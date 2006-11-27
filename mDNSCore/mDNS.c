@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.559  2006/11/27 08:20:57  cheshire
+Preliminary support for unifying the uDNS and mDNS code, including caching of uDNS answers
+
 Revision 1.558  2006/11/10 07:44:03  herscher
 <rdar://problem/4825493> Fix Daemon locking failures while toggling BTMM
 
@@ -3214,7 +3217,7 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 		*queryptr        = newptr;				// Update the packet pointer
 		*answerforecast  = forecast;			// Update the forecast
 		*kalistptrptr    = ka;					// Update the known answer list pointer
-		if (ucast) m->ExpectUnicastResponse = m->timenow;
+		if (ucast) q->ExpectUnicastResp = NonZeroTime(m->timenow);
 
 		for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)				// For every resource record in our cache,
 			if (rr->resrec.InterfaceID == q->SendQNow &&					// received on this interface
@@ -3408,14 +3411,14 @@ mDNSlocal void SendQueries(mDNS *const m)
 				InitializeDNSMessage(&m->omsg.h, q->TargetQID, QueryFlags);
 				qptr = putQuestion(&m->omsg, qptr, limit, &q->qname, q->qtype, q->qclass);
 				mDNSSendDNSMessage(m, &m->omsg, qptr, mDNSInterface_Any, &q->Target, q->TargetPort, mDNSNULL, mDNSNULL );
-				q->ThisQInterval   *= 2;
+				q->ThisQInterval    *= 2;
 				if (q->ThisQInterval > MaxQuestionInterval)
 					q->ThisQInterval = MaxQuestionInterval;
-				q->LastQTime        = m->timenow;
-				q->LastQTxTime      = m->timenow;
-				q->RecentAnswerPkts = 0;
-				q->SendQNow         = mDNSNULL;
-				m->ExpectUnicastResponse = m->timenow;
+				q->LastQTime         = m->timenow;
+				q->LastQTxTime       = m->timenow;
+				q->RecentAnswerPkts  = 0;
+				q->SendQNow          = mDNSNULL;
+				q->ExpectUnicastResp = NonZeroTime(m->timenow);
 				}
 			else if (!q->id.NotAnInteger && !q->Target.type && TimeToSendThisQuestion(q, m->timenow))
 				{
@@ -4686,7 +4689,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	const mDNSAddr *srcaddr, const mDNSInterfaceID InterfaceID, mDNSBool LegacyQuery, mDNSBool QueryWasMulticast,
 	mDNSBool QueryWasLocalUnicast, DNSMessage *const response)
 	{
-	mDNSBool      FromLocalSubnet    = AddressIsLocalSubnet(m, InterfaceID, srcaddr);
+	mDNSBool      FromLocalSubnet    = srcaddr && AddressIsLocalSubnet(m, InterfaceID, srcaddr);
 	AuthRecord   *ResponseRecords    = mDNSNULL;
 	AuthRecord  **nrp                = &ResponseRecords;
 	CacheRecord  *ExpectedAnswers    = mDNSNULL;			// Records in our cache we expect to see updated
@@ -5108,9 +5111,10 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 	const mDNSInterfaceID InterfaceID)
 	{
 	mDNSu8    *responseend = mDNSNULL;
-	mDNSBool   QueryWasLocalUnicast = !mDNSAddrIsDNSMulticast(dstaddr) && AddressIsLocalSubnet(m, InterfaceID, srcaddr);
+	mDNSBool   QueryWasLocalUnicast = srcaddr && dstaddr &&
+		!mDNSAddrIsDNSMulticast(dstaddr) && AddressIsLocalSubnet(m, InterfaceID, srcaddr);
 	
-	if (!InterfaceID && mDNSAddrIsDNSMulticast(dstaddr))
+	if (!InterfaceID && dstaddr && mDNSAddrIsDNSMulticast(dstaddr))
 		{
 		LogMsg("Ignoring Query from %#-15a:%-5d to %#-15a:%-5d on 0x%p with "
 			"%2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s (Multicast, but no InterfaceID)",
@@ -5144,6 +5148,57 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 		}
 	}
 
+mDNSlocal mDNSBool TrustedSource(const mDNS *const m, const mDNSAddr *const srcaddr)
+	{
+	(void)m; // Unused
+	(void)srcaddr; // Unused
+	DNSServer *s;
+	for (s = m->Servers; s; s = s->next)
+		if (mDNSSameAddress(srcaddr, &s->addr)) return(mDNStrue);
+	return(mDNSfalse);
+	}
+
+mDNSlocal const DNSQuestion *ExpectingUnicastResponseForQuestion(const mDNS *const m, const mDNSOpaque16 id, const DNSQuestion *const question)
+	{
+	DNSQuestion *q;
+	for (q = m->Questions; q; q=q->next)
+		if (q->id.NotAnInteger == id.NotAnInteger       &&
+			q->qtype           == question->qtype       &&
+			q->qclass          == question->qclass      &&
+			q->qnamehash       == question->qnamehash   &&
+			SameDomainName(&q->qname, &question->qname))
+			return(q);
+	return(mDNSNULL);
+	}
+
+mDNSlocal mDNSBool ExpectingUnicastResponseForRecord(mDNS *const m, const mDNSAddr *const srcaddr, const mDNSBool SrcLocal, const mDNSOpaque16 id, const CacheRecord *const rr)
+	{
+	DNSQuestion *q;
+	(void)id;
+	for (q = m->Questions; q; q=q->next)	
+		if (ResourceRecordAnswersQuestion(&rr->resrec, q))
+			{
+			if (q->id.NotAnInteger)
+				{
+				// For now we don't do this check -- for LLQ updates, the ID doesn't seem to match the ID in the question
+				// if (q->id.NotAnInteger == id.NotAnInteger)
+					{
+					if (mDNSSameAddress(srcaddr, &q->Target))                  return(mDNStrue);
+					if (q->llq && mDNSSameAddress(srcaddr, &q->llq->servAddr)) return(mDNStrue);
+					if (TrustedSource(m, srcaddr))                             return(mDNStrue);
+					LogMsg("WARNING: Ignoring suspect uDNS response from %#a for %s", srcaddr, CRDisplayString(m, rr));
+					return(mDNSfalse);
+					}
+				}
+			else
+				{
+				if (SrcLocal && q->ExpectUnicastResp && (mDNSu32)(m->timenow - q->ExpectUnicastResp) < (mDNSu32)(mDNSPlatformOneSecond*2))
+					return(mDNStrue);
+				}
+			}
+	return(mDNSfalse);
+	}
+
 // NOTE: mDNSCoreReceiveResponse calls mDNS_Deregister_internal which can call a user callback, which may change
 // the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
@@ -5153,9 +5208,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	const mDNSInterfaceID InterfaceID)
 	{
 	int i;
-
-	// We ignore questions (if any) in a DNS response packet
-	const mDNSu8 *ptr = LocateAnswers(response, end);
+	mDNSBool ResponseMCast    = dstaddr && mDNSAddrIsDNSMulticast(dstaddr);
+	mDNSBool ResponseSrcLocal = !srcaddr || AddressIsLocalSubnet(m, InterfaceID, srcaddr);
 
 	// "(CacheRecord*)1" is a special (non-zero) end-of-list marker
 	// We use this non-zero marker so that records in our CacheFlushRecords list will always have NextInCFList
@@ -5167,12 +5221,13 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	// to guard against spoof responses, then the only credible protection against that is cryptographic
 	// security, e.g. DNSSEC., not worring about which section in the spoof packet contained the record
 	int totalrecords = response->h.numAnswers + response->h.numAuthorities + response->h.numAdditionals;
+	const mDNSu8 *ptr = response->data;
 
-	(void)srcaddr;	// Currently used only for display in debugging message
+	// Currently used only for display in debugging message
 	(void)srcport;
 	(void)dstport;
 
-	verbosedebugf("Received Response from %#-15a addressed to %#-15a on %p with "
+	debugf("Received Response from %#-15a addressed to %#-15a on %p with "
 		"%2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
 		srcaddr, dstaddr, InterfaceID,
 		response->h.numQuestions,   response->h.numQuestions   == 1 ? ", " : "s,",
@@ -5180,22 +5235,56 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		response->h.numAuthorities, response->h.numAuthorities == 1 ? "y,  " : "ies,",
 		response->h.numAdditionals, response->h.numAdditionals == 1 ? "" : "s");
 
-	// If we get a unicast response when we weren't expecting one, then we assume it is someone trying to spoof us
-	if (!mDNSAddrIsDNSMulticast(dstaddr))
-		{
-		if (!AddressIsLocalSubnet(m, InterfaceID, srcaddr) || (mDNSu32)(m->timenow - m->ExpectUnicastResponse) > (mDNSu32)(mDNSPlatformOneSecond*2))
-			return;
-		// For now we don't put standard wide-area unicast responses in our main cache
-		// (Later we should fix this and cache all known results in a unified manner.)
-		if (response->h.id.NotAnInteger != 0 || srcport.NotAnInteger != MulticastDNSPort.NotAnInteger)
-			return;
-		}
+	if (ResponseMCast)	// We ignore questions (if any) in mDNS response packets
+		ptr = LocateAnswers(response, end);
+	else
+		for (i = 0; i < response->h.numQuestions && ptr && ptr < end; i++)
+			{
+			DNSQuestion q;
+			ptr = getQuestion(response, ptr, end, InterfaceID, &q);
+			if (ptr && ExpectingUnicastResponseForQuestion(m, response->h.id, &q))
+				{
+				CacheRecord *rr;
+				const mDNSu32 slot = HashSlot(&q.qname);
+				CacheGroup *cg = CacheGroupForName(m, slot, q.qnamehash, &q.qname);
+				for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
+					if (SameNameRecordAnswersQuestion(&rr->resrec, &q))
+						{
+						//LogMsg("uDNS Q for %s", CRDisplayString(m, rr));
+						rr->resrec.rroriginalttl = 0;
+						rr->TimeRcvd          = m->timenow;
+						rr->UnansweredQueries = MaxUnansweredQueries;
+						}
+				}
+			}
 
 	for (i = 0; i < totalrecords && ptr && ptr < end; i++)
 		{
+		// All responses sent via LL multicast are acceptable for caching
+		// All responses received over our outbound TCP connections are acceptable for caching
+		mDNSBool AcceptableResponse = ResponseMCast || !srcaddr;
+		// (Note that just because we are willing to cache something, that doesn't necessarily make it a trustworthy answer
+		// to any specific question -- any code reading records from the cache needs to make that determination for itself.)
+
 		const mDNSu8 RecordType = (mDNSu8)((i < response->h.numAnswers) ? kDNSRecordTypePacketAns : kDNSRecordTypePacketAdd);
 		ptr = GetLargeResourceRecord(m, response, ptr, end, InterfaceID, RecordType, &m->rec);
 		if (!ptr) goto exit;		// Break out of the loop and clean up our CacheFlushRecords list before exiting
+		
+		// Temporary:
+		// When we receive uDNS responses, we assume a long cache lifetime --
+		// In the case of LLQ queries we'll get remove events when the records actually do go away
+		// In the case of polling LLQs, we assume the record remains valid until the next poll
+		// In the case of one-shot queries, we should work out how to respect the real TTL
+		if (response->h.id.NotAnInteger)
+			{
+			// If the TTL is -1 for uDNS LLQ, that means "remove"
+			if (m->rec.r.resrec.rroriginalttl == 0xFFFFFFFF) m->rec.r.resrec.rroriginalttl = 0;
+			else                                             m->rec.r.resrec.rroriginalttl = 0x70000000 / mDNSPlatformOneSecond;
+			}
+
+		// If response was not sent via LL multicast,
+		// then see if it answers a recent query of ours, which would also make it acceptable for caching.
+		if (!AcceptableResponse) AcceptableResponse = ExpectingUnicastResponseForRecord(m, srcaddr, ResponseSrcLocal, response->h.id, &m->rec.r);
 
 		// 1. Check that this packet resource record does not conflict with any of ours
 		if (m->CurrentRecord) LogMsg("mDNSCoreReceiveResponse ERROR m->CurrentRecord already set");
@@ -5204,6 +5293,10 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 			{
 			AuthRecord *rr = m->CurrentRecord;
 			m->CurrentRecord = rr->next;
+			// We accept all multicast responses, and unicast responses resulting from queries we issued
+			// For other unicast responses, this code accepts them only for responses with an
+			// (apparently) local source address that pertain to a record of our own that's in probing state
+			if (!AcceptableResponse && !(ResponseSrcLocal && rr->resrec.RecordType == kDNSRecordTypeUnique)) continue;
 			if (PacketRRMatchesSignature(&m->rec.r, rr))		// If interface, name, type (if shared record) and class match...
 				{
 				// ... check to see if type and rdata are identical
@@ -5276,7 +5369,9 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 			}
 
 		// 2. See if we want to add this packet resource record to our cache
-		if (m->rrcache_size)	// Only try to cache answers if we have a cache to put them in
+		// We only try to cache answers if we have a cache to put them in
+		// Also, we ignore any apparent attempts at cache poisoning unicast to us that do not answer any outstanding active query
+		if (m->rrcache_size && AcceptableResponse)
 			{
 			const mDNSu32 slot = HashSlot(m->rec.r.resrec.name);
 			CacheGroup *cg = CacheGroupForRecord(m, slot, &m->rec.r.resrec);
@@ -5319,6 +5414,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 						}
 					else if (m->rec.r.resrec.rroriginalttl > 0)
 						{
+						if (rr->resrec.rroriginalttl == 0) LogMsg("uDNS rescuing %s", CRDisplayString(m, rr));
 						rr->resrec.rroriginalttl = m->rec.r.resrec.rroriginalttl;
 						rr->UnansweredQueries = 0;
 						rr->MPUnansweredQ     = 0;
@@ -5490,12 +5586,12 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 	
 	// We use zero addresses and all-ones addresses at various places in the code to indicate special values like "no address"
 	// If we accept and try to process a packet with zero or all-ones source address, that could really mess things up
-	if (!mDNSAddressIsValid(srcaddr)) { debugf("mDNSCoreReceive ignoring packet from %#a", srcaddr); return; }
+	if (srcaddr && !mDNSAddressIsValid(srcaddr)) { debugf("mDNSCoreReceive ignoring packet from %#a", srcaddr); return; }
 
 	mDNS_Lock(m);
 	m->PktNum++;
 #ifndef UNICAST_DISABLED
-	if (!mDNSAddressIsAllDNSLinkGroup(dstaddr) && (QR_OP == StdR || QR_OP == UpdateR))
+	if (!dstaddr || (!mDNSAddressIsAllDNSLinkGroup(dstaddr) && (QR_OP == StdR || QR_OP == UpdateR)))
 		uDNS_ReceiveMsg(m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID);
 		// Note: mDNSCore also needs to get access to received unicast responses
 #endif	
@@ -5520,7 +5616,11 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 #pragma mark - Searcher Functions
 #endif
 
-#define SameQTarget(A,B) (mDNSSameAddress(&(A)->Target, &(B)->Target) && (A)->TargetPort.NotAnInteger == (B)->TargetPort.NotAnInteger)
+// Targets are considered the same if both queries are untargeted, or
+// if both are targeted to the same address+port
+// (If Target address is zero, TargetPort is undefined)
+#define SameQTarget(A,B) (((A)->Target.type == mDNSAddrType_None && (B)->Target.type == mDNSAddrType_None) || \
+	(mDNSSameAddress(&(A)->Target, &(B)->Target) && (A)->TargetPort.NotAnInteger == (B)->TargetPort.NotAnInteger))
 
 mDNSlocal DNSQuestion *FindDuplicateQuestion(const mDNS *const m, const DNSQuestion *const question)
 	{
@@ -5582,10 +5682,13 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
     if (question->InterfaceID == mDNSInterface_LocalOnly || question->ForceMCast || IsLocalDomain(&question->qname))
 		{
     	question->id = zeroID;
+		question->Private = mDNSfalse;
 		}
     else
 		{
 	    question->id = mDNS_NewMessageID(m);
+	    // This is where we'll check to see if this uDNS domain is in our list of domains that require encrypted queries
+		question->Private = mDNSfalse;	// But for now assume not
 		}
 #else
     question->id = zeroID;
@@ -5650,44 +5753,45 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		question->NextInDQList      = mDNSNULL;
 		question->llq               = mDNSNULL;
 		question->next              = mDNSNULL;
+		question->DelayAnswering    = CheckForSoonToExpireRecords(m, &question->qname, question->qnamehash, HashSlot(&question->qname));
+		question->Answered          = mDNSfalse;
+		question->ThisQInterval     = InitialQuestionInterval * 2;			// MUST be > zero for an active question
+		question->RequestUnicast    = 0;
+		question->LastQTime         = m->timenow - m->RandomQueryDelay;		// Avoid inter-machine synchronization
+		question->ExpectUnicastResp = 0;
+		question->LastAnswerPktNum  = m->PktNum;
+		
+		for (i=0; i<DupSuppressInfoSize; i++)
+			question->DupSuppress[i].InterfaceID = mDNSNULL;
+		// question->InterfaceID must be already set by caller
+		question->SendOnAll         = mDNSfalse;
+		question->LastQTxTime       = m->timenow;
 
-		// If the question's id is zero, then it's local 
-		if (!question->id.NotAnInteger)
+		// If the question's id is non-zero, then it's Wide Area
+		if (question->id.NotAnInteger)
 			{
-			question->DelayAnswering    = CheckForSoonToExpireRecords(m, &question->qname, question->qnamehash, HashSlot(&question->qname));
-			question->ThisQInterval     = InitialQuestionInterval * 2;			// MUST be > zero for an active question
-			question->RequestUnicast    = 0;
-			question->LastQTime         = m->timenow - m->RandomQueryDelay;		// Avoid inter-machine synchronization
-			question->LastAnswerPktNum  = m->PktNum;
-			
-			for (i=0; i<DupSuppressInfoSize; i++)
-				question->DupSuppress[i].InterfaceID = mDNSNULL;
-			// question->InterfaceID must be already set by caller
-			question->SendOnAll         = mDNSfalse;
-			question->LastQTxTime       = m->timenow;
-			question->Private           = mDNSfalse;
-			}
-		// If the questions id is non-zero, then it's Wide Area
-		else
-			{
-			mStatus err;
-
-			question->DelayAnswering    = 0;
-			question->DuplicateOf       = 0;
-			question->Answered          = mDNSfalse;
-			question->knownAnswers      = mDNSNULL;
-			
+			// We ignore error returns in this case --
+			// There should be no errors that permanently kill a client's question
+			// Any errors are transient, and that's not the client's fault
 			if (question->LongLived)
 				{
-				if ((err = uDNS_InitLongLivedQuery(m, question)) != mStatus_NoError)	{ *q = mDNSNULL; return err; }
+				uDNS_InitLongLivedQuery(m, question);
 				}
 			else if (question->Private)
 				{
-				if ((err = uDNS_InitPrivateQuery(m, question)) != mStatus_NoError)		{ *q = mDNSNULL; return err; }
+				uDNS_InitPrivateQuery(m, question);
 				}
 			else
 				{
-				if ((err = uDNS_InitQuery(m, question)) != mStatus_NoError)		        { *q = mDNSNULL; return err; }
+				question->ThisQInterval = INIT_UCAST_POLL_INTERVAL / 2;
+				question->LastQTime     = m->timenow - question->ThisQInterval;
+			
+				//if ( !question->internal )
+				//	{
+					//question->responseCallback = simpleResponseHndlr;
+					//question->context = mDNSNULL;
+				//	}
+			
 				}
 			}		
 
@@ -5720,22 +5824,8 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 	CacheRecord *rr;
 	DNSQuestion **q = &m->Questions;
 	
-	if (question->id.NotAnInteger)
-		{
-		if (question->LongLived && question->llq)
-			{
-			uDNS_StopLongLivedQuery(m, question);
-			
-			while (question->knownAnswers)  
-				{
-				CacheRecord * ka;
-				
-				ka = question->knownAnswers; 
-				question->knownAnswers = question->knownAnswers->next;  
-				mDNSPlatformMemFree(ka);
-				}
-			}
-		}
+	if (question->id.NotAnInteger && question->LongLived && question->llq)
+		uDNS_StopLongLivedQuery(m, question);
 
 	if (question->InterfaceID == mDNSInterface_LocalOnly) q = &m->LocalOnlyQuestions;
 	while (*q && *q != question) q=&(*q)->next;
@@ -5745,6 +5835,7 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 		if (question->ThisQInterval >= 0)	// Only log error message if the query was supposed to be active
 			LogMsg("mDNS_StopQuery_internal: Question %##s (%s) not found in active list",
 				question->qname.c, DNSTypeName(question->qtype));
+		*(long*)0 = 0;
 		return(mStatus_BadReferenceErr);
 		}
 
@@ -5847,29 +5938,22 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 	question->qtype            = kDNSType_PTR;
 	question->qclass           = kDNSClass_IN;
 	question->LongLived        = mDNSfalse;
-	question->Private          = mDNSfalse;
 	question->ExpectUnique     = mDNSfalse;
 	question->ForceMCast       = ForceMCast;
+	question->ReturnCNAME      = mDNSfalse;
 	question->QuestionCallback = Callback;
 	question->QuestionContext  = Context;
-	question->id     = zeroID;
+	question->id               = zeroID;
 	if (!ConstructServiceName(&question->qname, mDNSNULL, srv, domain)) return(mStatus_BadParamErr);
 
 #ifndef UNICAST_DISABLED
-    if (question->InterfaceID == mDNSInterface_LocalOnly || question->ForceMCast || IsLocalDomain(&question->qname))
-    	{
-		question->LongLived = mDNSfalse;
-		question->id = zeroID;
-		return(mDNS_StartQuery(m, question));
-		}
-	else
+    if (question->InterfaceID != mDNSInterface_LocalOnly && !question->ForceMCast && !IsLocalDomain(&question->qname))
 		{
 		question->LongLived     = mDNStrue;
 		question->ThisQInterval = INIT_UCAST_POLL_INTERVAL / 2;
 		question->LastQTime     = m->timenow - question->ThisQInterval;
-		question->knownAnswers  = mDNSNULL;
 		question->Answered      = mDNSfalse;
-		question->internal      = mDNSfalse;
+//		question->internal      = mDNSfalse;
 		}
 #endif // UNICAST_DISABLED
 	return(mDNS_StartQuery(m, question));
@@ -6029,6 +6113,7 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	query->qSRV.LongLived           = mDNSfalse;
 	query->qSRV.ExpectUnique        = mDNStrue;
 	query->qSRV.ForceMCast          = mDNSfalse;
+	query->qSRV.ReturnCNAME         = mDNSfalse;
 	query->qSRV.QuestionCallback    = FoundServiceInfoSRV;
 	query->qSRV.QuestionContext     = query;
 
@@ -6042,6 +6127,7 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	query->qTXT.LongLived           = mDNSfalse;
 	query->qTXT.ExpectUnique        = mDNStrue;
 	query->qTXT.ForceMCast          = mDNSfalse;
+	query->qTXT.ReturnCNAME         = mDNSfalse;
 	query->qTXT.QuestionCallback    = FoundServiceInfoTXT;
 	query->qTXT.QuestionContext     = query;
 
@@ -6055,6 +6141,7 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	query->qAv4.LongLived           = mDNSfalse;
 	query->qAv4.ExpectUnique        = mDNStrue;
 	query->qAv4.ForceMCast          = mDNSfalse;
+	query->qAv4.ReturnCNAME         = mDNSfalse;
 	query->qAv4.QuestionCallback    = FoundServiceInfo;
 	query->qAv4.QuestionContext     = query;
 
@@ -6068,6 +6155,7 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	query->qAv6.LongLived           = mDNSfalse;
 	query->qAv6.ExpectUnique        = mDNStrue;
 	query->qAv6.ForceMCast          = mDNSfalse;
+	query->qAv6.ReturnCNAME         = mDNSfalse;
 	query->qAv6.QuestionCallback    = FoundServiceInfo;
 	query->qAv6.QuestionContext     = query;
 
@@ -6099,10 +6187,10 @@ mDNSexport void    mDNS_StopResolveService (mDNS *const m, ServiceInfoQuery *q)
 	{
 	mDNS_Lock(m);
 	// We use mDNS_StopQuery_internal here because we're already holding the lock
-	if (q->qSRV.ThisQInterval >= 0 || mDNS_IsActiveQuery(m, &q->qSRV)) mDNS_StopQuery_internal(m, &q->qSRV);
-	if (q->qTXT.ThisQInterval >= 0 || mDNS_IsActiveQuery(m, &q->qTXT)) mDNS_StopQuery_internal(m, &q->qTXT);
-	if (q->qAv4.ThisQInterval >= 0 || mDNS_IsActiveQuery(m, &q->qAv4)) mDNS_StopQuery_internal(m, &q->qAv4);
-	if (q->qAv6.ThisQInterval >= 0 || mDNS_IsActiveQuery(m, &q->qAv6)) mDNS_StopQuery_internal(m, &q->qAv6);
+	if (q->qSRV.ThisQInterval >= 0) mDNS_StopQuery_internal(m, &q->qSRV);
+	if (q->qTXT.ThisQInterval >= 0) mDNS_StopQuery_internal(m, &q->qTXT);
+	if (q->qAv4.ThisQInterval >= 0) mDNS_StopQuery_internal(m, &q->qAv4);
+	if (q->qAv6.ThisQInterval >= 0) mDNS_StopQuery_internal(m, &q->qAv6);
 	mDNS_Unlock(m);
 	}
 
@@ -6117,6 +6205,7 @@ mDNSexport mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, m
 	question->Private          = mDNSfalse;
 	question->ExpectUnique     = mDNSfalse;
 	question->ForceMCast       = mDNSfalse;
+	question->ReturnCNAME      = mDNSfalse;
 	question->QuestionCallback = Callback;
 	question->QuestionContext  = Context;
 	if (DomainType > mDNS_DomainTypeMax) return(mStatus_BadParamErr);
@@ -7042,31 +7131,17 @@ mDNSexport mStatus mDNS_AdvertiseDomains(mDNS *const m, AuthRecord *rr,
 extern mStatus mDNS_GetZoneData(mDNS *m, DNSQuestion *q, InternalResponseHndlr callback, void *hndlrContext)
 	{	
 	q->id               = zeroID;
-	q->internal         = mDNStrue;
+//	q->internal         = mDNStrue;
 	q->llq              = mDNSNULL;
 	q->sock             = mDNSNULL;
 	q->Answered         = mDNSfalse;
-	q->knownAnswers     = mDNSNULL;
 	q->RestartTime      = 0;
 	q->QuestionContext  = hndlrContext;
 	q->responseCallback = callback;
-	q->context          = hndlrContext;
+	if (q->ntaContext != hndlrContext) *(long*)0 = 0;
+	q->ntaContext       = hndlrContext;
 	// This call assumes we already have a lock
 	return mDNS_StartQuery_internal(m, q);
-	}
-	
-mDNSexport mDNSBool mDNS_IsActiveQuery(mDNS * const m, DNSQuestion *const question)
-    {
-	DNSQuestion *q;
-
-	for (q = m->Questions; q && q != question; q=q->next)		// Scan our list of questions
-		{
-		if (q == question)
-			{
-			return mDNStrue;
-			}
-		}
-	return mDNSfalse;
 	}
 	
 mDNSOpaque16 mDNS_NewMessageID(mDNS * const m)
@@ -7148,7 +7223,6 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->NextScheduledQuery      = timenow + 0x78000000;
 	m->NextScheduledProbe      = timenow + 0x78000000;
 	m->NextScheduledResponse   = timenow + 0x78000000;
-	m->ExpectUnicastResponse   = timenow + 0x78000000;
 	m->RandomQueryDelay        = 0;
 	m->RandomReconfirmDelay    = 0;
 	m->PktNum                  = 0;
