@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.251  2006/11/28 21:42:11  mkrochma
+Work around a crashing bug that was introduced by uDNS and mDNS code unification
+
 Revision 1.250  2006/11/18 05:01:30  cheshire
 Preliminary support for unifying the uDNS and mDNS code,
 including caching of uDNS answers
@@ -4628,7 +4631,7 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 
 					return;
 					}
-				else
+				else if (qptr->responseCallback)  // !!! MJK FIXME This prevents a crash but I don't know if it's the correct fix
 					{
 					m->CurrentQuestion = qptr;
 					qptr->responseCallback(m, msg, end, qptr);
