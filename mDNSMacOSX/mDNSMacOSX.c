@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.351  2006/11/28 21:37:51  mkrochma
+Tweak where the private DNS data is written
+
 Revision 1.350  2006/11/28 07:55:02  herscher
 <rdar://problem/4742743> dnsextd has a slow memory leak
 
@@ -4407,7 +4410,7 @@ mDNSlocal OSStatus StoreDomainDataFromKeychain(mDNS * const m)
 		CFRelease( itemRef );
 		}
 
-	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, CFSTR(kDNSServiceCompPrivateDNS));
+	key = SCDynamicStoreKeyCreate(NULL, CFSTR("%@/%@/%@"), kSCDynamicStoreDomainState, kSCCompNetwork, CFSTR(kDNSServiceCompPrivateDNS));
 
 	if ( !key )
 		{
