@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.349  2006/11/28 07:45:58  herscher
+<rdar://problem/4787010> Daemon: Need to write list of private domain names to the DynamicStore
+
 Revision 1.348  2006/11/16 21:47:20  mkrochma
 <rdar://problem/4841422> uDNS: Wide-area registrations sometimes fail
 
@@ -4294,6 +4297,189 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	
 	return(err);
 	}
+	
+mDNSlocal OSStatus StoreDomainDataFromKeychain(mDNS * const m)
+	{
+	SCDynamicStoreRef    store          = NULL;
+	SecKeychainRef       systemKeychain = NULL;
+	SecKeychainSearchRef searchRef      = NULL;
+	CFMutableArrayRef	 stateArray		= NULL;
+	CFStringRef			 key		    = NULL;
+	OSStatus             err            = 0;
+	
+	(void) m;
+	
+	store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:StoreDomainDataFromKeychain"), NULL, NULL);
+	
+	if ( !store )
+		{
+		LogMsg( "SCDynamicStoreCreate failed" );
+		err = mStatus_UnknownErr;
+		goto exit;
+		}
+
+	err = SecKeychainOpen( SYSTEM_KEYCHAIN_PATH, &systemKeychain );
+	
+	if ( err )
+		{
+		LogMsg("SecKeychainOpen failed: %d", err );
+		goto exit;
+		}
+
+	err = SecKeychainSearchCreateFromAttributes(systemKeychain, kSecGenericPasswordItemClass, NULL, &searchRef);
+	
+	if (err)
+		{
+		LogMsg("SecKeychainSearchCreateFromAttributes failed: %d", err );
+		goto exit;
+		}
+
+	stateArray = CFArrayCreateMutable(NULL, 0, NULL);
+
+	if ( !stateArray )
+		{
+		LogMsg( "CFArrayCreateMutable failed" );
+		err = notEnoughMemoryErr;
+		goto exit;
+		}
+
+	while ( 1 )
+		{
+		SecKeychainItemRef itemRef = NULL;
+
+		err = SecKeychainSearchCopyNext(searchRef, &itemRef);
+		
+		if (err)
+			{
+			break;
+			}
+		else
+			{
+			SecKeychainAttributeInfo attrInfo;
+			UInt32 secretlen;
+			void *secret = NULL;
+			SecKeychainAttributeList *attrList = NULL;
+	        UInt32 tags[1];
+
+			tags[0]         = kSecServiceItemAttr;
+			attrInfo.count  = 1;
+			attrInfo.tag    = tags;
+			attrInfo.format = NULL;
+
+			err = SecKeychainItemCopyAttributesAndData(itemRef,  &attrInfo, NULL, &attrList, &secretlen, &secret);
+	
+			if ( err )
+				{
+				LogMsg("SecKeychainItemCopyAttributesAndData failed: %d", err );
+				CFRelease( itemRef );
+				continue;
+				}
+
+			if ( attrList )
+				{
+				unsigned i;
+
+				for (i = 0; i < attrList->count; i++)
+					{
+					SecKeychainAttribute attr = attrList->attr[i];
+				
+					if (attr.tag == kSecServiceItemAttr)
+						{
+						char   keybuf[1024];
+						char * string;
+						
+						memset( keybuf, 0, sizeof( keybuf ) );
+						strncpy(keybuf, attr.data, attr.length);
+
+						if ( ( string = strstr( keybuf, "dns:" ) ) && ( string == keybuf ) )
+							{
+							string += strlen( "dns:" );
+							CFArrayAppendValue(stateArray, CFStringCreateWithCString(NULL, string, kCFStringEncodingUTF8 ) );
+							}
+						}
+					}
+					
+				SecKeychainItemFreeAttributesAndData(attrList, secret);
+				}
+			}
+			
+		CFRelease( itemRef );
+		}
+
+	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, CFSTR(kDNSServiceCompPrivateDNS));
+
+	if ( !key )
+		{
+		LogMsg("SCDynamicStoreKeyCreateNetworkGlobalEntity failed" );
+		err = mStatus_UnknownErr;
+		goto exit;
+		}
+
+	SCDynamicStoreSetValue(store, key, stateArray);
+
+exit:
+
+	if ( key )
+		{
+		CFRelease( key );
+		}
+
+	if ( searchRef )
+		{
+		CFRelease(searchRef);
+		}
+		
+	if ( systemKeychain )
+		{
+		CFRelease(systemKeychain);
+		}
+		
+	if ( stateArray )
+		{
+		CFRelease(stateArray);
+		}
+		
+	if ( store )
+		{
+		CFRelease(store);
+		}
+
+	return err;
+	}
+	
+mDNSlocal OSStatus KeychainChanged(SecKeychainEvent keychainEvent, SecKeychainCallbackInfo *info, void *context)
+	{	
+	char         path[1024];
+	UInt32       pathLen;
+	OSStatus     err;
+	mDNS *       m;
+
+	(void) keychainEvent;
+
+	m       = ( mDNS* ) context;
+	pathLen = sizeof( path );
+	err     = SecKeychainGetPath( info->keychain, &pathLen, path );
+
+	if ( err )
+		{
+		LogMsg("SecKeychainGetPath failed: %d", err );
+		goto exit;
+		}
+	
+	if ( strncmp( SYSTEM_KEYCHAIN_PATH, path, pathLen ) == 0 )
+		{
+		StoreDomainDataFromKeychain( m );
+		}
+
+exit:
+	
+	return 0;
+	}
+
+mDNSlocal mStatus WatchForKeychainChanges(mDNS * const m )
+	{
+	return SecKeychainAddCallback(KeychainChanged, kSecAddEventMask|kSecDeleteEventMask|kSecUpdateEventMask, m);
+	}
 
 #ifndef NO_IOPOWER
 mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messageType, void *messageArgument)
@@ -4478,6 +4664,11 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	SetupActiveInterfaces(m, utc);
 
 	err = WatchForNetworkChanges(m);
+	if (err) return(err);
+	
+	StoreDomainDataFromKeychain(m);
+	
+	err = WatchForKeychainChanges(m);
 	if (err) return(err);
 	
 #ifndef NO_IOPOWER

@@ -2117,6 +2117,10 @@ DNSServiceErrorType DNSSD_API DNSServiceSetDefaultDomainForUser
     const char                         *domain
     );
 
+
+#define kDNSServiceCompPrivateDNS "PrivateDNS"
+
+
 #endif //__APPLE_API_PRIVATE
 
 // Some C compiler cleverness. We can make the compiler check certain things for us,
