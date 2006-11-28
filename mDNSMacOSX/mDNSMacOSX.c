@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.350  2006/11/28 07:55:02  herscher
+<rdar://problem/4742743> dnsextd has a slow memory leak
+
 Revision 1.349  2006/11/28 07:45:58  herscher
 <rdar://problem/4787010> Daemon: Need to write list of private domain names to the DynamicStore
 
@@ -2149,27 +2152,25 @@ mDNSexport uDNS_TCPSocket mDNSPlatformTCPAccept( uDNS_TCPSocketFlags flags, int 
 
 mDNSexport void mDNSPlatformTCPCloseConnection(uDNS_TCPSocket sock)
 	{
+	if (sock)
+		{
 #ifndef NO_SECURITYFRAMEWORK
-	if ( sock->tlsContext )
-		{
-		SSLClose( sock->tlsContext );
-		}
-	else
+		if ( sock->tlsContext )
+			{
+			SSLClose( sock->tlsContext );
+			SSLDisposeContext( sock->tlsContext );
+			sock->tlsContext = NULL;
+			}
 #endif /* NO_SECURITYFRAMEWORK */
-	if ( sock->fd != -1 )
-		{
-		shutdown( sock->fd, 2 );
-		close( sock->fd );
-		sock->fd = -1;
-		}
+		if ( sock->fd != -1 )
+			{
+			shutdown( sock->fd, 2 );
+			close( sock->fd );
+			sock->fd = -1;
+			}
 
-#ifndef NO_SECURITYFRAMEWORK
-	if ( sock->tlsContext )
-		{
-		SSLDisposeContext( sock->tlsContext );
-		sock->tlsContext = NULL;
+		freeL( "mDNSPlatformTCPCloseConnection", sock );
 		}
-#endif /* NO_SECURITYFRAMEWORK */
 	}
 
 
