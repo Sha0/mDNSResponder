@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.42  2006/11/30 23:07:56  herscher
+<rdar://problem/4765644> uDNS: Sync up with Lighthouse changes for Private DNS
+
 Revision 1.41  2006/11/18 05:01:30  cheshire
 Preliminary support for unifying the uDNS and mDNS code,
 including caching of uDNS answers
@@ -167,16 +170,17 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 #define MAX_UCAST_POLL_INTERVAL (60 * 60 * mDNSPlatformOneSecond)
 #define LLQ_POLL_INTERVAL       (15 * 60 * mDNSPlatformOneSecond) // Polling interval for zones w/ an advertised LLQ port (ie not static zones) if LLQ fails due to NAT, etc.
 #define RESPONSE_WINDOW (60 * mDNSPlatformOneSecond)         // require server responses within one minute of request
-#define UPDATE_SERVICE_TYPE  ((domainname*)"\x0B_dns-update\x04_udp")
-#define LLQ_SERVICE_TYPE     ((domainname*)"\x08_dns-llq\x04_udp")
-#define PRIVATE_SERVICE_TYPE ((domainname*)"\x0C_dns-private\x04_tcp")
+#define PRIVATE_UPDATE_SERVICE_TYPE  ((domainname*)"\x0B_dns-update\x04_tls")
+#define PUBLIC_UPDATE_SERVICE_TYPE  ((domainname*)"\x0B_dns-update\x04_udp")
+#define PRIVATE_LLQ_SERVICE_TYPE     ((domainname*)"\x08_dns-llq\x04_tls")
+#define PUBLIC_LLQ_SERVICE_TYPE     ((domainname*)"\x08_dns-llq\x04_udp")
 #define DEFAULT_UPDATE_LEASE 7200
 	
 // Entry points into unicast-specific routines
 
 extern mStatus uDNS_InitLongLivedQuery(mDNS *const m, DNSQuestion *const question);
 extern void    uDNS_StopLongLivedQuery (mDNS *const m, DNSQuestion *const question);
-extern mStatus uDNS_InitPrivateQuery  (mDNS *const m, DNSQuestion *const question);
+extern mStatus uDNS_InitQuery  (mDNS *const m, DNSQuestion *const question);
 	
 extern void uDNS_Sleep(mDNS *const m);
 extern void uDNS_Wake(mDNS *const m);
@@ -209,6 +213,41 @@ extern void uDNS_ReceiveNATMap(mDNS *m, mDNSu8 *pkt, mDNSu16 len);
 	
 // returns time of next scheduled event
 extern void uDNS_Execute(mDNS *const m);
+
+// Asynchronous operation types
+typedef enum
+	{
+    lookupUpdateSRV,
+	lookupLLQSRV
+	} AsyncOpTarget;
+
+typedef enum
+	{
+	zoneDataResult                
+	// other async. operation names go here
+	} AsyncOpResultType;          
+    
+typedef struct                    
+	{
+	domainname zoneName;
+	mDNSAddr primaryAddr;
+	mDNSu16 zoneClass;
+	mDNSIPPort updatePort;
+	mDNSIPPort llqPort;
+	mDNSBool   isPrivate;
+	} zoneData_t;
+
+// other async. result struct defs go here
+
+typedef struct
+	{
+	AsyncOpResultType type;
+	zoneData_t zoneData;
+	// other async result structs go here
+	} AsyncOpResult;
+
+
+typedef void AsyncOpCallback(mStatus err, mDNS *const m, void *info, const AsyncOpResult *result);
 
 
 // Asynchronous operation types

@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.55  2006/11/30 23:08:39  herscher
+<rdar://problem/4765644> uDNS: Sync up with Lighthouse changes for Private DNS
+
 Revision 1.54  2006/11/18 05:01:33  cheshire
 Preliminary support for unifying the uDNS and mDNS code,
 including caching of uDNS answers
@@ -1116,24 +1119,42 @@ mDNSlocal int UpdateSRV(DaemonInfo *d, mDNSBool registration)
 		InitializeDNSMessage(&pkt.msg.h, zeroID, UpdateReqFlags);
 		pkt.src.sin_addr.s_addr = zerov4Addr.NotAnInteger; // address field set solely for verbose logging in subroutines
 		pkt.src.sin_family = AF_INET;
-	
+
 		// format message body
 		ptr = putZone(&pkt.msg, ptr, end, &zone->name, mDNSOpaque16fromIntVal(kDNSClass_IN));
 		require_action( ptr, exit, err = mStatus_UnknownErr; Log("UpdateSRV: Error constructing lease expiration update" ) );
 	
-		if ( zone->type == kDNSZonePrivate )
-			{
-			ptr = PutUpdateSRV(d, zone, &pkt, ptr, "_dns-private._tcp.", d->private_port, registration);
-			require_action( ptr, exit, err = mStatus_UnknownErr; Log("UpdateSRV: Error constructing lease expiration update" ) );
+	   if ( zone->type == kDNSZonePrivate )
+            {
+            ptr = PutUpdateSRV(d, zone, &pkt, ptr, "_dns-update._tls.", d->private_port, registration);
+            require_action( ptr, exit, err = mStatus_UnknownErr; Log("UpdateSRV: Error constructing lease expiration update" ) );
+            ptr = PutUpdateSRV(d, zone, &pkt, ptr, "_dns-llq._tls.", d->private_port, registration);
+            require_action( ptr, exit, err = mStatus_UnknownErr; Log("UpdateSRV: Error constructing lease expiration update" ) );
+            
+			if ( !registration )
+				{
+				ptr = PutUpdateSRV(d, zone, &pkt, ptr, "_dns-update._udp.", d->llq_port, registration);
+				require_action( ptr, exit, err = mStatus_UnknownErr; Log("UpdateSRV: Error constructing lease expiration update" ) );
+				ptr = PutUpdateSRV(d, zone, &pkt, ptr, "_dns-llq._udp.", d->llq_port, registration);
+				require_action( ptr, exit, err = mStatus_UnknownErr; Log("UpdateSRV: Error constructing lease expiration update" ) );
+				}
+			}
+        else
+            {
+			if ( !registration )
+				{
+				ptr = PutUpdateSRV(d, zone, &pkt, ptr, "_dns-update._tls.", d->private_port, registration);
+				require_action( ptr, exit, err = mStatus_UnknownErr; Log("UpdateSRV: Error constructing lease expiration update" ) );
+				ptr = PutUpdateSRV(d, zone, &pkt, ptr, "_dns-llq._tls.", d->private_port, registration);
+				require_action( ptr, exit, err = mStatus_UnknownErr; Log("UpdateSRV: Error constructing lease expiration update" ) );
+				}
+
+			ptr = PutUpdateSRV(d, zone, &pkt, ptr, "_dns-update._udp.", d->llq_port, registration);
+            require_action( ptr, exit, err = mStatus_UnknownErr; Log("UpdateSRV: Error constructing lease expiration update" ) );
+            ptr = PutUpdateSRV(d, zone, &pkt, ptr, "_dns-llq._udp.", d->llq_port, registration);
+            require_action( ptr, exit, err = mStatus_UnknownErr; Log("UpdateSRV: Error constructing lease expiration update" ) );
 			}
 
-		ptr = PutUpdateSRV(d, zone, &pkt, ptr, "_dns-update._udp.", d->llq_port, registration);
-		require_action( ptr, exit, err = mStatus_UnknownErr; Log("UpdateSRV: Error constructing lease expiration update" ) );
-		ptr = PutUpdateSRV(d, zone, &pkt, ptr, "_dns-update._tcp.", d->llq_port, registration);
-		require_action( ptr, exit, err = mStatus_UnknownErr; Log("UpdateSRV: Error constructing lease expiration update" ) );
-		ptr = PutUpdateSRV(d, zone, &pkt, ptr, "_dns-llq._udp.", d->llq_port, registration);
-		require_action( ptr, exit, err = mStatus_UnknownErr; Log("UpdateSRV: Error constructing lease expiration update" ) );
-		
 		nAdditHBO = pkt.msg.h.numAdditionals;
 		HdrHToN(&pkt);
 
@@ -1151,7 +1172,6 @@ mDNSlocal int UpdateSRV(DaemonInfo *d, mDNSBool registration)
 		require_action( !err, exit, Log( "UpdateSRV: SendPacket failed" ) );
 
 		reply = RecvPacket( sock, NULL, &closed );
-		if (reply) HdrNToH(reply);
 		require_action( reply, exit, err = mStatus_UnknownErr; Log( "UpdateSRV: RecvPacket returned NULL" ) );
 
 		ok = SuccessfulUpdateTransaction( &pkt, reply );
@@ -1434,7 +1454,7 @@ mDNSlocal void DeleteOneRecord(DaemonInfo *d, CacheRecord *rr, domainname *zname
 	char buf[MaxMsg];
 	mDNSBool closed;
 	PktMsg *reply = NULL;
-	
+
 	VLog("Expiring record %s", GetRRDisplayString_rdb(&rr->resrec, &rr->resrec.rdata->u, buf));	
 	
 	InitializeDNSMessage(&pkt.msg.h, zeroID, UpdateReqFlags);
@@ -3137,9 +3157,9 @@ int main(int argc, char *argv[])
 
 	// Setup the public SRV record names
 
-	SetPublicSRV( d, "_dns-private._tcp." );
-	SetPublicSRV( d, "_dns-update._tcp." );
+	SetPublicSRV( d, "_dns-update._tls." );
 	SetPublicSRV( d, "_dns-update._udp." );
+	SetPublicSRV( d, "_dns-llq._tls." );
 	SetPublicSRV( d, "_dns-llq._udp." );
 
 	// Setup signal handling

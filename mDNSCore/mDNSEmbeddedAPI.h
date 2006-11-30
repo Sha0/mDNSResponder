@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.308  2006/11/30 23:07:56  herscher
+<rdar://problem/4765644> uDNS: Sync up with Lighthouse changes for Private DNS
+
 Revision 1.307  2006/11/18 05:01:30  cheshire
 Preliminary support for unifying the uDNS and mDNS code,
 including caching of uDNS answers
@@ -1886,7 +1889,6 @@ typedef struct
 	NATTraversalInfo * NATInfoUDP;
 	mDNSAddr servAddr;
 	mDNSIPPort servPort;
-	mDNSIPPort privPort;
 	mDNSIPPort eventPort;			// This is non-zero if this is a private LLQ.  It is the port number that both the TCP
 	                                // and the UDP socket are bound to.  This allows us to receive event notifications via
 	                                // TCP or UDP.
@@ -1928,7 +1930,7 @@ enum
 	LLQErr_UnknownErr = 6
 	};
 
-typedef void (*InternalResponseHndlr)(mDNS *const m, DNSMessage *msg, const  mDNSu8 *end, DNSQuestion *question);
+typedef void (*InternalResponseHndlr)(mDNS *const m, DNSMessage *msg, const  mDNSu8 *end, DNSQuestion *question, void * internalContext);
 
 // Note: Within an mDNSQuestionCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute()
 typedef void mDNSQuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord);
@@ -1964,9 +1966,9 @@ struct DNSQuestion_struct
 	InternalResponseHndlr responseCallback; // NULL if internal field is false
 	mDNSBool              Answered;         // Have we received an answer (including NXDOMAIN) for this question?
 	mDNSs32               RestartTime;      // Mark when we restart a suspended query
-	NTAContext            *ntaContext;
 	uDNS_TCPSocket        sock;		        // For secure operations
 	LLQ_Info              *llq;             // NULL for 1-shot queries
+	void                  *context;
 
 	// Client API fields: The client must set up these fields *before* calling mDNS_StartQuery()
 	mDNSInterfaceID       InterfaceID;		// Non-zero if you want to issue queries only on a single specific IP interface
@@ -1984,81 +1986,6 @@ struct DNSQuestion_struct
 	void                 *QuestionContext;
 	};
 	
-// state machine states
-typedef enum
-    {
-    init,
-    lookupSOA,
-	foundZone,
-	lookupNS,
-	foundNS,
-	lookupA,
-	foundA,
-	lookupPort,
-	foundPort,
-	complete
-    } ntaState;
-
-// state machine actions
-typedef enum
-    {
-    smContinue,  // continue immediately to next state
-    smBreak,     // break until next packet/timeout
-	smError      // terminal error - cleanup and abort
-    } smAction;
- 
-
-// other async. result struct defs go here
-
-typedef struct
-	{
-    domainname zoneName;
-    mDNSAddr primaryAddr;
-    mDNSu16 zoneClass;
-    mDNSIPPort llqPort;
-    mDNSIPPort updatePort;
-	mDNSIPPort privatePort;
-	} zoneData_t;
-
-typedef enum
-	{
-	zoneDataResult
-	// other async. operation names go here
-	} AsyncOpResultType;
-
-typedef struct
-	{
-    AsyncOpResultType type;
-    zoneData_t zoneData;
-    // other async result structs go here
-	} AsyncOpResult;
-
-
-typedef void AsyncOpCallback(mStatus err, mDNS *const m, void *info, const AsyncOpResult *result);
-
-struct NTAContext_struct
-    {
-    domainname 	origName;            // name we originally try to convert
-    domainname 	*curSOA;             // name we have an outstanding SOA query for
-    ntaState  	state;               // determines what we do upon receiving a packet
-    mDNS	    *m;
-    domainname  zone;                // left-hand-side of SOA record
-    mDNSu16     zoneClass;
-    domainname  ns;                  // mname in SOA rdata, verified in confirmNS state
-    mDNSv4Addr  addr;                // address of nameserver
-    DNSQuestion question;            // storage for any active question
-
-    mDNSBool    findUpdatePort;
-    mDNSBool    findLLQPort;
-	mDNSBool	findPrivatePort;
-
-    mDNSIPPort  updatePort;
-    mDNSIPPort  llqPort;
-	mDNSIPPort	privatePort;
-    AsyncOpCallback *callback;       // caller specified function to be called upon completion
-    void        *callbackInfo;
-    };
-
 typedef struct
 	{
 	// Client API fields: The client must set up name and InterfaceID *before* calling mDNS_StartResolveService()

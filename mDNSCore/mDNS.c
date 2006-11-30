@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.560  2006/11/30 23:07:56  herscher
+<rdar://problem/4765644> uDNS: Sync up with Lighthouse changes for Private DNS
+
 Revision 1.559  2006/11/27 08:20:57  cheshire
 Preliminary support for unifying the uDNS and mDNS code, including caching of uDNS answers
 
@@ -3730,10 +3733,11 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, C
 			}
 
 	if (rr->DelayDelivery) return;		// We'll come back later when CacheRecordDeferredAdd() calls us
-
 	m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 	if (q->QuestionCallback)
+		{
 		q->QuestionCallback(m, q, &rr->resrec, AddRecord);
+		}
 	m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
 	// CAUTION: MUST NOT do anything more with q after calling q->QuestionCallback(), because the client's callback function
 	// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
@@ -3995,86 +3999,77 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 	mDNSBool ShouldQueryImmediately = mDNStrue;
 	CacheRecord *rr;
 	DNSQuestion *q = m->NewQuestions;		// Grab the question we're going to answer
-	
-	// SEH Until we're putting WideArea responses in cache, don't do this
-	if (!q->id.NotAnInteger)
+	const mDNSu32 slot = HashSlot(&q->qname);
+	CacheGroup *const cg = CacheGroupForName(m, slot, q->qnamehash, &q->qname);
+
+	verbosedebugf("AnswerNewQuestion: Answering %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+
+	if (cg) CheckCacheExpiration(m, cg);
+	m->NewQuestions = q->next;				// Advance NewQuestions to the next *after* calling CheckCacheExpiration();
+
+	if (m->lock_rrcache) LogMsg("AnswerNewQuestion ERROR! Cache already locked!");
+	// This should be safe, because calling the client's question callback may cause the
+	// question list to be modified, but should not ever cause the rrcache list to be modified.
+	// If the client's question callback deletes the question, then m->CurrentQuestion will	
+	// be advanced, and we'll exit out of the loop
+	m->lock_rrcache = 1;
+	if (m->CurrentQuestion) LogMsg("AnswerNewQuestion ERROR m->CurrentQuestion already set");
+	m->CurrentQuestion = q;		// Indicate which question we're answering, so we'll know if it gets deleted
+
+	if (q->InterfaceID == mDNSInterface_Any)	// If 'mDNSInterface_Any' question, see if we want to tell it about LocalOnly records
 		{
-		const mDNSu32 slot = HashSlot(&q->qname);
-		CacheGroup *const cg = CacheGroupForName(m, slot, q->qnamehash, &q->qname);
-
-		verbosedebugf("AnswerNewQuestion: Answering %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
-
-		if (cg) CheckCacheExpiration(m, cg);
-		m->NewQuestions = q->next;				// Advance NewQuestions to the next *after* calling CheckCacheExpiration();
-
-		if (m->lock_rrcache) LogMsg("AnswerNewQuestion ERROR! Cache already locked!");
-		// This should be safe, because calling the client's question callback may cause the
-		// question list to be modified, but should not ever cause the rrcache list to be modified.
-		// If the client's question callback deletes the question, then m->CurrentQuestion will	
-		// be advanced, and we'll exit out of the loop
-		m->lock_rrcache = 1;
-		if (m->CurrentQuestion) LogMsg("AnswerNewQuestion ERROR m->CurrentQuestion already set");
-		m->CurrentQuestion = q;		// Indicate which question we're answering, so we'll know if it gets deleted
-
-		if (q->InterfaceID == mDNSInterface_Any)	// If 'mDNSInterface_Any' question, see if we want to tell it about LocalOnly records
+		if (m->CurrentRecord) LogMsg("AnswerNewLocalOnlyQuestion ERROR m->CurrentRecord already set");
+		m->CurrentRecord = m->ResourceRecords;
+		while (m->CurrentRecord && m->CurrentRecord != m->NewLocalRecords)
 			{
-			if (m->CurrentRecord) LogMsg("AnswerNewLocalOnlyQuestion ERROR m->CurrentRecord already set");
-			m->CurrentRecord = m->ResourceRecords;
-			while (m->CurrentRecord && m->CurrentRecord != m->NewLocalRecords)
-				{
-				AuthRecord *rr = m->CurrentRecord;
-				m->CurrentRecord = rr->next;
-				if (rr->resrec.InterfaceID == mDNSInterface_LocalOnly)
-					if (ResourceRecordAnswersQuestion(&rr->resrec, q))
-						{
-						AnswerLocalOnlyQuestionWithResourceRecord(m, q, rr, mDNStrue);
-						// MUST NOT dereference q again after calling AnswerLocalOnlyQuestionWithResourceRecord()
-						if (m->CurrentQuestion != q) break;		// If callback deleted q, then we're finished here
-						}
-				}
-			m->CurrentRecord   = mDNSNULL;
-			}
-
-		for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
-			if (SameNameRecordAnswersQuestion(&rr->resrec, q))
-				{
-				// SecsSinceRcvd is whole number of elapsed seconds, rounded down
-				mDNSu32 SecsSinceRcvd = ((mDNSu32)(m->timenow - rr->TimeRcvd)) / mDNSPlatformOneSecond;
-				if (rr->resrec.rroriginalttl <= SecsSinceRcvd)
+			AuthRecord *rr = m->CurrentRecord;
+			m->CurrentRecord = rr->next;
+			if (rr->resrec.InterfaceID == mDNSInterface_LocalOnly)
+				if (ResourceRecordAnswersQuestion(&rr->resrec, q))
 					{
-					LogMsg("AnswerNewQuestion: How is rr->resrec.rroriginalttl %lu <= SecsSinceRcvd %lu for %##s (%s)",
-						rr->resrec.rroriginalttl, SecsSinceRcvd, rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
-					continue;	// Go to next one in loop
+					AnswerLocalOnlyQuestionWithResourceRecord(m, q, rr, mDNStrue);
+					// MUST NOT dereference q again after calling AnswerLocalOnlyQuestionWithResourceRecord()
+					if (m->CurrentQuestion != q) break;		// If callback deleted q, then we're finished here
 					}
-
-				// If this record set is marked unique, then that means we can reasonably assume we have the whole set
-				// -- we don't need to rush out on the network and query immediately to see if there are more answers out there
-				if ((rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) || (q->ExpectUnique))
-					ShouldQueryImmediately = mDNSfalse;
-				q->CurrentAnswers++;
-				if (rr->resrec.rdlength > SmallRecordLimit) q->LargeAnswers++;
-				if (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) q->UniqueAnswers++;
-				AnswerQuestionWithResourceRecord(m, q, rr, mDNStrue);
-				// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
-				if (m->CurrentQuestion != q) break;		// If callback deleted q, then we're finished here
-				}
-			else if (RRTypeIsAddressType(rr->resrec.rrtype) && RRTypeIsAddressType(q->qtype))
-				if (rr->resrec.namehash == q->qnamehash && SameDomainName(rr->resrec.name, &q->qname))
-					ShouldQueryImmediately = mDNSfalse;
-
-		if (ShouldQueryImmediately && (m->CurrentQuestion == q))
-			{
-			q->ThisQInterval  = InitialQuestionInterval;
-			q->LastQTime      = m->timenow - q->ThisQInterval;
-			m->NextScheduledQuery = m->timenow;
 			}
-		m->CurrentQuestion = mDNSNULL;
-		m->lock_rrcache = 0;
+		m->CurrentRecord   = mDNSNULL;
 		}
-	else
+
+	for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
+		if (SameNameRecordAnswersQuestion(&rr->resrec, q))
+			{
+			// SecsSinceRcvd is whole number of elapsed seconds, rounded down
+			mDNSu32 SecsSinceRcvd = ((mDNSu32)(m->timenow - rr->TimeRcvd)) / mDNSPlatformOneSecond;
+			if (rr->resrec.rroriginalttl <= SecsSinceRcvd)
+				{
+				LogMsg("AnswerNewQuestion: How is rr->resrec.rroriginalttl %lu <= SecsSinceRcvd %lu for %##s (%s)",
+					rr->resrec.rroriginalttl, SecsSinceRcvd, rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
+				continue;	// Go to next one in loop
+				}
+
+			// If this record set is marked unique, then that means we can reasonably assume we have the whole set
+			// -- we don't need to rush out on the network and query immediately to see if there are more answers out there
+			if ((rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) || (q->ExpectUnique))
+				ShouldQueryImmediately = mDNSfalse;
+			q->CurrentAnswers++;
+			if (rr->resrec.rdlength > SmallRecordLimit) q->LargeAnswers++;
+			if (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) q->UniqueAnswers++;
+			AnswerQuestionWithResourceRecord(m, q, rr, mDNStrue);
+			// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
+			if (m->CurrentQuestion != q) break;		// If callback deleted q, then we're finished here
+			}
+		else if (RRTypeIsAddressType(rr->resrec.rrtype) && RRTypeIsAddressType(q->qtype))
+			if (rr->resrec.namehash == q->qnamehash && SameDomainName(rr->resrec.name, &q->qname))
+				ShouldQueryImmediately = mDNSfalse;
+
+	if (ShouldQueryImmediately && (m->CurrentQuestion == q))
 		{
-		m->NewQuestions = q->next;
+		q->ThisQInterval  = InitialQuestionInterval;
+		q->LastQTime      = m->timenow - q->ThisQInterval;
+		m->NextScheduledQuery = m->timenow;
 		}
+	m->CurrentQuestion = mDNSNULL;
+	m->lock_rrcache = 0;
 	}
 
 // When a NewLocalOnlyQuestion is created, AnswerNewLocalOnlyQuestion runs though our ResourceRecords delivering any
@@ -5466,10 +5461,30 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 						rr->DelayDelivery = m->timenow + mDNSPlatformOneSecond;	// to delay delivery of this 'add' event
 					else
 						rr->DelayDelivery = CheckForSoonToExpireRecords(m, rr->resrec.name, rr->resrec.namehash, slot);
+
 					CacheRecordAdd(m, rr);  // CacheRecordAdd calls SetNextCacheCheckTime(m, rr); for us
 					}
 				}
+			else if ( rr && m->rec.r.resrec.rroriginalttl != 0 )
+				{
+				// HACK: If a resource record is already in the cache, then we don't answer wide area
+				//       questions.  I don't know exactly how to fix this the right away
+				// LogMsg( "resource record is already in cache: %##s", rr->resrec.name->c );
+				
+				m->CurrentQuestion = m->Questions;
+	
+				while (m->CurrentQuestion && m->CurrentQuestion != m->NewQuestions)
+					{
+					DNSQuestion *q = m->CurrentQuestion;
+					m->CurrentQuestion = q->next;
+					if (ResourceRecordAnswersQuestion(&rr->resrec, q))
+						AnswerQuestionWithResourceRecord(m, q, rr, mDNStrue);
+					}
+				}
+				
+				m->CurrentQuestion = mDNSNULL;
 			}
+
 		m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 		}
 
@@ -5695,7 +5710,6 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 #endif // UNICAST_DISABLED
 	
 	//LogOperation("mDNS_StartQuery %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
-	
 	if (m->rrcache_size == 0)	// Can't do queries if we have no cache space allocated
 		return(mStatus_NoCache);
 	else
@@ -5777,21 +5791,9 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 				{
 				uDNS_InitLongLivedQuery(m, question);
 				}
-			else if (question->Private)
-				{
-				uDNS_InitPrivateQuery(m, question);
-				}
 			else
 				{
-				question->ThisQInterval = INIT_UCAST_POLL_INTERVAL / 2;
-				question->LastQTime     = m->timenow - question->ThisQInterval;
-			
-				//if ( !question->internal )
-				//	{
-					//question->responseCallback = simpleResponseHndlr;
-					//question->context = mDNSNULL;
-				//	}
-			
+				uDNS_InitQuery(m, question);
 				}
 			}		
 
@@ -5953,7 +5955,6 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 		question->ThisQInterval = INIT_UCAST_POLL_INTERVAL / 2;
 		question->LastQTime     = m->timenow - question->ThisQInterval;
 		question->Answered      = mDNSfalse;
-//		question->internal      = mDNSfalse;
 		}
 #endif // UNICAST_DISABLED
 	return(mDNS_StartQuery(m, question));
@@ -7129,17 +7130,15 @@ mDNSexport mStatus mDNS_AdvertiseDomains(mDNS *const m, AuthRecord *rr,
 	
 // explicitly set response handler
 extern mStatus mDNS_GetZoneData(mDNS *m, DNSQuestion *q, InternalResponseHndlr callback, void *hndlrContext)
-	{	
+	{
 	q->id               = zeroID;
-//	q->internal         = mDNStrue;
 	q->llq              = mDNSNULL;
 	q->sock             = mDNSNULL;
 	q->Answered         = mDNSfalse;
 	q->RestartTime      = 0;
 	q->QuestionContext  = hndlrContext;
 	q->responseCallback = callback;
-	if (q->ntaContext != hndlrContext) *(long*)0 = 0;
-	q->ntaContext       = hndlrContext;
+	q->context          = hndlrContext;
 	// This call assumes we already have a lock
 	return mDNS_StartQuery_internal(m, q);
 	}
