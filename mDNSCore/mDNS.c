@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.561  2006/12/01 07:38:53  herscher
+Only perform cache workaround fix if query is wide-area
+
 Revision 1.560  2006/11/30 23:07:56  herscher
 <rdar://problem/4765644> uDNS: Sync up with Lighthouse changes for Private DNS
 
@@ -5477,7 +5480,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					{
 					DNSQuestion *q = m->CurrentQuestion;
 					m->CurrentQuestion = q->next;
-					if (ResourceRecordAnswersQuestion(&rr->resrec, q))
+					if (q->id.NotAnInteger && (ResourceRecordAnswersQuestion(&rr->resrec, q)))
 						AnswerQuestionWithResourceRecord(m, q, rr, mDNStrue);
 					}
 				}
