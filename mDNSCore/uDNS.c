@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.253  2006/12/01 07:43:34  herscher
+Fix byte ordering problem for one-shot TCP queries. Iterate more intelligently over duplicates in uDNS_ReceiveMsg to avoid spin loops.
+
 Revision 1.252  2006/11/30 23:07:57  herscher
 <rdar://problem/4765644> uDNS: Sync up with Lighthouse changes for Private DNS
 
@@ -1460,7 +1463,10 @@ mDNSlocal void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *
 	question->Answered = mDNStrue;
 
 	ptr = LocateAnswers(msg, end);
-	if (!ptr) goto pkt_error;
+	if (!ptr)
+		{
+		goto pkt_error;
+		}
 
 	for (i = 0; i < msg->h.numAnswers; i++)
 		{
@@ -1672,7 +1678,6 @@ mDNSlocal mDNSBool recvLLQEvent(mDNS *m, DNSQuestion *q, DNSMessage *msg, const 
 		return mDNSfalse;
 		}
 	if (opt.llqOp != kLLQOp_Event) { if (!q->llq->ntries) LogMsg("recvLLQEvent - Bad LLQ Opcode %d", opt.llqOp); return mDNSfalse; }
-
     // invoke response handler
 	m->CurrentQuestion = q;
 	q->responseCallback(m, msg, end, q, q->context);
@@ -1898,18 +1903,19 @@ mDNSlocal void tcpCallback( uDNS_TCPSocket sock, void * context, mDNSBool Connec
 
 		if ( ( tcpInfo->nread - sizeof( tcpInfo->lenbuf ) ) == tcpInfo->replylen)
 			{
-			// Finished reading message; convert the integer parts which are in IETF byte-order (MSB first, LSB second)
 			DNSMessage *msg = tcpInfo->reply;
-			mDNSu8 *ptr = (mDNSu8 *)&msg->h.numQuestions;
-			msg->h.numQuestions   = (mDNSu16)((mDNSu16)ptr[0] << 8 | ptr[1]);
-			msg->h.numAnswers     = (mDNSu16)((mDNSu16)ptr[2] << 8 | ptr[3]);
-			msg->h.numAuthorities = (mDNSu16)((mDNSu16)ptr[4] << 8 | ptr[5]);
-			msg->h.numAdditionals = (mDNSu16)((mDNSu16)ptr[6] << 8 | ptr[7]);
-
+			
 			tcpInfo->numReplies++;
-
+			
 			if ( tcpInfo->llqInfo )
 				{
+				// Finished reading message; convert the integer parts which are in IETF byte-order (MSB first, LSB second)
+				mDNSu8 *ptr = (mDNSu8 *)&msg->h.numQuestions;
+				msg->h.numQuestions   = (mDNSu16)((mDNSu16)ptr[0] << 8 | ptr[1]);
+				msg->h.numAnswers     = (mDNSu16)((mDNSu16)ptr[2] << 8 | ptr[3]);
+				msg->h.numAuthorities = (mDNSu16)((mDNSu16)ptr[4] << 8 | ptr[5]);
+				msg->h.numAdditionals = (mDNSu16)((mDNSu16)ptr[6] << 8 | ptr[7]);
+
 				if ( tcpInfo->llqInfo->state == LLQ_SecondaryRequest )
 					{
 					LLQOptData llq;
@@ -4718,19 +4724,22 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 				else if (qptr->responseCallback)
 					{
 					DNSQuestion * dupPtr;
+					DNSQuestion * nextPtr;
 
 					// HACK: We need to let duplicates of this question get their mitts on the response to
 					//       this question too.  I don't know if this is the best way of doing this, so
 					//       we'll probably want to change this code.
-					for (dupPtr = m->Questions; dupPtr; dupPtr = dupPtr->next)
+					dupPtr = m->Questions;
+					while ( dupPtr )
 						{
+						nextPtr = dupPtr->next;
 						if ( dupPtr->DuplicateOf == qptr )
 							{
 							m->CurrentQuestion = dupPtr;
 							dupPtr->responseCallback(m, msg, end, dupPtr, dupPtr->context);
-							dupPtr = m->Questions;
 							m->CurrentQuestion = mDNSNULL;
 							}
+						dupPtr = nextPtr;
 						}
 
 					m->CurrentQuestion = qptr;
