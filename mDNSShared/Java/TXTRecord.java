@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: TXTRecord.java,v $
+Revision 1.7  2006/12/13 07:13:23  mkrochma
+<rdar://problem/4612778> Java: Coding error in java wrappers, limited TXTRecord length
+
 Revision 1.6  2006/08/14 23:25:08  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -124,14 +127,15 @@ public class	TXTRecord
 		byte[]	oldBytes = fBytes;
 		int		valLen = (value != null) ? value.length : 0;
 		int		insertion = 0;
-		byte	newLen, avLen;
+		int		newLen;
+		byte	avLen;
 	
 		// locate the insertion point
 		for ( int i=0; i < index && insertion < fBytes.length; i++)
 			insertion += fBytes[ insertion] + 1;
 	
 		avLen = (byte) ( keyBytes.length + valLen + (value != null ? 1 : 0));
-		newLen = (byte) ( avLen + oldBytes.length + 1);
+		newLen = avLen + oldBytes.length + 1;
 
 		fBytes = new byte[ newLen];
 		System.arraycopy( oldBytes, 0, fBytes, 0, insertion);
