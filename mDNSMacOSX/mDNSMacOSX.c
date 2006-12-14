@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.353  2006/12/14 22:08:29  cheshire
+Fixed memory leak: need to call SecKeychainItemFreeAttributesAndData()
+to release data allocated by SecKeychainItemCopyAttributesAndData()
+
 Revision 1.352  2006/12/14 02:33:26  cheshire
 <rdar://problem/4841422> uDNS: Wide-area registrations sometimes fail
 
@@ -4095,15 +4099,11 @@ mDNSexport void mDNSPlatformSetSecretForDomain(mDNS *m, const domainname *domain
 #ifndef NO_SECURITYFRAMEWORK
 	OSStatus err = 0;
 	char dstring[4 + MAX_ESCAPED_DOMAIN_NAME];  // Extra 4 is for the "dns:" prefix
-	UInt32 secretlen;
-	void *secret = NULL;
 	domainname *d, canon;
 	int i, dlen;
 	mDNSu32 type = 'ddns';
 	mDNSu32 typelen = sizeof(type);
 	char *failedfn = "(none)";
-	SecKeychainAttributeList *attrList = NULL;
-	SecKeychainItemRef itemRef = NULL;
 	
 	err = SecKeychainSetPreferenceDomain(kSecPreferencesDomainSystem);
 	if (err) { failedfn = "SecKeychainSetPreferenceDomain"; goto cleanup; }
@@ -4130,6 +4130,7 @@ mDNSexport void mDNSPlatformSetSecretForDomain(mDNS *m, const domainname *domain
 		err = SecKeychainSearchCreateFromAttributes(NULL, kSecGenericPasswordItemClass, &attributes, &searchRef);
 		if (err) { failedfn = "SecKeychainSearchCreateFromAttributes"; goto cleanup; }
 
+		SecKeychainItemRef itemRef = NULL;
 		err = SecKeychainSearchCopyNext(searchRef, &itemRef);
 		
 		// If no keys exist, search again for keys in the old keychain format
@@ -4148,20 +4149,18 @@ mDNSexport void mDNSPlatformSetSecretForDomain(mDNS *m, const domainname *domain
 
 		if (!err)
 			{
-	        UInt32 tags[1];
-			SecKeychainAttributeInfo attrInfo;
-			mDNSu32 i;
-			
-			tags[0] = kSecAccountItemAttr;
-			attrInfo.count = 1;
-			attrInfo.tag = tags;
-			attrInfo.format = NULL;
+			UInt32 tag = kSecAccountItemAttr;
+			SecKeychainAttributeInfo attrInfo = { 1, &tag, NULL };
+			SecKeychainAttributeList *attrList = NULL;
+			UInt32 secretlen;
+			void *secret = NULL;
 			
 			err = SecKeychainItemCopyAttributesAndData(itemRef,  &attrInfo, NULL, &attrList, &secretlen, &secret);
 			if (err || !attrList) { failedfn = "SecKeychainItemCopyAttributesAndData"; goto cleanup; }
 			if (!secretlen || !secret) { LogMsg("SetSecretForDomain - bad shared secret"); return; }
 			if (((char *)secret)[secretlen-1]) { LogMsg("SetSecretForDomain - Shared secret not NULL-terminated"); goto cleanup; }
 			
+			mDNSu32 i;
 			for (i = 0; i < attrList->count; i++)
 				{
 				SecKeychainAttribute attr = attrList->attr[i];
@@ -4179,6 +4178,8 @@ mDNSexport void mDNSPlatformSetSecretForDomain(mDNS *m, const domainname *domain
 					}
 				}
 			if (i == attrList->count) LogMsg("SetSecretForDomain - no key name set");
+			SecKeychainItemFreeAttributesAndData(attrList, secret);
+			CFRelease(itemRef);
 			CFRelease(searchRef);
 			goto cleanup;
 			}
@@ -4188,8 +4189,6 @@ mDNSexport void mDNSPlatformSetSecretForDomain(mDNS *m, const domainname *domain
 
 	cleanup:
 	if (err && err != errSecItemNotFound) LogMsg("Error: SetSecretForDomain - %s failed with error code %d", failedfn, err);
-	if (attrList) SecKeychainItemFreeAttributesAndData(attrList, secret);
-	if (itemRef) CFRelease(itemRef);
 #else
 	(void)m; (void)domain;
 	LogMsg("Error: SetSecretForDomain - no keychain support");
