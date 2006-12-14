@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.352  2006/12/14 02:33:26  cheshire
+<rdar://problem/4841422> uDNS: Wide-area registrations sometimes fail
+
 Revision 1.351  2006/11/28 21:37:51  mkrochma
 Tweak where the private DNS data is written
 
@@ -1241,13 +1244,13 @@ mDNSlocal NetworkInterfaceInfoOSX *SearchForInterfaceByName(mDNS *const m, const
 	return(NULL);
 	}
 
-mDNSlocal int myIfIndexToName(u_short index, char* name)
+mDNSlocal int myIfIndexToName(u_short index, char *name)
 	{
 	struct ifaddrs *ifa;
 	for (ifa = myGetIfAddrs(0); ifa; ifa = ifa->ifa_next)
 		if (ifa->ifa_addr->sa_family == AF_LINK)
 			if (((struct sockaddr_dl*)ifa->ifa_addr)->sdl_index == index)
-				{ strncpy(name, ifa->ifa_name, IF_NAMESIZE); return 0; }
+				{ strlcpy(name, ifa->ifa_name, IF_NAMESIZE); return 0; }
 	return -1;
 	}
 
@@ -1732,7 +1735,7 @@ mDNSlocal OSStatus tlsReadSock( SSLConnectionRef	connection, void * data, size_t
 					{
 					case ENOENT:
 						/* connection closed */
-						rtn = errSSLClosedGraceful; 
+						rtn = errSSLClosedGraceful;
 						break;
 					case ECONNRESET:
 						rtn = errSSLClosedAbort;
@@ -2888,12 +2891,12 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 	bzero(i, sizeof(NetworkInterfaceInfoOSX));
 	i->ifa_name        = (char *)mallocL("NetworkInterfaceInfoOSX name", strlen(ifa->ifa_name) + 1);
 	if (!i->ifa_name) { freeL("NetworkInterfaceInfoOSX", i); return(mDNSNULL); }
-	strcpy(i->ifa_name, ifa->ifa_name);
+	strcpy(i->ifa_name, ifa->ifa_name);		// This is safe because we know we allocated i->ifa_name with sufficient space
 
 	i->ifinfo.InterfaceID = mDNSNULL;
 	i->ifinfo.ip          = ip;
 	i->ifinfo.mask        = mask;
-	strncpy(i->ifinfo.ifname, ifa->ifa_name, sizeof(i->ifinfo.ifname));
+	strlcpy(i->ifinfo.ifname, ifa->ifa_name, sizeof(i->ifinfo.ifname));
 	i->ifinfo.ifname[sizeof(i->ifinfo.ifname)-1] = 0;
 	i->ifinfo.Advertise   = m->AdvertiseLocalAddresses;
 	i->ifinfo.McastTxRx   = mDNSfalse; // For now; will be set up later at the end of UpdateInterfaceList
@@ -3003,7 +3006,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 						struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)ifa->ifa_addr;
 						struct in6_ifreq ifr6;
 						bzero((char *)&ifr6, sizeof(ifr6));
-						strncpy(ifr6.ifr_name, ifa->ifa_name, sizeof(ifr6.ifr_name));
+						strlcpy(ifr6.ifr_name, ifa->ifa_name, sizeof(ifr6.ifr_name));
 						ifr6.ifr_addr = *sin6;
 						if (ioctl(InfoSocket, SIOCGIFAFLAG_IN6, &ifr6) != -1)
 							ifru_flags6 = ifr6.ifr_ifru.ifru_flags6;
@@ -3285,7 +3288,7 @@ mDNSlocal mStatus GetDNSConfig(void **result)
 	
 mDNSexport void mDNSPlatformGetDNSConfig(mDNS * const m, domainname *const fqdn, domainname *const regDomain, DNameListElem **browseDomains)
 	{
-	char buf[MAX_ESCAPED_DOMAIN_NAME];
+	char buf[MAX_ESCAPED_DOMAIN_NAME];	// Max legal C-string name, including terminating NUL
 
 	fqdn->c[0] = 0;
 	regDomain->c[0] = 0;
@@ -3472,7 +3475,7 @@ mDNSexport IPAddrListElem * mDNSPlatformGetDNSServers()
 mDNSexport DNameListElem * mDNSPlatformGetSearchDomainList(void)
 	{
 	void			*	v				= NULL;
-	char				buf[MAX_ESCAPED_DOMAIN_NAME];
+	char				buf[MAX_ESCAPED_DOMAIN_NAME];	// Max legal C-string name, including terminating NUL
 	DNameListElem	*	head			= NULL;
 	DNameListElem	*	current			= NULL;
 	CFArrayRef			searchDomains	= NULL;
@@ -3613,7 +3616,7 @@ mDNSexport DNameListElem * mDNSPlatformGetSearchDomainList(void)
 mDNSexport DNameListElem * mDNSPlatformGetFQDN(void)
 	{
 	void			*	v;
-	char				buf[MAX_ESCAPED_DOMAIN_NAME];
+	char				buf[MAX_ESCAPED_DOMAIN_NAME];	// Max legal C-string name, including terminating NUL
 	domainname			dname;
 	DNameListElem	*	head			= NULL;
 	SCDynamicStoreRef	store			= NULL;
@@ -3757,7 +3760,7 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface( mDNS * const m, mDNSAddr * v
 				{
 				debugf("Ignoring router %s (requires PPP connection)", buf);
 				}
-			else 
+			else
 				{
 				*(in_addr_t *)&r->ip.v4 = saddr.sin_addr.s_addr;
 				}
@@ -3790,7 +3793,7 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface( mDNS * const m, mDNSAddr * v
 			if (!strcmp(buf, ifa->ifa_name))
 				{
 				if      (ifa->ifa_addr->sa_family == AF_INET) SetupAddr(v4, ifa->ifa_addr);
-				else if (ifa->ifa_addr->sa_family == AF_INET6) 				
+				else if (ifa->ifa_addr->sa_family == AF_INET6)
 					{
 					SetupAddr(&tmp6, ifa->ifa_addr);
 					if (tmp6.ip.v6.b[0] >> 5 == 1)   // global prefix: 001
@@ -3933,7 +3936,7 @@ mDNSexport void mDNSPlatformDynDNSHostNameStatusChanged(domainname *const dname,
 	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:SetDDNSNameStatus"), NULL, NULL);
 	if (store)
 		{
-		char uname[MAX_ESCAPED_DOMAIN_NAME];
+		char uname[MAX_ESCAPED_DOMAIN_NAME];	// Max legal C-string name, including terminating NUL
 		char *p;
 
 		ConvertDomainNameToCString(dname, uname);
@@ -4110,14 +4113,14 @@ mDNSexport void mDNSPlatformSetSecretForDomain(mDNS *m, const domainname *domain
 	dlen = strlen(dstring);
 	for (i = 0; i < dlen; i++) dstring[i] = tolower(dstring[i]);  // canonicalize -> lower case
 	MakeDomainNameFromDNSNameString(&canon, dstring);
-	d = &canon;		
+	d = &canon;
 	
 	// find longest-match key, excluding last label (e.g. excluding ".com")
 	while (d->c[0] && *(d->c + d->c[0] + 1))
 		{
 		snprintf(dstring, sizeof(dstring), "dns:");
 		if (!ConvertDomainNameToCString(d, dstring+4)) { LogMsg("SetSecretForDomain: bad domain %##s", d->c); return; }
-		dlen = strlen(dstring);		
+		dlen = strlen(dstring);
 		if (dstring[dlen-1] == '.') { dstring[dlen-1] = '\0'; dlen--; }  // chop trailing dot
 
 		SecKeychainAttribute attrs[] = { { kSecServiceItemAttr, strlen(dstring), dstring } };
@@ -4148,8 +4151,6 @@ mDNSexport void mDNSPlatformSetSecretForDomain(mDNS *m, const domainname *domain
 	        UInt32 tags[1];
 			SecKeychainAttributeInfo attrInfo;
 			mDNSu32 i;
-			char keybuf[MAX_ESCAPED_DOMAIN_NAME+1];			
-			domainname keyname;
 			
 			tags[0] = kSecAccountItemAttr;
 			attrInfo.count = 1;
@@ -4166,8 +4167,11 @@ mDNSexport void mDNSPlatformSetSecretForDomain(mDNS *m, const domainname *domain
 				SecKeychainAttribute attr = attrList->attr[i];
 				if (attr.tag == kSecAccountItemAttr)
 					{
-					if (!attr.length || attr.length > MAX_ESCAPED_DOMAIN_NAME) { LogMsg("SetSecretForDomain - Bad key length %d", attr.length); goto cleanup; }					
-					strlcpy(keybuf, attr.data, attr.length);
+					char keybuf[MAX_ESCAPED_DOMAIN_NAME];	// Max legal C-string name, including terminating NUL
+					domainname keyname;
+					if (!attr.length || attr.length > MAX_ESCAPED_DOMAIN_NAME) { LogMsg("SetSecretForDomain - Bad key length %d", attr.length); goto cleanup; }
+					memcpy(keybuf, attr.data, attr.length);
+					keybuf[attr.length] = 0;
 					if (!MakeDomainNameFromDNSNameString(&keyname, keybuf)) { LogMsg("SetSecretForDomain - bad key %s", keybuf); goto cleanup; }
 					debugf("Setting shared secret for zone %s with key %##s", dstring, keyname.c);
 					mDNS_SetSecretForZone(m, d, &keyname, secret);
@@ -4389,20 +4393,18 @@ mDNSlocal OSStatus StoreDomainDataFromKeychain(mDNS * const m)
 				
 					if (attr.tag == kSecServiceItemAttr)
 						{
-						char   keybuf[1024];
-						char * string;
-						
-						memset( keybuf, 0, sizeof( keybuf ) );
-						strncpy(keybuf, attr.data, attr.length);
-
-						if ( ( string = strstr( keybuf, "dns:" ) ) && ( string == keybuf ) )
+						char   keybuf[4 + MAX_ESCAPED_DOMAIN_NAME];  // Extra 4 is for the "dns:" prefix
+						char * const string;
+						memcpy(keybuf, attr.data, attr.length);
+						keybuf[attr.length] = 0;
+						if (strncasecmp(keybuf, "dns:", 4) == 0)
 							{
-							string += strlen( "dns:" );
-							CFArrayAppendValue(stateArray, CFStringCreateWithCString(NULL, string, kCFStringEncodingUTF8 ) );
+							CFStringRef cfs = CFStringCreateWithCString(NULL, string+4, kCFStringEncodingUTF8);
+							CFArrayAppendValue(stateArray, cfs);
+							CFRelease(cfs);
 							}
 						}
 					}
-					
 				SecKeychainItemFreeAttributesAndData(attrList, secret);
 				}
 			}
@@ -4452,7 +4454,7 @@ exit:
 	}
 	
 mDNSlocal OSStatus KeychainChanged(SecKeychainEvent keychainEvent, SecKeychainCallbackInfo *info, void *context)
-	{	
+	{
 	char         path[1024];
 	UInt32       pathLen;
 	OSStatus     err;
