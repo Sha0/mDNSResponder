@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.309  2006/12/14 03:02:37  cheshire
+<rdar://problem/4838433> Tools: dns-sd -G 0 only returns IPv6 when you have a routable IPv6 address
+
 Revision 1.308  2006/11/30 23:07:56  herscher
 <rdar://problem/4765644> uDNS: Sync up with Lighthouse changes for Private DNS
 
@@ -2649,6 +2652,7 @@ extern mDNSBool IsPrivateV4Addr(mDNSAddr *addr);  // returns true for RFC1918 pr
 	((X)->type == mDNSAddrType_IPv4) ? !(mDNSIPv4AddressIsZero((X)->ip.v4) || mDNSIPv4AddressIsOnes((X)->ip.v4)) :          \
 	((X)->type == mDNSAddrType_IPv6) ? !(mDNSIPv6AddressIsZero((X)->ip.v6) || mDNSIPv6AddressIsOnes((X)->ip.v6)) : mDNSfalse)
 
+#define mDNSAddressIsv6LinkLocal(X) ((X)->type == mDNSAddrType_IPv6 && (X)->ip.v6.b[0] == 0xFE && ((X)->ip.v6.b[1] & 0xC0) == 0x80)
 
 // ***************************************************************************
 #if 0

@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.219  2006/12/14 03:02:38  cheshire
+<rdar://problem/4838433> Tools: dns-sd -G 0 only returns IPv6 when you have a routable IPv6 address
+
 Revision 1.218  2006/11/18 05:01:33  cheshire
 Preliminary support for unifying the uDNS and mDNS code,
 including caching of uDNS answers
@@ -1062,27 +1065,6 @@ mDNSlocal mDNSBool is_routeable_v4(mDNSAddr * addr)
 		((b[0] == 10))                              ||
 		((b[0] == 172) && (b[1] > 15 && b[1] < 32)) ||
 		((b[0] == 192) && (b[1] == 168)))
-		{
-		return mDNSfalse;
-		}
-		
-	return mDNStrue;
-	}
-	
-mDNSlocal mDNSBool is_routeable_v6(mDNSAddr * addr)
-	{
-	mDNSu8   masked;
-	mDNSu8 * b;
-
-	if (addr->type != mDNSAddrType_IPv6)
-		{
-		return mDNSfalse;
-		}
-		
-	b = addr->ip.v6.b;
-	masked = b[1] & 0xF0;
-
-	if ((b[0] == 0xFE) && ((masked == 0x80) || (masked == 0x90) || (masked == 0xA0) || (masked == 0xB0)))
 		{
 		return mDNSfalse;
 		}
@@ -2481,7 +2463,7 @@ mDNSlocal void handle_addrinfo_request(request_state *rstate)
 					{
 					protocol |= kDNSServiceProtocol_IPv4;
 					}
-				else if ((intf->ip.type == mDNSAddrType_IPv6) && is_routeable_v6(&intf->ip))
+				else if ((intf->ip.type == mDNSAddrType_IPv6) && !mDNSAddressIsv6LinkLocal(&intf->ip))
 					{
 					protocol |= kDNSServiceProtocol_IPv6;
 					}
