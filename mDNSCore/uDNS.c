@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.254  2006/12/15 19:23:39  cheshire
+Use new DomainNameLengthLimit() function, to be more defensive against malformed
+data received from the network.
+
 Revision 1.253  2006/12/01 07:43:34  herscher
 Fix byte ordering problem for one-shot TCP queries. Iterate more intelligently over duplicates in uDNS_ReceiveMsg to avoid spin loops.
 
@@ -4010,10 +4014,9 @@ mDNSlocal mStatus ParseTSIGError(mDNS *m, const DNSMessage *msg, const mDNSu8 *e
 			{
 			mDNSu32 macsize;
 		    mDNSu8 *rd = lcr.r.resrec.rdata->u.data;
-			mDNSu8 *rdend = rd + MaximumRDSize;
-			int alglen = DomainNameLength(&lcr.r.resrec.rdata->u.name);
-
-			if (rd +  alglen > rdend) goto finish;
+			mDNSu8 *rdend = rd + lcr.r.resrec.rdlength;
+			int alglen = DomainNameLengthLimit(&lcr.r.resrec.rdata->u.name, rdend);
+			if (alglen > MAX_DOMAIN_NAME) goto finish;
 			rd += alglen;                                       // algorithm name
 			if (rd + 6 > rdend) goto finish;
 			rd += 6;                                            // 48-bit timestamp
@@ -4029,8 +4032,8 @@ mDNSlocal mStatus ParseTSIGError(mDNS *m, const DNSMessage *msg, const mDNSu8 *e
 			if (rd + sizeof(mDNSOpaque16) > rdend) goto finish;
 			err = mDNSVal16(*(mDNSOpaque16 *)rd);               // error code
 
-			if (err ==  TSIG_ErrBadSig)      { LogMsg("%##s: bad signature", displayname->c);              err = mStatus_BadSig;     }
-			else if (err == TSIG_ErrBadKey)  { LogMsg("%##s: bad key", displayname->c);                    err = mStatus_BadKey;     }
+			if      (err == TSIG_ErrBadSig ) { LogMsg("%##s: bad signature", displayname->c);              err = mStatus_BadSig;     }
+			else if (err == TSIG_ErrBadKey ) { LogMsg("%##s: bad key", displayname->c);                    err = mStatus_BadKey;     }
 			else if (err == TSIG_ErrBadTime) { LogMsg("%##s: bad time", displayname->c);                   err = mStatus_BadTime;    }
 			else if (err)                    { LogMsg("%##s: unknown tsig error %d", displayname->c, err); err = mStatus_UnknownErr; }
 			goto finish;
