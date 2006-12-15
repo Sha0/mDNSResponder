@@ -17,6 +17,11 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.112  2006/12/15 20:42:10  cheshire
+<rdar://problem/4769083> ValidateRData() should be stricter about malformed MX and SRV records
+Additional defensive coding in GetLargeResourceRecord() to reject apparently-valid
+rdata that actually runs past the end of the received packet data.
+
 Revision 1.111  2006/12/15 19:09:57  cheshire
 <rdar://problem/4769083> ValidateRData() should be stricter about malformed MX and SRV records
 Made DomainNameLength() more defensive by adding a limit parameter, so it can be
@@ -2056,9 +2061,9 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 
 	rr->resrec.InterfaceID       = InterfaceID;
 	ptr = getDomainName(msg, ptr, end, rr->resrec.name);
-	if (!ptr) { debugf("GetResourceRecord: Malformed RR name"); return(mDNSNULL); }
+	if (!ptr) { debugf("GetLargeResourceRecord: Malformed RR name"); return(mDNSNULL); }
 
-	if (ptr + 10 > end) { debugf("GetResourceRecord: Malformed RR -- no type/class/ttl/len!"); return(mDNSNULL); }
+	if (ptr + 10 > end) { debugf("GetLargeResourceRecord: Malformed RR -- no type/class/ttl/len!"); return(mDNSNULL); }
 
 	rr->resrec.rrtype            = (mDNSu16) ((mDNSu16)ptr[0] <<  8 | ptr[1]);
 	rr->resrec.rrclass           = (mDNSu16)(((mDNSu16)ptr[2] <<  8 | ptr[3]) & kDNSClass_Mask);
@@ -2071,7 +2076,7 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 	if (ptr[2] & (kDNSClass_UniqueRRSet >> 8))
 		RecordType |= kDNSRecordTypePacketUniqueMask;
 	ptr += 10;
-	if (ptr + pktrdlength > end) { debugf("GetResourceRecord: RDATA exceeds end of packet"); return(mDNSNULL); }
+	if (ptr + pktrdlength > end) { debugf("GetLargeResourceRecord: RDATA exceeds end of packet"); return(mDNSNULL); }
 	end = ptr + pktrdlength;		// Adjust end to indicate the end of the rdata for this resource record
 
 	rr->resrec.rdata = (RData*)&rr->rdatastorage;
@@ -2081,7 +2086,8 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 
 	switch (rr->resrec.rrtype)
 		{
-		case kDNSType_A:	rr->resrec.rdata->u.ipv4.b[0] = ptr[0];
+		case kDNSType_A:	if (pktrdlength != sizeof(mDNSv4Addr)) return(mDNSNULL);
+							rr->resrec.rdata->u.ipv4.b[0] = ptr[0];
 							rr->resrec.rdata->u.ipv4.b[1] = ptr[1];
 							rr->resrec.rdata->u.ipv4.b[2] = ptr[2];
 							rr->resrec.rdata->u.ipv4.b[3] = ptr[3];
@@ -2089,8 +2095,8 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 
 		case kDNSType_CNAME:// Same as PTR
 		case kDNSType_NS:
-		case kDNSType_PTR:	if (!getDomainName(msg, ptr, end, &rr->resrec.rdata->u.name))
-								{ debugf("GetResourceRecord: Malformed CNAME/PTR RDATA name"); return(mDNSNULL); }
+		case kDNSType_PTR:	ptr = getDomainName(msg, ptr, end, &rr->resrec.rdata->u.name);
+							if (ptr != end) { debugf("GetLargeResourceRecord: Malformed CNAME/PTR RDATA name"); return(mDNSNULL); }
 							//debugf("%##s PTR %##s rdlen %d", rr->resrec.name.c, rr->resrec.rdata->u.name.c, pktrdlength);
 							break;
 
@@ -2099,7 +2105,7 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 		case kDNSType_TSIG: //Same as TXT
 		case kDNSType_TXT:  if (pktrdlength > rr->resrec.rdata->MaxRDLength)
 								{
-								debugf("GetResourceRecord: %s rdata size (%d) exceeds storage (%d)",
+								debugf("GetLargeResourceRecord: %s rdata size (%d) exceeds storage (%d)",
 									DNSTypeName(rr->resrec.rrtype), pktrdlength, rr->resrec.rdata->MaxRDLength);
 								return(mDNSNULL);
 								}
@@ -2107,23 +2113,25 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 							mDNSPlatformMemCopy(ptr, rr->resrec.rdata->u.data, pktrdlength);
 							break;
 
-		case kDNSType_AAAA:	mDNSPlatformMemCopy(ptr, &rr->resrec.rdata->u.ipv6, sizeof(rr->resrec.rdata->u.ipv6));
+		case kDNSType_AAAA:	if (pktrdlength != sizeof(mDNSv6Addr)) return(mDNSNULL);
+							mDNSPlatformMemCopy(ptr, &rr->resrec.rdata->u.ipv6, sizeof(rr->resrec.rdata->u.ipv6));
 							break;
 
-		case kDNSType_SRV:	rr->resrec.rdata->u.srv.priority = (mDNSu16)((mDNSu16)ptr[0] <<  8 | ptr[1]);
+		case kDNSType_SRV:	if (pktrdlength < 7) return(mDNSNULL);	// Priority + weight + port + domainname
+							rr->resrec.rdata->u.srv.priority = (mDNSu16)((mDNSu16)ptr[0] <<  8 | ptr[1]);
 							rr->resrec.rdata->u.srv.weight   = (mDNSu16)((mDNSu16)ptr[2] <<  8 | ptr[3]);
 							rr->resrec.rdata->u.srv.port.b[0] = ptr[4];
 							rr->resrec.rdata->u.srv.port.b[1] = ptr[5];
-							if (!getDomainName(msg, ptr+6, end, &rr->resrec.rdata->u.srv.target))
-								{ debugf("GetResourceRecord: Malformed SRV RDATA name"); return(mDNSNULL); }
+							ptr = getDomainName(msg, ptr+6, end, &rr->resrec.rdata->u.srv.target);
+							if (ptr != end) { debugf("GetLargeResourceRecord: Malformed SRV RDATA name"); return(mDNSNULL); }
 							//debugf("%##s SRV %##s rdlen %d", rr->resrec.name.c, rr->resrec.rdata->u.srv.target.c, pktrdlength);
 							break;
 
 		case kDNSType_SOA:  ptr = getDomainName(msg, ptr, end, &rr->resrec.rdata->u.soa.mname);
-							if (!ptr) { debugf("GetResourceRecord: Malformed SOA RDATA mname"); return mDNSNULL; }
+							if (!ptr) { debugf("GetLargeResourceRecord: Malformed SOA RDATA mname"); return mDNSNULL; }
 							ptr = getDomainName(msg, ptr, end, &rr->resrec.rdata->u.soa.rname);
-							if (!ptr) { debugf("GetResourceRecord: Malformed SOA RDATA rname"); return mDNSNULL; }
-			                if (ptr + 0x14 != end) { debugf("GetResourceRecord: Malformed SOA RDATA"); return mDNSNULL; }
+							if (!ptr) { debugf("GetLargeResourceRecord: Malformed SOA RDATA rname"); return mDNSNULL; }
+			                if (ptr + 0x14 != end) { debugf("GetLargeResourceRecord: Malformed SOA RDATA"); return mDNSNULL; }
                 			rr->resrec.rdata->u.soa.serial  = (mDNSs32) ((mDNSs32)ptr[0x00] << 24 | (mDNSs32)ptr[0x01] << 16 | (mDNSs32)ptr[0x02] << 8 | ptr[0x03]);
 			                rr->resrec.rdata->u.soa.refresh = (mDNSu32) ((mDNSu32)ptr[0x04] << 24 | (mDNSu32)ptr[0x05] << 16 | (mDNSu32)ptr[0x06] << 8 | ptr[0x07]);
 			                rr->resrec.rdata->u.soa.retry   = (mDNSu32) ((mDNSu32)ptr[0x08] << 24 | (mDNSu32)ptr[0x09] << 16 | (mDNSu32)ptr[0x0A] << 8 | ptr[0x0B]);
@@ -2131,15 +2139,16 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 			                rr->resrec.rdata->u.soa.min     = (mDNSu32) ((mDNSu32)ptr[0x10] << 24 | (mDNSu32)ptr[0x11] << 16 | (mDNSu32)ptr[0x12] << 8 | ptr[0x13]);
 			                break;
 
-		case kDNSType_OPT:  getOptRdata(ptr, end, largecr, pktrdlength); break;
+		case kDNSType_OPT:  ptr = getOptRdata(ptr, end, largecr, pktrdlength); break;
+							if (ptr != end) { LogMsg("GetLargeResourceRecord: Malformed OptRdata"); return(mDNSNULL); }
 
 		default:			if (pktrdlength > rr->resrec.rdata->MaxRDLength)
 								{
-								debugf("GetResourceRecord: rdata %d (%s) size (%d) exceeds storage (%d)",
+								debugf("GetLargeResourceRecord: rdata %d (%s) size (%d) exceeds storage (%d)",
 									rr->resrec.rrtype, DNSTypeName(rr->resrec.rrtype), pktrdlength, rr->resrec.rdata->MaxRDLength);
 								return(mDNSNULL);
 								}
-							debugf("GetResourceRecord: Warning! Reading resource type %d (%s) as opaque data",
+							debugf("GetLargeResourceRecord: Warning! Reading resource type %d (%s) as opaque data",
 								rr->resrec.rrtype, DNSTypeName(rr->resrec.rrtype));
 							// Note: Just because we don't understand the record type, that doesn't
 							// mean we fail. The DNS protocol specifies rdlength, so we can
@@ -2156,7 +2165,7 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 
 	// Success! Now fill in RecordType to show this record contains valid data
 	rr->resrec.RecordType = RecordType;
-	return(ptr + pktrdlength);
+	return(end);
 	}
 
 mDNSexport const mDNSu8 *skipQuestion(const DNSMessage *msg, const mDNSu8 *ptr, const mDNSu8 *end)
