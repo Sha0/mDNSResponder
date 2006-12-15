@@ -54,6 +54,14 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.310  2006/12/15 19:09:56  cheshire
+<rdar://problem/4769083> ValidateRData() should be stricter about malformed MX and SRV records
+Made DomainNameLength() more defensive by adding a limit parameter, so it can be
+safely used to inspect potentially malformed data received from external sources.
+Without this, a domain name that starts off apparently valid, but extends beyond the end of
+the received packet data, could have appeared valid if the random bytes are already in memory
+beyond the end of the packet just happened to have reasonable values (e.g. all zeroes).
+
 Revision 1.309  2006/12/14 03:02:37  cheshire
 <rdar://problem/4838433> Tools: dns-sd -G 0 only returns IPv6 when you have a routable IPv6 address
 
@@ -2547,7 +2555,8 @@ extern mDNSBool IsLocalDomain(const domainname *d);     // returns true for doma
 
 // Get total length of domain name, in native DNS format, including terminal root label
 //   (e.g. length of "com." is 5 (length byte, three data bytes, final zero)
-extern mDNSu16  DomainNameLength(const domainname *const name);
+extern mDNSu16  DomainNameLengthLimit(const domainname *const name, const mDNSu8 *limit);
+#define DomainNameLength(name) DomainNameLengthLimit((name), (name)->c + MAX_DOMAIN_NAME + 1)
 
 // Append functions to append one or more labels to an existing native format domain name:
 //   AppendLiteralLabelString adds a single label from a literal C string, with no escape character interpretation.

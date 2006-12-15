@@ -17,6 +17,14 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.111  2006/12/15 19:09:57  cheshire
+<rdar://problem/4769083> ValidateRData() should be stricter about malformed MX and SRV records
+Made DomainNameLength() more defensive by adding a limit parameter, so it can be
+safely used to inspect potentially malformed data received from external sources.
+Without this, a domain name that starts off apparently valid, but extends beyond the end of
+the received packet data, could have appeared valid if the random bytes are already in memory
+beyond the end of the packet just happened to have reasonable values (e.g. all zeroes).
+
 Revision 1.110  2006/11/18 05:01:30  cheshire
 Preliminary support for unifying the uDNS and mDNS code,
 including caching of uDNS answers
@@ -713,24 +721,23 @@ mDNSexport mDNSBool IsLocalDomain(const domainname *d)
 	}
 
 // Returns length of a domain name INCLUDING the byte for the final null label
-// i.e. for the root label "." it returns one
+// e.g. for the root label "." it returns one
 // For the FQDN "com." it returns 5 (length byte, three data bytes, final zero)
 // Legal results are 1 (just root label) to 255 (MAX_DOMAIN_NAME)
-// If the given domainname is invalid, result is 256
-mDNSexport mDNSu16 DomainNameLength(const domainname *const name)
+// If the given domainname is invalid, result is 256 (MAX_DOMAIN_NAME+1)
+mDNSexport mDNSu16 DomainNameLengthLimit(const domainname *const name, const mDNSu8 *limit)
 	{
 	const mDNSu8 *src = name->c;
-	while (*src)
+	while (src < limit && *src <= MAX_DOMAIN_LABEL)
 		{
-		if (*src > MAX_DOMAIN_LABEL) return(MAX_DOMAIN_NAME+1);
+		if (*src == 0) return((mDNSu16)(src - name->c + 1));
 		src += 1 + *src;
-		if (src - name->c >= MAX_DOMAIN_NAME) return(MAX_DOMAIN_NAME+1);
 		}
-	return((mDNSu16)(src - name->c + 1));
+	return(MAX_DOMAIN_NAME+1);
 	}
 
 // CompressedDomainNameLength returns the length of a domain name INCLUDING the byte
-// for the final null label i.e. for the root label "." it returns one.
+// for the final null label, e.g. for the root label "." it returns one.
 // E.g. for the FQDN "foo.com." it returns 9
 // (length, three data bytes, length, three more data bytes, final zero).
 // In the case where a parent domain name is provided, and the given name is a child
@@ -756,7 +763,7 @@ mDNSexport mDNSu16 CompressedDomainNameLength(const domainname *const name, cons
 // The C string contains the label as-is, with no escaping, etc.
 // Any dots in the name are literal dots, not label separators
 // If successful, AppendLiteralLabelString returns a pointer to the next unused byte
-// in the domainname bufer (i.e., the next byte after the terminating zero).
+// in the domainname bufer (i.e. the next byte after the terminating zero).
 // If unable to construct a legal domain name (i.e. label more than 63 bytes, or total more than 255 bytes)
 // AppendLiteralLabelString returns mDNSNULL.
 mDNSexport mDNSu8 *AppendLiteralLabelString(domainname *const name, const char *cstr)
@@ -778,7 +785,7 @@ mDNSexport mDNSu8 *AppendLiteralLabelString(domainname *const name, const char *
 // The C string is in conventional DNS syntax:
 // Textual labels, escaped as necessary using the usual DNS '\' notation, separated by dots.
 // If successful, AppendDNSNameString returns a pointer to the next unused byte
-// in the domainname bufer (i.e., the next byte after the terminating zero).
+// in the domainname bufer (i.e. the next byte after the terminating zero).
 // If unable to construct a legal domain name (i.e. label more than 63 bytes, or total more than 255 bytes)
 // AppendDNSNameString returns mDNSNULL.
 mDNSexport mDNSu8 *AppendDNSNameString(domainname *const name, const char *cstring)
@@ -820,7 +827,7 @@ mDNSexport mDNSu8 *AppendDNSNameString(domainname *const name, const char *cstri
 
 // AppendDomainLabel appends a single label to a name.
 // If successful, AppendDomainLabel returns a pointer to the next unused byte
-// in the domainname bufer (i.e., the next byte after the terminating zero).
+// in the domainname bufer (i.e. the next byte after the terminating zero).
 // If unable to construct a legal domain name (i.e. label more than 63 bytes, or total more than 255 bytes)
 // AppendDomainLabel returns mDNSNULL.
 mDNSexport mDNSu8 *AppendDomainLabel(domainname *const name, const domainlabel *const label)
@@ -874,7 +881,7 @@ mDNSexport mDNSBool MakeDomainLabelFromLiteralString(domainlabel *const label, c
 // The C string is in conventional DNS syntax:
 // Textual labels, escaped as necessary using the usual DNS '\' notation, separated by dots.
 // If successful, MakeDomainNameFromDNSNameString returns a pointer to the next unused byte
-// in the domainname bufer (i.e., the next byte after the terminating zero).
+// in the domainname bufer (i.e. the next byte after the terminating zero).
 // If unable to construct a legal domain name (i.e. label more than 63 bytes, or total more than 255 bytes)
 // MakeDomainNameFromDNSNameString returns mDNSNULL.
 mDNSexport mDNSu8 *MakeDomainNameFromDNSNameString(domainname *const name, const char *cstr)
@@ -1411,8 +1418,7 @@ mDNSexport mDNSBool ValidateRData(const mDNSu16 rrtype, const mDNSu16 rdlength, 
 		case kDNSType_MR:	// Same as PTR
 		//case kDNSType_NULL not checked (no specified format, so always valid)
 		//case kDNSType_WKS not checked
-		case kDNSType_PTR:	if (!rdlength) return(mDNSfalse);
-							len = DomainNameLength(&rd->u.name);
+		case kDNSType_PTR:	len = DomainNameLengthLimit(&rd->u.name, rd->u.data + rdlength);
 							return(len <= MAX_DOMAIN_NAME && rdlength == len);
 
 		case kDNSType_HINFO:// Same as TXT (roughly)
@@ -1427,12 +1433,14 @@ mDNSexport mDNSBool ValidateRData(const mDNSu16 rrtype, const mDNSu16 rdlength, 
 
 		case kDNSType_AAAA:	return(rdlength == sizeof(mDNSv6Addr));
 
-		case kDNSType_MX:   if (rdlength < 3) return(mDNSfalse);	// Must be at least two-byte preference, plus domainname
-							len = DomainNameLength(&rd->u.mx.exchange);
+		case kDNSType_MX:   // Must be at least two-byte preference, plus domainname
+							// Call to DomainNameLengthLimit() implicitly enforces both requirements for us
+							len = DomainNameLengthLimit(&rd->u.mx.exchange, rd->u.data + rdlength);
 							return(len <= MAX_DOMAIN_NAME && rdlength == 2+len);
 
-		case kDNSType_SRV:	if (rdlength < 7) return(mDNSfalse);	// Must be at least priority+weight+port, plus domainname
-							len = DomainNameLength(&rd->u.srv.target);
+		case kDNSType_SRV:	// Must be at least priority+weight+port, plus domainname
+							// Call to DomainNameLengthLimit() implicitly enforces both requirements for us
+							len = DomainNameLengthLimit(&rd->u.srv.target, rd->u.data + rdlength);
 							return(len <= MAX_DOMAIN_NAME && rdlength == 6+len);
 
 		default:			return(mDNStrue);	// Allow all other types without checking
@@ -2144,7 +2152,7 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 		}
 
 	rr->resrec.namehash = DomainNameHashValue(rr->resrec.name);
-	SetNewRData(&rr->resrec, mDNSNULL, 0);
+	SetNewRData(&rr->resrec, mDNSNULL, 0);		// Sets rdlength, rdestimate, rdatahash for us
 
 	// Success! Now fill in RecordType to show this record contains valid data
 	rr->resrec.RecordType = RecordType;
