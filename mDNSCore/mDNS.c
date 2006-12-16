@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.562  2006/12/16 01:58:31  cheshire
+<rdar://problem/4720673> uDNS: Need to start caching unicast records
+
 Revision 1.561  2006/12/01 07:38:53  herscher
 Only perform cache workaround fix if query is wide-area
 
@@ -3736,11 +3739,10 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, C
 			}
 
 	if (rr->DelayDelivery) return;		// We'll come back later when CacheRecordDeferredAdd() calls us
+
 	m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 	if (q->QuestionCallback)
-		{
 		q->QuestionCallback(m, q, &rr->resrec, AddRecord);
-		}
 	m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
 	// CAUTION: MUST NOT do anything more with q after calling q->QuestionCallback(), because the client's callback function
 	// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
@@ -4005,7 +4007,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 	const mDNSu32 slot = HashSlot(&q->qname);
 	CacheGroup *const cg = CacheGroupForName(m, slot, q->qnamehash, &q->qname);
 
-	verbosedebugf("AnswerNewQuestion: Answering %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+	LogMsg("AnswerNewQuestion: Answering %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 
 	if (cg) CheckCacheExpiration(m, cg);
 	m->NewQuestions = q->next;				// Advance NewQuestions to the next *after* calling CheckCacheExpiration();
@@ -5464,30 +5466,10 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 						rr->DelayDelivery = m->timenow + mDNSPlatformOneSecond;	// to delay delivery of this 'add' event
 					else
 						rr->DelayDelivery = CheckForSoonToExpireRecords(m, rr->resrec.name, rr->resrec.namehash, slot);
-
 					CacheRecordAdd(m, rr);  // CacheRecordAdd calls SetNextCacheCheckTime(m, rr); for us
 					}
 				}
-			else if ( rr && m->rec.r.resrec.rroriginalttl != 0 )
-				{
-				// HACK: If a resource record is already in the cache, then we don't answer wide area
-				//       questions.  I don't know exactly how to fix this the right away
-				// LogMsg( "resource record is already in cache: %##s", rr->resrec.name->c );
-				
-				m->CurrentQuestion = m->Questions;
-	
-				while (m->CurrentQuestion && m->CurrentQuestion != m->NewQuestions)
-					{
-					DNSQuestion *q = m->CurrentQuestion;
-					m->CurrentQuestion = q->next;
-					if (q->id.NotAnInteger && (ResourceRecordAnswersQuestion(&rr->resrec, q)))
-						AnswerQuestionWithResourceRecord(m, q, rr, mDNStrue);
-					}
-				}
-				
-				m->CurrentQuestion = mDNSNULL;
 			}
-
 		m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 		}
 
@@ -5575,12 +5557,13 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 	const mDNSAddr *const srcaddr, const mDNSIPPort srcport, const mDNSAddr *const dstaddr, const mDNSIPPort dstport,
 	const mDNSInterfaceID InterfaceID)
 	{
+	mDNSInterfaceID ifid = InterfaceID;
 	DNSMessage  *msg  = (DNSMessage *)pkt;
 	const mDNSu8 StdQ = kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery;
 	const mDNSu8 StdR = kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery;
+	const mDNSu8 UpdR = kDNSFlag0_QR_Response | kDNSFlag0_OP_Update;
 	mDNSu8 QR_OP;
 	mDNSu8 *ptr = mDNSNULL;
-	const mDNSu8 UpdateR = kDNSFlag0_QR_Response | kDNSFlag0_OP_Update;
 
 #ifndef UNICAST_DISABLED
 	if (srcport.NotAnInteger == NATPMPPort.NotAnInteger)
@@ -5595,10 +5578,10 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 	QR_OP = (mDNSu8)(msg->h.flags.b[0] & kDNSFlag0_QROP_Mask);
 	// Read the integer parts which are in IETF byte-order (MSB first, LSB second)
 	ptr = (mDNSu8 *)&msg->h.numQuestions;
-	msg->h.numQuestions   = (mDNSu16)((mDNSu16)ptr[0] <<  8 | ptr[1]);
-	msg->h.numAnswers     = (mDNSu16)((mDNSu16)ptr[2] <<  8 | ptr[3]);
-	msg->h.numAuthorities = (mDNSu16)((mDNSu16)ptr[4] <<  8 | ptr[5]);
-	msg->h.numAdditionals = (mDNSu16)((mDNSu16)ptr[6] <<  8 | ptr[7]);
+	msg->h.numQuestions   = (mDNSu16)((mDNSu16)ptr[0] << 8 | ptr[1]);
+	msg->h.numAnswers     = (mDNSu16)((mDNSu16)ptr[2] << 8 | ptr[3]);
+	msg->h.numAuthorities = (mDNSu16)((mDNSu16)ptr[4] << 8 | ptr[5]);
+	msg->h.numAdditionals = (mDNSu16)((mDNSu16)ptr[6] << 8 | ptr[7]);
 
 	if (!m) { LogMsg("mDNSCoreReceive ERROR m is NULL"); return; }
 	
@@ -5609,13 +5592,16 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 	mDNS_Lock(m);
 	m->PktNum++;
 #ifndef UNICAST_DISABLED
-	if (!dstaddr || (!mDNSAddressIsAllDNSLinkGroup(dstaddr) && (QR_OP == StdR || QR_OP == UpdateR)))
-		uDNS_ReceiveMsg(m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID);
+	if (!dstaddr || (!mDNSAddressIsAllDNSLinkGroup(dstaddr) && (QR_OP == StdR || QR_OP == UpdR)))
+		{
+		if (msg->h.id.NotAnInteger) ifid = mDNSInterface_Any;
+		uDNS_ReceiveMsg(m, msg, end, srcaddr, srcport);
 		// Note: mDNSCore also needs to get access to received unicast responses
+		}
 #endif	
-	if      (QR_OP == StdQ) mDNSCoreReceiveQuery   (m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID);
-	else if (QR_OP == StdR) mDNSCoreReceiveResponse(m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID);
-	else if (QR_OP != UpdateR)
+	if      (QR_OP == StdQ) mDNSCoreReceiveQuery   (m, msg, end, srcaddr, srcport, dstaddr, dstport, ifid);
+	else if (QR_OP == StdR) mDNSCoreReceiveResponse(m, msg, end, srcaddr, srcport, dstaddr, dstport, ifid);
+	else if (QR_OP != UpdR)
 		LogMsg("Unknown DNS packet type %02X%02X from %#-15a:%-5d to %#-15a:%-5d on %p (ignored)",
 			msg->h.flags.b[0], msg->h.flags.b[1], srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), InterfaceID);
 
@@ -5712,7 +5698,8 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
     question->id = zeroID;
 #endif // UNICAST_DISABLED
 	
-	//LogOperation("mDNS_StartQuery %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
+	LogOperation("mDNS_StartQuery %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
+	
 	if (m->rrcache_size == 0)	// Can't do queries if we have no cache space allocated
 		return(mStatus_NoCache);
 	else
@@ -5735,7 +5722,6 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 			{
 			LogMsg("Error! Tried to add a question %##s (%s) that's already in the active list",
 				question->qname.c, DNSTypeName(question->qtype));
-			
 			return(mStatus_AlreadyRegistered);
 			}
 
@@ -5784,28 +5770,12 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		question->SendOnAll         = mDNSfalse;
 		question->LastQTxTime       = m->timenow;
 
-		// If the question's id is non-zero, then it's Wide Area
-		if (question->id.NotAnInteger)
-			{
-			// We ignore error returns in this case --
-			// There should be no errors that permanently kill a client's question
-			// Any errors are transient, and that's not the client's fault
-			if (question->LongLived)
-				{
-				uDNS_InitLongLivedQuery(m, question);
-				}
-			else
-				{
-				uDNS_InitQuery(m, question);
-				}
-			}		
-
 		if (!question->DuplicateOf)
-			verbosedebugf("mDNS_StartQuery_internal: Question %##s (%s) %p %d (%p) started",
+			LogMsg("mDNS_StartQuery_internal: Question %##s (%s) %p %d (%p) started",
 				question->qname.c, DNSTypeName(question->qtype), question->InterfaceID,
 				question->LastQTime + question->ThisQInterval - m->timenow, question);
 		else
-			verbosedebugf("mDNS_StartQuery_internal: Question %##s (%s) %p %d (%p) duplicate of (%p)",
+			LogMsg("mDNS_StartQuery_internal: Question %##s (%s) %p %d (%p) duplicate of (%p)",
 				question->qname.c, DNSTypeName(question->qtype), question->InterfaceID,
 				question->LastQTime + question->ThisQInterval - m->timenow, question, question->DuplicateOf);
 
@@ -5818,6 +5788,35 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 			if (!m->NewQuestions) m->NewQuestions = question;
 			SetNextQueryTime(m,question);
 			}
+
+		// If the question's id is non-zero, then it's Wide Area
+		// MUST NOT do this Wide Area setup until last -- this code may itself issue queries
+		// (e.g. SOA, NS, etc.) and if we haven't finished setting up our own question and
+		// setting m->NewQuestions if necessary then we could end up recursively re-entering
+		// this routine with the question list data structures in an inconsistent state.
+		if (question->id.NotAnInteger)
+			{
+			// We ignore error returns in this case --
+			// There should be no errors that permanently kill a client's question
+			// Any errors are transient, and that's not the client's fault
+			if (question->LongLived)
+				{
+				uDNS_InitLongLivedQuery(m, question);
+				}
+			else
+				{
+				question->ThisQInterval = INIT_UCAST_POLL_INTERVAL / 2;
+				question->LastQTime     = m->timenow - question->ThisQInterval;
+            
+				if ( !question->responseCallback )
+					{
+					extern void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *end, DNSQuestion *question);
+					question->responseCallback = pktResponseHndlr;
+					question->context = mDNSNULL;
+					}   
+				}
+			}		
+
 		return(mStatus_NoError);
 		}
 	}

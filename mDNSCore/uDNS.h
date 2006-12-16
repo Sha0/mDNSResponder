@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.43  2006/12/16 01:58:32  cheshire
+<rdar://problem/4720673> uDNS: Need to start caching unicast records
+
 Revision 1.42  2006/11/30 23:07:56  herscher
 <rdar://problem/4765644> uDNS: Sync up with Lighthouse changes for Private DNS
 
@@ -168,6 +171,7 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 #define INIT_UCAST_POLL_INTERVAL (3 * mDNSPlatformOneSecond) // this interval is used after send failures on network transitions
 	                                                         // which typically heal quickly, so we start agressively and exponentially back off
 #define MAX_UCAST_POLL_INTERVAL (60 * 60 * mDNSPlatformOneSecond)
+//#define MAX_UCAST_POLL_INTERVAL (1 * 60 * mDNSPlatformOneSecond)
 #define LLQ_POLL_INTERVAL       (15 * 60 * mDNSPlatformOneSecond) // Polling interval for zones w/ an advertised LLQ port (ie not static zones) if LLQ fails due to NAT, etc.
 #define RESPONSE_WINDOW (60 * mDNSPlatformOneSecond)         // require server responses within one minute of request
 #define PRIVATE_UPDATE_SERVICE_TYPE  ((domainname*)"\x0B_dns-update\x04_tls")
@@ -180,7 +184,6 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 
 extern mStatus uDNS_InitLongLivedQuery(mDNS *const m, DNSQuestion *const question);
 extern void    uDNS_StopLongLivedQuery (mDNS *const m, DNSQuestion *const question);
-extern mStatus uDNS_InitQuery  (mDNS *const m, DNSQuestion *const question);
 	
 extern void uDNS_Sleep(mDNS *const m);
 extern void uDNS_Wake(mDNS *const m);
@@ -206,8 +209,7 @@ extern void                   uDNS_CheckQuery ( mDNS * const m, DNSQuestion * qu
 
 // integer fields of msg header must be in HOST byte order before calling this routine
 extern void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
-	const mDNSAddr *const srcaddr, const mDNSIPPort srcport, const mDNSAddr *const dstaddr, 
-	const mDNSIPPort dstport, const mDNSInterfaceID InterfaceID);
+	const mDNSAddr *const srcaddr, const mDNSIPPort srcport);
 
 extern void uDNS_ReceiveNATMap(mDNS *m, mDNSu8 *pkt, mDNSu16 len);
 	

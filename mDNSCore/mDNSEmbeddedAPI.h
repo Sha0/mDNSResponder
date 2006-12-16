@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.311  2006/12/16 01:58:31  cheshire
+<rdar://problem/4720673> uDNS: Need to start caching unicast records
+
 Revision 1.310  2006/12/15 19:09:56  cheshire
 <rdar://problem/4769083> ValidateRData() should be stricter about malformed MX and SRV records
 Made DomainNameLength() more defensive by adding a limit parameter, so it can be
@@ -1910,7 +1913,6 @@ typedef struct
 	mDNSs32 expire; // ticks (absolute)
     mDNSs16 ntries;
 	mDNSOpaque64 id;
-	mDNSBool deriveRemovesOnResume;
 	} LLQ_Info;
 
 // LLQ constants
@@ -1941,7 +1943,7 @@ enum
 	LLQErr_UnknownErr = 6
 	};
 
-typedef void (*InternalResponseHndlr)(mDNS *const m, DNSMessage *msg, const  mDNSu8 *end, DNSQuestion *question, void * internalContext);
+typedef void (*InternalResponseHndlr)(mDNS *const m, DNSMessage *msg, const  mDNSu8 *end, DNSQuestion *question);
 
 // Note: Within an mDNSQuestionCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute()
 typedef void mDNSQuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord);
@@ -1975,6 +1977,10 @@ struct DNSQuestion_struct
 	// Wide Area fields.  These are used internally by the uDNS core
 	mDNSOpaque16          id;
 	InternalResponseHndlr responseCallback; // NULL if internal field is false
+											// This is one of: recvSetupResponse, pktResponseHndlr or getZoneData
+											// We should get rid of the function pointer, and just use the state
+											// variables in the DNSQuestion_struct to tell us what we need to do
+											// (maybe all three routines will end up combined into one?)
 	mDNSBool              Answered;         // Have we received an answer (including NXDOMAIN) for this question?
 	mDNSs32               RestartTime;      // Mark when we restart a suspended query
 	uDNS_TCPSocket        sock;		        // For secure operations
