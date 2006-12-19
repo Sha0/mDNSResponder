@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.564  2006/12/19 02:38:20  cheshire
+Get rid of unnecessary duplicate query ID field from DNSQuestion_struct
+
 Revision 1.563  2006/12/19 02:18:48  cheshire
 Get rid of unnecessary duplicate "void *context" field from DNSQuestion_struct
 
@@ -1875,7 +1878,8 @@ mDNSlocal void SetNextQueryTime(mDNS *const m, const DNSQuestion *const q)
 		{
 		mDNSs32 sendtime = q->LastQTime + q->ThisQInterval;
 
-		if (q->id.NotAnInteger && !q->LongLived && m->SuppressStdPort53Queries && (sendtime - m->SuppressStdPort53Queries < 0)) // Don't allow sendtime to be earlier than SuppressStdPort53Queries
+		// Don't allow sendtime to be earlier than SuppressStdPort53Queries
+		if (q->TargetQID.NotAnInteger && !q->LongLived && m->SuppressStdPort53Queries && (sendtime - m->SuppressStdPort53Queries < 0))
 			sendtime = m->SuppressStdPort53Queries;
 
 		if (m->NextScheduledQuery - sendtime > 0)
@@ -3412,11 +3416,11 @@ mDNSlocal void SendQueries(mDNS *const m)
 		//     *multicast* queries we're definitely going to send
 		for (q = m->Questions; q; q=q->next)
 			{
-			if (q->id.NotAnInteger && ActiveQuestion( q ) )
+			if (q->TargetQID.NotAnInteger && ActiveQuestion( q ) )
 				{
 				uDNS_CheckQuery( m, q );
 				}
-			else if (!q->id.NotAnInteger && q->Target.type && (q->SendQNow || TimeToSendThisQuestion(q, m->timenow)))
+			else if (!q->TargetQID.NotAnInteger && q->Target.type && (q->SendQNow || TimeToSendThisQuestion(q, m->timenow)))
 				{
 				mDNSu8       *qptr        = m->omsg.data;
 				const mDNSu8 *const limit = m->omsg.data + sizeof(m->omsg.data);
@@ -3432,7 +3436,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 				q->SendQNow          = mDNSNULL;
 				q->ExpectUnicastResp = NonZeroTime(m->timenow);
 				}
-			else if (!q->id.NotAnInteger && !q->Target.type && TimeToSendThisQuestion(q, m->timenow))
+			else if (!q->TargetQID.NotAnInteger && !q->Target.type && TimeToSendThisQuestion(q, m->timenow))
 				{
 				q->SendQNow = mDNSInterfaceMark;		// Mark this question for sending on all interfaces
 				if (maxExistingQuestionInterval < q->ThisQInterval)
@@ -3445,7 +3449,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 		// (b) to update the state variables for *all* the questions we're going to send
 		for (q = m->Questions; q; q=q->next)
 			{
-			if (!q->id.NotAnInteger && (q->SendQNow ||
+			if (!q->TargetQID.NotAnInteger && (q->SendQNow ||
 				(!q->Target.type && ActiveQuestion(q) && q->ThisQInterval <= maxExistingQuestionInterval && AccelerateThisQuery(m,q))))
 				{
 				// If at least halfway to next query time, advance to next interval
@@ -3563,7 +3567,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 			// Put query questions in this packet
 			for (q = m->Questions; q; q=q->next)
 				{
-				if (!q->id.NotAnInteger && (q->SendQNow == intf->InterfaceID))
+				if (!q->TargetQID.NotAnInteger && (q->SendQNow == intf->InterfaceID))
 					{
 					debugf("SendQueries: %s question for %##s (%s) at %d forecast total %d",
 						SuppressOnThisInterface(q->DupSuppress, intf) ? "Suppressing" : "Putting    ",
@@ -4433,7 +4437,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 #endif
         // 1. Retrigger all our questions
 		for (q = m->Questions; q; q=q->next)				// Scan our list of questions
-			if (!q->id.NotAnInteger && ActiveQuestion(q))
+			if (!q->TargetQID.NotAnInteger && ActiveQuestion(q))
 				{
 				q->ThisQInterval    = InitialQuestionInterval;	// MUST be > zero for an active question
 				q->RequestUnicast   = 2;						// Set to 2 because is decremented once *before* we check it
@@ -5165,10 +5169,10 @@ mDNSlocal const DNSQuestion *ExpectingUnicastResponseForQuestion(const mDNS *con
 	{
 	DNSQuestion *q;
 	for (q = m->Questions; q; q=q->next)
-		if (q->id.NotAnInteger == id.NotAnInteger       &&
-			q->qtype           == question->qtype       &&
-			q->qclass          == question->qclass      &&
-			q->qnamehash       == question->qnamehash   &&
+		if (q->TargetQID.NotAnInteger == id.NotAnInteger       &&
+			q->qtype                  == question->qtype       &&
+			q->qclass                 == question->qclass      &&
+			q->qnamehash              == question->qnamehash   &&
 			SameDomainName(&q->qname, &question->qname))
 			return(q);
 	return(mDNSNULL);
@@ -5181,10 +5185,10 @@ mDNSlocal mDNSBool ExpectingUnicastResponseForRecord(mDNS *const m, const mDNSAd
 	for (q = m->Questions; q; q=q->next)	
 		if (ResourceRecordAnswersQuestion(&rr->resrec, q))
 			{
-			if (q->id.NotAnInteger)
+			if (q->TargetQID.NotAnInteger)
 				{
 				// For now we don't do this check -- for LLQ updates, the ID doesn't seem to match the ID in the question
-				// if (q->id.NotAnInteger == id.NotAnInteger)
+				// if (q->TargetQID.NotAnInteger == id.NotAnInteger)
 					{
 					if (mDNSSameAddress(srcaddr, &q->Target))                  return(mDNStrue);
 					if (q->llq && mDNSSameAddress(srcaddr, &q->llq->servAddr)) return(mDNStrue);
@@ -5688,17 +5692,17 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 	// then we do a multicast query on that interface, even for unicast domains.
     if (question->InterfaceID == mDNSInterface_LocalOnly || question->ForceMCast || IsLocalDomain(&question->qname))
 		{
-    	question->id = zeroID;
+    	question->TargetQID = zeroID;
 		question->Private = mDNSfalse;
 		}
     else
 		{
-	    question->id = mDNS_NewMessageID(m);
+	    question->TargetQID = mDNS_NewMessageID(m);
 	    // This is where we'll check to see if this uDNS domain is in our list of domains that require encrypted queries
 		question->Private = mDNSfalse;	// But for now assume not
 		}
 #else
-    question->id = zeroID;
+    question->TargetQID = zeroID;
 #endif // UNICAST_DISABLED
 	
 	LogOperation("mDNS_StartQuery %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
@@ -5797,7 +5801,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		// (e.g. SOA, NS, etc.) and if we haven't finished setting up our own question and
 		// setting m->NewQuestions if necessary then we could end up recursively re-entering
 		// this routine with the question list data structures in an inconsistent state.
-		if (question->id.NotAnInteger)
+		if (question->TargetQID.NotAnInteger)
 			{
 			// We ignore error returns in this case --
 			// There should be no errors that permanently kill a client's question
@@ -5830,7 +5834,7 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 	CacheRecord *rr;
 	DNSQuestion **q = &m->Questions;
 	
-	if (question->id.NotAnInteger && question->LongLived && question->llq)
+	if (question->TargetQID.NotAnInteger && question->LongLived && question->llq)
 		uDNS_StopLongLivedQuery(m, question);
 
 	if (question->InterfaceID == mDNSInterface_LocalOnly) q = &m->LocalOnlyQuestions;
@@ -5852,7 +5856,7 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 
 	// If there are any cache records referencing this as their active question, then see if any other
 	// question that is also referencing them, else their CRActiveQuestion needs to get set to NULL.
-	if (!question->id.NotAnInteger)
+	if (!question->TargetQID.NotAnInteger)
 		{
 		for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
 			{
@@ -5949,7 +5953,6 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 	question->ReturnCNAME      = mDNSfalse;
 	question->QuestionCallback = Callback;
 	question->QuestionContext  = Context;
-	question->id               = zeroID;
 	if (!ConstructServiceName(&question->qname, mDNSNULL, srv, domain)) return(mStatus_BadParamErr);
 
 #ifndef UNICAST_DISABLED
@@ -6597,7 +6600,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 			}
 
 		for (q = m->Questions; q; q=q->next)							// Scan our list of questions
-			if (!q->id.NotAnInteger && (!q->InterfaceID || q->InterfaceID == set->InterfaceID))	// If not a wide-areq query, non-specific Q, or Q on this specific interface,
+			if (!q->TargetQID.NotAnInteger && (!q->InterfaceID || q->InterfaceID == set->InterfaceID))	// If not a wide-areq query, non-specific Q, or Q on this specific interface,
 				{														// then reactivate this question
 				mDNSs32 initial  = (flapping && q->FlappingInterface != set->InterfaceID) ? InitialQuestionInterval * 8 : InitialQuestionInterval;
 				mDNSs32 qdelay   = (flapping && q->FlappingInterface != set->InterfaceID) ? mDNSPlatformOneSecond   * 5 : 0;

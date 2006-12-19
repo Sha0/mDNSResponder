@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.313  2006/12/19 02:38:20  cheshire
+Get rid of unnecessary duplicate query ID field from DNSQuestion_struct
+
 Revision 1.312  2006/12/19 02:18:48  cheshire
 Get rid of unnecessary duplicate "void *context" field from DNSQuestion_struct
 
@@ -1978,9 +1981,7 @@ struct DNSQuestion_struct
 	mDNSBool              Private;			// Set if query is currently being done using Private DNS
 
 	// Wide Area fields.  These are used internally by the uDNS core
-	mDNSOpaque16          id;
-	InternalResponseHndlr responseCallback; // NULL if internal field is false
-											// This is one of: recvSetupResponse, pktResponseHndlr or getZoneData
+	InternalResponseHndlr responseCallback; // This is one of: recvSetupResponse, pktResponseHndlr or getZoneData
 											// We should get rid of the function pointer, and just use the state
 											// variables in the DNSQuestion_struct to tell us what we need to do
 											// (maybe all three routines will end up combined into one?)

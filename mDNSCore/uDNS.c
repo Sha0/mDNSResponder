@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.257  2006/12/19 02:38:20  cheshire
+Get rid of unnecessary duplicate query ID field from DNSQuestion_struct
+
 Revision 1.256  2006/12/19 02:18:48  cheshire
 Get rid of unnecessary duplicate "void *context" field from DNSQuestion_struct
 
@@ -1573,7 +1576,7 @@ exit:
 mDNSlocal void initializeQuery(DNSMessage *msg, DNSQuestion *question)
 	{
 	mDNSPlatformMemZero(msg, sizeof(msg));
-    InitializeDNSMessage(&msg->h, question->id, uQueryFlags);
+    InitializeDNSMessage(&msg->h, question->TargetQID, uQueryFlags);
 	}
 
 mDNSlocal mDNSu8 *putLLQ(DNSMessage *const msg, mDNSu8 *ptr, DNSQuestion *question, LLQOptData *data, mDNSBool includeQuestion)
@@ -1706,7 +1709,7 @@ mDNSlocal mDNSBool recvLLQResponse(mDNS *m, DNSMessage *msg, const mDNSu8 *end, 
 
 	ptr = getQuestion(msg, ptr, end, 0, &pktQ);
 	if (!ptr) return mDNSfalse;
-	pktQ.id = msg->h.id;
+	pktQ.TargetQID = msg->h.id;
 
 	q = m->Questions;
 	while (q)
@@ -1721,7 +1724,7 @@ mDNSlocal mDNSBool recvLLQResponse(mDNS *m, DNSMessage *msg, const mDNSu8 *end, 
 			m->CurrentQuestion = q;
 			if (llqInfo->state == LLQ_Established || (llqInfo->state == LLQ_Refresh && msg->h.numAnswers))
 				{ if (recvLLQEvent(m, q, msg, end, srcaddr, srcport)) { m->CurrentQuestion = mDNSNULL; return mDNStrue; } }
-			else if (msg->h.id.NotAnInteger == q->id.NotAnInteger)
+			else if (msg->h.id.NotAnInteger == q->TargetQID.NotAnInteger)
 				{
 				if (llqInfo->state == LLQ_Refresh && msg->h.numAdditionals && !msg->h.numAnswers)
 					{ recvRefreshReply(m, msg, end, q); m->CurrentQuestion = mDNSNULL; return mDNStrue; }
@@ -2782,7 +2785,6 @@ mDNSlocal void GetZoneData_Callback(mDNS *const m, DNSMessage *msg, const mDNSu8
 mDNSlocal mStatus GetZoneData_StartQuery(mDNS *m, DNSQuestion *q, InternalResponseHndlr callback, void *hndlrContext)
 	{
 	mStatus status;
-	q->id               = zeroID;
 	q->llq              = mDNSNULL;
 	q->sock             = mDNSNULL;
 	q->Answered         = mDNSfalse;
@@ -4594,7 +4596,7 @@ mDNSlocal void hndlTruncatedAnswer(DNSQuestion *question, const  mDNSAddr *src, 
 	mDNSPlatformMemZero(context, sizeof(tcpInfo_t));
 	context->question = question;
 	context->m = m;
-	question->id = mDNS_NewMessageID(m);
+	question->TargetQID = mDNS_NewMessageID(m);
 
 	sock = mDNSPlatformTCPSocket( m, 0, &port );
 
@@ -4668,7 +4670,7 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 		for (qptr = m->Questions; qptr; qptr = qptr->next)
 			{
 			//!!!KRS we should have a hashtable, hashed on message id
-			if (qptr->id.NotAnInteger == msg->h.id.NotAnInteger)
+			if (qptr->TargetQID.NotAnInteger == msg->h.id.NotAnInteger)
 				{
 				if (timenow - (qptr->LastQTime + RESPONSE_WINDOW) > 0)
 					{ debugf("uDNS_ReceiveMsg - response received after maximum allowed window.  Discarding"); return; }
@@ -4917,7 +4919,7 @@ mDNSlocal void startPrivateQueryCallback(mStatus err, mDNS *const m, void * cont
 	info->m        = m;
 	info->question = question;
 	info->authInfo = authInfo;
-	question->id   = mDNS_NewMessageID(m);
+	question->TargetQID   = mDNS_NewMessageID(m);
 
 	sock = mDNSPlatformTCPSocket( m, TCP_SOCKET_FLAGS, &port );
 
@@ -5646,7 +5648,8 @@ mDNSexport void uDNS_CheckQuery( mDNS * const m, DNSQuestion * q )
 		{
 		sendtime = q->LastQTime + q->ThisQInterval;
 
-		if (!q->LongLived && m->SuppressStdPort53Queries && sendtime - m->SuppressStdPort53Queries < 0) // Don't allow sendtime to be earlier than SuppressStdPort53Queries
+		// Don't allow sendtime to be earlier than SuppressStdPort53Queries
+		if (!q->LongLived && m->SuppressStdPort53Queries && sendtime - m->SuppressStdPort53Queries < 0)
 			sendtime = m->SuppressStdPort53Queries;
 
 		if (sendtime - m->timenow <= 0)
@@ -5887,7 +5890,7 @@ mDNSlocal void RestartQueries(mDNS *m)
 		q = m->CurrentQuestion;
 		m->CurrentQuestion = m->CurrentQuestion->next;
 
-		if ( q->id.NotAnInteger )
+		if ( q->TargetQID.NotAnInteger )
 			{
 			llqInfo = q->llq;
 
