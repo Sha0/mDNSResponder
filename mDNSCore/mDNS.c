@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.563  2006/12/19 02:18:48  cheshire
+Get rid of unnecessary duplicate "void *context" field from DNSQuestion_struct
+
 Revision 1.562  2006/12/16 01:58:31  cheshire
 <rdar://problem/4720673> uDNS: Need to start caching unicast records
 
@@ -4007,7 +4010,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 	const mDNSu32 slot = HashSlot(&q->qname);
 	CacheGroup *const cg = CacheGroupForName(m, slot, q->qnamehash, &q->qname);
 
-	LogMsg("AnswerNewQuestion: Answering %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+	verbosedebugf("AnswerNewQuestion: Answering %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 
 	if (cg) CheckCacheExpiration(m, cg);
 	m->NewQuestions = q->next;				// Advance NewQuestions to the next *after* calling CheckCacheExpiration();
@@ -5771,11 +5774,11 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		question->LastQTxTime       = m->timenow;
 
 		if (!question->DuplicateOf)
-			LogMsg("mDNS_StartQuery_internal: Question %##s (%s) %p %d (%p) started",
+			verbosedebugf("mDNS_StartQuery: Question %##s (%s) %p %d (%p) started",
 				question->qname.c, DNSTypeName(question->qtype), question->InterfaceID,
 				question->LastQTime + question->ThisQInterval - m->timenow, question);
 		else
-			LogMsg("mDNS_StartQuery_internal: Question %##s (%s) %p %d (%p) duplicate of (%p)",
+			verbosedebugf("mDNS_StartQuery: Question %##s (%s) %p %d (%p) duplicate of (%p)",
 				question->qname.c, DNSTypeName(question->qtype), question->InterfaceID,
 				question->LastQTime + question->ThisQInterval - m->timenow, question, question->DuplicateOf);
 
@@ -5812,7 +5815,6 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 					{
 					extern void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *end, DNSQuestion *question);
 					question->responseCallback = pktResponseHndlr;
-					question->context = mDNSNULL;
 					}   
 				}
 			}		
@@ -7128,21 +7130,6 @@ mDNSexport mStatus mDNS_AdvertiseDomains(mDNS *const m, AuthRecord *rr,
 	if (!MakeDomainNameFromDNSNameString(rr->resrec.name, mDNS_DomainTypeNames[DomainType])) return(mStatus_BadParamErr);
 	if (!MakeDomainNameFromDNSNameString(&rr->resrec.rdata->u.name, domname))                 return(mStatus_BadParamErr);
 	return(mDNS_Register(m, rr));
-	}
-	
-// explicitly set response handler
-extern mStatus mDNS_GetZoneData(mDNS *m, DNSQuestion *q, InternalResponseHndlr callback, void *hndlrContext)
-	{
-	q->id               = zeroID;
-	q->llq              = mDNSNULL;
-	q->sock             = mDNSNULL;
-	q->Answered         = mDNSfalse;
-	q->RestartTime      = 0;
-	q->QuestionContext  = hndlrContext;
-	q->responseCallback = callback;
-	q->context          = hndlrContext;
-	// This call assumes we already have a lock
-	return mDNS_StartQuery_internal(m, q);
 	}
 	
 mDNSOpaque16 mDNS_NewMessageID(mDNS * const m)

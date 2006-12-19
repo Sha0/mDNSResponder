@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.256  2006/12/19 02:18:48  cheshire
+Get rid of unnecessary duplicate "void *context" field from DNSQuestion_struct
+
 Revision 1.255  2006/12/16 01:58:31  cheshire
 <rdar://problem/4720673> uDNS: Need to start caching unicast records
 
@@ -2772,8 +2775,31 @@ typedef struct
 	} ntaContext;
 
 
-// Forward reference: hndlLookupSOA references getZoneData and vice versa
-mDNSlocal void getZoneData(mDNS *const m, DNSMessage *msg, const mDNSu8 *end, DNSQuestion *question);
+// Forward reference: hndlLookupSOA references GetZoneData_Callback and vice versa
+mDNSlocal void GetZoneData_Callback(mDNS *const m, DNSMessage *msg, const mDNSu8 *end, DNSQuestion *question);
+
+// explicitly set response handler
+mDNSlocal mStatus GetZoneData_StartQuery(mDNS *m, DNSQuestion *q, InternalResponseHndlr callback, void *hndlrContext)
+	{
+	mStatus status;
+	q->id               = zeroID;
+	q->llq              = mDNSNULL;
+	q->sock             = mDNSNULL;
+	q->Answered         = mDNSfalse;
+	q->RestartTime      = 0;
+	q->QuestionContext  = hndlrContext;
+	q->responseCallback = callback;
+	
+	// Temporary hack.
+	// GetZoneData_StartQuery is called with the lock held, but not from a normal callback that allows API calls
+	// Eventually we should fix this.
+	// For now we increment mDNS_reentrancy to stop the error messages
+	m->mDNS_reentrancy++;
+	status = mDNS_StartQuery(m, q);
+	m->mDNS_reentrancy--;
+
+	return(status);
+	}
 
 mDNSlocal void processSOA(ntaContext *context, ResourceRecord *rr)
 	{
@@ -2836,8 +2862,8 @@ mDNSlocal smAction hndlLookupSOA(DNSMessage *msg, const mDNSu8 *end, ntaContext 
     AssignDomainName(&query->qname, context->curSOA);
     query->qtype = kDNSType_SOA;
     query->qclass = kDNSClass_IN;
-    err = mDNS_GetZoneData(context->m, &context->question, getZoneData, context);
-	if (err) LogMsg("hndlLookupSOA: mDNS_GetZoneData returned error %ld (breaking until next periodic retransmission)", err);
+    err = GetZoneData_StartQuery(context->m, &context->question, GetZoneData_Callback, context);
+	if (err) LogMsg("hndlLookupSOA: GetZoneData_StartQuery returned error %ld (breaking until next periodic retransmission)", err);
 
     return smBreak;     // break from state machine until we receive another packet
     }
@@ -2857,8 +2883,8 @@ mDNSlocal smAction confirmNS(DNSMessage *msg, const mDNSu8 *end, ntaContext *con
 		AssignDomainName(&query->qname, &context->zone);
 		query->qtype = kDNSType_NS;
 		query->qclass = kDNSClass_IN;
-		err = mDNS_GetZoneData(context->m, query, getZoneData, context);
-		if (err) LogMsg("confirmNS: mDNS_GetZoneData returned error %ld (breaking until next periodic retransmission", err);
+		err = GetZoneData_StartQuery(context->m, query, GetZoneData_Callback, context);
+		if (err) LogMsg("confirmNS: GetZoneData_StartQuery returned error %ld (breaking until next periodic retransmission", err);
 		context->state = lookupNS;
 		return smBreak;  // break from SM until we receive another packet
 	}
@@ -2942,8 +2968,8 @@ mDNSlocal smAction lookupDNSPort(DNSMessage *msg, const mDNSu8 *end, ntaContext 
 	AppendDomainName(&context->question.qname, &context->zone);
 	context->question.qtype = kDNSType_SRV;
 	context->question.qclass = kDNSClass_IN;
-	err = mDNS_GetZoneData(context->m, &context->question, getZoneData, context);
-	if (err) LogMsg("lookupDNSPort: mDNS_GetZoneData returned error %ld (breaking until next periodic retransmission)", err);
+	err = GetZoneData_StartQuery(context->m, &context->question, GetZoneData_Callback, context);
+	if (err) LogMsg("lookupDNSPort: GetZoneData_StartQuery returned error %ld (breaking until next periodic retransmission)", err);
 	return smBreak;     // break from state machine until we receive another packet
 	}
 
@@ -2955,8 +2981,8 @@ mDNSlocal smAction queryNSAddr(ntaContext *context)
 	AssignDomainName(&query->qname, &context->ns);
 	query->qtype = kDNSType_A;
 	query->qclass = kDNSClass_IN;
-	err = mDNS_GetZoneData(context->m, query, getZoneData, context);
-	if (err) LogMsg("confirmNS: mDNS_GetZoneData returned error %ld (breaking until next periodic retransmission)", err);
+	err = GetZoneData_StartQuery(context->m, query, GetZoneData_Callback, context);
+	if (err) LogMsg("confirmNS: GetZoneData_StartQuery returned error %ld (breaking until next periodic retransmission)", err);
 	context->state = lookupA;
 	return smBreak;
 	}
@@ -3021,10 +3047,10 @@ mDNSlocal smAction lookupNSAddr(DNSMessage *msg, const mDNSu8 *end, ntaContext *
 	}
 
 // state machine entry routine
-mDNSlocal void getZoneData(mDNS *const m, DNSMessage *msg, const mDNSu8 *end, DNSQuestion *question)
+mDNSlocal void GetZoneData_Callback(mDNS *const m, DNSMessage *msg, const mDNSu8 *end, DNSQuestion *question)
     {
 	AsyncOpResult result;
-	ntaContext *context = (ntaContext*)question->context;
+	ntaContext *context = (ntaContext*)question->QuestionContext;
 	smAction action;
 
     // unused
@@ -3041,11 +3067,11 @@ mDNSlocal void getZoneData(mDNS *const m, DNSMessage *msg, const mDNSu8 *end, DN
 	if (msg && ( msg->h.flags.b[1] & kDNSFlag1_RC ) && ( msg->h.flags.b[1] & kDNSFlag1_RC ) != kDNSFlag1_RC_NXDomain)
 		{
 		// rcode non-zero, non-nxdomain
-		LogMsg("ERROR: getZoneData - received response w/ rcode %d", msg->h.flags.b[1]  & kDNSFlag1_RC);
+		LogMsg("ERROR: GetZoneData_Callback - received response w/ rcode %d", msg->h.flags.b[1]  & kDNSFlag1_RC);
 		goto error;
 		}
 
-	if (question) LogOperation("getZoneData: Question %##s", question->qname.c);
+	if (question) LogOperation("GetZoneData_Callback: Question %##s", question->qname.c);
 	switch (context->state)
         {
         case init:
@@ -3091,7 +3117,7 @@ mDNSlocal void getZoneData(mDNS *const m, DNSMessage *msg, const mDNSu8 *end, DN
 
 	if (context->state != complete)
 		{
-		LogMsg("ERROR: getZoneData - exited state machine with state %d", context->state);
+		LogMsg("ERROR: GetZoneData_Callback - exited state machine with state %d", context->state);
 		goto error;
 		}
 
@@ -3157,8 +3183,8 @@ mDNSlocal mStatus StartGetZoneData(mDNS *m, domainname *name, AsyncOpTarget targ
     context->isPrivate       = GetAuthInfoForName(m, name) ? mDNStrue : mDNSfalse;
     context->callback        = callback;
     context->callbackInfo    = callbackInfo;
-    context->question.context = context;
-    getZoneData(m, mDNSNULL, mDNSNULL, &context->question);
+    context->question.QuestionContext = context;
+    GetZoneData_Callback(m, mDNSNULL, mDNSNULL, &context->question);
     return mStatus_NoError;
     }
 

@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.312  2006/12/19 02:18:48  cheshire
+Get rid of unnecessary duplicate "void *context" field from DNSQuestion_struct
+
 Revision 1.311  2006/12/16 01:58:31  cheshire
 <rdar://problem/4720673> uDNS: Need to start caching unicast records
 
@@ -1985,7 +1988,6 @@ struct DNSQuestion_struct
 	mDNSs32               RestartTime;      // Mark when we restart a suspended query
 	uDNS_TCPSocket        sock;		        // For secure operations
 	LLQ_Info              *llq;             // NULL for 1-shot queries
-	void                  *context;
 
 	// Client API fields: The client must set up these fields *before* calling mDNS_StartQuery()
 	mDNSInterfaceID       InterfaceID;		// Non-zero if you want to issue queries only on a single specific IP interface
@@ -2531,8 +2533,6 @@ extern mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, mDNS_
 #define        mDNS_StopGetDomains mDNS_StopQuery
 extern mStatus mDNS_AdvertiseDomains(mDNS *const m, AuthRecord *rr, mDNS_DomainType DomainType, const mDNSInterfaceID InterfaceID, char *domname);
 #define        mDNS_StopAdvertiseDomains mDNS_Deregister
-
-extern mStatus mDNS_GetZoneData(mDNS *m, DNSQuestion *q, InternalResponseHndlr callback, void *hndlrContext);
 
 extern mDNSOpaque16 mDNS_NewMessageID(mDNS * const m);
 
