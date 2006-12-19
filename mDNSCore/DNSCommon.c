@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.114  2006/12/19 22:40:04  cheshire
+Fix compiler warnings
+
 Revision 1.113  2006/12/19 02:21:08  cheshire
 Delete spurious spaces
 
@@ -640,11 +643,11 @@ mDNSexport mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip)
 	{
 	switch(ip->type)
 		{
-		case mDNSAddrType_IPv4: return(mDNSBool)(ip->ip.v4.NotAnInteger == AllDNSLinkGroupv4.NotAnInteger);
-		case mDNSAddrType_IPv6: return(mDNSBool)(ip->ip.v6.l[0] == AllDNSLinkGroupv6.l[0] &&
-												 ip->ip.v6.l[1] == AllDNSLinkGroupv6.l[1] &&
-												 ip->ip.v6.l[2] == AllDNSLinkGroupv6.l[2] &&
-												 ip->ip.v6.l[3] == AllDNSLinkGroupv6.l[3] );
+		case mDNSAddrType_IPv4: return(mDNSBool)(ip->ip.v4.NotAnInteger == AllDNSLinkGroup_v4.ip.v4.NotAnInteger);
+		case mDNSAddrType_IPv6: return(mDNSBool)(ip->ip.v6.l[0] == AllDNSLinkGroup_v6.ip.v6.l[0] &&
+												 ip->ip.v6.l[1] == AllDNSLinkGroup_v6.ip.v6.l[1] &&
+												 ip->ip.v6.l[2] == AllDNSLinkGroup_v6.ip.v6.l[2] &&
+												 ip->ip.v6.l[3] == AllDNSLinkGroup_v6.ip.v6.l[3] );
 		default: return(mDNSfalse);
 		}
 	}
@@ -1122,8 +1125,8 @@ mDNSexport mDNSu32 TruncateUTF8ToLength(mDNSu8 *string, mDNSu32 length, mDNSu32 
 	{
 	if (length > max)
 		{
-		mDNSu8 c1 = string[max];								// First byte after cut point
-		mDNSu8 c2 = (max+1 < length) ? string[max+1] : 0xB0;	// Second byte after cut point
+		mDNSu8 c1 = string[max];										// First byte after cut point
+		mDNSu8 c2 = (max+1 < length) ? string[max+1] : (mDNSu8)0xB0;	// Second byte after cut point
 		length = max;	// Trim length down
 		while (length > 0)
 			{
@@ -2228,8 +2231,8 @@ mDNSexport mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg
     mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, uDNS_TCPSocket sock, uDNS_AuthInfo *authInfo)
 	{
 	mStatus status;
-	int nsent;
-	mDNSs32 msglen;
+	long nsent;
+	unsigned long msglen;
 	mDNSu8 lenbuf[2];
 	mDNSu16 numQuestions   = msg->h.numQuestions;
 	mDNSu16 numAnswers     = msg->h.numAnswers;
@@ -2265,7 +2268,7 @@ mDNSexport mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg
 		if (nsent != 2) goto tcp_error;
 
 		nsent = mDNSPlatformWriteTCP(sock, (char *)msg, msglen);
-		if (nsent != msglen) goto tcp_error;
+		if (nsent != (long)msglen) goto tcp_error;
 		status = mStatus_NoError;
 		}
 	else

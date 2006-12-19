@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.354  2006/12/19 22:43:55  cheshire
+Fix compiler warnings
+
 Revision 1.353  2006/12/14 22:08:29  cheshire
 Fixed memory leak: need to call SecKeychainItemFreeAttributesAndData()
 to release data allocated by SecKeychainItemCopyAttributesAndData()
@@ -1244,7 +1247,7 @@ mDNSlocal NetworkInterfaceInfoOSX *SearchForInterfaceByName(mDNS *const m, const
 		if (i->Exists && !strcmp(i->ifa_name, ifname) &&
 			((AAAA_OVER_V4                                              ) ||
 			 (type == AF_INET  && i->ifinfo.ip.type == mDNSAddrType_IPv4) ||
-			 (type == AF_INET6 && i->ifinfo.ip.type == mDNSAddrType_IPv6) )) return(i);
+			 (type == AF_INET6 && i->ifinfo.ip.type == mDNSAddrType_IPv6))) return(i);
 	return(NULL);
 	}
 
@@ -1639,10 +1642,10 @@ struct uDNS_TCPSocket_struct
 	};
 
 #ifndef NO_SECURITYFRAMEWORK
-mDNSlocal OSStatus tlsWriteSock( SSLConnectionRef	connection, const void * data, size_t * dataLength )
+mDNSlocal OSStatus tlsWriteSock(SSLConnectionRef connection, const void * data, size_t * dataLength)
 	{
 	UInt32			bytesSent = 0;
-	uDNS_TCPSocket	sock = ( uDNS_TCPSocket ) connection;
+	uDNS_TCPSocket	sock = (uDNS_TCPSocket) connection;
 	int 			length;
 	UInt32			dataLen = *dataLength;
 	const UInt8	*	dataPtr = (UInt8 *)data;
@@ -1656,18 +1659,18 @@ mDNSlocal OSStatus tlsWriteSock( SSLConnectionRef	connection, const void * data,
 		fd_set			fds;
 		struct timeval	tv;
 
-		FD_ZERO( &fds );
-		FD_SET( sock->fd, &fds );
+		FD_ZERO(&fds);
+		FD_SET(sock->fd, &fds);
 		tv.tv_sec = TLS_IO_TIMEOUT;
 		tv.tv_usec = 0;
 		
 		selectresult = select(sock->fd + 1, NULL, &fds, NULL, &tv);
 
-		if ( selectresult == 1 )
+		if (selectresult == 1)
 			{
-			length = send( sock->fd, ( char* ) dataPtr + bytesSent, dataLen - bytesSent, 0 );
+			length = send(sock->fd, (char*) dataPtr + bytesSent, dataLen - bytesSent, 0);
 			}
-		else if ( selectresult == 0 )
+		else if (selectresult == 0)
 			{
 			length = 0;
 			errno = EAGAIN;
@@ -1679,11 +1682,11 @@ mDNSlocal OSStatus tlsWriteSock( SSLConnectionRef	connection, const void * data,
 			break;
 			}
     	}
-	while ( ( length > 0 ) && ( ( bytesSent += length ) < dataLen ) );
+	while ((length > 0) && ((bytesSent += length) < dataLen));
 	
-	if ( length <= 0 )
+	if (length <= 0)
 		{
-		if ( errno == EAGAIN )
+		if (errno == EAGAIN)
 			{
 			ortn = errSSLWouldBlock;
 			}
@@ -1702,19 +1705,19 @@ mDNSlocal OSStatus tlsWriteSock( SSLConnectionRef	connection, const void * data,
 	}
 
 
-mDNSlocal OSStatus tlsReadSock( SSLConnectionRef	connection, void * data, size_t * dataLength )
+mDNSlocal OSStatus tlsReadSock(SSLConnectionRef	connection, void * data, size_t * dataLength)
 	{
 	UInt32			bytesToGo = *dataLength;
 	UInt32 			initLen = bytesToGo;
 	UInt8		*	currData = (UInt8 *)data;
-	uDNS_TCPSocket	sock = ( uDNS_TCPSocket ) connection;
+	uDNS_TCPSocket	sock = (uDNS_TCPSocket) connection;
 	OSStatus		rtn = noErr;
 	UInt32			bytesRead;
 	int				rrtn;
 	
 	*dataLength = 0;
 
-	for ( ;; )
+	for (;;)
 		{
 		int				selectresult;
 		fd_set			fds;
@@ -1722,20 +1725,20 @@ mDNSlocal OSStatus tlsReadSock( SSLConnectionRef	connection, void * data, size_t
 
 		bytesRead = 0;
 
-		FD_ZERO( &fds );
-		FD_SET( sock->fd, &fds );
+		FD_ZERO(&fds);
+		FD_SET(sock->fd, &fds);
 		tv.tv_sec  = TLS_IO_TIMEOUT;
 		tv.tv_usec = 0;
 
 		selectresult = select(sock->fd + 1, &fds, NULL, NULL, &tv);
 
-		if ( selectresult == 1 )
+		if (selectresult == 1)
 			{
 			rrtn = recv(sock->fd, currData, bytesToGo, 0);
 
-			if ( rrtn <= 0 )
+			if (rrtn <= 0)
 				{
-				switch ( errno )
+				switch (errno)
 					{
 					case ENOENT:
 						/* connection closed */
@@ -1748,7 +1751,7 @@ mDNSlocal OSStatus tlsReadSock( SSLConnectionRef	connection, void * data, size_t
 						rtn = errSSLWouldBlock;
 						break;
 					default:
-						LogMsg( "ERROR: tlsSockRead: read(%d) error %d\n", (int)bytesToGo, errno );
+						LogMsg("ERROR: tlsSockRead: read(%d) error %d\n", (int)bytesToGo, errno);
 						rtn = ioErr;
 						break;
 					}
@@ -1762,19 +1765,19 @@ mDNSlocal OSStatus tlsReadSock( SSLConnectionRef	connection, void * data, size_t
 			bytesToGo -= bytesRead;
 			currData  += bytesRead;
 		
-			if ( !bytesToGo )
+			if (!bytesToGo)
 				{
 				break;
 				}
 			}
-		else if ( selectresult == 0 )
+		else if (selectresult == 0)
 			{
 			rtn = errSSLWouldBlock;
 			break;
 			}
 		else
 			{
-			LogMsg( "ERROR: tlsSockRead: select(%d) error %d\n", (int)bytesToGo, errno );
+			LogMsg("ERROR: tlsSockRead: select(%d) error %d\n", (int)bytesToGo, errno);
 			rtn = ioErr;
 			break;
 			}
@@ -1786,38 +1789,38 @@ mDNSlocal OSStatus tlsReadSock( SSLConnectionRef	connection, void * data, size_t
 	}
 
 
-mDNSlocal OSStatus tlsSetupSock( uDNS_TCPSocket sock, mDNSBool server )
+mDNSlocal OSStatus tlsSetupSock(uDNS_TCPSocket sock, mDNSBool server)
 	{
 	mStatus err = mStatus_NoError;
 
-	if ( ( sock->flags & kTCPSocketFlags_UseTLS ) == 0 )
+	if ((sock->flags & kTCPSocketFlags_UseTLS) == 0)
 		{
-		LogMsg( "ERROR: tlsSetupSock: socket is not a TLS socket" );
+		LogMsg("ERROR: tlsSetupSock: socket is not a TLS socket");
 		err = mStatus_UnknownErr;
 		goto exit;
 		}
 
-	err = SSLNewContext( server, &sock->tlsContext );
+	err = SSLNewContext(server, &sock->tlsContext);
 
-	if ( err )
+	if (err)
 		{
-		LogMsg( "ERROR: tlsSetupSock: SSLNewContext failed with error code: %d", err );
+		LogMsg("ERROR: tlsSetupSock: SSLNewContext failed with error code: %d", err);
 		goto exit;
 		}
 
-	err = SSLSetIOFuncs( sock->tlsContext, tlsReadSock, tlsWriteSock );
+	err = SSLSetIOFuncs(sock->tlsContext, tlsReadSock, tlsWriteSock);
 
-	if ( err )
+	if (err)
 		{
-		LogMsg( "ERROR: tlsSetupSock: SSLSetIOFuncs failed with error code: %d", err );
+		LogMsg("ERROR: tlsSetupSock: SSLSetIOFuncs failed with error code: %d", err);
 		goto exit;
 		}
 
-	err = SSLSetConnection( sock->tlsContext, ( SSLConnectionRef ) sock );
+	err = SSLSetConnection(sock->tlsContext, (SSLConnectionRef) sock);
 
-	if ( err )
+	if (err)
 		{
-		LogMsg( "ERROR: tlsSetupSock: SSLSetConnection failed with error code: %d", err );
+		LogMsg("ERROR: tlsSetupSock: SSLSetConnection failed with error code: %d", err);
 		goto exit;
 		}
 
@@ -1840,25 +1843,25 @@ mDNSlocal void tcpKQSocketCallback(__unused int fd, __unused short filter, __unu
 		connect			= mDNStrue;
 		sock->connected = mDNStrue;  // prevent connected flag from being set in future callbacks
 
-		if ( sock->flags & kTCPSocketFlags_UseTLS )
+		if (sock->flags & kTCPSocketFlags_UseTLS)
 			{
 #ifndef NO_SECURITYFRAMEWORK
-			err = tlsSetupSock( sock, mDNSfalse );
+			err = tlsSetupSock(sock, mDNSfalse);
 
-			if ( err )
+			if (err)
 				{
-				LogMsg( "ERROR: tcpKQSocketCallback: tlsSetupSock failed with error code: %d", err );
+				LogMsg("ERROR: tcpKQSocketCallback: tlsSetupSock failed with error code: %d", err);
 				goto exit;
 				}
 
-			err = SSLHandshake( sock->tlsContext );
+			err = SSLHandshake(sock->tlsContext);
 			
 			sock->handshake = mDNStrue;
 			
-			if ( err )
+			if (err)
 				{
-				LogMsg( "ERROR: tcpKQSocketCallback: SSLHandshake failed with error code: %d", err );
-				SSLDisposeContext( sock->tlsContext );
+				LogMsg("ERROR: tcpKQSocketCallback: SSLHandshake failed with error code: %d", err);
+				SSLDisposeContext(sock->tlsContext);
 				sock->tlsContext = NULL;
 				goto exit;
 				}
@@ -1871,16 +1874,16 @@ mDNSlocal void tcpKQSocketCallback(__unused int fd, __unused short filter, __unu
 
 	exit:
 
-	sock->callback( sock, sock->context, connect, err );
+	sock->callback(sock, sock->context, connect, err);
 	// NOTE: the callback may call CloseConnection here, which frees the context structure!
 	}
 	
 
-mDNSexport void KQueueWake( mDNS * const m )
+mDNSexport void KQueueWake(mDNS * const m)
 	{
 	char wake = 1;
 	if (send(m->p->WakeKQueueLoopFD, &wake, sizeof(wake), 0) == -1)
-		LogMsg( "ERROR: KQueueWake: send failed with error code: %d - %s", errno, strerror(errno) );
+		LogMsg("ERROR: KQueueWake: send failed with error code: %d - %s", errno, strerror(errno));
 	}
 
 mDNSexport int KQueueAdd(int fd, short filter, u_int fflags, intptr_t data, const KQueueEntry *const entryRef)
@@ -1895,7 +1898,7 @@ mDNSexport int KQueueAdd(int fd, short filter, u_int fflags, intptr_t data, cons
 	return 0;
 	}
 
-mDNSexport uDNS_TCPSocket mDNSPlatformTCPSocket( mDNS * const m, uDNS_TCPSocketFlags flags, mDNSIPPort * port )
+mDNSexport uDNS_TCPSocket mDNSPlatformTCPSocket(mDNS * const m, uDNS_TCPSocketFlags flags, mDNSIPPort * port)
 	{
 	struct uDNS_TCPSocket_struct	*	sock = mDNSNULL;
 	struct sockaddr_in				addr;
@@ -1903,25 +1906,25 @@ mDNSexport uDNS_TCPSocket mDNSPlatformTCPSocket( mDNS * const m, uDNS_TCPSocketF
 	int								on = 1;  // "on" for setsockopt
 	mStatus							err = mStatus_NoError;
 
-	( void ) m;
+	(void) m;
 
-	sock = mallocL("mDNSPlatformTCPSocket", sizeof( struct uDNS_TCPSocket_struct ) );
+	sock = mallocL("mDNSPlatformTCPSocket", sizeof(struct uDNS_TCPSocket_struct));
 
-	if ( !sock )
+	if (!sock)
 		{
-		LogMsg("mDNSPlatformTCPSocket: memory allocation failure" );
+		LogMsg("mDNSPlatformTCPSocket: memory allocation failure");
 		err = mStatus_NoMemoryErr;
 		goto exit;
 		}
 
-	bzero( sock, sizeof( struct uDNS_TCPSocket_struct ) );
+	bzero(sock, sizeof(struct uDNS_TCPSocket_struct));
 	sock->flags = flags;
 	sock->fd = -1;
 		
 	// Create the socket
 
 	sock->fd = socket(AF_INET, SOCK_STREAM, 0);
-	if (sock->fd == -1 )
+	if (sock->fd == -1)
 		{
 		LogMsg("mDNSPlatformTCPSocket: socket error %d errno %d (%s)", sock->fd, errno, strerror(errno));
 		err = mStatus_UnknownErr;
@@ -1930,33 +1933,33 @@ mDNSexport uDNS_TCPSocket mDNSPlatformTCPSocket( mDNS * const m, uDNS_TCPSocketF
 		
 	// Bind it
 	
-	memset( &addr, 0, sizeof( addr ) );
+	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
-	addr.sin_addr.s_addr = htonl( INADDR_ANY );
+	addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	addr.sin_port = port->NotAnInteger;
 
-	if ( bind( sock->fd, ( struct sockaddr* ) &addr, sizeof( addr ) ) < 0 )
+	if (bind(sock->fd, (struct sockaddr*) &addr, sizeof(addr)) < 0)
 		{
-		LogMsg( "ERROR: bind %s", strerror( errno ) );
+		LogMsg("ERROR: bind %s", strerror(errno));
 		err = mStatus_UnknownErr;
 		goto exit;
 		}
 
 	// Receive interface identifiers
 
-	if (setsockopt( sock->fd, IPPROTO_IP, IP_RECVIF, &on, sizeof(on)) < 0)
+	if (setsockopt(sock->fd, IPPROTO_IP, IP_RECVIF, &on, sizeof(on)) < 0)
 		{
 		LogMsg("setsockopt IP_RECVIF - %s", strerror(errno));
 		err = mStatus_UnknownErr;
 		goto exit;
 		}
 		
-	memset( &addr, 0, sizeof( addr ) );
-	len = sizeof( addr );
+	memset(&addr, 0, sizeof(addr));
+	len = sizeof(addr);
 	
-	if (getsockname( sock->fd, ( struct sockaddr* ) &addr, &len ) < 0 )
+	if (getsockname(sock->fd, (struct sockaddr*) &addr, &len) < 0)
 		{
-		LogMsg("getsockname - %s", strerror( errno ) );
+		LogMsg("getsockname - %s", strerror(errno));
 		err = mStatus_UnknownErr;
 		goto exit;
 		}
@@ -1965,14 +1968,14 @@ mDNSexport uDNS_TCPSocket mDNSPlatformTCPSocket( mDNS * const m, uDNS_TCPSocketF
 
 	exit:
 
-	if ( err && sock )
+	if (err && sock)
 		{
-		if ( sock->fd != -1 )
+		if (sock->fd != -1)
 			{
-			close( sock->fd );
+			close(sock->fd);
 			}
 			
-		freeL( "mDNSPlatformTCPSocket", sock );
+		freeL("mDNSPlatformTCPSocket", sock);
 		
 		sock = NULL;
 		}
@@ -1981,8 +1984,8 @@ mDNSexport uDNS_TCPSocket mDNSPlatformTCPSocket( mDNS * const m, uDNS_TCPSocketF
 	}
 
 
-mDNSexport mStatus mDNSPlatformTCPConnect( uDNS_TCPSocket sock, const mDNSAddr * dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
-                                      TCPConnectionCallback callback, void * context )
+mDNSexport mStatus mDNSPlatformTCPConnect(uDNS_TCPSocket sock, const mDNSAddr * dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
+                                      TCPConnectionCallback callback, void * context)
 	{
 	struct sockaddr_in	saddr;
 	mStatus				err = mStatus_NoError;
@@ -2032,7 +2035,7 @@ mDNSexport mStatus mDNSPlatformTCPConnect( uDNS_TCPSocket sock, const mDNSAddr *
 
 	// Set non-blocking
 
-	if (fcntl( sock->fd, F_SETFL, O_NONBLOCK) < 0)
+	if (fcntl(sock->fd, F_SETFL, O_NONBLOCK) < 0)
 		{
 		LogMsg("ERROR: setsockopt O_NONBLOCK - %s", strerror(errno));
 		return mStatus_UnknownErr;
@@ -2040,7 +2043,7 @@ mDNSexport mStatus mDNSPlatformTCPConnect( uDNS_TCPSocket sock, const mDNSAddr *
 	
 	// initiate connection wth peer
 
-	if (connect( sock->fd, (struct sockaddr *)&saddr, sizeof(saddr)) < 0)
+	if (connect(sock->fd, (struct sockaddr *)&saddr, sizeof(saddr)) < 0)
 		{
 		if (errno == EINPROGRESS)
 			{
@@ -2056,27 +2059,27 @@ mDNSexport mStatus mDNSPlatformTCPConnect( uDNS_TCPSocket sock, const mDNSAddr *
 	
 	if (err == mStatus_ConnEstablished)  // manually invoke callback if connection completes
 		{
-		if ( sock->flags & kTCPSocketFlags_UseTLS )
+		if (sock->flags & kTCPSocketFlags_UseTLS)
 			{
 #ifndef NO_SECURITYFRAMEWORK
 			mStatus tlsErr;
 
-			tlsErr = tlsSetupSock( sock, mDNSfalse );
+			tlsErr = tlsSetupSock(sock, mDNSfalse);
 
-			if ( tlsErr )
+			if (tlsErr)
 				{
-				LogMsg( "ERROR: mDNSPlatformTCPConnect: tlsSetupSock failed with error code: %d", err );
+				LogMsg("ERROR: mDNSPlatformTCPConnect: tlsSetupSock failed with error code: %d", err);
 				err = tlsErr;
 				goto exit;
 				}
 
-			tlsErr = SSLHandshake( sock->tlsContext );
+			tlsErr = SSLHandshake(sock->tlsContext);
 			
 			sock->handshake = mDNStrue;
 			
-			if ( tlsErr )
+			if (tlsErr)
 				{
-				LogMsg( "ERROR: mDNSPlatformTCPConnect: SSLHandshake failed with error code: %d", err );
+				LogMsg("ERROR: mDNSPlatformTCPConnect: SSLHandshake failed with error code: %d", err);
 				err = tlsErr;
 				goto exit;
 				}
@@ -2093,70 +2096,70 @@ mDNSexport mStatus mDNSPlatformTCPConnect( uDNS_TCPSocket sock, const mDNSAddr *
 	}
 
 
-mDNSexport mDNSBool mDNSPlatformTCPIsConnected( uDNS_TCPSocket sock )
+mDNSexport mDNSBool mDNSPlatformTCPIsConnected(uDNS_TCPSocket sock)
 	{
 	return sock->connected;
 	}
 
 
-mDNSexport uDNS_TCPSocket mDNSPlatformTCPAccept( uDNS_TCPSocketFlags flags, int fd )
+mDNSexport uDNS_TCPSocket mDNSPlatformTCPAccept(uDNS_TCPSocketFlags flags, int fd)
 	{
 	struct uDNS_TCPSocket_struct	*	sock;
 	mStatus							err = mStatus_NoError;
 
-	sock = mallocL( "mDNSPlatformTCPAccept", sizeof( struct uDNS_TCPSocket_struct ) );
+	sock = mallocL("mDNSPlatformTCPAccept", sizeof(struct uDNS_TCPSocket_struct));
 	
-	if ( !sock )
+	if (!sock)
 		{
 		err = mStatus_NoMemoryErr;
 		goto exit;
 		}
 
-	memset( sock, 0, sizeof( *sock ) );
+	memset(sock, 0, sizeof(*sock));
 
 	sock->fd = fd;
 	sock->flags = flags;
 
-	if ( flags & kTCPSocketFlags_UseTLS )
+	if (flags & kTCPSocketFlags_UseTLS)
 		{
 #ifndef NO_SECURITYFRAMEWORK
-		if ( !ServerCerts )
+		if (!ServerCerts)
 			{
-			LogMsg( "ERROR: mDNSPlatformTCPAccept: unable to find TLS certificates" );
+			LogMsg("ERROR: mDNSPlatformTCPAccept: unable to find TLS certificates");
 			err = mStatus_UnknownErr;
 			goto exit;
 			}
 
-		err = tlsSetupSock( sock, mDNStrue );
+		err = tlsSetupSock(sock, mDNStrue);
 
-		if ( err )
+		if (err)
 			{
-			LogMsg( "ERROR: mDNSPlatformTCPAccept: tlsSetupSock failed with error code: %d", err );
+			LogMsg("ERROR: mDNSPlatformTCPAccept: tlsSetupSock failed with error code: %d", err);
 			goto exit;
 			}
 
-		err = SSLSetCertificate( sock->tlsContext, ServerCerts );
+		err = SSLSetCertificate(sock->tlsContext, ServerCerts);
 
-		if ( err )
+		if (err)
 			{
-			LogMsg( "ERROR: mDNSPlatformTCPAccept: SSLSetCertificate failed with error code: %d", err );
+			LogMsg("ERROR: mDNSPlatformTCPAccept: SSLSetCertificate failed with error code: %d", err);
 			goto exit;
 			}
 			
-		check( !sock->handshake );
+		check(!sock->handshake);
 #else
 		err = mStatus_UnsupportedErr;
 #endif /* NO_SECURITYFRAMEWORK */
 		}
 	exit:
 
-	if ( err && sock )
+	if (err && sock)
 	{
-		freeL( "mDNSPlatformTCPAccept", sock );
+		freeL("mDNSPlatformTCPAccept", sock);
 		sock = NULL;
 	}
 
-	return ( uDNS_TCPSocket ) sock;
+	return (uDNS_TCPSocket) sock;
 	}
 
 
@@ -2165,43 +2168,43 @@ mDNSexport void mDNSPlatformTCPCloseConnection(uDNS_TCPSocket sock)
 	if (sock)
 		{
 #ifndef NO_SECURITYFRAMEWORK
-		if ( sock->tlsContext )
+		if (sock->tlsContext)
 			{
-			SSLClose( sock->tlsContext );
-			SSLDisposeContext( sock->tlsContext );
+			SSLClose(sock->tlsContext);
+			SSLDisposeContext(sock->tlsContext);
 			sock->tlsContext = NULL;
 			}
 #endif /* NO_SECURITYFRAMEWORK */
-		if ( sock->fd != -1 )
+		if (sock->fd != -1)
 			{
-			shutdown( sock->fd, 2 );
-			close( sock->fd );
+			shutdown(sock->fd, 2);
+			close(sock->fd);
 			sock->fd = -1;
 			}
 
-		freeL( "mDNSPlatformTCPCloseConnection", sock );
+		freeL("mDNSPlatformTCPCloseConnection", sock);
 		}
 	}
 
 
-mDNSexport int mDNSPlatformReadTCP( uDNS_TCPSocket sock, void * buf, int buflen, mDNSBool * closed)
+mDNSexport long mDNSPlatformReadTCP(uDNS_TCPSocket sock, void * buf, unsigned long buflen, mDNSBool * closed)
 	{
 	int nread;
 
 	*closed = mDNSfalse;
 
-	if ( sock->flags & kTCPSocketFlags_UseTLS )
+	if (sock->flags & kTCPSocketFlags_UseTLS)
 		{
 #ifndef NO_SECURITYFRAMEWORK
-		if ( !sock->handshake )
+		if (!sock->handshake)
 			{
 			mStatus err;
 
-			err = SSLHandshake( sock->tlsContext );
+			err = SSLHandshake(sock->tlsContext);
 
-			if ( err )
+			if (err)
 				{
-				LogMsg( "ERROR: mDNSPlatformReadTCP: SSLHandshake failed with error code: %d", err );
+				LogMsg("ERROR: mDNSPlatformReadTCP: SSLHandshake failed with error code: %d", err);
 				}
 				
 			sock->handshake = mDNStrue;
@@ -2212,29 +2215,29 @@ mDNSexport int mDNSPlatformReadTCP( uDNS_TCPSocket sock, void * buf, int buflen,
 			size_t	processed;
 			mStatus	err;
 
-			err = SSLRead( sock->tlsContext, buf, buflen, &processed );
+			err = SSLRead(sock->tlsContext, buf, buflen, &processed);
 
-			if ( !err )
+			if (!err)
 				{
-				nread = ( int ) processed;
+				nread = (int) processed;
 				
-				if ( !nread )
+				if (!nread)
 					{
 					*closed = mDNStrue;
 					}
 				}
-			else if ( err == errSSLClosedGraceful )
+			else if (err == errSSLClosedGraceful)
 				{
 				nread = 0;
 				*closed = mDNStrue;
 				}
-			else if ( err == errSSLWouldBlock )
+			else if (err == errSSLWouldBlock)
 				{
 				nread = 0;
 				}
 			else
 				{
-				LogMsg("ERROR: mDNSPlatformReadTCP - SSLRead: %d", err );
+				LogMsg("ERROR: mDNSPlatformReadTCP - SSLRead: %d", err);
 				nread = -1;
 				*closed = mDNStrue;
 				}
@@ -2246,11 +2249,11 @@ mDNSexport int mDNSPlatformReadTCP( uDNS_TCPSocket sock, void * buf, int buflen,
 		}
 	else
 		{
-		nread = recv( sock->fd, buf, buflen, 0);
+		nread = recv(sock->fd, buf, buflen, 0);
 
-		if ( nread < 0 )
+		if (nread < 0)
 			{
-			if ( errno == EAGAIN )
+			if (errno == EAGAIN)
 				{
 				nread = 0;  // no data available (call would block)
 				}
@@ -2260,7 +2263,7 @@ mDNSexport int mDNSPlatformReadTCP( uDNS_TCPSocket sock, void * buf, int buflen,
 				nread = -1;
 				}
 			}
-		else if ( !nread )
+		else if (!nread)
 			{
 			*closed = mDNStrue;
 			}
@@ -2270,29 +2273,29 @@ mDNSexport int mDNSPlatformReadTCP( uDNS_TCPSocket sock, void * buf, int buflen,
 	}
 
 
-mDNSexport int mDNSPlatformWriteTCP( uDNS_TCPSocket sock, const char * msg, int len)
+mDNSexport long mDNSPlatformWriteTCP(uDNS_TCPSocket sock, const char * msg, unsigned long len)
 	{
 	int nsent;
 
-	if ( sock->flags & kTCPSocketFlags_UseTLS )
+	if (sock->flags & kTCPSocketFlags_UseTLS)
 		{
 #ifndef NO_SECURITYFRAMEWORK
 		size_t	processed;
 		mStatus	err;
 
-		err = SSLWrite( sock->tlsContext, msg, len, &processed );
+		err = SSLWrite(sock->tlsContext, msg, len, &processed);
 
-		if ( !err )
+		if (!err)
 			{
-			nsent = ( int ) processed;
+			nsent = (int) processed;
 			}
-		else if ( err == errSSLWouldBlock )
+		else if (err == errSSLWouldBlock)
 			{
 			nsent = 0;
 			}
 		else
 			{
-			LogMsg("ERROR: mDNSPlatformWriteTCP - SSLWrite returned %d", err );
+			LogMsg("ERROR: mDNSPlatformWriteTCP - SSLWrite returned %d", err);
 			nsent = -1;
 			}
 #else
@@ -2301,9 +2304,9 @@ mDNSexport int mDNSPlatformWriteTCP( uDNS_TCPSocket sock, const char * msg, int 
 		}
 	else
 		{
-		nsent = send( sock->fd, msg, len, 0);
+		nsent = send(sock->fd, msg, len, 0);
 
-		if ( nsent < 0 )
+		if (nsent < 0)
 			{
 			if (errno == EAGAIN)
 				{
@@ -2321,13 +2324,13 @@ mDNSexport int mDNSPlatformWriteTCP( uDNS_TCPSocket sock, const char * msg, int 
 	}
 
 
-mDNSexport int mDNSPlatformTCPGetFlags( uDNS_TCPSocket sock )
+mDNSexport int mDNSPlatformTCPGetFlags(uDNS_TCPSocket sock)
 	{
 	return sock->flags;
 	}
 	
 	
-mDNSexport int mDNSPlatformTCPGetFD(uDNS_TCPSocket sock )
+mDNSexport int mDNSPlatformTCPGetFD(uDNS_TCPSocket sock)
 	{
 	return sock->fd;
 	}
@@ -2348,7 +2351,7 @@ mDNSlocal mStatus SetupSocket(mDNS *const m, KQSocketSet *cp, mDNSBool mcast, co
 
 	mDNSIPPort port;
 
-	if ( inPort )
+	if (inPort)
 		{
 		port = *inPort;
 		}
@@ -2386,7 +2389,7 @@ mDNSlocal mStatus SetupSocket(mDNS *const m, KQSocketSet *cp, mDNSBool mcast, co
 			{
 			struct in_addr addr = { ifaddr->ip.v4.NotAnInteger };
 			struct ip_mreq imr;
-			imr.imr_multiaddr.s_addr = AllDNSLinkGroupv4.NotAnInteger;
+			imr.imr_multiaddr.s_addr = AllDNSLinkGroup_v4.ip.v4.NotAnInteger;
 			imr.imr_interface        = addr;
 			err = setsockopt(skt, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imr, sizeof(imr));
 			if (err < 0) { errstr = "setsockopt - IP_ADD_MEMBERSHIP"; goto fail; }
@@ -2438,7 +2441,7 @@ mDNSlocal mStatus SetupSocket(mDNS *const m, KQSocketSet *cp, mDNSBool mcast, co
 			struct ipv6_mreq i6mr;
 			//LogOperation("SetupSocket: v6 %#a %s %d", ifaddr, cp->info->ifa_name, interface_id);
 			i6mr.ipv6mr_interface = interface_id;
-			i6mr.ipv6mr_multiaddr = *(struct in6_addr*)&AllDNSLinkGroupv6;
+			i6mr.ipv6mr_multiaddr = *(struct in6_addr*)&AllDNSLinkGroup_v6.ip.v6;
 			err = setsockopt(skt, IPPROTO_IPV6, IPV6_JOIN_GROUP, &i6mr, sizeof(i6mr));
 			if (err < 0) { errstr = "setsockopt - IPV6_JOIN_GROUP"; goto fail; }
 			
@@ -2500,43 +2503,43 @@ mDNSlocal mStatus SetupSocket(mDNS *const m, KQSocketSet *cp, mDNSBool mcast, co
 	return(err);
 	}
 
-mDNSexport uDNS_UDPSocket mDNSPlatformUDPSocket( mDNS * const m, mDNSIPPort port )
+mDNSexport uDNS_UDPSocket mDNSPlatformUDPSocket(mDNS * const m, mDNSIPPort port)
 	{
 	KQSocketSet * ss = mDNSNULL;
 	mStatus err = 0;
 
-	ss = mallocL( "mDNSPlatformUDPSocket", sizeof( KQSocketSet ) );
+	ss = mallocL("mDNSPlatformUDPSocket", sizeof(KQSocketSet));
 
-	if ( !ss )
+	if (!ss)
 		{
-		LogMsg( "mDNSPlatformUDPSocket: memory exhausted" );
+		LogMsg("mDNSPlatformUDPSocket: memory exhausted");
 		err = mStatus_NoMemoryErr;
 		goto exit;
 		}
 
-	memset( ss, 0, sizeof( KQSocketSet ) );
+	memset(ss, 0, sizeof(KQSocketSet));
 
 	ss->m     = m;
 	ss->sktv4 = -1;
 	ss->sktv6 = -1;
 
-	err = SetupSocket( m, ss, mDNSfalse, &zeroAddr, &port, AF_INET );
+	err = SetupSocket(m, ss, mDNSfalse, &zeroAddr, &port, AF_INET);
 
-	if ( err )
+	if (err)
 		{
-		LogMsg( "mDNSPlatformUDPSocket: SetupSocket failed" );
+		LogMsg("mDNSPlatformUDPSocket: SetupSocket failed");
 		goto exit;
 		}
 
 	exit:
 
-	if ( err && ss )
+	if (err && ss)
 		{
-		freeL( "KQSocketSet", ss );
+		freeL("KQSocketSet", ss);
 		ss = mDNSNULL;
 		}
 
-	return ( uDNS_UDPSocket ) ss;
+	return (uDNS_UDPSocket) ss;
 	}
 	
 	
@@ -2554,10 +2557,10 @@ mDNSlocal void CloseSocketSet(KQSocketSet *ss)
 		}
 	}
 
-mDNSexport void mDNSPlatformUDPClose( uDNS_UDPSocket sock )
+mDNSexport void mDNSPlatformUDPClose(uDNS_UDPSocket sock)
 	{
-	CloseSocketSet( ( KQSocketSet* ) sock );
-	freeL( "uDNS_UDPSocket", ( KQSocketSet* ) sock );
+	CloseSocketSet((KQSocketSet*) sock);
+	freeL("uDNS_UDPSocket", (KQSocketSet*) sock);
 	}
 		
 
@@ -2577,87 +2580,87 @@ mDNSlocal CFArrayRef GetCertChain
     CSSM_TP_APPLE_EVIDENCE_INFO	*	statusChain		= NULL;
 	OSStatus						err				= 0;
 
-	if ( !identity )
+	if (!identity)
 		{
-		LogMsg( "getCertChain: identity is NULL" );
+		LogMsg("getCertChain: identity is NULL");
 		goto exit;
 		}
 
-	err = SecIdentityCopyCertificate( identity, &cert );
+	err = SecIdentityCopyCertificate(identity, &cert);
 
-	if ( err )
+	if (err)
 		{
-		LogMsg("getCertChain: SecIdentityCopyCertificate() returned %d", ( int ) err );
+		LogMsg("getCertChain: SecIdentityCopyCertificate() returned %d", (int) err);
 		goto exit;
 		}
 
     err = SecPolicySearchCreate(CSSM_CERT_X_509v3, &CSSMOID_APPLE_X509_BASIC, NULL, &searchRef);
 
-    if ( err )
+    if (err)
 		{
-		LogMsg("getCertChain: SecPolicySearchCreate() returned %d", ( int ) err );
+		LogMsg("getCertChain: SecPolicySearchCreate() returned %d", (int) err);
 		goto exit;
 		}
 
-    err = SecPolicySearchCopyNext( searchRef, &policy );
+    err = SecPolicySearchCopyNext(searchRef, &policy);
 
-	if ( err )
+	if (err)
 		{
-		LogMsg("getCertChain: SecPolicySearchCopyNext() returned %d", ( int ) err );
+		LogMsg("getCertChain: SecPolicySearchCopyNext() returned %d", (int) err);
 		goto exit;
 		}
 
-	wrappedCert = CFArrayCreate( NULL, ( const void** ) &cert, 1, &kCFTypeArrayCallBacks );
+	wrappedCert = CFArrayCreate(NULL, (const void**) &cert, 1, &kCFTypeArrayCallBacks);
 
-	if ( !wrappedCert )
+	if (!wrappedCert)
 		{
-		LogMsg( "getCertChain: wrappedCert is NULL" );
+		LogMsg("getCertChain: wrappedCert is NULL");
 		goto exit;
 		}
 
-	err = SecTrustCreateWithCertificates( wrappedCert, policy, &trust );
+	err = SecTrustCreateWithCertificates(wrappedCert, policy, &trust);
 	
-	if ( err )
+	if (err)
 		{
-		LogMsg("getCertChain: SecTrustCreateWithCertificates() returned %d", ( int ) err );
+		LogMsg("getCertChain: SecTrustCreateWithCertificates() returned %d", (int) err);
 		goto exit;
 		}
 
-	err = SecTrustEvaluate( trust, NULL );
+	err = SecTrustEvaluate(trust, NULL);
 
-	if ( err )
+	if (err)
 		{
-		LogMsg("getCertChain: SecTrustEvaluate() returned %d", ( int ) err );
+		LogMsg("getCertChain: SecTrustEvaluate() returned %d", (int) err);
 		goto exit;
 		}
 
-	err = SecTrustGetResult( trust, NULL, &rawCertChain, &statusChain );
+	err = SecTrustGetResult(trust, NULL, &rawCertChain, &statusChain);
 
-	if ( err )
+	if (err)
 		{
-		LogMsg("getCertChain: SecTrustGetResult() returned %d", ( int ) err );
+		LogMsg("getCertChain: SecTrustGetResult() returned %d", (int) err);
 		goto exit;
 		}
 
-	certChain = CFArrayCreateMutableCopy( NULL, 0, rawCertChain );
+	certChain = CFArrayCreateMutableCopy(NULL, 0, rawCertChain);
 
-	if ( !certChain )
+	if (!certChain)
 		{
-		LogMsg("getCertChain: certChain is NULL" );
+		LogMsg("getCertChain: certChain is NULL");
 		goto exit;
 		}
 
 	// Replace the SecCertificateRef at certChain[0] with a SecIdentityRef per documentation for SSLSetCertificate
 	// at http://devworld.apple.com/documentation/Security/Reference/secureTransportRef/index.html#//apple_ref/doc/uid/TP30000155
 
-	CFArraySetValueAtIndex( certChain, 0, identity );
+	CFArraySetValueAtIndex(certChain, 0, identity);
 
 	// Remove root from cert chain, but keep any and all intermediate certificates that have been signed by the root
 	// certificate
 
-    if ( CFArrayGetCount( certChain ) > 1 )
+    if (CFArrayGetCount(certChain) > 1)
 		{
-		CFArrayRemoveValueAtIndex( certChain, CFArrayGetCount( certChain ) - 1 );
+		CFArrayRemoveValueAtIndex(certChain, CFArrayGetCount(certChain) - 1);
 		}
 
 	exit:
@@ -2682,12 +2685,12 @@ mDNSlocal CFArrayRef GetCertChain
 		CFRelease(trust);
 		}
 
-	if ( rawCertChain )
+	if (rawCertChain)
 		{
-		CFRelease( rawCertChain );
+		CFRelease(rawCertChain);
 		}
 
-    if ( certChain && err )
+    if (certChain && err)
     	{
 		CFRelease(certChain);
 		certChain = NULL;
@@ -2707,47 +2710,47 @@ mDNSexport mStatus mDNSPlatformTLSSetupCerts(void)
 	
 	// Pick a keychain
 
-	err = SecKeychainOpen( SYSTEM_KEYCHAIN_PATH, &ServerKC );
+	err = SecKeychainOpen(SYSTEM_KEYCHAIN_PATH, &ServerKC);
 
-	if ( err )
+	if (err)
 		{
-		LogMsg("ERROR: mDNSPlatformTLSSetupCerts: SecKeychainOpen returned %d", (int) err );
+		LogMsg("ERROR: mDNSPlatformTLSSetupCerts: SecKeychainOpen returned %d", (int) err);
 		goto exit;
 		}
 
 	// search for "any" identity matching specified key use
 	// In this app, we expect there to be exactly one
 	 
-	err = SecIdentitySearchCreate( ServerKC, CSSM_KEYUSE_DECRYPT, &srchRef );
+	err = SecIdentitySearchCreate(ServerKC, CSSM_KEYUSE_DECRYPT, &srchRef);
 
-	if ( err )
+	if (err)
 		{
-		LogMsg("ERROR: mDNSPlatformTLSSetupCerts: SecIdentitySearchCreate returned %d", (int) err );
+		LogMsg("ERROR: mDNSPlatformTLSSetupCerts: SecIdentitySearchCreate returned %d", (int) err);
 		goto exit;
 		}
 
 	err = SecIdentitySearchCopyNext(srchRef, &identity);
 
-	if ( err )
+	if (err)
 		{
-		LogMsg("ERROR: mDNSPlatformTLSSetupCerts: SecIdentitySearchCopyNext returned %d", (int) err );
+		LogMsg("ERROR: mDNSPlatformTLSSetupCerts: SecIdentitySearchCopyNext returned %d", (int) err);
 		goto exit;
 		}
 
-	if ( CFGetTypeID(identity) != SecIdentityGetTypeID() )
+	if (CFGetTypeID(identity) != SecIdentityGetTypeID())
 		{
-		LogMsg("ERROR: mDNSPlatformTLSSetupCerts: SecIdentitySearchCopyNext CFTypeID failure" );
+		LogMsg("ERROR: mDNSPlatformTLSSetupCerts: SecIdentitySearchCopyNext CFTypeID failure");
 		err = mStatus_UnknownErr;
 		goto exit;
 		}
 
 	// Found one. Call getCertChain to create the correct certificate chain.
 
-	ServerCerts = GetCertChain( identity );
+	ServerCerts = GetCertChain(identity);
 
-	if ( ServerCerts == nil )
+	if (ServerCerts == nil)
 		{
-		LogMsg("ERROR: mDNSPlatformTLSSetupCerts: getCertChain error" );
+		LogMsg("ERROR: mDNSPlatformTLSSetupCerts: getCertChain error");
 		err = mStatus_UnknownErr;
 		goto exit;
 		}
@@ -2764,15 +2767,15 @@ mDNSexport mStatus mDNSPlatformTLSSetupCerts(void)
 mDNSexport  void  mDNSPlatformTLSTearDownCerts(void)
 	{
 #ifndef NO_SECURITYFRAMEWORK
-	if ( ServerCerts )
+	if (ServerCerts)
 		{
-		CFRelease( ServerCerts );
+		CFRelease(ServerCerts);
 		ServerCerts = NULL;
 		}
 
-	if ( ServerKC )
+	if (ServerKC)
 		{
-		CFRelease( ServerKC );
+		CFRelease(ServerKC);
 		ServerKC = NULL;
 		}
 #endif /* NO_SECURITYFRAMEWORK */
@@ -3395,17 +3398,17 @@ mDNSexport IPAddrListElem * mDNSPlatformGetDNSServers()
 	mStatus				err		= 0;
 
 	store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:DynDNSConfigChanged"), NULL, NULL);
-	require_action( store, exit, err = mStatus_UnknownErr );
+	require_action(store, exit, err = mStatus_UnknownErr);
 	
 	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
-	require_action( key, exit, err = mStatus_UnknownErr );
+	require_action(key, exit, err = mStatus_UnknownErr);
 
 	dict = SCDynamicStoreCopyValue(store, key);
-	require_action( dict, exit, err = mStatus_UnknownErr );
+	require_action(dict, exit, err = mStatus_UnknownErr);
 
 	values = CFDictionaryGetValue(dict, kSCPropNetDNSServerAddresses);
 
-	if ( values )
+	if (values)
 		{
 		for (i = 0; i < CFArrayGetCount(values); i++)
 			{
@@ -3413,11 +3416,11 @@ mDNSexport IPAddrListElem * mDNSPlatformGetDNSServers()
 			IPAddrListElem	*	last = current;
 
 			s = CFArrayGetValueAtIndex(values, i);
-			require_action( s, exit, err = mStatus_UnknownErr );
+			require_action(s, exit, err = mStatus_UnknownErr);
 			
 			ok = CFStringGetCString(s, buf, 256, kCFStringEncodingUTF8);
 
-			if ( !ok )
+			if (!ok)
 				{
 				LogMsg("ERROR: mDNSPlatformGetDNSServers - CFStringGetCString");
 				continue;
@@ -3425,29 +3428,29 @@ mDNSexport IPAddrListElem * mDNSPlatformGetDNSServers()
 
 			ok = inet_aton(buf, (struct in_addr *) addr.ip.v4.b);
 			
-			if ( !ok )
+			if (!ok)
 				{
 				LogMsg("ERROR: mDNSPlatformGetDNSServers - invalid address string %s", buf);
 				continue;
 				}
 				
-			current = ( IPAddrListElem* ) mallocL( "IPAddrListElem", sizeof( IPAddrListElem ) );
+			current = (IPAddrListElem*) mallocL("IPAddrListElem", sizeof(IPAddrListElem));
 		
-			if ( !current )
+			if (!current)
 				{
-				LogMsg("ERROR: mDNSPlatformGetDNSServers - couldn't allocate memory" );
+				LogMsg("ERROR: mDNSPlatformGetDNSServers - couldn't allocate memory");
 				continue;
 				}
 				
-			memset( current, 0, sizeof( IPAddrListElem ) );
-			memcpy( &current->addr, &addr, sizeof( mDNSAddr ) );
+			memset(current, 0, sizeof(IPAddrListElem));
+			memcpy(&current->addr, &addr, sizeof(mDNSAddr));
 
-			if ( !head )
+			if (!head)
 				{
 				head = current;
 				}
 				
-			if ( last )
+			if (last)
 				{
 				last->next = current;
 				}
@@ -3456,19 +3459,19 @@ mDNSexport IPAddrListElem * mDNSPlatformGetDNSServers()
 
 	exit:
 
-	if ( dict )
+	if (dict)
 		{
-		CFRelease( dict );
+		CFRelease(dict);
 		}
 		
-	if ( key )
+	if (key)
 		{
-		CFRelease( key );
+		CFRelease(key);
 		}
 		
-	if ( store )
+	if (store)
 		{
-		CFRelease( store );
+		CFRelease(store);
 		}
 
 	return head;
@@ -3497,7 +3500,7 @@ mDNSexport DNameListElem * mDNSPlatformGetSearchDomainList(void)
 		dns_resolver_t * resolv;
 		int              i;
 
-		config = ( dns_config_t* ) v;
+		config = (dns_config_t*) v;
 
 		if (!config->n_resolver)
 			{
@@ -3506,28 +3509,28 @@ mDNSexport DNameListElem * mDNSPlatformGetSearchDomainList(void)
 			}
 
 		resolv = config->resolver[0];  // use the first slot for search domains
-		require_action( resolv, exit, err = mStatus_UnknownErr );
+		require_action(resolv, exit, err = mStatus_UnknownErr);
 
 		for (i = 0; i < resolv->n_search; i++)
 			{
 			DNameListElem * last = current;
 			
-			current = ( DNameListElem* ) mallocL( "DNameListElem", sizeof( DNameListElem ) );
-			require_action( current, exit, dns_configuration_free(config); err = mStatus_NoMemoryErr );
-			memset( current, 0, sizeof( DNameListElem ) );
+			current = (DNameListElem*) mallocL("DNameListElem", sizeof(DNameListElem));
+			require_action(current, exit, dns_configuration_free(config); err = mStatus_NoMemoryErr);
+			memset(current, 0, sizeof(DNameListElem));
 			
-			if ( !MakeDomainNameFromDNSNameString( &current->name, resolv->search[i] ) )
+			if (!MakeDomainNameFromDNSNameString(&current->name, resolv->search[i]))
 				{
 				LogMsg("ERROR: mDNSPlatformGetSearchDomainList - MakeDomainNameFromDNSNameString");
 				continue;
 				}
 
-			if ( !head )
+			if (!head)
 				{
 				head = current;
 				}
 				
-			if ( last )
+			if (last)
 				{
 				last->next = current;
 				}
@@ -3537,16 +3540,16 @@ mDNSexport DNameListElem * mDNSPlatformGetSearchDomainList(void)
 		}
 #endif
 	
-	if ( err == mStatus_UnsupportedErr )
+	if (err == mStatus_UnsupportedErr)
 		{
 		store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:DynDNSConfigChanged"), NULL, NULL);
-		require_action( store, exit, err = mStatus_UnknownErr );
+		require_action(store, exit, err = mStatus_UnknownErr);
 	
 		key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
-		require_action( key, exit, err = mStatus_UnknownErr );
+		require_action(key, exit, err = mStatus_UnknownErr);
 
 		dict = SCDynamicStoreCopyValue(store, key);
-		require_action( dict, exit, err = mStatus_UnknownErr );
+		require_action(dict, exit, err = mStatus_UnknownErr);
 		
 		searchDomains = CFDictionaryGetValue(dict, kSCPropNetDNSSearchDomains);
 			
@@ -3560,30 +3563,30 @@ mDNSexport DNameListElem * mDNSPlatformGetSearchDomainList(void)
 				CFStringRef		s;
 
 				s = CFArrayGetValueAtIndex(searchDomains, i);
-				require_action( s, exit, err = mStatus_UnknownErr );
+				require_action(s, exit, err = mStatus_UnknownErr);
 
-				if ( !CFStringGetCString(s, buf, MAX_ESCAPED_DOMAIN_NAME, kCFStringEncodingUTF8) )
+				if (!CFStringGetCString(s, buf, MAX_ESCAPED_DOMAIN_NAME, kCFStringEncodingUTF8))
 					{
 					LogMsg("ERROR: mDNSPlatformGetSearchDomainList - CFStringGetCString");
 					continue;
 					}
 
-				current = ( DNameListElem* ) mallocL( "DNameListElem", sizeof( DNameListElem ) );
-				require_action( current, exit, err = mStatus_NoMemoryErr );
-				memset( current, 0, sizeof( DNameListElem ) );
+				current = (DNameListElem*) mallocL("DNameListElem", sizeof(DNameListElem));
+				require_action(current, exit, err = mStatus_NoMemoryErr);
+				memset(current, 0, sizeof(DNameListElem));
 			
-				if ( !MakeDomainNameFromDNSNameString( &current->name, buf ) )
+				if (!MakeDomainNameFromDNSNameString(&current->name, buf))
 					{
 					LogMsg("ERROR: mDNSPlatformGetSearchDomainList - MakeDomainNameFromDNSNameString");
 					continue;
 					}
 
-				if ( !head )
+				if (!head)
 					{
 					head = current;
 					}
 				
-				if ( last )
+				if (last)
 					{
 					last->next = current;
 					}
@@ -3593,22 +3596,22 @@ mDNSexport DNameListElem * mDNSPlatformGetSearchDomainList(void)
 		
 	exit:
 
-	if ( dict )
+	if (dict)
 		{
-		CFRelease( dict );
+		CFRelease(dict);
 		}
 		
-	if ( key )
+	if (key)
 		{
-		CFRelease( key );
+		CFRelease(key);
 		}
 		
-	if ( store )
+	if (store)
 		{
-		CFRelease( store );
+		CFRelease(store);
 		}
 
-	if ( err && head )
+	if (err && head)
 		{
 		}
 
@@ -3638,39 +3641,39 @@ mDNSexport DNameListElem * mDNSPlatformGetFQDN(void)
 		dns_config_t   * config = NULL;
 		dns_resolver_t * resolv = NULL;
 		
-		config = ( dns_config_t* ) v;
+		config = (dns_config_t*) v;
 		
-		require_action( config->n_resolver, exit, dns_configuration_free(config); err = mStatus_UnknownErr );
+		require_action(config->n_resolver, exit, dns_configuration_free(config); err = mStatus_UnknownErr);
 			
 		resolv = config->resolver[0];  // use the first slot for search domains
-		require_action( resolv, exit, dns_configuration_free(config); err = mStatus_UnknownErr );
+		require_action(resolv, exit, dns_configuration_free(config); err = mStatus_UnknownErr);
 
 		if (resolv->domain)
 			{
-			ptr = MakeDomainNameFromDNSNameString( &dname, resolv->domain );
-			require_action( ptr, exit, dns_configuration_free(config); err = mStatus_UnknownErr );
+			ptr = MakeDomainNameFromDNSNameString(&dname, resolv->domain);
+			require_action(ptr, exit, dns_configuration_free(config); err = mStatus_UnknownErr);
 
-			head = ( DNameListElem* ) mallocL( "DNameListElem", sizeof( DNameListElem ) );
-			require_action( head, exit, dns_configuration_free(config); err = mStatus_NoMemoryErr );
-			memset( head, 0, sizeof( DNameListElem ) );
+			head = (DNameListElem*) mallocL("DNameListElem", sizeof(DNameListElem));
+			require_action(head, exit, dns_configuration_free(config); err = mStatus_NoMemoryErr);
+			memset(head, 0, sizeof(DNameListElem));
 			
-			AssignDomainName( &head->name, &dname );
+			AssignDomainName(&head->name, &dname);
 			}
 			
 		dns_configuration_free(config);
 		}
 #endif
 
-	if ( err == mStatus_UnsupportedErr )
+	if (err == mStatus_UnsupportedErr)
 		{
 		store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:DynDNSConfigChanged"), NULL, NULL);
-		require_action( store, exit, err = mStatus_UnknownErr );
+		require_action(store, exit, err = mStatus_UnknownErr);
 	
 		key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
-		require_action( key, exit, err = mStatus_UnknownErr );
+		require_action(key, exit, err = mStatus_UnknownErr);
 
 		dict = SCDynamicStoreCopyValue(store, key);
-		require_action( dict, exit, err = mStatus_UnknownErr );
+		require_action(dict, exit, err = mStatus_UnknownErr);
 		
 		// get DHCP domain field
 		
@@ -3679,44 +3682,44 @@ mDNSexport DNameListElem * mDNSPlatformGetFQDN(void)
 		if (string)
 			{
 			ok = CFStringGetCString(string, buf, MAX_ESCAPED_DOMAIN_NAME, kCFStringEncodingUTF8);
-			require_action( ok, exit, err = mStatus_UnknownErr );
+			require_action(ok, exit, err = mStatus_UnknownErr);
 
-			ptr = MakeDomainNameFromDNSNameString( &dname, buf );
-			require_action( ptr, exit, err = mStatus_UnknownErr );
+			ptr = MakeDomainNameFromDNSNameString(&dname, buf);
+			require_action(ptr, exit, err = mStatus_UnknownErr);
 				
-			head = ( DNameListElem* ) mallocL( "DNameListElem", sizeof( DNameListElem ) );
-			require_action( head, exit, err = mStatus_NoMemoryErr );
-			memset( head, 0, sizeof( DNameListElem ) );
+			head = (DNameListElem*) mallocL("DNameListElem", sizeof(DNameListElem));
+			require_action(head, exit, err = mStatus_NoMemoryErr);
+			memset(head, 0, sizeof(DNameListElem));
 			
-			AssignDomainName( &head->name, &dname );
+			AssignDomainName(&head->name, &dname);
 			}
 		}
 		
 	exit:
 
-	if ( dict )
+	if (dict)
 		{
-		CFRelease( dict );
+		CFRelease(dict);
 		}
 		
-	if ( key )
+	if (key)
 		{
-		CFRelease( key );
+		CFRelease(key);
 		}
 		
-	if ( store )
+	if (store)
 		{
-		CFRelease( store );
+		CFRelease(store);
 		}
 
-	if ( err && head )
+	if (err && head)
 		{
 		}
 
 	return head;
 	}
 	
-mDNSexport mStatus mDNSPlatformGetPrimaryInterface( mDNS * const m, mDNSAddr * v4, mDNSAddr * v6, mDNSAddr * r )
+mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS * const m, mDNSAddr * v4, mDNSAddr * v6, mDNSAddr * r)
 	{
 	SCDynamicStoreRef	store	= NULL;
 	CFDictionaryRef		dict	= NULL;
@@ -3730,13 +3733,13 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface( mDNS * const m, mDNSAddr * v
 	// get IPv4 settings
 	
 	store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:DynDNSConfigChanged"), NULL, NULL);
-	require_action( store, exit, err = mStatus_UnknownErr );
+	require_action(store, exit, err = mStatus_UnknownErr);
 
 	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL,kSCDynamicStoreDomainState, kSCEntNetIPv4);
-	require_action( key, exit, err = mStatus_UnknownErr );
+	require_action(key, exit, err = mStatus_UnknownErr);
 
 	dict = SCDynamicStoreCopyValue(store, key);
-	require_action( dict, exit, err = mStatus_UnknownErr );
+	require_action(dict, exit, err = mStatus_UnknownErr);
 	
 	// handle router changes
 
@@ -3820,10 +3823,10 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface( mDNS * const m, mDNSAddr * v
 		// V4 to communicate w/ our DNS server
 
 #ifdef _LEGACY_NAT_TRAVERSAL_
-		if ( ( v4->ip.v4.b[0] != 169 || v4->ip.v4.b[1] != 254)							&&
-			 ( v4->ip.v4.NotAnInteger != m->AdvertisedV4.ip.v4.NotAnInteger	||
+		if ((v4->ip.v4.b[0] != 169 || v4->ip.v4.b[1] != 254)							&&
+			 (v4->ip.v4.NotAnInteger != m->AdvertisedV4.ip.v4.NotAnInteger	||
 			   memcmp(v6->ip.v6.b, m->AdvertisedV6.ip.v6.b, 16)				||
-			   r->ip.v4.NotAnInteger != m->Router.ip.v4.NotAnInteger ) )
+			   r->ip.v4.NotAnInteger != m->Router.ip.v4.NotAnInteger))
 			{
 			static mDNSBool LegacyNATInitialized = mDNSfalse;
 			
@@ -3840,17 +3843,17 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface( mDNS * const m, mDNSAddr * v
 
 	exit:
 
-	if ( dict )
+	if (dict)
 		{
 		CFRelease(dict);
 		}
 		
-	if ( key )
+	if (key)
 		{
 		CFRelease(key);
 		}
 		
-	if ( store )
+	if (store)
 		{
 		CFRelease(store);
 		}
@@ -3859,7 +3862,7 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface( mDNS * const m, mDNSAddr * v
 	}
 
 
-mDNSexport DNameListElem * mDNSPlatformGetReverseMapSearchDomainList( void )
+mDNSexport DNameListElem * mDNSPlatformGetReverseMapSearchDomainList(void)
 	{
 	DNameListElem	*	head	= NULL;
 	DNameListElem	*	current	= NULL;
@@ -3894,26 +3897,26 @@ mDNSexport DNameListElem * mDNSPlatformGetReverseMapSearchDomainList( void )
 				                                             addr.ip.v4.b[1] & netmask.ip.v4.b[1],
 				                                             addr.ip.v4.b[0] & netmask.ip.v4.b[0]);
 			
-				ptr = MakeDomainNameFromDNSNameString( &dname, buffer );
+				ptr = MakeDomainNameFromDNSNameString(&dname, buffer);
 
-				if ( !ptr )
+				if (!ptr)
 					{
 					LogMsg("ERROR: mDNSPlatformGetReverseMapSearchDomainList - MakeDomainNameFromDNSNameString");
 					continue;
 					}
 
-				current = ( DNameListElem* ) mallocL( "DNameListElem", sizeof( DNameListElem ) );
-				require_action( current, exit, err = mStatus_NoMemoryErr );
-				memset( current, 0, sizeof( DNameListElem ) );
+				current = (DNameListElem*) mallocL("DNameListElem", sizeof(DNameListElem));
+				require_action(current, exit, err = mStatus_NoMemoryErr);
+				memset(current, 0, sizeof(DNameListElem));
 
-				AssignDomainName( &current->name, &dname );
+				AssignDomainName(&current->name, &dname);
 
-				if ( !head )
+				if (!head)
 					{
 					head = current;
 					}
 				
-				if ( last )
+				if (last)
 					{
 					last->next = current;
 					}
@@ -3925,7 +3928,7 @@ mDNSexport DNameListElem * mDNSPlatformGetReverseMapSearchDomainList( void )
 
 	exit:
 
-	if ( err && head )
+	if (err && head)
 		{
 		mDNS_FreeDNameList(head);
 		head = NULL;
@@ -4318,18 +4321,18 @@ mDNSlocal OSStatus StoreDomainDataFromKeychain(mDNS * const m)
 	
 	store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:StoreDomainDataFromKeychain"), NULL, NULL);
 	
-	if ( !store )
+	if (!store)
 		{
-		LogMsg( "SCDynamicStoreCreate failed" );
+		LogMsg("SCDynamicStoreCreate failed");
 		err = mStatus_UnknownErr;
 		goto exit;
 		}
 
-	err = SecKeychainOpen( SYSTEM_KEYCHAIN_PATH, &systemKeychain );
+	err = SecKeychainOpen(SYSTEM_KEYCHAIN_PATH, &systemKeychain);
 	
-	if ( err )
+	if (err)
 		{
-		LogMsg("SecKeychainOpen failed: %d", err );
+		LogMsg("SecKeychainOpen failed: %d", err);
 		goto exit;
 		}
 
@@ -4337,20 +4340,20 @@ mDNSlocal OSStatus StoreDomainDataFromKeychain(mDNS * const m)
 	
 	if (err)
 		{
-		LogMsg("SecKeychainSearchCreateFromAttributes failed: %d", err );
+		LogMsg("SecKeychainSearchCreateFromAttributes failed: %d", err);
 		goto exit;
 		}
 
 	stateArray = CFArrayCreateMutable(NULL, 0, NULL);
 
-	if ( !stateArray )
+	if (!stateArray)
 		{
-		LogMsg( "CFArrayCreateMutable failed" );
+		LogMsg("CFArrayCreateMutable failed");
 		err = notEnoughMemoryErr;
 		goto exit;
 		}
 
-	while ( 1 )
+	while (1)
 		{
 		SecKeychainItemRef itemRef = NULL;
 
@@ -4375,14 +4378,14 @@ mDNSlocal OSStatus StoreDomainDataFromKeychain(mDNS * const m)
 
 			err = SecKeychainItemCopyAttributesAndData(itemRef,  &attrInfo, NULL, &attrList, &secretlen, &secret);
 	
-			if ( err )
+			if (err)
 				{
-				LogMsg("SecKeychainItemCopyAttributesAndData failed: %d", err );
-				CFRelease( itemRef );
+				LogMsg("SecKeychainItemCopyAttributesAndData failed: %d", err);
+				CFRelease(itemRef);
 				continue;
 				}
 
-			if ( attrList )
+			if (attrList)
 				{
 				unsigned i;
 
@@ -4408,14 +4411,14 @@ mDNSlocal OSStatus StoreDomainDataFromKeychain(mDNS * const m)
 				}
 			}
 			
-		CFRelease( itemRef );
+		CFRelease(itemRef);
 		}
 
 	key = SCDynamicStoreKeyCreate(NULL, CFSTR("%@/%@/%@"), kSCDynamicStoreDomainState, kSCCompNetwork, CFSTR(kDNSServiceCompPrivateDNS));
 
-	if ( !key )
+	if (!key)
 		{
-		LogMsg("SCDynamicStoreKeyCreateNetworkGlobalEntity failed" );
+		LogMsg("SCDynamicStoreKeyCreateNetworkGlobalEntity failed");
 		err = mStatus_UnknownErr;
 		goto exit;
 		}
@@ -4424,27 +4427,27 @@ mDNSlocal OSStatus StoreDomainDataFromKeychain(mDNS * const m)
 
 exit:
 
-	if ( key )
+	if (key)
 		{
-		CFRelease( key );
+		CFRelease(key);
 		}
 
-	if ( searchRef )
+	if (searchRef)
 		{
 		CFRelease(searchRef);
 		}
 		
-	if ( systemKeychain )
+	if (systemKeychain)
 		{
 		CFRelease(systemKeychain);
 		}
 		
-	if ( stateArray )
+	if (stateArray)
 		{
 		CFRelease(stateArray);
 		}
 		
-	if ( store )
+	if (store)
 		{
 		CFRelease(store);
 		}
@@ -4461,19 +4464,19 @@ mDNSlocal OSStatus KeychainChanged(SecKeychainEvent keychainEvent, SecKeychainCa
 
 	(void) keychainEvent;
 
-	m       = ( mDNS* ) context;
-	pathLen = sizeof( path );
-	err     = SecKeychainGetPath( info->keychain, &pathLen, path );
+	m       = (mDNS*) context;
+	pathLen = sizeof(path);
+	err     = SecKeychainGetPath(info->keychain, &pathLen, path);
 
-	if ( err )
+	if (err)
 		{
-		LogMsg("SecKeychainGetPath failed: %d", err );
+		LogMsg("SecKeychainGetPath failed: %d", err);
 		goto exit;
 		}
 	
-	if ( strncmp( SYSTEM_KEYCHAIN_PATH, path, pathLen ) == 0 )
+	if (strncmp(SYSTEM_KEYCHAIN_PATH, path, pathLen) == 0)
 		{
-		StoreDomainDataFromKeychain( m );
+		StoreDomainDataFromKeychain(m);
 		}
 
 exit:
@@ -4481,7 +4484,7 @@ exit:
 	return 0;
 	}
 
-mDNSlocal mStatus WatchForKeychainChanges(mDNS * const m )
+mDNSlocal mStatus WatchForKeychainChanges(mDNS * const m)
 	{
 	return SecKeychainAddCallback(KeychainChanged, kSecAddEventMask|kSecDeleteEventMask|kSecUpdateEventMask, m);
 	}

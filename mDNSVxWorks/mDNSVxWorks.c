@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSVxWorks.c,v $
+Revision 1.32  2006/12/19 22:43:56  cheshire
+Fix compiler warnings
+
 Revision 1.31  2006/11/10 00:54:16  cheshire
 <rdar://problem/4816598> Changing case of Computer Name doesn't work
 
@@ -431,7 +434,7 @@ mDNSexport void mDNSPlatformTCPCloseConnection(int sd)
 	(void)sd;			// Unused
 	}
 
-mDNSexport int mDNSPlatformReadTCP(int sd, void *buf, int buflen)
+mDNSexport long mDNSPlatformReadTCP(int sd, void *buf, unsigned long buflen)
 	{
 	(void)sd;			// Unused
 	(void)buf;			// Unused
@@ -439,7 +442,7 @@ mDNSexport int mDNSPlatformReadTCP(int sd, void *buf, int buflen)
 	return(0);
 	}
 
-mDNSexport int mDNSPlatformWriteTCP(int sd, const char *msg, int len)
+mDNSexport long mDNSPlatformWriteTCP(int sd, const char *msg, unsigned long len)
 	{
 	(void)sd;			// Unused
 	(void)msg;			// Unused
@@ -1347,7 +1350,7 @@ mDNSlocal mStatus	SetupSocket( mDNS *const inMDNS, const mDNSAddr *inAddr, mDNSB
 			struct ip_mreq		mreqV4;
 			
 			addrV4.s_addr				= inAddr->ip.v4.NotAnInteger;
-			mreqV4.imr_multiaddr.s_addr = AllDNSLinkGroupv4.NotAnInteger;
+			mreqV4.imr_multiaddr.s_addr = AllDNSLinkGroup_v4.ip.v4.NotAnInteger;
 			mreqV4.imr_interface		= addrV4;
 			err = setsockopt( sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *) &mreqV4, sizeof( mreqV4 ) );
 			check_translated_errno( err == 0, errno_compat(), kOptionErr );
@@ -1400,7 +1403,7 @@ mDNSlocal mStatus	SetupSocket( mDNS *const inMDNS, const mDNSAddr *inAddr, mDNSB
 			
 			ifindex					= inSS->info->scopeID;
 			mreqV6.ipv6mr_interface	= ifindex;
-			mreqV6.ipv6mr_multiaddr	= *( (struct in6_addr * ) &AllDNSLinkGroupv6 );
+			mreqV6.ipv6mr_multiaddr	= *( (struct in6_addr * ) &AllDNSLinkGroup_v6.ip.v6 );
 			err = setsockopt( sock, IPPROTO_IPV6, IPV6_JOIN_GROUP, (char *) &mreqV6, sizeof( mreqV6 ) );
 			check_translated_errno( err == 0, errno_compat(), kOptionErr );
 			

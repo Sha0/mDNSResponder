@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.111  2006/12/19 22:43:56  cheshire
+Fix compiler warnings
+
 Revision 1.110  2006/09/27 00:47:40  herscher
 Fix compile error caused by changes to the tcp callback api.
 
@@ -1448,7 +1451,7 @@ void	mDNSPlatformTCPCloseConnection( uDNS_TCPSocket sock )
 //	mDNSPlatformReadTCP
 //===========================================================================================================================
 
-int	mDNSPlatformReadTCP( uDNS_TCPSocket sock, void *inBuffer, int inBufferSize, mDNSBool * closed )
+long	mDNSPlatformReadTCP( uDNS_TCPSocket sock, void *inBuffer, unsigned long inBufferSize, mDNSBool * closed )
 {
 	int	nread;
 
@@ -1477,7 +1480,7 @@ int	mDNSPlatformReadTCP( uDNS_TCPSocket sock, void *inBuffer, int inBufferSize, 
 //	mDNSPlatformWriteTCP
 //===========================================================================================================================
 
-int	mDNSPlatformWriteTCP( uDNS_TCPSocket sock, const char *inMsg, int inMsgSize )
+long	mDNSPlatformWriteTCP( uDNS_TCPSocket sock, const char *inMsg, unsigned long inMsgSize )
 {
 	int			nsent;
 	OSStatus	err;
@@ -3156,7 +3159,7 @@ mDNSlocal mStatus	SetupSocket( mDNS * const inMDNS, const struct sockaddr *inAdd
 		{
 			// Join the all-DNS multicast group so we receive Multicast DNS packets
 
-			mreqv4.imr_multiaddr.s_addr = AllDNSLinkGroupv4.NotAnInteger;
+			mreqv4.imr_multiaddr.s_addr = AllDNSLinkGroup_v4.ip.v4.NotAnInteger;
 			mreqv4.imr_interface.s_addr = ipv4.NotAnInteger;
 			err = setsockopt( sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *) &mreqv4, sizeof( mreqv4 ) );
 			check_translated_errno( err == 0, errno_compat(), kOptionErr );
@@ -3227,7 +3230,7 @@ mDNSlocal mStatus	SetupSocket( mDNS * const inMDNS, const struct sockaddr *inAdd
 		{
 			// Join the all-DNS multicast group so we receive Multicast DNS packets.
 		
-			mreqv6.ipv6mr_multiaddr = *( (struct in6_addr *) &AllDNSLinkGroupv6 );
+			mreqv6.ipv6mr_multiaddr = *( (struct in6_addr *) &AllDNSLinkGroup_v6.ip.v6 );
 			mreqv6.ipv6mr_interface = sa6p->sin6_scope_id;
 			err = setsockopt( sock, IPPROTO_IPV6, IPV6_JOIN_GROUP, (char *) &mreqv6, sizeof( mreqv6 ) );
 			check_translated_errno( err == 0, errno_compat(), kOptionErr );

@@ -21,6 +21,9 @@
 	Change History (most recent first):
 
 $Log: mDNSVxWorksIPv4Only.c,v $
+Revision 1.30  2006/12/19 22:43:56  cheshire
+Fix compiler warnings
+
 Revision 1.29  2006/08/14 23:25:18  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -587,7 +590,7 @@ mDNSexport void mDNSPlatformTCPCloseConnection(int sd)
 	(void)sd;			// Unused
 	}
 
-mDNSexport int mDNSPlatformReadTCP(int sd, void *buf, int buflen)
+mDNSexport long mDNSPlatformReadTCP(int sd, void *buf, unsigned long buflen)
 	{
 	(void)sd;			// Unused
 	(void)buf;			// Unused
@@ -595,7 +598,7 @@ mDNSexport int mDNSPlatformReadTCP(int sd, void *buf, int buflen)
 	return(0);
 	}
 
-mDNSexport int mDNSPlatformWriteTCP(int sd, const char *msg, int len)
+mDNSexport long mDNSPlatformWriteTCP(int sd, const char *msg, unsigned long len)
 	{
 	(void)sd;			// Unused
 	(void)msg;			// Unused
@@ -1224,7 +1227,7 @@ mDNSlocal mStatus
 		// Join the all-DNS multicast group so we receive Multicast DNS packets.
 		
 		ip.NotAnInteger 			= ipv4->sin_addr.s_addr;
-		mreq.imr_multiaddr.s_addr 	= AllDNSLinkGroupv4.NotAnInteger;
+		mreq.imr_multiaddr.s_addr 	= AllDNSLinkGroup_v4.ip.v4.NotAnInteger;
 		mreq.imr_interface.s_addr 	= ip.NotAnInteger;
 		err = setsockopt( socketRef, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *) &mreq, sizeof( mreq ) );
 		check_errno( err, errno );
@@ -1234,7 +1237,7 @@ mDNSlocal mStatus
 		memset( &addr, 0, sizeof( addr ) );
 		addr.sin_family 		= AF_INET;
 		addr.sin_port 			= inPort.NotAnInteger;
-		addr.sin_addr.s_addr 	= AllDNSLinkGroupv4.NotAnInteger;
+		addr.sin_addr.s_addr 	= AllDNSLinkGroup_v4.ip.v4.NotAnInteger;
 		err = bind( socketRef, (struct sockaddr *) &addr, sizeof( addr ) );
 		check_errno( err, errno );
 		
@@ -1753,7 +1756,7 @@ mDNSlocal void	TaskProcessPacket( mDNS *inMDNS, MDNSInterfaceItem *inItem, MDNSS
 		srcAddr.ip.v4.NotAnInteger 	= addr.sin_addr.s_addr;
 		srcPort.NotAnInteger		= addr.sin_port;
 		dstAddr.type				= mDNSAddrType_IPv4;
-		dstAddr.ip.v4				= AllDNSLinkGroupv4;
+		dstAddr.ip.v4				= AllDNSLinkGroup_v4.ip.v4;
 		dstPort						= MulticastDNSPort;
 		
 		dlog( kDebugLevelChatty, DEBUG_NAME "packet received\n" );

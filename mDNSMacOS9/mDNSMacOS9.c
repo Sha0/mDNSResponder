@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOS9.c,v $
+Revision 1.47  2006/12/19 22:43:54  cheshire
+Fix compiler warnings
+
 Revision 1.46  2006/08/14 23:24:29  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -278,7 +281,7 @@ mDNSlocal OSStatus readpacket(mDNS *m)
 
 	#if OTCARBONAPPLICATION
 	// IP_RCVDSTADDR is known to fail on OS X Carbon, so we'll just assume the packet was probably multicast
-	destaddr.ip.v4  = AllDNSLinkGroupv4;
+	destaddr.ip.v4  = AllDNSLinkGroup_v4.ip.v4;
 	#endif
 
 	if (recvdata.opt.len)
@@ -302,37 +305,83 @@ mDNSlocal OSStatus readpacket(mDNS *m)
 	return(err);
 	}
 
-mDNSexport mStatus mDNSPlatformTCPConnect(const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
-										  TCPConnectionCallback callback, void *context, int *descriptor)
+mDNSexport uDNS_TCPSocket mDNSPlatformTCPSocket(mDNS * const m, uDNS_TCPSocketFlags flags, mDNSIPPort * port)
 	{
+	(void)m;			// Unused
+	(void)flags;		// Unused
+	(void)port;			// Unused
+	return NULL;
+	}
+
+mDNSexport uDNS_TCPSocket mDNSPlatformTCPAccept(uDNS_TCPSocketFlags flags, int sd)
+	{
+	(void)flags;		// Unused
+	(void)sd;			// Unused
+	return NULL;
+	}
+
+mDNSexport int mDNSPlatformTCPGetFlags(uDNS_TCPSocket sock)
+	{
+	(void)sock;			// Unused
+	return 0;
+	}
+
+mDNSexport int mDNSPlatformTCPGetFD(uDNS_TCPSocket sock)
+	{
+	(void)sock;			// Unused
+	return -1;
+	}
+
+mDNSexport mStatus mDNSPlatformTCPConnect(uDNS_TCPSocket sock, const mDNSAddr * dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
+                                      TCPConnectionCallback callback, void * context)
+	{
+	(void)sock;			// Unused
 	(void)dst;			// Unused
 	(void)dstport;		// Unused
 	(void)InterfaceID;	// Unused
 	(void)callback;		// Unused
 	(void)context;		// Unused
-	(void)descriptor;	// Unused
 	return(mStatus_UnsupportedErr);
 	}
 
-mDNSexport void mDNSPlatformTCPCloseConnection(int sd)
+mDNSexport mDNSBool mDNSPlatformTCPIsConnected(uDNS_TCPSocket sock)
+	{
+	(void)sock;			// Unused
+	return mDNSfalse;
+	}
+
+mDNSexport void mDNSPlatformTCPCloseConnection(uDNS_TCPSocket sd)
 	{
 	(void)sd;			// Unused
 	}
 
-mDNSexport int mDNSPlatformReadTCP(int sd, void *buf, int buflen)
+mDNSexport long mDNSPlatformReadTCP(uDNS_TCPSocket sock, void *buf, unsigned long buflen, mDNSBool *closed)
 	{
-	(void)sd;			// Unused
+	(void)sock;			// Unused
 	(void)buf;			// Unused
 	(void)buflen;		// Unused
+	(void)closed;		// Unused
 	return(0);
 	}
 
-mDNSexport int mDNSPlatformWriteTCP(int sd, const char *msg, int len)
+mDNSexport long mDNSPlatformWriteTCP(uDNS_TCPSocket sock, const char *msg, unsigned long len)
 	{
-	(void)sd;			// Unused
+	(void)sock;			// Unused
 	(void)msg;			// Unused
 	(void)len;			// Unused
 	return(0);
+	}
+
+mDNSexport uDNS_UDPSocket mDNSPlatformUDPSocket(mDNS * const m, mDNSIPPort port)
+	{
+	(void)m;			// Unused
+	(void)port;			// Unused
+	return NULL;
+	}
+
+mDNSexport void           mDNSPlatformUDPClose(uDNS_UDPSocket sock)
+	{
+	(void)sock;			// Unused
 	}
 
 mDNSlocal void mDNSOptionManagement(mDNS *const m)

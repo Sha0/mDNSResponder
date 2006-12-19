@@ -25,6 +25,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientshim.c,v $
+Revision 1.12  2006/12/19 22:43:55  cheshire
+Fix compiler warnings
+
 Revision 1.11  2006/10/27 01:30:23  cheshire
 Need explicitly to set ReturnCNAME = mDNSfalse
 
@@ -99,6 +102,7 @@ typedef struct
 	mDNSBool                autoname;		// Set if this name is tied to the Computer Name
 	mDNSBool                autorename;		// Set if we just got a name conflict and now need to automatically pick a new name
 	domainlabel             name;
+	domainname              host;
 	ServiceRecordSet        s;
 	} mDNS_DirectOP_Register;
 
@@ -296,11 +300,12 @@ DNSServiceErrorType DNSServiceRegister
 	x->autoname = (!name[0]);
 	x->autorename = mDNSfalse;
 	x->name = n;
+	x->host = h;
 
 	// Do the operation
 	err = mDNS_RegisterService(&mDNSStorage, &x->s,
 		&x->name, &t, &d,		// Name, type, domain
-		&h, port,				// Host and port
+		&x->host, port,			// Host and port
 		txtRecord, txtLen,		// TXT data, length
 		SubTypes, NumSubTypes,	// Subtypes
 		mDNSInterface_Any,		// Interface ID
@@ -496,7 +501,7 @@ mDNSlocal void FoundServiceInfo(mDNS *const m, DNSQuestion *question, const Reso
 		    ConvertDomainNameToCString(answer->name, fullname);
 		    ConvertDomainNameToCString(&x->SRV->rdata->u.srv.target, targethost);
 			x->callback((DNSServiceRef)x, 0, 0, kDNSServiceErr_NoError, fullname, targethost,
-				x->SRV->rdata->u.srv.port.NotAnInteger, x->TXT->rdlength, (char*)x->TXT->rdata->u.txt.c, x->context);
+				x->SRV->rdata->u.srv.port.NotAnInteger, x->TXT->rdlength, (unsigned char*)x->TXT->rdata->u.txt.c, x->context);
 			}
 		}
 	}

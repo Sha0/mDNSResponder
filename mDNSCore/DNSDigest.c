@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSDigest.c,v $
+Revision 1.18  2006/12/19 22:41:21  cheshire
+Fix compiler warnings
+
 Revision 1.17  2006/08/14 23:24:22  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -102,16 +105,16 @@ extern "C" {
 #endif
 
 static mDNSu16
-NToH16( mDNSu8 * bytes )
+NToH16(mDNSu8 * bytes)
 	{
-	return ( ( mDNSu16 ) bytes[0] << 8 | bytes[1] );
+	return (mDNSu16)((mDNSu16)bytes[0] << 8 | (mDNSu16)bytes[1]);
 	}
 
 
 static mDNSu32
-NToH32( mDNSu8 * bytes )
+NToH32(mDNSu8 * bytes)
 	{
-	return ( ( mDNSu32 ) bytes[0] << 24 | ( mDNSu32 ) bytes[1] << 16 | ( mDNSu32 ) bytes[2] << 8 | bytes[3] );
+	return (mDNSu32)((mDNSu32) bytes[0] << 24 | (mDNSu32) bytes[1] << 16 | (mDNSu32) bytes[2] << 8 | (mDNSu32)bytes[3]);
 	}
 
  // ***************************************************************************
@@ -487,7 +490,7 @@ void md5_block_data_order (MD5_CTX *c, const void *p,int num);
 #   define ROTATE(a,n)	(unsigned MD32_REG_T)__rlwinm((int)a,n,0,31)
 #  elif defined(__MC68K__)
     /* Motorola specific tweak. <appro@fy.chalmers.se> */
-#   define ROTATE(a,n)	( n<24 ? __rol(a,n) : __ror(a,32-n) )
+#   define ROTATE(a,n)	(n<24 ? __rol(a,n) : __ror(a,32-n))
 #  else
 #   define ROTATE(a,n)	__rol(a,n)
 #  endif
@@ -1191,7 +1194,6 @@ void md5_block_data_order (MD5_CTX *c, const void *data_, int num)
 #endif
 
 
-
  // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark - base64 -> binary conversion
@@ -1382,7 +1384,7 @@ mDNSexport void DNSDigest_ConstructHMACKey(uDNS_AuthInfo *info, const mDNSu8 *ke
 	}
 
 
-mDNSexport mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 *numAdditionals, uDNS_AuthInfo *info, mDNSu16 tcode )
+mDNSexport mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 *numAdditionals, uDNS_AuthInfo *info, mDNSu16 tcode)
 	{
 	AuthRecord tsig;
 	mDNSu8 *countPtr, *rdata;
@@ -1430,7 +1432,7 @@ mDNSexport mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 
 	utc48[1] = 0;
 	utc48[2] = (mDNSu8)((utc32 >> 24) & 0xff);
 	utc48[3] = (mDNSu8)((utc32 >> 16) & 0xff);
-	utc48[4] = (mDNSu8)((utc32 >> 8)  & 0xff);
+	utc48[4] = (mDNSu8)((utc32 >>  8) & 0xff);
 	utc48[5] = (mDNSu8)( utc32        & 0xff);
 
 	mDNSPlatformMemCopy(utc48, rdata, 6);
@@ -1444,8 +1446,8 @@ mDNSexport mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 
 	rdata += sizeof(mDNSOpaque16);
 
 	// digest error (tcode) and other data len (zero) - we'll add them to the rdata later
-	buf.b[0] = (mDNSu8)( ( tcode >> 8 )  & 0xff );
-	buf.b[1] = (mDNSu8)( tcode & 0xff );
+	buf.b[0] = (mDNSu8)((tcode >> 8) & 0xff);
+	buf.b[1] = (mDNSu8)( tcode       & 0xff);
 	MD5_Update(&c, buf.b, sizeof(mDNSOpaque16));  // error
 	buf.NotAnInteger = 0;
 	MD5_Update(&c, buf.b, sizeof(mDNSOpaque16));  // other data len
@@ -1467,8 +1469,8 @@ mDNSexport mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 
 	rdata += MD5_LEN;
 	rdata[0] = msg->h.id.b[0];                                            // original ID
 	rdata[1] = msg->h.id.b[1];
-	rdata[2] = (mDNSu8)( ( tcode >> 8 )  & 0xff );
-	rdata[3] = (mDNSu8)( tcode & 0xff );
+	rdata[2] = (mDNSu8)((tcode >> 8) & 0xff);
+	rdata[3] = (mDNSu8)( tcode       & 0xff);
 	rdata[4] = 0;                                                         // other data len
 	rdata[5] = 0;
 	rdata += 6;
@@ -1485,41 +1487,41 @@ mDNSexport mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 
 	return *end;
 	}
 
-mDNSexport mDNSBool DNSDigest_VerifyMessage(DNSMessage *msg, mDNSu8 *end, LargeCacheRecord * lcr, uDNS_AuthInfo *info, mDNSu16 * rcode, mDNSu16 * tcode )
+mDNSexport mDNSBool DNSDigest_VerifyMessage(DNSMessage *msg, mDNSu8 *end, LargeCacheRecord * lcr, uDNS_AuthInfo *info, mDNSu16 * rcode, mDNSu16 * tcode)
 	{
-	mDNSu8			*	ptr = ( mDNSu8* ) &lcr->r.resrec.rdata->u.data;
-	mDNSu32				now;
-	mDNSu32				then;
+	mDNSu8			*	ptr = (mDNSu8*) &lcr->r.resrec.rdata->u.data;
+	mDNSs32				now;
+	mDNSs32				then;
 	mDNSu8				thisDigest[MD5_LEN];
 	mDNSu8				thatDigest[MD5_LEN];
 	mDNSu32				macsize;
 	mDNSOpaque16 		buf;
 	mDNSu8				utc48[6];
-	mDNSu32				delta;
-	mDNSu32				fudge;
+	mDNSs32				delta;
+	mDNSu16				fudge;
 	domainname		*	algo;
 	MD5_CTX				c;
 	mDNSBool			ok = mDNSfalse;
 
 	// We only support HMAC-MD5 for now
 
-	algo = ( domainname* ) ptr;
+	algo = (domainname*) ptr;
 
-	if ( !SameDomainName( algo, &HMAC_MD5_AlgName ) )
+	if (!SameDomainName(algo, &HMAC_MD5_AlgName))
 		{
-		LogMsg( "ERROR: DNSDigest_VerifyMessage - TSIG algorithm not supported: %##s", algo->c );
+		LogMsg("ERROR: DNSDigest_VerifyMessage - TSIG algorithm not supported: %##s", algo->c);
 		*rcode = kDNSFlag1_RC_NotAuth;
 		*tcode = TSIG_ErrBadKey;
 		ok = mDNSfalse;
 		goto exit;
 		}
 
-	ptr += DomainNameLength( algo );
+	ptr += DomainNameLength(algo);
 
 	// Check the times
 
 	now = mDNSPlatformUTC();
-	if ( now == ( mDNSu32 ) -1 )
+	if (now == -1)
 		{
 		LogMsg("ERROR: DNSDigest_VerifyMessage - mDNSPlatformUTC returned bad time -1");
 		*rcode = kDNSFlag1_RC_NotAuth;
@@ -1537,17 +1539,17 @@ mDNSexport mDNSBool DNSDigest_VerifyMessage(DNSMessage *msg, mDNSu8 *end, LargeC
 	utc48[4] = *ptr++;
 	utc48[5] = *ptr++;
 
-	then  = NToH32( utc48 + sizeof( mDNSu16 ) );
+	then  = (mDNSs32)NToH32(utc48 + sizeof(mDNSu16));
 
-	fudge = ( mDNSu32 ) NToH16( ptr );
+	fudge = NToH16(ptr);
 
-	ptr += sizeof( mDNSu16 );
+	ptr += sizeof(mDNSu16);
 
-	delta = ( now > then ) ? now - then : then - now;
+	delta = (now > then) ? now - then : then - now;
 
-	if ( delta > fudge )
+	if (delta > fudge)
 		{
-		LogMsg( "ERROR: DNSDigest_VerifyMessage - time skew > %d", fudge );
+		LogMsg("ERROR: DNSDigest_VerifyMessage - time skew > %d", fudge);
 		*rcode = kDNSFlag1_RC_NotAuth;
 		*tcode = TSIG_ErrBadTime;
 		ok = mDNSfalse;
@@ -1556,66 +1558,66 @@ mDNSexport mDNSBool DNSDigest_VerifyMessage(DNSMessage *msg, mDNSu8 *end, LargeC
 
 	// MAC size
 
-	macsize = ( mDNSu32 ) NToH16( ptr );
+	macsize = (mDNSu32) NToH16(ptr);
 	
-	ptr += sizeof( mDNSu16 );
+	ptr += sizeof(mDNSu16);
 
 	// MAC
 
-	mDNSPlatformMemCopy( ptr, thatDigest, MD5_LEN );
+	mDNSPlatformMemCopy(ptr, thatDigest, MD5_LEN);
 
 	// Init MD5 context, digest inner key pad and message
 
 	MD5_Init(&c);
 	MD5_Update(&c, info->key.ipad, HMAC_LEN);
-	MD5_Update(&c, (mDNSu8*) msg, ( unsigned long )( end - ( mDNSu8* ) msg ) );
+	MD5_Update(&c, (mDNSu8*) msg, (unsigned long)(end - (mDNSu8*) msg));
 	   
 	// Key name
 
-	MD5_Update(&c, lcr->r.resrec.name->c, DomainNameLength( lcr->r.resrec.name ) );
+	MD5_Update(&c, lcr->r.resrec.name->c, DomainNameLength(lcr->r.resrec.name));
 
 	// Class name
 
-	buf = mDNSOpaque16fromIntVal( lcr->r.resrec.rrclass );
-	MD5_Update(&c, buf.b, sizeof( mDNSOpaque16 ) );
+	buf = mDNSOpaque16fromIntVal(lcr->r.resrec.rrclass);
+	MD5_Update(&c, buf.b, sizeof(mDNSOpaque16));
 
 	// TTL
 
-	MD5_Update( &c, ( mDNSu8* ) &lcr->r.resrec.rroriginalttl, sizeof(lcr->r.resrec.rroriginalttl ) );
+	MD5_Update(&c, (mDNSu8*) &lcr->r.resrec.rroriginalttl, sizeof(lcr->r.resrec.rroriginalttl));
 	
 	// Algorithm
  
-	MD5_Update( &c, algo->c, DomainNameLength( algo ) );
+	MD5_Update(&c, algo->c, DomainNameLength(algo));
 
 	// Time
 
-	MD5_Update( &c, utc48, 6 );
+	MD5_Update(&c, utc48, 6);
 
 	// Fudge
 
-	buf = mDNSOpaque16fromIntVal( fudge );
-	MD5_Update( &c, buf.b, sizeof( mDNSOpaque16 ) );
+	buf = mDNSOpaque16fromIntVal(fudge);
+	MD5_Update(&c, buf.b, sizeof(mDNSOpaque16));
 
 	// Digest error and other data len (both zero) - we'll add them to the rdata later
 
 	buf.NotAnInteger = 0;
-	MD5_Update( &c, buf.b, sizeof( mDNSOpaque16 ) );  // error
-	MD5_Update( &c, buf.b, sizeof( mDNSOpaque16 ) );  // other data len
+	MD5_Update(&c, buf.b, sizeof(mDNSOpaque16));  // error
+	MD5_Update(&c, buf.b, sizeof(mDNSOpaque16));  // other data len
 
 	// Finish the message & tsig var hash
 
-    MD5_Final( thisDigest, &c );
+    MD5_Final(thisDigest, &c);
 	
 	// perform outer MD5 (outer key pad, inner digest)
 
-	MD5_Init( &c );
-	MD5_Update( &c, info->key.opad, HMAC_LEN );
-	MD5_Update( &c, thisDigest, MD5_LEN );
-	MD5_Final( thisDigest, &c );
+	MD5_Init(&c);
+	MD5_Update(&c, info->key.opad, HMAC_LEN);
+	MD5_Update(&c, thisDigest, MD5_LEN);
+	MD5_Final(thisDigest, &c);
 
-	if ( !mDNSPlatformMemSame( thisDigest, thatDigest, MD5_LEN ) )
+	if (!mDNSPlatformMemSame(thisDigest, thatDigest, MD5_LEN))
 		{
-		LogMsg( "ERROR: DNSDigest_VerifyMessage - bad signature" );
+		LogMsg("ERROR: DNSDigest_VerifyMessage - bad signature");
 		*rcode = kDNSFlag1_RC_NotAuth;
 		*tcode = TSIG_ErrBadSig;
 		ok = mDNSfalse;

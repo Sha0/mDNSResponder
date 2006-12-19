@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: Searcher.c,v $
+Revision 1.4  2006/12/19 22:43:54  cheshire
+Fix compiler warnings
+
 Revision 1.3  2006/08/14 23:24:29  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -132,7 +135,7 @@ static void FoundInstanceAddress(DNSServiceRef sdRef, DNSServiceFlags flags, uin
 
 static void FoundInstanceInfo(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex,
 	DNSServiceErrorType errorCode, const char *fullname, const char *hosttarget, uint16_t notAnIntPort,
-	uint16_t txtLen, const char *txtRecord, void *context)
+	uint16_t txtLen, const unsigned char *txtRecord, void *context)
 	{
 	linkedServiceInfo *info = (linkedServiceInfo *)context;
 	SearcherServices *services = info->services;
@@ -145,7 +148,7 @@ static void FoundInstanceInfo(DNSServiceRef sdRef, DNSServiceFlags flags, uint32
 	if (txtLen == 0) info->text[0] = 0;
 	else
 		{
-		strncpy(info->text, txtRecord+1, txtRecord[0]);
+		strncpy(info->text, (char *)txtRecord+1, txtRecord[0]);
 		info->text[txtRecord[0]] = 0;
 		}
 	info->notAnIntPort.NotAnInteger = notAnIntPort;

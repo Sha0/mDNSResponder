@@ -30,6 +30,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.82  2006/12/19 22:43:55  cheshire
+Fix compiler warnings
+
 Revision 1.81  2006/08/14 23:24:46  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -422,7 +425,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 	assert(m != NULL);
 	assert(msg != NULL);
 	assert(end != NULL);
-	assert( (((char *) end) - ((char *) msg)) > 0 );
+	assert((((char *) end) - ((char *) msg)) > 0);
 	assert(dstPort.NotAnInteger != 0);
 
 	if (dst->type == mDNSAddrType_IPv4)
@@ -520,11 +523,11 @@ mDNSlocal void SocketDataReady(mDNS *const m, PosixNetworkInterface *intf, int s
 		// so all we can do is just assume it's a multicast
 
 		#if HAVE_BROKEN_RECVDSTADDR || (!defined(IP_PKTINFO) && !defined(IP_RECVDSTADDR))
-			if ( (destAddr.NotAnInteger == 0) && (flags & MSG_MCAST) )
+			if ((destAddr.NotAnInteger == 0) && (flags & MSG_MCAST))
 				{
 				destAddr.type = senderAddr.type;
-				if      (senderAddr.type == mDNSAddrType_IPv4) destAddr.ip.v4 = AllDNSLinkGroupv4;
-				else if (senderAddr.type == mDNSAddrType_IPv6) destAddr.ip.v6 = AllDNSLinkGroupv6;
+				if      (senderAddr.type == mDNSAddrType_IPv4) destAddr.ip.v4 = AllDNSLinkGroup_v4.ip.v4;
+				else if (senderAddr.type == mDNSAddrType_IPv6) destAddr.ip.v6 = AllDNSLinkGroup_v6.ip.v6;
 				}
 		#endif
 
@@ -544,8 +547,8 @@ mDNSlocal void SocketDataReady(mDNS *const m, PosixNetworkInterface *intf, int s
 			}
 		else
 			{
-			if      ( packetInfo.ipi_ifname[0] != 0 ) reject = (strcmp(packetInfo.ipi_ifname, intf->intfName) != 0);
-			else if ( packetInfo.ipi_ifindex != -1 )  reject = (packetInfo.ipi_ifindex != intf->index);
+			if      (packetInfo.ipi_ifname[0] != 0) reject = (strcmp(packetInfo.ipi_ifname, intf->intfName) != 0);
+			else if (packetInfo.ipi_ifindex != -1)  reject = (packetInfo.ipi_ifindex != intf->index);
 	
 			if (reject)
 				{
@@ -577,7 +580,7 @@ mDNSlocal void SocketDataReady(mDNS *const m, PosixNetworkInterface *intf, int s
 			&senderAddr, senderPort, &destAddr, MulticastDNSPort, InterfaceID);
 	}
 
-mDNSexport uDNS_TCPSocket mDNSPlatformTCPSocket( mDNS * const m, uDNS_TCPSocketFlags flags, mDNSIPPort * port )
+mDNSexport uDNS_TCPSocket mDNSPlatformTCPSocket(mDNS * const m, uDNS_TCPSocketFlags flags, mDNSIPPort * port)
 	{
 	(void)m;			// Unused
 	(void)flags;		// Unused
@@ -585,27 +588,27 @@ mDNSexport uDNS_TCPSocket mDNSPlatformTCPSocket( mDNS * const m, uDNS_TCPSocketF
 	return NULL;
 	}
 
-mDNSexport uDNS_TCPSocket mDNSPlatformTCPAccept( uDNS_TCPSocketFlags flags, int sd )
+mDNSexport uDNS_TCPSocket mDNSPlatformTCPAccept(uDNS_TCPSocketFlags flags, int sd)
 	{
 	(void)flags;		// Unused
 	(void)sd;			// Unused
 	return NULL;
 	}
 
-mDNSexport int mDNSPlatformTCPGetFlags( uDNS_TCPSocket sock )
+mDNSexport int mDNSPlatformTCPGetFlags(uDNS_TCPSocket sock)
 	{
 	(void)sock;			// Unused
 	return 0;
 	}
 
-mDNSexport int mDNSPlatformTCPGetFD( uDNS_TCPSocket sock )
+mDNSexport int mDNSPlatformTCPGetFD(uDNS_TCPSocket sock)
 	{
 	(void)sock;			// Unused
 	return -1;
 	}
 
-mDNSexport mStatus mDNSPlatformTCPConnect( uDNS_TCPSocket sock, const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
-										  TCPConnectionCallback callback, void *context )
+mDNSexport mStatus mDNSPlatformTCPConnect(uDNS_TCPSocket sock, const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
+										  TCPConnectionCallback callback, void *context)
 	{
 	(void)sock;			// Unused
 	(void)dst;			// Unused
@@ -616,18 +619,18 @@ mDNSexport mStatus mDNSPlatformTCPConnect( uDNS_TCPSocket sock, const mDNSAddr *
 	return(mStatus_UnsupportedErr);
 	}
 
-mDNSexport mDNSBool mDNSPlatformTCPIsConnected( uDNS_TCPSocket sock )
+mDNSexport mDNSBool mDNSPlatformTCPIsConnected(uDNS_TCPSocket sock)
 	{
 	(void)sock;			// Unused
 	return mDNSfalse;
 	}
 
-mDNSexport void mDNSPlatformTCPCloseConnection( uDNS_TCPSocket sock )
+mDNSexport void mDNSPlatformTCPCloseConnection(uDNS_TCPSocket sock)
 	{
 	(void)sock;			// Unused
 	}
 
-mDNSexport int mDNSPlatformReadTCP(uDNS_TCPSocket sock, void *buf, int buflen, mDNSBool * closed)
+mDNSexport long mDNSPlatformReadTCP(uDNS_TCPSocket sock, void *buf, unsigned long buflen, mDNSBool * closed)
 	{
 	(void)sock;			// Unused
 	(void)buf;			// Unused
@@ -636,7 +639,7 @@ mDNSexport int mDNSPlatformReadTCP(uDNS_TCPSocket sock, void *buf, int buflen, m
 	return 0;			
 	}
 
-mDNSexport int mDNSPlatformWriteTCP(uDNS_TCPSocket sock, const char *msg, int len)
+mDNSexport long mDNSPlatformWriteTCP(uDNS_TCPSocket sock, const char *msg, unsigned long len)
 	{
 	(void)sock;			// Unused
 	(void)msg;			// Unused
@@ -644,14 +647,14 @@ mDNSexport int mDNSPlatformWriteTCP(uDNS_TCPSocket sock, const char *msg, int le
 	return 0;
 	}
 
-mDNSexport uDNS_UDPSocket mDNSPlatformUDPSocket( mDNS * const m, mDNSIPPort port )
+mDNSexport uDNS_UDPSocket mDNSPlatformUDPSocket(mDNS * const m, mDNSIPPort port)
 	{
 	(void)m;			// Unused
 	(void)port;			// Unused
 	return NULL;
 	}
 
-mDNSexport void           mDNSPlatformUDPClose( uDNS_UDPSocket sock )
+mDNSexport void           mDNSPlatformUDPClose(uDNS_UDPSocket sock)
 	{
 	(void)sock;			// Unused
 	}
@@ -687,12 +690,12 @@ mDNSexport DNameListElem * mDNSPlatformGetSearchDomainList(void)
 	return NULL;
 	}
 
-mDNSexport DNameListElem * mDNSPlatformGetFQDN( void )
+mDNSexport DNameListElem * mDNSPlatformGetFQDN(void)
 	{
 	return NULL;
 	}
 
-mDNSexport mStatus mDNSPlatformGetPrimaryInterface( mDNS * const m, mDNSAddr * v4, mDNSAddr * v6, mDNSAddr * router )
+mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS * const m, mDNSAddr * v4, mDNSAddr * v6, mDNSAddr * router)
 	{
 	(void) m;
 	(void) v4;
@@ -702,18 +705,18 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface( mDNS * const m, mDNSAddr * v
 	return mStatus_UnsupportedErr;
 	}
 
-mDNSexport DNameListElem * mDNSPlatformGetReverseMapSearchDomainList( void )
+mDNSexport DNameListElem * mDNSPlatformGetReverseMapSearchDomainList(void)
 	{
 	return NULL;
 	}
 
-mDNSexport void mDNSPlatformSetSecretForDomain( mDNS * const m, const domainname *domain )
+mDNSexport void mDNSPlatformSetSecretForDomain(mDNS * const m, const domainname *domain)
 	{
 	(void) m;
 	(void) domain;
 	}
 
-mDNSexport mStatus mDNSPlatformRegisterSplitDNS( mDNS * const m, int * nAdditions, int * nDeletions )
+mDNSexport mStatus mDNSPlatformRegisterSplitDNS(mDNS * const m, int * nAdditions, int * nDeletions)
 	{
 	(void) m;
 	*nAdditions = 0;
@@ -760,7 +763,7 @@ mDNSlocal void GetUserSpecifiedRFC1034ComputerName(domainlabel *const namelabel)
 mDNSlocal void GetUserSpecifiedFriendlyComputerName(domainlabel *const namelabel)
 	{
 	// On Unix we have no better name than the host name, so we just use that.
-	GetUserSpecifiedRFC1034ComputerName( namelabel);
+	GetUserSpecifiedRFC1034ComputerName(namelabel);
 	}
 
 mDNSexport int ParseDNSServers(mDNS *m, const char *filePath)
@@ -799,7 +802,7 @@ mDNSlocal PosixNetworkInterface *SearchForInterfaceByName(mDNS *const m, const c
 	assert(intfName != NULL);
 
 	intf = (PosixNetworkInterface*)(m->HostInterfaces);
-	while ( (intf != NULL) && (strcmp(intf->intfName, intfName) != 0) )
+	while ((intf != NULL) && (strcmp(intf->intfName, intfName) != 0))
 		intf = (PosixNetworkInterface *)(intf->coreIntf.next);
 
 	return intf;
@@ -814,7 +817,7 @@ mDNSexport mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(mDNS *const
 	if (index == kDNSServiceInterfaceIndexLocalOnly) return(mDNSInterface_LocalOnly);
 
 	intf = (PosixNetworkInterface*)(m->HostInterfaces);
-	while ( (intf != NULL) && (mDNSu32) intf->index != index) 
+	while ((intf != NULL) && (mDNSu32) intf->index != index) 
 		intf = (PosixNetworkInterface *)(intf->coreIntf.next);
 
 	return (mDNSInterfaceID) intf;
@@ -829,7 +832,7 @@ mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(mDNS *const m, mDNS
 	if (id == mDNSInterface_LocalOnly) return(kDNSServiceInterfaceIndexLocalOnly);
 
 	intf = (PosixNetworkInterface*)(m->HostInterfaces);
-	while ( (intf != NULL) && (mDNSInterfaceID) intf != id)
+	while ((intf != NULL) && (mDNSInterfaceID) intf != id)
 		intf = (PosixNetworkInterface *)(intf->coreIntf.next);
 
 	return intf ? intf->index : 0;
@@ -882,7 +885,7 @@ mDNSlocal int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interf
 	assert(*sktPtr == -1);
 
 	// Open the socket...
-	if      (intfAddr->sa_family == AF_INET ) *sktPtr = socket(PF_INET,  SOCK_DGRAM, IPPROTO_UDP);
+	if      (intfAddr->sa_family == AF_INET) *sktPtr = socket(PF_INET,  SOCK_DGRAM, IPPROTO_UDP);
 #if HAVE_IPV6
 	else if (intfAddr->sa_family == AF_INET6) *sktPtr = socket(PF_INET6, SOCK_DGRAM, IPPROTO_UDP);
 #endif
@@ -940,7 +943,7 @@ mDNSlocal int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interf
 		// Add multicast group membership on this interface
 		if (err == 0 && JoinMulticastGroup)
 			{
-			imr.imr_multiaddr.s_addr = AllDNSLinkGroupv4.NotAnInteger;
+			imr.imr_multiaddr.s_addr = AllDNSLinkGroup_v4.ip.v4.NotAnInteger;
 			imr.imr_interface        = ((struct sockaddr_in*)intfAddr)->sin_addr;
 			err = setsockopt(*sktPtr, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imr, sizeof(imr));
 			if (err < 0) { err = errno; perror("setsockopt - IP_ADD_MEMBERSHIP"); }
@@ -1006,7 +1009,7 @@ mDNSlocal int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interf
 		// Add multicast group membership on this interface
 		if (err == 0 && JoinMulticastGroup)
 			{
-			imr6.ipv6mr_multiaddr       = *(const struct in6_addr*)&AllDNSLinkGroupv6;
+			imr6.ipv6mr_multiaddr       = *(const struct in6_addr*)&AllDNSLinkGroup_v6.ip.v6;
 			imr6.ipv6mr_interface       = interfaceIndex;
 			//LogMsg("Joining %.16a on %d", &imr6.ipv6mr_multiaddr, imr6.ipv6mr_interface);
 			err = setsockopt(*sktPtr, IPPROTO_IPV6, IPV6_JOIN_GROUP, &imr6, sizeof(imr6));
@@ -1083,7 +1086,7 @@ mDNSlocal int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interf
 
 	// Clean up
 	if (err != 0 && *sktPtr != -1) { assert(close(*sktPtr) == 0); *sktPtr = -1; }
-	assert( (err == 0) == (*sktPtr != -1) );
+	assert((err == 0) == (*sktPtr != -1));
 	return err;
 	}
 
@@ -1167,7 +1170,7 @@ mDNSlocal int SetupOneInterface(mDNS *const m, struct sockaddr *intfAddr, struct
 		if (intf) { FreePosixNetworkInterface(intf); intf = NULL; }
 		}
 
-	assert( (err == 0) == (intf != NULL) );
+	assert((err == 0) == (intf != NULL));
 
 	return err;
 	}
@@ -1203,7 +1206,7 @@ mDNSlocal int SetupInterfaceList(mDNS *const m)
 #if HAVE_IPV6
 					  || (i->ifi_addr->sa_family == AF_INET6)
 #endif
-				) &&  (i->ifi_flags & IFF_UP) && !(i->ifi_flags & IFF_POINTOPOINT) )
+				) &&  (i->ifi_flags & IFF_UP) && !(i->ifi_flags & IFF_POINTOPOINT))
 				{
 				if (i->ifi_flags & IFF_LOOPBACK)
 					{
@@ -1224,8 +1227,8 @@ mDNSlocal int SetupInterfaceList(mDNS *const m)
 		// loopback interface.  This allows self-discovery if no interfaces are configured.
 		// Temporary workaround: Multicast loopback on IPv6 interfaces appears not to work.
 		// In the interim, we skip loopback interface only if we found at least one v4 interface to use
-		// if ( (m->HostInterfaces == NULL) && (firstLoopback != NULL) )
-		if ( !foundav4 && firstLoopback )
+		// if ((m->HostInterfaces == NULL) && (firstLoopback != NULL))
+		if (!foundav4 && firstLoopback)
 			(void) SetupOneInterface(m, firstLoopback->ifi_addr, firstLoopback->ifi_netmask, firstLoopback->ifi_name, firstLoopback->ifi_index);
 		}
 
@@ -1239,26 +1242,26 @@ mDNSlocal int SetupInterfaceList(mDNS *const m)
 // See <http://www.faqs.org/rfcs/rfc3549.html> for a description of NetLink
 
 // Open a socket that will receive interface change notifications
-mDNSlocal mStatus OpenIfNotifySocket( int *pFD)
+mDNSlocal mStatus OpenIfNotifySocket(int *pFD)
 	{
 	mStatus					err = mStatus_NoError;
 	struct sockaddr_nl		snl;
 	int sock;
 	int ret;
 
-	sock = socket( AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
+	sock = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
 	if (sock < 0)
 		return errno;
 
 	// Configure read to be non-blocking because inbound msg size is not known in advance
-	(void) fcntl( sock, F_SETFL, O_NONBLOCK);
+	(void) fcntl(sock, F_SETFL, O_NONBLOCK);
 
 	/* Subscribe the socket to Link & IP addr notifications. */
-	bzero( &snl, sizeof snl);
+	bzero(&snl, sizeof snl);
 	snl.nl_family = AF_NETLINK;
 	snl.nl_groups = RTMGRP_LINK | RTMGRP_IPV4_IFADDR;
-	ret = bind( sock, (struct sockaddr *) &snl, sizeof snl);
-	if ( 0 == ret)
+	ret = bind(sock, (struct sockaddr *) &snl, sizeof snl);
+	if (0 == ret)
 		*pFD = sock;
 	else
 		err = errno;
@@ -1267,33 +1270,33 @@ mDNSlocal mStatus OpenIfNotifySocket( int *pFD)
 	}
 
 #if MDNS_DEBUGMSGS
-mDNSlocal void		PrintNetLinkMsg( const struct nlmsghdr *pNLMsg)
+mDNSlocal void		PrintNetLinkMsg(const struct nlmsghdr *pNLMsg)
 	{
 	const char *kNLMsgTypes[] = { "", "NLMSG_NOOP", "NLMSG_ERROR", "NLMSG_DONE", "NLMSG_OVERRUN" };
 	const char *kNLRtMsgTypes[] = { "RTM_NEWLINK", "RTM_DELLINK", "RTM_GETLINK", "RTM_NEWADDR", "RTM_DELADDR", "RTM_GETADDR" };
 
-	printf( "nlmsghdr len=%d, type=%s, flags=0x%x\n", pNLMsg->nlmsg_len, 
+	printf("nlmsghdr len=%d, type=%s, flags=0x%x\n", pNLMsg->nlmsg_len, 
 			pNLMsg->nlmsg_type < RTM_BASE ? kNLMsgTypes[ pNLMsg->nlmsg_type] : kNLRtMsgTypes[ pNLMsg->nlmsg_type - RTM_BASE], 
 			pNLMsg->nlmsg_flags);
 
-	if ( RTM_NEWLINK <= pNLMsg->nlmsg_type && pNLMsg->nlmsg_type <= RTM_GETLINK)
+	if (RTM_NEWLINK <= pNLMsg->nlmsg_type && pNLMsg->nlmsg_type <= RTM_GETLINK)
 		{
-		struct ifinfomsg	*pIfInfo = (struct ifinfomsg*) NLMSG_DATA( pNLMsg);
-		printf( "ifinfomsg family=%d, type=%d, index=%d, flags=0x%x, change=0x%x\n", pIfInfo->ifi_family, 
+		struct ifinfomsg	*pIfInfo = (struct ifinfomsg*) NLMSG_DATA(pNLMsg);
+		printf("ifinfomsg family=%d, type=%d, index=%d, flags=0x%x, change=0x%x\n", pIfInfo->ifi_family, 
 				pIfInfo->ifi_type, pIfInfo->ifi_index, pIfInfo->ifi_flags, pIfInfo->ifi_change);
 		
 		}
-	else if ( RTM_NEWADDR <= pNLMsg->nlmsg_type && pNLMsg->nlmsg_type <= RTM_GETADDR)
+	else if (RTM_NEWADDR <= pNLMsg->nlmsg_type && pNLMsg->nlmsg_type <= RTM_GETADDR)
 		{
-		struct ifaddrmsg	*pIfAddr = (struct ifaddrmsg*) NLMSG_DATA( pNLMsg);
-		printf( "ifaddrmsg family=%d, index=%d, flags=0x%x\n", pIfAddr->ifa_family, 
+		struct ifaddrmsg	*pIfAddr = (struct ifaddrmsg*) NLMSG_DATA(pNLMsg);
+		printf("ifaddrmsg family=%d, index=%d, flags=0x%x\n", pIfAddr->ifa_family, 
 				pIfAddr->ifa_index, pIfAddr->ifa_flags);
 		}
-	printf( "\n");
+	printf("\n");
 	}
 #endif
 
-mDNSlocal mDNSu32		ProcessRoutingNotification( int sd)
+mDNSlocal mDNSu32		ProcessRoutingNotification(int sd)
 // Read through the messages on sd and if any indicate that any interface records should
 // be torn down and rebuilt, return affected indices as a bitmask. Otherwise return 0.
 	{
@@ -1307,23 +1310,23 @@ mDNSlocal mDNSu32		ProcessRoutingNotification( int sd)
 	// enough to hold all pending data and so avoid message fragmentation.
 	// (Note that FIONREAD is not supported on AF_NETLINK.)
 
-	readCount = read( sd, buff, sizeof buff);
-	while ( 1)
+	readCount = read(sd, buff, sizeof buff);
+	while (1)
 		{
 		// Make sure we've got an entire nlmsghdr in the buffer, and payload, too.
 		// If not, discard already-processed messages in buffer and read more data.
-		if ( ( (char*) &pNLMsg[1] > ( buff + readCount)) ||	// i.e. *pNLMsg extends off end of buffer 
-			 ( (char*) pNLMsg + pNLMsg->nlmsg_len > ( buff + readCount)))
+		if (((char*) &pNLMsg[1] > (buff + readCount)) ||	// i.e. *pNLMsg extends off end of buffer 
+			 ((char*) pNLMsg + pNLMsg->nlmsg_len > (buff + readCount)))
 			{
-			if ( buff < (char*) pNLMsg)		// we have space to shuffle
+			if (buff < (char*) pNLMsg)		// we have space to shuffle
 				{
 				// discard processed data
-				readCount -= ( (char*) pNLMsg - buff);
-				memmove( buff, pNLMsg, readCount);
+				readCount -= ((char*) pNLMsg - buff);
+				memmove(buff, pNLMsg, readCount);
 				pNLMsg = (struct nlmsghdr*) buff;
 
 				// read more data
-				readCount += read( sd, buff + readCount, sizeof buff - readCount);
+				readCount += read(sd, buff + readCount, sizeof buff - readCount);
 				continue;					// spin around and revalidate with new readCount
 				}
 			else
@@ -1331,20 +1334,20 @@ mDNSlocal mDNSu32		ProcessRoutingNotification( int sd)
 			}
 
 #if MDNS_DEBUGMSGS
-		PrintNetLinkMsg( pNLMsg);
+		PrintNetLinkMsg(pNLMsg);
 #endif
 
 		// Process the NetLink message
-		if ( pNLMsg->nlmsg_type == RTM_GETLINK || pNLMsg->nlmsg_type == RTM_NEWLINK)
-			result |= 1 << ((struct ifinfomsg*) NLMSG_DATA( pNLMsg))->ifi_index;
-		else if ( pNLMsg->nlmsg_type == RTM_DELADDR || pNLMsg->nlmsg_type == RTM_NEWADDR)
-			result |= 1 << ((struct ifaddrmsg*) NLMSG_DATA( pNLMsg))->ifa_index;
+		if (pNLMsg->nlmsg_type == RTM_GETLINK || pNLMsg->nlmsg_type == RTM_NEWLINK)
+			result |= 1 << ((struct ifinfomsg*) NLMSG_DATA(pNLMsg))->ifi_index;
+		else if (pNLMsg->nlmsg_type == RTM_DELADDR || pNLMsg->nlmsg_type == RTM_NEWADDR)
+			result |= 1 << ((struct ifaddrmsg*) NLMSG_DATA(pNLMsg))->ifa_index;
 
 		// Advance pNLMsg to the next message in the buffer
-		if ( ( pNLMsg->nlmsg_flags & NLM_F_MULTI) != 0 && pNLMsg->nlmsg_type != NLMSG_DONE)
+		if ((pNLMsg->nlmsg_flags & NLM_F_MULTI) != 0 && pNLMsg->nlmsg_type != NLMSG_DONE)
 			{
-			ssize_t	len = readCount - ( (char*)pNLMsg - buff);
-			pNLMsg = NLMSG_NEXT( pNLMsg, len);
+			ssize_t	len = readCount - ((char*)pNLMsg - buff);
+			pNLMsg = NLMSG_NEXT(pNLMsg, len);
 			}
 		else
 			break;	// all done!
@@ -1356,21 +1359,21 @@ mDNSlocal mDNSu32		ProcessRoutingNotification( int sd)
 #else // USES_NETLINK
 
 // Open a socket that will receive interface change notifications
-mDNSlocal mStatus OpenIfNotifySocket( int *pFD)
+mDNSlocal mStatus OpenIfNotifySocket(int *pFD)
 	{
-	*pFD = socket( AF_ROUTE, SOCK_RAW, 0);
+	*pFD = socket(AF_ROUTE, SOCK_RAW, 0);
 
-	if ( *pFD < 0)
+	if (*pFD < 0)
 		return mStatus_UnknownErr;
 
 	// Configure read to be non-blocking because inbound msg size is not known in advance
-	(void) fcntl( *pFD, F_SETFL, O_NONBLOCK);
+	(void) fcntl(*pFD, F_SETFL, O_NONBLOCK);
 
 	return mStatus_NoError;
 	}
 
 #if MDNS_DEBUGMSGS
-mDNSlocal void		PrintRoutingSocketMsg( const struct ifa_msghdr *pRSMsg)
+mDNSlocal void		PrintRoutingSocketMsg(const struct ifa_msghdr *pRSMsg)
 	{
 	const char *kRSMsgTypes[] = { "", "RTM_ADD", "RTM_DELETE", "RTM_CHANGE", "RTM_GET", "RTM_LOSING",
 					"RTM_REDIRECT", "RTM_MISS", "RTM_LOCK", "RTM_OLDADD", "RTM_OLDDEL", "RTM_RESOLVE", 
@@ -1378,11 +1381,11 @@ mDNSlocal void		PrintRoutingSocketMsg( const struct ifa_msghdr *pRSMsg)
 
 	int		index = pRSMsg->ifam_type == RTM_IFINFO ? ((struct if_msghdr*) pRSMsg)->ifm_index : pRSMsg->ifam_index;
 
-	printf( "ifa_msghdr len=%d, type=%s, index=%d\n", pRSMsg->ifam_msglen, kRSMsgTypes[ pRSMsg->ifam_type], index);
+	printf("ifa_msghdr len=%d, type=%s, index=%d\n", pRSMsg->ifam_msglen, kRSMsgTypes[ pRSMsg->ifam_type], index);
 	}
 #endif
 
-mDNSlocal mDNSu32		ProcessRoutingNotification( int sd)
+mDNSlocal mDNSu32		ProcessRoutingNotification(int sd)
 // Read through the messages on sd and if any indicate that any interface records should
 // be torn down and rebuilt, return affected indices as a bitmask. Otherwise return 0.
 	{
@@ -1391,19 +1394,19 @@ mDNSlocal mDNSu32		ProcessRoutingNotification( int sd)
 	struct ifa_msghdr		*pRSMsg = (struct ifa_msghdr*) buff;
 	mDNSu32				result = 0;
 
-	readCount = read( sd, buff, sizeof buff);
-	if ( readCount < (ssize_t) sizeof( struct ifa_msghdr))
+	readCount = read(sd, buff, sizeof buff);
+	if (readCount < (ssize_t) sizeof(struct ifa_msghdr))
 		return mStatus_UnsupportedErr;		// cannot decipher message
 
 #if MDNS_DEBUGMSGS
-	PrintRoutingSocketMsg( pRSMsg);
+	PrintRoutingSocketMsg(pRSMsg);
 #endif
 
 	// Process the message
-	if ( pRSMsg->ifam_type == RTM_NEWADDR || pRSMsg->ifam_type == RTM_DELADDR ||
+	if (pRSMsg->ifam_type == RTM_NEWADDR || pRSMsg->ifam_type == RTM_DELADDR ||
 		 pRSMsg->ifam_type == RTM_IFINFO)
 		{
-		if ( pRSMsg->ifam_type == RTM_IFINFO)
+		if (pRSMsg->ifam_type == RTM_IFINFO)
 			result |= 1 << ((struct if_msghdr*) pRSMsg)->ifm_index;
 		else
 			result |= 1 << pRSMsg->ifam_index;
@@ -1415,27 +1418,27 @@ mDNSlocal mDNSu32		ProcessRoutingNotification( int sd)
 #endif // USES_NETLINK
 
 // Called when data appears on interface change notification socket
-mDNSlocal void InterfaceChangeCallback( void *context)
+mDNSlocal void InterfaceChangeCallback(void *context)
 	{
 	IfChangeRec		*pChgRec = (IfChangeRec*) context;
 	fd_set			readFDs;
 	mDNSu32		changedInterfaces = 0;
 	struct timeval	zeroTimeout = { 0, 0 };
 	
-	FD_ZERO( &readFDs);
-	FD_SET( pChgRec->NotifySD, &readFDs);
+	FD_ZERO(&readFDs);
+	FD_SET(pChgRec->NotifySD, &readFDs);
 	
 	do
 	{
-		changedInterfaces |= ProcessRoutingNotification( pChgRec->NotifySD);
+		changedInterfaces |= ProcessRoutingNotification(pChgRec->NotifySD);
 	}
-	while ( 0 < select( pChgRec->NotifySD + 1, &readFDs, (fd_set*) NULL, (fd_set*) NULL, &zeroTimeout));
+	while (0 < select(pChgRec->NotifySD + 1, &readFDs, (fd_set*) NULL, (fd_set*) NULL, &zeroTimeout));
 
 	// Currently we rebuild the entire interface list whenever any interface change is
 	// detected. If this ever proves to be a performance issue in a multi-homed 
 	// configuration, more care should be paid to changedInterfaces.
-	if ( changedInterfaces)
-		mDNSPlatformPosixRefreshInterfaceList( pChgRec->mDNS);
+	if (changedInterfaces)
+		mDNSPlatformPosixRefreshInterfaceList(pChgRec->mDNS);
 	}
 
 // Register with either a Routing Socket or RtNetLink to listen for interface changes.
@@ -1444,14 +1447,14 @@ mDNSlocal mStatus WatchForInterfaceChange(mDNS *const m)
 	mStatus		err;
 	IfChangeRec	*pChgRec;
 
-	pChgRec = (IfChangeRec*) mDNSPlatformMemAllocate( sizeof *pChgRec);
-	if ( pChgRec == NULL)
+	pChgRec = (IfChangeRec*) mDNSPlatformMemAllocate(sizeof *pChgRec);
+	if (pChgRec == NULL)
 		return mStatus_NoMemoryErr;
 
 	pChgRec->mDNS = m;
-	err = OpenIfNotifySocket( &pChgRec->NotifySD);
-	if ( err == 0)
-		err = mDNSPosixAddFDToEventLoop( pChgRec->NotifySD, InterfaceChangeCallback, pChgRec);
+	err = OpenIfNotifySocket(&pChgRec->NotifySD);
+	if (err == 0)
+		err = mDNSPosixAddFDToEventLoop(pChgRec->NotifySD, InterfaceChangeCallback, pChgRec);
 
 	return err;
 	}
@@ -1516,7 +1519,7 @@ mDNSexport mStatus mDNSPlatformInit(mDNS *const m)
 		{
 		err = WatchForInterfaceChange(m);
 		// Failure to observe interface changes is non-fatal.
-		if ( err != mStatus_NoError)
+		if (err != mStatus_NoError)
 			{
 			fprintf(stderr, "mDNS(%d) WARNING: Unable to detect interface changes (%d).\n", getpid(), err);
 			err = mStatus_NoError;
@@ -1642,7 +1645,7 @@ mDNSexport mDNSs32  mDNSPlatformRawTime()
 	// and we multiply tv.tv_usec by 16 / 15625 to get a value in the range 0-1023 to go in the bottom 10 bits.
 	// This gives us a proper modular (cyclic) counter that has a resolution of roughly 1ms (actually 1/1024 second)
 	// and correctly cycles every 2^22 seconds (4194304 seconds = approx 48 days).
-	return( (tv.tv_sec << 10) | (tv.tv_usec * 16 / 15625) );
+	return((tv.tv_sec << 10) | (tv.tv_usec * 16 / 15625));
 	}
 
 mDNSexport mDNSs32 mDNSPlatformUTC(void)
@@ -1730,39 +1733,39 @@ mDNSexport void mDNSPosixProcessFDSet(mDNS *const m, fd_set *readfds)
 	}
 
 // update gMaxFD
-mDNSlocal void	DetermineMaxEventFD( void )
+mDNSlocal void	DetermineMaxEventFD(void)
 	{
 	PosixEventSource	*iSource;
 	
 	gMaxFD = 0;
-	for ( iSource=(PosixEventSource*)gEventSources.Head; iSource; iSource = iSource->Next)
-		if ( gMaxFD < iSource->fd)
+	for (iSource=(PosixEventSource*)gEventSources.Head; iSource; iSource = iSource->Next)
+		if (gMaxFD < iSource->fd)
 			gMaxFD = iSource->fd;
 	}
 
 // Add a file descriptor to the set that mDNSPosixRunEventLoopOnce() listens to.
-mStatus mDNSPosixAddFDToEventLoop( int fd, mDNSPosixEventCallback callback, void *context)
+mStatus mDNSPosixAddFDToEventLoop(int fd, mDNSPosixEventCallback callback, void *context)
 	{
 	PosixEventSource	*newSource;
 	
-	if ( gEventSources.LinkOffset == 0)
-		InitLinkedList( &gEventSources, offsetof( PosixEventSource, Next));
+	if (gEventSources.LinkOffset == 0)
+		InitLinkedList(&gEventSources, offsetof(PosixEventSource, Next));
 
-	if ( fd >= (int) FD_SETSIZE || fd < 0)
+	if (fd >= (int) FD_SETSIZE || fd < 0)
 		return mStatus_UnsupportedErr;
-	if ( callback == NULL)
+	if (callback == NULL)
 		return mStatus_BadParamErr;
 
-	newSource = (PosixEventSource*) malloc( sizeof *newSource);
-	if ( NULL == newSource)
+	newSource = (PosixEventSource*) malloc(sizeof *newSource);
+	if (NULL == newSource)
 		return mStatus_NoMemoryErr;
 
 	newSource->Callback = callback;
 	newSource->Context = context;
 	newSource->fd = fd;
 
-	AddToTail( &gEventSources, newSource);
-	FD_SET( fd, &gEventFDs);
+	AddToTail(&gEventSources, newSource);
+	FD_SET(fd, &gEventFDs);
 
 	DetermineMaxEventFD();
 
@@ -1770,17 +1773,17 @@ mStatus mDNSPosixAddFDToEventLoop( int fd, mDNSPosixEventCallback callback, void
 	}
 
 // Remove a file descriptor from the set that mDNSPosixRunEventLoopOnce() listens to.
-mStatus mDNSPosixRemoveFDFromEventLoop( int fd)
+mStatus mDNSPosixRemoveFDFromEventLoop(int fd)
 	{
 	PosixEventSource	*iSource;
 	
-	for ( iSource=(PosixEventSource*)gEventSources.Head; iSource; iSource = iSource->Next)
+	for (iSource=(PosixEventSource*)gEventSources.Head; iSource; iSource = iSource->Next)
 		{
-		if ( fd == iSource->fd)
+		if (fd == iSource->fd)
 			{
-			FD_CLR( fd, &gEventFDs);
-			RemoveFromList( &gEventSources, iSource);
-			free( iSource);
+			FD_CLR(fd, &gEventFDs);
+			RemoveFromList(&gEventSources, iSource);
+			free(iSource);
 			DetermineMaxEventFD();
 			return mStatus_NoError;
 			}
@@ -1789,44 +1792,44 @@ mStatus mDNSPosixRemoveFDFromEventLoop( int fd)
 	}
 
 // Simply note the received signal in gEventSignals.
-mDNSlocal void	NoteSignal( int signum)
+mDNSlocal void	NoteSignal(int signum)
 	{
-	sigaddset( &gEventSignals, signum);
+	sigaddset(&gEventSignals, signum);
 	}
 
 // Tell the event package to listen for signal and report it in mDNSPosixRunEventLoopOnce().
-mStatus mDNSPosixListenForSignalInEventLoop( int signum)
+mStatus mDNSPosixListenForSignalInEventLoop(int signum)
 	{
 	struct sigaction	action;
 	mStatus				err;
 
-	bzero( &action, sizeof action);		// more portable than member-wise assignment
+	bzero(&action, sizeof action);		// more portable than member-wise assignment
 	action.sa_handler = NoteSignal;
-	err = sigaction( signum, &action, (struct sigaction*) NULL);
+	err = sigaction(signum, &action, (struct sigaction*) NULL);
 	
-	sigaddset( &gEventSignalSet, signum);
+	sigaddset(&gEventSignalSet, signum);
 
 	return err;
 	}
 
 // Tell the event package to stop listening for signal in mDNSPosixRunEventLoopOnce().
-mStatus mDNSPosixIgnoreSignalInEventLoop( int signum)
+mStatus mDNSPosixIgnoreSignalInEventLoop(int signum)
 	{
 	struct sigaction	action;
 	mStatus				err;
 
-	bzero( &action, sizeof action);		// more portable than member-wise assignment
+	bzero(&action, sizeof action);		// more portable than member-wise assignment
 	action.sa_handler = SIG_DFL;
-	err = sigaction( signum, &action, (struct sigaction*) NULL);
+	err = sigaction(signum, &action, (struct sigaction*) NULL);
 	
-	sigdelset( &gEventSignalSet, signum);
+	sigdelset(&gEventSignalSet, signum);
 
 	return err;
 	}
 
 // Do a single pass through the attendent event sources and dispatch any found to their callbacks.
 // Return as soon as internal timeout expires, or a signal we're listening for is received.
-mStatus mDNSPosixRunEventLoopOnce( mDNS *m, const struct timeval *pTimeout, 
+mStatus mDNSPosixRunEventLoopOnce(mDNS *m, const struct timeval *pTimeout, 
 									sigset_t *pSignalsReceived, mDNSBool *pDataDispatched)
 	{
 	fd_set			listenFDs = gEventFDs;
@@ -1834,24 +1837,24 @@ mStatus mDNSPosixRunEventLoopOnce( mDNS *m, const struct timeval *pTimeout,
 	struct timeval	timeout = *pTimeout;
 	
 	// Include the sockets that are listening to the wire in our select() set
-	mDNSPosixGetFDSet( m, &fdMax, &listenFDs, &timeout);	// timeout may get modified
-	if ( fdMax < gMaxFD)
+	mDNSPosixGetFDSet(m, &fdMax, &listenFDs, &timeout);	// timeout may get modified
+	if (fdMax < gMaxFD)
 		fdMax = gMaxFD;
 
-	numReady = select( fdMax + 1, &listenFDs, (fd_set*) NULL, (fd_set*) NULL, &timeout);
+	numReady = select(fdMax + 1, &listenFDs, (fd_set*) NULL, (fd_set*) NULL, &timeout);
 
 	// If any data appeared, invoke its callback
-	if ( numReady > 0)
+	if (numReady > 0)
 		{
 		PosixEventSource	*iSource;
 
-		(void) mDNSPosixProcessFDSet( m, &listenFDs);	// call this first to process wire data for clients
+		(void) mDNSPosixProcessFDSet(m, &listenFDs);	// call this first to process wire data for clients
 
-		for ( iSource=(PosixEventSource*)gEventSources.Head; iSource; iSource = iSource->Next)
+		for (iSource=(PosixEventSource*)gEventSources.Head; iSource; iSource = iSource->Next)
 			{
-			if ( FD_ISSET( iSource->fd, &listenFDs))
+			if (FD_ISSET(iSource->fd, &listenFDs))
 				{
-				iSource->Callback( iSource->Context);
+				iSource->Callback(iSource->Context);
 				break;	// in case callback removed elements from gEventSources
 				}
 			}
@@ -1860,10 +1863,10 @@ mStatus mDNSPosixRunEventLoopOnce( mDNS *m, const struct timeval *pTimeout,
 	else
 		*pDataDispatched = mDNSfalse;
 
-	(void) sigprocmask( SIG_BLOCK, &gEventSignalSet, (sigset_t*) NULL);
+	(void) sigprocmask(SIG_BLOCK, &gEventSignalSet, (sigset_t*) NULL);
 	*pSignalsReceived = gEventSignals;
-	sigemptyset( &gEventSignals);
-	(void) sigprocmask( SIG_UNBLOCK, &gEventSignalSet, (sigset_t*) NULL);
+	sigemptyset(&gEventSignals);
+	(void) sigprocmask(SIG_UNBLOCK, &gEventSignalSet, (sigset_t*) NULL);
 
 	return mStatus_NoError;
 	}
