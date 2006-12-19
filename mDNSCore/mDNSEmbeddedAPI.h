@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.314  2006/12/19 22:49:23  cheshire
+Remove uDNS_info substructure from ServiceRecordSet_struct
+
 Revision 1.313  2006/12/19 02:38:20  cheshire
 Get rid of unnecessary duplicate query ID field from DNSQuestion_struct
 
@@ -1593,6 +1596,7 @@ typedef struct
 // Unless otherwise noted, states may apply to either independent record registrations or service registrations	
 typedef enum
 	{
+	regState_Zero              = 0,
 	regState_FetchingZoneData  = 1,     // getting info - update not sent
 	regState_Pending           = 2,     // update sent, reply not received
 	regState_Registered        = 3,     // update sent, reply received
@@ -1615,7 +1619,6 @@ typedef struct
 	regState_t   state;
 	mDNSBool     lease;    // dynamic update contains (should contain) lease option
 	mDNSs32      expire;   // expiration of lease (-1 for static)
-	mDNSBool     TestForSelfConflict;  // on name conflict, check if we're just seeing our own orphaned records
 	mDNSBool     Private;  // on name conflict, check if we're just seeing our own orphaned records
 	
 	// identifier to match update request and response
@@ -1629,16 +1632,13 @@ typedef struct
 	// NAT traversal context
 	NATTraversalInfo *NATinfo; // may be NULL
 
-	// state for deferred operations
-    mDNSBool     ClientCallbackDeferred;  // invoke client callback on completion of pending operation(s)
-	mStatus      DeferredStatus;          // status to deliver when above flag is set
-    mDNSBool     SRVUpdateDeferred;       // do we need to change target or port once current operation completes?
-    mDNSBool     SRVChanged;              // temporarily deregistered service because its SRV target or port changed
-
     // uDNS_UpdateRecord support fields
-    RData *OrigRData;      mDNSu16 OrigRDLen;     // previously registered, being deleted
-    RData *InFlightRData;  mDNSu16 InFlightRDLen; // currently being registered
-    RData *QueuedRData;    mDNSu16 QueuedRDLen;   // if the client call Update while an update is in flight, we must finish the
+    RData *OrigRData;
+    mDNSu16 OrigRDLen;     // previously registered, being deleted
+    RData *InFlightRData;
+    mDNSu16 InFlightRDLen; // currently being registered
+    RData *QueuedRData;
+    mDNSu16 QueuedRDLen;   // if the client call Update while an update is in flight, we must finish the
                                                   // pending operation (re-transmitting if necessary) THEN register the queued update
 	mDNSRecordUpdateCallback *UpdateRDCallback;   // client callback to free old rdata
 	} uDNS_RegInfo;
@@ -1829,20 +1829,60 @@ struct ExtraResourceRecord_struct
 // Note: Within an mDNSServiceCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute()
 typedef struct ServiceRecordSet_struct ServiceRecordSet;
 typedef void mDNSServiceCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus result);
+
+// A ServiceRecordSet is basically a convenience structure to group together
+// the PTR/SRV/TXT records that make up a standard service registration
+// It contains its own ServiceCallback+ServiceContext to report aggregate results up to the next layer of software above
+// It also contains:
+//  * the "_services" PTR record for service enumeration
+//  * the optional target host name (for proxy registrations)
+//  * the optional list of SubType PTR records
+//  * the optional list of additional records attached to the service set (e.g. iChat pictures)
+//
+// ... and a bunch of stuff related to uDNS, some of which could be simplified or eliminated
+
 struct ServiceRecordSet_struct
 	{
-	// Internal state fields. These are used internally by mDNSCore; the client layer needn't be concerned with them.
+	// These internal state fields are used internally by mDNSCore; the client layer needn't be concerned with them.
 	// No fields need to be set up by the client prior to calling mDNS_RegisterService();
 	// all required data is passed as parameters to that function.
 	ServiceRecordSet    *next;
-	uDNS_RegInfo        uDNS_info;
+	
+	// Begin uDNS info ****************
+	
+	regState_t   state;
+	mDNSBool     lease;    // dynamic update contains (should contain) lease option
+	mDNSs32      expire;   // expiration of lease (-1 for static)
+	mDNSBool     TestForSelfConflict;  // on name conflict, check if we're just seeing our own orphaned records
+	mDNSBool     Private;  // on name conflict, check if we're just seeing our own orphaned records
+	
+	// identifier to match update request and response
+	mDNSOpaque16 id;
+	
+	// server info
+	domainname   zone;     // the zone that is updated
+	mDNSAddr     ns;       // primary name server for the record's zone    !!!KRS not technically correct to cache longer than TTL
+	mDNSIPPort   port;     // port on which server accepts dynamic updates
+	
+	// NAT traversal context
+	NATTraversalInfo *NATinfo; // may be NULL
+
+	// state for deferred operations
+    mDNSBool     ClientCallbackDeferred;  // invoke client callback on completion of pending operation(s)
+	mStatus      DeferredStatus;          // status to deliver when above flag is set
+    mDNSBool     SRVUpdateDeferred;       // do we need to change target or port once current operation completes?
+    mDNSBool     SRVChanged;              // temporarily deregistered service because its SRV target or port changed
+
+	// End uDNS info ****************
+	
 	mDNSServiceCallback *ServiceCallback;
 	void                *ServiceContext;
+	mDNSBool             Conflict;	// Set if this record set was forcibly deregistered because of a conflict
+	
 	ExtraResourceRecord *Extras;	// Optional list of extra AuthRecords attached to this service registration
 	mDNSu32              NumSubTypes;
 	AuthRecord          *SubTypes;
-	mDNSBool             Conflict;	// Set if this record set was forcibly deregistered because of a conflict
-	domainname           Host;		// Set if this service record does not use the standard target host name
+	const domainname    *Host;		// Set if this service record does not use the standard target host name
 	AuthRecord           RR_ADV;	// e.g. _services._dns-sd._udp.local. PTR _printer._tcp.local.
 	AuthRecord           RR_PTR;	// e.g. _printer._tcp.local.        PTR Name._printer._tcp.local.
 	AuthRecord           RR_SRV;	// e.g. Name._printer._tcp.local.   SRV 0 0 port target
@@ -2308,8 +2348,8 @@ extern const mDNSIPPort      PrivateDNSPort;
 extern const mDNSIPPort      NSIPCPort;
 
 extern const mDNSv4Addr      AllDNSAdminGroup;
-#define AllDNSLinkGroupv4 (AllDNSLinkGroup_v4.ip.v4)
-#define AllDNSLinkGroupv6 (AllDNSLinkGroup_v6.ip.v6)
+//#define AllDNSLinkGroupv4 (AllDNSLinkGroup_v4.ip.v4)
+//#define AllDNSLinkGroupv6 (AllDNSLinkGroup_v6.ip.v6)
 extern const mDNSAddr        AllDNSLinkGroup_v4;
 extern const mDNSAddr        AllDNSLinkGroup_v6;
 
@@ -2648,9 +2688,9 @@ extern mDNSBool IsPrivateV4Addr(mDNSAddr *addr);  // returns true for RFC1918 pr
 #define mDNSIPv4AddressIsOnes(A) mDNSSameIPv4Address((A), onesIPv4Addr)
 #define mDNSIPv6AddressIsOnes(A) mDNSSameIPv6Address((A), onesIPv6Addr)
 
-#define mDNSAddressIsAllDNSLinkGroup(X) (                                                     \
-	((X)->type == mDNSAddrType_IPv4 && mDNSSameIPv4Address((X)->ip.v4, AllDNSLinkGroupv4)) || \
-	((X)->type == mDNSAddrType_IPv6 && mDNSSameIPv6Address((X)->ip.v6, AllDNSLinkGroupv6))    )
+#define mDNSAddressIsAllDNSLinkGroup(X) (                                                            \
+	((X)->type == mDNSAddrType_IPv4 && mDNSSameIPv4Address((X)->ip.v4, AllDNSLinkGroup_v4.ip.v4)) || \
+	((X)->type == mDNSAddrType_IPv6 && mDNSSameIPv6Address((X)->ip.v6, AllDNSLinkGroup_v6.ip.v6))    )
 
 #define mDNSAddressIsZero(X) (                                                \
 	((X)->type == mDNSAddrType_IPv4 && mDNSIPv4AddressIsZero((X)->ip.v4))  || \
@@ -2753,7 +2793,7 @@ extern mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 *num
 // end of the record.  tsig is a pointer to the resource record that contains the TSIG OPT record.  info is
 // the matching key to use for verifying the message.  This function expects that the additionals member
 // of the DNS message header has already had one subtracted from it.
-extern mDNSBool DNSDigest_VerifyMessage(DNSMessage * msg, mDNSu8 * end, LargeCacheRecord * tsig, uDNS_AuthInfo * info, mDNSu16 * rcode, mDNSu16 * tcode );
+extern mDNSBool DNSDigest_VerifyMessage(DNSMessage * msg, mDNSu8 * end, LargeCacheRecord * tsig, uDNS_AuthInfo * info, mDNSu16 * rcode, mDNSu16 * tcode);
 
 
 // ***************************************************************************
@@ -2836,22 +2876,23 @@ extern mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(mDNS *const m, mDNSInte
 
 typedef enum
 	{
-	kTCPSocketFlags_UseTLS = ( 1 << 0 )
+	kTCPSocketFlags_Zero   = 0,
+	kTCPSocketFlags_UseTLS = (1 << 0)
 	} uDNS_TCPSocketFlags;
 	
 typedef void (*TCPConnectionCallback)(uDNS_TCPSocket sock, void *context, mDNSBool ConnectionEstablished, mStatus err);
-extern uDNS_TCPSocket mDNSPlatformTCPSocket( mDNS * const m, uDNS_TCPSocketFlags flags, mDNSIPPort * port );	// creates a tcp socket
-extern uDNS_TCPSocket mDNSPlatformTCPAccept( uDNS_TCPSocketFlags flags, int sd );
-extern int            mDNSPlatformTCPGetFlags( uDNS_TCPSocket sock );
-extern int            mDNSPlatformTCPGetFD( uDNS_TCPSocket sock );
-extern mStatus        mDNSPlatformTCPConnect( uDNS_TCPSocket sock, const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
-										  TCPConnectionCallback callback, void *context );
-extern mDNSBool       mDNSPlatformTCPIsConnected( uDNS_TCPSocket sock );
-extern void           mDNSPlatformTCPCloseConnection( uDNS_TCPSocket sock );
-extern int            mDNSPlatformReadTCP(uDNS_TCPSocket sock, void *buf, int buflen, mDNSBool * closed);
-extern int            mDNSPlatformWriteTCP(uDNS_TCPSocket sock, const char *msg, int len);
-extern uDNS_UDPSocket mDNSPlatformUDPSocket( mDNS * const m, mDNSIPPort port );
-extern void           mDNSPlatformUDPClose( uDNS_UDPSocket sock );
+extern uDNS_TCPSocket mDNSPlatformTCPSocket(mDNS * const m, uDNS_TCPSocketFlags flags, mDNSIPPort * port);	// creates a tcp socket
+extern uDNS_TCPSocket mDNSPlatformTCPAccept(uDNS_TCPSocketFlags flags, int sd);
+extern int            mDNSPlatformTCPGetFlags(uDNS_TCPSocket sock);
+extern int            mDNSPlatformTCPGetFD(uDNS_TCPSocket sock);
+extern mStatus        mDNSPlatformTCPConnect(uDNS_TCPSocket sock, const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
+										  TCPConnectionCallback callback, void *context);
+extern mDNSBool       mDNSPlatformTCPIsConnected(uDNS_TCPSocket sock);
+extern void           mDNSPlatformTCPCloseConnection(uDNS_TCPSocket sock);
+extern long           mDNSPlatformReadTCP(uDNS_TCPSocket sock, void *buf, unsigned long buflen, mDNSBool *closed);
+extern long           mDNSPlatformWriteTCP(uDNS_TCPSocket sock, const char *msg, unsigned long len);
+extern uDNS_UDPSocket mDNSPlatformUDPSocket(mDNS * const m, mDNSIPPort port);
+extern void           mDNSPlatformUDPClose(uDNS_UDPSocket sock);
 
 // mDNSPlatformTLSSetupCerts/mDNSPlatformTLSTearDownCerts used by dnsextd
 extern mStatus        mDNSPlatformTLSSetupCerts(void);
@@ -2864,12 +2905,12 @@ extern void           mDNSPlatformTLSTearDownCerts(void);
 extern void					mDNSPlatformGetDNSConfig(mDNS * const m, domainname *const fqdn, domainname *const regDomain, DNameListElem ** browseDomains);
 extern IPAddrListElem	*	mDNSPlatformGetDNSServers(void);
 extern DNameListElem    *   mDNSPlatformGetSearchDomainList(void);
-extern DNameListElem	*	mDNSPlatformGetFQDN( void );
-extern mStatus				mDNSPlatformGetPrimaryInterface( mDNS * const m, mDNSAddr * v4, mDNSAddr * v6, mDNSAddr * router );
-extern DNameListElem	*	mDNSPlatformGetReverseMapSearchDomainList( void );
-extern void					mDNSPlatformSetSecretForDomain( mDNS * const m, const domainname *domain );
-extern mStatus				mDNSPlatformRegisterSplitDNS( mDNS * const m, int * nAdditions, int * nDeletions );
-extern void					mDNSPlatformDefaultBrowseDomainChanged( const domainname *d, mDNSBool add );
+extern DNameListElem	*	mDNSPlatformGetFQDN(void);
+extern mStatus				mDNSPlatformGetPrimaryInterface(mDNS * const m, mDNSAddr * v4, mDNSAddr * v6, mDNSAddr * router);
+extern DNameListElem	*	mDNSPlatformGetReverseMapSearchDomainList(void);
+extern void					mDNSPlatformSetSecretForDomain(mDNS * const m, const domainname *domain);
+extern mStatus				mDNSPlatformRegisterSplitDNS(mDNS * const m, int * nAdditions, int * nDeletions);
+extern void					mDNSPlatformDefaultBrowseDomainChanged(const domainname *d, mDNSBool add);
 extern void					mDNSPlatformDefaultRegDomainChanged(const domainname *d, mDNSBool add);
 extern void					mDNSPlatformDynDNSHostNameStatusChanged(domainname *const dname, mStatus status);
 

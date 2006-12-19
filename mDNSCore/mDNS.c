@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.565  2006/12/19 22:49:23  cheshire
+Remove uDNS_info substructure from ServiceRecordSet_struct
+
 Revision 1.564  2006/12/19 02:38:20  cheshire
 Get rid of unnecessary duplicate query ID field from DNSQuestion_struct
 
@@ -5157,9 +5160,9 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 
 mDNSlocal mDNSBool TrustedSource(const mDNS *const m, const mDNSAddr *const srcaddr)
 	{
+	DNSServer *s;
 	(void)m; // Unused
 	(void)srcaddr; // Unused
-	DNSServer *s;
 	for (s = m->Servers; s; s = s->next)
 		if (mDNSSameAddress(srcaddr, &s->addr)) return(mDNStrue);
 	return(mDNSfalse);
@@ -5286,7 +5289,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 			{
 			// If the TTL is -1 for uDNS LLQ, that means "remove"
 			if (m->rec.r.resrec.rroriginalttl == 0xFFFFFFFF) m->rec.r.resrec.rroriginalttl = 0;
-			else                                             m->rec.r.resrec.rroriginalttl = 0x70000000 / mDNSPlatformOneSecond;
+			else                                             m->rec.r.resrec.rroriginalttl = (mDNSu32)(0x70000000 / mDNSPlatformOneSecond);
 			}
 
 		// If response was not sent via LL multicast,
@@ -6802,6 +6805,7 @@ mDNSlocal void NSSCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
 // left waiting forever looking for a nonexistent record.)
 // If the host parameter is mDNSNULL or the root domain (ASCII NUL),
 // then the default host name (m->MulticastHostname) is automatically used
+// If the optional target host parameter is set, then the storage it points to must remain valid for the lifetime of the service registration
 mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	const domainlabel *const name, const domainname *const type, const domainname *const domain,
 	const domainname *const host, mDNSIPPort port, const mDNSu8 txtinfo[], mDNSu16 txtlen,
@@ -6811,14 +6815,29 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	mStatus err;
 	mDNSu32 i;
 
+	sr->state                  = regState_Zero;
+	sr->lease                  = 0;
+	sr->expire                 = 0;
+	sr->TestForSelfConflict    = 0;
+	sr->Private                = 0;
+	sr->id                     = zeroID;
+	sr->zone.c[0]              = 0;
+	sr->ns                     = zeroAddr;
+	sr->port                   = zeroIPPort;
+	sr->NATinfo                = 0;
+	sr->ClientCallbackDeferred = 0;
+	sr->DeferredStatus         = 0;
+	sr->SRVUpdateDeferred      = 0;
+	sr->SRVChanged             = 0;
+
 	sr->ServiceCallback = Callback;
 	sr->ServiceContext  = Context;
+	sr->Conflict        = mDNSfalse;
+
 	sr->Extras          = mDNSNULL;
 	sr->NumSubTypes     = NumSubTypes;
 	sr->SubTypes        = SubTypes;
-	sr->Conflict        = mDNSfalse;
-	if (host && host->c[0]) sr->Host = *host;
-	else sr->Host.c[0] = 0;
+	sr->Host            = host && host->c[0] ? host : mDNSNULL;
 	
 	// If port number is zero, that means the client is really trying to do a RegisterNoSuchService
 	if (!port.NotAnInteger)
@@ -6875,7 +6894,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	sr->RR_SRV.resrec.rdata->u.srv.port     = port;
 
 	// Setting HostTarget tells DNS that the target of this SRV is to be automatically kept in sync with our host name
-	if (sr->Host.c[0]) AssignDomainName(&sr->RR_SRV.resrec.rdata->u.srv.target, &sr->Host);
+	if (sr->Host) AssignDomainName(&sr->RR_SRV.resrec.rdata->u.srv.target, sr->Host);
 	else { sr->RR_SRV.HostTarget = mDNStrue; sr->RR_SRV.resrec.rdata->u.srv.target.c[0] = '\0'; }
 
 	// 4. Set up the TXT record rdata,
@@ -7004,7 +7023,7 @@ mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordS
 	// mDNS_RegisterService() and mDNS_AddRecordToService(), which do the right locking internally.
 	domainlabel name1, name2;
 	domainname type, domain;
-	domainname *host = mDNSNULL;
+	const domainname *host = mDNSNULL;
 	ExtraResourceRecord *extras = sr->Extras;
 	mStatus err;
 
@@ -7020,7 +7039,7 @@ mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordS
 		LogMsg("%##s service renamed from \"%#s\" to \"%#s\"", type.c, name1.c, newname->c);
 	else LogMsg("%##s service (domain %##s) renamed from \"%#s\" to \"%#s\"",type.c, domain.c, name1.c, newname->c);
 
-	if (sr->RR_SRV.HostTarget == mDNSfalse && sr->Host.c[0]) host = &sr->Host;
+	if (sr->RR_SRV.HostTarget == mDNSfalse && sr->Host) host = sr->Host;
 	
 	err = mDNS_RegisterService(m, sr, newname, &type, &domain,
 		host, sr->RR_SRV.resrec.rdata->u.srv.port, sr->RR_TXT.resrec.rdata->u.txt.c, sr->RR_TXT.resrec.rdlength,

@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.220  2006/12/19 22:49:25  cheshire
+Remove uDNS_info substructure from ServiceRecordSet_struct
+
 Revision 1.219  2006/12/14 03:02:38  cheshire
 <rdar://problem/4838433> Tools: dns-sd -G 0 only returns IPv6 when you have a routable IPv6 address
 
@@ -2847,7 +2850,7 @@ mDNSexport int CountPeerRegistrations(mDNS *const m, ServiceRecordSet *const srs
 			count++;
 
 	for (s = m->ServiceRegistrations; s; s = s->next)
-		if (s->uDNS_info.state != regState_Unregistered && SameDomainName(s->RR_SRV.resrec.name, r->name) && !SameRData(&s->RR_SRV.resrec, r))
+		if (s->state != regState_Unregistered && SameDomainName(s->RR_SRV.resrec.name, r->name) && !SameRData(&s->RR_SRV.resrec, r))
 			count++;
 		
 	verbosedebugf("%d peer registrations for %##s", count, r->name->c);
