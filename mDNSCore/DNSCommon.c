@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.113  2006/12/19 02:21:08  cheshire
+Delete spurious spaces
+
 Revision 1.112  2006/12/15 20:42:10  cheshire
 <rdar://problem/4769083> ValidateRData() should be stricter about malformed MX and SRV records
 Additional defensive coding in GetLargeResourceRecord() to reject apparently-valid
@@ -518,7 +521,7 @@ mDNSexport mDNSBool IsPrivateV4Addr(mDNSAddr *addr)
 	b = addr->ip.v4.b;
 		
 	return ((b[0] == 10) ||                              // 10/8 prefix
-			(b[0] == 172 && b[1] > 15 && b[1] < 32) ||   // 172.16/12 
+			(b[0] == 172 && b[1] > 15 && b[1] < 32) ||   // 172.16/12
 			(b[0] == 192 && b[1] == 168));               // 192.168/16
 	}
 
@@ -1335,7 +1338,7 @@ mDNSexport mDNSBool SameRData(const ResourceRecord *const r1, const ResourceReco
 mDNSexport mDNSBool SameResourceRecord(ResourceRecord *r1, ResourceRecord *r2)
 	{
 	return (r1->namehash == r2->namehash &&
-			r1->rrtype == r2->rrtype && 
+			r1->rrtype == r2->rrtype &&
 			SameDomainName(r1->name, r2->name) &&
 			SameRData(r1, r2));
 	}
@@ -1882,7 +1885,7 @@ mDNSexport mDNSu8 *putDeleteAllRRSets(DNSMessage *msg, mDNSu8 *ptr, const domain
 mDNSexport mDNSu8 *putUpdateLease(DNSMessage *msg, mDNSu8 *end, mDNSu32 lease)
 	{
 	AuthRecord rr;
-	ResourceRecord *opt = &rr.resrec; 
+	ResourceRecord *opt = &rr.resrec;
 	rdataOpt *optRD;
 
 	mDNSPlatformMemZero(&rr, sizeof(AuthRecord));
@@ -2251,14 +2254,13 @@ mDNSexport mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg
 		}
 
 	// Send the packet on the wire
-
-	if ( sock )
+	if (sock)
 		{
 		msglen = (mDNSu16)(end - (mDNSu8 *)msg);
 		lenbuf[0] = (mDNSu8)(msglen >> 8);  // host->network byte conversion
 		lenbuf[1] = (mDNSu8)(msglen &  0xFF);
 
-		nsent = mDNSPlatformWriteTCP( sock, (char*)lenbuf, 2);
+		nsent = mDNSPlatformWriteTCP(sock, (char*)lenbuf, 2);
 		//!!!KRS make sure kernel is sending these as 1 packet!
 		if (nsent != 2) goto tcp_error;
 
