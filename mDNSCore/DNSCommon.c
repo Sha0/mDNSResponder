@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.115  2006/12/20 04:07:34  cheshire
+Remove uDNS_info substructure from AuthRecord_struct
+
 Revision 1.114  2006/12/19 22:40:04  cheshire
 Fix compiler warnings
 
@@ -429,8 +432,9 @@ mDNSexport const mDNSv4Addr      onesIPv4Addr      = { { 255, 255, 255, 255 } };
 mDNSexport const mDNSv6Addr      onesIPv6Addr      = { { 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255 } };
 mDNSexport const mDNSAddr        zeroAddr          = { mDNSAddrType_None, {{{ 0 }}} };
 
-mDNSexport const mDNSInterfaceID mDNSInterface_Any        = 0;
-mDNSexport const mDNSInterfaceID mDNSInterface_LocalOnly  = (mDNSInterfaceID)1;
+mDNSexport const mDNSInterfaceID mDNSInterface_Any       = 0;
+mDNSexport const mDNSInterfaceID mDNSInterface_LocalOnly = (mDNSInterfaceID)1;
+mDNSexport const mDNSInterfaceID mDNSInterface_Unicast   = (mDNSInterfaceID)2;
 
 // Note: Microsoft's proposed "Link Local Multicast Name Resolution Protocol" (LLMNR) is essentially a limited version of
 // Multicast DNS, using the same packet formats, naming syntax, and record types as Multicast DNS, but on a different UDP
@@ -1253,7 +1257,6 @@ mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 mDNSexport void mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mDNSInterfaceID InterfaceID,
 	mDNSu16 rrtype, mDNSu32 ttl, mDNSu8 RecordType, mDNSRecordCallback Callback, void *Context)
 	{
-	mDNSPlatformMemZero(&rr->uDNS_info, sizeof(uDNS_RegInfo));
 	// Don't try to store a TTL bigger than we can represent in platform time units
 	if (ttl > 0x7FFFFFFFUL / mDNSPlatformOneSecond)
 		ttl = 0x7FFFFFFFUL / mDNSPlatformOneSecond;
@@ -1292,7 +1295,13 @@ mDNSexport void mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mD
 	rr->ForceMCast        = mDNSfalse;
 
 	// Field Group 3: Transient state for Authoritative Records (set in mDNS_Register_internal)
-	
+
+	// HACK
+	// Because uDNS_RegisterService short-circuits the usual mDNS_Register_internal record registration calls,
+	// a bunch of fields don't get set up properly.
+	// Clearing QueuedRData here seems to avoid one particular crash.
+	rr->QueuedRData = 0;
+
 	rr->namestorage.c[0]  = 0;		// MUST be set by client before calling mDNS_Register()
 	}
 
@@ -1823,7 +1832,6 @@ mDNSexport mDNSu8 *putZone(DNSMessage *const msg, mDNSu8 *ptr, mDNSu8 *limit, co
 mDNSexport mDNSu8 *putPrereqNameNotInUse(domainname *name, DNSMessage *msg, mDNSu8 *ptr, mDNSu8 *end)
 	{
 	AuthRecord prereq;
-
 	mDNSPlatformMemZero(&prereq, sizeof(AuthRecord));
 	mDNS_SetupResourceRecord(&prereq, mDNSNULL, mDNSInterface_Any, kDNSQType_ANY, kStandardTTL, 0, mDNSNULL, mDNSNULL);
 	AssignDomainName(prereq.resrec.name, name);

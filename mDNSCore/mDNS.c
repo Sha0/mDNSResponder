@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.566  2006/12/20 04:07:34  cheshire
+Remove uDNS_info substructure from AuthRecord_struct
+
 Revision 1.565  2006/12/19 22:49:23  cheshire
 Remove uDNS_info substructure from ServiceRecordSet_struct
 
@@ -2253,23 +2256,16 @@ mDNSlocal void AcknowledgeRecord(mDNS *const m, AuthRecord *const rr)
 #define RecordIsLocalDuplicate(A,B) \
 	((A)->resrec.InterfaceID == (B)->resrec.InterfaceID && RecordLDT((A),(B)) && IdenticalResourceRecord(&(A)->resrec, &(B)->resrec))
 
-mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
+// Exported so uDNS.c can call this
+mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	{
 	domainname *target = GetRRDomainNameTarget(&rr->resrec);
 	AuthRecord *r;
 	AuthRecord **p = &m->ResourceRecords;
 	AuthRecord **d = &m->DuplicateRecords;
 
-	mDNSPlatformMemZero(&rr->uDNS_info, sizeof(uDNS_RegInfo));
-
 	if ((mDNSs32)rr->resrec.rroriginalttl <= 0)
 		{ LogMsg("mDNS_Register_internal: TTL must be 1 - 0x7FFFFFFF %s", ARDisplayString(m, rr)); return(mStatus_BadParamErr); }
-	
-#ifndef UNICAST_DISABLED
-    if (rr->resrec.InterfaceID == mDNSInterface_LocalOnly || rr->ForceMCast || IsLocalDomain(rr->resrec.name))
-    	rr->uDNS_info.id = zeroID;
-    else return uDNS_RegisterRecord(m, rr);
-#endif
 	
 	while (*p && *p != rr) p=&(*p)->next;
 	while (*d && *d != rr) d=&(*d)->next;
@@ -2313,7 +2309,10 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 
 	rr->next = mDNSNULL;
 
-	// Field Group 1: Persistent metadata for Authoritative Records
+	// Field Group 1: The actual information pertaining to this resource record
+	// Set up by client prior to call
+
+	// Field Group 2: Persistent metadata for Authoritative Records
 //	rr->Additional1       = set to mDNSNULL in mDNS_SetupResourceRecord; may be overridden by client
 //	rr->Additional2       = set to mDNSNULL in mDNS_SetupResourceRecord; may be overridden by client
 //	rr->DependentOn       = set to mDNSNULL in mDNS_SetupResourceRecord; may be overridden by client
@@ -2326,7 +2325,7 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	// Make sure target is not uninitialized data, or we may crash writing debugging log messages
 	if (rr->HostTarget && target) target->c[0] = 0;
 
-	// Field Group 2: Transient state for Authoritative Records
+	// Field Group 3: Transient state for Authoritative Records
 	rr->Acknowledged      = mDNSfalse;
 	rr->ProbeCount        = DefaultProbeCountForRecordType(rr->resrec.RecordType);
 	rr->AnnounceCount     = InitialAnnounceCount;
@@ -2354,6 +2353,23 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	rr->UpdateCredits     = kMaxUpdateCredits;
 	rr->NextUpdateCredit  = 0;
 	rr->UpdateBlocked     = 0;
+
+	// Field Group 4: Transient uDNS state for Authoritative Records
+	rr->state             = regState_Zero;
+	rr->lease             = 0;
+	rr->expire            = 0;
+	rr->Private           = 0;
+	rr->id                = zeroID;
+	rr->zone.c[0]         = 0;
+	rr->UpdateServer      = zeroAddr;
+	rr->UpdatePort        = zeroIPPort;
+	rr->NATinfo           = 0;
+	rr->OrigRData         = 0;
+	rr->OrigRDLen         = 0;
+	rr->InFlightRData     = 0;
+	rr->InFlightRDLen     = 0;
+	rr->QueuedRData       = 0;
+	rr->QueuedRDLen       = 0;
 
 //	rr->resrec.interface         = already set in mDNS_SetupResourceRecord
 //	rr->resrec.name->c            = MUST be set by client
@@ -2408,6 +2424,11 @@ mDNSlocal mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 			}
 		}
 
+#ifndef UNICAST_DISABLED
+	if (rr->resrec.InterfaceID == mDNSInterface_Any && !rr->ForceMCast && !IsLocalDomain(rr->resrec.name))
+		return uDNS_RegisterRecord(m, rr);
+#endif
+	
 	// Now that we've finished building our new record, make sure it's not identical to one we already have
 	for (r = m->ResourceRecords; r; r=r->next) if (RecordIsLocalDuplicate(r, rr)) break;
 	
@@ -6920,6 +6941,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 		// Since some legacy apps try to create zero-length TXT records, we'll silently correct it here.
 		// (We have to duplicate this check here because uDNS_RegisterService() bypasses the usual mDNS_Register_internal() bottleneck)
 		if (!sr->RR_TXT.resrec.rdlength) { sr->RR_TXT.resrec.rdlength = 1; sr->RR_TXT.resrec.rdata->u.txt.c[0] = 0; }
+		
 		status = uDNS_RegisterService(m, sr);
 		mDNS_Unlock(m);
 		return(status);

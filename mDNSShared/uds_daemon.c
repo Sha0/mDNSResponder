@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.221  2006/12/20 04:07:38  cheshire
+Remove uDNS_info substructure from AuthRecord_struct
+
 Revision 1.220  2006/12/19 22:49:25  cheshire
 Remove uDNS_info substructure from ServiceRecordSet_struct
 
@@ -2846,7 +2849,7 @@ mDNSexport int CountPeerRegistrations(mDNS *const m, ServiceRecordSet *const srs
 			count++;
 
 	for (rr = m->RecordRegistrations; rr; rr=rr->next)
-		if (rr->uDNS_info.state != regState_Unregistered && rr->resrec.rrtype == kDNSType_SRV && SameDomainName(rr->resrec.name, r->name) && !SameRData(&rr->resrec, r))
+		if (rr->state != regState_Unregistered && rr->resrec.rrtype == kDNSType_SRV && SameDomainName(rr->resrec.name, r->name) && !SameRData(&rr->resrec, r))
 			count++;
 
 	for (s = m->ServiceRegistrations; s; s = s->next)

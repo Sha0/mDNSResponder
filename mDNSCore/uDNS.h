@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.44  2006/12/20 04:07:35  cheshire
+Remove uDNS_info substructure from AuthRecord_struct
+
 Revision 1.43  2006/12/16 01:58:32  cheshire
 <rdar://problem/4720673> uDNS: Need to start caching unicast records
 
@@ -198,6 +201,7 @@ extern void uDNS_Wake(mDNS *const m);
 extern mStatus uDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra);
 extern mStatus uDNS_UpdateRecord(mDNS *m, AuthRecord *rr);
 	
+extern mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr);
 extern mStatus uDNS_RegisterRecord(mDNS *const m, AuthRecord *const rr);
 extern mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr);
 

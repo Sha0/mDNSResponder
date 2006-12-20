@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.315  2006/12/20 04:07:35  cheshire
+Remove uDNS_info substructure from AuthRecord_struct
+
 Revision 1.314  2006/12/19 22:49:23  cheshire
 Remove uDNS_info substructure from ServiceRecordSet_struct
 
@@ -1593,7 +1596,7 @@ typedef struct
 	RData           *rdata;				// Pointer to storage for this rdata
 	} ResourceRecord;
 
-// Unless otherwise noted, states may apply to either independent record registrations or service registrations	
+// Unless otherwise noted, states may apply to either independent record registrations or service registrations
 typedef enum
 	{
 	regState_Zero              = 0,
@@ -1610,38 +1613,7 @@ typedef enum
 	regState_NoTarget          = 12,    // service registration pending registration of hostname (ServiceRegistrations only)
     regState_ExtraQueued       = 13,    // extra record to be registered upon completion of service registration (RecordRegistrations only)
 	regState_NATError          = 14     // unable to complete NAT traversal
-	} regState_t; 
-
-// context for both ServiceRecordSet and individual AuthRec structs
-typedef struct
-	{
-	// registration/lease state
-	regState_t   state;
-	mDNSBool     lease;    // dynamic update contains (should contain) lease option
-	mDNSs32      expire;   // expiration of lease (-1 for static)
-	mDNSBool     Private;  // on name conflict, check if we're just seeing our own orphaned records
-	
-	// identifier to match update request and response
-	mDNSOpaque16 id;
-	
-	// server info
-	domainname   zone;     // the zone that is updated
-	mDNSAddr     ns;       // primary name server for the record's zone    !!!KRS not technically correct to cache longer than TTL
-	mDNSIPPort   port;     // port on which server accepts dynamic updates
-	
-	// NAT traversal context
-	NATTraversalInfo *NATinfo; // may be NULL
-
-    // uDNS_UpdateRecord support fields
-    RData *OrigRData;
-    mDNSu16 OrigRDLen;     // previously registered, being deleted
-    RData *InFlightRData;
-    mDNSu16 InFlightRDLen; // currently being registered
-    RData *QueuedRData;
-    mDNSu16 QueuedRDLen;   // if the client call Update while an update is in flight, we must finish the
-                                                  // pending operation (re-transmitting if necessary) THEN register the queued update
-	mDNSRecordUpdateCallback *UpdateRDCallback;   // client callback to free old rdata
-	} uDNS_RegInfo;
+	} regState_t;
 
 struct AuthRecord_struct
 	{
@@ -1653,7 +1625,6 @@ struct AuthRecord_struct
 	AuthRecord     *next;				// Next in list; first element of structure for efficiency reasons
 	// Field Group 1: Common ResourceRecord fields
 	ResourceRecord  resrec;
-	uDNS_RegInfo uDNS_info;
 
 	// Field Group 2: Persistent metadata for Authoritative Records
 	AuthRecord     *Additional1;		// Recommended additional record to include in response
@@ -1697,6 +1668,29 @@ struct AuthRecord_struct
 	mDNSs32         NextUpdateCredit;	// Time next token is added to bucket
 	mDNSs32         UpdateBlocked;		// Set if update delaying is in effect
 
+	// Field Group 4: Transient uDNS state for Authoritative Records
+	regState_t   state;
+	mDNSBool     lease;		// dynamic update contains (should contain) lease option
+	mDNSs32      expire;	// expiration of lease (-1 for static)
+	mDNSBool     Private;	// If zone is private, DNS updates may have to be encrypted to prevent eavesdropping
+	mDNSOpaque16 id;		// identifier to match update request and response
+	domainname   zone;			// the zone that is updated
+	mDNSAddr     UpdateServer;	// DNS server that handles updates for this zone
+	mDNSIPPort   UpdatePort;	// port on which server accepts dynamic updates
+								// !!!KRS not technically correct to cache longer than TTL
+								// SDC Perhaps should keep a reference to the relevant SRV record in the cache?
+	NATTraversalInfo *NATinfo;	// NAT traversal context; may be NULL
+	
+	// uDNS_UpdateRecord support fields
+	// Do we really need all these in *addition* to NewRData and newrdlength above?
+	RData *OrigRData;
+	mDNSu16 OrigRDLen;		// previously registered, being deleted
+	RData *InFlightRData;
+	mDNSu16 InFlightRDLen;	// currently being registered
+	RData *QueuedRData;		// if the client call Update while an update is in flight, we must finish the
+	mDNSu16 QueuedRDLen;	// pending operation (re-transmitting if necessary) THEN register the queued update
+
+	// Field Group 4: Large data objects go at the end
 	domainname      namestorage;
 	RData           rdatastorage;		// Normally the storage is right here, except for oversized records
 	// rdatastorage MUST be the last thing in the structure -- when using oversized AuthRecords, extra bytes
@@ -1849,25 +1843,18 @@ struct ServiceRecordSet_struct
 	ServiceRecordSet    *next;
 	
 	// Begin uDNS info ****************
+	// Hopefully much of this stuff can be simplified or eliminated
 	
 	regState_t   state;
 	mDNSBool     lease;    // dynamic update contains (should contain) lease option
 	mDNSs32      expire;   // expiration of lease (-1 for static)
 	mDNSBool     TestForSelfConflict;  // on name conflict, check if we're just seeing our own orphaned records
-	mDNSBool     Private;  // on name conflict, check if we're just seeing our own orphaned records
-	
-	// identifier to match update request and response
+	mDNSBool     Private;  // If zone is private, DNS updates may have to be encrypted to prevent eavesdropping
 	mDNSOpaque16 id;
-	
-	// server info
 	domainname   zone;     // the zone that is updated
-	mDNSAddr     ns;       // primary name server for the record's zone    !!!KRS not technically correct to cache longer than TTL
+	mDNSAddr     ns;       // primary name server for the record's zone  !!!KRS not technically correct to cache longer than TTL
 	mDNSIPPort   port;     // port on which server accepts dynamic updates
-	
-	// NAT traversal context
 	NATTraversalInfo *NATinfo; // may be NULL
-
-	// state for deferred operations
     mDNSBool     ClientCallbackDeferred;  // invoke client callback on completion of pending operation(s)
 	mStatus      DeferredStatus;          // status to deliver when above flag is set
     mDNSBool     SRVUpdateDeferred;       // do we need to change target or port once current operation completes?
@@ -1927,8 +1914,8 @@ typedef enum
 	LLQ_SecondaryRequest  = 3,
 	LLQ_Refresh           = 4,
 	LLQ_Retry             = 5,
-	LLQ_Established       = 6,	
-	LLQ_Suspended         = 7,   
+	LLQ_Established       = 6,
+	LLQ_Suspended         = 7,
 	LLQ_SuspendDeferred   = 8, // suspend once we get zone info
 	LLQ_SuspendedPoll     = 9, // suspended from polling state
 	LLQ_NatMapWaitTCP     = 10,
@@ -2130,7 +2117,7 @@ typedef packedstruct
 	{
 	mDNSu8 vers;
 	mDNSu8 opcode;
-	} NATAddrRequest;	
+	} NATAddrRequest;
 	
 typedef packedstruct
 	{
@@ -2338,6 +2325,7 @@ extern const mDNSAddr        zeroAddr;
 
 extern const mDNSInterfaceID mDNSInterface_Any;				// Zero
 extern const mDNSInterfaceID mDNSInterface_LocalOnly;		// Special value
+extern const mDNSInterfaceID mDNSInterface_Unicast;			// Special value
 
 extern const mDNSIPPort      UnicastDNSPort;
 extern const mDNSIPPort      NATPMPPort;
@@ -2761,7 +2749,7 @@ extern mStatus mDNS_SetSecretForZone(mDNS *m, const domainname *zone, const doma
 // these values are initialized.
 
 // When routable V4 interfaces are added or removed, mDNS_UpdateLLQs should be called to re-estabish LLQs in case the
-// destination address for events (i.e. the route) has changed.  For performance reasons, the caller is responsible for 
+// destination address for events (i.e. the route) has changed.  For performance reasons, the caller is responsible for
 // batching changes, e.g.  calling the routine only once if multiple interfaces are simultanously removed or added.
 
 // DNS servers used to resolve unicast queries are specified by mDNS_AddDNSServer, and may later be removed via mDNS_DeleteDNSServers.
