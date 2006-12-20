@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.356  2006/12/20 23:15:53  mkrochma
+Fix the private domain list code so that it actually works
+
 Revision 1.355  2006/12/20 23:04:36  mkrochma
 Fix crash when adding private domain list to Dynamic Store
 
@@ -4398,13 +4401,12 @@ mDNSlocal OSStatus StoreDomainDataFromKeychain(mDNS * const m)
 				
 					if (attr.tag == kSecServiceItemAttr)
 						{
-						char   keybuf[4 + MAX_ESCAPED_DOMAIN_NAME];  // Extra 4 is for the "dns:" prefix
-						char * const string;
+						char keybuf[4 + MAX_ESCAPED_DOMAIN_NAME];  // Extra 4 is for the "dns:" prefix
 						memcpy(keybuf, attr.data, attr.length);
 						keybuf[attr.length] = 0;
 						if (strncasecmp(keybuf, "dns:", 4) == 0)
 							{
-							CFStringRef cfs = CFStringCreateWithCString(NULL, string+4, kCFStringEncodingUTF8);
+							CFStringRef cfs = CFStringCreateWithCString(NULL, keybuf+4, kCFStringEncodingUTF8);
 							CFArrayAppendValue(stateArray, cfs);
 							CFRelease(cfs);
 							}
