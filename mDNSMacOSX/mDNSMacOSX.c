@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.355  2006/12/20 23:04:36  mkrochma
+Fix crash when adding private domain list to Dynamic Store
+
 Revision 1.354  2006/12/19 22:43:55  cheshire
 Fix compiler warnings
 
@@ -4344,7 +4347,7 @@ mDNSlocal OSStatus StoreDomainDataFromKeychain(mDNS * const m)
 		goto exit;
 		}
 
-	stateArray = CFArrayCreateMutable(NULL, 0, NULL);
+	stateArray = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 
 	if (!stateArray)
 		{
