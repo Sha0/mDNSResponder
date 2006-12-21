@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.357  2006/12/21 00:09:45  cheshire
+Use mDNSPlatformMemZero instead of bzero
+
 Revision 1.356  2006/12/20 23:15:53  mkrochma
 Fix the private domain list code so that it actually works
 
@@ -1923,7 +1926,7 @@ mDNSexport uDNS_TCPSocket mDNSPlatformTCPSocket(mDNS * const m, uDNS_TCPSocketFl
 		goto exit;
 		}
 
-	bzero(sock, sizeof(struct uDNS_TCPSocket_struct));
+	mDNSPlatformMemZero(sock, sizeof(struct uDNS_TCPSocket_struct));
 	sock->flags = flags;
 	sock->fd = -1;
 		
@@ -2007,11 +2010,11 @@ mDNSexport mStatus mDNSPlatformTCPConnect(uDNS_TCPSocket sock, const mDNSAddr * 
 		return mStatus_UnknownErr;
 		}
 
-	bzero(&saddr, sizeof(saddr));
-	saddr.sin_family = AF_INET;
-	saddr.sin_port = dstport.NotAnInteger;
-	saddr.sin_len = sizeof(saddr);
-	memcpy(&saddr.sin_addr, &dst->ip.v4.NotAnInteger, sizeof(saddr.sin_addr));
+	mDNSPlatformMemZero(&saddr, sizeof(saddr));
+	saddr.sin_family      = AF_INET;
+	saddr.sin_port        = dstport.NotAnInteger;
+	saddr.sin_len         = sizeof(saddr);
+	saddr.sin_addr.s_addr = dst->ip.v4.NotAnInteger;
 
 	// Don't send if it would cause dial-on-demand connection initiation.
 	if (AddrRequiresPPPConnection((struct sockaddr *)&saddr))
@@ -2478,7 +2481,7 @@ mDNSlocal mStatus SetupSocket(mDNS *const m, KQSocketSet *cp, mDNSBool mcast, co
 		
 		// And start listening for packets
 		struct sockaddr_in6 listening_sockaddr6;
-		bzero(&listening_sockaddr6, sizeof(listening_sockaddr6));
+		mDNSPlatformMemZero(&listening_sockaddr6, sizeof(listening_sockaddr6));
 		listening_sockaddr6.sin6_len         = sizeof(listening_sockaddr6);
 		listening_sockaddr6.sin6_family      = AF_INET6;
 		listening_sockaddr6.sin6_port        = port.NotAnInteger;
@@ -2901,7 +2904,7 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 	NetworkInterfaceInfoOSX *i = (NetworkInterfaceInfoOSX *)mallocL("NetworkInterfaceInfoOSX", sizeof(*i));
 	debugf("AddInterfaceToList: Making   new   interface %lu %.6a with address %#a at %p", scope_id, &bssid, &ip, i);
 	if (!i) return(mDNSNULL);
-	bzero(i, sizeof(NetworkInterfaceInfoOSX));
+	mDNSPlatformMemZero(i, sizeof(NetworkInterfaceInfoOSX));
 	i->ifa_name        = (char *)mallocL("NetworkInterfaceInfoOSX name", strlen(ifa->ifa_name) + 1);
 	if (!i->ifa_name) { freeL("NetworkInterfaceInfoOSX", i); return(mDNSNULL); }
 	strcpy(i->ifa_name, ifa->ifa_name);		// This is safe because we know we allocated i->ifa_name with sufficient space
@@ -3018,7 +3021,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 						{
 						struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)ifa->ifa_addr;
 						struct in6_ifreq ifr6;
-						bzero((char *)&ifr6, sizeof(ifr6));
+						mDNSPlatformMemZero((char *)&ifr6, sizeof(ifr6));
 						strlcpy(ifr6.ifr_name, ifa->ifa_name, sizeof(ifr6.ifr_name));
 						ifr6.ifr_addr = *sin6;
 						if (ioctl(InfoSocket, SIOCGIFAFLAG_IN6, &ifr6) != -1)
@@ -3449,7 +3452,7 @@ mDNSexport IPAddrListElem * mDNSPlatformGetDNSServers()
 				}
 				
 			memset(current, 0, sizeof(IPAddrListElem));
-			memcpy(&current->addr, &addr, sizeof(mDNSAddr));
+			current->addr = addr;
 
 			if (!head)
 				{

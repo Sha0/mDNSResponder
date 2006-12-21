@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.282  2006/12/21 00:09:45  cheshire
+Use mDNSPlatformMemZero instead of bzero
+
 Revision 1.281  2006/11/18 05:01:32  cheshire
 Preliminary support for unifying the uDNS and mDNS code,
 including caching of uDNS answers
@@ -935,7 +938,7 @@ void *mallocL(char *msg, unsigned int size)
 		LogMalloc("malloc( %s : %lu ) = %p", msg, size, &mem[2]);
 		mem[0] = 0xDEAD1234;
 		mem[1] = size;
-		//bzero(&mem[2], size);
+		//mDNSPlatformMemZero(&mem[2], size);
 		memset(&mem[2], 0xFF, size);
 		validatelists(&mDNSStorage);
 		return(&mem[2]);
@@ -954,7 +957,7 @@ void freeL(char *msg, void *x)
 		if (mem[1] > 24000)
 			{ LogMsg("free( %s : %ld @ %p) too big!", msg, mem[1], &mem[2]); return; }
 		LogMalloc("free( %s : %ld @ %p)", msg, mem[1], &mem[2]);
-		//bzero(mem, mem[1]+8);
+		//mDNSPlatformMemZero(mem, mem[1]+8);
 		memset(mem, 0xFF, mem[1]+8);
 		validatelists(&mDNSStorage);
 		free(mem);
@@ -1326,15 +1329,6 @@ mDNSexport void mDNSPlatformDefaultBrowseDomainChanged(const domainname *d, mDNS
 						{
 						DNSServiceBrowserQuestion *remove = *q;
 						*q = (*q)->next;
-						if (remove->q.LongLived)
-							{
-							// Give goodbyes for known answers.
-							// Note that this a special case where we know that the QuestionCallback function is our own
-							// code (it's FoundInstance), and that callback routine doesn't ever cancel its operation, so we
-							// don't need to guard against the question being cancelled mid-loop the way the mDNSCore routines do.
-							// SEH knownAnswers CacheRecord *ka = remove->q.knownAnswers;
-							// while (ka) { remove->q.QuestionCallback(&mDNSStorage, &remove->q, &ka->resrec, mDNSfalse); ka = ka->next; }
-							}
 						mDNS_StopBrowse(&mDNSStorage, &remove->q);
 						freeL("DNSServiceBrowserQuestion", remove );
 						return;
@@ -1440,8 +1434,8 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 
 	if (query->info->TXTlen > sizeof(cstring)) return;
 
-	bzero(&interface, sizeof(interface));
-	bzero(&address,   sizeof(address));
+	mDNSPlatformMemZero(&interface, sizeof(interface));
+	mDNSPlatformMemZero(&address,   sizeof(address));
 
 	if (ifx && ifx->ifinfo.ip.type == mDNSAddrType_IPv4)
 		{
@@ -1793,7 +1787,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	// Allocate memory, and handle failure
 	DNSServiceRegistration *x = mallocL("DNSServiceRegistration", sizeof(*x));
 	if (!x) { err = mStatus_NoMemoryErr; errormsg = "No memory"; goto fail; }
-	bzero(x, sizeof(*x));
+	mDNSPlatformMemZero(x, sizeof(*x));
 
 	// Set up object, and link into list
 	x->ClientMachPort = client;
@@ -2969,7 +2963,7 @@ mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *cont
 	if (NULL == newSource)
 		return mStatus_NoMemoryErr;
 
-	bzero(newSource, sizeof(*newSource));
+	mDNSPlatformMemZero(newSource, sizeof(*newSource));
 	newSource->Callback = callback;
 	newSource->Context = context;
 	newSource->fd = fd;

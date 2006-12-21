@@ -30,6 +30,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.83  2006/12/21 00:09:46  cheshire
+Use mDNSPlatformMemZero instead of bzero
+
 Revision 1.82  2006/12/19 22:43:55  cheshire
 Fix compiler warnings
 
@@ -1257,7 +1260,7 @@ mDNSlocal mStatus OpenIfNotifySocket(int *pFD)
 	(void) fcntl(sock, F_SETFL, O_NONBLOCK);
 
 	/* Subscribe the socket to Link & IP addr notifications. */
-	bzero(&snl, sizeof snl);
+	mDNSPlatformMemZero(&snl, sizeof snl);
 	snl.nl_family = AF_NETLINK;
 	snl.nl_groups = RTMGRP_LINK | RTMGRP_IPV4_IFADDR;
 	ret = bind(sock, (struct sockaddr *) &snl, sizeof snl);
@@ -1276,7 +1279,7 @@ mDNSlocal void		PrintNetLinkMsg(const struct nlmsghdr *pNLMsg)
 	const char *kNLRtMsgTypes[] = { "RTM_NEWLINK", "RTM_DELLINK", "RTM_GETLINK", "RTM_NEWADDR", "RTM_DELADDR", "RTM_GETADDR" };
 
 	printf("nlmsghdr len=%d, type=%s, flags=0x%x\n", pNLMsg->nlmsg_len, 
-			pNLMsg->nlmsg_type < RTM_BASE ? kNLMsgTypes[ pNLMsg->nlmsg_type] : kNLRtMsgTypes[ pNLMsg->nlmsg_type - RTM_BASE], 
+			pNLMsg->nlmsg_type < RTM_BASE ? kNLMsgTypes[pNLMsg->nlmsg_type] : kNLRtMsgTypes[pNLMsg->nlmsg_type - RTM_BASE], 
 			pNLMsg->nlmsg_flags);
 
 	if (RTM_NEWLINK <= pNLMsg->nlmsg_type && pNLMsg->nlmsg_type <= RTM_GETLINK)
@@ -1301,7 +1304,7 @@ mDNSlocal mDNSu32		ProcessRoutingNotification(int sd)
 // be torn down and rebuilt, return affected indices as a bitmask. Otherwise return 0.
 	{
 	ssize_t					readCount;
-	char					buff[ 4096];	
+	char					buff[4096];	
 	struct nlmsghdr			*pNLMsg = (struct nlmsghdr*) buff;
 	mDNSu32				result = 0;
 	
@@ -1381,7 +1384,7 @@ mDNSlocal void		PrintRoutingSocketMsg(const struct ifa_msghdr *pRSMsg)
 
 	int		index = pRSMsg->ifam_type == RTM_IFINFO ? ((struct if_msghdr*) pRSMsg)->ifm_index : pRSMsg->ifam_index;
 
-	printf("ifa_msghdr len=%d, type=%s, index=%d\n", pRSMsg->ifam_msglen, kRSMsgTypes[ pRSMsg->ifam_type], index);
+	printf("ifa_msghdr len=%d, type=%s, index=%d\n", pRSMsg->ifam_msglen, kRSMsgTypes[pRSMsg->ifam_type], index);
 	}
 #endif
 
@@ -1390,7 +1393,7 @@ mDNSlocal mDNSu32		ProcessRoutingNotification(int sd)
 // be torn down and rebuilt, return affected indices as a bitmask. Otherwise return 0.
 	{
 	ssize_t					readCount;
-	char					buff[ 4096];	
+	char					buff[4096];	
 	struct ifa_msghdr		*pRSMsg = (struct ifa_msghdr*) buff;
 	mDNSu32				result = 0;
 
@@ -1803,7 +1806,7 @@ mStatus mDNSPosixListenForSignalInEventLoop(int signum)
 	struct sigaction	action;
 	mStatus				err;
 
-	bzero(&action, sizeof action);		// more portable than member-wise assignment
+	mDNSPlatformMemZero(&action, sizeof action);		// more portable than member-wise assignment
 	action.sa_handler = NoteSignal;
 	err = sigaction(signum, &action, (struct sigaction*) NULL);
 	
@@ -1818,7 +1821,7 @@ mStatus mDNSPosixIgnoreSignalInEventLoop(int signum)
 	struct sigaction	action;
 	mStatus				err;
 
-	bzero(&action, sizeof action);		// more portable than member-wise assignment
+	mDNSPlatformMemZero(&action, sizeof action);		// more portable than member-wise assignment
 	action.sa_handler = SIG_DFL;
 	err = sigaction(signum, &action, (struct sigaction*) NULL);
 	
