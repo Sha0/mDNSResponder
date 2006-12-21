@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.567  2006/12/21 00:01:37  cheshire
+Tidy up code alignment
+
 Revision 1.566  2006/12/20 04:07:34  cheshire
 Remove uDNS_info substructure from AuthRecord_struct
 
@@ -2313,13 +2316,13 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	// Set up by client prior to call
 
 	// Field Group 2: Persistent metadata for Authoritative Records
-//	rr->Additional1       = set to mDNSNULL in mDNS_SetupResourceRecord; may be overridden by client
-//	rr->Additional2       = set to mDNSNULL in mDNS_SetupResourceRecord; may be overridden by client
-//	rr->DependentOn       = set to mDNSNULL in mDNS_SetupResourceRecord; may be overridden by client
-//	rr->RRSet             = set to mDNSNULL in mDNS_SetupResourceRecord; may be overridden by client
-//	rr->Callback          = already set in mDNS_SetupResourceRecord
-//	rr->Context           = already set in mDNS_SetupResourceRecord
-//	rr->RecordType        = already set in mDNS_SetupResourceRecord
+//	rr->Additional1       = set to mDNSNULL  in mDNS_SetupResourceRecord; may be overridden by client
+//	rr->Additional2       = set to mDNSNULL  in mDNS_SetupResourceRecord; may be overridden by client
+//	rr->DependentOn       = set to mDNSNULL  in mDNS_SetupResourceRecord; may be overridden by client
+//	rr->RRSet             = set to mDNSNULL  in mDNS_SetupResourceRecord; may be overridden by client
+//	rr->Callback          = already set      in mDNS_SetupResourceRecord
+//	rr->Context           = already set      in mDNS_SetupResourceRecord
+//	rr->RecordType        = already set      in mDNS_SetupResourceRecord
 //	rr->HostTarget        = set to mDNSfalse in mDNS_SetupResourceRecord; may be overridden by client
 //	rr->AllowRemoteQuery  = set to mDNSfalse in mDNS_SetupResourceRecord; may be overridden by client
 	// Make sure target is not uninitialized data, or we may crash writing debugging log messages
