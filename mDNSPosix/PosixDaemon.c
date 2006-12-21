@@ -21,6 +21,9 @@
 	Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.33  2006/12/21 00:10:53  cheshire
+Make mDNS_PlatformSupport PlatformStorage a static global instead of a stack variable
+
 Revision 1.32  2006/11/03 22:28:50  cheshire
 PosixDaemon needs to handle mStatus_ConfigChanged and mStatus_GrowCache messages
 
@@ -146,6 +149,7 @@ static domainname DynDNSHostname;
 
 #define RR_CACHE_SIZE 500
 static CacheEntity gRRCache[RR_CACHE_SIZE];
+static mDNS_PlatformSupport PlatformStorage;
 
 extern const char mDNSResponderVersionString[];
 
@@ -262,24 +266,19 @@ mDNSlocal mStatus MainLoop(mDNS *m) // Loop until we quit.
 
 int main(int argc, char **argv)
 	{
-	#define mDNSRecord mDNSStorage
-	mDNS_PlatformSupport	platformStorage;
 	mStatus					err;
-
-	bzero(&mDNSRecord, sizeof mDNSRecord);
-	bzero(&platformStorage, sizeof platformStorage);
 
 	ParseCmdLinArgs(argc, argv);
 
 	LogMsgIdent(mDNSResponderVersionString, "starting");
 
-	err = mDNS_Init(&mDNSRecord, &platformStorage, gRRCache, RR_CACHE_SIZE, mDNS_Init_AdvertiseLocalAddresses, 
+	err = mDNS_Init(&mDNSStorage, &PlatformStorage, gRRCache, RR_CACHE_SIZE, mDNS_Init_AdvertiseLocalAddresses, 
 					mDNS_StatusCallback, mDNS_Init_NoInitCallbackContext); 
 
 	if (mStatus_NoError == err)
 		err = udsserver_init();
 		
-	Reconfigure(&mDNSRecord);
+	Reconfigure(&mDNSStorage);
 
 	// Now that we're finished with anything privileged, switch over to running as "nobody"
 	if (mStatus_NoError == err)
@@ -292,11 +291,11 @@ int main(int argc, char **argv)
 		}
 
 	if (mStatus_NoError == err)
-		err = MainLoop(&mDNSRecord);
+		err = MainLoop(&mDNSStorage);
  
 	LogMsgIdent(mDNSResponderVersionString, "stopping");
 
-	mDNS_Close(&mDNSRecord);
+	mDNS_Close(&mDNSStorage);
 
 	if (udsserver_exit() < 0)
 		LogMsg("ExitCallback: udsserver_exit failed");
