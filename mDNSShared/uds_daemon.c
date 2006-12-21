@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.223  2006/12/21 01:25:49  cheshire
+Tidy up SIGINFO state log
+
 Revision 1.222  2006/12/21 00:15:22  cheshire
 Get rid of gmDNS macro; fixed a crash in udsserver_info()
 
@@ -1292,7 +1295,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 
     LogMsgNoIdent("Timenow 0x%08lX (%ld)", (mDNSu32)now, now);
 
-    LogMsgNoIdent("Slt Q    TTL U Type  if     len rdata");
+    LogMsgNoIdent("Slt Q     TTL if    U Type rdlen");
 	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 		for(cg = m->rrcache_hash[slot]; cg; cg=cg->next)
 			{
@@ -1300,16 +1303,16 @@ mDNSexport void udsserver_info(mDNS *const m)
 			for (rr = cg->members; rr; rr=rr->next)
 				{
 				mDNSs32 remain = rr->resrec.rroriginalttl - (now - rr->TimeRcvd) / mDNSPlatformOneSecond;
-				NetworkInterfaceInfo *i = (NetworkInterfaceInfo *)rr->resrec.InterfaceID;
+				NetworkInterfaceInfo *info = (NetworkInterfaceInfo *)rr->resrec.InterfaceID;
 				CacheUsed++;
 				if (rr->CRActiveQuestion) CacheActive++;
-				LogMsgNoIdent("%3d %s%7ld %s %-6s%-6s%s",
+				LogMsgNoIdent("%3d %s%8ld %-6s%s %-6s%s",
 					slot,
 					rr->CRActiveQuestion ? "*" : " ",
 					remain,
+					info ? info->ifname : "-U-",
 					(rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) ? "-" : " ",
 					DNSTypeName(rr->resrec.rrtype),
-					i ? i->ifname : "-U-",
 					CRDisplayString(m, rr));
 				usleep(1000);	// Limit rate a little so we don't flood syslog too fast
 				}
@@ -1321,19 +1324,23 @@ mDNSexport void udsserver_info(mDNS *const m)
 		LogMsgNoIdent("Cache use mismatch: rrcache_active is %lu, true count %lu", m->rrcache_active, CacheActive);
 	LogMsgNoIdent("Cache currently contains %lu records; %lu referenced by active questions", CacheUsed, CacheActive);
 
-	LogMsgNoIdent("%-55s%-5s%-5s%-16s%s", "Name", "Type", "LLQ", "LastQTime", "ThisQInterval");
+	LogMsgNoIdent("   Int  Next if      Type");
 	CacheUsed = 0;
 	CacheActive = 0;
 	for (q = m->Questions; q; q=q->next)
 		{
-		char buf[MAX_ESCAPED_DOMAIN_NAME];
-		ConvertDomainNameToCString(&q->qname, buf);
+		mDNSs32 i = q->ThisQInterval / mDNSPlatformOneSecond;
+		mDNSs32 n = (q->LastQTime + q->ThisQInterval - now) / mDNSPlatformOneSecond;
+		NetworkInterfaceInfo *info = (NetworkInterfaceInfo *)q->InterfaceID;
 		CacheUsed++;
 		if (q->ThisQInterval) CacheActive++;
-		LogMsgNoIdent("%##-55s%-5u%-5s%-16u%u", q->qname.c, q->qtype, q->llq ? "y" : "n", q->LastQTime, q->ThisQInterval);
+		LogMsgNoIdent("%6d%6d %-6s%s %-6s%##s",
+			i, n, info ? info->ifname : "",
+			!q->TargetQID.NotAnInteger ? " " : q->llq ? "L" : "O", // mDNS, long-lived, or one-shot query?
+			DNSTypeName(q->qtype), q->qname.c);
 		usleep(1000);	// Limit rate a little so we don't flood syslog too fast
 		}
-	LogMsgNoIdent("Question list currently contains %lu questions; %lu are active", CacheUsed, CacheActive);
+	LogMsgNoIdent("%lu question%s; %lu active", CacheUsed, CacheUsed > 1 ? "s" : "", CacheActive);
 
     for (req = all_requests; req; req=req->next)
 		LogClientInfo(req);
