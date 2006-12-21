@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.116  2006/12/21 00:04:07  cheshire
+To be defensive, put a mDNSPlatformMemZero() at the start of mDNS_SetupResourceRecord()
+
 Revision 1.115  2006/12/20 04:07:34  cheshire
 Remove uDNS_info substructure from AuthRecord_struct
 
@@ -1257,6 +1260,12 @@ mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 mDNSexport void mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mDNSInterfaceID InterfaceID,
 	mDNSu16 rrtype, mDNSu32 ttl, mDNSu8 RecordType, mDNSRecordCallback Callback, void *Context)
 	{
+	// For now, until the uDNS code is fully integrated, it's helpful to zero the entire structure
+	// (e.g. uDNS_RegisterService short-circuits the usual mDNS_Register_internal record registration calls,
+	// so a bunch of fields don't get set up properly. In particular, if we don't zero rr->QueuedRData
+	// then the uDNS code crashes.
+	mDNSPlatformMemZero(rr, sizeof(*rr));
+	
 	// Don't try to store a TTL bigger than we can represent in platform time units
 	if (ttl > 0x7FFFFFFFUL / mDNSPlatformOneSecond)
 		ttl = 0x7FFFFFFFUL / mDNSPlatformOneSecond;
@@ -1295,12 +1304,7 @@ mDNSexport void mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mD
 	rr->ForceMCast        = mDNSfalse;
 
 	// Field Group 3: Transient state for Authoritative Records (set in mDNS_Register_internal)
-
-	// HACK
-	// Because uDNS_RegisterService short-circuits the usual mDNS_Register_internal record registration calls,
-	// a bunch of fields don't get set up properly.
-	// Clearing QueuedRData here seems to avoid one particular crash.
-	rr->QueuedRData = 0;
+	// Field Group 4: Transient uDNS state for Authoritative Records (set in mDNS_Register_internal)
 
 	rr->namestorage.c[0]  = 0;		// MUST be set by client before calling mDNS_Register()
 	}
@@ -1832,7 +1836,6 @@ mDNSexport mDNSu8 *putZone(DNSMessage *const msg, mDNSu8 *ptr, mDNSu8 *limit, co
 mDNSexport mDNSu8 *putPrereqNameNotInUse(domainname *name, DNSMessage *msg, mDNSu8 *ptr, mDNSu8 *end)
 	{
 	AuthRecord prereq;
-	mDNSPlatformMemZero(&prereq, sizeof(AuthRecord));
 	mDNS_SetupResourceRecord(&prereq, mDNSNULL, mDNSInterface_Any, kDNSQType_ANY, kStandardTTL, 0, mDNSNULL, mDNSNULL);
 	AssignDomainName(prereq.resrec.name, name);
 	prereq.resrec.rrtype = kDNSQType_ANY;
@@ -1899,7 +1902,6 @@ mDNSexport mDNSu8 *putUpdateLease(DNSMessage *msg, mDNSu8 *end, mDNSu32 lease)
 	ResourceRecord *opt = &rr.resrec;
 	rdataOpt *optRD;
 
-	mDNSPlatformMemZero(&rr, sizeof(AuthRecord));
 	mDNS_SetupResourceRecord(&rr, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, 0, mDNSNULL, mDNSNULL);
 	
 	opt->RecordType = kDNSRecordTypeKnownUnique;  // to avoid warnings in other layers
