@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSDigest.c,v $
+Revision 1.19  2006/12/21 00:06:07  cheshire
+Don't need to do mDNSPlatformMemZero() -- mDNS_SetupResourceRecord() does it for us
+
 Revision 1.18  2006/12/19 22:41:21  cheshire
 Fix compiler warnings
 
@@ -1402,7 +1405,6 @@ mDNSexport mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 
 	MD5_Update(&c, (mDNSu8 *)msg, (unsigned long)(*end - (mDNSu8 *)msg));
 	   
 	// Construct TSIG RR, digesting variables as apporpriate
-	mDNSPlatformMemZero(&tsig, sizeof(AuthRecord));	
 	mDNS_SetupResourceRecord(&tsig, mDNSNULL, 0, kDNSType_TSIG, 0, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
 
 	// key name

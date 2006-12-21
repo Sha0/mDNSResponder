@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.260  2006/12/21 00:06:07  cheshire
+Don't need to do mDNSPlatformMemZero() -- mDNS_SetupResourceRecord() does it for us
+
 Revision 1.259  2006/12/20 04:07:36  cheshire
 Remove uDNS_info substructure from AuthRecord_struct
 
@@ -1601,7 +1604,6 @@ mDNSlocal mDNSu8 *putLLQ(DNSMessage *const msg, mDNSu8 *ptr, DNSQuestion *questi
 	// !!!KRS implement me
 
 	// format opt rr (fields not specified are zero-valued)
-	mDNSPlatformMemZero(&rr, sizeof(AuthRecord));
 	mDNS_SetupResourceRecord(&rr, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
 	opt->rdlength = LLQ_OPT_RDLEN;
 	opt->rdestimate = LLQ_OPT_RDLEN;
@@ -3936,7 +3938,7 @@ mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr, co
 
 	if ((v4Changed || RouterChanged) && m->MappedV4.ip.v4.NotAnInteger) m->MappedV4.ip.v4 = zerov4Addr;
 	if (v4addr) m->AdvertisedV4 = *v4addr;  else m->AdvertisedV4.ip.v4 = zerov4Addr;
-	if (v6addr) m->AdvertisedV6 = *v6addr;  else mDNSPlatformMemZero(m->AdvertisedV6.ip.v6.b, 16);
+	if (v6addr) m->AdvertisedV6 = *v6addr;  else m->AdvertisedV6.ip.v6 = zerov6Addr;
 	if (router) m->Router       = *router;  else m->Router.ip.v4 = zerov4Addr;
 	// setting router to zero indicates that nat mappings must be reestablished when router is reset
 
@@ -5344,7 +5346,7 @@ mDNSexport mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	ServiceRecordSet **p = &m->ServiceRegistrations;
 	while (*p && *p != srs) p=&(*p)->next;
 	if (*p) { LogMsg("uDNS_RegisterService: %p %##s already in list", srs, srs->RR_SRV.resrec.name->c); return(mStatus_AlreadyRegistered); }
-	//mDNSPlatformMemZero(info, sizeof(*info));
+
 	*p = srs;
 	srs->next = mDNSNULL;
 
@@ -5570,27 +5572,6 @@ mDNSexport void uDNS_CheckQuery(mDNS * const m, DNSQuestion * q)
 
 	m->CurrentQuestion = q;
 	llq = q->llq;
-
-	if (!q->responseCallback && ((!q->LongLived && !q->Answered) || (llq && llq->state < LLQ_Established)) &&
-		q->RestartTime + RESTART_GOODBYE_DELAY - m->timenow < 0)
-		{
-		// if we've been spinning on restart setup, and we have known answers, give goodbyes (they may be re-added later)
-		// SEH Will we need this?  Will mDNS take care of this?  We'll at least need to add logic to look at LLQs
-		// if this is swallowed up by code in mDNS
-		/* SEH knownAnswers
-		while (q->knownAnswers)
-			{
-			CacheRecord *cr = q->knownAnswers;
-			q->knownAnswers = q->knownAnswers->next;
-
-			m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
-			q->QuestionCallback(m, q, &cr->resrec, mDNSfalse);
-			m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
-			mDNSPlatformMemFree(cr);
-			if (q != m->CurrentQuestion) { debugf("CheckQueries - question removed via callback."); break; }
-			}
-		*/
-		}
 
 	if (q != m->CurrentQuestion) { m->CurrentQuestion = mDNSNULL; return; }
 
