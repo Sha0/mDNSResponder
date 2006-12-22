@@ -30,6 +30,10 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.84  2006/12/22 21:07:35  cheshire
+<rdar://problem/4742742> Read *all* DNS keys from keychain,
+ not just key for the system-wide default registration domain
+
 Revision 1.83  2006/12/21 00:09:46  cheshire
 Use mDNSPlatformMemZero instead of bzero
 
@@ -711,12 +715,6 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS * const m, mDNSAddr * v4
 mDNSexport DNameListElem * mDNSPlatformGetReverseMapSearchDomainList(void)
 	{
 	return NULL;
-	}
-
-mDNSexport void mDNSPlatformSetSecretForDomain(mDNS * const m, const domainname *domain)
-	{
-	(void) m;
-	(void) domain;
 	}
 
 mDNSexport mStatus mDNSPlatformRegisterSplitDNS(mDNS * const m, int * nAdditions, int * nDeletions)
