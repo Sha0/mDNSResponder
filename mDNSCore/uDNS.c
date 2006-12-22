@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.261  2006/12/22 20:59:49  cheshire
+<rdar://problem/4742742> Read *all* DNS keys from keychain,
+ not just key for the system-wide default registration domain
+
 Revision 1.260  2006/12/21 00:06:07  cheshire
 Don't need to do mDNSPlatformMemZero() -- mDNS_SetupResourceRecord() does it for us
 
@@ -890,7 +894,7 @@ typedef struct
 	mDNS				*	m;
 	DNSMessage				request;
 	int						requestLen;
-	uDNS_AuthInfo		*	authInfo;
+	DomainAuthInfo		*	authInfo;
 	DNSQuestion			*	question;	// For queries
 	ServiceRecordSet	*	srs;		// For service record updates
 	AuthRecord			*	rr;			// For record updates
@@ -1043,69 +1047,57 @@ mDNSexport void mDNS_DeleteDNSServers(mDNS *const m)
 #pragma mark - authorization management
 #endif
 
-mDNSlocal uDNS_AuthInfo *GetAuthInfoForName(const mDNS *m, const domainname *name)
+mDNSlocal DomainAuthInfo *GetAuthInfoForName(const mDNS *m, const domainname *const name)
 	{
-	uDNS_AuthInfo *ptr;
-	while (name->c[0])
+	const domainname *n = name;
+	DomainAuthInfo *ptr;
+	while (n->c[0])
 		{
 		for (ptr = m->AuthInfoList; ptr; ptr = ptr->next)
-			if (SameDomainName(&ptr->zone, name)) return(ptr);
-		name = (const domainname *)(name->c + 1 + name->c[0]);
+			if (SameDomainName(&ptr->domain, n))
+				{
+				LogMsg("GetAuthInfoForName %##s %##s %##s", n->c, ptr->domain.c, ptr->keyname.c);
+				return(ptr);
+				}
+		n = (const domainname *)(n->c + 1 + n->c[0]);
 		}
+	LogMsg("GetAuthInfoForName none found for %##s", name->c);
 	return mDNSNULL;
 	}
 
-mDNSlocal void DeleteAuthInfoForZone(mDNS *m, const domainname *zone)
+mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
+	const domainname *domain, const domainname *keyname, const char *b64keydata)
 	{
-	uDNS_AuthInfo *ptr, *prev = mDNSNULL;
-
-	for (ptr = m->AuthInfoList; ptr; ptr = ptr->next)
-		{
-		if (SameDomainName(&ptr->zone, zone))
-			{
-			if (prev) prev->next = ptr->next;
-			else m->AuthInfoList = ptr->next;
-			mDNSPlatformMemFree(ptr);
-			return;
-			}
-		prev = ptr;
-		}
-	}
-
-mDNSexport mStatus mDNS_SetSecretForZone(mDNS *m, const domainname *zone, const domainname *key, const char *sharedSecret)
-	{
-	uDNS_AuthInfo *info;
-	mDNSu8 keybuf[1024];
+	DomainAuthInfo **p;
 	mDNSs32 keylen;
-	mStatus status = mStatus_NoError;
+	if (!info || !b64keydata) return(mStatus_BadParamErr);
 
-	mDNS_Lock(m);
+	info->next = mDNSNULL;
+	AssignDomainName(&info->domain,  domain);
+	AssignDomainName(&info->keyname, keyname);
 
-	if (GetAuthInfoForName(m, zone)) DeleteAuthInfoForZone(m, zone);
-	if (!key) goto exit;
-
-	info = (uDNS_AuthInfo*)mDNSPlatformMemAllocate(sizeof(*info));
-	if (!info) { LogMsg("ERROR: mDNSPlatformMemAllocate"); status = mStatus_NoMemoryErr; goto exit; }
-	mDNSPlatformMemZero(info, sizeof(*info));
-	AssignDomainName(&info->zone, zone);
-	AssignDomainName(&info->keyname, key);
-
-	keylen = DNSDigest_Base64ToBin(sharedSecret, keybuf, 1024);
+	keylen = DNSDigest_ConstructHMACKeyfromBase64(info, b64keydata);
 	if (keylen < 0)
 		{
-		LogMsg("ERROR: mDNS_SetSecretForZone - could not convert shared secret %s from base64", sharedSecret);
-		mDNSPlatformMemFree(info);
-		status = mStatus_UnknownErr;
-		goto exit;
+		LogMsg("ERROR: mDNS_SetSecretForDomain: could not convert shared secret %s from base64", b64keydata);
+		return(mStatus_BadParamErr);
 		}
-	DNSDigest_ConstructHMACKey(info, keybuf, (mDNSu32)keylen);
 
     // link into list
-	info->next = m->AuthInfoList;
-	m->AuthInfoList = info;
-exit:
+	mDNS_Lock(m);
+	p = &m->AuthInfoList;
+	while (*p && (*p) != info) p=&(*p)->next;
+	if (*p)
+		LogMsg("Error! Tried to mDNS_SetSecretForDomain: %##s %##s with DomainAuthInfo %p that's already in the list",
+			domain->c, keyname->c, info);
+	else
+		{
+		LogOperation("mDNS_SetSecretForDomain: %##s %##s", domain->c, keyname->c);
+		*p = info;
+		}
 	mDNS_Unlock(m);
-	return status;
+
+	return(mStatus_NoError);
 	}
 
  // ***************************************************************************
@@ -2173,7 +2165,7 @@ mDNSlocal void startLLQHandshakePrivate(mDNS *m, LLQ_Info *info, mDNSBool defer)
 	tcpInfo_t *context;
 	mDNSs32 timenow = m->timenow;
 	mStatus err = mStatus_NoError;
-	uDNS_AuthInfo * authInfo = mDNSNULL;
+	DomainAuthInfo * authInfo = mDNSNULL;
 
 	// Let's look for credentials right now.  If we can't find them, then it's an error.
 
@@ -2531,7 +2523,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	NATTraversalInfo *nat = srs->NATinfo;
 	mDNSBool mapped = mDNSfalse;
 	domainname target;
-	uDNS_AuthInfo * authInfo;
+	DomainAuthInfo * authInfo;
 	AuthRecord *srv = &srs->RR_SRV;
 	mDNSu32 i;
 
@@ -3451,7 +3443,7 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 	mDNSOpaque16 id;
 	mDNSu8 *ptr = msg.data;
 	mDNSu8 *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
-	uDNS_AuthInfo * authInfo;
+	DomainAuthInfo * authInfo;
 	mStatus err = mStatus_UnknownErr;
 	mDNSu32 i;
 
@@ -4058,7 +4050,7 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 	DNSMessage msg;
 	mDNSu8 *ptr = msg.data;
 	mDNSu8 *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
-	uDNS_AuthInfo * authInfo;
+	DomainAuthInfo * authInfo;
 	mStatus err = mStatus_UnknownErr;
 
 	rr->id = mDNS_NewMessageID(m);
@@ -4866,7 +4858,7 @@ mDNSlocal void startPrivateQueryCallback(mStatus err, mDNS *const m, void * cont
 	DNSQuestion * question = (DNSQuestion *) context;
 	const zoneData_t *zoneInfo = mDNSNULL;
 	tcpInfo_t * info;
-	uDNS_AuthInfo * authInfo = mDNSNULL;
+	DomainAuthInfo * authInfo = mDNSNULL;
 	uDNS_TCPSocket	sock = mDNSNULL;
 	mDNSIPPort		port = { { 0 } };
 
@@ -5191,7 +5183,7 @@ mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 	{
 	DNSMessage msg;
 	mDNSu8 *ptr = msg.data;
-	uDNS_AuthInfo * authInfo;
+	DomainAuthInfo * authInfo;
 	mDNSu8 *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
 	mStatus err = mStatus_NoError;
 
@@ -6435,7 +6427,6 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 
 		if (m->RegDomain.c[0])
 		{
-			mDNSPlatformSetSecretForDomain(m, &m->RegDomain);
 			AddDefaultRegDomain(m, &m->RegDomain);
 			SetPrefsBrowseDomain(m, &m->RegDomain, mDNStrue);
 		}
@@ -6469,7 +6460,6 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 
 		if (m->FQDN.c[0])
 			{
-			mDNSPlatformSetSecretForDomain(m, &fqdn); // no-op if "zone" secret, above, is to be used for hostname
 			mDNSPlatformDynDNSHostNameStatusChanged(&m->FQDN, 1);
 			mDNS_AddDynDNSHostName(m, &m->FQDN, DynDNSHostNameCallback, mDNSNULL);
 			}

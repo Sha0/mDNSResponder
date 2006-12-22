@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: dnsextd_parser.y,v $
+Revision 1.6  2006/12/22 20:59:51  cheshire
+<rdar://problem/4742742> Read *all* DNS keys from keychain,
+ not just key for the system-wide default registration domain
+
 Revision 1.5  2006/10/20 05:47:09  herscher
 Set the DNSZone pointer to NULL in ParseConfig() before parsing the configuration file.
 
@@ -417,7 +421,7 @@ ParseConfig
 	{
 	extern FILE		*	yyin;
 	DNSZone			*	zone;
-	uDNS_AuthInfo	*	key;
+	DomainAuthInfo	*	key;
 	KeySpec			*	keySpec;
 	ZoneSpec		*	zoneSpec;
 	int					err = 0;
@@ -436,7 +440,7 @@ ParseConfig
 
 		while ( key )
 			{
-			uDNS_AuthInfo * nextKey = key->next;
+			DomainAuthInfo * nextKey = key->next;
 
 			free( key );
 
@@ -447,7 +451,7 @@ ParseConfig
 
 		while ( key )
 			{
-			uDNS_AuthInfo * nextKey = key->next;
+			DomainAuthInfo * nextKey = key->next;
 
 			free( key );
 
@@ -498,21 +502,18 @@ ParseConfig
 				{
 				if ( strcmp( elem->string, keySpec->name ) == 0 )
 					{
-					uDNS_AuthInfo	*	authInfo;
-					unsigned char		keybuf[512];
+					DomainAuthInfo	*	authInfo;
 					mDNSs32				keylen;
 
-					authInfo = malloc( sizeof( uDNS_AuthInfo ) );
+					authInfo = malloc( sizeof( DomainAuthInfo ) );
 					require_action( authInfo, exit, err = 1 );
-					memset( authInfo, 0, sizeof( uDNS_AuthInfo ) );
+					memset( authInfo, 0, sizeof( DomainAuthInfo ) );
 
 					ok = MakeDomainNameFromDNSNameString( &authInfo->keyname, keySpec->name );
 					require_action( ok, exit, err = 1 );
 
-					keylen = DNSDigest_Base64ToBin( keySpec->secret, keybuf, 512 );
+					keylen = DNSDigest_ConstructHMACKeyfromBase64( authInfo, keySpec->secret );
 					require_action( keylen >= 0, exit, err = 1 );
-
-					DNSDigest_ConstructHMACKey( authInfo, keybuf, ( mDNSu32 ) keylen );
 
 					authInfo->next = zone->updateKeys;
 					zone->updateKeys = authInfo;
@@ -537,21 +538,18 @@ ParseConfig
 				{
 				if ( strcmp( elem->string, keySpec->name ) == 0 )
 					{
-					uDNS_AuthInfo	*	authInfo;
-					unsigned char		keybuf[512];
+					DomainAuthInfo	*	authInfo;
 					mDNSs32				keylen;
 	
-					authInfo = malloc( sizeof( uDNS_AuthInfo ) );
+					authInfo = malloc( sizeof( DomainAuthInfo ) );
 					require_action( authInfo, exit, err = 1 );
-					memset( authInfo, 0, sizeof( uDNS_AuthInfo ) );
+					memset( authInfo, 0, sizeof( DomainAuthInfo ) );
 
 					ok = MakeDomainNameFromDNSNameString( &authInfo->keyname, keySpec->name );
 					require_action( ok, exit, err = 1 );
 
-					keylen = DNSDigest_Base64ToBin( keySpec->secret, keybuf, 512 );
+					keylen = DNSDigest_ConstructHMACKeyfromBase64( authInfo, keySpec->secret );
 					require_action( keylen >= 0, exit, err = 1 );
-
-					DNSDigest_ConstructHMACKey( authInfo, keybuf, ( mDNSu32 ) keylen );
 
 					authInfo->next = zone->queryKeys;
 					zone->queryKeys = authInfo;

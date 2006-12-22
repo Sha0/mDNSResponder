@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.38  2006/12/22 20:59:49  cheshire
+<rdar://problem/4742742> Read *all* DNS keys from keychain,
+ not just key for the system-wide default registration domain
+
 Revision 1.37  2006/08/14 23:24:22  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -355,7 +359,7 @@ extern const mDNSu8 *LocateAdditionals(const DNSMessage *const msg, const mDNSu8
 #endif
 
 extern mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg, mDNSu8 *end,
-	mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, uDNS_TCPSocket sock, uDNS_AuthInfo *authInfo);
+	mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, uDNS_TCPSocket sock, DomainAuthInfo *authInfo);
 
 
 // ***************************************************************************

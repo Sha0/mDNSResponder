@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: PlatformCommon.c,v $
+Revision 1.8  2006/12/22 20:59:51  cheshire
+<rdar://problem/4742742> Read *all* DNS keys from keychain,
+ not just key for the system-wide default registration domain
+
 Revision 1.7  2006/08/14 23:24:56  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -49,6 +53,7 @@ Move ReadDDNSSettingsFromConfFile() from mDNSMacOSX.c to PlatformCommon.c
 #include <netinet/in.h>			// Needed for sockaddr_in
 
 #include "mDNSEmbeddedAPI.h"	// Defines the interface provided to the client layer above
+#include "DNSCommon.h"
 #include "PlatformCommon.h"
 
 #ifdef NOT_HAVE_SOCKLEN_T
@@ -95,6 +100,21 @@ mDNSlocal mDNSBool GetConfigOption(char *dst, const char *option, FILE *f)
 	return mDNSfalse;
 	}
 
+mDNSexport void ClearDomainSecrets(mDNS *m)
+	{
+	DomainAuthInfo *p;
+	mDNS_Lock(m);
+	p = m->AuthInfoList;
+	m->AuthInfoList = mDNSNULL;
+	while (p)
+		{
+		DomainAuthInfo *q = p;
+		p=p->next;
+		mDNSPlatformMemFree(q);
+		}
+	mDNS_Unlock(m);
+	}
+
 mDNSexport void ReadDDNSSettingsFromConfFile(mDNS *const m, const char *const filename, domainname *const hostname, domainname *const domain, mDNSBool *DomainDiscoveryDisabled)
 	{
 	char buf   [MAX_ESCAPED_DOMAIN_NAME];
@@ -123,9 +143,10 @@ mDNSexport void ReadDDNSSettingsFromConfFile(mDNS *const m, const char *const fi
 
 	if (domain && domain->c[0] && secret[0])
 		{
+		DomainAuthInfo *info = (DomainAuthInfo*)mDNSPlatformMemAllocate(sizeof(*info));
 		// for now we assume keyname = service reg domain and we use same key for service and hostname registration
-		err = mDNS_SetSecretForZone(m, domain, domain, secret);
-		if (err) LogMsg("ERROR: mDNS_SetSecretForZone returned %d for domain %##s", err, domain->c);
+		err = mDNS_SetSecretForDomain(m, info, domain, domain, secret);
+		if (err) LogMsg("ERROR: mDNS_SetSecretForDomain returned %d for domain %##s", err, domain->c);
 		}
 
 	return;

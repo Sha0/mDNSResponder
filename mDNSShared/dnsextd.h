@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: dnsextd.h,v $
+Revision 1.4  2006/12/22 20:59:51  cheshire
+<rdar://problem/4742742> Read *all* DNS keys from keychain,
+ not just key for the system-wide default registration domain
+
 Revision 1.3  2006/11/18 05:01:33  cheshire
 Preliminary support for unifying the uDNS and mDNS code,
 including caching of uDNS answers
@@ -57,8 +61,8 @@ typedef struct DNSZone
 {
 	domainname				name;
 	DNSZoneSpecType			type;
-	uDNS_AuthInfo		*	updateKeys;	// linked list of keys for signing deletion updates
-	uDNS_AuthInfo		*	queryKeys;	// linked list of keys for queries
+	DomainAuthInfo		*	updateKeys;	// linked list of keys for signing deletion updates
+	DomainAuthInfo		*	queryKeys;	// linked list of keys for queries
 	struct DNSZone		*	next;
 } DNSZone;
 	

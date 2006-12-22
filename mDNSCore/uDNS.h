@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.45  2006/12/22 20:59:49  cheshire
+<rdar://problem/4742742> Read *all* DNS keys from keychain,
+ not just key for the system-wide default registration domain
+
 Revision 1.44  2006/12/20 04:07:35  cheshire
 Remove uDNS_info substructure from AuthRecord_struct
 
@@ -177,10 +181,10 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 //#define MAX_UCAST_POLL_INTERVAL (1 * 60 * mDNSPlatformOneSecond)
 #define LLQ_POLL_INTERVAL       (15 * 60 * mDNSPlatformOneSecond) // Polling interval for zones w/ an advertised LLQ port (ie not static zones) if LLQ fails due to NAT, etc.
 #define RESPONSE_WINDOW (60 * mDNSPlatformOneSecond)         // require server responses within one minute of request
-#define PRIVATE_UPDATE_SERVICE_TYPE  ((domainname*)"\x0B_dns-update\x04_tls")
-#define PUBLIC_UPDATE_SERVICE_TYPE  ((domainname*)"\x0B_dns-update\x04_udp")
-#define PRIVATE_LLQ_SERVICE_TYPE     ((domainname*)"\x08_dns-llq\x04_tls")
-#define PUBLIC_LLQ_SERVICE_TYPE     ((domainname*)"\x08_dns-llq\x04_udp")
+#define PRIVATE_UPDATE_SERVICE_TYPE ((domainname*)"\x0B_dns-update" "\x04_tls")
+#define PUBLIC_UPDATE_SERVICE_TYPE  ((domainname*)"\x0B_dns-update" "\x04_udp")
+#define PRIVATE_LLQ_SERVICE_TYPE    ((domainname*)"\x08_dns-llq"    "\x04_tls")
+#define PUBLIC_LLQ_SERVICE_TYPE     ((domainname*)"\x08_dns-llq"    "\x04_udp")
 #define DEFAULT_UPDATE_LEASE 7200
 	
 // Entry points into unicast-specific routines
@@ -208,7 +212,7 @@ extern mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr);
 extern mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs);
 extern mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs);
 
-extern struct uDNS_AuthInfo * uDNS_GetAuthInfo( mDNS * const m, DNSQuestion * question );
+extern struct DomainAuthInfo* uDNS_GetAuthInfo( mDNS * const m, DNSQuestion * question );
 extern void                   uDNS_CheckQuery ( mDNS * const m, DNSQuestion * question );
 
 // integer fields of msg header must be in HOST byte order before calling this routine

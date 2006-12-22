@@ -17,6 +17,10 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.112  2006/12/22 20:59:51  cheshire
+<rdar://problem/4742742> Read *all* DNS keys from keychain,
+ not just key for the system-wide default registration domain
+
 Revision 1.111  2006/12/19 22:43:56  cheshire
 Fix compiler warnings
 
@@ -133,7 +137,7 @@ Revision 1.74  2005/02/08 06:06:16  shersche
 <rdar://problem/3986597> Implement mDNSPlatformTCPConnect, mDNSPlatformTCPCloseConnection, mDNSPlatformTCPRead, mDNSPlatformTCPWrite
 
 Revision 1.73  2005/02/01 19:35:43  ksekar
-Removed obsolete arguments from mDNS_SetSecretForZone
+Removed obsolete arguments from mDNS_SetSecretForDomain
 
 Revision 1.72  2005/02/01 01:38:53  shersche
 Handle null DynDNS configuration more gracefully
@@ -1744,11 +1748,16 @@ exit:
 
 
 //===========================================================================================================================
-//	mDNSPlatformSetSecretForDomain
+//	SetDomainSecrets
 //===========================================================================================================================
 
-void
-mDNSPlatformSetSecretForDomain( mDNS * const m, const domainname * inDomain )
+// This routine needs to be called whenever the system secrets database changes.
+// Right now I call it from ProcessingThreadDynDNSConfigChanged, which may or may not be sufficient.
+// Also, it needs to call mDNS_SetSecretForDomain() for *every* configured DNS domain/secret pair
+// in the database, not just inDomain (the inDomain parameter should be deleted).
+
+mDNSlocal void
+SetDomainSecrets( mDNS * const m, const domainname * inDomain )
 {
 	PolyString				domain;
 	PolyString				key;
@@ -1824,7 +1833,7 @@ mDNSPlatformSetSecretForDomain( mDNS * const m, const domainname * inDomain )
 	// And finally, tell the core about this secret
 
 	debugf("Setting shared secret for zone %s with key %##s", domain.m_utf8, key.m_dname.c);
-	mDNS_SetSecretForZone( m, &domain.m_dname, &key.m_dname, secret.m_utf8 );
+	mDNS_SetSecretForDomain( m, &domain.m_dname, &key.m_dname, secret.m_utf8 );
 
 exit:
 
@@ -4194,6 +4203,8 @@ mDNSlocal void	ProcessingThreadDynDNSConfigChanged( mDNS *inMDNS )
 	
 	dlog( kDebugLevelInfo, DEBUG_NAME "DynDNS config has changed\n" );
 	check( inMDNS );
+
+	SetDomainSecrets( inMDNS );
 
 	mDNSPlatformLock( inMDNS );
 

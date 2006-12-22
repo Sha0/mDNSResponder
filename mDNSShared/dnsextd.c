@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.56  2006/12/22 20:59:51  cheshire
+<rdar://problem/4742742> Read *all* DNS keys from keychain,
+ not just key for the system-wide default registration domain
+
 Revision 1.55  2006/11/30 23:08:39  herscher
 <rdar://problem/4765644> uDNS: Sync up with Lighthouse changes for Private DNS
 
@@ -1309,7 +1313,7 @@ mDNSlocal int ProcessArgs(int argc, char *argv[], DaemonInfo *d)
 		{
 		if ( zone->updateKeys )
 			{
-			AssignDomainName( &zone->updateKeys->zone, &zone->name );
+			AssignDomainName( &zone->updateKeys->domain, &zone->name );
 			}
 		}
 
@@ -2505,11 +2509,11 @@ mDNSlocal int RecvLLQ( DaemonInfo *d, PktMsg *pkt, uDNS_TCPSocket sock )
 	}
 
 
-mDNSlocal mDNSBool IsAuthorized( DaemonInfo * d, PktMsg * pkt, uDNS_AuthInfo ** key, mDNSu16 * rcode, mDNSu16 * tcode )
+mDNSlocal mDNSBool IsAuthorized( DaemonInfo * d, PktMsg * pkt, DomainAuthInfo ** key, mDNSu16 * rcode, mDNSu16 * tcode )
 	{
 	const mDNSu8 	*	lastPtr = NULL;
 	const mDNSu8 	*	ptr = NULL;
-	uDNS_AuthInfo	*	keys;
+	DomainAuthInfo	*	keys;
 	mDNSu8 			*	end	= ( mDNSu8* ) &pkt->msg + pkt->len;
 	LargeCacheRecord	lcr;
 	mDNSBool			hasTSIG = mDNSfalse;
@@ -2691,7 +2695,7 @@ RecvUDPMessage
 	pthread_t			tid;
 	mDNSu16				rcode;
 	mDNSu16				tcode;
-	uDNS_AuthInfo	*	key;
+	DomainAuthInfo	*	key;
 	unsigned int		clisize = sizeof( context->cliaddr );
 	int					res;
 	mStatus				err = mStatus_NoError;
@@ -2836,7 +2840,7 @@ RecvTCPMessage
 	mDNSu16				rcode;
 	mDNSu16				tcode;
 	pthread_t			tid;
-	uDNS_AuthInfo	*	key;
+	DomainAuthInfo	*	key;
 	PktMsg			*	pkt;
 	mDNSBool			closed;
 	mDNSBool			freeContext = mDNStrue;
@@ -3212,24 +3216,33 @@ void mDNSCoreInitComplete( mDNS * const m, mStatus result) { ( void ) m; ( void 
 void mDNSCoreMachineSleep(mDNS * const m, mDNSBool wake) { ( void ) m; ( void ) wake; }
 void mDNSCoreReceive(mDNS *const m, void *const msg, const mDNSu8 *const end,
                                 const mDNSAddr *const srcaddr, const mDNSIPPort srcport,
-                                const mDNSAddr *const dstaddr, const mDNSIPPort dstport, const mDNSInterfaceID iid) { ( void ) m; ( void ) msg; ( void ) end; ( void ) srcaddr; ( void ) srcport; ( void ) dstaddr; ( void ) dstport; ( void ) iid; }
-void mDNS_AddDNSServer(mDNS * const m, const mDNSAddr * dnsAddr, const domainname * domain) { ( void ) m; ( void ) dnsAddr; ( void ) domain; }
-void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSRecordCallback *StatusCallback, const void *StatusContext) { ( void ) m; ( void ) fqdn; ( void ) StatusCallback; ( void ) StatusContext; }
+                                const mDNSAddr *const dstaddr, const mDNSIPPort dstport, const mDNSInterfaceID iid)
+	{ ( void ) m; ( void ) msg; ( void ) end; ( void ) srcaddr; ( void ) srcport; ( void ) dstaddr; ( void ) dstport; ( void ) iid; }
+void mDNS_AddDNSServer(mDNS * const m, const mDNSAddr * dnsAddr, const domainname * domain)
+	{ ( void ) m; ( void ) dnsAddr; ( void ) domain; }
+void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSRecordCallback *StatusCallback, const void *StatusContext)
+	{ ( void ) m; ( void ) fqdn; ( void ) StatusCallback; ( void ) StatusContext; }
 void mDNS_DeleteDNSServers(mDNS * const m) { ( void ) m;}
 mDNSs32 mDNS_Execute   (mDNS *const m) { ( void ) m; return 0; }
 mDNSs32 mDNS_TimeNow(const mDNS *const m) { ( void ) m; return 0; }
 mStatus mDNS_Deregister(mDNS *const m, AuthRecord *const rr) { ( void ) m; ( void ) rr; return 0; }
-void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *set, mDNSBool flapping) { ( void ) m; ( void ) set; ( void ) flapping; }
+void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *set, mDNSBool flapping)
+	{ ( void ) m; ( void ) set; ( void ) flapping; }
 const char * const  mDNS_DomainTypeNames[1] = {};
 mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, mDNS_DomainType DomainType, const domainname *dom,
-                                const mDNSInterfaceID InterfaceID, mDNSQuestionCallback *Callback, void *Context) { ( void ) m; ( void ) question; ( void ) DomainType; ( void ) dom; ( void ) InterfaceID; ( void ) Callback; ( void ) Context; return 0; }
+                                const mDNSInterfaceID InterfaceID, mDNSQuestionCallback *Callback, void *Context)
+	{ ( void ) m; ( void ) question; ( void ) DomainType; ( void ) dom; ( void ) InterfaceID; ( void ) Callback; ( void ) Context; return 0; }
 mStatus mDNS_Register(mDNS *const m, AuthRecord *const rr) { ( void ) m; ( void ) rr; return 0; }
-mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *set, mDNSBool flapping) { ( void ) m; ( void ) set; ( void ) flapping; return 0; }
+mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *set, mDNSBool flapping)
+	{ ( void ) m; ( void ) set; ( void ) flapping; return 0; }
 void mDNS_RemoveDynDNSHostName(mDNS *m, const domainname *fqdn) { ( void ) m; ( void ) fqdn; }
 void mDNS_SetFQDN(mDNS * const m) { ( void ) m; }
-void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr,  const mDNSAddr *v6addr, const mDNSAddr *router) { ( void ) m; ( void ) v4addr; ( void ) v6addr; ( void ) router; }
+void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr,  const mDNSAddr *v6addr, const mDNSAddr *router)
+	{ ( void ) m; ( void ) v4addr; ( void ) v6addr; ( void ) router; }
 mStatus uDNS_SetupDNSConfig( mDNS *const m ) { ( void ) m; return 0; }
-mStatus mDNS_SetSecretForZone(mDNS *m, const domainname *zone, const domainname *key, const char *sharedSecret) { ( void ) m; ( void ) zone; ( void ) key; ( void ) sharedSecret; return 0; }
+mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
+	const domainname *domain, const domainname *keyname, const char *b64keydata)
+	{ ( void ) m; ( void ) info; ( void ) domain; ( void ) keyname; ( void ) b64keydata; return 0; }
 mStatus mDNS_StopQuery(mDNS *const m, DNSQuestion *const question) { ( void ) m; ( void ) question; return 0; }
 void mDNS_UpdateLLQs(mDNS * const m) { ( void ) m; }
 char * mDNSResponderVersionString = NULL;

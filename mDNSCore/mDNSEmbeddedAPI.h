@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.316  2006/12/22 20:59:49  cheshire
+<rdar://problem/4742742> Read *all* DNS keys from keychain,
+ not just key for the system-wide default registration domain
+
 Revision 1.315  2006/12/20 04:07:35  cheshire
 Remove uDNS_info substructure from AuthRecord_struct
 
@@ -2184,6 +2188,21 @@ typedef struct DNameListElem
 	struct DNameListElem *next;
 	} DNameListElem;
 
+#define HMAC_LEN    64
+#define HMAC_IPAD   0x36
+#define HMAC_OPAD   0x5c
+#define MD5_LEN     16
+
+// Internal data structure to maintain authentication information for an update domain
+typedef struct DomainAuthInfo
+	{
+	struct DomainAuthInfo *next;
+	domainname  domain;
+	domainname keyname;
+	mDNSu8     keydata_ipad[HMAC_LEN];	// padded key for inner hash rounds
+	mDNSu8     keydata_opad[HMAC_LEN];	// padded key for outer hash rounds
+	} DomainAuthInfo;
+
 // ***************************************************************************
 #if 0
 #pragma mark - Main mDNS object, used to hold all the mDNS state
@@ -2282,7 +2301,7 @@ struct mDNS_struct
 	mDNSAddr         MappedV4;           // Cache of public address if PrimaryIP is behind a NAT
 	mDNSAddr         AdvertisedV6;       // IPv6 address pointed to by hostname
 	domainname       ServiceRegDomain;   // (going away w/ multi-user support)
-	struct uDNS_AuthInfo *AuthInfoList;  // list of domains requiring authentication for updates.
+	DomainAuthInfo  *AuthInfoList;       // list of domains requiring authentication for updates
 	uDNS_HostnameInfo *Hostnames;        // List of registered hostnames + hostname metadata
     DNSQuestion      ReverseMap;         // Reverse-map query to find static hostname for service target
     mDNSBool         ReverseMapActive;   // Is above query active?
@@ -2290,7 +2309,7 @@ struct mDNS_struct
     mDNSBool         DelaySRVUpdate;     // Delay SRV target/port update to avoid "flap"
     mDNSs32          NextSRVUpdate;      // Time to perform delayed update
 	domainname		 RegDomain;          // Default wide-area zone for service registration
-	struct DNameListElem *  BrowseDomains;      // Default wide-area zone for legacy ("empty string") browses
+	struct DNameListElem *BrowseDomains;      // Default wide-area zone for legacy ("empty string") browses
     domainname       FQDN;
     mDNSBool         RegisterSearchDomains;
     
@@ -2703,37 +2722,17 @@ extern mDNSBool IsPrivateV4Addr(mDNSAddr *addr);  // returns true for RFC1918 pr
 #pragma mark - Authentication Support
 #endif
 
-#define HMAC_LEN    64
-#define HMAC_IPAD   0x36
-#define HMAC_OPAD   0x5c
-#define MD5_LEN     16
-
-// padded keys for inned/outer hash rounds
-typedef struct
-	{
-	mDNSu8 ipad[HMAC_LEN];
-	mDNSu8 opad[HMAC_LEN];
-	} HMAC_Key;
-
-// Internal data structure to maintain authentication information for an update domain
-typedef struct uDNS_AuthInfo
-	{
-	domainname zone;
-	domainname keyname;
-	HMAC_Key key;
-	struct uDNS_AuthInfo *next;
-	} uDNS_AuthInfo;
-
 // Unicast DNS and Dynamic Update specific Client Calls
 //
-// mDNS_SetSecretForZone tells the core to authenticate (via TSIG with an HMAC_MD5 hash of the shared secret)
+// mDNS_SetSecretForDomain tells the core to authenticate (via TSIG with an HMAC_MD5 hash of the shared secret)
 // when dynamically updating a given zone (and its subdomains).  The key used in authentication must be in
 // domain name format.  The shared secret must be a null-terminated base64 encoded string.  A minimum size of
 // 16 bytes (128 bits) is recommended for an MD5 hash as per RFC 2485.
 // Calling this routine multiple times for a zone replaces previously entered values.  Call with a NULL key
 // to dissable authentication for the zone.
 
-extern mStatus mDNS_SetSecretForZone(mDNS *m, const domainname *zone, const domainname *key, const char *sharedSecret);
+extern mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
+	const domainname *domain, const domainname *keyname, const char *b64keydata);
 
 // Hostname/Unicast Interface Configuration
 
@@ -2765,23 +2764,20 @@ extern void mDNS_DeleteDNSServers(mDNS *const m);
 
 // Routines called by the core, exported by DNSDigest.c
 
-// Convert a base64 encoded key into a binary byte stream
-extern mDNSs32 DNSDigest_Base64ToBin(const char *src, mDNSu8 *target, mDNSu32 targsize);
-
-// Convert an arbitrary binary key (of any length) into an HMAC key (stored in AuthInfo struct)
-extern void DNSDigest_ConstructHMACKey(uDNS_AuthInfo *info, const mDNSu8 *key, mDNSu32 len);
+// Convert an arbitrary base64 encoded key key into an HMAC key (stored in AuthInfo struct)
+extern mDNSs32 DNSDigest_ConstructHMACKeyfromBase64(DomainAuthInfo *info, const char *b64key);
 
 // sign a DNS message.  The message must be complete, with all values in network byte order.  end points to the end
 // of the message, and is modified by this routine.  numAdditionals is a pointer to the number of additional
 // records in HOST byte order, which is incremented upon successful completion of this routine.  The function returns
 // the new end pointer on success, and NULL on failure.
-extern mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 *numAdditionals, uDNS_AuthInfo *info, mDNSu16 tcode);
+extern mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 *numAdditionals, DomainAuthInfo *info, mDNSu16 tcode);
 
 // verify a DNS message.  The message must be complete, with all values in network byte order.  end points to the
 // end of the record.  tsig is a pointer to the resource record that contains the TSIG OPT record.  info is
 // the matching key to use for verifying the message.  This function expects that the additionals member
 // of the DNS message header has already had one subtracted from it.
-extern mDNSBool DNSDigest_VerifyMessage(DNSMessage * msg, mDNSu8 * end, LargeCacheRecord * tsig, uDNS_AuthInfo * info, mDNSu16 * rcode, mDNSu16 * tcode);
+extern mDNSBool DNSDigest_VerifyMessage(DNSMessage * msg, mDNSu8 * end, LargeCacheRecord * tsig, DomainAuthInfo * info, mDNSu16 * rcode, mDNSu16 * tcode);
 
 
 // ***************************************************************************
@@ -2896,7 +2892,6 @@ extern DNameListElem    *   mDNSPlatformGetSearchDomainList(void);
 extern DNameListElem	*	mDNSPlatformGetFQDN(void);
 extern mStatus				mDNSPlatformGetPrimaryInterface(mDNS * const m, mDNSAddr * v4, mDNSAddr * v6, mDNSAddr * router);
 extern DNameListElem	*	mDNSPlatformGetReverseMapSearchDomainList(void);
-extern void					mDNSPlatformSetSecretForDomain(mDNS * const m, const domainname *domain);
 extern mStatus				mDNSPlatformRegisterSplitDNS(mDNS * const m, int * nAdditions, int * nDeletions);
 extern void					mDNSPlatformDefaultBrowseDomainChanged(const domainname *d, mDNSBool add);
 extern void					mDNSPlatformDefaultRegDomainChanged(const domainname *d, mDNSBool add);

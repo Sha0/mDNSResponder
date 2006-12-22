@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.117  2006/12/22 20:59:49  cheshire
+<rdar://problem/4742742> Read *all* DNS keys from keychain,
+ not just key for the system-wide default registration domain
+
 Revision 1.116  2006/12/21 00:04:07  cheshire
 To be defensive, put a mDNSPlatformMemZero() at the start of mDNS_SetupResourceRecord()
 
@@ -2238,7 +2242,7 @@ mDNSexport const mDNSu8 *LocateAdditionals(const DNSMessage *const msg, const mD
 #endif
 
 mDNSexport mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg, mDNSu8 *end,
-    mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, uDNS_TCPSocket sock, uDNS_AuthInfo *authInfo)
+    mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, uDNS_TCPSocket sock, DomainAuthInfo *authInfo)
 	{
 	mStatus status;
 	long nsent;
