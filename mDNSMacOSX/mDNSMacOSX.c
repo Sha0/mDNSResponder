@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.359  2006/12/22 21:14:37  cheshire
+Added comment explaining why we allow both "ddns" and "sndd" as valid item types
+The Keychain APIs on Intel appear to store the four-character item type backwards (at least some of the time)
+
 Revision 1.358  2006/12/22 20:59:50  cheshire
 <rdar://problem/4742742> Read *all* DNS keys from keychain,
  not just key for the system-wide default registration domain
@@ -4154,6 +4158,8 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 		if (attrList->attr[2].length > sizeof(keynamebuf)-1) { LogMsg("SetSecretForDomain: Bad kSecAccountItemAttr length %d", attrList->attr[2].length); goto nextitem; }
 
 		// Get domain name for which this key applies
+		// On Mac OS X on Intel, the four-character string seems to be stored backwards, at least sometimes
+		// To cope with this we allow *both* "ddns" and "sndd" as valid item types
 		if (strncasecmp(attrList->attr[0].data, "ddns", 4) == 0 || strncasecmp(attrList->attr[0].data, "sndd", 4) == 0)
 			{ memcpy(dstring, attrList->attr[1].data, attrList->attr[1].length); dstring[attrList->attr[1].length] = 0; }
 		else if (attrList->attr[1].length >= 4 && strncasecmp(attrList->attr[1].data, "dns:", 4) == 0)
