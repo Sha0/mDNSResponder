@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.360  2007/01/04 00:12:24  cheshire
+<rdar://problem/4742742> Read *all* DNS keys from keychain,
+ not just key for the system-wide default registration domain
+
 Revision 1.359  2006/12/22 21:14:37  cheshire
 Added comment explaining why we allow both "ddns" and "sndd" as valid item types
 The Keychain APIs on Intel appear to store the four-character item type backwards (at least some of the time)
@@ -4116,95 +4120,105 @@ mDNSexport mStatus mDNSPlatformRegisterSplitDNS(mDNS *m, int * nAdditions, int *
 	
 mDNSlocal void SetDomainSecrets(mDNS *m)
 	{
-#ifndef NO_SECURITYFRAMEWORK
-	ClearDomainSecrets(m);
-
-	SecKeychainSearchRef searchRef;
-	OSStatus err = SecKeychainSearchCreateFromAttributes(NULL, kSecGenericPasswordItemClass, NULL, &searchRef);
-	if (err) { LogMsg("SetDomainSecrets: SecKeychainSearchCreateFromAttributes %d", err); return; }
-
-	CFMutableArrayRef StateArray = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
-	if (!StateArray) { LogMsg("SetDomainSecrets: CFArrayCreateMutable failed"); goto cleanup; }
-
-	while (1)
-		{
-		// Iterate through keychain items
-		SecKeychainItemRef itemRef = NULL;
-		err = SecKeychainSearchCopyNext(searchRef, &itemRef);
-		if (err) break;
-
-		// Get attributes and data out of itemRef
-		UInt32 tags[3] = { kSecTypeItemAttr, kSecServiceItemAttr, kSecAccountItemAttr };
-		SecKeychainAttributeInfo attrInfo = { 3, tags, NULL };	// Count, array of tags, array of formats
-		SecKeychainAttributeList *attrList = NULL;
-		UInt32 secretlen;
-		void *secret = NULL;
-		err = SecKeychainItemCopyAttributesAndData(itemRef,  &attrInfo, NULL, &attrList, &secretlen, &secret);
-
-		// Validate that results look reasonable
-		if (err == errSecInteractionNotAllowed) goto nextitem;
-		if (err || !attrList) { LogMsg("SecKeychainItemCopyAttributesAndData error %d attrList %p", err, attrList); goto nextitem; }
-		if (!secretlen || !secret) { LogMsg("SetSecretForDomain: bad shared secret"); return; }
-		if (attrList->count != 3) { LogMsg("SetSecretForDomain: SecKeychainItemCopyAttributesAndData got wrong attrList->count %d", attrList->count); return; }
-		if (attrList->attr[0].tag != tags[0]) { LogMsg("SetSecretForDomain: SecKeychainItemCopyAttributesAndData got wrong attribute %d", 0); return; }
-		if (attrList->attr[1].tag != tags[1]) { LogMsg("SetSecretForDomain: SecKeychainItemCopyAttributesAndData got wrong attribute %d", 1); return; }
-		if (attrList->attr[2].tag != tags[2]) { LogMsg("SetSecretForDomain: SecKeychainItemCopyAttributesAndData got wrong attribute %d", 2); return; }
-
-		// Validate that attributes are not too large
-		char dstring[4 + MAX_ESCAPED_DOMAIN_NAME];  // Extra 4 is for the "dns:" prefix
-		char keynamebuf[MAX_ESCAPED_DOMAIN_NAME];	// Max legal C-string name, including terminating NUL
-		if (attrList->attr[0].length != 4                  ) { LogMsg("SetSecretForDomain: Bad kSecTypeItemAttr    length %d", attrList->attr[0].length); goto nextitem; }
-		if (attrList->attr[1].length > sizeof(dstring   )-1) { LogMsg("SetSecretForDomain: Bad kSecServiceItemAttr length %d", attrList->attr[1].length); goto nextitem; }
-		if (attrList->attr[2].length > sizeof(keynamebuf)-1) { LogMsg("SetSecretForDomain: Bad kSecAccountItemAttr length %d", attrList->attr[2].length); goto nextitem; }
-
-		// Get domain name for which this key applies
-		// On Mac OS X on Intel, the four-character string seems to be stored backwards, at least sometimes
-		// To cope with this we allow *both* "ddns" and "sndd" as valid item types
-		if (strncasecmp(attrList->attr[0].data, "ddns", 4) == 0 || strncasecmp(attrList->attr[0].data, "sndd", 4) == 0)
-			{ memcpy(dstring, attrList->attr[1].data, attrList->attr[1].length); dstring[attrList->attr[1].length] = 0; }
-		else if (attrList->attr[1].length >= 4 && strncasecmp(attrList->attr[1].data, "dns:", 4) == 0)
-			{ memcpy(dstring, attrList->attr[1].data + 4, attrList->attr[1].length - 4); dstring[attrList->attr[1].length - 4] = 0; }
-		else goto nextitem;
-
-		domainname domain;
-		if (!MakeDomainNameFromDNSNameString(&domain, dstring)) { LogMsg("SetSecretForDomain: bad key domain %s", dstring); goto nextitem; }
-
-		// Get DNS key name
-		memcpy(keynamebuf, attrList->attr[2].data, attrList->attr[2].length);
-		keynamebuf[attrList->attr[2].length] = 0;
-		domainname keyname;
-		if (!MakeDomainNameFromDNSNameString(&keyname, keynamebuf)) { LogMsg("SetSecretForDomain: bad key name %s", keynamebuf); goto nextitem; }
-
-		// Get DNS key data
-		char keystring[1024];
-		if (secretlen > sizeof(keystring) - 1) { LogMsg("SetSecretForDomain: Shared secret too long: %d", secretlen); goto nextitem; }
-		memcpy(keystring, secret, secretlen);
-		keystring[secretlen] = 0;	// mDNS_SetSecretForDomain requires NULL-terminated C string for key
-
-		// Make a new DomainAuthInfo structure to hold this data
-		DomainAuthInfo *info = (DomainAuthInfo*)mDNSPlatformMemAllocate(sizeof(*info));
-		if (!info) { LogMsg("SetSecretForDomain: No memory"); goto nextitem; }
-		mDNS_SetSecretForDomain(m, info, &domain, &keyname, keystring);
-
-		CFStringRef cfs = CFStringCreateWithCString(NULL, dstring, kCFStringEncodingUTF8);
-		if (cfs) { CFArrayAppendValue(StateArray, cfs); CFRelease(cfs); }
-
-		nextitem:
-		SecKeychainItemFreeAttributesAndData(attrList, secret);
-		CFRelease(itemRef);
-		}
-
-	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:SetDomainSecrets"), NULL, NULL);
-	if (store) { SCDynamicStoreSetValue(store, CFSTR("State:/Network/PrivateDNS"), StateArray); CFRelease(store); }
-	else LogMsg("SetDomainSecrets: SCDynamicStoreCreate failed");
-
-	cleanup:
-	CFRelease(searchRef);
-	if (StateArray) CFRelease(StateArray);
-
-#else
+#ifdef NO_SECURITYFRAMEWORK
 	(void)m;
 	LogMsg("Note: SetDomainSecrets: no keychain support");
+#else
+
+	ClearDomainSecrets(m);
+
+	CFMutableArrayRef sa = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
+	if (!sa) { LogMsg("SetDomainSecrets: CFArrayCreateMutable failed"); return; }
+
+	SecKeychainRef skc;
+	OSStatus err = SecKeychainOpen(SYSTEM_KEYCHAIN_PATH, &skc);
+	if (err) LogMsg("SetDomainSecrets: SecKeychainOpen %d", err);
+	else
+		{
+		SecKeychainSearchRef searchRef;
+		err = SecKeychainSearchCreateFromAttributes(skc, kSecGenericPasswordItemClass, NULL, &searchRef);
+		if (err) LogMsg("SetDomainSecrets: SecKeychainSearchCreateFromAttributes %d", err);
+		else
+			{
+			while (1)
+				{
+				// Iterate through keychain items
+				SecKeychainItemRef itemRef = NULL;
+				err = SecKeychainSearchCopyNext(searchRef, &itemRef);
+				if (err) break;
+		
+				// Get attributes and data out of itemRef
+				UInt32 tags[3] = { kSecTypeItemAttr, kSecServiceItemAttr, kSecAccountItemAttr };
+				SecKeychainAttributeInfo attrInfo = { 3, tags, NULL };	// Count, array of tags, array of formats
+				SecKeychainAttributeList *a = NULL;
+				void *secret = NULL;
+				err = SecKeychainItemCopyAttributesAndData(itemRef,  &attrInfo, NULL, &a, NULL, NULL);
+		
+				// Validate that results look reasonable
+				//LogMsg("* %.*s", a->attr[1].length, a->attr[1].data);
+				//if (err == errSecInteractionNotAllowed) goto nextitem;
+				if (err || !a)                 { LogMsg("SetSecretForDomain: SecKeychainItemCopyAttributesAndData error %d %p", err, a); goto nextitem; }
+				if (a->count != 3)             { LogMsg("SetSecretForDomain: SecKeychainItemCopyAttributesAndData got wrong count %d", a->count); goto nextitem; }
+				if (a->attr[0].tag != tags[0]) { LogMsg("SetSecretForDomain: SecKeychainItemCopyAttributesAndData got wrong attribute %d", 0); goto nextitem; }
+				if (a->attr[1].tag != tags[1]) { LogMsg("SetSecretForDomain: SecKeychainItemCopyAttributesAndData got wrong attribute %d", 1); goto nextitem; }
+				if (a->attr[2].tag != tags[2]) { LogMsg("SetSecretForDomain: SecKeychainItemCopyAttributesAndData got wrong attribute %d", 2); goto nextitem; }
+		
+				// Validate that attributes are not too large
+				char dstring[4 + MAX_ESCAPED_DOMAIN_NAME];  // Extra 4 is for the "dns:" prefix
+				char keynamebuf[MAX_ESCAPED_DOMAIN_NAME];	// Max legal C-string name, including terminating NUL
+				if (a->attr[1].length > sizeof(dstring   )-1) { LogMsg("SetSecretForDomain: Bad kSecServiceItemAttr length %d", a->attr[1].length); goto nextitem; }
+				if (a->attr[2].length > sizeof(keynamebuf)-1) { LogMsg("SetSecretForDomain: Bad kSecAccountItemAttr length %d", a->attr[2].length); goto nextitem; }
+		
+				// Get domain name for which this key applies
+				// On Mac OS X on Intel, the four-character string seems to be stored backwards, at least sometimes.
+				// I suspect some overenthusiastic inexperienced engineer said, "On Intel everything's backwards,
+				// therefore I need to add some byte swapping in this API to make this four-character string backwards too."
+				// To cope with this we allow *both* "ddns" and "sndd" as valid item types.
+				if (a->attr[0].length == 4 && (!strncasecmp(a->attr[0].data, "ddns", 4) || !strncasecmp(a->attr[0].data, "sndd", 4)))
+					{ memcpy(dstring, a->attr[1].data, a->attr[1].length); dstring[a->attr[1].length] = 0; }
+				else if (a->attr[1].length >= 4 && strncasecmp(a->attr[1].data, "dns:", 4) == 0)
+					{ memcpy(dstring, a->attr[1].data + 4, a->attr[1].length - 4); dstring[a->attr[1].length - 4] = 0; }
+				else goto nextitem;
+		
+				domainname domain;
+				if (!MakeDomainNameFromDNSNameString(&domain, dstring)) { LogMsg("SetSecretForDomain: bad key domain %s", dstring); goto nextitem; }
+		
+				// Get DNS key name
+				memcpy(keynamebuf, a->attr[2].data, a->attr[2].length);
+				keynamebuf[a->attr[2].length] = 0;
+				domainname keyname;
+				if (!MakeDomainNameFromDNSNameString(&keyname, keynamebuf)) { LogMsg("SetSecretForDomain: bad key name %s", keynamebuf); goto nextitem; }
+		
+				// Get DNS key data
+				UInt32 secretlen;
+				char keystring[1024];
+				err = SecKeychainItemCopyAttributesAndData(itemRef,  NULL, NULL, NULL, &secretlen, &secret);
+				if (err)                               { LogMsg("SetSecretForDomain: SecKeychainItemCopyAttributesAndData error %d", err); goto nextitem; }
+				if (!secretlen || !secret)             { LogMsg("SetSecretForDomain: No shared secret"); goto nextitem; }
+				if (secretlen > sizeof(keystring) - 1) { LogMsg("SetSecretForDomain: Shared secret too long: %d", secretlen); goto nextitem; }
+				memcpy(keystring, secret, secretlen);
+				keystring[secretlen] = 0;	// mDNS_SetSecretForDomain requires NULL-terminated C string for key
+		
+				// Make a new DomainAuthInfo structure to hold this data
+				DomainAuthInfo *info = (DomainAuthInfo*)mDNSPlatformMemAllocate(sizeof(*info));
+				if (!info) { LogMsg("SetSecretForDomain: No memory"); goto nextitem; }
+				mDNS_SetSecretForDomain(m, info, &domain, &keyname, keystring);
+		
+				CFStringRef cfs = CFStringCreateWithCString(NULL, dstring, kCFStringEncodingUTF8);
+				if (cfs) { CFArrayAppendValue(sa, cfs); CFRelease(cfs); }
+		
+				nextitem:
+				SecKeychainItemFreeAttributesAndData(a, secret);
+				CFRelease(itemRef);
+				}
+			CFRelease(searchRef);
+			SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:SetDomainSecrets"), NULL, NULL);
+			if (!store) LogMsg("SetDomainSecrets: SCDynamicStoreCreate failed");
+			else { SCDynamicStoreSetValue(store, CFSTR("State:/Network/PrivateDNS"), sa); CFRelease(store); }
+			}
+		CFRelease(skc);
+		}
+	CFRelease(sa);
 #endif /* NO_SECURITYFRAMEWORK */
 	}
 
