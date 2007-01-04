@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.317  2007/01/04 02:39:53  cheshire
+<rdar://problem/4030599> Hostname passed into DNSServiceRegister ignored for Wide-Area service registrations
+
 Revision 1.316  2006/12/22 20:59:49  cheshire
 <rdar://problem/4742742> Read *all* DNS keys from keychain,
  not just key for the system-wide default registration domain
@@ -1873,7 +1876,6 @@ struct ServiceRecordSet_struct
 	ExtraResourceRecord *Extras;	// Optional list of extra AuthRecords attached to this service registration
 	mDNSu32              NumSubTypes;
 	AuthRecord          *SubTypes;
-	const domainname    *Host;		// Set if this service record does not use the standard target host name
 	AuthRecord           RR_ADV;	// e.g. _services._dns-sd._udp.local. PTR _printer._tcp.local.
 	AuthRecord           RR_PTR;	// e.g. _printer._tcp.local.        PTR Name._printer._tcp.local.
 	AuthRecord           RR_SRV;	// e.g. Name._printer._tcp.local.   SRV 0 0 port target

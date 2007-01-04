@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.568  2007/01/04 02:39:53  cheshire
+<rdar://problem/4030599> Hostname passed into DNSServiceRegister ignored for Wide-Area service registrations
+
 Revision 1.567  2006/12/21 00:01:37  cheshire
 Tidy up code alignment
 
@@ -6861,7 +6864,6 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	sr->Extras          = mDNSNULL;
 	sr->NumSubTypes     = NumSubTypes;
 	sr->SubTypes        = SubTypes;
-	sr->Host            = host && host->c[0] ? host : mDNSNULL;
 	
 	// If port number is zero, that means the client is really trying to do a RegisterNoSuchService
 	if (!port.NotAnInteger)
@@ -6918,7 +6920,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	sr->RR_SRV.resrec.rdata->u.srv.port     = port;
 
 	// Setting HostTarget tells DNS that the target of this SRV is to be automatically kept in sync with our host name
-	if (sr->Host) AssignDomainName(&sr->RR_SRV.resrec.rdata->u.srv.target, sr->Host);
+	if (host && host->c[0]) AssignDomainName(&sr->RR_SRV.resrec.rdata->u.srv.target, host);
 	else { sr->RR_SRV.HostTarget = mDNStrue; sr->RR_SRV.resrec.rdata->u.srv.target.c[0] = '\0'; }
 
 	// 4. Set up the TXT record rdata,
@@ -7048,7 +7050,7 @@ mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordS
 	// mDNS_RegisterService() and mDNS_AddRecordToService(), which do the right locking internally.
 	domainlabel name1, name2;
 	domainname type, domain;
-	const domainname *host = mDNSNULL;
+	const domainname *host = sr->RR_SRV.HostTarget ? mDNSNULL : &sr->RR_SRV.resrec.rdata->u.srv.target;
 	ExtraResourceRecord *extras = sr->Extras;
 	mStatus err;
 
@@ -7064,8 +7066,6 @@ mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordS
 		LogMsg("%##s service renamed from \"%#s\" to \"%#s\"", type.c, name1.c, newname->c);
 	else LogMsg("%##s service (domain %##s) renamed from \"%#s\" to \"%#s\"",type.c, domain.c, name1.c, newname->c);
 
-	if (sr->RR_SRV.HostTarget == mDNSfalse && sr->Host) host = sr->Host;
-	
 	err = mDNS_RegisterService(m, sr, newname, &type, &domain,
 		host, sr->RR_SRV.resrec.rdata->u.srv.port, sr->RR_TXT.resrec.rdata->u.txt.c, sr->RR_TXT.resrec.rdlength,
 		sr->SubTypes, sr->NumSubTypes,
