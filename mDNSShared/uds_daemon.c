@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.225  2007/01/04 23:11:15  cheshire
+<rdar://problem/4720673> uDNS: Need to start caching unicast records
+When an automatic browsing domain is removed, generate appropriate "remove" events for legacy queries
+
 Revision 1.224  2007/01/04 20:57:49  cheshire
 Rename ReturnCNAME to ReturnIntermed (for ReturnIntermediates)
 
@@ -2806,10 +2810,13 @@ mDNSlocal void browse_termination_callback(void *context)
 	freeL("browser_info", info);
 	}
 
-mDNSexport void udsserver_default_browse_domain_changed(const domainname *d, mDNSBool add)
+mDNSexport void udsserver_automatic_browse_domain_changed(const domainname *d, mDNSBool add)
 	{
 	request_state *r;
-
+	
+	debugf("DefaultBrowseDomainChanged: %s default browse domain %##s", add ? "Adding" : "Removing", d->c);
+	machserver_automatic_browse_domain_changed(d, add);
+  	
   	for (r = all_requests; r; r = r->next)
 		{
 		browser_info_t *info = r->browser_info;
@@ -2825,7 +2832,7 @@ mDNSexport void udsserver_default_browse_domain_changed(const domainname *d, mDN
 					{
 					browser_t *remove = *ptr;
 					*ptr = (*ptr)->next;
-					mDNS_StopBrowse(&mDNSStorage, &remove->q);
+					mDNS_StopQueryWithRemoves(&mDNSStorage, &remove->q);
 					freeL("browser_t", remove);
 					return;
 					}

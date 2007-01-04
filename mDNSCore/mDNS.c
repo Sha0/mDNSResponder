@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.572  2007/01/04 23:11:11  cheshire
+<rdar://problem/4720673> uDNS: Need to start caching unicast records
+When an automatic browsing domain is removed, generate appropriate "remove" events for legacy queries
+
 Revision 1.571  2007/01/04 21:45:20  cheshire
 Added mDNS_DropLockBeforeCallback/mDNS_ReclaimLockAfterCallback macros,
 to do additional lock sanity checking around callback invocations
@@ -4079,46 +4083,48 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 				if (ResourceRecordAnswersQuestion(&rr->resrec, q))
 					{
 					AnswerLocalOnlyQuestionWithResourceRecord(m, q, rr, mDNStrue);
-					// MUST NOT dereference q again after calling AnswerLocalOnlyQuestionWithResourceRecord()
 					if (m->CurrentQuestion != q) break;		// If callback deleted q, then we're finished here
 					}
 			}
-		m->CurrentRecord   = mDNSNULL;
+		m->CurrentRecord = mDNSNULL;
 		}
 
-	for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
-		if (SameNameRecordAnswersQuestion(&rr->resrec, q))
-			{
-			// SecsSinceRcvd is whole number of elapsed seconds, rounded down
-			mDNSu32 SecsSinceRcvd = ((mDNSu32)(m->timenow - rr->TimeRcvd)) / mDNSPlatformOneSecond;
-			if (rr->resrec.rroriginalttl <= SecsSinceRcvd)
+	if (m->CurrentQuestion == q)
+		{
+		for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
+			if (SameNameRecordAnswersQuestion(&rr->resrec, q))
 				{
-				LogMsg("AnswerNewQuestion: How is rr->resrec.rroriginalttl %lu <= SecsSinceRcvd %lu for %##s (%s)",
-					rr->resrec.rroriginalttl, SecsSinceRcvd, rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
-				continue;	// Go to next one in loop
+				// SecsSinceRcvd is whole number of elapsed seconds, rounded down
+				mDNSu32 SecsSinceRcvd = ((mDNSu32)(m->timenow - rr->TimeRcvd)) / mDNSPlatformOneSecond;
+				if (rr->resrec.rroriginalttl <= SecsSinceRcvd)
+					{
+					LogMsg("AnswerNewQuestion: How is rr->resrec.rroriginalttl %lu <= SecsSinceRcvd %lu for %##s (%s)",
+						rr->resrec.rroriginalttl, SecsSinceRcvd, rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
+					continue;	// Go to next one in loop
+					}
+	
+				// If this record set is marked unique, then that means we can reasonably assume we have the whole set
+				// -- we don't need to rush out on the network and query immediately to see if there are more answers out there
+				if ((rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) || (q->ExpectUnique))
+					ShouldQueryImmediately = mDNSfalse;
+				q->CurrentAnswers++;
+				if (rr->resrec.rdlength > SmallRecordLimit) q->LargeAnswers++;
+				if (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) q->UniqueAnswers++;
+				AnswerQuestionWithResourceRecord(m, q, rr, mDNStrue);
+				if (m->CurrentQuestion != q) break;		// If callback deleted q, then we're finished here
 				}
+			else if (RRTypeIsAddressType(rr->resrec.rrtype) && RRTypeIsAddressType(q->qtype))
+				if (rr->resrec.namehash == q->qnamehash && SameDomainName(rr->resrec.name, &q->qname))
+					ShouldQueryImmediately = mDNSfalse;
+		}
 
-			// If this record set is marked unique, then that means we can reasonably assume we have the whole set
-			// -- we don't need to rush out on the network and query immediately to see if there are more answers out there
-			if ((rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) || (q->ExpectUnique))
-				ShouldQueryImmediately = mDNSfalse;
-			q->CurrentAnswers++;
-			if (rr->resrec.rdlength > SmallRecordLimit) q->LargeAnswers++;
-			if (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) q->UniqueAnswers++;
-			AnswerQuestionWithResourceRecord(m, q, rr, mDNStrue);
-			// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
-			if (m->CurrentQuestion != q) break;		// If callback deleted q, then we're finished here
-			}
-		else if (RRTypeIsAddressType(rr->resrec.rrtype) && RRTypeIsAddressType(q->qtype))
-			if (rr->resrec.namehash == q->qnamehash && SameDomainName(rr->resrec.name, &q->qname))
-				ShouldQueryImmediately = mDNSfalse;
-
-	if (ShouldQueryImmediately && (m->CurrentQuestion == q))
+	if (m->CurrentQuestion == q && ShouldQueryImmediately)
 		{
 		q->ThisQInterval  = InitialQuestionInterval;
 		q->LastQTime      = m->timenow - q->ThisQInterval;
 		m->NextScheduledQuery = m->timenow;
 		}
+
 	m->CurrentQuestion = mDNSNULL;
 	m->lock_rrcache = 0;
 	}
@@ -4144,7 +4150,6 @@ mDNSlocal void AnswerNewLocalOnlyQuestion(mDNS *const m)
 		if (ResourceRecordAnswersQuestion(&rr->resrec, q))
 			{
 			AnswerLocalOnlyQuestionWithResourceRecord(m, q, rr, mDNStrue);
-			// MUST NOT dereference q again after calling AnswerLocalOnlyQuestionWithResourceRecord()
 			if (m->CurrentQuestion != q) break;		// If callback deleted q, then we're finished here
 			}
 		}
@@ -5884,7 +5889,9 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 		if (question->ThisQInterval >= 0)	// Only log error message if the query was supposed to be active
 			LogMsg("mDNS_StopQuery_internal: Question %##s (%s) not found in active list",
 				question->qname.c, DNSTypeName(question->qtype));
+#if ForceAlerts
 		*(long*)0 = 0;
+#endif
 		return(mStatus_BadReferenceErr);
 		}
 
@@ -5951,6 +5958,38 @@ mDNSexport mStatus mDNS_StopQuery(mDNS *const m, DNSQuestion *const question)
 	mStatus status;
 	mDNS_Lock(m);
 	status = mDNS_StopQuery_internal(m, question);
+	mDNS_Unlock(m);
+	return(status);
+	}
+
+// Note that mDNS_StopQueryWithRemoves() does not currently implement the full generality of the other APIs
+// Specifically, question callbacks invoked as a result of this call cannot themselves make API calls.
+// We invoke the callback without using mDNS_DropLockBeforeCallback/mDNS_ReclaimLockAfterCallback
+// specifically to catch and report if the client callback does try to make API calls
+mDNSexport mStatus mDNS_StopQueryWithRemoves(mDNS *const m, DNSQuestion *const question)
+	{
+	mStatus status;
+	DNSQuestion *qq;
+	mDNS_Lock(m);
+
+	// Check if question is new -- don't want to give remove events for a question we haven't even answered yet
+	for (qq = m->NewQuestions; qq; qq=qq->next) if (qq == question) break;
+
+	status = mDNS_StopQuery_internal(m, question);
+	if (status == mStatus_NoError && !qq)
+		{
+		CacheRecord *rr;
+		const mDNSu32 slot = HashSlot(&question->qname);
+		CacheGroup *const cg = CacheGroupForName(m, slot, question->qnamehash, &question->qname);
+		LogOperation("Generating terminal removes for %##s", question->qname.c);
+		for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
+			if (SameNameRecordAnswersQuestion(&rr->resrec, question))
+				{
+				// Don't use mDNS_DropLockBeforeCallback() here
+				if (question->QuestionCallback)
+					question->QuestionCallback(m, question, &rr->resrec, mDNSfalse);
+				}
+		}
 	mDNS_Unlock(m);
 	return(status);
 	}

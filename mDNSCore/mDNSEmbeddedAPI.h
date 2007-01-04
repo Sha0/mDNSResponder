@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.319  2007/01/04 23:11:11  cheshire
+<rdar://problem/4720673> uDNS: Need to start caching unicast records
+When an automatic browsing domain is removed, generate appropriate "remove" events for legacy queries
+
 Revision 1.318  2007/01/04 20:57:48  cheshire
 Rename ReturnCNAME to ReturnIntermed (for ReturnIntermediates)
 
@@ -2503,6 +2507,7 @@ extern mStatus mDNS_Deregister(mDNS *const m, AuthRecord *const rr);
 
 extern mStatus mDNS_StartQuery(mDNS *const m, DNSQuestion *const question);
 extern mStatus mDNS_StopQuery (mDNS *const m, DNSQuestion *const question);
+extern mStatus mDNS_StopQueryWithRemoves(mDNS *const m, DNSQuestion *const question);
 extern mStatus mDNS_Reconfirm (mDNS *const m, CacheRecord *const cacherr);
 extern mStatus mDNS_ReconfirmByValue(mDNS *const m, ResourceRecord *const rr);
 extern mDNSs32 mDNS_TimeNow(const mDNS *const m);
@@ -2898,7 +2903,6 @@ extern DNameListElem	*	mDNSPlatformGetFQDN(void);
 extern mStatus				mDNSPlatformGetPrimaryInterface(mDNS * const m, mDNSAddr * v4, mDNSAddr * v6, mDNSAddr * router);
 extern DNameListElem	*	mDNSPlatformGetReverseMapSearchDomainList(void);
 extern mStatus				mDNSPlatformRegisterSplitDNS(mDNS * const m, int * nAdditions, int * nDeletions);
-extern void					mDNSPlatformDefaultBrowseDomainChanged(const domainname *d, mDNSBool add);
 extern void					mDNSPlatformDefaultRegDomainChanged(const domainname *d, mDNSBool add);
 extern void					mDNSPlatformDynDNSHostNameStatusChanged(domainname *const dname, mStatus status);
 

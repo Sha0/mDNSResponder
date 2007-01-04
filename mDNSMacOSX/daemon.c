@@ -30,6 +30,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.283  2007/01/04 23:11:14  cheshire
+<rdar://problem/4720673> uDNS: Need to start caching unicast records
+When an automatic browsing domain is removed, generate appropriate "remove" events for legacy queries
+
 Revision 1.282  2006/12/21 00:09:45  cheshire
 Use mDNSPlatformMemZero instead of bzero
 
@@ -1304,13 +1308,9 @@ mDNSlocal mStatus AddDomainToBrowser(DNSServiceBrowser *browser, const domainnam
 	return err;
 	}
 
-mDNSexport void mDNSPlatformDefaultBrowseDomainChanged(const domainname *d, mDNSBool add)
+mDNSexport void machserver_automatic_browse_domain_changed(const domainname *d, mDNSBool add)
 	{
 	DNSServiceBrowser *ptr;
-
-	udsserver_default_browse_domain_changed(d, add);
-
-	debugf("DefaultBrowseDomainChanged: %s default browse domain %##s", add ? "Adding" : "Removing", d->c);
 	for (ptr = DNSServiceBrowserList; ptr; ptr = ptr->next)
 		{
 		if (ptr->DefaultDomain)
@@ -1329,7 +1329,7 @@ mDNSexport void mDNSPlatformDefaultBrowseDomainChanged(const domainname *d, mDNS
 						{
 						DNSServiceBrowserQuestion *remove = *q;
 						*q = (*q)->next;
-						mDNS_StopBrowse(&mDNSStorage, &remove->q);
+						mDNS_StopQueryWithRemoves(&mDNSStorage, &remove->q);
 						freeL("DNSServiceBrowserQuestion", remove );
 						return;
 						}

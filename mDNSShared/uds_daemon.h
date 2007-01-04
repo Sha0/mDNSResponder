@@ -23,6 +23,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.h,v $
+Revision 1.16  2007/01/04 23:11:15  cheshire
+<rdar://problem/4720673> uDNS: Need to start caching unicast records
+When an automatic browsing domain is removed, generate appropriate "remove" events for legacy queries
+
 Revision 1.15  2006/08/14 23:24:57  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -94,7 +98,8 @@ extern void udsserver_handle_configchange(void);
 extern int udsserver_exit(void);	// should be called prior to app exit
 
 extern void udsserver_default_reg_domain_changed(const domainname *d, mDNSBool add);
-extern void udsserver_default_browse_domain_changed(const domainname *d, mDNSBool add);
+extern void udsserver_automatic_browse_domain_changed(const domainname *d, mDNSBool add);
+extern void machserver_automatic_browse_domain_changed(const domainname *d, mDNSBool add);
 
 /* Routines that uds_daemon expects to link against: */
 

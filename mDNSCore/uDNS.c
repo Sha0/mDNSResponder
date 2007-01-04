@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.269  2007/01/04 23:11:13  cheshire
+<rdar://problem/4720673> uDNS: Need to start caching unicast records
+When an automatic browsing domain is removed, generate appropriate "remove" events for legacy queries
+
 Revision 1.268  2007/01/04 22:06:38  cheshire
 Fixed crash in LLQNatMapComplete()
 
@@ -6172,6 +6176,9 @@ mDNSlocal void RemoveDefaultRegDomain(mDNS *const m, domainname *d)
 	debugf("Requested removal of default registration domain %##s not in contained in list", d->c);
 	}
 
+// HACK: This part of uDNS.c assumes the only client it's used with is uds_daemon.c!
+extern void udsserver_automatic_browse_domain_changed(const domainname *d, mDNSBool add);
+
 mDNSlocal void TrackLegacyBrowseDomains(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
 	DNameListElem *ptr, *prev, *new;
@@ -6187,7 +6194,7 @@ mDNSlocal void TrackLegacyBrowseDomains(mDNS *const m, DNSQuestion *question, co
 		AssignDomainName(&new->name, &answer->rdata->u.name);
 		new->next = m->DefBrowseList;
 		m->DefBrowseList = new;
-		mDNSPlatformDefaultBrowseDomainChanged(&new->name, mDNStrue);
+		udsserver_automatic_browse_domain_changed(&new->name, mDNStrue);
 		return;
 		}
 	else
@@ -6198,7 +6205,7 @@ mDNSlocal void TrackLegacyBrowseDomains(mDNS *const m, DNSQuestion *question, co
 			{
 			if (SameDomainName(&ptr->name, &answer->rdata->u.name))
 				{
-				mDNSPlatformDefaultBrowseDomainChanged(&ptr->name, mDNSfalse);
+				udsserver_automatic_browse_domain_changed(&ptr->name, mDNSfalse);
 				if (prev) prev->next = ptr->next;
 				else m->DefBrowseList = ptr->next;
 				mDNSPlatformMemFree(ptr);
