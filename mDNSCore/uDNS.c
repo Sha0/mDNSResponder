@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.264  2007/01/04 20:39:27  cheshire
+Fix locking mismatch
+
 Revision 1.263  2007/01/04 02:39:53  cheshire
 <rdar://problem/4030599> Hostname passed into DNSServiceRegister ignored for Wide-Area service registrations
 
@@ -2493,7 +2496,7 @@ mDNSlocal void LLQNatMapComplete(mDNS *m, NATTraversalInfo * n)
 
 // if we ever want to refine support for multiple hostnames, we can add logic matching service names to a particular hostname
 // for now, we grab the first registered DynDNS name, if any, or a static name we learned via a reverse-map query
-mDNSlocal domainname *GetServiceTarget(mDNS *m, AuthRecord *srv)
+mDNSlocal const domainname *GetServiceTarget(mDNS *m, AuthRecord *srv)
 	{
 	if (!srv->HostTarget)		// If not automatically tracking this host's current name, just return the exising target
 		return(&srv->resrec.rdata->u.srv.target);
@@ -3148,6 +3151,10 @@ mDNSlocal mStatus StartGetZoneData(mDNS *m, domainname *name, AsyncOpTarget targ
     {
     ntaContext *context = (ntaContext*)mDNSPlatformMemAllocate(sizeof(ntaContext));
     if (!context) { LogMsg("ERROR: StartGetZoneData - mDNSPlatformMemAllocate failed");  return mStatus_NoMemoryErr; }
+
+	if (m->mDNS_busy != m->mDNS_reentrancy+1)
+		LogMsg("StartGetZoneData: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
+
 	mDNSPlatformMemZero(context, sizeof(ntaContext));
     AssignDomainName(&context->origName, name);
     context->curSOA          = mDNSNULL;
@@ -3543,8 +3550,9 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 	// The target has changed
 
 	domainname *curtarget = &srs->RR_SRV.resrec.rdata->u.srv.target;
-	domainname *newtarget = GetServiceTarget(m, &srs->RR_SRV);
-	mDNSBool TargetChanged = (newtarget && srs->state == regState_NoTarget) || (curtarget->c[0] && !newtarget) || !SameDomainName(curtarget, newtarget);
+	const domainname *const nt = GetServiceTarget(m, &srs->RR_SRV);
+	const domainname *const newtarget = nt ? nt : (domainname*)"";
+	mDNSBool TargetChanged = (newtarget->c[0] && srs->state == regState_NoTarget) || !SameDomainName(curtarget, newtarget);
 	mDNSBool HaveZoneData = srs->ns.ip.v4.NotAnInteger ? mDNStrue : mDNSfalse;
 
 	// Nat state change if:
@@ -3559,6 +3567,9 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 	mDNSBool WereBehindNAT = nat != mDNSNULL;
 	mDNSBool NATRouterChanged = nat && nat->Router.ip.v4.NotAnInteger != m->Router.ip.v4.NotAnInteger;
 	mDNSBool PortWasMapped = nat && (nat->state == NATState_Established || nat->state == NATState_Legacy) && nat->PublicPort.NotAnInteger != port.NotAnInteger;
+
+	if (m->mDNS_busy != m->mDNS_reentrancy+1)
+		LogMsg("UpdateSRV: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
 	if (WereBehindNAT && NowBehindNAT && NATRouterChanged) NATChanged = mDNStrue;
 	else if (!NowBehindNAT && PortWasMapped)               NATChanged = mDNStrue;
@@ -3594,7 +3605,7 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 			// if nat changed, register if we have a target (below)
 
 		case regState_NoTarget:
-			if (newtarget)
+			if (newtarget->c[0])
 				{
 				debugf("UpdateSRV: %s service %##s", HaveZoneData ? (NATChanged && NowBehindNAT ? "Starting Port Map for" : "Registering") : "Getting Zone Data for", srs->RR_SRV.resrec.name->c);
 				if (!HaveZoneData)
@@ -3626,7 +3637,6 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 mDNSlocal void UpdateSRVRecords(mDNS *m)
 	{
 	ServiceRecordSet *srs;
-
 	for (srs = m->ServiceRegistrations; srs; srs = srs->next) UpdateSRV(m, srs);
 	}
 
@@ -3670,7 +3680,9 @@ mDNSlocal void HostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 		return;
 		}
 	// register any pending services that require a target
+	mDNS_Lock(m);
 	UpdateSRVRecords(m);
+	mDNS_Unlock(m);
 
 	// Deliver success to client
 	if (!hi) { LogMsg("HostnameCallback invoked with orphaned address record"); return; }
@@ -6133,13 +6145,13 @@ mDNSlocal void RemoveDefaultRegDomain(mDNS *const m, domainname *d)
 	debugf("Requested removal of default registration domain %##s not in contained in list", d->c);
 	}
 
-mDNSlocal void FoundDefaultBrowseDomain(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+mDNSlocal void TrackLegacyBrowseDomains(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
 	DNameListElem *ptr, *prev, *new;
 	(void)m; // unused;
 	(void)question;  // unused
 
-	LogOperation("FoundDefaultBrowseDomain: %s default browse domain %##s", AddRecord ? "Adding" : "Removing", answer->rdata->u.name.c);
+	LogOperation("TrackLegacyBrowseDomains: %s default browse domain %##s", AddRecord ? "Adding" : "Removing", answer->rdata->u.name.c);
 
 	if (AddRecord)
 		{
@@ -6168,7 +6180,7 @@ mDNSlocal void FoundDefaultBrowseDomain(mDNS *const m, DNSQuestion *question, co
 			prev = ptr;
 			ptr = ptr->next;
 			}
-		LogMsg("FoundDefBrowseDomain: Got remove event for domain %##s not in list", answer->rdata->u.name.c);
+		LogMsg("TrackLegacyBrowseDomains: Got remove event for domain %##s not in list", answer->rdata->u.name.c);
 		}
 	}
 
@@ -6355,7 +6367,7 @@ mDNSlocal void DeregisterBrowseDomainPTR(mDNS *m, const domainname *d, int type)
 
 mDNSlocal void SetPrefsBrowseDomain(mDNS *m, const domainname *d, mDNSBool add)
 	{
-	LogMsg("%s default browse domain %##s", add ? "Adding" : "Removing", d->c);
+	LogOperation("SetPrefsBrowseDomain: %s default browse domain refcount for %##s", add ? "Incrementing" : "Decrementing", d->c);
 
 	if (add)
 		{
@@ -6372,18 +6384,9 @@ mDNSlocal void SetPrefsBrowseDomain(mDNS *m, const domainname *d, mDNSBool add)
 mDNSlocal void SetPrefsBrowseDomains(mDNS *m, DNameListElem * browseDomains, mDNSBool add)
 	{
 	DNameListElem * browseDomain;
-
 	for (browseDomain = browseDomains; browseDomain; browseDomain = browseDomain->next)
-		{
-		if (!browseDomain->name.c[0])
-			{
-			LogMsg("SetPrefsBrowseDomains bad browse domain: %##s", browseDomain->name.c[0] ? (char*) browseDomain->name.c : "(unknown)");
-			}
-		else
-			{
-			SetPrefsBrowseDomain(m, &browseDomain->name, add);
-			}
-		}
+		if (browseDomain->name.c[0]) SetPrefsBrowseDomain(m, &browseDomain->name, add);
+		else LogMsg("SetPrefsBrowseDomains bad browse domain: %P", browseDomain);
 	}
 
 // Construction of Default Browse domain list (i.e. when clients pass NULL) is as follows:
@@ -6428,6 +6431,8 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 			SetPrefsBrowseDomain(m, &m->RegDomain, mDNStrue);
 		}
 	}
+
+	LogOperation("uDNS_SetupDNSConfig");
 
 	// Add new browse domains to internal list
 	if (browseDomains)
@@ -6514,7 +6519,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 		mStatus err;
 
 		// start query for domains to be used in default (empty string domain) browses
-		err = mDNS_GetDomains(m, &LegacyBrowseDomainQ, mDNS_DomainTypeBrowseLegacy, mDNSNULL, mDNSInterface_LocalOnly, FoundDefaultBrowseDomain, mDNSNULL);
+		err = mDNS_GetDomains(m, &LegacyBrowseDomainQ, mDNS_DomainTypeBrowseLegacy, mDNSNULL, mDNSInterface_LocalOnly, TrackLegacyBrowseDomains, mDNSNULL);
 
 		// provide .local automatically
 		SetPrefsBrowseDomain(m, &localdomain, mDNStrue);
