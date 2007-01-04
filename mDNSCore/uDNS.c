@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.268  2007/01/04 22:06:38  cheshire
+Fixed crash in LLQNatMapComplete()
+
 Revision 1.267  2007/01/04 21:45:20  cheshire
 Added mDNS_DropLockBeforeCallback/mDNS_ReclaimLockAfterCallback macros,
 to do additional lock sanity checking around callback invocations
@@ -2437,8 +2440,6 @@ exit:
 
 mDNSlocal void LLQNatMapComplete(mDNS *m, NATTraversalInfo * n)
 	{
-	LLQ_Info *llqInfo;
-
 	if (!n) { LogMsg("Error: LLQNatMapComplete called with NULL NATTraversalInfo"); return; }
 	if (n->state != NATState_Established && n->state != NATState_Legacy && n->state != NATState_Error)
 		{ LogMsg("LLQNatMapComplete - bad nat state %d", n->state); return; }
@@ -2447,9 +2448,9 @@ mDNSlocal void LLQNatMapComplete(mDNS *m, NATTraversalInfo * n)
 	while (m->CurrentQuestion)
 		{
 		DNSQuestion *q = m->CurrentQuestion;
+		LLQ_Info *llqInfo = q->llq;
 		m->CurrentQuestion = m->CurrentQuestion->next;
-		llqInfo = q->llq;
-		if (q->LongLived)
+		if (q->LongLived && llqInfo)
 			{
 			if (llqInfo->isPrivate)
 				{
