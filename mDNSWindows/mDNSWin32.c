@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.113  2007/01/04 23:12:20  cheshire
+Remove unused mDNSPlatformDefaultBrowseDomainChanged
+
 Revision 1.112  2006/12/22 20:59:51  cheshire
 <rdar://problem/4742742> Read *all* DNS keys from keychain,
  not just key for the system-wide default registration domain
@@ -2302,20 +2305,6 @@ exit:
 	}
 
 	return err;
-}
-
-
-//===========================================================================================================================
-//	mDNSPlatformDefaultBrowseDomainChanged
-//===========================================================================================================================
-
-void
-mDNSPlatformDefaultBrowseDomainChanged( const domainname *d, mDNSBool add )
-{
-	DEBUG_UNUSED( d );
-	DEBUG_UNUSED( add );
-
-	// This is a no-op on Windows
 }
 
 

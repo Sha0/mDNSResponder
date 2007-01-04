@@ -30,6 +30,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.85  2007/01/04 23:12:20  cheshire
+Remove unused mDNSPlatformDefaultBrowseDomainChanged
+
 Revision 1.84  2006/12/22 21:07:35  cheshire
 <rdar://problem/4742742> Read *all* DNS keys from keychain,
  not just key for the system-wide default registration domain
@@ -723,12 +726,6 @@ mDNSexport mStatus mDNSPlatformRegisterSplitDNS(mDNS * const m, int * nAdditions
 	*nAdditions = 0;
 	*nDeletions = 0;
 	return mStatus_UnsupportedErr;
-	}
-
-mDNSexport void mDNSPlatformDefaultBrowseDomainChanged(const domainname *d, mDNSBool add)
-	{
-	(void) d;
-	(void) add;
 	}
 
 mDNSexport void mDNSPlatformDefaultRegDomainChanged(const domainname *d, mDNSBool add)
