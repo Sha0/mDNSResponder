@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.569  2007/01/04 20:27:27  cheshire
+Change a LogMsg() to debugf()
+
 Revision 1.568  2007/01/04 02:39:53  cheshire
 <rdar://problem/4030599> Hostname passed into DNSServiceRegister ignored for Wide-Area service registrations
 
@@ -3744,8 +3747,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, CacheRecord *rr, mDNSBool AddRecord)
 	{
-	verbosedebugf("AnswerQuestionWithResourceRecord:%4lu %s TTL%6lu %##s (%s)",
-		q->CurrentAnswers, AddRecord ? "Add" : "Rmv", rr->resrec.rroriginalttl, rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
+	verbosedebugf("AnswerQuestionWithResourceRecord:%4lu %s %s", q->CurrentAnswers, AddRecord ? "Add" : "Rmv", CRDisplayString(m, rr));
 
 	// Note: Use caution here. In the case of records with rr->DelayDelivery set, AnswerQuestionWithResourceRecord(... mDNStrue)
 	// may be called twice, once when the record is received, and again when it's time to notify local clients.
@@ -5451,7 +5453,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 						}
 					else if (m->rec.r.resrec.rroriginalttl > 0)
 						{
-						if (rr->resrec.rroriginalttl == 0) LogMsg("uDNS rescuing %s", CRDisplayString(m, rr));
+						if (rr->resrec.rroriginalttl == 0) debugf("uDNS rescuing %s", CRDisplayString(m, rr));
 						rr->resrec.rroriginalttl = m->rec.r.resrec.rroriginalttl;
 						rr->UnansweredQueries = 0;
 						rr->MPUnansweredQ     = 0;
