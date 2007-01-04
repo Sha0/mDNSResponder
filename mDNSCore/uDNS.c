@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.267  2007/01/04 21:45:20  cheshire
+Added mDNS_DropLockBeforeCallback/mDNS_ReclaimLockAfterCallback macros,
+to do additional lock sanity checking around callback invocations
+
 Revision 1.266  2007/01/04 21:01:20  cheshire
 <rdar://problem/4607042> mDNSResponder NXDOMAIN and CNAME support
 Only return NXDOMAIN results to clients that request them using kDNSServiceFlagsReturnIntermediates
@@ -1470,9 +1474,9 @@ mDNSexport void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const mDNSu8 *
 		cr->resrec.rdata->MaxRDLength = cr->resrec.rdlength;
 
 		/* Pass empty answer to callback */
-		m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+		mDNS_DropLockBeforeCallback();
 		question->QuestionCallback(m, question, &cr->resrec, 0);
-		m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+		mDNS_ReclaimLockAfterCallback();
 		// CAUTION: Need to be careful after calling question->QuestionCallback(),
 		// because the client's callback function is allowed to do anything,
 		// including starting/stopping queries, registering/deregistering records, etc.
@@ -1504,9 +1508,9 @@ mDNSexport void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const mDNSu8 *
 					debugf("Following cname %##s -> %##s", question->qname.c, cr->resrec.rdata->u.name.c);
 					if (question->ReturnIntermed)
 						{
-						m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+						mDNS_DropLockBeforeCallback();
 						question->QuestionCallback(m, question, &cr->resrec, !goodbye);
-						m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+						mDNS_ReclaimLockAfterCallback();
 						// CAUTION: Need to be careful after calling question->QuestionCallback(),
 						// because the client's callback function is allowed to do anything,
 						// including starting/stopping queries, registering/deregistering records, etc.
@@ -1943,9 +1947,9 @@ exit:
 
 			if (!deregPending)
 				{
-				m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+				mDNS_DropLockBeforeCallback();
 				if (tcpInfo->rr->RecordCallback) tcpInfo->rr->RecordCallback(m, tcpInfo->rr, err);
-				m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+				mDNS_ReclaimLockAfterCallback();
 				}
 			}
 
@@ -1958,9 +1962,9 @@ exit:
 
 			if (!deregPending)
 				{
-				m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+				mDNS_DropLockBeforeCallback();
 				tcpInfo->srs->ServiceCallback(m, tcpInfo->srs, err);
-				m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+				mDNS_ReclaimLockAfterCallback();
 				//!!!KRS will mem still be free'd on error?
 				// NOTE: not safe to touch any client structures here
 				}
@@ -2697,9 +2701,9 @@ exit:
 
 		unlinkSRS(m, srs);
 		srs->state = regState_Unregistered;
-		m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+		mDNS_DropLockBeforeCallback();
 		srs->ServiceCallback(m, srs, err);
-		m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+		mDNS_ReclaimLockAfterCallback();
 		//!!!KRS will mem still be free'd on error?
 		// NOTE: not safe to touch any client structures here
 		}
@@ -2800,10 +2804,10 @@ mDNSlocal mStatus GetZoneData_StartQuery(mDNS *m, DNSQuestion *q, InternalRespon
 	// Temporary hack.
 	// GetZoneData_StartQuery is called with the lock held, but not from a normal callback that allows API calls
 	// Eventually we should fix this.
-	// For now we increment mDNS_reentrancy to stop the error messages
-	m->mDNS_reentrancy++;
+	// For now we increment mDNS_reentrancy to suppress the syslog error messages
+	mDNS_DropLockBeforeCallback();
 	status = mDNS_StartQuery(m, q);
-	m->mDNS_reentrancy--;
+	mDNS_ReclaimLockAfterCallback();
 
 	return(status);
 	}
@@ -3066,9 +3070,12 @@ mDNSlocal void GetZoneData_Callback(mDNS *const m, DNSMessage *msg, const mDNSu8
 	// stop any active question
 	if (context->question.ThisQInterval >= 0)
 		{
-		m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+		// Seems like a hack -- if this code is allowed to issue API calls, then it should have been called in the appropriate state in the first place
+		// and if it's not allowed to issue API calls, then deliberately circumventing the locking check like this seems like it's asking for
+		// tricky hard-to-diagnose crashing bugs
+		mDNS_DropLockBeforeCallback();
 		mDNS_StopQuery(context->m, &context->question);
-		m->mDNS_reentrancy--;
+		mDNS_ReclaimLockAfterCallback();
 		}
 
 	if (msg && (msg->h.flags.b[1] & kDNSFlag1_RC) && (msg->h.flags.b[1] & kDNSFlag1_RC) != kDNSFlag1_RC_NXDomain)
@@ -3146,9 +3153,12 @@ error:
 cleanup:
 	if (context && context->question.ThisQInterval >= 0)
 		{
-		m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+		// Seems like a hack -- if this code is allowed to issue API calls, then it should have been called in the appropriate state in the first place
+		// and if it's not allowed to issue API calls, then deliberately circumventing the locking check like this seems like it's asking for
+		// tricky hard-to-diagnose crashing bugs
+		mDNS_DropLockBeforeCallback();
 		mDNS_StopQuery(context->m, &context->question);
-		m->mDNS_reentrancy--;
+		mDNS_ReclaimLockAfterCallback();
 		}
     if (context) mDNSPlatformMemFree(context);
 	}
@@ -3245,9 +3255,9 @@ mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srs
 		// client cancelled registration while fetching zone data
 		srs->state = regState_Unregistered;
 		unlinkSRS(m, srs);
-		m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+		mDNS_DropLockBeforeCallback();
 		srs->ServiceCallback(m, srs, mStatus_MemFree);
-		m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+		mDNS_ReclaimLockAfterCallback();
 		return;
 		}
 
@@ -3281,9 +3291,9 @@ mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srs
 error:
 	unlinkSRS(m, srs);
 	srs->state = regState_Unregistered;
-	m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+	mDNS_DropLockBeforeCallback();
 	srs->ServiceCallback(m, srs, err);
-	m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+	mDNS_ReclaimLockAfterCallback();
 	// NOTE: not safe to touch any client structures here
 	}
 
@@ -3763,9 +3773,12 @@ mDNSlocal void GetStaticHostname(mDNS *m)
 
 	if (m->ReverseMapActive)
 		{
-		m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+		// Seems like a hack -- if this code is allowed to issue API calls, then it should have been called in the appropriate state in the first place
+		// and if it's not allowed to issue API calls, then deliberately circumventing the locking check like this seems like it's asking for
+		// tricky hard-to-diagnose crashing bugs
+		mDNS_DropLockBeforeCallback();
 		mDNS_StopQuery(m, q);
-		m->mDNS_reentrancy--;
+		mDNS_ReclaimLockAfterCallback();
 		m->ReverseMapActive = mDNSfalse;
 		}
 
@@ -3786,9 +3799,12 @@ mDNSlocal void GetStaticHostname(mDNS *m)
     q->QuestionCallback = FoundStaticHostname;
     q->QuestionContext  = mDNSNULL;
 
-	m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API
+	// Seems like a hack -- if this code is allowed to issue API calls, then it should have been called in the appropriate state in the first place
+	// and if it's not allowed to issue API calls, then deliberately circumventing the locking check like this seems like it's asking for
+	// tricky hard-to-diagnose crashing bugs
+	mDNS_DropLockBeforeCallback();
 	err = mDNS_StartQuery(m, q);
-	m->mDNS_reentrancy--;
+	mDNS_ReclaimLockAfterCallback();
 	if (err) LogMsg("Error: GetStaticHostname - StartQuery returned error %d", err);
 	else m->ReverseMapActive = mDNStrue;
 	}
@@ -4187,9 +4203,9 @@ exit:
 			rr->state = regState_Unregistered;
 			}
 
-		m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+		mDNS_DropLockBeforeCallback();
 		if (rr->RecordCallback) rr->RecordCallback(m, rr, err);
-		m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+		mDNS_ReclaimLockAfterCallback();
 		// NOTE: not safe to touch any client structures here
 		}
 	}
@@ -4362,14 +4378,14 @@ mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mS
 		return;
 		}
 
-	m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+	mDNS_DropLockBeforeCallback();
 	if (InvokeCallback) srs->ServiceCallback(m, srs, err);
 	else if (srs->ClientCallbackDeferred)
 		{
 		srs->ClientCallbackDeferred = mDNSfalse;
 		srs->ServiceCallback(m, srs, srs->DeferredStatus);
 		}
-	m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+	mDNS_ReclaimLockAfterCallback();
 	// NOTE: do not touch structures after calling ServiceCallback
 	}
 
@@ -4457,9 +4473,9 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 
 	if (InvokeCallback)
 		{
-		m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+		mDNS_DropLockBeforeCallback();
 		if (rr->RecordCallback) rr->RecordCallback(m, rr, err);
-		m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+		mDNS_ReclaimLockAfterCallback();
 		}
 	}
 
@@ -4592,9 +4608,12 @@ exit:
 
 	if (err)
 		{
-		m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
-		mDNS_StopQuery(m, question);  //!!!KRS can we really call this here?
-		m->mDNS_reentrancy--;
+		// Seems like a hack -- if this code is allowed to issue API calls, then it should have been called in the appropriate state in the first place
+		// and if it's not allowed to issue API calls, then deliberately circumventing the locking check like this seems like it's asking for
+		// tricky hard-to-diagnose crashing bugs
+		mDNS_DropLockBeforeCallback();
+		mDNS_StopQuery(m, question);
+		mDNS_ReclaimLockAfterCallback();
 		}
 	}
 
@@ -4951,10 +4970,12 @@ exit:
 
 	if (err)
 		{
-		//!!!KRS can we really call this here?
-		m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+		// Seems like a hack -- if this code is allowed to issue API calls, then it should have been called in the appropriate state in the first place
+		// and if it's not allowed to issue API calls, then deliberately circumventing the locking check like this seems like it's asking for
+		// tricky hard-to-diagnose crashing bugs
+		mDNS_DropLockBeforeCallback();
 		mDNS_StopQuery(m, question);
-		m->mDNS_reentrancy--;
+		mDNS_ReclaimLockAfterCallback();
 		}
 	}
 
@@ -5136,10 +5157,10 @@ error:
 		unlinkAR(&m->RecordRegistrations, newRR);
 		newRR->state = regState_Unregistered;
 		}
-	m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+	mDNS_DropLockBeforeCallback();
 	if (newRR->RecordCallback)
 		newRR->RecordCallback(m, newRR, err);
-	m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+	mDNS_ReclaimLockAfterCallback();
 	// NOTE: not safe to touch any client structures here
 	}
 
@@ -5333,9 +5354,10 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 		{
 		// unlink and deliver memfree
 		unlinkAR(&m->RecordRegistrations, rr);
-		m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
-		if (rr->RecordCallback) rr->RecordCallback(m, rr, mStatus_MemFree);
-		m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+		mDNS_DropLockBeforeCallback();
+		if (rr->RecordCallback)
+			rr->RecordCallback(m, rr, mStatus_MemFree);
+		mDNS_ReclaimLockAfterCallback();
 		return mStatus_NoError;
 		}
 
@@ -5417,9 +5439,9 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 		case regState_NoTarget:  // not registered
 			unlinkSRS(m, srs);
 			srs->state = regState_Unregistered;
-			m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+			mDNS_DropLockBeforeCallback();
 			srs->ServiceCallback(m, srs, mStatus_MemFree);
-			m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+			mDNS_ReclaimLockAfterCallback();
 			return mStatus_NoError;
 		case regState_Registered:
 			srs->state = regState_DeregPending;

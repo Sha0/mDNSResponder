@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.39  2007/01/04 21:45:20  cheshire
+Added mDNS_DropLockBeforeCallback/mDNS_ReclaimLockAfterCallback macros,
+to do additional lock sanity checking around callback invocations
+
 Revision 1.38  2006/12/22 20:59:49  cheshire
 <rdar://problem/4742742> Read *all* DNS keys from keychain,
  not just key for the system-wide default registration domain
@@ -241,7 +245,6 @@ extern mDNSu32 TruncateUTF8ToLength(mDNSu8 *string, mDNSu32 length, mDNSu32 max)
 extern mDNSBool LabelContainsSuffix(const domainlabel *const name, const mDNSBool RichText);
 extern mDNSu32 RemoveLabelSuffix(domainlabel *name, mDNSBool RichText);
 extern void AppendLabelSuffix(domainlabel *name, mDNSu32 val, mDNSBool RichText);
-extern void mDNS_HostNameCallback(mDNS *const m, AuthRecord *const rr, mStatus result);
 #define ValidateDomainName(N) (DomainNameLength(N) <= MAX_DOMAIN_NAME)
 
 
@@ -370,6 +373,16 @@ extern mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg, mD
 
 extern void mDNS_Lock(mDNS *const m);
 extern void mDNS_Unlock(mDNS *const m);
+
+#define mDNS_DropLockBeforeCallback() do { m->mDNS_reentrancy++; \
+	if (m->mDNS_busy != m->mDNS_reentrancy) \
+		LogMsg("%s: Locking Failure! mDNS_busy (%ld) != mDNS_reentrancy (%ld)", __func__, m->mDNS_busy, m->mDNS_reentrancy); \
+	} while (0)
+
+#define mDNS_ReclaimLockAfterCallback() do { \
+	if (m->mDNS_busy != m->mDNS_reentrancy) \
+		LogMsg("%s: Unlocking Failure! mDNS_busy (%ld) != mDNS_reentrancy (%ld)", __func__, m->mDNS_busy, m->mDNS_reentrancy); \
+	m->mDNS_reentrancy--; } while (0)
 
 #ifdef	__cplusplus
 	}

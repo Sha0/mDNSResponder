@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.571  2007/01/04 21:45:20  cheshire
+Added mDNS_DropLockBeforeCallback/mDNS_ReclaimLockAfterCallback macros,
+to do additional lock sanity checking around callback invocations
+
 Revision 1.570  2007/01/04 20:57:47  cheshire
 Rename ReturnCNAME to ReturnIntermed (for ReturnIntermediates)
 
@@ -1955,10 +1959,10 @@ mDNSlocal void AnswerLocalOnlyQuestionWithResourceRecord(mDNS *const m, DNSQuest
 	{
 	// Indicate that we've given at least one positive answer for this record, so we should be prepared to send a goodbye for it
 	if (AddRecord) rr->LocalAnswer = mDNStrue;
-	m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+	mDNS_DropLockBeforeCallback();		// Allow client to legally make mDNS API calls from the callback
 	if (q->QuestionCallback)
 		q->QuestionCallback(m, q, &rr->resrec, AddRecord);
-	m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+	mDNS_ReclaimLockAfterCallback();	// Decrement mDNS_reentrancy to block mDNS API calls again
 	}
 
 // When a new local AuthRecord is created or deleted, AnswerLocalQuestions() runs though our LocalOnlyQuestions delivering answers
@@ -2256,9 +2260,9 @@ mDNSlocal void AcknowledgeRecord(mDNS *const m, AuthRecord *const rr)
 		// CAUTION: MUST NOT do anything more with rr after calling rr->Callback(), because the client's callback function
 		// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
 		rr->Acknowledged = mDNStrue;
-		m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+		mDNS_DropLockBeforeCallback();		// Allow client to legally make mDNS API calls from the callback
 		rr->RecordCallback(m, rr, mStatus_NoError);
-		m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+		mDNS_ReclaimLockAfterCallback();	// Decrement mDNS_reentrancy to block mDNS API calls again
 		}
 	}
 
@@ -2624,7 +2628,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 		// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
 		// In this case the likely client action to the mStatus_MemFree message is to free the memory,
 		// so any attempt to touch rr after this is likely to lead to a crash.
-		m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+		mDNS_DropLockBeforeCallback();		// Allow client to legally make mDNS API calls from the callback
 		if (drt != mDNS_Dereg_conflict)
 			{
 			if (rr->RecordCallback) rr->RecordCallback(m, rr, mStatus_MemFree);			// MUST NOT touch rr after this
@@ -2643,7 +2647,7 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 				else { mDNS_Deregister_internal(m, r2, mDNS_Dereg_conflict); r2 = m->DuplicateRecords; }
 				}
 			}
-		m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+		mDNS_ReclaimLockAfterCallback();	// Decrement mDNS_reentrancy to block mDNS API calls again
 		}
 	return(mStatus_NoError);
 	}
@@ -3782,10 +3786,10 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, C
 
 	if (rr->DelayDelivery) return;		// We'll come back later when CacheRecordDeferredAdd() calls us
 
-	m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+	mDNS_DropLockBeforeCallback();		// Allow client to legally make mDNS API calls from the callback
 	if (q->QuestionCallback)
 		q->QuestionCallback(m, q, &rr->resrec, AddRecord);
-	m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+	mDNS_ReclaimLockAfterCallback();	// Decrement mDNS_reentrancy to block mDNS API calls again
 	// CAUTION: MUST NOT do anything more with q after calling q->QuestionCallback(), because the client's callback function
 	// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
 	// Right now the only routines that call AnswerQuestionWithResourceRecord() are CacheRecordAdd(), CacheRecordRmv()
@@ -4172,9 +4176,9 @@ mDNSlocal CacheEntity *GetCacheEntity(mDNS *const m, const CacheGroup *const Pre
 				m->rrcache_size, m->rrcache_active);
 		else
 			{
-			m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+			mDNS_DropLockBeforeCallback();		// Allow client to legally make mDNS API calls from the callback
 			m->MainCallback(m, mStatus_GrowCache);
-			m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+			mDNS_ReclaimLockAfterCallback();	// Decrement mDNS_reentrancy to block mDNS API calls again
 			}
 		}
 	
@@ -6358,7 +6362,8 @@ mDNSexport mStatus mDNS_Deregister(mDNS *const m, AuthRecord *const rr)
 	return(status);
 	}
 
-mDNSexport void mDNS_HostNameCallback(mDNS *const m, AuthRecord *const rr, mStatus result);
+// Circular reference: AdvertiseInterface references mDNS_HostNameCallback, which calls mDNS_SetFQDN, which call AdvertiseInterface
+mDNSlocal void mDNS_HostNameCallback(mDNS *const m, AuthRecord *const rr, mStatus result);
 
 mDNSlocal NetworkInterfaceInfo *FindFirstAdvertisedInterface(mDNS *const m)
 	{
@@ -6488,7 +6493,7 @@ mDNSexport void mDNS_SetFQDN(mDNS *const m)
 	mDNS_Unlock(m);
 	}
 
-mDNSexport void mDNS_HostNameCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
+mDNSlocal void mDNS_HostNameCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
 	{
 	(void)rr;	// Unused parameter
 	
@@ -6505,11 +6510,7 @@ mDNSexport void mDNS_HostNameCallback(mDNS *const m, AuthRecord *const rr, mStat
 		{
 		// Notify the client that the host name is successfully registered
 		if (m->MainCallback)
-			{
-			m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 			m->MainCallback(m, result);
-			m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
-			}
 		}
 	else if (result == mStatus_NameConflict)
 		{
@@ -6517,11 +6518,7 @@ mDNSexport void mDNS_HostNameCallback(mDNS *const m, AuthRecord *const rr, mStat
 
 		// 1. First give the client callback a chance to pick a new name
 		if (m->MainCallback)
-			{
-			m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 			m->MainCallback(m, mStatus_NameConflict);
-			m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
-			}
 
 		// 2. If the client callback didn't do it, add (or increment) an index ourselves
 		// This needs to be case-insensitive compare, because we need to know that the name has been changed so as to
@@ -7340,9 +7337,9 @@ mDNSexport void mDNSCoreInitComplete(mDNS *const m, mStatus result)
 	if (m->MainCallback)
 		{
 		mDNS_Lock(m);
-		m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
+		mDNS_DropLockBeforeCallback();		// Allow client to legally make mDNS API calls from the callback
 		m->MainCallback(m, mStatus_NoError);
-		m->mDNS_reentrancy--; // Decrement to block mDNS API calls again
+		mDNS_ReclaimLockAfterCallback();	// Decrement mDNS_reentrancy to block mDNS API calls again
 		mDNS_Unlock(m);
 		}
 	}
