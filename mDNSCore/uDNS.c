@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.262  2007/01/04 00:29:25  cheshire
+Covert LogMsg() in GetAuthInfoForName to LogOperation()
+
 Revision 1.261  2006/12/22 20:59:49  cheshire
 <rdar://problem/4742742> Read *all* DNS keys from keychain,
  not just key for the system-wide default registration domain
@@ -1056,12 +1059,12 @@ mDNSlocal DomainAuthInfo *GetAuthInfoForName(const mDNS *m, const domainname *co
 		for (ptr = m->AuthInfoList; ptr; ptr = ptr->next)
 			if (SameDomainName(&ptr->domain, n))
 				{
-				LogMsg("GetAuthInfoForName %##s %##s %##s", n->c, ptr->domain.c, ptr->keyname.c);
+				LogOperation("GetAuthInfoForName %##s %##s %##s", name->c, ptr->domain.c, ptr->keyname.c);
 				return(ptr);
 				}
 		n = (const domainname *)(n->c + 1 + n->c[0]);
 		}
-	LogMsg("GetAuthInfoForName none found for %##s", name->c);
+	LogOperation("GetAuthInfoForName none found for %##s", name->c);
 	return mDNSNULL;
 	}
 
