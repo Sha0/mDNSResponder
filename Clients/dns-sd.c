@@ -807,7 +807,7 @@ int main(int argc, char **argv)
 		case 'Q':
 		case 'C':	{
 					uint16_t rrtype, rrclass;
-					DNSServiceFlags flags = kDNSServiceFlagsReturnCNAME;
+					DNSServiceFlags flags = kDNSServiceFlagsReturnIntermediates;
 					if (argc < optind+1) goto Fail;
 					rrtype = (argc <= optind+1) ? kDNSServiceType_A  : GetRRType(argv[optind+1]);
 					rrclass = (argc <= optind+2) ? kDNSServiceClass_IN : atoi(argv[optind+2]);

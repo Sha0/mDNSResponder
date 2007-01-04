@@ -25,11 +25,14 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientshim.c,v $
+Revision 1.13  2007/01/04 20:57:49  cheshire
+Rename ReturnCNAME to ReturnIntermed (for ReturnIntermediates)
+
 Revision 1.12  2006/12/19 22:43:55  cheshire
 Fix compiler warnings
 
 Revision 1.11  2006/10/27 01:30:23  cheshire
-Need explicitly to set ReturnCNAME = mDNSfalse
+Need explicitly to set ReturnIntermed = mDNSfalse
 
 Revision 1.10  2006/08/14 23:24:56  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
@@ -553,7 +556,7 @@ DNSServiceErrorType DNSServiceResolve
 	x->qSRV.LongLived           = mDNSfalse;
 	x->qSRV.ExpectUnique        = mDNStrue;
 	x->qSRV.ForceMCast          = mDNSfalse;
-	x->qSRV.ReturnCNAME         = mDNSfalse;
+	x->qSRV.ReturnIntermed      = mDNSfalse;
 	x->qSRV.QuestionCallback    = FoundServiceInfo;
 	x->qSRV.QuestionContext     = x;
 
@@ -566,7 +569,7 @@ DNSServiceErrorType DNSServiceResolve
 	x->qTXT.LongLived           = mDNSfalse;
 	x->qTXT.ExpectUnique        = mDNStrue;
 	x->qTXT.ForceMCast          = mDNSfalse;
-	x->qTXT.ReturnCNAME         = mDNSfalse;
+	x->qTXT.ReturnIntermed      = mDNSfalse;
 	x->qTXT.QuestionCallback    = FoundServiceInfo;
 	x->qTXT.QuestionContext     = x;
 
@@ -689,7 +692,7 @@ DNSServiceErrorType DNSServiceQueryRecord
 	x->q.LongLived           = (flags & kDNSServiceFlagsLongLivedQuery) != 0;
 	x->q.ExpectUnique        = mDNSfalse;
 	x->q.ForceMCast          = (flags & kDNSServiceFlagsForceMulticast) != 0;
-	x->q.ReturnCNAME         = (flags & kDNSServiceFlagsReturnIntermediates) != 0;
+	x->q.ReturnIntermed      = (flags & kDNSServiceFlagsReturnIntermediates) != 0;
 	x->q.QuestionCallback    = DNSServiceQueryRecordResponse;
 	x->q.QuestionContext     = x;
 

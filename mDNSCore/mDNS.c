@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.570  2007/01/04 20:57:47  cheshire
+Rename ReturnCNAME to ReturnIntermed (for ReturnIntermediates)
+
 Revision 1.569  2007/01/04 20:27:27  cheshire
 Change a LogMsg() to debugf()
 
@@ -5982,7 +5985,7 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 	question->LongLived        = mDNSfalse;
 	question->ExpectUnique     = mDNSfalse;
 	question->ForceMCast       = ForceMCast;
-	question->ReturnCNAME      = mDNSfalse;
+	question->ReturnIntermed   = mDNSfalse;
 	question->QuestionCallback = Callback;
 	question->QuestionContext  = Context;
 	if (!ConstructServiceName(&question->qname, mDNSNULL, srv, domain)) return(mStatus_BadParamErr);
@@ -6153,7 +6156,7 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	query->qSRV.LongLived           = mDNSfalse;
 	query->qSRV.ExpectUnique        = mDNStrue;
 	query->qSRV.ForceMCast          = mDNSfalse;
-	query->qSRV.ReturnCNAME         = mDNSfalse;
+	query->qSRV.ReturnIntermed      = mDNSfalse;
 	query->qSRV.QuestionCallback    = FoundServiceInfoSRV;
 	query->qSRV.QuestionContext     = query;
 
@@ -6167,7 +6170,7 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	query->qTXT.LongLived           = mDNSfalse;
 	query->qTXT.ExpectUnique        = mDNStrue;
 	query->qTXT.ForceMCast          = mDNSfalse;
-	query->qTXT.ReturnCNAME         = mDNSfalse;
+	query->qTXT.ReturnIntermed      = mDNSfalse;
 	query->qTXT.QuestionCallback    = FoundServiceInfoTXT;
 	query->qTXT.QuestionContext     = query;
 
@@ -6181,7 +6184,7 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	query->qAv4.LongLived           = mDNSfalse;
 	query->qAv4.ExpectUnique        = mDNStrue;
 	query->qAv4.ForceMCast          = mDNSfalse;
-	query->qAv4.ReturnCNAME         = mDNSfalse;
+	query->qAv4.ReturnIntermed      = mDNSfalse;
 	query->qAv4.QuestionCallback    = FoundServiceInfo;
 	query->qAv4.QuestionContext     = query;
 
@@ -6195,7 +6198,7 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	query->qAv6.LongLived           = mDNSfalse;
 	query->qAv6.ExpectUnique        = mDNStrue;
 	query->qAv6.ForceMCast          = mDNSfalse;
-	query->qAv6.ReturnCNAME         = mDNSfalse;
+	query->qAv6.ReturnIntermed      = mDNSfalse;
 	query->qAv6.QuestionCallback    = FoundServiceInfo;
 	query->qAv6.QuestionContext     = query;
 
@@ -6245,7 +6248,7 @@ mDNSexport mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, m
 	question->Private          = mDNSfalse;
 	question->ExpectUnique     = mDNSfalse;
 	question->ForceMCast       = mDNSfalse;
-	question->ReturnCNAME      = mDNSfalse;
+	question->ReturnIntermed   = mDNSfalse;
 	question->QuestionCallback = Callback;
 	question->QuestionContext  = Context;
 	if (DomainType > mDNS_DomainTypeMax) return(mStatus_BadParamErr);

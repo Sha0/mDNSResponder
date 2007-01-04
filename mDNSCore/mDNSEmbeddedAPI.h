@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.318  2007/01/04 20:57:48  cheshire
+Rename ReturnCNAME to ReturnIntermed (for ReturnIntermediates)
+
 Revision 1.317  2007/01/04 02:39:53  cheshire
 <rdar://problem/4030599> Hostname passed into DNSServiceRegister ignored for Wide-Area service registrations
 
@@ -2034,7 +2037,7 @@ struct DNSQuestion_struct
 	mDNSBool              LongLived;        // Set by client for calls to mDNS_StartQuery to indicate LLQs to unicast layer.
 	mDNSBool              ExpectUnique;		// Set by client if it's expecting unique RR(s) for this question, not shared RRs
 	mDNSBool              ForceMCast;		// Set by client to force mDNS query, even for apparently uDNS names
-	mDNSBool              ReturnCNAME;		// Set by client to request callbacks for intermediate CNAME records
+	mDNSBool              ReturnIntermed;	// Set by client to request callbacks for intermediate CNAME/NXDOMAIN results
 	mDNSQuestionCallback *QuestionCallback;
 	void                 *QuestionContext;
 	};

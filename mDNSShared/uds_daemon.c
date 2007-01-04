@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.224  2007/01/04 20:57:49  cheshire
+Rename ReturnCNAME to ReturnIntermed (for ReturnIntermediates)
+
 Revision 1.223  2006/12/21 01:25:49  cheshire
 Tidy up SIGINFO state log
 
@@ -43,7 +46,7 @@ Revision 1.216  2006/11/10 00:54:16  cheshire
 <rdar://problem/4816598> Changing case of Computer Name doesn't work
 
 Revision 1.215  2006/10/27 01:30:23  cheshire
-Need explicitly to set ReturnCNAME = mDNSfalse
+Need explicitly to set ReturnIntermed = mDNSfalse
 
 Revision 1.214  2006/10/20 05:37:23  herscher
 Display question list information in udsserver_info()
@@ -1643,10 +1646,10 @@ mDNSlocal void handle_query_request(request_state *rstate)
     q->qtype            = rrtype;
     q->qclass           = rrclass;
     q->Private          = mDNSfalse;
-    q->LongLived        = (flags & kDNSServiceFlagsLongLivedQuery) != 0;
+    q->LongLived        = (flags & kDNSServiceFlagsLongLivedQuery     ) != 0;
     q->ExpectUnique     = mDNSfalse;
-    q->ForceMCast       = (flags & kDNSServiceFlagsForceMulticast) != 0;
-    q->ReturnCNAME      = (flags & kDNSServiceFlagsReturnCNAME   ) != 0;
+    q->ForceMCast       = (flags & kDNSServiceFlagsForceMulticast     ) != 0;
+    q->ReturnIntermed   = (flags & kDNSServiceFlagsReturnIntermediates) != 0;
     q->QuestionCallback = question_result_callback;
     q->QuestionContext  = rstate;
 
@@ -1730,7 +1733,7 @@ mDNSlocal void handle_resolve_request(request_state *rstate)
     term->qsrv.LongLived        = mDNSfalse;
     term->qsrv.ExpectUnique     = mDNStrue;
 	term->qsrv.ForceMCast       = mDNSfalse;
-	term->qsrv.ReturnCNAME      = mDNSfalse;
+	term->qsrv.ReturnIntermed   = mDNSfalse;
     term->qsrv.QuestionCallback = resolve_result_callback;
     term->qsrv.QuestionContext  = rstate;
     
@@ -1743,7 +1746,7 @@ mDNSlocal void handle_resolve_request(request_state *rstate)
     term->qtxt.LongLived        = mDNSfalse;
     term->qtxt.ExpectUnique     = mDNStrue;
 	term->qtxt.ForceMCast       = mDNSfalse;
-	term->qtxt.ReturnCNAME      = mDNSfalse;
+	term->qtxt.ReturnIntermed   = mDNSfalse;
     term->qtxt.QuestionCallback = resolve_result_callback;
     term->qtxt.QuestionContext  = rstate;
 
@@ -2504,10 +2507,10 @@ mDNSlocal void handle_addrinfo_request(request_state *rstate)
 		info->q4.qtype            = kDNSServiceType_A;
 		info->q4.qclass           = kDNSServiceClass_IN;
 		info->q4.Private          = mDNSfalse;
-		info->q4.LongLived        = (flags & kDNSServiceFlagsLongLivedQuery) != 0;
+		info->q4.LongLived        = (flags & kDNSServiceFlagsLongLivedQuery     ) != 0;
 		info->q4.ExpectUnique     = mDNSfalse;
-		info->q4.ForceMCast       = (flags & kDNSServiceFlagsForceMulticast) != 0;
-		info->q4.ReturnCNAME      = (flags & kDNSServiceFlagsReturnCNAME   ) != 0;
+		info->q4.ForceMCast       = (flags & kDNSServiceFlagsForceMulticast     ) != 0;
+		info->q4.ReturnIntermed   = (flags & kDNSServiceFlagsReturnIntermediates) != 0;
 		info->q4.QuestionCallback = addrinfo_result_callback;
 		info->q4.QuestionContext  = info;
 
@@ -2527,10 +2530,10 @@ mDNSlocal void handle_addrinfo_request(request_state *rstate)
 		info->q6.qtype            = kDNSServiceType_AAAA;
 		info->q6.qclass           = kDNSServiceClass_IN;
 		info->q6.Private          = mDNSfalse;
-		info->q6.LongLived        = (flags & kDNSServiceFlagsLongLivedQuery) != 0;
+		info->q6.LongLived        = (flags & kDNSServiceFlagsLongLivedQuery     ) != 0;
 		info->q6.ExpectUnique     = mDNSfalse;
-		info->q6.ForceMCast       = (flags & kDNSServiceFlagsForceMulticast) != 0;
-		info->q6.ReturnCNAME      = (flags & kDNSServiceFlagsReturnCNAME   ) != 0;
+		info->q6.ForceMCast       = (flags & kDNSServiceFlagsForceMulticast     ) != 0;
+		info->q6.ReturnIntermed   = (flags & kDNSServiceFlagsReturnIntermediates) != 0;
 		info->q6.QuestionCallback = addrinfo_result_callback;
 		info->q6.QuestionContext  = info;
 		
