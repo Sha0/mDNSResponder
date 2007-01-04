@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.58  2007/01/04 23:11:54  cheshire
+udsserver_default_browse_domain_changed renamed to udsserver_automatic_browse_domain_changed
+
 Revision 1.57  2007/01/04 01:41:48  cheshire
 Use _dns-update-tls/_dns-query-tls/_dns-llq-tls instead of creating a new "_tls" subdomain
 
@@ -3255,5 +3258,5 @@ mStatus mDNS_StopQuery(mDNS *const m, DNSQuestion *const question) { ( void ) m;
 void mDNS_UpdateLLQs(mDNS * const m) { ( void ) m; }
 char * mDNSResponderVersionString = NULL;
 mDNS mDNSStorage;
-void udsserver_default_browse_domain_changed(const domainname *d, mDNSBool add) { ( void ) d; ( void ) add; }
+void udsserver_automatic_browse_domain_changed(const domainname *d, mDNSBool add) { ( void ) d; ( void ) add; }
 void udsserver_default_reg_domain_changed(const domainname *d, mDNSBool add) { ( void ) d; ( void ) add; }
