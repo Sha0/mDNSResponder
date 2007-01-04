@@ -1086,6 +1086,7 @@
 			hasScannedForEncodings = 1;
 			mainGroup = 08FB7794FE84155DC02AAC07 /* mDNSResponder */;
 			projectDirPath = "";
+			projectRoot = "";
 			targets = (
 				00AD62BB032D7A0C0CCA2C71 /* Build Main */,
 				FFB7657B0AEED96B00583A2C /* Build All */,
