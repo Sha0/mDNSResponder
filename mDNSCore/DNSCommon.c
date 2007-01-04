@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.118  2007/01/04 20:21:59  cheshire
+<rdar://problem/4720673> uDNS: Need to start caching unicast records
+Don't return multicast answers in response to unicast questions
+
 Revision 1.117  2006/12/22 20:59:49  cheshire
 <rdar://problem/4742742> Read *all* DNS keys from keychain,
  not just key for the system-wide default registration domain
@@ -1376,6 +1380,9 @@ mDNSexport mDNSBool SameNameRecordAnswersQuestion(const ResourceRecord *const rr
 		q ->InterfaceID && q->InterfaceID != mDNSInterface_LocalOnly &&
 		rr->InterfaceID != q->InterfaceID) return(mDNSfalse);
 
+	// If ResourceRecord received via multicast, but question was unicast, then shouldn't use record to answer this question
+	if (rr->InterfaceID && q->TargetQID.NotAnInteger) return(mDNSfalse);
+
 	// RR type CNAME matches any query type. QTYPE ANY matches any RR type. QCLASS ANY matches any RR class.
 	if (rr->rrtype != kDNSType_CNAME && rr->rrtype  != q->qtype  && q->qtype  != kDNSQType_ANY ) return(mDNSfalse);
 	if (                                rr->rrclass != q->qclass && q->qclass != kDNSQClass_ANY) return(mDNSfalse);
@@ -1396,6 +1403,9 @@ mDNSexport mDNSBool ResourceRecordAnswersQuestion(const ResourceRecord *const rr
 	if (rr->InterfaceID &&
 		q ->InterfaceID && q->InterfaceID != mDNSInterface_LocalOnly &&
 		rr->InterfaceID != q->InterfaceID) return(mDNSfalse);
+
+	// If ResourceRecord received via multicast, but question was unicast, then shouldn't use record to answer this question
+	if (rr->InterfaceID && q->TargetQID.NotAnInteger) return(mDNSfalse);
 
 	// RR type CNAME matches any query type. QTYPE ANY matches any RR type. QCLASS ANY matches any RR class.
 	if (rr->rrtype != kDNSType_CNAME && rr->rrtype  != q->qtype  && q->qtype  != kDNSQType_ANY ) return(mDNSfalse);
@@ -2319,7 +2329,12 @@ mDNSexport void mDNS_Lock(mDNS *const m)
 	// If that client callback does mDNS API calls, mDNS_reentrancy and mDNS_busy will both be one
 	// If mDNS_busy != mDNS_reentrancy that's a bad sign
 	if (m->mDNS_busy != m->mDNS_reentrancy)
+		{
 		LogMsg("mDNS_Lock: Locking failure! mDNS_busy (%ld) != mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
+#if ForceAlerts
+		*(long*)0 = 0;
+#endif
+		}
 
 	// If this is an initial entry into the mDNSCore code, set m->timenow
 	// else, if this is a re-entrant entry into the mDNSCore code, m->timenow should already be set
@@ -2378,7 +2393,12 @@ mDNSexport void mDNS_Unlock(mDNS *const m)
 	
 	// Check for locking failures
 	if (m->mDNS_busy != m->mDNS_reentrancy)
+		{
 		LogMsg("mDNS_Unlock: Locking failure! mDNS_busy (%ld) != mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
+#if ForceAlerts
+		*(long*)0 = 0;
+#endif
+		}
 
 	// If this is a final exit from the mDNSCore code, set m->NextScheduledEvent and clear m->timenow
 	if (m->mDNS_busy == 0)
