@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.46  2007/01/04 01:41:47  cheshire
+Use _dns-update-tls/_dns-query-tls/_dns-llq-tls instead of creating a new "_tls" subdomain
+
 Revision 1.45  2006/12/22 20:59:49  cheshire
 <rdar://problem/4742742> Read *all* DNS keys from keychain,
  not just key for the system-wide default registration domain
@@ -181,21 +184,24 @@ Revision 1.1  2003/12/13 03:05:27  ksekar
 //#define MAX_UCAST_POLL_INTERVAL (1 * 60 * mDNSPlatformOneSecond)
 #define LLQ_POLL_INTERVAL       (15 * 60 * mDNSPlatformOneSecond) // Polling interval for zones w/ an advertised LLQ port (ie not static zones) if LLQ fails due to NAT, etc.
 #define RESPONSE_WINDOW (60 * mDNSPlatformOneSecond)         // require server responses within one minute of request
-#define PRIVATE_UPDATE_SERVICE_TYPE ((domainname*)"\x0B_dns-update" "\x04_tls")
-#define PUBLIC_UPDATE_SERVICE_TYPE  ((domainname*)"\x0B_dns-update" "\x04_udp")
-#define PRIVATE_LLQ_SERVICE_TYPE    ((domainname*)"\x08_dns-llq"    "\x04_tls")
-#define PUBLIC_LLQ_SERVICE_TYPE     ((domainname*)"\x08_dns-llq"    "\x04_udp")
+#define PUBLIC_UPDATE_SERVICE_TYPE  ((domainname*)"\x0B_dns-update"     "\x04_udp")
+#define PUBLIC_LLQ_SERVICE_TYPE     ((domainname*)"\x08_dns-llq"        "\x04_udp")
+
+#define PRIVATE_UPDATE_SERVICE_TYPE ((domainname*)"\x0F_dns-update-tls" "\x04_tcp")
+#define PRIVATE_QUERY_SERVICE_TYPE  ((domainname*)"\x0E_dns-query-tls"  "\x04_tcp")
+#define PRIVATE_LLQ_SERVICE_TYPE    ((domainname*)"\x0C_dns-llq-tls"    "\x04_tcp")
+
 #define DEFAULT_UPDATE_LEASE 7200
-	
+
 // Entry points into unicast-specific routines
 
 extern mStatus uDNS_InitLongLivedQuery(mDNS *const m, DNSQuestion *const question);
 extern void    uDNS_StopLongLivedQuery (mDNS *const m, DNSQuestion *const question);
-	
+
 extern void uDNS_Sleep(mDNS *const m);
 extern void uDNS_Wake(mDNS *const m);
 #define uDNS_Close uDNS_Sleep
-	
+
 // uDNS_UpdateRecord
 // following fields must be set, and the update validated, upon entry.
 // rr->NewRData
@@ -204,7 +210,7 @@ extern void uDNS_Wake(mDNS *const m);
 
 extern mStatus uDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra);
 extern mStatus uDNS_UpdateRecord(mDNS *m, AuthRecord *rr);
-	
+
 extern mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr);
 extern mStatus uDNS_RegisterRecord(mDNS *const m, AuthRecord *const rr);
 extern mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr);
@@ -220,7 +226,7 @@ extern void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *
 	const mDNSAddr *const srcaddr, const mDNSIPPort srcport);
 
 extern void uDNS_ReceiveNATMap(mDNS *m, mDNSu8 *pkt, mDNSu16 len);
-	
+
 // returns time of next scheduled event
 extern void uDNS_Execute(mDNS *const m);
 

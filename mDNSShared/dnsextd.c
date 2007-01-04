@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.57  2007/01/04 01:41:48  cheshire
+Use _dns-update-tls/_dns-query-tls/_dns-llq-tls instead of creating a new "_tls" subdomain
+
 Revision 1.56  2006/12/22 20:59:51  cheshire
 <rdar://problem/4742742> Read *all* DNS keys from keychain,
  not just key for the system-wide default registration domain
@@ -1130,9 +1133,11 @@ mDNSlocal int UpdateSRV(DaemonInfo *d, mDNSBool registration)
 	
 	   if ( zone->type == kDNSZonePrivate )
             {
-            ptr = PutUpdateSRV(d, zone, &pkt, ptr, "_dns-update._tls.", d->private_port, registration);
+            ptr = PutUpdateSRV(d, zone, &pkt, ptr, "_dns-update-tls._tcp.", d->private_port, registration);
             require_action( ptr, exit, err = mStatus_UnknownErr; Log("UpdateSRV: Error constructing lease expiration update" ) );
-            ptr = PutUpdateSRV(d, zone, &pkt, ptr, "_dns-llq._tls.", d->private_port, registration);
+            ptr = PutUpdateSRV(d, zone, &pkt, ptr, "_dns-query-tls._tcp.", d->private_port, registration);
+            require_action( ptr, exit, err = mStatus_UnknownErr; Log("UpdateSRV: Error constructing lease expiration update" ) );
+            ptr = PutUpdateSRV(d, zone, &pkt, ptr, "_dns-llq-tls._tcp.", d->private_port, registration);
             require_action( ptr, exit, err = mStatus_UnknownErr; Log("UpdateSRV: Error constructing lease expiration update" ) );
             
 			if ( !registration )
@@ -1147,9 +1152,11 @@ mDNSlocal int UpdateSRV(DaemonInfo *d, mDNSBool registration)
             {
 			if ( !registration )
 				{
-				ptr = PutUpdateSRV(d, zone, &pkt, ptr, "_dns-update._tls.", d->private_port, registration);
+				ptr = PutUpdateSRV(d, zone, &pkt, ptr, "_dns-update-tls.", d->private_port, registration);
 				require_action( ptr, exit, err = mStatus_UnknownErr; Log("UpdateSRV: Error constructing lease expiration update" ) );
-				ptr = PutUpdateSRV(d, zone, &pkt, ptr, "_dns-llq._tls.", d->private_port, registration);
+				ptr = PutUpdateSRV(d, zone, &pkt, ptr, "_dns-query-tls.", d->private_port, registration);
+				require_action( ptr, exit, err = mStatus_UnknownErr; Log("UpdateSRV: Error constructing lease expiration update" ) );
+				ptr = PutUpdateSRV(d, zone, &pkt, ptr, "_dns-llq-tls.", d->private_port, registration);
 				require_action( ptr, exit, err = mStatus_UnknownErr; Log("UpdateSRV: Error constructing lease expiration update" ) );
 				}
 
@@ -3161,10 +3168,11 @@ int main(int argc, char *argv[])
 
 	// Setup the public SRV record names
 
-	SetPublicSRV( d, "_dns-update._tls." );
-	SetPublicSRV( d, "_dns-update._udp." );
-	SetPublicSRV( d, "_dns-llq._tls." );
-	SetPublicSRV( d, "_dns-llq._udp." );
+	SetPublicSRV(d, "_dns-update._udp.");
+	SetPublicSRV(d, "_dns-llq._udp.");
+	SetPublicSRV(d, "_dns-update-tls._tcp.");
+	SetPublicSRV(d, "_dns-query-tls._tcp.");
+	SetPublicSRV(d, "_dns-llq-tls._tcp.");
 
 	// Setup signal handling
 	
