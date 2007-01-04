@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.266  2007/01/04 21:01:20  cheshire
+<rdar://problem/4607042> mDNSResponder NXDOMAIN and CNAME support
+Only return NXDOMAIN results to clients that request them using kDNSServiceFlagsReturnIntermediates
+
 Revision 1.265  2007/01/04 20:47:17  cheshire
 Fixed crash in CheckForUnreferencedLLQMapping()
 
@@ -1446,7 +1450,7 @@ mDNSexport void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const mDNSu8 *
 	if (question != m->CurrentQuestion)
 		{ LogMsg("ERROR: pktResponseHdnlr called without CurrentQuestion ptr set!");  return; }
 
-	if (question->Answered == 0 && msg->h.numAnswers == 0 && !question->LongLived)
+	if (question->Answered == 0 && msg->h.numAnswers == 0 && question->ReturnIntermed)
 		{
 		/* NXDOMAIN error or empty RR set - notify client */
 		question->Answered = mDNStrue;
@@ -1498,7 +1502,7 @@ mDNSexport void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const mDNSu8 *
 				else
 					{
 					debugf("Following cname %##s -> %##s", question->qname.c, cr->resrec.rdata->u.name.c);
-					if (question->ReturnCNAME)
+					if (question->ReturnIntermed)
 						{
 						m->mDNS_reentrancy++; // Increment to allow client to legally make mDNS API calls from the callback
 						question->QuestionCallback(m, question, &cr->resrec, !goodbye);
@@ -3778,7 +3782,7 @@ mDNSlocal void GetStaticHostname(mDNS *m)
     q->LongLived        = mDNSfalse;
     q->ExpectUnique     = mDNSfalse;
     q->ForceMCast       = mDNSfalse;
-    q->ReturnCNAME      = mDNSfalse;
+    q->ReturnIntermed   = mDNSfalse;
     q->QuestionCallback = FoundStaticHostname;
     q->QuestionContext  = mDNSNULL;
 
