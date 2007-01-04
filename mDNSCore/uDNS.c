@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.265  2007/01/04 20:47:17  cheshire
+Fixed crash in CheckForUnreferencedLLQMapping()
+
 Revision 1.264  2007/01/04 20:39:27  cheshire
 Fix locking mismatch
 
@@ -3420,16 +3423,13 @@ mDNSlocal void CheckForUnreferencedLLQMapping(mDNS *m)
 
 	while (n)
 		{
-		NATTraversalInfo * current;
-		mDNSBool found = mDNSfalse;
-
-		for (q = m->Questions; q; q = q->next)
-			if (q->LongLived && ((q->llq->NATInfoTCP == n) || (q->llq->NATInfoUDP == n))) { found = mDNStrue; break; }
-
-		current = n;
+		NATTraversalInfo *current = n;
 		n = n->next;
 
-		if (!found && current->isLLQ && (--current->refs == 0))
+		for (q = m->Questions; q; q = q->next)
+			if (q->LongLived && q->llq && ((q->llq->NATInfoTCP == current) || (q->llq->NATInfoUDP == current))) break;
+
+		if (!q && current->isLLQ && (--current->refs == 0))
 			{
 			//to avoid race condition if we need to recreate before this finishes, we do one-shot deregistration
 			if (current->state == NATState_Established || current->state == NATState_Legacy)
