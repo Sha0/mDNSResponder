@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: SamplemDNSClient.c,v $
+Revision 1.49  2007/01/04 21:54:49  cheshire
+Fix compile warnings related to the deprecated Mach-based API
+
 Revision 1.48  2006/08/14 23:24:39  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -90,6 +93,9 @@ Add checkin history header
 #include <AvailabilityMacros.h>
 #undef AVAILABLE_MAC_OS_X_VERSION_10_2_AND_LATER_BUT_DEPRECATED
 #define AVAILABLE_MAC_OS_X_VERSION_10_2_AND_LATER_BUT_DEPRECATED
+#undef AVAILABLE_MAC_OS_X_VERSION_10_2_AND_LATER_BUT_DEPRECATED_IN_MAC_OS_X_VERSION_10_3
+#define AVAILABLE_MAC_OS_X_VERSION_10_2_AND_LATER_BUT_DEPRECATED_IN_MAC_OS_X_VERSION_10_3
+
 #include <DNSServiceDiscovery/DNSServiceDiscovery.h>
 
 //*************************************************************************************************************

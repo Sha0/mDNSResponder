@@ -15,6 +15,14 @@
  * limitations under the License.
  */
 
+// Suppress "warning: 'DNSServiceDiscoveryMachPort' is deprecated" messages -- we already know this code is building the deprecated API
+// Since we compile with all warnings treated as errors, we have to turn off the warnings here or the project won't compile
+#include <AvailabilityMacros.h>
+#undef AVAILABLE_MAC_OS_X_VERSION_10_2_AND_LATER_BUT_DEPRECATED
+#define AVAILABLE_MAC_OS_X_VERSION_10_2_AND_LATER_BUT_DEPRECATED
+#undef AVAILABLE_MAC_OS_X_VERSION_10_2_AND_LATER_BUT_DEPRECATED_IN_MAC_OS_X_VERSION_10_3
+#define AVAILABLE_MAC_OS_X_VERSION_10_2_AND_LATER_BUT_DEPRECATED_IN_MAC_OS_X_VERSION_10_3
+
 #include "DNSServiceDiscovery.h"
 #include "DNSServiceDiscoveryDefines.h"
 
