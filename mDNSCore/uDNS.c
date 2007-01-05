@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.271  2007/01/05 06:34:03  cheshire
+Improve "ERROR m->CurrentQuestion already set" debugging messages
+
 Revision 1.270  2007/01/05 05:44:33  cheshire
 Move automatic browse/registration management from uDNS.c to mDNSShared/uds_daemon.c,
 so that mDNSPosix embedded clients will compile again
@@ -1554,8 +1557,8 @@ mDNSexport void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const mDNSu8 *
 	return;
 
 	pkt_error:
-	LogMsg("ERROR: pktResponseHndlr - received malformed response to query for %##s (%d)",
-		   question->qname.c, question->qtype);
+	LogMsg("ERROR: pktResponseHndlr - received malformed response to query for %##s (%s)",
+		   question->qname.c, DNSTypeName(question->qtype));
 	return;
 	}
 
@@ -1696,6 +1699,8 @@ mDNSlocal mDNSBool recvLLQEvent(mDNS *m, DNSQuestion *q, DNSMessage *msg, const 
 	if (opt.llqOp != kLLQOp_Event) { if (!q->llq->ntries) LogMsg("recvLLQEvent - Bad LLQ Opcode %d", opt.llqOp); return mDNSfalse; }
 
     // invoke response handler
+	if (m->CurrentQuestion)
+		LogMsg("recvLLQEvent: ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
 	m->CurrentQuestion = q;
 	q->responseCallback(m, msg, end, q);
 	if (m->CurrentQuestion != q) { m->CurrentQuestion = mDNSNULL; return mDNStrue; }
@@ -1750,6 +1755,8 @@ mDNSlocal mDNSBool recvLLQResponse(mDNS *m, DNSMessage *msg, const mDNSu8 *end, 
 			q->qtype == pktQ.qtype &&
 			SameDomainName(&q->qname, &pktQ.qname))
 			{
+			if (m->CurrentQuestion)
+				LogMsg("recvLLQResponse: ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
 			m->CurrentQuestion = q;
 			if (llqInfo->state == LLQ_Established || (llqInfo->state == LLQ_Refresh && msg->h.numAnswers))
 				{ if (recvLLQEvent(m, q, msg, end, srcaddr, srcport)) { m->CurrentQuestion = mDNSNULL; return mDNStrue; } }
@@ -2450,6 +2457,8 @@ mDNSlocal void LLQNatMapComplete(mDNS *m, NATTraversalInfo * n)
 	if (n->state != NATState_Established && n->state != NATState_Legacy && n->state != NATState_Error)
 		{ LogMsg("LLQNatMapComplete - bad nat state %d", n->state); return; }
 
+	if (m->CurrentQuestion)
+		LogMsg("LLQNatMapComplete: ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
 	m->CurrentQuestion = m->Questions;
 	while (m->CurrentQuestion)
 		{
@@ -4690,6 +4699,8 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 					{ hndlTruncatedAnswer(qptr, srcaddr, m); return; }
 				else if (qptr->responseCallback)
 					{
+					if (m->CurrentQuestion)
+						LogMsg("uDNS_ReceiveMsg: ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
 					m->CurrentQuestion = qptr;
 					qptr->responseCallback(m, msg, end, qptr);
 					m->CurrentQuestion = mDNSNULL;
@@ -5604,6 +5615,8 @@ mDNSexport void uDNS_CheckQuery(mDNS * const m, DNSQuestion * q)
 	mStatus err = mStatus_NoError;
 	mDNSu8 *end;
 
+	if (m->CurrentQuestion)
+		LogMsg("uDNS_CheckQuery: ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
 	m->CurrentQuestion = q;
 	llq = q->llq;
 
@@ -5883,6 +5896,8 @@ mDNSlocal void RestartQueries(mDNS *m)
 	LLQ_Info *llqInfo;
 	mDNSs32 timenow = m->timenow;
 
+	if (m->CurrentQuestion)
+		LogMsg("RestartQueries: ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
 	m->CurrentQuestion = m->Questions;
 	while (m->CurrentQuestion)
 		{

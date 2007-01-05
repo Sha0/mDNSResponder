@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.573  2007/01/05 06:34:03  cheshire
+Improve "ERROR m->CurrentQuestion already set" debugging messages
+
 Revision 1.572  2007/01/04 23:11:11  cheshire
 <rdar://problem/4720673> uDNS: Need to start caching unicast records
 When an automatic browsing domain is removed, generate appropriate "remove" events for legacy queries
@@ -1975,7 +1978,8 @@ mDNSlocal void AnswerLocalOnlyQuestionWithResourceRecord(mDNS *const m, DNSQuest
 // Used by AnswerForNewLocalRecords() and mDNS_Deregister_internal()
 mDNSlocal void AnswerLocalQuestions(mDNS *const m, AuthRecord *rr, mDNSBool AddRecord)
 	{
-	if (m->CurrentQuestion) LogMsg("AnswerLocalQuestions ERROR m->CurrentQuestion already set");
+	if (m->CurrentQuestion)
+		LogMsg("AnswerLocalQuestions ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
 
 	m->CurrentQuestion = m->LocalOnlyQuestions;
 	while (m->CurrentQuestion && m->CurrentQuestion != m->NewLocalOnlyQuestions)
@@ -3211,13 +3215,13 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 	mDNSu8 *newptr = putQuestion(query, *queryptr, limit, &q->qname, q->qtype, (mDNSu16)(q->qclass | ucbit));
 	if (!newptr)
 		{
-		debugf("BuildQuestion: No more space in this packet for question %##s", q->qname.c);
+		debugf("BuildQuestion: No more space in this packet for question %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 		return(mDNSfalse);
 		}
 	else if (newptr + *answerforecast >= limit)
 		{
-		verbosedebugf("BuildQuestion: Retracting question %##s new forecast total %d",
-			q->qname.c, newptr + *answerforecast - query->data);
+		verbosedebugf("BuildQuestion: Retracting question %##s (%s) new forecast total %d",
+			q->qname.c, DNSTypeName(q->qtype), newptr + *answerforecast - query->data);
 		query->h.numQuestions--;
 		return(mDNSfalse);
 		}
@@ -3743,7 +3747,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 	for (q = m->Questions; q; q=q->next)
 		if (q->SendQNow)
 			{
-			LogMsg("SendQueries: No active interface to send: %##s %s", q->qname.c, DNSTypeName(q->qtype));
+			LogMsg("SendQueries: No active interface to send: %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 			q->SendQNow = mDNSNULL;
 			}
 	}
@@ -3804,7 +3808,8 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, C
 mDNSlocal void CacheRecordDeferredAdd(mDNS *const m, CacheRecord *rr)
 	{
 	rr->DelayDelivery = 0;		// Note, only need to call SetNextCacheCheckTime() when DelayDelivery is set, not when it's cleared
-	if (m->CurrentQuestion) LogMsg("CacheRecordDeferredAdd ERROR m->CurrentQuestion already set");
+	if (m->CurrentQuestion)
+		LogMsg("CacheRecordDeferredAdd ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
 	m->CurrentQuestion = m->Questions;
 	while (m->CurrentQuestion && m->CurrentQuestion != m->NewQuestions)
 		{
@@ -3841,7 +3846,8 @@ mDNSlocal mDNSs32 CheckForSoonToExpireRecords(mDNS *const m, const domainname *c
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
 	{
-	if (m->CurrentQuestion) LogMsg("CacheRecordAdd ERROR m->CurrentQuestion already set");
+	if (m->CurrentQuestion)
+		LogMsg("CacheRecordAdd ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
 	m->CurrentQuestion = m->Questions;
 	while (m->CurrentQuestion && m->CurrentQuestion != m->NewQuestions)
 		{
@@ -3903,7 +3909,8 @@ mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
 mDNSlocal void NoCacheAnswer(mDNS *const m, CacheRecord *rr)
 	{
 	LogMsg("No cache space: Delivering non-cached result for %##s", m->rec.r.resrec.name->c);
-	if (m->CurrentQuestion) LogMsg("NoCacheAnswer ERROR m->CurrentQuestion already set");
+	if (m->CurrentQuestion)
+		LogMsg("NoCacheAnswer ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
 	m->CurrentQuestion = m->Questions;
 	while (m->CurrentQuestion)
 		{
@@ -3926,7 +3933,8 @@ mDNSlocal void NoCacheAnswer(mDNS *const m, CacheRecord *rr)
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void CacheRecordRmv(mDNS *const m, CacheRecord *rr)
 	{
-	if (m->CurrentQuestion) LogMsg("CacheRecordRmv ERROR m->CurrentQuestion already set");
+	if (m->CurrentQuestion)
+		LogMsg("CacheRecordRmv ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
 	m->CurrentQuestion = m->Questions;
 	while (m->CurrentQuestion && m->CurrentQuestion != m->NewQuestions)
 		{
@@ -4068,7 +4076,8 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 	// If the client's question callback deletes the question, then m->CurrentQuestion will	
 	// be advanced, and we'll exit out of the loop
 	m->lock_rrcache = 1;
-	if (m->CurrentQuestion) LogMsg("AnswerNewQuestion ERROR m->CurrentQuestion already set");
+	if (m->CurrentQuestion)
+		LogMsg("AnswerNewQuestion ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
 	m->CurrentQuestion = q;		// Indicate which question we're answering, so we'll know if it gets deleted
 
 	if (q->InterfaceID == mDNSInterface_Any)	// If 'mDNSInterface_Any' question, see if we want to tell it about LocalOnly records
@@ -4138,7 +4147,8 @@ mDNSlocal void AnswerNewLocalOnlyQuestion(mDNS *const m)
 
 	debugf("AnswerNewLocalOnlyQuestion: Answering %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 
-	if (m->CurrentQuestion) LogMsg("AnswerNewLocalOnlyQuestion ERROR m->CurrentQuestion already set");
+	if (m->CurrentQuestion)
+		LogMsg("AnswerNewLocalOnlyQuestion ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
 	m->CurrentQuestion = q;		// Indicate which question we're answering, so we'll know if it gets deleted
 
 	if (m->CurrentRecord) LogMsg("AnswerNewLocalOnlyQuestion ERROR m->CurrentRecord already set");
@@ -4326,7 +4336,8 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 		int i;
 
 		verbosedebugf("mDNS_Execute");
-		if (m->CurrentQuestion) LogMsg("mDNS_Execute: ERROR! m->CurrentQuestion already set");
+		if (m->CurrentQuestion)
+			LogMsg("mDNS_Execute: ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
 	
 		// 1. If we're past the probe suppression time, we can clear it
 		if (m->SuppressProbes && m->timenow - m->SuppressProbes >= 0) m->SuppressProbes = 0;
@@ -5785,8 +5796,8 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 			for (intf = m->HostInterfaces; intf; intf = intf->next)
 				if (intf->InterfaceID == question->InterfaceID) break;
 			if (!intf)
-				LogMsg("Note: InterfaceID %p for question %##s not currently found in active interface list",
-					question->InterfaceID, question->qname.c);
+				LogMsg("Note: InterfaceID %p for question %##s (%s) not currently found in active interface list",
+					question->InterfaceID, question->qname.c, DNSTypeName(question->qtype));
 			}
 
 		// Note: In the case where we already have the answer to this question in our cache, that may be all the client
@@ -5981,7 +5992,7 @@ mDNSexport mStatus mDNS_StopQueryWithRemoves(mDNS *const m, DNSQuestion *const q
 		CacheRecord *rr;
 		const mDNSu32 slot = HashSlot(&question->qname);
 		CacheGroup *const cg = CacheGroupForName(m, slot, question->qnamehash, &question->qname);
-		LogOperation("Generating terminal removes for %##s", question->qname.c);
+		LogOperation("Generating terminal removes for %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
 		for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
 			if (SameNameRecordAnswersQuestion(&rr->resrec, question))
 				{
@@ -6097,7 +6108,7 @@ mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const R
 			query->qAv6.InterfaceID   = answer->InterfaceID;
 			AssignDomainName(&query->qAv6.qname, &answer->rdata->u.srv.target);
 			}
-		debugf("FoundServiceInfoSRV: Restarting address queries for %##s", query->qAv4.qname.c);
+		debugf("FoundServiceInfoSRV: Restarting address queries for %##s (%s)", query->qAv4.qname.c, DNSTypeName(query->qAv4.qtype));
 		mDNS_StartQuery(m, &query->qAv4);
 		// Only do the AAAA query if this machine actually has IPv6 active
 		if (MachineHasActiveIPv6(m)) mDNS_StartQuery(m, &query->qAv6);
