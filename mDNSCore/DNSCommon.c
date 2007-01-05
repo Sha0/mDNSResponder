@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.120  2007/01/05 05:23:00  cheshire
+Zero DNSQuestion structure in getQuestion (specifically, need TargetQID to be zero'd)
+
 Revision 1.119  2007/01/05 04:30:16  cheshire
 Change a couple of "(domainname *)" casts to "(const domainname *)"
 
@@ -2212,6 +2215,7 @@ mDNSexport const mDNSu8 *skipQuestion(const DNSMessage *msg, const mDNSu8 *ptr, 
 mDNSexport const mDNSu8 *getQuestion(const DNSMessage *msg, const mDNSu8 *ptr, const mDNSu8 *end, const mDNSInterfaceID InterfaceID,
 	DNSQuestion *question)
 	{
+	mDNSPlatformMemZero(question, sizeof(*question));
 	question->InterfaceID = InterfaceID;
 	ptr = getDomainName(msg, ptr, end, &question->qname);
 	if (!ptr) { debugf("Malformed domain name in DNS question section"); return(mDNSNULL); }
