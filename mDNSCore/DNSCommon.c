@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.119  2007/01/05 04:30:16  cheshire
+Change a couple of "(domainname *)" casts to "(const domainname *)"
+
 Revision 1.118  2007/01/04 20:21:59  cheshire
 <rdar://problem/4720673> uDNS: Need to start caching unicast records
 Don't return multicast answers in response to unicast questions
@@ -778,7 +781,7 @@ mDNSexport mDNSu16 CompressedDomainNameLength(const domainname *const name, cons
 	while (*src)
 		{
 		if (*src > MAX_DOMAIN_LABEL) return(MAX_DOMAIN_NAME+1);
-		if (parent && SameDomainName((domainname *)src, parent)) return((mDNSu16)(src - name->c + 2));
+		if (parent && SameDomainName((const domainname *)src, parent)) return((mDNSu16)(src - name->c + 2));
 		src += 1 + *src;
 		if (src - name->c >= MAX_DOMAIN_NAME) return(MAX_DOMAIN_NAME+1);
 		}
@@ -1018,7 +1021,7 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 					len = *src;
 					for (i=0; i <= len;                      i++) *dst++ = *src++;
 					for (i=0; i < (int)sizeof(SubTypeLabel); i++) *dst++ = SubTypeLabel[i];
-					type = (domainname *)s1;
+					type = (const domainname *)s1;
 					
 					// Special support for queries done by some third-party network monitoring software
 					// For these queries, we retract the "._sub" we just added between the subtype and the main type
