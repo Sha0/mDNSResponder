@@ -30,6 +30,10 @@
     Change History (most recent first):
 
 $Log: SamplemDNSClient.c,v $
+Revision 1.50  2007/01/05 08:30:47  cheshire
+Trim excessive "$Log" checkin history from before 2006
+(checkin history still available via "cvs log ..." of course)
+
 Revision 1.49  2007/01/04 21:54:49  cheshire
 Fix compile warnings related to the deprecated Mach-based API
 
@@ -39,47 +43,7 @@ Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 Revision 1.47  2006/01/10 02:29:22  cheshire
 <rdar://problem/4403861> Cosmetic IPv6 address display problem in mDNS test tool
 
-Revision 1.46  2004/11/02 01:32:34  cheshire
-<rdar://problem/3861705> Update code so it still compiles when DNSServiceDiscovery.h is deprecated
-
-Revision 1.45  2004/06/15 02:39:47  cheshire
-When displaying error message, only show command name, not entire path
-
-Revision 1.44  2004/05/28 02:20:06  cheshire
-If we allow dot or empty string for domain when resolving a service,
-it should be a synonym for "local"
-
-Revision 1.43  2004/02/03 22:07:50  cheshire
-<rdar://problem/3548184>: Widen columns to display non-local domains better
-
-Revision 1.42  2003/12/03 11:39:17  cheshire
-<rdar://problem/3468977> Browse output misaligned in mDNS command-line tool
-(Also fix it to add leading space when the hours part of the time is only one digit)
-
-Revision 1.41  2003/10/30 22:52:57  cheshire
-<rdar://problem/3468977> Browse output misaligned in mDNS command-line tool
-
-Revision 1.40  2003/09/26 01:07:06  cheshire
-Added test case to test fix for <rdar://problem/3427923>
-
-Revision 1.39  2003/08/18 19:05:45  cheshire
-<rdar://problem/3382423> UpdateRecord not working right
-Added "newrdlength" field to hold new length of updated rdata
-
-Revision 1.38  2003/08/12 19:56:25  cheshire
-Update to APSL 2.0
-
-Revision 1.37  2003/08/05 20:39:25  cheshire
-<rdar://problem/3362184> mDNS buffered std out makes it impossible to use from another tool
-Added "setlinebuf(stdout);"
-
-Revision 1.36  2003/07/19 03:23:13  cheshire
-<rdar://problem/2986147> mDNSResponder needs to receive and cache larger records
-
-Revision 1.35  2003/07/11 01:57:18  cheshire
-Add checkin history header
-
- */
+*/
 
 #include <libc.h>
 #define BIND_8_COMPAT

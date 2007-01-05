@@ -21,6 +21,10 @@
 	Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.35  2007/01/05 08:30:52  cheshire
+Trim excessive "$Log" checkin history from before 2006
+(checkin history still available via "cvs log ..." of course)
+
 Revision 1.34  2007/01/05 05:46:08  cheshire
 Add mDNS *const m parameter to udsserver_handle_configchange()
 
@@ -37,97 +41,6 @@ Revision 1.30  2006/07/07 01:09:12  cheshire
 <rdar://problem/4472013> Add Private DNS server functionality to dnsextd
 Only use mallocL/freeL debugging routines when building mDNSResponder, not dnsextd
 
-Revision 1.29  2005/08/04 03:37:45  mkrochma
-Temporary workaround to fix posix after mDNS_SetPrimaryInterfaceInfo changed
-
-Revision 1.28  2005/07/19 11:21:09  cheshire
-<rdar://problem/4170449> Unix Domain Socket leak in mdnsd
-
-Revision 1.27  2005/02/04 00:39:59  cheshire
-Move ParseDNSServers() from PosixDaemon.c to mDNSPosix.c so all Posix client layers can use it
-
-Revision 1.26  2005/02/02 02:21:30  cheshire
-Update references to "mDNSResponder" to say "mdnsd" instead
-
-Revision 1.25  2005/01/27 20:01:50  cheshire
-udsSupportRemoveFDFromEventLoop() needs to close the file descriptor as well
-
-Revision 1.24  2005/01/19 19:20:49  ksekar
-<rdar://problem/3960191> Need a way to turn off domain discovery
-
-Revision 1.23  2004/12/16 20:17:11  cheshire
-<rdar://problem/3324626> Cache memory management improvements
-
-Revision 1.22  2004/12/10 13:12:08  cheshire
-Create no-op function RecordUpdatedNiceLabel(), required by uds_daemon.c
-
-Revision 1.21  2004/12/01 20:57:20  ksekar
-<rdar://problem/3873921> Wide Area Service Discovery must be split-DNS aware
-
-Revision 1.20  2004/12/01 04:28:43  cheshire
-<rdar://problem/3872803> Darwin patches for Solaris and Suse
-Use version of daemon() provided in mDNSUNP.c instead of local copy
-
-Revision 1.19  2004/12/01 03:30:29  cheshire
-<rdar://problem/3889346> Add Unicast DNS support to mDNSPosix
-
-Revision 1.18  2004/11/30 22:45:59  cheshire
-Minor code tidying
-
-Revision 1.17  2004/11/30 22:18:59  cheshire
-<rdar://problem/3889351> Posix needs to read the list of unicast DNS servers and set server list
-
-Revision 1.16  2004/09/21 21:05:12	cheshire
-Move duplicate code out of mDNSMacOSX/daemon.c and mDNSPosix/PosixDaemon.c,
-into mDNSShared/uds_daemon.c
-
-Revision 1.15  2004/09/17 01:08:53	cheshire
-Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
-  The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
-  declared in that file are ONLY appropriate to single-address-space embedded applications.
-  For clients on general-purpose computers, the interfaces defined in dns_sd.h should be used.
-
-Revision 1.14  2004/09/16 00:24:49	cheshire
-<rdar://problem/3803162> Fix unsafe use of mDNSPlatformTimeNow()
-
-Revision 1.13  2004/08/11 01:59:41	cheshire
-Remove "mDNS *globalInstance" parameter from udsserver_init()
-
-Revision 1.12  2004/06/28 23:19:19	cheshire
-Fix "Daemon_Init declared but never defined" warning on Linux
-
-Revision 1.11  2004/06/25 00:26:27	rpantos
-Changes to fix the Posix build on Solaris.
-
-Revision 1.10  2004/06/08 04:59:40	cheshire
-Tidy up wording -- log messages are already prefixed with "mDNSResponder", so don't need to repeat it
-
-Revision 1.9  2004/05/29 00:14:20  rpantos
-<rdar://problem/3508093> Runtime check to disable prod mdnsd on OS X.
-
-Revision 1.8  2004/04/07 01:19:04  cheshire
-Hash slot value should be unsigned
-
-Revision 1.7  2004/02/14 06:34:57  cheshire
-Use LogMsg instead of fprintf( stderr
-
-Revision 1.6  2004/02/14 01:10:42  rpantos
-Allow daemon to run if 'nobody' is not defined, with a warning. (For Roku HD1000.)
-
-Revision 1.5  2004/02/05 07:45:43  cheshire
-Add Log header
-
-Revision 1.4  2004/01/28 21:14:23  cheshire
-Reconcile debug_mode and gDebugLogging into a single flag (mDNS_DebugMode)
-
-Revision 1.3  2004/01/19 19:51:46  cheshire
-Fix compiler error (mixed declarations and code) on some versions of Linux
-
-Revision 1.2  2003/12/11 03:03:51  rpantos
-Clean up mDNSPosix so that it builds on OS X again.
-
-Revision 1.1  2003/12/08 20:47:02  rpantos
-Add support for mDNSResponder on Linux.
 */
 
 #include <stdio.h>

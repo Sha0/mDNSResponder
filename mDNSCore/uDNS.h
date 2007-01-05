@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.47  2007/01/05 08:30:43  cheshire
+Trim excessive "$Log" checkin history from before 2006
+(checkin history still available via "cvs log ..." of course)
+
 Revision 1.46  2007/01/04 01:41:47  cheshire
 Use _dns-update-tls/_dns-query-tls/_dns-llq-tls instead of creating a new "_tls" subdomain
 
@@ -61,111 +65,8 @@ Fix broken "empty string" browsing
 
 Revision 1.33  2006/07/05 22:53:28  cheshire
 <rdar://problem/4472014> Add Private DNS client functionality to mDNSResponder
-
-Revision 1.32  2005/07/29 19:46:10  ksekar
-<rdar://problem/4191860> reduce polling period on failed LLQs to 15 minutes
-
-Revision 1.31  2005/03/31 02:19:56  cheshire
-<rdar://problem/4021486> Fix build warnings
-Reviewed by: Scott Herscher
-
-Revision 1.30  2005/03/04 03:00:03  ksekar
-<rdar://problem/4026546> Retransmissions happen too early, causing registrations to conflict with themselves
-
-Revision 1.29  2005/01/11 22:50:53  ksekar
-Fixed constant naming (was using kLLQ_DefLease for update leases)
-
-Revision 1.28  2004/12/22 00:13:49  ksekar
-<rdar://problem/3873993> Change version, port, and polling interval for LLQ
-
-Revision 1.27  2004/11/23 04:06:50  cheshire
-Get rid of floating point constant -- in a small embedded device, bringing in all
-the floating point libraries just to halve an integer value is a bit too heavyweight.
-
-Revision 1.26  2004/11/22 17:49:15  ksekar
-Changed INIT_REFRESH from fraction to decimal
-
-Revision 1.25  2004/11/22 17:16:20  ksekar
-<rdar://problem/3854298> Unicast services don't disappear when you disable all networking
-
-Revision 1.24  2004/11/19 04:24:08  ksekar
-<rdar://problem/3682609> Security: Enforce a "window" on one-shot wide-area queries
-
-Revision 1.23  2004/11/18 18:04:21  ksekar
-Add INIT_REFRESH constant
-
-Revision 1.22  2004/11/15 20:09:24  ksekar
-<rdar://problem/3719050> Wide Area support for Add/Remove record
-
-Revision 1.21  2004/11/11 20:14:55  ksekar
-<rdar://problem/3719574> Wide-Area registrations not deregistered on sleep
-
-Revision 1.20  2004/10/16 00:16:59  cheshire
-<rdar://problem/3770558> Replace IP TTL 255 check with local subnet source address check
-
-Revision 1.19  2004/09/17 01:08:49  cheshire
-Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
-  The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
-  declared in that file are ONLY appropriate to single-address-space embedded applications.
-  For clients on general-purpose computers, the interfaces defined in dns_sd.h should be used.
-
-Revision 1.18  2004/09/03 19:23:05  ksekar
-<rdar://problem/3788460>: Need retransmission mechanism for wide-area service registrations
-
-Revision 1.17  2004/09/01 03:59:29  ksekar
-<rdar://problem/3783453>: Conditionally compile out uDNS code on Windows
-
-Revision 1.16  2004/08/25 00:37:27  ksekar
-<rdar://problem/3774635>: Cleanup DynDNS hostname registration code
-
-Revision 1.15  2004/07/30 17:40:06  ksekar
-<rdar://problem/3739115>: TXT Record updates not available for wide-area services
-
-Revision 1.14  2004/07/29 19:27:15  ksekar
-NAT-PMP Support - minor fixes and cleanup
-
-Revision 1.13  2004/07/29 02:03:35  ksekar
-Delete unused #define and structure field
-
-Revision 1.12  2004/07/26 22:49:30  ksekar
-<rdar://problem/3651409>: Feature #9516: Need support for NAT-PMP in client
-
-Revision 1.11  2004/06/17 01:13:11  ksekar
-<rdar://problem/3696616>: polling interval too short
-
-Revision 1.10  2004/06/11 05:45:03  ksekar
-<rdar://problem/3682397>: Change SRV names for LLQ/Update port lookups
-
-Revision 1.9  2004/06/01 23:46:50  ksekar
-<rdar://problem/3675149>: DynDNS: dynamically look up LLQ/Update ports
-
-Revision 1.8  2004/05/28 23:42:37  ksekar
-<rdar://problem/3258021>: Feature: DNS server->client notification on record changes (#7805)
-
-Revision 1.7  2004/05/18 23:51:25  cheshire
-Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
-
-Revision 1.6  2004/03/13 01:57:33  ksekar
-<rdar://problem/3192546>: DynDNS: Dynamic update of service records
-
-Revision 1.5  2004/02/21 08:56:58  bradley
-Wrap prototypes with extern "C" for C++ builds.
-
-Revision 1.4  2004/02/06 23:04:19  ksekar
-Basic Dynamic Update support via mDNS_Register (dissabled via
-UNICAST_REGISTRATION #define)
-
-Revision 1.3  2004/01/24 03:38:27  cheshire
-Fix minor syntactic error: Headers should use "extern" declarations, not "mDNSexport"
-
-Revision 1.2  2004/01/23 23:23:15  ksekar
-Added TCP support for truncated unicast messages.
-
-Revision 1.1  2003/12/13 03:05:27  ksekar
-<rdar://problem/3192548>: DynDNS: Unicast query of service records
-
  
- */
+*/
 
 #ifndef __UDNS_H_
 #define __UDNS_H_

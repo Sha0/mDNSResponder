@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.61  2007/01/05 08:30:54  cheshire
+Trim excessive "$Log" checkin history from before 2006
+(checkin history still available via "cvs log ..." of course)
+
 Revision 1.60  2007/01/05 08:07:29  cheshire
 Remove unnecessary dummy udsserver_default_reg_domain_changed() routine
 
@@ -76,140 +80,6 @@ More fixes for private DNS
 
 Revision 1.42  2006/07/05 22:48:19  cheshire
 <rdar://problem/4472013> Add Private DNS server functionality to dnsextd
-
-Revision 1.41  2005/09/24 01:10:54  cheshire
-Fix comment typos
-
-Revision 1.40  2005/09/07 21:54:37  ksekar
-<rdar://problem/4046465> dnsextd doesn't clean up on exit
-Close sockets before cleanup so clients can't make new requests
-
-Revision 1.39  2005/08/22 23:30:30  ksekar
-<rdar://problem/4158123> memory leak in dnsextd.c
-
-Revision 1.38  2005/06/29 10:03:56  cheshire
-Fix compile errors and warnings
-
-Revision 1.37  2005/06/27 22:12:17  ksekar
-<rdar://problem/4163315> dnsextd performance improvements
-
-Revision 1.36  2005/06/14 23:14:41  ksekar
-<rdar://problem/3934233> Unable to refresh LLQs
-
-Revision 1.35  2005/03/17 03:57:43  cheshire
-LEASE_OPT_SIZE is now LEASE_OPT_RDLEN; LLQ_OPT_SIZE is now LLQ_OPT_RDLEN
-
-Revision 1.34  2005/03/16 18:47:37  ksekar
-<rdar://problem/4046465> dnsextd doesn't clean up on exit
-
-Revision 1.33  2005/03/11 19:09:02  ksekar
-Fixed ZERO_LLQID macro
-
-Revision 1.32  2005/03/10 22:54:33  ksekar
-<rdar://problem/4046285> dnsextd leaks memory/ports
-
-Revision 1.31  2005/02/24 02:37:57  ksekar
-<rdar://problem/4021977> dnsextd memory management improvements
-
-Revision 1.30  2005/01/27 22:57:56  cheshire
-Fix compile errors on gcc4
-
-Revision 1.29  2004/12/22 00:13:50  ksekar
-<rdar://problem/3873993> Change version, port, and polling interval for LLQ
-
-Revision 1.28  2004/12/17 00:30:00  ksekar
-<rdar://problem/3924045> dnsextd memory leak
-
-Revision 1.27  2004/12/17 00:27:32  ksekar
-Ignore SIGPIPE
-
-Revision 1.26  2004/12/17 00:21:33  ksekar
-Fixes for new CacheRecord structure with indirect name pointer
-
-Revision 1.25  2004/12/16 20:13:02  cheshire
-<rdar://problem/3324626> Cache memory management improvements
-
-Revision 1.24  2004/12/14 17:09:06  ksekar
-fixed incorrect usage instructions
-
-Revision 1.23  2004/12/06 20:24:31  ksekar
-<rdar://problem/3907303> dnsextd leaks sockets
-
-Revision 1.22  2004/12/03 20:20:29  ksekar
-<rdar://problem/3904149> dnsextd: support delivery of large records via LLQ events
-
-Revision 1.21  2004/12/03 06:11:34  ksekar
-<rdar://problem/3885059> clean up dnsextd arguments
-
-Revision 1.20  2004/12/01 04:27:28  cheshire
-<rdar://problem/3872803> Darwin patches for Solaris and Suse
-Don't use uint32_t, etc. -- they require stdint.h, which doesn't exist on FreeBSD 4.x, Solaris, etc.
-
-Revision 1.19  2004/12/01 01:16:29  cheshire
-Solaris compatibility fixes
-
-Revision 1.18  2004/11/30 23:51:06  cheshire
-Remove double semicolons
-
-Revision 1.17  2004/11/30 22:37:01  cheshire
-Update copyright dates and add "Mode: C; tab-width: 4" headers
-
-Revision 1.16  2004/11/25 02:02:28  ksekar
-Fixed verbose log message argument
-
-Revision 1.15  2004/11/19 02:35:02  ksekar
-<rdar://problem/3886317> Wide Area Security: Add LLQ-ID to events
-
-Revision 1.14  2004/11/17 06:17:58  cheshire
-Update comments to show correct SRV names: _dns-update._udp.<zone>. and _dns-llq._udp.<zone>.
-
-Revision 1.13  2004/11/13 02:22:36  ksekar
-<rdar://problem/3878201> Refresh Acks from daemon malformatted
-
-Revision 1.12  2004/11/12 01:05:01  ksekar
-<rdar://problem/3876757> dnsextd: daemon registers the SRV same record
-twice at startup
-
-Revision 1.11  2004/11/12 01:03:31  ksekar
-<rdar://problem/3876776> dnsextd: KnownAnswers (CacheRecords) leaked
-
-Revision 1.10  2004/11/12 00:35:28  ksekar
-<rdar://problem/3876705> dnsextd: uninitialized pointer can cause crash
-
-Revision 1.9  2004/11/10 20:38:17  ksekar
-<rdar://problem/3874168> dnsextd: allow a "fudge" in LLQ lease echo
-
-Revision 1.8  2004/11/01 17:48:14  cheshire
-Changed SOA serial number back to signed. RFC 1035 may describe it as "unsigned", but
-it's wrong. The SOA serial is a modular counter, as explained in "DNS & BIND", page
-137. Since C doesn't have a modular type, we used signed, C's closest approximation.
-
-Revision 1.7  2004/10/30 00:06:58  ksekar
-<rdar://problem/3722535> Support Long Lived Queries in DNS Extension daemon
-
-Revision 1.6  2004/09/17 01:08:54  cheshire
-Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
-  The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
-  declared in that file are ONLY appropriate to single-address-space embedded applications.
-  For clients on general-purpose computers, the interfaces defined in dns_sd.h should be used.
-
-Revision 1.5  2004/09/16 00:50:54  cheshire
-Don't use MSG_WAITALL -- it returns "Invalid argument" on some Linux versions
-
-Revision 1.4  2004/09/14 23:27:48  cheshire
-Fix compile errors
-
-Revision 1.3  2004/09/02 01:39:40  cheshire
-For better readability, follow consistent convention that QR bit comes first, followed by OP bits
-
-Revision 1.2  2004/08/24 23:27:57  cheshire
-Fixes for Linux compatibility:
-Don't use strings.h
-Don't assume SIGINFO
-Don't try to set servaddr.sin_len on platforms that don't have sa_len
-
-Revision 1.1  2004/08/11 00:43:26  ksekar
-<rdar://problem/3722542>: DNS Extension daemon for DNS Update Lease
 
 */
 

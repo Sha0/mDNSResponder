@@ -28,6 +28,10 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.59  2007/01/05 08:30:55  cheshire
+Trim excessive "$Log" checkin history from before 2006
+(checkin history still available via "cvs log ..." of course)
+
 Revision 1.58  2006/10/27 00:38:22  cheshire
 Strip accidental trailing whitespace from lines
 
@@ -58,151 +62,7 @@ Revision 1.50  2006/06/28 08:22:27  cheshire
 Revision 1.49  2006/06/28 07:58:59  cheshire
 Minor textual tidying
 
-Revision 1.48  2005/06/30 18:01:00  shersche
-<rdar://problem/4096913> Clients shouldn't wait ten seconds to connect to mDNSResponder
-
-Revision 1.47  2005/03/31 02:19:56  cheshire
-<rdar://problem/4021486> Fix build warnings
-Reviewed by: Scott Herscher
-
-Revision 1.46  2005/03/21 00:39:31  shersche
-<rdar://problem/4021486> Fix build warnings on Win32 platform
-
-Revision 1.45  2005/02/01 01:25:06  shersche
-Define sleep() to be Sleep() for Windows compatibility
-
-Revision 1.44  2005/01/27 22:57:56  cheshire
-Fix compile errors on gcc4
-
-Revision 1.43  2005/01/27 00:02:29  cheshire
-<rdar://problem/3947461> Handle case where client runs before daemon has finished launching
-
-Revision 1.42  2005/01/11 02:01:02  shersche
-Use dnssd_close() rather than close() for Windows compatibility
-
-Revision 1.41  2004/12/23 17:34:26  ksekar
-<rdar://problem/3931319> Calls leak sockets if mDNSResponder is not running
-
-Revision 1.40  2004/11/23 03:39:47  cheshire
-Let interface name/index mapping capability live directly in JNISupport.c,
-instead of having to call through to the daemon via IPC to get this information.
-
-Revision 1.39  2004/11/12 03:22:00  rpantos
-rdar://problem/3809541 Add DNSSDMapIfIndexToName, DNSSDMapNameToIfIndex.
-
-Revision 1.38  2004/11/02 02:51:23  cheshire
-<rdar://problem/3526342> Remove overly-restrictive flag checks
-
-Revision 1.37  2004/10/14 01:43:35  cheshire
-Fix opaque port passing problem
-
-Revision 1.36  2004/10/06 02:22:19  cheshire
-Changed MacRoman copyright symbol (should have been UTF-8 in any case :-) to ASCII-compatible "(c)"
-
-Revision 1.35  2004/10/01 22:15:55  rpantos
-rdar://problem/3824265: Replace APSL in client lib with BSD license.
-
-Revision 1.34  2004/09/17 22:36:13  cheshire
-Add comment explaining that deliver_request frees the message it sends
-
-Revision 1.33  2004/09/17 01:17:31  ksekar
-Remove double-free of msg header, freed automatically by deliver_request()
-
-Revision 1.32  2004/09/17 01:08:55  cheshire
-Renamed mDNSClientAPI.h to mDNSEmbeddedAPI.h
-  The name "mDNSClientAPI.h" is misleading to new developers looking at this code. The interfaces
-  declared in that file are ONLY appropriate to single-address-space embedded applications.
-  For clients on general-purpose computers, the interfaces defined in dns_sd.h should be used.
-
-Revision 1.31  2004/09/16 23:37:19  cheshire
-Free hdr before returning
-
-Revision 1.30  2004/09/16 23:14:24  cheshire
-Changes for Windows compatibility
-
-Revision 1.29  2004/09/16 21:46:38  ksekar
-<rdar://problem/3665304> Need SPI for LoginWindow to associate a UID with a Wide Area domain
-
-Revision 1.28  2004/08/11 17:10:04  cheshire
-Fix signed/unsigned warnings
-
-Revision 1.27  2004/08/11 00:54:16  cheshire
-Change "hdr->op.request_op" to just "hdr->op"
-
-Revision 1.26  2004/07/26 06:07:27  shersche
-fix bugs when using an error socket to communicate with the daemon
-
-Revision 1.25  2004/07/26 05:54:02  shersche
-DNSServiceProcessResult() returns NoError if socket read returns EWOULDBLOCK
-
-Revision 1.24  2004/07/20 06:46:21  shersche
-<rdar://problem/3730123> fix endless loop in read_all() if recv returns 0
-Bug #: 3730123
-
-Revision 1.23  2004/06/29 00:48:38  cheshire
-Don't use "MSG_WAITALL"; it returns "Invalid argument" on some Linux versions;
-use an explicit while() loop instead.
-
-Revision 1.22  2004/06/26 03:16:34  shersche
-clean up warning messages on Win32 platform
-
-Submitted by: herscher
-
-Revision 1.21  2004/06/18 04:53:56  rpantos
-Use platform layer for socket types. Introduce USE_TCP_LOOPBACK. Remove dependency on mDNSEmbeddedAPI.h.
-
-Revision 1.20  2004/06/12 00:50:22  cheshire
-Changes for Windows compatibility
-
-Revision 1.19  2004/05/25 18:29:33  cheshire
-Move DNSServiceConstructFullName() from dnssd_clientstub.c to dnssd_clientlib.c,
-so that it's also accessible to dnssd_clientshim.c (single address space) clients.
-
-Revision 1.18  2004/05/18 23:51:27  cheshire
-Tidy up all checkin comments to use consistent "<rdar://problem/xxxxxxx>" format for bug numbers
-
-Revision 1.17  2004/05/06 18:42:58  ksekar
-General dns_sd.h API cleanup, including the following radars:
-<rdar://problem/3592068>: Remove flags with zero value
-<rdar://problem/3479569>: Passing in NULL causes a crash.
-
-Revision 1.16  2004/03/12 22:00:37  cheshire
-Added: #include <sys/socket.h>
-
-Revision 1.15  2004/01/20 18:36:29  ksekar
-Propagated Libinfo fix for <rdar://problem/3483971>: SU:
-DNSServiceUpdateRecord() doesn't allow you to update the TXT record
-into TOT mDNSResponder.
-
-Revision 1.14  2004/01/19 22:39:17  cheshire
-Don't use "MSG_WAITALL"; it makes send() return "Invalid argument" on Linux;
-use an explicit while() loop instead. (In any case, this should only make a difference
-with non-blocking sockets, which we don't use on the client side right now.)
-
-Revision 1.13  2004/01/19 21:46:52  cheshire
-Fix compiler warning
-
-Revision 1.12  2003/12/23 20:46:47  ksekar
-<rdar://problem/3497428>: sync dnssd files between libinfo & mDNSResponder
-
-Revision 1.11  2003/12/08 21:11:42  rpantos
-Changes necessary to support mDNSResponder on Linux.
-
-Revision 1.10  2003/10/13 23:50:53  ksekar
-Updated dns_sd clientstub files to bring copies in synch with
-top-of-tree Libinfo:  A memory leak in dnssd_clientstub.c is fixed,
-and comments in dns_sd.h are improved.
-
-Revision 1.9  2003/08/15 21:30:39  cheshire
-Bring up to date with LibInfo version
-
-Revision 1.8  2003/08/13 23:54:52  ksekar
-Bringing dnssd_clientstub.c up to date with Libinfo, per radar 3376640
-
-Revision 1.7  2003/08/12 19:56:25  cheshire
-Update to APSL 2.0
-
- */
+*/
 
 #include <errno.h>
 #include <stdlib.h>
