@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.40  2007/01/05 05:46:08  cheshire
+Add mDNS *const m parameter to udsserver_handle_configchange()
+
 Revision 1.39  2006/08/14 23:26:07  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -1397,7 +1400,7 @@ HostDescriptionChanged(mDNS * const inMDNS)
 {
 	DEBUG_UNUSED( inMDNS );
 
-	udsserver_handle_configchange();
+	udsserver_handle_configchange(inMDNS);
 }
 
 

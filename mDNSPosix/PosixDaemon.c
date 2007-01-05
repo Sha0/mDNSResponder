@@ -21,6 +21,9 @@
 	Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.34  2007/01/05 05:46:08  cheshire
+Add mDNS *const m parameter to udsserver_handle_configchange()
+
 Revision 1.33  2006/12/21 00:10:53  cheshire
 Make mDNS_PlatformSupport PlatformStorage a static global instead of a stack variable
 
@@ -166,7 +169,7 @@ mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 		}
 	else if (result == mStatus_ConfigChanged)
 		{
-		udsserver_handle_configchange();
+		udsserver_handle_configchange(m);
 		}
 	else if (result == mStatus_GrowCache)
 		{

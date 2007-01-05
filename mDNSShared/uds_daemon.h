@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.h,v $
+Revision 1.17  2007/01/05 05:46:07  cheshire
+Add mDNS *const m parameter to udsserver_handle_configchange()
+
 Revision 1.16  2007/01/04 23:11:15  cheshire
 <rdar://problem/4720673> uDNS: Need to start caching unicast records
 When an automatic browsing domain is removed, generate appropriate "remove" events for legacy queries
@@ -93,13 +96,11 @@ extern mDNSs32 udsserver_idle(mDNSs32 nextevent);
 
 extern void udsserver_info(mDNS *const m);	// print out info about current state
 
-extern void udsserver_handle_configchange(void);
+extern void udsserver_handle_configchange(mDNS *const m);
 
 extern int udsserver_exit(void);	// should be called prior to app exit
 
 extern void udsserver_default_reg_domain_changed(const domainname *d, mDNSBool add);
-extern void udsserver_automatic_browse_domain_changed(const domainname *d, mDNSBool add);
-extern void machserver_automatic_browse_domain_changed(const domainname *d, mDNSBool add);
 
 /* Routines that uds_daemon expects to link against: */
 
