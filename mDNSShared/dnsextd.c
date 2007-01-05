@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.60  2007/01/05 08:07:29  cheshire
+Remove unnecessary dummy udsserver_default_reg_domain_changed() routine
+
 Revision 1.59  2007/01/05 05:46:47  cheshire
 Remove unnecessary dummy udsserver_automatic_browse_domain_changed() routine
 
@@ -3261,4 +3264,3 @@ mStatus mDNS_StopQuery(mDNS *const m, DNSQuestion *const question) { ( void ) m;
 void mDNS_UpdateLLQs(mDNS * const m) { ( void ) m; }
 char * mDNSResponderVersionString = NULL;
 mDNS mDNSStorage;
-void udsserver_default_reg_domain_changed(const domainname *d, mDNSBool add) { ( void ) d; ( void ) add; }
