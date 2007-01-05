@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.226  2007/01/05 05:44:35  cheshire
+Move automatic browse/registration management from uDNS.c to mDNSShared/uds_daemon.c,
+so that mDNSPosix embedded clients will compile again
+
 Revision 1.225  2007/01/04 23:11:15  cheshire
 <rdar://problem/4720673> uDNS: Need to start caching unicast records
 When an automatic browsing domain is removed, generate appropriate "remove" events for legacy queries
@@ -1090,13 +1094,279 @@ mDNSlocal mDNSBool is_routeable_v4(mDNSAddr * addr)
 	return mDNStrue;
 	}
 
-int udsserver_init(void)
+// Generates a response message giving name, type, domain, plus interface index,
+// suitable for a browse result or service registration result.
+// On successful completion rep is set to point to a malloc'd reply_state struct
+mDNSlocal mStatus GenerateNTDResponse(domainname *servicename, mDNSInterfaceID id, request_state *request, reply_state **rep)
+	{
+	domainlabel name;
+	domainname type, dom;
+	*rep = NULL;
+	if (!DeconstructServiceName(servicename, &name, &type, &dom))
+		return kDNSServiceErr_Invalid;
+	else
+		{
+		char namestr[MAX_DOMAIN_LABEL+1];
+		char typestr[MAX_ESCAPED_DOMAIN_NAME];
+		char domstr [MAX_ESCAPED_DOMAIN_NAME];
+		int len;
+		char *data;
+	
+		ConvertDomainLabelToCString_unescaped(&name, namestr);
+		ConvertDomainNameToCString(&type, typestr);
+		ConvertDomainNameToCString(&dom, domstr);
+		
+		// Calculate reply data length
+		len = sizeof(DNSServiceFlags);
+		len += sizeof(uint32_t);  // if index
+		len += sizeof(DNSServiceErrorType);
+		len += (int) (strlen(namestr) + 1);
+		len += (int) (strlen(typestr) + 1);
+		len += (int) (strlen(domstr) + 1);
+		
+		// Build reply header
+		*rep = create_reply(query_reply_op, len, request);
+		(*rep)->rhdr->flags = dnssd_htonl(0);
+		(*rep)->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, id));
+		(*rep)->rhdr->error = dnssd_htonl(kDNSServiceErr_NoError);
+		
+		// Build reply body
+		data = (*rep)->sdata;
+		put_string(namestr, &data);
+		put_string(typestr, &data);
+		put_string(domstr, &data);
+
+		return mStatus_NoError;
+		}
+	}
+
+mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+	{
+	request_state *req = question->QuestionContext;
+	reply_state *rep;
+	(void)m; // Unused
+
+	if (answer->rrtype != kDNSType_PTR)
+		{ LogMsg("%3d: FoundInstance: Should not be called with rrtype %d (not a PTR record)", req->sd, answer->rrtype); return; }
+
+	if (GenerateNTDResponse(&answer->rdata->u.name, answer->InterfaceID, req, &rep) != mStatus_NoError)
+		{
+		LogMsg("%3d: FoundInstance: %##s PTR %##s received from network is not valid DNS-SD service pointer",
+			req->sd, answer->name->c, answer->rdata->u.name.c);
+		return;
+		}
+
+	LogOperation("%3d: DNSServiceBrowse(%##s, %s) RESULT %s %s",
+		req->sd, question->qname.c, DNSTypeName(question->qtype), AddRecord ? "Add" : "Rmv", RRDisplayString(m, answer));
+
+	if (AddRecord) rep->rhdr->flags |= dnssd_htonl(kDNSServiceFlagsAdd);
+	append_reply(req, rep);
+	}
+
+mDNSlocal mStatus add_domain_to_browser(browser_info_t *info, const domainname *d)
+	{
+	browser_t *b, *p;
+	mStatus err;
+
+	for (p = info->browsers; p; p = p->next)
+		{
+		if (SameDomainName(&p->domain, d))
+			{ debugf("add_domain_to_browser - attempt to add domain %##d already in list", d->c); return mStatus_AlreadyRegistered; }
+		}
+
+	b = mallocL("browser_t", sizeof(*b));
+	if (!b) return mStatus_NoMemoryErr;
+	AssignDomainName(&b->domain, d);
+	err = mDNS_StartBrowse(&mDNSStorage, &b->q, &info->regtype, d, info->interface_id, info->ForceMCast, FoundInstance, info->rstate);
+	if (err)
+		{
+		LogMsg("mDNS_StartBrowse returned %d for type %##s domain %##s", err, info->regtype.c, d->c);
+		freeL("browser_t", b);
+		}
+	else
+		{
+		b->next = info->browsers;
+		info->browsers = b;
+		}
+		return err;
+	}
+
+mDNSlocal void udsserver_automatic_browse_domain_changed(const domainname *d, mDNSBool add)
+	{
+	request_state *r;
+	
+	debugf("DefaultBrowseDomainChanged: %s default browse domain %##s", add ? "Adding" : "Removing", d->c);
+
+#if APPLE_OSX_mDNSResponder
+	extern void machserver_automatic_browse_domain_changed(const domainname *d, mDNSBool add);
+	machserver_automatic_browse_domain_changed(d, add);
+#endif // APPLE_OSX_mDNSResponder
+  	
+  	for (r = all_requests; r; r = r->next)
+		{
+		browser_info_t *info = r->browser_info;
+		
+		if (!info || !info->default_domain) continue;
+		if (add) add_domain_to_browser(info, d);
+		else
+			{
+			browser_t **ptr = &info->browsers;
+			while (*ptr)
+				{
+				if (SameDomainName(&(*ptr)->domain, d))
+					{
+					browser_t *remove = *ptr;
+					*ptr = (*ptr)->next;
+					mDNS_StopQueryWithRemoves(&mDNSStorage, &remove->q);
+					freeL("browser_t", remove);
+					return;
+					}
+				ptr = &(*ptr)->next;
+				}
+			LogMsg("Requested removal of default domain %##s not in list for sd %d", d->c, r->sd);
+			}
+		}
+	}
+
+static ARListElem     *  SCPrefBrowseDomains  = mDNSNULL;  // manually generated local-only PTR records for browse domains we get from SCPreferences
+
+mDNSlocal void FreeARElemCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
+	{
+	(void)m;  // unused
+	if (result == mStatus_MemFree) mDNSPlatformMemFree(rr->RecordContext);
+	}
+
+mDNSlocal void RegisterBrowseDomainPTR(mDNS *m, const domainname *d, int type)
+	{
+	// allocate/register legacy and non-legacy _browse PTR record
+	mStatus err;
+	ARListElem *browse = mDNSPlatformMemAllocate(sizeof(*browse));
+	mDNS_SetupResourceRecord(&browse->ar, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, FreeARElemCallback, browse);
+	MakeDomainNameFromDNSNameString(browse->ar.resrec.name, mDNS_DomainTypeNames[type]);
+	AppendDNSNameString            (browse->ar.resrec.name, "local");
+	AssignDomainName(&browse->ar.resrec.rdata->u.name, d);
+	err = mDNS_Register(m, &browse->ar);
+	if (err)
+		{
+		LogMsg("SetSCPrefsBrowseDomain: mDNS_Register returned error %d", err);
+		mDNSPlatformMemFree(browse);
+		}
+	else
+		{
+		browse->next = SCPrefBrowseDomains;
+		SCPrefBrowseDomains = browse;
+		}
+	}
+
+mDNSlocal void DeregisterBrowseDomainPTR(mDNS *m, const domainname *d, int type)
+	{
+	ARListElem *remove, **ptr = &SCPrefBrowseDomains;
+	domainname lhs; // left-hand side of PTR, for comparison
+
+	MakeDomainNameFromDNSNameString(&lhs, mDNS_DomainTypeNames[type]);
+	AppendDNSNameString            (&lhs, "local");
+
+	while (*ptr)
+		{
+		if (SameDomainName(&(*ptr)->ar.resrec.rdata->u.name, d) && SameDomainName((*ptr)->ar.resrec.name, &lhs))
+			{
+			remove = *ptr;
+			*ptr = (*ptr)->next;
+			mDNS_Deregister(m, &remove->ar);
+			return;
+			}
+		else ptr = &(*ptr)->next;
+		}
+	}
+
+mDNSlocal void SetPrefsBrowseDomain(mDNS *m, const domainname *d, mDNSBool add)
+	{
+	LogOperation("SetPrefsBrowseDomain: %s default browse domain refcount for %##s", add ? "Incrementing" : "Decrementing", d->c);
+
+	if (add)
+		{
+		RegisterBrowseDomainPTR(m, d, mDNS_DomainTypeBrowse);
+		RegisterBrowseDomainPTR(m, d, mDNS_DomainTypeBrowseLegacy);
+		}
+	else
+		{
+		DeregisterBrowseDomainPTR(m, d, mDNS_DomainTypeBrowse);
+		DeregisterBrowseDomainPTR(m, d, mDNS_DomainTypeBrowseLegacy);
+		}
+	}
+
+mDNSlocal void SetPrefsBrowseDomains(mDNS *m, DNameListElem * browseDomains, mDNSBool add)
+	{
+	DNameListElem * browseDomain;
+	for (browseDomain = browseDomains; browseDomain; browseDomain = browseDomain->next)
+		if (browseDomain->name.c[0]) SetPrefsBrowseDomain(m, &browseDomain->name, add);
+		else LogMsg("SetPrefsBrowseDomains bad browse domain: %p", browseDomain);
+	}
+
+mDNSlocal void LegacyBrowseDomainChange(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+	{
+	DNameListElem *ptr, *prev, *new;
+	(void)m; // unused;
+	(void)question;  // unused
+
+	LogOperation("LegacyBrowseDomainChange: %s default browse domain %##s", AddRecord ? "Adding" : "Removing", answer->rdata->u.name.c);
+
+	if (AddRecord)
+		{
+		new = mDNSPlatformMemAllocate(sizeof(DNameListElem));
+		if (!new) { LogMsg("ERROR: malloc"); return; }
+		AssignDomainName(&new->name, &answer->rdata->u.name);
+		new->next = m->DefBrowseList;
+		m->DefBrowseList = new;
+		udsserver_automatic_browse_domain_changed(&new->name, mDNStrue);
+		return;
+		}
+	else
+		{
+		ptr = m->DefBrowseList;
+		prev = mDNSNULL;
+		while (ptr)
+			{
+			if (SameDomainName(&ptr->name, &answer->rdata->u.name))
+				{
+				udsserver_automatic_browse_domain_changed(&ptr->name, mDNSfalse);
+				if (prev) prev->next = ptr->next;
+				else m->DefBrowseList = ptr->next;
+				mDNSPlatformMemFree(ptr);
+				return;
+				}
+			prev = ptr;
+			ptr = ptr->next;
+			}
+		LogMsg("LegacyBrowseDomainChange: Got remove event for domain %##s not in list", answer->rdata->u.name.c);
+		}
+	}
+
+mDNSlocal void TrackLegacyBrowseDomains(mDNS *const m)
+	{
+	static DNSQuestion LegacyBrowseDomainQ;              // our local enumeration query for _legacy._browse domains
+
+	// start query for domains to be used in default (empty string domain) browses
+	mStatus err = mDNS_GetDomains(m, &LegacyBrowseDomainQ, mDNS_DomainTypeBrowseLegacy, mDNSNULL, mDNSInterface_LocalOnly, LegacyBrowseDomainChange, mDNSNULL);
+
+	// provide .local automatically
+	SetPrefsBrowseDomain(m, &localdomain, mDNStrue);
+
+	// <rdar://problem/4055653> dns-sd -E does not return "local."
+	// register registration domain "local"
+	RegisterBrowseDomainPTR(m, &localdomain, mDNS_DomainTypeRegistration);
+	if (err) LogMsg("ERROR: dDNS_InitDNSConfig - mDNS_Register returned error %d", err);
+	}
+
+mDNSexport int udsserver_init(void)
 	{
 	dnssd_sockaddr_t laddr;
 	int				 ret;
 #if defined(_WIN32)
 	u_long opt = 1;
 #endif
+
+	LogOperation("udsserver_init");
 
 	// If a particular platform wants to opt out of having a PID file, define PID_FILE to be ""
 	if (PID_FILE[0])
@@ -1150,16 +1420,16 @@ int udsserver_init(void)
 		}
 	#endif
 
-	#if defined(_WIN32)
+#if defined(_WIN32)
 	//
 	// SEH: do we even need to do this on windows?  this socket
 	// will be given to WSAEventSelect which will automatically
 	// set it to non-blocking
 	//
 	if (ioctlsocket(listenfd, FIONBIO, &opt) != 0)
-	#else
+#else
     if (fcntl(listenfd, F_SETFL, O_NONBLOCK) != 0)
-	#endif
+#endif
 		{
 		my_perror("ERROR: could not set listen socket to non-blocking mode");
 		goto error;
@@ -1199,7 +1469,8 @@ int udsserver_init(void)
 	debugf("maxfds.rlim_cur %d", (long)maxfds.rlim_cur);
 	}
 #endif
-	
+
+	TrackLegacyBrowseDomains(&mDNSStorage);
     return 0;
 	
 error:
@@ -1208,7 +1479,7 @@ error:
     return -1;
     }
 
-int udsserver_exit(void)
+mDNSexport int udsserver_exit(void)
     {
 	dnssd_close(listenfd);
 
@@ -1376,9 +1647,52 @@ mDNSlocal void rename_service(service_instance *srv)
 		}
 	}
 
-mDNSexport void udsserver_handle_configchange(void)
+mDNSlocal void AddDefaultRegDomain(mDNS *const m, domainname *d)
+	{
+	DNameListElem *newelem = mDNSNULL, *ptr;
+
+	// make sure name not already in list
+	for (ptr = m->DefRegList; ptr; ptr = ptr->next)
+		{
+		if (SameDomainName(&ptr->name, d))
+			{ debugf("duplicate addition of default reg domain %##s", d->c); return; }
+		}
+
+	newelem = mDNSPlatformMemAllocate(sizeof(*newelem));
+	if (!newelem) { LogMsg("Error - malloc"); return; }
+	AssignDomainName(&newelem->name, d);
+	newelem->next = m->DefRegList;
+	m->DefRegList = newelem;
+
+	mDNSPlatformDefaultRegDomainChanged(d, mDNStrue);
+	}
+
+mDNSlocal void RemoveDefaultRegDomain(mDNS *const m, domainname *d)
+	{
+	DNameListElem *ptr = m->DefRegList, *prev = mDNSNULL;
+
+	while (ptr)
+		{
+		if (SameDomainName(&ptr->name, d))
+			{
+			if (prev) prev->next = ptr->next;
+			else m->DefRegList = ptr->next;
+			mDNSPlatformMemFree(ptr);
+			mDNSPlatformDefaultRegDomainChanged(d, mDNSfalse);
+			return;
+			}
+		prev = ptr;
+		ptr = ptr->next;
+		}
+	debugf("Requested removal of default registration domain %##s not in contained in list", d->c);
+	}
+
+mDNSexport void udsserver_handle_configchange(mDNS *const m)
     {
     request_state *req;
+    domainname      fqdn;
+	domainname      regDomain;
+	DNameListElem * browseDomains;
 
     for (req = all_requests; req; req = req->next)
         {
@@ -1389,6 +1703,45 @@ mDNSexport void udsserver_handle_configchange(void)
 				rename_service(ptr);
 			}
 		}
+
+	// Let the platform layer get the current DNS information
+	mDNSPlatformGetDNSConfig(m, &fqdn, &regDomain, &browseDomains);
+
+	// Did our registration domain change?
+	if (!SameDomainName(&regDomain, &m->RegDomain))
+		{
+		if (m->RegDomain.c[0])
+			{
+			RemoveDefaultRegDomain(m, &m->RegDomain);
+			SetPrefsBrowseDomain(m, &m->RegDomain, mDNSfalse); // if we were automatically browsing in our registration domain, stop
+			}
+
+		AssignDomainName(&m->RegDomain, &regDomain);
+
+		if (m->RegDomain.c[0])
+		{
+			AddDefaultRegDomain(m, &m->RegDomain);
+			SetPrefsBrowseDomain(m, &m->RegDomain, mDNStrue);
+		}
+	}
+
+	LogOperation("uDNS_SetupDNSConfig");
+
+	// Add new browse domains to internal list
+	if (browseDomains)
+		{
+		SetPrefsBrowseDomains(m, browseDomains, mDNStrue);
+		}
+
+	// Remove old browse domains from internal list
+	if (m->BrowseDomains)
+		{
+		SetPrefsBrowseDomains(m, m->BrowseDomains, mDNSfalse);
+		mDNS_FreeDNameList(m->BrowseDomains);
+		}
+
+	// Replace the old browse domains array with the new array
+	m->BrowseDomains = browseDomains;
     }
 
 mDNSlocal void connect_callback(void *info)
@@ -2596,103 +2949,6 @@ mDNSlocal void addrinfo_termination_callback(void *context)
 	freeL("addrinfo_info_t", info);
 	}
 
-// Generates a response message giving name, type, domain, plus interface index,
-// suitable for a browse result or service registration result.
-// On successful completion rep is set to point to a malloc'd reply_state struct
-mDNSlocal mStatus GenerateNTDResponse(domainname *servicename, mDNSInterfaceID id, request_state *request, reply_state **rep)
-	{
-	domainlabel name;
-	domainname type, dom;
-	*rep = NULL;
-	if (!DeconstructServiceName(servicename, &name, &type, &dom))
-		return kDNSServiceErr_Invalid;
-	else
-		{
-		char namestr[MAX_DOMAIN_LABEL+1];
-		char typestr[MAX_ESCAPED_DOMAIN_NAME];
-		char domstr [MAX_ESCAPED_DOMAIN_NAME];
-		int len;
-		char *data;
-	
-		ConvertDomainLabelToCString_unescaped(&name, namestr);
-		ConvertDomainNameToCString(&type, typestr);
-		ConvertDomainNameToCString(&dom, domstr);
-		
-		// Calculate reply data length
-		len = sizeof(DNSServiceFlags);
-		len += sizeof(uint32_t);  // if index
-		len += sizeof(DNSServiceErrorType);
-		len += (int) (strlen(namestr) + 1);
-		len += (int) (strlen(typestr) + 1);
-		len += (int) (strlen(domstr) + 1);
-		
-		// Build reply header
-		*rep = create_reply(query_reply_op, len, request);
-		(*rep)->rhdr->flags = dnssd_htonl(0);
-		(*rep)->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, id));
-		(*rep)->rhdr->error = dnssd_htonl(kDNSServiceErr_NoError);
-		
-		// Build reply body
-		data = (*rep)->sdata;
-		put_string(namestr, &data);
-		put_string(typestr, &data);
-		put_string(domstr, &data);
-
-		return mStatus_NoError;
-		}
-	}
-
-mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
-	{
-	request_state *req = question->QuestionContext;
-	reply_state *rep;
-	(void)m; // Unused
-
-	if (answer->rrtype != kDNSType_PTR)
-		{ LogMsg("%3d: FoundInstance: Should not be called with rrtype %d (not a PTR record)", req->sd, answer->rrtype); return; }
-
-	if (GenerateNTDResponse(&answer->rdata->u.name, answer->InterfaceID, req, &rep) != mStatus_NoError)
-		{
-		LogMsg("%3d: FoundInstance: %##s PTR %##s received from network is not valid DNS-SD service pointer",
-			req->sd, answer->name->c, answer->rdata->u.name.c);
-		return;
-		}
-
-	LogOperation("%3d: DNSServiceBrowse(%##s, %s) RESULT %s %s",
-		req->sd, question->qname.c, DNSTypeName(question->qtype), AddRecord ? "Add" : "Rmv", RRDisplayString(m, answer));
-
-	if (AddRecord) rep->rhdr->flags |= dnssd_htonl(kDNSServiceFlagsAdd);
-	append_reply(req, rep);
-	}
-
-mDNSlocal mStatus add_domain_to_browser(browser_info_t *info, const domainname *d)
-	{
-	browser_t *b, *p;
-	mStatus err;
-
-	for (p = info->browsers; p; p = p->next)
-		{
-		if (SameDomainName(&p->domain, d))
-			{ debugf("add_domain_to_browser - attempt to add domain %##d already in list", d->c); return mStatus_AlreadyRegistered; }
-		}
-
-	b = mallocL("browser_t", sizeof(*b));
-	if (!b) return mStatus_NoMemoryErr;
-	AssignDomainName(&b->domain, d);
-	err = mDNS_StartBrowse(&mDNSStorage, &b->q, &info->regtype, d, info->interface_id, info->ForceMCast, FoundInstance, info->rstate);
-	if (err)
-		{
-		LogMsg("mDNS_StartBrowse returned %d for type %##s domain %##s", err, info->regtype.c, d->c);
-		freeL("browser_t", b);
-		}
-	else
-		{
-		b->next = info->browsers;
-		info->browsers = b;
-		}
-		return err;
-	}
-
 mDNSlocal void handle_browse_request(request_state *request)
     {
     DNSServiceFlags flags;
@@ -2808,39 +3064,6 @@ mDNSlocal void browse_termination_callback(void *context)
 	
 	info->rstate->termination_context = NULL;
 	freeL("browser_info", info);
-	}
-
-mDNSexport void udsserver_automatic_browse_domain_changed(const domainname *d, mDNSBool add)
-	{
-	request_state *r;
-	
-	debugf("DefaultBrowseDomainChanged: %s default browse domain %##s", add ? "Adding" : "Removing", d->c);
-	machserver_automatic_browse_domain_changed(d, add);
-  	
-  	for (r = all_requests; r; r = r->next)
-		{
-		browser_info_t *info = r->browser_info;
-		
-		if (!info || !info->default_domain) continue;
-		if (add) add_domain_to_browser(info, d);
-		else
-			{
-			browser_t **ptr = &info->browsers;
-			while (*ptr)
-				{
-				if (SameDomainName(&(*ptr)->domain, d))
-					{
-					browser_t *remove = *ptr;
-					*ptr = (*ptr)->next;
-					mDNS_StopQueryWithRemoves(&mDNSStorage, &remove->q);
-					freeL("browser_t", remove);
-					return;
-					}
-				ptr = &(*ptr)->next;
-				}
-			LogMsg("Requested removal of default domain %##s not in list for sd %d", d->c, r->sd);
-			}
-		}
 	}
 
 // Count how many other service records we have locally with the same name, but different rdata.

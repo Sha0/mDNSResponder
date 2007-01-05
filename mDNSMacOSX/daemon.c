@@ -30,6 +30,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.284  2007/01/05 05:44:35  cheshire
+Move automatic browse/registration management from uDNS.c to mDNSShared/uds_daemon.c,
+so that mDNSPosix embedded clients will compile again
+
 Revision 1.283  2007/01/04 23:11:14  cheshire
 <rdar://problem/4720673> uDNS: Need to start caching unicast records
 When an automatic browsing domain is removed, generate appropriate "remove" events for legacy queries
@@ -1308,6 +1312,7 @@ mDNSlocal mStatus AddDomainToBrowser(DNSServiceBrowser *browser, const domainnam
 	return err;
 	}
 
+extern     void machserver_automatic_browse_domain_changed(const domainname *d, mDNSBool add);
 mDNSexport void machserver_automatic_browse_domain_changed(const domainname *d, mDNSBool add)
 	{
 	DNSServiceBrowser *ptr;
@@ -2040,7 +2045,7 @@ mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 				}
 
 		// Then we call into the UDS daemon code, to let it do the same
-		udsserver_handle_configchange();
+		udsserver_handle_configchange(m);
 		}
 	else if (result == mStatus_GrowCache)
 		{
@@ -2121,7 +2126,7 @@ mDNSlocal mStatus UpdateRecord(ServiceRecordSet *srs, mach_port_t client, AuthRe
     // Check client parameter
 	mStatus err = mStatus_NoError;
 	const char *errormsg = "Unknown";
-	domainname *name = (domainname *)"";
+	const domainname *name = (const domainname *)"";
 
 	name = srs->RR_SRV.resrec.name;
 
@@ -2166,7 +2171,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationUpdateRecord_rpc(mach_por
     // Check client parameter
 	mStatus err = mStatus_NoError;
 	const char *errormsg = "Unknown";
-	domainname *name = (domainname *)"";
+	const domainname *name = (const domainname *)"";
 	ServiceInstance *si;
 
 	(void)unusedserver; // unused
@@ -2889,14 +2894,13 @@ mDNSexport int main(int argc, char **argv)
 	PlatformStorage.WakeKQueueLoopFD = fdpair[0];
 	KQueueAdd(fdpair[1], EVFILT_READ, 0, 0, &wakeKQEntry);
 	
-	status = udsserver_init();
-	if (status) { LogMsg("Daemon start: udsserver_init failed"); goto exit; }
-	
 	// First do the all the initialization we need root privilege for, before we change to user "nobody"
 	LogMsgIdent(mDNSResponderVersionString, "starting");
 	OSXVers = mDNSMacOSXSystemBuildNumber(NULL);
 	status = mDNSDaemonInitialize();
-
+	status = udsserver_init();
+	if (status) { LogMsg("Daemon start: udsserver_init failed"); goto exit; }
+	
 #if CAN_UPDATE_DYNAMIC_STORE_WITHOUT_BEING_ROOT
 	// Now that we're finished with anything privileged, switch over to running as "nobody"
 	const struct passwd *pw = getpwnam("nobody");
