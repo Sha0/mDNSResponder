@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.227  2007/01/05 07:04:24  cheshire
+Minor code tidying
+
 Revision 1.226  2007/01/05 05:44:35  cheshire
 Move automatic browse/registration management from uDNS.c to mDNSShared/uds_daemon.c,
 so that mDNSPosix embedded clients will compile again
@@ -3346,12 +3349,12 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 	if (!srs)      { LogMsg("regservice_callback: srs is NULL %d",                 result); return; }
 	if (!instance) { LogMsg("regservice_callback: srs->ServiceContext is NULL %d", result); return; }
 
-	if (instance->request && instance->request->service_registration)
-		{
-		service_info *info = instance->request->service_registration;
-		if (info->default_domain && !instance->default_local) SuppressError = mDNStrue;
-		// don't send errors up to client for wide-area, empty-string registrations
-		}
+	// don't send errors up to client for wide-area, empty-string registrations
+	if (instance->request &&
+		instance->request->service_registration &&
+		instance->request->service_registration->default_domain &&
+		!instance->default_local)
+			SuppressError = mDNStrue;
 
 	if (result == mStatus_NoError)
 		LogOperation("%3d: DNSServiceRegister(%##s, %u) REGISTERED  ",  instance->sd, srs->RR_SRV.resrec.name->c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port));
