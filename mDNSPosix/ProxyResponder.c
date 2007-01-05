@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: ProxyResponder.c,v $
+Revision 1.40  2007/01/05 04:32:13  cheshire
+Change "(domainname *)" cast to "(const domainname *)"
+
 Revision 1.39  2006/08/14 23:24:46  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -270,7 +273,7 @@ mDNSlocal void RegisterService(mDNS *m, ServiceRecordSet *recordset,
 
 mDNSlocal void NoSuchServiceCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
 	{
-	domainname *proxyhostname = (domainname *)rr->RecordContext;
+	const domainname *proxyhostname = (const domainname *)rr->RecordContext;
 	switch (result)
 		{
 		case mStatus_NoError:      debugf("Callback: %##s Name Registered",    rr->resrec.name->c); break;
