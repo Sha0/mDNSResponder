@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.122  2007/01/06 00:47:35  cheshire
+Improve GetRRDisplayString to indicate when record has zero-length rdata
+
 Revision 1.121  2007/01/05 08:30:39  cheshire
 Trim excessive "$Log" checkin history from before 2006
 (checkin history still available via "cvs log ..." of course)
@@ -305,6 +308,8 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd,
 	#define Max (MaxMsg-1)
 	char *ptr = buffer;
 	mDNSu32 length = mDNS_snprintf(buffer, Max, "%4d %##s %s ", rr->rdlength, rr->name->c, DNSTypeName(rr->rrtype));
+	if (!rr->rdlength) { mDNS_snprintf(buffer+length, Max-length, "<< ZERO RDATA LENGTH >>"); return(buffer); }
+	
 	switch (rr->rrtype)
 		{
 		case kDNSType_A:	mDNS_snprintf(buffer+length, Max-length, "%.4a", &rd->ipv4);          break;
@@ -319,9 +324,11 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd,
 		case kDNSType_AAAA:	mDNS_snprintf(buffer+length, Max-length, "%.16a", &rd->ipv6);       break;
 		case kDNSType_SRV:	mDNS_snprintf(buffer+length, Max-length, "%u %u %u %##s",
 								rd->srv.priority, rd->srv.weight, mDNSVal16(rd->srv.port), rd->srv.target.c); break;
-		default:			mDNS_snprintf(buffer+length, Max-length, "RDLen %d: %s", rr->rdlength, rd->data);  break;
+		default:			mDNS_snprintf(buffer+length, Max-length, "RDLen %d: %s", rr->rdlength, rd->data);
+							// Really should scan buffer to check if text is valid UTF-8 and only replace with dots if not
+							for (ptr = buffer; *ptr; ptr++) if (*ptr < ' ') *ptr='.';
+							break;
 		}
-	for (ptr = buffer; *ptr; ptr++) if (*ptr < ' ') *ptr='.';
 	return(buffer);
 	}
 
