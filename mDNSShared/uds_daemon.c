@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.231  2007/01/06 02:50:19  cheshire
+<rdar://problem/4632919> Instead of copying SRV and TXT record data, just store pointers to cache entities
+
 Revision 1.230  2007/01/06 01:00:35  cheshire
 Improved SIGINFO output
 
@@ -407,13 +410,8 @@ typedef struct
     request_state *rstate;
     DNSQuestion qtxt;
     DNSQuestion qsrv;
-    // const ResourceRecord *txt;
-    // const ResourceRecord *srv;
-    mDNSBool   srv;
-    mDNSBool   txt;
-    rdataSRV   srvdata;
-    mDNSu16    txtlen;
-    mDNSu8     txtdata[AbsoluteMaxDNSMessageData];
+    const ResourceRecord *txt;
+    const ResourceRecord *srv;
     } resolve_termination_t;
 
 #ifdef _HAVE_SETDOMAIN_SUPPORT_
@@ -2340,92 +2338,72 @@ error:
 
 mDNSlocal void resolve_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
-    size_t len = 0;
-    char fullname[MAX_ESCAPED_DOMAIN_NAME], target[MAX_ESCAPED_DOMAIN_NAME];
-    char *data;
-    transfer_state result;
-    reply_state *rep;
-    request_state *rs = question->QuestionContext;
-    resolve_termination_t *res = rs->termination_context;
-    (void)m; // Unused
+	size_t len = 0;
+	char fullname[MAX_ESCAPED_DOMAIN_NAME], target[MAX_ESCAPED_DOMAIN_NAME];
+	char *data;
+	transfer_state result;
+	reply_state *rep;
+	request_state *rs = question->QuestionContext;
+	resolve_termination_t *res = rs->termination_context;
+	(void)m; // Unused
 
 	LogOperation("%3d: DNSServiceResolve(%##s, %s) %s %s",
 		rs->sd, question->qname.c, DNSTypeName(question->qtype), AddRecord ? "ADD" : "RMV", RRDisplayString(m, answer));
-    
-    // This code used to do this trick of just keeping a copy of the pointer to
-    // the answer record in the cache, but the unicast query code doesn't currently
-    // put its answer records in the cache, so for now we can't do this.
-    
+	
+	// This code used to do this trick of just keeping a copy of the pointer to
+	// the answer record in the cache, but the unicast query code doesn't currently
+	// put its answer records in the cache, so for now we can't do this.
+	
 	if (!AddRecord)
 		{
-		// After unicast query code is updated to store its records in the common cache, use this...
-		// if (answer->rrtype == kDNSType_SRV && res->srv == answer) res->srv = mDNSNULL;
-		// if (answer->rrtype == kDNSType_TXT && res->txt == answer) res->txt = mDNSNULL;
-		// instead of this...
-		if (answer->rrtype == kDNSType_SRV && res->srv &&                                    SameRDataBody(answer, (RDataBody *)&res->srvdata))
-			res->srv = mDNSfalse;
-		if (answer->rrtype == kDNSType_TXT && res->txt && answer->rdlength == res->txtlen && SameRDataBody(answer, (RDataBody *)&res->txtdata))
-			res->txt = mDNSfalse;
+		if (answer->rrtype == kDNSType_SRV && res->srv == answer) res->srv = mDNSNULL;
+		if (answer->rrtype == kDNSType_TXT && res->txt == answer) res->txt = mDNSNULL;
 		return;
 		}
 
-	// After unicast query code is updated to store its records in the common cache, use this...
-    // if (answer->rrtype == kDNSType_SRV) res->srv = answer;
-    // if (answer->rrtype == kDNSType_TXT) res->txt = answer;
-	// instead of this...
-    if (answer->rrtype == kDNSType_SRV)
-    	{
-    	res->srvdata = answer->rdata->u.srv;
-    	res->srv = mDNStrue;
-    	}
-    if (answer->rrtype == kDNSType_TXT)
-    	{
-    	if (answer->rdlength > AbsoluteMaxDNSMessageData) return;
-    	res->txtlen = answer->rdlength;
-    	mDNSPlatformMemCopy(answer->rdata->u.data, res->txtdata, res->txtlen);
-    	res->txt = mDNStrue;
-    	}
+	if (answer->rrtype == kDNSType_SRV) res->srv = answer;
+	if (answer->rrtype == kDNSType_TXT) res->txt = answer;
 
-    if (!res->txt || !res->srv) return;		// only deliver result to client if we have both answers
-    
-    ConvertDomainNameToCString(answer->name, fullname);
-    ConvertDomainNameToCString(&res->srvdata.target, target);
+	if (!res->txt || !res->srv) return;		// only deliver result to client if we have both answers
+	
+	ConvertDomainNameToCString(answer->name, fullname);
+	ConvertDomainNameToCString(&res->srv->rdata->u.srv.target, target);
 
-    // calculate reply length
-    len += sizeof(DNSServiceFlags);
-    len += sizeof(uint32_t);  // interface index
-    len += sizeof(DNSServiceErrorType);
-    len += strlen(fullname) + 1;
-    len += strlen(target) + 1;
-    len += 2 * sizeof(uint16_t);  // port, txtLen
-    len += res->txtlen;
-    
-    // allocate/init reply header
-    rep =  create_reply(resolve_reply_op, len, rs);
-    rep->rhdr->flags = dnssd_htonl(0);
-    rep->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, answer->InterfaceID));
-    rep->rhdr->error = dnssd_htonl(kDNSServiceErr_NoError);
+	// calculate reply length
+	len += sizeof(DNSServiceFlags);
+	len += sizeof(uint32_t);  // interface index
+	len += sizeof(DNSServiceErrorType);
+	len += strlen(fullname) + 1;
+	len += strlen(target) + 1;
+	len += 2 * sizeof(uint16_t);  // port, txtLen
+	len += res->txt->rdlength;
+	
+	// allocate/init reply header
+	rep =  create_reply(resolve_reply_op, len, rs);
+	rep->rhdr->flags = dnssd_htonl(0);
+	rep->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, answer->InterfaceID));
+	rep->rhdr->error = dnssd_htonl(kDNSServiceErr_NoError);
 
-    data = rep->sdata;
-    
-    // write reply data to message
-    put_string(fullname, &data);
-    put_string(target, &data);
-	*data++ = res->srvdata.port.b[0];
-	*data++ = res->srvdata.port.b[1];
-    put_short(res->txtlen, &data);
-    put_rdata(res->txtlen, res->txtdata, &data);
-    
-    result = send_msg(rep);
-    if (result == t_error || result == t_terminated)
-        {
-        abort_request(rs);
-        unlink_request(rs);
-        freeL("resolve_result_callback", rep);
-        }
-    else if (result == t_complete) freeL("resolve_result_callback", rep);
-    else append_reply(rs, rep);
-    }
+	data = rep->sdata;
+	
+	// write reply data to message
+	put_string(fullname, &data);
+	put_string(target, &data);
+	*data++ = res->srv->rdata->u.srv.port.b[0];
+	*data++ = res->srv->rdata->u.srv.port.b[1];
+	put_short(res->txt->rdlength, &data);
+	put_rdata(res->txt->rdlength, res->txt->rdata->u.data, &data);
+	
+	result = send_msg(rep);
+	if (result == t_error || result == t_terminated)
+		{
+		abort_request(rs);
+		unlink_request(rs);
+		freeL("resolve_result_callback", rep);
+		}
+	else if (result == t_complete) freeL("resolve_result_callback", rep);
+	else append_reply(rs, rep);
+	}
 
 mDNSlocal void resolve_termination_callback(void *context)
     {
