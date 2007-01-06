@@ -467,7 +467,9 @@ static void DNSSD_API qr_reply(DNSServiceRef sdRef, const DNSServiceFlags flags,
 
 	if (num_printed++ == 0) printf("Timestamp     A/R Flags if %-30s%4s%4s Rdata\n", "Name", "T", "C");
 	printtimestamp();
-	if (errorCode)
+	if (errorCode == kDNSServiceErr_NoSuchRecord)
+		printf("No Such Record\n");
+	else if (errorCode)
 		printf("Error code %d\n", errorCode);
 	else
 		{
