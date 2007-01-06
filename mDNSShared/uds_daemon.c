@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.230  2007/01/06 01:00:35  cheshire
+Improved SIGINFO output
+
 Revision 1.229  2007/01/05 08:30:56  cheshire
 Trim excessive "$Log" checkin history from before 2006
 (checkin history still available via "cvs log ..." of course)
@@ -2564,7 +2567,7 @@ bad_param:
 // delivering the result to the client, and termination) are identical.
 
 // what gets called when a resolve is completed and we need to send the data back to the client
-mDNSlocal void question_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+mDNSlocal void queryrecord_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
     {
     char *data;
     char name[MAX_ESCAPED_DOMAIN_NAME];
@@ -2610,15 +2613,15 @@ mDNSlocal void question_result_callback(mDNS *const m, DNSQuestion *question, co
     return;
     }
 
-mDNSlocal void question_termination_callback(void *context)
+mDNSlocal void queryrecord_termination_callback(void *context)
     {
     DNSQuestion *q = context;
 	LogOperation("%3d: DNSServiceQueryRecord(%##s, %s) STOP", ((request_state *)q->QuestionContext)->sd, q->qname.c, DNSTypeName(q->qtype));
     mDNS_StopQuery(&mDNSStorage, q);  // no need to error check
-    freeL("question_termination_callback", q);
+    freeL("queryrecord_termination_callback", q);
     }
 
-mDNSlocal void handle_query_request(request_state *rstate)
+mDNSlocal void handle_queryrecord_request(request_state *rstate)
     {
     DNSServiceFlags flags;
     uint32_t ifi;
@@ -2631,13 +2634,13 @@ mDNSlocal void handle_query_request(request_state *rstate)
 	
     if (rstate->ts != t_complete)
         {
-        LogMsg("ERROR: handle_query_request - transfer state != t_complete");
+        LogMsg("ERROR: handle_queryrecord_request - transfer state != t_complete");
         goto error;
         }
     ptr = rstate->msgdata;
     if (!ptr)
         {
-        LogMsg("ERROR: handle_query_request - NULL msgdata");
+        LogMsg("ERROR: handle_queryrecord_request - NULL msgdata");
         goto error;
         }
 	
@@ -2663,11 +2666,11 @@ mDNSlocal void handle_query_request(request_state *rstate)
     q->ExpectUnique     = mDNSfalse;
     q->ForceMCast       = (flags & kDNSServiceFlagsForceMulticast     ) != 0;
     q->ReturnIntermed   = (flags & kDNSServiceFlagsReturnIntermediates) != 0;
-    q->QuestionCallback = question_result_callback;
+    q->QuestionCallback = queryrecord_result_callback;
     q->QuestionContext  = rstate;
 
     rstate->termination_context = q;
-    rstate->terminate = question_termination_callback;
+    rstate->terminate = queryrecord_termination_callback;
 
 	LogOperation("%3d: DNSServiceQueryRecord(%##s, %s) START", rstate->sd, q->qname.c, DNSTypeName(q->qtype));
     result = mDNS_StartQuery(&mDNSStorage, q);
@@ -3569,7 +3572,7 @@ mDNSlocal void request_callback(void *info)
 		switch(rstate->hdr.op)
 			{
 			case resolve_request:              handle_resolve_request              (rstate); break;
-			case query_request:                handle_query_request                (rstate); break;
+			case query_request:                handle_queryrecord_request          (rstate); break;
 			case browse_request:               handle_browse_request               (rstate); break;
 			case reg_service_request:          handle_regservice_request           (rstate); break;
 			case enumeration_request:          handle_enum_request                 (rstate); break;
@@ -3795,10 +3798,13 @@ mDNSlocal void LogClientInfo(request_state *req)
 			}
 		else if (req->terminate == resolve_termination_callback)
 			LogMsgNoIdent("%3d: DNSServiceResolve          %##s", req->sd, ((resolve_termination_t *)t)->qsrv.qname.c);
-		else if (req->terminate == question_termination_callback)
+		else if (req->terminate == queryrecord_termination_callback)
 			LogMsgNoIdent("%3d: DNSServiceQueryRecord      %##s", req->sd, ((DNSQuestion *)          t)->qname.c);
 		else if (req->terminate == enum_termination_callback)
 			LogMsgNoIdent("%3d: DNSServiceEnumerateDomains %##s", req->sd, ((enum_termination_t *)   t)->all->question.qname.c);
+		
+		// %%% Need to add listing of NAT port mapping requests and GetAddrInfo requests here too
+		
 		}
 	}
 
@@ -3812,7 +3818,8 @@ mDNSexport void udsserver_info(mDNS *const m)
 	CacheRecord *rr;
     request_state *req;
 
-    LogMsgNoIdent("Timenow 0x%08lX (%ld)", (mDNSu32)now, now);
+	LogMsgNoIdent("Timenow 0x%08lX (%ld)", (mDNSu32)now, now);
+	LogMsgNoIdent("------------ Cache -------------");
 
     LogMsgNoIdent("Slt Q     TTL if    U Type rdlen");
 	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
@@ -3843,6 +3850,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 		LogMsgNoIdent("Cache use mismatch: rrcache_active is %lu, true count %lu", m->rrcache_active, CacheActive);
 	LogMsgNoIdent("Cache currently contains %lu records; %lu referenced by active questions", CacheUsed, CacheActive);
 
+	LogMsgNoIdent("---------- Questions -----------");
 	LogMsgNoIdent("   Int  Next if      Type");
 	CacheUsed = 0;
 	CacheActive = 0;
@@ -3861,12 +3869,10 @@ mDNSexport void udsserver_info(mDNS *const m)
 		}
 	LogMsgNoIdent("%lu question%s; %lu active", CacheUsed, CacheUsed > 1 ? "s" : "", CacheActive);
 
-    for (req = all_requests; req; req=req->next)
+	LogMsgNoIdent("---- Active Client Requests ----");
+	for (req = all_requests; req; req=req->next)
 		LogClientInfo(req);
-
-    now = mDNS_TimeNow(m);
-    LogMsgNoIdent("Timenow 0x%08lX (%ld)", (mDNSu32)now, now);
-    }
+	}
 
 mDNSexport mDNSs32 udsserver_idle(mDNSs32 nextevent)
     {

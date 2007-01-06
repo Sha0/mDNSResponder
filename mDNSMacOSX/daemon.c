@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.286  2007/01/06 01:00:33  cheshire
+Improved SIGINFO output
+
 Revision 1.285  2007/01/05 08:30:47  cheshire
 Trim excessive "$Log" checkin history from before 2006
 (checkin history still available via "cvs log ..." of course)
@@ -1930,6 +1933,7 @@ mDNSlocal void INFOCallback(void)
 			LogMsgNoIdent("%5d: Mach ServiceInstance     %##s %u", si->ClientMachPort, si->srs.RR_SRV.resrec.name->c, mDNSVal16(si->srs.RR_SRV.resrec.rdata->u.srv.port));
 		}
 
+	LogMsgNoIdent("------ Network Interfaces ------");
 	for (i = mDNSStorage.p->InterfaceList; i; i = i->next)
 		{
 		if (!i->Exists)
@@ -1949,6 +1953,9 @@ mDNSlocal void INFOCallback(void)
 
 	for (s = mDNSStorage.Servers; s; s = s->next)
 		LogMsgNoIdent("DNS Server %#a %##s", &s->addr, s->domain.c);
+
+	mDNSs32 now = mDNS_TimeNow(&mDNSStorage);
+	LogMsgNoIdent("Timenow 0x%08lX (%ld)", (mDNSu32)now, now);
 
 	LogMsgIdent(mDNSResponderVersionString, "----  END STATE LOG  ----");
 	}
