@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.362  2007/01/08 23:54:01  cheshire
+Made mDNSPlatformGetDNSConfig() more selective -- only reads prefs for non-null parameters
+
 Revision 1.361  2007/01/05 08:30:48  cheshire
 Trim excessive "$Log" checkin history from before 2006
 (checkin history still available via "cvs log ..." of course)
@@ -2384,78 +2387,86 @@ mDNSlocal mStatus GetDNSConfig(void **result)
 mDNSexport void mDNSPlatformGetDNSConfig(mDNS * const m, domainname *const fqdn, domainname *const regDomain, DNameListElem **browseDomains)
 	{
 	char buf[MAX_ESCAPED_DOMAIN_NAME];	// Max legal C-string name, including terminating NUL
-
-	fqdn->c[0] = 0;
-	regDomain->c[0] = 0;
-	buf[0] = 0;
-	*browseDomains = NULL;
-	
 	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:GetUserSpecifiedDDNSConfig"), NULL, NULL);
 	if (store)
 		{
 		CFDictionaryRef dict = SCDynamicStoreCopyValue(store, CFSTR("Setup:/Network/DynamicDNS"));
 		if (dict)
 			{
-			CFArrayRef fqdnArray = CFDictionaryGetValue(dict, CFSTR("HostNames"));
-			if (fqdnArray && CFArrayGetCount(fqdnArray) > 0)
+			if (fqdn)
 				{
-				CFDictionaryRef fqdnDict = CFArrayGetValueAtIndex(fqdnArray, 0); // for now, we only look at the first array element.  if we ever support multiple configurations, we will walk the list
-				if (fqdnDict && DDNSSettingEnabled(fqdnDict))
+				fqdn->c[0] = 0;
+				CFArrayRef fqdnArray = CFDictionaryGetValue(dict, CFSTR("HostNames"));
+				if (fqdnArray && CFArrayGetCount(fqdnArray) > 0)
 					{
-					CFStringRef name = CFDictionaryGetValue(fqdnDict, CFSTR("Domain"));
-					if (name)
+					// for now, we only look at the first array element.  if we ever support multiple configurations, we will walk the list
+					CFDictionaryRef fqdnDict = CFArrayGetValueAtIndex(fqdnArray, 0);
+					if (fqdnDict && DDNSSettingEnabled(fqdnDict))
 						{
-						if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) ||
-							!MakeDomainNameFromDNSNameString(fqdn, buf) || !fqdn->c[0])
-							LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS host name: %s", buf[0] ? buf : "(unknown)");
-						else debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS host name: %s", buf);
+						CFStringRef name = CFDictionaryGetValue(fqdnDict, CFSTR("Domain"));
+						if (name)
+							{
+							if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) ||
+								!MakeDomainNameFromDNSNameString(fqdn, buf) || !fqdn->c[0])
+								LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS host name: %s", buf[0] ? buf : "(unknown)");
+							else debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS host name: %s", buf);
+							}
 						}
 					}
 				}
 
-			CFArrayRef regArray = CFDictionaryGetValue(dict, CFSTR("RegistrationDomains"));
-			if (regArray && CFArrayGetCount(regArray) > 0)
+			if (regDomain)
 				{
-				CFDictionaryRef regDict = CFArrayGetValueAtIndex(regArray, 0);
-				if (regDict && DDNSSettingEnabled(regDict))
+				regDomain->c[0] = 0;
+				CFArrayRef regArray = CFDictionaryGetValue(dict, CFSTR("RegistrationDomains"));
+				if (regArray && CFArrayGetCount(regArray) > 0)
 					{
-					CFStringRef name = CFDictionaryGetValue(regDict, CFSTR("Domain"));
-					if (name)
+					CFDictionaryRef regDict = CFArrayGetValueAtIndex(regArray, 0);
+					if (regDict && DDNSSettingEnabled(regDict))
 						{
-						if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) ||
-							!MakeDomainNameFromDNSNameString(regDomain, buf) || !regDomain->c[0])
-							LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS registration domain: %s", buf[0] ? buf : "(unknown)");
-						else debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS registration domain: %s", buf);
+						CFStringRef name = CFDictionaryGetValue(regDict, CFSTR("Domain"));
+						if (name)
+							{
+							if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) ||
+								!MakeDomainNameFromDNSNameString(regDomain, buf) || !regDomain->c[0])
+								LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS registration domain: %s", buf[0] ? buf : "(unknown)");
+							else debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS registration domain: %s", buf);
+							}
 						}
 					}
 				}
-			CFArrayRef browseArray = CFDictionaryGetValue(dict, CFSTR("BrowseDomains"));
-			if (browseArray)
+
+			if (browseDomains)
 				{
-				int i;
-				for (i = 0; i < CFArrayGetCount(browseArray); i++)
+				*browseDomains = NULL;
+				CFArrayRef browseArray = CFDictionaryGetValue(dict, CFSTR("BrowseDomains"));
+				if (browseArray)
 					{
-					CFDictionaryRef browseDict = CFArrayGetValueAtIndex(browseArray, i);
-					if (browseDict && DDNSSettingEnabled(browseDict))
+					int i;
+					for (i = 0; i < CFArrayGetCount(browseArray); i++)
 						{
-						CFStringRef name = CFDictionaryGetValue(browseDict, CFSTR("Domain"));
-						if (name)
+						CFDictionaryRef browseDict = CFArrayGetValueAtIndex(browseArray, i);
+						if (browseDict && DDNSSettingEnabled(browseDict))
 							{
-							domainname dname;
-							if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) ||
-								!MakeDomainNameFromDNSNameString(&dname, buf) || !dname.c[0])
-								LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS browsing domain: %s", buf[0] ? buf : "(unknown)");
-							else
+							CFStringRef name = CFDictionaryGetValue(browseDict, CFSTR("Domain"));
+							if (name)
 								{
-								debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS browsing domain: %s", buf);
-							
-								DNameListElem *browseDomain = (DNameListElem*) mallocL("mDNSPlatformGetDNSConfig", sizeof(DNameListElem));
-								if (!browseDomain) { LogMsg("ERROR: mDNSPlatformGetDNSConfig: memory exhausted"); continue; }
-								memset(browseDomain, 0, sizeof(DNameListElem));
-								AssignDomainName(&browseDomain->name, &dname);
-								browseDomain->next = mDNSNULL;
-								*browseDomains = browseDomain;
-								browseDomains = &browseDomain->next;
+								domainname dname;
+								if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) ||
+									!MakeDomainNameFromDNSNameString(&dname, buf) || !dname.c[0])
+									LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS browsing domain: %s", buf[0] ? buf : "(unknown)");
+								else
+									{
+									debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS browsing domain: %s", buf);
+								
+									DNameListElem *browseDomain = (DNameListElem*) mallocL("mDNSPlatformGetDNSConfig", sizeof(DNameListElem));
+									if (!browseDomain) { LogMsg("ERROR: mDNSPlatformGetDNSConfig: memory exhausted"); continue; }
+									memset(browseDomain, 0, sizeof(DNameListElem));
+									AssignDomainName(&browseDomain->name, &dname);
+									browseDomain->next = mDNSNULL;
+									*browseDomains = browseDomain;
+									browseDomains = &browseDomain->next;
+									}
 								}
 							}
 						}
@@ -2466,7 +2477,7 @@ mDNSexport void mDNSPlatformGetDNSConfig(mDNS * const m, domainname *const fqdn,
 		CFRelease(store);
 		}
 
-	ReadDDNSSettingsFromConfFile(m, CONFIG_FILE, fqdn->c[0] ? NULL : fqdn, regDomain->c[0] ? NULL : regDomain, &DomainDiscoveryDisabled);
+	ReadDDNSSettingsFromConfFile(m, CONFIG_FILE, fqdn && fqdn->c[0] ? NULL : fqdn, regDomain && regDomain->c[0] ? NULL : regDomain, &DomainDiscoveryDisabled);
 	}
 
 // Get the list of DNS Servers
@@ -3222,8 +3233,7 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 				err = SecKeychainItemCopyAttributesAndData(itemRef,  &attrInfo, NULL, &a, NULL, NULL);
 		
 				// Validate that results look reasonable
-				//LogMsg("* %.*s", a->attr[1].length, a->attr[1].data);
-				//if (err == errSecInteractionNotAllowed) goto nextitem;
+				// LogMsg("* %.*s", a->attr[1].length, a->attr[1].data);
 				if (err || !a)                 { LogMsg("SetSecretForDomain: SecKeychainItemCopyAttributesAndData error %d %p", err, a); goto nextitem; }
 				if (a->count != 3)             { LogMsg("SetSecretForDomain: SecKeychainItemCopyAttributesAndData got wrong count %d", a->count); goto nextitem; }
 				if (a->attr[0].tag != tags[0]) { LogMsg("SetSecretForDomain: SecKeychainItemCopyAttributesAndData got wrong attribute %d", 0); goto nextitem; }
