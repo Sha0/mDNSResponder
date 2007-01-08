@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.273  2007/01/08 23:58:00  cheshire
+Don't request regDomain and browseDomains in uDNS_SetupDNSConfig() -- it just ignores those results
+
 Revision 1.272  2007/01/05 08:30:42  cheshire
 Trim excessive "$Log" checkin history from before 2006
 (checkin history still available via "cvs log ..." of course)
@@ -5570,12 +5573,10 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 	mDNSAddr        v4;
 	mDNSAddr		v6;
 	mDNSAddr        r;
-	DNameListElem * browseDomains;
-	domainname      regDomain;
     domainname      fqdn;
 
 	// Let the platform layer get the current DNS information
-	mDNSPlatformGetDNSConfig(m, &fqdn, &regDomain, &browseDomains);
+	mDNSPlatformGetDNSConfig(m, &fqdn, mDNSNULL, mDNSNULL);
 
 	// Did our FQDN change?
 	if (!SameDomainName(&fqdn, &m->FQDN))
