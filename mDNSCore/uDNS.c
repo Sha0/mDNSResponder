@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.275  2007/01/09 22:37:18  cheshire
+Provide ten-second grace period for deleted keys, to give mDNSResponder
+time to delete host name before it gives up access to the required key.
+
 Revision 1.274  2007/01/09 01:16:32  cheshire
 Improve "ERROR m->CurrentQuestion already set" debugging messages
 
@@ -350,10 +354,30 @@ mDNSexport void mDNS_DeleteDNSServers(mDNS *const m)
 #pragma mark - authorization management
 #endif
 
-mDNSlocal DomainAuthInfo *GetAuthInfoForName(const mDNS *m, const domainname *const name)
+mDNSlocal DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const name)
 	{
 	const domainname *n = name;
+	DomainAuthInfo **p = &m->AuthInfoList;
 	DomainAuthInfo *ptr;
+
+	// First purge any dead keys from the list
+	while (*p)
+		{
+		if ((*p)->deltime && m->timenow - (*p)->deltime >= 0)
+			{
+			ptr = *p;
+			LogOperation("Deleting expired key %##s %##s", ptr->domain.c, ptr->keyname.c);
+			*p = ptr->next;
+			// Probably not essential, but just to be safe, zero out the secret key data
+			// so we don't leave it hanging around in memory
+			// (where it could potentially get exposed via some other bug)
+			mDNSPlatformMemZero(ptr, sizeof(*ptr));
+			mDNSPlatformMemFree(ptr);
+			}
+		else
+			p = &(*p)->next;
+		}
+	
 	while (n->c[0])
 		{
 		for (ptr = m->AuthInfoList; ptr; ptr = ptr->next)
@@ -372,22 +396,19 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 	const domainname *domain, const domainname *keyname, const char *b64keydata)
 	{
 	DomainAuthInfo **p;
-	mDNSs32 keylen;
 	if (!info || !b64keydata) return(mStatus_BadParamErr);
 
 	info->next = mDNSNULL;
 	AssignDomainName(&info->domain,  domain);
 	AssignDomainName(&info->keyname, keyname);
 
-	keylen = DNSDigest_ConstructHMACKeyfromBase64(info, b64keydata);
-	if (keylen < 0)
+	if (DNSDigest_ConstructHMACKeyfromBase64(info, b64keydata) < 0)
 		{
 		LogMsg("ERROR: mDNS_SetSecretForDomain: could not convert shared secret %s from base64", b64keydata);
 		return(mStatus_BadParamErr);
 		}
 
     // link into list
-	mDNS_Lock(m);
 	p = &m->AuthInfoList;
 	while (*p && (*p) != info) p=&(*p)->next;
 	if (*p)
@@ -398,7 +419,6 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 		LogOperation("mDNS_SetSecretForDomain: %##s %##s", domain->c, keyname->c);
 		*p = info;
 		}
-	mDNS_Unlock(m);
 
 	return(mStatus_NoError);
 	}
@@ -879,7 +899,7 @@ exit:
 
 mDNSlocal void initializeQuery(DNSMessage *msg, DNSQuestion *question)
 	{
-	mDNSPlatformMemZero(msg, sizeof(msg));
+	mDNSPlatformMemZero(msg, sizeof(*msg));
     InitializeDNSMessage(&msg->h, question->TargetQID, uQueryFlags);
 	}
 

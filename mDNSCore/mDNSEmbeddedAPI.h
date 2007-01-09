@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.321  2007/01/09 22:37:18  cheshire
+Provide ten-second grace period for deleted keys, to give mDNSResponder
+time to delete host name before it gives up access to the required key.
+
 Revision 1.320  2007/01/05 08:30:41  cheshire
 Trim excessive "$Log" checkin history from before 2006
 (checkin history still available via "cvs log ..." of course)
@@ -1274,10 +1278,11 @@ typedef struct DNameListElem
 typedef struct DomainAuthInfo
 	{
 	struct DomainAuthInfo *next;
+	mDNSs32     deltime;
 	domainname  domain;
-	domainname keyname;
-	mDNSu8     keydata_ipad[HMAC_LEN];	// padded key for inner hash rounds
-	mDNSu8     keydata_opad[HMAC_LEN];	// padded key for outer hash rounds
+	domainname  keyname;
+	mDNSu8      keydata_ipad[HMAC_LEN];	// padded key for inner hash rounds
+	mDNSu8      keydata_opad[HMAC_LEN];	// padded key for outer hash rounds
 	} DomainAuthInfo;
 
 // ***************************************************************************
