@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.274  2007/01/09 01:16:32  cheshire
+Improve "ERROR m->CurrentQuestion already set" debugging messages
+
 Revision 1.273  2007/01/08 23:58:00  cheshire
 Don't request regDomain and browseDomains in uDNS_SetupDNSConfig() -- it just ignores those results
 
@@ -967,9 +970,15 @@ mDNSlocal mDNSBool recvLLQEvent(mDNS *m, DNSQuestion *q, DNSMessage *msg, const 
 	if (opt.llqOp != kLLQOp_Event) { if (!q->llq->ntries) LogMsg("recvLLQEvent - Bad LLQ Opcode %d", opt.llqOp); return mDNSfalse; }
 
     // invoke response handler
-	if (m->CurrentQuestion)
-		LogMsg("recvLLQEvent: ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
-	m->CurrentQuestion = q;
+	if (m->CurrentQuestion != q)
+		{
+		LogMsg("recvLLQEvent: ERROR m->CurrentQuestion not set: q %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+		if (m->CurrentQuestion)
+			LogMsg("recvLLQEvent: ERROR m->CurrentQuestion not set: CurrentQuestion %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
+		else
+			LogMsg("recvLLQEvent: ERROR m->CurrentQuestion not set: CurrentQuestion NULL");
+		}
+
 	q->responseCallback(m, msg, end, q);
 	if (m->CurrentQuestion != q) { m->CurrentQuestion = mDNSNULL; return mDNStrue; }
 	m->CurrentQuestion = mDNSNULL;
@@ -1027,7 +1036,9 @@ mDNSlocal mDNSBool recvLLQResponse(mDNS *m, DNSMessage *msg, const mDNSu8 *end, 
 				LogMsg("recvLLQResponse: ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
 			m->CurrentQuestion = q;
 			if (llqInfo->state == LLQ_Established || (llqInfo->state == LLQ_Refresh && msg->h.numAnswers))
-				{ if (recvLLQEvent(m, q, msg, end, srcaddr, srcport)) { m->CurrentQuestion = mDNSNULL; return mDNStrue; } }
+				{
+				if (recvLLQEvent(m, q, msg, end, srcaddr, srcport)) { m->CurrentQuestion = mDNSNULL; return mDNStrue; }
+				}
 			else if (msg->h.id.NotAnInteger == q->TargetQID.NotAnInteger)
 				{
 				if (llqInfo->state == LLQ_Refresh && msg->h.numAdditionals && !msg->h.numAnswers)
@@ -1275,7 +1286,7 @@ mDNSlocal void sendChallengeResponse(mDNS *m, DNSQuestion *q, LLQOptData *llq)
 
 	if (info->ntries++ == kLLQ_MAX_TRIES)
 		{
-		LogMsg("sendChallengeResponse: %d failed attempts for LLQ %##s. Will re-try in %d minutes",
+		LogMsg("sendChallengeResponse: %d failed attempts for LLQ %##s Will re-try in %d minutes",
 			   kLLQ_MAX_TRIES, q->qname.c, kLLQ_DEF_RETRY / 60);
 		info->state      = LLQ_Retry;
 		q->LastQTime     = m->timenow;
@@ -1728,6 +1739,7 @@ mDNSlocal void LLQNatMapComplete(mDNS *m, NATTraversalInfo * n)
 	if (m->CurrentQuestion)
 		LogMsg("LLQNatMapComplete: ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
 	m->CurrentQuestion = m->Questions;
+
 	while (m->CurrentQuestion)
 		{
 		DNSQuestion *q = m->CurrentQuestion;
