@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.576  2007/01/09 02:40:57  cheshire
+uDNS_SetupDNSConfig() shouldn't be called from mDNSMacOSX.c (platform support layer);
+moved it to mDNS_Init() in mDNS.c (core code)
+
 Revision 1.575  2007/01/09 00:17:25  cheshire
 Improve "ERROR m->CurrentRecord already set" debugging messages
 
@@ -5713,6 +5717,8 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->DefBrowseList            = mDNSNULL;
 	m->DefRegList               = mDNSNULL;
 	m->SuppressStdPort53Queries = 0;
+
+	uDNS_SetupDNSConfig(m);						// Get initial DNS configuration
 #endif
 
 	result = mDNSPlatformInit(m);

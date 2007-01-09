@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.363  2007/01/09 02:41:18  cheshire
+uDNS_SetupDNSConfig() shouldn't be called from mDNSMacOSX.c (platform support layer);
+moved it to mDNS_Init() in mDNS.c (core code)
+
 Revision 1.362  2007/01/08 23:54:01  cheshire
 Made mDNSPlatformGetDNSConfig() more selective -- only reads prefs for non-null parameters
 
@@ -3616,9 +3620,7 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	if (err) return err;
 #endif /* NO_IOPOWER */
 
-	uDNS_SetupDNSConfig(m);						// Get initial DNS configuration
-
- 	return(err);
+	return(err);
 	}
 
 mDNSexport mStatus mDNSPlatformInit(mDNS *const m)
