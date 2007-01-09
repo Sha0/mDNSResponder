@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.365  2007/01/09 21:09:20  cheshire
+Need locking in KeychainChanged()
+
 Revision 1.364  2007/01/09 20:17:04  cheshire
 mDNSPlatformGetDNSConfig() needs to initialize fields even when no "Setup:/Network/DynamicDNS" entity exists
 
@@ -3420,12 +3423,19 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 
 mDNSlocal OSStatus KeychainChanged(SecKeychainEvent keychainEvent, SecKeychainCallbackInfo *info, void *context)
 	{
+	mDNS *const m = (mDNS *const)context;
 	char         path[1024];
 	UInt32       pathLen = sizeof(path);
 	OSStatus     err = SecKeychainGetPath(info->keychain, &pathLen, path);
 	(void) keychainEvent;
 	if (err) LogMsg("SecKeychainGetPath failed: %d", err);
-	else if (strncmp(SYSTEM_KEYCHAIN_PATH, path, pathLen) == 0) SetDomainSecrets((mDNS*)context);
+	else if (strncmp(SYSTEM_KEYCHAIN_PATH, path, pathLen) == 0)
+		{
+		pthread_mutex_lock(&m->p->BigMutex);
+		SetDomainSecrets((mDNS*)context);
+		pthread_mutex_unlock(&m->p->BigMutex);
+		KQueueWake(m);
+		}
 	return 0;
 	}
 
