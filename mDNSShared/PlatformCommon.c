@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: PlatformCommon.c,v $
+Revision 1.9  2007/01/09 22:37:44  cheshire
+Remove unused ClearDomainSecrets() function
+
 Revision 1.8  2006/12/22 20:59:51  cheshire
 <rdar://problem/4742742> Read *all* DNS keys from keychain,
  not just key for the system-wide default registration domain
@@ -98,21 +101,6 @@ mDNSlocal mDNSBool GetConfigOption(char *dst, const char *option, FILE *f)
 		}
 	debugf("Option %s not set", option);
 	return mDNSfalse;
-	}
-
-mDNSexport void ClearDomainSecrets(mDNS *m)
-	{
-	DomainAuthInfo *p;
-	mDNS_Lock(m);
-	p = m->AuthInfoList;
-	m->AuthInfoList = mDNSNULL;
-	while (p)
-		{
-		DomainAuthInfo *q = p;
-		p=p->next;
-		mDNSPlatformMemFree(q);
-		}
-	mDNS_Unlock(m);
 	}
 
 mDNSexport void ReadDDNSSettingsFromConfFile(mDNS *const m, const char *const filename, domainname *const hostname, domainname *const domain, mDNSBool *DomainDiscoveryDisabled)

@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: PlatformCommon.h,v $
+Revision 1.6  2007/01/09 22:37:43  cheshire
+Remove unused ClearDomainSecrets() function
+
 Revision 1.5  2006/12/22 20:59:51  cheshire
 <rdar://problem/4742742> Read *all* DNS keys from keychain,
  not just key for the system-wide default registration domain
@@ -36,5 +39,4 @@ Move ReadDDNSSettingsFromConfFile() from mDNSMacOSX.c to PlatformCommon.c
  */
 
 extern void FindDefaultRouteIP(mDNSAddr *a);
-extern void ClearDomainSecrets(mDNS *m);
 extern void ReadDDNSSettingsFromConfFile(mDNS *const m, const char *const filename, domainname *const hostname, domainname *const domain, mDNSBool *DomainDiscoveryDisabled);
