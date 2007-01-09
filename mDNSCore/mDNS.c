@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.575  2007/01/09 00:17:25  cheshire
+Improve "ERROR m->CurrentRecord already set" debugging messages
+
 Revision 1.574  2007/01/05 08:30:41  cheshire
 Trim excessive "$Log" checkin history from before 2006
 (checkin history still available via "cvs log ..." of course)
@@ -1125,7 +1128,8 @@ mDNSlocal void CompleteDeregistration(mDNS *const m, AuthRecord *rr)
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void DiscardDeregistrations(mDNS *const m)
 	{
-	if (m->CurrentRecord) LogMsg("DiscardDeregistrations ERROR m->CurrentRecord already set");
+	if (m->CurrentRecord)
+		LogMsg("DiscardDeregistrations ERROR m->CurrentRecord already set %s", ARDisplayString(m, m->CurrentRecord));
 	m->CurrentRecord = m->ResourceRecords;
 	
 	while (m->CurrentRecord)
@@ -1424,7 +1428,8 @@ mDNSlocal void SendResponses(mDNS *const m)
 	// *** 3. Cleanup: Now that everything is sent, call client callback functions, and reset state variables
 	// ***
 
-	if (m->CurrentRecord) LogMsg("SendResponses: ERROR m->CurrentRecord already set");
+	if (m->CurrentRecord)
+		LogMsg("SendResponses ERROR m->CurrentRecord already set %s", ARDisplayString(m, m->CurrentRecord));
 	m->CurrentRecord = m->ResourceRecords;
 	while (m->CurrentRecord)
 		{
@@ -1879,7 +1884,8 @@ mDNSlocal void SendQueries(mDNS *const m)
 		{
 		m->NextScheduledProbe = m->timenow + 0x78000000;
 
-		if (m->CurrentRecord) LogMsg("SendQueries:   ERROR m->CurrentRecord already set");
+		if (m->CurrentRecord)
+			LogMsg("SendQueries ERROR m->CurrentRecord already set %s", ARDisplayString(m, m->CurrentRecord));
 		m->CurrentRecord = m->ResourceRecords;
 		while (m->CurrentRecord)
 			{
@@ -2412,7 +2418,8 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 
 	if (q->InterfaceID == mDNSInterface_Any)	// If 'mDNSInterface_Any' question, see if we want to tell it about LocalOnly records
 		{
-		if (m->CurrentRecord) LogMsg("AnswerNewLocalOnlyQuestion ERROR m->CurrentRecord already set");
+		if (m->CurrentRecord)
+			LogMsg("AnswerNewQuestion ERROR m->CurrentRecord already set %s", ARDisplayString(m, m->CurrentRecord));
 		m->CurrentRecord = m->ResourceRecords;
 		while (m->CurrentRecord && m->CurrentRecord != m->NewLocalRecords)
 			{
@@ -2481,8 +2488,10 @@ mDNSlocal void AnswerNewLocalOnlyQuestion(mDNS *const m)
 		LogMsg("AnswerNewLocalOnlyQuestion ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
 	m->CurrentQuestion = q;		// Indicate which question we're answering, so we'll know if it gets deleted
 
-	if (m->CurrentRecord) LogMsg("AnswerNewLocalOnlyQuestion ERROR m->CurrentRecord already set");
+	if (m->CurrentRecord)
+		LogMsg("AnswerNewLocalOnlyQuestion ERROR m->CurrentRecord already set %s", ARDisplayString(m, m->CurrentRecord));
 	m->CurrentRecord = m->ResourceRecords;
+
 	while (m->CurrentRecord && m->CurrentRecord != m->NewLocalRecords)
 		{
 		AuthRecord *rr = m->CurrentRecord;
@@ -3124,7 +3133,8 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		// Also note: we just mark potential answer records here, without trying to build the
 		// "ResponseRecords" list, because we don't want to risk user callbacks deleting records
 		// from that list while we're in the middle of trying to build it.
-		if (m->CurrentRecord) LogMsg("ProcessQuery ERROR m->CurrentRecord already set");
+		if (m->CurrentRecord)
+			LogMsg("ProcessQuery ERROR m->CurrentRecord already set %s", ARDisplayString(m, m->CurrentRecord));
 		m->CurrentRecord = m->ResourceRecords;
 		while (m->CurrentRecord)
 			{
@@ -3679,7 +3689,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		if (!AcceptableResponse) AcceptableResponse = ExpectingUnicastResponseForRecord(m, srcaddr, ResponseSrcLocal, response->h.id, &m->rec.r);
 
 		// 1. Check that this packet resource record does not conflict with any of ours
-		if (m->CurrentRecord) LogMsg("mDNSCoreReceiveResponse ERROR m->CurrentRecord already set");
+		if (m->CurrentRecord)
+			LogMsg("mDNSCoreReceiveResponse ERROR m->CurrentRecord already set %s", ARDisplayString(m, m->CurrentRecord));
 		m->CurrentRecord = m->ResourceRecords;
 		while (m->CurrentRecord)
 			{
@@ -5761,7 +5772,8 @@ mDNSexport void mDNS_Close(mDNS *const m)
 			DeadvertiseInterface(m, intf);
 
 	// Make sure there are nothing but deregistering records remaining in the list
-	if (m->CurrentRecord) LogMsg("mDNS_Close ERROR m->CurrentRecord already set");
+	if (m->CurrentRecord)
+		LogMsg("mDNS_Close ERROR m->CurrentRecord already set %s", ARDisplayString(m, m->CurrentRecord));
 	m->CurrentRecord = m->ResourceRecords;
 	while (m->CurrentRecord)
 		{
