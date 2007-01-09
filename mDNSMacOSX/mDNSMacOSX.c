@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.364  2007/01/09 20:17:04  cheshire
+mDNSPlatformGetDNSConfig() needs to initialize fields even when no "Setup:/Network/DynamicDNS" entity exists
+
 Revision 1.363  2007/01/09 02:41:18  cheshire
 uDNS_SetupDNSConfig() shouldn't be called from mDNSMacOSX.c (platform support layer);
 moved it to mDNS_Init() in mDNS.c (core code)
@@ -2391,6 +2394,12 @@ mDNSlocal mStatus GetDNSConfig(void **result)
 mDNSexport void mDNSPlatformGetDNSConfig(mDNS * const m, domainname *const fqdn, domainname *const regDomain, DNameListElem **browseDomains)
 	{
 	char buf[MAX_ESCAPED_DOMAIN_NAME];	// Max legal C-string name, including terminating NUL
+
+	// Need to set these here because we need to do this even if SCDynamicStoreCreate() or SCDynamicStoreCopyValue() below don't succeed
+	if (fqdn)          fqdn->c[0]      = 0;
+	if (regDomain)     regDomain->c[0] = 0;
+	if (browseDomains) *browseDomains  = NULL;
+
 	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:GetUserSpecifiedDDNSConfig"), NULL, NULL);
 	if (store)
 		{
@@ -2399,7 +2408,6 @@ mDNSexport void mDNSPlatformGetDNSConfig(mDNS * const m, domainname *const fqdn,
 			{
 			if (fqdn)
 				{
-				fqdn->c[0] = 0;
 				CFArrayRef fqdnArray = CFDictionaryGetValue(dict, CFSTR("HostNames"));
 				if (fqdnArray && CFArrayGetCount(fqdnArray) > 0)
 					{
@@ -2421,7 +2429,6 @@ mDNSexport void mDNSPlatformGetDNSConfig(mDNS * const m, domainname *const fqdn,
 
 			if (regDomain)
 				{
-				regDomain->c[0] = 0;
 				CFArrayRef regArray = CFDictionaryGetValue(dict, CFSTR("RegistrationDomains"));
 				if (regArray && CFArrayGetCount(regArray) > 0)
 					{
@@ -2442,7 +2449,6 @@ mDNSexport void mDNSPlatformGetDNSConfig(mDNS * const m, domainname *const fqdn,
 
 			if (browseDomains)
 				{
-				*browseDomains = NULL;
 				CFArrayRef browseArray = CFDictionaryGetValue(dict, CFSTR("BrowseDomains"));
 				if (browseArray)
 					{
@@ -2462,7 +2468,6 @@ mDNSexport void mDNSPlatformGetDNSConfig(mDNS * const m, domainname *const fqdn,
 								else
 									{
 									debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS browsing domain: %s", buf);
-								
 									DNameListElem *browseDomain = (DNameListElem*) mallocL("mDNSPlatformGetDNSConfig", sizeof(DNameListElem));
 									if (!browseDomain) { LogMsg("ERROR: mDNSPlatformGetDNSConfig: memory exhausted"); continue; }
 									memset(browseDomain, 0, sizeof(DNameListElem));
