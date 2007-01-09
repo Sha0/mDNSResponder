@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.232  2007/01/09 00:03:23  cheshire
+Call udsserver_handle_configchange() once at the end of udsserver_init()
+to set up the automatic registration and browsing domains.
+
 Revision 1.231  2007/01/06 02:50:19  cheshire
 <rdar://problem/4632919> Instead of copying SRV and TXT record data, just store pointers to cache entities
 
@@ -2104,7 +2108,6 @@ mDNSlocal void SetPrefsBrowseDomains(mDNS *m, DNameListElem * browseDomains, mDN
 mDNSexport void udsserver_handle_configchange(mDNS *const m)
     {
     request_state *req;
-    domainname      fqdn;
 	domainname      regDomain;
 	DNameListElem * browseDomains;
 
@@ -2119,7 +2122,7 @@ mDNSexport void udsserver_handle_configchange(mDNS *const m)
 		}
 
 	// Let the platform layer get the current DNS information
-	mDNSPlatformGetDNSConfig(m, &fqdn, &regDomain, &browseDomains);
+	mDNSPlatformGetDNSConfig(m, mDNSNULL, &regDomain, &browseDomains);
 
 	// Did our registration domain change?
 	if (!SameDomainName(&regDomain, &m->RegDomain))
@@ -2133,13 +2136,11 @@ mDNSexport void udsserver_handle_configchange(mDNS *const m)
 		AssignDomainName(&m->RegDomain, &regDomain);
 
 		if (m->RegDomain.c[0])
-		{
+			{
 			AddDefaultRegDomain(m, &m->RegDomain);
 			SetPrefsBrowseDomain(m, &m->RegDomain, mDNStrue);
+			}
 		}
-	}
-
-	LogOperation("uDNS_SetupDNSConfig");
 
 	// Add new browse domains to internal list
 	if (browseDomains)
@@ -3732,6 +3733,7 @@ mDNSexport int udsserver_init(void)
 #endif
 
 	TrackLegacyBrowseDomains(&mDNSStorage);
+	udsserver_handle_configchange(&mDNSStorage);
     return 0;
 	
 error:
