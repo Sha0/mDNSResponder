@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.233  2007/01/10 20:49:37  cheshire
+Remove unnecessary setting of q->Private fields
+
 Revision 1.232  2007/01/09 00:03:23  cheshire
 Call udsserver_handle_configchange() once at the end of udsserver_init()
 to set up the automatic registration and browsing domains.
@@ -2482,7 +2485,6 @@ mDNSlocal void handle_resolve_request(request_state *rstate)
     memcpy(&term->qsrv.qname, &fqdn, MAX_DOMAIN_NAME);
     term->qsrv.qtype            = kDNSType_SRV;
     term->qsrv.qclass           = kDNSClass_IN;
-    term->qsrv.Private          = mDNSfalse;
     term->qsrv.LongLived        = mDNSfalse;
     term->qsrv.ExpectUnique     = mDNStrue;
 	term->qsrv.ForceMCast       = mDNSfalse;
@@ -2495,7 +2497,6 @@ mDNSlocal void handle_resolve_request(request_state *rstate)
     memcpy(&term->qtxt.qname, &fqdn, MAX_DOMAIN_NAME);
     term->qtxt.qtype            = kDNSType_TXT;
     term->qtxt.qclass           = kDNSClass_IN;
-    term->qtxt.Private          = mDNSfalse;
     term->qtxt.LongLived        = mDNSfalse;
     term->qtxt.ExpectUnique     = mDNStrue;
 	term->qtxt.ForceMCast       = mDNSfalse;
@@ -2640,7 +2641,6 @@ mDNSlocal void handle_queryrecord_request(request_state *rstate)
     if (!MakeDomainNameFromDNSNameString(&q->qname, name)) { freeL("DNSQuestion", q); goto bad_param; }
     q->qtype            = rrtype;
     q->qclass           = rrclass;
-    q->Private          = mDNSfalse;
     q->LongLived        = (flags & kDNSServiceFlagsLongLivedQuery     ) != 0;
     q->ExpectUnique     = mDNSfalse;
     q->ForceMCast       = (flags & kDNSServiceFlagsForceMulticast     ) != 0;
@@ -3348,7 +3348,6 @@ mDNSlocal void handle_addrinfo_request(request_state *rstate)
 		info->q4.qname            = d;
 		info->q4.qtype            = kDNSServiceType_A;
 		info->q4.qclass           = kDNSServiceClass_IN;
-		info->q4.Private          = mDNSfalse;
 		info->q4.LongLived        = (flags & kDNSServiceFlagsLongLivedQuery     ) != 0;
 		info->q4.ExpectUnique     = mDNSfalse;
 		info->q4.ForceMCast       = (flags & kDNSServiceFlagsForceMulticast     ) != 0;
@@ -3371,7 +3370,6 @@ mDNSlocal void handle_addrinfo_request(request_state *rstate)
 		info->q6.qname            = d;
 		info->q6.qtype            = kDNSServiceType_AAAA;
 		info->q6.qclass           = kDNSServiceClass_IN;
-		info->q6.Private          = mDNSfalse;
 		info->q6.LongLived        = (flags & kDNSServiceFlagsLongLivedQuery     ) != 0;
 		info->q6.ExpectUnique     = mDNSfalse;
 		info->q6.ForceMCast       = (flags & kDNSServiceFlagsForceMulticast     ) != 0;
