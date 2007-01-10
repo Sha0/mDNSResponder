@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.577  2007/01/10 02:05:21  cheshire
+Delay uDNS_SetupDNSConfig() until *after* the platform layer
+has set up the interface list and security credentials
+
 Revision 1.576  2007/01/09 02:40:57  cheshire
 uDNS_SetupDNSConfig() shouldn't be called from mDNSMacOSX.c (platform support layer);
 moved it to mDNS_Init() in mDNS.c (core code)
@@ -5691,7 +5695,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->NumFailedProbes         = 0;
 	m->SuppressProbes          = 0;
 
-#ifndef UNICAST_DISABLED	
+#ifndef UNICAST_DISABLED
 	m->nextevent                = timenow + 0x78000000;
 	m->ServiceRegistrations     = mDNSNULL;
 	m->RecordRegistrations      = mDNSNULL;
@@ -5717,11 +5721,15 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->DefBrowseList            = mDNSNULL;
 	m->DefRegList               = mDNSNULL;
 	m->SuppressStdPort53Queries = 0;
-
-	uDNS_SetupDNSConfig(m);						// Get initial DNS configuration
 #endif
 
 	result = mDNSPlatformInit(m);
+
+#ifndef UNICAST_DISABLED
+	// It's better to do this *after* the platform layer has set up the
+	// interface list and security credentials
+	uDNS_SetupDNSConfig(m);						// Get initial DNS configuration
+#endif
 
 	return(result);
 	}
