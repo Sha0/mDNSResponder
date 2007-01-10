@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.367  2007/01/10 01:22:01  cheshire
+Make sure c1, c2, c3 are initialized
+
 Revision 1.366  2007/01/09 22:37:20  cheshire
 Provide ten-second grace period for deleted keys, to give mDNSResponder
 time to delete host name before it gives up access to the required key.
@@ -3366,7 +3369,7 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 	CFRange range = { 0, c };
 	CFStringRef k1 = SCDynamicStoreKeyCreateComputerName(NULL);
 	CFStringRef k2 = SCDynamicStoreKeyCreateHostNames(NULL);
-	int c1, c2, c3;
+	int c1 = 0, c2 = 0, c3 = 0;
 	if (k1 && k2)
 		{
 		c1 = (CFArrayContainsValue(changedKeys, range, k1) != 0);	// See if ComputerName changed
