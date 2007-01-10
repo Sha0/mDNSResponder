@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.368  2007/01/10 01:25:31  cheshire
+Use symbol kDNSServiceCompPrivateDNS instead of fixed string "State:/Network/PrivateDNS"
+
 Revision 1.367  2007/01/10 01:22:01  cheshire
 Make sure c1, c2, c3 are initialized
 
@@ -3331,7 +3334,7 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 			CFRelease(searchRef);
 			SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:SetDomainSecrets"), NULL, NULL);
 			if (!store) LogMsg("SetDomainSecrets: SCDynamicStoreCreate failed");
-			else { SCDynamicStoreSetValue(store, CFSTR("State:/Network/PrivateDNS"), sa); CFRelease(store); }
+			else { SCDynamicStoreSetValue(store, CFSTR("State:/Network/" kDNSServiceCompPrivateDNS), sa); CFRelease(store); }
 			}
 		CFRelease(skc);
 		}
