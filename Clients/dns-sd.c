@@ -65,6 +65,9 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT ws2_32.lib ..\mDNSWindows\DLL\Rele
 
 // For testing changes to dnssd_clientstub.c, uncomment this line and the code will be compiled
 // with an embedded copy of the client stub instead of linking the system library version at runtime.
+// This also useful to work around link errors when you're working on an older version of Mac OS X,
+// and trying to build a newer version of the "dns-sd" command which uses new API entry points that
+// aren't in the system's /usr/lib/libSystem.dylib.
 //#define TEST_NEW_CLIENTSTUB 1
 
 #include <ctype.h>
@@ -104,9 +107,12 @@ static const char kFilePathSep = '/';
 #include "../mDNSShared/dnssd_clientstub.c"
 #endif
 
-#if _DNS_SD_H >= 116
+// The "+0" is to cope with the case where _DNS_SD_H is defined but empty (e.g. on Mac OS X 10.4 and earlier)
+#if _DNS_SD_H+0 >= 116
 #define HAS_NAT_PMP_API 1
 #define HAS_ADDRINFO_API 1
+#else
+#define kDNSServiceFlagsReturnIntermediates 0
 #endif
 
 //*************************************************************************************************************
