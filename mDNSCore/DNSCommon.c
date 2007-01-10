@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.123  2007/01/10 22:45:51  cheshire
+Cast static strings to "(const domainname*)", not "(domainname*)"
+
 Revision 1.122  2007/01/06 00:47:35  cheshire
 Improve GetRRDisplayString to indicate when record has zero-length rdata
 
@@ -438,19 +441,19 @@ mDNSexport mDNSBool IsLocalDomain(const domainname *d)
 	{
 	// Domains that are defined to be resolved via link-local multicast are:
 	// local., 254.169.in-addr.arpa., and {8,9,A,B}.E.F.ip6.arpa.
-	static const domainname *nL = (domainname*)"\x5" "local";
-	static const domainname *nR = (domainname*)"\x3" "254" "\x3" "169"         "\x7" "in-addr" "\x4" "arpa";
-	static const domainname *n8 = (domainname*)"\x1" "8"   "\x1" "e" "\x1" "f" "\x3" "ip6"     "\x4" "arpa";
-	static const domainname *n9 = (domainname*)"\x1" "9"   "\x1" "e" "\x1" "f" "\x3" "ip6"     "\x4" "arpa";
-	static const domainname *nA = (domainname*)"\x1" "a"   "\x1" "e" "\x1" "f" "\x3" "ip6"     "\x4" "arpa";
-	static const domainname *nB = (domainname*)"\x1" "b"   "\x1" "e" "\x1" "f" "\x3" "ip6"     "\x4" "arpa";
+	static const domainname *nL = (const domainname*)"\x5" "local";
+	static const domainname *nR = (const domainname*)"\x3" "254" "\x3" "169"         "\x7" "in-addr" "\x4" "arpa";
+	static const domainname *n8 = (const domainname*)"\x1" "8"   "\x1" "e" "\x1" "f" "\x3" "ip6"     "\x4" "arpa";
+	static const domainname *n9 = (const domainname*)"\x1" "9"   "\x1" "e" "\x1" "f" "\x3" "ip6"     "\x4" "arpa";
+	static const domainname *nA = (const domainname*)"\x1" "a"   "\x1" "e" "\x1" "f" "\x3" "ip6"     "\x4" "arpa";
+	static const domainname *nB = (const domainname*)"\x1" "b"   "\x1" "e" "\x1" "f" "\x3" "ip6"     "\x4" "arpa";
 
 	const domainname *d1, *d2, *d3, *d4, *d5, *d6;	// Top-level domain, second-level domain, etc.
 	d1 = d2 = d3 = d4 = d5 = d6 = mDNSNULL;
 	while (d->c[0])
 		{
 		d6 = d5; d5 = d4; d4 = d3; d3 = d2; d2 = d1; d1 = d;
-		d = (domainname*)(d->c + 1 + d->c[0]);
+		d = (const domainname*)(d->c + 1 + d->c[0]);
 		}
 
 	if (d1 && SameDomainName(d1, nL)) return(mDNStrue);
@@ -738,8 +741,8 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 					
 					// Special support for queries done by some third-party network monitoring software
 					// For these queries, we retract the "._sub" we just added between the subtype and the main type
-					if (SameDomainName((domainname*)s0, (domainname*)"\x09_services\x07_dns-sd\x04_udp") ||
-						SameDomainName((domainname*)s0, (domainname*)"\x09_services\x05_mdns\x04_udp"))
+					if (SameDomainName((domainname*)s0, (const domainname*)"\x09_services\x07_dns-sd\x04_udp") ||
+						SameDomainName((domainname*)s0, (const domainname*)"\x09_services\x05_mdns\x04_udp"))
 						dst -= sizeof(SubTypeLabel);
 					}
 				}
@@ -780,7 +783,7 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 
 	*dst = 0;
 	if (!domain->c[0]) { errormsg="Service domain must be non-empty"; goto fail; }
-	if (SameDomainName(domain, (domainname*)"\x05" "local" "\x04" "arpa"))
+	if (SameDomainName(domain, (const domainname*)"\x05" "local" "\x04" "arpa"))
 		{ errormsg="Illegal domain \"local.arpa.\" Use \"local.\" (or empty string)"; goto fail; }
 	dst = AppendDomainName(fqdn, domain);
 	if (!dst) { errormsg="Service domain too long"; goto fail; }
