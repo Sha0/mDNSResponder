@@ -469,7 +469,7 @@ enum
  */
 
 #define kDNSServiceInterfaceIndexAny 0
-#define kDNSServiceInterfaceIndexLocalOnly ( (uint32_t) -1 )
+#define kDNSServiceInterfaceIndexLocalOnly ((uint32_t)-1)
 
 typedef uint32_t DNSServiceFlags;
 typedef int32_t DNSServiceErrorType;
@@ -2117,9 +2117,10 @@ DNSServiceErrorType DNSSD_API DNSServiceSetDefaultDomainForUser
     const char                         *domain
     );
 
-
+// Symbol defined to tell System Configuration Framework where to look in the Dynamic Store
+// for the list of PrivateDNS domains that need to be handed off to mDNSResponder
+// (the complete key is "State:/Network/PrivateDNS")
 #define kDNSServiceCompPrivateDNS "PrivateDNS"
-
 
 #endif //__APPLE_API_PRIVATE
 
