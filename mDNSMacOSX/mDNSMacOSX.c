@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.369  2007/01/10 02:09:32  cheshire
+Better LogOperation record of keys read from System Keychain
+
 Revision 1.368  2007/01/10 01:25:31  cheshire
 Use symbol kDNSServiceCompPrivateDNS instead of fixed string "State:/Network/PrivateDNS"
 
@@ -3225,6 +3228,8 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 	LogMsg("Note: SetDomainSecrets: no keychain support");
 #else
 
+	LogOperation("SetDomainSecrets");
+
 	// Rather than immediately deleting all keys now, we mark them for deletion in ten seconds.
 	// In the case where the user simultaneously removes their DDNS host name and the key
 	// for it, this gives mDNSResponder ten seconds to gracefully delete the name from the
@@ -3308,19 +3313,19 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 				for (ptr = m->AuthInfoList; ptr; ptr = ptr->next)
 					if (SameDomainName(&ptr->domain, &domain)) break;
 
-				if (ptr)
+				LogOperation("SetDomainSecrets: %##s %##s", &domain.c, &keyname.c);
+
+				if (ptr)	// If we found an entry for this domain already in our list, just clear its deltime flag and update key data
 					{
 					ptr->deltime = 0;
 					AssignDomainName(&ptr->keyname, &keyname);
 					if (DNSDigest_ConstructHMACKeyfromBase64(ptr, keystring) < 0)
 						LogMsg("SetDomainSecrets: Could not convert shared secret %s from base64", keystring);
 					}
-				else
+				else		// else make a new DomainAuthInfo structure to hold this data
 					{
-					// Make a new DomainAuthInfo structure to hold this data
 					ptr = (DomainAuthInfo*)mDNSPlatformMemAllocate(sizeof(*ptr));
 					if (!ptr) { LogMsg("SetSecretForDomain: No memory"); goto nextitem; }
-					ptr->deltime = 0;
 					mDNS_SetSecretForDomain(m, ptr, &domain, &keyname, keystring);
 					}
 

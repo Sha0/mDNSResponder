@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.276  2007/01/10 02:09:30  cheshire
+Better LogOperation record of keys read from System Keychain
+
 Revision 1.275  2007/01/09 22:37:18  cheshire
 Provide ten-second grace period for deleted keys, to give mDNSResponder
 time to delete host name before it gives up access to the required key.
@@ -395,10 +398,11 @@ mDNSlocal DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const na
 mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 	const domainname *domain, const domainname *keyname, const char *b64keydata)
 	{
-	DomainAuthInfo **p;
+	DomainAuthInfo **p = &m->AuthInfoList;
 	if (!info || !b64keydata) return(mStatus_BadParamErr);
 
-	info->next = mDNSNULL;
+	info->next    = mDNSNULL;
+	info->deltime = 0;
 	AssignDomainName(&info->domain,  domain);
 	AssignDomainName(&info->keyname, keyname);
 
@@ -408,17 +412,10 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 		return(mStatus_BadParamErr);
 		}
 
-    // link into list
-	p = &m->AuthInfoList;
 	while (*p && (*p) != info) p=&(*p)->next;
-	if (*p)
-		LogMsg("Error! Tried to mDNS_SetSecretForDomain: %##s %##s with DomainAuthInfo %p that's already in the list",
-			domain->c, keyname->c, info);
-	else
-		{
-		LogOperation("mDNS_SetSecretForDomain: %##s %##s", domain->c, keyname->c);
-		*p = info;
-		}
+	if (!*p) *p = info;
+	else LogMsg("Error! Tried to mDNS_SetSecretForDomain: %##s %##s with DomainAuthInfo %p that's already in the list",
+		domain->c, keyname->c, info);
 
 	return(mStatus_NoError);
 	}
