@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.578  2007/01/10 22:51:57  cheshire
+<rdar://problem/4917539> Add support for one-shot private queries as well as long-lived private queries
+
 Revision 1.577  2007/01/10 02:05:21  cheshire
 Delay uDNS_SetupDNSConfig() until *after* the platform layer
 has set up the interface list and security credentials
@@ -4096,13 +4099,12 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
     if (question->InterfaceID == mDNSInterface_LocalOnly || question->ForceMCast || IsLocalDomain(&question->qname))
 		{
     	question->TargetQID = zeroID;
-		question->Private = mDNSfalse;
+		question->Private  = mDNSNULL;
 		}
     else
 		{
-	    question->TargetQID = mDNS_NewMessageID(m);
-	    // This is where we'll check to see if this uDNS domain is in our list of domains that require encrypted queries
-		question->Private = mDNSfalse;	// But for now assume not
+		question->TargetQID = mDNS_NewMessageID(m);
+		question->Private   = GetAuthInfoForName(m, &question->qname);
 		}
 #else
     question->TargetQID = zeroID;
@@ -4554,7 +4556,6 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	AssignDomainName(&query->qSRV.qname, &info->name);
 	query->qSRV.qtype               = kDNSType_SRV;
 	query->qSRV.qclass              = kDNSClass_IN;
-	query->qSRV.Private             = mDNSfalse;
 	query->qSRV.LongLived           = mDNSfalse;
 	query->qSRV.ExpectUnique        = mDNStrue;
 	query->qSRV.ForceMCast          = mDNSfalse;
@@ -4568,7 +4569,6 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	AssignDomainName(&query->qTXT.qname, &info->name);
 	query->qTXT.qtype               = kDNSType_TXT;
 	query->qTXT.qclass              = kDNSClass_IN;
-	query->qTXT.Private             = mDNSfalse;
 	query->qTXT.LongLived           = mDNSfalse;
 	query->qTXT.ExpectUnique        = mDNStrue;
 	query->qTXT.ForceMCast          = mDNSfalse;
@@ -4582,7 +4582,6 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	query->qAv4.qname.c[0]          = 0;
 	query->qAv4.qtype               = kDNSType_A;
 	query->qAv4.qclass              = kDNSClass_IN;
-	query->qAv4.Private             = mDNSfalse;
 	query->qAv4.LongLived           = mDNSfalse;
 	query->qAv4.ExpectUnique        = mDNStrue;
 	query->qAv4.ForceMCast          = mDNSfalse;
@@ -4596,7 +4595,6 @@ mDNSexport mStatus mDNS_StartResolveService(mDNS *const m,
 	query->qAv6.qname.c[0]          = 0;
 	query->qAv6.qtype               = kDNSType_AAAA;
 	query->qAv6.qclass              = kDNSClass_IN;
-	query->qAv6.Private             = mDNSfalse;
 	query->qAv6.LongLived           = mDNSfalse;
 	query->qAv6.ExpectUnique        = mDNStrue;
 	query->qAv6.ForceMCast          = mDNSfalse;
@@ -4647,7 +4645,6 @@ mDNSexport mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, m
 	question->qtype            = kDNSType_PTR;
 	question->qclass           = kDNSClass_IN;
 	question->LongLived        = mDNSfalse;
-	question->Private          = mDNSfalse;
 	question->ExpectUnique     = mDNSfalse;
 	question->ForceMCast       = mDNSfalse;
 	question->ReturnIntermed   = mDNSfalse;
@@ -5283,7 +5280,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	// Set up the record names
 	// For now we only create an advisory record for the main type, not for subtypes
 	// We need to gain some operational experience before we decide if there's a need to create them for subtypes too
-	if (ConstructServiceName(sr->RR_ADV.resrec.name, (domainlabel*)"\x09_services", (domainname*)"\x07_dns-sd\x04_udp", domain) == mDNSNULL)
+	if (ConstructServiceName(sr->RR_ADV.resrec.name, (const domainlabel*)"\x09_services", (const domainname*)"\x07_dns-sd\x04_udp", domain) == mDNSNULL)
 		return(mStatus_BadParamErr);
 	if (ConstructServiceName(sr->RR_PTR.resrec.name, mDNSNULL, type, domain) == mDNSNULL) return(mStatus_BadParamErr);
 	if (ConstructServiceName(sr->RR_SRV.resrec.name, name,     type, domain) == mDNSNULL) return(mStatus_BadParamErr);

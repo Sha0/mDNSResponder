@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.322  2007/01/10 22:51:56  cheshire
+<rdar://problem/4917539> Add support for one-shot private queries as well as long-lived private queries
+
 Revision 1.321  2007/01/09 22:37:18  cheshire
 Provide ten-second grace period for deleted keys, to give mDNSResponder
 time to delete host name before it gives up access to the required key.
@@ -1063,6 +1066,22 @@ enum
 
 typedef void (*InternalResponseHndlr)(mDNS *const m, DNSMessage *msg, const  mDNSu8 *end, DNSQuestion *question);
 
+#define HMAC_LEN    64
+#define HMAC_IPAD   0x36
+#define HMAC_OPAD   0x5c
+#define MD5_LEN     16
+
+// Internal data structure to maintain authentication information
+typedef struct DomainAuthInfo
+	{
+	struct DomainAuthInfo *next;
+	mDNSs32     deltime;
+	domainname  domain;
+	domainname  keyname;
+	mDNSu8      keydata_ipad[HMAC_LEN];	// padded key for inner hash rounds
+	mDNSu8      keydata_opad[HMAC_LEN];	// padded key for outer hash rounds
+	} DomainAuthInfo;
+
 // Note: Within an mDNSQuestionCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute()
 typedef void mDNSQuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord);
 struct DNSQuestion_struct
@@ -1090,7 +1109,7 @@ struct DNSQuestion_struct
 	mDNSBool              SendOnAll;		// Set if we're sending this question on all active interfaces
 	mDNSu32               RequestUnicast;	// Non-zero if we want to send query with kDNSQClass_UnicastResponse bit set
 	mDNSs32               LastQTxTime;		// Last time this Q was sent on one (but not necessarily all) interfaces
-	mDNSBool              Private;			// Set if query is currently being done using Private DNS
+	DomainAuthInfo       *Private;			// Set if query is currently being done using Private DNS
 
 	// Wide Area fields.  These are used internally by the uDNS core
 	InternalResponseHndlr responseCallback; // This is one of: recvSetupResponse, pktResponseHndlr or getZoneData
@@ -1268,22 +1287,6 @@ typedef struct DNameListElem
 	domainname name;
 	struct DNameListElem *next;
 	} DNameListElem;
-
-#define HMAC_LEN    64
-#define HMAC_IPAD   0x36
-#define HMAC_OPAD   0x5c
-#define MD5_LEN     16
-
-// Internal data structure to maintain authentication information for an update domain
-typedef struct DomainAuthInfo
-	{
-	struct DomainAuthInfo *next;
-	mDNSs32     deltime;
-	domainname  domain;
-	domainname  keyname;
-	mDNSu8      keydata_ipad[HMAC_LEN];	// padded key for inner hash rounds
-	mDNSu8      keydata_opad[HMAC_LEN];	// padded key for outer hash rounds
-	} DomainAuthInfo;
 
 // ***************************************************************************
 #if 0

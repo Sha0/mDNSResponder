@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.48  2007/01/10 22:51:57  cheshire
+<rdar://problem/4917539> Add support for one-shot private queries as well as long-lived private queries
+
 Revision 1.47  2007/01/05 08:30:43  cheshire
 Trim excessive "$Log" checkin history from before 2006
 (checkin history still available via "cvs log ..." of course)
@@ -85,12 +88,6 @@ Revision 1.33  2006/07/05 22:53:28  cheshire
 //#define MAX_UCAST_POLL_INTERVAL (1 * 60 * mDNSPlatformOneSecond)
 #define LLQ_POLL_INTERVAL       (15 * 60 * mDNSPlatformOneSecond) // Polling interval for zones w/ an advertised LLQ port (ie not static zones) if LLQ fails due to NAT, etc.
 #define RESPONSE_WINDOW (60 * mDNSPlatformOneSecond)         // require server responses within one minute of request
-#define PUBLIC_UPDATE_SERVICE_TYPE  ((domainname*)"\x0B_dns-update"     "\x04_udp")
-#define PUBLIC_LLQ_SERVICE_TYPE     ((domainname*)"\x08_dns-llq"        "\x04_udp")
-
-#define PRIVATE_UPDATE_SERVICE_TYPE ((domainname*)"\x0F_dns-update-tls" "\x04_tcp")
-#define PRIVATE_QUERY_SERVICE_TYPE  ((domainname*)"\x0E_dns-query-tls"  "\x04_tcp")
-#define PRIVATE_LLQ_SERVICE_TYPE    ((domainname*)"\x0C_dns-llq-tls"    "\x04_tcp")
 
 #define DEFAULT_UPDATE_LEASE 7200
 
@@ -119,8 +116,7 @@ extern mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr);
 extern mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs);
 extern mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs);
 
-extern struct DomainAuthInfo* uDNS_GetAuthInfo( mDNS * const m, DNSQuestion * question );
-extern void                   uDNS_CheckQuery ( mDNS * const m, DNSQuestion * question );
+extern void    uDNS_CheckQuery (mDNS *const m, DNSQuestion *question);
 
 // integer fields of msg header must be in HOST byte order before calling this routine
 extern void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
@@ -131,54 +127,33 @@ extern void uDNS_ReceiveNATMap(mDNS *m, mDNSu8 *pkt, mDNSu16 len);
 // returns time of next scheduled event
 extern void uDNS_Execute(mDNS *const m);
 
-// Asynchronous operation types
-typedef enum
-	{
-    lookupUpdateSRV,
-	lookupLLQSRV
-	} AsyncOpTarget;
-
-typedef enum
-	{
-	zoneDataResult                
-	// other async. operation names go here
-	} AsyncOpResultType;          
-    
 typedef struct                    
 	{
 	domainname zoneName;
-	mDNSAddr primaryAddr;
-	mDNSu16 zoneClass;
+	mDNSAddr   primaryAddr;
+	mDNSu16    zoneClass;
 	mDNSIPPort updatePort;
+	mDNSIPPort queryPort;
 	mDNSIPPort llqPort;
 	mDNSBool   isPrivate;
 	} zoneData_t;
 
-// other async. result struct defs go here
-
 typedef struct
 	{
-	AsyncOpResultType type;
 	zoneData_t zoneData;
-	// other async result structs go here
 	} AsyncOpResult;
-
 
 typedef void AsyncOpCallback(mStatus err, mDNS *const m, void *info, const AsyncOpResult *result);
 
-
-// Asynchronous operation types
-
-
-extern mStatus           uDNS_SetupDNSConfig( mDNS *const m );
-extern mStatus           uDNS_RegisterSearchDomains( mDNS* const m );
+extern mStatus           uDNS_SetupDNSConfig(mDNS *const m);
+extern mStatus           uDNS_RegisterSearchDomains(mDNS *const m);
 extern NATTraversalInfo *uDNS_AllocNATInfo(mDNS *const m, NATOp_t op, mDNSIPPort privatePort, mDNSIPPort publicPort, mDNSu32 ttl, NATResponseHndlr callback);
 extern mDNSBool          uDNS_HandleNATQueryAddrReply(NATTraversalInfo *n, mDNS * const m, mDNSu8 *pkt, mDNSu16 len, mDNSAddr *addr, mStatus *err);
 extern mDNSBool          uDNS_HandleNATPortMapReply(NATTraversalInfo *n, mDNS * const m, mDNSu8 *pkt, mDNSu16 len);
 extern void              uDNS_SendNATMsg(NATTraversalInfo *info, mDNS *m);
 extern void              uDNS_DeleteNATPortMapping(mDNS *m, NATTraversalInfo *nat);
 extern mDNSBool          uDNS_FreeNATInfo(mDNS *m, NATTraversalInfo *n);
-
+extern DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const name);
 
 #ifdef	__cplusplus
 	}
