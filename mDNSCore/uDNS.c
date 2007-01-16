@@ -22,6 +22,11 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.278  2007/01/16 03:04:16  cheshire
+<rdar://problem/4917539> Add support for one-shot private queries as well as long-lived private queries
+Don't cache result of ntaContextSRV(context) in a local variable --
+the macro evaluates to a different result after we clear "context->isPrivate"
+
 Revision 1.277  2007/01/10 22:51:58  cheshire
 <rdar://problem/4917539> Add support for one-shot private queries as well as long-lived private queries
 
@@ -2270,9 +2275,8 @@ mDNSlocal smAction lookupDNSPort(DNSMessage *msg, const mDNSu8 *end, ntaContext 
 	LargeCacheRecord lcr;
 	const mDNSu8 *ptr;
 	mStatus err;
-	const domainname *srvname = ntaContextSRV(context);
 
-	LogOperation("lookupDNSPort %##s", srvname);
+	LogOperation("lookupDNSPort %##s", ntaContextSRV(context));
 
 	if (context->state == lookupPort)  // we've already issued the query
 		{
@@ -2289,13 +2293,15 @@ mDNSlocal smAction lookupDNSPort(DNSMessage *msg, const mDNSu8 *end, ntaContext 
 				return smContinue;
 				}
 			}
-		LogOperation("lookupDNSPort - no answer for type %##s", srvname);
+		LogOperation("lookupDNSPort - no answer for type %##s", ntaContextSRV(context));
 		*port = zeroIPPort;
 
 		// If the context is private, and we couldn't lookup the SRV record
 		// then let's retry this query with the public SRV
 		if (context->isPrivate)
 			{
+			// Note: This state change causes ntaContextSRV() below to
+			// yield a different SRV name when building the query below
 			context->isPrivate = mDNSfalse;
 			}
 		else
@@ -2308,7 +2314,7 @@ mDNSlocal smAction lookupDNSPort(DNSMessage *msg, const mDNSu8 *end, ntaContext 
 	// query the server for the update port for the zone
 	context->state = lookupPort;
 	context->question.qname.c[0] = 0;
-	AppendDomainName(&context->question.qname, srvname);
+	AppendDomainName(&context->question.qname, ntaContextSRV(context));
 	AppendDomainName(&context->question.qname, &context->zone);
 	context->question.qtype = kDNSType_SRV;
 	context->question.qclass = kDNSClass_IN;
