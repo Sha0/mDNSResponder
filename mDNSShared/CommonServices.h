@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: CommonServices.h,v $
+Revision 1.7  2007/01/16 23:00:45  cheshire
+Don't need to include CoreServices.h
+
 Revision 1.6  2006/08/24 22:41:53  herscher
 <rdar://problem/4580067> POSIX: dnsextd_parser doesn't compile on Linux
 
@@ -169,9 +172,7 @@ Common Services and portability support for various platforms.
 		#include	<sys/ioctl.h>
 		#include	<sys/socket.h>
 		#include	<unistd.h>
-		
-		#include	<CoreServices/CoreServices.h>
-	
+
 	#else
 		
 		// Classic Mac OS
