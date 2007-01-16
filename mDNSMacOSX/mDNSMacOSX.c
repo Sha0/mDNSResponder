@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.370  2007/01/16 22:59:58  cheshire
+Error code ioErr is from wrong conceptual namespace; use errSSLClosedAbort instead
+
 Revision 1.369  2007/01/10 02:09:32  cheshire
 Better LogOperation record of keys read from System Keychain
 
@@ -806,7 +809,7 @@ mDNSlocal OSStatus tlsWriteSock(SSLConnectionRef connection, const void * data, 
 			}
 		else
 			{
-			ortn = ioErr;
+			ortn = errSSLClosedAbort;		// send() failed
 			}
 		}
 	else
@@ -866,7 +869,7 @@ mDNSlocal OSStatus tlsReadSock(SSLConnectionRef	connection, void * data, size_t 
 						break;
 					default:
 						LogMsg("ERROR: tlsSockRead: read(%d) error %d\n", (int)bytesToGo, errno);
-						rtn = ioErr;
+						rtn = errSSLClosedAbort;		// recv() failed
 						break;
 					}
 				break;
@@ -892,7 +895,7 @@ mDNSlocal OSStatus tlsReadSock(SSLConnectionRef	connection, void * data, size_t 
 		else
 			{
 			LogMsg("ERROR: tlsSockRead: select(%d) error %d\n", (int)bytesToGo, errno);
-			rtn = ioErr;
+			rtn = errSSLClosedAbort;		// select() failed
 			break;
 			}
 		}
