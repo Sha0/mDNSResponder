@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.281  2007/01/17 21:58:13  cheshire
+For clarity, rename ntaContext field "isPrivate" to "ntaPrivate"
+
 Revision 1.280  2007/01/17 21:46:02  cheshire
 Remove redundant duplicated "isPrivate" field from LLQ_Info
 
@@ -2106,7 +2109,7 @@ typedef struct
 	DNSQuestion     extraQuestion;       // additional storage
 	mDNSBool        questionActive;      // if true, StopQuery() can be called on the question field
 	AsyncOpTarget   target;
-	mDNSBool        isPrivate;           // if true, we try to lookup the privateSRV first
+	mDNSBool        ntaPrivate;          // if true, we try to lookup the privateSRV first
 	mDNSIPPort      updatePort;
 	mDNSIPPort      queryPort;
 	mDNSIPPort      llqPort;
@@ -2122,9 +2125,9 @@ mDNSlocal const domainname *PRIVATE_QUERY_SERVICE_TYPE  = (const domainname*)"\x
 mDNSlocal const domainname *PRIVATE_LLQ_SERVICE_TYPE    = (const domainname*)"\x0C_dns-llq-tls"    "\x04_tcp";
 
 #define ntaContextSRV(X) (\
-	(X)->target == lookupUpdateSRV ? (context->isPrivate ? PRIVATE_UPDATE_SERVICE_TYPE : PUBLIC_UPDATE_SERVICE_TYPE) : \
-	(X)->target == lookupQuerySRV  ? (context->isPrivate ? PRIVATE_QUERY_SERVICE_TYPE  : PRIVATE_QUERY_SERVICE_TYPE) : \
-	(X)->target == lookupLLQSRV    ? (context->isPrivate ? PRIVATE_LLQ_SERVICE_TYPE    : PUBLIC_LLQ_SERVICE_TYPE   ) : \
+	(X)->target == lookupUpdateSRV ? (context->ntaPrivate ? PRIVATE_UPDATE_SERVICE_TYPE : PUBLIC_UPDATE_SERVICE_TYPE) : \
+	(X)->target == lookupQuerySRV  ? (context->ntaPrivate ? PRIVATE_QUERY_SERVICE_TYPE  : PRIVATE_QUERY_SERVICE_TYPE) : \
+	(X)->target == lookupLLQSRV    ? (context->ntaPrivate ? PRIVATE_LLQ_SERVICE_TYPE    : PUBLIC_LLQ_SERVICE_TYPE   ) : \
 	(const domainname*)"")
 
 // Forward reference: hndlLookupSOA references GetZoneData_Callback and vice versa
@@ -2304,11 +2307,11 @@ mDNSlocal smAction lookupDNSPort(DNSMessage *msg, const mDNSu8 *end, ntaContext 
 
 		// If the context is private, and we couldn't lookup the SRV record
 		// then let's retry this query with the public SRV
-		if (context->isPrivate)
+		if (context->ntaPrivate)
 			{
 			// Note: This state change causes ntaContextSRV() below to
 			// yield a different SRV name when building the query below
-			context->isPrivate = mDNSfalse;
+			context->ntaPrivate = mDNSfalse;
 			}
 		else
 			{
@@ -2474,7 +2477,7 @@ mDNSlocal void GetZoneData_Callback(mDNS *const m, DNSMessage *msg, const mDNSu8
 	result.zoneData.primaryAddr.type = mDNSAddrType_IPv4;
 	AssignDomainName(&result.zoneData.zoneName, &context->zone);
 	result.zoneData.zoneClass   = context->zoneClass;
-	result.zoneData.zonePrivate = context->isPrivate;
+	result.zoneData.zonePrivate = context->ntaPrivate;
 	result.zoneData.updatePort  = context->target == lookupUpdateSRV ? context->updatePort : zeroIPPort;
 	result.zoneData.queryPort   = context->target == lookupQuerySRV  ? context->queryPort  : zeroIPPort;
 	result.zoneData.llqPort     = context->target == lookupLLQSRV    ? context->llqPort    : zeroIPPort;
@@ -2517,7 +2520,7 @@ mDNSlocal mStatus StartGetZoneData(mDNS *m, domainname *name, AsyncOpTarget targ
     context->addr            = zerov4Addr;
     context->question.ThisQInterval = -1;
     context->target          = target;
-    context->isPrivate       = GetAuthInfoForName(m, name) ? mDNStrue : mDNSfalse;
+    context->ntaPrivate      = GetAuthInfoForName(m, name) ? mDNStrue : mDNSfalse;
     context->callback        = callback;
     context->callbackInfo    = callbackInfo;
     context->question.QuestionContext = context;
