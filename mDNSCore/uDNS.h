@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.49  2007/01/17 21:35:31  cheshire
+For clarity, rename zoneData_t field "isPrivate" to "zonePrivate"
+
 Revision 1.48  2007/01/10 22:51:57  cheshire
 <rdar://problem/4917539> Add support for one-shot private queries as well as long-lived private queries
 
@@ -135,7 +138,7 @@ typedef struct
 	mDNSIPPort updatePort;
 	mDNSIPPort queryPort;
 	mDNSIPPort llqPort;
-	mDNSBool   isPrivate;
+	mDNSBool   zonePrivate;
 	} zoneData_t;
 
 typedef struct

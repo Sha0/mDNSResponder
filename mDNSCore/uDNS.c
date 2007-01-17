@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.279  2007/01/17 21:35:31  cheshire
+For clarity, rename zoneData_t field "isPrivate" to "zonePrivate"
+
 Revision 1.278  2007/01/16 03:04:16  cheshire
 <rdar://problem/4917539> Add support for one-shot private queries as well as long-lived private queries
 Don't cache result of ntaContextSRV(context) in a local variable --
@@ -2467,11 +2470,11 @@ mDNSlocal void GetZoneData_Callback(mDNS *const m, DNSMessage *msg, const mDNSu8
 	result.zoneData.primaryAddr.ip.v4 = context->addr;
 	result.zoneData.primaryAddr.type = mDNSAddrType_IPv4;
 	AssignDomainName(&result.zoneData.zoneName, &context->zone);
-	result.zoneData.zoneClass = context->zoneClass;
-	result.zoneData.isPrivate = context->isPrivate;
-	result.zoneData.updatePort = context->target == lookupUpdateSRV ? context->updatePort : zeroIPPort;
-	result.zoneData.queryPort  = context->target == lookupQuerySRV  ? context->queryPort  : zeroIPPort;
-	result.zoneData.llqPort    = context->target == lookupLLQSRV    ? context->llqPort    : zeroIPPort;
+	result.zoneData.zoneClass   = context->zoneClass;
+	result.zoneData.zonePrivate = context->isPrivate;
+	result.zoneData.updatePort  = context->target == lookupUpdateSRV ? context->updatePort : zeroIPPort;
+	result.zoneData.queryPort   = context->target == lookupQuerySRV  ? context->queryPort  : zeroIPPort;
+	result.zoneData.llqPort     = context->target == lookupLLQSRV    ? context->llqPort    : zeroIPPort;
 	context->callback(mStatus_NoError, context->m, context->callbackInfo, &result);
 	goto cleanup;
 
@@ -2578,7 +2581,7 @@ mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srs
 	if (zoneData->updatePort.NotAnInteger)
 	{
 		srs->port = zoneData->updatePort;
-		srs->Private = zoneData->isPrivate;
+		srs->Private = zoneData->zonePrivate;
 	}
 	else
 		{
@@ -4168,7 +4171,7 @@ mDNSlocal void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqIn
     // cache necessary zone data
 	info->servAddr  = zoneInfo->primaryAddr;
 	info->servPort  = zoneInfo->llqPort;
-	info->isPrivate = zoneInfo->isPrivate;
+	info->isPrivate = zoneInfo->zonePrivate;
 
     info->ntries = 0;
 
@@ -4217,7 +4220,7 @@ mDNSlocal void startPrivateQueryCallback(mStatus err, mDNS *const m, void * cont
 
 	zoneInfo = &result->zoneData;
 
-	if (!zoneInfo->isPrivate)
+	if (!zoneInfo->zonePrivate)
 		{
 		debugf("Private port lookup failed");
 		err = mStatus_UnknownErr;
@@ -4439,7 +4442,7 @@ mDNSlocal void RecordRegistrationCallback(mStatus err, mDNS *const m, void *auth
 	if (zoneData->updatePort.NotAnInteger)
 		{
 		newRR->UpdatePort = zoneData->updatePort;
-		newRR->Private = zoneData->isPrivate;
+		newRR->Private = zoneData->zonePrivate;
 		}
 	else
 		{
