@@ -104,6 +104,7 @@ static const char kFilePathSep = '/';
 #include "dns_sd.h"
 
 #ifdef TEST_NEW_CLIENTSTUB
+#include "../mDNSShared/dnssd_ipc.c"
 #include "../mDNSShared/dnssd_clientstub.c"
 #endif
 
