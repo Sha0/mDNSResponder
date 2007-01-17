@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: CommonServices.h,v $
+Revision 1.8  2007/01/17 19:16:59  cheshire
+Only define ssize_t if it's not already defined
+
 Revision 1.7  2007/01/16 23:00:45  cheshire
 Don't need to include CoreServices.h
 
@@ -448,7 +451,7 @@ Common Services and portability support for various platforms.
 // - Windows
 
 #if( TARGET_LANGUAGE_C_LIKE )
-	#if( ( TARGET_OS_WIN32 || !defined( _BSD_SSIZE_T_DEFINED_ ) ) && !TARGET_OS_LINUX && !TARGET_OS_VXWORKS && !TARGET_OS_MAC )
+	#if( !defined(_SSIZE_T) && ( TARGET_OS_WIN32 || !defined( _BSD_SSIZE_T_DEFINED_ ) ) && !TARGET_OS_LINUX && !TARGET_OS_VXWORKS && !TARGET_OS_MAC)
 		typedef int						ssize_t;
 	#endif
 #endif
