@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd_parser.y,v $
+Revision 1.7  2007/01/17 17:38:13  cheshire
+Need to include stdlib.h for malloc/free
+
 Revision 1.6  2006/12/22 20:59:51  cheshire
 <rdar://problem/4742742> Read *all* DNS keys from keychain,
  not just key for the system-wide default registration domain
@@ -40,11 +43,12 @@ Revision 1.1  2006/07/06 00:09:05  cheshire
  */
 
 %{
-#include "dnsextd.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <mDNSEmbeddedAPI.h>
 #include <DebugServices.h>
-#include <string.h>
-#include <stdio.h>
+#include "dnsextd.h"
 
 void yyerror( const char* error );
 int  yylex(void);
