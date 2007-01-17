@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.62  2007/01/17 22:06:03  cheshire
+Replace duplicated literal constant "{ { 0 } }" with symbol "zeroIPPort"
+
 Revision 1.61  2007/01/05 08:30:54  cheshire
 Trim excessive "$Log" checkin history from before 2006
 (checkin history still available via "cvs log ..." of course)
@@ -347,7 +350,7 @@ mDNSlocal uDNS_TCPSocket ConnectToServer(DaemonInfo *d)
 
 	while (1)
 		{
-		mDNSIPPort port = { { 0 } };
+		mDNSIPPort port = zeroIPPort;
 		int fd;
 
 		uDNS_TCPSocket sock = mDNSPlatformTCPSocket( NULL, 0, &port );

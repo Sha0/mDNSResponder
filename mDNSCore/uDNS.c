@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.282  2007/01/17 22:06:01  cheshire
+Replace duplicated literal constant "{ { 0 } }" with symbol "zeroIPPort"
+
 Revision 1.281  2007/01/17 21:58:13  cheshire
 For clarity, rename ntaContext field "isPrivate" to "ntaPrivate"
 
@@ -1531,7 +1534,7 @@ mDNSlocal void startLLQHandshakePrivate(mDNS *m, LLQ_Info *info, mDNSBool defer)
 		{
 		uDNS_TCPSocket	tcpSock = mDNSNULL;
 		uDNS_UDPSocket	udpSock = mDNSNULL;
-		mDNSIPPort		port = { { 0 } };
+		mDNSIPPort		port = zeroIPPort;
 		mDNSBool		good = mDNSfalse;
 		int				i;
 
@@ -1961,7 +1964,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 		{
 		tcpInfo_t		*	info;
 		uDNS_TCPSocket		sock;
-		mDNSIPPort			port = { { 0 } };
+		mDNSIPPort			port = zeroIPPort;
 
 		info = (tcpInfo_t *)mDNSPlatformMemAllocate(sizeof(tcpInfo_t));
 
@@ -2801,7 +2804,7 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 		{
 		tcpInfo_t		*	info;
 		uDNS_TCPSocket		sock;
-		mDNSIPPort			port = { { 0 } };
+		mDNSIPPort			port = zeroIPPort;
 
 		info = (tcpInfo_t *)mDNSPlatformMemAllocate(sizeof(tcpInfo_t));
 
@@ -3443,7 +3446,7 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 		{
 		tcpInfo_t	*	info;
 		uDNS_TCPSocket	sock;
-		mDNSIPPort		port = { { 0 } };
+		mDNSIPPort		port = zeroIPPort;
 
 		info = (tcpInfo_t *)mDNSPlatformMemAllocate(sizeof(tcpInfo_t));
 
@@ -3869,7 +3872,7 @@ mDNSlocal void hndlTruncatedAnswer(DNSQuestion *question, const mDNSAddr *src, m
 	{
 	uDNS_TCPSocket sock = mDNSNULL;
 	tcpInfo_t *context;
-	mDNSIPPort port = { { 0 } };
+	mDNSIPPort port = zeroIPPort;
 	mStatus err = mStatus_NoError;
 
 	if (!src)
@@ -4210,7 +4213,7 @@ mDNSlocal void startPrivateQueryCallback(mStatus err, mDNS *const m, void * cont
 	tcpInfo_t * info;
 	DomainAuthInfo * authInfo = mDNSNULL;
 	uDNS_TCPSocket	sock = mDNSNULL;
-	mDNSIPPort		port = { { 0 } };
+	mDNSIPPort		port = zeroIPPort;
 
 	if (err)
 		{
@@ -4546,7 +4549,7 @@ mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 		{
 		tcpInfo_t	*	info;
 		uDNS_TCPSocket	sock;
-		mDNSIPPort		port = { { 0 } };
+		mDNSIPPort		port = zeroIPPort;
 
 		info = (tcpInfo_t *)mDNSPlatformMemAllocate(sizeof(tcpInfo_t));
 
