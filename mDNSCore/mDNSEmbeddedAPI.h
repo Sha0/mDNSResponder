@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.323  2007/01/17 21:46:02  cheshire
+Remove redundant duplicated "isPrivate" field from LLQ_Info
+
 Revision 1.322  2007/01/10 22:51:56  cheshire
 <rdar://problem/4917539> Add support for one-shot private queries as well as long-lived private queries
 
@@ -1019,7 +1022,6 @@ typedef enum
 typedef struct
 	{
 	LLQ_State state;
-	mDNSBool isPrivate;
 	NATTraversalInfo * NATInfoTCP;	// This is used if we're browsing behind a NAT
 	NATTraversalInfo * NATInfoUDP;
 	mDNSAddr servAddr;

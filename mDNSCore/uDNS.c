@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.280  2007/01/17 21:46:02  cheshire
+Remove redundant duplicated "isPrivate" field from LLQ_Info
+
 Revision 1.279  2007/01/17 21:35:31  cheshire
 For clarity, rename zoneData_t field "isPrivate" to "zonePrivate"
 
@@ -884,7 +887,7 @@ mDNSlocal void StartLLQNatMap(mDNS *m, LLQ_Info * llq)
 		}
 	else
 		{
-		if (llq->isPrivate)
+		if (llq->question->Private)
 			{
 			llq->NATInfoUDP = AllocLLQNatMap(m, NATOp_MapUDP, llq->eventPort, uDNS_HandleNATPortMapReply);
 			}
@@ -1485,7 +1488,7 @@ mDNSlocal void recvSetupResponse(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *end,
 		// an issue for private LLQs, because we skip parts 2 and 3 of the handshake.  This is related to a bigger
 		// problem of the current implementation of TCP LLQ setup: we're not handling state transitions correctly
 		// if the server sends back SERVFULL or STATIC.
-		if (info->isPrivate)
+		if (info->question->Private)
 			info->id = llq.id;
 
 		hndlChallengeResponseAck(m, pktMsg, end, &llq, q);
@@ -1775,7 +1778,7 @@ mDNSlocal void LLQNatMapComplete(mDNS *m, NATTraversalInfo * n)
 		m->CurrentQuestion = m->CurrentQuestion->next;
 		if (q->LongLived && llqInfo)
 			{
-			if (llqInfo->isPrivate)
+			if (llqInfo->question->Private)
 				{
 				if ((llqInfo->state == LLQ_NatMapWaitTCP) && (llqInfo->NATInfoTCP == n))
 					{
@@ -1796,7 +1799,7 @@ mDNSlocal void LLQNatMapComplete(mDNS *m, NATTraversalInfo * n)
 						{
 						llqInfo->state = LLQ_GetZoneInfo;
 
-						if (llqInfo->isPrivate)
+						if (llqInfo->question->Private)
 							startLLQHandshakePrivate(m, llqInfo, mDNSfalse);
 						else
 							startLLQHandshake(m, llqInfo, mDNSfalse);
@@ -4171,7 +4174,8 @@ mDNSlocal void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqIn
     // cache necessary zone data
 	info->servAddr  = zoneInfo->primaryAddr;
 	info->servPort  = zoneInfo->llqPort;
-	info->isPrivate = zoneInfo->zonePrivate;
+	if (!zoneInfo->zonePrivate)
+		info->question->Private = mDNSNULL;
 
     info->ntries = 0;
 
@@ -4179,7 +4183,7 @@ mDNSlocal void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqIn
 		{
 		info->state = LLQ_Suspended;
 		}
-	else if (info->isPrivate)
+	else if (info->question->Private)
 		{
 		startLLQHandshakePrivate(m, info, mDNSfalse);
 		}
@@ -4922,7 +4926,7 @@ mDNSexport void uDNS_CheckQuery(mDNS * const m, DNSQuestion * q)
 					}
 				else if (llq->state == LLQ_InitialRequest)
 					{
-					if (llq->isPrivate)
+					if (llq->question->Private)
 						startLLQHandshakePrivate(m, llq, mDNSfalse);
 					else
 						startLLQHandshake(m, llq, mDNSfalse);
@@ -4934,7 +4938,7 @@ mDNSexport void uDNS_CheckQuery(mDNS * const m, DNSQuestion * q)
 				else if (llq->state == LLQ_Retry)
 					{
 					llq->ntries = 0;
-					if (llq->isPrivate)
+					if (llq->question->Private)
 						startLLQHandshakePrivate(m, llq, mDNSfalse);
 					else
 						startLLQHandshake(m, llq, mDNSfalse);
@@ -5200,7 +5204,7 @@ mDNSlocal void RestartQueries(mDNS *m)
 				if (llqInfo->state == LLQ_Suspended || llqInfo->state == LLQ_NatMapWaitTCP || llqInfo->state == LLQ_NatMapWaitUDP)
 					{
 					llqInfo->ntries = -1;
-					if (llqInfo->isPrivate)
+					if (llqInfo->question->Private)
 						startLLQHandshakePrivate(m, llqInfo, mDNStrue);	// we set defer to true since several events that may generate restarts often arrive in rapid succession, and this cuts unnecessary packets
 					else
 						startLLQHandshake(m, llqInfo, mDNSfalse);	// we set defer to true since several events that may generate restarts often arrive in rapid succession, and this cuts unnecessary packets
