@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.41  2007/01/18 23:18:17  cheshire
+Source code tidying: Delete extraneous white space
+
 Revision 1.40  2007/01/05 08:30:40  cheshire
 Trim excessive "$Log" checkin history from before 2006
 (checkin history still available via "cvs log ..." of course)
@@ -57,7 +60,6 @@ Split out SameRDataBody() into a separate routine so it can be called from other
 	extern "C" {
 #endif
 
-
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark - DNS Protocol Constants
@@ -68,7 +70,7 @@ typedef enum
 	kDNSFlag0_QR_Mask     = 0x80,		// Query or response?
 	kDNSFlag0_QR_Query    = 0x00,
 	kDNSFlag0_QR_Response = 0x80,
-	
+
 	kDNSFlag0_OP_Mask     = 0x78,		// Operation type
 	kDNSFlag0_OP_StdQuery = 0x00,
 	kDNSFlag0_OP_Iquery   = 0x08,
@@ -76,14 +78,14 @@ typedef enum
 	kDNSFlag0_OP_Unused3  = 0x18,
 	kDNSFlag0_OP_Notify   = 0x20,
 	kDNSFlag0_OP_Update   = 0x28,
-	
+
 	kDNSFlag0_QROP_Mask   = kDNSFlag0_QR_Mask | kDNSFlag0_OP_Mask,
-	
+
 	kDNSFlag0_AA          = 0x04,		// Authoritative Answer?
 	kDNSFlag0_TC          = 0x02,		// Truncated?
 	kDNSFlag0_RD          = 0x01,		// Recursion Desired?
 	kDNSFlag1_RA          = 0x80,		// Recursion Available?
-	
+
 	kDNSFlag1_Zero        = 0x40,		// Reserved; must be zero
 	kDNSFlag1_AD          = 0x20,		// Authentic Data [RFC 2535]
 	kDNSFlag1_CD          = 0x10,		// Checking Disabled [RFC 2535]
@@ -108,7 +110,6 @@ typedef enum
 	TSIG_ErrBadKey  = 17,
 	TSIG_ErrBadTime = 18
 	} TSIG_ErrorCode;
-	
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -122,18 +123,17 @@ extern mDNSInterfaceID GetNextActiveInterfaceID(const NetworkInterfaceInfo *intf
 extern mDNSu32 mDNSRandom(mDNSu32 max);
 extern mDNSu32 mDNSRandomFromFixedSeed(mDNSu32 seed, mDNSu32 max);
 
-
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
 #pragma mark - Domain Name Utility Functions
 #endif
-	
+
 #define mdnsIsDigit(X)     ((X) >= '0' && (X) <= '9')
 #define mDNSIsUpperCase(X) ((X) >= 'A' && (X) <= 'Z')
 #define mDNSIsLowerCase(X) ((X) >= 'a' && (X) <= 'z')
 #define mdnsIsLetter(X)    (mDNSIsUpperCase(X) || mDNSIsLowerCase(X))
-	
+
 #define mdnsValidHostChar(X, notfirst, notlast) (mdnsIsLetter(X) || mdnsIsDigit(X) || ((notfirst) && (notlast) && (X) == '-') )
 
 extern mDNSu16 CompressedDomainNameLength(const domainname *const name, const domainname *parent);
@@ -144,7 +144,6 @@ extern mDNSu32 RemoveLabelSuffix(domainlabel *name, mDNSBool RichText);
 extern void AppendLabelSuffix(domainlabel *name, mDNSu32 val, mDNSBool RichText);
 #define ValidateDomainName(N) (DomainNameLength(N) <= MAX_DOMAIN_NAME)
 
-
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
@@ -152,71 +151,50 @@ extern void AppendLabelSuffix(domainlabel *name, mDNSu32 val, mDNSBool RichText)
 #endif
 
 extern mDNSu32 RDataHashValue(mDNSu16 const rdlength, const RDataBody *const rdb);
-
 extern mDNSBool SameRDataBody(const ResourceRecord *const r1, const RDataBody *const r2);
 extern mDNSBool SameRData(const ResourceRecord *const r1, const ResourceRecord *const r2);
-
 extern mDNSBool ResourceRecordAnswersQuestion(const ResourceRecord *const rr, const DNSQuestion *const q);
 extern mDNSBool SameNameRecordAnswersQuestion(const ResourceRecord *const rr, const DNSQuestion *const q);
-
 extern mDNSBool SameResourceRecord(ResourceRecord *r1, ResourceRecord *r2);
-	
 extern mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate);
+extern mDNSBool ValidateRData(const mDNSu16 rrtype, const mDNSu16 rdlength, const RData *const rd);
 
 #define GetRRDomainNameTarget(RR) (                                                                          \
 	((RR)->rrtype == kDNSType_CNAME || (RR)->rrtype == kDNSType_PTR || (RR)->rrtype == kDNSType_NS)          \
 	                                                                 ? &(RR)->rdata->u.name       :          \
 	((RR)->rrtype == kDNSType_SRV                                  ) ? &(RR)->rdata->u.srv.target : mDNSNULL )
 
-extern mDNSBool ValidateRData(const mDNSu16 rrtype, const mDNSu16 rdlength, const RData *const rd);
 #define LocalRecordReady(X) ((X)->resrec.RecordType != kDNSRecordTypeUnique && (X)->resrec.RecordType != kDNSRecordTypeDeregistering)
-
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
-#pragma mark -
 #pragma mark -
 #pragma mark - DNS Message Creation Functions
 #endif
 
 extern void InitializeDNSMessage(DNSMessageHeader *h, mDNSOpaque16 id, mDNSOpaque16 flags);
 extern const mDNSu8 *FindCompressionPointer(const mDNSu8 *const base, const mDNSu8 *const end, const mDNSu8 *const domname);
-
 extern mDNSu8 *putDomainNameAsLabels(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, const domainname *const name);
-	
 extern mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, ResourceRecord *rr);
 
 // If we have a single large record to put in the packet, then we allow the packet to be up to 9K bytes,
-// but in the normal case we try to keep the packets below 1500 to avoid IP fragmentation on standard Ethernet	
-
+// but in the normal case we try to keep the packets below 1500 to avoid IP fragmentation on standard Ethernet
 extern mDNSu8 *PutResourceRecordTTLWithLimit(DNSMessage *const msg, mDNSu8 *ptr, mDNSu16 *count, ResourceRecord *rr, mDNSu32 ttl, const mDNSu8 *limit);
-
 #define PutResourceRecordTTL(msg, ptr, count, rr, ttl) PutResourceRecordTTLWithLimit((msg), (ptr), (count), (rr), (ttl), \
 	((msg)->h.numAnswers || (msg)->h.numAuthorities || (msg)->h.numAdditionals) ? (msg)->data + NormalMaxDNSMessageData : (msg)->data + AbsoluteMaxDNSMessageData)
-
 #define PutResourceRecordTTLJumbo(msg, ptr, count, rr, ttl) PutResourceRecordTTLWithLimit((msg), (ptr), (count), (rr), (ttl), \
 	(msg)->data + AbsoluteMaxDNSMessageData)
-			
 extern mDNSu8 *PutResourceRecordCappedTTL(DNSMessage *const msg, mDNSu8 *ptr, mDNSu16 *count, ResourceRecord *rr, mDNSu32 maxttl);
-
 extern mDNSu8 *putEmptyResourceRecord(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, mDNSu16 *count, const AuthRecord *rr);
 
 extern mDNSu8 *putQuestion(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, const domainname *const name, mDNSu16 rrtype, mDNSu16 rrclass);
-
 extern mDNSu8 *putZone(DNSMessage *const msg, mDNSu8 *ptr, mDNSu8 *limit, const domainname *zone, mDNSOpaque16 zoneClass);
-
 extern mDNSu8 *putPrereqNameNotInUse(domainname *name, DNSMessage *msg, mDNSu8 *ptr, mDNSu8 *end);
-
 extern mDNSu8 *putDeletionRecord(DNSMessage *msg, mDNSu8 *ptr, ResourceRecord *rr);
-
 extern  mDNSu8 *putDeleteRRSet(DNSMessage *msg, mDNSu8 *ptr, const domainname *name, mDNSu16 rrtype);
-
 extern mDNSu8 *putDeleteAllRRSets(DNSMessage *msg, mDNSu8 *ptr, const domainname *name);
-	
 extern mDNSu8 *putUpdateLease(DNSMessage *msg, mDNSu8 *end, mDNSu32 lease);
-	
 #define PutResourceRecord(MSG, P, C, RR) PutResourceRecordTTL((MSG), (P), (C), (RR), (RR)->rroriginalttl)
-
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -225,42 +203,28 @@ extern mDNSu8 *putUpdateLease(DNSMessage *msg, mDNSu8 *end, mDNSu32 lease);
 #endif
 
 extern mDNSu32 DomainNameHashValue(const domainname *const name);
-
 extern void SetNewRData(ResourceRecord *const rr, RData *NewRData, mDNSu16 rdlength);
-
-
 extern const mDNSu8 *skipDomainName(const DNSMessage *const msg, const mDNSu8 *ptr, const mDNSu8 *const end);
-
 extern const mDNSu8 *getDomainName(const DNSMessage *const msg, const mDNSu8 *ptr, const mDNSu8 *const end,
 	domainname *const name);
-	
 extern const mDNSu8 *skipResourceRecord(const DNSMessage *msg, const mDNSu8 *ptr, const mDNSu8 *end);
-
-extern const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage * const msg, const mDNSu8 *ptr, 
+extern const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage * const msg, const mDNSu8 *ptr,
     const mDNSu8 * end, const mDNSInterfaceID InterfaceID, mDNSu8 RecordType, LargeCacheRecord *largecr);
-
 extern const mDNSu8 *skipQuestion(const DNSMessage *msg, const mDNSu8 *ptr, const mDNSu8 *end);
-
 extern const mDNSu8 *getQuestion(const DNSMessage *msg, const mDNSu8 *ptr, const mDNSu8 *end, const mDNSInterfaceID InterfaceID,
 	DNSQuestion *question);
-	
 extern const mDNSu8 *LocateAnswers(const DNSMessage *const msg, const mDNSu8 *const end);
-
 extern const mDNSu8 *LocateAuthorities(const DNSMessage *const msg, const mDNSu8 *const end);
-
 extern const mDNSu8 *LocateAdditionals(const DNSMessage *const msg, const mDNSu8 *const end);
-
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
-#pragma mark -
 #pragma mark -
 #pragma mark - Packet Sending Functions
 #endif
 
 extern mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg, mDNSu8 *end,
 	mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, uDNS_TCPSocket sock, DomainAuthInfo *authInfo);
-
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
