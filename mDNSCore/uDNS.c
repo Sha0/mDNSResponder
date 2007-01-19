@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.290  2007/01/19 23:41:45  cheshire
+Need to clear m->rec.r.resrec.RecordType after calling GetLLQOptData()
+
 Revision 1.289  2007/01/19 23:32:07  cheshire
 Eliminate pointless timenow variable
 
@@ -1067,7 +1070,7 @@ mDNSlocal void recvRefreshReply(mDNS *m, DNSMessage *msg, const mDNSu8 *end, DNS
 	{
 	LLQ_Info *qInfo = q->llq;
 	const rdataOPT *pktData = GetLLQOptData(m, msg, end);
-
+	m->rec.r.resrec.RecordType = 0;
 	if (!pktData) { LogMsg("ERROR recvRefreshReply - GetLLQOptData"); return; }
 	if (pktData->OptData.llq.llqOp != kLLQOp_Refresh) return;
 	if (!mDNSSameOpaque64(&pktData->OptData.llq.id, &qInfo->id)) { LogMsg("recvRefreshReply - ID mismatch.  Discarding");  return; }
@@ -1268,6 +1271,7 @@ mDNSlocal void tcpCallback(uDNS_TCPSocket sock, void * context, mDNSBool Connect
 					{
 					const rdataOPT *llq = GetLLQOptData(m, msg, (mDNSu8*) (msg + tcpInfo->replylen));
 					if (llq) tcpInfo->llqInfo->id = llq->OptData.llq.id;
+					m->rec.r.resrec.RecordType = 0;
 					}
 
 				recvLLQResponse(m, msg, (mDNSu8*) (msg + tcpInfo->replylen), &tcpInfo->llqInfo->servAddr, tcpInfo->llqInfo->servPort);
@@ -1540,6 +1544,8 @@ mDNSlocal void recvSetupResponse(mDNS *const m, const DNSMessage *const pktMsg, 
 	err = mStatus_UnknownErr;
 
 exit:
+
+	m->rec.r.resrec.RecordType = 0;
 
 	if (err)
 		{
