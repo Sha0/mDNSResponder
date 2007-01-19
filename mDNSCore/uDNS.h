@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.50  2007/01/19 21:17:32  cheshire
+StartLLQPolling needs to call SetNextQueryTime() to cause query to be done in a timely fashion
+
 Revision 1.49  2007/01/17 21:35:31  cheshire
 For clarity, rename zoneData_t field "isPrivate" to "zonePrivate"
 
@@ -112,6 +115,7 @@ extern void uDNS_Wake(mDNS *const m);
 extern mStatus uDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr, ExtraResourceRecord *extra);
 extern mStatus uDNS_UpdateRecord(mDNS *m, AuthRecord *rr);
 
+extern void SetNextQueryTime(mDNS *const m, const DNSQuestion *const q);
 extern mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr);
 extern mStatus uDNS_RegisterRecord(mDNS *const m, AuthRecord *const rr);
 extern mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr);

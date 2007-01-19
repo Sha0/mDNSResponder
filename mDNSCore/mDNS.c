@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.580  2007/01/19 21:17:33  cheshire
+StartLLQPolling needs to call SetNextQueryTime() to cause query to be done in a timely fashion
+
 Revision 1.579  2007/01/19 18:39:10  cheshire
 Fix a bunch of parameters that should have been declared "const"
 
@@ -249,7 +252,7 @@ mDNSexport const char *const mDNS_DomainTypeNames[] =
 #define ActiveQuestion(Q) ((Q)->ThisQInterval > 0 && !(Q)->DuplicateOf)
 #define TimeToSendThisQuestion(Q,time) (ActiveQuestion(Q) && (time) - ((Q)->LastQTime + (Q)->ThisQInterval) >= 0)
 
-mDNSlocal void SetNextQueryTime(mDNS *const m, const DNSQuestion *const q)
+mDNSexport void SetNextQueryTime(mDNS *const m, const DNSQuestion *const q)
 	{
 	if (ActiveQuestion(q))
 		{

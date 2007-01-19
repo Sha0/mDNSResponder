@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.286  2007/01/19 21:17:33  cheshire
+StartLLQPolling needs to call SetNextQueryTime() to cause query to be done in a timely fashion
+
 Revision 1.285  2007/01/19 18:39:11  cheshire
 Fix a bunch of parameters that should have been declared "const"
 
@@ -881,13 +884,14 @@ mDNSexport void pktResponseHndlr(mDNS *const m, const DNSMessage *const msg, con
 	return;
 	}
 
-mDNSlocal void startLLQPolling(mDNS * const m, LLQ_Info * info)
+mDNSlocal void StartLLQPolling(mDNS * const m, LLQ_Info * info)
 	{
-	LogOperation("startLLQPolling: %##s", info->question->qname.c);
+	LogOperation("StartLLQPolling: %##s", info->question->qname.c);
 	info->question->responseCallback = pktResponseHndlr;
 	info->state = LLQ_Poll;
-	info->question->LastQTime = m->timenow;  // trigger immediate poll
 	info->question->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
+	info->question->LastQTime     = m->timenow - info->question->ThisQInterval;  // trigger immediate poll
+	SetNextQueryTime(m, info->question);
 	}
 
 mDNSlocal void StartLLQNatMap(mDNS *m, LLQ_Info * llq)
@@ -1172,7 +1176,7 @@ mDNSlocal void tcpCallback(uDNS_TCPSocket sock, void * context, mDNSBool Connect
 		// Record time we sent this questions
 		// (Not sure why we care)
 		if (tcpInfo->question)
-			tcpInfo->question->LastQTime = mDNS_TimeNow_NoLock(m);
+			tcpInfo->question->LastQTime = mDNS_TimeNow(m);
 		}
 	else
 		{
@@ -1528,7 +1532,7 @@ exit:
 
 	if (err)
 		{
-		startLLQPolling(m, info);
+		StartLLQPolling(m, info);
 		}
 	}
 
@@ -1681,7 +1685,7 @@ exit:
 
 	if (err)
 		{
-		startLLQPolling(m, info);
+		StartLLQPolling(m, info);
 		}
 	}
 
@@ -1783,7 +1787,7 @@ exit:
 
 	if (err)
 		{
-		startLLQPolling(m, info);
+		StartLLQPolling(m, info);
 		}
 	}
 
@@ -1816,7 +1820,7 @@ mDNSlocal void LLQNatMapComplete(mDNS *m, NATTraversalInfo * n)
 					else
 						{
 						RemoveLLQNatMappings(m, llqInfo);
-						startLLQPolling(m, llqInfo);
+						StartLLQPolling(m, llqInfo);
 						}
 					}
 				else if ((llqInfo->state == LLQ_NatMapWaitUDP) && (llqInfo->NATInfoUDP == n))
@@ -1833,7 +1837,7 @@ mDNSlocal void LLQNatMapComplete(mDNS *m, NATTraversalInfo * n)
 					else
 						{
 						RemoveLLQNatMappings(m, llqInfo);
-						startLLQPolling(m, llqInfo);
+						StartLLQPolling(m, llqInfo);
 						}
 					}
 				}
@@ -1849,7 +1853,7 @@ mDNSlocal void LLQNatMapComplete(mDNS *m, NATTraversalInfo * n)
 					else
 						{
 						RemoveLLQNatMappings(m, llqInfo);
-						startLLQPolling(m, llqInfo);
+						StartLLQPolling(m, llqInfo);
 						}
 					}
 				}
@@ -4115,9 +4119,9 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease, uDNS_TCPSo
 		info->expire - timenow < 0)
 		{
 		LogMsg("Unable to refresh LLQ %##s - will retry in %d minutes", q->qname.c, kLLQ_DEF_RETRY/60);
-		info->state                 = LLQ_Retry;
-		q->LastQTime                = m->timenow;
-		q->ThisQInterval            = kLLQ_DEF_RETRY * mDNSPlatformOneSecond;
+		info->state      = LLQ_Retry;
+		q->LastQTime     = m->timenow;
+		q->ThisQInterval = kLLQ_DEF_RETRY * mDNSPlatformOneSecond;
 		return;
 		//!!!KRS handle this - periodically try to re-establish
 		}
@@ -4175,7 +4179,7 @@ mDNSlocal void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqIn
 	if (err)
 		{
 		LogMsg("ERROR: startLLQHandshakeCallback %##s invoked with error code %ld", info->question->qname.c, err);
-		startLLQPolling(m, info);
+		StartLLQPolling(m, info);
 		err = mStatus_NoError;
 		goto exit;
 		}
@@ -4193,7 +4197,7 @@ mDNSlocal void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqIn
 		{
 		debugf("LLQ port lookup failed - reverting to polling");
 		info->servPort = zeroIPPort;
-		startLLQPolling(m, info);
+		StartLLQPolling(m, info);
 		goto exit;
 		}
 
