@@ -22,6 +22,11 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.283  2007/01/19 18:09:33  cheshire
+Fixed getLLQAtIndex (now called GetLLQOptData):
+1. It incorrectly assumed all EDNS0 OPT records are the same size (it ignored optlen)
+2. It used inefficient memory copying instead of just returning a pointer
+
 Revision 1.282  2007/01/17 22:06:01  cheshire
 Replace duplicated literal constant "{ { 0 } }" with symbol "zeroIPPort"
 
@@ -924,7 +929,7 @@ mDNSlocal mDNSu8 *putLLQ(DNSMessage *const msg, mDNSu8 *ptr, DNSQuestion *questi
 	{
 	AuthRecord rr;
 	ResourceRecord *opt = &rr.resrec;
-	rdataOpt *optRD;
+	rdataOPT *optRD;
 
 	//!!!KRS when we implement multiple llqs per message, we'll need to memmove anything past the question section
 	if (includeQuestion)
@@ -963,87 +968,96 @@ mDNSlocal mStatus constructQueryMsg(DNSMessage *msg, mDNSu8 **endPtr, DNSQuestio
 	return mStatus_NoError;
 	}
 
-mDNSlocal mDNSBool getLLQAtIndex(mDNS *m, DNSMessage *msg, const mDNSu8 *end, LLQOptData *llq, int index)
+// On success, GetLLQOptData returns pointer to storage within shared "m->rec";
+// it is callers responsibilty to clear m->rec.r.resrec.RecordType after use
+// Note: An OPT RDataBody actually contains one or more variable-length rdataOPT objects packed together
+// The code that currently calls this assumes there's only one, instead of iterating through the set
+mDNSlocal rdataOPT *GetLLQOptData(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end)
 	{
-	LargeCacheRecord lcr;
 	int i;
-	const mDNSu8 *ptr;
+	const mDNSu8 *ptr = LocateAdditionals(msg, end);
+	if (!ptr) return(mDNSNULL);
 
-	mDNSPlatformMemZero(&lcr, sizeof(lcr));
-
-	ptr = LocateAdditionals(msg, end);
-	if (!ptr) return mDNSfalse;
-
-	// find the last additional
+	// Locate the OPT record.
+	// According to RFC 2671, "One OPT pseudo-RR can be added to the additional data section of either a request or a response."
+	// This implies that there may be *at most* one OPT record per DNS message, in the Additional Section,
+	// but not necessarily the *last* entry in the Additional Section.
 	for (i = 0; i < msg->h.numAdditionals; i++)
-//		{ ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAdd, &lcr); if (!ptr) return mDNSfalse; }
-//!!!KRS workaround for LH server bug, which puts OPT as first additional
 		{
-		ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAdd, &lcr);
-		if (!ptr) return mDNSfalse;
-		if (lcr.r.resrec.rrtype == kDNSType_OPT) break;
+		ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAdd, &m->rec);
+		if (!ptr) return(mDNSNULL);
+		if (m->rec.r.resrec.rrtype == kDNSType_OPT &&
+			m->rec.r.resrec.rdlength >= LLQ_OPT_RDLEN)
+			return(&m->rec.r.resrec.rdata->u.opt);
+		m->rec.r.resrec.RecordType = 0;		// Clear RecordType, ready to fetch the next one
 		}
-	if (lcr.r.resrec.rrtype != kDNSType_OPT) return mDNSfalse;
-	if (lcr.r.resrec.rdlength < (index + 1) * LLQ_OPT_RDLEN) return mDNSfalse;  // rdata too small
-	mDNSPlatformMemCopy((mDNSu8 *)&lcr.r.resrec.rdata->u.opt.OptData.llq + (index * sizeof(*llq)), llq, sizeof(*llq));
-	return mDNStrue;
+	return(mDNSNULL);
 	}
 
 mDNSlocal mDNSBool recvLLQEvent(mDNS *m, DNSQuestion *q, DNSMessage *msg, const mDNSu8 *end, const mDNSAddr *srcaddr, mDNSIPPort srcport)
 	{
-	DNSMessage ack;
-	mDNSu8 *ackEnd = ack.data;
-	mStatus err;
-	LLQOptData opt;
-
-    // find Opt RR, verify correct ID
-	if (!getLLQAtIndex(m, msg, end, &opt, 0))  { debugf("Pkt does not contain LLQ Opt");                         return mDNSfalse; }
-	if (!q->llq) { LogMsg("Error: recvLLQEvent - question object does not contain LLQ metadata");                return mDNSfalse; }
-	if (!mDNSSameOpaque64(&opt.id, &q->llq->id))
+	if (!q->llq) { LogMsg("Error: recvLLQEvent - question object does not contain LLQ metadata"); return mDNSfalse; }
+	else
 		{
-		debugf("recvLLQEvent opt.id %08X %08X != q->llq->id %08X %08X", opt.id.l[0], opt.id.l[1], q->llq->id.l[0], q->llq->id.l[1]);
-		return mDNSfalse;
+		// find Opt RR, verify correct ID
+		rdataOPT *opt = GetLLQOptData(m, msg, end);
+		if (!opt) { debugf("Pkt does not contain LLQ Opt"); return mDNSfalse; }
+		if (!mDNSSameOpaque64(&opt->OptData.llq.id, &q->llq->id))
+			{
+			debugf("recvLLQEvent opt->id %08X %08X != q->llq->id %08X %08X", opt->OptData.llq.id.l[0], opt->OptData.llq.id.l[1], q->llq->id.l[0], q->llq->id.l[1]);
+			goto efalse;
+			}
+		if (opt->OptData.llq.llqOp != kLLQOp_Event)
+			{
+			if (!q->llq->ntries) LogMsg("recvLLQEvent - Bad LLQ Opcode %d", opt->OptData.llq.llqOp);
+			goto efalse;
+			}
+	
+		// invoke response handler
+		if (m->CurrentQuestion != q)
+			{
+			LogMsg("recvLLQEvent: ERROR m->CurrentQuestion not set: q %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+			if (m->CurrentQuestion)
+				LogMsg("recvLLQEvent: ERROR m->CurrentQuestion not set: CurrentQuestion %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
+			else
+				LogMsg("recvLLQEvent: ERROR m->CurrentQuestion not set: CurrentQuestion NULL");
+			}
+	
+		q->responseCallback(m, msg, end, q);
+		// As long as client didn't cancel question out from under us, format and send LLQ ack
+		if (m->CurrentQuestion == q)
+			{
+			DNSMessage ack;
+			mDNSu8 *ackEnd;
+			InitializeDNSMessage(&ack.h, msg->h.id, ResponseFlags);
+			ackEnd = putLLQ(&ack, ack.data, mDNSNULL, &opt->OptData.llq, mDNSfalse);
+			if (ackEnd) mDNSSendDNSMessage(m, &ack, ackEnd, mDNSInterface_Any, srcaddr, srcport, mDNSNULL, mDNSNULL);
+			}
+		m->CurrentQuestion = mDNSNULL;
+
+		m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
+		return mDNStrue;
 		}
-	if (opt.llqOp != kLLQOp_Event) { if (!q->llq->ntries) LogMsg("recvLLQEvent - Bad LLQ Opcode %d", opt.llqOp); return mDNSfalse; }
-
-    // invoke response handler
-	if (m->CurrentQuestion != q)
-		{
-		LogMsg("recvLLQEvent: ERROR m->CurrentQuestion not set: q %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
-		if (m->CurrentQuestion)
-			LogMsg("recvLLQEvent: ERROR m->CurrentQuestion not set: CurrentQuestion %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
-		else
-			LogMsg("recvLLQEvent: ERROR m->CurrentQuestion not set: CurrentQuestion NULL");
-		}
-
-	q->responseCallback(m, msg, end, q);
-	if (m->CurrentQuestion != q) { m->CurrentQuestion = mDNSNULL; return mDNStrue; }
-	m->CurrentQuestion = mDNSNULL;
-
-    //  format and send ack
-	InitializeDNSMessage(&ack.h, msg->h.id, ResponseFlags);
-	ackEnd = putLLQ(&ack, ack.data, mDNSNULL, &opt, mDNSfalse);
-	if (!ackEnd) { LogMsg("ERROR: recvLLQEvent - putLLQ");  return mDNSfalse; }
-	err = mDNSSendDNSMessage(m, &ack, ackEnd, mDNSInterface_Any, srcaddr, srcport, mDNSNULL, mDNSNULL);
-	if (err) debugf("ERROR: recvLLQEvent - mDNSSendDNSMessage returned %ld", err);
-	return mDNStrue;
+	
+efalse:
+	m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
+	return mDNSfalse;
 	}
 
 mDNSlocal void recvRefreshReply(mDNS *m, DNSMessage *msg, const mDNSu8 *end, DNSQuestion *q)
 	{
-	LLQ_Info *qInfo;
-	LLQOptData pktData;
+	LLQ_Info *qInfo = q->llq;
+	const rdataOPT *pktData = GetLLQOptData(m, msg, end);
 
-	qInfo = q->llq;
-	if (!getLLQAtIndex(m, msg, end, &pktData, 0)) { LogMsg("ERROR recvRefreshReply - getLLQAtIndex"); return; }
-	if (pktData.llqOp != kLLQOp_Refresh) return;
-	if (!mDNSSameOpaque64(&pktData.id, &qInfo->id)) { LogMsg("recvRefreshReply - ID mismatch.  Discarding");  return; }
-	if (pktData.err != LLQErr_NoError) { LogMsg("recvRefreshReply: received error %d from server", pktData.err); return; }
+	if (!pktData) { LogMsg("ERROR recvRefreshReply - GetLLQOptData"); return; }
+	if (pktData->OptData.llq.llqOp != kLLQOp_Refresh) return;
+	if (!mDNSSameOpaque64(&pktData->OptData.llq.id, &qInfo->id)) { LogMsg("recvRefreshReply - ID mismatch.  Discarding");  return; }
+	if (pktData->OptData.llq.err != LLQErr_NoError) { LogMsg("recvRefreshReply: received error %d from server", pktData->OptData.llq.err); return; }
 
-	qInfo->expire    = q->LastQTime + ((mDNSs32)pktData.lease * mDNSPlatformOneSecond);
-	q->ThisQInterval = ((mDNSs32)pktData.lease * mDNSPlatformOneSecond/2);
+	qInfo->expire    = q->LastQTime + ((mDNSs32)pktData->OptData.llq.lease * mDNSPlatformOneSecond);
+	q->ThisQInterval = ((mDNSs32)pktData->OptData.llq.lease * mDNSPlatformOneSecond/2);
 
-	qInfo->origLease = pktData.lease;
+	qInfo->origLease = pktData->OptData.llq.lease;
 	qInfo->state = LLQ_Established;
 	}
 
@@ -1233,9 +1247,8 @@ mDNSlocal void tcpCallback(uDNS_TCPSocket sock, void * context, mDNSBool Connect
 				mDNS_Lock(m);
 				if (tcpInfo->llqInfo->state == LLQ_SecondaryRequest)
 					{
-					LLQOptData llq;
-					if (getLLQAtIndex(m, msg, (mDNSu8*) (msg + tcpInfo->replylen), &llq, 0))
-						tcpInfo->llqInfo->id = llq.id;
+					const rdataOPT *llq = GetLLQOptData(m, msg, (mDNSu8*) (msg + tcpInfo->replylen));
+					if (llq) tcpInfo->llqInfo->id = llq->OptData.llq.id;
 					}
 
 				recvLLQResponse(m, msg, (mDNSu8*) (msg + tcpInfo->replylen), &tcpInfo->llqInfo->servAddr, tcpInfo->llqInfo->servPort);
@@ -1359,7 +1372,7 @@ mDNSlocal void sendChallengeResponse(mDNS *m, DNSQuestion *q, LLQOptData *llq)
 	info->state = LLQ_Error;
 	}
 
-mDNSlocal void hndlRequestChallenge(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *end, LLQOptData *llq, DNSQuestion *q)
+mDNSlocal void hndlRequestChallenge(mDNS *const m, DNSMessage *const pktMsg, const mDNSu8 *const end, LLQOptData *const llq, DNSQuestion *const q)
 	{
 	LLQ_Info *info = q->llq;
 	mDNSs32 timenow = m->timenow;
@@ -1433,7 +1446,7 @@ mDNSlocal void hndlChallengeResponseAck(mDNS *m, DNSMessage *pktMsg, const mDNSu
 mDNSlocal void recvSetupResponse(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *end, DNSQuestion *q)
 	{
 	DNSQuestion pktQuestion;
-	LLQOptData llq;
+	rdataOPT *llq;
 	const mDNSu8 *ptr = pktMsg->data;
 	LLQ_Info *info = q->llq;
 	mDNSu8 rcode = (mDNSu8)(pktMsg->h.flags.b[1] & kDNSFlag1_RC);
@@ -1461,30 +1474,31 @@ mDNSlocal void recvSetupResponse(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *end,
 		goto exit;
 		}
 
-	if (!getLLQAtIndex(m, pktMsg, end, &llq, 0))
+	llq = GetLLQOptData(m, pktMsg, end);
+	if (!llq)
 		{
 		debugf("recvSetupResponse - GetLLQAtIndex");
 		err = mStatus_UnknownErr;
 		goto exit;
 		}
 
-	if (llq.llqOp != kLLQOp_Setup)
+	if (llq->OptData.llq.llqOp != kLLQOp_Setup)
 		{
-		LogMsg("ERROR: recvSetupResponse - bad op %d", llq.llqOp);
+		LogMsg("ERROR: recvSetupResponse - bad op %d", llq->OptData.llq.llqOp);
 		err = mStatus_UnknownErr;
 		goto exit;
 		}
 
-	if (llq.vers != kLLQ_Vers)
+	if (llq->OptData.llq.vers != kLLQ_Vers)
 		{
-		LogMsg("ERROR: recvSetupResponse - bad vers %d", llq.vers);
+		LogMsg("ERROR: recvSetupResponse - bad vers %d", llq->OptData.llq.vers);
 		err = mStatus_UnknownErr;
 		goto exit;
 		}
 
 	if (info->state == LLQ_InitialRequest)
 		{
-		hndlRequestChallenge(m, pktMsg, end, &llq, q);
+		hndlRequestChallenge(m, pktMsg, end, &llq->OptData.llq, q);
 		goto exit;
 		}
 
@@ -1495,9 +1509,9 @@ mDNSlocal void recvSetupResponse(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *end,
 		// problem of the current implementation of TCP LLQ setup: we're not handling state transitions correctly
 		// if the server sends back SERVFULL or STATIC.
 		if (info->question->Private)
-			info->id = llq.id;
+			info->id = llq->OptData.llq.id;
 
-		hndlChallengeResponseAck(m, pktMsg, end, &llq, q);
+		hndlChallengeResponseAck(m, pktMsg, end, &llq->OptData.llq, q);
 		goto exit;
 		}
 
