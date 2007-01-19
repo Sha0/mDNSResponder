@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.289  2007/01/19 23:32:07  cheshire
+Eliminate pointless timenow variable
+
 Revision 1.288  2007/01/19 23:26:08  cheshire
 Right now tcpCallback does not run holding the lock, so no need to drop the lock before invoking callbacks
 
@@ -4001,8 +4004,6 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 	mDNSu8 QR_OP   = (mDNSu8)(msg->h.flags.b[0] & kDNSFlag0_QROP_Mask);
 	mDNSu8 rcode   = (mDNSu8)(msg->h.flags.b[1] & kDNSFlag1_RC);
 
-	mDNSs32 timenow = m->timenow;
-
 	debugf("uDNS_ReceiveMsg from %#-15a with "
 		"%2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
 		srcaddr,
@@ -4026,7 +4027,7 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 			//!!!KRS we should have a hashtable, hashed on message id
 			if (qptr->TargetQID.NotAnInteger == msg->h.id.NotAnInteger)
 				{
-				if (timenow - (qptr->LastQTime + RESPONSE_WINDOW) > 0)
+				if (m->timenow - (qptr->LastQTime + RESPONSE_WINDOW) > 0)
 					{ debugf("uDNS_ReceiveMsg - response received after maximum allowed window.  Discarding"); return; }
 				if (msg->h.flags.b[0] & kDNSFlag0_TC)
 					{ hndlTruncatedAnswer(qptr, srcaddr, m); return; }
@@ -4121,11 +4122,9 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease, uDNS_TCPSo
 	LLQOptData llq;
 	LLQ_Info *info = q->llq;
 	mStatus err;
-	mDNSs32 timenow;
 
-	timenow = m->timenow;
 	if ((info->state == LLQ_Refresh && info->ntries >= kLLQ_MAX_TRIES) ||
-		info->expire - timenow < 0)
+		info->expire - m->timenow < 0)
 		{
 		LogMsg("Unable to refresh LLQ %##s - will retry in %d minutes", q->qname.c, kLLQ_DEF_RETRY/60);
 		info->state      = LLQ_Retry;
@@ -4151,7 +4150,7 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease, uDNS_TCPSo
 	if (info->state == LLQ_Established) info->ntries = 1;
 	else info->ntries++;
 	info->state = LLQ_Refresh;
-	q->LastQTime = timenow;
+	q->LastQTime = m->timenow;
 	}
 
 // wrapper for startLLQHandshake, invoked by async op callback
