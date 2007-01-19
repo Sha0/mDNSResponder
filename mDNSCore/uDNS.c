@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.284  2007/01/19 18:28:28  cheshire
+Improved debugging messages
+
 Revision 1.283  2007/01/19 18:09:33  cheshire
 Fixed getLLQAtIndex (now called GetLLQOptData):
 1. It incorrectly assumed all EDNS0 OPT records are the same size (it ignored optlen)
@@ -2450,7 +2453,7 @@ mDNSlocal void GetZoneData_Callback(mDNS *const m, DNSMessage *msg, const mDNSu8
 		goto error;
 		}
 
-	if (question) LogOperation("GetZoneData_Callback: Question %##s", question->qname.c);
+	if (question) LogOperation("GetZoneData_Callback: %d Question %##s", context->state, question->qname.c);
 	switch (context->state)
         {
         case init:
@@ -4231,7 +4234,7 @@ mDNSlocal void startPrivateQueryCallback(mStatus err, mDNS *const m, void * cont
 
 	if (err)
 		{
-		LogMsg("ERROR: startPrivateQueryCallback %##s invoked with error code %ld", question->qname.c, err);
+		LogMsg("ERROR: startPrivateQueryCallback %##s (%s) invoked with error code %ld", question->qname.c, DNSTypeName(question->qtype), err);
 		goto exit;
 		}
 
@@ -4255,7 +4258,7 @@ mDNSlocal void startPrivateQueryCallback(mStatus err, mDNS *const m, void * cont
 
 	if (!authInfo)
 		{
-		LogMsg("ERROR: startPrivateQueryCallback: cannot find credentials for question %##s", question->qname.c);
+		LogMsg("ERROR: startPrivateQueryCallback: cannot find credentials for question %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
 		err = mStatus_UnknownErr;
 		goto exit;
 		}
@@ -4997,7 +5000,7 @@ mDNSexport void uDNS_CheckQuery(mDNS * const m, DNSQuestion * q)
 					private = q->Private;
 					}
 
-				if (err)  LogMsg("Error: uDNS_CheckQuery - constructQueryMsg.  Skipping question %##s", q->qname.c);
+				if (err)  LogMsg("Error: uDNS_CheckQuery - constructQueryMsg.  Skipping question %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 				else
 					{
 					if (server->teststate != DNSServer_Failed)
