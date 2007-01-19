@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.324  2007/01/19 18:04:04  cheshire
+For naming consistency, use capital letters for RR types: rdataOpt should be rdataOPT
+
 Revision 1.323  2007/01/17 21:46:02  cheshire
 Remove redundant duplicated "isPrivate" field from LLQ_Info
 
@@ -598,13 +601,13 @@ typedef packedstruct
 // off the wire.  Use sizeof(LLQOptData) when dealing with structures (e.g. memcpy).  Never memcpy between on-the-wire
 // representation and a structure
 	
-// NOTE: rdataOpt format may be repeated an arbitrary number of times in a single resource record
+// NOTE: rdataOPT format may be repeated an arbitrary number of times in a single resource record
 typedef packedstruct
 	{
 	mDNSu16 opt;
 	mDNSu16 optlen;
 	union { LLQOptData llq; mDNSu32 lease; } OptData;
-	} rdataOpt;
+	} rdataOPT;
 
 // StandardAuthRDSize is 264 (256+8), which is large enough to hold a maximum-sized SRV record
 // MaximumRDSize is 8K the absolute maximum we support (at least for now)
@@ -636,8 +639,8 @@ typedef union
 	UTF8str255  txt;		// For TXT record
 	rdataSRV    srv;		// For SRV record
 	rdataMX     mx;			// For MX record
-	rdataSOA    soa;        // For SOA record
-	rdataOpt    opt;        // For eDNS0 opt record
+	rdataSOA    soa;		// For SOA record
+	rdataOPT    opt;		// For EDNS0 OPT record; RDataBody may contain multiple variable-length rdataOPT objects packed together
 	} RDataBody;
 
 typedef struct

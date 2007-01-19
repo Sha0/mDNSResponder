@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.124  2007/01/19 18:04:05  cheshire
+For naming consistency, use capital letters for RR types: rdataOpt should be rdataOPT
+
 Revision 1.123  2007/01/10 22:45:51  cheshire
 Cast static strings to "(const domainname*)", not "(domainname*)"
 
@@ -146,7 +149,6 @@ Improved GetRRDisplayString to also show priority, weight, and port for SRV reco
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
-#pragma mark -
 #pragma mark - Program Constants
 #endif
 
@@ -1207,7 +1209,6 @@ mDNSexport mDNSBool ValidateRData(const mDNSu16 rrtype, const mDNSu16 rdlength, 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
-#pragma mark -
 #pragma mark - DNS Message Creation Functions
 #endif
 
@@ -1342,13 +1343,13 @@ mDNSlocal mDNSu8 *putVal32(mDNSu8 *ptr, mDNSu32 val)
 mDNSlocal mDNSu8 *putOptRData(mDNSu8 *ptr, const mDNSu8 *limit, ResourceRecord *rr)
 	{
 	int nput = 0;
-	rdataOpt *opt;
+	rdataOPT *opt;
 	
 	while (nput < rr->rdlength)
 		{
 		// check if space for opt/optlen
 		if (ptr + (2 * sizeof(mDNSu16)) > limit) goto space_err;
-		opt = (rdataOpt *)(rr->rdata->u.data + nput);
+		opt = (rdataOPT *)(rr->rdata->u.data + nput);
 		ptr = putVal16(ptr, opt->opt);
 		ptr = putVal16(ptr, opt->optlen);
 		nput += 2 * sizeof(mDNSu16);
@@ -1390,9 +1391,9 @@ mDNSlocal const mDNSu8 *getOptRdata(const mDNSu8 *ptr, const mDNSu8 *const limit
 	{
 	int nread = 0;
 	ResourceRecord *const rr = &cr->r.resrec;
-	rdataOpt *opt = (rdataOpt *)rr->rdata->u.data;
+	rdataOPT *opt = (rdataOPT *)rr->rdata->u.data;
 
-	while (nread < pktRDLen && (mDNSu8 *)opt < rr->rdata->u.data + MaximumRDSize - sizeof(rdataOpt))
+	while (nread < pktRDLen && (mDNSu8 *)opt < rr->rdata->u.data + MaximumRDSize - sizeof(rdataOPT))
 		{
 		// space for opt + optlen
 		if (nread + (2 * sizeof(mDNSu16)) > rr->rdata->MaxRDLength) goto space_err;
@@ -1580,10 +1581,8 @@ mDNSexport mDNSu8 *putPrereqNameNotInUse(domainname *name, DNSMessage *msg, mDNS
 // for dynamic updates
 mDNSexport mDNSu8 *putDeletionRecord(DNSMessage *msg, mDNSu8 *ptr, ResourceRecord *rr)
 	{
-	mDNSu16 origclass;
 	// deletion: specify record w/ TTL 0, class NONE
-
-	origclass = rr->rrclass;
+	const mDNSu16 origclass = rr->rrclass;
 	rr->rrclass = kDNSClass_NONE;
 	ptr = PutResourceRecordTTLJumbo(msg, ptr, &msg->h.mDNS_numUpdates, rr, 0);
 	rr->rrclass = origclass;
@@ -1632,23 +1631,16 @@ mDNSexport mDNSu8 *putDeleteAllRRSets(DNSMessage *msg, mDNSu8 *ptr, const domain
 mDNSexport mDNSu8 *putUpdateLease(DNSMessage *msg, mDNSu8 *end, mDNSu32 lease)
 	{
 	AuthRecord rr;
-	ResourceRecord *opt = &rr.resrec;
-	rdataOpt *optRD;
-
 	mDNS_SetupResourceRecord(&rr, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, 0, mDNSNULL, mDNSNULL);
-	
-	opt->RecordType = kDNSRecordTypeKnownUnique;  // to avoid warnings in other layers
-	opt->rrtype = kDNSType_OPT;
-	opt->rdlength = LEASE_OPT_RDLEN;
-	opt->rdestimate = LEASE_OPT_RDLEN;
-
-	optRD = &rr.resrec.rdata->u.opt;
-	optRD->opt = kDNSOpt_Lease;
-	optRD->optlen = sizeof(mDNSs32);
-	optRD->OptData.lease = lease;
-	end = PutResourceRecordTTLJumbo(msg, end, &msg->h.numAdditionals, opt, 0);
+	rr.resrec.RecordType = kDNSRecordTypeKnownUnique;  // to avoid warnings in other layers
+	rr.resrec.rrtype     = kDNSType_OPT;
+	rr.resrec.rdlength   = LEASE_OPT_RDLEN;
+	rr.resrec.rdestimate = LEASE_OPT_RDLEN;
+	rr.resrec.rdata->u.opt.opt           = kDNSOpt_Lease;
+	rr.resrec.rdata->u.opt.optlen        = sizeof(mDNSs32);
+	rr.resrec.rdata->u.opt.OptData.lease = lease;
+	end = PutResourceRecordTTLJumbo(msg, end, &msg->h.numAdditionals, &rr.resrec, 0);
 	if (!end) { LogMsg("ERROR: putUpdateLease - PutResourceRecordTTL"); return mDNSNULL; }
-
 	return end;
 	}
 
@@ -1966,7 +1958,6 @@ mDNSexport const mDNSu8 *LocateAdditionals(const DNSMessage *const msg, const mD
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
-#pragma mark -
 #pragma mark -
 #pragma mark - Packet Sending Functions
 #endif
