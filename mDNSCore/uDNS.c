@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.288  2007/01/19 23:26:08  cheshire
+Right now tcpCallback does not run holding the lock, so no need to drop the lock before invoking callbacks
+
 Revision 1.287  2007/01/19 22:55:41  cheshire
 Eliminate redundant identical parameters to GetZoneData_StartQuery()
 
@@ -1305,9 +1308,10 @@ exit:
 
 			if (!deregPending)
 				{
-				mDNS_DropLockBeforeCallback();
+				// Right now tcpCallback does not run holding the lock, so no need to drop the lock
+				//mDNS_DropLockBeforeCallback();
 				if (tcpInfo->rr->RecordCallback) tcpInfo->rr->RecordCallback(m, tcpInfo->rr, err);
-				mDNS_ReclaimLockAfterCallback();
+				//mDNS_ReclaimLockAfterCallback();
 				}
 			}
 
@@ -1320,9 +1324,10 @@ exit:
 
 			if (!deregPending)
 				{
-				mDNS_DropLockBeforeCallback();
+				// Right now tcpCallback does not run holding the lock, so no need to drop the lock
+				//mDNS_DropLockBeforeCallback();
 				tcpInfo->srs->ServiceCallback(m, tcpInfo->srs, err);
-				mDNS_ReclaimLockAfterCallback();
+				//mDNS_ReclaimLockAfterCallback();
 				//!!!KRS will mem still be free'd on error?
 				// NOTE: not safe to touch any client structures here
 				}
