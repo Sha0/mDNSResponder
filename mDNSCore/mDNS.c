@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.579  2007/01/19 18:39:10  cheshire
+Fix a bunch of parameters that should have been declared "const"
+
 Revision 1.578  2007/01/10 22:51:57  cheshire
 <rdar://problem/4917539> Add support for one-shot private queries as well as long-lived private queries
 
@@ -4222,7 +4225,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
             
 				if ( !question->responseCallback )
 					{
-					extern void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const  mDNSu8 *end, DNSQuestion *question);
+					extern void pktResponseHndlr(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, DNSQuestion *const question);
 					question->responseCallback = pktResponseHndlr;
 					}   
 				}

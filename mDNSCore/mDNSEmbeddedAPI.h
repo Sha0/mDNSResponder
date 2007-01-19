@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.325  2007/01/19 18:39:11  cheshire
+Fix a bunch of parameters that should have been declared "const"
+
 Revision 1.324  2007/01/19 18:04:04  cheshire
 For naming consistency, use capital letters for RR types: rdataOpt should be rdataOPT
 
@@ -1069,7 +1072,7 @@ enum
 	LLQErr_UnknownErr = 6
 	};
 
-typedef void (*InternalResponseHndlr)(mDNS *const m, DNSMessage *msg, const  mDNSu8 *end, DNSQuestion *question);
+typedef void (*InternalResponseHndlr)(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, DNSQuestion *const question);
 
 #define HMAC_LEN    64
 #define HMAC_IPAD   0x36

@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.285  2007/01/19 18:39:11  cheshire
+Fix a bunch of parameters that should have been declared "const"
+
 Revision 1.284  2007/01/19 18:28:28  cheshire
 Improved debugging messages
 
@@ -766,8 +769,8 @@ mDNSlocal void RefreshNATMapping(NATTraversalInfo *n, mDNS *m)
 	uDNS_SendNATMsg(n, m);
 	}
 
-extern void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const mDNSu8 *end, DNSQuestion *question);
-mDNSexport void pktResponseHndlr(mDNS * const m, DNSMessage *msg, const mDNSu8 *end, DNSQuestion *question)
+extern void pktResponseHndlr(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, DNSQuestion *const question);
+mDNSexport void pktResponseHndlr(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, DNSQuestion *const question)
 	{
 	const mDNSu8 *ptr;
 	int i;
@@ -928,7 +931,7 @@ mDNSlocal void initializeQuery(DNSMessage *msg, DNSQuestion *question)
     InitializeDNSMessage(&msg->h, question->TargetQID, uQueryFlags);
 	}
 
-mDNSlocal mDNSu8 *putLLQ(DNSMessage *const msg, mDNSu8 *ptr, DNSQuestion *question, LLQOptData *data, mDNSBool includeQuestion)
+mDNSlocal mDNSu8 *putLLQ(DNSMessage *const msg, mDNSu8 *ptr, const DNSQuestion *const question, const LLQOptData *const data, mDNSBool includeQuestion)
 	{
 	AuthRecord rr;
 	ResourceRecord *opt = &rr.resrec;
@@ -975,7 +978,7 @@ mDNSlocal mStatus constructQueryMsg(DNSMessage *msg, mDNSu8 **endPtr, DNSQuestio
 // it is callers responsibilty to clear m->rec.r.resrec.RecordType after use
 // Note: An OPT RDataBody actually contains one or more variable-length rdataOPT objects packed together
 // The code that currently calls this assumes there's only one, instead of iterating through the set
-mDNSlocal rdataOPT *GetLLQOptData(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end)
+mDNSlocal const rdataOPT *GetLLQOptData(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end)
 	{
 	int i;
 	const mDNSu8 *ptr = LocateAdditionals(msg, end);
@@ -1003,7 +1006,7 @@ mDNSlocal mDNSBool recvLLQEvent(mDNS *m, DNSQuestion *q, DNSMessage *msg, const 
 	else
 		{
 		// find Opt RR, verify correct ID
-		rdataOPT *opt = GetLLQOptData(m, msg, end);
+		const rdataOPT *opt = GetLLQOptData(m, msg, end);
 		if (!opt) { debugf("Pkt does not contain LLQ Opt"); return mDNSfalse; }
 		if (!mDNSSameOpaque64(&opt->OptData.llq.id, &q->llq->id))
 			{
@@ -1328,7 +1331,7 @@ exit:
 		}
 	}
 
-mDNSlocal void sendChallengeResponse(mDNS *m, DNSQuestion *q, LLQOptData *llq)
+mDNSlocal void sendChallengeResponse(const mDNS *const m, DNSQuestion *const q, const LLQOptData *llq)
 	{
 	LLQ_Info *info = q->llq;
 	DNSMessage response;
@@ -1350,12 +1353,12 @@ mDNSlocal void sendChallengeResponse(mDNS *m, DNSQuestion *q, LLQOptData *llq)
 
 	if (!llq)
 		{
+		llqBuf.vers  = kLLQ_Vers;
+		llqBuf.llqOp = kLLQOp_Setup;
+		llqBuf.err   = LLQErr_NoError;
+		llqBuf.id    = info->id;
+		llqBuf.lease = info->origLease;
 		llq = &llqBuf;
-		llq->vers  = kLLQ_Vers;
-		llq->llqOp = kLLQOp_Setup;
-		llq->err   = LLQErr_NoError;
-		llq->id    = info->id;
-		llq->lease = info->origLease;
 		}
 
 	q->LastQTime     = timenow;
@@ -1375,7 +1378,7 @@ mDNSlocal void sendChallengeResponse(mDNS *m, DNSQuestion *q, LLQOptData *llq)
 	info->state = LLQ_Error;
 	}
 
-mDNSlocal void hndlRequestChallenge(mDNS *const m, DNSMessage *const pktMsg, const mDNSu8 *const end, LLQOptData *const llq, DNSQuestion *const q)
+mDNSlocal void hndlRequestChallenge(mDNS *const m, const DNSMessage *const pktMsg, const mDNSu8 *const end, const LLQOptData *const llq, DNSQuestion *const q)
 	{
 	LLQ_Info *info = q->llq;
 	mDNSs32 timenow = m->timenow;
@@ -1425,7 +1428,7 @@ mDNSlocal void hndlRequestChallenge(mDNS *const m, DNSMessage *const pktMsg, con
 	info->state = LLQ_Error;
 	}
 
-mDNSlocal void hndlChallengeResponseAck(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *end, LLQOptData *llq, DNSQuestion *q)
+mDNSlocal void hndlChallengeResponseAck(mDNS *const m, const DNSMessage *const pktMsg, const mDNSu8 *const end, const LLQOptData *const llq, DNSQuestion *const q)
 	{
 	LLQ_Info *info = q->llq;
 
@@ -1446,10 +1449,10 @@ mDNSlocal void hndlChallengeResponseAck(mDNS *m, DNSMessage *pktMsg, const mDNSu
 	}
 
 // response handler for initial and secondary setup responses
-mDNSlocal void recvSetupResponse(mDNS *m, DNSMessage *pktMsg, const mDNSu8 *end, DNSQuestion *q)
+mDNSlocal void recvSetupResponse(mDNS *const m, const DNSMessage *const pktMsg, const mDNSu8 *const end, DNSQuestion *const q)
 	{
 	DNSQuestion pktQuestion;
-	rdataOPT *llq;
+	const rdataOPT *llq;
 	const mDNSu8 *ptr = pktMsg->data;
 	LLQ_Info *info = q->llq;
 	mDNSu8 rcode = (mDNSu8)(pktMsg->h.flags.b[1] & kDNSFlag1_RC);
@@ -2151,7 +2154,7 @@ mDNSlocal const domainname *PRIVATE_LLQ_SERVICE_TYPE    = (const domainname*)"\x
 	(const domainname*)"")
 
 // Forward reference: hndlLookupSOA references GetZoneData_Callback and vice versa
-mDNSlocal void GetZoneData_Callback(mDNS *const m, DNSMessage *msg, const mDNSu8 *end, DNSQuestion *question);
+mDNSlocal void GetZoneData_Callback(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, DNSQuestion *const question);
 
 // explicitly set response handler
 mDNSlocal mStatus GetZoneData_StartQuery(mDNS *m, DNSQuestion *q, InternalResponseHndlr callback, void *hndlrContext)
@@ -2189,7 +2192,7 @@ mDNSlocal void processSOA(ntaContext *context, ResourceRecord *rr)
 	context->state = foundZone;
 	}
 
-mDNSlocal smAction hndlLookupSOA(DNSMessage *msg, const mDNSu8 *end, ntaContext *context)
+mDNSlocal smAction hndlLookupSOA(const DNSMessage *const msg, const mDNSu8 *const end, ntaContext *const context)
     {
     mStatus err;
     LargeCacheRecord lcr;
@@ -2248,7 +2251,7 @@ mDNSlocal smAction hndlLookupSOA(DNSMessage *msg, const mDNSu8 *end, ntaContext 
     return smBreak;     // break from state machine until we receive another packet
     }
 
-mDNSlocal smAction confirmNS(DNSMessage *msg, const mDNSu8 *end, ntaContext *context)
+mDNSlocal smAction confirmNS(const DNSMessage *const msg, const mDNSu8 *const end, ntaContext *const context)
 	{
 	DNSQuestion *query = &context->question;
 	mStatus err;
@@ -2298,7 +2301,7 @@ mDNSlocal smAction confirmNS(DNSMessage *msg, const mDNSu8 *end, ntaContext *con
 			return smError;
 		}
 	}
-mDNSlocal smAction lookupDNSPort(DNSMessage *msg, const mDNSu8 *end, ntaContext *context, mDNSIPPort *port)
+mDNSlocal smAction lookupDNSPort(const DNSMessage *const msg, const mDNSu8 *const end, ntaContext *const context, mDNSIPPort *const port)
 	{
 	int i;
 	LargeCacheRecord lcr;
@@ -2366,7 +2369,7 @@ mDNSlocal smAction queryNSAddr(ntaContext *context)
 	return smBreak;
 	}
 
-mDNSlocal smAction lookupNSAddr(DNSMessage *msg, const mDNSu8 *end, ntaContext *context)
+mDNSlocal smAction lookupNSAddr(const DNSMessage *const msg, const mDNSu8 *const end, ntaContext *const context)
 	{
 	const mDNSu8 *ptr;
 	int i;
@@ -2426,7 +2429,7 @@ mDNSlocal smAction lookupNSAddr(DNSMessage *msg, const mDNSu8 *end, ntaContext *
 	}
 
 // state machine entry routine
-mDNSlocal void GetZoneData_Callback(mDNS *const m, DNSMessage *msg, const mDNSu8 *end, DNSQuestion *question)
+mDNSlocal void GetZoneData_Callback(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, DNSQuestion *const question)
     {
 	AsyncOpResult result;
 	ntaContext *context = (ntaContext*)question->QuestionContext;
