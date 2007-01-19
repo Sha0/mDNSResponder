@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.287  2007/01/19 22:55:41  cheshire
+Eliminate redundant identical parameters to GetZoneData_StartQuery()
+
 Revision 1.286  2007/01/19 21:17:33  cheshire
 StartLLQPolling needs to call SetNextQueryTime() to cause query to be done in a timely fashion
 
@@ -2160,16 +2163,17 @@ mDNSlocal const domainname *PRIVATE_LLQ_SERVICE_TYPE    = (const domainname*)"\x
 // Forward reference: hndlLookupSOA references GetZoneData_Callback and vice versa
 mDNSlocal void GetZoneData_Callback(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, DNSQuestion *const question);
 
-// explicitly set response handler
-mDNSlocal mStatus GetZoneData_StartQuery(mDNS *m, DNSQuestion *q, InternalResponseHndlr callback, void *hndlrContext)
+mDNSlocal mStatus GetZoneData_StartQuery(ntaContext *hndlrContext)
 	{
+	mDNS *const m = hndlrContext->m;
+	DNSQuestion *q = &hndlrContext->question;
 	mStatus status;
 	q->llq              = mDNSNULL;
 	q->sock             = mDNSNULL;
 	q->Answered         = mDNSfalse;
 	q->RestartTime      = 0;
 	q->QuestionContext  = hndlrContext;
-	q->responseCallback = callback;
+	q->responseCallback = GetZoneData_Callback;
 	
 	// Temporary hack.
 	// GetZoneData_StartQuery is called with the lock held, but not from a normal callback that allows API calls
@@ -2249,7 +2253,7 @@ mDNSlocal smAction hndlLookupSOA(const DNSMessage *const msg, const mDNSu8 *cons
     AssignDomainName(&query->qname, context->curSOA);
     query->qtype = kDNSType_SOA;
     query->qclass = kDNSClass_IN;
-    err = GetZoneData_StartQuery(context->m, &context->question, GetZoneData_Callback, context);
+    err = GetZoneData_StartQuery(context);
 	if (err) LogMsg("hndlLookupSOA: GetZoneData_StartQuery returned error %ld (breaking until next periodic retransmission)", err);
 
     return smBreak;     // break from state machine until we receive another packet
@@ -2270,7 +2274,7 @@ mDNSlocal smAction confirmNS(const DNSMessage *const msg, const mDNSu8 *const en
 		AssignDomainName(&query->qname, &context->zone);
 		query->qtype = kDNSType_NS;
 		query->qclass = kDNSClass_IN;
-		err = GetZoneData_StartQuery(context->m, query, GetZoneData_Callback, context);
+		err = GetZoneData_StartQuery(context);
 		if (err) LogMsg("confirmNS: GetZoneData_StartQuery returned error %ld (breaking until next periodic retransmission", err);
 		context->state = lookupNS;
 		return smBreak;  // break from SM until we receive another packet
@@ -2354,7 +2358,7 @@ mDNSlocal smAction lookupDNSPort(const DNSMessage *const msg, const mDNSu8 *cons
 	AppendDomainName(&context->question.qname, &context->zone);
 	context->question.qtype = kDNSType_SRV;
 	context->question.qclass = kDNSClass_IN;
-	err = GetZoneData_StartQuery(context->m, &context->question, GetZoneData_Callback, context);
+	err = GetZoneData_StartQuery(context);
 	if (err) LogMsg("lookupDNSPort: GetZoneData_StartQuery returned error %ld (breaking until next periodic retransmission)", err);
 	return smBreak;     // break from state machine until we receive another packet
 	}
@@ -2367,7 +2371,7 @@ mDNSlocal smAction queryNSAddr(ntaContext *context)
 	AssignDomainName(&query->qname, &context->ns);
 	query->qtype = kDNSType_A;
 	query->qclass = kDNSClass_IN;
-	err = GetZoneData_StartQuery(context->m, query, GetZoneData_Callback, context);
+	err = GetZoneData_StartQuery(context);
 	if (err) LogMsg("confirmNS: GetZoneData_StartQuery returned error %ld (breaking until next periodic retransmission)", err);
 	context->state = lookupA;
 	return smBreak;
