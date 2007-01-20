@@ -22,6 +22,11 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.291  2007/01/20 00:07:02  cheshire
+When we have credentials in the keychain for a domain, we attempt private queries, but
+if the authoritative server is not set up for private queries (i.e. no _dns-query-tls
+or _dns-llq-tls record) then we need to fall back to conventional non-private queries.
+
 Revision 1.290  2007/01/19 23:41:45  cheshire
 Need to clear m->rec.r.resrec.RecordType after calling GetLLQOptData()
 
@@ -2170,7 +2175,7 @@ mDNSlocal const domainname *PRIVATE_LLQ_SERVICE_TYPE    = (const domainname*)"\x
 
 #define ntaContextSRV(X) (\
 	(X)->target == lookupUpdateSRV ? (context->ntaPrivate ? PRIVATE_UPDATE_SERVICE_TYPE : PUBLIC_UPDATE_SERVICE_TYPE) : \
-	(X)->target == lookupQuerySRV  ? (context->ntaPrivate ? PRIVATE_QUERY_SERVICE_TYPE  : PRIVATE_QUERY_SERVICE_TYPE) : \
+	(X)->target == lookupQuerySRV  ? (context->ntaPrivate ? PRIVATE_QUERY_SERVICE_TYPE  : (const domainname*)""     ) : \
 	(X)->target == lookupLLQSRV    ? (context->ntaPrivate ? PRIVATE_LLQ_SERVICE_TYPE    : PUBLIC_LLQ_SERVICE_TYPE   ) : \
 	(const domainname*)"")
 
@@ -2334,6 +2339,7 @@ mDNSlocal smAction lookupDNSPort(const DNSMessage *const msg, const mDNSu8 *cons
 
 	if (context->state == lookupPort)  // we've already issued the query
 		{
+		mDNSBool wasPrivate = context->ntaPrivate;
 		if (!msg) { LogMsg("ERROR: lookupDNSPort - NULL message"); return smError; }
 		ptr = LocateAnswers(msg, end);
 		for (i = 0; i < msg->h.numAnswers; i++)
@@ -2348,18 +2354,15 @@ mDNSlocal smAction lookupDNSPort(const DNSMessage *const msg, const mDNSu8 *cons
 				}
 			}
 		LogOperation("lookupDNSPort - no answer for type %##s", ntaContextSRV(context));
-		*port = zeroIPPort;
 
-		// If the context is private, and we couldn't lookup the SRV record
-		// then let's retry this query with the public SRV
-		if (context->ntaPrivate)
+		// We failed to find our desired SRV record.
+		// If we were trying to find _dns-update-tls or _dns-llq-tls then we retry,
+		// looking for the non-TLS variant, otherwise we just give up and return zero
+		// Note: Changing ntaPrivate causes ntaContextSRV() to yield a different SRV name when building the query below
+		context->ntaPrivate = mDNSfalse;
+		if (context->target == lookupQuerySRV || !wasPrivate)
 			{
-			// Note: This state change causes ntaContextSRV() below to
-			// yield a different SRV name when building the query below
-			context->ntaPrivate = mDNSfalse;
-			}
-		else
-			{
+			*port = zeroIPPort;
 			context->state = foundPort;
 			return smContinue;
 			}
@@ -4192,7 +4195,8 @@ mDNSlocal void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqIn
 
 	if (err)
 		{
-		LogMsg("ERROR: startLLQHandshakeCallback %##s invoked with error code %ld", info->question->qname.c, err);
+		LogMsg("ERROR: startLLQHandshakeCallback %##s (%s) invoked with error code %ld",
+			info->question->qname.c, DNSTypeName(info->question->qtype), err);
 		StartLLQPolling(m, info);
 		err = mStatus_NoError;
 		goto exit;
@@ -4209,7 +4213,8 @@ mDNSlocal void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqIn
 
 	if (!zoneInfo->llqPort.NotAnInteger)
 		{
-		debugf("LLQ port lookup failed - reverting to polling");
+		debugf("LLQ port lookup failed - reverting to polling for %##s (%s)",
+			info->question->qname.c, DNSTypeName(info->question->qtype));
 		info->servPort = zeroIPPort;
 		StartLLQPolling(m, info);
 		goto exit;
@@ -4270,9 +4275,13 @@ mDNSlocal void startPrivateQueryCallback(mStatus err, mDNS *const m, void * cont
 
 	if (!zoneInfo->zonePrivate)
 		{
-		debugf("Private port lookup failed");
-		err = mStatus_UnknownErr;
+		debugf("Private port lookup failed -- retrying without TLS -- %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
+		question->Private = mDNSNULL;
+		question->ThisQInterval = mDNSPlatformOneSecond/2; // InitialQuestionInterval
+		question->LastQTime = m->timenow;// - q->ThisQInterval;
+		SetNextQueryTime(m, question);
 		goto exit;
+		// Next call to uDNS_CheckQuery() will do this as a non-private query
 		}
 
 	authInfo = GetAuthInfoForName(m, &question->qname);
@@ -4963,7 +4972,7 @@ mDNSexport void uDNS_CheckQuery(mDNS * const m, DNSQuestion * q)
 				{
 				// sanity check to avoid packet flood bugs
 				if (!q->ThisQInterval)
-					LogMsg("ERROR: retry timer not set for LLQ %##s in state %d", q->qname.c, llq->state);
+					LogMsg("ERROR: retry timer not set for LLQ %##s (%s) in state %d", q->qname.c, DNSTypeName(q->qtype), llq->state);
 				else if (llq->state == LLQ_Established || llq->state == LLQ_Refresh)
 					{
 					sendLLQRefresh(m, q, llq->origLease, llq->tcpSock);
