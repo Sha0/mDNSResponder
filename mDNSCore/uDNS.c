@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.292  2007/01/20 01:32:40  cheshire
+Update comments and debugging messages
+
 Revision 1.291  2007/01/20 00:07:02  cheshire
 When we have credentials in the keychain for a domain, we attempt private queries, but
 if the authoritative server is not set up for private queries (i.e. no _dns-query-tls
@@ -1026,9 +1029,9 @@ mDNSlocal mDNSBool recvLLQEvent(mDNS *m, DNSQuestion *q, DNSMessage *msg, const 
 	if (!q->llq) { LogMsg("Error: recvLLQEvent - question object does not contain LLQ metadata"); return mDNSfalse; }
 	else
 		{
-		// find Opt RR, verify correct ID
+		// Find OPT RR, verify correct ID
 		const rdataOPT *opt = GetLLQOptData(m, msg, end);
-		if (!opt) { debugf("Pkt does not contain LLQ Opt"); return mDNSfalse; }
+		if (!opt) { debugf("Pkt does not contain LLQ OPT"); return mDNSfalse; }
 		if (!mDNSSameOpaque64(&opt->OptData.llq.id, &q->llq->id))
 			{
 			debugf("recvLLQEvent opt->id %08X %08X != q->llq->id %08X %08X", opt->OptData.llq.id.l[0], opt->OptData.llq.id.l[1], q->llq->id.l[0], q->llq->id.l[1]);
@@ -1150,11 +1153,12 @@ mDNSlocal void tcpCallback(uDNS_TCPSocket sock, void * context, mDNSBool Connect
 		if (tcpInfo->llqInfo)
 			{
 			LLQOptData	llqData;			// set llq rdata
-			llqData.vers    = kLLQ_Vers;
-			llqData.llqOp   = kLLQOp_Setup;
-			llqData.err     = LLQErr_NoError;
-			llqData.id      = zeroOpaque64;
-			llqData.lease   = kLLQ_DefLease;
+			llqData.vers  = kLLQ_Vers;
+			llqData.llqOp = kLLQOp_Setup;
+			llqData.err   = LLQErr_NoError;
+//			llqData.err   = tcpInfo->llqInfo->eventPort;
+			llqData.id    = zeroOpaque64;
+			llqData.lease = kLLQ_DefLease;
 			initializeQuery(&tcpInfo->request, tcpInfo->llqInfo->question);
 			end = putLLQ(&tcpInfo->request, tcpInfo->request.data, tcpInfo->llqInfo->question, &llqData, mDNStrue);
 
@@ -1768,11 +1772,11 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info, mDNSBool defer)
 		}
 
     // set llq rdata
-	llqData.vers    = kLLQ_Vers;
-	llqData.llqOp   = kLLQOp_Setup;
-	llqData.err     = LLQErr_NoError;
-	llqData.id      = zeroOpaque64;
-	llqData.lease   = kLLQ_DefLease;
+	llqData.vers  = kLLQ_Vers;
+	llqData.llqOp = kLLQOp_Setup;
+	llqData.err   = LLQErr_NoError;
+	llqData.id    = zeroOpaque64;
+	llqData.lease = kLLQ_DefLease;
 
 	initializeQuery(&msg, q);
 	end = putLLQ(&msg, msg.data, q, &llqData, mDNStrue);
@@ -4143,10 +4147,11 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease, uDNS_TCPSo
 		//!!!KRS handle this - periodically try to re-establish
 		}
 
-	llq.vers = kLLQ_Vers;
+	llq.vers  = kLLQ_Vers;
 	llq.llqOp = kLLQOp_Refresh;
-	llq.err = LLQErr_NoError;
-	llq.id = info->id;
+	llq.err   = LLQErr_NoError;
+//	llq.err   = info->eventPort;
+	llq.id    = info->id;
 	llq.lease = lease;
 
 	initializeQuery(&msg, q);
@@ -4371,6 +4376,8 @@ mDNSexport mStatus uDNS_InitLongLivedQuery(mDNS * const m, DNSQuestion * const q
     question->llq           = info;
 
     question->responseCallback = pktResponseHndlr;
+
+	LogOperation("uDNS_InitLongLivedQuery: %##s (%s) %p", question->qname.c, DNSTypeName(question->qtype), question->Private);
 
     err = StartGetZoneData(m, &question->qname, lookupLLQSRV, startLLQHandshakeCallback, info);
 
@@ -5000,6 +5007,7 @@ mDNSexport void uDNS_CheckQuery(mDNS * const m, DNSQuestion * q)
 			}
 		else if ((q->LastQTime + q->ThisQInterval) - m->timenow <= 0)
 			{
+			LogOperation("Adjusting LastQTime for %##s (%s) by %d", q->qname.c, DNSTypeName(q->qtype), m->timenow - q->LastQTime);
 			q->LastQTime = m->timenow;
 			}
 		}
@@ -5035,6 +5043,7 @@ mDNSexport void uDNS_CheckQuery(mDNS * const m, DNSQuestion * q)
 					{
 					if (server->teststate != DNSServer_Failed)
 						{
+						//LogMsg("uDNS_CheckQuery %d %p %##s (%s)", (q->LastQTime + q->ThisQInterval) - m->timenow, private, q->qname.c, DNSTypeName(q->qtype));
 						if (!private)
 							err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, &server->addr, UnicastDNSPort, mDNSNULL, mDNSNULL);
 						else
@@ -5046,6 +5055,7 @@ mDNSexport void uDNS_CheckQuery(mDNS * const m, DNSQuestion * q)
 					else if (!q->LongLived && q->ThisQInterval < MAX_UCAST_POLL_INTERVAL)
 						{
 						q->ThisQInterval = q->ThisQInterval * 2;  // don't increase interval if send failed
+						//LogMsg("Adjusted ThisQInterval to %d for %##s (%s)", q->ThisQInterval, q->qname.c, DNSTypeName(q->qtype));
 						}
 					}
 				}
