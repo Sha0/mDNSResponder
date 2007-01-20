@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.64  2007/01/20 01:43:26  cheshire
+<rdar://problem/4058383> Should not write log messages to /dev/console
+
 Revision 1.63  2007/01/20 01:31:56  cheshire
 Update comments
 
@@ -209,7 +212,7 @@ mDNSlocal void PrintLog(const char *buffer)
 		}
 	else				
 		{
-		openlog("dnsextd", LOG_CONS | LOG_PERROR, LOG_DAEMON);
+		openlog("dnsextd", LOG_CONS, LOG_DAEMON);
 		syslog(LOG_ERR, "%s", buffer);
 		closelog();
 		}

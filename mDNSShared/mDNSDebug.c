@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.c,v $
+Revision 1.8  2007/01/20 01:43:27  cheshire
+<rdar://problem/4058383> Should not write log messages to /dev/console
+
 Revision 1.7  2006/08/14 23:24:56  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -110,7 +113,7 @@ mDNSlocal void WriteLogMsg(const char *ident, const char *buffer, int logoptflag
 		}
 	else				// else, in production mode, we write to syslog
 		{
-		openlog(ident, LOG_CONS | LOG_PERROR | logoptflags, LOG_DAEMON);
+		openlog(ident, LOG_CONS | logoptflags, LOG_DAEMON);
 		syslog(LOG_ERR, "%s", buffer);
 		closelog();
 		}
