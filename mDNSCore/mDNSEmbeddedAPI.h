@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.326  2007/01/20 01:30:49  cheshire
+Update comments
+
 Revision 1.325  2007/01/19 18:39:11  cheshire
 Fix a bunch of parameters that should have been declared "const"
 
@@ -594,15 +597,17 @@ typedef packedstruct
 	{
 	mDNSu16      vers;
 	mDNSu16      llqOp;
-	mDNSu16      err;
+	mDNSu16      err;	// Or UDP reply port, in setup request
 	mDNSOpaque64 id;
 	mDNSu32      lease;
 	} LLQOptData;
 
+// Windows adds pad bytes to sizeof(LLQOptData).
+// Use this macro when setting length fields or validating option rdata from off the wire.
+// Use sizeof(LLQOptData) when dealing with structures (e.g. memcpy).
+// Never memcpy between on-the-wire representation and a structure.
+
 #define LLQ_OPTLEN ((3 * sizeof(mDNSu16)) + 8 + sizeof(mDNSu32))
-// Windows adds pad bytes to sizeof(LLQOptData).  Use this macro when setting length fields or validating option rdata from
-// off the wire.  Use sizeof(LLQOptData) when dealing with structures (e.g. memcpy).  Never memcpy between on-the-wire
-// representation and a structure
 	
 // NOTE: rdataOPT format may be repeated an arbitrary number of times in a single resource record
 typedef packedstruct
