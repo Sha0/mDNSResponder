@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.293  2007/01/23 02:56:11  cheshire
+Store negative results in the cache, instead of generating them out of pktResponseHndlr()
+
 Revision 1.292  2007/01/20 01:32:40  cheshire
 Update comments and debugging messages
 
@@ -797,7 +800,6 @@ mDNSexport void pktResponseHndlr(mDNS *const m, const DNSMessage *const msg, con
 	{
 	const mDNSu8 *ptr;
 	int i;
-	CacheRecord *cr = &m->rec.r;
 	mDNSBool goodbye;
 	int followedCNames = 0;
 	static const int maxCNames = 5;
@@ -808,42 +810,6 @@ mDNSexport void pktResponseHndlr(mDNS *const m, const DNSMessage *const msg, con
 	if (question != m->CurrentQuestion)
 		{ LogMsg("ERROR: pktResponseHdnlr called without CurrentQuestion ptr set!");  return; }
 
-	if (question->Answered == 0 && msg->h.numAnswers == 0 && question->ReturnIntermed)
-		{
-		/* NXDOMAIN error or empty RR set - notify client */
-		question->Answered = mDNStrue;
-
-		/* Create empty resource record */
-		cr->resrec.RecordType = kDNSRecordTypeUnregistered;
-		cr->resrec.InterfaceID = mDNSInterface_Any;
-		cr->resrec.name = &question->qname;
-		cr->resrec.rrtype = question->qtype;
-		cr->resrec.rrclass = question->qclass;
-		cr->resrec.rroriginalttl = 1; /* What should we use for the TTL? TTL from SOA for domain? */
-		cr->resrec.rdlength      = 0;
-		cr->resrec.rdestimate    = 0;
-		cr->resrec.namehash      = 0;
-		cr->resrec.rdatahash     = 0;
-		cr->resrec.rdata = (RData*)&cr->rdatastorage;
-		cr->resrec.rdata->MaxRDLength = cr->resrec.rdlength;
-
-		/* Pass empty answer to callback */
-		mDNS_DropLockBeforeCallback();
-		question->QuestionCallback(m, question, &cr->resrec, 0);
-		mDNS_ReclaimLockAfterCallback();
-		// CAUTION: Need to be careful after calling question->QuestionCallback(),
-		// because the client's callback function is allowed to do anything,
-		// including starting/stopping queries, registering/deregistering records, etc.
-		m->rec.r.resrec.RecordType = 0; // Clear RecordType to show we're not still using it
-		if (question != m->CurrentQuestion)
-			{
-			debugf("pktResponseHndlr - CurrentQuestion changed by QuestionCallback - returning.");
-			return;
-			}
-		}
-
-	question->Answered = mDNStrue;
-
 	ptr = LocateAnswers(msg, end);
 	if (!ptr) goto pkt_error;
 
@@ -851,19 +817,19 @@ mDNSexport void pktResponseHndlr(mDNS *const m, const DNSMessage *const msg, con
 		{
 		ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAns, &m->rec);
 		if (!ptr) goto pkt_error;
-		goodbye = question->LongLived ? ((mDNSs32)cr->resrec.rroriginalttl == -1) : mDNSfalse;
-		if (ResourceRecordAnswersQuestion(&cr->resrec, question))
+		goodbye = question->LongLived ? ((mDNSs32)m->rec.r.resrec.rroriginalttl == -1) : mDNSfalse;
+		if (ResourceRecordAnswersQuestion(&m->rec.r.resrec, question))
 			{
-			if (cr->resrec.rrtype == kDNSType_CNAME)
+			if (m->rec.r.resrec.rrtype == kDNSType_CNAME)
 				{
 				if (followedCNames > (maxCNames - 1)) LogMsg("Error: too many CNAME referals for question %##s", &origname);
 				else
 					{
-					debugf("Following cname %##s -> %##s", question->qname.c, cr->resrec.rdata->u.name.c);
+					debugf("Following cname %##s -> %##s", question->qname.c, m->rec.r.resrec.rdata->u.name.c);
 					if (question->ReturnIntermed)
 						{
 						mDNS_DropLockBeforeCallback();
-						question->QuestionCallback(m, question, &cr->resrec, !goodbye);
+						question->QuestionCallback(m, question, &m->rec.r.resrec, !goodbye);
 						mDNS_ReclaimLockAfterCallback();
 						// CAUTION: Need to be careful after calling question->QuestionCallback(),
 						// because the client's callback function is allowed to do anything,
@@ -876,7 +842,7 @@ mDNSexport void pktResponseHndlr(mDNS *const m, const DNSMessage *const msg, con
 							}
 						}
 					AssignDomainName(&origname, &question->qname);
-					AssignDomainName(&question->qname, &cr->resrec.rdata->u.name);
+					AssignDomainName(&question->qname, &m->rec.r.resrec.rdata->u.name);
 					question->qnamehash = DomainNameHashValue(&question->qname);
 					followedCNames++;
 					i = -1; // restart packet answer matching
@@ -2193,7 +2159,6 @@ mDNSlocal mStatus GetZoneData_StartQuery(ntaContext *hndlrContext)
 	mStatus status;
 	q->llq              = mDNSNULL;
 	q->sock             = mDNSNULL;
-	q->Answered         = mDNSfalse;
 	q->RestartTime      = 0;
 	q->QuestionContext  = hndlrContext;
 	q->responseCallback = GetZoneData_Callback;
@@ -2332,6 +2297,7 @@ mDNSlocal smAction confirmNS(const DNSMessage *const msg, const mDNSu8 *const en
 			return smError;
 		}
 	}
+
 mDNSlocal smAction lookupDNSPort(const DNSMessage *const msg, const mDNSu8 *const end, ntaContext *const context, mDNSIPPort *const port)
 	{
 	int i;
@@ -5260,7 +5226,6 @@ mDNSlocal void RestartQueries(mDNS *m)
 			llqInfo = q->llq;
 
 			q->RestartTime = timenow;
-			q->Answered = mDNSfalse;
 			if (q->LongLived)
 				{
 				if (!llqInfo) { LogMsg("Error: RestartQueries - %##s long-lived with NULL info", q->qname.c); continue; }

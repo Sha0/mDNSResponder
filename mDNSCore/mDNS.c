@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.581  2007/01/23 02:56:11  cheshire
+Store negative results in the cache, instead of generating them out of pktResponseHndlr()
+
 Revision 1.580  2007/01/19 21:17:33  cheshire
 StartLLQPolling needs to call SetNextQueryTime() to cause query to be done in a timely fashion
 
@@ -217,7 +220,6 @@ Fixes to avoid code generation warning/error on FreeBSD 7
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
-#pragma mark -
 #pragma mark - Program Constants
 #endif
 
@@ -2147,6 +2149,9 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, C
 
 	if (rr->DelayDelivery) return;		// We'll come back later when CacheRecordDeferredAdd() calls us
 
+	// Only deliver negative answers if client has explicitly requested them
+	if (rr->resrec.rdata->MaxRDLength == 0 && !q->ReturnIntermed) return;
+
 	mDNS_DropLockBeforeCallback();		// Allow client to legally make mDNS API calls from the callback
 	if (q->QuestionCallback)
 		q->QuestionCallback(m, q, &rr->resrec, AddRecord);
@@ -2296,6 +2301,7 @@ mDNSlocal void CacheRecordRmv(mDNS *const m, CacheRecord *rr)
 		if (ResourceRecordAnswersQuestion(&rr->resrec, q))
 			{
 			verbosedebugf("CacheRecordRmv %p %s", rr, CRDisplayString(m, rr));
+			q->FlappingInterface = mDNSNULL;
 			if (q->CurrentAnswers == 0)
 				LogMsg("CacheRecordRmv ERROR: How can CurrentAnswers already be zero for %p %##s (%s)?",
 					q, q->qname.c, DNSTypeName(q->qtype));
@@ -2305,15 +2311,17 @@ mDNSlocal void CacheRecordRmv(mDNS *const m, CacheRecord *rr)
 				if (rr->resrec.rdlength > SmallRecordLimit) q->LargeAnswers--;
 				if (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) q->UniqueAnswers--;
 				}
-			if (q->CurrentAnswers == 0)
+			if (rr->resrec.rdata->MaxRDLength) // Never generate "remove" events for negative results
 				{
-				LogOperation("CacheRecordRmv: Last answer for %##s (%s) expired from cache; will reconfirm antecedents",
-					q->qname.c, DNSTypeName(q->qtype));
-				ReconfirmAntecedents(m, &q->qname, q->qnamehash, 0);
+				if (q->CurrentAnswers == 0)
+					{
+					LogOperation("CacheRecordRmv: Last answer for %##s (%s) expired from cache; will reconfirm antecedents",
+						q->qname.c, DNSTypeName(q->qtype));
+					ReconfirmAntecedents(m, &q->qname, q->qnamehash, 0);
+					}
+				AnswerQuestionWithResourceRecord(m, q, rr, mDNSfalse);
+				// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
 				}
-			q->FlappingInterface = mDNSNULL;
-			AnswerQuestionWithResourceRecord(m, q, rr, mDNSfalse);
-			// MUST NOT dereference q again after calling AnswerQuestionWithResourceRecord()
 			}
 		}
 	m->CurrentQuestion = mDNSNULL;
@@ -3618,6 +3626,41 @@ mDNSlocal mDNSBool ExpectingUnicastResponseForRecord(mDNS *const m, const mDNSAd
 	return(mDNSfalse);
 	}
 
+mDNSlocal CacheRecord *CreateNewCacheEntry(mDNS *const m, const mDNSu32 slot, CacheGroup *cg)
+	{
+	CacheRecord *rr = mDNSNULL;
+	if (!cg) cg = GetCacheGroup(m, slot, &m->rec.r.resrec);			// If we don't have a CacheGroup for this name, make one now
+	if (cg)  rr = GetCacheRecord(m, cg, m->rec.r.resrec.rdlength);	// Make a cache record, being careful not to recycle cg
+	if (!rr) NoCacheAnswer(m, &m->rec.r);
+	else
+		{
+		RData *saveptr = rr->resrec.rdata;		// Save the rr->resrec.rdata pointer
+		*rr = m->rec.r;							// Block copy the CacheRecord object
+		rr->resrec.rdata = saveptr;				// Restore rr->resrec.rdata after the structure assignment
+		rr->resrec.name  = cg->name;			// And set rr->resrec.name to point into our CacheGroup header
+
+		// If this is an oversized record with external storage allocated, copy rdata to external storage
+		if      (rr->resrec.rdata == (RData*)&rr->rdatastorage && m->rec.r.resrec.rdlength > InlineCacheRDSize)
+			LogMsg("rr->resrec.rdata == &rr->rdatastorage but length > InlineCacheRDSize %##s", m->rec.r.resrec.name->c);
+		else if (rr->resrec.rdata != (RData*)&rr->rdatastorage && m->rec.r.resrec.rdlength <= InlineCacheRDSize)
+			LogMsg("rr->resrec.rdata != &rr->rdatastorage but length <= InlineCacheRDSize %##s", m->rec.r.resrec.name->c);
+		if (m->rec.r.resrec.rdlength > InlineCacheRDSize)
+			mDNSPlatformMemCopy(m->rec.r.resrec.rdata, rr->resrec.rdata, sizeofRDataHeader + m->rec.r.resrec.rdlength);
+
+		rr->next = mDNSNULL;					// Clear 'next' pointer
+		*(cg->rrcache_tail) = rr;				// Append this record to tail of cache slot list
+		cg->rrcache_tail = &(rr->next);			// Advance tail pointer
+		if (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask &&	// If marked unique,
+			rr->resrec.rdata->MaxRDLength != 0)							// and non-negative, assume we may have
+			rr->DelayDelivery = m->timenow + mDNSPlatformOneSecond;		// to delay delivery of this 'add' event
+		else
+			rr->DelayDelivery = CheckForSoonToExpireRecords(m, rr->resrec.name, rr->resrec.namehash, slot);
+
+		CacheRecordAdd(m, rr);  // CacheRecordAdd calls SetNextCacheCheckTime(m, rr); for us
+		}
+	return(rr);
+	}
+
 // NOTE: mDNSCoreReceiveResponse calls mDNS_Deregister_internal which can call a user callback, which may change
 // the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
@@ -3657,6 +3700,13 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	if (ResponseMCast)	// We ignore questions (if any) in mDNS response packets
 		ptr = LocateAnswers(response, end);
 	else
+		{
+		// We could possibly combine this with the similar loop at the end of this function --
+		// instead of tagging cache records here and then rescuing them if we find them in the answer section,
+		// we could instead use the "m->PktNum" mechanism to tag each cache record with the packet number in
+		// which it was received (or refreshed), and then at the end if we find any cache records which
+		// answer questions in this packet's question section, but which aren't tagged with this packet's
+		// packet number, then we deduce they are old and delete them
 		for (i = 0; i < response->h.numQuestions && ptr && ptr < end; i++)
 			{
 			DNSQuestion q;
@@ -3676,6 +3726,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 						}
 				}
 			}
+		}
 
 	for (i = 0; i < totalrecords && ptr && ptr < end; i++)
 		{
@@ -3862,32 +3913,9 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 			// (unless it is just a deletion of a record we never had, in which case we don't care)
 			if (!rr && m->rec.r.resrec.rroriginalttl > 0)
 				{
-				// If we don't have a CacheGroup for this name, make one now
-				if (!cg) cg = GetCacheGroup(m, slot, &m->rec.r.resrec);
-				if (cg) rr = GetCacheRecord(m, cg, m->rec.r.resrec.rdlength);	// Make a cache record, being careful not to recycle cg
-				if (!rr) NoCacheAnswer(m, &m->rec.r);
-				else
-					{
-					RData *saveptr = rr->resrec.rdata;		// Save the rr->resrec.rdata pointer
-					*rr = m->rec.r;							// Block copy the CacheRecord object
-					rr->resrec.rdata = saveptr;				// Restore rr->resrec.rdata after the structure assignment
-					rr->resrec.name  = cg->name;			// And set rr->resrec.name to point into our CacheGroup header
-					if (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask)
-						{ *cfp = rr; cfp = &rr->NextInCFList; *cfp = (CacheRecord*)1; }
-					// If this is an oversized record with external storage allocated, copy rdata to external storage
-					if (rr->resrec.rdata != (RData*)&rr->rdatastorage && !(m->rec.r.resrec.rdlength > InlineCacheRDSize))
-						LogMsg("rr->resrec.rdata != &rr->rdatastorage but length <= InlineCacheRDSize %##s", m->rec.r.resrec.name->c);
-					if (m->rec.r.resrec.rdlength > InlineCacheRDSize)
-						mDNSPlatformMemCopy(m->rec.r.resrec.rdata, rr->resrec.rdata, sizeofRDataHeader + m->rec.r.resrec.rdlength);
-					rr->next = mDNSNULL;					// Clear 'next' pointer
-					*(cg->rrcache_tail) = rr;				// Append this record to tail of cache slot list
-					cg->rrcache_tail = &(rr->next);			// Advance tail pointer
-					if (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask)	// If marked unique, assume we may have
-						rr->DelayDelivery = m->timenow + mDNSPlatformOneSecond;	// to delay delivery of this 'add' event
-					else
-						rr->DelayDelivery = CheckForSoonToExpireRecords(m, rr->resrec.name, rr->resrec.namehash, slot);
-					CacheRecordAdd(m, rr);  // CacheRecordAdd calls SetNextCacheCheckTime(m, rr); for us
-					}
+				rr = CreateNewCacheEntry(m, slot, cg);
+				if (rr && rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask)
+					{ *cfp = rr; cfp = &rr->NextInCFList; *cfp = (CacheRecord*)1; }
 				}
 			}
 		m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
@@ -3969,6 +3997,41 @@ exit:
 			// Note, only need to call SetNextCacheCheckTime() when DelayDelivery is set, not when it's cleared
 			r1->DelayDelivery = CheckForSoonToExpireRecords(m, r1->resrec.name, r1->resrec.namehash, slot);
 			if (!r1->DelayDelivery) CacheRecordDeferredAdd(m, r1);
+			}
+		}
+
+	// See if we need to generate negative cache entries for unanswered unicast questions
+	ptr = response->data;
+	for (i = 0; i < response->h.numQuestions && ptr && ptr < end; i++)
+		{
+		DNSQuestion q;
+		ptr = getQuestion(response, ptr, end, InterfaceID, &q);
+		if (ptr && ExpectingUnicastResponseForQuestion(m, response->h.id, &q))
+			{
+			CacheRecord *rr;
+			const mDNSu32 slot = HashSlot(&q.qname);
+			CacheGroup *cg = CacheGroupForName(m, slot, q.qnamehash, &q.qname);
+			for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
+				if (SameNameRecordAnswersQuestion(&rr->resrec, &q) && rr->resrec.rroriginalttl) break;
+			if (!rr)
+				{
+				LogOperation("Making negative cache entry for %##s (%s)", q.qname.c, DNSTypeName(q.qtype));
+				// Create empty resource record
+				m->rec.r.resrec.RecordType    = kDNSRecordTypePacketAnsUnique;
+				m->rec.r.resrec.InterfaceID   = mDNSInterface_Any;
+				m->rec.r.resrec.name          = &q.qname;
+				m->rec.r.resrec.rrtype        = q.qtype;
+				m->rec.r.resrec.rrclass       = q.qclass;
+				m->rec.r.resrec.rroriginalttl = 10; // What should we use for the TTL? TTL from SOA for domain?
+				m->rec.r.resrec.rdlength      = 0;
+				m->rec.r.resrec.rdestimate    = 0;
+				m->rec.r.resrec.namehash      = q.qnamehash;
+				m->rec.r.resrec.rdatahash     = 0;
+				m->rec.r.resrec.rdata = (RData*)&m->rec.r.rdatastorage;
+				m->rec.r.resrec.rdata->MaxRDLength = m->rec.r.resrec.rdlength;
+				CreateNewCacheEntry(m, slot, cg);
+				m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
+				}
 			}
 		}
 	}
@@ -4175,7 +4238,6 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		question->llq               = mDNSNULL;
 		question->next              = mDNSNULL;
 		question->DelayAnswering    = CheckForSoonToExpireRecords(m, &question->qname, question->qnamehash, HashSlot(&question->qname));
-		question->Answered          = mDNSfalse;
 		question->ThisQInterval     = InitialQuestionInterval * 2;			// MUST be > zero for an active question
 		question->RequestUnicast    = 0;
 		question->LastQTime         = m->timenow - m->RandomQueryDelay;		// Avoid inter-machine synchronization
@@ -4406,7 +4468,6 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 		question->LongLived     = mDNStrue;
 		question->ThisQInterval = INIT_UCAST_POLL_INTERVAL / 2;
 		question->LastQTime     = m->timenow - question->ThisQInterval;
-		question->Answered      = mDNSfalse;
 		}
 #endif // UNICAST_DISABLED
 	return(mDNS_StartQuery(m, question));

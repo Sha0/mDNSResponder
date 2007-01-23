@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.327  2007/01/23 02:56:10  cheshire
+Store negative results in the cache, instead of generating them out of pktResponseHndlr()
+
 Revision 1.326  2007/01/20 01:30:49  cheshire
 Update comments
 
@@ -1129,7 +1132,6 @@ struct DNSQuestion_struct
 											// We should get rid of the function pointer, and just use the state
 											// variables in the DNSQuestion_struct to tell us what we need to do
 											// (maybe all three routines will end up combined into one?)
-	mDNSBool              Answered;         // Have we received an answer (including NXDOMAIN) for this question?
 	mDNSs32               RestartTime;      // Mark when we restart a suspended query
 	uDNS_TCPSocket        sock;		        // For secure operations
 	LLQ_Info              *llq;             // NULL for 1-shot queries
