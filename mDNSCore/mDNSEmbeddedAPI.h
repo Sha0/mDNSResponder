@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.328  2007/01/25 00:19:40  cheshire
+Add CNAMEReferrals field to DNSQuestion_struct
+
 Revision 1.327  2007/01/23 02:56:10  cheshire
 Store negative results in the cache, instead of generating them out of pktResponseHndlr()
 
@@ -422,7 +425,6 @@ enum
 	mStatus_GrowCache         = -65790,
 	mStatus_ConfigChanged     = -65791,
 	mStatus_MemFree           = -65792		// Last value: 0xFFFE FF00
-	
 	// mStatus_MemFree is the last legal mDNS error code, at the end of the range allocated for mDNS
 	};
 
@@ -460,7 +462,7 @@ typedef struct { mDNSu8 c[256]; } UTF8str255;		// Null-terminated C string
 // Wide-area service discovery records have a very short TTL to avoid poluting intermediate caches with
 // dynamic records.  When discovered via Long Lived Queries (with change notifications), resource record
 // TTLs can be safely ignored.
-	
+
 #define kStandardTTL (3600UL * 100 / 80)
 #define kHostNameTTL 120UL
 #define kWideAreaTTL 3
@@ -611,7 +613,7 @@ typedef packedstruct
 // Never memcpy between on-the-wire representation and a structure.
 
 #define LLQ_OPTLEN ((3 * sizeof(mDNSu16)) + 8 + sizeof(mDNSu32))
-	
+
 // NOTE: rdataOPT format may be repeated an arbitrary number of times in a single resource record
 typedef packedstruct
 	{
@@ -786,7 +788,7 @@ struct AuthRecord_struct
 								// !!!KRS not technically correct to cache longer than TTL
 								// SDC Perhaps should keep a reference to the relevant SRV record in the cache?
 	NATTraversalInfo *NATinfo;	// NAT traversal context; may be NULL
-	
+
 	// uDNS_UpdateRecord support fields
 	// Do we really need all these in *addition* to NewRData and newrdlength above?
 	RData *OrigRData;
@@ -947,10 +949,10 @@ struct ServiceRecordSet_struct
 	// No fields need to be set up by the client prior to calling mDNS_RegisterService();
 	// all required data is passed as parameters to that function.
 	ServiceRecordSet    *next;
-	
+
 	// Begin uDNS info ****************
 	// Hopefully much of this stuff can be simplified or eliminated
-	
+
 	regState_t   state;
 	mDNSBool     lease;    // dynamic update contains (should contain) lease option
 	mDNSs32      expire;   // expiration of lease (-1 for static)
@@ -967,11 +969,11 @@ struct ServiceRecordSet_struct
     mDNSBool     SRVChanged;              // temporarily deregistered service because its SRV target or port changed
 
 	// End uDNS info ****************
-	
+
 	mDNSServiceCallback *ServiceCallback;
 	void                *ServiceContext;
 	mDNSBool             Conflict;	// Set if this record set was forcibly deregistered because of a conflict
-	
+
 	ExtraResourceRecord *Extras;	// Optional list of extra AuthRecords attached to this service registration
 	mDNSu32              NumSubTypes;
 	AuthRecord          *SubTypes;
@@ -1025,7 +1027,7 @@ typedef enum
 	LLQ_SuspendedPoll     = 9, // suspended from polling state
 	LLQ_NatMapWaitTCP     = 10,
 	LLQ_NatMapWaitUDP     = 11,
-	
+
 	// Established/error states
 	LLQ_Static            = 16,
 	LLQ_Poll              = 17,
@@ -1125,13 +1127,13 @@ struct DNSQuestion_struct
 	mDNSBool              SendOnAll;		// Set if we're sending this question on all active interfaces
 	mDNSu32               RequestUnicast;	// Non-zero if we want to send query with kDNSQClass_UnicastResponse bit set
 	mDNSs32               LastQTxTime;		// Last time this Q was sent on one (but not necessarily all) interfaces
-	DomainAuthInfo       *Private;			// Set if query is currently being done using Private DNS
+	DomainAuthInfo       *Private;			// Non-NULL if query is currently being done using Private DNS
+	mDNSu32               CNAMEReferrals;	// Count of how many CNAME redirections we've done
 
 	// Wide Area fields.  These are used internally by the uDNS core
-	InternalResponseHndlr responseCallback; // This is one of: recvSetupResponse, pktResponseHndlr or getZoneData
+	InternalResponseHndlr responseCallback; // This is one of: recvSetupResponse or getZoneData
 											// We should get rid of the function pointer, and just use the state
 											// variables in the DNSQuestion_struct to tell us what we need to do
-											// (maybe all three routines will end up combined into one?)
 	mDNSs32               RestartTime;      // Mark when we restart a suspended query
 	uDNS_TCPSocket        sock;		        // For secure operations
 	LLQ_Info              *llq;             // NULL for 1-shot queries
@@ -1151,7 +1153,7 @@ struct DNSQuestion_struct
 	mDNSQuestionCallback *QuestionCallback;
 	void                 *QuestionContext;
 	};
-	
+
 typedef struct
 	{
 	// Client API fields: The client must set up name and InterfaceID *before* calling mDNS_StartResolveService()
@@ -1237,7 +1239,7 @@ typedef packedstruct
 	mDNSu8 vers;
 	mDNSu8 opcode;
 	} NATAddrRequest;
-	
+
 typedef packedstruct
 	{
 	mDNSu8 vers;
@@ -1256,7 +1258,7 @@ typedef packedstruct
 	mDNSIPPort pub;
 	mDNSOpaque32 lease;
 	} NATPortMapRequest;
-	
+
 typedef packedstruct
 	{
 	mDNSu8 vers;
@@ -1267,7 +1269,7 @@ typedef packedstruct
 	mDNSIPPort pub;
 	mDNSOpaque32 lease;
 	} NATPortMapReply;
-	
+
 // Pass NULL for pkt on error (including timeout)
 typedef mDNSBool (*NATResponseHndlr)(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mDNSu16 len);
 
@@ -1471,7 +1473,7 @@ extern const mDNSOpaque64    zeroOpaque64;
 
 #define localdomain (*(const domainname *)"\x5" "local")
 #define LocalReverseMapDomain (*(const domainname *)"\x3" "254" "\x3" "169" "\x7" "in-addr" "\x4" "arpa")
-	
+
 // ***************************************************************************
 #if 0
 #pragma mark - Inline functions
@@ -1627,7 +1629,7 @@ extern mDNSs32  mDNSPlatformOneSecond;
 // via mDNS_RemoveRecordFromService, or by deregistering the service.  mDNS_RemoveRecordFromService is passed a
 // callback to free the memory associated with the extra RR when it is safe to do so.  The ExtraResourceRecord
 // object can be found in the record's context pointer.
-	
+
 // mDNS_GetBrowseDomains is a special case of the mDNS_StartQuery call, where the resulting answers
 // are a list of PTR records indicating (in the rdata) domains that are recommended for browsing.
 // After getting the list of domains to browse, call mDNS_StopQuery to end the search.
@@ -1671,7 +1673,7 @@ typedef enum
 	mDNS_DomainTypeBrowseLegacy        = 2,
 	mDNS_DomainTypeRegistration        = 3,
 	mDNS_DomainTypeRegistrationDefault = 4,
-	
+
 	mDNS_DomainTypeMax = 4
 	} mDNS_DomainType;
 
@@ -1839,7 +1841,7 @@ extern mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 
 // All hostnames advertised point to one IPv4 address and/or one IPv6 address, set via SetPrimaryInterfaceInfo.  Invoking this routine
 // updates all existing hostnames to point to the new address.
-	
+
 // A hostname is added via AddDynDNSHostName, which points to the primary interface's v4 and/or v6 addresss
 
 // The status callback is invoked to convey success or failure codes - the callback should not modify the AuthRecord or free memory.
@@ -1855,7 +1857,7 @@ extern mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 // DNS servers used to resolve unicast queries are specified by mDNS_AddDNSServer, and may later be removed via mDNS_DeleteDNSServers.
 // For "split" DNS configurations, in which queries for different domains are sent to different servers (e.g. VPN and external),
 // a domain may be associated with a DNS server.  For standard configurations, specify the root label (".") or NULL.
-	
+
 extern void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSRecordCallback *StatusCallback, const void *StatusContext);
 extern void mDNS_RemoveDynDNSHostName(mDNS *m, const domainname *fqdn);
 extern void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr,  const mDNSAddr *v6addr, const mDNSAddr *router);
@@ -1964,7 +1966,7 @@ typedef enum
 	kTCPSocketFlags_Zero   = 0,
 	kTCPSocketFlags_UseTLS = (1 << 0)
 	} uDNS_TCPSocketFlags;
-	
+
 typedef void (*TCPConnectionCallback)(uDNS_TCPSocket sock, void *context, mDNSBool ConnectionEstablished, mStatus err);
 extern uDNS_TCPSocket mDNSPlatformTCPSocket(mDNS * const m, uDNS_TCPSocketFlags flags, mDNSIPPort * port);	// creates a tcp socket
 extern uDNS_TCPSocket mDNSPlatformTCPAccept(uDNS_TCPSocketFlags flags, int sd);
