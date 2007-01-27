@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.583  2007/01/27 03:19:33  cheshire
+Need to initialize question->sock
+
 Revision 1.582  2007/01/25 00:40:16  cheshire
 Unified CNAME-following functionality into cache management code (which means CNAME-following
 should now also work for mDNS queries too); deleted defunct pktResponseHndlr() routine.
@@ -4051,7 +4054,7 @@ exit:
 				m->rec.r.resrec.name          = &q.qname;
 				m->rec.r.resrec.rrtype        = q.qtype;
 				m->rec.r.resrec.rrclass       = q.qclass;
-				m->rec.r.resrec.rroriginalttl = 10; // What should we use for the TTL? TTL from SOA for domain?
+				m->rec.r.resrec.rroriginalttl = 60; // What should we use for the TTL? TTL from SOA for domain?
 				m->rec.r.resrec.rdlength      = 0;
 				m->rec.r.resrec.rdestimate    = 0;
 				m->rec.r.resrec.namehash      = q.qnamehash;
@@ -4269,8 +4272,8 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		question->Private           = GetAuthInfoForName(m, &question->qname);
 		question->CNAMEReferrals    = 0;
 		question->responseCallback  = mDNSNULL;
-
 		question->RestartTime       = 0;
+		question->sock              = mDNSNULL;
 		question->llq               = mDNSNULL;
 
 		for (i=0; i<DupSuppressInfoSize; i++)
