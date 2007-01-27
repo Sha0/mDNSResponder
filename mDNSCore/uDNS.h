@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.51  2007/01/27 03:34:27  cheshire
+Made GetZoneData use standard queries (and cached results);
+eliminated GetZoneData_Callback() packet response handler
+
 Revision 1.50  2007/01/19 21:17:32  cheshire
 StartLLQPolling needs to call SetNextQueryTime() to cause query to be done in a timely fashion
 
@@ -133,24 +137,6 @@ extern void uDNS_ReceiveNATMap(mDNS *m, mDNSu8 *pkt, mDNSu16 len);
 
 // returns time of next scheduled event
 extern void uDNS_Execute(mDNS *const m);
-
-typedef struct                    
-	{
-	domainname zoneName;
-	mDNSAddr   primaryAddr;
-	mDNSu16    zoneClass;
-	mDNSIPPort updatePort;
-	mDNSIPPort queryPort;
-	mDNSIPPort llqPort;
-	mDNSBool   zonePrivate;
-	} zoneData_t;
-
-typedef struct
-	{
-	zoneData_t zoneData;
-	} AsyncOpResult;
-
-typedef void AsyncOpCallback(mStatus err, mDNS *const m, void *info, const AsyncOpResult *result);
 
 extern mStatus           uDNS_SetupDNSConfig(mDNS *const m);
 extern mStatus           uDNS_RegisterSearchDomains(mDNS *const m);
