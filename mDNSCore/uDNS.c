@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.296  2007/01/29 16:03:22  cheshire
+Fix unused parameter warning
+
 Revision 1.295  2007/01/27 03:34:27  cheshire
 Made GetZoneData use standard queries (and cached results);
 eliminated GetZoneData_Callback() packet response handler
@@ -2131,6 +2134,7 @@ mDNSlocal void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *question
 	ntaContext *context = (ntaContext*)question->QuestionContext;
 	mStatus err;
 	zoneData_t result;
+	(void)m;	// unused
 
 	LogOperation("GetZoneData_QuestionCallback: %s %d %s", AddRecord ? "Add" : "Rmv", context->state, RRDisplayString(m, answer));
 	if (!AddRecord) return;
