@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.41  2007/02/06 19:06:49  cheshire
+<rdar://problem/3956518> Need to go native with launchd
+
 Revision 1.40  2007/01/05 05:46:08  cheshire
 Add mDNS *const m parameter to udsserver_handle_configchange()
 
@@ -1246,7 +1249,7 @@ static OSStatus	ServiceSpecificInitialize( int argc, LPTSTR argv[] )
 	err = mDNS_Init( &gMDNSRecord, &gPlatformStorage, gRRCache, RR_CACHE_SIZE, mDNS_Init_AdvertiseLocalAddresses, CoreCallback, mDNS_Init_NoInitCallbackContext); 
 	require_noerr( err, exit);
 
-	err = udsserver_init();
+	err = udsserver_init(dnssd_InvalidSocket);
 	require_noerr( err, exit);
 
 	//

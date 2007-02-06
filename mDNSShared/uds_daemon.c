@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.234  2007/02/06 19:06:49  cheshire
+<rdar://problem/3956518> Need to go native with launchd
+
 Revision 1.233  2007/01/10 20:49:37  cheshire
 Remove unnecessary setting of q->Private fields
 
@@ -3618,7 +3621,7 @@ mDNSlocal void connect_callback(void *info)
     all_requests = rstate;
     }
 
-mDNSexport int udsserver_init(void)
+mDNSexport int udsserver_init(dnssd_sock_t skt)
 	{
 	dnssd_sockaddr_t laddr;
 	int				 ret;
@@ -3639,46 +3642,52 @@ mDNSexport int udsserver_init(void)
 			}
 		}
 
-	if ((listenfd = socket(AF_DNSSD, SOCK_STREAM, 0)) == dnssd_InvalidSocket)
+	if (skt != dnssd_InvalidSocket)
+		listenfd = skt;
+	else
 		{
-		my_perror("ERROR: socket(AF_DNSSD, SOCK_STREAM, 0); failed");
-		goto error;
-		}
-
-    mDNSPlatformMemZero(&laddr, sizeof(laddr));
-
-	#if defined(USE_TCP_LOOPBACK)
-		{
-		laddr.sin_family		=	AF_INET;
-		laddr.sin_port			=	htons(MDNS_TCP_SERVERPORT);
-		laddr.sin_addr.s_addr	=	inet_addr(MDNS_TCP_SERVERADDR);
-    	ret = bind(listenfd, (struct sockaddr *) &laddr, sizeof(laddr));
-		if (ret < 0)
+		listenfd = socket(AF_DNSSD, SOCK_STREAM, 0);
+		if (listenfd == dnssd_InvalidSocket)
 			{
-			my_perror("ERROR: bind(listenfd, (struct sockaddr *) &laddr, sizeof(laddr)); failed");
+			my_perror("ERROR: socket(AF_DNSSD, SOCK_STREAM, 0); failed");
 			goto error;
 			}
-		}
-	#else
-		{
-    	mode_t mask = umask(0);
-    	unlink(MDNS_UDS_SERVERPATH);  //OK if this fails
-    	laddr.sun_family = AF_LOCAL;
-	#ifndef NOT_HAVE_SA_LEN
-	// According to Stevens (section 3.2), there is no portable way to
-	// determine whether sa_len is defined on a particular platform.
-    	laddr.sun_len = sizeof(struct sockaddr_un);
-	#endif
-    	strcpy(laddr.sun_path, MDNS_UDS_SERVERPATH);
-		ret = bind(listenfd, (struct sockaddr *) &laddr, sizeof(laddr));
-		umask(mask);
-		if (ret < 0)
+	
+		mDNSPlatformMemZero(&laddr, sizeof(laddr));
+	
+		#if defined(USE_TCP_LOOPBACK)
 			{
-			my_perror("ERROR: bind(listenfd, (struct sockaddr *) &laddr, sizeof(laddr)); failed");
-			goto error;
+			laddr.sin_family		=	AF_INET;
+			laddr.sin_port			=	htons(MDNS_TCP_SERVERPORT);
+			laddr.sin_addr.s_addr	=	inet_addr(MDNS_TCP_SERVERADDR);
+			ret = bind(listenfd, (struct sockaddr *) &laddr, sizeof(laddr));
+			if (ret < 0)
+				{
+				my_perror("ERROR: bind(listenfd, (struct sockaddr *) &laddr, sizeof(laddr)); failed");
+				goto error;
+				}
 			}
+		#else
+			{
+			mode_t mask = umask(0);
+			unlink(MDNS_UDS_SERVERPATH);  //OK if this fails
+			laddr.sun_family = AF_LOCAL;
+			#ifndef NOT_HAVE_SA_LEN
+			// According to Stevens (section 3.2), there is no portable way to
+			// determine whether sa_len is defined on a particular platform.
+			laddr.sun_len = sizeof(struct sockaddr_un);
+			#endif
+			strcpy(laddr.sun_path, MDNS_UDS_SERVERPATH);
+			ret = bind(listenfd, (struct sockaddr *) &laddr, sizeof(laddr));
+			umask(mask);
+			if (ret < 0)
+				{
+				my_perror("ERROR: bind(listenfd, (struct sockaddr *) &laddr, sizeof(laddr)); failed");
+				goto error;
+				}
+			}
+		#endif
 		}
-	#endif
 
 #if defined(_WIN32)
 	//

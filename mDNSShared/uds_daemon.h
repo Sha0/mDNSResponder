@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.h,v $
+Revision 1.18  2007/02/06 19:06:49  cheshire
+<rdar://problem/3956518> Need to go native with launchd
+
 Revision 1.17  2007/01/05 05:46:07  cheshire
 Add mDNS *const m parameter to udsserver_handle_configchange()
 
@@ -89,7 +92,7 @@ Changes necessary to support mDNSResponder on Linux.
 
 #define SRS_PORT(S) mDNSVal16((S)->RR_SRV.resrec.rdata->u.srv.port)
 
-extern int udsserver_init(void);
+extern int udsserver_init(dnssd_sock_t skt);
 
 // takes the next scheduled event time, does idle work, and returns the updated nextevent time
 extern mDNSs32 udsserver_idle(mDNSs32 nextevent);

@@ -21,6 +21,9 @@
 	Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.36  2007/02/06 19:06:48  cheshire
+<rdar://problem/3956518> Need to go native with launchd
+
 Revision 1.35  2007/01/05 08:30:52  cheshire
 Trim excessive "$Log" checkin history from before 2006
 (checkin history still available via "cvs log ..." of course)
@@ -192,7 +195,7 @@ int main(int argc, char **argv)
 					mDNS_StatusCallback, mDNS_Init_NoInitCallbackContext); 
 
 	if (mStatus_NoError == err)
-		err = udsserver_init();
+		err = udsserver_init(dnssd_InvalidSocket);
 		
 	Reconfigure(&mDNSStorage);
 

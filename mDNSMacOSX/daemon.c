@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.287  2007/02/06 19:06:48  cheshire
+<rdar://problem/3956518> Need to go native with launchd
+
 Revision 1.286  2007/01/06 01:00:33  cheshire
 Improved SIGINFO output
 
@@ -129,6 +132,7 @@ Revision 1.261  2006/01/06 01:22:28  cheshire
 #include <unistd.h>
 #include <paths.h>
 #include <fcntl.h>
+#include <launch.h>
 #include <pwd.h>
 #include <sys/event.h>
 #include <pthread.h>
@@ -166,9 +170,12 @@ static mDNS_PlatformSupport PlatformStorage;
 static CacheEntity rrcachestorage[RR_CACHE_SIZE];
 
 static const char kmDNSBootstrapName[] = "com.apple.mDNSResponderRestart";
+static mach_port_t m_port            = MACH_PORT_NULL;
 static mach_port_t client_death_port = MACH_PORT_NULL;
 static mach_port_t signal_port       = MACH_PORT_NULL;
 static mach_port_t server_priv_port  = MACH_PORT_NULL;
+
+static dnssd_sock_t listenfd = dnssd_InvalidSocket;
 
 // mDNS Mach Message Timeout, in milliseconds.
 // We need this to be short enough that we don't deadlock the mDNSResponder if a client
@@ -178,8 +185,8 @@ static mach_port_t server_priv_port  = MACH_PORT_NULL;
 // even extra-slow clients a fair chance before we cut them off.
 #define MDNS_MM_TIMEOUT 250
 
-static int restarting_via_mach_init = 0;
-static int started_via_launchdaemon = 0;
+static int restarting_via_mach_init = 0;	// Used on Jaguar/Panther when daemon is started via mach_init mechanism
+static int started_via_launchdaemon = 0;	// Indicates we're running on Tiger or later, where daemon is managed by launchd
 
 static int OSXVers;
 
@@ -1987,24 +1994,33 @@ mDNSlocal void SignalCallback(CFMachPortRef port, void *msg, CFIndex size, void 
 mDNSlocal kern_return_t mDNSDaemonInitialize(void)
 	{
 	mStatus            err;
+	CFMachPortRef      s_port;
+
+	// If launchd already created our Mach port for us, then use that, else we create a new one of our own
+	if (m_port != MACH_PORT_NULL)
+		s_port = CFMachPortCreateWithPort(NULL, m_port, DNSserverCallback, NULL, NULL);
+	else
+		{
+		s_port = CFMachPortCreate(NULL, DNSserverCallback, NULL, NULL);
+		m_port = CFMachPortGetPort(s_port);
+		char *MachServerName = OSXVers < 7 ? "DNSServiceDiscoveryServer" : "com.apple.mDNSResponder";
+		kern_return_t      status = bootstrap_register(bootstrap_port, MachServerName, m_port);
+	
+		if (status)
+			{
+			if (status == 1103)
+				LogMsg("Bootstrap_register failed(): A copy of the daemon is apparently already running");
+			else
+				LogMsg("Bootstrap_register failed(): %s %d", mach_error_string(status), status);
+			return(status);
+			}
+		}
+
 	CFMachPortRef      d_port = CFMachPortCreate(NULL, ClientDeathCallback, NULL, NULL);
-	CFMachPortRef      s_port = CFMachPortCreate(NULL, DNSserverCallback, NULL, NULL);
 	CFMachPortRef      i_port = CFMachPortCreate(NULL, SignalCallback, NULL, NULL);
-	mach_port_t        m_port = CFMachPortGetPort(s_port);
-	char *MachServerName = OSXVers < 7 ? "DNSServiceDiscoveryServer" : "com.apple.mDNSResponder";
-	kern_return_t      status = bootstrap_register(bootstrap_port, MachServerName, m_port);
 	CFRunLoopSourceRef d_rls  = CFMachPortCreateRunLoopSource(NULL, d_port, 0);
 	CFRunLoopSourceRef s_rls  = CFMachPortCreateRunLoopSource(NULL, s_port, 0);
 	CFRunLoopSourceRef i_rls  = CFMachPortCreateRunLoopSource(NULL, i_port, 0);
-
-	if (status)
-		{
-		if (status == 1103)
-			LogMsg("Bootstrap_register failed(): A copy of the daemon is apparently already running");
-		else
-			LogMsg("Bootstrap_register failed(): %s %d", mach_error_string(status), status);
-		return(status);
-		}
 
 	err = mDNS_Init(&mDNSStorage, &PlatformStorage,
 		rrcachestorage, RR_CACHE_SIZE,
@@ -2017,7 +2033,7 @@ mDNSlocal kern_return_t mDNSDaemonInitialize(void)
 	gNotificationUserNiceLabel = gNotificationPrefNiceLabel = PlatformStorage.usernicelabel;
 
 	client_death_port = CFMachPortGetPort(d_port);
-	signal_port = CFMachPortGetPort(i_port);
+	signal_port       = CFMachPortGetPort(i_port);
 
 	CFRunLoopAddSource(CFRunLoopGetCurrent(), d_rls, kCFRunLoopDefaultMode);
 	CFRunLoopAddSource(CFRunLoopGetCurrent(), s_rls, kCFRunLoopDefaultMode);
@@ -2282,6 +2298,64 @@ mDNSlocal void * KQueueLoop(void* m_param)
 	return NULL;
 	}
 
+mDNSlocal void LaunchdCheckin(void)
+	{
+	launch_data_t msg  = launch_data_new_string(LAUNCH_KEY_CHECKIN);
+	launch_data_t resp = launch_msg(msg);
+	launch_data_free(msg);
+	if (!resp) { LogMsg("launch_msg returned NULL"); return; }
+
+	if (launch_data_get_type(resp) == LAUNCH_DATA_ERRNO)
+		{
+		int err = launch_data_get_errno(resp);
+		// When running on Tiger with "ServiceIPC = false", we get "err == EACCES" to tell us there's no launchdata to fetch
+		if (err != EACCES) LogMsg("launch_msg returned %d", err);
+		else LogOperation("Launchd provided no launchdata; will open Mach port and Unix Domain Socket explicitly...", err);
+		}
+	else
+		{
+		launch_data_t skts = launch_data_dict_lookup(resp, LAUNCH_JOBKEY_SOCKETS);
+		if (!skts) LogMsg("launch_data_dict_lookup LAUNCH_JOBKEY_SOCKETS returned NULL");
+		else
+			{
+			launch_data_t skt = launch_data_dict_lookup(skts, "Listeners");
+			if (!skt) LogMsg("launch_data_dict_lookup Listeners returned NULL");
+			else
+				{
+				launch_data_t s = launch_data_array_get_index(skt, 0);
+				if (!s) LogMsg("launch_data_array_get_index(skt, 0) returned NULL");
+				else
+					{
+					listenfd = launch_data_get_fd(s);
+					LogOperation("Launchd listenfd: %d", listenfd);
+					// In some early versions of 10.4.x, the permissions on the UDS were not set correctly, so we fix them here
+					chmod(MDNS_UDS_SERVERPATH, S_IRUSR|S_IWUSR | S_IRGRP|S_IWGRP | S_IROTH|S_IWOTH);
+					launch_data_free(s);
+					}
+				launch_data_free(skt);
+				}
+			launch_data_free(skts);
+			}
+
+		launch_data_t ports = launch_data_dict_lookup(resp, "MachServices");
+		if (!ports) LogMsg("launch_data_dict_lookup MachServices returned NULL");
+		else
+			{
+			launch_data_t p = launch_data_array_get_index(ports, 0);
+			if (!p) LogOperation("launch_data_array_get_index(ports, 0) returned NULL");
+			else
+				{
+				m_port = launch_data_get_fd(p);
+				LogOperation("Launchd Mach Port: %d", m_port);
+				if (m_port == ~0U) m_port = MACH_PORT_NULL;
+				launch_data_free(p);
+				}
+			launch_data_free(ports);
+			}
+		}
+	launch_data_free(resp);
+	}
+
 mDNSexport int main(int argc, char **argv)
 	{
 	int i;
@@ -2290,8 +2364,9 @@ mDNSexport int main(int argc, char **argv)
 
 	for (i=1; i<argc; i++)
 		{
-		if (!strcmp(argv[i], "-d")) mDNS_DebugMode = mDNStrue;
-		if (!strcmp(argv[i], "-launchdaemon")) started_via_launchdaemon = mDNStrue;
+		if (!strcasecmp(argv[i], "-d"           )) mDNS_DebugMode = mDNStrue;
+		if (!strcasecmp(argv[i], "-launchd"     )) started_via_launchdaemon = mDNStrue;
+		if (!strcasecmp(argv[i], "-launchdaemon")) started_via_launchdaemon = mDNStrue;
 		}
 
 	signal(SIGHUP,  HandleSIG);		// (Debugging) Exit cleanly and let mach_init restart us (for debugging)
@@ -2300,6 +2375,11 @@ mDNSexport int main(int argc, char **argv)
 	signal(SIGTERM, HandleSIG);		// Machine shutting down: Detach from and exit cleanly like Ctrl-C
 	signal(SIGINFO, HandleSIG);		// (Debugging) Write state snapshot to syslog
 	signal(SIGUSR1, HandleSIG);		// (Debugging) Simulate network change notification from System Configuration Framework
+
+	// First do the all the initialization we need root privilege for, before we change to user "nobody"
+	mDNSStorage.p = &PlatformStorage;	// Make sure mDNSStorage.p is set up, because validatelists uses it
+	LogMsgIdent(mDNSResponderVersionString, "starting");
+	LaunchdCheckin();
 
 	// Register the server with mach_init for automatic restart only during normal (non-debug) mode
     if (!mDNS_DebugMode && !started_via_launchdaemon)
@@ -2317,10 +2397,6 @@ mDNSexport int main(int argc, char **argv)
 			if (fd != STDIN_FILENO && fd != STDOUT_FILENO && fd != STDERR_FILENO) (void)close(fd);
 			}
 		}
-
-	// Make our PID file and Unix Domain Socket first, because launchd waits for those before it starts launching other daemons.
-	// The sooner we do this, the faster the machine will boot.
-	mDNSStorage.p = &PlatformStorage;	// Make sure mDNSStorage.p is set up, because validatelists uses it
 
 	// Create the kqueue, mutex and thread to support KQSockets
 	KQueueFD = kqueue();
@@ -2340,11 +2416,10 @@ mDNSexport int main(int argc, char **argv)
 	PlatformStorage.WakeKQueueLoopFD = fdpair[0];
 	KQueueAdd(fdpair[1], EVFILT_READ, 0, 0, &wakeKQEntry);
 	
-	// First do the all the initialization we need root privilege for, before we change to user "nobody"
-	LogMsgIdent(mDNSResponderVersionString, "starting");
 	OSXVers = mDNSMacOSXSystemBuildNumber(NULL);
 	status = mDNSDaemonInitialize();
-	status = udsserver_init();
+	if (status) { LogMsg("Daemon start: mDNSDaemonInitialize failed"); goto exit; }
+	status = udsserver_init(listenfd);
 	if (status) { LogMsg("Daemon start: udsserver_init failed"); goto exit; }
 	
 #if CAN_UPDATE_DYNAMIC_STORE_WITHOUT_BEING_ROOT
