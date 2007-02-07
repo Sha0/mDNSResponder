@@ -30,6 +30,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.288  2007/02/07 01:01:24  cheshire
+<rdar://problem/3956518> Need to go native with launchd
+Additional refinements -- was unnecessarily calling launch_data_free()
+
 Revision 1.287  2007/02/06 19:06:48  cheshire
 <rdar://problem/3956518> Need to go native with launchd
 
@@ -2327,30 +2331,25 @@ mDNSlocal void LaunchdCheckin(void)
 				else
 					{
 					listenfd = launch_data_get_fd(s);
-					LogOperation("Launchd listenfd: %d", listenfd);
+					LogOperation("Launchd Unix Domain Socket: %d", listenfd);
 					// In some early versions of 10.4.x, the permissions on the UDS were not set correctly, so we fix them here
 					chmod(MDNS_UDS_SERVERPATH, S_IRUSR|S_IWUSR | S_IRGRP|S_IWGRP | S_IROTH|S_IWOTH);
-					launch_data_free(s);
 					}
-				launch_data_free(skt);
 				}
-			launch_data_free(skts);
 			}
 
 		launch_data_t ports = launch_data_dict_lookup(resp, "MachServices");
 		if (!ports) LogMsg("launch_data_dict_lookup MachServices returned NULL");
 		else
 			{
-			launch_data_t p = launch_data_array_get_index(ports, 0);
+			launch_data_t p = launch_data_dict_lookup(ports, "com.apple.mDNSResponder");
 			if (!p) LogOperation("launch_data_array_get_index(ports, 0) returned NULL");
 			else
 				{
 				m_port = launch_data_get_fd(p);
 				LogOperation("Launchd Mach Port: %d", m_port);
 				if (m_port == ~0U) m_port = MACH_PORT_NULL;
-				launch_data_free(p);
 				}
-			launch_data_free(ports);
 			}
 		}
 	launch_data_free(resp);
