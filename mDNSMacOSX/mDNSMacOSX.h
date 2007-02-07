@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.63  2007/02/07 19:32:00  cheshire
+<rdar://problem/4980353> All mDNSResponder components should contain version strings in SCCS-compatible format
+
 Revision 1.62  2007/01/05 08:30:49  cheshire
 Trim excessive "$Log" checkin history from before 2006
 (checkin history still available via "cvs log ..." of course)
@@ -136,8 +139,6 @@ extern void mDNSMacOSXNetworkChanged(mDNS *const m);
 extern int mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring);
 extern void KQueueWake(mDNS *const m);
 extern int KQueueAdd(int fd, short filter, u_int fflags, intptr_t data, const KQueueEntry *const entryRef);
-
-extern const char mDNSResponderVersionString[];
 
 // Allow platform layer to tell daemon when default registration/browse domains
 extern void DefaultRegDomainChanged(const domainname *d, mDNSBool add);

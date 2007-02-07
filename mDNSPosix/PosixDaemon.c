@@ -21,6 +21,9 @@
 	Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.37  2007/02/07 19:32:00  cheshire
+<rdar://problem/4980353> All mDNSResponder components should contain version strings in SCCS-compatible format
+
 Revision 1.36  2007/02/06 19:06:48  cheshire
 <rdar://problem/3956518> Need to go native with launchd
 
@@ -69,8 +72,6 @@ static domainname DynDNSHostname;
 #define RR_CACHE_SIZE 500
 static CacheEntity gRRCache[RR_CACHE_SIZE];
 static mDNS_PlatformSupport PlatformStorage;
-
-extern const char mDNSResponderVersionString[];
 
 mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 	{
@@ -251,7 +252,7 @@ mDNSexport void RecordUpdatedNiceLabel(mDNS *const m, mDNSs32 delay)
 
 // For convenience when using the "strings" command, this is the last thing in the file
 #if mDNSResponderVersion > 1
-mDNSexport const char mDNSResponderVersionString[] = "mDNSResponder-" STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ") ";
+mDNSexport const char mDNSResponderVersionString_SCCS[] = "@(#) mDNSResponder-" STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ") ";
 #else
-mDNSexport const char mDNSResponderVersionString[] = "mDNSResponder (Engineering Build) (" __DATE__ " " __TIME__ ") ";
+mDNSexport const char mDNSResponderVersionString_SCCS[] = "@(#) mDNSResponder (Engineering Build) (" __DATE__ " " __TIME__ ") ";
 #endif

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.h,v $
+Revision 1.19  2007/02/07 19:32:00  cheshire
+<rdar://problem/4980353> All mDNSResponder components should contain version strings in SCCS-compatible format
+
 Revision 1.18  2007/02/06 19:06:49  cheshire
 <rdar://problem/3956518> Need to go native with launchd
 
@@ -123,3 +126,6 @@ extern AuthRecord *AllocateSubTypes(mDNSs32 NumSubTypes, char *p);
 extern int CountExistingRegistrations(domainname *srv, mDNSIPPort port);
 extern void FreeExtraRR(mDNS *const m, AuthRecord *const rr, mStatus result);
 extern int CountPeerRegistrations(mDNS *const m, ServiceRecordSet *const srs);
+
+extern const char mDNSResponderVersionString_SCCS[];
+#define mDNSResponderVersionString (mDNSResponderVersionString_SCCS+5)

@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.289  2007/02/07 19:32:00  cheshire
+<rdar://problem/4980353> All mDNSResponder components should contain version strings in SCCS-compatible format
+
 Revision 1.288  2007/02/07 01:01:24  cheshire
 <rdar://problem/3956518> Need to go native with launchd
 Additional refinements -- was unnecessarily calling launch_data_free()
@@ -2529,4 +2532,4 @@ const char *__crashreporter_info__ = mDNSResponderVersionString;
 asm(".desc ___crashreporter_info__, 0x10");
 
 // For convenience when using the "strings" command, this is the last thing in the file
-mDNSexport const char mDNSResponderVersionString[] = STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ")";
+mDNSexport const char mDNSResponderVersionString_SCCS[] = "@(#) " STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ")";

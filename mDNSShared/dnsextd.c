@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.65  2007/02/07 19:32:00  cheshire
+<rdar://problem/4980353> All mDNSResponder components should contain version strings in SCCS-compatible format
+
 Revision 1.64  2007/01/20 01:43:26  cheshire
 <rdar://problem/4058383> Should not write log messages to /dev/console
 
@@ -3145,5 +3148,5 @@ mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 	{ ( void ) m; ( void ) info; ( void ) domain; ( void ) keyname; ( void ) b64keydata; return 0; }
 mStatus mDNS_StopQuery(mDNS *const m, DNSQuestion *const question) { ( void ) m; ( void ) question; return 0; }
 void mDNS_UpdateLLQs(mDNS * const m) { ( void ) m; }
-char * mDNSResponderVersionString = NULL;
+const char mDNSResponderVersionString_SCCS[] = "";
 mDNS mDNSStorage;
