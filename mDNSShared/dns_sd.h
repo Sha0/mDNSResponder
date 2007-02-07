@@ -367,9 +367,12 @@ enum
     kDNSServiceErr_NATTraversal              = -65557,
     kDNSServiceErr_DoubleNAT                 = -65558,
     kDNSServiceErr_BadTime                   = -65559,  /* Codes up to here existed in Tiger */
-    kDNSServiceErr_ServiceNotRunning         = -65560,  /* Background daemon not running */
-    kDNSServiceErr_NATPortMappingUnsupported = -65561,  /* No NAT or if the NAT doesn't support NAT-PMP or UPnP. */
-    kDNSServiceErr_NATPortMappingDisabled    = -65562   /* NAT supports NAT-PMP or UPnP but it's disabled by the administrator */
+    kDNSServiceErr_BadSig                    = -65560,
+    kDNSServiceErr_BadKey                    = -65561,
+    kDNSServiceErr_Transient                 = -65562,
+    kDNSServiceErr_ServiceNotRunning         = -65563,  /* Background daemon not running */
+    kDNSServiceErr_NATPortMappingUnsupported = -65564,  /* No NAT or if the NAT doesn't support NAT-PMP or UPnP. */
+    kDNSServiceErr_NATPortMappingDisabled    = -65565   /* NAT supports NAT-PMP or UPnP but it's disabled by the administrator */
 
     /* mDNS Error codes are in the range
      * FFFE FF00 (-65792) to FFFE FFFF (-65537) */

@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.329  2007/02/07 01:19:36  cheshire
+<rdar://problem/4849427> API: Reconcile conflicting error code values
+
 Revision 1.328  2007/01/25 00:19:40  cheshire
 Add CNAMEReferrals field to DNSQuestion_struct
 
@@ -388,33 +391,36 @@ enum
 	// the bottom end of the range (FFFE FF00) is used for non-error values;
 
 	// Error codes:
-	mStatus_UnknownErr        = -65537,		// First value: 0xFFFE FFFF
-	mStatus_NoSuchNameErr     = -65538,
-	mStatus_NoMemoryErr       = -65539,
-	mStatus_BadParamErr       = -65540,
-	mStatus_BadReferenceErr   = -65541,
-	mStatus_BadStateErr       = -65542,
-	mStatus_BadFlagsErr       = -65543,
-	mStatus_UnsupportedErr    = -65544,
-	mStatus_NotInitializedErr = -65545,
-	mStatus_NoCache           = -65546,
-	mStatus_AlreadyRegistered = -65547,
-	mStatus_NameConflict      = -65548,
-	mStatus_Invalid           = -65549,
-	mStatus_Firewall          = -65550,
-	mStatus_Incompatible      = -65551,
-	mStatus_BadInterfaceErr   = -65552,
-	mStatus_Refused           = -65553,
-	mStatus_NoSuchRecord      = -65554,
-	mStatus_NoAuth            = -65555,
-	mStatus_NoSuchKey         = -65556,
-	mStatus_NATTraversal      = -65557,
-	mStatus_DoubleNAT         = -65558,
-	mStatus_BadTime           = -65559,
-	mStatus_BadSig            = -65560,     // while we define this per RFC 2845, BIND 9 returns Refused for bad/missing signatures
-	mStatus_BadKey            = -65561,
-	mStatus_TransientErr      = -65562,     // transient failures, e.g. sending packets shortly after a network transition or wake from sleep
-	// -65563 to -65786 currently unused; available for allocation
+	mStatus_UnknownErr                = -65537,		// First value: 0xFFFE FFFF
+	mStatus_NoSuchNameErr             = -65538,
+	mStatus_NoMemoryErr               = -65539,
+	mStatus_BadParamErr               = -65540,
+	mStatus_BadReferenceErr           = -65541,
+	mStatus_BadStateErr               = -65542,
+	mStatus_BadFlagsErr               = -65543,
+	mStatus_UnsupportedErr            = -65544,
+	mStatus_NotInitializedErr         = -65545,
+	mStatus_NoCache                   = -65546,
+	mStatus_AlreadyRegistered         = -65547,
+	mStatus_NameConflict              = -65548,
+	mStatus_Invalid                   = -65549,
+	mStatus_Firewall                  = -65550,
+	mStatus_Incompatible              = -65551,
+	mStatus_BadInterfaceErr           = -65552,
+	mStatus_Refused                   = -65553,
+	mStatus_NoSuchRecord              = -65554,
+	mStatus_NoAuth                    = -65555,
+	mStatus_NoSuchKey                 = -65556,
+	mStatus_NATTraversal              = -65557,
+	mStatus_DoubleNAT                 = -65558,
+	mStatus_BadTime                   = -65559,
+	mStatus_BadSig                    = -65560,     // while we define this per RFC 2845, BIND 9 returns Refused for bad/missing signatures
+	mStatus_BadKey                    = -65561,
+	mStatus_TransientErr              = -65562,     // transient failures, e.g. sending packets shortly after a network transition or wake from sleep
+	mStatus_ServiceNotRunning         = -65563,     // Background daemon not running
+	mStatus_NATPortMappingUnsupported = -65564,     // No NAT or if the NAT doesn't support NAT-PMP or UPnP
+	mStatus_NATPortMappingDisabled    = -65565,     // NAT supports NAT-PMP or UPnP but it's disabled by the administrator
+	// -65566 to -65786 currently unused; available for allocation
 
 	// tcp connection status
 	mStatus_ConnPending       = -65787,
