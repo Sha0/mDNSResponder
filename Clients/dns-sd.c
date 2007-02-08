@@ -525,7 +525,7 @@ static void DNSSD_API port_mapping_create_reply(DNSServiceRef sdRef, DNSServiceF
 #endif
 
 #if HAS_ADDRINFO_API
-static void DNSSD_API addrinfo_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex, DNSServiceErrorType errorCode, char *hostname, struct sockaddr *address, uint32_t ttl, void *context)
+static void DNSSD_API addrinfo_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex, DNSServiceErrorType errorCode, const char *hostname, const struct sockaddr *address, uint32_t ttl, void *context)
 	{
 	char *op = (flags & kDNSServiceFlagsAdd) ? "Add" : "Rmv";
 	(void) sdRef;

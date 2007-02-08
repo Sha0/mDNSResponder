@@ -473,6 +473,7 @@ enum
 
 #define kDNSServiceInterfaceIndexAny 0
 #define kDNSServiceInterfaceIndexLocalOnly ((uint32_t)-1)
+#define kDNSServiceInterfaceIndexUnicast   ((uint32_t)-2)
 
 typedef uint32_t DNSServiceFlags;
 typedef int32_t DNSServiceErrorType;
@@ -1334,8 +1335,8 @@ typedef void (DNSSD_API *DNSServiceGetAddrInfoReply)
     DNSServiceFlags                  flags,
     uint32_t                         interfaceIndex,
     DNSServiceErrorType              errorCode,
-    char                             *hostname,
-    struct sockaddr                  *address,
+    const char                       *hostname,
+    const struct sockaddr            *address,
     uint32_t                         ttl,
     void                             *context
     );
