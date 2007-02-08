@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.371  2007/02/08 21:12:28  cheshire
+<rdar://problem/4386497> Stop reading /etc/mDNSResponder.conf on every sleep/wake
+
 Revision 1.370  2007/01/16 22:59:58  cheshire
 Error code ioErr is from wrong conceptual namespace; use errSSLClosedAbort instead
 
@@ -276,7 +279,6 @@ typedef struct SearchListElem
 // Globals
 
 static mDNSu32 clockdivisor = 0;
-static mDNSBool DomainDiscoveryDisabled = mDNSfalse;
 
 mDNSexport int KQueueFD;
 
@@ -285,7 +287,6 @@ static CFArrayRef ServerCerts;
 static SecKeychainRef ServerKC;
 #endif /* NO_SECURITYFRAMEWORK */
 
-#define CONFIG_FILE "/etc/mDNSResponder.conf"
 #define DYNDNS_KEYCHAIN_SERVICE "DynDNS Shared Secret"
 #define SYSTEM_KEYCHAIN_PATH "/Library/Keychains/System.keychain"
 
@@ -2410,7 +2411,7 @@ mDNSlocal mStatus GetDNSConfig(void **result)
 #endif // MDNS_NO_DNSINFO
 	}
 
-mDNSexport void mDNSPlatformGetDNSConfig(mDNS * const m, domainname *const fqdn, domainname *const regDomain, DNameListElem **browseDomains)
+mDNSexport void mDNSPlatformGetDNSConfig(domainname *const fqdn, domainname *const regDomain, DNameListElem **browseDomains)
 	{
 	char buf[MAX_ESCAPED_DOMAIN_NAME];	// Max legal C-string name, including terminating NUL
 
@@ -2504,8 +2505,6 @@ mDNSexport void mDNSPlatformGetDNSConfig(mDNS * const m, domainname *const fqdn,
 			}
 		CFRelease(store);
 		}
-
-	ReadDDNSSettingsFromConfFile(m, CONFIG_FILE, fqdn && fqdn->c[0] ? NULL : fqdn, regDomain && regDomain->c[0] ? NULL : regDomain, &DomainDiscoveryDisabled);
 	}
 
 // Get the list of DNS Servers

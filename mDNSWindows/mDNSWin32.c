@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.115  2007/02/08 21:12:28  cheshire
+<rdar://problem/4386497> Stop reading /etc/mDNSResponder.conf on every sleep/wake
+
 Revision 1.114  2007/01/05 08:31:01  cheshire
 Trim excessive "$Log" checkin history from before 2006
 (checkin history still available via "cvs log ..." of course)
@@ -1219,7 +1222,7 @@ mDNSPlatformTLSTearDownCerts(void)
 //===========================================================================================================================
 
 void
-mDNSPlatformGetDNSConfig(mDNS * const m, domainname * const fqdn, domainname *const regDomain, DNameListElem ** browseDomains)
+mDNSPlatformGetDNSConfig(domainname * const fqdn, domainname *const regDomain, DNameListElem ** browseDomains)
 {
 	LPSTR		name = NULL;
 	char		subKeyName[kRegistryMaxKeyLength + 1];
@@ -1233,8 +1236,6 @@ mDNSPlatformGetDNSConfig(mDNS * const m, domainname * const fqdn, domainname *co
 	domainname	dname;
 	DWORD		i;
 	OSStatus	err;
-
-	DEBUG_UNUSED( m );
 
 	// Initialize
 

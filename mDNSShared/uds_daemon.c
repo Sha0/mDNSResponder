@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.235  2007/02/08 21:12:28  cheshire
+<rdar://problem/4386497> Stop reading /etc/mDNSResponder.conf on every sleep/wake
+
 Revision 1.234  2007/02/06 19:06:49  cheshire
 <rdar://problem/3956518> Need to go native with launchd
 
@@ -2128,7 +2131,7 @@ mDNSexport void udsserver_handle_configchange(mDNS *const m)
 		}
 
 	// Let the platform layer get the current DNS information
-	mDNSPlatformGetDNSConfig(m, mDNSNULL, &regDomain, &browseDomains);
+	mDNSPlatformGetDNSConfig(mDNSNULL, &regDomain, &browseDomains);
 
 	// Did our registration domain change?
 	if (!SameDomainName(&regDomain, &m->RegDomain))

@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.297  2007/02/08 21:12:28  cheshire
+<rdar://problem/4386497> Stop reading /etc/mDNSResponder.conf on every sleep/wake
+
 Revision 1.296  2007/01/29 16:03:22  cheshire
 Fix unused parameter warning
 
@@ -5379,7 +5382,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
     domainname      fqdn;
 
 	// Let the platform layer get the current DNS information
-	mDNSPlatformGetDNSConfig(m, &fqdn, mDNSNULL, mDNSNULL);
+	mDNSPlatformGetDNSConfig(&fqdn, mDNSNULL, mDNSNULL);
 
 	// Did our FQDN change?
 	if (!SameDomainName(&fqdn, &m->FQDN))

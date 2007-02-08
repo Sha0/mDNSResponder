@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.330  2007/02/08 21:12:28  cheshire
+<rdar://problem/4386497> Stop reading /etc/mDNSResponder.conf on every sleep/wake
+
 Revision 1.329  2007/02/07 01:19:36  cheshire
 <rdar://problem/4849427> API: Reconcile conflicting error code values
 
@@ -1995,7 +1998,7 @@ extern void           mDNSPlatformTLSTearDownCerts(void);
 // Platforms that support unicast browsing and dynamic update registration for clients who do not specify a domain
 // in browse/registration calls must implement these routines to get the "default" browse/registration list.
 
-extern void					mDNSPlatformGetDNSConfig(mDNS * const m, domainname *const fqdn, domainname *const regDomain, DNameListElem ** browseDomains);
+extern void					mDNSPlatformGetDNSConfig(domainname *const fqdn, domainname *const regDomain, DNameListElem ** browseDomains);
 extern IPAddrListElem	*	mDNSPlatformGetDNSServers(void);
 extern DNameListElem    *   mDNSPlatformGetSearchDomainList(void);
 extern DNameListElem	*	mDNSPlatformGetFQDN(void);
