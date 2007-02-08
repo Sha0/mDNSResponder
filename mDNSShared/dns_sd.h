@@ -1060,9 +1060,7 @@ DNSServiceErrorType DNSSD_API DNSServiceBrowse
  *
  * sdRef:           The DNSServiceRef initialized by DNSServiceResolve().
  *
- * flags:           Specifying kDNSServiceFlagsForceMulticast will cause query to be
- *                  performed with a link-local mDNS query, even if the name is an
- *                  apparently non-local name (i.e. a name not ending in ".local.")
+ * flags:           Possible values: kDNSServiceFlagsMoreComing
  *
  * interfaceIndex:  The interface on which the service was resolved.
  *
@@ -1126,7 +1124,9 @@ typedef void (DNSSD_API *DNSServiceResolveReply)
  *                  and the resolve operation will run indefinitely until the client
  *                  terminates it by passing this DNSServiceRef to DNSServiceRefDeallocate().
  *
- * flags:           Currently ignored, reserved for future use.
+ * flags:           Specifying kDNSServiceFlagsForceMulticast will cause query to be
+ *                  performed with a link-local mDNS query, even if the name is an
+ *                  apparently non-local name (i.e. a name not ending in ".local.")
  *
  * interfaceIndex:  The interface on which to resolve the service. If this resolve call is
  *                  as a result of a currently active DNSServiceBrowse() operation, then the
@@ -1304,7 +1304,8 @@ DNSServiceErrorType DNSSD_API DNSServiceQueryRecord
  *
  * sdRef:           The DNSServiceRef initialized by DNSServiceGetAddrInfo().
  *
- * flags:           kDNSServiceFlagsAdd and kDNSServiceFlagsMoreComing.
+ * flags:           Possible values are kDNSServiceFlagsMoreComing and
+ *                  kDNSServiceFlagsAdd.
  *
  * interfaceIndex:  The interface to which the answers pertain.
  *
