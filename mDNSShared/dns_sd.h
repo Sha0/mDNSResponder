@@ -476,7 +476,8 @@ enum
 #define kDNSServiceInterfaceIndexUnicast   ((uint32_t)-2)
 
 typedef uint32_t DNSServiceFlags;
-typedef int32_t DNSServiceErrorType;
+typedef uint32_t DNSServiceProtocol;
+typedef int32_t  DNSServiceErrorType;
 
 /*********************************************************************************************
  *
@@ -1393,7 +1394,7 @@ DNSServiceErrorType DNSSD_API DNSServiceGetAddrInfo
     DNSServiceRef                    *sdRef,
     DNSServiceFlags                  flags,
     uint32_t                         interfaceIndex,
-    uint32_t                         protocol,
+    DNSServiceProtocol               protocol,
     const char                       *hostname,
     DNSServiceGetAddrInfoReply       callBack,
     void                             *context          /* may be NULL */
@@ -1628,8 +1629,8 @@ typedef void (DNSSD_API *DNSServiceNATPortMappingReply)
     DNSServiceFlags                  flags,
     uint32_t                         interfaceIndex,
     DNSServiceErrorType              errorCode,
-    uint32_t                         publicAddress,   /* four byte IPv4 address in network byte order */
-    uint32_t                         protocol,
+    uint32_t                         publicAddress,    /* four byte IPv4 address in network byte order */
+    DNSServiceProtocol               protocol,
     uint16_t                         privatePort,
     uint16_t                         publicPort,       /* may be different than the requested port */
     uint32_t                         ttl,              /* may be different than the requested ttl */
@@ -1687,7 +1688,7 @@ DNSServiceErrorType DNSSD_API DNSServiceNATPortMappingCreate
     DNSServiceRef                    *sdRef,
     DNSServiceFlags                  flags,
     uint32_t                         interfaceIndex,
-    uint32_t                         protocol,         /* TCP and/or UDP */
+    DNSServiceProtocol               protocol,         /* TCP and/or UDP */
     uint16_t                         privatePort,      /* network byte order */
     uint16_t                         publicPort,       /* network byte order */
     uint32_t                         ttl,              /* time to live in seconds */
