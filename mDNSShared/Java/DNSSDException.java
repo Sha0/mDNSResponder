@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSSDException.java,v $
+Revision 1.6  2007/02/08 23:58:17  cheshire
+Added comment about updating kMessages array in AppleDNSSDException (DNSSD.java)
+
 Revision 1.5  2007/02/07 01:19:36  cheshire
 <rdar://problem/4849427> API: Reconcile conflicting error code values
 
@@ -73,6 +76,9 @@ abstract public class	DNSSDException extends Exception
     public static final int		SERVICENOTRUNNING         = -65563;
     public static final int		NATPORTMAPPINGUNSUPPORTED = -65564;
     public static final int		NATPORTMAPPINGDISABLED    = -65565;
+    
+    // Note: When adding new error values here, remember also
+    // to update the corresponding kMessages array in AppleDNSSDException (DNSSD.java)
 
 	/** Returns the sub-code that identifies the particular error. */
 	abstract public int			getErrorCode();
