@@ -502,7 +502,7 @@ static void DNSSD_API qr_reply(DNSServiceRef sdRef, const DNSServiceFlags flags,
 	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
 	}
 
-#if defined(HAS_NAT_PMP_API)
+#if HAS_NAT_PMP_API
 static void DNSSD_API port_mapping_create_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode, uint32_t publicAddress, uint32_t protocol, uint16_t privatePort, uint16_t publicPort, uint32_t ttl, void * context)
 	{
 	(void)sdRef;       // Unused
@@ -524,7 +524,7 @@ static void DNSSD_API port_mapping_create_reply(DNSServiceRef sdRef, DNSServiceF
 	}
 #endif
 
-#if defined(HAS_ADDRINFO_API)
+#if HAS_ADDRINFO_API
 static void DNSSD_API addrinfo_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex, DNSServiceErrorType errorCode, char *hostname, struct sockaddr *address, uint32_t ttl, void *context)
 	{
 	char *op = (flags & kDNSServiceFlagsAdd) ? "Add" : "Rmv";
@@ -708,7 +708,7 @@ static DNSServiceErrorType RegisterService(DNSServiceRef *sdRef,
 	
 	printf("Registering Service %s.%s%s%s", nam[0] ? nam : "<<Default>>", typ, dom[0] ? "." : "", dom);
 	if (host && *host) printf(" host %s", host);
-	printf(" port %s\n", port);
+	printf(" port %s", port);
 
 	if (argc)
 		{
@@ -724,9 +724,10 @@ static DNSServiceErrorType RegisterService(DNSServiceRef *sdRef,
 				}
 			ptr += 1 + *ptr;
 			}
+		printf(" TXT");
 		ShowTXTRecord(ptr-txt, txt);
-		printf("\n");
 		}
+	printf("\n");
 	
 	//flags |= kDNSServiceFlagsAllowRemoteQuery;
 	//flags |= kDNSServiceFlagsNoAutoRename;
@@ -766,10 +767,10 @@ int main(int argc, char **argv)
 
 	if (argc < 2) goto Fail;        // Minimum command line is the command name and one argument
 	operation = getfirstoption(argc, argv, "EFBLRPQCAUNTMI"
-								#if defined(HAS_NAT_PMP_API)
+								#if HAS_NAT_PMP_API
 									"X"
 								#endif
-								#if defined(HAS_ADDRINFO_API)
+								#if HAS_ADDRINFO_API
 									"G"
 								#endif
 								, &optind);
@@ -866,7 +867,7 @@ int main(int argc, char **argv)
 					if (!err) err = DNSServiceUpdateRecord(client, NULL, 0, sizeof(TXT)-1, TXT, 0);
 					break;
 					}
-#if defined(HAS_NAT_PMP_API)
+#if HAS_NAT_PMP_API
 		case 'X':   {
 					if (argc != optind+4) goto Fail;
 					else
@@ -881,7 +882,7 @@ int main(int argc, char **argv)
 					break;
 		            }
 #endif
-#if defined(HAS_ADDRINFO_API)
+#if HAS_ADDRINFO_API
 		case 'G':   {
 					if (argc != optind+2) goto Fail;
 					else
@@ -917,10 +918,10 @@ Fail:
 	fprintf(stderr, "%s -T                            (Test creating a large TXT record)\n", a0);
 	fprintf(stderr, "%s -M      (Test creating a registration with multiple TXT records)\n", a0);
 	fprintf(stderr, "%s -I   (Test registering and then immediately updating TXT record)\n", a0);
-#if defined(HAS_NAT_PMP_API)
+#if HAS_NAT_PMP_API
 	fprintf(stderr, "%s -X <Prot> <PrivPort> <PubPort> <TTL>   (Create NAT Port Mapping)\n", a0);
 #endif
-#if defined(HAS_ADDRINFO_API)
+#if HAS_ADDRINFO_API
 	fprintf(stderr, "%s -G <Prot> <Hostname>      (Get address information for hostname)\n", a0);
 #endif
 	return 0;
