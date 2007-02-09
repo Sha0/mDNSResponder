@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: DNSServiceDiscoveryPref.m,v $
+Revision 1.9  2007/02/09 00:39:06  cheshire
+Fix compile warnings
+
 Revision 1.8  2006/08/14 23:15:47  cheshire
 Tidy up Change History comment
 
@@ -80,6 +83,7 @@ Add Preference Pane to facilitate testing of DDNS & wide-area features
 static int
 MyArrayCompareFunction(id val1, id val2, void *context)
 {
+	(void)context; // Unused
     return CFStringCompare((CFStringRef)val1, (CFStringRef)val2, kCFCompareCaseInsensitive);
 }
 
@@ -87,6 +91,7 @@ MyArrayCompareFunction(id val1, id val2, void *context)
 static int
 MyDomainArrayCompareFunction(id val1, id val2, void *context)
 {
+	(void)context; // Unused
 	NSString *domain1 = [val1 objectForKey:(NSString *)SC_DYNDNS_DOMAIN_KEY];
 	NSString *domain2 = [val2 objectForKey:(NSString *)SC_DYNDNS_DOMAIN_KEY];
     return CFStringCompare((CFStringRef)domain1, (CFStringRef)domain2, kCFCompareCaseInsensitive);
@@ -123,6 +128,8 @@ GetNextLabel(const char *cstr, char label[64])
 
 static void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, void *context)
 {
+	(void)store; // Unused
+	(void)changedKeys; // Unused
     DNSServiceDiscoveryPref * me = (DNSServiceDiscoveryPref *)context;
     assert(me != NULL);
     
@@ -133,6 +140,9 @@ static void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, void
 static void ServiceDomainEnumReply( DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex,
     DNSServiceErrorType errorCode, const char *replyDomain, void *context, DNSServiceFlags enumType)
 {    
+	(void)sdRef; // Unused
+	(void)interfaceIndex; // Unused
+	(void)errorCode; // Unused
     if (strcmp(replyDomain, "local.") == 0) return;  // local domain is not interesting
 
 	DNSServiceDiscoveryPref * me = (DNSServiceDiscoveryPref *)context;
@@ -186,7 +196,7 @@ static void ServiceDomainEnumReply( DNSServiceRef sdRef, DNSServiceFlags flags, 
 }
 
 
-void
+static void
 browseDomainReply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex,
     DNSServiceErrorType errorCode, const char *replyDomain, void *context)
 {
@@ -194,7 +204,7 @@ browseDomainReply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interface
 }
 
 
-void
+static void
 registrationDomainReply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex,
     DNSServiceErrorType errorCode, const char *replyDomain, void *context)
 {
@@ -249,7 +259,7 @@ MySocketReadCallback(CFSocketRef s, CFSocketCallBackType type, CFDataRef address
 
 
 
-void
+static void
 MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
 {
     CFSocketNativeHandle sock;
@@ -396,7 +406,7 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
 	
 	if ([defaultBrowseDomainsArray count] > 0) {
 		NSEnumerator * arrayEnumerator = [defaultBrowseDomainsArray objectEnumerator];
-		while (domain = [arrayEnumerator nextObject]) {
+		while ((domain = [arrayEnumerator nextObject]) != NULL) {
 			if ([self domainAlreadyInList:domain] == NO) break;
 		}
 	}
@@ -419,6 +429,7 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
 
 - (IBAction)removeBrowseDomainClicked:(id)sender;
 {
+	(void)sender; // Unused
 	int selectedBrowseDomain = [browseDomainList selectedRow];
 	[browseDomainsArray removeObjectAtIndex:selectedBrowseDomain];
 	[browseDomainList reloadData];
@@ -444,6 +455,7 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
 
 - (int)numberOfRowsInTableView:(NSTableView *)tableView;
 {
+	(void)tableView; // Unused
 	int numberOfRows = 0;
 		
 	if (browseDomainsArray) {
@@ -453,8 +465,10 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
 }
 
 
-- (void)tabView:(NSTabView *)tabView didSelectTabViewItem:(NSTabViewItem *)tabViewItem;
+- (void)tabView:(NSTabView *)xtabView didSelectTabViewItem:(NSTabViewItem *)tabViewItem;
 {
+	(void)xtabView; // Unused
+	(void)tabViewItem; // Unused
 	[browseDomainList deselectAll:self];
 	[mainWindow makeFirstResponder:nil];
 }
@@ -462,6 +476,7 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
 
 - (id)tableView:(NSTableView *)tableView objectValueForTableColumn:(NSTableColumn *)tableColumn row:(int)row;
 {
+	(void)tableView; // Unused
 	NSDictionary *browseDomainDict;
 	id           value = nil;
 		
@@ -618,7 +633,7 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
 		NSDictionary *domainDict;
 		NSString     *domainName;
 		NSEnumerator *arrayEnumerator = [browseDomainsArray objectEnumerator];
-		while (domainDict = [arrayEnumerator nextObject]) {
+		while ((domainDict = [arrayEnumerator nextObject]) != NULL) {
 			domainName = [domainDict objectForKey:(NSString *)SC_DYNDNS_DOMAIN_KEY];
 			if ([domainString caseInsensitiveCompare:domainName] == NSOrderedSame) return YES;
 		}
@@ -637,6 +652,7 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
 
 - (void)addBrowseDomainSheetDidEnd:(NSWindow *)sheet returnCode:(int)returnCode contextInfo:(void *)contextInfo
 {
+	(void)contextInfo; // Unused
     [sheet orderOut:self];
     [self enableControls];
     
@@ -680,7 +696,7 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
     if ([sender isEqualTo:hostNameSharedSecretButton]) {		
         if (hostNameSharedSecretValue) {
 			[sharedSecretValue setStringValue:hostNameSharedSecretValue];
-        } else if (keyName = [self sharedSecretKeyName:[hostName stringValue]]) {
+        } else if ((keyName = [self sharedSecretKeyName:[hostName stringValue]]) != NULL) {
 			[sharedSecretName setStringValue:keyName];
             [sharedSecretValue setStringValue:@"****************"];
 		} else {
@@ -691,7 +707,7 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
     } else {        
         if (regSharedSecretValue) {
 			[sharedSecretValue setStringValue:regSharedSecretValue];
-        } else if (keyName = [self sharedSecretKeyName:[regDomainsComboBox stringValue]]) {
+        } else if ((keyName = [self sharedSecretKeyName:[regDomainsComboBox stringValue]]) != NULL) {
 			[sharedSecretName setStringValue:keyName];
             [sharedSecretValue setStringValue:@"****************"];
 		} else {
@@ -745,6 +761,7 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
 
 - (void)controlTextDidChange:(NSNotification *)notification;
 {
+	(void)notification; // Unused
     [self updateApplyButtonState];
 }
 
@@ -752,6 +769,7 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
 
 - (IBAction)comboAction:(id)sender;
 {
+	(void)sender; // Unused
     [self updateApplyButtonState];
 }
 
@@ -856,6 +874,7 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
 
 - (IBAction)applyClicked:(id)sender
 {
+	(void)sender; // Unused
     [self applyCurrentState];
 }
 
@@ -912,6 +931,7 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
 
 - (void)savePanelWillClose:(NSWindow *)sheet returnCode:(int)returnCode contextInfo:(void *)contextInfo
 {
+	(void)sheet; // Unused
     DNSServiceDiscoveryPref * me = (DNSServiceDiscoveryPref *)contextInfo;
     
     if (returnCode == NSAlertDefaultReturn) {
@@ -963,7 +983,7 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
         SecKeychainAttributeInfo attrInfo;
         SecKeychainAttributeList *attrList = NULL;
         SecKeychainAttribute attribute;
-		int i;
+		unsigned int i;
 		
         tags[0] = kSecAccountItemAttr;
         attrInfo.count = 1;
@@ -1171,6 +1191,8 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
 
 - (BOOL)tableView:(NSTableView *)tableView shouldSelectRow:(int)row;
 {
+	(void)row; // Unused
+	(void)tableView; // Unused
 	return browseDomainListEnabled;
 }
 
@@ -1198,12 +1220,14 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
 
 - (void)authorizationViewDidAuthorize:(SFAuthorizationView *)view
 {
+	(void)view; // Unused
     [self enableControls];
 }
 
 
 - (void)authorizationViewDidDeauthorize:(SFAuthorizationView *)view
 {    
+	(void)view; // Unused
     [self disableControls];
 }
 

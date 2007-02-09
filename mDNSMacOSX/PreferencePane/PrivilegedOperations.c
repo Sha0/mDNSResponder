@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: PrivilegedOperations.c,v $
+Revision 1.7  2007/02/09 00:39:06  cheshire
+Fix compile warnings
+
 Revision 1.6  2006/08/14 23:15:47  cheshire
 Tidy up Change History comment
 
@@ -78,7 +81,7 @@ Add Preference Pane to facilitate testing of DDNS & wide-area features
 
 Boolean	gToolApproved = false;
 
-pid_t	execTool(const char *args[])
+static pid_t	execTool(const char *args[])
 // fork/exec and return new pid
 {
 	pid_t	child;
