@@ -396,7 +396,7 @@
 		7F461DB5062DBF2900672BF3 /* DNSDigest.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = DNSDigest.c; path = ../mDNSCore/DNSDigest.c; sourceTree = SOURCE_ROOT; };
 		7F869685066EE02400D2A2DC /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = /System/Library/Frameworks/Security.framework; sourceTree = "<absolute>"; };
 		7FC8F9D406D14E66007E879D /* LegacyNATTraversal.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = LegacyNATTraversal.c; sourceTree = SOURCE_ROOT; };
-		D284BE730ADD80740027CCDF /* mDNSResponder */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "compiled.mach-o.executable"; path = mDNSResponder; sourceTree = BUILT_PRODUCTS_DIR; };
+		D284BE730ADD80740027CCDF /* mDNSResponder */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = mDNSResponder; sourceTree = BUILT_PRODUCTS_DIR; };
 		D284BE950ADD80800027CCDF /* mDNSResponder.debug */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = mDNSResponder.debug; sourceTree = BUILT_PRODUCTS_DIR; };
 		D284BEA30ADD808B0027CCDF /* mDNS */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = mDNS; sourceTree = BUILT_PRODUCTS_DIR; };
 		D284BEB00ADD80920027CCDF /* dns-sd */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "dns-sd"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -1225,7 +1225,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "javah -force -J-Xbootclasspath/p:${CONFIGURATION_TEMP_DIR}/dns_sd.jar.build/JavaClasses -o ${CONFIGURATION_TEMP_DIR}/dns_sd.jar.build/DNSSD.java.h com.apple.dnssd.AppleDNSSD com.apple.dnssd.AppleBrowser com.apple.dnssd.AppleResolver com.apple.dnssd.AppleRegistration com.apple.dnssd.AppleQuery com.apple.dnssd.AppleDomainEnum com.apple.dnssd.AppleService";
+			shellScript = "javah -force -J-Xbootclasspath/p:${CONFIGURATION_TEMP_DIR}/dns_sd.jar.build/JavaClasses -o ${CONFIGURATION_TEMP_DIR}/dns_sd.jar.build/DNSSD.java.h com.apple.dnssd.AppleDNSSD com.apple.dnssd.AppleBrowser com.apple.dnssd.AppleResolver com.apple.dnssd.AppleRegistration com.apple.dnssd.AppleQuery com.apple.dnssd.AppleDomainEnum com.apple.dnssd.AppleService com.apple.dnssd.AppleDNSRecord com.apple.dnssd.AppleRecordRegistrar";
 		};
 		FFD41DDD06641B4200F0C438 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -1532,11 +1532,6 @@
 				REZ_EXECUTABLE = YES;
 				SECTORDER_FLAGS = "";
 				STRIPFLAGS = "-S";
-				WARNING_CFLAGS = (
-					"-Wmost",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
 			};
 			name = Development;
 		};
@@ -1561,6 +1556,13 @@
 		D284BE2C0ADD78180027CCDF /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				WARNING_CFLAGS = (
+					"-W",
+					"-Wall",
+					"-Wmissing-prototypes",
+					"-Wno-four-char-constants",
+					"-Wno-unknown-pragmas",
+				);
 				YACC_GENERATED_FILE_STEM = Standard;
 			};
 			name = Development;
@@ -1603,13 +1605,6 @@
 					mDNSResponder.order,
 				);
 				STRIPFLAGS = "-S";
-				WARNING_CFLAGS = (
-					"-W",
-					"-Wall",
-					"-Wmissing-prototypes",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
 			};
 			name = Development;
 		};
@@ -1650,13 +1645,6 @@
 					mDNSResponder.order,
 				);
 				STRIPFLAGS = "-S";
-				WARNING_CFLAGS = (
-					"-W",
-					"-Wall",
-					"-Wmissing-prototypes",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
 			};
 			name = Development;
 		};
@@ -1680,13 +1668,6 @@
 				REZ_EXECUTABLE = YES;
 				SECTORDER_FLAGS = "";
 				STRIPFLAGS = "-S";
-				WARNING_CFLAGS = (
-					"-W",
-					"-Wall",
-					"-Wmissing-prototypes",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
 			};
 			name = Development;
 		};
@@ -1711,13 +1692,6 @@
 				REZ_EXECUTABLE = YES;
 				SECTORDER_FLAGS = "";
 				STRIPFLAGS = "-S";
-				WARNING_CFLAGS = (
-					"-W",
-					"-Wall",
-					"-Wmissing-prototypes",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
 			};
 			name = Development;
 		};
@@ -1752,11 +1726,6 @@
 				REZ_EXECUTABLE = YES;
 				SECTORDER_FLAGS = "";
 				STRIPFLAGS = "-S";
-				WARNING_CFLAGS = (
-					"-Wmost",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
 			};
 			name = Development;
 		};
@@ -1789,13 +1758,6 @@
 				REZ_EXECUTABLE = YES;
 				SECTORDER_FLAGS = "";
 				STRIPFLAGS = "-S";
-				WARNING_CFLAGS = (
-					"-W",
-					"-Wall",
-					"-Wmissing-prototypes",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
 				YACC = "/usr/bin/bison -y";
 			};
 			name = Development;
@@ -1819,11 +1781,6 @@
 				REZ_EXECUTABLE = YES;
 				SECTORDER_FLAGS = "";
 				STRIPFLAGS = "-S";
-				WARNING_CFLAGS = (
-					"-Wmost",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
 			};
 			name = Development;
 		};
@@ -1849,11 +1806,6 @@
 				PRODUCT_NAME = Bonjour;
 				SECTORDER_FLAGS = "";
 				STRIPFLAGS = "-S";
-				WARNING_CFLAGS = (
-					"-Wmost",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
 				WRAPPER_EXTENSION = prefPane;
 			};
 			name = Development;
