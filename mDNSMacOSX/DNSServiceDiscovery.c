@@ -25,6 +25,7 @@
 
 #include "DNSServiceDiscovery.h"
 #include "DNSServiceDiscoveryDefines.h"
+#include "DNSServiceDiscoveryReplyServer.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -34,8 +35,6 @@
 #include <pthread.h>
 
 #include <netinet/in.h>
-
-extern struct mig_subsystem internal_DNSServiceDiscoveryReply_subsystem;
 
 extern boolean_t DNSServiceDiscoveryReply_server(
         mach_msg_header_t *InHeadP,
@@ -130,7 +129,7 @@ typedef struct _dns_service_discovery_t {
     mach_port_t	port;
 } dns_service_discovery_t;
 
-mach_port_t DNSServiceDiscoveryLookupServer(void)
+static mach_port_t DNSServiceDiscoveryLookupServer(void)
 {
     static mach_port_t sndPort 	= MACH_PORT_NULL;
     kern_return_t   result;
@@ -149,7 +148,7 @@ mach_port_t DNSServiceDiscoveryLookupServer(void)
     return sndPort;
 }
 
-void _increaseQueueLengthOnPort(mach_port_t port)
+static void _increaseQueueLengthOnPort(mach_port_t port)
 {
     mach_port_limits_t qlimits;
     kern_return_t result;
@@ -520,7 +519,7 @@ kern_return_t internal_DNSServiceDomainEnumerationReply_rpc
     mach_port_t reply,
     int resultType,
     DNSCString replyDomain,
-    DNSServiceDiscoveryReplyFlags flags
+    int flags
 )
 {
     struct a_requests	*request;
@@ -557,7 +556,7 @@ kern_return_t internal_DNSServiceBrowserReply_rpc
     DNSCString replyName,
     DNSCString replyType,
     DNSCString replyDomain,
-    DNSServiceDiscoveryReplyFlags flags
+    int flags
 )
 {
     struct a_requests	*request;
@@ -624,7 +623,7 @@ kern_return_t internal_DNSServiceResolverReply_rpc
     sockaddr_t interface,
     sockaddr_t address,
     DNSCString txtRecord,
-    DNSServiceDiscoveryReplyFlags flags
+    int flags
 )
 {
     struct sockaddr  *interface_storage = NULL;
