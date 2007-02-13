@@ -1556,6 +1556,7 @@
 		D284BE2C0ADD78180027CCDF /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				PREBINDING = NO;
 				WARNING_CFLAGS = (
 					"-W",
 					"-Wall",
@@ -1802,7 +1803,6 @@
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "-twolevel_namespace";
 				OTHER_REZFLAGS = "";
-				PREBINDING = NO;
 				PRODUCT_NAME = Bonjour;
 				SECTORDER_FLAGS = "";
 				STRIPFLAGS = "-S";
@@ -1825,7 +1825,6 @@
 				);
 				INSTALL_PATH = /usr/local/lib/system;
 				MVERS = "\"mDNSResponder (Engineering Build)\"";
-				PREBINDING = NO;
 				PRODUCT_NAME = dns_sd_debug;
 			};
 			name = Development;
@@ -1846,7 +1845,6 @@
 				GENERATE_PROFILING_CODE = YES;
 				INSTALL_PATH = /usr/local/lib/system;
 				MVERS = "\"mDNSResponder (Engineering Build)\"";
-				PREBINDING = NO;
 				PRODUCT_NAME = dns_sd_profile;
 			};
 			name = Development;
@@ -1890,7 +1888,6 @@
 				);
 				INSTALL_PATH = /usr/local/lib/system;
 				MVERS = "\"mDNSResponder (Engineering Build)\"";
-				PREBINDING = NO;
 				PRODUCT_NAME = dns_sd;
 			};
 			name = Development;
