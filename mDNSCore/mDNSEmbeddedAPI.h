@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.331  2007/02/14 03:16:39  cheshire
+<rdar://problem/4789477> Eliminate unnecessary malloc/free in mDNSCore code
+
 Revision 1.330  2007/02/08 21:12:28  cheshire
 <rdar://problem/4386497> Stop reading /etc/mDNSResponder.conf on every sleep/wake
 
@@ -786,11 +789,14 @@ struct AuthRecord_struct
 	mDNSs32         UpdateBlocked;		// Set if update delaying is in effect
 
 	// Field Group 4: Transient uDNS state for Authoritative Records
-	regState_t   state;
-	mDNSBool     lease;		// dynamic update contains (should contain) lease option
-	mDNSs32      expire;	// expiration of lease (-1 for static)
-	mDNSBool     Private;	// If zone is private, DNS updates may have to be encrypted to prevent eavesdropping
-	mDNSOpaque16 id;		// identifier to match update request and response
+	regState_t   state;			// Maybe combine this with resrec.RecordType state? Right now it's ambiguous and confusing.
+								// e.g. rr->resrec.RecordType can be kDNSRecordTypeUnregistered,
+								// and rr->state can be regState_Unregistered
+								// What if we find one of those statements is true and the other false? What does that mean?
+	mDNSBool     lease;			// dynamic update contains (should contain) lease option
+	mDNSs32      expire;		// expiration of lease (-1 for static)
+	mDNSBool     Private;		// If zone is private, DNS updates may have to be encrypted to prevent eavesdropping
+	mDNSOpaque16 id;			// identifier to match update request and response
 	domainname   zone;			// the zone that is updated
 	mDNSAddr     UpdateServer;	// DNS server that handles updates for this zone
 	mDNSIPPort   UpdatePort;	// port on which server accepts dynamic updates
@@ -870,8 +876,8 @@ typedef struct uDNS_HostnameInfo
 	{
 	struct uDNS_HostnameInfo *next;
     domainname fqdn;
-    AuthRecord *arv4;                         // registered IPv4 address record
-	AuthRecord *arv6;                         // registered IPv6 address record
+    AuthRecord arv4;                          // registered IPv4 address record
+	AuthRecord arv6;                          // registered IPv6 address record
 	mDNSRecordCallback *StatusCallback;       // callback to deliver success or error code to client layer
 	const void *StatusContext;                // Client Context
 	} uDNS_HostnameInfo;
