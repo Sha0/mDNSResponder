@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.42  2007/02/14 01:58:19  cheshire
+<rdar://problem/4995831> Don't delete Unix Domain Socket on exit if we didn't create it on startup
+
 Revision 1.41  2007/02/06 19:06:49  cheshire
 <rdar://problem/3956518> Need to go native with launchd
 
@@ -1343,7 +1346,7 @@ static void	ServiceSpecificFinalize( int argc, LPTSTR argv[] )
 	//
 	// give a chance for the udsserver code to clean up
 	//
-	udsserver_exit();
+	udsserver_exit(dnssd_InvalidSocket);
 
 	//
 	// and finally close down the mDNSCore

@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.290  2007/02/14 01:58:19  cheshire
+<rdar://problem/4995831> Don't delete Unix Domain Socket on exit if we didn't create it on startup
+
 Revision 1.289  2007/02/07 19:32:00  cheshire
 <rdar://problem/4980353> All mDNSResponder components should contain version strings in SCCS-compatible format
 
@@ -182,7 +185,7 @@ static mach_port_t client_death_port = MACH_PORT_NULL;
 static mach_port_t signal_port       = MACH_PORT_NULL;
 static mach_port_t server_priv_port  = MACH_PORT_NULL;
 
-static dnssd_sock_t listenfd = dnssd_InvalidSocket;
+static dnssd_sock_t launchd_fd = dnssd_InvalidSocket;
 
 // mDNS Mach Message Timeout, in milliseconds.
 // We need this to be short enough that we don't deadlock the mDNSResponder if a client
@@ -1892,7 +1895,7 @@ mDNSlocal void ExitCallback(int signal)
 
 	debugf("ExitCallback: mDNS_Close");
 	mDNS_Close(&mDNSStorage);
-	if (udsserver_exit() < 0) LogMsg("ExitCallback: udsserver_exit failed");
+	if (udsserver_exit(launchd_fd) < 0) LogMsg("ExitCallback: udsserver_exit failed");
 	exit(0);
 	}
 
@@ -2333,8 +2336,8 @@ mDNSlocal void LaunchdCheckin(void)
 				if (!s) LogMsg("launch_data_array_get_index(skt, 0) returned NULL");
 				else
 					{
-					listenfd = launch_data_get_fd(s);
-					LogOperation("Launchd Unix Domain Socket: %d", listenfd);
+					launchd_fd = launch_data_get_fd(s);
+					LogOperation("Launchd Unix Domain Socket: %d", launchd_fd);
 					// In some early versions of 10.4.x, the permissions on the UDS were not set correctly, so we fix them here
 					chmod(MDNS_UDS_SERVERPATH, S_IRUSR|S_IWUSR | S_IRGRP|S_IWGRP | S_IROTH|S_IWOTH);
 					}
@@ -2421,7 +2424,7 @@ mDNSexport int main(int argc, char **argv)
 	OSXVers = mDNSMacOSXSystemBuildNumber(NULL);
 	status = mDNSDaemonInitialize();
 	if (status) { LogMsg("Daemon start: mDNSDaemonInitialize failed"); goto exit; }
-	status = udsserver_init(listenfd);
+	status = udsserver_init(launchd_fd);
 	if (status) { LogMsg("Daemon start: udsserver_init failed"); goto exit; }
 	
 #if CAN_UPDATE_DYNAMIC_STORE_WITHOUT_BEING_ROOT

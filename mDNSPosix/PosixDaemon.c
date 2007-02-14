@@ -21,6 +21,9 @@
 	Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.38  2007/02/14 01:58:19  cheshire
+<rdar://problem/4995831> Don't delete Unix Domain Socket on exit if we didn't create it on startup
+
 Revision 1.37  2007/02/07 19:32:00  cheshire
 <rdar://problem/4980353> All mDNSResponder components should contain version strings in SCCS-compatible format
 
@@ -217,7 +220,7 @@ int main(int argc, char **argv)
 
 	mDNS_Close(&mDNSStorage);
 
-	if (udsserver_exit() < 0)
+	if (udsserver_exit(dnssd_InvalidSocket) < 0)
 		LogMsg("ExitCallback: udsserver_exit failed");
  
  #if MDNS_DEBUGMSGS > 0

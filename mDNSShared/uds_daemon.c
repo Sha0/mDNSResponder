@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.236  2007/02/14 01:58:19  cheshire
+<rdar://problem/4995831> Don't delete Unix Domain Socket on exit if we didn't create it on startup
+
 Revision 1.235  2007/02/08 21:12:28  cheshire
 <rdar://problem/4386497> Stop reading /etc/mDNSResponder.conf on every sleep/wake
 
@@ -3752,17 +3755,21 @@ error:
     return -1;
     }
 
-mDNSexport int udsserver_exit(void)
+mDNSexport int udsserver_exit(dnssd_sock_t skt)
     {
-	dnssd_close(listenfd);
-
+    // If the launching environment created no listening socket,
+    // that means we created it ourselves, so we should clean it up on exit
+    if (skt == dnssd_InvalidSocket)
+		{
+		dnssd_close(listenfd);
 #if !defined(USE_TCP_LOOPBACK)
-	// Currently, we're unable to remove /var/run/mdnsd because we've changed to userid "nobody"
-	// to give up unnecessary privilege, but we need to be root to remove this Unix Domain Socket.
-	// It would be nice if we could find a solution to this problem
-	if (unlink(MDNS_UDS_SERVERPATH))
-		debugf("Unable to remove %s", MDNS_UDS_SERVERPATH);
+		// Currently, we're unable to remove /var/run/mdnsd because we've changed to userid "nobody"
+		// to give up unnecessary privilege, but we need to be root to remove this Unix Domain Socket.
+		// It would be nice if we could find a solution to this problem
+		if (unlink(MDNS_UDS_SERVERPATH))
+			debugf("Unable to remove %s", MDNS_UDS_SERVERPATH);
 #endif
+		}
 
 	if (PID_FILE[0]) unlink(PID_FILE);
 

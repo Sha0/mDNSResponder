@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.h,v $
+Revision 1.20  2007/02/14 01:58:19  cheshire
+<rdar://problem/4995831> Don't delete Unix Domain Socket on exit if we didn't create it on startup
+
 Revision 1.19  2007/02/07 19:32:00  cheshire
 <rdar://problem/4980353> All mDNSResponder components should contain version strings in SCCS-compatible format
 
@@ -104,7 +107,7 @@ extern void udsserver_info(mDNS *const m);	// print out info about current state
 
 extern void udsserver_handle_configchange(mDNS *const m);
 
-extern int udsserver_exit(void);	// should be called prior to app exit
+extern int udsserver_exit(dnssd_sock_t skt);	// should be called prior to app exit
 
 extern void udsserver_default_reg_domain_changed(const domainname *d, mDNSBool add);
 
