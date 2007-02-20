@@ -791,7 +791,7 @@ int main(int argc, char **argv)
 					break;
 
 		case 'B':	if (argc < optind+1) goto Fail;
-					dom = (argc < optind+2) ? "" : argv[optind+1];
+					dom = (argc < optind+2) ? "" : argv[optind+1];  // Missing domain argument is the same as empty string i.e. use system default(s)
 					if (dom[0] == '.' && dom[1] == 0) dom[0] = 0;   // We allow '.' on the command line as a synonym for empty string
 					printf("Browsing for %s%s%s\n", argv[optind+0], dom[0] ? "." : "", dom);
 					err = DNSServiceBrowse(&client, 0, opinterface, argv[optind+0], dom, browse_reply, NULL);
