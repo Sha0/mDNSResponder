@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSSD.java,v $
+Revision 1.13  2007/02/24 23:08:02  mkrochma
+<rdar://problem/5001673> Typo in Bonjour Java API document
+
 Revision 1.12  2007/02/09 00:33:02  cheshire
 Add missing error codes to kMessages array
 
@@ -74,7 +77,7 @@ package	com.apple.dnssd;
 	<PRE><CODE>
     class   MyClient implements BrowseListener {
         void    lookForWebServers() {
-            myBrowser = DNSSD.browse("_http_.tcp", this);
+            myBrowser = DNSSD.browse("_http._tcp", this);
         }
     
         public void serviceFound(DNSSDService browser, int flags, int ifIndex,
