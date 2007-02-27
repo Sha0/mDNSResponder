@@ -28,6 +28,9 @@
    Change History (most recent first):
 
 $Log: dnssd_clientlib.c,v $
+Revision 1.13  2007/02/27 00:25:03  cheshire
+<rdar://problem/5010640> DNSServiceConstructFullName() doesn't handle empty string for instance name
+
 Revision 1.12  2007/02/07 19:32:00  cheshire
 <rdar://problem/4980353> All mDNSResponder components should contain version strings in SCCS-compatible format
 
@@ -150,7 +153,7 @@ int DNSSD_API DNSServiceConstructFullName
 	const char *r = regtype;
 	const char *d = domain;
 
-	if (service)
+	if (service && *service)
 		{
 		while(*s)
 			{
