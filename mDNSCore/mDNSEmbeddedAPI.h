@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.332  2007/02/27 02:48:24  cheshire
+Parameter to LNT_GetPublicIP function is IPv4 address, not anonymous "mDNSOpaque32" object
+
 Revision 1.331  2007/02/14 03:16:39  cheshire
 <rdar://problem/4789477> Eliminate unnecessary malloc/free in mDNSCore code
 
@@ -2028,7 +2031,7 @@ extern void mDNS_FreeIPAddrList(IPAddrListElem * list);
 
 extern int     LNT_Init(void);
 extern int     LNT_Destroy(void);
-extern mStatus LNT_GetPublicIP(mDNSOpaque32 *ip);
+extern mStatus LNT_GetPublicIP(mDNSv4Addr *ip);
 extern mStatus LNT_MapPort(mDNSIPPort priv, mDNSIPPort pub, mDNSBool tcp);
 extern mStatus LNT_UnmapPort(mDNSIPPort PubPort, mDNSBool tcp);
 #endif // _LEGACY_NAT_TRAVERSAL_

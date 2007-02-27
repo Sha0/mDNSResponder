@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.17  2007/02/27 02:48:25  cheshire
+Parameter to LNT_GetPublicIP function is IPv4 address, not anonymous "mDNSOpaque32" object
+
 Revision 1.16  2006/08/14 23:24:39  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -2878,7 +2881,7 @@ static int GetMappingUnused(unsigned short eport, int protocol)
 	return NA_E_SUCCESS;
 }
 
-mStatus LNT_GetPublicIP(mDNSOpaque32 *IpPtr)
+mStatus LNT_GetPublicIP(mDNSv4Addr *IpPtr)
 {
 	char			buf[1024];
 	PHTTPResponse	resp;
