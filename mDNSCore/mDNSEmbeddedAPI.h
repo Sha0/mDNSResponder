@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.333  2007/02/27 22:55:22  cheshire
+Get rid of unused AllDNSLinkGroupv4 and AllDNSLinkGroupv6
+
 Revision 1.332  2007/02/27 02:48:24  cheshire
 Parameter to LNT_GetPublicIP function is IPv4 address, not anonymous "mDNSOpaque32" object
 
@@ -1475,8 +1478,6 @@ extern const mDNSIPPort      PrivateDNSPort;
 extern const mDNSIPPort      NSIPCPort;
 
 extern const mDNSv4Addr      AllDNSAdminGroup;
-//#define AllDNSLinkGroupv4 (AllDNSLinkGroup_v4.ip.v4)
-//#define AllDNSLinkGroupv6 (AllDNSLinkGroup_v6.ip.v6)
 extern const mDNSAddr        AllDNSLinkGroup_v4;
 extern const mDNSAddr        AllDNSLinkGroup_v6;
 
