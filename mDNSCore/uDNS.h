@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.52  2007/02/28 01:44:26  cheshire
+<rdar://problem/5027863> Byte order bugs in uDNS.c, uds_daemon.c, dnssd_clientstub.c
+
 Revision 1.51  2007/01/27 03:34:27  cheshire
 Made GetZoneData use standard queries (and cached results);
 eliminated GetZoneData_Callback() packet response handler
@@ -141,8 +144,9 @@ extern void uDNS_Execute(mDNS *const m);
 extern mStatus           uDNS_SetupDNSConfig(mDNS *const m);
 extern mStatus           uDNS_RegisterSearchDomains(mDNS *const m);
 extern NATTraversalInfo *uDNS_AllocNATInfo(mDNS *const m, NATOp_t op, mDNSIPPort privatePort, mDNSIPPort publicPort, mDNSu32 ttl, NATResponseHndlr callback);
-extern mDNSBool          uDNS_HandleNATQueryAddrReply(NATTraversalInfo *n, mDNS * const m, mDNSu8 *pkt, mDNSu16 len, mDNSAddr *addr, mStatus *err);
-extern mDNSBool          uDNS_HandleNATPortMapReply(NATTraversalInfo *n, mDNS * const m, mDNSu8 *pkt, mDNSu16 len);
+extern void              uDNS_FormatPortMaprequest(NATTraversalInfo *info);
+extern mDNSBool          uDNS_HandleNATQueryAddrReply(NATTraversalInfo *n, mDNS * const m, mDNSu8 *pkt, mDNSAddr *addr, mStatus *err);
+extern mDNSBool          uDNS_HandleNATPortMapReply(NATTraversalInfo *n, mDNS * const m, mDNSu8 *pkt);
 extern void              uDNS_SendNATMsg(NATTraversalInfo *info, mDNS *m);
 extern void              uDNS_DeleteNATPortMapping(mDNS *m, NATTraversalInfo *nat);
 extern mDNSBool          uDNS_FreeNATInfo(mDNS *m, NATTraversalInfo *n);

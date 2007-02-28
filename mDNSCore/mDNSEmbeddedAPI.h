@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.334  2007/02/28 01:44:26  cheshire
+<rdar://problem/5027863> Byte order bugs in uDNS.c, uds_daemon.c, dnssd_clientstub.c
+
 Revision 1.333  2007/02/27 22:55:22  cheshire
 Get rid of unused AllDNSLinkGroupv4 and AllDNSLinkGroupv6
 
@@ -889,11 +892,11 @@ typedef struct uDNS_HostnameInfo
 	} uDNS_HostnameInfo;
 
 enum
-   	{
-   	DNSServer_Untested = 0,
-   	DNSServer_Failed   = 1,
-   	DNSServer_Passed   = 2
-   	};
+	{
+	DNSServer_Untested = 0,
+	DNSServer_Failed   = 1,
+	DNSServer_Passed   = 2
+	};
 
 typedef struct DNSServer
 	{
@@ -1225,20 +1228,24 @@ struct ServiceInfoQuery_struct
 
 typedef enum
 	{
-	NATOp_AddrRequest = 0,
-	NATOp_MapUDP      = 1,
-	NATOp_MapTCP      = 2
+	NATOp_AddrRequest    = 0,
+	NATOp_MapUDP         = 1,
+	NATOp_MapTCP         = 2,
+	
+	NATOp_AddrResponse   = 128 + 0,
+	NATOp_MapUDPResponse = 128 + 1,
+	NATOp_MapTCPResponse = 128 + 2,
 	} NATOp_t;
 
 enum
-   	{
-   	NATErr_None = 0,
-   	NATErr_Vers = 1,
-   	NATErr_Refused = 2,
-   	NATErr_NetFail = 3,
-   	NATErr_Res = 4,
-   	NATErr_Opcode = 5
-   	};
+	{
+	NATErr_None = 0,
+	NATErr_Vers = 1,
+	NATErr_Refused = 2,
+	NATErr_NetFail = 3,
+	NATErr_Res = 4,
+	NATErr_Opcode = 5
+	};
 
 typedef mDNSu16 NATErr_t;
 
@@ -1263,11 +1270,11 @@ typedef packedstruct
 
 typedef packedstruct
 	{
-	mDNSu8 vers;
-	mDNSu8 opcode;
-	mDNSOpaque16 err;
-	mDNSOpaque32 uptime;
-	mDNSv4Addr   PubAddr;
+	mDNSu8     vers;
+	mDNSu8     opcode;
+	mDNSu16    err;
+	mDNSu32    uptime;
+	mDNSv4Addr PubAddr;
 	} NATAddrReply;
 
 typedef packedstruct
@@ -1277,22 +1284,22 @@ typedef packedstruct
 	mDNSOpaque16 unused;
 	mDNSIPPort priv;
 	mDNSIPPort pub;
-	mDNSOpaque32 lease;
+	mDNSu32    lease;
 	} NATPortMapRequest;
 
 typedef packedstruct
 	{
-	mDNSu8 vers;
-	mDNSu8 opcode;
-	mDNSOpaque16 err;
-	mDNSOpaque32 uptime;
+	mDNSu8     vers;
+	mDNSu8     opcode;
+	mDNSu16    err;
+	mDNSu32    uptime;
 	mDNSIPPort priv;
 	mDNSIPPort pub;
-	mDNSOpaque32 lease;
+	mDNSu32    lease;
 	} NATPortMapReply;
 
 // Pass NULL for pkt on error (including timeout)
-typedef mDNSBool (*NATResponseHndlr)(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt, mDNSu16 len);
+typedef mDNSBool (*NATResponseHndlr)(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt);
 
 struct NATTraversalInfo_struct
 	{
@@ -1302,7 +1309,7 @@ struct NATTraversalInfo_struct
     mDNSAddr Router;
 	mDNSIPPort PrivatePort;
     mDNSIPPort PublicPort;
-	mDNSu32 TTL;
+	mDNSu32 lease;
     union { NATAddrRequest AddrReq; NATPortMapRequest PortReq; } request;
 	mDNSs32 retry;                   // absolute time when we retry
 	mDNSs32 RetryInterval;           // delta between time sent and retry
@@ -1469,17 +1476,17 @@ extern const mDNSInterfaceID mDNSInterface_Any;				// Zero
 extern const mDNSInterfaceID mDNSInterface_LocalOnly;		// Special value
 extern const mDNSInterfaceID mDNSInterface_Unicast;			// Special value
 
-extern const mDNSIPPort      UnicastDNSPort;
-extern const mDNSIPPort      NATPMPPort;
-extern const mDNSIPPort      DNSEXTPort;
-extern const mDNSIPPort      MulticastDNSPort;
-extern const mDNSIPPort      LoopbackIPCPort;
-extern const mDNSIPPort      PrivateDNSPort;
-extern const mDNSIPPort      NSIPCPort;
+extern const mDNSIPPort   UnicastDNSPort;
+extern const mDNSIPPort   NATPMPPort;
+extern const mDNSIPPort   DNSEXTPort;
+extern const mDNSIPPort   MulticastDNSPort;
+extern const mDNSIPPort   LoopbackIPCPort;
+extern const mDNSIPPort   PrivateDNSPort;
+extern const mDNSIPPort   NSIPCPort;
 
-extern const mDNSv4Addr      AllDNSAdminGroup;
-extern const mDNSAddr        AllDNSLinkGroup_v4;
-extern const mDNSAddr        AllDNSLinkGroup_v6;
+extern const mDNSv4Addr   AllDNSAdminGroup;
+extern const mDNSAddr     AllDNSLinkGroup_v4;
+extern const mDNSAddr     AllDNSLinkGroup_v6;
 
 extern const mDNSOpaque16 zeroID;
 extern const mDNSOpaque16 QueryFlags;
@@ -1488,7 +1495,7 @@ extern const mDNSOpaque16 ResponseFlags;
 extern const mDNSOpaque16 UpdateReqFlags;
 extern const mDNSOpaque16 UpdateRespFlags;
 
-extern const mDNSOpaque64    zeroOpaque64;
+extern const mDNSOpaque64 zeroOpaque64;
 
 #define localdomain (*(const domainname *)"\x5" "local")
 #define LocalReverseMapDomain (*(const domainname *)"\x3" "254" "\x3" "169" "\x7" "in-addr" "\x4" "arpa")

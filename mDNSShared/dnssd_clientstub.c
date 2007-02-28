@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.62  2007/02/28 01:44:30  cheshire
+<rdar://problem/5027863> Byte order bugs in uDNS.c, uds_daemon.c, dnssd_clientstub.c
+
 Revision 1.61  2007/02/09 03:09:42  cheshire
 <rdar://problem/3869251> Cleanup: Stop returning kDNSServiceErr_Unknown so often
 <rdar://problem/4177924> API: Should return kDNSServiceErr_ServiceNotRunning
@@ -631,7 +634,7 @@ static void handle_addrinfo_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *
 		{
 		if (rrtype == kDNSServiceType_A)
 			{
-			memcpy(&sa4.sin_addr, rdata,rdlen);
+			memcpy(&sa4.sin_addr, rdata, rdlen);
 			sa = (struct sockaddr*) &sa4;
 #ifndef NOT_HAVE_SA_LEN
 			sa->sa_len = sizeof(struct sockaddr_in);
@@ -1195,28 +1198,30 @@ DNSServiceErrorType DNSSD_API DNSServiceReconfirmRecord
 
 static void handle_port_mapping_create_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *data)
 	{
-	DNSServiceFlags flags;
+	DNSServiceFlags     flags = get_flags(&data);
+	uint32_t            ifi   = get_long(&data);
+	DNSServiceErrorType err   = get_error_code(&data);
+
+	union { uint32_t l; u_char b[4]; } addr;
 	uint8_t protocol;
-	uint32_t ttl;
 	union { uint16_t s; u_char b[2]; } privatePort;
 	union { uint16_t s; u_char b[2]; } publicPort;
-	uint32_t ifi;
-	DNSServiceErrorType err;
-	uint32_t addr;
+	uint32_t ttl;
+
 	(void)hdr; 		//unused
 
-	flags = get_flags(&data);
-	ifi = get_long(&data);
-	err = get_error_code(&data);
-	addr = get_long(&data);
-	protocol = *data++;
+	addr       .b[0] = *data++;
+	addr       .b[1] = *data++;
+	addr       .b[2] = *data++;
+	addr       .b[3] = *data++;
+	protocol         = *data++;
 	privatePort.b[0] = *data++;
 	privatePort.b[1] = *data++;
-	publicPort.b[0] = *data++;
-	publicPort.b[1] = *data++;
-	ttl = get_long(&data);
+	publicPort .b[0] = *data++;
+	publicPort .b[1] = *data++;
+	ttl              = get_long(&data);
 
-	((DNSServiceNATPortMappingReply)sdr->app_callback)(sdr, flags, ifi, err, addr, protocol, privatePort.s, publicPort.s, ttl, sdr->app_context);
+	((DNSServiceNATPortMappingReply)sdr->app_callback)(sdr, flags, ifi, err, addr.l, protocol, privatePort.s, publicPort.s, ttl, sdr->app_context);
 	}
 
 DNSServiceErrorType DNSSD_API DNSServiceNATPortMappingCreate
@@ -1225,8 +1230,8 @@ DNSServiceErrorType DNSSD_API DNSServiceNATPortMappingCreate
 	DNSServiceFlags                     flags,
 	uint32_t                            interfaceIndex,
 	uint32_t                            protocol,     /* TCP and/or UDP */
-	uint16_t                            privatePort,  /* network byte oder */
-	uint16_t                            publicPort,   /* network byte oder */
+	uint16_t                            privatePortInNetworkByteOrder,
+	uint16_t                            publicPortInNetworkByteOrder,
 	uint32_t                            ttl,          /* time to live in seconds */
 	DNSServiceNATPortMappingReply       callBack,
 	void                                *context      /* may be NULL */
@@ -1237,6 +1242,8 @@ DNSServiceErrorType DNSSD_API DNSServiceNATPortMappingCreate
 	ipc_msg_hdr *hdr;
 	DNSServiceRef sdr;
 	DNSServiceErrorType err;
+	union { uint16_t s; u_char b[2]; } privatePort = { privatePortInNetworkByteOrder };
+	union { uint16_t s; u_char b[2]; } publicPort  = { publicPortInNetworkByteOrder };
 
 	if (!sdRef) return kDNSServiceErr_BadParam;
 	*sdRef = NULL;
@@ -1253,10 +1260,11 @@ DNSServiceErrorType DNSSD_API DNSServiceNATPortMappingCreate
 
 	put_flags(flags, &ptr);
 	put_long(interfaceIndex, &ptr);
-	*ptr = protocol;
-	ptr += sizeof(uint8_t);
-	put_short(privatePort, &ptr);
-	put_short(publicPort, &ptr);
+	*ptr++ = protocol;
+	*ptr++ = privatePort.b[0];
+	*ptr++ = privatePort.b[1];
+	*ptr++ = publicPort .b[0];
+	*ptr++ = publicPort .b[1];
 	put_long(ttl, &ptr);
 
 	sdr = connect_to_server();
