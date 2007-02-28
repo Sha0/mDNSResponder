@@ -30,6 +30,12 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.292  2007/02/28 21:55:10  cheshire
+<rdar://problem/3862944> UI: Name conflict notifications should be localized
+Additional fix: We were not getting our NotificationCallBackDismissed messages
+because we were scheduling our CFUserNotification RunLoopSource on the wrong runloop.
+(We were incorrectly assuming CFRunLoopGetCurrent() would be the right runloop.)
+
 Revision 1.291  2007/02/28 03:51:24  cheshire
 <rdar://problem/3862944> UI: Name conflict notifications should be localized
 Moved curly quotes out of the literal text and into the localized text, so they
@@ -204,6 +210,8 @@ static int restarting_via_mach_init = 0;	// Used on Jaguar/Panther when daemon i
 static int started_via_launchdaemon = 0;	// Indicates we're running on Tiger or later, where daemon is managed by launchd
 
 static int OSXVers;
+
+static CFRunLoopRef CFRunLoop;
 
 //*************************************************************************************************************
 // Active client list structures
@@ -1345,12 +1353,15 @@ mDNSlocal CFRunLoopSourceRef    gNotificationRLS = NULL;
 
 mDNSlocal void NotificationCallBackDismissed(CFUserNotificationRef userNotification, CFOptionFlags responseFlags)
 	{
+	LogOperation("NotificationCallBackDismissed");
 	pthread_mutex_lock(&PlatformStorage.BigMutex);
 	(void)responseFlags;	// Unused
 	if (userNotification != gNotification) LogMsg("NotificationCallBackDismissed: Wrong CFUserNotificationRef");
 	if (gNotificationRLS)
 		{
-		CFRunLoopRemoveSource(CFRunLoopGetCurrent(), gNotificationRLS, kCFRunLoopDefaultMode);
+		// Caution: don't use CFRunLoopGetCurrent() here, because the currently executing thread may not be our "CFRunLoopRun" thread.
+		// We need to explicitly specify the desired CFRunLoop from which we want to remove this event source.
+		CFRunLoopRemoveSource(CFRunLoop, gNotificationRLS, kCFRunLoopDefaultMode);
 		CFRelease(gNotificationRLS);
 		gNotificationRLS = NULL;
 		CFRelease(gNotification);
@@ -1382,10 +1393,12 @@ mDNSlocal void ShowNameConflictNotification(CFStringRef header, CFStringRef subt
 		{
 		SInt32 error;
 		gNotification = CFUserNotificationCreate(NULL, 0, kCFUserNotificationCautionAlertLevel, &error, dictionary);
-		if (!gNotification) { LogMsg("ShowNameConflictNotification: CFUserNotificationRef"); return; }
+		if (!gNotification || error) { LogMsg("ShowNameConflictNotification: CFUserNotificationRef: Error %d", error); return; }
 		gNotificationRLS = CFUserNotificationCreateRunLoopSource(NULL, gNotification, NotificationCallBackDismissed, 0);
 		if (!gNotificationRLS) { LogMsg("ShowNameConflictNotification: RLS"); CFRelease(gNotification); gNotification = NULL; return; }
-		CFRunLoopAddSource(CFRunLoopGetCurrent(), gNotificationRLS, kCFRunLoopDefaultMode);
+		// Caution: don't use CFRunLoopGetCurrent() here, because the currently executing thread may not be our "CFRunLoopRun" thread.
+		// We need to explicitly specify the desired CFRunLoop to which we want to add this event source.
+		CFRunLoopAddSource(CFRunLoop, gNotificationRLS, kCFRunLoopDefaultMode);
 		}
 
 	CFRelease(dictionary);
@@ -1394,6 +1407,7 @@ mDNSlocal void ShowNameConflictNotification(CFStringRef header, CFStringRef subt
 
 static CFStringRef CFS_OQ;
 static CFStringRef CFS_CQ;
+static CFStringRef CFS_Format;
 static CFStringRef CFS_MsgComputerName;
 static CFStringRef CFS_MsgLocalHostName;
 
@@ -1412,16 +1426,14 @@ mDNSlocal void RecordUpdatedName(const mDNS *const m, const domainlabel *const o
 	// We tag a zero-width non-breaking space at the end of the literal text to guarantee that, no matter what
 	// arbitrary computer name the user may choose, this exact text (with zero-width non-breaking space added)
 	// can never be one that occurs in the Localizable.strings translation file.
-	const CFStringRef f1        = CFStringCreateWithCString(NULL, "%@%s\xEF\xBB\xBF", kCFStringEncodingUTF8);
-	const CFStringRef f2        = CFStringCreateWithCString(NULL, "%@%s\xEF\xBB\xBF", kCFStringEncodingUTF8);
 	const SCPreferencesRef session   = SCPreferencesCreate(NULL, CFSTR("mDNSResponder"), NULL);
-	if (!cfoldname || !cfnewname || !f1 || !f2 || !session || !SCPreferencesLock(session, 0))	// If we can't get the lock don't wait
+	if (!cfoldname || !cfnewname || !session || !SCPreferencesLock(session, 0))	// If we can't get the lock don't wait
 		LogMsg("RecordUpdatedName: ERROR: Couldn't create SCPreferences session");
 	else
 		{
 		const CFStringRef s0 = CFStringCreateWithCString(NULL, msg, kCFStringEncodingUTF8);
-		const CFStringRef s1 = CFStringCreateWithFormat(NULL, NULL, f1, cfoldname, suffix);
-		const CFStringRef s2 = CFStringCreateWithFormat(NULL, NULL, f2, cfnewname, suffix);
+		const CFStringRef s1 = CFStringCreateWithFormat(NULL, NULL, CFS_Format, cfoldname, suffix);
+		const CFStringRef s2 = CFStringCreateWithFormat(NULL, NULL, CFS_Format, cfnewname, suffix);
 		// On Tiger and later, if we pass an array instead of a string, CFUserNotification will translate each
 		// element of the array individually for us, and then concatenate the results to make the final message.
 		// This lets us have the relevant bits localized, but not the literal names, which should not be translated.
@@ -1463,8 +1475,6 @@ mDNSlocal void RecordUpdatedName(const mDNS *const m, const domainlabel *const o
 		}
 	if (cfoldname) CFRelease(cfoldname);
 	if (cfnewname) CFRelease(cfnewname);
-	if (f1)        CFRelease(f1);
-	if (f2)        CFRelease(f2);
 	if (session)   CFRelease(session);
 	}
 
@@ -1473,6 +1483,7 @@ mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 	(void)m; // Unused
 	if (result == mStatus_NoError)
 		{
+		LogOperation("Local Hostname changed from \"%#s.local\" to \"%#s.local\"", m->p->userhostlabel.c, m->hostlabel.c);
 		// One second pause in case we get a Computer Name update too -- don't want to alert the user twice
 		RecordUpdatedNiceLabel(m, mDNSPlatformOneSecond);
 		}
@@ -2019,6 +2030,7 @@ mDNSlocal kern_return_t mDNSDaemonInitialize(void)
 
 	CFS_OQ               = CFStringCreateWithCString(NULL, "“",  kCFStringEncodingUTF8);
 	CFS_CQ               = CFStringCreateWithCString(NULL, "”",  kCFStringEncodingUTF8);
+	CFS_Format           = CFStringCreateWithCString(NULL, "%@%s\xEF\xBB\xBF", kCFStringEncodingUTF8);
 	CFS_MsgComputerName  = CFStringCreateWithCString(NULL, "To change the name of your computer, "
 		"open System Preferences and click Sharing, then type the name in the Computer Name field.",  kCFStringEncodingUTF8);
 	CFS_MsgLocalHostName = CFStringCreateWithCString(NULL, "To change the local hostname, "
@@ -2063,9 +2075,10 @@ mDNSlocal kern_return_t mDNSDaemonInitialize(void)
 	client_death_port = CFMachPortGetPort(d_port);
 	signal_port       = CFMachPortGetPort(i_port);
 
-	CFRunLoopAddSource(CFRunLoopGetCurrent(), d_rls, kCFRunLoopDefaultMode);
-	CFRunLoopAddSource(CFRunLoopGetCurrent(), s_rls, kCFRunLoopDefaultMode);
-	CFRunLoopAddSource(CFRunLoopGetCurrent(), i_rls, kCFRunLoopDefaultMode);
+	CFRunLoop = CFRunLoopGetCurrent();
+	CFRunLoopAddSource(CFRunLoop, d_rls, kCFRunLoopDefaultMode);
+	CFRunLoopAddSource(CFRunLoop, s_rls, kCFRunLoopDefaultMode);
+	CFRunLoopAddSource(CFRunLoop, i_rls, kCFRunLoopDefaultMode);
 	CFRelease(d_rls);
 	CFRelease(s_rls);
 	CFRelease(i_rls);
