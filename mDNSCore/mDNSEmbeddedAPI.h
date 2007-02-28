@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.335  2007/02/28 21:49:07  cheshire
+Off-by-one error: SameDomainLabelCS (case-sensitive) was stopping one character short of
+the end of the label, e.g. it would fail to detect that "chesh1" and "chesh2" are different.
+
 Revision 1.334  2007/02/28 01:44:26  cheshire
 <rdar://problem/5027863> Byte order bugs in uDNS.c, uds_daemon.c, dnssd_clientstub.c
 
@@ -1730,7 +1734,7 @@ extern mDNSOpaque16 mDNS_NewMessageID(mDNS * const m);
 #define AssignDomainName(DST, SRC) mDNSPlatformMemCopy((SRC)->c, (DST)->c, DomainNameLength((SRC)))
 
 // Comparison functions
-#define SameDomainLabelCS(A,B) ((A)[0] == (B)[0] && mDNSPlatformMemSame((A), (B), (A)[0]))
+#define SameDomainLabelCS(A,B) ((A)[0] == (B)[0] && mDNSPlatformMemSame((A)+1, (B)+1, (A)[0]))
 extern mDNSBool SameDomainLabel(const mDNSu8 *a, const mDNSu8 *b);
 extern mDNSBool SameDomainName(const domainname *const d1, const domainname *const d2);
 extern mDNSBool SameDomainNameCS(const domainname *const d1, const domainname *const d2);
