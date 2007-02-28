@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.336  2007/02/28 22:12:24  cheshire
+Get rid of unused mDNSVal32 and mDNSOpaque32fromIntVal
+
 Revision 1.335  2007/02/28 21:49:07  cheshire
 Off-by-one error: SameDomainLabelCS (case-sensitive) was stopping one character short of
 the end of the label, e.g. it would fail to detect that "chesh1" and "chesh2" are different.
@@ -1519,9 +1522,7 @@ extern const mDNSOpaque64 zeroOpaque64;
 #if !defined(mDNSinline)
 extern mDNSs32      NonZeroTime(mDNSs32 t);
 extern mDNSu16      mDNSVal16(mDNSOpaque16 x);
-extern mDNSu32      mDNSVal32(mDNSOpaque32 x);
 extern mDNSOpaque16 mDNSOpaque16fromIntVal(mDNSu16 v);
-extern mDNSOpaque32 mDNSOpaque32fromIntVal(mDNSu32 v);
 #endif
 
 // If we're compiling the particular C file that instantiates our inlines, then we
@@ -1535,7 +1536,6 @@ extern mDNSOpaque32 mDNSOpaque32fromIntVal(mDNSu32 v);
 mDNSinline mDNSs32 NonZeroTime(mDNSs32 t) { if (t) return(t); else return(1); }
 
 mDNSinline mDNSu16 mDNSVal16(mDNSOpaque16 x) { return((mDNSu16)((mDNSu16)x.b[0] <<  8 | (mDNSu16)x.b[1])); }
-mDNSinline mDNSu32 mDNSVal32(mDNSOpaque32 x) { return((mDNSu32)((mDNSu32)x.b[0] << 24 | (mDNSu32)x.b[1] << 16 | (mDNSu32)x.b[2] << 8 | (mDNSu32)x.b[3])); }
 
 mDNSinline mDNSOpaque16 mDNSOpaque16fromIntVal(mDNSu16 v)
 	{
@@ -1543,16 +1543,6 @@ mDNSinline mDNSOpaque16 mDNSOpaque16fromIntVal(mDNSu16 v)
 	x.b[0] = (mDNSu8)(v >> 8);
 	x.b[1] = (mDNSu8)(v & 0xFF);
 	return(x);
-	}
-
-mDNSinline mDNSOpaque32 mDNSOpaque32fromIntVal(mDNSu32 v)
-	{
-	mDNSOpaque32 x;
-	x.b[0] = (mDNSu8) (v >> 24)        ;
-	x.b[1] = (mDNSu8)((v >> 16) & 0xFF);
-	x.b[2] = (mDNSu8)((v >> 8 ) & 0xFF);
-	x.b[3] = (mDNSu8)((v      ) & 0xFF);
-	return x;
 	}
 
 #endif
