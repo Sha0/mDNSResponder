@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: ProxyResponder.c,v $
+Revision 1.41  2007/02/28 01:51:22  cheshire
+Added comment about reverse-order IP address
+
 Revision 1.40  2007/01/05 04:32:13  cheshire
 Change "(domainname *)" cast to "(const domainname *)"
 
@@ -177,6 +180,7 @@ mDNSlocal mStatus mDNS_RegisterProxyHost(mDNS *m, ProxyHost *p)
 	AppendDomainLabel(p->RR_A.resrec.name, &p->hostlabel);
 	AppendLiteralLabelString(p->RR_A.resrec.name, "local");
 
+	// Note: This is reverse order compared to a normal dotted-decimal IP address, so we can't use our customary "%.4a" format code
 	mDNS_snprintf(buffer, sizeof(buffer), "%d.%d.%d.%d.in-addr.arpa.", p->ip.b[3], p->ip.b[2], p->ip.b[1], p->ip.b[0]);
 	MakeDomainNameFromDNSNameString(p->RR_PTR.resrec.name, buffer);
 	p->RR_PTR.ForceMCast = mDNStrue; // This PTR points to our dot-local name, so don't ever try to write it into a uDNS server

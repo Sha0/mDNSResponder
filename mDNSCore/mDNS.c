@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.584  2007/02/28 01:51:27  cheshire
+Added comment about reverse-order IP address
+
 Revision 1.583  2007/01/27 03:19:33  cheshire
 Need to initialize question->sock
 
@@ -4879,7 +4882,7 @@ mDNSlocal void AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 		{
 		set->RR_A.resrec.rrtype = kDNSType_A;
 		set->RR_A.resrec.rdata->u.ipv4 = set->ip.ip.v4;
-		// Note: This is reverse order compared to a normal dotted-decimal IP address
+		// Note: This is reverse order compared to a normal dotted-decimal IP address, so we can't use our customary "%.4a" format code
 		mDNS_snprintf(buffer, sizeof(buffer), "%d.%d.%d.%d.in-addr.arpa.",
 			set->ip.ip.v4.b[3], set->ip.ip.v4.b[2], set->ip.ip.v4.b[1], set->ip.ip.v4.b[0]);
 		}

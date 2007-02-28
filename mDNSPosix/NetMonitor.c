@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.85  2007/02/28 01:51:22  cheshire
+Added comment about reverse-order IP address
+
 Revision 1.84  2007/01/05 08:30:52  cheshire
 Trim excessive "$Log" checkin history from before 2006
 (checkin history still available via "cvs log ..." of course)
@@ -263,6 +266,7 @@ mDNSlocal HostEntry *AddHost(const mDNSAddr *addr, HostList* list)
 		{
 		mDNSv4Addr ip = entry->addr.ip.v4;
 		char buffer[32];
+		// Note: This is reverse order compared to a normal dotted-decimal IP address, so we can't use our customary "%.4a" format code
 		mDNS_snprintf(buffer, sizeof(buffer), "%d.%d.%d.%d.in-addr.arpa.", ip.b[3], ip.b[2], ip.b[1], ip.b[0]);
 		MakeDomainNameFromDNSNameString(&entry->revname, buffer);
 		}

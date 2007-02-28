@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.40  2007/02/28 01:51:22  cheshire
+Added comment about reverse-order IP address
+
 Revision 1.39  2007/01/05 08:30:51  cheshire
 Trim excessive "$Log" checkin history from before 2006
 (checkin history still available via "cvs log ..." of course)
@@ -316,6 +319,7 @@ mDNSexport int main(int argc, char **argv)
 		if (inet_pton(AF_INET, arg, &s4) == 1)
 			{
 			mDNSu8 *p = (mDNSu8 *)&s4;
+			// Note: This is reverse order compared to a normal dotted-decimal IP address, so we can't use our customary "%.4a" format code
 			mDNS_snprintf(buffer, sizeof(buffer), "%d.%d.%d.%d.in-addr.arpa.", p[3], p[2], p[1], p[0]);
 			printf("%s\n", buffer);
 			target.type = mDNSAddrType_IPv4;

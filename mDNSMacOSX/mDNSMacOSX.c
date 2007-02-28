@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.373  2007/02/28 01:51:20  cheshire
+Added comment about reverse-order IP address
+
 Revision 1.372  2007/02/28 01:06:48  cheshire
 Use %#a format code instead of %d.%d.%d.%d
 
@@ -3021,6 +3024,7 @@ mDNSexport DNameListElem * mDNSPlatformGetReverseMapSearchDomainList(void)
 				DNameListElem	*	last = current;
 				mDNSu8			*	ptr;
 
+				// Note: This is reverse order compared to a normal dotted-decimal IP address, so we can't use our customary "%.4a" format code
 				sprintf(buffer, "%d.%d.%d.%d.in-addr.arpa.", addr.ip.v4.b[3] & netmask.ip.v4.b[3],
 				                                             addr.ip.v4.b[2] & netmask.ip.v4.b[2],
 				                                             addr.ip.v4.b[1] & netmask.ip.v4.b[1],
