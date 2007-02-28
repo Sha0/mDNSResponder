@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.372  2007/02/28 01:06:48  cheshire
+Use %#a format code instead of %d.%d.%d.%d
+
 Revision 1.371  2007/02/08 21:12:28  cheshire
 <rdar://problem/4386497> Stop reading /etc/mDNSResponder.conf on every sleep/wake
 
@@ -3178,7 +3181,7 @@ mDNSexport mStatus mDNSPlatformRegisterSplitDNS(mDNS *m, int * nAdditions, int *
 					mDNSAddr saddr;
 					if (SetupAddr(&saddr, r->nameserver[n])) { LogMsg("RegisterSplitDNS: bad IP address"); continue; }
 					// mDNSAddr saddr = { mDNSAddrType_IPv4, { { { 192, 168, 1, 1 } } } }; // for testing
-					debugf("Adding dns server from slot %d %d.%d.%d.%d for domain %##s", i, saddr.ip.v4.b[0], saddr.ip.v4.b[1], saddr.ip.v4.b[2], saddr.ip.v4.b[3], d.c);
+					debugf("Adding dns server from slot %d %#a for domain %##s", i, &saddr, d.c);
 					p = m->Servers;
 					while (p)
 						{
