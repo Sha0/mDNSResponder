@@ -30,6 +30,10 @@
 	Change History (most recent first):
 
 $Log: SamplemDNSClient.c,v $
+Revision 1.52  2007/03/06 22:45:52  cheshire
+
+<rdar://problem/4138615> argv buffer overflow issues
+
 Revision 1.51  2007/02/13 18:56:45  cheshire
 <rdar://problem/4993485> Mach mDNS tool inconsistent with UDS-based dns-sd tool
 (missing domain should mean "system default(s)", not "local")
@@ -357,8 +361,10 @@ int main(int argc, char **argv)
 					// Copy all the TXT strings into one C string separated by ASCII-1 delimiters                    
 					for (i = optind+4; i < argc; i++)
 						{
+						int len = strlen(argv[i]);
+						if (len > 255 || ptr + len + 1 >= txt + sizeof(txt)) break;
 						strcpy(ptr, argv[i]);
-						ptr += strlen(argv[i]);
+						ptr += len;
 						*ptr++ = 1;
 						}
 					if (ptr > txt) ptr--;

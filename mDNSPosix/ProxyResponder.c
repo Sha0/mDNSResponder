@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: ProxyResponder.c,v $
+Revision 1.42  2007/03/06 22:45:53  cheshire
+
+<rdar://problem/4138615> argv buffer overflow issues
+
 Revision 1.41  2007/02/28 01:51:22  cheshire
 Added comment about reverse-order IP address
 
@@ -247,6 +251,7 @@ mDNSlocal void RegisterService(mDNS *m, ServiceRecordSet *recordset,
 	while (argc)
 		{
 		int len = strlen(argv[0]);
+		if (len > 255 || bptr + 1 + len >= txtbuffer + sizeof(txtbuffer)) break;
 		printf("STR: %s\n", argv[0]);
 		bptr[0] = len;
 		strcpy((char*)(bptr+1), argv[0]);
