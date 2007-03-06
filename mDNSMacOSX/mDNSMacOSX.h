@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.64  2007/03/06 23:29:50  cheshire
+<rdar://problem/4331696> Need to call IONotificationPortDestroy on shutdown
+
 Revision 1.63  2007/02/07 19:32:00  cheshire
 <rdar://problem/4980353> All mDNSResponder components should contain version strings in SCCS-compatible format
 
@@ -125,9 +128,9 @@ struct mDNS_PlatformSupport_struct
 	mDNSs32                  NetworkChanged;
 	SCDynamicStoreRef        Store;
 	CFRunLoopSourceRef       StoreRLS;
+	IONotificationPortRef    PowerPortRef;
 	io_connect_t             PowerConnection;
 	io_object_t              PowerNotifier;
-	CFRunLoopSourceRef       PowerRLS;
 	pthread_mutex_t          BigMutex;
 	int						 WakeKQueueLoopFD;
 	};

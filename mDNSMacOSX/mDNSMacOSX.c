@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.374  2007/03/06 23:29:50  cheshire
+<rdar://problem/4331696> Need to call IONotificationPortDestroy on shutdown
+
 Revision 1.373  2007/02/28 01:51:20  cheshire
 Added comment about reverse-order IP address
 
@@ -3525,19 +3528,6 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 	pthread_mutex_unlock(&m->p->BigMutex);
 	KQueueWake(m);
 	}
-
-mDNSlocal mStatus WatchForPowerChanges(mDNS *const m)
-	{
-	IONotificationPortRef thePortRef;
-	m->p->PowerConnection = IORegisterForSystemPower(m, &thePortRef, PowerChanged, &m->p->PowerNotifier);
-	if (m->p->PowerConnection)
-		{
-		m->p->PowerRLS = IONotificationPortGetRunLoopSource(thePortRef);
-		CFRunLoopAddSource(CFRunLoopGetCurrent(), m->p->PowerRLS, kCFRunLoopDefaultMode);
-		return(mStatus_NoError);
-		}
-	return(-1);
-	}
 #endif /* NO_IOPOWER */
 
 CF_EXPORT CFDictionaryRef _CFCopySystemVersionDictionary(void);
@@ -3686,11 +3676,12 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	if (err) return(err);
 
 #ifndef NO_IOPOWER
-	err = WatchForPowerChanges(m);
-	if (err) return err;
+	m->p->PowerConnection = IORegisterForSystemPower(m, &m->p->PowerPortRef, PowerChanged, &m->p->PowerNotifier);
+	if (!m->p->PowerConnection) return(-1);
+	else CFRunLoopAddSource(CFRunLoopGetCurrent(), IONotificationPortGetRunLoopSource(m->p->PowerPortRef), kCFRunLoopDefaultMode);
 #endif /* NO_IOPOWER */
 
-	return(err);
+	return(mStatus_NoError);
 	}
 
 mDNSexport mStatus mDNSPlatformInit(mDNS *const m)
@@ -3707,15 +3698,15 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 	{
 	if (m->p->PowerConnection)
 		{
-		CFRunLoopRemoveSource(CFRunLoopGetCurrent(), m->p->PowerRLS, kCFRunLoopDefaultMode);
-		CFRunLoopSourceInvalidate(m->p->PowerRLS);
-		CFRelease(m->p->PowerRLS);
+		CFRunLoopRemoveSource(CFRunLoopGetCurrent(), IONotificationPortGetRunLoopSource(m->p->PowerPortRef), kCFRunLoopDefaultMode);
 #ifndef NO_IOPOWER
+		// According to <http://developer.apple.com/qa/qa2004/qa1340.html>, a single call
+		// to IORegisterForSystemPower creates *three* objects that need to be disposed individually:
 		IODeregisterForSystemPower(&m->p->PowerNotifier);
+		IOServiceClose            ( m->p->PowerConnection);
+		IONotificationPortDestroy ( m->p->PowerPortRef);
 #endif /* NO_IOPOWER */
 		m->p->PowerConnection = 0;
-		m->p->PowerNotifier   = 0;
-		m->p->PowerRLS        = NULL;
 		}
 
 	if (m->p->Store)
