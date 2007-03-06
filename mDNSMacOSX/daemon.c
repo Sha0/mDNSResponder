@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.293  2007/03/06 22:59:01  cheshire
+<rdar://problem/4157921> Security: Null dereference possible in daemon.c
+
 Revision 1.292  2007/02/28 21:55:10  cheshire
 <rdar://problem/3862944> UI: Name conflict notifications should be localized
 Additional fix: We were not getting our NotificationCallBackDismissed messages
@@ -1591,7 +1594,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationAddRecord_rpc(mach_port_t
 	return mStatus_NoError;
 
 fail:
-	LogMsg("%5d: DNSServiceRegistrationAddRecord(%##s, type %d, length %d) failed: %s (%ld)", client, x->name.c, type, data_len, errormsg, err);
+	LogMsg("%5d: DNSServiceRegistrationAddRecord(%##s, type %d, length %d) failed: %s (%ld)", client, x ? x->name.c : (mDNSu8*)"\x8""«NULL»", type, data_len, errormsg, err);
 	return mStatus_UnknownErr;
 	}
 
