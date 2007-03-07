@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.65  2007/03/07 02:50:50  cheshire
+<rdar://problem/4574528> Name conflict dialog doesn't appear if Bonjour is persistantly unable to find an available hostname
+
 Revision 1.64  2007/03/06 23:29:50  cheshire
 <rdar://problem/4331696> Need to call IONotificationPortDestroy on shutdown
 
@@ -125,6 +128,7 @@ struct mDNS_PlatformSupport_struct
 	domainlabel              userhostlabel;		// The hostlabel as it was set in System Preferences the last time we looked
 	domainlabel              usernicelabel;		// The nicelabel as it was set in System Preferences the last time we looked
 	mDNSs32                  NotifyUser;
+	mDNSs32                  HostNameConflict;	// Time we experienced conflict on our link-local host name
 	mDNSs32                  NetworkChanged;
 	SCDynamicStoreRef        Store;
 	CFRunLoopSourceRef       StoreRLS;
