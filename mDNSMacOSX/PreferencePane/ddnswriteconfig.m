@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: ddnswriteconfig.m,v $
+Revision 1.7  2007/03/07 00:49:00  cheshire
+<rdar://problem/4618207> Security: ddnswriteconfig does not verify that authorization blob is of correct size
+
 Revision 1.6  2007/02/09 00:39:06  cheshire
 Fix compile warnings
 
@@ -148,8 +151,8 @@ static int
 readTaggedBlock(int fd, u_int32_t *pTag, u_int32_t *pLen, char **ppBuff)
 // Read tag, block len and block data from stream and return. Dealloc *ppBuff via free().
 {
-	size_t		num;
-	u_int32_t	tag, len;
+	ssize_t		num, len;
+	u_int32_t	tag;
 	int			result = 0;
 
 	num = read(fd, &tag, sizeof tag);
@@ -186,6 +189,8 @@ SetAuthInfo( int fd)
 
 	result = readTaggedBlock( fd, &tag, &len, &p);
 	require( result == 0, ReadParamsFailed);
+	require( len == sizeof(AuthorizationExternalForm), ReadParamsFailed);
+	require( len == kAuthorizationExternalFormLength, ReadParamsFailed);
 
 	if (gAuthRef != 0) {
 		(void) AuthorizationFree(gAuthRef, kAuthorizationFlagDestroyRights);
