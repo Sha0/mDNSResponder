@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.125  2007/03/07 00:08:58  cheshire
+<rdar://problem/4347550> Don't allow hyphens at start of service type
+
 Revision 1.124  2007/01/19 18:04:05  cheshire
 For naming consistency, use capital letters for RR types: rdataOpt should be rdataOPT
 
@@ -331,7 +334,7 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd,
 								rd->srv.priority, rd->srv.weight, mDNSVal16(rd->srv.port), rd->srv.target.c); break;
 		default:			mDNS_snprintf(buffer+length, Max-length, "RDLen %d: %s", rr->rdlength, rd->data);
 							// Really should scan buffer to check if text is valid UTF-8 and only replace with dots if not
-							for (ptr = buffer; *ptr; ptr++) if (*ptr < ' ') *ptr='.';
+							for (ptr = buffer; *ptr; ptr++) if (*ptr < ' ') *ptr = '.';
 							break;
 		}
 	return(buffer);
@@ -755,7 +758,7 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 		{
 		src = name->c;									// Put the service name into the domain name
 		len = *src;
-		if (len >= 0x40) { errormsg="Service instance name too long"; goto fail; }
+		if (len >= 0x40) { errormsg = "Service instance name too long"; goto fail; }
 		for (i=0; i<=len; i++) *dst++ = *src++;
 		}
 	else
@@ -765,30 +768,37 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 	len = *src;
 	if (len < 2 || len >= 0x40 || (len > 15 && !SameDomainName(domain, &localdomain)))
 		{
-		errormsg="Application protocol name must be underscore plus 1-14 characters. See <http://www.dns-sd.org/ServiceTypes.html>";
+		errormsg = "Application protocol name must be underscore plus 1-14 characters. See <http://www.dns-sd.org/ServiceTypes.html>";
 		goto fail;
 		}
-	if (src[1] != '_') { errormsg="Application protocol name must begin with underscore"; goto fail; }
+	if (src[1] != '_') { errormsg = "Application protocol name must begin with underscore"; goto fail; }
 	for (i=2; i<=len; i++)
-		if (!mdnsIsLetter(src[i]) && !mdnsIsDigit(src[i]) && src[i] != '-' && src[i] != '_')
-			{ errormsg="Application protocol name must contain only letters, digits, and hyphens"; goto fail; }
+		{
+		// Letters and digits are allowed anywhere
+		if (mdnsIsLetter(src[i]) || mdnsIsDigit(src[i])) continue;
+		// Hyphens are only allowed as interior characters
+		// Underscores are not supposed to be allowed at all, but for backwards compatibility with some old products we do allow them,
+		// with the same rule as hyphens
+		if ((src[i] == '-' || src[i] == '_') && i > 2 && i < len) continue;
+		errormsg = "Application protocol name must contain only letters, digits, and hyphens"; goto fail;
+		}
 	for (i=0; i<=len; i++) *dst++ = *src++;
 
 	len = *src;
 	if (!(len == 4 && src[1] == '_' &&
 		(((src[2] | 0x20) == 'u' && (src[3] | 0x20) == 'd') || ((src[2] | 0x20) == 't' && (src[3] | 0x20) == 'c')) &&
 		(src[4] | 0x20) == 'p'))
-		{ errormsg="Transport protocol name must be _udp or _tcp"; goto fail; }
+		{ errormsg = "Transport protocol name must be _udp or _tcp"; goto fail; }
 	for (i=0; i<=len; i++) *dst++ = *src++;
 
-	if (*src) { errormsg="Service type must have only two labels"; goto fail; }
+	if (*src) { errormsg = "Service type must have only two labels"; goto fail; }
 
 	*dst = 0;
-	if (!domain->c[0]) { errormsg="Service domain must be non-empty"; goto fail; }
+	if (!domain->c[0]) { errormsg = "Service domain must be non-empty"; goto fail; }
 	if (SameDomainName(domain, (const domainname*)"\x05" "local" "\x04" "arpa"))
-		{ errormsg="Illegal domain \"local.arpa.\" Use \"local.\" (or empty string)"; goto fail; }
+		{ errormsg = "Illegal domain \"local.arpa.\" Use \"local.\" (or empty string)"; goto fail; }
 	dst = AppendDomainName(fqdn, domain);
-	if (!dst) { errormsg="Service domain too long"; goto fail; }
+	if (!dst) { errormsg = "Service domain too long"; goto fail; }
 	return(dst);
 
 fail:
