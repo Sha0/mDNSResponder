@@ -30,6 +30,10 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.88  2007/03/07 00:30:18  mkrochma
+<rdar://problem/5034370> POSIX: kDNSServiceInterfaceIndexAny not correctly handled
+Thanks goes to Aidan Williams of Audinate who did a lot of work in diagnosing this
+
 Revision 1.87  2007/02/08 21:12:28  cheshire
 <rdar://problem/4386497> Stop reading /etc/mDNSResponder.conf on every sleep/wake
 
@@ -580,6 +584,7 @@ mDNSexport mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(mDNS *const
 	assert(m != NULL);
 
 	if (index == kDNSServiceInterfaceIndexLocalOnly) return(mDNSInterface_LocalOnly);
+	if (index == kDNSServiceInterfaceIndexAny      ) return(mDNSInterface_Any);
 
 	intf = (PosixNetworkInterface*)(m->HostInterfaces);
 	while ((intf != NULL) && (mDNSu32) intf->index != index) 
@@ -595,6 +600,7 @@ mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(mDNS *const m, mDNS
 	assert(m != NULL);
 
 	if (id == mDNSInterface_LocalOnly) return(kDNSServiceInterfaceIndexLocalOnly);
+	if (id == mDNSInterface_Any      ) return(kDNSServiceInterfaceIndexAny);
 
 	intf = (PosixNetworkInterface*)(m->HostInterfaces);
 	while ((intf != NULL) && (mDNSInterfaceID) intf != id)
