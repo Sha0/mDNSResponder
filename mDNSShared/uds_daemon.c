@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.238  2007/03/07 00:26:48  cheshire
+<rdar://problem/4426754> DNSServiceRemoveRecord log message should include record type
+
 Revision 1.237  2007/02/28 01:44:29  cheshire
 <rdar://problem/5027863> Byte order bugs in uDNS.c, uds_daemon.c, dnssd_clientstub.c
 
@@ -1643,7 +1646,7 @@ mDNSlocal mStatus remove_record(request_state *rstate)
 	return err;
 	}
 
-mDNSlocal mStatus remove_extra(request_state *rstate, service_instance *serv)
+mDNSlocal mStatus remove_extra(const request_state *const rstate, service_instance *const serv, mDNSu16 *const rrtype)
 	{
 	mStatus err = mStatus_BadReferenceErr;
 	ExtraResourceRecord *ptr;
@@ -1651,7 +1654,10 @@ mDNSlocal mStatus remove_extra(request_state *rstate, service_instance *serv)
 	for (ptr = serv->srs.Extras; ptr; ptr = ptr->next)
 		{
 		if (ptr->ClientID == rstate->hdr.reg_index) // found match
+			{
+			*rrtype = ptr->r.resrec.rrtype;
 			return mDNS_RemoveRecordFromService(&mDNSStorage, &serv->srs, ptr, FreeExtraRR, ptr);
+			}
 		}
 	return err;
 	}
@@ -1670,14 +1676,16 @@ mDNSlocal mStatus handle_removerecord_request(request_state *rstate)
 	else
 		{
 		service_instance *i;
-		LogOperation("%3d: DNSServiceRemoveRecord(%##s)", rstate->sd,
-			(srvinfo->instances) ? srvinfo->instances->srs.RR_SRV.resrec.name->c : NULL);
+		mDNSu16 rrtype = 0;
 		for (i = srvinfo->instances; i; i = i->next)
 			{
-			err = remove_extra(rstate, i);
+			err = remove_extra(rstate, i, &rrtype);
 			if (err && i->default_local) break;
 			else err = mStatus_NoError;  // suppress non-local default errors
 			}
+		LogOperation("%3d: DNSServiceRemoveRecord(%##s, %s)", rstate->sd,
+			(srvinfo->instances) ? srvinfo->instances->srs.RR_SRV.resrec.name->c : NULL,
+			rrtype ? DNSTypeName(rrtype) : "<NONE>");
 		}
 	
 	return(err);
