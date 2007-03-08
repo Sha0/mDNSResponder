@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.300  2007/03/08 18:56:00  cheshire
+Fixed typo: "&v4.ip.v4.b[0]" is always non-zero (ampersand should not be there)
+
 Revision 1.299  2007/02/28 01:45:47  cheshire
 <rdar://problem/4683261> NAT-PMP: Port mapping refreshes should contain actual public port
 <rdar://problem/5027863> Byte order bugs in uDNS.c, uds_daemon.c, dnssd_clientstub.c
@@ -3002,9 +3005,9 @@ mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr, co
 	{
 	mDNSBool v4Changed, v6Changed, RouterChanged;
 
-	if (v4addr && v4addr->type != mDNSAddrType_IPv4) { LogMsg("mDNS_SetPrimaryInterfaceInfo V4 address - incorrect type.  Discarding."); return; }
-	if (v6addr && v6addr->type != mDNSAddrType_IPv6) { LogMsg("mDNS_SetPrimaryInterfaceInfo V6 address - incorrect type.  Discarding."); return; }
-	if (router && router->type != mDNSAddrType_IPv4) { LogMsg("mDNS_SetPrimaryInterfaceInfo passed non-V4 router.  Discarding."); return; }
+	if (v4addr && v4addr->type != mDNSAddrType_IPv4) { LogMsg("mDNS_SetPrimaryInterfaceInfo v4 address - incorrect type.  Discarding. %#a", v4addr); return; }
+	if (v6addr && v6addr->type != mDNSAddrType_IPv6) { LogMsg("mDNS_SetPrimaryInterfaceInfo v6 address - incorrect type.  Discarding. %#a", v6addr); return; }
+	if (router && router->type != mDNSAddrType_IPv4) { LogMsg("mDNS_SetPrimaryInterfaceInfo passed non-v4 router.  Discarding. %#a",        router); return; }
 
 	mDNS_Lock(m);
 
@@ -5391,7 +5394,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 
 		if (v4.ip.v4.b[0] != 169 || v4.ip.v4.b[1] != 254)
 			{
-			mDNS_SetPrimaryInterfaceInfo(m, &v4.ip.v4.b[0] ? &v4 : mDNSNULL, v6.ip.v6.b[0] ? &v6 : mDNSNULL, r.ip.v4.NotAnInteger ? &r : mDNSNULL);
+			mDNS_SetPrimaryInterfaceInfo(m, v4.ip.v4.b[0] ? &v4 : mDNSNULL, v6.ip.v6.b[0] ? &v6 : mDNSNULL, r.ip.v4.NotAnInteger ? &r : mDNSNULL);
 			}
 		else
 			{
