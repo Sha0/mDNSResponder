@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.126  2007/03/10 03:26:44  cheshire
+<rdar://problem/4961667> uDNS: LLQ refresh response packet causes cached records to be removed from cache
+
 Revision 1.125  2007/03/07 00:08:58  cheshire
 <rdar://problem/4347550> Don't allow hyphens at start of service type
 
@@ -1964,6 +1967,32 @@ mDNSexport const mDNSu8 *LocateAdditionals(const DNSMessage *const msg, const mD
 	const mDNSu8 *ptr = LocateAuthorities(msg, end);
 	for (i = 0; i < msg->h.numAuthorities; i++) ptr = skipResourceRecord(msg, ptr, end);
 	return (ptr);
+	}
+
+mDNSexport const mDNSu8 *LocateLLQOptData(const DNSMessage *const msg, const mDNSu8 *const end)
+	{
+	int i;
+	const mDNSu8 *ptr = LocateAdditionals(msg, end);
+	if (!ptr) return(mDNSNULL);
+
+	// Locate the OPT record.
+	// According to RFC 2671, "One OPT pseudo-RR can be added to the additional data section of either a request or a response."
+	// This implies that there may be *at most* one OPT record per DNS message, in the Additional Section,
+	// but not necessarily the *last* entry in the Additional Section.
+	for (i = 0; i < msg->h.numAdditionals; i++)
+		{
+		if (ptr + 10 + LLQ_OPT_RDLEN <= end   &&		// Make sure we have 10+22 bytes of data
+			ptr[0] == 0                       &&		// Name must be root label
+			ptr[1] == (kDNSType_OPT >> 8  )   &&		// rrtype OPT
+			ptr[2] == (kDNSType_OPT & 0xFF)   &&
+			ptr[3] == (kDNSClass_IN >> 8  )   &&		// rrclass IN, don't care about TTL
+			ptr[4] == (kDNSClass_IN & 0xFF)   &&
+			((mDNSu16)ptr[9] << 8 | (mDNSu16)ptr[10]) >= (mDNSu16)LLQ_OPT_RDLEN)
+			return(ptr);
+		else
+			ptr = skipResourceRecord(msg, ptr, end);
+		}
+	return(mDNSNULL);
 	}
 
 // ***************************************************************************

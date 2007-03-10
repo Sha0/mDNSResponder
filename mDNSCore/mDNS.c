@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.586  2007/03/10 03:26:44  cheshire
+<rdar://problem/4961667> uDNS: LLQ refresh response packet causes cached records to be removed from cache
+
 Revision 1.585  2007/03/10 02:02:58  cheshire
 <rdar://problem/4961667> uDNS: LLQ refresh response packet causes cached records to be removed from cache
 Eliminate unnecessary "InternalResponseHndlr responseCallback" function pointer
@@ -3736,8 +3739,12 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		response->h.numAuthorities, response->h.numAuthorities == 1 ? "y,  " : "ies,",
 		response->h.numAdditionals, response->h.numAdditionals == 1 ? "" : "s");
 
-	if (ResponseMCast)	// We ignore questions (if any) in mDNS response packets
+	// We ignore questions (if any) in mDNS response packets
+	// Also, if this is an LLQ response, we handle it much the same
+	if (ResponseMCast || LocateLLQOptData(response, end))
 		ptr = LocateAnswers(response, end);
+	// Otherwise, for one-shot queries, any answers in our cache that are not also contained
+	// in this response packet are immediately deemed to be invalid.
 	else
 		{
 		// We could possibly combine this with the similar loop at the end of this function --

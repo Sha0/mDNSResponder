@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.42  2007/03/10 03:26:44  cheshire
+<rdar://problem/4961667> uDNS: LLQ refresh response packet causes cached records to be removed from cache
+
 Revision 1.41  2007/01/18 23:18:17  cheshire
 Source code tidying: Delete extraneous white space
 
@@ -216,6 +219,7 @@ extern const mDNSu8 *getQuestion(const DNSMessage *msg, const mDNSu8 *ptr, const
 extern const mDNSu8 *LocateAnswers(const DNSMessage *const msg, const mDNSu8 *const end);
 extern const mDNSu8 *LocateAuthorities(const DNSMessage *const msg, const mDNSu8 *const end);
 extern const mDNSu8 *LocateAdditionals(const DNSMessage *const msg, const mDNSu8 *const end);
+extern const mDNSu8 *LocateLLQOptData(const DNSMessage *const msg, const mDNSu8 *const end);
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK

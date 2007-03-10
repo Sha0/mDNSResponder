@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.303  2007/03/10 03:26:44  cheshire
+<rdar://problem/4961667> uDNS: LLQ refresh response packet causes cached records to be removed from cache
+
 Revision 1.302  2007/03/10 02:29:58  cheshire
 Added comments about NAT-PMP response functions
 
@@ -890,22 +893,11 @@ mDNSlocal mStatus constructQueryMsg(DNSMessage *msg, mDNSu8 **endPtr, DNSQuestio
 // The code that currently calls this assumes there's only one, instead of iterating through the set
 mDNSlocal const rdataOPT *GetLLQOptData(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end)
 	{
-	int i;
-	const mDNSu8 *ptr = LocateAdditionals(msg, end);
-	if (!ptr) return(mDNSNULL);
-
-	// Locate the OPT record.
-	// According to RFC 2671, "One OPT pseudo-RR can be added to the additional data section of either a request or a response."
-	// This implies that there may be *at most* one OPT record per DNS message, in the Additional Section,
-	// but not necessarily the *last* entry in the Additional Section.
-	for (i = 0; i < msg->h.numAdditionals; i++)
+	const mDNSu8 *ptr = LocateLLQOptData(msg, end);
+	if (ptr)
 		{
 		ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAdd, &m->rec);
-		if (!ptr) return(mDNSNULL);
-		if (m->rec.r.resrec.rrtype == kDNSType_OPT &&
-			m->rec.r.resrec.rdlength >= LLQ_OPT_RDLEN)
-			return(&m->rec.r.resrec.rdata->u.opt);
-		m->rec.r.resrec.RecordType = 0;		// Clear RecordType, ready to fetch the next one
+		if (ptr) return(&m->rec.r.resrec.rdata->u.opt);
 		}
 	return(mDNSNULL);
 	}
