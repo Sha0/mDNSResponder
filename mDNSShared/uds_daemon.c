@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.239  2007/03/10 02:29:36  cheshire
+Added comment about port_mapping_create_reply()
+
 Revision 1.238  2007/03/07 00:26:48  cheshire
 <rdar://problem/4426754> DNSServiceRemoveRecord log message should include record type
 
@@ -2975,6 +2978,7 @@ mDNSlocal void port_mapping_create_termination_callback(void *context)
 	mDNS_Unlock(&mDNSStorage);
 	}
 
+// Called via function pointer when we get a NAT-PMP address request or port mapping response
 mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt)
 	{
 	mStatus err = mStatus_NoError;
@@ -3145,7 +3149,7 @@ mDNSlocal void handle_port_mapping_create_request(request_state *request)
 	request->msgbuf = NULL;
 
 	InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
-	if (interfaceIndex && !InterfaceID)                                                 { err = mStatus_BadParamErr;  goto error; }
+	if (interfaceIndex && !InterfaceID)                                                 { err = mStatus_BadParamErr; goto error; }
 	if (!(protocol & kDNSServiceProtocol_UDP) && !(protocol & kDNSServiceProtocol_UDP)) { err = mStatus_BadParamErr; goto error; }
 	if (!privatePort.NotAnInteger)                                                      { err = mStatus_BadParamErr; goto error; }
 
