@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.338  2007/03/10 02:28:28  cheshire
+Added comment explaining NATResponseHndlr
+
 Revision 1.337  2007/03/10 02:02:58  cheshire
 <rdar://problem/4961667> uDNS: LLQ refresh response packet causes cached records to be removed from cache
 Eliminate unnecessary "InternalResponseHndlr responseCallback" function pointer
@@ -1310,7 +1313,10 @@ typedef mDNSBool (*NATResponseHndlr)(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt);
 struct NATTraversalInfo_struct
 	{
 	NATOp_t op;
-	NATResponseHndlr ReceiveResponse;
+	NATResponseHndlr ReceiveResponse;	// Should be one of:
+										// ReceiveNATAddrResponse (uDNS.c)
+										// uDNS_HandleNATPortMapReply(uDNS.c)
+										// port_mapping_create_reply (uds_daemon.c)
 	union { AuthRecord *RecordRegistration; ServiceRecordSet *ServiceRegistration; } reg;
     mDNSAddr Router;
 	mDNSIPPort PrivatePort;
