@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.302  2007/03/10 02:29:58  cheshire
+Added comments about NAT-PMP response functions
+
 Revision 1.301  2007/03/10 02:02:58  cheshire
 <rdar://problem/4961667> uDNS: LLQ refresh response packet causes cached records to be removed from cache
 Eliminate unnecessary "InternalResponseHndlr responseCallback" function pointer
@@ -680,6 +683,7 @@ mDNSexport void uDNS_SendNATMsg(NATTraversalInfo *info, mDNS *m)
 	info->retry = m->timenow + info->RetryInterval;
 	}
 
+// Called from both ReceiveNATAddrResponse and port_mapping_create_reply, when we get a NAT-PMP address request response
 mDNSexport mDNSBool uDNS_HandleNATQueryAddrReply(NATTraversalInfo *n, mDNS * const m, mDNSu8 *pkt, mDNSAddr *addr, mStatus *err)
 	{
 	NATAddrReply *response = (NATAddrReply *)pkt;
@@ -712,6 +716,7 @@ mDNSexport mDNSBool uDNS_HandleNATQueryAddrReply(NATTraversalInfo *n, mDNS * con
 	return mDNStrue;
 	}
 
+// Called via function pointer when we get a NAT-PMP address request response
 mDNSlocal mDNSBool ReceiveNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt)
 	{
 	mStatus err = mStatus_NoError;
@@ -2358,6 +2363,7 @@ error:
 	// NOTE: not safe to touch any client structures here
 	}
 
+// Called via function pointer when we get a NAT-PMP port request response
 mDNSexport mDNSBool uDNS_HandleNATPortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt)
 	{
 	ServiceRecordSet *srs = n->reg.ServiceRegistration;
