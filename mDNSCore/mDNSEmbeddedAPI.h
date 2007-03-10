@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.337  2007/03/10 02:02:58  cheshire
+<rdar://problem/4961667> uDNS: LLQ refresh response packet causes cached records to be removed from cache
+Eliminate unnecessary "InternalResponseHndlr responseCallback" function pointer
+
 Revision 1.336  2007/02/28 22:12:24  cheshire
 Get rid of unused mDNSVal32 and mDNSOpaque32fromIntVal
 
@@ -1113,8 +1117,6 @@ enum
 	LLQErr_UnknownErr = 6
 	};
 
-typedef void (*InternalResponseHndlr)(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, DNSQuestion *const question);
-
 #define HMAC_LEN    64
 #define HMAC_IPAD   0x36
 #define HMAC_OPAD   0x5c
@@ -1162,9 +1164,6 @@ struct DNSQuestion_struct
 	mDNSu32               CNAMEReferrals;	// Count of how many CNAME redirections we've done
 
 	// Wide Area fields.  These are used internally by the uDNS core
-	InternalResponseHndlr responseCallback; // This is one of: recvSetupResponse or getZoneData
-											// We should get rid of the function pointer, and just use the state
-											// variables in the DNSQuestion_struct to tell us what we need to do
 	mDNSs32               RestartTime;      // Mark when we restart a suspended query
 	uDNS_TCPSocket        sock;		        // For secure operations
 	LLQ_Info              *llq;             // NULL for 1-shot queries

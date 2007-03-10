@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.301  2007/03/10 02:02:58  cheshire
+<rdar://problem/4961667> uDNS: LLQ refresh response packet causes cached records to be removed from cache
+Eliminate unnecessary "InternalResponseHndlr responseCallback" function pointer
+
 Revision 1.300  2007/03/08 18:56:00  cheshire
 Fixed typo: "&v4.ip.v4.b[0]" is always non-zero (ampersand should not be there)
 
@@ -972,6 +976,9 @@ mDNSlocal void recvRefreshReply(mDNS *m, DNSMessage *msg, const mDNSu8 *end, DNS
 	qInfo->state = LLQ_Established;
 	}
 
+// Forward declaration
+mDNSlocal void recvSetupResponse(mDNS *const m, const DNSMessage *const pktMsg, const mDNSu8 *const end, DNSQuestion *const q);
+
 mDNSlocal mDNSBool recvLLQResponse(mDNS *m, DNSMessage *msg, const mDNSu8 *end, const mDNSAddr *srcaddr, mDNSIPPort srcport)
 	{
 	DNSQuestion pktQ, *q;
@@ -1009,8 +1016,7 @@ mDNSlocal mDNSBool recvLLQResponse(mDNS *m, DNSMessage *msg, const mDNSu8 *end, 
 					{
 					if ((llqInfo->state != LLQ_InitialRequest && llqInfo->state != LLQ_SecondaryRequest) || mDNSSameAddress(srcaddr, &llqInfo->servAddr))
 						{
-						if (q->responseCallback)
-							q->responseCallback(m, msg, end, q);
+						recvSetupResponse(m, msg, end, q);
 						m->CurrentQuestion = mDNSNULL;
 						return mDNStrue;
 						}
@@ -1340,24 +1346,6 @@ mDNSlocal void hndlRequestChallenge(mDNS *const m, const LLQOptData *const llq, 
 	info->state = LLQ_Error;
 	}
 
-mDNSlocal void hndlChallengeResponseAck(mDNS *const m, const LLQOptData *const llq, DNSQuestion *const q)
-	{
-	LLQ_Info *info = q->llq;
-
-	if (llq->err) { LogMsg("hndlChallengeResponseAck - received error %d from server", llq->err); goto error; }
-	if (!mDNSSameOpaque64(&info->id, &llq->id)) { LogMsg("hndlChallengeResponseAck - ID changed.  discarding"); return; } // this can happen rarely (on packet loss + reordering)
-	info->expire = m->timenow + ((mDNSs32)llq->lease * mDNSPlatformOneSecond);
-	q->LastQTime     = m->timenow;
-	q->ThisQInterval = ((mDNSs32)llq->lease * mDNSPlatformOneSecond / 2);
-	info->origLease = llq->lease;
-	info->state = LLQ_Established;
-	q->responseCallback = mDNSNULL;	// Was recvSetupResponse; now we're finished, clear function pointer
-	return;
-
-	error:
-	info->state = LLQ_Error;
-	}
-
 // response handler for initial and secondary setup responses
 mDNSlocal void recvSetupResponse(mDNS *const m, const DNSMessage *const pktMsg, const mDNSu8 *const end, DNSQuestion *const q)
 	{
@@ -1427,7 +1415,14 @@ mDNSlocal void recvSetupResponse(mDNS *const m, const DNSMessage *const pktMsg, 
 		if (info->question->Private)
 			info->id = llq->OptData.llq.id;
 
-		hndlChallengeResponseAck(m, &llq->OptData.llq, q);
+		if (llq->OptData.llq.err) { LogMsg("recvSetupResponse - received error %d from server", llq->OptData.llq.err); info->state = LLQ_Error; goto exit; }
+		if (!mDNSSameOpaque64(&info->id, &llq->OptData.llq.id))
+			{ LogMsg("recvSetupResponse - ID changed.  discarding"); goto exit; } // this can happen rarely (on packet loss + reordering)
+		info->expire     = m->timenow + ((mDNSs32)llq->OptData.llq.lease * mDNSPlatformOneSecond);
+		q->LastQTime     = m->timenow;
+		q->ThisQInterval = ((mDNSs32)llq->OptData.llq.lease * mDNSPlatformOneSecond / 2);
+		info->origLease  = llq->OptData.llq.lease;
+		info->state      = LLQ_Established;
 		goto exit;
 		}
 
@@ -1435,13 +1430,9 @@ mDNSlocal void recvSetupResponse(mDNS *const m, const DNSMessage *const pktMsg, 
 	err = mStatus_UnknownErr;
 
 exit:
-
 	m->rec.r.resrec.RecordType = 0;
 
-	if (err)
-		{
-		StartLLQPolling(m, info);
-		}
+	if (err) StartLLQPolling(m, info);
 	}
 
 mDNSlocal void startLLQHandshakePrivate(mDNS *m, LLQ_Info *info, mDNSBool defer)
@@ -1587,7 +1578,6 @@ mDNSlocal void startLLQHandshakePrivate(mDNS *m, LLQ_Info *info, mDNSBool defer)
 	info->origLease                  = kLLQ_DefLease;
 	info->question->ThisQInterval    = (kLLQ_INIT_RESEND * mDNSPlatformOneSecond);
 	info->question->LastQTime        = timenow;
-	info->question->responseCallback = recvSetupResponse;
 
 exit:
 
@@ -1687,7 +1677,6 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info, mDNSBool defer)
 	info->origLease = kLLQ_DefLease;
 	q->LastQTime = timenow;
 	q->ThisQInterval    = (kLLQ_INIT_RESEND * mDNSPlatformOneSecond);
-	q->responseCallback = recvSetupResponse;
 
 	err = mStatus_NoError;
 
@@ -3726,7 +3715,6 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 	if (QR_OP == StdR)
 		{
 		// !!!KRS we should to a table lookup here to see if it answers an LLQ or a 1-shot
-		// LLQ Responses over TCP not currently supported
 		if (srcaddr && recvLLQResponse(m, msg, end, srcaddr, srcport)) return;
 
 		if (uDNS_ReceiveTestQuestionResponse(m, msg, end, srcaddr)) return;
@@ -3742,16 +3730,8 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 					{ debugf("uDNS_ReceiveMsg - response received after maximum allowed window.  Discarding"); return; }
 				if (msg->h.flags.b[0] & kDNSFlag0_TC)
 					{ hndlTruncatedAnswer(qptr, srcaddr, m); return; }
-				else if (qptr->responseCallback)
-					{
-					if (m->CurrentQuestion)
-						LogMsg("uDNS_ReceiveMsg: ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
-					m->CurrentQuestion = qptr;
-					qptr->responseCallback(m, msg, end, qptr);
-					m->CurrentQuestion = mDNSNULL;
-					// Note: responseCallback can invalidate qptr
-					return;
-					}
+				else if (qptr->llq && (qptr->llq->state == LLQ_InitialRequest || qptr->llq->state == LLQ_SecondaryRequest))
+					{ recvSetupResponse(m, msg, end, qptr); return; }
 				}
 			}
 		}

@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.585  2007/03/10 02:02:58  cheshire
+<rdar://problem/4961667> uDNS: LLQ refresh response packet causes cached records to be removed from cache
+Eliminate unnecessary "InternalResponseHndlr responseCallback" function pointer
+
 Revision 1.584  2007/02/28 01:51:27  cheshire
 Added comment about reverse-order IP address
 
@@ -4274,7 +4278,6 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		question->LastQTxTime       = m->timenow;
 		question->Private           = GetAuthInfoForName(m, &question->qname);
 		question->CNAMEReferrals    = 0;
-		question->responseCallback  = mDNSNULL;
 		question->RestartTime       = 0;
 		question->sock              = mDNSNULL;
 		question->llq               = mDNSNULL;
@@ -4996,7 +4999,7 @@ mDNSlocal void mDNS_HostNameCallback(mDNS *const m, AuthRecord *const rr, mStatu
 		{
 		// Notify the client that the host name is successfully registered
 		if (m->MainCallback)
-			m->MainCallback(m, result);
+			m->MainCallback(m, mStatus_NoError);
 		}
 	else if (result == mStatus_NameConflict)
 		{
