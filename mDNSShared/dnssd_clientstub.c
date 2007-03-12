@@ -28,6 +28,10 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.63  2007/03/12 21:48:21  cheshire
+<rdar://problem/5000162> Scary unlink errors in system.log
+Code was using memory after it had been freed
+
 Revision 1.62  2007/02/28 01:44:30  cheshire
 <rdar://problem/5027863> Byte order bugs in uDNS.c, uds_daemon.c, dnssd_clientstub.c
 
@@ -356,8 +360,6 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceRef sdr, 
 	//syslog(LOG_WARNING, "deliver_request writing %ld bytes\n", datalen + sizeof(ipc_msg_hdr));
 	//syslog(LOG_WARNING, "deliver_request name is %s\n", (char *)msg + sizeof(ipc_msg_hdr));
 	if (write_all(sdr->sockfd, (char *)hdr, datalen + sizeof(ipc_msg_hdr)) < 0) goto cleanup;
-	free(hdr);
-	hdr = NULL;
 
 	if (reuse_sd) errsd = sdr->sockfd;
 	else
@@ -388,7 +390,7 @@ cleanup:
 		// else syslog(LOG_WARNING, "deliver_request: removed UDS: %s\n", data);
 #endif
 		}
-	if (hdr) free(hdr);
+	free(hdr);
 	return err;
 	}
 
