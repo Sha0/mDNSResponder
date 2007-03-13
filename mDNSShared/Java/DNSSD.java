@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSSD.java,v $
+Revision 1.15  2007/03/13 00:28:03  vazquez
+<rdar://problem/4625928> Java: Rename exported symbols in libjdns_sd.jnilib
+
 Revision 1.14  2007/03/13 00:10:14  vazquez
 <rdar://problem/4455206> Java: 64 bit JNI patch
 
@@ -589,7 +592,7 @@ class	AppleDNSSD extends DNSSD
 	{
 		System.loadLibrary( "jdns_sd");
 	
-		int		libInitResult = InitLibrary( 1);
+		int		libInitResult = InitLibrary( 2);	// Current version number (must be sync'd with jnilib version)
 
 		if ( libInitResult != DNSSDException.NO_ERROR)
 			throw new InternalError( "cannot instantiate DNSSD: " + new AppleDNSSDException( libInitResult).getMessage());

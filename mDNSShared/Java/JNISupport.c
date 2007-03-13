@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: JNISupport.c,v $
+Revision 1.19  2007/03/13 00:28:03  vazquez
+<rdar://problem/4625928> Java: Rename exported symbols in libjdns_sd.jnilib
+
 Revision 1.18  2007/03/13 00:10:14  vazquez
 <rdar://problem/4455206> Java: 64 bit JNI patch
 
@@ -127,7 +130,8 @@ static DWORD	if_nametoindex( const char * nameStr );
 #endif
 
 enum {
-	kInterfaceVersion = 1		// Must match version in .jar file
+	kInterfaceVersionOne = 1,
+	kInterfaceVersionCurrent		// Must match version in .jar file
 };
 
 typedef struct OpContext	OpContext;
@@ -152,7 +156,7 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleDNSSD_InitLibrary( JNIEnv *pEnv
 						jint callerVersion)
 {
 	/* Ensure that caller & interface versions match. */
-	if ( callerVersion != kInterfaceVersion)
+	if ( callerVersion != kInterfaceVersionCurrent)
 		return kDNSServiceErr_Incompatible;
 
 #if AUTO_CALLBACKS
