@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSSD.java,v $
+Revision 1.14  2007/03/13 00:10:14  vazquez
+<rdar://problem/4455206> Java: 64 bit JNI patch
+
 Revision 1.13  2007/02/24 23:08:02  mkrochma
 <rdar://problem/5001673> Typo in Bonjour Java API document
 
@@ -695,7 +698,7 @@ class	AppleService implements DNSSDService, Runnable
 			throw new AppleDNSSDException( rc);
 	}
 
-	protected int	/* warning */	fNativeContext;		// Private storage for native side
+	protected long	/* warning */	fNativeContext;		// Private storage for native side
 
 	public void		run()
 	{
@@ -791,7 +794,7 @@ class	AppleDNSRecord implements DNSRecord
 		this.ThrowOnErr( this.Remove());
 	}
 
-	protected int			fRecord;		// Really a DNSRecord; sizeof(int) == sizeof(void*) ?
+	protected long			fRecord;		// Really a DNSRecord; sizeof(long) == sizeof(void*) ?
 	protected AppleService	fOwner;
 
 	protected void			ThrowOnErr( int rc) throws DNSSDException
