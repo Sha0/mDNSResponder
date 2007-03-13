@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: JNISupport.c,v $
+Revision 1.20  2007/03/13 01:41:46  cheshire
+Fixed compile warnings when building 32-bit
+
 Revision 1.19  2007/03/13 00:28:03  vazquez
 <rdar://problem/4625928> Java: Rename exported symbols in libjdns_sd.jnilib
 
@@ -264,11 +267,11 @@ JNIEXPORT void JNICALL Java_com_apple_dnssd_AppleService_HaltOperation( JNIEnv *
 
 	if ( contextField != 0)
 	{
-		OpContext	*pContext = (OpContext*) (*pEnv)->GetLongField( pEnv, pThis, contextField);
+		OpContext	*pContext = (OpContext*) (long) (*pEnv)->GetLongField(pEnv, pThis, contextField);
 		if ( pContext != NULL)
 		{
 			// MUST clear fNativeContext first, BEFORE calling DNSServiceRefDeallocate()
-			(*pEnv)->SetLongField( pEnv, pThis, contextField, 0);
+			(*pEnv)->SetLongField(pEnv, pThis, contextField, 0);
 			if ( pContext->ServiceRef != NULL)
 				DNSServiceRefDeallocate( pContext->ServiceRef);
 
@@ -290,7 +293,7 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleService_BlockForData( JNIEnv *p
 
 	if ( contextField != 0)
 	{
-		OpContext	*pContext = (OpContext*) (*pEnv)->GetLongField( pEnv, pThis, contextField);
+		OpContext	*pContext = (OpContext*) (long) (*pEnv)->GetLongField(pEnv, pThis, contextField);
 		if ( pContext != NULL)
 		{
 			fd_set			readFDs;
@@ -331,7 +334,7 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleService_ProcessResults( JNIEnv 
 
 	jclass			cls = (*pEnv)->GetObjectClass( pEnv, pThis);
 	jfieldID		contextField = (*pEnv)->GetFieldID( pEnv, cls, "fNativeContext", "J");
-	OpContext		*pContext = (OpContext*) (*pEnv)->GetLongField( pEnv, pThis, contextField);
+	OpContext		*pContext = (OpContext*) (long) (*pEnv)->GetLongField(pEnv, pThis, contextField);
 	DNSServiceErrorType err = kDNSServiceErr_BadState;
 
 	if ( pContext != NULL)
@@ -416,7 +419,7 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleBrowser_CreateBrowser( JNIEnv *
 		err = DNSServiceBrowse( &pContext->ServiceRef, flags, ifIndex, regStr, domainStr, ServiceBrowseReply, pContext);
 		if ( err == kDNSServiceErr_NoError)
 		{
-			(*pEnv)->SetLongField( pEnv, pThis, contextField, (jlong) pContext);
+			(*pEnv)->SetLongField(pEnv, pThis, contextField, (long) pContext);
 		}
 
 		SafeReleaseUTFChars( pEnv, regType, regStr);
@@ -500,7 +503,7 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleResolver_CreateResolver( JNIEnv
 								servStr, regStr, domainStr, ServiceResolveReply, pContext);
 		if ( err == kDNSServiceErr_NoError)
 		{
-			(*pEnv)->SetLongField( pEnv, pThis, contextField, (jlong) pContext);
+			(*pEnv)->SetLongField(pEnv, pThis, contextField, (long) pContext);
 		}
 
 		SafeReleaseUTFChars( pEnv, serviceName, servStr);
@@ -580,7 +583,7 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleRegistration_BeginRegister( JNI
 								numBytes, pBytes, ServiceRegisterReply, pContext);
 		if ( err == kDNSServiceErr_NoError)
 		{
-			(*pEnv)->SetLongField( pEnv, pThis, contextField, (jlong) pContext);
+			(*pEnv)->SetLongField(pEnv, pThis, contextField, (long) pContext);
 		}
 
 		if ( pBytes != NULL)
@@ -611,7 +614,7 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleRegistration_AddRecord( JNIEnv 
 	DNSRecordRef			recRef;
 
 	if ( contextField != 0)
-		pContext = (OpContext*) (*pEnv)->GetLongField( pEnv, pThis, contextField);
+		pContext = (OpContext*) (long) (*pEnv)->GetLongField(pEnv, pThis, contextField);
 	if ( pContext == NULL || pContext->ServiceRef == NULL)
 		return kDNSServiceErr_BadParam;
 
@@ -621,7 +624,7 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleRegistration_AddRecord( JNIEnv 
 	err = DNSServiceAddRecord( pContext->ServiceRef, &recRef, flags, rrType, numBytes, pBytes, ttl);
 	if ( err == kDNSServiceErr_NoError)
 	{
-		(*pEnv)->SetLongField( pEnv, destObj, recField, (jlong) recRef);
+		(*pEnv)->SetLongField(pEnv, destObj, recField, (long) recRef);
 	}
 
 	if ( pBytes != NULL)
@@ -648,10 +651,10 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleDNSRecord_Update( JNIEnv *pEnv,
 		jclass		ownerClass = (*pEnv)->GetObjectClass( pEnv, ownerObj);
 		jfieldID	contextField = (*pEnv)->GetFieldID( pEnv, ownerClass, "fNativeContext", "J");
 		if ( contextField != 0)
-			pContext = (OpContext*) (*pEnv)->GetLongField( pEnv, ownerObj, contextField);
+			pContext = (OpContext*) (long) (*pEnv)->GetLongField(pEnv, ownerObj, contextField);
 	}
 	if ( recField != 0)
-		recRef = (DNSRecordRef) (*pEnv)->GetLongField( pEnv, pThis, recField);
+		recRef = (DNSRecordRef) (long) (*pEnv)->GetLongField(pEnv, pThis, recField);
 	if ( pContext == NULL || pContext->ServiceRef == NULL)
 		return kDNSServiceErr_BadParam;
 
@@ -681,10 +684,10 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleDNSRecord_Remove( JNIEnv *pEnv,
 		jclass		ownerClass = (*pEnv)->GetObjectClass( pEnv, ownerObj);
 		jfieldID	contextField = (*pEnv)->GetFieldID( pEnv, ownerClass, "fNativeContext", "J");
 		if ( contextField != 0)
-			pContext = (OpContext*) (*pEnv)->GetLongField( pEnv, ownerObj, contextField);
+			pContext = (OpContext*) (long) (*pEnv)->GetLongField(pEnv, ownerObj, contextField);
 	}
 	if ( recField != 0)
-		recRef = (DNSRecordRef) (*pEnv)->GetLongField( pEnv, pThis, recField);
+		recRef = (DNSRecordRef) (long) (*pEnv)->GetLongField(pEnv, pThis, recField);
 	if ( pContext == NULL || pContext->ServiceRef == NULL)
 		return kDNSServiceErr_BadParam;
 
@@ -711,7 +714,7 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleRecordRegistrar_CreateConnectio
 		err = DNSServiceCreateConnection( &pContext->ServiceRef);
 		if ( err == kDNSServiceErr_NoError)
 		{
-			(*pEnv)->SetLongField( pEnv, pThis, contextField, (jlong) pContext);
+			(*pEnv)->SetLongField(pEnv, pThis, contextField, (long) pContext);
 		}
 	}
 	else
@@ -770,7 +773,7 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleRecordRegistrar_RegisterRecord(
 	RecordRegistrationRef	*regEnvelope;
 
 	if ( contextField != 0)
-		pContext = (OpContext*) (*pEnv)->GetLongField( pEnv, pThis, contextField);
+		pContext = (OpContext*) (long) (*pEnv)->GetLongField(pEnv, pThis, contextField);
 	if ( pContext == NULL || pContext->ServiceRef == NULL || nameStr == NULL)
 		return kDNSServiceErr_BadParam;
 
@@ -789,7 +792,7 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleRecordRegistrar_RegisterRecord(
 
 	if ( err == kDNSServiceErr_NoError)
 	{
-		(*pEnv)->SetLongField( pEnv, destObj, recField, (jlong) recRef);
+		(*pEnv)->SetLongField(pEnv, destObj, recField, (long) recRef);
 	}
 	else
 	{
@@ -861,7 +864,7 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleQuery_CreateQuery( JNIEnv *pEnv
 									rrtype, rrclass, ServiceQueryReply, pContext);
 		if ( err == kDNSServiceErr_NoError)
 		{
-			(*pEnv)->SetLongField( pEnv, pThis, contextField, (jlong) pContext);
+			(*pEnv)->SetLongField(pEnv, pThis, contextField, (long) pContext);
 		}
 
 		SafeReleaseUTFChars( pEnv, serviceName, servStr);
@@ -919,7 +922,7 @@ JNIEXPORT jint JNICALL Java_com_apple_dnssd_AppleDomainEnum_BeginEnum( JNIEnv *p
 											DomainEnumReply, pContext);
 		if ( err == kDNSServiceErr_NoError)
 		{
-			(*pEnv)->SetLongField( pEnv, pThis, contextField, (jlong) pContext);
+			(*pEnv)->SetLongField(pEnv, pThis, contextField, (long) pContext);
 		}
 	}
 	else
