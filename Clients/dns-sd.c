@@ -518,7 +518,7 @@ static void DNSSD_API port_mapping_create_reply(DNSServiceRef sdRef, DNSServiceF
 		char                  addr[256];
 
 		sprintf(addr, "%d.%d.%d.%d", digits[0], digits[1], digits[2], digits[3]);
-		printf("%-4d %-20s %-15d %-15d %-15d %d\n", ifIndex, addr, protocol, privatePort, publicPort, ttl);
+		printf("%-4d %-20s %-15d %-15d %-15d %d\n", ifIndex, addr, protocol, ntohs(privatePort), ntohs(publicPort), ttl);
 		}
 	fflush(stdout);
 	}
