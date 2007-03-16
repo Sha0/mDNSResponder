@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.240  2007/03/16 23:25:35  cheshire
+<rdar://problem/5067001> NAT-PMP: Parameter validation not working correctly
+
 Revision 1.239  2007/03/10 02:29:36  cheshire
 Added comment about port_mapping_create_reply()
 
@@ -3149,9 +3152,18 @@ mDNSlocal void handle_port_mapping_create_request(request_state *request)
 	request->msgbuf = NULL;
 
 	InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
-	if (interfaceIndex && !InterfaceID)                                                 { err = mStatus_BadParamErr; goto error; }
-	if (!(protocol & kDNSServiceProtocol_UDP) && !(protocol & kDNSServiceProtocol_UDP)) { err = mStatus_BadParamErr; goto error; }
-	if (!privatePort.NotAnInteger)                                                      { err = mStatus_BadParamErr; goto error; }
+	if (interfaceIndex && !InterfaceID) { err = mStatus_BadParamErr; goto error; }
+
+	if (protocol == 0)
+		{
+		// If protocol == 0 (i.e. just request public address) then privatePort, publicPort, ttl must be zero too
+		if (privatePort.NotAnInteger || publicPort.NotAnInteger || ttl) { err = mStatus_BadParamErr; goto error; }
+		}
+	else
+		{
+		if (!privatePort.NotAnInteger) { err = mStatus_BadParamErr; goto error; }
+		if (!(protocol & (kDNSServiceProtocol_UDP | kDNSServiceProtocol_TCP))) { err = mStatus_BadParamErr; goto error; }
+		}
 
 	// allocate and set up browser info
 	info = mallocL("port_mapping_info_t", sizeof(*info));
