@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: TXTRecord.java,v $
+Revision 1.8  2007/03/16 23:39:40  vazquez
+<rdar://problem/4612778> Java: Coding error in java wrappers, limited TXTRecord length
+
 Revision 1.7  2006/12/13 07:13:23  mkrochma
 <rdar://problem/4612778> Java: Coding error in java wrappers, limited TXTRecord length
 
@@ -127,21 +130,20 @@ public class	TXTRecord
 		byte[]	oldBytes = fBytes;
 		int		valLen = (value != null) ? value.length : 0;
 		int		insertion = 0;
-		int		newLen;
-		byte	avLen;
+		int		newLen, avLen;
 	
 		// locate the insertion point
 		for ( int i=0; i < index && insertion < fBytes.length; i++)
-			insertion += fBytes[ insertion] + 1;
+			insertion += (0xFF & (fBytes[ insertion] + 1));
 	
-		avLen = (byte) ( keyBytes.length + valLen + (value != null ? 1 : 0));
+		avLen = keyBytes.length + valLen + (value != null ? 1 : 0);
 		newLen = avLen + oldBytes.length + 1;
 
 		fBytes = new byte[ newLen];
 		System.arraycopy( oldBytes, 0, fBytes, 0, insertion);
 		int secondHalfLen = oldBytes.length - insertion;
 		System.arraycopy( oldBytes, insertion, fBytes, newLen - secondHalfLen, secondHalfLen);
-		fBytes[ insertion] = avLen;
+		fBytes[ insertion] = ( byte) avLen;
 		System.arraycopy( keyBytes, 0, fBytes, insertion + 1, keyBytes.length);
 		if ( value != null)
 		{
@@ -171,7 +173,7 @@ public class	TXTRecord
 					return i;
 				}
 			}
-			avStart += avLen + 1;
+			avStart += (0xFF & (avLen + 1));
 		}
 		return -1;
 	}
@@ -182,7 +184,7 @@ public class	TXTRecord
 		int		i, avStart;
 
 		for ( i=0, avStart=0; avStart < fBytes.length; i++)
-			avStart += fBytes[ avStart] + 1;
+			avStart += (0xFF & (fBytes[ avStart] + 1));
 		return i;
 	}
 
