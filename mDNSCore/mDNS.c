@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.587  2007/03/16 22:10:56  cheshire
+<rdar://problem/4471307> mDNS: Query for *either* type A or AAAA should return both types
+
 Revision 1.586  2007/03/10 03:26:44  cheshire
 <rdar://problem/4961667> uDNS: LLQ refresh response packet causes cached records to be removed from cache
 
@@ -1066,12 +1069,24 @@ mDNSlocal void AddAdditionalsToResponseList(mDNS *const m, AuthRecord *ResponseR
 		
 		// For SRV records, automatically add the Address record(s) for the target host
 		if (rr->resrec.rrtype == kDNSType_SRV)
+			{
 			for (rr2=m->ResourceRecords; rr2; rr2=rr2->next)					// Scan list of resource records
 				if (RRTypeIsAddressType(rr2->resrec.rrtype) &&					// For all address records (A/AAAA) ...
 					ResourceRecordIsValidInterfaceAnswer(rr2, InterfaceID) &&	// ... which are valid for answer ...
 					rr->resrec.rdatahash == rr2->resrec.namehash &&			// ... whose name is the name of the SRV target
 					SameDomainName(&rr->resrec.rdata->u.srv.target, rr2->resrec.name))
 					AddRecordToResponseList(nrpp, rr2, rr);
+			}
+		else if (RRTypeIsAddressType(rr->resrec.rrtype))
+			{
+			LogMsg("AddAdditionalsToResponseList %##s", rr->resrec.name);
+			for (rr2=m->ResourceRecords; rr2; rr2=rr2->next)					// Scan list of resource records
+				if (RRTypeIsAddressType(rr2->resrec.rrtype) &&					// For all address records (A/AAAA) ...
+					ResourceRecordIsValidInterfaceAnswer(rr2, InterfaceID) &&	// ... which are valid for answer ...
+					rr->resrec.namehash == rr2->resrec.namehash &&				// ... and have the same name
+					SameDomainName(rr->resrec.name, rr2->resrec.name))
+					AddRecordToResponseList(nrpp, rr2, rr);
+			}
 		}
 	}
 
@@ -4403,6 +4418,8 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 
 	// Take care not to trash question->next until *after* we've updated m->CurrentQuestion and m->NewQuestions
 	question->next = mDNSNULL;
+
+	// LogMsg("mDNS_StopQuery_internal: Question %##s (%s) removed", question->qname.c, DNSTypeName(question->qtype));
 
 	return(mStatus_NoError);
 	}
