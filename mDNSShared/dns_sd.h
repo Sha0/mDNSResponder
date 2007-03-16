@@ -1651,7 +1651,11 @@ typedef void (DNSSD_API *DNSServiceNATPortMappingReply)
  * interfaceIndex:  The interface on which to create port mappings in a NAT gateway. Passing 0 causes
  *                  the port mapping request to be sent on the primary interface.
  *
- * protocol:        Pass in kDNSServiceProtocol_UDP or kDNSServiceProtocol_TCP or both.
+ * protocol:        To request a port mapping, pass in kDNSServiceProtocol_UDP, or kDNSServiceProtocol_TCP,
+ *                  or (kDNSServiceProtocol_UDP | kDNSServiceProtocol_TCP) to map both.
+ *                  The local listening port number must also be specified in the privatePort parameter.
+ *                  To just discover the NAT gateway's public IP address, pass zero for protocol,
+ *                  privatePort, publicPort and ttl.
  *
  * privatePort:     The port number in network byte order on the local machine which is listening for packets.
  *
