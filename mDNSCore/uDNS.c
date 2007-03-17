@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.304  2007/03/17 00:02:11  cheshire
+<rdar://problem/5067013> NAT-PMP: Lease TTL is being ignored
+
 Revision 1.303  2007/03/10 03:26:44  cheshire
 <rdar://problem/4961667> uDNS: LLQ refresh response packet causes cached records to be removed from cache
 
@@ -571,6 +574,7 @@ exit:
 mDNSexport void uDNS_FormatPortMaprequest(NATTraversalInfo *info)
 	{
 	mDNSu8 *p = (mDNSu8 *)&info->request.PortReq;	// NATPortMapRequest packet
+	mDNSu32 lease = info->lease ? info->lease : NATMAP_DEFAULT_LEASE;
 
 	p[ 0] = NATMAP_VERS;
 	p[ 1] = info->op;
@@ -580,10 +584,10 @@ mDNSexport void uDNS_FormatPortMaprequest(NATTraversalInfo *info)
 	p[ 5] = info->PrivatePort.b[1];
 	p[ 6] = info->PublicPort. b[0];
 	p[ 7] = info->PublicPort. b[1];
-	p[ 8] = (mDNSu8)((NATMAP_DEFAULT_LEASE >> 24) &  0xFF);
-	p[ 9] = (mDNSu8)((NATMAP_DEFAULT_LEASE >> 16) &  0xFF);
-	p[10] = (mDNSu8)((NATMAP_DEFAULT_LEASE >>  8) &  0xFF);
-	p[11] = (mDNSu8)( NATMAP_DEFAULT_LEASE        &  0xFF);
+	p[ 8] = (mDNSu8)((lease >> 24) &  0xFF);
+	p[ 9] = (mDNSu8)((lease >> 16) &  0xFF);
+	p[10] = (mDNSu8)((lease >>  8) &  0xFF);
+	p[11] = (mDNSu8)( lease        &  0xFF);
 	}
 
 mDNSlocal void SendInitialPMapReq(mDNS *m, NATTraversalInfo *info)
