@@ -1528,17 +1528,24 @@ DNSServiceErrorType DNSSD_API DNSServiceRegisterRecord
 
 /* DNSServiceReconfirmRecord
  *
- * Instruct the daemon to verify the validity of a resource record that appears to
- * be out of date (e.g. because tcp connection to a service's target failed.)
+ * Instruct the daemon to verify the validity of a resource record that appears
+ * to be out of date (e.g. because TCP connection to a service's target failed.)
  * Causes the record to be flushed from the daemon's cache (as well as all other
  * daemons' caches on the network) if the record is determined to be invalid.
+ * Use this routine conservatively. Reconfirming a record necessarily consumes
+ * network bandwidth, so this should not be done indiscriminately.
  *
  * Parameters:
  *
- * flags:           Pass kDNSServiceFlagsForce to force immediate deletion of record.
+ * flags:           Pass kDNSServiceFlagsForce to force immediate deletion of record,
+ *                  instead of after some number of reconfirmation queries have gone unanswered.
  *
- * interfaceIndex:  If non-zero, specifies the interface of the record in question.
- *                  Passing 0 causes all instances of this record to be reconfirmed.
+ * interfaceIndex:  Specifies the interface of the record in question.
+ *                  The caller must specify the interface.
+ *                  This API (by design) causes increased network traffic, so it requires
+ *                  the caller to be precise about which record should be reconfirmed.
+ *                  It is not possible to pass zero for the interface index to perform
+ *                  a "wildcard" reconfirmation, where *all* matching records are reconfirmed.
  *
  * fullname:        The resource record's full domain name.
  *
