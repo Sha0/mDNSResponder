@@ -94,6 +94,7 @@ static const char kFilePathSep = '\\';
 #include <sys/socket.h>		// For AF_INET
 #include <netinet/in.h>		// For struct sockaddr_in()
 #include <arpa/inet.h>		// For inet_addr()
+#include <net/if.h>			// For if_nametoindex()
 static const char kFilePathSep = '/';
 #endif
 
@@ -757,12 +758,13 @@ int main(int argc, char **argv)
 		printf("Using LocalOnly\n");
 		}
 
-	if (argc > 2 && !strcmp(argv[1], "-i") && atoi(argv[2]))
+	if (argc > 2 && !strcmp(argv[1], "-i"))
 		{
-		opinterface = atoi(argv[2]);
+		opinterface = if_nametoindex(argv[2]);
+		if (!opinterface) opinterface = atoi(argv[2]);
+		if (!opinterface) { fprintf(stderr, "Unknown interface %s\n", argv[2]); goto Fail; }
 		argc -= 2;
 		argv += 2;
-		printf("Using interface %d\n", opinterface);
 		}
 
 	if (argc < 2) goto Fail;        // Minimum command line is the command name and one argument
@@ -775,6 +777,8 @@ int main(int argc, char **argv)
 								#endif
 								, &optind);
 	if (operation == -1) goto Fail;
+
+	if (opinterface) printf("Using interface %d\n", opinterface);
 
 	switch (operation)
 		{
