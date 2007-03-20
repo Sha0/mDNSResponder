@@ -141,7 +141,7 @@ static volatile int stopNow = 0;
 static volatile int timeOut = LONG_TIME;
 
 //*************************************************************************************************************
-// Supporting Utility Function
+// Supporting Utility Functions
 
 static uint16_t GetRRType(const char *s)
 	{
@@ -193,6 +193,19 @@ static uint16_t GetRRType(const char *s)
 	else if (!strcasecmp(s, "MAILB"   )) return(kDNSServiceType_MAILB);
 	else if (!strcasecmp(s, "MAILA"   )) return(kDNSServiceType_MAILA);
 	else if (!strcasecmp(s, "ANY"     )) return(kDNSServiceType_ANY);
+	else                                 return(atoi(s));
+	}
+
+static DNSServiceProtocol GetProtocol(const char *s)
+	{
+	if      (!strcasecmp(s, "v4"      )) return(kDNSServiceProtocol_IPv4);
+	else if (!strcasecmp(s, "v6"      )) return(kDNSServiceProtocol_IPv6);
+	else if (!strcasecmp(s, "v4v6"    )) return(kDNSServiceProtocol_IPv4 | kDNSServiceProtocol_IPv6);
+	else if (!strcasecmp(s, "v6v4"    )) return(kDNSServiceProtocol_IPv4 | kDNSServiceProtocol_IPv6);
+	else if (!strcasecmp(s, "udp"     )) return(kDNSServiceProtocol_UDP);
+	else if (!strcasecmp(s, "tcp"     )) return(kDNSServiceProtocol_TCP);
+	else if (!strcasecmp(s, "udptcp"  )) return(kDNSServiceProtocol_UDP | kDNSServiceProtocol_TCP);
+	else if (!strcasecmp(s, "tcpudp"  )) return(kDNSServiceProtocol_UDP | kDNSServiceProtocol_TCP);
 	else                                 return(atoi(s));
 	}
 
@@ -877,11 +890,10 @@ int main(int argc, char **argv)
 					else
 						{
 						uint16_t PrivatePortAsNumber = atoi(argv[optind+1]);
-						uint16_t PublicPortAsNumber = atoi(argv[optind+2]);
-						Opaque16 mapPrivatePort = { { PrivatePortAsNumber >> 8, PrivatePortAsNumber & 0xFF } };
-						Opaque16 mapPublicPort = { { PublicPortAsNumber >> 8, PublicPortAsNumber & 0xFF } };
-
-						err = DNSServiceNATPortMappingCreate(&client, 0, 0, atoi(argv[optind+0]), mapPrivatePort.NotAnInteger, mapPublicPort.NotAnInteger, atoi(argv[optind+3]), port_mapping_create_reply, NULL);
+						uint16_t PublicPortAsNumber  = atoi(argv[optind+2]);
+						Opaque16 mapPrivatePort      = { { PrivatePortAsNumber >> 8, PrivatePortAsNumber & 0xFF } };
+						Opaque16 mapPublicPort       = { { PublicPortAsNumber  >> 8, PublicPortAsNumber  & 0xFF } };
+						err = DNSServiceNATPortMappingCreate(&client, 0, 0, GetProtocol(argv[optind+0]), mapPrivatePort.NotAnInteger, mapPublicPort.NotAnInteger, atoi(argv[optind+3]), port_mapping_create_reply, NULL);
 						}
 					break;
 		            }
@@ -891,7 +903,7 @@ int main(int argc, char **argv)
 					if (argc != optind+2) goto Fail;
 					else
 						{
-						err = DNSServiceGetAddrInfo(&client, 0, 0, atoi(argv[optind+0]), argv[optind+1], addrinfo_reply, NULL);
+						err = DNSServiceGetAddrInfo(&client, 0, 0, GetProtocol(argv[optind+0]), argv[optind+1], addrinfo_reply, NULL);
 						}
 					break;
 		            }
@@ -916,17 +928,17 @@ Fail:
 	fprintf(stderr, "%s -P <Name> <Type> <Domain> <Port> <Host> <IP> [<TXT>...]  (Proxy)\n", a0);
 	fprintf(stderr, "%s -Q <FQDN> <rrtype> <rrclass> (Generic query for any record type)\n", a0);
 	fprintf(stderr, "%s -C <FQDN> <rrtype> <rrclass>   (Query; reconfirming each result)\n", a0);
+#if HAS_NAT_PMP_API
+	fprintf(stderr, "%s -X udp/tcp/udptcp <PrivPort> <PubPort> <TTL>  (NAT Port Mapping)\n", a0);
+#endif
+#if HAS_ADDRINFO_API
+	fprintf(stderr, "%s -G v4/v6/v4v6 <Hostname>  (Get address information for hostname)\n", a0);
+#endif
 	fprintf(stderr, "%s -A                      (Test Adding/Updating/Deleting a record)\n", a0);
 	fprintf(stderr, "%s -U                                  (Test updating a TXT record)\n", a0);
 	fprintf(stderr, "%s -N                             (Test adding a large NULL record)\n", a0);
 	fprintf(stderr, "%s -T                            (Test creating a large TXT record)\n", a0);
 	fprintf(stderr, "%s -M      (Test creating a registration with multiple TXT records)\n", a0);
 	fprintf(stderr, "%s -I   (Test registering and then immediately updating TXT record)\n", a0);
-#if HAS_NAT_PMP_API
-	fprintf(stderr, "%s -X <Prot> <PrivPort> <PubPort> <TTL>   (Create NAT Port Mapping)\n", a0);
-#endif
-#if HAS_ADDRINFO_API
-	fprintf(stderr, "%s -G <Prot> <Hostname>      (Get address information for hostname)\n", a0);
-#endif
 	return 0;
 	}
