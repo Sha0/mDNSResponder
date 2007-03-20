@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.375  2007/03/20 00:50:57  cheshire
+<rdar://problem/4530644> Remove logic to disable IPv6 discovery on interfaces which have a routable IPv4 address
+
 Revision 1.374  2007/03/06 23:29:50  cheshire
 <rdar://problem/4331696> Need to call IONotificationPortDestroy on shutdown
 
@@ -214,6 +217,18 @@ Add (commented out) trigger value for testing "mach_absolute_time went backwards
 // A records over IPv4 and AAAA over IPv6. Setting this to 1 sends both
 // AAAA and A records over both IPv4 and IPv6.
 #define AAAA_OVER_V4 1
+
+// In Mac OS X 10.4 and earlier, to reduce traffic, we would send and receive using IPv6 only on interfaces that had no routable
+// IPv4 address. Having a routable IPv4 address assigned is a reasonable indicator of being on a large configured network,
+// which means there's a good chance that most or all the other devices on that network should also have IPv4.
+// By doing this we lost the ability to talk to true IPv6-only devices on that link, but we cut the packet rate in half.
+// At that time, reducing the packet rate was more important than v6-only devices on a large configured network,
+// so were willing to make that sacrifice.
+// In Mac OS X 10.5, in 2007, two things have changed:
+// 1. IPv6-only devices are starting to become more common, so we can't ignore them.
+// 2. Other efficiency improvements in the code mean that crude hacks like this should no longer be necessary.
+
+#define USE_V6_ONLY_WHEN_NO_ROUTABLE_V4 0
 
 #include "mDNSEmbeddedAPI.h"          // Defines the interface provided to the client layer above
 #include "DNSCommon.h"
@@ -2056,6 +2071,7 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 	return(i);
 	}
 
+#if USE_V6_ONLY_WHEN_NO_ROUTABLE_V4
 mDNSlocal NetworkInterfaceInfoOSX *FindRoutableIPv4(mDNS *const m, mDNSu32 scope_id)
 	{
 	NetworkInterfaceInfoOSX *i;
@@ -2065,6 +2081,7 @@ mDNSlocal NetworkInterfaceInfoOSX *FindRoutableIPv4(mDNS *const m, mDNSu32 scope
 				return(i);
 	return(mDNSNULL);
 	}
+#endif
 
 mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 	{
@@ -2172,18 +2189,14 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 	if (!foundav6 && v6Loopback) AddInterfaceToList(m, v6Loopback, utc);
 
 	// Now the list is complete, set the McastTxRx setting for each interface.
-	// We always send and receive using IPv4.
-	// To reduce traffic, we send and receive using IPv6 only on interfaces that have no routable IPv4 address.
-	// Having a routable IPv4 address assigned is a reasonable indicator of being on a large configured network,
-	// which means there's a good chance that most or all the other devices on that network should also have v4.
-	// By doing this we lose the ability to talk to true v6-only devices on that link, but we cut the packet rate in half.
-	// At this time, reducing the packet rate is more important than v6-only devices on a large configured network,
-	// so we are willing to make that sacrifice.
 	NetworkInterfaceInfoOSX *i;
 	for (i = m->p->InterfaceList; i; i = i->next)
 		if (i->Exists)
 			{
-			mDNSBool txrx = MulticastInterface(i) && ((i->ifinfo.ip.type == mDNSAddrType_IPv4) || !FindRoutableIPv4(m, i->scope_id));
+			mDNSBool txrx = MulticastInterface(i);
+#if USE_V6_ONLY_WHEN_NO_ROUTABLE_V4
+			txrx = txrx && ((i->ifinfo.ip.type == mDNSAddrType_IPv4) || !FindRoutableIPv4(m, i->scope_id));
+#endif
 			if (i->ifinfo.McastTxRx != txrx)
 				{
 				i->ifinfo.McastTxRx = txrx;
