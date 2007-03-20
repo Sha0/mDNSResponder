@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.589  2007/03/20 15:37:19  cheshire
+Delete unnecessary log message
+
 Revision 1.588  2007/03/20 00:24:44  cheshire
 <rdar://problem/4175213> Should deliver "name registered" callback slightly *before* announcing PTR record
 
@@ -1082,7 +1085,6 @@ mDNSlocal void AddAdditionalsToResponseList(mDNS *const m, AuthRecord *ResponseR
 			}
 		else if (RRTypeIsAddressType(rr->resrec.rrtype))
 			{
-			LogMsg("AddAdditionalsToResponseList %##s", rr->resrec.name);
 			for (rr2=m->ResourceRecords; rr2; rr2=rr2->next)					// Scan list of resource records
 				if (RRTypeIsAddressType(rr2->resrec.rrtype) &&					// For all address records (A/AAAA) ...
 					ResourceRecordIsValidInterfaceAnswer(rr2, InterfaceID) &&	// ... which are valid for answer ...
