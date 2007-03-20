@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.43  2007/03/20 17:07:15  cheshire
+Rename "struct uDNS_TCPSocket_struct" to "TCPSocket", "struct uDNS_UDPSocket_struct" to "UDPSocket"
+
 Revision 1.42  2007/03/10 03:26:44  cheshire
 <rdar://problem/4961667> uDNS: LLQ refresh response packet causes cached records to be removed from cache
 
@@ -228,7 +231,7 @@ extern const mDNSu8 *LocateLLQOptData(const DNSMessage *const msg, const mDNSu8 
 #endif
 
 extern mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg, mDNSu8 *end,
-	mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, uDNS_TCPSocket sock, DomainAuthInfo *authInfo);
+	mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, TCPSocket *sock, DomainAuthInfo *authInfo);
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK

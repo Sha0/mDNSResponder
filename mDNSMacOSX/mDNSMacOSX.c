@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.376  2007/03/20 17:07:15  cheshire
+Rename "struct uDNS_TCPSocket_struct" to "TCPSocket", "struct uDNS_UDPSocket_struct" to "UDPSocket"
+
 Revision 1.375  2007/03/20 00:50:57  cheshire
 <rdar://problem/4530644> Remove logic to disable IPv6 discovery on interfaces which have a routable IPv4 address
 
@@ -287,15 +290,15 @@ Add (commented out) trigger value for testing "mach_absolute_time went backwards
 
 typedef struct SearchListElem
 	{
-    struct SearchListElem *next;
-    domainname domain;
-    int flag;
-    DNSQuestion BrowseQ;
-    DNSQuestion DefBrowseQ;
-    DNSQuestion LegacyBrowseQ;
-    DNSQuestion RegisterQ;
-    DNSQuestion DefRegisterQ;
-    ARListElem *AuthRecs;
+	struct SearchListElem *next;
+	domainname domain;
+	int flag;
+	DNSQuestion BrowseQ;
+	DNSQuestion DefBrowseQ;
+	DNSQuestion LegacyBrowseQ;
+	DNSQuestion RegisterQ;
+	DNSQuestion DefRegisterQ;
+	ARListElem *AuthRecs;
 	} SearchListElem;
 
 
@@ -533,7 +536,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 	if (err < 0)
 		{
 		static int MessageCount = 0;
-        // Don't report EHOSTDOWN (i.e. ARP failure), ENETDOWN, or no route to host for unicast destinations
+		// Don't report EHOSTDOWN (i.e. ARP failure), ENETDOWN, or no route to host for unicast destinations
 		if (!mDNSAddressIsAllDNSLinkGroup(dst))
 			if (errno == EHOSTDOWN || errno == ENETDOWN || errno == EHOSTUNREACH || errno == ENETUNREACH) return(mStatus_TransientErr);
 		// Don't report EHOSTUNREACH in the first three minutes after boot
@@ -769,17 +772,17 @@ mDNSlocal void myKQSocketCallBack(int s1, short filter, __unused u_int fflags, _
 
 // TCP socket support
 
-struct uDNS_TCPSocket_struct
+struct TCPSocket_struct
 	{
-    TCPConnectionCallback callback;
+	TCPConnectionCallback callback;
 	int fd;
 	KQueueEntry kqEntry;
-	uDNS_TCPSocketFlags flags;
+	TCPSocketFlags flags;
 #ifndef NO_SECURITYFRAMEWORK
 	SSLContextRef tlsContext;
 #endif /* NO_SECURITYFRAMEWORK */
 	void *context;
-    mDNSBool connected;
+	mDNSBool connected;
 	mDNSBool handshake;
 	};
 
@@ -787,7 +790,7 @@ struct uDNS_TCPSocket_struct
 mDNSlocal OSStatus tlsWriteSock(SSLConnectionRef connection, const void * data, size_t * dataLength)
 	{
 	UInt32			bytesSent = 0;
-	uDNS_TCPSocket	sock = (uDNS_TCPSocket) connection;
+	TCPSocket *	sock = (TCPSocket *) connection;
 	int 			length;
 	UInt32			dataLen = *dataLength;
 	const UInt8	*	dataPtr = (UInt8 *)data;
@@ -795,7 +798,7 @@ mDNSlocal OSStatus tlsWriteSock(SSLConnectionRef connection, const void * data, 
 
 	*dataLength = 0;
 
-    do
+	do
 		{
 		int				selectresult;
 		fd_set			fds;
@@ -823,7 +826,7 @@ mDNSlocal OSStatus tlsWriteSock(SSLConnectionRef connection, const void * data, 
 			length = 0;
 			break;
 			}
-    	}
+		}
 	while ((length > 0) && ((bytesSent += length) < dataLen));
 
 	if (length <= 0)
@@ -852,7 +855,7 @@ mDNSlocal OSStatus tlsReadSock(SSLConnectionRef	connection, void * data, size_t 
 	UInt32			bytesToGo = *dataLength;
 	UInt32 			initLen = bytesToGo;
 	UInt8		*	currData = (UInt8 *)data;
-	uDNS_TCPSocket	sock = (uDNS_TCPSocket) connection;
+	TCPSocket *	sock = (TCPSocket *) connection;
 	OSStatus		rtn = noErr;
 	UInt32			bytesRead;
 	int				rrtn;
@@ -931,7 +934,7 @@ mDNSlocal OSStatus tlsReadSock(SSLConnectionRef	connection, void * data, size_t 
 	}
 
 
-mDNSlocal OSStatus tlsSetupSock(uDNS_TCPSocket sock, mDNSBool server)
+mDNSlocal OSStatus tlsSetupSock(TCPSocket *sock, mDNSBool server)
 	{
 	mStatus err = mStatus_NoError;
 
@@ -976,7 +979,7 @@ mDNSlocal OSStatus tlsSetupSock(uDNS_TCPSocket sock, mDNSBool server)
 mDNSlocal void tcpKQSocketCallback(__unused int fd, __unused short filter, __unused u_int fflags, __unused intptr_t data, void *context)
 	{
 	#pragma unused(cfs, CallbackType, address, data)
-	struct uDNS_TCPSocket_struct * sock = context;
+	TCPSocket * sock = context;
 	mDNSBool connect = mDNSfalse;
 	mStatus err = mStatus_NoError;
 
@@ -1040,9 +1043,9 @@ mDNSexport int KQueueAdd(int fd, short filter, u_int fflags, intptr_t data, cons
 	return 0;
 	}
 
-mDNSexport uDNS_TCPSocket mDNSPlatformTCPSocket(mDNS * const m, uDNS_TCPSocketFlags flags, mDNSIPPort * port)
+mDNSexport TCPSocket *mDNSPlatformTCPSocket(mDNS * const m, TCPSocketFlags flags, mDNSIPPort * port)
 	{
-	struct uDNS_TCPSocket_struct	*	sock = mDNSNULL;
+	TCPSocket	*	sock = mDNSNULL;
 	struct sockaddr_in				addr;
 	socklen_t						len;
 	int								on = 1;  // "on" for setsockopt
@@ -1050,7 +1053,7 @@ mDNSexport uDNS_TCPSocket mDNSPlatformTCPSocket(mDNS * const m, uDNS_TCPSocketFl
 
 	(void) m;
 
-	sock = mallocL("mDNSPlatformTCPSocket", sizeof(struct uDNS_TCPSocket_struct));
+	sock = mallocL("TCPSocket_struct/mDNSPlatformTCPSocket", sizeof(TCPSocket));
 
 	if (!sock)
 		{
@@ -1059,7 +1062,7 @@ mDNSexport uDNS_TCPSocket mDNSPlatformTCPSocket(mDNS * const m, uDNS_TCPSocketFl
 		goto exit;
 		}
 
-	mDNSPlatformMemZero(sock, sizeof(struct uDNS_TCPSocket_struct));
+	mDNSPlatformMemZero(sock, sizeof(TCPSocket));
 	sock->flags = flags;
 	sock->fd = -1;
 
@@ -1126,8 +1129,8 @@ mDNSexport uDNS_TCPSocket mDNSPlatformTCPSocket(mDNS * const m, uDNS_TCPSocketFl
 	}
 
 
-mDNSexport mStatus mDNSPlatformTCPConnect(uDNS_TCPSocket sock, const mDNSAddr * dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
-                                      TCPConnectionCallback callback, void * context)
+mDNSexport mStatus mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr * dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
+                                          TCPConnectionCallback callback, void * context)
 	{
 	struct sockaddr_in	saddr;
 	mStatus				err = mStatus_NoError;
@@ -1238,18 +1241,18 @@ mDNSexport mStatus mDNSPlatformTCPConnect(uDNS_TCPSocket sock, const mDNSAddr * 
 	}
 
 
-mDNSexport mDNSBool mDNSPlatformTCPIsConnected(uDNS_TCPSocket sock)
+mDNSexport mDNSBool mDNSPlatformTCPIsConnected(TCPSocket *sock)
 	{
 	return sock->connected;
 	}
 
 
-mDNSexport uDNS_TCPSocket mDNSPlatformTCPAccept(uDNS_TCPSocketFlags flags, int fd)
+mDNSexport TCPSocket *mDNSPlatformTCPAccept(TCPSocketFlags flags, int fd)
 	{
-	struct uDNS_TCPSocket_struct	*	sock;
+	TCPSocket	*	sock;
 	mStatus							err = mStatus_NoError;
 
-	sock = mallocL("mDNSPlatformTCPAccept", sizeof(struct uDNS_TCPSocket_struct));
+	sock = mallocL("TCPSocket_struct/mDNSPlatformTCPAccept", sizeof(TCPSocket));
 
 	if (!sock)
 		{
@@ -1301,11 +1304,11 @@ mDNSexport uDNS_TCPSocket mDNSPlatformTCPAccept(uDNS_TCPSocketFlags flags, int f
 		sock = NULL;
 	}
 
-	return (uDNS_TCPSocket) sock;
+	return (TCPSocket *) sock;
 	}
 
 
-mDNSexport void mDNSPlatformTCPCloseConnection(uDNS_TCPSocket sock)
+mDNSexport void mDNSPlatformTCPCloseConnection(TCPSocket *sock)
 	{
 	if (sock)
 		{
@@ -1329,7 +1332,7 @@ mDNSexport void mDNSPlatformTCPCloseConnection(uDNS_TCPSocket sock)
 	}
 
 
-mDNSexport long mDNSPlatformReadTCP(uDNS_TCPSocket sock, void * buf, unsigned long buflen, mDNSBool * closed)
+mDNSexport long mDNSPlatformReadTCP(TCPSocket *sock, void * buf, unsigned long buflen, mDNSBool * closed)
 	{
 	int nread;
 
@@ -1415,7 +1418,7 @@ mDNSexport long mDNSPlatformReadTCP(uDNS_TCPSocket sock, void * buf, unsigned lo
 	}
 
 
-mDNSexport long mDNSPlatformWriteTCP(uDNS_TCPSocket sock, const char * msg, unsigned long len)
+mDNSexport long mDNSPlatformWriteTCP(TCPSocket *sock, const char * msg, unsigned long len)
 	{
 	int nsent;
 
@@ -1466,13 +1469,13 @@ mDNSexport long mDNSPlatformWriteTCP(uDNS_TCPSocket sock, const char * msg, unsi
 	}
 
 
-mDNSexport int mDNSPlatformTCPGetFlags(uDNS_TCPSocket sock)
+mDNSexport int mDNSPlatformTCPGetFlags(TCPSocket *sock)
 	{
 	return sock->flags;
 	}
 
 
-mDNSexport int mDNSPlatformTCPGetFD(uDNS_TCPSocket sock)
+mDNSexport int mDNSPlatformTCPGetFD(TCPSocket *sock)
 	{
 	return sock->fd;
 	}
@@ -1480,7 +1483,7 @@ mDNSexport int mDNSPlatformTCPGetFD(uDNS_TCPSocket sock)
 
 // If mDNSIPPort port is non-zero, then it's a multicast socket on the specified interface
 // If mDNSIPPort port is zero, then it's a randomly assigned port number, used for sending unicast queries
-mDNSlocal mStatus SetupSocket(mDNS *const m, KQSocketSet *cp, mDNSBool mcast, const mDNSAddr *ifaddr, mDNSIPPort * inPort, u_short sa_family)
+mDNSlocal mStatus SetupSocket(mDNS *const m, KQSocketSet *cp, mDNSBool mcast, const mDNSAddr *ifaddr, const mDNSIPPort *const inPort, u_short sa_family)
 	{
 	const int ip_tosbits = IPTOS_LOWDELAY | IPTOS_THROUGHPUT;
 	int         *s        = (sa_family == AF_INET) ? &cp->sktv4 : &cp->sktv6;
@@ -1645,43 +1648,23 @@ mDNSlocal mStatus SetupSocket(mDNS *const m, KQSocketSet *cp, mDNSBool mcast, co
 	return(err);
 	}
 
-mDNSexport uDNS_UDPSocket mDNSPlatformUDPSocket(mDNS * const m, mDNSIPPort port)
+struct UDPSocket_struct
 	{
-	KQSocketSet * ss = mDNSNULL;
-	mStatus err = 0;
+	KQSocketSet ss;
+	};
 
-	ss = mallocL("mDNSPlatformUDPSocket", sizeof(KQSocketSet));
-
-	if (!ss)
-		{
-		LogMsg("mDNSPlatformUDPSocket: memory exhausted");
-		err = mStatus_NoMemoryErr;
-		goto exit;
-		}
-
-	memset(ss, 0, sizeof(KQSocketSet));
-
-	ss->m     = m;
-	ss->sktv4 = -1;
-	ss->sktv6 = -1;
-
-	err = SetupSocket(m, ss, mDNSfalse, &zeroAddr, &port, AF_INET);
-
-	if (err)
-		{
-		LogMsg("mDNSPlatformUDPSocket: SetupSocket failed");
-		goto exit;
-		}
-
-	exit:
-
-	if (err && ss)
-		{
-		freeL("KQSocketSet", ss);
-		ss = mDNSNULL;
-		}
-
-	return (uDNS_UDPSocket) ss;
+mDNSexport UDPSocket *mDNSPlatformUDPSocket(mDNS *const m, const mDNSIPPort port)
+	{
+	mStatus err;
+	UDPSocket *p = mallocL("UDPSocket", sizeof(UDPSocket));
+	if (!p) { LogMsg("mDNSPlatformUDPSocket: memory exhausted"); return(mDNSNULL); }
+	memset(p, 0, sizeof(UDPSocket));
+	p->ss.m     = m;
+	p->ss.sktv4 = -1;
+	p->ss.sktv6 = -1;
+	err = SetupSocket(m, &p->ss, mDNSfalse, &zeroAddr, &port, AF_INET);
+	if (err) { LogMsg("mDNSPlatformUDPSocket: SetupSocket failed"); freeL("UDPSocket", p); return(mDNSNULL); }
+	return(p);
 	}
 
 
@@ -1699,10 +1682,10 @@ mDNSlocal void CloseSocketSet(KQSocketSet *ss)
 		}
 	}
 
-mDNSexport void mDNSPlatformUDPClose(uDNS_UDPSocket sock)
+mDNSexport void mDNSPlatformUDPClose(UDPSocket *sock)
 	{
-	CloseSocketSet((KQSocketSet*) sock);
-	freeL("uDNS_UDPSocket", (KQSocketSet*) sock);
+	CloseSocketSet(&sock->ss);
+	freeL("UDPSocket", sock);
 	}
 
 
@@ -1718,8 +1701,8 @@ mDNSlocal CFArrayRef GetCertChain
 	CFArrayRef						wrappedCert		= NULL;
 	SecTrustRef						trust			= NULL;
 	CFArrayRef						rawCertChain	= NULL;
-    CFMutableArrayRef				certChain		= NULL;
-    CSSM_TP_APPLE_EVIDENCE_INFO	*	statusChain		= NULL;
+	CFMutableArrayRef				certChain		= NULL;
+	CSSM_TP_APPLE_EVIDENCE_INFO	*	statusChain		= NULL;
 	OSStatus						err				= 0;
 
 	if (!identity)
@@ -1736,15 +1719,15 @@ mDNSlocal CFArrayRef GetCertChain
 		goto exit;
 		}
 
-    err = SecPolicySearchCreate(CSSM_CERT_X_509v3, &CSSMOID_APPLE_X509_BASIC, NULL, &searchRef);
+	err = SecPolicySearchCreate(CSSM_CERT_X_509v3, &CSSMOID_APPLE_X509_BASIC, NULL, &searchRef);
 
-    if (err)
+	if (err)
 		{
 		LogMsg("getCertChain: SecPolicySearchCreate() returned %d", (int) err);
 		goto exit;
 		}
 
-    err = SecPolicySearchCopyNext(searchRef, &policy);
+	err = SecPolicySearchCopyNext(searchRef, &policy);
 
 	if (err)
 		{
@@ -1800,29 +1783,29 @@ mDNSlocal CFArrayRef GetCertChain
 	// Remove root from cert chain, but keep any and all intermediate certificates that have been signed by the root
 	// certificate
 
-    if (CFArrayGetCount(certChain) > 1)
+	if (CFArrayGetCount(certChain) > 1)
 		{
 		CFArrayRemoveValueAtIndex(certChain, CFArrayGetCount(certChain) - 1);
 		}
 
 	exit:
 
-    if (searchRef)
+	if (searchRef)
 		{
 		CFRelease(searchRef);
 		}
 
-    if (policy)
+	if (policy)
 		{
 		CFRelease(policy);
 		}
 
-    if (wrappedCert)
+	if (wrappedCert)
 		{
 		CFRelease(wrappedCert);
 		}
 
-    if (trust)
+	if (trust)
 		{
 		CFRelease(trust);
 		}
@@ -1832,13 +1815,13 @@ mDNSlocal CFArrayRef GetCertChain
 		CFRelease(rawCertChain);
 		}
 
-    if (certChain && err)
-    	{
+	if (certChain && err)
+		{
 		CFRelease(certChain);
 		certChain = NULL;
-    	}
+		}
 
-    return certChain;
+	return certChain;
 	}
 #endif /* NO_SECURITYFRAMEWORK */
 
@@ -2184,7 +2167,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 		ifa = ifa->ifa_next;
 		}
 
-    // For efficiency, we don't register a loopback interface when other interfaces of that family are available
+	// For efficiency, we don't register a loopback interface when other interfaces of that family are available
 	if (!foundav4 && v4Loopback) AddInterfaceToList(m, v4Loopback, utc);
 	if (!foundav6 && v6Loopback) AddInterfaceToList(m, v6Loopback, utc);
 
@@ -3026,9 +3009,9 @@ mDNSexport DNameListElem * mDNSPlatformGetReverseMapSearchDomainList(void)
 		mDNSAddr addr;
 
 		if (ifa->ifa_addr->sa_family == AF_INET	&&
-		    !SetupAddr(&addr, ifa->ifa_addr)	&&
-		    !IsPrivateV4Addr(&addr)				&&
-		    !(ifa->ifa_flags & IFF_LOOPBACK)	&&
+			!SetupAddr(&addr, ifa->ifa_addr)	&&
+			!IsPrivateV4Addr(&addr)				&&
+			!(ifa->ifa_flags & IFF_LOOPBACK)	&&
 			ifa->ifa_netmask)
 			{
 			mDNSAddr	netmask;
@@ -3042,9 +3025,9 @@ mDNSexport DNameListElem * mDNSPlatformGetReverseMapSearchDomainList(void)
 
 				// Note: This is reverse order compared to a normal dotted-decimal IP address, so we can't use our customary "%.4a" format code
 				sprintf(buffer, "%d.%d.%d.%d.in-addr.arpa.", addr.ip.v4.b[3] & netmask.ip.v4.b[3],
-				                                             addr.ip.v4.b[2] & netmask.ip.v4.b[2],
-				                                             addr.ip.v4.b[1] & netmask.ip.v4.b[1],
-				                                             addr.ip.v4.b[0] & netmask.ip.v4.b[0]);
+															 addr.ip.v4.b[2] & netmask.ip.v4.b[2],
+															 addr.ip.v4.b[1] & netmask.ip.v4.b[1],
+															 addr.ip.v4.b[0] & netmask.ip.v4.b[0]);
 
 				ptr = MakeDomainNameFromDNSNameString(&dname, buffer);
 

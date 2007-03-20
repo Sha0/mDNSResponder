@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOS9.c,v $
+Revision 1.48  2007/03/20 17:07:15  cheshire
+Rename "struct uDNS_TCPSocket_struct" to "TCPSocket", "struct uDNS_UDPSocket_struct" to "UDPSocket"
+
 Revision 1.47  2006/12/19 22:43:54  cheshire
 Fix compiler warnings
 
@@ -305,7 +308,7 @@ mDNSlocal OSStatus readpacket(mDNS *m)
 	return(err);
 	}
 
-mDNSexport uDNS_TCPSocket mDNSPlatformTCPSocket(mDNS * const m, uDNS_TCPSocketFlags flags, mDNSIPPort * port)
+mDNSexport TCPSocket *mDNSPlatformTCPSocket(mDNS * const m, TCPSocketFlags flags, mDNSIPPort * port)
 	{
 	(void)m;			// Unused
 	(void)flags;		// Unused
@@ -313,26 +316,26 @@ mDNSexport uDNS_TCPSocket mDNSPlatformTCPSocket(mDNS * const m, uDNS_TCPSocketFl
 	return NULL;
 	}
 
-mDNSexport uDNS_TCPSocket mDNSPlatformTCPAccept(uDNS_TCPSocketFlags flags, int sd)
+mDNSexport TCPSocket *mDNSPlatformTCPAccept(TCPSocketFlags flags, int sd)
 	{
 	(void)flags;		// Unused
 	(void)sd;			// Unused
 	return NULL;
 	}
 
-mDNSexport int mDNSPlatformTCPGetFlags(uDNS_TCPSocket sock)
+mDNSexport int mDNSPlatformTCPGetFlags(TCPSocket *sock)
 	{
 	(void)sock;			// Unused
 	return 0;
 	}
 
-mDNSexport int mDNSPlatformTCPGetFD(uDNS_TCPSocket sock)
+mDNSexport int mDNSPlatformTCPGetFD(TCPSocket *sock)
 	{
 	(void)sock;			// Unused
 	return -1;
 	}
 
-mDNSexport mStatus mDNSPlatformTCPConnect(uDNS_TCPSocket sock, const mDNSAddr * dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
+mDNSexport mStatus mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr * dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
                                       TCPConnectionCallback callback, void * context)
 	{
 	(void)sock;			// Unused
@@ -344,18 +347,18 @@ mDNSexport mStatus mDNSPlatformTCPConnect(uDNS_TCPSocket sock, const mDNSAddr * 
 	return(mStatus_UnsupportedErr);
 	}
 
-mDNSexport mDNSBool mDNSPlatformTCPIsConnected(uDNS_TCPSocket sock)
+mDNSexport mDNSBool mDNSPlatformTCPIsConnected(TCPSocket *sock)
 	{
 	(void)sock;			// Unused
 	return mDNSfalse;
 	}
 
-mDNSexport void mDNSPlatformTCPCloseConnection(uDNS_TCPSocket sd)
+mDNSexport void mDNSPlatformTCPCloseConnection(TCPSocket *sd)
 	{
 	(void)sd;			// Unused
 	}
 
-mDNSexport long mDNSPlatformReadTCP(uDNS_TCPSocket sock, void *buf, unsigned long buflen, mDNSBool *closed)
+mDNSexport long mDNSPlatformReadTCP(TCPSocket *sock, void *buf, unsigned long buflen, mDNSBool *closed)
 	{
 	(void)sock;			// Unused
 	(void)buf;			// Unused
@@ -364,7 +367,7 @@ mDNSexport long mDNSPlatformReadTCP(uDNS_TCPSocket sock, void *buf, unsigned lon
 	return(0);
 	}
 
-mDNSexport long mDNSPlatformWriteTCP(uDNS_TCPSocket sock, const char *msg, unsigned long len)
+mDNSexport long mDNSPlatformWriteTCP(TCPSocket *sock, const char *msg, unsigned long len)
 	{
 	(void)sock;			// Unused
 	(void)msg;			// Unused
@@ -372,14 +375,14 @@ mDNSexport long mDNSPlatformWriteTCP(uDNS_TCPSocket sock, const char *msg, unsig
 	return(0);
 	}
 
-mDNSexport uDNS_UDPSocket mDNSPlatformUDPSocket(mDNS * const m, mDNSIPPort port)
+mDNSexport UDPSocket *mDNSPlatformUDPSocket(mDNS * const m, mDNSIPPort port)
 	{
 	(void)m;			// Unused
 	(void)port;			// Unused
 	return NULL;
 	}
 
-mDNSexport void           mDNSPlatformUDPClose(uDNS_UDPSocket sock)
+mDNSexport void           mDNSPlatformUDPClose(UDPSocket *sock)
 	{
 	(void)sock;			// Unused
 	}

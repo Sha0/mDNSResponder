@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.127  2007/03/20 17:07:15  cheshire
+Rename "struct uDNS_TCPSocket_struct" to "TCPSocket", "struct uDNS_UDPSocket_struct" to "UDPSocket"
+
 Revision 1.126  2007/03/10 03:26:44  cheshire
 <rdar://problem/4961667> uDNS: LLQ refresh response packet causes cached records to be removed from cache
 
@@ -604,7 +607,7 @@ mDNSexport mDNSu8 *AppendDomainName(domainname *const name, const domainname *co
 	mDNSu8       *      ptr = name->c + DomainNameLength(name) - 1;	// Find end of current name
 	const mDNSu8 *const lim = name->c + MAX_DOMAIN_NAME - 1;		// Limit of how much we can add (not counting final zero)
 	const mDNSu8 *      src = append->c;
-	while(src[0])
+	while (src[0])
 		{
 		int i;
 		if (ptr + 1 + src[0] > lim) return(mDNSNULL);
@@ -2002,7 +2005,7 @@ mDNSexport const mDNSu8 *LocateLLQOptData(const DNSMessage *const msg, const mDN
 #endif
 
 mDNSexport mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg, mDNSu8 *end,
-    mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, uDNS_TCPSocket sock, DomainAuthInfo *authInfo)
+    mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, TCPSocket *sock, DomainAuthInfo *authInfo)
 	{
 	mStatus status;
 	long nsent;
@@ -2360,7 +2363,7 @@ mDNSexport mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt
 								{
 								case 0: i=0;
 										if (!F.havePrecision)				// C string
-											while(s[i]) i++;
+											while (s[i]) i++;
 										else
 											{
 											while ((i < F.precision) && s[i]) i++;

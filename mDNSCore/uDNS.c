@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.305  2007/03/20 17:07:15  cheshire
+Rename "struct uDNS_TCPSocket_struct" to "TCPSocket", "struct uDNS_UDPSocket_struct" to "UDPSocket"
+
 Revision 1.304  2007/03/17 00:02:11  cheshire
 <rdar://problem/5067013> NAT-PMP: Lease TTL is being ignored
 
@@ -1030,7 +1033,7 @@ mDNSlocal mDNSBool recvLLQResponse(mDNS *m, DNSMessage *msg, const mDNSu8 *end, 
 	return mDNSfalse;
 	}
 
-mDNSlocal void tcpCallback(uDNS_TCPSocket sock, void * context, mDNSBool ConnectionEstablished, mStatus err)
+mDNSlocal void tcpCallback(TCPSocket *sock, void * context, mDNSBool ConnectionEstablished, mStatus err)
 	{
 	tcpInfo_t		*	tcpInfo = (tcpInfo_t *)context;
 	mDNSBool			closed = mDNSfalse;
@@ -1456,8 +1459,8 @@ mDNSlocal void startLLQHandshakePrivate(mDNS *m, LLQ_Info *info, mDNSBool defer)
 
 	if (!info->eventPort.NotAnInteger)
 		{
-		uDNS_TCPSocket	tcpSock = mDNSNULL;
-		uDNS_UDPSocket	udpSock = mDNSNULL;
+		TCPSocket *	tcpSock = mDNSNULL;
+		UDPSocket *	udpSock = mDNSNULL;
 		mDNSIPPort		port = zeroIPPort;
 		mDNSBool		good = mDNSfalse;
 		int				i;
@@ -1885,7 +1888,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	if (srs->Private)
 		{
 		tcpInfo_t		*	info;
-		uDNS_TCPSocket		sock;
+		TCPSocket *		sock;
 		mDNSIPPort			port = zeroIPPort;
 
 		info = (tcpInfo_t *)mDNSPlatformMemAllocate(sizeof(tcpInfo_t));
@@ -2547,7 +2550,7 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 	if (srs->Private)
 		{
 		tcpInfo_t		*	info;
-		uDNS_TCPSocket		sock;
+		TCPSocket *		sock;
 		mDNSIPPort			port = zeroIPPort;
 
 		info = (tcpInfo_t *)mDNSPlatformMemAllocate(sizeof(tcpInfo_t));
@@ -3180,7 +3183,7 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 	if (rr->Private)
 		{
 		tcpInfo_t	*	info;
-		uDNS_TCPSocket	sock;
+		TCPSocket *	sock;
 		mDNSIPPort		port = zeroIPPort;
 
 		info = (tcpInfo_t *)mDNSPlatformMemAllocate(sizeof(tcpInfo_t));
@@ -3608,7 +3611,7 @@ mDNSlocal mDNSBool uDNS_ReceiveTestQuestionResponse(mDNS *const m, DNSMessage *c
 
 mDNSlocal void hndlTruncatedAnswer(DNSQuestion *question, const mDNSAddr *src, mDNS *m)
 	{
-	uDNS_TCPSocket sock = mDNSNULL;
+	TCPSocket *sock = mDNSNULL;
 	tcpInfo_t *context;
 	mDNSIPPort port = zeroIPPort;
 	mStatus err = mStatus_NoError;
@@ -3808,7 +3811,7 @@ mDNSlocal DNSServer *GetServerForName(mDNS *m, const domainname *name)
 #pragma mark - Query Routines
 #endif
 
-mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease, uDNS_TCPSocket sock)
+mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease, TCPSocket *sock)
 	{
 	DNSMessage msg;
 	mDNSu8 *end;
@@ -3936,7 +3939,7 @@ mDNSlocal void startPrivateQueryCallback(mStatus err, mDNS *const m, void * cont
 	DNSQuestion * question = (DNSQuestion *) context;
 	tcpInfo_t * info;
 	DomainAuthInfo * authInfo = mDNSNULL;
-	uDNS_TCPSocket	sock = mDNSNULL;
+	TCPSocket *	sock = mDNSNULL;
 	mDNSIPPort		port = zeroIPPort;
 
 	if (err)
@@ -4272,7 +4275,7 @@ mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 	if (rr->Private)
 		{
 		tcpInfo_t	*	info;
-		uDNS_TCPSocket	sock;
+		TCPSocket *	sock;
 		mDNSIPPort		port = zeroIPPort;
 
 		info = (tcpInfo_t *)mDNSPlatformMemAllocate(sizeof(tcpInfo_t));
@@ -5019,7 +5022,7 @@ mDNSlocal void WakeRecordRegistrations(mDNS *m)
 mDNSlocal void SleepServiceRegistrations(mDNS *m)
 	{
 	ServiceRecordSet *srs = m->ServiceRegistrations;
-	while(srs)
+	while (srs)
 		{
 		ServiceRecordSet *info = srs;
 		NATTraversalInfo *nat = info->NATinfo;
@@ -5062,7 +5065,7 @@ mDNSlocal void WakeServiceRegistrations(mDNS *m)
 	{
 	mDNSs32 timenow = m->timenow;
 	ServiceRecordSet *srs = m->ServiceRegistrations;
-	while(srs)
+	while (srs)
 		{
 		if (srs->state == regState_Refresh)
 			{

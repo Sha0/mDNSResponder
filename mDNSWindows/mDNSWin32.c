@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.116  2007/03/20 17:07:16  cheshire
+Rename "struct uDNS_TCPSocket_struct" to "TCPSocket", "struct uDNS_UDPSocket_struct" to "UDPSocket"
+
 Revision 1.115  2007/02/08 21:12:28  cheshire
 <rdar://problem/4386497> Stop reading /etc/mDNSResponder.conf on every sleep/wake
 
@@ -172,15 +175,15 @@ struct	mDNSPlatformInterfaceInfo
 	mDNSAddr			ip;
 };
 
-struct uDNS_TCPSocket_struct
+struct TCPSocket_struct
 {
 	SocketRef				fd;
-	uDNS_TCPSocketFlags		flags;
+	TCPSocketFlags		flags;
 	BOOL					connected;
 	TCPConnectionCallback	callback;
 	void				*	context;
 	HANDLE					pendingEvent;
-	uDNS_TCPSocket			next;
+	TCPSocket *			next;
 };
 
 
@@ -223,7 +226,7 @@ mDNSlocal OSStatus			TCHARtoUTF8( const TCHAR *inString, char *inBuffer, size_t 
 mDNSlocal OSStatus			WindowsLatin1toUTF8( const char *inString, char *inBuffer, size_t inBufferSize );
 mDNSlocal OSStatus			MakeLsaStringFromUTF8String( PLSA_UNICODE_STRING output, const char * input );
 mDNSlocal OSStatus			MakeUTF8StringFromLsaString( char * output, size_t len, PLSA_UNICODE_STRING input );
-mDNSlocal void				FreeTCPSocket( uDNS_TCPSocket sock );
+mDNSlocal void				FreeTCPSocket( TCPSocket *sock );
 mDNSlocal mStatus           SetupAddr(mDNSAddr *ip, const struct sockaddr *const sa);
 
 #ifdef	__cplusplus
@@ -240,7 +243,7 @@ mDNSlocal mStatus           SetupAddr(mDNSAddr *ip, const struct sockaddr *const
 
 mDNSlocal mDNS_PlatformSupport	gMDNSPlatformSupport;
 mDNSs32							mDNSPlatformOneSecond = 0;
-mDNSlocal uDNS_TCPSocket		gTCPConnectionList		= NULL;
+mDNSlocal TCPSocket *		gTCPConnectionList		= NULL;
 mDNSlocal int					gTCPConnections			= 0;
 mDNSlocal BOOL					gWaitListChanged		= FALSE;
 
@@ -895,15 +898,15 @@ mDNSu32	mDNSPlatformInterfaceIndexfromInterfaceID( mDNS * const inMDNS, mDNSInte
 //	mDNSPlatformTCPSocket
 //===========================================================================================================================
 
-uDNS_TCPSocket
+TCPSocket *
 mDNSPlatformTCPSocket
 	(
 	mDNS			* const m,
-	uDNS_TCPSocketFlags		flags,
+	TCPSocketFlags		flags,
 	mDNSIPPort			*	port 
 	)
 {
-	uDNS_TCPSocket		sock    = NULL;
+	TCPSocket *		sock    = NULL;
 	u_long				on		= 1;  // "on" for setsockopt
 	struct sockaddr_in	saddr;
 	int					len;
@@ -915,9 +918,9 @@ mDNSPlatformTCPSocket
 
 	// Setup connection data object
 
-	sock = (uDNS_TCPSocket) malloc( sizeof( struct uDNS_TCPSocket_struct ) );
+	sock = (TCPSocket *) malloc( sizeof( TCPSocket ) );
 	require_action( sock, exit, err = mStatus_NoMemoryErr );
-	memset( sock, 0, sizeof( uDNS_TCPSocket ) );
+	memset( sock, 0, sizeof( TCPSocket ) );
 
 	sock->fd		= INVALID_SOCKET;
 	sock->flags		= flags;
@@ -968,7 +971,7 @@ exit:
 mStatus
 mDNSPlatformTCPConnect
 	(
-	uDNS_TCPSocket 			sock,
+	TCPSocket *			sock,
 	const mDNSAddr		*	inDstIP, 
 	mDNSOpaque16 			inDstPort, 
 	mDNSInterfaceID			inInterfaceID,
@@ -1029,7 +1032,7 @@ exit:
 //	mDNSPlatformTCPIsConnected
 //===========================================================================================================================
 
-mDNSexport mDNSBool mDNSPlatformTCPIsConnected( uDNS_TCPSocket sock )
+mDNSexport mDNSBool mDNSPlatformTCPIsConnected( TCPSocket *sock )
     {
     return sock->connected;
     }
@@ -1039,14 +1042,14 @@ mDNSexport mDNSBool mDNSPlatformTCPIsConnected( uDNS_TCPSocket sock )
 //===========================================================================================================================
 
 mDNSexport 
-mDNSexport uDNS_TCPSocket mDNSPlatformTCPAccept( uDNS_TCPSocketFlags flags, int fd )
+mDNSexport TCPSocket *mDNSPlatformTCPAccept( TCPSocketFlags flags, int fd )
 	{
-	struct uDNS_TCPSocket_struct	*	sock = NULL;
+	TCPSocket	*	sock = NULL;
 	mStatus							err = mStatus_NoError;
 
 	require_action( !flags, exit, err = mStatus_UnsupportedErr );
 
-	sock = malloc( sizeof( struct uDNS_TCPSocket_struct ) );
+	sock = malloc( sizeof( TCPSocket ) );
 	require_action( sock, exit, err = mStatus_NoMemoryErr );
 	
 	memset( sock, 0, sizeof( *sock ) );
@@ -1062,7 +1065,7 @@ exit:
 		sock = NULL;
 	}
 
-	return ( uDNS_TCPSocket ) sock;
+	return ( TCPSocket *) sock;
 	}
 
 
@@ -1070,10 +1073,10 @@ exit:
 //	mDNSPlatformTCPCloseConnection
 //===========================================================================================================================
 
-void	mDNSPlatformTCPCloseConnection( uDNS_TCPSocket sock )
+void	mDNSPlatformTCPCloseConnection( TCPSocket *sock )
 {
-	uDNS_TCPSocket	inserted  = gTCPConnectionList;
-	uDNS_TCPSocket	last = NULL;
+	TCPSocket *	inserted  = gTCPConnectionList;
+	TCPSocket *	last = NULL;
 
 	while ( inserted )
 	{
@@ -1105,7 +1108,7 @@ void	mDNSPlatformTCPCloseConnection( uDNS_TCPSocket sock )
 //	mDNSPlatformReadTCP
 //===========================================================================================================================
 
-long	mDNSPlatformReadTCP( uDNS_TCPSocket sock, void *inBuffer, unsigned long inBufferSize, mDNSBool * closed )
+long	mDNSPlatformReadTCP( TCPSocket *sock, void *inBuffer, unsigned long inBufferSize, mDNSBool * closed )
 {
 	int	nread;
 
@@ -1134,7 +1137,7 @@ long	mDNSPlatformReadTCP( uDNS_TCPSocket sock, void *inBuffer, unsigned long inB
 //	mDNSPlatformWriteTCP
 //===========================================================================================================================
 
-long	mDNSPlatformWriteTCP( uDNS_TCPSocket sock, const char *inMsg, unsigned long inMsgSize )
+long	mDNSPlatformWriteTCP( TCPSocket *sock, const char *inMsg, unsigned long inMsgSize )
 {
 	int			nsent;
 	OSStatus	err;
@@ -1158,7 +1161,7 @@ exit:
 //	mDNSPlatformTCPGetFlags
 //===========================================================================================================================
 
-mDNSexport int mDNSPlatformTCPGetFlags( uDNS_TCPSocket sock )
+mDNSexport int mDNSPlatformTCPGetFlags( TCPSocket *sock )
     {
     return sock->flags;
     }
@@ -1167,7 +1170,7 @@ mDNSexport int mDNSPlatformTCPGetFlags( uDNS_TCPSocket sock )
 //	mDNSPlatformTCPGetFD
 //===========================================================================================================================
 
-mDNSexport int mDNSPlatformTCPGetFD(uDNS_TCPSocket sock )
+mDNSexport int mDNSPlatformTCPGetFD(TCPSocket *sock )
     {
     return ( int ) sock->fd;
     }
@@ -1176,7 +1179,7 @@ mDNSexport int mDNSPlatformTCPGetFD(uDNS_TCPSocket sock )
 //	mDNSPlatformUDPSocket
 //===========================================================================================================================
 
-mDNSexport uDNS_UDPSocket mDNSPlatformUDPSocket
+mDNSexport UDPSocket *mDNSPlatformUDPSocket
 	(
 	mDNS	*	const m,
 	mDNSIPPort		  port
@@ -1192,7 +1195,7 @@ mDNSexport uDNS_UDPSocket mDNSPlatformUDPSocket
 //	mDNSPlatformUDPClose
 //===========================================================================================================================
 	
-mDNSexport void mDNSPlatformUDPClose( uDNS_UDPSocket sock )
+mDNSexport void mDNSPlatformUDPClose( UDPSocket *sock )
 	{
 	DEBUG_UNUSED( sock );
 	}
@@ -3360,7 +3363,7 @@ mDNSlocal unsigned WINAPI	ProcessingThread( LPVOID inParam )
 						HANDLE					signaledObject;
 						int						n = 0;
 						mDNSInterfaceData	*	ifd;
-						uDNS_TCPSocket			tcd;
+						TCPSocket *			tcd;
 						
 						signaledObject = waitList[ waitItemIndex ];
 	
@@ -3508,7 +3511,7 @@ mDNSlocal mStatus	ProcessingThreadSetupWaitList( mDNS * const inMDNS, HANDLE **o
 	HANDLE *				waitList;
 	HANDLE *				waitItemPtr;
 	mDNSInterfaceData	*	ifd;
-	uDNS_TCPSocket			tcd;
+	TCPSocket *			tcd;
 	
 	dlog( kDebugLevelTrace, DEBUG_NAME "thread setting up wait list\n" );
 	check( inMDNS );
@@ -5091,7 +5094,7 @@ exit:
 //===========================================================================================================================
 
 mDNSlocal void
-FreeTCPSocket( uDNS_TCPSocket sock )
+FreeTCPSocket( TCPSocket *sock )
 {
 	check( sock );
 

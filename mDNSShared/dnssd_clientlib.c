@@ -28,6 +28,9 @@
    Change History (most recent first):
 
 $Log: dnssd_clientlib.c,v $
+Revision 1.14  2007/03/20 17:07:16  cheshire
+Rename "struct uDNS_TCPSocket_struct" to "TCPSocket", "struct uDNS_UDPSocket_struct" to "UDPSocket"
+
 Revision 1.13  2007/02/27 00:25:03  cheshire
 <rdar://problem/5010640> DNSServiceConstructFullName() doesn't handle empty string for instance name
 
@@ -155,7 +158,7 @@ int DNSSD_API DNSServiceConstructFullName
 
 	if (service && *service)
 		{
-		while(*s)
+		while (*s)
 			{
 			c = (unsigned char)*s++;
 			if (c == '.' || (c == '\\')) *fn++ = '\\'; // escape dot and backslash literals
@@ -176,11 +179,11 @@ int DNSSD_API DNSServiceConstructFullName
 	if (DomainEndsInDot(regtype)) len--;
 	if (len < 6) return -1; // regtype must be at least "x._udp" or "x._tcp"
 	if (strncmp((regtype + len - 4), "_tcp", 4) && strncmp((regtype + len - 4), "_udp", 4)) return -1;
-	while(*r) *fn++ = *r++;
+	while (*r) *fn++ = *r++;
 	if (!DomainEndsInDot(regtype)) *fn++ = '.';
 
 	if (!domain || !domain[0]) return -1;
-	while(*d) *fn++ = *d++;
+	while (*d) *fn++ = *d++;
 	if (!DomainEndsInDot(domain)) *fn++ = '.';
 	*fn = '\0';
 	return 0;

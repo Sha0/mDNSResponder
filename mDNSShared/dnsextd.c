@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.66  2007/03/20 17:07:16  cheshire
+Rename "struct uDNS_TCPSocket_struct" to "TCPSocket", "struct uDNS_UDPSocket_struct" to "UDPSocket"
+
 Revision 1.65  2007/02/07 19:32:00  cheshire
 <rdar://problem/4980353> All mDNSResponder components should contain version strings in SCCS-compatible format
 
@@ -172,7 +175,7 @@ typedef struct
 	{
 	PktMsg	pkt;
     struct sockaddr_in cliaddr;
-    uDNS_TCPSocket sock;           // socket connected to client
+    TCPSocket *sock;           // socket connected to client
     DaemonInfo *d;
 	} TCPContext;
 
@@ -295,7 +298,7 @@ mDNSlocal void HdrHToN(PktMsg *pkt)
 
 // Add socket to event loop
 
-mDNSlocal mStatus AddSourceToEventLoop( DaemonInfo * self, uDNS_TCPSocket sock, EventCallback callback, void *context )
+mDNSlocal mStatus AddSourceToEventLoop( DaemonInfo * self, TCPSocket *sock, EventCallback callback, void *context )
 	{
 	EventSource	* newSource;
 	mStatus			err = mStatus_NoError;
@@ -327,7 +330,7 @@ exit:
 
 // Remove socket from event loop
 
-mDNSlocal mStatus RemoveSourceFromEventLoop( DaemonInfo * self, uDNS_TCPSocket sock )
+mDNSlocal mStatus RemoveSourceFromEventLoop( DaemonInfo * self, TCPSocket *sock )
 	{
 	EventSource	*	source;
 	mStatus			err;
@@ -353,7 +356,7 @@ exit:
 
 // create a socket connected to nameserver
 // caller terminates connection via close()
-mDNSlocal uDNS_TCPSocket ConnectToServer(DaemonInfo *d)
+mDNSlocal TCPSocket *ConnectToServer(DaemonInfo *d)
 	{
 	int ntries = 0, retry = 0;
 
@@ -362,7 +365,7 @@ mDNSlocal uDNS_TCPSocket ConnectToServer(DaemonInfo *d)
 		mDNSIPPort port = zeroIPPort;
 		int fd;
 
-		uDNS_TCPSocket sock = mDNSPlatformTCPSocket( NULL, 0, &port );
+		TCPSocket *sock = mDNSPlatformTCPSocket( NULL, 0, &port );
 		if ( !sock ) { LogErr("ConnectToServer", "socket");  return NULL; }
 		fd = mDNSPlatformTCPGetFD( sock );
 		if (!connect( fd, (struct sockaddr *)&d->ns_addr, sizeof(d->ns_addr))) return sock;
@@ -380,7 +383,7 @@ mDNSlocal uDNS_TCPSocket ConnectToServer(DaemonInfo *d)
 	}
 
 // send an entire block of data over a connected socket
-mDNSlocal int MySend(uDNS_TCPSocket sock, const void *msg, int len)
+mDNSlocal int MySend(TCPSocket *sock, const void *msg, int len)
 	{
 	int selectval, n, nsent = 0;
 	fd_set wset;
@@ -408,7 +411,7 @@ mDNSlocal int MySend(uDNS_TCPSocket sock, const void *msg, int len)
 	}
 
 // Transmit a DNS message, prefixed by its length, over TCP, blocking if necessary
-mDNSlocal int SendPacket(uDNS_TCPSocket sock, PktMsg *pkt)
+mDNSlocal int SendPacket(TCPSocket *sock, PktMsg *pkt)
 	{
 	// send the lenth, in network byte order
 	mDNSu16 len = htons((mDNSu16)pkt->len);
@@ -425,7 +428,7 @@ mDNSlocal int SendPacket(uDNS_TCPSocket sock, PktMsg *pkt)
 
 // Receive len bytes, waiting until we have all of them.
 // Returns number of bytes read (which should always be the number asked for).
-static int my_recv(uDNS_TCPSocket sock, void *const buf, const int len, mDNSBool * closed)
+static int my_recv(TCPSocket *sock, void *const buf, const int len, mDNSBool * closed)
     {
     // Don't use "MSG_WAITALL"; it returns "Invalid argument" on some Linux versions;
     // use an explicit while() loop instead.
@@ -472,7 +475,7 @@ static int my_recv(uDNS_TCPSocket sock, void *const buf, const int len, mDNSBool
 mDNSlocal PktMsg*
 RecvPacket
 	(
-	uDNS_TCPSocket	sock,
+	TCPSocket *	sock,
 	PktMsg		*	storage,
 	mDNSBool	*	closed
 	)
@@ -996,7 +999,7 @@ mDNSlocal mDNSu8 *PutUpdateSRV(DaemonInfo *d, DNSZone * zone, PktMsg *pkt, mDNSu
 // specify deletion by passing false for the register parameter, otherwise register the records.
 mDNSlocal int UpdateSRV(DaemonInfo *d, mDNSBool registration)
 	{
-	uDNS_TCPSocket sock = NULL;
+	TCPSocket *sock = NULL;
 	DNSZone * zone;
 	int err = mStatus_NoError;
 
@@ -1346,7 +1349,7 @@ exit:
 
 // Delete a resource record from the nameserver via a dynamic update
 // sd is a socket already connected to the server
-mDNSlocal void DeleteOneRecord(DaemonInfo *d, CacheRecord *rr, domainname *zname, uDNS_TCPSocket sock)
+mDNSlocal void DeleteOneRecord(DaemonInfo *d, CacheRecord *rr, domainname *zname, TCPSocket *sock)
 	{
 	DNSZone	*	zone;
 	PktMsg pkt;
@@ -1398,7 +1401,7 @@ mDNSlocal void DeleteRecords(DaemonInfo *d, mDNSBool DeleteAll)
 	{
 	struct timeval now;
 	int i;
-	uDNS_TCPSocket sock = ConnectToServer(d);
+	TCPSocket *sock = ConnectToServer(d);
 	if (!sock) { Log("DeleteRecords: ConnectToServer failed"); return; }
 	if (gettimeofday(&now, NULL)) { LogErr("DeleteRecords ", "gettimeofday"); return; }
 	if (pthread_mutex_lock(&d->tablelock)) { LogErr("DeleteRecords", "pthread_mutex_lock"); return; }
@@ -1569,7 +1572,7 @@ HandleRequest
 	PktMsg		*	leaseReply;
 	PktMsg	 		buf;
 	char			addrbuf[32];
-	uDNS_TCPSocket	sock = NULL;
+	TCPSocket *	sock = NULL;
 	mStatus			err;
 	
 	// Send msg to server, read reply
@@ -1738,7 +1741,7 @@ mDNSlocal void DeleteLLQ(DaemonInfo *d, LLQEntry *e)
 	free(e);
 	}
 
-mDNSlocal int SendLLQ(DaemonInfo *d, PktMsg *pkt, struct sockaddr_in dst, uDNS_TCPSocket sock)
+mDNSlocal int SendLLQ(DaemonInfo *d, PktMsg *pkt, struct sockaddr_in dst, TCPSocket *sock)
 	{
 	char addr[32];
 	int err = -1;
@@ -1771,7 +1774,7 @@ mDNSlocal CacheRecord *AnswerQuestion(DaemonInfo *d, AnswerListElem *e)
 	{
 	PktMsg q;
 	int i;
-	uDNS_TCPSocket sock = NULL;
+	TCPSocket *sock = NULL;
 	const mDNSu8 *ansptr;
 	mDNSu8 *end = q.msg.data;
 	PktMsg buf, *reply = NULL;
@@ -2145,7 +2148,7 @@ mDNSlocal LLQEntry *NewLLQ(DaemonInfo *d, struct sockaddr_in cli, domainname *qn
 	}
 
 // Handle a refresh request from client
-mDNSlocal void LLQRefresh(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mDNSOpaque16 msgID, uDNS_TCPSocket sock )
+mDNSlocal void LLQRefresh(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mDNSOpaque16 msgID, TCPSocket *sock )
 	{
 	AuthRecord opt;
 	PktMsg ack;
@@ -2181,7 +2184,7 @@ mDNSlocal void LLQRefresh(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mDNSOpaqu
 	}
 
 // Complete handshake with Ack an initial answers
-mDNSlocal void LLQCompleteHandshake(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mDNSOpaque16 msgID, uDNS_TCPSocket sock)
+mDNSlocal void LLQCompleteHandshake(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mDNSOpaque16 msgID, TCPSocket *sock)
 	{
 	char addr[32];
 	CacheRecord *ptr;
@@ -2266,7 +2269,7 @@ mDNSlocal void LLQSetupChallenge(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mD
 	}
 
 // Take action on an LLQ message from client.  Entry must be initialized and in table
-mDNSlocal void UpdateLLQ(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mDNSOpaque16 msgID, uDNS_TCPSocket sock )
+mDNSlocal void UpdateLLQ(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mDNSOpaque16 msgID, TCPSocket *sock )
 	{
 	switch(e->state)
 		{
@@ -2347,7 +2350,7 @@ exit:
 	}
 
 
-mDNSlocal int RecvLLQ( DaemonInfo *d, PktMsg *pkt, uDNS_TCPSocket sock )
+mDNSlocal int RecvLLQ( DaemonInfo *d, PktMsg *pkt, TCPSocket *sock )
 	{
 	DNSQuestion q;
 	LargeCacheRecord opt;
@@ -2834,7 +2837,7 @@ AcceptTCPConnection
 	(
 	DaemonInfo		*	self,
 	int					sd,
-	uDNS_TCPSocketFlags	flags
+	TCPSocketFlags	flags
 	)
 	{
 	TCPContext *	context = NULL;

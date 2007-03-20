@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.h,v $
+Revision 1.5  2007/03/20 17:07:16  cheshire
+Rename "struct uDNS_TCPSocket_struct" to "TCPSocket", "struct uDNS_UDPSocket_struct" to "UDPSocket"
+
 Revision 1.4  2006/12/22 20:59:51  cheshire
 <rdar://problem/4742742> Read *all* DNS keys from keychain,
  not just key for the system-wide default registration domain
@@ -128,7 +131,7 @@ typedef struct EventSource
 	{
 	EventCallback			callback;
 	void				*	context;
-	uDNS_TCPSocket			sock;
+	TCPSocket *			sock;
 	int						fd;
 	mDNSBool				markedForDeletion;
 	struct  EventSource	*	next;

@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.339  2007/03/20 17:07:15  cheshire
+Rename "struct uDNS_TCPSocket_struct" to "TCPSocket", "struct uDNS_UDPSocket_struct" to "UDPSocket"
+
 Revision 1.338  2007/03/10 02:28:28  cheshire
 Added comment explaining NATResponseHndlr
 
@@ -1043,11 +1046,11 @@ typedef struct
 
 // A struct that abstracts away the differences in TCP/SSL sockets
  
-typedef struct uDNS_TCPSocket_struct * uDNS_TCPSocket;
+typedef struct TCPSocket_struct TCPSocket;
 
 // A struct that abstracts away the differences in UDP sockets
 
-typedef struct uDNS_UDPSocket_struct * uDNS_UDPSocket;
+typedef struct UDPSocket_struct UDPSocket;
 
 
 typedef enum
@@ -1083,8 +1086,8 @@ typedef struct
 	mDNSIPPort eventPort;			// This is non-zero if this is a private LLQ.  It is the port number that both the TCP
 	                                // and the UDP socket are bound to.  This allows us to receive event notifications via
 	                                // TCP or UDP.
-	uDNS_TCPSocket tcpSock;
-	uDNS_UDPSocket udpSock;
+	TCPSocket *tcpSock;
+	UDPSocket *udpSock;
 	DNSQuestion *question;
 	mDNSu32 origLease;  // seconds (relative)
 	mDNSs32 expire; // ticks (absolute)
@@ -1168,7 +1171,7 @@ struct DNSQuestion_struct
 
 	// Wide Area fields.  These are used internally by the uDNS core
 	mDNSs32               RestartTime;      // Mark when we restart a suspended query
-	uDNS_TCPSocket        sock;		        // For secure operations
+	TCPSocket        *sock;			// For secure operations
 	LLQ_Info              *llq;             // NULL for 1-shot queries
 
 	// Client API fields: The client must set up these fields *before* calling mDNS_StartQuery()
@@ -1990,21 +1993,21 @@ typedef enum
 	{
 	kTCPSocketFlags_Zero   = 0,
 	kTCPSocketFlags_UseTLS = (1 << 0)
-	} uDNS_TCPSocketFlags;
+	} TCPSocketFlags;
 
-typedef void (*TCPConnectionCallback)(uDNS_TCPSocket sock, void *context, mDNSBool ConnectionEstablished, mStatus err);
-extern uDNS_TCPSocket mDNSPlatformTCPSocket(mDNS * const m, uDNS_TCPSocketFlags flags, mDNSIPPort * port);	// creates a tcp socket
-extern uDNS_TCPSocket mDNSPlatformTCPAccept(uDNS_TCPSocketFlags flags, int sd);
-extern int            mDNSPlatformTCPGetFlags(uDNS_TCPSocket sock);
-extern int            mDNSPlatformTCPGetFD(uDNS_TCPSocket sock);
-extern mStatus        mDNSPlatformTCPConnect(uDNS_TCPSocket sock, const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
+typedef void (*TCPConnectionCallback)(TCPSocket *sock, void *context, mDNSBool ConnectionEstablished, mStatus err);
+extern TCPSocket *mDNSPlatformTCPSocket(mDNS * const m, TCPSocketFlags flags, mDNSIPPort * port);	// creates a tcp socket
+extern TCPSocket *mDNSPlatformTCPAccept(TCPSocketFlags flags, int sd);
+extern int            mDNSPlatformTCPGetFlags(TCPSocket *sock);
+extern int            mDNSPlatformTCPGetFD(TCPSocket *sock);
+extern mStatus        mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
 										  TCPConnectionCallback callback, void *context);
-extern mDNSBool       mDNSPlatformTCPIsConnected(uDNS_TCPSocket sock);
-extern void           mDNSPlatformTCPCloseConnection(uDNS_TCPSocket sock);
-extern long           mDNSPlatformReadTCP(uDNS_TCPSocket sock, void *buf, unsigned long buflen, mDNSBool *closed);
-extern long           mDNSPlatformWriteTCP(uDNS_TCPSocket sock, const char *msg, unsigned long len);
-extern uDNS_UDPSocket mDNSPlatformUDPSocket(mDNS * const m, mDNSIPPort port);
-extern void           mDNSPlatformUDPClose(uDNS_UDPSocket sock);
+extern mDNSBool       mDNSPlatformTCPIsConnected(TCPSocket *sock);
+extern void           mDNSPlatformTCPCloseConnection(TCPSocket *sock);
+extern long           mDNSPlatformReadTCP(TCPSocket *sock, void *buf, unsigned long buflen, mDNSBool *closed);
+extern long           mDNSPlatformWriteTCP(TCPSocket *sock, const char *msg, unsigned long len);
+extern UDPSocket *mDNSPlatformUDPSocket(mDNS * const m, mDNSIPPort port);
+extern void           mDNSPlatformUDPClose(UDPSocket *sock);
 
 // mDNSPlatformTLSSetupCerts/mDNSPlatformTLSTearDownCerts used by dnsextd
 extern mStatus        mDNSPlatformTLSSetupCerts(void);
