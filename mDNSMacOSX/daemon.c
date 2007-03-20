@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.295  2007/03/20 23:32:49  cheshire
+Minor textual tidying
+
 Revision 1.294  2007/03/07 02:50:50  cheshire
 <rdar://problem/4574528> Name conflict dialog doesn't appear if Bonjour is persistantly unable to find an available hostname
 
@@ -460,7 +463,7 @@ mDNSlocal void FreeServiceInstance(ServiceInstance *x)
 	ServiceRecordSet *s = &x->srs;
 	ExtraResourceRecord *e = x->srs.Extras, *tmp;
 	
-	while(e)
+	while (e)
 		{
 		e->r.RecordContext = e;
 		tmp = e;
@@ -831,7 +834,6 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 	(void)unusedserver;		// Unused
 	mStatus err = mStatus_NoError;
 	const char *errormsg = "Unknown";
-	DNameListElem *sdPtr;
 
 	if (client == (mach_port_t)-1)      { err = mStatus_Invalid; errormsg = "Client id -1 invalid";     goto fail; }
 	if (CheckForExistingClient(client)) { err = mStatus_Invalid; errormsg = "Client id already in use"; goto fail; }
@@ -871,6 +873,7 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 		}
 	else
 		{
+		DNameListElem *sdPtr;
 		// Start browser on all domains
 		x->DefaultDomain = mDNStrue;
 		if (!mDNSStorage.DefBrowseList) { AbortClient(client, x); errormsg = "GetSearchDomainList"; goto fail; }
@@ -2356,7 +2359,7 @@ mDNSlocal void * KQueueLoop(void* m_param)
 
 		static const struct timespec zero_timeout = { 0, 0 };
 		int events_found;
-		while((events_found = kevent(KQueueFD, NULL, 0, new_events, kEventsToReadAtOnce, &zero_timeout)) != 0)
+		while ((events_found = kevent(KQueueFD, NULL, 0, new_events, kEventsToReadAtOnce, &zero_timeout)) != 0)
 			{
 			if (events_found > kEventsToReadAtOnce || (events_found < 0 && errno != EINTR))
 				{
