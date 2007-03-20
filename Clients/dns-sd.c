@@ -453,6 +453,7 @@ static void DNSSD_API reg_reply(DNSServiceRef client, const DNSServiceFlags flag
 	(void)flags;    // Unused
 	(void)context;  // Unused
 
+	printtimestamp();
 	printf("Got a reply for %s.%s%s: ", name, regtype, domain);
 
 	if (errorCode == kDNSServiceErr_NoError)
