@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.588  2007/03/20 00:24:44  cheshire
+<rdar://problem/4175213> Should deliver "name registered" callback slightly *before* announcing PTR record
+
 Revision 1.587  2007/03/16 22:10:56  cheshire
 <rdar://problem/4471307> mDNS: Query for *either* type A or AAAA should return both types
 
@@ -1957,21 +1960,33 @@ mDNSlocal void SendQueries(mDNS *const m)
 					rr->LastAPTime = m->timenow;
 					rr->ProbeCount--;
 					SetNextAnnounceProbeTime(m, rr);
+					if (rr->ProbeCount == 0)
+						{
+						// If this is the last probe for this record, then see if we have any matching records
+						// on our duplicate list which should similarly have their ProbeCount cleared to zero...
+						AuthRecord *r2;
+						for (r2 = m->DuplicateRecords; r2; r2=r2->next)
+							if (r2->resrec.RecordType == kDNSRecordTypeUnique && RecordIsLocalDuplicate(r2, rr))
+								r2->ProbeCount = 0;
+						// ... then acknowledge this record to the client.
+						// We do this optimistically, just as we're about to send the third probe.
+						// This helps clients that both advertise and browse, and want to filter themselves
+						// from the browse results list, because it helps ensure that the registration
+						// confirmation will be delivered 1/4 second *before* the browse "add" event.
+						// A potential downside is that we could deliver a registration confirmation and then find out
+						// moments later that there's a name conflict, but applications have to be prepared to handle
+						// late conflicts anyway (e.g. on connection of network cable, etc.), so this is nothing new.
+						AcknowledgeRecord(m, rr);
+						}
 					}
 				// else, if it has now finished probing, move it to state Verified,
 				// and update m->NextScheduledResponse so it will be announced
 				else
 					{
-					AuthRecord *r2;
 					rr->resrec.RecordType     = kDNSRecordTypeVerified;
 					rr->ThisAPInterval = DefaultAnnounceIntervalForTypeUnique;
 					rr->LastAPTime     = m->timenow - DefaultAnnounceIntervalForTypeUnique;
 					SetNextAnnounceProbeTime(m, rr);
-					// If we have any records on our duplicate list that match this one, they have now also completed probing
-					for (r2 = m->DuplicateRecords; r2; r2=r2->next)
-						if (r2->resrec.RecordType == kDNSRecordTypeUnique && RecordIsLocalDuplicate(r2, rr))
-							r2->ProbeCount = 0;
-					AcknowledgeRecord(m, rr);
 					}
 				}
 			}
