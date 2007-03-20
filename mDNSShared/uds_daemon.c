@@ -17,6 +17,10 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.241  2007/03/20 00:04:50  cheshire
+<rdar://problem/4837929> Should allow "udp" or "tcp" for protocol command-line arg
+Fix LogOperation("DNSServiceNATPortMappingCreate(...)") message to actually show client arguments
+
 Revision 1.240  2007/03/16 23:25:35  cheshire
 <rdar://problem/5067001> NAT-PMP: Parameter validation not working correctly
 
@@ -3187,7 +3191,7 @@ mDNSlocal void handle_port_mapping_create_request(request_state *request)
 	request->termination_context      = info;
 	request->terminate                = port_mapping_create_termination_callback;
 	
-	LogOperation("%3d: DNSServiceNATPortMappingCreate() START", request->sd);
+	LogOperation("%3d: DNSServiceNATPortMappingCreate(%X, %u, %u, %d) START", request->sd, protocol, mDNSVal16(privatePort), mDNSVal16(publicPort), ttl);
 
 	info->NATAddrinfo = uDNS_AllocNATInfo(&mDNSStorage, NATOp_AddrRequest, zeroIPPort, zeroIPPort, 0, port_mapping_create_reply);
 	if (!info->NATAddrinfo) { mDNS_Unlock(&mDNSStorage); err = mStatus_NoMemoryErr; goto error; }
