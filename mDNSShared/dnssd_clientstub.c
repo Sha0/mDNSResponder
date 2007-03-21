@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.64  2007/03/21 19:01:56  cheshire
+<rdar://problem/5078494> IPC code not 64-bit-savvy: assumes long=32bits, and short=16bits
+
 Revision 1.63  2007/03/12 21:48:21  cheshire
 <rdar://problem/5000162> Scary unlink errors in system.log
 Code was using memory after it had been freed
@@ -238,7 +241,7 @@ static ipc_msg_hdr *create_hdr(uint32_t op, size_t *len, char **data_start, int 
 #if defined(USE_TCP_LOOPBACK)
 	// Put dummy data in for the port, since we don't know what it is yet.
 	// The data will get filled in before we send the message. This happens in deliver_request().
-	if (!reuse_socket) put_short(0, data_start);
+	if (!reuse_socket) put_uint16(0, data_start);
 #else
 	if (!reuse_socket) put_string(ctrl_path, data_start);
 #endif
@@ -451,13 +454,13 @@ static void handle_resolve_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *d
 	(void)hdr; 		//unused
 
 	flags = get_flags(&data);
-	ifi = get_long(&data);
+	ifi = get_uint32(&data);
 	err = get_error_code(&data);
 	if (get_string(&data, fullname, kDNSServiceMaxDomainName) < 0) str_error = 1;
 	if (get_string(&data, target,   kDNSServiceMaxDomainName) < 0) str_error = 1;
 	port.b[0] = *data++;
 	port.b[1] = *data++;
-	txtlen = get_short(&data);
+	txtlen = get_uint16(&data);
 	txtrecord = (unsigned char *)get_rdata(&data, txtlen);
 
 	if (!err && str_error) { err = kDNSServiceErr_Unknown; syslog(LOG_WARNING, "handle_resolve_response: error reading result from daemon"); }
@@ -499,7 +502,7 @@ DNSServiceErrorType DNSSD_API DNSServiceResolve
 	if (!hdr) return kDNSServiceErr_NoMemory;
 
 	put_flags(flags, &ptr);
-	put_long(interfaceIndex, &ptr);
+	put_uint32(interfaceIndex, &ptr);
 	put_string(name, &ptr);
 	put_string(regtype, &ptr);
 	put_string(domain, &ptr);
@@ -533,14 +536,14 @@ static void handle_query_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *dat
 	(void)hdr;//Unused
 
 	flags = get_flags(&data);
-	interfaceIndex = get_long(&data);
+	interfaceIndex = get_uint32(&data);
 	err = get_error_code(&data);
 	if (get_string(&data, name, kDNSServiceMaxDomainName) < 0) str_error = 1;
-	rrtype = get_short(&data);
-	rrclass = get_short(&data);
-	rdlen = get_short(&data);
+	rrtype = get_uint16(&data);
+	rrclass = get_uint16(&data);
+	rdlen = get_uint16(&data);
 	rdata = get_rdata(&data, rdlen);
-	ttl = get_long(&data);
+	ttl = get_uint32(&data);
 
 	if (!err && str_error) { err = kDNSServiceErr_Unknown; syslog(LOG_WARNING, "handle_query_response: error reading result from daemon"); }
 	((DNSServiceQueryRecordReply)sdr->app_callback)(sdr, flags, interfaceIndex, err, name, rrtype, rrclass,
@@ -581,10 +584,10 @@ DNSServiceErrorType DNSSD_API DNSServiceQueryRecord
 	if (!hdr) return kDNSServiceErr_NoMemory;
 
 	put_flags(flags, &ptr);
-	put_long(interfaceIndex, &ptr);
+	put_uint32(interfaceIndex, &ptr);
 	put_string(name, &ptr);
-	put_short(rrtype, &ptr);
-	put_short(rrclass, &ptr);
+	put_uint16(rrtype, &ptr);
+	put_uint16(rrclass, &ptr);
 
 	sdr = connect_to_server();
 	if (!sdr) { free(hdr); return kDNSServiceErr_ServiceNotRunning; }
@@ -618,13 +621,13 @@ static void handle_addrinfo_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *
 	(void)hdr;//Unused
 
 	flags = get_flags(&data);
-	interfaceIndex = get_long(&data);
+	interfaceIndex = get_uint32(&data);
 	err = get_error_code(&data);
 	if (get_string(&data, hostname, kDNSServiceMaxDomainName) < 0) str_error = 1;
-	rrtype = get_short(&data);
-	rdlen = get_short(&data);
+	rrtype = get_uint16(&data);
+	rdlen = get_uint16(&data);
 	rdata = get_rdata(&data, rdlen);
-	ttl = get_long(&data);
+	ttl = get_uint32(&data);
 	
 	if (!err && str_error) { err = kDNSServiceErr_Unknown; syslog(LOG_WARNING, "handle_addrinfo_response: error reading result from daemon"); }
 
@@ -691,8 +694,8 @@ DNSServiceErrorType DNSSD_API DNSServiceGetAddrInfo
 	if (!hdr) return kDNSServiceErr_NoMemory;
 
 	put_flags(flags, &ptr);
-	put_long(interfaceIndex, &ptr);
-	put_long(protocol, &ptr);
+	put_uint32(interfaceIndex, &ptr);
+	put_uint32(protocol, &ptr);
 	put_string(hostname, &ptr);
 
 	sdr = connect_to_server();
@@ -723,7 +726,7 @@ static void handle_browse_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *da
 	(void)hdr;//Unused
 
 	flags = get_flags(&data);
-	interfaceIndex = get_long(&data);
+	interfaceIndex = get_uint32(&data);
 	err = get_error_code(&data);
 	if (get_string(&data, replyName, 256) < 0) str_error = 1;
 	if (get_string(&data, replyType, kDNSServiceMaxDomainName) < 0) str_error = 1;
@@ -763,7 +766,7 @@ DNSServiceErrorType DNSSD_API DNSServiceBrowse
 	if (!hdr) return kDNSServiceErr_NoMemory;
 
 	put_flags(flags, &ptr);
-	put_long(interfaceIndex, &ptr);
+	put_uint32(interfaceIndex, &ptr);
 	put_string(regtype, &ptr);
 	put_string(domain, &ptr);
 
@@ -819,7 +822,7 @@ static void handle_regservice_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char
 	(void)hdr;//Unused
 
 	flags = get_flags(&data);
-	interfaceIndex = get_long(&data);
+	interfaceIndex = get_uint32(&data);
 	err = get_error_code(&data);
 	if (get_string(&data, name, 256) < 0) str_error = 1;
 	if (get_string(&data, regtype, kDNSServiceMaxDomainName) < 0) str_error = 1;
@@ -874,14 +877,14 @@ DNSServiceErrorType DNSSD_API DNSServiceRegister
 	if (!callBack) hdr->flags |= IPC_FLAGS_NOREPLY;
 
 	put_flags(flags, &ptr);
-	put_long(interfaceIndex, &ptr);
+	put_uint32(interfaceIndex, &ptr);
 	put_string(name, &ptr);
 	put_string(regtype, &ptr);
 	put_string(domain, &ptr);
 	put_string(host, &ptr);
 	*ptr++ = port.b[0];
 	*ptr++ = port.b[1];
-	put_short(txtLen, &ptr);
+	put_uint16(txtLen, &ptr);
 	put_rdata(txtLen, txtRecord, &ptr);
 
 	sdr = connect_to_server();
@@ -912,7 +915,7 @@ static void handle_enumeration_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, cha
 	(void)hdr;//Unused
 
 	flags = get_flags(&data);
-	interfaceIndex = get_long(&data);
+	interfaceIndex = get_uint32(&data);
 	err = get_error_code(&data);
 	if (get_string(&data, domain, kDNSServiceMaxDomainName) < 0) str_error = 1;
 	if (!err && str_error) { err = kDNSServiceErr_Unknown; syslog(LOG_WARNING, "handle_enumeration_response: error reading result from daemon"); }
@@ -947,7 +950,7 @@ DNSServiceErrorType DNSSD_API DNSServiceEnumerateDomains
 	if (!hdr) return kDNSServiceErr_NoMemory;
 
 	put_flags(flags, &ptr);
-	put_long(interfaceIndex, &ptr);
+	put_uint32(interfaceIndex, &ptr);
 
 	sdr = connect_to_server();
 	if (!sdr) { free(hdr); return kDNSServiceErr_ServiceNotRunning; }
@@ -980,7 +983,7 @@ static void handle_regrecord_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char 
 		return;
 		}
 	flags = get_flags(&data);
-	interfaceIndex = get_long(&data);
+	interfaceIndex = get_uint32(&data);
 	err = get_error_code(&data);
 
 	rref->app_callback(rref->sdr, rref, flags, err, rref->app_context);
@@ -1034,13 +1037,13 @@ DNSServiceErrorType DNSSD_API DNSServiceRegisterRecord
 	if (!hdr) return kDNSServiceErr_NoMemory;
 
 	put_flags(flags, &ptr);
-	put_long(interfaceIndex, &ptr);
+	put_uint32(interfaceIndex, &ptr);
 	put_string(fullname, &ptr);
-	put_short(rrtype, &ptr);
-	put_short(rrclass, &ptr);
-	put_short(rdlen, &ptr);
+	put_uint16(rrtype, &ptr);
+	put_uint16(rrclass, &ptr);
+	put_uint16(rdlen, &ptr);
 	put_rdata(rdlen, rdata, &ptr);
-	put_long(ttl, &ptr);
+	put_uint32(ttl, &ptr);
 
 	rref = malloc(sizeof(_DNSRecordRef_t));
 	if (!rref) { free(hdr); return kDNSServiceErr_NoMemory; }
@@ -1084,10 +1087,10 @@ DNSServiceErrorType DNSSD_API DNSServiceAddRecord
 	hdr = create_hdr(add_record_request, &len, &ptr, 0);
 	if (!hdr) return kDNSServiceErr_NoMemory;
 	put_flags(flags, &ptr);
-	put_short(rrtype, &ptr);
-	put_short(rdlen, &ptr);
+	put_uint16(rrtype, &ptr);
+	put_uint16(rdlen, &ptr);
 	put_rdata(rdlen, rdata, &ptr);
-	put_long(ttl, &ptr);
+	put_uint32(ttl, &ptr);
 
 	rref = malloc(sizeof(_DNSRecordRef_t));
 	if (!rref) { free(hdr); return kDNSServiceErr_NoMemory; }
@@ -1127,9 +1130,9 @@ DNSServiceErrorType DNSSD_API DNSServiceUpdateRecord
 	if (!hdr) return kDNSServiceErr_NoMemory;
 	hdr->reg_index = RecordRef ? RecordRef->record_index : TXT_RECORD_INDEX;
 	put_flags(flags, &ptr);
-	put_short(rdlen, &ptr);
+	put_uint16(rdlen, &ptr);
 	put_rdata(rdlen, rdata, &ptr);
-	put_long(ttl, &ptr);
+	put_uint32(ttl, &ptr);
 	return deliver_request(hdr, sdRef, 0);		// Will free hdr for us
 	}
 
@@ -1185,11 +1188,11 @@ DNSServiceErrorType DNSSD_API DNSServiceReconfirmRecord
 	if (!hdr) return kDNSServiceErr_NoMemory;
 
 	put_flags(flags, &ptr);
-	put_long(interfaceIndex, &ptr);
+	put_uint32(interfaceIndex, &ptr);
 	put_string(fullname, &ptr);
-	put_short(rrtype, &ptr);
-	put_short(rrclass, &ptr);
-	put_short(rdlen, &ptr);
+	put_uint16(rrtype, &ptr);
+	put_uint16(rrclass, &ptr);
+	put_uint16(rdlen, &ptr);
 	put_rdata(rdlen, rdata, &ptr);
 	ConvertHeaderBytes(hdr);
 	write_all(tmp->sockfd, (char *)hdr, (int) len);
@@ -1201,7 +1204,7 @@ DNSServiceErrorType DNSSD_API DNSServiceReconfirmRecord
 static void handle_port_mapping_create_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *data)
 	{
 	DNSServiceFlags     flags = get_flags(&data);
-	uint32_t            ifi   = get_long(&data);
+	uint32_t            ifi   = get_uint32(&data);
 	DNSServiceErrorType err   = get_error_code(&data);
 
 	union { uint32_t l; u_char b[4]; } addr;
@@ -1221,7 +1224,7 @@ static void handle_port_mapping_create_response(DNSServiceRef sdr, ipc_msg_hdr *
 	privatePort.b[1] = *data++;
 	publicPort .b[0] = *data++;
 	publicPort .b[1] = *data++;
-	ttl              = get_long(&data);
+	ttl              = get_uint32(&data);
 
 	((DNSServiceNATPortMappingReply)sdr->app_callback)(sdr, flags, ifi, err, addr.l, protocol, privatePort.s, publicPort.s, ttl, sdr->app_context);
 	}
@@ -1261,13 +1264,13 @@ DNSServiceErrorType DNSSD_API DNSServiceNATPortMappingCreate
 	if (!hdr) return kDNSServiceErr_NoMemory;
 
 	put_flags(flags, &ptr);
-	put_long(interfaceIndex, &ptr);
+	put_uint32(interfaceIndex, &ptr);
 	*ptr++ = protocol;
 	*ptr++ = privatePort.b[0];
 	*ptr++ = privatePort.b[1];
 	*ptr++ = publicPort .b[0];
 	*ptr++ = publicPort .b[1];
-	put_long(ttl, &ptr);
+	put_uint32(ttl, &ptr);
 
 	sdr = connect_to_server();
 	if (!sdr) { free(hdr); return kDNSServiceErr_ServiceNotRunning; }

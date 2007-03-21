@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_ipc.c,v $
+Revision 1.18  2007/03/21 19:01:57  cheshire
+<rdar://problem/5078494> IPC code not 64-bit-savvy: assumes long=32bits, and short=16bits
+
 Revision 1.17  2006/10/27 00:38:22  cheshire
 Strip accidental trailing whitespace from lines
 
@@ -66,7 +69,7 @@ Update to APSL 2.0
 
 #include "dnssd_ipc.h"
 
-void put_long(const uint32_t l, char **ptr)
+void put_uint32(const uint32_t l, char **ptr)
 	{
 	(*ptr)[0] = (char)((l >> 24) &  0xFF);
 	(*ptr)[1] = (char)((l >> 16) &  0xFF);
@@ -75,21 +78,21 @@ void put_long(const uint32_t l, char **ptr)
 	*ptr += sizeof(uint32_t);
 	}
 
-uint32_t get_long(char **ptr)
+uint32_t get_uint32(char **ptr)
 	{
 	uint8_t *p = (uint8_t*) *ptr;
 	*ptr += sizeof(uint32_t);
 	return((uint32_t) ((uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3]));
 	}
 
-void put_short(uint16_t s, char **ptr)
+void put_uint16(uint16_t s, char **ptr)
 	{
 	(*ptr)[0] = (char)((s >>  8) &  0xFF);
 	(*ptr)[1] = (char)((s      ) &  0xFF);
 	*ptr += sizeof(uint16_t);
 	}
 
-uint16_t get_short(char **ptr)
+uint16_t get_uint16(char **ptr)
 	{
 	uint8_t *p = (uint8_t*) *ptr;
 	*ptr += sizeof(uint16_t);

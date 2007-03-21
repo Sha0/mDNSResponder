@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.243  2007/03/21 19:01:57  cheshire
+<rdar://problem/5078494> IPC code not 64-bit-savvy: assumes long=32bits, and short=16bits
+
 Revision 1.242  2007/03/21 18:51:21  cheshire
 <rdar://problem/4549320> Code in uds_daemon.c passes function name instead of type name to mallocL/freeL
 
@@ -494,7 +497,7 @@ mDNSlocal uint32_t dnssd_htonl(uint32_t l)
 	{
 	uint32_t 	ret;
 	char	*	data = (char*) &ret;
-	put_long(l, &data);
+	put_uint32(l, &data);
 	return ret;
 	}
 
@@ -1071,15 +1074,15 @@ mDNSlocal AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int GetTTL, int validat
 		return NULL;
 		}
 	
-	interfaceIndex = get_long(&msgbuf);
+	interfaceIndex = get_uint32(&msgbuf);
 	if (get_string(&msgbuf, name, 256) < 0)
 		{
 		LogMsg("ERROR: read_rr_from_ipc_msg - get_string");
 		return NULL;
 		}
-	type = get_short(&msgbuf);
-	class = get_short(&msgbuf);
-	rdlen = get_short(&msgbuf);
+	type = get_uint16(&msgbuf);
+	class = get_uint16(&msgbuf);
+	rdlen = get_uint16(&msgbuf);
 
 	if (rdlen > sizeof(RDataBody)) storage_size = rdlen;
 	else storage_size = sizeof(RDataBody);
@@ -1102,7 +1105,7 @@ mDNSlocal AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int GetTTL, int validat
 	rr->resrec.rdata->MaxRDLength = rdlen;
 	rdata = get_rdata(&msgbuf, rdlen);
 	memcpy(rr->resrec.rdata->u.data, rdata, rdlen);
-	if (GetTTL) rr->resrec.rroriginalttl = get_long(&msgbuf);
+	if (GetTTL) rr->resrec.rroriginalttl = get_uint32(&msgbuf);
 	rr->resrec.namehash = DomainNameHashValue(rr->resrec.name);
 	SetNewRData(&rr->resrec, mDNSNULL, 0);	// Sets rr->rdatahash for us
 	return rr;
@@ -1508,10 +1511,10 @@ mDNSlocal mStatus handle_add_request(request_state *rstate)
 
 	ptr = rstate->msgdata;
 	flags = get_flags(&ptr);
-	rrtype = get_short(&ptr);
-	rdlen = get_short(&ptr);
+	rrtype = get_uint16(&ptr);
+	rdlen = get_uint16(&ptr);
 	rdata = get_rdata(&ptr, rdlen);
-	ttl = get_long(&ptr);
+	ttl = get_uint32(&ptr);
 	
 	if (!ttl) ttl = DefaultTTLforRRType(rrtype);
 
@@ -1570,9 +1573,9 @@ mDNSlocal mStatus handle_update_request(request_state *rstate)
 	// get the message data
 	ptr = rstate->msgdata;
 	get_flags(&ptr);	// flags unused
-	rdlen = get_short(&ptr);
+	rdlen = get_uint16(&ptr);
 	rdata = get_rdata(&ptr, rdlen);
-	ttl = get_long(&ptr);
+	ttl = get_uint32(&ptr);
 
 	if (rstate->reg_recs)
 		{
@@ -1841,7 +1844,7 @@ mDNSlocal void handle_regservice_request(request_state *request)
 	// extract data from message
 	ptr = request->msgdata;
 	flags = get_flags(&ptr);
-	ifi = get_long(&ptr);
+	ifi = get_uint32(&ptr);
 	service->InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, ifi);
 	if (ifi && !service->InterfaceID)
 		{ LogMsg("ERROR: handle_regservice_request - Couldn't find InterfaceID for interfaceIndex %d", ifi); goto bad_param; }
@@ -1856,7 +1859,7 @@ mDNSlocal void handle_regservice_request(request_state *request)
 	service->port.b[0] = *ptr++;
 	service->port.b[1] = *ptr++;
 
-	service->txtlen  = get_short(&ptr);
+	service->txtlen  = get_uint16(&ptr);
 	if (service->txtlen)
 		{
 		service->txtdata = mallocL("service_info txtdata", service->txtlen);
@@ -2267,7 +2270,7 @@ mDNSlocal void handle_browse_request(request_state *request)
 	// extract data from message
 	ptr = request->msgdata;
 	flags = get_flags(&ptr);
-	interfaceIndex = get_long(&ptr);
+	interfaceIndex = get_uint32(&ptr);
 	if (get_string(&ptr, regtype, MAX_ESCAPED_DOMAIN_NAME) < 0 ||
 		get_string(&ptr, domain, MAX_ESCAPED_DOMAIN_NAME) < 0)
 		{ err = mStatus_BadParamErr;  goto error; }
@@ -2403,7 +2406,7 @@ mDNSlocal void resolve_result_callback(mDNS *const m, DNSQuestion *question, con
 	put_string(target, &data);
 	*data++ = res->srv->rdata->u.srv.port.b[0];
 	*data++ = res->srv->rdata->u.srv.port.b[1];
-	put_short(res->txt->rdlength, &data);
+	put_uint16(res->txt->rdlength, &data);
 	put_rdata(res->txt->rdlength, res->txt->rdata->u.data, &data);
 	
 	result = send_msg(rep);
@@ -2463,7 +2466,7 @@ mDNSlocal void handle_resolve_request(request_state *rstate)
 		return;
 		}
 	flags = get_flags(&ptr);
-	interfaceIndex = get_long(&ptr);
+	interfaceIndex = get_uint32(&ptr);
 	InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
 	if (interfaceIndex && !InterfaceID)
 		{ LogMsg("ERROR: handle_resolve_request - Couldn't find InterfaceID for interfaceIndex %d", interfaceIndex); goto bad_param; }
@@ -2583,11 +2586,11 @@ mDNSlocal void queryrecord_result_callback(mDNS *const m, DNSQuestion *question,
 	data = rep->sdata;
 	
 	put_string(name, &data);
-	put_short(answer->rrtype, &data);
-	put_short(answer->rrclass, &data);
-	put_short(answer->rdlength, &data);
+	put_uint16(answer->rrtype, &data);
+	put_uint16(answer->rrclass, &data);
+	put_uint16(answer->rdlength, &data);
 	put_rdata(answer->rdlength, answer->rdata->u.data, &data);
-	put_long(AddRecord ? answer->rroriginalttl : 0, &data);
+	put_uint32(AddRecord ? answer->rroriginalttl : 0, &data);
 
 	append_reply(req, rep);
 	return;
@@ -2625,10 +2628,10 @@ mDNSlocal void handle_queryrecord_request(request_state *rstate)
 		}
 	
 	flags = get_flags(&ptr);
-	ifi = get_long(&ptr);
+	ifi = get_uint32(&ptr);
 	if (get_string(&ptr, name, 256) < 0) goto bad_param;
-	rrtype = get_short(&ptr);
-	rrclass = get_short(&ptr);
+	rrtype = get_uint16(&ptr);
+	rrclass = get_uint16(&ptr);
 	InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, ifi);
 	if (ifi && !InterfaceID) goto bad_param;
 
@@ -2759,7 +2762,7 @@ mDNSlocal void handle_enum_request(request_state *rstate)
 		}
 		
 	flags = get_flags(&ptr);
-	ifi = get_long(&ptr);
+	ifi = get_uint32(&ptr);
 	InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, ifi);
 	if (ifi && !InterfaceID)
 		{
@@ -3075,7 +3078,7 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 		*data++ = info->privatePort.b[1];
 		*data++ = info->receivedPublicPort.b[0];
 		*data++ = info->receivedPublicPort.b[1];
-		put_long(info->receivedTTL, &data);
+		put_uint32(info->receivedTTL, &data);
 
 		append_reply(req, rep);
 		}
@@ -3107,13 +3110,13 @@ mDNSlocal void handle_port_mapping_create_request(request_state *request)
 	// extract data from message
 	ptr              = request->msgdata;
 	flags            = get_flags(&ptr);
-	interfaceIndex   = get_long(&ptr);
+	interfaceIndex   = get_uint32(&ptr);
 	protocol         = *ptr++;
 	privatePort.b[0] = *ptr++;
 	privatePort.b[1] = *ptr++;
 	publicPort .b[0] = *ptr++;
 	publicPort .b[1] = *ptr++;
-	ttl              = get_long(&ptr);
+	ttl              = get_uint32(&ptr);
 
 	// Now we've pulled out the parameters we need, can free the message buffer
 	freeL("request_state msgbuf handle_port_mapping_create_request", request->msgbuf);
@@ -3252,10 +3255,10 @@ mDNSlocal void addrinfo_result_callback(mDNS *const m, DNSQuestion *question, co
 
 	data = rep->sdata;
 	put_string(hostname, &data);
-	put_short(answer->rrtype, &data);
-	put_short(answer->rdlength, &data);
+	put_uint16(answer->rrtype, &data);
+	put_uint16(answer->rdlength, &data);
 	put_rdata(answer->rdlength, answer->rdata->u.data, &data);
-	put_long(AddRecord ? answer->rroriginalttl : 0, &data);
+	put_uint32(AddRecord ? answer->rroriginalttl : 0, &data);
 
 	append_reply(info->rstate, rep);
 	return;
@@ -3287,8 +3290,8 @@ mDNSlocal void handle_addrinfo_request(request_state *rstate)
 		}
 	
 	flags = get_flags(&ptr);
-	ifi = get_long(&ptr);
-	protocol = get_long(&ptr);
+	ifi = get_uint32(&ptr);
+	protocol = get_uint32(&ptr);
 	if (get_string(&ptr, hostname, 256) < 0) goto bad_param;
 
 	// Can free request->msgbuf now we've read all the data from it?

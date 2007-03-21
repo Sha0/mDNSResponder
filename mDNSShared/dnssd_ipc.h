@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.28  2007/03/21 19:01:57  cheshire
+<rdar://problem/5078494> IPC code not 64-bit-savvy: assumes long=32bits, and short=16bits
+
 Revision 1.27  2006/10/27 00:38:22  cheshire
 Strip accidental trailing whitespace from lines
 
@@ -247,17 +250,17 @@ typedef void (*process_reply_callback)
 // ptr is the address of the pointer to the start of the field.
 // it is advanced to point to the next field, or the end of the message
 
-void put_long(const uint32_t l, char **ptr);
-uint32_t get_long(char **ptr);
+void put_uint32(const uint32_t l, char **ptr);
+uint32_t get_uint32(char **ptr);
 
-void put_short(uint16_t s, char **ptr);
-uint16_t get_short(char **ptr);
+void put_uint16(uint16_t s, char **ptr);
+uint16_t get_uint16(char **ptr);
 
-#define put_flags put_long
-#define get_flags get_long
+#define put_flags put_uint32
+#define get_flags get_uint32
 
-#define put_error_code put_long
-#define get_error_code get_long
+#define put_error_code put_uint32
+#define get_error_code get_uint32
 
 int put_string(const char *str, char **ptr);
 int get_string(char **ptr, char *buffer, int buflen);
