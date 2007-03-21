@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.130  2007/03/21 19:23:37  cheshire
+<rdar://problem/5076826> jmDNS advertised garbage that shows up weird in Safari
+Make check less strict so we don't break Bonjour Browser
+
 Revision 1.129  2007/03/21 01:00:45  cheshire
 <rdar://problem/5076826> jmDNS advertised garbage that shows up weird in Safari
 DeconstructServiceName() needs to be more defensive about what it considers legal
@@ -723,10 +727,10 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 					for (i=0; i < (int)sizeof(SubTypeLabel); i++) *dst++ = SubTypeLabel[i];
 					type = (const domainname *)s1;
 					
-					// Special support for queries done by some third-party network monitoring software
+					// Special support to enable the DNSServiceBrowse call made by Bonjour Browser
 					// For these queries, we retract the "._sub" we just added between the subtype and the main type
-					if (SameDomainName((domainname*)s0, (const domainname*)"\x09_services\x07_dns-sd\x04_udp") ||
-						SameDomainName((domainname*)s0, (const domainname*)"\x09_services\x05_mdns\x04_udp"))
+					// Remove after Bonjour Browser is updated to use DNSServiceQueryRecord instead of DNSServiceBrowse
+					if (SameDomainName((domainname*)s0, (const domainname*)"\x09_services\x07_dns-sd\x04_udp"))
 						dst -= sizeof(SubTypeLabel);
 					}
 				}
@@ -810,8 +814,9 @@ mDNSexport mDNSBool DeconstructServiceName(const domainname *const fqdn,
 
 	len = *src;
 	if (!len)         { debugf("DeconstructServiceName: FQDN contains only two labels!");          return(mDNSfalse); }
-	if (!ValidTransportProtocol(src))
-	                  { debugf("DeconstructServiceName: Transport protocol must be _udp or _tcp"); return(mDNSfalse); }
+	// Can't do this check right now, until Bonjour Browser is updated to use DNSServiceQueryRecord instead of DNSServiceBrowse
+	//if (!ValidTransportProtocol(src))
+	//                  { debugf("DeconstructServiceName: Transport protocol must be _udp or _tcp"); return(mDNSfalse); }
 	for (i=0; i<=len; i++) *dst++ = *src++;
 	*dst++ = 0;											// Put terminator on the end of service type
 
