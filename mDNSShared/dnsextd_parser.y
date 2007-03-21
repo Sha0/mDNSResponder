@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd_parser.y,v $
+Revision 1.8  2007/03/21 19:47:50  cheshire
+<rdar://problem/4789463> Leak: On error path in ParseConfig
+
 Revision 1.7  2007/01/17 17:38:13  cheshire
 Need to include stdlib.h for malloc/free
 
@@ -506,18 +509,16 @@ ParseConfig
 				{
 				if ( strcmp( elem->string, keySpec->name ) == 0 )
 					{
-					DomainAuthInfo	*	authInfo;
+					DomainAuthInfo	*	authInfo = malloc( sizeof( DomainAuthInfo ) );
 					mDNSs32				keylen;
-
-					authInfo = malloc( sizeof( DomainAuthInfo ) );
 					require_action( authInfo, exit, err = 1 );
 					memset( authInfo, 0, sizeof( DomainAuthInfo ) );
 
 					ok = MakeDomainNameFromDNSNameString( &authInfo->keyname, keySpec->name );
-					require_action( ok, exit, err = 1 );
+					if (!ok) { free(authInfo); err = 1; goto exit; }
 
 					keylen = DNSDigest_ConstructHMACKeyfromBase64( authInfo, keySpec->secret );
-					require_action( keylen >= 0, exit, err = 1 );
+					if (keylen < 0) { free(authInfo); err = 1; goto exit; }
 
 					authInfo->next = zone->updateKeys;
 					zone->updateKeys = authInfo;
@@ -542,18 +543,16 @@ ParseConfig
 				{
 				if ( strcmp( elem->string, keySpec->name ) == 0 )
 					{
-					DomainAuthInfo	*	authInfo;
+					DomainAuthInfo	*	authInfo = malloc( sizeof( DomainAuthInfo ) );
 					mDNSs32				keylen;
-	
-					authInfo = malloc( sizeof( DomainAuthInfo ) );
 					require_action( authInfo, exit, err = 1 );
 					memset( authInfo, 0, sizeof( DomainAuthInfo ) );
 
 					ok = MakeDomainNameFromDNSNameString( &authInfo->keyname, keySpec->name );
-					require_action( ok, exit, err = 1 );
+					if (!ok) { free(authInfo); err = 1; goto exit; }
 
 					keylen = DNSDigest_ConstructHMACKeyfromBase64( authInfo, keySpec->secret );
-					require_action( keylen >= 0, exit, err = 1 );
+					if (keylen < 0) { free(authInfo); err = 1; goto exit; }
 
 					authInfo->next = zone->queryKeys;
 					zone->queryKeys = authInfo;
