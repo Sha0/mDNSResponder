@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.244  2007/03/21 21:01:48  cheshire
+<rdar://problem/4789793> Leak on error path in regrecord_callback, uds_daemon.c
+
 Revision 1.243  2007/03/21 19:01:57  cheshire
 <rdar://problem/5078494> IPC code not 64-bit-savvy: assumes long=32bits, and short=16bits
 
@@ -507,26 +510,6 @@ mDNSlocal void my_perror(char *errmsg)
 	LogMsg("%s: %s", errmsg, dnssd_strerror(dnssd_errno()));
 	}
 
-mDNSlocal mDNSBool is_routeable_v4(mDNSAddr * addr)
-	{
-	mDNSu8 * b;
-
-	if (addr->type != mDNSAddrType_IPv4) return mDNSfalse;
-		
-	b = addr->ip.v4.b;
-		
-	if (((b[0] == 169) && (b[1] == 254))            ||
-		((b[0] == 127))                             ||
-		((b[0] == 10))                              ||
-		((b[0] == 172) && (b[1] > 15 && b[1] < 32)) ||
-		((b[0] == 192) && (b[1] == 168)))
-		{
-		return mDNSfalse;
-		}
-		
-	return mDNStrue;
-	}
-
 // If there's a comma followed by another character,
 // FindFirstSubType overwrites the comma with a nul and returns the pointer to the next character.
 // Otherwise, it returns a pointer to the final nul at the end of the string
@@ -627,23 +610,13 @@ mDNSlocal transfer_state send_undelivered_error(request_state *rs)
 mDNSlocal int send_msg(reply_state *rs)
 	{
 	ssize_t nwriten;
-	
-	if (!rs->msgbuf)
-		{
-		LogMsg("ERROR: send_msg called with NULL message buffer");
-		return t_error;
-		}
-	
-	if (rs->request->no_reply)	//!!!KRS this behavior should be optimized if it becomes more common
-		{
-		rs->ts = t_complete;
-		freeL("reply_state msgbuf (no_reply)", rs->msgbuf);
-		return t_complete;
-		}
+	if (!rs->msgbuf) { LogMsg("ERROR: send_msg called with NULL message buffer"); return(rs->ts = t_error); }
+	if (rs->request->no_reply) { freeL("reply_state msgbuf (no_reply)", rs->msgbuf); return(rs->ts = t_complete); }
 
 	ConvertHeaderBytes(rs->mhdr);
 	nwriten = send(rs->sd, rs->msgbuf + rs->nwriten, rs->len - rs->nwriten, 0);
 	ConvertHeaderBytes(rs->mhdr);
+
 	if (nwriten < 0)
 		{
 		if (dnssd_errno() == dnssd_EINTR || dnssd_errno() == dnssd_EWOULDBLOCK) nwriten = 0;
@@ -651,34 +624,20 @@ mDNSlocal int send_msg(reply_state *rs)
 			{
 #if !defined(PLATFORM_NO_EPIPE)
 			if (dnssd_errno() == EPIPE)
-				{
-				debugf("%3d: broken pipe", rs->sd);
-				rs->ts = t_terminated;
-				rs->request->ts = t_terminated;
-				return t_terminated;
-				}
+				return(rs->request->ts = rs->ts = t_terminated);
 			else
 #endif
-				{
-				my_perror("ERROR: send\n");
-				rs->ts = t_error;
-				return t_error;
-				}
+				{ my_perror("ERROR: send\n"); return(rs->ts = t_error); }
 			}
 		}
 	rs->nwriten += nwriten;
-
-	if (rs->nwriten == rs->len)
-		{
-		rs->ts = t_complete;
-		freeL("reply_state msgbuf (nwriten == len)", rs->msgbuf);
-		}
+	if (rs->nwriten == rs->len) { freeL("reply_state msgbuf (t_complete)", rs->msgbuf); rs->ts = t_complete; }
 	return rs->ts;
 	}
 
 mDNSlocal void abort_request(request_state *rs)
 	{
-	reply_state *rep, *ptr;
+	reply_state *rep;
 
 	if (rs->terminate) rs->terminate(rs->termination_context);  // terminate field may not be set yet
 	
@@ -699,9 +658,9 @@ mDNSlocal void abort_request(request_state *rs)
 	rep = rs->replies;
 	while (rep)
 		{
-		if (rep->msgbuf) freeL("reply_state msgbuf (abort)", rep->msgbuf);
-		ptr = rep;
+		reply_state *ptr = rep;
 		rep = rep->next;
+		if (ptr->msgbuf) freeL("reply_state msgbuf (abort)", ptr->msgbuf);
 		freeL("reply_state (abort)", ptr);
 		}
 	
@@ -764,36 +723,32 @@ mDNSlocal reply_state *create_reply(reply_op_t op, size_t datalen, request_state
 // append a reply to the list in a request object
 mDNSlocal void append_reply(request_state *req, reply_state *rep)
 	{
-	reply_state *ptr;
-
-	if (!req->replies) req->replies = rep;
+	// If we have no partially-sent replies already in the queue, then try to send this immediately
+	if (!req->replies) send_msg(rep);
+	
+	// If didn't manage to send it all (or didn't even try), add it to the end of the list
+	if (rep->ts == t_morecoming)
+		{
+		reply_state **ptr = &req->replies;
+		while (*ptr) ptr = &(*ptr)->next;
+		*ptr = rep;
+		rep->next = NULL;
+		}
 	else
 		{
-		ptr = req->replies;
-		while (ptr->next) ptr = ptr->next;
-		ptr->next = rep;
+		if (rep->ts == t_error || rep->ts == t_terminated) AbortUnlinkAndFree(req);
+		freeL("reply_state/append_reply", rep);
 		}
-	rep->next = NULL;
 	}
 
-// send bogus data along with an error code to the app callback
-// returns 0 on success (linking reply into list of not fully delivered),
-// -1 on failure (request should be aborted)
-mDNSlocal int deliver_async_error(request_state *rs, reply_op_t op, mStatus err)
+mDNSlocal void deliver_async_error(request_state *rs, reply_op_t op, mStatus err)
 	{
-	int len;
-	reply_state *reply;
-	transfer_state ts;
-	
-	if (rs->no_reply) return 0;
-	len = 256;		// long enough for any reply handler to read all args w/o buffer overrun
-	reply = create_reply(op, len, rs);
-	reply->rhdr->error = dnssd_htonl(err);
-	ts = send_msg(reply);
-	if      (ts == t_error || ts == t_terminated) { freeL("reply_state/deliver_async_error", reply); return -1; }
-	else if (ts == t_complete                   )   freeL("reply_state/deliver_async_error t_complete", reply);
-	else if (ts == t_morecoming) append_reply(rs, reply);   // client is blocked, link reply into list
-	return 0;
+	if (!rs->no_reply)
+		{
+		reply_state *reply = create_reply(op, 256, rs);
+		reply->rhdr->error = dnssd_htonl(err);
+		append_reply(rs, reply);
+		}
 	}
 
 // Generates a response message giving name, type, domain, plus interface index,
@@ -1240,7 +1195,7 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 		instance->request->service_registration &&
 		instance->request->service_registration->default_domain &&
 		!instance->default_local)
-			SuppressError = mDNStrue;
+		SuppressError = mDNStrue;
 
 	if (result == mStatus_NoError)
 		LogOperation("%3d: DNSServiceRegister(%##s, %u) REGISTERED  ",  instance->sd, srs->RR_SRV.resrec.name->c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port));
@@ -1270,14 +1225,7 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 			reply_state *rep;
 			if (GenerateNTDResponse(srs->RR_SRV.resrec.name, srs->RR_SRV.resrec.InterfaceID, req, &rep) != mStatus_NoError)
 				LogMsg("%3d: regservice_callback: %##s is not valid DNS-SD SRV name", req->sd, srs->RR_SRV.resrec.name->c);
-			else
-				{
-				transfer_state send_result = send_msg(rep);
-				if (send_result == t_error || send_result == t_terminated)
-					{ AbortUnlinkAndFree(req); freeL("reply_state/regservice_callback", rep); }
-				else if (send_result == t_complete) freeL("reply_state/regservice_callback", rep);
-				else append_reply(req, rep);
-				}
+			else append_reply(req, rep);
 			}
 		if (instance->autoname && CountPeerRegistrations(m, srs) == 0)
 			RecordUpdatedNiceLabel(m, 0);	// Successfully got new name, tell user immediately
@@ -1313,8 +1261,7 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 			request_state *rs = instance->request;
 			if (!rs) { LogMsg("ERROR: regservice_callback: received result %ld with a NULL request pointer", result); return; }
 			free_service_instance(instance);
-			if (!SuppressError && deliver_async_error(rs, reg_service_reply_op, result) < 0)
-				AbortUnlinkAndFree(rs);
+			if (!SuppressError) deliver_async_error(rs, reg_service_reply_op, result);
 			}
 		}
 	else
@@ -1323,8 +1270,7 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 		if (!rs) { LogMsg("ERROR: regservice_callback: received result %ld with a NULL request pointer", result); return; }
 		if (result != mStatus_NATTraversal) LogMsg("ERROR: unknown result in regservice_callback: %ld", result);
 		free_service_instance(instance);
-		if (!SuppressError && deliver_async_error(rs, reg_service_reply_op, result) < 0)
-			AbortUnlinkAndFree(rs);
+		if (!SuppressError) deliver_async_error(rs, reg_service_reply_op, result);
 		}
 	}
 
@@ -1364,12 +1310,11 @@ mDNSlocal void regrecord_callback(mDNS *const m, AuthRecord * rr, mStatus result
 	request_state *rstate = re ? re->rstate : NULL;
 	int len;
 	reply_state *reply;
-	transfer_state ts;
 	(void)m; // Unused
 
 	if (!re)
 		{
-		// parent struct alreadt freed by termination callback
+		// parent struct already freed by termination callback
 		if (!result) LogMsg("Error: regrecord_callback: successful registration of orphaned record");
 		else
 			{
@@ -1387,7 +1332,7 @@ mDNSlocal void regrecord_callback(mDNS *const m, AuthRecord * rr, mStatus result
 	reply = create_reply(reg_record_reply_op, len, rstate);
 	reply->mhdr->client_context = re->client_context;
 	reply->rhdr->flags = dnssd_htonl(0);
-	reply->rhdr->ifi = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, rr->resrec.InterfaceID));
+	reply->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, rr->resrec.InterfaceID));
 	reply->rhdr->error = dnssd_htonl(result);
 
 	if (result)
@@ -1403,11 +1348,7 @@ mDNSlocal void regrecord_callback(mDNS *const m, AuthRecord * rr, mStatus result
 		re = NULL;
 		}
 	
-	ts = send_msg(reply);
-	
-	if (ts == t_error || ts == t_terminated) AbortUnlinkAndFree(rstate);
-	else if (ts == t_complete) freeL("reply_state/regrecord_callback", reply);
-	else if (ts == t_morecoming) append_reply(rstate, reply);   // client is blocked, link reply into list
+	append_reply(rstate, reply);
 	}
 
 mDNSlocal void connected_registration_termination(void *context)
@@ -1980,6 +1921,7 @@ mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const Resourc
 		req->sd, question->qname.c, DNSTypeName(question->qtype), AddRecord ? "Add" : "Rmv", RRDisplayString(m, answer));
 
 	if (AddRecord) rep->rhdr->flags |= dnssd_htonl(kDNSServiceFlagsAdd);
+
 	append_reply(req, rep);
 	}
 
@@ -2356,7 +2298,6 @@ mDNSlocal void resolve_result_callback(mDNS *const m, DNSQuestion *question, con
 	size_t len = 0;
 	char fullname[MAX_ESCAPED_DOMAIN_NAME], target[MAX_ESCAPED_DOMAIN_NAME];
 	char *data;
-	transfer_state result;
 	reply_state *rep;
 	request_state *rs = question->QuestionContext;
 	resolve_termination_t *res = rs->termination_context;
@@ -2409,14 +2350,7 @@ mDNSlocal void resolve_result_callback(mDNS *const m, DNSQuestion *question, con
 	put_uint16(res->txt->rdlength, &data);
 	put_rdata(res->txt->rdlength, res->txt->rdata->u.data, &data);
 	
-	result = send_msg(rep);
-	if (result == t_error || result == t_terminated)
-		{
-		AbortUnlinkAndFree(rs);
-		freeL("reply_state/resolve_result_callback (t_error)", rep);
-		}
-	else if (result == t_complete) freeL("reply_state/resolve_result_callback (t_complete)", rep);
-	else append_reply(rs, rep);
+	append_reply(rs, rep);
 	}
 
 mDNSlocal void resolve_termination_callback(void *context)
@@ -2593,7 +2527,6 @@ mDNSlocal void queryrecord_result_callback(mDNS *const m, DNSQuestion *question,
 	put_uint32(AddRecord ? answer->rroriginalttl : 0, &data);
 
 	append_reply(req, rep);
-	return;
 	}
 
 mDNSlocal void queryrecord_termination_callback(void *context)
@@ -2669,7 +2602,6 @@ bad_param:
 	rstate->terminate = NULL;	// don't try to terminate insuccessful Core calls
 error:
 	AbortUnlinkAndFree(rstate);
-	return;
 	}
 
 // ***************************************************************************
@@ -2733,14 +2665,8 @@ mDNSlocal void enum_result_callback(mDNS *const m, DNSQuestion *question, const 
 	// a machine's system preferences may be discovered on the LocalOnly interface, but should be browsed on the
 	// network, so we just pass kDNSServiceInterfaceIndexAny
 	reply = format_enumeration_reply(de->rstate, domain, flags, kDNSServiceInterfaceIndexAny, kDNSServiceErr_NoError);
-	if (!reply)
-		{
-		LogMsg("ERROR: enum_result_callback, format_enumeration_reply");
-		return;
-		}
-	reply->next = NULL;
+	if (!reply) { LogMsg("ERROR: enum_result_callback, format_enumeration_reply"); return; }
 	append_reply(de->rstate, reply);
-	return;
 	}
 
 mDNSlocal void handle_enum_request(request_state *rstate)
@@ -3261,7 +3187,6 @@ mDNSlocal void addrinfo_result_callback(mDNS *const m, DNSQuestion *question, co
 	put_uint32(AddRecord ? answer->rroriginalttl : 0, &data);
 
 	append_reply(info->rstate, rep);
-	return;
 	}
 
 mDNSlocal void handle_addrinfo_request(request_state *rstate)
@@ -3309,28 +3234,16 @@ mDNSlocal void handle_addrinfo_request(request_state *rstate)
 			{
 			for (intf = mDNSStorage.HostInterfaces; intf; intf = intf->next)
 				{				
-				if ((intf->ip.type == mDNSAddrType_IPv4) && !mDNSIPv4AddressIsZero(intf->ip.ip.v4))
-					{
-					protocol |= kDNSServiceProtocol_IPv4;
-					}
-				else if ((intf->ip.type == mDNSAddrType_IPv6) && !mDNSIPv6AddressIsZero(intf->ip.ip.v6))
-					{
-					protocol |= kDNSServiceProtocol_IPv6;
-					}
+				if      ((intf->ip.type == mDNSAddrType_IPv4) && !mDNSIPv4AddressIsZero(intf->ip.ip.v4)) protocol |= kDNSServiceProtocol_IPv4;
+				else if ((intf->ip.type == mDNSAddrType_IPv6) && !mDNSIPv6AddressIsZero(intf->ip.ip.v6)) protocol |= kDNSServiceProtocol_IPv6;
 				}
 			}
 		else
 			{
 			for (intf = mDNSStorage.HostInterfaces; intf; intf = intf->next)
 				{
-				if ((intf->ip.type == mDNSAddrType_IPv4) && is_routeable_v4(&intf->ip))
-					{
-					protocol |= kDNSServiceProtocol_IPv4;
-					}
-				else if ((intf->ip.type == mDNSAddrType_IPv6) && !mDNSAddressIsv6LinkLocal(&intf->ip))
-					{
-					protocol |= kDNSServiceProtocol_IPv6;
-					}
+				if      ((intf->ip.type == mDNSAddrType_IPv4) && !mDNSAddressIsv4LinkLocal(&intf->ip)) protocol |= kDNSServiceProtocol_IPv4;
+				else if ((intf->ip.type == mDNSAddrType_IPv6) && !mDNSAddressIsv6LinkLocal(&intf->ip)) protocol |= kDNSServiceProtocol_IPv6;
 				}
 			}
 		}
