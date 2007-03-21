@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.242  2007/03/21 18:51:21  cheshire
+<rdar://problem/4549320> Code in uds_daemon.c passes function name instead of type name to mallocL/freeL
+
 Revision 1.241  2007/03/20 00:04:50  cheshire
 <rdar://problem/4837929> Should allow "udp" or "tcp" for protocol command-line arg
 Fix LogOperation("DNSServiceNATPortMappingCreate(...)") message to actually show client arguments
@@ -213,7 +216,7 @@ mDNSlocal char * win32_strerror(int inErrorCode)
 	if (n > 0)
 		{
 		// Remove any trailing CR's or LF's since some messages have them.
-		while((n > 0) && isspace(((unsigned char *) buffer)[n - 1]))
+		while ((n > 0) && isspace(((unsigned char *) buffer)[n - 1]))
 			buffer[--n] = '\0';
 		}
 	return buffer;
@@ -610,7 +613,7 @@ mDNSlocal transfer_state send_undelivered_error(request_state *rs)
 		}
 	if ((unsigned int)(nwritten + rs->u_err->nwritten) >= sizeof(mStatus))
 		{
-		freeL("send_undelivered_error", rs->u_err);
+		freeL("undelivered_error_t", rs->u_err);
 		rs->u_err = NULL;
 		return t_complete;
 		}
@@ -631,7 +634,7 @@ mDNSlocal int send_msg(reply_state *rs)
 	if (rs->request->no_reply)	//!!!KRS this behavior should be optimized if it becomes more common
 		{
 		rs->ts = t_complete;
-		freeL("send_msg", rs->msgbuf);
+		freeL("reply_state msgbuf (no_reply)", rs->msgbuf);
 		return t_complete;
 		}
 
@@ -665,7 +668,7 @@ mDNSlocal int send_msg(reply_state *rs)
 	if (rs->nwriten == rs->len)
 		{
 		rs->ts = t_complete;
-		freeL("send_msg", rs->msgbuf);
+		freeL("reply_state msgbuf (nwriten == len)", rs->msgbuf);
 		}
 	return rs->ts;
 	}
@@ -675,7 +678,13 @@ mDNSlocal void abort_request(request_state *rs)
 	reply_state *rep, *ptr;
 
 	if (rs->terminate) rs->terminate(rs->termination_context);  // terminate field may not be set yet
-	if (rs->msgbuf) freeL("abort_request", rs->msgbuf);
+	
+	// Do we need to do this? We should decide whether it's the responsibility of the handle* routines to
+	// free msgbuf, or the responsibility of abort_request, and then do it all one way or all the other.
+	// Doing it in the handle* routines would result in a smaller resident working set
+	// (why keep data around that we don't need any more?)
+	if (rs->msgbuf) freeL("request_state msgbuf (abort)", rs->msgbuf);
+
 	LogOperation("%3d: Removing FD", rs->sd);
 	udsSupportRemoveFDFromEventLoop(rs->sd);					// Note: This also closes file descriptor rs->sd for us
 
@@ -685,17 +694,17 @@ mDNSlocal void abort_request(request_state *rs)
 
 	// free pending replies
 	rep = rs->replies;
-	while(rep)
+	while (rep)
 		{
-		if (rep->msgbuf) freeL("abort_request", rep->msgbuf);
+		if (rep->msgbuf) freeL("reply_state msgbuf (abort)", rep->msgbuf);
 		ptr = rep;
 		rep = rep->next;
-		freeL("abort_request", ptr);
+		freeL("reply_state (abort)", ptr);
 		}
 	
 	if (rs->u_err)
 		{
-		freeL("abort_request", rs->u_err);
+		freeL("request_state (abort)", rs->u_err);
 		rs->u_err = NULL;
 		}
 	}
@@ -710,23 +719,12 @@ mDNSexport void uds_validatelists(void)
 	}
 #endif
 
-mDNSlocal void unlink_request(request_state *rs)
+mDNSlocal void AbortUnlinkAndFree(request_state *rs)
 	{
-	request_state *ptr;
-	
-	if (rs == all_requests)
-		{
-		all_requests = all_requests->next;
-		freeL("unlink_request", rs);
-		return;
-		}
-	for (ptr = all_requests; ptr->next; ptr = ptr->next)
-		if (ptr->next == rs)
-			{
-			ptr->next = rs->next;
-			freeL("unlink_request", rs);
-			return;
-		}
+	request_state **p = &all_requests;
+	abort_request(rs);
+	while (*p && *p != rs) p=&(*p)->next;
+	if (*p) { *p = rs->next; freeL("request_state/AbortUnlinkAndFree", rs); }
 	}
 
 mDNSlocal reply_state *create_reply(reply_op_t op, size_t datalen, request_state *request)
@@ -741,14 +739,14 @@ mDNSlocal reply_state *create_reply(reply_op_t op, size_t datalen, request_state
 		}
 	
 	totallen = (int) (datalen + sizeof(ipc_msg_hdr));
-	reply = mallocL("create_reply", sizeof(reply_state));
+	reply = mallocL("reply_state", sizeof(reply_state));
 	if (!reply) FatalError("ERROR: malloc");
 	mDNSPlatformMemZero(reply, sizeof(reply_state));
 	reply->ts = t_morecoming;
 	reply->sd = request->sd;
 	reply->request = request;
 	reply->len = totallen;
-	reply->msgbuf = mallocL("create_reply", totallen);
+	reply->msgbuf = mallocL("reply_state msgbuf", totallen);
 	if (!reply->msgbuf) FatalError("ERROR: malloc");
 	mDNSPlatformMemZero(reply->msgbuf, totallen);
 	reply->mhdr = (ipc_msg_hdr *)reply->msgbuf;
@@ -789,12 +787,8 @@ mDNSlocal int deliver_async_error(request_state *rs, reply_op_t op, mStatus err)
 	reply = create_reply(op, len, rs);
 	reply->rhdr->error = dnssd_htonl(err);
 	ts = send_msg(reply);
-	if (ts == t_error || ts == t_terminated)
-		{
-		freeL("deliver_async_error", reply);
-		return -1;
-		}
-	else if (ts == t_complete) freeL("deliver_async_error", reply);
+	if      (ts == t_error || ts == t_terminated) { freeL("reply_state/deliver_async_error", reply); return -1; }
+	else if (ts == t_complete                   )   freeL("reply_state/deliver_async_error t_complete", reply);
 	else if (ts == t_morecoming) append_reply(rs, reply);   // client is blocked, link reply into list
 	return 0;
 	}
@@ -864,7 +858,7 @@ mDNSlocal int deliver_error(request_state *rstate, mStatus err)
 		else
 			{
 			//client blocked - store result and come backr
-			undeliv = mallocL("deliver_error", sizeof(undelivered_error_t));
+			undeliv = mallocL("undelivered_error_t", sizeof(undelivered_error_t));
 			if (!undeliv) FatalError("ERROR: malloc");
 			undeliv->err      = err;
 			undeliv->nwritten = nwritten;
@@ -946,7 +940,7 @@ mDNSlocal int read_msg(request_state *rs)
 		
 		if (!rs->msgbuf)  // allocate the buffer first time through
 			{
-			rs->msgbuf = mallocL("read_msg", rs->hdr.datalen + MSG_PAD_BYTES);
+			rs->msgbuf = mallocL("request_state msgbuf", rs->hdr.datalen + MSG_PAD_BYTES);
 			if (!rs->msgbuf)
 				{
 				my_perror("ERROR: malloc");
@@ -1090,7 +1084,7 @@ mDNSlocal AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int GetTTL, int validat
 	if (rdlen > sizeof(RDataBody)) storage_size = rdlen;
 	else storage_size = sizeof(RDataBody);
 	
-	rr = mallocL("read_rr_from_ipc_msg", sizeof(AuthRecord) - sizeof(RDataBody) + storage_size);
+	rr = mallocL("AuthRecord/read_rr_from_ipc_msg", sizeof(AuthRecord) - sizeof(RDataBody) + storage_size);
 	if (!rr) FatalError("ERROR: malloc");
 	mDNS_SetupResourceRecord(rr, mDNSNULL, mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex),
 		type, 0, (mDNSu8) ((flags & kDNSServiceFlagsShared) ? kDNSRecordTypeShared : kDNSRecordTypeUnique), mDNSNULL, mDNSNULL);
@@ -1098,7 +1092,7 @@ mDNSlocal AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int GetTTL, int validat
 	if (!MakeDomainNameFromDNSNameString(rr->resrec.name, name))
 		{
 		LogMsg("ERROR: bad name: %s", name);
-		freeL("read_rr_from_ipc_msg", rr);
+		freeL("AuthRecord/read_rr_from_ipc_msg", rr);
 		return NULL;
 		}
 	
@@ -1120,7 +1114,7 @@ mDNSlocal void reset_connected_rstate(request_state *rstate)
 	rstate->ts = t_morecoming;
 	rstate->hdr_bytes = 0;
 	rstate->data_bytes = 0;
-	if (rstate->msgbuf) freeL("reset_connected_rstate", rstate->msgbuf);
+	if (rstate->msgbuf) freeL("request_state msgbuf reset_connected_rstate", rstate->msgbuf);
 	rstate->msgbuf = NULL;
 	rstate->bufsize = 0;
 	}
@@ -1153,7 +1147,7 @@ mDNSexport void FreeExtraRR(mDNS *const m, AuthRecord *const rr, mStatus result)
 	debugf("%##s: MemFree", rr->resrec.name->c);
 	if (rr->resrec.rdata != &rr->rdatastorage)
 		freeL("Extra RData", rr->resrec.rdata);
-	freeL("ExtraResourceRecord", extra);
+	freeL("ExtraResourceRecord/FreeExtraRR", extra);
 	}
 
 mDNSlocal void free_service_instance(service_instance *srv)
@@ -1164,21 +1158,19 @@ mDNSlocal void free_service_instance(service_instance *srv)
 	// clear pointers from parent struct
 	if (rstate)
 		{
-		service_instance *ptr = rstate->service_registration->instances, *prev = NULL;
-		while (ptr)
+		service_instance **p = &rstate->service_registration->instances;
+		while (*p)
 			{
-			if (ptr == srv)
+			if (*p == srv)
 				{
-				if (prev) prev->next = ptr->next;
-				else rstate->service_registration->instances = ptr->next;
+				*p = (*p)->next;
 				break;
 				}
-			prev = ptr;
-			ptr = ptr->next;
+			p = &(*p)->next;
 			}
 		}
 	
-	while(e)
+	while (e)
 		{
 		e->r.RecordContext = e;
 		tmp = e;
@@ -1186,8 +1178,8 @@ mDNSlocal void free_service_instance(service_instance *srv)
 		FreeExtraRR(&mDNSStorage, &tmp->r, mStatus_MemFree);
 		}
 	
-	if (srv->subtypes) { freeL("regservice_callback", srv->subtypes); srv->subtypes = NULL; }
-	freeL("regservice_callback", srv);
+	if (srv->subtypes) { freeL("ServiceSubTypes", srv->subtypes); srv->subtypes = NULL; }
+	freeL("service_instance", srv);
 	}
 
 // Count how many other service records we have locally with the same name, but different rdata.
@@ -1279,8 +1271,8 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 				{
 				transfer_state send_result = send_msg(rep);
 				if (send_result == t_error || send_result == t_terminated)
-					{ abort_request(req); unlink_request(req); freeL("reply_state", rep); }
-				else if (send_result == t_complete) freeL("regservice_callback", rep);
+					{ AbortUnlinkAndFree(req); freeL("reply_state/regservice_callback", rep); }
+				else if (send_result == t_complete) freeL("reply_state/regservice_callback", rep);
 				else append_reply(req, rep);
 				}
 			}
@@ -1319,10 +1311,7 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 			if (!rs) { LogMsg("ERROR: regservice_callback: received result %ld with a NULL request pointer", result); return; }
 			free_service_instance(instance);
 			if (!SuppressError && deliver_async_error(rs, reg_service_reply_op, result) < 0)
-				{
-				abort_request(rs);
-				unlink_request(rs);
-				}
+				AbortUnlinkAndFree(rs);
 			}
 		}
 	else
@@ -1332,10 +1321,7 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 		if (result != mStatus_NATTraversal) LogMsg("ERROR: unknown result in regservice_callback: %ld", result);
 		free_service_instance(instance);
 		if (!SuppressError && deliver_async_error(rs, reg_service_reply_op, result) < 0)
-			{
-			abort_request(rs);
-			unlink_request(rs);
-			}
+			AbortUnlinkAndFree(rs);
 		}
 	}
 
@@ -1385,7 +1371,7 @@ mDNSlocal void regrecord_callback(mDNS *const m, AuthRecord * rr, mStatus result
 		else
 			{
 			if (result != mStatus_MemFree) LogMsg("regrecord_callback: error %d received after parent termination", result);
-			freeL("regrecord_callback", rr);
+			freeL("AuthRecord/regrecord_callback", rr);
 			}
 		return;
 		}
@@ -1408,16 +1394,16 @@ mDNSlocal void regrecord_callback(mDNS *const m, AuthRecord * rr, mStatus result
 		while (*ptr && (*ptr) != re) ptr = &(*ptr)->next;
 		if (!*ptr) { LogMsg("regrecord_callback - record not in list!"); return; }
 		*ptr = (*ptr)->next;
-		freeL("regrecord_callback", re->rr);
+		freeL("registered_record_entry AuthRecord regrecord_callback", re->rr);
 		re->rr = rr = NULL;
-		freeL("regrecord_callback", re);
+		freeL("registered_record_entry regrecord_callback", re);
 		re = NULL;
 		}
 	
 	ts = send_msg(reply);
 	
-	if (ts == t_error || ts == t_terminated) { abort_request(rstate); unlink_request(rstate); }
-	else if (ts == t_complete) freeL("regrecord_callback", reply);
+	if (ts == t_error || ts == t_terminated) AbortUnlinkAndFree(rstate);
+	else if (ts == t_complete) freeL("reply_state/regrecord_callback", reply);
 	else if (ts == t_morecoming) append_reply(rstate, reply);   // client is blocked, link reply into list
 	}
 
@@ -1425,14 +1411,14 @@ mDNSlocal void connected_registration_termination(void *context)
 	{
 	int shared;
 	registered_record_entry *fptr, *ptr = ((request_state *)context)->reg_recs;
-	while(ptr)
+	while (ptr)
 		{
 		fptr = ptr;
 		ptr = ptr->next;
 		shared = fptr->rr->resrec.RecordType == kDNSRecordTypeShared;
 		fptr->rr->RecordContext = NULL;
 		mDNS_Deregister(&mDNSStorage, fptr->rr);
-		freeL("connected_registration_termination", fptr);
+		freeL("registered_record_entry/connected_registration_termination", fptr);
 		}
 	}
 	
@@ -1445,8 +1431,7 @@ mDNSlocal mStatus handle_regrecord_request(request_state *rstate)
 	if (rstate->ts != t_complete)
 		{
 		LogMsg("ERROR: handle_regrecord_request - transfer state != t_complete");
-		abort_request(rstate);
-		unlink_request(rstate);
+		AbortUnlinkAndFree(rstate);
 		return(-1);
 		}
 		
@@ -1454,7 +1439,7 @@ mDNSlocal mStatus handle_regrecord_request(request_state *rstate)
 	if (!rr) return(mStatus_BadParamErr);
 
 	// allocate registration entry, link into list
-	re = mallocL("handle_regrecord_request", sizeof(registered_record_entry));
+	re = mallocL("registered_record_entry", sizeof(registered_record_entry));
 	if (!re) FatalError("ERROR: malloc");
 	re->key = rstate->hdr.reg_index;
 	re->rr = rr;
@@ -1503,7 +1488,7 @@ mDNSlocal mStatus add_record_to_service(request_state *rstate, service_instance 
 	memcpy(&extra->r.rdatastorage.u.data, rdata, rdlen);
 	
 	result =  mDNS_AddRecordToService(&mDNSStorage, srs , extra, &extra->r.rdatastorage, ttl);
-	if (result) { freeL("ExtraResourceRecord", extra); return result; }
+	if (result) { freeL("ExtraResourceRecord/add_record_to_service", extra); return result; }
 
 	extra->ClientID = rstate->hdr.reg_index;
 	return result;
@@ -1546,7 +1531,7 @@ mDNSlocal mStatus handle_add_request(request_state *rstate)
 mDNSlocal void update_callback(mDNS *const m, AuthRecord *const rr, RData *oldrd)
 	{
 	(void)m; // Unused
-	if (oldrd != &rr->rdatastorage) freeL("update_callback", oldrd);
+	if (oldrd != &rr->rdatastorage) freeL("RData/update_callback", oldrd);
 	}
 
 mDNSlocal mStatus update_record(AuthRecord *rr, uint16_t rdlen, char *rdata, uint32_t ttl)
@@ -1557,7 +1542,7 @@ mDNSlocal mStatus update_record(AuthRecord *rr, uint16_t rdlen, char *rdata, uin
 	
 	if (rdlen > sizeof(RDataBody)) rdsize = rdlen;
 	else rdsize = sizeof(RDataBody);
-	newrd = mallocL("handle_update_request", sizeof(RData) - sizeof(RDataBody) + rdsize);
+	newrd = mallocL("RData/update_record", sizeof(RData) - sizeof(RDataBody) + rdsize);
 	if (!newrd) FatalError("ERROR: malloc");
 	newrd->MaxRDLength = (mDNSu16) rdsize;
 	memcpy(&newrd->u, rdata, rdlen);
@@ -1568,7 +1553,7 @@ mDNSlocal mStatus update_record(AuthRecord *rr, uint16_t rdlen, char *rdata, uin
 	if (rr->resrec.rrtype == kDNSType_TXT && rdlen == 0) { rdlen = 1; newrd->u.txt.c[0] = 0; }
 
 	result = mDNS_Update(&mDNSStorage, rr, ttl, rdlen, newrd, update_callback);
-	if (result) { LogMsg("ERROR: mDNS_Update - %ld", result); freeL("handle_update_request", newrd); }
+	if (result) { LogMsg("ERROR: mDNS_Update - %ld", result); freeL("RData/update_record", newrd); }
 	return result;
 	}
 
@@ -1638,7 +1623,7 @@ mDNSlocal mStatus remove_record(request_state *rstate)
 	mStatus err = mStatus_UnknownErr;
 	registered_record_entry *e, **ptr = &rstate->reg_recs;
 	
-	while(*ptr && (*ptr)->key != rstate->hdr.reg_index) ptr = &(*ptr)->next;
+	while (*ptr && (*ptr)->key != rstate->hdr.reg_index) ptr = &(*ptr)->next;
 	if (!*ptr) { LogMsg("DNSServiceRemoveRecord - bad reference"); return mStatus_BadReferenceErr; }
 	e = *ptr;
 	*ptr = e->next; // unlink
@@ -1650,8 +1635,8 @@ mDNSlocal mStatus remove_record(request_state *rstate)
 	if (err)
 		{
 		LogMsg("ERROR: remove_record, mDNS_Deregister: %ld", err);
-		freeL("remove_record", e->rr);
-		freeL("remove_record", e);
+		freeL("registered_record_entry AuthRecord remove_record", e->rr);
+		freeL("registered_record_entry remove_record", e);
 		}
 	return err;
 	}
@@ -1703,20 +1688,19 @@ mDNSlocal mStatus handle_removerecord_request(request_state *rstate)
 
 mDNSlocal void RemoveDefaultRegDomain(mDNS *const m, domainname *d)
 	{
-	DNameListElem *ptr = m->DefRegList, *prev = mDNSNULL;
+	DNameListElem **p = &m->DefRegList;
 
-	while (ptr)
+	while ((*p))
 		{
-		if (SameDomainName(&ptr->name, d))
+		if (SameDomainName(&(*p)->name, d))
 			{
-			if (prev) prev->next = ptr->next;
-			else m->DefRegList = ptr->next;
+			DNameListElem *ptr = *p;
+			*p = ptr->next;
 			mDNSPlatformMemFree(ptr);
 			mDNSPlatformDefaultRegDomainChanged(d, mDNSfalse);
 			return;
 			}
-		prev = ptr;
-		ptr = ptr->next;
+		p = &(*p)->next;
 		}
 	debugf("Requested removal of default registration domain %##s not in contained in list", d->c);
 	}
@@ -1780,7 +1764,7 @@ mDNSlocal void regservice_termination_callback(void *context)
 		if (mDNS_DeregisterService(&mDNSStorage, &p->srs)) free_service_instance(p);
 		}
 	info->request->service_registration = NULL; // clear pointer from request back to info
-	if (info->txtdata) { freeL("txtdata", info->txtdata); info->txtdata = NULL; }
+	if (info->txtdata) { freeL("service_info txtdata", info->txtdata); info->txtdata = NULL; }
 	freeL("service_info", info);
 	}
 
@@ -1802,14 +1786,14 @@ mDNSexport void udsserver_default_reg_domain_changed(const domainname *d, mDNSBo
 		else
 			{
 			// find the instance to remove
-			service_instance *si = rstate->service_registration->instances, *prev = NULL;
-			while (si)
+			service_instance **p = &rstate->service_registration->instances;
+			while (*p)
 				{
-				if (SameDomainName(&si->domain, d))
+				if (SameDomainName(&(*p)->domain, d))
 					{
 					mStatus err;
-					if (prev) prev->next = si->next;
-					else info->instances = si->next;
+					service_instance *si = *p;
+					*p = si->next;
 					err = mDNS_DeregisterService(&mDNSStorage, &si->srs);
 					if (err)
 						{
@@ -1818,10 +1802,9 @@ mDNSexport void udsserver_default_reg_domain_changed(const domainname *d, mDNSBo
 						}
 					break;
 					}
-				prev = si;
-				si = si->next;
+				p = &(*p)->next;
 				}
-			if (!si) debugf("udsserver_default_reg_domain_changed - domain %##s not registered", d->c); // normal if registration failed
+			if (!*p) debugf("udsserver_default_reg_domain_changed - domain %##s not registered", d->c); // normal if registration failed
 			}
 		}
 	}
@@ -1840,8 +1823,7 @@ mDNSlocal void handle_regservice_request(request_state *request)
 	if (request->ts != t_complete)
 		{
 		LogMsg("ERROR: handle_regservice_request - transfer state != t_complete");
-		abort_request(request);
-		unlink_request(request);
+		AbortUnlinkAndFree(request);
 		return;
 		}
 
@@ -1868,14 +1850,16 @@ mDNSlocal void handle_regservice_request(request_state *request)
 		get_string(&ptr, domain, MAX_ESCAPED_DOMAIN_NAME) < 0 ||
 		get_string(&ptr, host, MAX_ESCAPED_DOMAIN_NAME) < 0)
 		{ LogMsg("ERROR: handle_regservice_request - Couldn't read name/regtype/domain"); goto bad_param; }
-		
+	
+	// Can free request->msgbuf now we've read all the data from it?
+	
 	service->port.b[0] = *ptr++;
 	service->port.b[1] = *ptr++;
 
 	service->txtlen  = get_short(&ptr);
 	if (service->txtlen)
 		{
-		service->txtdata = mallocL("txtdata", service->txtlen);
+		service->txtdata = mallocL("service_info txtdata", service->txtlen);
 		if (!service->txtdata) { my_perror("ERROR: malloc"); result = mStatus_NoMemoryErr; goto finish; }
 		memcpy(service->txtdata, get_rdata(&ptr, service->txtlen), service->txtlen);
 		}
@@ -1954,20 +1938,15 @@ mDNSlocal void handle_regservice_request(request_state *request)
 finish:
 	deliver_error(request, result);
 	if (result != mStatus_NoError)
-		{
-		abort_request(request);
-		unlink_request(request);
-		}
+		AbortUnlinkAndFree(request);
 	else
 		reset_connected_rstate(request);  // prepare to receive add/remove messages
 
 	return;
 
 bad_param:
-	//if (service) freeL("service_info", service);	Don't think we should do this -- abort_request will free it a second time and crash
 	deliver_error(request, mStatus_BadParamErr);
-	abort_request(request);
-	unlink_request(request);
+	AbortUnlinkAndFree(request);
 	}
 
 // ***************************************************************************
@@ -2019,7 +1998,7 @@ mDNSlocal mStatus add_domain_to_browser(browser_info_t *info, const domainname *
 	if (err)
 		{
 		LogMsg("mDNS_StartBrowse returned %d for type %##s domain %##s", err, info->regtype.c, d->c);
-		freeL("browser_t", b);
+		freeL("browser_t/add_domain_to_browser", b);
 		}
 	else
 		{
@@ -2055,7 +2034,7 @@ mDNSlocal void udsserver_automatic_browse_domain_changed(const domainname *d, mD
 					browser_t *remove = *ptr;
 					*ptr = (*ptr)->next;
 					mDNS_StopQueryWithRemoves(&mDNSStorage, &remove->q);
-					freeL("browser_t", remove);
+					freeL("browser_t/udsserver_automatic_browse_domain_changed", remove);
 					return;
 					}
 				ptr = &(*ptr)->next;
@@ -2176,16 +2155,18 @@ mDNSexport void udsserver_handle_configchange(mDNS *const m)
 		}
 
 	// Add new browse domains to internal list
-	if (browseDomains)
-		{
-		SetPrefsBrowseDomains(m, browseDomains, mDNStrue);
-		}
+	if (browseDomains) SetPrefsBrowseDomains(m, browseDomains, mDNStrue);
 
 	// Remove old browse domains from internal list
 	if (m->BrowseDomains)
 		{
 		SetPrefsBrowseDomains(m, m->BrowseDomains, mDNSfalse);
-		mDNS_FreeDNameList(m->BrowseDomains);
+		while (m->BrowseDomains)
+			{
+			DNameListElem *fptr = m->BrowseDomains;
+			m->BrowseDomains = m->BrowseDomains->next;
+			mDNSPlatformMemFree(fptr);
+			}
 		}
 
 	// Replace the old browse domains array with the new array
@@ -2194,7 +2175,6 @@ mDNSexport void udsserver_handle_configchange(mDNS *const m)
 
 mDNSlocal void LegacyBrowseDomainChange(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
-	DNameListElem *ptr, *prev, *new;
 	(void)m; // unused;
 	(void)question;  // unused
 
@@ -2202,7 +2182,7 @@ mDNSlocal void LegacyBrowseDomainChange(mDNS *const m, DNSQuestion *question, co
 
 	if (AddRecord)
 		{
-		new = mDNSPlatformMemAllocate(sizeof(DNameListElem));
+		DNameListElem *new = mDNSPlatformMemAllocate(sizeof(DNameListElem));
 		if (!new) { LogMsg("ERROR: malloc"); return; }
 		AssignDomainName(&new->name, &answer->rdata->u.name);
 		new->next = m->DefBrowseList;
@@ -2212,20 +2192,18 @@ mDNSlocal void LegacyBrowseDomainChange(mDNS *const m, DNSQuestion *question, co
 		}
 	else
 		{
-		ptr = m->DefBrowseList;
-		prev = mDNSNULL;
-		while (ptr)
+		DNameListElem **p = &m->DefBrowseList;
+		while (*p)
 			{
-			if (SameDomainName(&ptr->name, &answer->rdata->u.name))
+			if (SameDomainName(&(*p)->name, &answer->rdata->u.name))
 				{
+				DNameListElem *ptr = *p;
 				udsserver_automatic_browse_domain_changed(&ptr->name, mDNSfalse);
-				if (prev) prev->next = ptr->next;
-				else m->DefBrowseList = ptr->next;
+				*p = ptr->next;
 				mDNSPlatformMemFree(ptr);
 				return;
 				}
-			prev = ptr;
-			ptr = ptr->next;
+			p = &(*p)->next;
 			}
 		LogMsg("LegacyBrowseDomainChange: Got remove event for domain %##s not in list", answer->rdata->u.name.c);
 		}
@@ -2254,17 +2232,17 @@ mDNSlocal void browse_termination_callback(void *context)
 	
 	if (!info) return;
 
-	while(info->browsers)
+	while (info->browsers)
 		{
 		ptr = info->browsers;
 		info->browsers = ptr->next;
 		LogOperation("%3d: DNSServiceBrowse(%##s) STOP", info->rstate->sd, ptr->q.qname.c);
 		mDNS_StopBrowse(&mDNSStorage, &ptr->q);  // no need to error-check result
-		freeL("browse_termination_callback", ptr);
+		freeL("browser_t/browse_termination_callback", ptr);
 		}
 	
 	info->rstate->termination_context = NULL;
-	freeL("browser_info", info);
+	freeL("browser_info/browse_termination_callback", info);
 	}
 
 mDNSlocal void handle_browse_request(request_state *request)
@@ -2282,8 +2260,7 @@ mDNSlocal void handle_browse_request(request_state *request)
 	if (request->ts != t_complete)
 		{
 		LogMsg("ERROR: handle_browse_request - transfer state != t_complete");
-		abort_request(request);
-		unlink_request(request);
+		AbortUnlinkAndFree(request);
 		return;
 		}
 
@@ -2294,7 +2271,9 @@ mDNSlocal void handle_browse_request(request_state *request)
 	if (get_string(&ptr, regtype, MAX_ESCAPED_DOMAIN_NAME) < 0 ||
 		get_string(&ptr, domain, MAX_ESCAPED_DOMAIN_NAME) < 0)
 		{ err = mStatus_BadParamErr;  goto error; }
-	freeL("handle_browse_request", request->msgbuf);
+
+	// Now we've pulled out the parameters we need, can free the message buffer
+	freeL("request_state msgbuf handle_browse_request", request->msgbuf);
 	request->msgbuf = NULL;
 
 	InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
@@ -2360,8 +2339,7 @@ error:
 	if (info) freeL("browser_info_t", info);
 	if (request->termination_context) request->termination_context = NULL;
 	deliver_error(request, err);
-	abort_request(request);
-	unlink_request(request);
+	AbortUnlinkAndFree(request);
 	}
 
 // ***************************************************************************
@@ -2431,11 +2409,10 @@ mDNSlocal void resolve_result_callback(mDNS *const m, DNSQuestion *question, con
 	result = send_msg(rep);
 	if (result == t_error || result == t_terminated)
 		{
-		abort_request(rs);
-		unlink_request(rs);
-		freeL("resolve_result_callback", rep);
+		AbortUnlinkAndFree(rs);
+		freeL("reply_state/resolve_result_callback (t_error)", rep);
 		}
-	else if (result == t_complete) freeL("resolve_result_callback", rep);
+	else if (result == t_complete) freeL("reply_state/resolve_result_callback (t_complete)", rep);
 	else append_reply(rs, rep);
 	}
 
@@ -2455,7 +2432,7 @@ mDNSlocal void resolve_termination_callback(void *context)
 	mDNS_StopQuery(&mDNSStorage, &term->qtxt);
 	mDNS_StopQuery(&mDNSStorage, &term->qsrv);
 	
-	freeL("resolve_termination_callback", term);
+	freeL("resolve_termination_t", term);
 	rs->termination_context = NULL;
 	}
 
@@ -2473,8 +2450,7 @@ mDNSlocal void handle_resolve_request(request_state *rstate)
 	if (rstate->ts != t_complete)
 		{
 		LogMsg("ERROR: handle_resolve_request - transfer state != t_complete");
-		abort_request(rstate);
-		unlink_request(rstate);
+		AbortUnlinkAndFree(rstate);
 		return;
 		}
 		
@@ -2483,8 +2459,7 @@ mDNSlocal void handle_resolve_request(request_state *rstate)
 	if (!ptr)
 		{
 		LogMsg("ERROR: handle_resolve_request - NULL msgdata");
-		abort_request(rstate);
-		unlink_request(rstate);
+		AbortUnlinkAndFree(rstate);
 		return;
 		}
 	flags = get_flags(&ptr);
@@ -2497,15 +2472,15 @@ mDNSlocal void handle_resolve_request(request_state *rstate)
 		get_string(&ptr, domain, MAX_ESCAPED_DOMAIN_NAME) < 0)
 		{ LogMsg("ERROR: handle_resolve_request - Couldn't read name/regtype/domain"); goto bad_param; }
 
-	// free memory in rstate since we don't need it anymore
-	freeL("handle_resolve_request", rstate->msgbuf);
+	// Now we've pulled out the parameters we need, can free the message buffer
+	freeL("request_state msgbuf handle_resolve_request", rstate->msgbuf);
 	rstate->msgbuf = NULL;
 
 	if (build_domainname_from_strings(&fqdn, name, regtype, domain) < 0)
 		{ LogMsg("ERROR: handle_resolve_request - Couldn't build_domainname_from_strings “%s” “%s” “%s”", name, regtype, domain); goto bad_param; }
 
 	// set up termination info
-	term = mallocL("handle_resolve_request", sizeof(resolve_termination_t));
+	term = mallocL("resolve_termination_t", sizeof(resolve_termination_t));
 	mDNSPlatformMemZero(term, sizeof(*term));
 	if (!term) FatalError("ERROR: malloc");
 
@@ -2545,20 +2520,15 @@ mDNSlocal void handle_resolve_request(request_state *rstate)
 
 	if (err)
 		{
-		freeL("handle_resolve_request", term);
-		rstate->terminate = NULL;  // prevent abort_request() from invoking termination callback
+		freeL("resolve_termination_t/handle_resolve_request", term);
+		rstate->terminate = NULL;  // prevent AbortUnlinkAndFree() from invoking termination callback
 		}
-	if (deliver_error(rstate, err) < 0 || err)
-		{
-		abort_request(rstate);
-		unlink_request(rstate);
-		}
+	if (deliver_error(rstate, err) < 0 || err) AbortUnlinkAndFree(rstate);
 	return;
 
 bad_param:
 	deliver_error(rstate, mStatus_BadParamErr);
-	abort_request(rstate);
-	unlink_request(rstate);
+	AbortUnlinkAndFree(rstate);
 	}
 	
 // ***************************************************************************
@@ -2628,7 +2598,7 @@ mDNSlocal void queryrecord_termination_callback(void *context)
 	DNSQuestion *q = context;
 	LogOperation("%3d: DNSServiceQueryRecord(%##s, %s) STOP", ((request_state *)q->QuestionContext)->sd, q->qname.c, DNSTypeName(q->qtype));
 	mDNS_StopQuery(&mDNSStorage, q);  // no need to error check
-	freeL("queryrecord_termination_callback", q);
+	freeL("DNSQuestion/queryrecord_termination_callback", q);
 	}
 
 mDNSlocal void handle_queryrecord_request(request_state *rstate)
@@ -2662,13 +2632,15 @@ mDNSlocal void handle_queryrecord_request(request_state *rstate)
 	InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, ifi);
 	if (ifi && !InterfaceID) goto bad_param;
 
+	// Can free request->msgbuf now we've read all the data from it?
+
 	q = mallocL("DNSQuestion", sizeof(DNSQuestion));
 	if (!q) FatalError("ERROR: handle_query - malloc");
 	mDNSPlatformMemZero(q, sizeof(DNSQuestion));
 
 	q->InterfaceID      = InterfaceID;
 	q->Target           = zeroAddr;
-	if (!MakeDomainNameFromDNSNameString(&q->qname, name)) { freeL("DNSQuestion", q); goto bad_param; }
+	if (!MakeDomainNameFromDNSNameString(&q->qname, name)) { freeL("DNSQuestion/handle_queryrecord_request", q); goto bad_param; }
 	q->qtype            = rrtype;
 	q->qclass           = rrclass;
 	q->LongLived        = (flags & kDNSServiceFlagsLongLivedQuery     ) != 0;
@@ -2693,8 +2665,7 @@ bad_param:
 	deliver_error(rstate, mStatus_BadParamErr);
 	rstate->terminate = NULL;	// don't try to terminate insuccessful Core calls
 error:
-	abort_request(rstate);
-	unlink_request(rstate);
+	AbortUnlinkAndFree(rstate);
 	return;
 	}
 
@@ -2731,10 +2702,10 @@ mDNSlocal void enum_termination_callback(void *context)
 
 	mDNS_StopGetDomains(coredata, &t->all->question);
 	mDNS_StopGetDomains(coredata, &t->def->question);
-	freeL("enum_termination_callback", t->all);
-	freeL("enum_termination_callback", t->def);
+	freeL("domain_enum_t all", t->all);
+	freeL("domain_enum_t def", t->def);
 	t->rstate->termination_context = NULL;
-	freeL("enum_termination_callback", t);
+	freeL("enum_termination_t", t);
 	}
 
 mDNSlocal void enum_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
@@ -2783,8 +2754,7 @@ mDNSlocal void handle_enum_request(request_state *rstate)
 	if (rstate->ts != t_complete)
 		{
 		LogMsg("ERROR: handle_enum_request - transfer state != t_complete");
-		abort_request(rstate);
-		unlink_request(rstate);
+		AbortUnlinkAndFree(rstate);
 		return;
 		}
 		
@@ -2794,15 +2764,16 @@ mDNSlocal void handle_enum_request(request_state *rstate)
 	if (ifi && !InterfaceID)
 		{
 		deliver_error(rstate, mStatus_BadParamErr);
-		abort_request(rstate);
-		unlink_request(rstate);
+		AbortUnlinkAndFree(rstate);
 		return;
 		}
 
+	// Can free request->msgbuf now we've read all the data from it?
+
 	// allocate context structures
-	def = mallocL("handle_enum_request", sizeof(domain_enum_t));
-	all = mallocL("handle_enum_request", sizeof(domain_enum_t));
-	term = mallocL("handle_enum_request", sizeof(enum_termination_t));
+	def = mallocL("domain_enum_t def", sizeof(domain_enum_t));
+	all = mallocL("domain_enum_t all", sizeof(domain_enum_t));
+	term = mallocL("enum_termination_t", sizeof(enum_termination_t));
 	if (!def || !all || !term) FatalError("ERROR: malloc");
 
 	uDNS_RegisterSearchDomains(&mDNSStorage);
@@ -2835,18 +2806,14 @@ mDNSlocal void handle_enum_request(request_state *rstate)
 		err = mDNS_GetDomains(&mDNSStorage, &def->question, def->type, NULL, InterfaceID, enum_result_callback, def);
 	result = deliver_error(rstate, err);  // send error *before* returning local domain
 	
-	if (result < 0 || err)
-		{
-		abort_request(rstate);
-		unlink_request(rstate);
-		return;
-		}
+	if (result < 0 || err) AbortUnlinkAndFree(rstate);
 	}
 
 
 mDNSlocal void handle_reconfirm_request(request_state *rstate)
 	{
 	AuthRecord *rr = read_rr_from_ipc_msg(rstate->msgdata, 0, 0);
+	// Can free request->msgbuf now we've read all the data from it?
 	if (rr)
 		{
 		mStatus status = mDNS_ReconfirmByValue(&mDNSStorage, &rr->resrec);
@@ -2858,16 +2825,15 @@ mDNSlocal void handle_reconfirm_request(request_state *rstate)
 			mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, rr->resrec.InterfaceID), status);
 		status = 0;  // Adding this line eliminates a build failure when building mDNSPosix on Tiger
 		}
-	abort_request(rstate);
-	unlink_request(rstate);
-	freeL("handle_reconfirm_request", rr);
+	AbortUnlinkAndFree(rstate);
+	freeL("AuthRecord/handle_reconfirm_request", rr);
 	}
 
 #ifdef _HAVE_SETDOMAIN_SUPPORT_
 mDNSlocal void free_defdomain(mDNS *const m, AuthRecord *const rr, mStatus result)
 	{
 	(void)m;  // unused
-	if (result == mStatus_MemFree) freeL(rr->RecordContext);  // context is the enclosing list structure
+	if (result == mStatus_MemFree) freeL("AuthRecord/free_defdomain", rr->RecordContext);  // context is the enclosing list structure
 	}
 #endif
 
@@ -2886,8 +2852,7 @@ mDNSlocal void handle_setdomain_request(request_state *request)
 	if (request->ts != t_complete)
 		{
 		LogMsg("ERROR: handle_setdomain_request - transfer state != t_complete");
-		abort_request(request);
-		unlink_request(request);
+		AbortUnlinkAndFree(request);
 		return;
 		}
 
@@ -2898,7 +2863,8 @@ mDNSlocal void handle_setdomain_request(request_state *request)
 		!MakeDomainNameFromDNSNameString(&domain, domainstr))
 		{ err = mStatus_BadParamErr; goto end; }
 
-	freeL("handle_setdomain_request", request->msgbuf);
+	// Now we've pulled out the parameters we need, can free the message buffer
+	freeL("request_state msgbuf handle_setdomain_request", request->msgbuf);
 	request->msgbuf = NULL;
 
 	debugf("%3d: DNSServiceSetDefaultDomainForUser(%##s)", request->sd, domain.c);
@@ -2923,7 +2889,7 @@ mDNSlocal void handle_setdomain_request(request_state *request)
  		AssignDomainName(&newelem->ptr_rec.resrec.rdata->u.name, &domain);
 		newelem->uid = xuc.cr_uid;
 		err = mDNS_Register(&mDNSStorage, &newelem->ptr_rec);
-		if (err) freeL(newelem);
+		if (err) freeL("default_browse_list_t/handle_setdomain_request", newelem);
 		else
 			{
 			// link into list
@@ -2935,20 +2901,19 @@ mDNSlocal void handle_setdomain_request(request_state *request)
 	else
 		{
 		// remove - find in list, deregister
-		default_browse_list_t *ptr = default_browse_list, *prev = NULL;
-		while (ptr)
+		default_browse_list_t **p = &default_browse_list;
+		while (*p)
 			{
-			if (SameDomainName(&ptr->ptr_rec.resrec.rdata->u.name, &domain))
+			if (SameDomainName(&(*p)->ptr_rec.resrec.rdata->u.name, &domain))
 				{
-				if (prev) prev->next = ptr->next;
-				else default_browse_list = ptr->next;
+				default_browse_list_t *ptr = *p;
+				*p = ptr->next;
 				err = mDNS_Deregister(&mDNSStorage, &ptr->ptr_rec);
 				break;
 				}
-			prev = ptr;
-			ptr = ptr->next;
+			p = &(*p)->next;
 			}
-		if (!ptr) { LogMsg("Attempt to remove nonexistent domain %s for UID %d", domainstr, xuc.cr_uid); err = mStatus_Invalid; }
+		if (!*p) { LogMsg("Attempt to remove nonexistent domain %s for UID %d", domainstr, xuc.cr_uid); err = mStatus_Invalid; }
 		}
 #else
 	err = mStatus_NoError;
@@ -2956,8 +2921,7 @@ mDNSlocal void handle_setdomain_request(request_state *request)
 	
 	end:
 	deliver_error(request, err);
-	abort_request(request);
-	unlink_request(request);
+	AbortUnlinkAndFree(request);
 	}
 
 mDNSlocal void port_mapping_create_termination_callback(void *context)
@@ -3136,8 +3100,7 @@ mDNSlocal void handle_port_mapping_create_request(request_state *request)
 	if (request->ts != t_complete)
 		{
 		LogMsg("ERROR: handle_port_mapping_create - transfer state != t_complete");
-		abort_request(request);
-		unlink_request(request);
+		AbortUnlinkAndFree(request);
 		return;
 		}
 
@@ -3152,7 +3115,8 @@ mDNSlocal void handle_port_mapping_create_request(request_state *request)
 	publicPort .b[1] = *ptr++;
 	ttl              = get_long(&ptr);
 
-	freeL("handle_port_mapping_create", request->msgbuf);
+	// Now we've pulled out the parameters we need, can free the message buffer
+	freeL("request_state msgbuf handle_port_mapping_create_request", request->msgbuf);
 	request->msgbuf = NULL;
 
 	InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
@@ -3221,11 +3185,10 @@ mDNSlocal void handle_port_mapping_create_request(request_state *request)
 	return;
 	
 error:
-	if (info) freeL("port_mapping_info_t", info);
+	if (info) freeL("port_mapping_info_t/handle_port_mapping_create_request", info);
 	if (request->termination_context) request->termination_context = NULL;
 	deliver_error(request, err);
-	abort_request(request);
-	unlink_request(request);
+	AbortUnlinkAndFree(request);
 	}
 
 mDNSlocal void addrinfo_termination_callback(void *context)
@@ -3327,6 +3290,9 @@ mDNSlocal void handle_addrinfo_request(request_state *rstate)
 	ifi = get_long(&ptr);
 	protocol = get_long(&ptr);
 	if (get_string(&ptr, hostname, 256) < 0) goto bad_param;
+
+	// Can free request->msgbuf now we've read all the data from it?
+
 	InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, ifi);
 	if (!MakeDomainNameFromDNSNameString(&d, hostname)) { LogMsg("ERROR: handle_addrinfo_request: bad hostname: %s", hostname); goto bad_param; }
 	if (ifi && !InterfaceID) goto bad_param;
@@ -3440,9 +3406,7 @@ error:
 		mDNS_StopQuery(&mDNSStorage, &info->q6);
 		info->q6.QuestionContext = mDNSNULL;
 		}
-	abort_request(rstate);
-	unlink_request(rstate);
-	return;
+	AbortUnlinkAndFree(rstate);
 	}
 
 mDNSlocal void request_callback(void *info)
@@ -3456,29 +3420,14 @@ mDNSlocal void request_callback(void *info)
 #endif
 	
 	result = read_msg(rstate);
-	if (result == t_morecoming)
-		{
-		return;
-		}
-	if (result == t_terminated)
-		{
-		abort_request(rstate);
-		unlink_request(rstate);
-		return;
-		}
-	if (result == t_error)
-		{
-		abort_request(rstate);
-		unlink_request(rstate);
-		return;
-		}
+	if (result == t_morecoming) return;
+	if (result == t_terminated || result == t_error) { AbortUnlinkAndFree(rstate); return; }
 
 	if (rstate->hdr.version != VERSION)
 		{
 		LogMsg("ERROR: client incompatible with daemon (client version = %d, "
 			   "daemon version = %d)\n", rstate->hdr.version, VERSION);
-		abort_request(rstate);
-		unlink_request(rstate);
+		AbortUnlinkAndFree(rstate);
 		return;
 		}
 	
@@ -3486,8 +3435,7 @@ mDNSlocal void request_callback(void *info)
 		{
 		// note that we cannot deliver an error message if validation fails, since the path to the error socket
 		// may be contained in the (invalid) message body for some message types
-		abort_request(rstate);
-		unlink_request(rstate);
+		AbortUnlinkAndFree(rstate);
 		LogMsg("Invalid message sent by client - may indicate a malicious program running on this machine!");
 		return;
 		}
@@ -3507,13 +3455,7 @@ mDNSlocal void request_callback(void *info)
 		mStatus err = 0;
 		int nwritten;
 		dnssd_sock_t errfd = socket(AF_DNSSD, SOCK_STREAM, 0);
-		if (errfd == dnssd_InvalidSocket)
-			{
-			my_perror("ERROR: socket");
-			abort_request(rstate);
-			unlink_request(rstate);
-			return;
-			}
+		if (errfd == dnssd_InvalidSocket) { my_perror("ERROR: socket"); AbortUnlinkAndFree(rstate); return; }
 
 		//LogOperation("request_callback: Opened dedicated errfd %d", errfd);
 
@@ -3541,8 +3483,7 @@ mDNSlocal void request_callback(void *info)
 			{
 			//LogOperation("request_callback: Couldn't connect to “%s”", cliaddr.sun_path);
 			my_perror("ERROR: connect");
-			abort_request(rstate);
-			unlink_request(rstate);
+			AbortUnlinkAndFree(rstate);
 			return;
 			}
 #if defined(_WIN32)
@@ -3552,8 +3493,7 @@ mDNSlocal void request_callback(void *info)
 #endif
 			{
 			my_perror("ERROR: could not set control socket to non-blocking mode");
-			abort_request(rstate);
-			unlink_request(rstate);
+			AbortUnlinkAndFree(rstate);
 			return;
 			}
 
@@ -3565,6 +3505,8 @@ mDNSlocal void request_callback(void *info)
 			case remove_record_request: err = handle_removerecord_request(rstate); break;
 			default: LogMsg("%3d: ERROR: udsserver_recv_request - unsupported request type: %d", rstate->sd, rstate->hdr.op);
 			}
+
+		// Should free rstate->msgbuf here, instead of doing it piecemeal all over the place
 
 		//LogOperation("request_callback: Returning error code %d on socket %d", err, errfd);
 		err = dnssd_htonl(err);
@@ -3594,6 +3536,7 @@ mDNSlocal void request_callback(void *info)
 			case addrinfo_request:             handle_addrinfo_request             (rstate); break;
 			default: LogMsg("%3d: ERROR: udsserver_recv_request - unsupported request type: %d", rstate->sd, rstate->hdr.op);
 			}
+		// Should free rstate->msgbuf here, instead of doing it piecemeal all over the place
 		}
 	}
 
@@ -3640,7 +3583,7 @@ mDNSlocal void connect_callback(void *info)
 		}
 	
 	// allocate a request_state struct that will live with the socket
-	rstate = mallocL("connect_callback", sizeof(request_state));
+	rstate = mallocL("request_state/connect_callback", sizeof(request_state));
 	if (!rstate) FatalError("ERROR: malloc");
 	mDNSPlatformMemZero(rstate, sizeof(request_state));
 	rstate->ts = t_morecoming;
@@ -3899,33 +3842,33 @@ mDNSexport void udsserver_info(mDNS *const m)
 
 mDNSexport mDNSs32 udsserver_idle(mDNSs32 nextevent)
 	{
-	request_state *req = all_requests, *tmp, *prev = NULL;
+	request_state **req = &all_requests;
 	reply_state *fptr;
 	transfer_state result;
 	mDNSs32 now = mDNS_TimeNow(&mDNSStorage);
 
-	while(req)
+	while (*req)
 		{
 		result = t_uninitialized;
-		if (req->u_err)
-			result = send_undelivered_error(req);
+		if ((*req)->u_err)
+			result = send_undelivered_error(*req);
 		if (result != t_error && result != t_morecoming &&		// don't try to send msg if send_error failed
-			(req->ts == t_complete || req->ts == t_morecoming))
+			((*req)->ts == t_complete || (*req)->ts == t_morecoming))
 			{
-			while(req->replies)
+			while ((*req)->replies)
 				{
-				if (req->replies->next) req->replies->rhdr->flags |= dnssd_htonl(kDNSServiceFlagsMoreComing);
-				result = send_msg(req->replies);
+				if ((*req)->replies->next) (*req)->replies->rhdr->flags |= dnssd_htonl(kDNSServiceFlagsMoreComing);
+				result = send_msg((*req)->replies);
 				if (result == t_complete)
 					{
-					fptr = req->replies;
-					req->replies = req->replies->next;
-					freeL("udsserver_idle", fptr);
-					req->time_blocked = 0;                              // reset failure counter after successful send
+					fptr = (*req)->replies;
+					(*req)->replies = (*req)->replies->next;
+					freeL("reply_state/udsserver_idle", fptr);
+					(*req)->time_blocked = 0;                              // reset failure counter after successful send
 					}
 				else if (result == t_terminated || result == t_error)
 					{
-					abort_request(req);
+					abort_request(*req);
 					break;
 					}
 				else if (result == t_morecoming) break;	   		// client's queues are full, move to next
@@ -3933,31 +3876,26 @@ mDNSexport mDNSs32 udsserver_idle(mDNSs32 nextevent)
 			}
 		if (result == t_morecoming)
 			{
-			if (!req->time_blocked) req->time_blocked = now;
-			debugf("udsserver_idle: client has been blocked for %ld seconds", (now - req->time_blocked) / mDNSPlatformOneSecond);
-			if (now - req->time_blocked >= MAX_TIME_BLOCKED)
+			if (!(*req)->time_blocked) (*req)->time_blocked = now;
+			debugf("udsserver_idle: client has been blocked for %ld seconds", (now - (*req)->time_blocked) / mDNSPlatformOneSecond);
+			if (now - (*req)->time_blocked >= MAX_TIME_BLOCKED)
 				{
-				LogMsg("Could not write data to client %d after %ld seconds - aborting connection", req->sd, MAX_TIME_BLOCKED / mDNSPlatformOneSecond);
-				LogClientInfo(req);
-				abort_request(req);
+				LogMsg("Could not write data to client %d after %ld seconds - aborting connection", (*req)->sd, MAX_TIME_BLOCKED / mDNSPlatformOneSecond);
+				LogClientInfo(*req);
+				abort_request(*req);
 				result = t_terminated;
 				}
 			else if (nextevent - now > mDNSPlatformOneSecond) nextevent = now + mDNSPlatformOneSecond;  // try again in a second
 			}
 		if (result == t_terminated || result == t_error)
-		//since we're already doing a list traversal, we unlink the request manually instead of calling unlink_request()
 			{
-			tmp = req;
-			if (prev) prev->next = req->next;
-			if (req == all_requests) all_requests = all_requests->next;
-			req = req->next;
-			freeL("udsserver_idle", tmp);
+			// Since we're already doing a list traversal, we unlink the request manually instead of calling AbortUnlinkAndFree()
+			request_state *tmp = *req;
+			*req = tmp->next;
+			freeL("request_state/udsserver_idle", tmp);
 			}
 		else
-			{
-			prev = req;
-			req = req->next;
-			}
+			req = &(*req)->next;
 		}
 	return nextevent;
 	}
