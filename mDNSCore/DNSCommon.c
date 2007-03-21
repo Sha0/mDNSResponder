@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.131  2007/03/21 21:55:20  cheshire
+<rdar://problem/5069688> Hostname gets ; or : which are illegal characters
+Error in AppendLabelSuffix() for numbers close to the 32-bit limit
+
 Revision 1.130  2007/03/21 19:23:37  cheshire
 <rdar://problem/5076826> jmDNS advertised garbage that shows up weird in Safari
 Make check less strict so we don't break Bonjour Browser
@@ -928,7 +932,7 @@ mDNSexport mDNSu32 RemoveLabelSuffix(domainlabel *name, mDNSBool RichText)
 
 // appends a numerical suffix to a label, with the number following a whitespace and enclosed
 // in parentheses (rich text) or following two consecutive hyphens (RFC 1034 domain label).
-mDNSexport void AppendLabelSuffix(domainlabel *name, mDNSu32 val, mDNSBool RichText)
+mDNSexport void AppendLabelSuffix(domainlabel *const name, mDNSu32 val, const mDNSBool RichText)
 	{
 	mDNSu32 divisor = 1, chars = 2;	// Shortest possible RFC1034 name suffix is 2 characters ("-2")
 	if (RichText) chars = 4;		// Shortest possible RichText suffix is 4 characters (" (2)")
@@ -936,7 +940,7 @@ mDNSexport void AppendLabelSuffix(domainlabel *name, mDNSu32 val, mDNSBool RichT
 	// Truncate trailing spaces from RichText names
 	if (RichText) while (name->c[name->c[0]] == ' ') name->c[0]--;
 
-	while (val >= divisor * 10) { divisor *= 10; chars++; }
+	while (divisor < 0xFFFFFFFFUL/10 && val >= divisor * 10) { divisor *= 10; chars++; }
 
 	name->c[0] = (mDNSu8) TruncateUTF8ToLength(name->c+1, name->c[0], MAX_DOMAIN_LABEL - chars);
 
