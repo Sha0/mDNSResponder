@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.67  2007/03/21 00:30:07  cheshire
+<rdar://problem/4789455> Multiple errors in DNameList-related code
+
 Revision 1.66  2007/03/20 17:07:16  cheshire
 Rename "struct uDNS_TCPSocket_struct" to "TCPSocket", "struct uDNS_UDPSocket_struct" to "UDPSocket"
 
@@ -3126,9 +3129,9 @@ void mDNSCoreReceive(mDNS *const m, void *const msg, const mDNSu8 *const end,
 	{ ( void ) m; ( void ) msg; ( void ) end; ( void ) srcaddr; ( void ) srcport; ( void ) dstaddr; ( void ) dstport; ( void ) iid; }
 void mDNS_AddDNSServer(mDNS * const m, const mDNSAddr * dnsAddr, const domainname * domain)
 	{ ( void ) m; ( void ) dnsAddr; ( void ) domain; }
+void mDNS_AddSearchDomain(const domainname *const domain) { (void)domain; }
 void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSRecordCallback *StatusCallback, const void *StatusContext)
 	{ ( void ) m; ( void ) fqdn; ( void ) StatusCallback; ( void ) StatusContext; }
-void mDNS_DeleteDNSServers(mDNS * const m) { ( void ) m;}
 mDNSs32 mDNS_Execute   (mDNS *const m) { ( void ) m; return 0; }
 mDNSs32 mDNS_TimeNow(const mDNS *const m) { ( void ) m; return 0; }
 mStatus mDNS_Deregister(mDNS *const m, AuthRecord *const rr) { ( void ) m; ( void ) rr; return 0; }

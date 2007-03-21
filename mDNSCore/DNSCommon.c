@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.128  2007/03/21 00:30:02  cheshire
+<rdar://problem/4789455> Multiple errors in DNameList-related code
+
 Revision 1.127  2007/03/20 17:07:15  cheshire
 Rename "struct uDNS_TCPSocket_struct" to "TCPSocket", "struct uDNS_UDPSocket_struct" to "UDPSocket"
 
@@ -211,44 +214,6 @@ mDNSexport const mDNSOpaque16 UpdateReqFlags  = { { kDNSFlag0_QR_Query    | kDNS
 mDNSexport const mDNSOpaque16 UpdateRespFlags = { { kDNSFlag0_QR_Response | kDNSFlag0_OP_Update,                  0 } };
 
 mDNSexport const mDNSOpaque64 zeroOpaque64    = { { 0 } };
-
-// ***************************************************************************
-#if COMPILER_LIKES_PRAGMA_MARK
-#pragma mark -
-#pragma mark - DNameList copy/deallocation routines
-#endif
-
-mDNSexport void mDNS_FreeDNameList(DNameListElem *list)
-	{
-	DNameListElem *fptr;
-
-	while (list)
-		{
-		fptr = list;
-		list = list->next;
-		mDNSPlatformMemFree(fptr);
-		}
-	}
-
-
-// ***************************************************************************
-#if COMPILER_LIKES_PRAGMA_MARK
-#pragma mark -
-#pragma mark - IPAddrList deallocation routine
-#endif
-
-mDNSexport void mDNS_FreeIPAddrList(IPAddrListElem * list)
-{
-	IPAddrListElem * fptr;
-
-	while (list)
-	{
-		fptr = list;
-		list = list->next;
-		mDNSPlatformMemFree(fptr);
-	}
-}
-
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -2397,11 +2362,15 @@ mDNSexport mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt
 										if (*a == 0) *s++ = '.';	// Special case for root DNS name
 										while (*a)
 											{
+											char buf[63*4+1];
 											if (*a > 63)
 												{ s += mDNS_snprintf(s, mDNS_VACB_Remain(s), "<<INVALID LABEL LENGTH %u>>", *a); break; }
 											if (s + *a >= &mDNS_VACB[254])
 												{ s += mDNS_snprintf(s, mDNS_VACB_Remain(s), "<<NAME TOO LONG>>"); break; }
-											s += mDNS_snprintf(s, mDNS_VACB_Remain(s), "%#s.", a);
+											// Need to use ConvertDomainLabelToCString to do proper escaping here,
+											// so it's clear what's a literal dot and what's a label separator
+											ConvertDomainLabelToCString((domainlabel*)a, buf);
+											s += mDNS_snprintf(s, mDNS_VACB_Remain(s), "%s.", buf);
 											a += 1 + *a;
 											}
 										i = (mDNSu32)(s - mDNS_VACB);

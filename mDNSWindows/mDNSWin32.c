@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.117  2007/03/21 00:30:07  cheshire
+<rdar://problem/4789455> Multiple errors in DNameList-related code
+
 Revision 1.116  2007/03/20 17:07:16  cheshire
 Rename "struct uDNS_TCPSocket_struct" to "TCPSocket", "struct uDNS_UDPSocket_struct" to "UDPSocket"
 
@@ -1065,7 +1068,7 @@ exit:
 		sock = NULL;
 	}
 
-	return ( TCPSocket *) sock;
+	return sock;
 	}
 
 
@@ -1517,11 +1520,14 @@ exit:
 
 
 //===========================================================================================================================
-//	mDNSPlatformGetSearchDomainList
+//	mDNSPlatformSetSearchDomainList
 //===========================================================================================================================
 
-DNameListElem*
-mDNSPlatformGetSearchDomainList( void )
+static void mDNSWindowsSetDomainFromDHCP( void );
+static void mDNSWindowsSetReverseMapSearchDomainList( void );
+
+void
+mDNSPlatformSetSearchDomainList( void )
 {
 	char			*	searchList	= NULL;
 	DWORD				searchListLen;
@@ -1548,23 +1554,7 @@ mDNSPlatformGetSearchDomainList( void )
 
 			if ( MakeDomainNameFromDNSNameString( &domain, tok ) )
 			{
-				DNameListElem * last = current;
-	
-				current = (DNameListElem*) malloc( sizeof( DNameListElem ) );
-				require_action( current, exit, err = mStatus_NoMemoryErr );
-	
-				AssignDomainName( &current->name, &domain );
-				current->next = NULL;
-				
-				if ( !head )
-				{
-					head = current;
-				}
-
-				if ( last )
-				{
-					last->next = current;
-				}
+				mDNS_AddSearchDomain( &domain );
 			}
 		}
 
@@ -1583,21 +1573,19 @@ exit:
 		RegCloseKey( key );
 	}
 
-	return head;
+	mDNSWindowsSetDomainFromDHCP();
+	mDNSWindowsSetReverseMapSearchDomainList();
 }
 
 
 //===========================================================================================================================
-//	mDNSPlatformGetReverseMapSearchDomainList
+//	mDNSWindowsSetReverseMapSearchDomainList
 //===========================================================================================================================
 
-DNameListElem*
-mDNSPlatformGetReverseMapSearchDomainList( void )
+static void
+mDNSWindowsSetReverseMapSearchDomainList( void )
 {
-	DNameListElem	*	head = NULL;
-	DNameListElem	*	current = NULL;
 	struct ifaddrs	*	ifa;
-	mStatus				err;
 
 	ifa = myGetIfAddrs( 1 );
 	while (ifa)
@@ -1619,23 +1607,7 @@ mDNSPlatformGetReverseMapSearchDomainList( void )
 				
 				if ( MakeDomainNameFromDNSNameString( &domain, buffer ) )
 				{
-					DNameListElem * last = current;
-
-					current = (DNameListElem*) malloc( sizeof( DNameListElem ) );
-					require_action( current, exit, err = mStatus_NoMemoryErr );
-
-					AssignDomainName( &current->name, &domain );
-					current->next = NULL;
-					
-					if ( !head )
-					{
-						head = current;
-					}
-
-					if ( last )
-					{
-						last->next = current;
-					}
+					mDNS_AddSearchDomain( &domain );
 				}
 			}
 		}
@@ -1644,25 +1616,21 @@ mDNSPlatformGetReverseMapSearchDomainList( void )
 	}
 
 exit:
-
-	return head;
 }
 
 
 //===========================================================================================================================
-//	mDNSPlatformGetDNSServers
+//	mDNSPlatformSetDNSServers
 //===========================================================================================================================
 
-IPAddrListElem*
-mDNSPlatformGetDNSServers( void )
+void
+mDNSPlatformSetDNSServers( mDNS *const m )
 {
 	PIP_PER_ADAPTER_INFO	pAdapterInfo	=	NULL;
 	FIXED_INFO			*	fixedInfo	= NULL;
 	ULONG					bufLen		= 0;	
 	IP_ADDR_STRING		*	dnsServerList;
 	IP_ADDR_STRING		*	ipAddr;
-	IPAddrListElem		*	head		= NULL;
-	IPAddrListElem		*	current		= NULL;
 	DWORD					index;
 	int						i			= 0;
 	mStatus					err			= kUnknownErr;
@@ -1725,31 +1693,9 @@ mDNSPlatformGetDNSServers( void )
 
 	for ( ipAddr = dnsServerList; ipAddr; ipAddr = ipAddr->Next )
 	{
-		mDNSAddr			addr;
-		IPAddrListElem	*	last = current;
-
+		mDNSAddr addr;
 		err = StringToAddress( &addr, ipAddr->IpAddress.String );
-
-		if ( err )
-		{
-			continue;
-		}
-
-		current = (IPAddrListElem*) malloc( sizeof( IPAddrListElem ) );
-		require_action( current, exit, err = mStatus_NoMemoryErr );
-
-		memcpy( &current->addr, &addr, sizeof( mDNSAddr ) );
-		current->next = NULL;
-			
-		if ( !head )
-		{
-			head = current;
-		}
-
-		if ( last )
-		{
-			last->next = current;
-		}
+		if ( !err ) mDNS_AddDNSServer(m, addr, mDNSNULL);
 	}
 
 exit:
@@ -1763,17 +1709,15 @@ exit:
 	{
 		GlobalFree( fixedInfo );
 	}
-
-	return head;
 }
 
 
 //===========================================================================================================================
-//	mDNSPlatformGetFQDN
+//	mDNSWindowsGetDHCPDomain
 //===========================================================================================================================
 
-DNameListElem*
-mDNSPlatformGetFQDN( void )
+static void
+mDNSWindowsSetDomainFromDHCP( void )
 {
 	DNameListElem	*	head		= NULL;
 	int					i			= 0;
@@ -1840,11 +1784,7 @@ mDNSPlatformGetFQDN( void )
 
 			if ( domain && domain[0] && ( MakeDomainNameFromDNSNameString( &dname, domain ) || !dname.c[0] ) )
 			{
-				head = (DNameListElem*) malloc( sizeof( DNameListElem ) );
-				require_action( head, exit, err = mStatus_NoMemoryErr );
-
-				AssignDomainName( &head->name, &dname );
-				head->next = NULL;
+				mDNS_AddSearchDomain( &dname );
 			}
 
 			break;
@@ -1867,24 +1807,6 @@ exit:
 	{
 		RegCloseKey( key );
 	}
-
-	return head;
-}
-
-
-//===========================================================================================================================
-//	mDNSPlatformRegisterSplitDNS
-//===========================================================================================================================
-
-mStatus
-mDNSPlatformRegisterSplitDNS( mDNS * const m, int * nAdditions, int * nDeletions )
-{
-	DEBUG_UNUSED( m );
-
-	*nAdditions = 0;
-	*nDeletions = 0;
-
-	return mStatus_UnsupportedErr;
 }
 
 

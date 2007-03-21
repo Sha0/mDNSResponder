@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.306  2007/03/21 00:30:03  cheshire
+<rdar://problem/4789455> Multiple errors in DNameList-related code
+
 Revision 1.305  2007/03/20 17:07:15  cheshire
 Rename "struct uDNS_TCPSocket_struct" to "TCPSocket", "struct uDNS_UDPSocket_struct" to "UDPSocket"
 
@@ -319,7 +322,7 @@ typedef struct SearchListElem
 	{
     struct SearchListElem *next;
     domainname domain;
-    int flag;
+    int flag;		// -1 means delete, 0 means unchanged, +1 means newly added
     DNSQuestion BrowseQ;
     DNSQuestion DefBrowseQ;
     DNSQuestion LegacyBrowseQ;
@@ -406,47 +409,33 @@ mDNSlocal void SetRecordRetry(mDNS *const m, AuthRecord *rr, mStatus SendErr)
 
 mDNSexport void mDNS_AddDNSServer(mDNS *const m, const mDNSAddr *addr, const domainname *d)
     {
-	DNSServer *s, **p = &m->Servers;
+	DNSServer **p = &m->Servers;
 
-	mDNS_Lock(m);
 	if (!d) d = (const domainname *)"";
+
+	LogOperation("mDNS_AddDNSServer: Adding %#a for %##s", addr, d->c);
+	if (m->mDNS_busy != m->mDNS_reentrancy+1)
+		LogMsg("mDNS_AddDNSServer: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
 	while (*p)	// Check if we already have this {server,domain} pair registered
 		{
 		if (mDNSSameAddress(&(*p)->addr, addr) && SameDomainName(&(*p)->domain, d))
-			LogMsg("Note: DNS Server %#a for domain %##s registered more than once", addr, d->c);
+			{
+			if (!(*p)->del) LogMsg("Note: DNS Server %#a for domain %##s registered more than once", addr, d->c);
+			(*p)->del = mDNSfalse;
+			return;
+			}
 		p=&(*p)->next;
 		}
 
 	// allocate, add to list
-	s = mDNSPlatformMemAllocate(sizeof(*s));
-	if (!s) { LogMsg("Error: mDNS_AddDNSServer - malloc"); goto end; }
-	s->addr      = *addr;
-	s->del       = mDNSfalse;
-	s->teststate = DNSServer_Untested;
-	AssignDomainName(&s->domain, d);
-	s->next = mDNSNULL;
-	*p = s;
-
-	end:
-	mDNS_Unlock(m);
-    }
-
-mDNSexport void mDNS_DeleteDNSServers(mDNS *const m)
-    {
-	DNSServer *s;
-	mDNS_Lock(m);
-
-	s = m->Servers;
-	m->Servers = mDNSNULL;
-	while (s)
-		{
-		DNSServer *tmp = s;
-		s = s->next;
-		mDNSPlatformMemFree(tmp);
-		}
-
-	mDNS_Unlock(m);
+	*p = mDNSPlatformMemAllocate(sizeof(*(*p)));
+	if (!*p) { LogMsg("Error: mDNS_AddDNSServer - malloc"); return; }
+	(*p)->addr      = *addr;
+	(*p)->del       = mDNSfalse;
+	(*p)->teststate = DNSServer_Untested;
+	AssignDomainName(&(*p)->domain, d);
+	(*p)->next = mDNSNULL;
     }
 
  // ***************************************************************************
@@ -5077,29 +5066,27 @@ mDNSlocal void WakeServiceRegistrations(mDNS *m)
 		}
 	}
 
-mDNSlocal void MarkSearchListElem(domainname *domain)
+mDNSexport void mDNS_AddSearchDomain(const domainname *const domain)
 	{
-	SearchListElem *new, *ptr;
+	SearchListElem **p;
+	LogMsg("mDNSPlatformSetSearchDomainList %##s", domain->c);
 
-	// if domain is in list, mark as pre-existent (0)
-	for (ptr = SearchList; ptr; ptr = ptr->next)
-		if (SameDomainName(&ptr->domain, domain))
+	// Check to see if we already have this domain in our list
+	for (p = &SearchList; *p; p = &(*p)->next)
+		if (SameDomainName(&(*p)->domain, domain))
 			{
-			if (ptr->flag != 1) ptr->flag = 0;	// gracefully handle duplicates - if it is already marked as add, don't bump down to preexistent
-			break;
+			// If domain is already in list, and marked for deletion, change it to "leave alone
+			if ((*p)->flag == -1) (*p)->flag = 0;
+			return;
 			}
 
 	// if domain not in list, add to list, mark as add (1)
-	if (!ptr)
-		{
-		new = mDNSPlatformMemAllocate(sizeof(SearchListElem));
-		if (!new) { LogMsg("ERROR: MarkSearchListElem - malloc"); return; }
-		mDNSPlatformMemZero(new, sizeof(SearchListElem));
-		AssignDomainName(&new->domain, domain);
-		new->flag = 1;	// add
-		new->next = SearchList;
-		SearchList = new;
-		}
+	*p = mDNSPlatformMemAllocate(sizeof(SearchListElem));
+	if (!*p) { LogMsg("ERROR: mDNS_AddSearchDomain - malloc"); return; }
+	mDNSPlatformMemZero(*p, sizeof(*p));
+	AssignDomainName(&(*p)->domain, domain);
+	(*p)->flag = 1;	// add
+	(*p)->next = mDNSNULL;
 	}
 
 mDNSlocal void DynDNSHostNameCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
@@ -5173,92 +5160,38 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 		}
 	}
 
-mDNSlocal mStatus RegisterNameServers(mDNS *const m)
-	{
-	IPAddrListElem	* list;
-	IPAddrListElem	* elem;
-
-	mDNS_DeleteDNSServers(m); // deregister orig list
-
-	list = mDNSPlatformGetDNSServers();
-
-	for (elem = list; elem; elem = elem->next)
-		{
-		LogOperation("RegisterNameServers: Adding %#a", &elem->addr);
-		mDNS_AddDNSServer(m, &elem->addr, mDNSNULL);
-		}
-
-	mDNS_FreeIPAddrList(list);
-
-	return mStatus_NoError;
-	}
-
 // This should probably move to the UDS daemon -- the concept of legacy clients and automatic registration / automatic browsing
 // is really a UDS API issue, not something intrinsic to uDNS
 
 mDNSlocal mStatus RegisterSearchDomains(mDNS *const m)
 	{
-	SearchListElem *ptr, *prev, *freeSLPtr;
-	DNameListElem	*	elem;
-	DNameListElem	*	list;
+	SearchListElem *ptr, **p;
 	ARListElem *arList;
 	mStatus err;
-	mDNSBool dict = 1;
 
-	// step 1: mark each elem for removal (-1), unless we aren't passed a dictionary in which case we mark as preexistent
-	for (ptr = SearchList; ptr; ptr = ptr->next)
-		{
-		ptr->flag = dict ? -1 : 0;
-		}
+	// step 1: mark each element for removal (-1)
+	for (ptr = SearchList; ptr; ptr = ptr->next) ptr->flag = -1;
 
 	// get all the domains from the platform layer
-	list = mDNSPlatformGetSearchDomainList();
+	mDNSPlatformSetSearchDomainList();
 
-	for (elem = list; elem; elem = elem->next)
-		{
-		MarkSearchListElem(&elem->name);
-		}
-
-	mDNS_FreeDNameList(list);
-
-	list = mDNSPlatformGetFQDN();
-
-	if (list)
-		{
-		MarkSearchListElem(&list->name);
-		mDNS_FreeDNameList(list);
-		}
-
-	list = mDNSPlatformGetReverseMapSearchDomainList();
-
-	for (elem = list; elem; elem = elem->next)
-		{
-		MarkSearchListElem(&elem->name);
-		}
-
-	mDNS_FreeDNameList(list);
-
-	if (m->RegDomain.c[0])
-		{
-		MarkSearchListElem(&m->RegDomain);	// implicitly browse reg domain too (no-op if same as BrowseDomain)
-		}
+	if (m->RegDomain.c[0]) mDNS_AddSearchDomain(&m->RegDomain);	// implicitly browse reg domain too (no-op if same as BrowseDomain)
 
 	// delete elems marked for removal, do queries for elems marked add
-	prev = mDNSNULL;
-	ptr = SearchList;
-	while (ptr)
+	p = &SearchList;
+	while (*p)
 		{
-		if (ptr->flag == -1)	// remove
+		if ((*p)->flag == -1)	// remove
 			{
-			mDNS_StopQuery(m, &ptr->BrowseQ);
-			mDNS_StopQuery(m, &ptr->RegisterQ);
-			mDNS_StopQuery(m, &ptr->DefBrowseQ);
-			mDNS_StopQuery(m, &ptr->DefRegisterQ);
-			mDNS_StopQuery(m, &ptr->LegacyBrowseQ);
+			mDNS_StopQuery(m, &(*p)->BrowseQ);
+			mDNS_StopQuery(m, &(*p)->RegisterQ);
+			mDNS_StopQuery(m, &(*p)->DefBrowseQ);
+			mDNS_StopQuery(m, &(*p)->DefRegisterQ);
+			mDNS_StopQuery(m, &(*p)->LegacyBrowseQ);
 
             // deregister records generated from answers to the query
-			arList = ptr->AuthRecs;
-			ptr->AuthRecs = mDNSNULL;
+			arList = (*p)->AuthRecs;
+			(*p)->AuthRecs = mDNSNULL;
 			while (arList)
 				{
 				AuthRecord *dereg = &arList->ar;
@@ -5269,22 +5202,20 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m)
 				}
 
 			// remove elem from list, delete
-			if (prev) prev->next = ptr->next;
-			else SearchList = ptr->next;
-			freeSLPtr = ptr;
-			ptr = ptr->next;
-			mDNSPlatformMemFree(freeSLPtr);
+			ptr = *p;
+			*p = (*p)->next;
+			mDNSPlatformMemFree(ptr);
 			continue;
 			}
 
-		if (ptr->flag == 1)	// add
+		if ((*p)->flag == 1)	// add
 			{
 			mStatus err1, err2, err3, err4, err5;
-			err1 = mDNS_GetDomains(m, &ptr->BrowseQ,       mDNS_DomainTypeBrowse,              &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
-			err2 = mDNS_GetDomains(m, &ptr->DefBrowseQ,    mDNS_DomainTypeBrowseDefault,       &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
-			err3 = mDNS_GetDomains(m, &ptr->RegisterQ,     mDNS_DomainTypeRegistration,        &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
-			err4 = mDNS_GetDomains(m, &ptr->DefRegisterQ,  mDNS_DomainTypeRegistrationDefault, &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
-			err5 = mDNS_GetDomains(m, &ptr->LegacyBrowseQ, mDNS_DomainTypeBrowseLegacy,        &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
+			err1 = mDNS_GetDomains(m, &(*p)->BrowseQ,       mDNS_DomainTypeBrowse,              &(*p)->domain, mDNSInterface_Any, FoundDomain, (*p));
+			err2 = mDNS_GetDomains(m, &(*p)->DefBrowseQ,    mDNS_DomainTypeBrowseDefault,       &(*p)->domain, mDNSInterface_Any, FoundDomain, (*p));
+			err3 = mDNS_GetDomains(m, &(*p)->RegisterQ,     mDNS_DomainTypeRegistration,        &(*p)->domain, mDNSInterface_Any, FoundDomain, (*p));
+			err4 = mDNS_GetDomains(m, &(*p)->DefRegisterQ,  mDNS_DomainTypeRegistrationDefault, &(*p)->domain, mDNSInterface_Any, FoundDomain, (*p));
+			err5 = mDNS_GetDomains(m, &(*p)->LegacyBrowseQ, mDNS_DomainTypeBrowseLegacy,        &(*p)->domain, mDNSInterface_Any, FoundDomain, (*p));
 			if (err1 || err2 || err3 || err4 || err5)
 				LogMsg("GetDomains for domain %##s returned error(s):\n"
 					   "%d (mDNS_DomainTypeBrowse)\n"
@@ -5292,14 +5223,13 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m)
 					   "%d (mDNS_DomainTypeRegistration)\n"
 					   "%d (mDNS_DomainTypeRegistrationDefault)"
 					   "%d (mDNS_DomainTypeBrowseLegacy)\n",
-					   ptr->domain.c, err1, err2, err3, err4, err5);
-			ptr->flag = 0;
+					   (*p)->domain.c, err1, err2, err3, err4, err5);
+			(*p)->flag = 0;
 			}
 
-		if (ptr->flag) { LogMsg("RegisterSearchDomains - unknown flag %d. Skipping.", ptr->flag); }
+		if ((*p)->flag) { LogMsg("RegisterSearchDomains - unknown flag %d. Skipping.", (*p)->flag); }
 
-		prev = ptr;
-		ptr = ptr->next;
+		p = &(*p)->next;
 		}
 
 	return mStatus_NoError;
@@ -5323,12 +5253,9 @@ mDNSexport mStatus uDNS_RegisterSearchDomains(mDNS * const m)
 
 mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 	{
-	int				nAdditions;
-	int				nDeletions;
-	mDNSAddr        v4;
-	mDNSAddr		v6;
-	mDNSAddr        r;
+	mDNSAddr        v4, v6, r;
     domainname      fqdn;
+    DNSServer       *ptr, **p = &m->Servers;
 
 	// Let the platform layer get the current DNS information
 	mDNSPlatformGetDNSConfig(&fqdn, mDNSNULL, mDNSNULL);
@@ -5350,10 +5277,18 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 			}
 		}
 
-	// handle any changes to search domains and DNS server addresses
-	if (mDNSPlatformRegisterSplitDNS(m, &nAdditions, &nDeletions) != mStatus_NoError)
+	for (ptr = m->Servers; ptr; ptr = ptr->next) ptr->del = mDNStrue;
+	mDNSPlatformSetDNSServers(m);
+	while (*p)
 		{
-		RegisterNameServers(m);	// fall back to non-split DNS aware configuration on failure
+		if ((*p)->del)
+			{
+			ptr = *p;
+			*p = (*p)->next;
+			mDNSPlatformMemFree(ptr);
+			}
+		else
+			p = &(*p)->next;
 		}
 
 	// This bit of trickery is to ensure that we're lazily calling RegisterSearchDomains.
@@ -5372,10 +5307,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 		{
 		// handle primary interface changes
         // if we gained or lost DNS servers (e.g. logged into VPN) "toggle" primary address so it gets re-registered even if it is unchanged
-		if (nAdditions || nDeletions)
-			{
-			mDNS_SetPrimaryInterfaceInfo(m, mDNSNULL, mDNSNULL, mDNSNULL);
-			}
+		mDNS_SetPrimaryInterfaceInfo(m, mDNSNULL, mDNSNULL, mDNSNULL);
 
 		if (v4.ip.v4.b[0] != 169 || v4.ip.v4.b[1] != 254)
 			{

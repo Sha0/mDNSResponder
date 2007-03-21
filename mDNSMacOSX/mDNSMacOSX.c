@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.377  2007/03/21 00:30:05  cheshire
+<rdar://problem/4789455> Multiple errors in DNameList-related code
+
 Revision 1.376  2007/03/20 17:07:15  cheshire
 Rename "struct uDNS_TCPSocket_struct" to "TCPSocket", "struct uDNS_UDPSocket_struct" to "UDPSocket"
 
@@ -287,20 +290,6 @@ Add (commented out) trigger value for testing "mach_absolute_time went backwards
 #include <IOKit/IOKitLib.h>
 #include <IOKit/IOMessage.h>
 #include <mach/mach_time.h>
-
-typedef struct SearchListElem
-	{
-	struct SearchListElem *next;
-	domainname domain;
-	int flag;
-	DNSQuestion BrowseQ;
-	DNSQuestion DefBrowseQ;
-	DNSQuestion LegacyBrowseQ;
-	DNSQuestion RegisterQ;
-	DNSQuestion DefRegisterQ;
-	ARListElem *AuthRecs;
-	} SearchListElem;
-
 
 // ***************************************************************************
 // Globals
@@ -849,7 +838,6 @@ mDNSlocal OSStatus tlsWriteSock(SSLConnectionRef connection, const void * data, 
 	return ortn;
 	}
 
-
 mDNSlocal OSStatus tlsReadSock(SSLConnectionRef	connection, void * data, size_t * dataLength)
 	{
 	UInt32			bytesToGo = *dataLength;
@@ -933,7 +921,6 @@ mDNSlocal OSStatus tlsReadSock(SSLConnectionRef	connection, void * data, size_t 
 	return rtn;
 	}
 
-
 mDNSlocal OSStatus tlsSetupSock(TCPSocket *sock, mDNSBool server)
 	{
 	mStatus err = mStatus_NoError;
@@ -974,7 +961,6 @@ mDNSlocal OSStatus tlsSetupSock(TCPSocket *sock, mDNSBool server)
 	return err;
 	}
 #endif /* NO_SECURITYFRAMEWORK */
-
 
 mDNSlocal void tcpKQSocketCallback(__unused int fd, __unused short filter, __unused u_int fflags, __unused intptr_t data, void *context)
 	{
@@ -1023,7 +1009,6 @@ mDNSlocal void tcpKQSocketCallback(__unused int fd, __unused short filter, __unu
 	// NOTE: the callback may call CloseConnection here, which frees the context structure!
 	}
 
-
 mDNSexport void KQueueWake(mDNS * const m)
 	{
 	char wake = 1;
@@ -1045,89 +1030,48 @@ mDNSexport int KQueueAdd(int fd, short filter, u_int fflags, intptr_t data, cons
 
 mDNSexport TCPSocket *mDNSPlatformTCPSocket(mDNS * const m, TCPSocketFlags flags, mDNSIPPort * port)
 	{
-	TCPSocket	*	sock = mDNSNULL;
-	struct sockaddr_in				addr;
-	socklen_t						len;
-	int								on = 1;  // "on" for setsockopt
-	mStatus							err = mStatus_NoError;
-
 	(void) m;
 
-	sock = mallocL("TCPSocket_struct/mDNSPlatformTCPSocket", sizeof(TCPSocket));
-
-	if (!sock)
-		{
-		LogMsg("mDNSPlatformTCPSocket: memory allocation failure");
-		err = mStatus_NoMemoryErr;
-		goto exit;
-		}
+	TCPSocket *sock = mallocL("TCPSocket/mDNSPlatformTCPSocket", sizeof(TCPSocket));
+	if (!sock) { LogMsg("mDNSPlatformTCPSocket: memory allocation failure"); return(mDNSNULL); }
 
 	mDNSPlatformMemZero(sock, sizeof(TCPSocket));
 	sock->flags = flags;
-	sock->fd = -1;
-
-	// Create the socket
-
-	sock->fd = socket(AF_INET, SOCK_STREAM, 0);
+	sock->fd    = socket(AF_INET, SOCK_STREAM, 0);
 	if (sock->fd == -1)
 		{
 		LogMsg("mDNSPlatformTCPSocket: socket error %d errno %d (%s)", sock->fd, errno, strerror(errno));
-		err = mStatus_UnknownErr;
-		goto exit;
+		freeL("TCPSocket/mDNSPlatformTCPSocket", sock);
+		return(mDNSNULL);
 		}
 
 	// Bind it
-
+	struct sockaddr_in addr;
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	addr.sin_port = port->NotAnInteger;
-
 	if (bind(sock->fd, (struct sockaddr*) &addr, sizeof(addr)) < 0)
-		{
-		LogMsg("ERROR: bind %s", strerror(errno));
-		err = mStatus_UnknownErr;
-		goto exit;
-		}
+		{ LogMsg("ERROR: bind %s", strerror(errno)); goto error; }
 
 	// Receive interface identifiers
-
+	const int on = 1;  // "on" for setsockopt
 	if (setsockopt(sock->fd, IPPROTO_IP, IP_RECVIF, &on, sizeof(on)) < 0)
-		{
-		LogMsg("setsockopt IP_RECVIF - %s", strerror(errno));
-		err = mStatus_UnknownErr;
-		goto exit;
-		}
+		{ LogMsg("setsockopt IP_RECVIF - %s", strerror(errno)); goto error; }
 
 	memset(&addr, 0, sizeof(addr));
-	len = sizeof(addr);
-
+	socklen_t len = sizeof(addr);
 	if (getsockname(sock->fd, (struct sockaddr*) &addr, &len) < 0)
-		{
-		LogMsg("getsockname - %s", strerror(errno));
-		err = mStatus_UnknownErr;
-		goto exit;
-		}
+		{ LogMsg("getsockname - %s", strerror(errno)); goto error; }
 
 	port->NotAnInteger = addr.sin_port;
-
-	exit:
-
-	if (err && sock)
-		{
-		if (sock->fd != -1)
-			{
-			close(sock->fd);
-			}
-
-		freeL("mDNSPlatformTCPSocket", sock);
-
-		sock = NULL;
-		}
-
 	return sock;
-	}
 
+error:
+	close(sock->fd);
+	freeL("TCPSocket/mDNSPlatformTCPSocket", sock);
+	return(mDNSNULL);
+	}
 
 mDNSexport mStatus mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr * dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
                                           TCPConnectionCallback callback, void * context)
@@ -1240,73 +1184,43 @@ mDNSexport mStatus mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr * dst,
 	return err;
 	}
 
-
 mDNSexport mDNSBool mDNSPlatformTCPIsConnected(TCPSocket *sock)
 	{
 	return sock->connected;
 	}
 
-
+// Why doesn't mDNSPlatformTCPAccept actually call accept() ?
 mDNSexport TCPSocket *mDNSPlatformTCPAccept(TCPSocketFlags flags, int fd)
 	{
-	TCPSocket	*	sock;
 	mStatus							err = mStatus_NoError;
 
-	sock = mallocL("TCPSocket_struct/mDNSPlatformTCPAccept", sizeof(TCPSocket));
-
-	if (!sock)
-		{
-		err = mStatus_NoMemoryErr;
-		goto exit;
-		}
+	TCPSocket *sock = mallocL("TCPSocket/mDNSPlatformTCPAccept", sizeof(TCPSocket));
+	if (!sock) return(mDNSNULL);
 
 	memset(sock, 0, sizeof(*sock));
-
 	sock->fd = fd;
 	sock->flags = flags;
 
 	if (flags & kTCPSocketFlags_UseTLS)
 		{
 #ifndef NO_SECURITYFRAMEWORK
-		if (!ServerCerts)
-			{
-			LogMsg("ERROR: mDNSPlatformTCPAccept: unable to find TLS certificates");
-			err = mStatus_UnknownErr;
-			goto exit;
-			}
+		if (!ServerCerts) { LogMsg("ERROR: mDNSPlatformTCPAccept: unable to find TLS certificates"); err = mStatus_UnknownErr; goto exit; }
 
 		err = tlsSetupSock(sock, mDNStrue);
-
-		if (err)
-			{
-			LogMsg("ERROR: mDNSPlatformTCPAccept: tlsSetupSock failed with error code: %d", err);
-			goto exit;
-			}
+		if (err) { LogMsg("ERROR: mDNSPlatformTCPAccept: tlsSetupSock failed with error code: %d", err); goto exit; }
 
 		err = SSLSetCertificate(sock->tlsContext, ServerCerts);
+		if (err) { LogMsg("ERROR: mDNSPlatformTCPAccept: SSLSetCertificate failed with error code: %d", err); goto exit; }
 
-		if (err)
-			{
-			LogMsg("ERROR: mDNSPlatformTCPAccept: SSLSetCertificate failed with error code: %d", err);
-			goto exit;
-			}
-
-		check(!sock->handshake);
 #else
 		err = mStatus_UnsupportedErr;
 #endif /* NO_SECURITYFRAMEWORK */
 		}
-	exit:
 
-	if (err && sock)
-	{
-		freeL("mDNSPlatformTCPAccept", sock);
-		sock = NULL;
+exit:
+	if (err) { freeL("TCPSocket/mDNSPlatformTCPAccept", sock); return(mDNSNULL); }
+	return(sock);
 	}
-
-	return (TCPSocket *) sock;
-	}
-
 
 mDNSexport void mDNSPlatformTCPCloseConnection(TCPSocket *sock)
 	{
@@ -1330,7 +1244,6 @@ mDNSexport void mDNSPlatformTCPCloseConnection(TCPSocket *sock)
 		freeL("mDNSPlatformTCPCloseConnection", sock);
 		}
 	}
-
 
 mDNSexport long mDNSPlatformReadTCP(TCPSocket *sock, void * buf, unsigned long buflen, mDNSBool * closed)
 	{
@@ -1417,7 +1330,6 @@ mDNSexport long mDNSPlatformReadTCP(TCPSocket *sock, void * buf, unsigned long b
 	return nread;
 	}
 
-
 mDNSexport long mDNSPlatformWriteTCP(TCPSocket *sock, const char * msg, unsigned long len)
 	{
 	int nsent;
@@ -1468,18 +1380,15 @@ mDNSexport long mDNSPlatformWriteTCP(TCPSocket *sock, const char * msg, unsigned
 	return nsent;
 	}
 
-
 mDNSexport int mDNSPlatformTCPGetFlags(TCPSocket *sock)
 	{
 	return sock->flags;
 	}
 
-
 mDNSexport int mDNSPlatformTCPGetFD(TCPSocket *sock)
 	{
 	return sock->fd;
 	}
-
 
 // If mDNSIPPort port is non-zero, then it's a multicast socket on the specified interface
 // If mDNSIPPort port is zero, then it's a randomly assigned port number, used for sending unicast queries
@@ -1667,7 +1576,6 @@ mDNSexport UDPSocket *mDNSPlatformUDPSocket(mDNS *const m, const mDNSIPPort port
 	return(p);
 	}
 
-
 mDNSlocal void CloseSocketSet(KQSocketSet *ss)
 	{
 	if (ss->sktv4 != -1)
@@ -1687,7 +1595,6 @@ mDNSexport void mDNSPlatformUDPClose(UDPSocket *sock)
 	CloseSocketSet(&sock->ss);
 	freeL("UDPSocket", sock);
 	}
-
 
 #ifndef NO_SECURITYFRAMEWORK
 mDNSlocal CFArrayRef GetCertChain
@@ -1825,7 +1732,6 @@ mDNSlocal CFArrayRef GetCertChain
 	}
 #endif /* NO_SECURITYFRAMEWORK */
 
-
 mDNSexport mStatus mDNSPlatformTLSSetupCerts(void)
 	{
 #ifndef NO_SECURITYFRAMEWORK
@@ -1888,7 +1794,6 @@ mDNSexport mStatus mDNSPlatformTLSSetupCerts(void)
 #endif /* NO_SECURITYFRAMEWORK */
 	}
 
-
 mDNSexport  void  mDNSPlatformTLSTearDownCerts(void)
 	{
 #ifndef NO_SECURITYFRAMEWORK
@@ -1905,7 +1810,6 @@ mDNSexport  void  mDNSPlatformTLSTearDownCerts(void)
 		}
 #endif /* NO_SECURITYFRAMEWORK */
 	}
-
 
 // This gets the text of the field currently labelled "Computer Name" in the Sharing Prefs Control Panel
 mDNSlocal void GetUserSpecifiedFriendlyComputerName(domainlabel *const namelabel)
@@ -2425,7 +2329,7 @@ mDNSexport void mDNSPlatformGetDNSConfig(domainname *const fqdn, domainname *con
 	if (regDomain)     regDomain->c[0] = 0;
 	if (browseDomains) *browseDomains  = NULL;
 
-	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:GetUserSpecifiedDDNSConfig"), NULL, NULL);
+	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:mDNSPlatformGetDNSConfig"), NULL, NULL);
 	if (store)
 		{
 		CFDictionaryRef dict = SCDynamicStoreCopyValue(store, CFSTR("Setup:/Network/DynamicDNS"));
@@ -2493,7 +2397,7 @@ mDNSexport void mDNSPlatformGetDNSConfig(domainname *const fqdn, domainname *con
 								else
 									{
 									debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS browsing domain: %s", buf);
-									DNameListElem *browseDomain = (DNameListElem*) mallocL("mDNSPlatformGetDNSConfig", sizeof(DNameListElem));
+									DNameListElem *browseDomain = (DNameListElem*) mallocL("DNameListElem/mDNSPlatformGetDNSConfig", sizeof(DNameListElem));
 									if (!browseDomain) { LogMsg("ERROR: mDNSPlatformGetDNSConfig: memory exhausted"); continue; }
 									memset(browseDomain, 0, sizeof(DNameListElem));
 									AssignDomainName(&browseDomain->name, &dname);
@@ -2513,341 +2417,160 @@ mDNSexport void mDNSPlatformGetDNSConfig(domainname *const fqdn, domainname *con
 	}
 
 // Get the list of DNS Servers
-
-mDNSexport IPAddrListElem * mDNSPlatformGetDNSServers()
+mDNSexport void mDNSPlatformSetDNSServers(mDNS *const m)
 	{
-	int i;
-	CFArrayRef values;
-	char buf[256];
-	CFStringRef s;
-	IPAddrListElem	*	head = NULL;
-	IPAddrListElem	*	current = NULL;
-	SCDynamicStoreRef	store = NULL;
-	CFDictionaryRef		dict	= NULL;
-	CFStringRef			key		= NULL;
-	mDNSBool			ok;
-	mStatus				err		= 0;
+	(void)m;  // unused on 10.3 systems
+	void *v;
+	mStatus err = GetDNSConfig(&v);
 
-	store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:DynDNSConfigChanged"), NULL, NULL);
-	require_action(store, exit, err = mStatus_UnknownErr);
-
-	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
-	require_action(key, exit, err = mStatus_UnknownErr);
-
-	dict = SCDynamicStoreCopyValue(store, key);
-	require_action(dict, exit, err = mStatus_UnknownErr);
-
-	values = CFDictionaryGetValue(dict, kSCPropNetDNSServerAddresses);
-
-	if (values)
-		{
-		for (i = 0; i < CFArrayGetCount(values); i++)
-			{
-			mDNSAddr			addr = { mDNSAddrType_IPv4, { { { 0 } } } };
-			IPAddrListElem	*	last = current;
-
-			s = CFArrayGetValueAtIndex(values, i);
-			require_action(s, exit, err = mStatus_UnknownErr);
-
-			ok = CFStringGetCString(s, buf, 256, kCFStringEncodingUTF8);
-
-			if (!ok)
-				{
-				LogMsg("ERROR: mDNSPlatformGetDNSServers - CFStringGetCString");
-				continue;
-				}
-
-			ok = inet_aton(buf, (struct in_addr *) addr.ip.v4.b);
-
-			if (!ok)
-				{
-				LogMsg("ERROR: mDNSPlatformGetDNSServers - invalid address string %s", buf);
-				continue;
-				}
-
-			current = (IPAddrListElem*) mallocL("IPAddrListElem", sizeof(IPAddrListElem));
-
-			if (!current)
-				{
-				LogMsg("ERROR: mDNSPlatformGetDNSServers - couldn't allocate memory");
-				continue;
-				}
-
-			memset(current, 0, sizeof(IPAddrListElem));
-			current->addr = addr;
-
-			if (!head)
-				{
-				head = current;
-				}
-
-			if (last)
-				{
-				last->next = current;
-				}
-			}
-		}
-
-	exit:
-
-	if (dict)
-		{
-		CFRelease(dict);
-		}
-
-	if (key)
-		{
-		CFRelease(key);
-		}
-
-	if (store)
-		{
-		CFRelease(store);
-		}
-
-	return head;
-	}
-
-
-// Get the search domains via OS X resolver routines or System Configuration routines
-mDNSexport DNameListElem * mDNSPlatformGetSearchDomainList(void)
-	{
-	void			*	v				= NULL;
-	char				buf[MAX_ESCAPED_DOMAIN_NAME];	// Max legal C-string name, including terminating NUL
-	DNameListElem	*	head			= NULL;
-	DNameListElem	*	current			= NULL;
-	CFArrayRef			searchDomains	= NULL;
-	SCDynamicStoreRef	store			= NULL;
-	CFDictionaryRef		dict			= NULL;
-	CFStringRef			key				= NULL;
-	mStatus				err;
-
-	err = GetDNSConfig(&v);
+	mDNS_Lock(m);
 
 #if !MDNS_NO_DNSINFO
 	if (!err && v)
 		{
-		dns_config_t   * config = NULL;
-		dns_resolver_t * resolv;
-		int              i;
-
-		config = (dns_config_t*) v;
-
-		if (!config->n_resolver)
+		dns_config_t *config = v;  // use void * to allow compilation on 10.3 systems
+		LogOperation("RegisterSplitDNS: Registering %d resolvers", config->n_resolver);
+		int i;
+		for (i = 0; i < config->n_resolver; i++)
 			{
-			dns_configuration_free(config);
-			goto exit;
+			int j, n;
+			domainname d;
+			dns_resolver_t *r = config->resolver[i];
+			if (r->port == MulticastDNSPort.NotAnInteger) continue; // ignore configurations for .local
+			if (r->search_order == DEFAULT_SEARCH_ORDER || !r->domain || !*r->domain) d.c[0] = 0; // we ignore domain for "default" resolver
+			else if (!MakeDomainNameFromDNSNameString(&d, r->domain)) { LogMsg("RegisterSplitDNS: bad domain %s", r->domain); continue; }
+
+			// check if this is the lowest-weighted server for the domain
+			for (j = 0; j < config->n_resolver; j++)
+				{
+				dns_resolver_t *p = config->resolver[j];
+				if (p->port == MulticastDNSPort.NotAnInteger) continue;
+				if (p->search_order <= r->search_order)
+					{
+					domainname tmp;
+					if (p->search_order == DEFAULT_SEARCH_ORDER || !p->domain || !*p->domain) tmp.c[0] = '\0';
+					else if (!MakeDomainNameFromDNSNameString(&tmp, p->domain)) { LogMsg("RegisterSplitDNS: bad domain %s", p->domain); continue; }
+					if (SameDomainName(&d, &tmp))
+						if (p->search_order < r->search_order || j < i) break;  // if equal weights, pick first in list, otherwise pick lower-weight (p)
+					}
+				}
+			if (j < config->n_resolver) // found a lower-weighted resolver for this domain
+				{ debugf("Rejecting DNS server in slot %d domain %##s (slot %d outranks)", i, d.c, j); continue; }
+			// we're using this resolver - find the first IPv4 address
+			for (n = 0; n < r->n_nameserver; n++)
+				{
+				if (r->nameserver[n]->sa_family == AF_INET && !AddrRequiresPPPConnection(r->nameserver[n]))
+					{
+					mDNSAddr saddr;
+					// mDNSAddr saddr = { mDNSAddrType_IPv4, { { { 192, 168, 1, 1 } } } }; // for testing
+					debugf("Adding dns server from slot %d %#a for domain %##s", i, &saddr, d.c);
+					if (SetupAddr(&saddr, r->nameserver[n])) LogMsg("RegisterSplitDNS: bad IP address");
+					else mDNS_AddDNSServer(m, &saddr, &d);
+					}
+				}
 			}
-
-		resolv = config->resolver[0];  // use the first slot for search domains
-		require_action(resolv, exit, err = mStatus_UnknownErr);
-
-		for (i = 0; i < resolv->n_search; i++)
-			{
-			DNameListElem * last = current;
-
-			current = (DNameListElem*) mallocL("DNameListElem", sizeof(DNameListElem));
-			require_action(current, exit, dns_configuration_free(config); err = mStatus_NoMemoryErr);
-			memset(current, 0, sizeof(DNameListElem));
-
-			if (!MakeDomainNameFromDNSNameString(&current->name, resolv->search[i]))
-				{
-				LogMsg("ERROR: mDNSPlatformGetSearchDomainList - MakeDomainNameFromDNSNameString");
-				continue;
-				}
-
-			if (!head)
-				{
-				head = current;
-				}
-
-			if (last)
-				{
-				last->next = current;
-				}
-			}
-
 		dns_configuration_free(config);
 		}
+	else
 #endif
-
-	if (err == mStatus_UnsupportedErr)
 		{
-		store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:DynDNSConfigChanged"), NULL, NULL);
-		require_action(store, exit, err = mStatus_UnknownErr);
-
-		key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
-		require_action(key, exit, err = mStatus_UnknownErr);
-
-		dict = SCDynamicStoreCopyValue(store, key);
-		require_action(dict, exit, err = mStatus_UnknownErr);
-
-		searchDomains = CFDictionaryGetValue(dict, kSCPropNetDNSSearchDomains);
-
-		if (searchDomains)
+		SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:mDNSPlatformSetDNSServers"), NULL, NULL);
+		if (store)
 			{
-			int i;
-
-			for (i = 0; i < CFArrayGetCount(searchDomains); i++)
+			CFStringRef key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
+			if (key)
 				{
-				DNameListElem * last = current;
-				CFStringRef		s;
-
-				s = CFArrayGetValueAtIndex(searchDomains, i);
-				require_action(s, exit, err = mStatus_UnknownErr);
-
-				if (!CFStringGetCString(s, buf, MAX_ESCAPED_DOMAIN_NAME, kCFStringEncodingUTF8))
+				CFDictionaryRef dict = SCDynamicStoreCopyValue(store, key);
+				if (dict)
 					{
-					LogMsg("ERROR: mDNSPlatformGetSearchDomainList - CFStringGetCString");
-					continue;
+					CFArrayRef values = CFDictionaryGetValue(dict, kSCPropNetDNSServerAddresses);
+					if (values)
+						{
+						int i;
+						for (i = 0; i < CFArrayGetCount(values); i++)
+							{
+							CFStringRef s = CFArrayGetValueAtIndex(values, i);
+							char buf[256];
+							mDNSAddr addr = { mDNSAddrType_IPv4, { { { 0 } } } };
+							if (s && CFStringGetCString(s, buf, 256, kCFStringEncodingUTF8) &&
+								inet_aton(buf, (struct in_addr *) &addr.ip.v4))
+								mDNS_AddDNSServer(m, &addr, mDNSNULL);
+							}
+						}
+					CFRelease(dict);
 					}
-
-				current = (DNameListElem*) mallocL("DNameListElem", sizeof(DNameListElem));
-				require_action(current, exit, err = mStatus_NoMemoryErr);
-				memset(current, 0, sizeof(DNameListElem));
-
-				if (!MakeDomainNameFromDNSNameString(&current->name, buf))
-					{
-					LogMsg("ERROR: mDNSPlatformGetSearchDomainList - MakeDomainNameFromDNSNameString");
-					continue;
-					}
-
-				if (!head)
-					{
-					head = current;
-					}
-
-				if (last)
-					{
-					last->next = current;
-					}
+				CFRelease(key);
 				}
+			CFRelease(store);
 			}
 		}
-
-	exit:
-
-	if (dict)
-		{
-		CFRelease(dict);
-		}
-
-	if (key)
-		{
-		CFRelease(key);
-		}
-
-	if (store)
-		{
-		CFRelease(store);
-		}
-
-	if (err && head)
-		{
-		}
-
-	return head;
+	mDNS_Unlock(m);
 	}
 
-
 // Get the search domains via OS X resolver routines or System Configuration routines
-mDNSexport DNameListElem * mDNSPlatformGetFQDN(void)
+mDNSexport void mDNSPlatformSetSearchDomainList(void)
 	{
-	void			*	v;
-	char				buf[MAX_ESCAPED_DOMAIN_NAME];	// Max legal C-string name, including terminating NUL
-	domainname			dname;
-	DNameListElem	*	head			= NULL;
-	SCDynamicStoreRef	store			= NULL;
-	CFDictionaryRef		dict			= NULL;
-	CFStringRef			key				= NULL;
-	mDNSu8			*	ptr;
-	mDNSBool			ok;
-	mStatus				err;
+	LogMsg("mDNSPlatformSetSearchDomainList");
 
-	err = GetDNSConfig(&v);
-
-#if !MDNS_NO_DNSINFO
-	if (!err && v)
-		{
-		dns_config_t   * config = NULL;
-		dns_resolver_t * resolv = NULL;
-
-		config = (dns_config_t*) v;
-
-		require_action(config->n_resolver, exit, dns_configuration_free(config); err = mStatus_UnknownErr);
-
-		resolv = config->resolver[0];  // use the first slot for search domains
-		require_action(resolv, exit, dns_configuration_free(config); err = mStatus_UnknownErr);
-
-		if (resolv->domain)
-			{
-			ptr = MakeDomainNameFromDNSNameString(&dname, resolv->domain);
-			require_action(ptr, exit, dns_configuration_free(config); err = mStatus_UnknownErr);
-
-			head = (DNameListElem*) mallocL("DNameListElem", sizeof(DNameListElem));
-			require_action(head, exit, dns_configuration_free(config); err = mStatus_NoMemoryErr);
-			memset(head, 0, sizeof(DNameListElem));
-
-			AssignDomainName(&head->name, &dname);
-			}
-
-		dns_configuration_free(config);
-		}
-#endif
-
-	if (err == mStatus_UnsupportedErr)
-		{
-		store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:DynDNSConfigChanged"), NULL, NULL);
-		require_action(store, exit, err = mStatus_UnknownErr);
-
-		key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
-		require_action(key, exit, err = mStatus_UnknownErr);
-
-		dict = SCDynamicStoreCopyValue(store, key);
-		require_action(dict, exit, err = mStatus_UnknownErr);
-
-		// get DHCP domain field
-
-		CFStringRef string = CFDictionaryGetValue(dict, kSCPropNetDNSDomainName);
-
-		if (string)
-			{
-			ok = CFStringGetCString(string, buf, MAX_ESCAPED_DOMAIN_NAME, kCFStringEncodingUTF8);
-			require_action(ok, exit, err = mStatus_UnknownErr);
-
-			ptr = MakeDomainNameFromDNSNameString(&dname, buf);
-			require_action(ptr, exit, err = mStatus_UnknownErr);
-
-			head = (DNameListElem*) mallocL("DNameListElem", sizeof(DNameListElem));
-			require_action(head, exit, err = mStatus_NoMemoryErr);
-			memset(head, 0, sizeof(DNameListElem));
-
-			AssignDomainName(&head->name, &dname);
-			}
-		}
-
-	exit:
-
-	if (dict)
-		{
-		CFRelease(dict);
-		}
-
-	if (key)
-		{
-		CFRelease(key);
-		}
-
+	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:mDNSPlatformSetSearchDomainList"), NULL, NULL);
 	if (store)
 		{
+		CFStringRef key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
+		if (key)
+			{
+			CFDictionaryRef dict = SCDynamicStoreCopyValue(store, key);
+			if (dict)
+				{
+				char buf[MAX_ESCAPED_DOMAIN_NAME];	// Max legal C-string name, including terminating NUL
+				domainname d;
+				CFArrayRef searchDomains = CFDictionaryGetValue(dict, kSCPropNetDNSSearchDomains);
+				if (searchDomains)
+					{
+					int i;
+					for (i = 0; i < CFArrayGetCount(searchDomains); i++)
+						{
+						CFStringRef s = CFArrayGetValueAtIndex(searchDomains, i);
+						if (s && CFStringGetCString(s, buf, MAX_ESCAPED_DOMAIN_NAME, kCFStringEncodingUTF8))
+							if (MakeDomainNameFromDNSNameString(&d, buf)) mDNS_AddSearchDomain(&d);
+						}
+					}
+				else	// No kSCPropNetDNSSearchDomains, so use 
+					{
+					CFStringRef string = CFDictionaryGetValue(dict, kSCPropNetDNSDomainName);
+					if (string && CFStringGetCString(string, buf, MAX_ESCAPED_DOMAIN_NAME, kCFStringEncodingUTF8))
+						if (MakeDomainNameFromDNSNameString(&d, buf)) mDNS_AddSearchDomain(&d);
+					}
+				CFRelease(dict);
+				}
+			CFRelease(key);
+			}
 		CFRelease(store);
 		}
 
-	if (err && head)
+	struct ifaddrs *ifa = myGetIfAddrs(1);
+	while (ifa)
 		{
-		}
+		mDNSAddr a, n;
+		if (ifa->ifa_addr->sa_family == AF_INET	&&
+			ifa->ifa_netmask                    &&
+			!(ifa->ifa_flags & IFF_LOOPBACK)	&&
+			!SetupAddr(&a, ifa->ifa_addr)	&&
+			!IsPrivateV4Addr(&a)				&&
+			!SetupAddr(&n, ifa->ifa_netmask))
+			{
+			char       buffer[256];
+			domainname d;
 
-	return head;
+			// Note: This is reverse order compared to a normal dotted-decimal IP address, so we can't use our customary "%.4a" format code
+			sprintf(buffer, "%d.%d.%d.%d.in-addr.arpa.", a.ip.v4.b[3] & n.ip.v4.b[3],
+														 a.ip.v4.b[2] & n.ip.v4.b[2],
+														 a.ip.v4.b[1] & n.ip.v4.b[1],
+														 a.ip.v4.b[0] & n.ip.v4.b[0]);
+
+			if (MakeDomainNameFromDNSNameString(&d, buffer)) mDNS_AddSearchDomain(&d);
+			}
+		ifa = ifa->ifa_next;
+		}
 	}
 
 mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS * const m, mDNSAddr * v4, mDNSAddr * v6, mDNSAddr * r)
@@ -2863,7 +2586,7 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS * const m, mDNSAddr * v4
 
 	// get IPv4 settings
 
-	store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:DynDNSConfigChanged"), NULL, NULL);
+	store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:mDNSPlatformGetPrimaryInterface"), NULL, NULL);
 	require_action(store, exit, err = mStatus_UnknownErr);
 
 	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetIPv4);
@@ -2992,87 +2715,9 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS * const m, mDNSAddr * v4
 	return err;
 	}
 
-
-mDNSexport DNameListElem * mDNSPlatformGetReverseMapSearchDomainList(void)
-	{
-	DNameListElem	*	head	= NULL;
-	DNameListElem	*	current	= NULL;
-	struct ifaddrs	*	ifa		= NULL;
-	mStatus				err     = 0;
-
-	// Construct reverse-map search domains
-
-	ifa = myGetIfAddrs(1);
-
-	while (ifa)
-		{
-		mDNSAddr addr;
-
-		if (ifa->ifa_addr->sa_family == AF_INET	&&
-			!SetupAddr(&addr, ifa->ifa_addr)	&&
-			!IsPrivateV4Addr(&addr)				&&
-			!(ifa->ifa_flags & IFF_LOOPBACK)	&&
-			ifa->ifa_netmask)
-			{
-			mDNSAddr	netmask;
-			char		buffer[256];
-
-			if (!SetupAddr(&netmask, ifa->ifa_netmask))
-				{
-				domainname			dname;
-				DNameListElem	*	last = current;
-				mDNSu8			*	ptr;
-
-				// Note: This is reverse order compared to a normal dotted-decimal IP address, so we can't use our customary "%.4a" format code
-				sprintf(buffer, "%d.%d.%d.%d.in-addr.arpa.", addr.ip.v4.b[3] & netmask.ip.v4.b[3],
-															 addr.ip.v4.b[2] & netmask.ip.v4.b[2],
-															 addr.ip.v4.b[1] & netmask.ip.v4.b[1],
-															 addr.ip.v4.b[0] & netmask.ip.v4.b[0]);
-
-				ptr = MakeDomainNameFromDNSNameString(&dname, buffer);
-
-				if (!ptr)
-					{
-					LogMsg("ERROR: mDNSPlatformGetReverseMapSearchDomainList - MakeDomainNameFromDNSNameString");
-					continue;
-					}
-
-				current = (DNameListElem*) mallocL("DNameListElem", sizeof(DNameListElem));
-				require_action(current, exit, err = mStatus_NoMemoryErr);
-				memset(current, 0, sizeof(DNameListElem));
-
-				AssignDomainName(&current->name, &dname);
-
-				if (!head)
-					{
-					head = current;
-					}
-
-				if (last)
-					{
-					last->next = current;
-					}
-				}
-			}
-
-			ifa = ifa->ifa_next;
-		}
-
-	exit:
-
-	if (err && head)
-		{
-		mDNS_FreeDNameList(head);
-		head = NULL;
-		}
-
-	return head;
-	}
-
-
 mDNSexport void mDNSPlatformDynDNSHostNameStatusChanged(domainname *const dname, mStatus status)
 	{
-	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:SetDDNSNameStatus"), NULL, NULL);
+	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:mDNSPlatformDynDNSHostNameStatusChanged"), NULL, NULL);
 	if (store)
 		{
 		char uname[MAX_ESCAPED_DOMAIN_NAME];	// Max legal C-string name, including terminating NUL
@@ -3130,103 +2775,6 @@ mDNSexport void mDNSPlatformDynDNSHostNameStatusChanged(domainname *const dname,
 			CFRelease(store);
 			}
 		}
-	}
-
-mDNSexport mStatus mDNSPlatformRegisterSplitDNS(mDNS *m, int * nAdditions, int * nDeletions)
-	{
-	(void)m;  // unused on 10.3 systems
-	void *v;
-	*nAdditions = *nDeletions = 0;
-	mStatus err = GetDNSConfig(&v);
-
-#if !MDNS_NO_DNSINFO
-	if (!err && v)
-		{
-		int i;
-		DNSServer *p;
-		dns_config_t *config = v;  // use void * to allow compilation on 10.3 systems
-		mDNS_Lock(m);
-		p = m->Servers;
-		while (p) { p->del = mDNStrue; p = p->next; }  // mark all for deletion
-
-		LogOperation("RegisterSplitDNS: Registering %d resolvers", config->n_resolver);
-		for (i = 0; i < config->n_resolver; i++)
-			{
-			int j, n;
-			domainname d;
-			dns_resolver_t *r = config->resolver[i];
-			if (r->port == MulticastDNSPort.NotAnInteger) continue; // ignore configurations for .local
-			if (r->search_order == DEFAULT_SEARCH_ORDER || !r->domain || !*r->domain) d.c[0] = 0; // we ignore domain for "default" resolver
-			else if (!MakeDomainNameFromDNSNameString(&d, r->domain)) { LogMsg("RegisterSplitDNS: bad domain %s", r->domain); continue; }
-
-			// check if this is the lowest-weighted server for the domain
-			for (j = 0; j < config->n_resolver; j++)
-				{
-				dns_resolver_t *p = config->resolver[j];
-				if (p->port == MulticastDNSPort.NotAnInteger) continue;
-				if (p->search_order <= r->search_order)
-					{
-					domainname tmp;
-					if (p->search_order == DEFAULT_SEARCH_ORDER || !p->domain || !*p->domain) tmp.c[0] = '\0';
-					else if (!MakeDomainNameFromDNSNameString(&tmp, p->domain)) { LogMsg("RegisterSplitDNS: bad domain %s", p->domain); continue; }
-					if (SameDomainName(&d, &tmp))
-						if (p->search_order < r->search_order || j < i) break;  // if equal weights, pick first in list, otherwise pick lower-weight (p)
-					}
-				}
-			if (j < config->n_resolver) // found a lower-weighted resolver for this domain
-				{ debugf("Rejecting DNS server in slot %d domain %##s (slot %d outranks)", i, d.c, j); continue; }
-			// we're using this resolver - find the first IPv4 address
-			for (n = 0; n < r->n_nameserver; n++)
-				{
-				if (r->nameserver[n]->sa_family == AF_INET && !AddrRequiresPPPConnection(r->nameserver[n]))
-					{
-					// %%% This should use mDNS_AddDNSServer() instead of duplicating functionality here
-					mDNSAddr saddr;
-					if (SetupAddr(&saddr, r->nameserver[n])) { LogMsg("RegisterSplitDNS: bad IP address"); continue; }
-					// mDNSAddr saddr = { mDNSAddrType_IPv4, { { { 192, 168, 1, 1 } } } }; // for testing
-					debugf("Adding dns server from slot %d %#a for domain %##s", i, &saddr, d.c);
-					p = m->Servers;
-					while (p)
-						{
-						if (mDNSSameAddress(&p->addr, &saddr) && SameDomainName(&p->domain, &d)) { p->del = mDNSfalse; break; }
-						else p = p->next;
-						}
-					if (!p)
-						{
-						p = mallocL("DNSServer", sizeof(*p));
-						if (!p) { LogMsg("Error: couldn't allocate memory for DNSServer");  mDNS_Unlock(m); return mStatus_UnknownErr; }
-						p->addr      = saddr;
-						p->del       = mDNSfalse;
-						p->teststate = DNSServer_Untested;
-						AssignDomainName(&p->domain, &d);
-						p->next = m->Servers;
-						m->Servers = p;
-						(*nAdditions)++;
-						}
-					break;  // !!!KRS if we ever support round-robin servers, don't break here
-					}
-				}
-			}
-
-		// remove all servers marked for deletion
-		DNSServer **s = &m->Servers;
-		while (*s)
-			{
-			if ((*s)->del)
-				{
-				p = *s;
-				*s = (*s)->next;
-				freeL("DNSServer", p);
-				(*nDeletions)--;
-				}
-			else s = &(*s)->next;
-			}
-		mDNS_Unlock(m);
-		dns_configuration_free(config);
-		}
-#endif
-
-	return err;
 	}
 
 mDNSlocal void SetDomainSecrets(mDNS *m)

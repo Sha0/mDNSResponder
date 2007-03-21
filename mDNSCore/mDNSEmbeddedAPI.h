@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.340  2007/03/21 00:30:02  cheshire
+<rdar://problem/4789455> Multiple errors in DNameList-related code
+
 Revision 1.339  2007/03/20 17:07:15  cheshire
 Rename "struct uDNS_TCPSocket_struct" to "TCPSocket", "struct uDNS_UDPSocket_struct" to "UDPSocket"
 
@@ -1336,12 +1339,6 @@ struct NATTraversalInfo_struct
 	unsigned refs;
 	};
 
-typedef struct IPAddrListElem
-	{
-	mDNSAddr addr;
-	struct IPAddrListElem *next;
-	} IPAddrListElem;
-
 typedef struct DNameListElem
 	{
 	domainname name;
@@ -1882,7 +1879,7 @@ extern mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 // destination address for events (i.e. the route) has changed.  For performance reasons, the caller is responsible for
 // batching changes, e.g.  calling the routine only once if multiple interfaces are simultanously removed or added.
 
-// DNS servers used to resolve unicast queries are specified by mDNS_AddDNSServer, and may later be removed via mDNS_DeleteDNSServers.
+// DNS servers used to resolve unicast queries are specified by mDNS_AddDNSServer.
 // For "split" DNS configurations, in which queries for different domains are sent to different servers (e.g. VPN and external),
 // a domain may be associated with a DNS server.  For standard configurations, specify the root label (".") or NULL.
 
@@ -1891,7 +1888,7 @@ extern void mDNS_RemoveDynDNSHostName(mDNS *m, const domainname *fqdn);
 extern void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr,  const mDNSAddr *v6addr, const mDNSAddr *router);
 extern void mDNS_UpdateLLQs(mDNS *m);
 extern void mDNS_AddDNSServer(mDNS *const m, const mDNSAddr *dnsAddr, const domainname *domain);
-extern void mDNS_DeleteDNSServers(mDNS *const m);
+extern void mDNS_AddSearchDomain(const domainname *const domain);
 
 // Routines called by the core, exported by DNSDigest.c
 
@@ -2017,20 +2014,13 @@ extern void           mDNSPlatformTLSTearDownCerts(void);
 // Platforms that support unicast browsing and dynamic update registration for clients who do not specify a domain
 // in browse/registration calls must implement these routines to get the "default" browse/registration list.
 
-extern void					mDNSPlatformGetDNSConfig(domainname *const fqdn, domainname *const regDomain, DNameListElem ** browseDomains);
-extern IPAddrListElem	*	mDNSPlatformGetDNSServers(void);
-extern DNameListElem    *   mDNSPlatformGetSearchDomainList(void);
-extern DNameListElem	*	mDNSPlatformGetFQDN(void);
-extern mStatus				mDNSPlatformGetPrimaryInterface(mDNS * const m, mDNSAddr * v4, mDNSAddr * v6, mDNSAddr * router);
-extern DNameListElem	*	mDNSPlatformGetReverseMapSearchDomainList(void);
-extern mStatus				mDNSPlatformRegisterSplitDNS(mDNS * const m, int * nAdditions, int * nDeletions);
-extern void					mDNSPlatformDefaultRegDomainChanged(const domainname *d, mDNSBool add);
-extern void					mDNSPlatformDynDNSHostNameStatusChanged(domainname *const dname, mStatus status);
+extern void         mDNSPlatformGetDNSConfig(domainname *const fqdn, domainname *const regDomain, DNameListElem ** browseDomains);
+extern void         mDNSPlatformSetDNSServers(mDNS *const m);
+extern void         mDNSPlatformSetSearchDomainList(void);
+extern mStatus      mDNSPlatformGetPrimaryInterface(mDNS * const m, mDNSAddr * v4, mDNSAddr * v6, mDNSAddr * router);
+extern void         mDNSPlatformDefaultRegDomainChanged(const domainname *d, mDNSBool add);
+extern void         mDNSPlatformDynDNSHostNameStatusChanged(domainname *const dname, mStatus status);
 
-
-// Helper functions provided by the core
-extern void mDNS_FreeDNameList(DNameListElem *list);
-extern void mDNS_FreeIPAddrList(IPAddrListElem * list);
 
 #ifdef _LEGACY_NAT_TRAVERSAL_
 // Support for legacy NAT traversal protocols, implemented by the platform layer and callable by the core.
