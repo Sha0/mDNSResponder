@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.65  2007/03/21 22:25:23  cheshire
+<rdar://problem/4172796> Remove client retry logic now that mDNSResponder uses launchd for its Unix Domain Socket
+
 Revision 1.64  2007/03/21 19:01:56  cheshire
 <rdar://problem/5078494> IPC code not 64-bit-savvy: assumes long=32bits, and short=16bits
 
@@ -264,6 +267,10 @@ static DNSServiceRef connect_to_server(void)
 		}
 	// <rdar://problem/4096913> If the system service is disabled, we only want to try to connect once
 	if (IsSystemServiceDisabled()) NumTries = DNSSD_CLIENT_MAXTRIES;
+#endif
+
+#if APPLE_OSX_mDNSResponder
+	NumTries = DNSSD_CLIENT_MAXTRIES;
 #endif
 
 	sdr = malloc(sizeof(_DNSServiceRef_t));
