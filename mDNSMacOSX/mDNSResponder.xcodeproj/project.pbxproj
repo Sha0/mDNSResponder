@@ -1797,7 +1797,7 @@
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
 				INFOPLIST_FILE = "PreferencePane/Info-PreferencePane.plist";
-				INSTALL_PATH = "${SYSTEM_LIBRARY_DIR}/PreferencePanes";
+				INSTALL_PATH = /AppleInternal/Library/PreferencePanes;
 				MACOSX_DEPLOYMENT_TARGET = 10.2;
 				MVERS = "\"mDNSResponder (Engineering Build)\"";
 				OTHER_CFLAGS = "";
