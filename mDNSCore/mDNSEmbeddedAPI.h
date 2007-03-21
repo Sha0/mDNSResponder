@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.341  2007/03/21 20:44:11  cheshire
+Added mDNSAddressIsv4LinkLocal macro
+
 Revision 1.340  2007/03/21 00:30:02  cheshire
 <rdar://problem/4789455> Multiple errors in DNameList-related code
 
@@ -1843,6 +1846,7 @@ extern mDNSBool IsPrivateV4Addr(mDNSAddr *addr);  // returns true for RFC1918 pr
 	((X)->type == mDNSAddrType_IPv4) ? !(mDNSIPv4AddressIsZero((X)->ip.v4) || mDNSIPv4AddressIsOnes((X)->ip.v4)) :          \
 	((X)->type == mDNSAddrType_IPv6) ? !(mDNSIPv6AddressIsZero((X)->ip.v6) || mDNSIPv6AddressIsOnes((X)->ip.v6)) : mDNSfalse)
 
+#define mDNSAddressIsv4LinkLocal(X) ((X)->type == mDNSAddrType_IPv4 && (X)->ip.v4.b[0] == 169 && (X)->ip.v4.b[1] == 254)
 #define mDNSAddressIsv6LinkLocal(X) ((X)->type == mDNSAddrType_IPv6 && (X)->ip.v6.b[0] == 0xFE && ((X)->ip.v6.b[1] & 0xC0) == 0x80)
 
 // ***************************************************************************
