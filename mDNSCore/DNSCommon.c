@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.129  2007/03/21 01:00:45  cheshire
+<rdar://problem/5076826> jmDNS advertised garbage that shows up weird in Safari
+DeconstructServiceName() needs to be more defensive about what it considers legal
+
 Revision 1.128  2007/03/21 00:30:02  cheshire
 <rdar://problem/4789455> Multiple errors in DNameList-related code
 
@@ -687,6 +691,10 @@ mDNSexport void ConvertUTF8PstringToRFC1034HostLabel(const mDNSu8 UTF8Name[], do
 	hostlabel->c[0] = (mDNSu8)(ptr - &hostlabel->c[1]);
 	}
 
+#define ValidTransportProtocol(X) ( (X)[0] == 4 && (X)[1] == '_' && \
+	((((X)[2] | 0x20) == 'u' && ((X)[3] | 0x20) == 'd') || (((X)[2] | 0x20) == 't' && ((X)[3] | 0x20) == 'c')) && \
+	((X)[4] | 0x20) == 'p')
+
 mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 	const domainlabel *name, const domainname *type, const domainname *const domain)
 	{
@@ -756,10 +764,7 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 	for (i=0; i<=len; i++) *dst++ = *src++;
 
 	len = *src;
-	if (!(len == 4 && src[1] == '_' &&
-		(((src[2] | 0x20) == 'u' && (src[3] | 0x20) == 'd') || ((src[2] | 0x20) == 't' && (src[3] | 0x20) == 'c')) &&
-		(src[4] | 0x20) == 'p'))
-		{ errormsg = "Transport protocol name must be _udp or _tcp"; goto fail; }
+	if (!ValidTransportProtocol(src)) { errormsg = "Transport protocol name must be _udp or _tcp"; goto fail; }
 	for (i=0; i<=len; i++) *dst++ = *src++;
 
 	if (*src) { errormsg = "Service type must have only two labels"; goto fail; }
@@ -792,19 +797,21 @@ mDNSexport mDNSBool DeconstructServiceName(const domainname *const fqdn,
 
 	dst = name->c;										// Extract the service name
 	len = *src;
-	if (!len)        { debugf("DeconstructServiceName: FQDN empty!");            return(mDNSfalse); }
-	if (len >= 0x40) { debugf("DeconstructServiceName: Instance name too long"); return(mDNSfalse); }
+	if (!len)         { debugf("DeconstructServiceName: FQDN empty!");                             return(mDNSfalse); }
+	if (len >= 0x40)  { debugf("DeconstructServiceName: Instance name too long");                  return(mDNSfalse); }
 	for (i=0; i<=len; i++) *dst++ = *src++;
 
 	dst = type->c;										// Extract the service type
 	len = *src;
-	if (!len)        { debugf("DeconstructServiceName: FQDN contains only one label!");      return(mDNSfalse); }
-	if (len >= 0x40) { debugf("DeconstructServiceName: Application protocol name too long"); return(mDNSfalse); }
+	if (!len)         { debugf("DeconstructServiceName: FQDN contains only one label!");           return(mDNSfalse); }
+	if (len >= 0x40)  { debugf("DeconstructServiceName: Application protocol name too long");      return(mDNSfalse); }
+	if (src[1] != '_'){ debugf("DeconstructServiceName: No _ at start of application protocol");   return(mDNSfalse); }
 	for (i=0; i<=len; i++) *dst++ = *src++;
 
 	len = *src;
-	if (!len)        { debugf("DeconstructServiceName: FQDN contains only two labels!");   return(mDNSfalse); }
-	if (len >= 0x40) { debugf("DeconstructServiceName: Transport protocol name too long"); return(mDNSfalse); }
+	if (!len)         { debugf("DeconstructServiceName: FQDN contains only two labels!");          return(mDNSfalse); }
+	if (!ValidTransportProtocol(src))
+	                  { debugf("DeconstructServiceName: Transport protocol must be _udp or _tcp"); return(mDNSfalse); }
 	for (i=0; i<=len; i++) *dst++ = *src++;
 	*dst++ = 0;											// Put terminator on the end of service type
 
