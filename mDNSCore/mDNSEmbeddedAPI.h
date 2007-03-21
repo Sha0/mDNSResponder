@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.342  2007/03/21 23:06:00  cheshire
+Rename uDNS_HostnameInfo to HostnameInfo; deleted some unused fields
+
 Revision 1.341  2007/03/21 20:44:11  cheshire
 Added mDNSAddressIsv4LinkLocal macro
 
@@ -904,15 +907,15 @@ typedef struct
 	domainname namestorage;									// Needs to go *after* the extra rdata bytes
 	} LargeCacheRecord;
 
-typedef struct uDNS_HostnameInfo
+typedef struct HostnameInfo
 	{
-	struct uDNS_HostnameInfo *next;
+	struct HostnameInfo *next;
     domainname fqdn;
     AuthRecord arv4;                          // registered IPv4 address record
 	AuthRecord arv6;                          // registered IPv6 address record
 	mDNSRecordCallback *StatusCallback;       // callback to deliver success or error code to client layer
 	const void *StatusContext;                // Client Context
-	} uDNS_HostnameInfo;
+	} HostnameInfo;
 
 enum
 	{
@@ -1435,38 +1438,40 @@ struct mDNS_struct
 	mDNSs32 SuppressProbes;
 
 	// unicast-specific data
-	mDNSs32          nextevent;
+	mDNSs32           nextevent;
+    mDNSs32           NextSRVUpdate;        // Time to perform delayed update
+	mDNSs32 SuppressStdPort53Queries;       // Wait before allowing the next standard unicast query to the user's configured DNS server
+
 	ServiceRecordSet *ServiceRegistrations;
 	AuthRecord       *RecordRegistrations;
 	NATTraversalInfo *NATTraversals;
-	mDNSu16          NextMessageID;
-    DNSServer        *Servers;           // list of DNS servers
-	mDNSAddr         Router;
-	mDNSAddr         AdvertisedV4;       // IPv4 address pointed to by hostname
-	mDNSAddr         MappedV4;           // Cache of public address if PrimaryIP is behind a NAT
-	mDNSAddr         AdvertisedV6;       // IPv6 address pointed to by hostname
-	domainname       ServiceRegDomain;   // (going away w/ multi-user support)
-	DomainAuthInfo  *AuthInfoList;       // list of domains requiring authentication for updates
-	uDNS_HostnameInfo *Hostnames;        // List of registered hostnames + hostname metadata
-    DNSQuestion      ReverseMap;         // Reverse-map query to find static hostname for service target
-    mDNSBool         ReverseMapActive;   // Is above query active?
-    domainname       StaticHostname;     // Current answer to reverse-map query (above)
-    mDNSBool         DelaySRVUpdate;     // Delay SRV target/port update to avoid "flap"
-    mDNSs32          NextSRVUpdate;      // Time to perform delayed update
-	domainname		 RegDomain;          // Default wide-area zone for service registration
-	struct DNameListElem *BrowseDomains;      // Default wide-area zone for legacy ("empty string") browses
-    domainname       FQDN;
-    mDNSBool         RegisterSearchDomains;
-    
-	DNameListElem  *DefBrowseList;  // cache of answers to above query (where we search for empty string browses)
-	DNameListElem  *DefRegList;  // manually generated list of domains where we register for empty string registrations
+	mDNSu16           NextMessageID;
+    DNSServer        *Servers;              // list of DNS servers
 
-	mDNSs32 SuppressStdPort53Queries;	// Wait before allowing the next standard unicast query to the user's configured DNS server
+	mDNSAddr          Router;
+	mDNSAddr          AdvertisedV4;         // IPv4 address pointed to by hostname
+	mDNSAddr          MappedV4;             // Cache of public address if PrimaryIP is behind a NAT
+	mDNSAddr          AdvertisedV6;         // IPv6 address pointed to by hostname
+
+	DomainAuthInfo   *AuthInfoList;         // list of domains requiring authentication for updates
+
+    DNSQuestion       ReverseMap;           // Reverse-map query to find static hostname for service target
+
+    domainname        StaticHostname;       // Current answer to reverse-map query
+    domainname        FQDN;
+	HostnameInfo     *Hostnames;            // List of registered hostnames + hostname metadata
+
+	DNameListElem    *BrowseDomains;        // Default wide-area zone for legacy ("empty string") browses
+	DNameListElem    *DefBrowseList;        // Where we search for empty string browse
+
+    mDNSBool          RegisterSearchDomains;
+	domainname		  RegDomain;            // Default wide-area zone for service registration
+	DNameListElem    *DefRegList;           // manually generated list of domains where we register for empty string registrations
 
 	// Fixed storage, to avoid creating large objects on the stack
-	DNSMessage imsg;		// Incoming message received from wire
-	DNSMessage omsg;		// Outgoing message we're building
-	LargeCacheRecord rec;	// Resource Record extracted from received message
+	DNSMessage        imsg;                 // Incoming message received from wire
+	DNSMessage        omsg;                 // Outgoing message we're building
+	LargeCacheRecord  rec;                  // Resource Record extracted from received message
 	};
 
 #define FORALL_CACHERECORDS(SLOT,CG,CR)                          \

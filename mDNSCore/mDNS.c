@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.590  2007/03/21 23:05:59  cheshire
+Rename uDNS_HostnameInfo to HostnameInfo; deleted some unused fields
+
 Revision 1.589  2007/03/20 15:37:19  cheshire
 Delete unnecessary log message
 
@@ -5838,13 +5841,10 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->AdvertisedV4             = zeroAddr;
 	m->MappedV4                 = zeroAddr;
 	m->AdvertisedV6             = zeroAddr;
-	m->ServiceRegDomain.c[0]    = 0;
 	m->AuthInfoList             = mDNSNULL;
 	m->Hostnames                = mDNSNULL;
-	//m->ReverseMap (DNSQuestion)
-	m->ReverseMapActive         = mDNSfalse;
+	m->ReverseMap.ThisQInterval = -1;
 	m->StaticHostname.c[0]      = 0;
-	m->DelaySRVUpdate           = mDNSfalse;
 	m->NextSRVUpdate            = timenow + 0x78000000;
 	m->RegDomain.c[0]           = 0;
 	m->BrowseDomains            = mDNSNULL;
@@ -5895,7 +5895,7 @@ mDNSexport void mDNS_Close(mDNS *const m)
 	rrcache_totalused = m->rrcache_totalused;
 	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 		{
-		while(m->rrcache_hash[slot])
+		while (m->rrcache_hash[slot])
 			{
 			CacheGroup *cg = m->rrcache_hash[slot];
 			while (cg->members)

@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.307  2007/03/21 23:06:00  cheshire
+Rename uDNS_HostnameInfo to HostnameInfo; deleted some unused fields
+
 Revision 1.306  2007/03/21 00:30:03  cheshire
 <rdar://problem/4789455> Multiple errors in DNameList-related code
 
@@ -1760,7 +1763,7 @@ mDNSlocal const domainname *GetServiceTarget(mDNS *m, AuthRecord *srv)
 		return(&srv->resrec.rdata->u.srv.target);
 	else
 		{
-		uDNS_HostnameInfo *hi = m->Hostnames;
+		HostnameInfo *hi = m->Hostnames;
 		while (hi)
 			{
 			if (hi->arv4.state == regState_Registered || hi->arv4.state == regState_Refresh) return(hi->arv4.resrec.name);
@@ -2427,7 +2430,7 @@ mDNSexport mDNSBool uDNS_HandleNATPortMapReply(NATTraversalInfo *n, mDNS *m, mDN
 		n->state = NATState_Error;
 		if (srs)
 			{
-			uDNS_HostnameInfo *hi = m->Hostnames;
+			HostnameInfo *hi = m->Hostnames;
 			while (hi)
 				{
 				if (hi->arv6.state == regState_Registered || hi->arv6.state == regState_Refresh) break;
@@ -2707,7 +2710,7 @@ mDNSlocal void UpdateSRVRecords(mDNS *m)
 	}
 
 // register record or begin NAT traversal
-mDNSlocal void AdvertiseHostname(mDNS *m, uDNS_HostnameInfo *h)
+mDNSlocal void AdvertiseHostname(mDNS *m, HostnameInfo *h)
 	{
 	if (m->AdvertisedV4.ip.v4.NotAnInteger && h->arv4.state == regState_Unregistered)
 		{
@@ -2727,18 +2730,18 @@ mDNSlocal void AdvertiseHostname(mDNS *m, uDNS_HostnameInfo *h)
 	}
 
 // Forward reference: HostnameCallback calls AssignHostnameInfoAuthRecord, and AssignHostnameInfoAuthRecord references HostnameCallback
-mDNSlocal void AssignHostnameInfoAuthRecord(mDNS *m, uDNS_HostnameInfo *hi, AuthRecord *ar);
+mDNSlocal void AssignHostnameInfoAuthRecord(mDNS *m, HostnameInfo *hi, AuthRecord *ar);
 
 mDNSlocal void HostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
 	{
-	uDNS_HostnameInfo *hi = (uDNS_HostnameInfo *)rr->RecordContext;
+	HostnameInfo *hi = (HostnameInfo *)rr->RecordContext;
 
 	if (result == mStatus_MemFree)
 		{
 		if (hi)
 			{
 			// If we're still in the Hostnames list, update to new address
-			uDNS_HostnameInfo *i;
+			HostnameInfo *i;
 			for (i = m->Hostnames; i; i = i->next)
 				{
 				if (rr == &i->arv4) { mDNS_Lock(m); AssignHostnameInfoAuthRecord(m, i, &i->arv4); AdvertiseHostname(m, i); mDNS_Unlock(m); return; }
@@ -2796,7 +2799,7 @@ mDNSlocal void FoundStaticHostname(mDNS *const m, DNSQuestion *question, const R
 	{
 	const domainname *pktname = &answer->rdata->u.name;
 	domainname *storedname = &m->StaticHostname;
-	uDNS_HostnameInfo *h = m->Hostnames;
+	HostnameInfo *h = m->Hostnames;
 
 	(void)question;
 
@@ -2810,8 +2813,7 @@ mDNSlocal void FoundStaticHostname(mDNS *const m, DNSQuestion *question, const R
 				h->arv6.state == regState_FetchingZoneData || h->arv6.state == regState_Pending)
 				{
 				// if we're in the process of registering a dynamic hostname, delay SRV update so we don't have to reregister services if the dynamic name succeeds
-				m->DelaySRVUpdate = mDNStrue;
-				m->NextSRVUpdate = m->timenow + (5 * mDNSPlatformOneSecond);
+				m->NextSRVUpdate = NonZeroTime(m->timenow + (5 * mDNSPlatformOneSecond));
 				return;
 				}
 			h = h->next;
@@ -2832,7 +2834,7 @@ mDNSlocal void GetStaticHostname(mDNS *m)
 	mDNSu8 *ip = m->AdvertisedV4.ip.v4.b;
 	mStatus err;
 
-	if (m->ReverseMapActive)
+	if (m->ReverseMap.ThisQInterval != -1)
 		{
 		// Seems like a hack -- if this code is allowed to issue API calls, then it should have been called in the appropriate state in the first place
 		// and if it's not allowed to issue API calls, then deliberately circumventing the locking check like this seems like it's asking for
@@ -2840,7 +2842,6 @@ mDNSlocal void GetStaticHostname(mDNS *m)
 		mDNS_DropLockBeforeCallback();
 		mDNS_StopQuery(m, q);
 		mDNS_ReclaimLockAfterCallback();
-		m->ReverseMapActive = mDNSfalse;
 		}
 
 	m->StaticHostname.c[0] = 0;
@@ -2868,10 +2869,9 @@ mDNSlocal void GetStaticHostname(mDNS *m)
 	err = mDNS_StartQuery(m, q);
 	mDNS_ReclaimLockAfterCallback();
 	if (err) LogMsg("Error: GetStaticHostname - StartQuery returned error %d", err);
-	else m->ReverseMapActive = mDNStrue;
 	}
 
-mDNSlocal void AssignHostnameInfoAuthRecord(mDNS *m, uDNS_HostnameInfo *hi, AuthRecord *ar)
+mDNSlocal void AssignHostnameInfoAuthRecord(mDNS *m, HostnameInfo *hi, AuthRecord *ar)
 	{
 	mDNS_SetupResourceRecord(ar, mDNSNULL, 0, (mDNSu16) (ar == &hi->arv4 ? kDNSType_A : kDNSType_AAAA),  1, kDNSRecordTypeKnownUnique, HostnameCallback, hi);
 	AssignDomainName(ar->resrec.name, &hi->fqdn);
@@ -2894,7 +2894,7 @@ mDNSlocal void AssignHostnameInfoAuthRecord(mDNS *m, uDNS_HostnameInfo *hi, Auth
 // values for the hostlabel and primary IP address
 mDNSlocal void UpdateHostnameRegistrations(mDNS *m)
 	{
-	uDNS_HostnameInfo *i;
+	HostnameInfo *i;
 
 	for (i = m->Hostnames; i; i = i->next)
 		{
@@ -2923,7 +2923,7 @@ mDNSlocal void UpdateHostnameRegistrations(mDNS *m)
 
 mDNSexport void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSRecordCallback *StatusCallback, const void *StatusContext)
    {
-	uDNS_HostnameInfo *ptr, *new;
+	HostnameInfo *ptr, *new;
 
 	mDNS_Lock(m);
 
@@ -2960,7 +2960,7 @@ exit:
 
 mDNSexport void mDNS_RemoveDynDNSHostName(mDNS *m, const domainname *fqdn)
 	{
-	uDNS_HostnameInfo **ptr = &m->Hostnames;
+	HostnameInfo **ptr = &m->Hostnames;
 
 	mDNS_Lock(m);
 
@@ -2970,7 +2970,7 @@ mDNSexport void mDNS_RemoveDynDNSHostName(mDNS *m, const domainname *fqdn)
 	if (!*ptr) LogMsg("mDNS_RemoveDynDNSHostName: no such domainname %##s", fqdn->c);
 	else
 		{
-		uDNS_HostnameInfo *hi = *ptr;
+		HostnameInfo *hi = *ptr;
 		// We do it this way because, if we have no active v6 record, the "uDNS_DeregisterRecord(m, &hi->arv4);"
 		// below could free the memory, and we have to make sure we don't touch hi fields after that.
 		mDNSBool f4 = hi->arv4.resrec.RecordType != kDNSRecordTypeUnregistered && hi->arv4.state != regState_Unregistered;
@@ -4818,11 +4818,8 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 
 	m->nextevent = timenow + 0x3FFFFFFF;
 
-	if (m->DelaySRVUpdate && m->NextSRVUpdate - timenow < 0)
-		{
-		m->DelaySRVUpdate = mDNSfalse;
-		UpdateSRVRecords(m);
-		}
+	if (m->NextSRVUpdate && m->NextSRVUpdate - timenow < 0)
+		{ m->NextSRVUpdate = 0; UpdateSRVRecords(m); }
 
 	nexte = CheckNATMappings(m, timenow);
 	if (nexte - m->nextevent < 0) m->nextevent = nexte;
