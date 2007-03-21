@@ -30,6 +30,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.90  2007/03/21 00:31:45  cheshire
+Remove unnecessary (and unimplemented) platform functions
+
 Revision 1.89  2007/03/20 17:07:15  cheshire
 Rename "struct uDNS_TCPSocket_struct" to "TCPSocket", "struct uDNS_UDPSocket_struct" to "UDPSocket"
 
@@ -464,19 +467,12 @@ mDNSexport void mDNSPlatformGetDNSConfig(domainname *const fqdn, domainname *con
 	(void) browseDomains;
 	}
 
-mDNSexport IPAddrListElem * mDNSPlatformGetDNSServers(void)
+mDNSexport void mDNSPlatformSetDNSServers(mDNS *const m)
 	{
-	return NULL;
 	}
 
-mDNSexport DNameListElem * mDNSPlatformGetSearchDomainList(void)
+mDNSexport void mDNSPlatformSetSearchDomainList(void)
 	{
-	return NULL;
-	}
-
-mDNSexport DNameListElem * mDNSPlatformGetFQDN(void)
-	{
-	return NULL;
 	}
 
 mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS * const m, mDNSAddr * v4, mDNSAddr * v6, mDNSAddr * router)
@@ -486,19 +482,6 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS * const m, mDNSAddr * v4
 	(void) v6;
 	(void) router;
 
-	return mStatus_UnsupportedErr;
-	}
-
-mDNSexport DNameListElem * mDNSPlatformGetReverseMapSearchDomainList(void)
-	{
-	return NULL;
-	}
-
-mDNSexport mStatus mDNSPlatformRegisterSplitDNS(mDNS * const m, int * nAdditions, int * nDeletions)
-	{
-	(void) m;
-	*nAdditions = 0;
-	*nDeletions = 0;
 	return mStatus_UnsupportedErr;
 	}
 
@@ -513,8 +496,6 @@ mDNSexport void mDNSPlatformDynDNSHostNameStatusChanged(domainname *const dname,
 	(void) dname;
 	(void) status;
 	}
-
-
 
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark ***** Init and Term
