@@ -21,6 +21,9 @@
 	Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.39  2007/03/21 00:30:44  cheshire
+Remove obsolete mDNS_DeleteDNSServers() call
+
 Revision 1.38  2007/02/14 01:58:19  cheshire
 <rdar://problem/4995831> Don't delete Unix Domain Socket on exit if we didn't create it on startup
 
@@ -107,7 +110,6 @@ static void Reconfigure(mDNS *m)
 	{
 	mDNSAddr DynDNSIP;
 	mDNS_SetPrimaryInterfaceInfo(m, NULL, NULL, NULL);
-	mDNS_DeleteDNSServers(m);
 	if (ParseDNSServers(m, uDNS_SERVERS_FILE) < 0)
 		LogMsg("Unable to parse DNS server list. Unicast DNS-SD unavailable");
 	ReadDDNSSettingsFromConfFile(m, CONFIG_FILE, &DynDNSHostname, &DynDNSZone, NULL);
