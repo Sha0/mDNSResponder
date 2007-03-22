@@ -17,6 +17,10 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.248  2007/03/22 20:03:37  cheshire
+Rename variables for clarity: instead of using variable rs for both request_state
+and reply_state, use req for request_state and rep for reply_state
+
 Revision 1.247  2007/03/22 19:31:42  cheshire
 <rdar://problem/4848295> Advertise model information via Bonjour
 Add missing "model=" at start of DeviceInfo data
@@ -592,11 +596,11 @@ mDNSexport AuthRecord *AllocateSubTypes(mDNSs32 NumSubTypes, char *p)
 	}
 
 // returns 0 on success, -1 if send is incomplete, or on terminal failure (request is aborted)
-mDNSlocal transfer_state send_undelivered_error(request_state *rs)
+mDNSlocal transfer_state send_undelivered_error(request_state *req)
 	{
 	int nwritten;
 	
-	nwritten = send(rs->u_err->sd, (char *)(&rs->u_err->err) + rs->u_err->nwritten, sizeof(mStatus) - rs->u_err->nwritten, 0);
+	nwritten = send(req->u_err->sd, (char *)(&req->u_err->err) + req->u_err->nwritten, sizeof(mStatus) - req->u_err->nwritten, 0);
 	if (nwritten < 0)
 		{
 		if (dnssd_errno() == dnssd_EINTR || dnssd_errno() == dnssd_EWOULDBLOCK)
@@ -607,25 +611,25 @@ mDNSlocal transfer_state send_undelivered_error(request_state *rs)
 			return t_error;
 			}
 		}
-	if ((unsigned int)(nwritten + rs->u_err->nwritten) >= sizeof(mStatus))
+	if ((unsigned int)(nwritten + req->u_err->nwritten) >= sizeof(mStatus))
 		{
-		freeL("undelivered_error_t", rs->u_err);
-		rs->u_err = NULL;
+		freeL("undelivered_error_t", req->u_err);
+		req->u_err = NULL;
 		return t_complete;
 		}
-	rs->u_err->nwritten += nwritten;
+	req->u_err->nwritten += nwritten;
 	return t_morecoming;
 	}
 
-mDNSlocal int send_msg(reply_state *rs)
+mDNSlocal int send_msg(reply_state *rep)
 	{
 	ssize_t nwriten;
-	if (!rs->msgbuf) { LogMsg("ERROR: send_msg called with NULL message buffer"); return(rs->ts = t_error); }
-	if (rs->request->no_reply) { freeL("reply_state msgbuf (no_reply)", rs->msgbuf); return(rs->ts = t_complete); }
+	if (!rep->msgbuf) { LogMsg("ERROR: send_msg called with NULL message buffer"); return(rep->ts = t_error); }
+	if (rep->request->no_reply) { freeL("reply_state msgbuf (no_reply)", rep->msgbuf); return(rep->ts = t_complete); }
 
-	ConvertHeaderBytes(rs->mhdr);
-	nwriten = send(rs->sd, rs->msgbuf + rs->nwriten, rs->len - rs->nwriten, 0);
-	ConvertHeaderBytes(rs->mhdr);
+	ConvertHeaderBytes(rep->mhdr);
+	nwriten = send(rep->sd, rep->msgbuf + rep->nwriten, rep->len - rep->nwriten, 0);
+	ConvertHeaderBytes(rep->mhdr);
 
 	if (nwriten < 0)
 		{
@@ -634,38 +638,38 @@ mDNSlocal int send_msg(reply_state *rs)
 			{
 #if !defined(PLATFORM_NO_EPIPE)
 			if (dnssd_errno() == EPIPE)
-				return(rs->request->ts = rs->ts = t_terminated);
+				return(rep->request->ts = rep->ts = t_terminated);
 			else
 #endif
-				{ my_perror("ERROR: send\n"); return(rs->ts = t_error); }
+				{ my_perror("ERROR: send\n"); return(rep->ts = t_error); }
 			}
 		}
-	rs->nwriten += nwriten;
-	if (rs->nwriten == rs->len) { freeL("reply_state msgbuf (t_complete)", rs->msgbuf); rs->ts = t_complete; }
-	return rs->ts;
+	rep->nwriten += nwriten;
+	if (rep->nwriten == rep->len) { freeL("reply_state msgbuf (t_complete)", rep->msgbuf); rep->ts = t_complete; }
+	return rep->ts;
 	}
 
-mDNSlocal void abort_request(request_state *rs)
+mDNSlocal void abort_request(request_state *req)
 	{
 	reply_state *rep;
 
-	if (rs->terminate) rs->terminate(rs->termination_context);  // terminate field may not be set yet
+	if (req->terminate) req->terminate(req->termination_context);  // terminate field may not be set yet
 	
 	// Do we need to do this? We should decide whether it's the responsibility of the handle* routines to
 	// free msgbuf, or the responsibility of abort_request, and then do it all one way or all the other.
 	// Doing it in the handle* routines would result in a smaller resident working set
 	// (why keep data around that we don't need any more?)
-	if (rs->msgbuf) freeL("request_state msgbuf (abort)", rs->msgbuf);
+	if (req->msgbuf) freeL("request_state msgbuf (abort)", req->msgbuf);
 
-	LogOperation("%3d: Removing FD", rs->sd);
-	udsSupportRemoveFDFromEventLoop(rs->sd);					// Note: This also closes file descriptor rs->sd for us
+	LogOperation("%3d: Removing FD", req->sd);
+	udsSupportRemoveFDFromEventLoop(req->sd);					// Note: This also closes file descriptor req->sd for us
 
 	// Don't use dnssd_InvalidSocket (-1) because that's the sentinel value MACOSX_MDNS_MALLOC_DEBUGGING uses
 	// for detecting when the memory for an object is inadvertently freed while the object is still on some list
-	rs->sd = -2;
+	req->sd = -2;
 
 	// free pending replies
-	rep = rs->replies;
+	rep = req->replies;
 	while (rep)
 		{
 		reply_state *ptr = rep;
@@ -674,10 +678,10 @@ mDNSlocal void abort_request(request_state *rs)
 		freeL("reply_state (abort)", ptr);
 		}
 	
-	if (rs->u_err)
+	if (req->u_err)
 		{
-		freeL("request_state (abort)", rs->u_err);
-		rs->u_err = NULL;
+		freeL("request_state (abort)", req->u_err);
+		req->u_err = NULL;
 		}
 	}
 
@@ -691,12 +695,12 @@ mDNSexport void uds_validatelists(void)
 	}
 #endif
 
-mDNSlocal void AbortUnlinkAndFree(request_state *rs)
+mDNSlocal void AbortUnlinkAndFree(request_state *req)
 	{
 	request_state **p = &all_requests;
-	abort_request(rs);
-	while (*p && *p != rs) p=&(*p)->next;
-	if (*p) { *p = rs->next; freeL("request_state/AbortUnlinkAndFree", rs); }
+	abort_request(req);
+	while (*p && *p != req) p=&(*p)->next;
+	if (*p) { *p = req->next; freeL("request_state/AbortUnlinkAndFree", req); }
 	}
 
 mDNSlocal reply_state *create_reply(reply_op_t op, size_t datalen, request_state *request)
@@ -751,13 +755,13 @@ mDNSlocal void append_reply(request_state *req, reply_state *rep)
 		}
 	}
 
-mDNSlocal void deliver_async_error(request_state *rs, reply_op_t op, mStatus err)
+mDNSlocal void deliver_async_error(request_state *req, reply_op_t op, mStatus err)
 	{
-	if (!rs->no_reply)
+	if (!req->no_reply)
 		{
-		reply_state *reply = create_reply(op, 256, rs);
+		reply_state *reply = create_reply(op, 256, req);
 		reply->rhdr->error = dnssd_htonl(err);
-		append_reply(rs, reply);
+		append_reply(req, reply);
 		}
 	}
 
@@ -838,109 +842,109 @@ mDNSlocal int deliver_error(request_state *rstate, mStatus err)
 	return 0;
 	}
 
-// read_msg may be called any time when the transfer state (rs->ts) is t_morecoming.
+// read_msg may be called any time when the transfer state (req->ts) is t_morecoming.
 // returns the current state of the request (morecoming, error, complete, terminated.)
 // if there is no data on the socket, the socket will be closed and t_terminated will be returned
-mDNSlocal int read_msg(request_state *rs)
+mDNSlocal int read_msg(request_state *req)
 	{
 	uint32_t nleft;
 	int nread;
 	char buf[4];   // dummy for death notification
 	
-	if (rs->ts == t_terminated || rs->ts == t_error)
+	if (req->ts == t_terminated || req->ts == t_error)
 		{
 		LogMsg("ERROR: read_msg called with transfer state terminated or error");
-		rs->ts = t_error;
+		req->ts = t_error;
 		return t_error;
 		}
 		
-	if (rs->ts == t_complete)
+	if (req->ts == t_complete)
 		{  // this must be death or something is wrong
-		nread = recv(rs->sd, buf, 4, 0);
-		if (!nread) 	{  rs->ts = t_terminated;  return t_terminated;  	}
+		nread = recv(req->sd, buf, 4, 0);
+		if (!nread) 	{  req->ts = t_terminated;  return t_terminated;  	}
 		if (nread < 0) goto rerror;
 		LogMsg("ERROR: read data from a completed request.");
-		rs->ts = t_error;
+		req->ts = t_error;
 		return t_error;
 		}
 
-	if (rs->ts != t_morecoming)
+	if (req->ts != t_morecoming)
 		{
-		LogMsg("ERROR: read_msg called with invalid transfer state (%d)", rs->ts);
-		rs->ts = t_error;
+		LogMsg("ERROR: read_msg called with invalid transfer state (%d)", req->ts);
+		req->ts = t_error;
 		return t_error;
 		}
 		
-	if (rs->hdr_bytes < sizeof(ipc_msg_hdr))
+	if (req->hdr_bytes < sizeof(ipc_msg_hdr))
 		{
-		nleft = sizeof(ipc_msg_hdr) - rs->hdr_bytes;
-		nread = recv(rs->sd, (char *)&rs->hdr + rs->hdr_bytes, nleft, 0);
-		if (nread == 0)  	{ rs->ts = t_terminated;  return t_terminated;  	}
+		nleft = sizeof(ipc_msg_hdr) - req->hdr_bytes;
+		nread = recv(req->sd, (char *)&req->hdr + req->hdr_bytes, nleft, 0);
+		if (nread == 0)  	{ req->ts = t_terminated;  return t_terminated;  	}
 		if (nread < 0) goto rerror;
-		rs->hdr_bytes += nread;
-		if (rs->hdr_bytes == sizeof(ipc_msg_hdr))
+		req->hdr_bytes += nread;
+		if (req->hdr_bytes == sizeof(ipc_msg_hdr))
 			{
-			ConvertHeaderBytes(&rs->hdr);
-			if (rs->hdr.version != VERSION)
+			ConvertHeaderBytes(&req->hdr);
+			if (req->hdr.version != VERSION)
 				{
-				LogMsg("ERROR: read_msg - client version 0x%08X does not match daemon version 0x%08X", rs->hdr.version, VERSION);
-				rs->ts = t_error;
+				LogMsg("ERROR: read_msg - client version 0x%08X does not match daemon version 0x%08X", req->hdr.version, VERSION);
+				req->ts = t_error;
 				return t_error;
 				}
 			}
-		if (rs->hdr_bytes > sizeof(ipc_msg_hdr))
+		if (req->hdr_bytes > sizeof(ipc_msg_hdr))
 			{
 			LogMsg("ERROR: read_msg - read too many header bytes");
-			rs->ts = t_error;
+			req->ts = t_error;
 			return t_error;
 			}
 		}
 
 	// only read data if header is complete
-	if (rs->hdr_bytes == sizeof(ipc_msg_hdr))
+	if (req->hdr_bytes == sizeof(ipc_msg_hdr))
 		{
-		if (rs->hdr.datalen == 0)  // ok in removerecord requests
+		if (req->hdr.datalen == 0)  // ok in removerecord requests
 			{
-			rs->ts = t_complete;
-			rs->msgbuf = NULL;
+			req->ts = t_complete;
+			req->msgbuf = NULL;
 			return t_complete;
 			}
 		
-		if (!rs->msgbuf)  // allocate the buffer first time through
+		if (!req->msgbuf)  // allocate the buffer first time through
 			{
-			rs->msgbuf = mallocL("request_state msgbuf", rs->hdr.datalen + MSG_PAD_BYTES);
-			if (!rs->msgbuf)
+			req->msgbuf = mallocL("request_state msgbuf", req->hdr.datalen + MSG_PAD_BYTES);
+			if (!req->msgbuf)
 				{
 				my_perror("ERROR: malloc");
-				rs->ts = t_error;
+				req->ts = t_error;
 				return t_error;
 				}
-			rs->msgdata = rs->msgbuf;
-			mDNSPlatformMemZero(rs->msgbuf, rs->hdr.datalen + MSG_PAD_BYTES);
+			req->msgdata = req->msgbuf;
+			mDNSPlatformMemZero(req->msgbuf, req->hdr.datalen + MSG_PAD_BYTES);
 			}
-		nleft = rs->hdr.datalen - rs->data_bytes;
-		nread = recv(rs->sd, rs->msgbuf + rs->data_bytes, nleft, 0);
-		if (nread == 0)  	{ rs->ts = t_terminated;  return t_terminated; 	}
+		nleft = req->hdr.datalen - req->data_bytes;
+		nread = recv(req->sd, req->msgbuf + req->data_bytes, nleft, 0);
+		if (nread == 0)  	{ req->ts = t_terminated;  return t_terminated; 	}
 		if (nread < 0)	goto rerror;
-		rs->data_bytes += nread;
-		if (rs->data_bytes > rs->hdr.datalen)
+		req->data_bytes += nread;
+		if (req->data_bytes > req->hdr.datalen)
 			{
 			LogMsg("ERROR: read_msg - read too many data bytes");
-			rs->ts = t_error;
+			req->ts = t_error;
 			return t_error;
 			}
 		}
 
-	if (rs->hdr_bytes == sizeof(ipc_msg_hdr) && rs->data_bytes == rs->hdr.datalen)
-		rs->ts = t_complete;
-	else rs->ts = t_morecoming;
+	if (req->hdr_bytes == sizeof(ipc_msg_hdr) && req->data_bytes == req->hdr.datalen)
+		req->ts = t_complete;
+	else req->ts = t_morecoming;
 
-	return rs->ts;
+	return req->ts;
 
 rerror:
 	if (dnssd_errno() == dnssd_EWOULDBLOCK || dnssd_errno() == dnssd_EINTR) return t_morecoming;
 	my_perror("ERROR: read_msg");
-	rs->ts = t_error;
+	req->ts = t_error;
 	return t_error;
 	}
 
@@ -1268,19 +1272,19 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 			}
 		else
 			{
-			request_state *rs = instance->request;
-			if (!rs) { LogMsg("ERROR: regservice_callback: received result %ld with a NULL request pointer", result); return; }
+			request_state *req = instance->request;
+			if (!req) { LogMsg("ERROR: regservice_callback: received result %ld with a NULL request pointer", result); return; }
 			free_service_instance(instance);
-			if (!SuppressError) deliver_async_error(rs, reg_service_reply_op, result);
+			if (!SuppressError) deliver_async_error(req, reg_service_reply_op, result);
 			}
 		}
 	else
 		{
-		request_state *rs = instance->request;
-		if (!rs) { LogMsg("ERROR: regservice_callback: received result %ld with a NULL request pointer", result); return; }
+		request_state *req = instance->request;
+		if (!req) { LogMsg("ERROR: regservice_callback: received result %ld with a NULL request pointer", result); return; }
 		if (result != mStatus_NATTraversal) LogMsg("ERROR: unknown result in regservice_callback: %ld", result);
 		free_service_instance(instance);
-		if (!SuppressError) deliver_async_error(rs, reg_service_reply_op, result);
+		if (!SuppressError) deliver_async_error(req, reg_service_reply_op, result);
 		}
 	}
 
@@ -2341,12 +2345,12 @@ mDNSlocal void resolve_result_callback(mDNS *const m, DNSQuestion *question, con
 	char fullname[MAX_ESCAPED_DOMAIN_NAME], target[MAX_ESCAPED_DOMAIN_NAME];
 	char *data;
 	reply_state *rep;
-	request_state *rs = question->QuestionContext;
-	resolve_termination_t *res = rs->termination_context;
+	request_state *req = question->QuestionContext;
+	resolve_termination_t *res = req->termination_context;
 	(void)m; // Unused
 
 	LogOperation("%3d: DNSServiceResolve(%##s, %s) %s %s",
-		rs->sd, question->qname.c, DNSTypeName(question->qtype), AddRecord ? "ADD" : "RMV", RRDisplayString(m, answer));
+		req->sd, question->qname.c, DNSTypeName(question->qtype), AddRecord ? "ADD" : "RMV", RRDisplayString(m, answer));
 	
 	// This code used to do this trick of just keeping a copy of the pointer to
 	// the answer record in the cache, but the unicast query code doesn't currently
@@ -2377,7 +2381,7 @@ mDNSlocal void resolve_result_callback(mDNS *const m, DNSQuestion *question, con
 	len += res->txt->rdlength;
 	
 	// allocate/init reply header
-	rep =  create_reply(resolve_reply_op, len, rs);
+	rep =  create_reply(resolve_reply_op, len, req);
 	rep->rhdr->flags = dnssd_htonl(0);
 	rep->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(m, answer->InterfaceID));
 	rep->rhdr->error = dnssd_htonl(kDNSServiceErr_NoError);
@@ -2392,27 +2396,27 @@ mDNSlocal void resolve_result_callback(mDNS *const m, DNSQuestion *question, con
 	put_uint16(res->txt->rdlength, &data);
 	put_rdata(res->txt->rdlength, res->txt->rdata->u.data, &data);
 	
-	append_reply(rs, rep);
+	append_reply(req, rep);
 	}
 
 mDNSlocal void resolve_termination_callback(void *context)
 	{
 	resolve_termination_t *term = context;
-	request_state *rs;
+	request_state *req;
 	
 	if (!term)
 		{
 		LogMsg("ERROR: resolve_termination_callback: double termination");
 		return;
 		}
-	rs = term->rstate;
-	LogOperation("%3d: DNSServiceResolve(%##s) STOP", rs->sd, term->qtxt.qname.c);
+	req = term->rstate;
+	LogOperation("%3d: DNSServiceResolve(%##s) STOP", req->sd, term->qtxt.qname.c);
 	
 	mDNS_StopQuery(&mDNSStorage, &term->qtxt);
 	mDNS_StopQuery(&mDNSStorage, &term->qsrv);
 	
 	freeL("resolve_termination_t", term);
-	rs->termination_context = NULL;
+	req->termination_context = NULL;
 	}
 
 mDNSlocal void handle_resolve_request(request_state *rstate)
