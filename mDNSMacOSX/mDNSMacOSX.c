@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.378  2007/03/22 00:49:20  cheshire
+<rdar://problem/4848295> Advertise model information via Bonjour
+
 Revision 1.377  2007/03/21 00:30:05  cheshire
 <rdar://problem/4789455> Multiple errors in DNameList-related code
 
@@ -212,12 +215,6 @@ Add (commented out) trigger value for testing "mach_absolute_time went backwards
 // For debugging, set LIST_ALL_INTERFACES to 1 to display all found interfaces,
 // including ones that mDNSResponder chooses not to use.
 #define LIST_ALL_INTERFACES 0
-
-// For debugging, being able to identify software versions is useful.
-// Some people are concerned that this information could be exploited by hackers.
-// I'm not totally convinced by that argument, but we don't want to cause our users distress,
-// so for shipping code, define "NO_HINFO" to suppress the generation of HINFO records. -- SC
-#define NO_HINFO 1
 
 // For enabling AAAA records over IPv4. Setting this to 0 sends only
 // A records over IPv4 and AAAA over IPv6. Setting this to 1 sends both
@@ -3166,7 +3163,6 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	if (mDNSMacOSXSystemBuildNumber(HINFO_SWstring) < 7) m->KnownBugs |= mDNS_KnownBug_PhantomInterfaces;
 	if (mDNSPlatformInit_CanReceiveUnicast())            m->CanReceiveUnicastOn5353 = mDNStrue;
 
-#ifndef NO_HINFO
 	mDNSu32 hlen = mDNSPlatformStrLen(HINFO_HWstring);
 	mDNSu32 slen = mDNSPlatformStrLen(HINFO_SWstring);
 	if (hlen + slen < 254)
@@ -3176,7 +3172,6 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 		mDNSPlatformMemCopy(HINFO_HWstring, &m->HIHardware.c[1], hlen);
 		mDNSPlatformMemCopy(HINFO_SWstring, &m->HISoftware.c[1], slen);
 		}
-#endif /* NO_HINFO */
 
  	m->p->unicastsockets.m     = m;
 	m->p->unicastsockets.info  = NULL;

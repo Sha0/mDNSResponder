@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.245  2007/03/22 00:49:20  cheshire
+<rdar://problem/4848295> Advertise model information via Bonjour
+
 Revision 1.244  2007/03/21 21:01:48  cheshire
 <rdar://problem/4789793> Leak on error path in regrecord_callback, uds_daemon.c
 
@@ -1235,8 +1238,8 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 		if (instance->renameonmemfree)
 			{
 			instance->renameonmemfree = 0;
-			instance->name = mDNSStorage.nicelabel;
-			err = mDNS_RenameAndReregisterService(&mDNSStorage, srs, &instance->name);
+			instance->name = m->nicelabel;
+			err = mDNS_RenameAndReregisterService(m, srs, &instance->name);
 			if (err) LogMsg("ERROR: regservice_callback - RenameAndReregisterService returned %ld", err);
 			// error should never happen - safest to log and continue
 			}
@@ -1254,7 +1257,7 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 				m->MainCallback(m, mStatus_ConfigChanged);
 				}
 			else	// On conflict for a non-autoname service, rename and reregister just that one service
-				mDNS_RenameAndReregisterService(&mDNSStorage, srs, mDNSNULL);
+				mDNS_RenameAndReregisterService(m, srs, mDNSNULL);
 			}
 		else
 			{
@@ -1271,16 +1274,6 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 		if (result != mStatus_NATTraversal) LogMsg("ERROR: unknown result in regservice_callback: %ld", result);
 		free_service_instance(instance);
 		if (!SuppressError) deliver_async_error(rs, reg_service_reply_op, result);
-		}
-	}
-
-mDNSlocal void rename_service(service_instance *srv)
-	{
-	if (srv->autoname && !SameDomainLabelCS(srv->name.c, mDNSStorage.nicelabel.c))
-		{
-		srv->renameonmemfree = 1;
-		if (mDNS_DeregisterService(&mDNSStorage, &srv->srs))	// If service deregistered already, we can re-register immediately
-			regservice_callback(&mDNSStorage, &srv->srs, mStatus_MemFree);
 		}
 	}
 
@@ -1332,7 +1325,7 @@ mDNSlocal void regrecord_callback(mDNS *const m, AuthRecord * rr, mStatus result
 	reply = create_reply(reg_record_reply_op, len, rstate);
 	reply->mhdr->client_context = re->client_context;
 	reply->rhdr->flags = dnssd_htonl(0);
-	reply->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, rr->resrec.InterfaceID));
+	reply->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(m, rr->resrec.InterfaceID));
 	reply->rhdr->error = dnssd_htonl(result);
 
 	if (result)
@@ -1691,6 +1684,43 @@ mDNSlocal mStatus register_service_instance(request_state *request, const domain
 	return result;
 	}
 
+mDNSlocal void UpdateDeviceInfoRecord(mDNS *const m, mDNSBool force)
+	{
+	int num_autoname = 0;
+
+	if (!force)
+		{
+		request_state *req;
+		service_instance *ptr;
+		for (req = all_requests; req; req = req->next)
+			if (req->service_registration)
+				for (ptr = req->service_registration->instances; ptr; ptr = ptr->next)
+					if (ptr->autoname)
+						num_autoname++;
+		}
+
+	// If DeviceInfo record is currently registered, see if we need to deregister it
+	if (m->DeviceInfo.resrec.RecordType != kDNSRecordTypeUnregistered)
+		if (force || num_autoname == 0 || !SameDomainLabelCS(m->DeviceInfo.resrec.name->c, m->nicelabel.c))
+			{
+			LogOperation("UpdateDeviceInfoRecord Deregister %##s", m->DeviceInfo.resrec.name);
+			mDNS_Deregister(m, &m->DeviceInfo);
+			}
+
+	// If DeviceInfo record is not currently registered, see if we need to register it
+	if (m->DeviceInfo.resrec.RecordType == kDNSRecordTypeUnregistered)
+		if (force || num_autoname > 0)
+			{
+			mDNS_SetupResourceRecord(&m->DeviceInfo, mDNSNULL, mDNSNULL, kDNSType_TXT, kHostNameTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
+			ConstructServiceName(m->DeviceInfo.resrec.name, &m->nicelabel, &DeviceInfoName, &localdomain);
+			mDNSPlatformMemCopy(&m->HIHardware, m->DeviceInfo.resrec.rdata->u.data, 1 + (mDNSu32)m->HIHardware.c[0]);
+			//MakeDomainLabelFromLiteralString((domainlabel *)m->DeviceInfo.resrec.rdata->u.name.c, "model = foo");
+			m->DeviceInfo.resrec.rdlength = m->DeviceInfo.resrec.rdata->u.data[0] + 1;
+			LogOperation("UpdateDeviceInfoRecord   Register %##s", m->DeviceInfo.resrec.name);
+			mDNS_Register(m, &m->DeviceInfo);
+			}
+	}
+
 mDNSlocal void regservice_termination_callback(void *context)
 	{
 	service_info *info = context;
@@ -1710,6 +1740,7 @@ mDNSlocal void regservice_termination_callback(void *context)
 	info->request->service_registration = NULL; // clear pointer from request back to info
 	if (info->txtdata) { freeL("service_info txtdata", info->txtdata); info->txtdata = NULL; }
 	freeL("service_info", info);
+	UpdateDeviceInfoRecord(&mDNSStorage, mDNSfalse);
 	}
 
 mDNSexport void udsserver_default_reg_domain_changed(const domainname *d, mDNSBool add)
@@ -1820,7 +1851,7 @@ mDNSlocal void handle_regservice_request(request_state *request)
 
 	if (!name[0])
 		{
-		service->name = (&mDNSStorage)->nicelabel;
+		service->name = mDNSStorage.nicelabel;
 		service->autoname = mDNStrue;
 		}
 	else
@@ -1878,7 +1909,9 @@ mDNSlocal void handle_regservice_request(request_state *request)
 			register_service_instance(request, &ptr->name);
 			// note that we don't report errors for non-local, non-explicit domains
 		}
-	
+
+	UpdateDeviceInfoRecord(&mDNSStorage, mDNStrue);
+
 finish:
 	deliver_error(request, result);
 	if (result != mStatus_NoError)
@@ -2065,18 +2098,21 @@ mDNSlocal void SetPrefsBrowseDomains(mDNS *m, DNameListElem * browseDomains, mDN
 mDNSexport void udsserver_handle_configchange(mDNS *const m)
 	{
 	request_state *req;
+	service_instance *ptr;
 	domainname      regDomain;
 	DNameListElem * browseDomains;
 
+	UpdateDeviceInfoRecord(m, mDNSfalse);
+
 	for (req = all_requests; req; req = req->next)
-		{
 		if (req->service_registration)
-			{
-			service_instance *ptr;
 			for (ptr = req->service_registration->instances; ptr; ptr = ptr->next)
-				rename_service(ptr);
-			}
-		}
+				if (ptr->autoname && !SameDomainLabelCS(ptr->name.c, m->nicelabel.c))
+					{
+					ptr->renameonmemfree = 1;
+					if (mDNS_DeregisterService(m, &ptr->srs))	// If service deregistered already, we can re-register immediately
+						regservice_callback(m, &ptr->srs, mStatus_MemFree);
+					}
 
 	// Let the platform layer get the current DNS information
 	mDNSPlatformGetDNSConfig(mDNSNULL, &regDomain, &browseDomains);
@@ -2224,11 +2260,8 @@ mDNSlocal void handle_browse_request(request_state *request)
 	InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
 	if (interfaceIndex && !InterfaceID) { err = mStatus_BadParamErr;  goto error; }
 
-	if (!domain || (domain[0] == '\0'))
-		{
-		uDNS_RegisterSearchDomains(&mDNSStorage);
-		}
-		
+	if (!domain || (domain[0] == '\0')) uDNS_RegisterSearchDomains(&mDNSStorage);
+
 	typedn.c[0] = 0;
 	NumSubTypes = ChopSubTypes(regtype);	// Note: Modifies regtype string to remove trailing subtypes
 	if (NumSubTypes < 0 || NumSubTypes > 1) { err = mStatus_BadParamErr;  goto error; }
@@ -2337,7 +2370,7 @@ mDNSlocal void resolve_result_callback(mDNS *const m, DNSQuestion *question, con
 	// allocate/init reply header
 	rep =  create_reply(resolve_reply_op, len, rs);
 	rep->rhdr->flags = dnssd_htonl(0);
-	rep->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, answer->InterfaceID));
+	rep->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(m, answer->InterfaceID));
 	rep->rhdr->error = dnssd_htonl(kDNSServiceErr_NoError);
 
 	data = rep->sdata;
@@ -2514,7 +2547,7 @@ mDNSlocal void queryrecord_result_callback(mDNS *const m, DNSQuestion *question,
 	rep =  create_reply(query_reply_op, len, req);
 
 	rep->rhdr->flags = dnssd_htonl(AddRecord ? kDNSServiceFlagsAdd : 0);
-	rep->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, answer->InterfaceID));
+	rep->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(m, answer->InterfaceID));
 	rep->rhdr->error = dnssd_htonl(kDNSServiceErr_NoError);
 
 	data = rep->sdata;
@@ -2909,7 +2942,7 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 		if (err)
 			{
 			deliver_async_error(req, port_mapping_create_reply_op, kDNSServiceErr_NATPortMappingUnsupported);
-			uDNS_FreeNATInfo(&mDNSStorage, n);
+			uDNS_FreeNATInfo(m, n);
 			info->NATAddrinfo = mDNSNULL;
 			return mDNStrue;
 			}
@@ -2918,11 +2951,11 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 			{
 			if (info->protocol & kDNSServiceProtocol_UDP)
 				{
-				info->NATMapinfo = uDNS_AllocNATInfo(&mDNSStorage, NATOp_MapUDP, info->privatePort, info->requestedPublicPort, info->requestedTTL, port_mapping_create_reply);
+				info->NATMapinfo = uDNS_AllocNATInfo(m, NATOp_MapUDP, info->privatePort, info->requestedPublicPort, info->requestedTTL, port_mapping_create_reply);
 				}
 			else if (info->protocol & kDNSServiceProtocol_TCP)
 				{
-				info->NATMapinfo = uDNS_AllocNATInfo(&mDNSStorage, NATOp_MapTCP, info->privatePort, info->requestedPublicPort, info->requestedTTL, port_mapping_create_reply);
+				info->NATMapinfo = uDNS_AllocNATInfo(m, NATOp_MapTCP, info->privatePort, info->requestedPublicPort, info->requestedTTL, port_mapping_create_reply);
 				}
 			
 			if (!info->NATMapinfo) { deliver_async_error(req, port_mapping_create_reply_op, mStatus_NoMemoryErr); return mDNStrue; }
@@ -2930,14 +2963,14 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 			info->NATMapinfo->reg.RecordRegistration = NULL;
 			info->NATMapinfo->state                  = NATState_Request;
 			uDNS_FormatPortMaprequest(info->NATMapinfo);
-			uDNS_SendNATMsg(info->NATMapinfo, &mDNSStorage);
+			uDNS_SendNATMsg(info->NATMapinfo, m);
 			}
 		}
 	else if (info->NATMapinfo == n)
 		{
 		mDNSBool ret;
 
-		ret = uDNS_HandleNATPortMapReply(n, &mDNSStorage, pkt);
+		ret = uDNS_HandleNATPortMapReply(n, m, pkt);
 
 		switch (n->state)
 			{
@@ -2951,7 +2984,7 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 			case NATState_Deleted:
 				{
 				deliver_async_error(req, port_mapping_create_reply_op, kDNSServiceErr_Invalid);
-				uDNS_FreeNATInfo(&mDNSStorage, n);
+				uDNS_FreeNATInfo(m, n);
 				info->NATMapinfo = mDNSNULL;
 				return ret;
 				}
@@ -2959,7 +2992,7 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 			case NATState_Error:
 				{
 				deliver_async_error(req, port_mapping_create_reply_op, kDNSServiceErr_NATPortMappingUnsupported);
-				uDNS_FreeNATInfo(&mDNSStorage, n);
+				uDNS_FreeNATInfo(m, n);
 				info->NATMapinfo = mDNSNULL;
 				return ret;
 				}
@@ -2990,7 +3023,7 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 		rep = create_reply(port_mapping_create_reply_op, replyLen, req);
 
 		rep->rhdr->flags = dnssd_htonl(0);
-		rep->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, info->interface_id));
+		rep->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(m, info->interface_id));
 		rep->rhdr->error = dnssd_htonl(kDNSServiceErr_NoError);
 
 		data = rep->sdata;
@@ -3099,13 +3132,9 @@ mDNSlocal void handle_port_mapping_create_request(request_state *request)
 	req->opcode = NATOp_AddrRequest;
 	
 	if (!mDNSStorage.Router.ip.v4.NotAnInteger)
-		{
 		debugf("No router.  Will retry NAT traversal in %ld ticks", NATMAP_INIT_RETRY);
-		}
 	else
-		{
 		uDNS_SendNATMsg(info->NATAddrinfo, &mDNSStorage);
-		}
 
 	deliver_error(request, err);
 
@@ -3176,7 +3205,7 @@ mDNSlocal void addrinfo_result_callback(mDNS *const m, DNSQuestion *question, co
 	rep =  create_reply(addrinfo_reply_op, len, info->rstate);
 
 	if (AddRecord) rep->rhdr->flags |= dnssd_htonl(kDNSServiceFlagsAdd);
-	rep->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, answer->InterfaceID));
+	rep->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(m, answer->InterfaceID));
 	rep->rhdr->error = dnssd_htonl(kDNSServiceErr_NoError);
 
 	data = rep->sdata;

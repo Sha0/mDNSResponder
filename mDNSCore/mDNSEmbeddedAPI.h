@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.343  2007/03/22 00:49:20  cheshire
+<rdar://problem/4848295> Advertise model information via Bonjour
+
 Revision 1.342  2007/03/21 23:06:00  cheshire
 Rename uDNS_HostnameInfo to HostnameInfo; deleted some unused fields
 
@@ -782,8 +785,8 @@ struct AuthRecord_struct
 	ResourceRecord  resrec;
 
 	// Field Group 2: Persistent metadata for Authoritative Records
-	AuthRecord     *Additional1;		// Recommended additional record to include in response
-	AuthRecord     *Additional2;		// Another additional
+	AuthRecord     *Additional1;		// Recommended additional record to include in response (e.g. SRV for PTR record)
+	AuthRecord     *Additional2;		// Another additional (e.g. TXT for record)
 	AuthRecord     *DependentOn;		// This record depends on another for its uniqueness checking
 	AuthRecord     *RRSet;				// This unique record is part of an RRSet
 	mDNSRecordCallback *RecordCallback;	// Callback function to call for state changes, and to free memory asynchronously on deregistration
@@ -1428,6 +1431,7 @@ struct mDNS_struct
 	domainname  MulticastHostname;		// Fully Qualified "dot-local" Host Name, e.g. "Foo.local."
 	UTF8str255  HIHardware;
 	UTF8str255  HISoftware;
+	AuthRecord  DeviceInfo;
 	AuthRecord *ResourceRecords;
 	AuthRecord *DuplicateRecords;		// Records currently 'on hold' because they are duplicates of existing records
 	AuthRecord *NewLocalRecords;		// Fresh local-only records not yet delivered to local-only questions
@@ -1519,6 +1523,7 @@ extern const mDNSOpaque64 zeroOpaque64;
 
 #define localdomain (*(const domainname *)"\x5" "local")
 #define LocalReverseMapDomain (*(const domainname *)"\x3" "254" "\x3" "169" "\x7" "in-addr" "\x4" "arpa")
+#define DeviceInfoName (*(const domainname *)"\xC" "_device-info" "\x4" "_tcp")
 
 // ***************************************************************************
 #if 0

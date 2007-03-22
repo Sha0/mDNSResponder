@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.591  2007/03/22 00:49:19  cheshire
+<rdar://problem/4848295> Advertise model information via Bonjour
+
 Revision 1.590  2007/03/21 23:05:59  cheshire
 Rename uDNS_HostnameInfo to HostnameInfo; deleted some unused fields
 
@@ -251,6 +254,8 @@ Fixes to avoid code generation warning/error on FreeBSD 7
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark - Program Constants
 #endif
+
+#define NO_HINFO 1
 
 mDNSlocal const mDNSInterfaceID mDNSInterfaceMark = (mDNSInterfaceID)~0;
 
@@ -1075,7 +1080,7 @@ mDNSlocal void AddAdditionalsToResponseList(mDNS *const m, AuthRecord *ResponseR
 
 		if (rr->Additional2 && ResourceRecordIsValidInterfaceAnswer(rr->Additional2, InterfaceID))
 			AddRecordToResponseList(nrpp, rr->Additional2, rr);
-		
+
 		// For SRV records, automatically add the Address record(s) for the target host
 		if (rr->resrec.rrtype == kDNSType_SRV)
 			{
@@ -1086,7 +1091,7 @@ mDNSlocal void AddAdditionalsToResponseList(mDNS *const m, AuthRecord *ResponseR
 					SameDomainName(&rr->resrec.rdata->u.srv.target, rr2->resrec.name))
 					AddRecordToResponseList(nrpp, rr2, rr);
 			}
-		else if (RRTypeIsAddressType(rr->resrec.rrtype))
+		else if (RRTypeIsAddressType(rr->resrec.rrtype))	// For A or AAAA, put counterpart as additional
 			{
 			for (rr2=m->ResourceRecords; rr2; rr2=rr2->next)					// Scan list of resource records
 				if (RRTypeIsAddressType(rr2->resrec.rrtype) &&					// For all address records (A/AAAA) ...
@@ -1094,6 +1099,12 @@ mDNSlocal void AddAdditionalsToResponseList(mDNS *const m, AuthRecord *ResponseR
 					rr->resrec.namehash == rr2->resrec.namehash &&				// ... and have the same name
 					SameDomainName(rr->resrec.name, rr2->resrec.name))
 					AddRecordToResponseList(nrpp, rr2, rr);
+			}
+		else if (rr->resrec.rrtype == kDNSType_PTR)			// For service PTR, see if we want to add DeviceInfo record
+			{
+			if (ResourceRecordIsValidInterfaceAnswer(&m->DeviceInfo, InterfaceID) &&
+				SameDomainLabel(rr->resrec.rdata->u.name.c, m->DeviceInfo.resrec.name->c))
+				AddRecordToResponseList(nrpp, &m->DeviceInfo, rr);
 			}
 		}
 	}
@@ -4958,7 +4969,7 @@ mDNSlocal void AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	mDNS_Register_internal(m, &set->RR_A);
 	mDNS_Register_internal(m, &set->RR_PTR);
 
-	if (m->HIHardware.c[0] > 0 && m->HISoftware.c[0] > 0 && m->HIHardware.c[0] + m->HISoftware.c[0] <= 254)
+	if (!NO_HINFO && m->HIHardware.c[0] > 0 && m->HISoftware.c[0] > 0 && m->HIHardware.c[0] + m->HISoftware.c[0] <= 254)
 		{
 		mDNSu8 *p = set->RR_HINFO.resrec.rdata->u.data;
 		AssignDomainName(set->RR_HINFO.resrec.name, &m->MulticastHostname);
