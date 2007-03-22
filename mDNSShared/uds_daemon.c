@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.249  2007/03/22 20:13:27  cheshire
+Delete unused client_context field
+
 Revision 1.248  2007/03/22 20:03:37  cheshire
 Rename variables for clarity: instead of using variable rs for both request_state
 and reply_state, use req for request_state and rep for reply_state
@@ -387,10 +390,10 @@ typedef struct
 
 typedef struct request_state
 	{
-	// connection structures
+	struct request_state *next;
+
 	dnssd_sock_t sd;
 
-	// state of read (in case message is read over several recv() calls)
 	transfer_state ts;
 	uint32_t hdr_bytes;		// bytes of header already read
 	ipc_msg_hdr hdr;
@@ -402,7 +405,6 @@ typedef struct request_state
 	// reply, termination, error, and client context info
 	int no_reply;		// don't send asynchronous replies to client
 	int time_blocked;           // record time of a blocked client
-	void *client_context;	// don't touch this - pointer only valid in client's addr space
 	struct reply_state *replies;  // corresponding (active) reply list
 	undelivered_error_t *u_err;
 	void *termination_context;
@@ -415,7 +417,6 @@ typedef struct request_state
 	browser_info_t *browser_info;
 	port_mapping_info_t * port_mapping_create_info;
 	addrinfo_info_t     * addrinfo_info;
-	struct request_state *next;
 	} request_state;
 
 // struct physically sits between ipc message header and call-specific fields in the message buffer
