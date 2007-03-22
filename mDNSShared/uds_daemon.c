@@ -17,6 +17,10 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.247  2007/03/22 19:31:42  cheshire
+<rdar://problem/4848295> Advertise model information via Bonjour
+Add missing "model=" at start of DeviceInfo data
+
 Revision 1.246  2007/03/22 18:31:48  cheshire
 Put dst parameter first in mDNSPlatformStrCopy/mDNSPlatformMemCopy, like conventional Posix strcpy/memcpy
 
@@ -1714,11 +1718,13 @@ mDNSlocal void UpdateDeviceInfoRecord(mDNS *const m, mDNSBool force)
 	if (m->DeviceInfo.resrec.RecordType == kDNSRecordTypeUnregistered)
 		if (force || num_autoname > 0)
 			{
+			mDNSu8 len = m->HIHardware.c[0] < 255 - 6 ? m->HIHardware.c[0] : 255 - 6;
 			mDNS_SetupResourceRecord(&m->DeviceInfo, mDNSNULL, mDNSNULL, kDNSType_TXT, kHostNameTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
 			ConstructServiceName(m->DeviceInfo.resrec.name, &m->nicelabel, &DeviceInfoName, &localdomain);
-			mDNSPlatformMemCopy(m->DeviceInfo.resrec.rdata->u.data, &m->HIHardware, 1 + (mDNSu32)m->HIHardware.c[0]);
-			//MakeDomainLabelFromLiteralString((domainlabel *)m->DeviceInfo.resrec.rdata->u.name.c, "model = foo");
-			m->DeviceInfo.resrec.rdlength = m->DeviceInfo.resrec.rdata->u.data[0] + 1;
+			mDNSPlatformMemCopy(m->DeviceInfo.resrec.rdata->u.data + 1, "model=", 6);
+			mDNSPlatformMemCopy(m->DeviceInfo.resrec.rdata->u.data + 7, m->HIHardware.c + 1, len);
+			m->DeviceInfo.resrec.rdata->u.data[0] = 6 + len;	// "model=" plus the device string
+			m->DeviceInfo.resrec.rdlength         = 7 + len;	// One extra for the length byte at the start of the string
 			LogOperation("UpdateDeviceInfoRecord   Register %##s", m->DeviceInfo.resrec.name);
 			mDNS_Register(m, &m->DeviceInfo);
 			}
