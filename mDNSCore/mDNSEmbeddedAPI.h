@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.345  2007/03/22 19:29:23  cheshire
+Add comment and check to ensure StandardAuthRDSize is at least 256 bytes
+
 Revision 1.344  2007/03/22 18:31:48  cheshire
 Put dst parameter first in mDNSPlatformStrCopy/mDNSPlatformMemCopy, like conventional Posix strcpy/memcpy
 
@@ -675,7 +678,7 @@ typedef packedstruct
 	union { LLQOptData llq; mDNSu32 lease; } OptData;
 	} rdataOPT;
 
-// StandardAuthRDSize is 264 (256+8), which is large enough to hold a maximum-sized SRV record
+// StandardAuthRDSize is 264 (256+8), which is large enough to hold a maximum-sized SRV record (6 + 256 bytes)
 // MaximumRDSize is 8K the absolute maximum we support (at least for now)
 #define StandardAuthRDSize 264
 #define MaximumRDSize 8192
@@ -2128,6 +2131,7 @@ struct mDNS_CompileTimeAssertionChecks
 	char assertB[(sizeof(mDNSOpaque128)    ==  16                          ) ? 1 : -1];
 	char assertC[(sizeof(CacheRecord  )    >=  sizeof(CacheGroup)          ) ? 1 : -1];
 	char assertD[(sizeof(int)              >=  4                           ) ? 1 : -1];
+	char assertE[(StandardAuthRDSize       >=  256                         ) ? 1 : -1];
 	};
 
 // ***************************************************************************
