@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.592  2007/03/22 18:31:48  cheshire
+Put dst parameter first in mDNSPlatformStrCopy/mDNSPlatformMemCopy, like conventional Posix strcpy/memcpy
+
 Revision 1.591  2007/03/22 00:49:19  cheshire
 <rdar://problem/4848295> Advertise model information via Bonjour
 
@@ -3733,7 +3736,7 @@ mDNSlocal CacheRecord *CreateNewCacheEntry(mDNS *const m, const mDNSu32 slot, Ca
 		else if (rr->resrec.rdata != (RData*)&rr->rdatastorage && m->rec.r.resrec.rdlength <= InlineCacheRDSize)
 			LogMsg("rr->resrec.rdata != &rr->rdatastorage but length <= InlineCacheRDSize %##s", m->rec.r.resrec.name->c);
 		if (m->rec.r.resrec.rdlength > InlineCacheRDSize)
-			mDNSPlatformMemCopy(m->rec.r.resrec.rdata, rr->resrec.rdata, sizeofRDataHeader + m->rec.r.resrec.rdlength);
+			mDNSPlatformMemCopy(rr->resrec.rdata, m->rec.r.resrec.rdata, sizeofRDataHeader + m->rec.r.resrec.rdlength);
 
 		rr->next = mDNSNULL;					// Clear 'next' pointer
 		*(cg->rrcache_tail) = rr;				// Append this record to tail of cache slot list
@@ -4634,7 +4637,7 @@ mDNSlocal void FoundServiceInfoTXT(mDNS *const m, DNSQuestion *question, const R
 	query->GotTXT       = mDNStrue;
 	query->info->TXTlen = answer->rdlength;
 	query->info->TXTinfo[0] = 0;		// In case answer->rdlength is zero
-	mDNSPlatformMemCopy(answer->rdata->u.txt.c, query->info->TXTinfo, answer->rdlength);
+	mDNSPlatformMemCopy(query->info->TXTinfo, answer->rdata->u.txt.c, answer->rdlength);
 
 	verbosedebugf("FoundServiceInfoTXT: %##s GotADD=%d", query->info->name.c, query->GotADD);
 
@@ -4974,9 +4977,9 @@ mDNSlocal void AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 		mDNSu8 *p = set->RR_HINFO.resrec.rdata->u.data;
 		AssignDomainName(set->RR_HINFO.resrec.name, &m->MulticastHostname);
 		set->RR_HINFO.DependentOn = &set->RR_A;
-		mDNSPlatformMemCopy(&m->HIHardware, p, 1 + (mDNSu32)m->HIHardware.c[0]);
+		mDNSPlatformMemCopy(p, &m->HIHardware, 1 + (mDNSu32)m->HIHardware.c[0]);
 		p += 1 + (int)p[0];
-		mDNSPlatformMemCopy(&m->HISoftware, p, 1 + (mDNSu32)m->HISoftware.c[0]);
+		mDNSPlatformMemCopy(p, &m->HISoftware, 1 + (mDNSu32)m->HISoftware.c[0]);
 		mDNS_Register_internal(m, &set->RR_HINFO);
 		}
 	else
@@ -5476,7 +5479,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 		{
 		sr->RR_TXT.resrec.rdlength = txtlen;
 		if (sr->RR_TXT.resrec.rdlength > sr->RR_TXT.resrec.rdata->MaxRDLength) return(mStatus_BadParamErr);
-		mDNSPlatformMemCopy(txtinfo, sr->RR_TXT.resrec.rdata->u.txt.c, txtlen);
+		mDNSPlatformMemCopy(sr->RR_TXT.resrec.rdata->u.txt.c, txtinfo, txtlen);
 		}
 	sr->RR_TXT.DependentOn = &sr->RR_SRV;
 

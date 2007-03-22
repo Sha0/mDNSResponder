@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.246  2007/03/22 18:31:48  cheshire
+Put dst parameter first in mDNSPlatformStrCopy/mDNSPlatformMemCopy, like conventional Posix strcpy/memcpy
+
 Revision 1.245  2007/03/22 00:49:20  cheshire
 <rdar://problem/4848295> Advertise model information via Bonjour
 
@@ -1713,7 +1716,7 @@ mDNSlocal void UpdateDeviceInfoRecord(mDNS *const m, mDNSBool force)
 			{
 			mDNS_SetupResourceRecord(&m->DeviceInfo, mDNSNULL, mDNSNULL, kDNSType_TXT, kHostNameTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
 			ConstructServiceName(m->DeviceInfo.resrec.name, &m->nicelabel, &DeviceInfoName, &localdomain);
-			mDNSPlatformMemCopy(&m->HIHardware, m->DeviceInfo.resrec.rdata->u.data, 1 + (mDNSu32)m->HIHardware.c[0]);
+			mDNSPlatformMemCopy(m->DeviceInfo.resrec.rdata->u.data, &m->HIHardware, 1 + (mDNSu32)m->HIHardware.c[0]);
 			//MakeDomainLabelFromLiteralString((domainlabel *)m->DeviceInfo.resrec.rdata->u.name.c, "model = foo");
 			m->DeviceInfo.resrec.rdlength = m->DeviceInfo.resrec.rdata->u.data[0] + 1;
 			LogOperation("UpdateDeviceInfoRecord   Register %##s", m->DeviceInfo.resrec.name);

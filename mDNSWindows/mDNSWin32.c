@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.118  2007/03/22 18:31:49  cheshire
+Put dst parameter first in mDNSPlatformStrCopy/mDNSPlatformMemCopy, like conventional Posix strcpy/memcpy
+
 Revision 1.117  2007/03/21 00:30:07  cheshire
 <rdar://problem/4789455> Multiple errors in DNameList-related code
 
@@ -634,7 +637,7 @@ void	mDNSPlatformUnlock( const mDNS * const inMDNS )
 //	mDNSPlatformStrCopy
 //===========================================================================================================================
 
-void	mDNSPlatformStrCopy( const void *inSrc, void *inDst )
+void	mDNSPlatformStrCopy( void *inDst, const void *inSrc )
 {
 	check( inSrc );
 	check( inDst );
@@ -657,7 +660,7 @@ mDNSu32	mDNSPlatformStrLen( const void *inSrc )
 //	mDNSPlatformMemCopy
 //===========================================================================================================================
 
-void	mDNSPlatformMemCopy( const void *inSrc, void *inDst, mDNSu32 inSize )
+void	mDNSPlatformMemCopy( void *inDst, const void *inSrc, mDNSu32 inSize )
 {
 	check( inSrc );
 	check( inDst );
@@ -669,7 +672,7 @@ void	mDNSPlatformMemCopy( const void *inSrc, void *inDst, mDNSu32 inSize )
 //	mDNSPlatformMemSame
 //===========================================================================================================================
 
-mDNSBool	mDNSPlatformMemSame( const void *inSrc, const void *inDst, mDNSu32 inSize )
+mDNSBool	mDNSPlatformMemSame( const void *inDst, const void *inSrc, mDNSu32 inSize )
 {
 	check( inSrc );
 	check( inDst );

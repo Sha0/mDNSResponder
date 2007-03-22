@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSDigest.c,v $
+Revision 1.21  2007/03/22 18:31:48  cheshire
+Put dst parameter first in mDNSPlatformStrCopy/mDNSPlatformMemCopy, like conventional Posix strcpy/memcpy
+
 Revision 1.20  2006/12/22 20:59:49  cheshire
 <rdar://problem/4742742> Read *all* DNS keys from keychain,
  not just key for the system-wide default registration domain
@@ -1374,8 +1377,8 @@ mDNSlocal void DNSDigest_ConstructHMACKey(DomainAuthInfo *info, const mDNSu8 *ke
 	// store key in pads
 	mDNSPlatformMemZero(info->keydata_ipad, HMAC_LEN);
 	mDNSPlatformMemZero(info->keydata_opad, HMAC_LEN);
-	mDNSPlatformMemCopy(key, info->keydata_ipad, len);
-	mDNSPlatformMemCopy(key, info->keydata_opad, len);
+	mDNSPlatformMemCopy(info->keydata_ipad, key, len);
+	mDNSPlatformMemCopy(info->keydata_opad, key, len);
 
 	// XOR key with ipad and opad values
 	for (i = 0; i < HMAC_LEN; i++)
@@ -1445,7 +1448,7 @@ mDNSexport mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 
 	utc48[4] = (mDNSu8)((utc32 >>  8) & 0xff);
 	utc48[5] = (mDNSu8)( utc32        & 0xff);
 
-	mDNSPlatformMemCopy(utc48, rdata, 6);
+	mDNSPlatformMemCopy(rdata, utc48, 6);
 	rdata += 6;              	
 	MD5_Update(&c, utc48, 6);
 
@@ -1475,7 +1478,7 @@ mDNSexport mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 
 	rdata[0] = (mDNSu8)((MD5_LEN >> 8)  & 0xff);
 	rdata[1] = (mDNSu8)( MD5_LEN        & 0xff);
 	rdata += sizeof(mDNSOpaque16);
-	mDNSPlatformMemCopy(digest, rdata, MD5_LEN);                          // MAC
+	mDNSPlatformMemCopy(rdata, digest, MD5_LEN);                          // MAC
 	rdata += MD5_LEN;
 	rdata[0] = msg->h.id.b[0];                                            // original ID
 	rdata[1] = msg->h.id.b[1];
@@ -1574,7 +1577,7 @@ mDNSexport mDNSBool DNSDigest_VerifyMessage(DNSMessage *msg, mDNSu8 *end, LargeC
 
 	// MAC
 
-	mDNSPlatformMemCopy(ptr, thatDigest, MD5_LEN);
+	mDNSPlatformMemCopy(thatDigest, ptr, MD5_LEN);
 
 	// Init MD5 context, digest inner key pad and message
 

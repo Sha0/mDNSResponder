@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.344  2007/03/22 18:31:48  cheshire
+Put dst parameter first in mDNSPlatformStrCopy/mDNSPlatformMemCopy, like conventional Posix strcpy/memcpy
+
 Revision 1.343  2007/03/22 00:49:20  cheshire
 <rdar://problem/4848295> Advertise model information via Bonjour
 
@@ -1739,7 +1742,7 @@ extern mDNSOpaque16 mDNS_NewMessageID(mDNS * const m);
 // A simple C structure assignment of a domainname can cause a protection fault by accessing unmapped memory,
 // because that object is defined to be 256 bytes long, but not all domainname objects are truly the full size.
 // This macro uses mDNSPlatformMemCopy() to make sure it only touches the actual bytes that are valid.
-#define AssignDomainName(DST, SRC) mDNSPlatformMemCopy((SRC)->c, (DST)->c, DomainNameLength((SRC)))
+#define AssignDomainName(DST, SRC) mDNSPlatformMemCopy((DST)->c, (SRC)->c, DomainNameLength((SRC)))
 
 // Comparison functions
 #define SameDomainLabelCS(A,B) ((A)[0] == (B)[0] && mDNSPlatformMemSame((A)+1, (B)+1, (A)[0]))
@@ -1964,11 +1967,11 @@ mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport);
 extern void     mDNSPlatformLock        (const mDNS *const m);
 extern void     mDNSPlatformUnlock      (const mDNS *const m);
 
-extern void     mDNSPlatformStrCopy     (const void *src,       void *dst);
-extern mDNSu32  mDNSPlatformStrLen      (const void *src);
-extern void     mDNSPlatformMemCopy     (const void *src,       void *dst, mDNSu32 len);
-extern mDNSBool mDNSPlatformMemSame     (const void *src, const void *dst, mDNSu32 len);
-extern void     mDNSPlatformMemZero     (                       void *dst, mDNSu32 len);
+extern void     mDNSPlatformStrCopy     (      void *dst, const void *src);
+extern mDNSu32  mDNSPlatformStrLen      (                 const void *src);
+extern void     mDNSPlatformMemCopy     (      void *dst, const void *src, mDNSu32 len);
+extern mDNSBool mDNSPlatformMemSame     (const void *dst, const void *src, mDNSu32 len);
+extern void     mDNSPlatformMemZero     (      void *dst,                  mDNSu32 len);
 extern void *   mDNSPlatformMemAllocate (mDNSu32 len);
 extern void     mDNSPlatformMemFree     (void *mem);
 extern mDNSu32  mDNSPlatformRandomSeed  (void);

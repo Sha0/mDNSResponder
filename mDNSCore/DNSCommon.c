@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.132  2007/03/22 18:31:48  cheshire
+Put dst parameter first in mDNSPlatformStrCopy/mDNSPlatformMemCopy, like conventional Posix strcpy/memcpy
+
 Revision 1.131  2007/03/21 21:55:20  cheshire
 <rdar://problem/5069688> Hostname gets ; or : which are illegal characters
 Error in AppendLabelSuffix() for numbers close to the 32-bit limit
@@ -1356,7 +1359,7 @@ mDNSlocal mDNSu8 *putOptRData(mDNSu8 *ptr, const mDNSu8 *limit, ResourceRecord *
 			ptr = putVal16(ptr, opt->OptData.llq.vers);
 			ptr = putVal16(ptr, opt->OptData.llq.llqOp);
 			ptr = putVal16(ptr, opt->OptData.llq.err);
-			mDNSPlatformMemCopy(opt->OptData.llq.id.b, ptr, 8);  // 8-byte id
+			mDNSPlatformMemCopy(ptr, opt->OptData.llq.id.b, 8);  // 8-byte id
 			ptr += 8;
 			ptr = putVal32(ptr, opt->OptData.llq.lease);
 			nput += LLQ_OPTLEN;
@@ -1403,7 +1406,7 @@ mDNSlocal const mDNSu8 *getOptRdata(const mDNSu8 *ptr, const mDNSu8 *const limit
 			opt->OptData.llq.vers = getVal16(&ptr);
 			opt->OptData.llq.llqOp = getVal16(&ptr);
 			opt->OptData.llq.err = getVal16(&ptr);
-			mDNSPlatformMemCopy(ptr, opt->OptData.llq.id.b, 8);
+			mDNSPlatformMemCopy(opt->OptData.llq.id.b, ptr, 8);
 			ptr += 8;
 			opt->OptData.llq.lease = (mDNSu32) ((mDNSu32)ptr[0] << 24 | (mDNSu32)ptr[1] << 16 | (mDNSu32)ptr[2] << 8 | ptr[3]);
 			if (opt->OptData.llq.lease > 0x70000000UL / mDNSPlatformOneSecond)
@@ -1458,7 +1461,7 @@ mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNS
 								return(mDNSNULL);
 								}
 							if (ptr + sizeof(rr->rdata->u.ipv6) > limit) return(mDNSNULL);
-							mDNSPlatformMemCopy(&rr->rdata->u.ipv6, ptr, sizeof(rr->rdata->u.ipv6));
+							mDNSPlatformMemCopy(ptr, &rr->rdata->u.ipv6, sizeof(rr->rdata->u.ipv6));
 							return(ptr + sizeof(rr->rdata->u.ipv6));
 
 		case kDNSType_SRV:	if (ptr + 6 > limit) return(mDNSNULL);
@@ -1476,7 +1479,7 @@ mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNS
 		case kDNSType_HINFO:
 		case kDNSType_TXT:
 		case kDNSType_TSIG:	if (ptr + rr->rdlength > limit) return(mDNSNULL);
-							mDNSPlatformMemCopy(rr->rdata->u.data, ptr, rr->rdlength);
+							mDNSPlatformMemCopy(ptr, rr->rdata->u.data, rr->rdlength);
 							return(ptr + rr->rdlength);
 		}
 	}
@@ -1848,11 +1851,11 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 								return(mDNSNULL);
 								}
 							rr->resrec.rdlength = pktrdlength;
-							mDNSPlatformMemCopy(ptr, rr->resrec.rdata->u.data, pktrdlength);
+							mDNSPlatformMemCopy(rr->resrec.rdata->u.data, ptr, pktrdlength);
 							break;
 
 		case kDNSType_AAAA:	if (pktrdlength != sizeof(mDNSv6Addr)) return(mDNSNULL);
-							mDNSPlatformMemCopy(ptr, &rr->resrec.rdata->u.ipv6, sizeof(rr->resrec.rdata->u.ipv6));
+							mDNSPlatformMemCopy(&rr->resrec.rdata->u.ipv6, ptr, sizeof(rr->resrec.rdata->u.ipv6));
 							break;
 
 		case kDNSType_SRV:	if (pktrdlength < 7) return(mDNSNULL);	// Priority + weight + port + domainname
@@ -1894,7 +1897,7 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 							// We also grab a binary copy of the rdata anyway, since the caller
 							// might know how to interpret it even if we don't.
 							rr->resrec.rdlength = pktrdlength;
-							mDNSPlatformMemCopy(ptr, rr->resrec.rdata->u.data, pktrdlength);
+							mDNSPlatformMemCopy(rr->resrec.rdata->u.data, ptr, pktrdlength);
 							break;
 		}
 

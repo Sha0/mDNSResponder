@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.379  2007/03/22 18:31:48  cheshire
+Put dst parameter first in mDNSPlatformStrCopy/mDNSPlatformMemCopy, like conventional Posix strcpy/memcpy
+
 Revision 1.378  2007/03/22 00:49:20  cheshire
 <rdar://problem/4848295> Advertise model information via Bonjour
 
@@ -599,7 +602,7 @@ mDNSlocal ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 			struct sockaddr_dl *sdl = (struct sockaddr_dl *)CMSG_DATA(cmPtr);
 			if (sdl->sdl_nlen < IF_NAMESIZE)
 				{
-				mDNSPlatformMemCopy(sdl->sdl_data, ifname, sdl->sdl_nlen);
+				mDNSPlatformMemCopy(ifname, sdl->sdl_data, sdl->sdl_nlen);
 				ifname[sdl->sdl_nlen] = 0;
 				// debugf("IP_RECVIF sdl_index %d, sdl_data %s len %d", sdl->sdl_index, ifname, sdl->sdl_nlen);
 				}
@@ -2012,7 +2015,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 			{
 			struct sockaddr_dl *sdl = (struct sockaddr_dl *)ifa->ifa_addr;
 			if (sdl->sdl_type == IFT_ETHER && sdl->sdl_alen == sizeof(PrimaryMAC) && mDNSSameEthAddress(&PrimaryMAC, &zeroEthAddr))
-				mDNSPlatformMemCopy(sdl->sdl_data + sdl->sdl_nlen, PrimaryMAC.b, 6);
+				mDNSPlatformMemCopy(PrimaryMAC.b, sdl->sdl_data + sdl->sdl_nlen, 6);
 			}
 
 		if (ifa->ifa_flags & IFF_UP && ifa->ifa_addr)
@@ -3169,8 +3172,8 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 		{
 		m->HIHardware.c[0] = hlen;
 		m->HISoftware.c[0] = slen;
-		mDNSPlatformMemCopy(HINFO_HWstring, &m->HIHardware.c[1], hlen);
-		mDNSPlatformMemCopy(HINFO_SWstring, &m->HISoftware.c[1], slen);
+		mDNSPlatformMemCopy(&m->HIHardware.c[1], HINFO_HWstring, hlen);
+		mDNSPlatformMemCopy(&m->HISoftware.c[1], HINFO_SWstring, slen);
 		}
 
  	m->p->unicastsockets.m     = m;
@@ -3332,10 +3335,10 @@ mDNSexport mDNSs32 mDNSPlatformUTC(void)
 // Locking is a no-op here, because we're single-threaded with a CFRunLoop, so we can never interrupt ourselves
 mDNSexport void     mDNSPlatformLock   (const mDNS *const m) { (void)m; }
 mDNSexport void     mDNSPlatformUnlock (const mDNS *const m) { (void)m; }
-mDNSexport void     mDNSPlatformStrCopy(const void *src,       void *dst)              { strcpy((char *)dst, (char *)src); }
-mDNSexport mDNSu32  mDNSPlatformStrLen (const void *src)                               { return(strlen((char*)src)); }
-mDNSexport void     mDNSPlatformMemCopy(const void *src,       void *dst, mDNSu32 len) { memcpy(dst, src, len); }
-mDNSexport mDNSBool mDNSPlatformMemSame(const void *src, const void *dst, mDNSu32 len) { return(memcmp(dst, src, len) == 0); }
-mDNSexport void     mDNSPlatformMemZero(                       void *dst, mDNSu32 len) { bzero(dst, len); }
+mDNSexport void     mDNSPlatformStrCopy(      void *dst, const void *src)              { strcpy((char *)dst, (char *)src); }
+mDNSexport mDNSu32  mDNSPlatformStrLen (                 const void *src)              { return(strlen((char*)src)); }
+mDNSexport void     mDNSPlatformMemCopy(      void *dst, const void *src, mDNSu32 len) { memcpy(dst, src, len); }
+mDNSexport mDNSBool mDNSPlatformMemSame(const void *dst, const void *src, mDNSu32 len) { return(memcmp(dst, src, len) == 0); }
+mDNSexport void     mDNSPlatformMemZero(      void *dst,                  mDNSu32 len) { bzero(dst, len); }
 mDNSexport void *   mDNSPlatformMemAllocate(mDNSu32 len) { return(mallocL("mDNSPlatformMemAllocate", len)); }
 mDNSexport void     mDNSPlatformMemFree    (void *mem)   { freeL("mDNSPlatformMemFree", mem); }

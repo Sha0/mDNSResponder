@@ -21,6 +21,9 @@
 	Change History (most recent first):
 
 $Log: mDNSVxWorksIPv4Only.c,v $
+Revision 1.31  2007/03/22 18:31:49  cheshire
+Put dst parameter first in mDNSPlatformStrCopy/mDNSPlatformMemCopy, like conventional Posix strcpy/memcpy
+
 Revision 1.30  2006/12/19 22:43:56  cheshire
 Fix compiler warnings
 
@@ -672,7 +675,7 @@ mDNSu32  mDNSPlatformStrLen( const void *inSrc )
 //	mDNSPlatformStrCopy
 //===========================================================================================================================
 
-void	mDNSPlatformStrCopy( const void *inSrc, void *inDst )
+void	mDNSPlatformStrCopy( void *inDst, const void *inSrc )
 {
 	check( inSrc );
 	check( inDst );
@@ -684,7 +687,7 @@ void	mDNSPlatformStrCopy( const void *inSrc, void *inDst )
 //	mDNSPlatformMemCopy
 //===========================================================================================================================
 
-void	mDNSPlatformMemCopy( const void *inSrc, void *inDst, mDNSu32 inSize )
+void	mDNSPlatformMemCopy( void *inDst, const void *inSrc, mDNSu32 inSize )
 {
 	check( inSrc );
 	check( inDst );
@@ -696,7 +699,7 @@ void	mDNSPlatformMemCopy( const void *inSrc, void *inDst, mDNSu32 inSize )
 //	mDNSPlatformMemSame
 //===========================================================================================================================
 
-mDNSBool	mDNSPlatformMemSame( const void *inSrc, const void *inDst, mDNSu32 inSize )
+mDNSBool	mDNSPlatformMemSame( const void *inDst, const void *inSrc, mDNSu32 inSize )
 {
 	check( inSrc );
 	check( inDst );
@@ -1800,7 +1803,7 @@ mDNSlocal void	GenerateUniqueHostName( char *outName, long *ioSeed )
 	
 	// $$$ Non-Apple Platforms: Fill in appropriate name for device.
 	
-	mDNSPlatformStrCopy( kMDNSDefaultName, outName );
+	mDNSPlatformStrCopy( outName, kMDNSDefaultName );
 }
 
 //===========================================================================================================================
@@ -1816,7 +1819,7 @@ mDNSlocal void	GenerateUniqueDNSName( char *outName, long *ioSeed )
 	
 	// $$$ Non-Apple Platforms: Fill in appropriate DNS name for device.
 	
-	mDNSPlatformStrCopy( kMDNSDefaultName, outName );
+	mDNSPlatformStrCopy( outName, kMDNSDefaultName );
 }
 #endif
 

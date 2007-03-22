@@ -30,6 +30,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.91  2007/03/22 18:31:48  cheshire
+Put dst parameter first in mDNSPlatformStrCopy/mDNSPlatformMemCopy, like conventional Posix strcpy/memcpy
+
 Revision 1.90  2007/03/21 00:31:45  cheshire
 Remove unnecessary (and unimplemented) platform functions
 
@@ -1337,7 +1340,7 @@ mDNSexport void    mDNSPlatformUnlock (const mDNS *const m)
 
 // mDNS core calls this routine to copy C strings.
 // On the Posix platform this maps directly to the ANSI C strcpy.
-mDNSexport void    mDNSPlatformStrCopy(const void *src,       void *dst)
+mDNSexport void    mDNSPlatformStrCopy(void *dst, const void *src)
 	{
 	strcpy((char *)dst, (char *)src);
 	}
@@ -1351,21 +1354,21 @@ mDNSexport mDNSu32  mDNSPlatformStrLen (const void *src)
 
 // mDNS core calls this routine to copy memory.
 // On the Posix platform this maps directly to the ANSI C memcpy.
-mDNSexport void    mDNSPlatformMemCopy(const void *src,       void *dst, mDNSu32 len)
+mDNSexport void    mDNSPlatformMemCopy(void *dst, const void *src, mDNSu32 len)
 	{
 	memcpy(dst, src, len);
 	}
 
 // mDNS core calls this routine to test whether blocks of memory are byte-for-byte
 // identical. On the Posix platform this is a simple wrapper around ANSI C memcmp.
-mDNSexport mDNSBool mDNSPlatformMemSame(const void *src, const void *dst, mDNSu32 len)
+mDNSexport mDNSBool mDNSPlatformMemSame(const void *dst, const void *src, mDNSu32 len)
 	{
 	return memcmp(dst, src, len) == 0;
 	}
 
 // mDNS core calls this routine to clear blocks of memory.
 // On the Posix platform this is a simple wrapper around ANSI C memset.
-mDNSexport void    mDNSPlatformMemZero(                       void *dst, mDNSu32 len)
+mDNSexport void    mDNSPlatformMemZero(void *dst, mDNSu32 len)
 	{
 	memset(dst, 0, len);
 	}

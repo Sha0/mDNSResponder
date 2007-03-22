@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOS9.c,v $
+Revision 1.49  2007/03/22 18:31:48  cheshire
+Put dst parameter first in mDNSPlatformStrCopy/mDNSPlatformMemCopy, like conventional Posix strcpy/memcpy
+
 Revision 1.48  2007/03/20 17:07:15  cheshire
 Rename "struct uDNS_TCPSocket_struct" to "TCPSocket", "struct uDNS_UDPSocket_struct" to "UDPSocket"
 
@@ -295,7 +298,7 @@ mDNSlocal OSStatus readpacket(mDNS *m)
 			err = OTNextOption(recvdata.opt.buf, recvdata.opt.len, &c);
 			if (err || !c) break;
 			if (c->level == INET_IP && c->name == IP_RCVDSTADDR && c->len - kOTOptionHeaderSize == sizeof(destaddr.ip.v4))
-				mDNSPlatformMemCopy(c->value, &destaddr.ip.v4, sizeof(destaddr.ip.v4));
+				mDNSPlatformMemCopy(&destaddr.ip.v4, c->value, sizeof(destaddr.ip.v4));
 			}
 		}
 
@@ -779,11 +782,11 @@ mDNSexport void    mDNSPlatformUnlock(const mDNS *const m)
 	else OTLeaveNotifier(m->p->ep);
 	}
 
-mDNSexport void     mDNSPlatformStrCopy(const void *src,       void *dst)             { OTStrCopy((char*)dst, (char*)src); }
-mDNSexport UInt32   mDNSPlatformStrLen (const void *src)                              { return(OTStrLength((char*)src)); }
-mDNSexport void     mDNSPlatformMemCopy(const void *src,       void *dst, UInt32 len) { OTMemcpy(dst, src, len); }
-mDNSexport mDNSBool mDNSPlatformMemSame(const void *src, const void *dst, UInt32 len) { return(OTMemcmp(dst, src, len)); }
-mDNSexport void     mDNSPlatformMemZero(                       void *dst, UInt32 len) { OTMemzero(dst, len); }
+mDNSexport void     mDNSPlatformStrCopy(      void *dst, const void *src)             { OTStrCopy((char*)dst, (char*)src); }
+mDNSexport UInt32   mDNSPlatformStrLen (                 const void *src)             { return(OTStrLength((char*)src)); }
+mDNSexport void     mDNSPlatformMemCopy(      void *dst, const void *src, UInt32 len) { OTMemcpy(dst, src, len); }
+mDNSexport mDNSBool mDNSPlatformMemSame(const void *dst, const void *src, UInt32 len) { return(OTMemcmp(dst, src, len)); }
+mDNSexport void     mDNSPlatformMemZero(      void *dst,                  UInt32 len) { OTMemzero(dst, len); }
 mDNSexport void *   mDNSPlatformMemAllocate(mDNSu32 len)                              { return(OTAllocMem(len)); }
 mDNSexport void     mDNSPlatformMemFree(void *mem)                                    { OTFreeMem(mem); }
 mDNSexport mDNSu32  mDNSPlatformRandomSeed(void)                                      { return(TickCount()); }

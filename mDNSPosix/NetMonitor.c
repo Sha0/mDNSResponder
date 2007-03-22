@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.86  2007/03/22 18:31:48  cheshire
+Put dst parameter first in mDNSPlatformStrCopy/mDNSPlatformMemCopy, like conventional Posix strcpy/memcpy
+
 Revision 1.85  2007/02/28 01:51:22  cheshire
 Added comment about reverse-order IP address
 
@@ -316,8 +319,8 @@ mDNSlocal void RecordHostInfo(HostEntry *entry, const ResourceRecord *const pktr
 		if (sw + 1 + sw[0] <= rdend)
 			{
 			AssignDomainName(&entry->hostname, pktrr->name);
-			mDNSPlatformMemCopy(hw, entry->HIHardware.c, 1 + (mDNSu32)hw[0]);
-			mDNSPlatformMemCopy(sw, entry->HISoftware.c, 1 + (mDNSu32)sw[0]);
+			mDNSPlatformMemCopy(entry->HIHardware.c, hw, 1 + (mDNSu32)hw[0]);
+			mDNSPlatformMemCopy(entry->HISoftware.c, sw, 1 + (mDNSu32)sw[0]);
 			}
 		}
 	}
@@ -399,7 +402,7 @@ mDNSlocal void ShowSortedHostList(HostList *list, int max)
 		if (e->pkts[HostPkt_B]) mprintf("Bad: %8lu", e->pkts[HostPkt_B]);
 		mprintf("\n");
 		if (!e->HISoftware.c[0] && e->NumQueries > 2)
-			mDNSPlatformMemCopy("\x27*** Unknown (Jaguar, Windows, etc.) ***", &e->HISoftware, 0x28);
+			mDNSPlatformMemCopy(&e->HISoftware, "\x27*** Unknown (Jaguar, Windows, etc.) ***", 0x28);
 		if (e->hostname.c[0] || e->HIHardware.c[0] || e->HISoftware.c[0])
 			mprintf("%##-45s %#-14s %#s\n", e->hostname.c, e->HIHardware.c, e->HISoftware.c);
 		}
