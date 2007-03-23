@@ -1822,6 +1822,7 @@
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"mDNSResponderVersion=${MVERS}",
 					"APPLE_OSX_mDNSResponder=1",
+					"__DARWIN_NON_CANCELABLE=1",
 				);
 				INSTALL_PATH = /usr/local/lib/system;
 				MVERS = "\"mDNSResponder (Engineering Build)\"";
@@ -1841,6 +1842,7 @@
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"mDNSResponderVersion=${MVERS}",
 					"APPLE_OSX_mDNSResponder=1",
+					"__DARWIN_NON_CANCELABLE=1",
 				);
 				GENERATE_PROFILING_CODE = YES;
 				INSTALL_PATH = /usr/local/lib/system;
@@ -1885,6 +1887,7 @@
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"mDNSResponderVersion=${MVERS}",
 					"APPLE_OSX_mDNSResponder=1",
+					"__DARWIN_NON_CANCELABLE=1",
 				);
 				INSTALL_PATH = /usr/local/lib/system;
 				MVERS = "\"mDNSResponder (Engineering Build)\"";
