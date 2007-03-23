@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.593  2007/03/23 17:40:08  cheshire
+<rdar://problem/4060169> Bug when auto-renaming Computer Name after name collision
+
 Revision 1.592  2007/03/22 18:31:48  cheshire
 Put dst parameter first in mDNSPlatformStrCopy/mDNSPlatformMemCopy, like conventional Posix strcpy/memcpy
 
@@ -5659,6 +5662,18 @@ mDNSexport mStatus mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr)
 	else if (sr->RR_PTR.resrec.RecordType == kDNSRecordTypeDeregistering)
 		{
 		debugf("Service set for %##s already in the process of deregistering", sr->RR_SRV.resrec.name->c);
+		// Avoid race condition:
+		// If a service gets a conflict, then we set the Conflict flag to tell us to generate
+		// an mStatus_NameConflict message when we get the mStatus_MemFree for our PTR record.
+		// If the client happens to deregister the service in the middle of that process, then
+		// we clear the flag back to the normal state, so that we deliver a plain mStatus_MemFree
+		// instead of incorrectly promoting it to mStatus_NameConflict.
+		// This race condition is exposed particularly when the conformance test generates
+		// a whole batch of simultaneous conflicts across a range of services all advertised
+		// using the same system default name, and if we don't take this precaution then
+		// we end up incrementing m->nicelabel multiple times instead of just once.
+		// <rdar://problem/4060169> Bug when auto-renaming Computer Name after name collision
+		sr->Conflict = mDNSfalse;
 		return(mStatus_NoError);
 		}
 	else
