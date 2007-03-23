@@ -17,6 +17,10 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.252  2007/03/23 22:59:58  cheshire
+<rdar://problem/4848295> Advertise model information via Bonjour
+Use kStandardTTL, not kHostNameTTL
+
 Revision 1.251  2007/03/23 22:44:07  cheshire
 Instead of calling AbortUnlinkAndFree() haphazardly all over the place, make the handle* routines
 return an error code, and then request_callback() does all necessary cleanup in one place.
@@ -1695,7 +1699,7 @@ mDNSlocal void UpdateDeviceInfoRecord(mDNS *const m, mDNSBool force)
 		if (force || num_autoname > 0)
 			{
 			mDNSu8 len = m->HIHardware.c[0] < 255 - 6 ? m->HIHardware.c[0] : 255 - 6;
-			mDNS_SetupResourceRecord(&m->DeviceInfo, mDNSNULL, mDNSNULL, kDNSType_TXT, kHostNameTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
+			mDNS_SetupResourceRecord(&m->DeviceInfo, mDNSNULL, mDNSNULL, kDNSType_TXT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
 			ConstructServiceName(m->DeviceInfo.resrec.name, &m->nicelabel, &DeviceInfoName, &localdomain);
 			mDNSPlatformMemCopy(m->DeviceInfo.resrec.rdata->u.data + 1, "model=", 6);
 			mDNSPlatformMemCopy(m->DeviceInfo.resrec.rdata->u.data + 7, m->HIHardware.c + 1, len);
