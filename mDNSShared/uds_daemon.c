@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.255  2007/03/23 23:56:14  cheshire
+Move list of record registrations into the request_state union
+
 Revision 1.254  2007/03/23 23:48:56  cheshire
 Eliminate service_info as a separately-allocated structure, and make it part of the request_state union
 
@@ -307,9 +310,9 @@ typedef void (*req_termination_fn)(void *);
 
 typedef struct registered_record_entry
 	{
-	uint32_t key;
-	AuthRecord *rr;
 	struct registered_record_entry *next;
+	uint32_t key;
+	AuthRecord *rr;		// Variable-sized AuthRecord
 	client_context_t client_context;
 	struct request_state *rstate;
 	} registered_record_entry;
@@ -397,7 +400,6 @@ typedef struct request_state
 
 	//!!!KRS toss these pointers in a union
 	// registration context associated with this request (null if not applicable)
-	registered_record_entry *reg_recs;  // muliple registrations for a connection-oriented request
 	port_mapping_info_t * port_mapping_create_info;
 	addrinfo_info_t     * addrinfo_info;
 
@@ -428,6 +430,7 @@ typedef struct request_state
 			int num_subtypes;
 			service_instance *instances;
 			} service;
+		registered_record_entry *reg_recs;  // list of registrations for a connection-oriented request
 		} u;
 	} request_state;
 
@@ -1325,7 +1328,7 @@ mDNSlocal void regrecord_callback(mDNS *const m, AuthRecord * rr, mStatus result
 	if (result)
 		{
 		// unlink from list, free memory
-		registered_record_entry **ptr = &re->rstate->reg_recs;
+		registered_record_entry **ptr = &re->rstate->u.reg_recs;
 		while (*ptr && (*ptr) != re) ptr = &(*ptr)->next;
 		if (!*ptr) { LogMsg("regrecord_callback - record not in list!"); return; }
 		*ptr = (*ptr)->next;
@@ -1341,7 +1344,7 @@ mDNSlocal void regrecord_callback(mDNS *const m, AuthRecord * rr, mStatus result
 mDNSlocal void connected_registration_termination(void *context)
 	{
 	int shared;
-	registered_record_entry *fptr, *ptr = ((request_state *)context)->reg_recs;
+	registered_record_entry *fptr, *ptr = ((request_state *)context)->u.reg_recs;
 	while (ptr)
 		{
 		fptr = ptr;
@@ -1371,8 +1374,8 @@ mDNSlocal mStatus handle_regrecord_request(request_state *request)
 	re->client_context = request->hdr.client_context;
 	rr->RecordContext = re;
 	rr->RecordCallback = regrecord_callback;
-	re->next = request->reg_recs;
-	request->reg_recs = re;
+	re->next = request->u.reg_recs;
+	request->u.reg_recs = re;
 
 	if (!request->terminate)
 		{
@@ -1494,11 +1497,11 @@ mDNSlocal mStatus handle_update_request(request_state *request)
 	rdata = get_rdata(&ptr, rdlen);
 	ttl = get_uint32(&ptr);
 
-	if (request->reg_recs)
+	if (request->u.reg_recs)
 		{
 		// update an individually registered record
 		registered_record_entry *reptr;
-		for (reptr = request->reg_recs; reptr; reptr = reptr->next)
+		for (reptr = request->u.reg_recs; reptr; reptr = reptr->next)
 			{
 			if (reptr->key == request->hdr.reg_index)
 				{
@@ -1540,7 +1543,7 @@ mDNSlocal mStatus remove_record(request_state *request)
 	{
 	int shared;
 	mStatus err = mStatus_UnknownErr;
-	registered_record_entry *e, **ptr = &request->reg_recs;
+	registered_record_entry *e, **ptr = &request->u.reg_recs;
 
 	while (*ptr && (*ptr)->key != request->hdr.reg_index) ptr = &(*ptr)->next;
 	if (!*ptr) { LogMsg("DNSServiceRemoveRecord - bad reference"); return mStatus_BadReferenceErr; }
@@ -1584,7 +1587,7 @@ mDNSlocal mStatus handle_removerecord_request(request_state *request)
 	ptr = request->msgdata;
 	get_flags(&ptr);	// flags unused
 
-	if (request->reg_recs)  err = remove_record(request);  // remove individually registered record
+	if (request->u.reg_recs)  err = remove_record(request);  // remove individually registered record
 	else
 		{
 		service_instance *i;
