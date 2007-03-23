@@ -104,7 +104,7 @@ static const char kFilePathSep = '/';
 
 #include "dns_sd.h"
 
-#ifdef TEST_NEW_CLIENTSTUB
+#if TEST_NEW_CLIENTSTUB
 #include "../mDNSShared/dnssd_ipc.c"
 #include "../mDNSShared/dnssd_clientstub.c"
 #endif
@@ -196,6 +196,7 @@ static uint16_t GetRRType(const char *s)
 	else                                 return(atoi(s));
 	}
 
+#if HAS_NAT_PMP_API | HAS_ADDRINFO_API
 static DNSServiceProtocol GetProtocol(const char *s)
 	{
 	if      (!strcasecmp(s, "v4"      )) return(kDNSServiceProtocol_IPv4);
@@ -208,6 +209,7 @@ static DNSServiceProtocol GetProtocol(const char *s)
 	else if (!strcasecmp(s, "tcpudp"  )) return(kDNSServiceProtocol_UDP | kDNSServiceProtocol_TCP);
 	else                                 return(atoi(s));
 	}
+#endif
 
 //*************************************************************************************************************
 // Sample callback functions for each of the operation types
