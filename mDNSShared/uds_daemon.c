@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.253  2007/03/23 23:04:29  cheshire
+Eliminate browser_info_t as a separately-allocated structure, and make it part of request_state
+
 Revision 1.252  2007/03/23 22:59:58  cheshire
 <rdar://problem/4848295> Advertise model information via Bonjour
 Use kStandardTTL, not kHostNameTTL
@@ -351,21 +354,10 @@ typedef struct
 // for multi-domain default browsing
 typedef struct browser_t
 	{
-	DNSQuestion q;
-	domainname domain;
 	struct browser_t *next;
+	domainname domain;
+	DNSQuestion q;
 	} browser_t;
-
-// parent struct for browser instances: list pointer plus metadata
-typedef struct
-	{
-	mDNSBool default_domain;
-	mDNSBool ForceMCast;
-	domainname regtype;
-	mDNSInterfaceID interface_id;
-	struct request_state *rstate;
-	browser_t *browsers;
-	} browser_info_t;
 
 typedef struct
 	{
@@ -425,9 +417,21 @@ typedef struct request_state
 	// registration context associated with this request (null if not applicable)
 	registered_record_entry *reg_recs;  // muliple registrations for a connection-oriented request
 	service_info *service_registration;
-	browser_info_t *browser_info;
 	port_mapping_info_t * port_mapping_create_info;
 	addrinfo_info_t     * addrinfo_info;
+
+	union
+		{
+		struct
+			{
+			mDNSBool default_domain;
+			mDNSBool ForceMCast;
+			domainname regtype;
+			mDNSInterfaceID interface_id;
+			struct request_state *rstate;
+			browser_t *browsers;
+			} browser;
+		} u;
 	} request_state;
 
 // struct physically sits between ipc message header and call-specific fields in the message buffer
@@ -1929,12 +1933,12 @@ mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const Resourc
 	append_reply(req, rep);
 	}
 
-mDNSlocal mStatus add_domain_to_browser(browser_info_t *info, const domainname *d)
+mDNSlocal mStatus add_domain_to_browser(request_state *info, const domainname *d)
 	{
 	browser_t *b, *p;
 	mStatus err;
 
-	for (p = info->browsers; p; p = p->next)
+	for (p = info->u.browser.browsers; p; p = p->next)
 		{
 		if (SameDomainName(&p->domain, d))
 			{ debugf("add_domain_to_browser - attempt to add domain %##d already in list", d->c); return mStatus_AlreadyRegistered; }
@@ -1943,16 +1947,16 @@ mDNSlocal mStatus add_domain_to_browser(browser_info_t *info, const domainname *
 	b = mallocL("browser_t", sizeof(*b));
 	if (!b) return mStatus_NoMemoryErr;
 	AssignDomainName(&b->domain, d);
-	err = mDNS_StartBrowse(&mDNSStorage, &b->q, &info->regtype, d, info->interface_id, info->ForceMCast, FoundInstance, info->rstate);
+	err = mDNS_StartBrowse(&mDNSStorage, &b->q, &info->u.browser.regtype, d, info->u.browser.interface_id, info->u.browser.ForceMCast, FoundInstance, info->u.browser.rstate);
 	if (err)
 		{
-		LogMsg("mDNS_StartBrowse returned %d for type %##s domain %##s", err, info->regtype.c, d->c);
+		LogMsg("mDNS_StartBrowse returned %d for type %##s domain %##s", err, info->u.browser.regtype.c, d->c);
 		freeL("browser_t/add_domain_to_browser", b);
 		}
 	else
 		{
-		b->next = info->browsers;
-		info->browsers = b;
+		b->next = info->u.browser.browsers;
+		info->u.browser.browsers = b;
 		}
 		return err;
 	}
@@ -1969,13 +1973,11 @@ mDNSlocal void udsserver_automatic_browse_domain_changed(const domainname *d, mD
 
 	for (r = all_requests; r; r = r->next)
 		{
-		browser_info_t *info = r->browser_info;
-
-		if (!info || !info->default_domain) continue;
-		if (add) add_domain_to_browser(info, d);
+		if (!r || !r->u.browser.default_domain) continue;
+		if (add) add_domain_to_browser(r, d);
 		else
 			{
-			browser_t **ptr = &info->browsers;
+			browser_t **ptr = &r->u.browser.browsers;
 			while (*ptr)
 				{
 				if (SameDomainName(&(*ptr)->domain, d))
@@ -2179,22 +2181,19 @@ mDNSlocal void TrackLegacyBrowseDomains(mDNS *const m)
 
 mDNSlocal void browse_termination_callback(void *context)
 	{
-	browser_info_t *info = context;
-	browser_t *ptr;
-
+	request_state *info = context;
 	if (!info) return;
 
-	while (info->browsers)
+	while (info->u.browser.browsers)
 		{
-		ptr = info->browsers;
-		info->browsers = ptr->next;
-		LogOperation("%3d: DNSServiceBrowse(%##s) STOP", info->rstate->sd, ptr->q.qname.c);
+		browser_t *ptr = info->u.browser.browsers;
+		info->u.browser.browsers = ptr->next;
+		LogOperation("%3d: DNSServiceBrowse(%##s) STOP", info->u.browser.rstate->sd, ptr->q.qname.c);
 		mDNS_StopBrowse(&mDNSStorage, &ptr->q);  // no need to error-check result
 		freeL("browser_t/browse_termination_callback", ptr);
 		}
 
-	info->rstate->termination_context = NULL;
-	freeL("browser_info/browse_termination_callback", info);
+	info->u.browser.rstate->termination_context = NULL;
 	}
 
 mDNSlocal mStatus handle_browse_request(request_state *request)
@@ -2205,7 +2204,6 @@ mDNSlocal mStatus handle_browse_request(request_state *request)
 	domainname typedn, d, temp;
 	mDNSs32 NumSubTypes;
 	mStatus err = mStatus_NoError;
-	browser_info_t *info = NULL;
 
 	DNSServiceFlags flags = get_flags(&ptr);
 	uint32_t interfaceIndex = get_uint32(&ptr);
@@ -2227,26 +2225,22 @@ mDNSlocal mStatus handle_browse_request(request_state *request)
 	if (!MakeDomainNameFromDNSNameString(&temp, regtype)) return(mStatus_BadParamErr);
 	if (temp.c[0] > 15 && domain[0] == 0) mDNSPlatformStrCopy(domain, "local."); // For over-long service types, we only allow domain "local"
 
-	// allocate and set up browser info
-	info = mallocL("browser_info_t", sizeof(*info));
-	if (!info) return(mStatus_NoMemoryErr);
-
-	request->browser_info = info;
-	info->ForceMCast = (flags & kDNSServiceFlagsForceMulticast) != 0;
-	info->interface_id = InterfaceID;
-	AssignDomainName(&info->regtype, &typedn);
-	info->rstate = request;
-	info->default_domain = !domain[0];
-	info->browsers = NULL;
+	// Set up browser info
+	request->u.browser.ForceMCast = (flags & kDNSServiceFlagsForceMulticast) != 0;
+	request->u.browser.interface_id = InterfaceID;
+	AssignDomainName(&request->u.browser.regtype, &typedn);
+	request->u.browser.rstate = request;
+	request->u.browser.default_domain = !domain[0];
+	request->u.browser.browsers = NULL;
 
 	// setup termination context
-	request->termination_context = info;
+	request->termination_context = request;
 
-	LogOperation("%3d: DNSServiceBrowse(\"%##s\", \"%s\") START", request->sd, info->regtype.c, domain);
+	LogOperation("%3d: DNSServiceBrowse(\"%##s\", \"%s\") START", request->sd, request->u.browser.regtype.c, domain);
 	if (domain[0])
 		{
 		if (!MakeDomainNameFromDNSNameString(&d, domain)) return(mStatus_BadParamErr);
-		err = add_domain_to_browser(info, &d);
+		err = add_domain_to_browser(request, &d);
 		}
 
 	else
@@ -2254,7 +2248,7 @@ mDNSlocal mStatus handle_browse_request(request_state *request)
 		DNameListElem *sdom;
 		for (sdom = mDNSStorage.DefBrowseList; sdom; sdom = sdom->next)
 			{
-			err = add_domain_to_browser(info, &sdom->name);
+			err = add_domain_to_browser(request, &sdom->name);
 			if (err)
 				{
 				if (SameDomainName(&sdom->name, &localdomain)) break;
@@ -2263,8 +2257,7 @@ mDNSlocal mStatus handle_browse_request(request_state *request)
 			}
 		}
 
-	if (err) freeL("browser_info_t", info);
-	else request->terminate = browse_termination_callback;
+	if (!err) request->terminate = browse_termination_callback;
 
 	return(err);
 	}
@@ -2416,7 +2409,6 @@ mDNSlocal mStatus handle_resolve_request(request_state *request)
 	err = mDNS_StartQuery(&mDNSStorage, &term->qsrv);
 	if (!err) err = mDNS_StartQuery(&mDNSStorage, &term->qtxt);
 
-	// If error, prevent AbortUnlinkAndFree() from invoking termination callback
 	if (err) freeL("resolve_termination_t/handle_resolve_request", term);
 	else request->terminate = resolve_termination_callback;
 
@@ -3521,7 +3513,7 @@ mDNSlocal void LogClientInfo(request_state *req)
 		else if (req->terminate == browse_termination_callback)
 			{
 			browser_t *blist;
-			for (blist = req->browser_info->browsers; blist; blist = blist->next)
+			for (blist = req->u.browser.browsers; blist; blist = blist->next)
 				LogMsgNoIdent("%3d: DNSServiceBrowse           %##s", req->sd, blist->q.qname.c);
 			}
 		else if (req->terminate == resolve_termination_callback)
