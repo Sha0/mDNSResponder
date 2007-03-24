@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.30  2007/03/24 01:22:44  cheshire
+Add validator for uDNS data structures
+
 Revision 1.29  2006/08/14 23:24:23  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -163,6 +166,7 @@ extern void *mallocL(char *msg, unsigned int size);
 extern void freeL(char *msg, void *x);
 extern void LogMemCorruption(const char *format, ...);
 extern void uds_validatelists(void);
+extern void udns_validatelists(void);
 #else
 #define mallocL(X,Y) malloc(Y)
 #define freeL(X,Y) free(Y)
