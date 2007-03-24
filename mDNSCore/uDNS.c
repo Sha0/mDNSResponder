@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.310  2007/03/24 01:24:13  cheshire
+Add validator for uDNS data structures; fixed crash in RegisterSearchDomains()
+
 Revision 1.309  2007/03/24 00:47:53  cheshire
 <rdar://problem/4983538> serviceRegistrationCallback: Locking Failure! mDNS_busy (1) != mDNS_reentrancy (2)
 Locking in this file is all messed up. For now we'll just work around the issue.
@@ -5077,7 +5080,7 @@ mDNSlocal void WakeServiceRegistrations(mDNS *m)
 mDNSexport void mDNS_AddSearchDomain(const domainname *const domain)
 	{
 	SearchListElem **p;
-	LogMsg("mDNSPlatformSetSearchDomainList %##s", domain->c);
+	LogMsg("mDNS_AddSearchDomain %##s", domain->c);
 
 	// Check to see if we already have this domain in our list
 	for (p = &SearchList; *p; p = &(*p)->next)
@@ -5091,7 +5094,7 @@ mDNSexport void mDNS_AddSearchDomain(const domainname *const domain)
 	// if domain not in list, add to list, mark as add (1)
 	*p = mDNSPlatformMemAllocate(sizeof(SearchListElem));
 	if (!*p) { LogMsg("ERROR: mDNS_AddSearchDomain - malloc"); return; }
-	mDNSPlatformMemZero(*p, sizeof(*p));
+	mDNSPlatformMemZero(*p, sizeof(SearchListElem));
 	AssignDomainName(&(*p)->domain, domain);
 	(*p)->flag = 1;	// add
 	(*p)->next = mDNSNULL;
@@ -5161,12 +5164,25 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 		}
 	}
 
+#if APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING
+mDNSexport void udns_validatelists(void)
+	{
+	SearchListElem *ptr;
+	for (ptr = SearchList; ptr; ptr = ptr->next)
+		if (ptr->AuthRecs == (void*)0xFFFFFFFF)
+			{
+			LogMemCorruption("SearchList: %p is garbage (%X)", ptr, ptr->AuthRecs);
+			*(long*)0 = 0;
+			}
+	}
+#endif
+
 // This should probably move to the UDS daemon -- the concept of legacy clients and automatic registration / automatic browsing
 // is really a UDS API issue, not something intrinsic to uDNS
 
 mDNSlocal mStatus RegisterSearchDomains(mDNS *const m)
 	{
-	SearchListElem **p, *ptr;
+	SearchListElem **p = &SearchList, *ptr;
 	mStatus err;
 
 	// step 1: mark each element for removal (-1)
@@ -5178,10 +5194,10 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m)
 	if (m->RegDomain.c[0]) mDNS_AddSearchDomain(&m->RegDomain);	// implicitly browse reg domain too (no-op if same as BrowseDomain)
 
 	// delete elems marked for removal, do queries for elems marked add
-	p = &SearchList;
 	while (*p)
 		{
 		ptr = *p;
+		debugf("RegisterSearchDomains %d %p %##s", ptr->flag, ptr->AuthRecs, ptr->domain.c);
 		if (ptr->flag == -1)	// remove
 			{
 			ARListElem *arList = ptr->AuthRecs;
