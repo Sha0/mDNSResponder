@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.258  2007/03/24 00:40:04  cheshire
+Minor code cleanup
+
 Revision 1.257  2007/03/24 00:23:12  cheshire
 Eliminate port_mapping_info_t as a separately-allocated structure, and make it part of the request_state union
 
@@ -1964,7 +1967,7 @@ mDNSlocal void RegisterBrowseDomainPTR(mDNS *m, const domainname *d, int type)
 
 mDNSlocal void DeregisterBrowseDomainPTR(mDNS *m, const domainname *d, int type)
 	{
-	ARListElem *remove, **ptr = &SCPrefBrowseDomains;
+	ARListElem **ptr = &SCPrefBrowseDomains;
 	domainname lhs; // left-hand side of PTR, for comparison
 
 	MakeDomainNameFromDNSNameString(&lhs, mDNS_DomainTypeNames[type]);
@@ -1974,7 +1977,7 @@ mDNSlocal void DeregisterBrowseDomainPTR(mDNS *m, const domainname *d, int type)
 		{
 		if (SameDomainName(&(*ptr)->ar.resrec.rdata->u.name, d) && SameDomainName((*ptr)->ar.resrec.name, &lhs))
 			{
-			remove = *ptr;
+			ARListElem *remove = *ptr;
 			*ptr = (*ptr)->next;
 			mDNS_Deregister(m, &remove->ar);
 			return;
