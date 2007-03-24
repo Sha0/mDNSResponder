@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.257  2007/03/24 00:23:12  cheshire
+Eliminate port_mapping_info_t as a separately-allocated structure, and make it part of the request_state union
+
 Revision 1.256  2007/03/24 00:07:18  cheshire
 Eliminate addrinfo_info_t as a separately-allocated structure, and make it part of the request_state union
 
@@ -349,21 +352,6 @@ typedef struct browser_t
 
 typedef struct
 	{
-	mDNSInterfaceID       interface_id;
-	uint8_t               protocol;
-	mDNSIPPort            privatePort;
-	mDNSIPPort            requestedPublicPort;
-	mDNSIPPort            receivedPublicPort;
-	uint32_t              requestedTTL;
-	uint32_t              receivedTTL;
-	mDNSAddr              addr;
-	NATTraversalInfo     *NATAddrinfo;
-	NATTraversalInfo     *NATMapinfo;
-	struct request_state *rstate;
-	} port_mapping_info_t;
-
-typedef struct
-	{
 	mStatus err;		// Note: This field is in NETWORK byte order
 	int nwritten;
 	dnssd_sock_t sd;
@@ -390,9 +378,6 @@ typedef struct request_state
 	undelivered_error_t *u_err;
 	void *termination_context;
 	req_termination_fn terminate;
-
-	//!!!KRS toss these pointers in a union
-	port_mapping_info_t * port_mapping_create_info;
 
 	union
 		{
@@ -430,6 +415,19 @@ typedef struct request_state
 			DNSQuestion           q4;
 			DNSQuestion           q6;
 			} addrinfo;
+		struct
+			{
+			mDNSInterfaceID       interface_id;
+			uint8_t               protocol;
+			mDNSIPPort            privatePort;
+			mDNSIPPort            requestedPublicPort;
+			mDNSIPPort            receivedPublicPort;
+			uint32_t              requestedTTL;
+			uint32_t              receivedTTL;
+			mDNSAddr              addr;
+			NATTraversalInfo     *NATAddrinfo;
+			NATTraversalInfo     *NATMapinfo;
+			} portmapping;
 		} u;
 	} request_state;
 
@@ -2725,26 +2723,22 @@ mDNSlocal mStatus handle_setdomain_request(request_state *request)
 
 mDNSlocal void port_mapping_create_termination_callback(void *context)
 	{
-	port_mapping_info_t *info = (port_mapping_info_t*) context;
-
-	if (!info) return;
+	request_state *request = context;
 
 	mDNS_Lock(&mDNSStorage);
 
-	if (info->NATAddrinfo)
+	if (request->u.portmapping.NATAddrinfo)
 		{
-		uDNS_FreeNATInfo(&mDNSStorage, info->NATAddrinfo);
+		uDNS_FreeNATInfo(&mDNSStorage, request->u.portmapping.NATAddrinfo);
 		}
 
-	if (info->NATMapinfo)
+	if (request->u.portmapping.NATMapinfo)
 		{
-		uDNS_DeleteNATPortMapping(&mDNSStorage, info->NATMapinfo);
-		uDNS_FreeNATInfo(&mDNSStorage, info->NATMapinfo);
+		uDNS_DeleteNATPortMapping(&mDNSStorage, request->u.portmapping.NATMapinfo);
+		uDNS_FreeNATInfo(&mDNSStorage, request->u.portmapping.NATMapinfo);
 		}
 
-	info->rstate->termination_context = NULL;
-	freeL("port_mapping_info_t", info);
-
+	request->termination_context = NULL;
 	mDNS_Unlock(&mDNSStorage);
 	}
 
@@ -2752,24 +2746,18 @@ mDNSlocal void port_mapping_create_termination_callback(void *context)
 mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt)
 	{
 	mStatus err = mStatus_NoError;
-	port_mapping_info_t * info;
-	request_state * req;
+	request_state * request = n->context;
 	reply_state * rep;
 	int replyLen;
 	char * data;
 
-	info = (port_mapping_info_t*) n->context;
-	if (!info) { LogMsg("port_mapping_create_reply called with info == NULL"); return mDNSfalse; }
-
-	req = info->rstate;
-
-	if (info->NATAddrinfo == n)
+	if (request->u.portmapping.NATAddrinfo == n)
 		{
 		mDNSBool ret;
 
-		info->addr = zeroAddr;
+		request->u.portmapping.addr = zeroAddr;
 
-		ret = uDNS_HandleNATQueryAddrReply(n, m, pkt, &info->addr, &err);
+		ret = uDNS_HandleNATQueryAddrReply(n, m, pkt, &request->u.portmapping.addr, &err);
 
 		if (!ret)
 			{
@@ -2778,32 +2766,32 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 
 		if (err)
 			{
-			deliver_async_error(req, port_mapping_create_reply_op, kDNSServiceErr_NATPortMappingUnsupported);
+			deliver_async_error(request, port_mapping_create_reply_op, kDNSServiceErr_NATPortMappingUnsupported);
 			uDNS_FreeNATInfo(m, n);
-			info->NATAddrinfo = mDNSNULL;
+			request->u.portmapping.NATAddrinfo = mDNSNULL;
 			return mDNStrue;
 			}
 
-		if (info->privatePort.NotAnInteger && !info->NATMapinfo)
+		if (request->u.portmapping.privatePort.NotAnInteger && !request->u.portmapping.NATMapinfo)
 			{
-			if (info->protocol & kDNSServiceProtocol_UDP)
+			if (request->u.portmapping.protocol & kDNSServiceProtocol_UDP)
 				{
-				info->NATMapinfo = uDNS_AllocNATInfo(m, NATOp_MapUDP, info->privatePort, info->requestedPublicPort, info->requestedTTL, port_mapping_create_reply);
+				request->u.portmapping.NATMapinfo = uDNS_AllocNATInfo(m, NATOp_MapUDP, request->u.portmapping.privatePort, request->u.portmapping.requestedPublicPort, request->u.portmapping.requestedTTL, port_mapping_create_reply);
 				}
-			else if (info->protocol & kDNSServiceProtocol_TCP)
+			else if (request->u.portmapping.protocol & kDNSServiceProtocol_TCP)
 				{
-				info->NATMapinfo = uDNS_AllocNATInfo(m, NATOp_MapTCP, info->privatePort, info->requestedPublicPort, info->requestedTTL, port_mapping_create_reply);
+				request->u.portmapping.NATMapinfo = uDNS_AllocNATInfo(m, NATOp_MapTCP, request->u.portmapping.privatePort, request->u.portmapping.requestedPublicPort, request->u.portmapping.requestedTTL, port_mapping_create_reply);
 				}
 
-			if (!info->NATMapinfo) { deliver_async_error(req, port_mapping_create_reply_op, mStatus_NoMemoryErr); return mDNStrue; }
-			info->NATMapinfo->context = info;
-			info->NATMapinfo->reg.RecordRegistration = NULL;
-			info->NATMapinfo->state                  = NATState_Request;
-			uDNS_FormatPortMaprequest(info->NATMapinfo);
-			uDNS_SendNATMsg(info->NATMapinfo, m);
+			if (!request->u.portmapping.NATMapinfo) { deliver_async_error(request, port_mapping_create_reply_op, mStatus_NoMemoryErr); return mDNStrue; }
+			request->u.portmapping.NATMapinfo->context = request;
+			request->u.portmapping.NATMapinfo->reg.RecordRegistration = NULL;
+			request->u.portmapping.NATMapinfo->state                  = NATState_Request;
+			uDNS_FormatPortMaprequest(request->u.portmapping.NATMapinfo);
+			uDNS_SendNATMsg(request->u.portmapping.NATMapinfo, m);
 			}
 		}
-	else if (info->NATMapinfo == n)
+	else if (request->u.portmapping.NATMapinfo == n)
 		{
 		mDNSBool ret;
 
@@ -2820,25 +2808,25 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 
 			case NATState_Deleted:
 				{
-				deliver_async_error(req, port_mapping_create_reply_op, kDNSServiceErr_Invalid);
+				deliver_async_error(request, port_mapping_create_reply_op, kDNSServiceErr_Invalid);
 				uDNS_FreeNATInfo(m, n);
-				info->NATMapinfo = mDNSNULL;
+				request->u.portmapping.NATMapinfo = mDNSNULL;
 				return ret;
 				}
 
 			case NATState_Error:
 				{
-				deliver_async_error(req, port_mapping_create_reply_op, kDNSServiceErr_NATPortMappingUnsupported);
+				deliver_async_error(request, port_mapping_create_reply_op, kDNSServiceErr_NATPortMappingUnsupported);
 				uDNS_FreeNATInfo(m, n);
-				info->NATMapinfo = mDNSNULL;
+				request->u.portmapping.NATMapinfo = mDNSNULL;
 				return ret;
 				}
 
 			case NATState_Established:
 			case NATState_Legacy:
 				{
-				info->receivedPublicPort = n->PublicPort;
-				info->receivedTTL        = n->lease;
+				request->u.portmapping.receivedPublicPort = n->PublicPort;
+				request->u.portmapping.receivedTTL        = n->lease;
 				}
 			}
 		}
@@ -2848,7 +2836,7 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 		return mDNSfalse;
 		}
 
-	if (!info->privatePort.NotAnInteger || info->receivedPublicPort.NotAnInteger)
+	if (!request->u.portmapping.privatePort.NotAnInteger || request->u.portmapping.receivedPublicPort.NotAnInteger)
 		{
 		// calculate reply data length
 		replyLen = sizeof(DNSServiceFlags);
@@ -2857,26 +2845,26 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 		replyLen += 2 * sizeof(uint16_t);  // publicAddress + privateAddress
 		replyLen += sizeof(uint8_t);       // protocol
 
-		rep = create_reply(port_mapping_create_reply_op, replyLen, req);
+		rep = create_reply(port_mapping_create_reply_op, replyLen, request);
 
 		rep->rhdr->flags = dnssd_htonl(0);
-		rep->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(m, info->interface_id));
+		rep->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(m, request->u.portmapping.interface_id));
 		rep->rhdr->error = dnssd_htonl(kDNSServiceErr_NoError);
 
 		data = rep->sdata;
 
-		*data++ = info->addr.ip.v4.b[0];
-		*data++ = info->addr.ip.v4.b[1];
-		*data++ = info->addr.ip.v4.b[2];
-		*data++ = info->addr.ip.v4.b[3];
-		*data++ = info->protocol;
-		*data++ = info->privatePort.b[0];
-		*data++ = info->privatePort.b[1];
-		*data++ = info->receivedPublicPort.b[0];
-		*data++ = info->receivedPublicPort.b[1];
-		put_uint32(info->receivedTTL, &data);
+		*data++ = request->u.portmapping.addr.ip.v4.b[0];
+		*data++ = request->u.portmapping.addr.ip.v4.b[1];
+		*data++ = request->u.portmapping.addr.ip.v4.b[2];
+		*data++ = request->u.portmapping.addr.ip.v4.b[3];
+		*data++ = request->u.portmapping.protocol;
+		*data++ = request->u.portmapping.privatePort.b[0];
+		*data++ = request->u.portmapping.privatePort.b[1];
+		*data++ = request->u.portmapping.receivedPublicPort.b[0];
+		*data++ = request->u.portmapping.receivedPublicPort.b[1];
+		put_uint32(request->u.portmapping.receivedTTL, &data);
 
-		append_reply(req, rep);
+		append_reply(request, rep);
 		}
 
 	return mDNStrue;
@@ -2889,7 +2877,6 @@ mDNSlocal mStatus handle_port_mapping_create_request(request_state *request)
 	mDNSIPPort privatePort;
 	mDNSIPPort publicPort;
 	uint32_t ttl;
-	port_mapping_info_t *info = NULL;
 	NATAddrRequest *req;
 	mStatus err = mStatus_NoError;
 
@@ -2917,49 +2904,42 @@ mDNSlocal mStatus handle_port_mapping_create_request(request_state *request)
 		if (!(protocol & (kDNSServiceProtocol_UDP | kDNSServiceProtocol_TCP))) return(mStatus_BadParamErr);
 		}
 
-	// allocate and set up browser info
-	info = mallocL("port_mapping_info_t", sizeof(*info));
-	if (!info) return(mStatus_NoMemoryErr);
-
 	mDNS_Lock(&mDNSStorage);
 
-	request->port_mapping_create_info = info;
-	info->interface_id                = InterfaceID;
-	info->protocol                    = protocol;
-	info->privatePort                 = privatePort;
-	info->requestedPublicPort         = publicPort;
-	info->receivedPublicPort          = zeroIPPort;
-	info->requestedTTL                = ttl;
-	info->receivedTTL                 = 0;
-	info->rstate                      = request;
-	info->NATAddrinfo                 = mDNSNULL;
-	info->NATMapinfo                  = mDNSNULL;
+	request->u.portmapping.interface_id                = InterfaceID;
+	request->u.portmapping.protocol                    = protocol;
+	request->u.portmapping.privatePort                 = privatePort;
+	request->u.portmapping.requestedPublicPort         = publicPort;
+	request->u.portmapping.receivedPublicPort          = zeroIPPort;
+	request->u.portmapping.requestedTTL                = ttl;
+	request->u.portmapping.receivedTTL                 = 0;
+	request->u.portmapping.NATAddrinfo                 = mDNSNULL;
+	request->u.portmapping.NATMapinfo                  = mDNSNULL;
 
-	request->termination_context      = info;
+	request->termination_context      = request;
 
 	LogOperation("%3d: DNSServiceNATPortMappingCreate(%X, %u, %u, %d) START", request->sd, protocol, mDNSVal16(privatePort), mDNSVal16(publicPort), ttl);
 
-	info->NATAddrinfo = uDNS_AllocNATInfo(&mDNSStorage, NATOp_AddrRequest, zeroIPPort, zeroIPPort, 0, port_mapping_create_reply);
-	if (!info->NATAddrinfo) { mDNS_Unlock(&mDNSStorage); return(mStatus_NoMemoryErr); }
+	request->u.portmapping.NATAddrinfo = uDNS_AllocNATInfo(&mDNSStorage, NATOp_AddrRequest, zeroIPPort, zeroIPPort, 0, port_mapping_create_reply);
+	if (!request->u.portmapping.NATAddrinfo) { mDNS_Unlock(&mDNSStorage); return(mStatus_NoMemoryErr); }
 
-	info->NATAddrinfo->context                = info;
-	info->NATAddrinfo->reg.RecordRegistration = NULL;
-	info->NATAddrinfo->state                  = NATState_Request;
+	request->u.portmapping.NATAddrinfo->context                = request;
+	request->u.portmapping.NATAddrinfo->reg.RecordRegistration = NULL;
+	request->u.portmapping.NATAddrinfo->state                  = NATState_Request;
 
 	// format message
-	req         = &info->NATAddrinfo->request.AddrReq;
+	req         = &request->u.portmapping.NATAddrinfo->request.AddrReq;
 	req->vers   = NATMAP_VERS;
 	req->opcode = NATOp_AddrRequest;
 
 	if (!mDNSStorage.Router.ip.v4.NotAnInteger)
 		debugf("No router.  Will retry NAT traversal in %ld ticks", NATMAP_INIT_RETRY);
 	else
-		uDNS_SendNATMsg(info->NATAddrinfo, &mDNSStorage);
+		uDNS_SendNATMsg(request->u.portmapping.NATAddrinfo, &mDNSStorage);
 
 	mDNS_Unlock(&mDNSStorage);
 
-	if (err) freeL("port_mapping_info_t/handle_port_mapping_create_request", info);
-	else request->terminate = port_mapping_create_termination_callback;
+	if (!err) request->terminate = port_mapping_create_termination_callback;
 
 	return(err);
 	}
