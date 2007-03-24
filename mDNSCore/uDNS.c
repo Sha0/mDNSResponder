@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.309  2007/03/24 00:47:53  cheshire
+<rdar://problem/4983538> serviceRegistrationCallback: Locking Failure! mDNS_busy (1) != mDNS_reentrancy (2)
+Locking in this file is all messed up. For now we'll just work around the issue.
+
 Revision 1.308  2007/03/24 00:41:33  cheshire
 Minor code cleanup (move variable declarations to minimum enclosing scope)
 
@@ -2821,12 +2825,16 @@ mDNSlocal void FoundStaticHostname(mDNS *const m, DNSQuestion *question, const R
 				}
 			h = h->next;
 			}
+		mDNS_Lock(m);
 		UpdateSRVRecords(m);
+		mDNS_Unlock(m);
 		}
 	else if (!AddRecord && SameDomainName(pktname, storedname))
 		{
+		mDNS_Lock(m);
 		storedname->c[0] = 0;
 		UpdateSRVRecords(m);
+		mDNS_Unlock(m);
 		}
 	}
 
