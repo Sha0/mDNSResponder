@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.256  2007/03/24 00:07:18  cheshire
+Eliminate addrinfo_info_t as a separately-allocated structure, and make it part of the request_state union
+
 Revision 1.255  2007/03/23 23:56:14  cheshire
 Move list of record registrations into the request_state union
 
@@ -361,16 +364,6 @@ typedef struct
 
 typedef struct
 	{
-	uint32_t              flags;
-	mDNSInterfaceID       interface_id;
-	uint32_t              protocol;
-	DNSQuestion           q4;
-	DNSQuestion           q6;
-	struct request_state *rstate;
-	} addrinfo_info_t;
-
-typedef struct
-	{
 	mStatus err;		// Note: This field is in NETWORK byte order
 	int nwritten;
 	dnssd_sock_t sd;
@@ -399,9 +392,7 @@ typedef struct request_state
 	req_termination_fn terminate;
 
 	//!!!KRS toss these pointers in a union
-	// registration context associated with this request (null if not applicable)
 	port_mapping_info_t * port_mapping_create_info;
-	addrinfo_info_t     * addrinfo_info;
 
 	union
 		{
@@ -431,6 +422,14 @@ typedef struct request_state
 			service_instance *instances;
 			} service;
 		registered_record_entry *reg_recs;  // list of registrations for a connection-oriented request
+		struct
+			{
+			mDNSInterfaceID       interface_id;
+			uint32_t              flags;
+			uint32_t              protocol;
+			DNSQuestion           q4;
+			DNSQuestion           q6;
+			} addrinfo;
 		} u;
 	} request_state;
 
@@ -2967,45 +2966,37 @@ mDNSlocal mStatus handle_port_mapping_create_request(request_state *request)
 
 mDNSlocal void addrinfo_termination_callback(void *context)
 	{
-	addrinfo_info_t *info = (addrinfo_info_t*) context;
+	request_state *request = context;
 
-	if (!info) return;
-
-	if (info->q4.QuestionContext)
+	if (request->u.addrinfo.q4.QuestionContext)
 		{
-		mDNS_StopQuery(&mDNSStorage, &info->q4);
-		info->q4.QuestionContext = mDNSNULL;
+		mDNS_StopQuery(&mDNSStorage, &request->u.addrinfo.q4);
+		request->u.addrinfo.q4.QuestionContext = mDNSNULL;
 		}
 
-	if (info->q6.QuestionContext)
+	if (request->u.addrinfo.q6.QuestionContext)
 		{
-		mDNS_StopQuery(&mDNSStorage, &info->q6);
-		info->q6.QuestionContext = mDNSNULL;
+		mDNS_StopQuery(&mDNSStorage, &request->u.addrinfo.q6);
+		request->u.addrinfo.q6.QuestionContext = mDNSNULL;
 		}
 
-	info->rstate->termination_context = NULL;
-	freeL("addrinfo_info_t", info);
+	request->termination_context = NULL;
 	}
 
 mDNSlocal void addrinfo_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
 	char *data;
-	addrinfo_info_t *info = question->QuestionContext;
+	request_state *request = question->QuestionContext;
 	reply_state *rep;
 	size_t len;
 	char hostname[MAX_ESCAPED_DOMAIN_NAME];
 	(void)m; // Unused
 
-	if (!info)
-		{
-		return;
-		}
-
-	LogOperation("%3d: DNSServiceGetAddrInfo(%##s, %s) RESULT %s", info->rstate->sd, question->qname.c, DNSTypeName(question->qtype), RRDisplayString(m, answer));
+	LogOperation("%3d: DNSServiceGetAddrInfo(%##s, %s) RESULT %s", request->sd, question->qname.c, DNSTypeName(question->qtype), RRDisplayString(m, answer));
 
 	if (answer->rdlength == 0)
 		{
-		deliver_async_error(info->rstate, query_reply_op, kDNSServiceErr_NoSuchRecord);
+		deliver_async_error(request, query_reply_op, kDNSServiceErr_NoSuchRecord);
 		return;
 		}
 
@@ -3018,7 +3009,7 @@ mDNSlocal void addrinfo_result_callback(mDNS *const m, DNSQuestion *question, co
 	len += 2 * sizeof(uint16_t); // type, rdlen
 	len += answer->rdlength;
 
-	rep =  create_reply(addrinfo_reply_op, len, info->rstate);
+	rep =  create_reply(addrinfo_reply_op, len, request);
 
 	if (AddRecord) rep->rhdr->flags |= dnssd_htonl(kDNSServiceFlagsAdd);
 	rep->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(m, answer->InterfaceID));
@@ -3031,7 +3022,7 @@ mDNSlocal void addrinfo_result_callback(mDNS *const m, DNSQuestion *question, co
 	put_rdata(answer->rdlength, answer->rdata->u.data, &data);
 	put_uint32(AddRecord ? answer->rroriginalttl : 0, &data);
 
-	append_reply(info->rstate, rep);
+	append_reply(request, rep);
 	}
 
 mDNSlocal mStatus handle_addrinfo_request(request_state *request)
@@ -3039,7 +3030,6 @@ mDNSlocal mStatus handle_addrinfo_request(request_state *request)
 	char *ptr = request->msgdata;
 	char hostname[256];
 	uint32_t protocol;
-	addrinfo_info_t * info = mDNSNULL;
 	domainname d;
 	mStatus err = 0;
 
@@ -3075,62 +3065,55 @@ mDNSlocal mStatus handle_addrinfo_request(request_state *request)
 			}
 		}
 
-	// allocate and set up info
-	info = mallocL("addrinfo_info_t", sizeof(*info));
-	if (!info) return(mStatus_NoMemoryErr);
-	mDNSPlatformMemZero(info, sizeof(addrinfo_info_t));
-
-	info->rstate                 = request;
-	request->termination_context = info;
+	request->termination_context = request;
 
 	if (protocol & kDNSServiceProtocol_IPv4)
 		{
-		info->q4.InterfaceID      = InterfaceID;
-		info->q4.Target           = zeroAddr;
-		info->q4.qname            = d;
-		info->q4.qtype            = kDNSServiceType_A;
-		info->q4.qclass           = kDNSServiceClass_IN;
-		info->q4.LongLived        = (flags & kDNSServiceFlagsLongLivedQuery     ) != 0;
-		info->q4.ExpectUnique     = mDNSfalse;
-		info->q4.ForceMCast       = (flags & kDNSServiceFlagsForceMulticast     ) != 0;
-		info->q4.ReturnIntermed   = (flags & kDNSServiceFlagsReturnIntermediates) != 0;
-		info->q4.QuestionCallback = addrinfo_result_callback;
-		info->q4.QuestionContext  = info;
+		request->u.addrinfo.q4.InterfaceID      = InterfaceID;
+		request->u.addrinfo.q4.Target           = zeroAddr;
+		request->u.addrinfo.q4.qname            = d;
+		request->u.addrinfo.q4.qtype            = kDNSServiceType_A;
+		request->u.addrinfo.q4.qclass           = kDNSServiceClass_IN;
+		request->u.addrinfo.q4.LongLived        = (flags & kDNSServiceFlagsLongLivedQuery     ) != 0;
+		request->u.addrinfo.q4.ExpectUnique     = mDNSfalse;
+		request->u.addrinfo.q4.ForceMCast       = (flags & kDNSServiceFlagsForceMulticast     ) != 0;
+		request->u.addrinfo.q4.ReturnIntermed   = (flags & kDNSServiceFlagsReturnIntermediates) != 0;
+		request->u.addrinfo.q4.QuestionCallback = addrinfo_result_callback;
+		request->u.addrinfo.q4.QuestionContext  = request;
 
-		err = mDNS_StartQuery(&mDNSStorage, &info->q4);
+		err = mDNS_StartQuery(&mDNSStorage, &request->u.addrinfo.q4);
 		if (err != mStatus_NoError)
 			{
 			LogMsg("ERROR: mDNS_StartQuery: %d", (int)err);
-			info->q4.QuestionContext = mDNSNULL;
+			request->u.addrinfo.q4.QuestionContext = mDNSNULL;
 			}
 		}
 
 	if (!err && (protocol & kDNSServiceProtocol_IPv6))
 		{
-		info->q6.InterfaceID      = InterfaceID;
-		info->q6.Target           = zeroAddr;
-		info->q6.qname            = d;
-		info->q6.qtype            = kDNSServiceType_AAAA;
-		info->q6.qclass           = kDNSServiceClass_IN;
-		info->q6.LongLived        = (flags & kDNSServiceFlagsLongLivedQuery     ) != 0;
-		info->q6.ExpectUnique     = mDNSfalse;
-		info->q6.ForceMCast       = (flags & kDNSServiceFlagsForceMulticast     ) != 0;
-		info->q6.ReturnIntermed   = (flags & kDNSServiceFlagsReturnIntermediates) != 0;
-		info->q6.QuestionCallback = addrinfo_result_callback;
-		info->q6.QuestionContext  = info;
+		request->u.addrinfo.q6.InterfaceID      = InterfaceID;
+		request->u.addrinfo.q6.Target           = zeroAddr;
+		request->u.addrinfo.q6.qname            = d;
+		request->u.addrinfo.q6.qtype            = kDNSServiceType_AAAA;
+		request->u.addrinfo.q6.qclass           = kDNSServiceClass_IN;
+		request->u.addrinfo.q6.LongLived        = (flags & kDNSServiceFlagsLongLivedQuery     ) != 0;
+		request->u.addrinfo.q6.ExpectUnique     = mDNSfalse;
+		request->u.addrinfo.q6.ForceMCast       = (flags & kDNSServiceFlagsForceMulticast     ) != 0;
+		request->u.addrinfo.q6.ReturnIntermed   = (flags & kDNSServiceFlagsReturnIntermediates) != 0;
+		request->u.addrinfo.q6.QuestionCallback = addrinfo_result_callback;
+		request->u.addrinfo.q6.QuestionContext  = request;
 
-		err = mDNS_StartQuery(&mDNSStorage, &info->q6);
+		err = mDNS_StartQuery(&mDNSStorage, &request->u.addrinfo.q6);
 		if (err != mStatus_NoError)
 			{
 			LogMsg("ERROR: mDNS_StartQuery: %d", (int)err);
-			info->q6.QuestionContext = mDNSNULL;
+			request->u.addrinfo.q6.QuestionContext = mDNSNULL;
 			}
 		}
 
 	LogOperation("%3d: DNSServiceGetAddrInfo(%##s) START", request->sd, d.c);
 
-	if (err) freeL("addrinfo_info_t", info);
-	else request->terminate = addrinfo_termination_callback;
+	if (!err) request->terminate = addrinfo_termination_callback;
 
 	return(err);
 	}
