@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.308  2007/03/24 00:41:33  cheshire
+Minor code cleanup (move variable declarations to minimum enclosing scope)
+
 Revision 1.307  2007/03/21 23:06:00  cheshire
 Rename uDNS_HostnameInfo to HostnameInfo; deleted some unused fields
 
@@ -5102,14 +5105,12 @@ mDNSlocal void FreeARElemCallback(mDNS *const m, AuthRecord *const rr, mStatus r
 mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
 	SearchListElem *slElem = question->QuestionContext;
-	ARListElem *arElem, *ptr, *prev;
-    AuthRecord *dereg;
-	const char *name;
 	mStatus err;
 
 	if (AddRecord)
 		{
-		arElem = mDNSPlatformMemAllocate(sizeof(ARListElem));
+		const char *name;
+		ARListElem *arElem = mDNSPlatformMemAllocate(sizeof(ARListElem));
 		if (!arElem) { LogMsg("ERROR: malloc"); return; }
 		mDNS_SetupResourceRecord(&arElem->ar, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200, kDNSRecordTypeShared, FreeARElemCallback, arElem);
 		if      (question == &slElem->BrowseQ)       name = mDNS_DomainTypeNames[mDNS_DomainTypeBrowse];
@@ -5134,25 +5135,20 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 		}
 	else
 		{
-		ptr = slElem->AuthRecs;
-		prev = mDNSNULL;
-		while (ptr)
+		ARListElem **ptr = &slElem->AuthRecs;
+		while (*ptr)
 			{
-			if (SameDomainName(&ptr->ar.resrec.rdata->u.name, &answer->rdata->u.name))
+			if (SameDomainName(&(*ptr)->ar.resrec.rdata->u.name, &answer->rdata->u.name))
 				{
-				debugf("Deregistering PTR %##s -> %##s", ptr->ar.resrec.name->c, ptr->ar.resrec.rdata->u.name.c);
-                dereg = &ptr->ar;
-				if (prev) prev->next = ptr->next;
-				else slElem->AuthRecs = ptr->next;
-                ptr = ptr->next;
-				err = mDNS_Deregister(m, dereg);
+				ARListElem *dereg = *ptr;
+				*ptr = (*ptr)->next;
+				debugf("Deregistering PTR %##s -> %##s", dereg->ar.resrec.name->c, dereg->ar.resrec.rdata->u.name.c);
+				err = mDNS_Deregister(m, &dereg->ar);
 				if (err) LogMsg("ERROR: FoundDomain - mDNS_Deregister returned %d", err);
+				// Memory will be freed in the FreeARElemCallback
 				}
 			else
-				{
-				prev = ptr;
-				ptr = ptr->next;
-				}
+				ptr = &(*ptr)->next;
 			}
 		}
 	}
@@ -5162,8 +5158,7 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 
 mDNSlocal mStatus RegisterSearchDomains(mDNS *const m)
 	{
-	SearchListElem *ptr, **p;
-	ARListElem *arList;
+	SearchListElem **p, *ptr;
 	mStatus err;
 
 	// step 1: mark each element for removal (-1)
@@ -5178,41 +5173,41 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m)
 	p = &SearchList;
 	while (*p)
 		{
-		if ((*p)->flag == -1)	// remove
+		ptr = *p;
+		if (ptr->flag == -1)	// remove
 			{
-			mDNS_StopQuery(m, &(*p)->BrowseQ);
-			mDNS_StopQuery(m, &(*p)->RegisterQ);
-			mDNS_StopQuery(m, &(*p)->DefBrowseQ);
-			mDNS_StopQuery(m, &(*p)->DefRegisterQ);
-			mDNS_StopQuery(m, &(*p)->LegacyBrowseQ);
+			ARListElem *arList = ptr->AuthRecs;
+			ptr->AuthRecs = mDNSNULL;
+			*p = ptr->next;
+
+			mDNS_StopQuery(m, &ptr->BrowseQ);
+			mDNS_StopQuery(m, &ptr->RegisterQ);
+			mDNS_StopQuery(m, &ptr->DefBrowseQ);
+			mDNS_StopQuery(m, &ptr->DefRegisterQ);
+			mDNS_StopQuery(m, &ptr->LegacyBrowseQ);
+			mDNSPlatformMemFree(ptr);
 
             // deregister records generated from answers to the query
-			arList = (*p)->AuthRecs;
-			(*p)->AuthRecs = mDNSNULL;
 			while (arList)
 				{
-				AuthRecord *dereg = &arList->ar;
+				ARListElem *dereg = arList;
 				arList = arList->next;
-				debugf("Deregistering PTR %##s -> %##s", dereg->resrec.name->c, dereg->resrec.rdata->u.name.c);
-				err = mDNS_Deregister(m, dereg);
+				debugf("Deregistering PTR %##s -> %##s", dereg->ar.resrec.name->c, dereg->ar.resrec.rdata->u.name.c);
+				err = mDNS_Deregister(m, &dereg->ar);
 				if (err) LogMsg("ERROR: RegisterSearchDomains mDNS_Deregister returned %d", err);
+				// Memory will be freed in the FreeARElemCallback
 				}
-
-			// remove elem from list, delete
-			ptr = *p;
-			*p = (*p)->next;
-			mDNSPlatformMemFree(ptr);
 			continue;
 			}
 
-		if ((*p)->flag == 1)	// add
+		if (ptr->flag == 1)	// add
 			{
 			mStatus err1, err2, err3, err4, err5;
-			err1 = mDNS_GetDomains(m, &(*p)->BrowseQ,       mDNS_DomainTypeBrowse,              &(*p)->domain, mDNSInterface_Any, FoundDomain, (*p));
-			err2 = mDNS_GetDomains(m, &(*p)->DefBrowseQ,    mDNS_DomainTypeBrowseDefault,       &(*p)->domain, mDNSInterface_Any, FoundDomain, (*p));
-			err3 = mDNS_GetDomains(m, &(*p)->RegisterQ,     mDNS_DomainTypeRegistration,        &(*p)->domain, mDNSInterface_Any, FoundDomain, (*p));
-			err4 = mDNS_GetDomains(m, &(*p)->DefRegisterQ,  mDNS_DomainTypeRegistrationDefault, &(*p)->domain, mDNSInterface_Any, FoundDomain, (*p));
-			err5 = mDNS_GetDomains(m, &(*p)->LegacyBrowseQ, mDNS_DomainTypeBrowseLegacy,        &(*p)->domain, mDNSInterface_Any, FoundDomain, (*p));
+			err1 = mDNS_GetDomains(m, &ptr->BrowseQ,       mDNS_DomainTypeBrowse,              &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
+			err2 = mDNS_GetDomains(m, &ptr->DefBrowseQ,    mDNS_DomainTypeBrowseDefault,       &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
+			err3 = mDNS_GetDomains(m, &ptr->RegisterQ,     mDNS_DomainTypeRegistration,        &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
+			err4 = mDNS_GetDomains(m, &ptr->DefRegisterQ,  mDNS_DomainTypeRegistrationDefault, &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
+			err5 = mDNS_GetDomains(m, &ptr->LegacyBrowseQ, mDNS_DomainTypeBrowseLegacy,        &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
 			if (err1 || err2 || err3 || err4 || err5)
 				LogMsg("GetDomains for domain %##s returned error(s):\n"
 					   "%d (mDNS_DomainTypeBrowse)\n"
@@ -5220,13 +5215,13 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m)
 					   "%d (mDNS_DomainTypeRegistration)\n"
 					   "%d (mDNS_DomainTypeRegistrationDefault)"
 					   "%d (mDNS_DomainTypeBrowseLegacy)\n",
-					   (*p)->domain.c, err1, err2, err3, err4, err5);
-			(*p)->flag = 0;
+					   ptr->domain.c, err1, err2, err3, err4, err5);
+			ptr->flag = 0;
 			}
 
-		if ((*p)->flag) { LogMsg("RegisterSearchDomains - unknown flag %d. Skipping.", (*p)->flag); }
+		if (ptr->flag) { LogMsg("RegisterSearchDomains - unknown flag %d. Skipping.", ptr->flag); }
 
-		p = &(*p)->next;
+		p = &ptr->next;
 		}
 
 	return mStatus_NoError;
