@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.296  2007/03/24 01:23:29  cheshire
+Call validator for uDNS data structures
+
 Revision 1.295  2007/03/20 23:32:49  cheshire
 Minor textual tidying
 
@@ -358,6 +361,7 @@ mDNSlocal void validatelists(mDNS *const m)
 
 	// Check UDS client lists
 	uds_validatelists();
+	udns_validatelists();
 
 	// Check core mDNS lists
 	AuthRecord                  *rr;
