@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.133  2007/03/26 22:55:45  cheshire
+Add OPT and TSIG to list of types DNSTypeName() knows about
+
 Revision 1.132  2007/03/22 18:31:48  cheshire
 Put dst parameter first in mDNSPlatformStrCopy/mDNSPlatformMemCopy, like conventional Posix strcpy/memcpy
 
@@ -285,6 +288,8 @@ mDNSexport char *DNSTypeName(mDNSu16 rrtype)
 		case kDNSType_TXT:  return("TXT");
 		case kDNSType_AAAA: return("AAAA");
 		case kDNSType_SRV:  return("SRV");
+		case kDNSType_OPT:  return("OPT");
+		case kDNSType_TSIG: return("TSIG");
 		case kDNSQType_ANY: return("ANY");
 		default:			{
 							static char buffer[16];
