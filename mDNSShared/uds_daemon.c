@@ -17,6 +17,10 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.259  2007/03/26 23:48:16  cheshire
+<rdar://problem/4848295> Advertise model information via Bonjour
+Refinements to reduce unnecessary transmissions of the DeviceInfo TXT record
+
 Revision 1.258  2007/03/24 00:40:04  cheshire
 Minor code cleanup
 
@@ -1666,7 +1670,7 @@ mDNSlocal mStatus register_service_instance(request_state *request, const domain
 	return result;
 	}
 
-mDNSlocal void UpdateDeviceInfoRecord(mDNS *const m, mDNSBool force);
+mDNSlocal void UpdateDeviceInfoRecord(mDNS *const m);
 
 mDNSlocal void regservice_termination_callback(void *context)
 	{
@@ -1685,7 +1689,7 @@ mDNSlocal void regservice_termination_callback(void *context)
 		}
 	request->terminate = NULL; // clear pointer from request back to info
 	if (request->u.service.txtdata) { freeL("service_info txtdata", request->u.service.txtdata); request->u.service.txtdata = NULL; }
-	UpdateDeviceInfoRecord(&mDNSStorage, mDNSfalse);
+	if (request->u.service.autoname) UpdateDeviceInfoRecord(&mDNSStorage);
 	}
 
 mDNSexport void udsserver_default_reg_domain_changed(const domainname *d, mDNSBool add)
@@ -1836,9 +1840,11 @@ mDNSlocal mStatus handle_regservice_request(request_state *request)
 			// note that we don't report errors for non-local, non-explicit domains
 		}
 
-	if (request->u.service.autoname) UpdateDeviceInfoRecord(&mDNSStorage, mDNStrue);
-
-	if (!err) request->terminate = regservice_termination_callback;
+	if (!err)
+		{
+		request->terminate = regservice_termination_callback;
+		if (request->u.service.autoname) UpdateDeviceInfoRecord(&mDNSStorage);
+		}
 
 	return(err);
 	}
@@ -2010,24 +2016,17 @@ mDNSlocal void SetPrefsBrowseDomains(mDNS *m, DNameListElem * browseDomains, mDN
 		else LogMsg("SetPrefsBrowseDomains bad browse domain: %p", browseDomain);
 	}
 
-mDNSlocal void UpdateDeviceInfoRecord(mDNS *const m, mDNSBool force)
+mDNSlocal void UpdateDeviceInfoRecord(mDNS *const m)
 	{
 	int num_autoname = 0;
-
-	if (!force)
-		{
-		request_state *req;
-		service_instance *ptr;
-		for (req = all_requests; req; req = req->next)
-			if (req->terminate == regservice_termination_callback)
-				for (ptr = req->u.service.instances; ptr; ptr = ptr->next)
-					if (ptr->autoname)
-						num_autoname++;
-		}
+	request_state *req;
+	for (req = all_requests; req; req = req->next)
+		if (req->terminate == regservice_termination_callback && req->u.service.autoname)
+			num_autoname++;
 
 	// If DeviceInfo record is currently registered, see if we need to deregister it
 	if (m->DeviceInfo.resrec.RecordType != kDNSRecordTypeUnregistered)
-		if (force || num_autoname == 0 || !SameDomainLabelCS(m->DeviceInfo.resrec.name->c, m->nicelabel.c))
+		if (num_autoname == 0 || !SameDomainLabelCS(m->DeviceInfo.resrec.name->c, m->nicelabel.c))
 			{
 			LogOperation("UpdateDeviceInfoRecord Deregister %##s", m->DeviceInfo.resrec.name);
 			mDNS_Deregister(m, &m->DeviceInfo);
@@ -2035,10 +2034,10 @@ mDNSlocal void UpdateDeviceInfoRecord(mDNS *const m, mDNSBool force)
 
 	// If DeviceInfo record is not currently registered, see if we need to register it
 	if (m->DeviceInfo.resrec.RecordType == kDNSRecordTypeUnregistered)
-		if (force || num_autoname > 0)
+		if (num_autoname > 0)
 			{
 			mDNSu8 len = m->HIHardware.c[0] < 255 - 6 ? m->HIHardware.c[0] : 255 - 6;
-			mDNS_SetupResourceRecord(&m->DeviceInfo, mDNSNULL, mDNSNULL, kDNSType_TXT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
+			mDNS_SetupResourceRecord(&m->DeviceInfo, mDNSNULL, mDNSNULL, kDNSType_TXT, kStandardTTL, kDNSRecordTypeAdvisory, mDNSNULL, mDNSNULL);
 			ConstructServiceName(m->DeviceInfo.resrec.name, &m->nicelabel, &DeviceInfoName, &localdomain);
 			mDNSPlatformMemCopy(m->DeviceInfo.resrec.rdata->u.data + 1, "model=", 6);
 			mDNSPlatformMemCopy(m->DeviceInfo.resrec.rdata->u.data + 7, m->HIHardware.c + 1, len);
@@ -2056,7 +2055,7 @@ mDNSexport void udsserver_handle_configchange(mDNS *const m)
 	domainname      regDomain;
 	DNameListElem * browseDomains;
 
-	UpdateDeviceInfoRecord(m, mDNSfalse);
+	UpdateDeviceInfoRecord(m);
 
 	for (req = all_requests; req; req = req->next)
 		if (req->terminate == regservice_termination_callback)

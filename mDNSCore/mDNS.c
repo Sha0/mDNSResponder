@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.595  2007/03/26 23:48:16  cheshire
+<rdar://problem/4848295> Advertise model information via Bonjour
+Refinements to reduce unnecessary transmissions of the DeviceInfo TXT record
+
 Revision 1.594  2007/03/26 23:05:05  cheshire
 <rdar://problem/5089257> Don't cache TSIG records
 
@@ -1299,6 +1303,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 	// which will be non-null. If by some chance there is an address record that's not interface-specific (should never happen)
 	// then all that means is that it won't get sent -- which would not be the end of the world.
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
+		{
 		if (rr->ImmedAnswer && rr->resrec.rrtype == kDNSType_SRV)
 			for (r2=m->ResourceRecords; r2; r2=r2->next)				// Scan list of resource records
 				if (RRTypeIsAddressType(r2->resrec.rrtype) &&			// For all address records (A/AAAA) ...
@@ -1308,6 +1313,16 @@ mDNSlocal void SendResponses(mDNS *const m)
 					SameDomainName(&rr->resrec.rdata->u.srv.target, r2->resrec.name) &&
 					(rr->ImmedAnswer == mDNSInterfaceMark || rr->ImmedAnswer == r2->resrec.InterfaceID))
 					r2->ImmedAdditional = r2->resrec.InterfaceID;		// ... then mark this address record for sending too
+		// We also make sure we send the DeviceInfo TXT record too, if necessary
+		// We check for RecordType == kDNSRecordTypeShared because we don't want to tag the
+		// DeviceInfo TXT record onto a goodbye packet (RecordType == kDNSRecordTypeDeregistering).
+		if (rr->ImmedAnswer && rr->resrec.RecordType == kDNSRecordTypeShared && rr->resrec.rrtype == kDNSType_PTR)
+			if (ResourceRecordIsValidAnswer(&m->DeviceInfo) && SameDomainLabel(rr->resrec.rdata->u.name.c, m->DeviceInfo.resrec.name->c))
+				{
+				if (!m->DeviceInfo.ImmedAnswer) m->DeviceInfo.ImmedAnswer = rr->ImmedAnswer;
+				else                            m->DeviceInfo.ImmedAnswer = mDNSInterfaceMark;
+				}
+		}
 
 	// If there's a record which is supposed to be unique that we're going to send, then make sure that we give
 	// the whole RRSet as an atomic unit. That means that if we have any other records with the same name/type/class
