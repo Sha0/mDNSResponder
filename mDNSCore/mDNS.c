@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.594  2007/03/26 23:05:05  cheshire
+<rdar://problem/5089257> Don't cache TSIG records
+
 Revision 1.593  2007/03/23 17:40:08  cheshire
 <rdar://problem/4060169> Bug when auto-renaming Computer Name after name collision
 
@@ -3837,6 +3840,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		const mDNSu8 RecordType = (mDNSu8)((i < response->h.numAnswers) ? kDNSRecordTypePacketAns : kDNSRecordTypePacketAdd);
 		ptr = GetLargeResourceRecord(m, response, ptr, end, InterfaceID, RecordType, &m->rec);
 		if (!ptr) goto exit;		// Break out of the loop and clean up our CacheFlushRecords list before exiting
+		// Don't want to cache OPT or TSIG pseudo-RRs
+		if (m->rec.r.resrec.rrtype == kDNSType_OPT || m->rec.r.resrec.rrtype == kDNSType_TSIG) continue;
 		
 		// Temporary:
 		// When we receive uDNS responses, we assume a long cache lifetime --
