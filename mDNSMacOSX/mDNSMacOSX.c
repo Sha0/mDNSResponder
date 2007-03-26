@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.380  2007/03/26 22:54:46  cheshire
+Fix compile error
+
 Revision 1.379  2007/03/22 18:31:48  cheshire
 Put dst parameter first in mDNSPlatformStrCopy/mDNSPlatformMemCopy, like conventional Posix strcpy/memcpy
 
@@ -2425,7 +2428,9 @@ mDNSexport void mDNSPlatformSetDNSServers(mDNS *const m)
 
 	mDNS_Lock(m);
 
-#if !MDNS_NO_DNSINFO
+#if MDNS_NO_DNSINFO
+	(void)err;
+#else
 	if (!err && v)
 		{
 		dns_config_t *config = v;  // use void * to allow compilation on 10.3 systems
