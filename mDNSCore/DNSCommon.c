@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.134  2007/03/27 23:25:35  cheshire
+Fix error caching SOA records
+(cache entry was size of wire-format packed data, not size of in-memory structure)
+
 Revision 1.133  2007/03/26 22:55:45  cheshire
 Add OPT and TSIG to list of types DNSTypeName() knows about
 
@@ -316,6 +320,11 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd,
 		case kDNSType_NS:	// Same as PTR
 		case kDNSType_CNAME:// Same as PTR
 		case kDNSType_PTR:	mDNS_snprintf(buffer+length, Max-length, "%##s", rd->name.c);       break;
+
+		case kDNSType_SOA:  mDNS_snprintf(buffer+length, Max-length, "%##s %##s %d %d %d %d %d",
+								rd->soa.mname.c, rd->soa.rname.c,
+								rd->soa.serial, rd->soa.refresh, rd->soa.retry, rd->soa.expire, rd->soa.min);
+							break;
 
 		case kDNSType_HINFO:// Display this the same as TXT (just show first string)
 		case kDNSType_TXT:  mDNS_snprintf(buffer+length, Max-length, "%#s", rd->txt.c);         break;
@@ -1155,7 +1164,8 @@ mDNSexport mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate
 		case kDNSType_TXT:  return(rr->rdlength); // TXT is not self-describing, so have to just trust rdlength
 		case kDNSType_AAAA:	return(sizeof(rd->ipv6));
 		case kDNSType_SRV:	return(mDNSu16)(6 + CompressedDomainNameLength(&rd->srv.target, name));
-		case kDNSType_SOA:  return (mDNSu16)(CompressedDomainNameLength(&rd->soa.mname, name) +
+		case kDNSType_SOA:  if (!estimate) return(sizeof(rdataSOA));
+							return(mDNSu16)(CompressedDomainNameLength(&rd->soa.mname, name) +
 											CompressedDomainNameLength(&rd->soa.rname, name) +
 											5 * sizeof(mDNSOpaque32));
 		case kDNSType_OPT:  return(rr->rdlength);
@@ -1874,10 +1884,10 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 							break;
 
 		case kDNSType_SOA:  ptr = getDomainName(msg, ptr, end, &rr->resrec.rdata->u.soa.mname);
-							if (!ptr) { debugf("GetLargeResourceRecord: Malformed SOA RDATA mname"); return mDNSNULL; }
+							if (!ptr)              { debugf("GetLargeResourceRecord: Malformed SOA RDATA mname"); return mDNSNULL; }
 							ptr = getDomainName(msg, ptr, end, &rr->resrec.rdata->u.soa.rname);
-							if (!ptr) { debugf("GetLargeResourceRecord: Malformed SOA RDATA rname"); return mDNSNULL; }
-			                if (ptr + 0x14 != end) { debugf("GetLargeResourceRecord: Malformed SOA RDATA"); return mDNSNULL; }
+							if (!ptr)              { debugf("GetLargeResourceRecord: Malformed SOA RDATA rname"); return mDNSNULL; }
+			                if (ptr + 0x14 != end) { debugf("GetLargeResourceRecord: Malformed SOA RDATA");       return mDNSNULL; }
                 			rr->resrec.rdata->u.soa.serial  = (mDNSs32) ((mDNSs32)ptr[0x00] << 24 | (mDNSs32)ptr[0x01] << 16 | (mDNSs32)ptr[0x02] << 8 | ptr[0x03]);
 			                rr->resrec.rdata->u.soa.refresh = (mDNSu32) ((mDNSu32)ptr[0x04] << 24 | (mDNSu32)ptr[0x05] << 16 | (mDNSu32)ptr[0x06] << 8 | ptr[0x07]);
 			                rr->resrec.rdata->u.soa.retry   = (mDNSu32) ((mDNSu32)ptr[0x08] << 24 | (mDNSu32)ptr[0x09] << 16 | (mDNSu32)ptr[0x0A] << 8 | ptr[0x0B]);
