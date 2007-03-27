@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.263  2007/03/27 00:45:01  cheshire
+Removed unnecessary "void *termination_context" pointer
+
 Revision 1.262  2007/03/27 00:40:43  cheshire
 Eliminate resolve_termination_t as a separately-allocated structure, and make it part of the request_state union
 
@@ -393,7 +396,6 @@ typedef struct request_state
 	int time_blocked;           // record time of a blocked client
 	struct reply_state *replies;  // corresponding (active) reply list
 	undelivered_error_t *u_err;
-	void *termination_context;
 	req_termination_fn terminate;
 
 	union
@@ -675,7 +677,7 @@ mDNSlocal void abort_request(request_state *req)
 	{
 	reply_state *rep;
 
-	if (req->terminate) req->terminate(req->termination_context);  // terminate field may not be set yet
+	if (req->terminate) req->terminate(req);
 
 	LogOperation("%3d: Removing FD", req->sd);
 	udsSupportRemoveFDFromEventLoop(req->sd);					// Note: This also closes file descriptor req->sd for us
@@ -1384,10 +1386,7 @@ mDNSlocal mStatus handle_regrecord_request(request_state *request)
 	request->u.reg_recs = re;
 
 	if (!request->terminate)
-		{
 		request->terminate = connected_registration_termination;
-		request->termination_context = request;
-		}
 
 	if (rr->resrec.rroriginalttl == 0)
 		rr->resrec.rroriginalttl = DefaultTTLforRRType(rr->resrec.rrtype);
@@ -1758,7 +1757,6 @@ mDNSlocal mStatus handle_regservice_request(request_state *request)
 	request->u.service.txtlen  = 0;
 	request->u.service.txtdata = NULL;
 	mDNSPlatformStrCopy(request->u.service.type_as_string, type_as_string);
-	request->termination_context = request;
 
 	request->u.service.port.b[0] = *ptr++;
 	request->u.service.port.b[1] = *ptr++;
@@ -2174,8 +2172,6 @@ mDNSlocal void browse_termination_callback(void *context)
 		mDNS_StopBrowse(&mDNSStorage, &ptr->q);  // no need to error-check result
 		freeL("browser_t/browse_termination_callback", ptr);
 		}
-
-	info->termination_context = NULL;
 	}
 
 mDNSlocal mStatus handle_browse_request(request_state *request)
@@ -2213,9 +2209,6 @@ mDNSlocal mStatus handle_browse_request(request_state *request)
 	AssignDomainName(&request->u.browser.regtype, &typedn);
 	request->u.browser.default_domain = !domain[0];
 	request->u.browser.browsers = NULL;
-
-	// setup termination context
-	request->termination_context = request;
 
 	LogOperation("%3d: DNSServiceBrowse(\"%##s\", \"%s\") START", request->sd, request->u.browser.regtype.c, domain);
 	if (domain[0])
@@ -2365,8 +2358,6 @@ mDNSlocal mStatus handle_resolve_request(request_state *request)
 	request->u.resolve.qtxt.QuestionCallback = resolve_result_callback;
 	request->u.resolve.qtxt.QuestionContext  = request;
 
-	request->termination_context = request;
-
 	// ask the questions
 	LogOperation("%3d: DNSServiceResolve(%##s) START", request->sd, request->u.resolve.qsrv.qname.c);
 	err = mDNS_StartQuery(&mDNSStorage, &request->u.resolve.qsrv);
@@ -2479,8 +2470,6 @@ mDNSlocal mStatus handle_queryrecord_request(request_state *request)
 	request->u.queryrecord.q.QuestionCallback = queryrecord_result_callback;
 	request->u.queryrecord.q.QuestionContext  = request;
 
-	request->termination_context = request;
-
 	LogOperation("%3d: DNSServiceQueryRecord(%##s, %s) START", request->sd, request->u.queryrecord.q.qname.c, DNSTypeName(request->u.queryrecord.q.qtype));
 	err = mDNS_StartQuery(&mDNSStorage, &request->u.queryrecord.q);
 	if (err) LogMsg("ERROR: mDNS_StartQuery: %d", (int)err);
@@ -2569,7 +2558,6 @@ mDNSlocal mStatus handle_enum_request(request_state *request)
 
 	// enumeration requires multiple questions, so we must link all the context pointers so that
 	// necessary context can be reached from the callbacks
-	request->termination_context = request;
 	request->u.enumeration.q_all    .QuestionContext = request;
 	request->u.enumeration.q_default.QuestionContext = request;
 	
@@ -2708,7 +2696,6 @@ mDNSlocal void port_mapping_create_termination_callback(void *context)
 		uDNS_FreeNATInfo(&mDNSStorage, request->u.portmapping.NATMapinfo);
 		}
 
-	request->termination_context = NULL;
 	mDNS_Unlock(&mDNSStorage);
 	}
 
@@ -2886,8 +2873,6 @@ mDNSlocal mStatus handle_port_mapping_create_request(request_state *request)
 	request->u.portmapping.NATAddrinfo                 = mDNSNULL;
 	request->u.portmapping.NATMapinfo                  = mDNSNULL;
 
-	request->termination_context      = request;
-
 	LogOperation("%3d: DNSServiceNATPortMappingCreate(%X, %u, %u, %d) START", request->sd, protocol, mDNSVal16(privatePort), mDNSVal16(publicPort), ttl);
 
 	request->u.portmapping.NATAddrinfo = uDNS_AllocNATInfo(&mDNSStorage, NATOp_AddrRequest, zeroIPPort, zeroIPPort, 0, port_mapping_create_reply);
@@ -2929,8 +2914,6 @@ mDNSlocal void addrinfo_termination_callback(void *context)
 		mDNS_StopQuery(&mDNSStorage, &request->u.addrinfo.q6);
 		request->u.addrinfo.q6.QuestionContext = mDNSNULL;
 		}
-
-	request->termination_context = NULL;
 	}
 
 mDNSlocal void addrinfo_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
@@ -3014,8 +2997,6 @@ mDNSlocal mStatus handle_addrinfo_request(request_state *request)
 				}
 			}
 		}
-
-	request->termination_context = request;
 
 	if (protocol & kDNSServiceProtocol_IPv4)
 		{
@@ -3417,31 +3398,27 @@ mDNSexport int udsserver_exit(dnssd_sock_t skt)
 
 mDNSlocal void LogClientInfo(request_state *req)
 	{
-	void *t = req->termination_context;
-	if (t)
+	if (req->terminate == regservice_termination_callback)
 		{
-		if (req->terminate == regservice_termination_callback)
-			{
-			service_instance *ptr;
-			for (ptr = req->u.service.instances; ptr; ptr = ptr->next)
-				LogMsgNoIdent("%3d: DNSServiceRegister         %##s %u", req->sd, ptr->srs.RR_SRV.resrec.name->c, SRS_PORT(&ptr->srs));
-			}
-		else if (req->terminate == browse_termination_callback)
-			{
-			browser_t *blist;
-			for (blist = req->u.browser.browsers; blist; blist = blist->next)
-				LogMsgNoIdent("%3d: DNSServiceBrowse           %##s", req->sd, blist->q.qname.c);
-			}
-		else if (req->terminate == resolve_termination_callback)
-			LogMsgNoIdent("%3d: DNSServiceResolve          %##s", req->sd, req->u.resolve.qsrv.qname.c);
-		else if (req->terminate == queryrecord_termination_callback)
-			LogMsgNoIdent("%3d: DNSServiceQueryRecord      %##s", req->sd, req->u.queryrecord.q.qname.c);
-		else if (req->terminate == enum_termination_callback)
-			LogMsgNoIdent("%3d: DNSServiceEnumerateDomains %##s", req->sd, req->u.enumeration.q_all.qname.c);
-
-		// %%% Need to add listing of NAT port mapping requests and GetAddrInfo requests here too
-
+		service_instance *ptr;
+		for (ptr = req->u.service.instances; ptr; ptr = ptr->next)
+			LogMsgNoIdent("%3d: DNSServiceRegister         %##s %u", req->sd, ptr->srs.RR_SRV.resrec.name->c, SRS_PORT(&ptr->srs));
 		}
+	else if (req->terminate == browse_termination_callback)
+		{
+		browser_t *blist;
+		for (blist = req->u.browser.browsers; blist; blist = blist->next)
+			LogMsgNoIdent("%3d: DNSServiceBrowse           %##s", req->sd, blist->q.qname.c);
+		}
+	else if (req->terminate == resolve_termination_callback)
+		LogMsgNoIdent("%3d: DNSServiceResolve          %##s", req->sd, req->u.resolve.qsrv.qname.c);
+	else if (req->terminate == queryrecord_termination_callback)
+		LogMsgNoIdent("%3d: DNSServiceQueryRecord      %##s", req->sd, req->u.queryrecord.q.qname.c);
+	else if (req->terminate == enum_termination_callback)
+		LogMsgNoIdent("%3d: DNSServiceEnumerateDomains %##s", req->sd, req->u.enumeration.q_all.qname.c);
+
+	// %%% Need to add listing of NAT port mapping requests and GetAddrInfo requests here too
+
 	}
 
 mDNSexport void udsserver_info(mDNS *const m)
