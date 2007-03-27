@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.261  2007/03/27 00:29:00  cheshire
+Eliminate queryrecord_request data as a separately-allocated structure, and make it part of the request_state union
+
 Revision 1.260  2007/03/27 00:18:42  cheshire
 Eliminate enum_termination_t and domain_enum_t as separately-allocated structures,
 and make them part of the request_state union
@@ -444,6 +447,11 @@ typedef struct request_state
 			DNSQuestion q_all;
 			DNSQuestion q_default;
 			} enumeration;
+		struct
+			{
+			DNSQuestion q;
+			} queryrecord;
+		 ;
 		} u;
 	} request_state;
 
@@ -2450,10 +2458,9 @@ mDNSlocal void queryrecord_result_callback(mDNS *const m, DNSQuestion *question,
 
 mDNSlocal void queryrecord_termination_callback(void *context)
 	{
-	DNSQuestion *q = context;
-	LogOperation("%3d: DNSServiceQueryRecord(%##s, %s) STOP", ((request_state *)q->QuestionContext)->sd, q->qname.c, DNSTypeName(q->qtype));
-	mDNS_StopQuery(&mDNSStorage, q);  // no need to error check
-	freeL("DNSQuestion/queryrecord_termination_callback", q);
+	request_state *request = context;
+	LogOperation("%3d: DNSServiceQueryRecord(%##s, %s) STOP", request->sd, request->u.queryrecord.q.qname.c, DNSTypeName(request->u.queryrecord.q.qtype));
+	mDNS_StopQuery(&mDNSStorage, &request->u.queryrecord.q);  // no need to error check
 	}
 
 mDNSlocal mStatus handle_queryrecord_request(request_state *request)
@@ -2462,7 +2469,6 @@ mDNSlocal mStatus handle_queryrecord_request(request_state *request)
 	char name[256];
 	uint16_t rrtype, rrclass;
 	mStatus err;
-	DNSQuestion *q;
 
 	DNSServiceFlags flags = get_flags(&ptr);
 	uint32_t interfaceIndex = get_uint32(&ptr);
@@ -2473,30 +2479,27 @@ mDNSlocal mStatus handle_queryrecord_request(request_state *request)
 	rrtype  = get_uint16(&ptr);
 	rrclass = get_uint16(&ptr);
 
-	q = mallocL("DNSQuestion", sizeof(DNSQuestion));
-	if (!q) FatalError("ERROR: handle_query - malloc");
-	mDNSPlatformMemZero(q, sizeof(DNSQuestion));
+	mDNSPlatformMemZero(&request->u.queryrecord.q, sizeof(&request->u.queryrecord.q));
 
-	q->InterfaceID      = InterfaceID;
-	q->Target           = zeroAddr;
-	if (!MakeDomainNameFromDNSNameString(&q->qname, name)) { freeL("DNSQuestion/handle_queryrecord_request", q); return(mStatus_BadParamErr); }
-	q->qtype            = rrtype;
-	q->qclass           = rrclass;
-	q->LongLived        = (flags & kDNSServiceFlagsLongLivedQuery     ) != 0;
-	q->ExpectUnique     = mDNSfalse;
-	q->ForceMCast       = (flags & kDNSServiceFlagsForceMulticast     ) != 0;
-	q->ReturnIntermed   = (flags & kDNSServiceFlagsReturnIntermediates) != 0;
-	q->QuestionCallback = queryrecord_result_callback;
-	q->QuestionContext  = request;
+	request->u.queryrecord.q.InterfaceID      = InterfaceID;
+	request->u.queryrecord.q.Target           = zeroAddr;
+	if (!MakeDomainNameFromDNSNameString(&request->u.queryrecord.q.qname, name)) return(mStatus_BadParamErr);
+	request->u.queryrecord.q.qtype            = rrtype;
+	request->u.queryrecord.q.qclass           = rrclass;
+	request->u.queryrecord.q.LongLived        = (flags & kDNSServiceFlagsLongLivedQuery     ) != 0;
+	request->u.queryrecord.q.ExpectUnique     = mDNSfalse;
+	request->u.queryrecord.q.ForceMCast       = (flags & kDNSServiceFlagsForceMulticast     ) != 0;
+	request->u.queryrecord.q.ReturnIntermed   = (flags & kDNSServiceFlagsReturnIntermediates) != 0;
+	request->u.queryrecord.q.QuestionCallback = queryrecord_result_callback;
+	request->u.queryrecord.q.QuestionContext  = request;
 
-	request->termination_context = q;
+	request->termination_context = request;
 
-	LogOperation("%3d: DNSServiceQueryRecord(%##s, %s) START", request->sd, q->qname.c, DNSTypeName(q->qtype));
-	err = mDNS_StartQuery(&mDNSStorage, q);
+	LogOperation("%3d: DNSServiceQueryRecord(%##s, %s) START", request->sd, request->u.queryrecord.q.qname.c, DNSTypeName(request->u.queryrecord.q.qtype));
+	err = mDNS_StartQuery(&mDNSStorage, &request->u.queryrecord.q);
 	if (err) LogMsg("ERROR: mDNS_StartQuery: %d", (int)err);
 
-	if (err) freeL("DNSQuestion/handle_queryrecord_request", q);
-	else request->terminate = queryrecord_termination_callback;
+	if (!err) request->terminate = queryrecord_termination_callback;
 
 	return(err);
 	}
@@ -3446,7 +3449,7 @@ mDNSlocal void LogClientInfo(request_state *req)
 		else if (req->terminate == resolve_termination_callback)
 			LogMsgNoIdent("%3d: DNSServiceResolve          %##s", req->sd, ((resolve_termination_t *)t)->qsrv.qname.c);
 		else if (req->terminate == queryrecord_termination_callback)
-			LogMsgNoIdent("%3d: DNSServiceQueryRecord      %##s", req->sd, ((DNSQuestion *)          t)->qname.c);
+			LogMsgNoIdent("%3d: DNSServiceQueryRecord      %##s", req->sd, req->u.queryrecord.q.qname.c);
 		else if (req->terminate == enum_termination_callback)
 			LogMsgNoIdent("%3d: DNSServiceEnumerateDomains %##s", req->sd, req->u.enumeration.q_all.qname.c);
 
