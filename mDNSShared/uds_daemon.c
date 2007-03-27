@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.262  2007/03/27 00:40:43  cheshire
+Eliminate resolve_termination_t as a separately-allocated structure, and make it part of the request_state union
+
 Revision 1.261  2007/03/27 00:29:00  cheshire
 Eliminate queryrecord_request data as a separately-allocated structure, and make it part of the request_state union
 
@@ -451,6 +454,13 @@ typedef struct request_state
 			{
 			DNSQuestion q;
 			} queryrecord;
+		struct
+			{
+			DNSQuestion qtxt;
+			DNSQuestion qsrv;
+			const ResourceRecord *txt;
+			const ResourceRecord *srv;
+			} resolve;
 		 ;
 		} u;
 	} request_state;
@@ -480,15 +490,6 @@ typedef struct reply_state
 	// pointer to malloc'd buffer
 	char *msgbuf;
 	} reply_state;
-
-typedef struct
-	{
-	request_state *rstate;
-	DNSQuestion qtxt;
-	DNSQuestion qsrv;
-	const ResourceRecord *txt;
-	const ResourceRecord *srv;
-	} resolve_termination_t;
 
 #ifdef _HAVE_SETDOMAIN_SUPPORT_
 typedef struct default_browse_list_t
@@ -2255,7 +2256,6 @@ mDNSlocal void resolve_result_callback(mDNS *const m, DNSQuestion *question, con
 	char *data;
 	reply_state *rep;
 	request_state *req = question->QuestionContext;
-	resolve_termination_t *res = req->termination_context;
 	(void)m; // Unused
 
 	LogOperation("%3d: DNSServiceResolve(%##s, %s) %s %s",
@@ -2267,18 +2267,18 @@ mDNSlocal void resolve_result_callback(mDNS *const m, DNSQuestion *question, con
 
 	if (!AddRecord)
 		{
-		if (answer->rrtype == kDNSType_SRV && res->srv == answer) res->srv = mDNSNULL;
-		if (answer->rrtype == kDNSType_TXT && res->txt == answer) res->txt = mDNSNULL;
+		if (answer->rrtype == kDNSType_SRV && req->u.resolve.srv == answer) req->u.resolve.srv = mDNSNULL;
+		if (answer->rrtype == kDNSType_TXT && req->u.resolve.txt == answer) req->u.resolve.txt = mDNSNULL;
 		return;
 		}
 
-	if (answer->rrtype == kDNSType_SRV) res->srv = answer;
-	if (answer->rrtype == kDNSType_TXT) res->txt = answer;
+	if (answer->rrtype == kDNSType_SRV) req->u.resolve.srv = answer;
+	if (answer->rrtype == kDNSType_TXT) req->u.resolve.txt = answer;
 
-	if (!res->txt || !res->srv) return;		// only deliver result to client if we have both answers
+	if (!req->u.resolve.txt || !req->u.resolve.srv) return;		// only deliver result to client if we have both answers
 
 	ConvertDomainNameToCString(answer->name, fullname);
-	ConvertDomainNameToCString(&res->srv->rdata->u.srv.target, target);
+	ConvertDomainNameToCString(&req->u.resolve.srv->rdata->u.srv.target, target);
 
 	// calculate reply length
 	len += sizeof(DNSServiceFlags);
@@ -2287,7 +2287,7 @@ mDNSlocal void resolve_result_callback(mDNS *const m, DNSQuestion *question, con
 	len += strlen(fullname) + 1;
 	len += strlen(target) + 1;
 	len += 2 * sizeof(uint16_t);  // port, txtLen
-	len += res->txt->rdlength;
+	len += req->u.resolve.txt->rdlength;
 
 	// allocate/init reply header
 	rep =  create_reply(resolve_reply_op, len, req);
@@ -2300,32 +2300,20 @@ mDNSlocal void resolve_result_callback(mDNS *const m, DNSQuestion *question, con
 	// write reply data to message
 	put_string(fullname, &data);
 	put_string(target, &data);
-	*data++ = res->srv->rdata->u.srv.port.b[0];
-	*data++ = res->srv->rdata->u.srv.port.b[1];
-	put_uint16(res->txt->rdlength, &data);
-	put_rdata(res->txt->rdlength, res->txt->rdata->u.data, &data);
+	*data++ = req->u.resolve.srv->rdata->u.srv.port.b[0];
+	*data++ = req->u.resolve.srv->rdata->u.srv.port.b[1];
+	put_uint16(req->u.resolve.txt->rdlength, &data);
+	put_rdata(req->u.resolve.txt->rdlength, req->u.resolve.txt->rdata->u.data, &data);
 
 	append_reply(req, rep);
 	}
 
 mDNSlocal void resolve_termination_callback(void *context)
 	{
-	resolve_termination_t *term = context;
-	request_state *req;
-
-	if (!term)
-		{
-		LogMsg("ERROR: resolve_termination_callback: double termination");
-		return;
-		}
-	req = term->rstate;
-	LogOperation("%3d: DNSServiceResolve(%##s) STOP", req->sd, term->qtxt.qname.c);
-
-	mDNS_StopQuery(&mDNSStorage, &term->qtxt);
-	mDNS_StopQuery(&mDNSStorage, &term->qsrv);
-
-	freeL("resolve_termination_t", term);
-	req->termination_context = NULL;
+	request_state *req = context;
+	LogOperation("%3d: DNSServiceResolve(%##s) STOP", req->sd, req->u.resolve.qtxt.qname.c);
+	mDNS_StopQuery(&mDNSStorage, &req->u.resolve.qtxt);
+	mDNS_StopQuery(&mDNSStorage, &req->u.resolve.qsrv);
 	}
 
 mDNSlocal mStatus handle_resolve_request(request_state *request)
@@ -2333,7 +2321,6 @@ mDNSlocal mStatus handle_resolve_request(request_state *request)
 	char *ptr = request->msgdata;
 	char name[256], regtype[MAX_ESCAPED_DOMAIN_NAME], domain[MAX_ESCAPED_DOMAIN_NAME];
 	domainname fqdn;
-	resolve_termination_t *term;
 	mStatus err;
 
 	// extract the data from the message
@@ -2351,46 +2338,45 @@ mDNSlocal mStatus handle_resolve_request(request_state *request)
 	if (build_domainname_from_strings(&fqdn, name, regtype, domain) < 0)
 		{ LogMsg("ERROR: handle_resolve_request - Couldn't build_domainname_from_strings “%s” “%s” “%s”", name, regtype, domain); return(mStatus_BadParamErr); }
 
-	// set up termination info
-	term = mallocL("resolve_termination_t", sizeof(resolve_termination_t));
-	mDNSPlatformMemZero(term, sizeof(*term));
-	if (!term) FatalError("ERROR: malloc");
+	mDNSPlatformMemZero(&request->u.resolve, sizeof(request->u.resolve));
 
 	// format questions
-	term->qsrv.InterfaceID      = InterfaceID;
-	term->qsrv.Target           = zeroAddr;
-	memcpy(&term->qsrv.qname, &fqdn, MAX_DOMAIN_NAME);
-	term->qsrv.qtype            = kDNSType_SRV;
-	term->qsrv.qclass           = kDNSClass_IN;
-	term->qsrv.LongLived        = (flags & kDNSServiceFlagsLongLivedQuery     ) != 0;
-	term->qsrv.ExpectUnique     = mDNStrue;
-	term->qsrv.ForceMCast       = (flags & kDNSServiceFlagsForceMulticast     ) != 0;
-	term->qsrv.ReturnIntermed   = (flags & kDNSServiceFlagsReturnIntermediates) != 0;
-	term->qsrv.QuestionCallback = resolve_result_callback;
-	term->qsrv.QuestionContext  = request;
+	request->u.resolve.qsrv.InterfaceID      = InterfaceID;
+	request->u.resolve.qsrv.Target           = zeroAddr;
+	AssignDomainName(&request->u.resolve.qsrv.qname, &fqdn);
+	request->u.resolve.qsrv.qtype            = kDNSType_SRV;
+	request->u.resolve.qsrv.qclass           = kDNSClass_IN;
+	request->u.resolve.qsrv.LongLived        = (flags & kDNSServiceFlagsLongLivedQuery     ) != 0;
+	request->u.resolve.qsrv.ExpectUnique     = mDNStrue;
+	request->u.resolve.qsrv.ForceMCast       = (flags & kDNSServiceFlagsForceMulticast     ) != 0;
+	request->u.resolve.qsrv.ReturnIntermed   = (flags & kDNSServiceFlagsReturnIntermediates) != 0;
+	request->u.resolve.qsrv.QuestionCallback = resolve_result_callback;
+	request->u.resolve.qsrv.QuestionContext  = request;
 
-	term->qtxt.InterfaceID      = InterfaceID;
-	term->qtxt.Target           = zeroAddr;
-	memcpy(&term->qtxt.qname, &fqdn, MAX_DOMAIN_NAME);
-	term->qtxt.qtype            = kDNSType_TXT;
-	term->qtxt.qclass           = kDNSClass_IN;
-	term->qtxt.LongLived        = (flags & kDNSServiceFlagsLongLivedQuery     ) != 0;
-	term->qtxt.ExpectUnique     = mDNStrue;
-	term->qtxt.ForceMCast       = (flags & kDNSServiceFlagsForceMulticast     ) != 0;
-	term->qtxt.ReturnIntermed   = (flags & kDNSServiceFlagsReturnIntermediates) != 0;
-	term->qtxt.QuestionCallback = resolve_result_callback;
-	term->qtxt.QuestionContext  = request;
+	request->u.resolve.qtxt.InterfaceID      = InterfaceID;
+	request->u.resolve.qtxt.Target           = zeroAddr;
+	AssignDomainName(&request->u.resolve.qtxt.qname, &fqdn);
+	request->u.resolve.qtxt.qtype            = kDNSType_TXT;
+	request->u.resolve.qtxt.qclass           = kDNSClass_IN;
+	request->u.resolve.qtxt.LongLived        = (flags & kDNSServiceFlagsLongLivedQuery     ) != 0;
+	request->u.resolve.qtxt.ExpectUnique     = mDNStrue;
+	request->u.resolve.qtxt.ForceMCast       = (flags & kDNSServiceFlagsForceMulticast     ) != 0;
+	request->u.resolve.qtxt.ReturnIntermed   = (flags & kDNSServiceFlagsReturnIntermediates) != 0;
+	request->u.resolve.qtxt.QuestionCallback = resolve_result_callback;
+	request->u.resolve.qtxt.QuestionContext  = request;
 
-	term->rstate = request;
-	request->termination_context = term;
+	request->termination_context = request;
 
 	// ask the questions
-	LogOperation("%3d: DNSServiceResolve(%##s) START", request->sd, term->qsrv.qname.c);
-	err = mDNS_StartQuery(&mDNSStorage, &term->qsrv);
-	if (!err) err = mDNS_StartQuery(&mDNSStorage, &term->qtxt);
+	LogOperation("%3d: DNSServiceResolve(%##s) START", request->sd, request->u.resolve.qsrv.qname.c);
+	err = mDNS_StartQuery(&mDNSStorage, &request->u.resolve.qsrv);
+	if (!err)
+		{
+		err = mDNS_StartQuery(&mDNSStorage, &request->u.resolve.qtxt);
+		if (err) mDNS_StopQuery(&mDNSStorage, &request->u.resolve.qsrv);
+		}
 
-	if (err) freeL("resolve_termination_t/handle_resolve_request", term);
-	else request->terminate = resolve_termination_callback;
+	if (!err) request->terminate = resolve_termination_callback;
 
 	return(err);
 	}
@@ -3447,7 +3433,7 @@ mDNSlocal void LogClientInfo(request_state *req)
 				LogMsgNoIdent("%3d: DNSServiceBrowse           %##s", req->sd, blist->q.qname.c);
 			}
 		else if (req->terminate == resolve_termination_callback)
-			LogMsgNoIdent("%3d: DNSServiceResolve          %##s", req->sd, ((resolve_termination_t *)t)->qsrv.qname.c);
+			LogMsgNoIdent("%3d: DNSServiceResolve          %##s", req->sd, req->u.resolve.qsrv.qname.c);
 		else if (req->terminate == queryrecord_termination_callback)
 			LogMsgNoIdent("%3d: DNSServiceQueryRecord      %##s", req->sd, req->u.queryrecord.q.qname.c);
 		else if (req->terminate == enum_termination_callback)
