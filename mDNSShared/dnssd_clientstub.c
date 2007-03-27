@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.66  2007/03/27 22:23:04  cheshire
+Add "dnssd_clientstub" prefix onto syslog messages
+
 Revision 1.65  2007/03/21 22:25:23  cheshire
 <rdar://problem/4172796> Remove client retry logic now that mDNSResponder uses launchd for its Unix Domain Socket
 
@@ -163,7 +166,7 @@ static int write_all(dnssd_sock_t sd, char *buf, int len)
 			{
 			// Should never happen. If it does, it indicates some OS bug,
 			// or that the mDNSResponder daemon crashed (which should never happen).
-			syslog(LOG_WARNING, "write_all(%d) failed %d/%d %d %s", sd, num_written, len, errno, strerror(errno));
+			syslog(LOG_WARNING, "dnssd_clientstub write_all(%d) failed %d/%d %d %s", sd, num_written, len, errno, strerror(errno));
 			return -1;
 			}
 		buf += num_written;
@@ -185,7 +188,7 @@ static int read_all(dnssd_sock_t sd, char *buf, int len)
 			{
 			// Should never happen. If it does, it indicates some OS bug,
 			// or that the mDNSResponder daemon crashed (which should never happen).
-			syslog(LOG_WARNING, "read_all(%d) failed %d/%d %d %s", sd, num_read, len, errno, strerror(errno));
+			syslog(LOG_WARNING, "dnssd_clientstub read_all(%d) failed %d/%d %d %s", sd, num_read, len, errno, strerror(errno));
 			return -1;
 			}
 		buf += num_read;
@@ -220,7 +223,7 @@ static ipc_msg_hdr *create_hdr(uint32_t op, size_t *len, char **data_start, int 
 #else
 		struct timeval time;
 		if (gettimeofday(&time, NULL) < 0)
-			{ syslog(LOG_WARNING, "create_hdr: gettimeofday failed %d %s", errno, strerror(errno)); return NULL; }
+			{ syslog(LOG_WARNING, "dnssd_clientstub create_hdr: gettimeofday failed %d %s", errno, strerror(errno)); return NULL; }
 		sprintf(ctrl_path, "%s%d-%.3lx-%.6lu", CTL_PATH_PREFIX, (int)getpid(),
 			(unsigned long)(time.tv_sec & 0xFFF), (unsigned long)(time.tv_usec));
 		*len += strlen(ctrl_path) + 1;
@@ -232,7 +235,7 @@ static ipc_msg_hdr *create_hdr(uint32_t op, size_t *len, char **data_start, int 
 
 	// Write message to buffer
 	msg = malloc(*len);
-	if (!msg) { syslog(LOG_WARNING, "create_hdr: malloc failed"); return NULL; }
+	if (!msg) { syslog(LOG_WARNING, "dnssd_clientstub create_hdr: malloc failed"); return NULL; }
 
 	bzero(msg, *len);
 	hdr = (void *)msg;
@@ -274,12 +277,12 @@ static DNSServiceRef connect_to_server(void)
 #endif
 
 	sdr = malloc(sizeof(_DNSServiceRef_t));
-	if (!sdr) { syslog(LOG_WARNING, "connect_to_server: malloc failed"); return NULL; }
+	if (!sdr) { syslog(LOG_WARNING, "dnssd_clientstub connect_to_server: malloc failed"); return NULL; }
 	sdr->sockfd = socket(AF_DNSSD, SOCK_STREAM, 0);
 	if (sdr->sockfd == dnssd_InvalidSocket)
 		{
 		free(sdr);
-		syslog(LOG_WARNING, "connect_to_server: socket failed %d %s", errno, strerror(errno));
+		syslog(LOG_WARNING, "dnssd_clientstub connect_to_server: socket failed %d %s", errno, strerror(errno));
 		return NULL;
 		}
 
@@ -324,8 +327,8 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceRef sdr, 
 	dnssd_socklen_t len = (dnssd_socklen_t) sizeof(caddr);
 	DNSServiceErrorType err;
 
-	if (!hdr           ) { syslog(LOG_WARNING, "deliver_request: !hdr"                  ); return kDNSServiceErr_Unknown; }
-	if (sdr->sockfd < 0) { syslog(LOG_WARNING, "deliver_request: sockfd %d", sdr->sockfd); return kDNSServiceErr_Unknown; }
+	if (!hdr           ) { syslog(LOG_WARNING, "dnssd_clientstub deliver_request: !hdr"                  ); return kDNSServiceErr_Unknown; }
+	if (sdr->sockfd < 0) { syslog(LOG_WARNING, "dnssd_clientstub deliver_request: sockfd %d", sdr->sockfd); return kDNSServiceErr_Unknown; }
 
 	if (!reuse_sd)
 		{
@@ -356,7 +359,7 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceRef sdr, 
 #ifndef NOT_HAVE_SA_LEN
 			caddr.sun_len = sizeof(struct sockaddr_un);
 #endif
-			//syslog(LOG_WARNING, "deliver_request: creating UDS: %s\n", data);
+			//syslog(LOG_WARNING, "dnssd_clientstub deliver_request: creating UDS: %s\n", data);
 			strcpy(caddr.sun_path, data);
 			ret = bind(listenfd, (struct sockaddr *)&caddr, sizeof(caddr));
 			umask(mask);
@@ -367,17 +370,17 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceRef sdr, 
 		}
 
 	ConvertHeaderBytes(hdr);
-	//syslog(LOG_WARNING, "deliver_request writing %ld bytes\n", datalen + sizeof(ipc_msg_hdr));
-	//syslog(LOG_WARNING, "deliver_request name is %s\n", (char *)msg + sizeof(ipc_msg_hdr));
+	//syslog(LOG_WARNING, "dnssd_clientstub deliver_request writing %ld bytes\n", datalen + sizeof(ipc_msg_hdr));
+	//syslog(LOG_WARNING, "dnssd_clientstub deliver_request name is %s\n", (char *)msg + sizeof(ipc_msg_hdr));
 	if (write_all(sdr->sockfd, (char *)hdr, datalen + sizeof(ipc_msg_hdr)) < 0) goto cleanup;
 
 	if (reuse_sd) errsd = sdr->sockfd;
 	else
 		{
-		//syslog(LOG_WARNING, "deliver_request: accept\n");
+		//syslog(LOG_WARNING, "dnssd_clientstub deliver_request: accept\n");
 		len = sizeof(daddr);
 		errsd = accept(listenfd, (struct sockaddr *)&daddr, &len);
-		//syslog(LOG_WARNING, "deliver_request: accept returned %d\n", errsd);
+		//syslog(LOG_WARNING, "dnssd_clientstub deliver_request: accept returned %d\n", errsd);
 		if (errsd < 0) goto cleanup;
 		}
 
@@ -386,7 +389,7 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceRef sdr, 
 	else
 		err = ntohl(err);
 
-	//syslog(LOG_WARNING, "deliver_request: retrieved error code %d\n", err);
+	//syslog(LOG_WARNING, "dnssd_clientstub deliver_request: retrieved error code %d\n", err);
 
 cleanup:
 	if (!reuse_sd)
@@ -394,10 +397,10 @@ cleanup:
 		if (listenfd > 0) dnssd_close(listenfd);
 		if (errsd    > 0) dnssd_close(errsd);
 #if !defined(USE_TCP_LOOPBACK)
-		// syslog(LOG_WARNING, "deliver_request: removing UDS: %s\n", data);
+		// syslog(LOG_WARNING, "dnssd_clientstub deliver_request: removing UDS: %s\n", data);
 		if (unlink(data) != 0)
-			syslog(LOG_WARNING, "WARNING: unlink(\"%s\") failed errno %d (%s)", data, errno, strerror(errno));
-		// else syslog(LOG_WARNING, "deliver_request: removed UDS: %s\n", data);
+			syslog(LOG_WARNING, "dnssd_clientstub WARNING: unlink(\"%s\") failed errno %d (%s)", data, errno, strerror(errno));
+		// else syslog(LOG_WARNING, "dnssd_clientstub deliver_request: removed UDS: %s\n", data);
 #endif
 		}
 	free(hdr);
@@ -470,7 +473,7 @@ static void handle_resolve_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *d
 	txtlen = get_uint16(&data);
 	txtrecord = (unsigned char *)get_rdata(&data, txtlen);
 
-	if (!err && str_error) { err = kDNSServiceErr_Unknown; syslog(LOG_WARNING, "handle_resolve_response: error reading result from daemon"); }
+	if (!err && str_error) { err = kDNSServiceErr_Unknown; syslog(LOG_WARNING, "dnssd_clientstub handle_resolve_response: error reading result from daemon"); }
 
 	((DNSServiceResolveReply)sdr->app_callback)(sdr, flags, ifi, err, fullname, target, port.s, txtlen, txtrecord, sdr->app_context);
 	}
@@ -552,7 +555,7 @@ static void handle_query_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *dat
 	rdata = get_rdata(&data, rdlen);
 	ttl = get_uint32(&data);
 
-	if (!err && str_error) { err = kDNSServiceErr_Unknown; syslog(LOG_WARNING, "handle_query_response: error reading result from daemon"); }
+	if (!err && str_error) { err = kDNSServiceErr_Unknown; syslog(LOG_WARNING, "dnssd_clientstub handle_query_response: error reading result from daemon"); }
 	((DNSServiceQueryRecordReply)sdr->app_callback)(sdr, flags, interfaceIndex, err, name, rrtype, rrclass,
 													rdlen, rdata, ttl, sdr->app_context);
 	return;
@@ -636,7 +639,7 @@ static void handle_addrinfo_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *
 	rdata = get_rdata(&data, rdlen);
 	ttl = get_uint32(&data);
 	
-	if (!err && str_error) { err = kDNSServiceErr_Unknown; syslog(LOG_WARNING, "handle_addrinfo_response: error reading result from daemon"); }
+	if (!err && str_error) { err = kDNSServiceErr_Unknown; syslog(LOG_WARNING, "dnssd_clientstub handle_addrinfo_response: error reading result from daemon"); }
 
 	if (err)
 		{
@@ -738,7 +741,7 @@ static void handle_browse_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *da
 	if (get_string(&data, replyName, 256) < 0) str_error = 1;
 	if (get_string(&data, replyType, kDNSServiceMaxDomainName) < 0) str_error = 1;
 	if (get_string(&data, replyDomain, kDNSServiceMaxDomainName) < 0) str_error = 1;
-	if (!err && str_error) { err = kDNSServiceErr_Unknown; syslog(LOG_WARNING, "handle_browse_response: error reading result from daemon"); }
+	if (!err && str_error) { err = kDNSServiceErr_Unknown; syslog(LOG_WARNING, "dnssd_clientstub handle_browse_response: error reading result from daemon"); }
 	((DNSServiceBrowseReply)sdr->app_callback)(sdr, flags, interfaceIndex, err, replyName, replyType, replyDomain, sdr->app_context);
 	}
 
@@ -834,7 +837,7 @@ static void handle_regservice_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char
 	if (get_string(&data, name, 256) < 0) str_error = 1;
 	if (get_string(&data, regtype, kDNSServiceMaxDomainName) < 0) str_error = 1;
 	if (get_string(&data, domain,  kDNSServiceMaxDomainName) < 0) str_error = 1;
-	if (!err && str_error) { err = kDNSServiceErr_Unknown; syslog(LOG_WARNING, "handle_regservice_response: error reading result from daemon"); }
+	if (!err && str_error) { err = kDNSServiceErr_Unknown; syslog(LOG_WARNING, "dnssd_clientstub handle_regservice_response: error reading result from daemon"); }
 	((DNSServiceRegisterReply)sdr->app_callback)(sdr, flags, err, name, regtype, domain, sdr->app_context);
 	}
 
@@ -925,7 +928,7 @@ static void handle_enumeration_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, cha
 	interfaceIndex = get_uint32(&data);
 	err = get_error_code(&data);
 	if (get_string(&data, domain, kDNSServiceMaxDomainName) < 0) str_error = 1;
-	if (!err && str_error) { err = kDNSServiceErr_Unknown; syslog(LOG_WARNING, "handle_enumeration_response: error reading result from daemon"); }
+	if (!err && str_error) { err = kDNSServiceErr_Unknown; syslog(LOG_WARNING, "dnssd_clientstub handle_enumeration_response: error reading result from daemon"); }
 	((DNSServiceDomainEnumReply)sdr->app_callback)(sdr, flags, interfaceIndex, err, domain, sdr->app_context);
 	}
 
@@ -985,7 +988,7 @@ static void handle_regrecord_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char 
 
 	if (sdr->op != connection)
 		{
-		syslog(LOG_WARNING, "handle_regrecord_response: sdr->op != connection");
+		syslog(LOG_WARNING, "dnssd_clientstub handle_regrecord_response: sdr->op != connection");
 		rref->app_callback(rref->sdr, rref, 0, kDNSServiceErr_Unknown, rref->app_context);
 		return;
 		}
