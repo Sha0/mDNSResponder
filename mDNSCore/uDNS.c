@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.311  2007/03/27 22:47:51  cheshire
+Remove unnecessary "*(long*)0 = 0;" to generate crash and stack trace
+
 Revision 1.310  2007/03/24 01:24:13  cheshire
 Add validator for uDNS data structures; fixed crash in RegisterSearchDomains()
 
@@ -5170,10 +5173,7 @@ mDNSexport void udns_validatelists(void)
 	SearchListElem *ptr;
 	for (ptr = SearchList; ptr; ptr = ptr->next)
 		if (ptr->AuthRecs == (void*)0xFFFFFFFF)
-			{
 			LogMemCorruption("SearchList: %p is garbage (%X)", ptr, ptr->AuthRecs);
-			*(long*)0 = 0;
-			}
 	}
 #endif
 
