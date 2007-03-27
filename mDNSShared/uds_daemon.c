@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.264  2007/03/27 00:49:40  cheshire
+Should use mallocL, not plain malloc
+
 Revision 1.263  2007/03/27 00:45:01  cheshire
 Removed unnecessary "void *termination_context" pointer
 
@@ -2638,7 +2641,7 @@ mDNSlocal mStatus handle_setdomain_request(request_state *request)
 	if (flags & kDNSServiceFlagsAdd)
 		{
 		// register a local-only PRT record
-		default_browse_list_t *newelem = malloc(sizeof(default_browse_list_t));
+		default_browse_list_t *newelem = mallocL("default_browse_list_t", sizeof(default_browse_list_t));
 		if (!newelem) { LogMsg("ERROR: malloc"); err = mStatus_NoMemoryErr; goto end; }
 		mDNS_SetupResourceRecord(&newelem->ptr_rec, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, free_defdomain, newelem);
 		MakeDomainNameFromDNSNameString(&newelem->ptr_rec.resrec.name, mDNS_DomainTypeNames[mDNS_DomainTypeBrowseDefault]);
