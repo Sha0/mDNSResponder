@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.312  2007/03/27 23:48:21  cheshire
+Use mDNS_StopGetDomains(), not mDNS_StopQuery()
+
 Revision 1.311  2007/03/27 22:47:51  cheshire
 Remove unnecessary "*(long*)0 = 0;" to generate crash and stack trace
 
@@ -5204,11 +5207,11 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m)
 			ptr->AuthRecs = mDNSNULL;
 			*p = ptr->next;
 
-			mDNS_StopQuery(m, &ptr->BrowseQ);
-			mDNS_StopQuery(m, &ptr->RegisterQ);
-			mDNS_StopQuery(m, &ptr->DefBrowseQ);
-			mDNS_StopQuery(m, &ptr->DefRegisterQ);
-			mDNS_StopQuery(m, &ptr->LegacyBrowseQ);
+			mDNS_StopGetDomains(m, &ptr->BrowseQ);
+			mDNS_StopGetDomains(m, &ptr->RegisterQ);
+			mDNS_StopGetDomains(m, &ptr->DefBrowseQ);
+			mDNS_StopGetDomains(m, &ptr->DefRegisterQ);
+			mDNS_StopGetDomains(m, &ptr->LegacyBrowseQ);
 			mDNSPlatformMemFree(ptr);
 
             // deregister records generated from answers to the query
