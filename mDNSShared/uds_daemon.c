@@ -17,6 +17,10 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.260  2007/03/27 00:18:42  cheshire
+Eliminate enum_termination_t and domain_enum_t as separately-allocated structures,
+and make them part of the request_state union
+
 Revision 1.259  2007/03/26 23:48:16  cheshire
 <rdar://problem/4848295> Advertise model information via Bonjour
 Refinements to reduce unnecessary transmissions of the DeviceInfo TXT record
@@ -435,6 +439,11 @@ typedef struct request_state
 			NATTraversalInfo     *NATAddrinfo;
 			NATTraversalInfo     *NATMapinfo;
 			} portmapping;
+		struct
+			{
+			DNSQuestion q_all;
+			DNSQuestion q_default;
+			} enumeration;
 		} u;
 	} request_state;
 
@@ -464,22 +473,6 @@ typedef struct reply_state
 	char *msgbuf;
 	} reply_state;
 
-// domain enumeration and resolv calls require 2 mDNSCore calls, so we need separate interconnected
-// structures to handle callbacks
-typedef struct
-	{
-	DNSQuestion question;
-	mDNS_DomainType type;
-	request_state *rstate;
-	} domain_enum_t;
-
-typedef struct
-	{
-	domain_enum_t *all;
-	domain_enum_t *def;
-	request_state *rstate;
-	} enum_termination_t;
-
 typedef struct
 	{
 	request_state *rstate;
@@ -504,7 +497,7 @@ static default_browse_list_t *default_browse_list = NULL;
 mDNSexport mDNS mDNSStorage;
 
 static dnssd_sock_t listenfd = dnssd_InvalidSocket;
-static request_state * all_requests = NULL;
+static request_state *all_requests = NULL;
 
 #define MAX_TIME_BLOCKED 60 * mDNSPlatformOneSecond  // try to send data to a blocked client for 60 seconds before
 													 // terminating connection
@@ -2536,79 +2529,61 @@ mDNSlocal reply_state *format_enumeration_reply(request_state *request, const ch
 
 mDNSlocal void enum_termination_callback(void *context)
 	{
-	enum_termination_t *t = context;
-	mDNS *coredata = &mDNSStorage;
-
-	mDNS_StopGetDomains(coredata, &t->all->question);
-	mDNS_StopGetDomains(coredata, &t->def->question);
-	freeL("domain_enum_t all", t->all);
-	freeL("domain_enum_t def", t->def);
-	t->rstate->termination_context = NULL;
-	freeL("enum_termination_t", t);
+	request_state *request = context;
+	mDNS_StopGetDomains(&mDNSStorage, &request->u.enumeration.q_all);
+	mDNS_StopGetDomains(&mDNSStorage, &request->u.enumeration.q_default);
 	}
 
 mDNSlocal void enum_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
 	char domain[MAX_ESCAPED_DOMAIN_NAME];
-	domain_enum_t *de = question->QuestionContext;
+	request_state *request = question->QuestionContext;
 	DNSServiceFlags flags = 0;
 	reply_state *reply;
 	(void)m; // Unused
 
 	if (answer->rrtype != kDNSType_PTR) return;
-	if (!AddRecord && de->type != mDNS_DomainTypeBrowse) return;
+	
+	// We only return add/remove events for the browse and registration lists
+	// For the default browse and registration answers, we only give an "ADD" event
+	if (question == &request->u.enumeration.q_default && !AddRecord) return;
 
 	if (AddRecord)
 		{
 		flags |= kDNSServiceFlagsAdd;
-		if (de->type == mDNS_DomainTypeRegistrationDefault || de->type == mDNS_DomainTypeBrowseDefault)
-			flags |= kDNSServiceFlagsDefault;
+		if (question == &request->u.enumeration.q_default) flags |= kDNSServiceFlagsDefault;
 		}
+
 	ConvertDomainNameToCString(&answer->rdata->u.name, domain);
-	// note that we do NOT propagate specific interface indexes to the client - for example, a domain we learn from
+	// Note that we do NOT propagate specific interface indexes to the client - for example, a domain we learn from
 	// a machine's system preferences may be discovered on the LocalOnly interface, but should be browsed on the
 	// network, so we just pass kDNSServiceInterfaceIndexAny
-	reply = format_enumeration_reply(de->rstate, domain, flags, kDNSServiceInterfaceIndexAny, kDNSServiceErr_NoError);
+	reply = format_enumeration_reply(request, domain, flags, kDNSServiceInterfaceIndexAny, kDNSServiceErr_NoError);
 	if (!reply) { LogMsg("ERROR: enum_result_callback, format_enumeration_reply"); return; }
-	append_reply(de->rstate, reply);
+	append_reply(request, reply);
 	}
 
 mDNSlocal mStatus handle_enum_request(request_state *request)
 	{
 	char *ptr = request->msgdata;
-	domain_enum_t *def, *all;
-	enum_termination_t *term;
 	mStatus err;
 
 	DNSServiceFlags flags = get_flags(&ptr);
+	mDNS_DomainType t_all     = (flags & kDNSServiceFlagsRegistrationDomains) ? mDNS_DomainTypeRegistration        : mDNS_DomainTypeBrowse;
+	mDNS_DomainType t_default = (flags & kDNSServiceFlagsRegistrationDomains) ? mDNS_DomainTypeRegistrationDefault : mDNS_DomainTypeBrowseDefault;
 	uint32_t interfaceIndex = get_uint32(&ptr);
 	mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
 	if (interfaceIndex && !InterfaceID) return(mStatus_BadParamErr);
 
 	// allocate context structures
-	def = mallocL("domain_enum_t def", sizeof(domain_enum_t));
-	all = mallocL("domain_enum_t all", sizeof(domain_enum_t));
-	term = mallocL("enum_termination_t", sizeof(enum_termination_t));
-	if (!def || !all || !term) FatalError("ERROR: malloc");
-
 	uDNS_RegisterSearchDomains(&mDNSStorage);
 
 	// enumeration requires multiple questions, so we must link all the context pointers so that
 	// necessary context can be reached from the callbacks
-	def->rstate = request;
-	all->rstate = request;
-	term->def = def;
-	term->all = all;
-	term->rstate = request;
-	request->termination_context = term;
-	request->terminate = enum_termination_callback;
-	def->question.QuestionContext = def;
-	def->type = (flags & kDNSServiceFlagsRegistrationDomains) ?
-		mDNS_DomainTypeRegistrationDefault: mDNS_DomainTypeBrowseDefault;
-	all->question.QuestionContext = all;
-	all->type = (flags & kDNSServiceFlagsRegistrationDomains) ?
-		mDNS_DomainTypeRegistration : mDNS_DomainTypeBrowse;
-
+	request->termination_context = request;
+	request->u.enumeration.q_all    .QuestionContext = request;
+	request->u.enumeration.q_default.QuestionContext = request;
+	
 	// if the caller hasn't specified an explicit interface, we use local-only to get the system-wide list.
 	if (!InterfaceID) InterfaceID = mDNSInterface_LocalOnly;
 
@@ -2616,9 +2591,13 @@ mDNSlocal mStatus handle_enum_request(request_state *request)
 	LogOperation("%3d: DNSServiceEnumerateDomains(%X=%s)", request->sd, flags,
 		(flags & kDNSServiceFlagsBrowseDomains      ) ? "kDNSServiceFlagsBrowseDomains" :
 		(flags & kDNSServiceFlagsRegistrationDomains) ? "kDNSServiceFlagsRegistrationDomains" : "<<Unknown>>");
-	err = mDNS_GetDomains(&mDNSStorage, &all->question, all->type, NULL, InterfaceID, enum_result_callback, all);
-	if (err == mStatus_NoError)
-		err = mDNS_GetDomains(&mDNSStorage, &def->question, def->type, NULL, InterfaceID, enum_result_callback, def);
+	err = mDNS_GetDomains(&mDNSStorage, &request->u.enumeration.q_all, t_all, NULL, InterfaceID, enum_result_callback, request);
+	if (!err)
+		{
+		err = mDNS_GetDomains(&mDNSStorage, &request->u.enumeration.q_default, t_default, NULL, InterfaceID, enum_result_callback, request);
+		if (err) mDNS_StopGetDomains(&mDNSStorage, &request->u.enumeration.q_all);
+		}
+	if (!err) request->terminate = enum_termination_callback;
 
 	return(err);
 	}
@@ -3241,6 +3220,7 @@ mDNSlocal void request_callback(void *info)
 
 mDNSlocal void connect_callback(void *info)
 	{
+	request_state **p = &all_requests;
 	dnssd_sock_t sd;
 	dnssd_socklen_t len;
 	unsigned long optval;
@@ -3291,8 +3271,10 @@ mDNSlocal void connect_callback(void *info)
 	LogOperation("%3d: Adding FD", request->sd);
 	if (mStatus_NoError != udsSupportAddFDToEventLoop(sd, request_callback, request))
 		return;
-	request->next = all_requests;
-	all_requests = request;
+
+	request->next = mDNSNULL;
+	while (*p) p=&(*p)->next;
+	*p = request;
 	}
 
 mDNSexport int udsserver_init(dnssd_sock_t skt)
@@ -3466,7 +3448,7 @@ mDNSlocal void LogClientInfo(request_state *req)
 		else if (req->terminate == queryrecord_termination_callback)
 			LogMsgNoIdent("%3d: DNSServiceQueryRecord      %##s", req->sd, ((DNSQuestion *)          t)->qname.c);
 		else if (req->terminate == enum_termination_callback)
-			LogMsgNoIdent("%3d: DNSServiceEnumerateDomains %##s", req->sd, ((enum_termination_t *)   t)->all->question.qname.c);
+			LogMsgNoIdent("%3d: DNSServiceEnumerateDomains %##s", req->sd, req->u.enumeration.q_all.qname.c);
 
 		// %%% Need to add listing of NAT port mapping requests and GetAddrInfo requests here too
 
