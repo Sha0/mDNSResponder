@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.297  2007/03/27 22:47:19  cheshire
+On memory corruption, if ForceAlerts is set, force a crash to get a stack trace
+
 Revision 1.296  2007/03/24 01:23:29  cheshire
 Call validator for uDNS data structures
 
@@ -332,7 +335,10 @@ mDNSexport void LogMemCorruption(const char *format, ...)
 	va_end(ptr);
 	LogMsg("!!!! %s !!!!", buffer);
 	NotifyOfElusiveBug("Memory Corruption", buffer);
-	//*(long*)0 = -1;	// Trick to crash and get a stack trace right here, if that's what we want
+#if ForceAlerts
+	*(long*)0 = 0;	// Trick to crash and get a stack trace right here, if that's what we want
+#endif
+
 	}
 
 mDNSlocal void validatelists(mDNS *const m)
