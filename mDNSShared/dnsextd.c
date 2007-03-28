@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.68  2007/03/28 18:20:50  cheshire
+Textual tidying
+
 Revision 1.67  2007/03/21 00:30:07  cheshire
 <rdar://problem/4789455> Multiple errors in DNameList-related code
 
@@ -2042,7 +2045,7 @@ mDNSlocal void GenLLQEvents(DaemonInfo *d)
 		AnswerListElem *a = d->AnswerTable[i];
 		while(a)
 			{
-			if (pthread_join(a->tid, NULL))  LogErr("GenLLQEvents", "pthread_join");
+			if (pthread_join(a->tid, NULL)) LogErr("GenLLQEvents", "pthread_join");
 			a = a->next;
 			}
 		}

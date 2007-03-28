@@ -626,7 +626,7 @@ typedef void (DNSSD_API *DNSServiceDomainEnumReply)
  *
  * interfaceIndex:  If non-zero, specifies the interface on which to look for domains.
  *                  (the index for a given interface is determined via the if_nametoindex()
- *                  family of calls.)  Most applications will pass 0 to enumerate domains on
+ *                  family of calls.) Most applications will pass 0 to enumerate domains on
  *                  all interfaces. See "Constants for specifying an interface index" for more details.
  *
  * callBack:        The function to be called when a domain is found or the call asynchronously
@@ -705,7 +705,7 @@ typedef void (DNSSD_API *DNSServiceRegisterReply)
     );
 
 
-/* DNSServiceRegister()  Parameters:
+/* DNSServiceRegister() Parameters:
  *
  * sdRef:           A pointer to an uninitialized DNSServiceRef. If the call succeeds
  *                  then it initializes the DNSServiceRef, returns kDNSServiceErr_NoError,
@@ -714,7 +714,7 @@ typedef void (DNSSD_API *DNSServiceRegisterReply)
  *
  * interfaceIndex:  If non-zero, specifies the interface on which to register the service
  *                  (the index for a given interface is determined via the if_nametoindex()
- *                  family of calls.)  Most applications will pass 0 to register on all
+ *                  family of calls.) Most applications will pass 0 to register on all
  *                  available interfaces. See "Constants for specifying an interface index" for more details.
  *
  * flags:           Indicates the renaming behavior on name conflict (most applications
@@ -1003,7 +1003,7 @@ typedef void (DNSSD_API *DNSServiceBrowseReply)
  *
  * interfaceIndex:  If non-zero, specifies the interface on which to browse for services
  *                  (the index for a given interface is determined via the if_nametoindex()
- *                  family of calls.)  Most applications will pass 0 to browse on all available
+ *                  family of calls.) Most applications will pass 0 to browse on all available
  *                  interfaces. See "Constants for specifying an interface index" for more details.
  *
  * regtype:         The service type being browsed for followed by the protocol, separated by a
@@ -1254,7 +1254,7 @@ typedef void (DNSSD_API *DNSServiceQueryRecordReply)
  *
  * interfaceIndex:  If non-zero, specifies the interface on which to issue the query
  *                  (the index for a given interface is determined via the if_nametoindex()
- *                  family of calls.)  Passing 0 causes the name to be queried for on all
+ *                  family of calls.) Passing 0 causes the name to be queried for on all
  *                  interfaces. See "Constants for specifying an interface index" for more details.
  *
  * fullname:        The full domain name of the resource record to be queried for.
@@ -1482,7 +1482,7 @@ DNSServiceErrorType DNSSD_API DNSServiceCreateConnection(DNSServiceRef *sdRef);
  *
  * interfaceIndex:  If non-zero, specifies the interface on which to register the record
  *                  (the index for a given interface is determined via the if_nametoindex()
- *                  family of calls.)  Passing 0 causes the record to be registered on all interfaces.
+ *                  family of calls.) Passing 0 causes the record to be registered on all interfaces.
  *                  See "Constants for specifying an interface index" for more details.
  *
  * fullname:        The full domain name of the resource record.
