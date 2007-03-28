@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.347  2007/03/28 20:59:26  cheshire
+<rdar://problem/4743285> Remove inappropriate use of IsPrivateV4Addr()
+
 Revision 1.346  2007/03/28 15:56:37  cheshire
 <rdar://problem/5085774> Add listing of NAT port mapping and GetAddrInfo requests in SIGINFO output
 
@@ -1100,8 +1103,8 @@ typedef enum
 typedef struct
 	{
 	LLQ_State state;
-	NATTraversalInfo * NATInfoTCP;	// This is used if we're browsing behind a NAT
-	NATTraversalInfo * NATInfoUDP;
+	NATTraversalInfo *NATInfoTCP;	// This is used if we're browsing behind a NAT
+	NATTraversalInfo *NATInfoUDP;
 	mDNSAddr servAddr;
 	mDNSIPPort servPort;
 	mDNSIPPort eventPort;			// This is non-zero if this is a private LLQ.  It is the port number that both the TCP
@@ -1732,7 +1735,7 @@ extern mStatus mDNS_GetDomains(mDNS *const m, DNSQuestion *const question, mDNS_
 extern mStatus mDNS_AdvertiseDomains(mDNS *const m, AuthRecord *rr, mDNS_DomainType DomainType, const mDNSInterfaceID InterfaceID, char *domname);
 #define        mDNS_StopAdvertiseDomains mDNS_Deregister
 
-extern mDNSOpaque16 mDNS_NewMessageID(mDNS * const m);
+extern mDNSOpaque16 mDNS_NewMessageID(mDNS *const m);
 
 // ***************************************************************************
 #if 0
@@ -1830,7 +1833,8 @@ extern char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd, cha
 #define CRDisplayString(m, rr) GetRRDisplayString_rdb(&(rr)->resrec, &(rr)->resrec.rdata->u, (m)->MsgBuffer)
 extern mDNSBool mDNSSameAddress(const mDNSAddr *ip1, const mDNSAddr *ip2);
 extern void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText);
-extern mDNSBool IsPrivateV4Addr(mDNSv4Addr *addr);  // returns true for RFC1918 private addresses
+extern mDNSBool mDNSv4AddrIsPrivate(mDNSv4Addr *addr);  // returns true for RFC1918 private addresses
+#define mDNSAddrIsv4Private(X) ((X)->type == mDNSAddrType_IPv4 && mDNSv4AddrIsPrivate(&(X)->ip.v4))
 
 #define mDNSSameIPv4Address(A,B) ((A).NotAnInteger == (B).NotAnInteger)
 #define mDNSSameIPv6Address(A,B) ((A).l[0] == (B).l[0] && (A).l[1] == (B).l[1] && (A).l[2] == (B).l[2] && (A).l[3] == (B).l[3])
@@ -1865,8 +1869,12 @@ extern mDNSBool IsPrivateV4Addr(mDNSv4Addr *addr);  // returns true for RFC1918 
 	((X)->type == mDNSAddrType_IPv4) ? !(mDNSIPv4AddressIsZero((X)->ip.v4) || mDNSIPv4AddressIsOnes((X)->ip.v4)) :          \
 	((X)->type == mDNSAddrType_IPv6) ? !(mDNSIPv6AddressIsZero((X)->ip.v6) || mDNSIPv6AddressIsOnes((X)->ip.v6)) : mDNSfalse)
 
-#define mDNSAddressIsv4LinkLocal(X) ((X)->type == mDNSAddrType_IPv4 && (X)->ip.v4.b[0] == 169 && (X)->ip.v4.b[1] == 254)
-#define mDNSAddressIsv6LinkLocal(X) ((X)->type == mDNSAddrType_IPv6 && (X)->ip.v6.b[0] == 0xFE && ((X)->ip.v6.b[1] & 0xC0) == 0x80)
+#define mDNSv4AddressIsLinkLocal(X) ((X)->b[0] ==  169 &&  (X)->b[1]         ==  254)
+#define mDNSv6AddressIsLinkLocal(X) ((X)->b[0] == 0xFE && ((X)->b[1] & 0xC0) == 0x80)
+
+#define mDNSAddressIsLinkLocal(X)  (                                                    \
+	((X)->type == mDNSAddrType_IPv4) ? mDNSv4AddressIsLinkLocal(&(X)->ip.v4) :          \
+	((X)->type == mDNSAddrType_IPv6) ? mDNSv6AddressIsLinkLocal(&(X)->ip.v6) : mDNSfalse)
 
 // ***************************************************************************
 #if 0
@@ -1928,7 +1936,7 @@ extern mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 *num
 // end of the record.  tsig is a pointer to the resource record that contains the TSIG OPT record.  info is
 // the matching key to use for verifying the message.  This function expects that the additionals member
 // of the DNS message header has already had one subtracted from it.
-extern mDNSBool DNSDigest_VerifyMessage(DNSMessage * msg, mDNSu8 * end, LargeCacheRecord * tsig, DomainAuthInfo * info, mDNSu16 * rcode, mDNSu16 * tcode);
+extern mDNSBool DNSDigest_VerifyMessage(DNSMessage *msg, mDNSu8 *end, LargeCacheRecord *tsig, DomainAuthInfo *info, mDNSu16 *rcode, mDNSu16 *tcode);
 
 
 // ***************************************************************************
@@ -2016,7 +2024,7 @@ typedef enum
 	} TCPSocketFlags;
 
 typedef void (*TCPConnectionCallback)(TCPSocket *sock, void *context, mDNSBool ConnectionEstablished, mStatus err);
-extern TCPSocket *mDNSPlatformTCPSocket(mDNS * const m, TCPSocketFlags flags, mDNSIPPort * port);	// creates a tcp socket
+extern TCPSocket *mDNSPlatformTCPSocket(mDNS *const m, TCPSocketFlags flags, mDNSIPPort *port);	// creates a tcp socket
 extern TCPSocket *mDNSPlatformTCPAccept(TCPSocketFlags flags, int sd);
 extern int            mDNSPlatformTCPGetFlags(TCPSocket *sock);
 extern int            mDNSPlatformTCPGetFD(TCPSocket *sock);
@@ -2026,7 +2034,7 @@ extern mDNSBool       mDNSPlatformTCPIsConnected(TCPSocket *sock);
 extern void           mDNSPlatformTCPCloseConnection(TCPSocket *sock);
 extern long           mDNSPlatformReadTCP(TCPSocket *sock, void *buf, unsigned long buflen, mDNSBool *closed);
 extern long           mDNSPlatformWriteTCP(TCPSocket *sock, const char *msg, unsigned long len);
-extern UDPSocket *mDNSPlatformUDPSocket(mDNS * const m, mDNSIPPort port);
+extern UDPSocket *mDNSPlatformUDPSocket(mDNS *const m, mDNSIPPort port);
 extern void           mDNSPlatformUDPClose(UDPSocket *sock);
 
 // mDNSPlatformTLSSetupCerts/mDNSPlatformTLSTearDownCerts used by dnsextd
@@ -2040,7 +2048,7 @@ extern void           mDNSPlatformTLSTearDownCerts(void);
 extern void         mDNSPlatformGetDNSConfig(domainname *const fqdn, domainname *const regDomain, DNameListElem ** browseDomains);
 extern void         mDNSPlatformSetDNSServers(mDNS *const m);
 extern void         mDNSPlatformSetSearchDomainList(void);
-extern mStatus      mDNSPlatformGetPrimaryInterface(mDNS * const m, mDNSAddr * v4, mDNSAddr * v6, mDNSAddr * router);
+extern mStatus      mDNSPlatformGetPrimaryInterface(mDNS *const m, mDNSAddr *v4, mDNSAddr *v6, mDNSAddr *router);
 extern void         mDNSPlatformDefaultRegDomainChanged(const domainname *d, mDNSBool add);
 extern void         mDNSPlatformDynDNSHostNameStatusChanged(domainname *const dname, mStatus status);
 

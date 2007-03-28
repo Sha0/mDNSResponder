@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.120  2007/03/28 20:59:27  cheshire
+<rdar://problem/4743285> Remove inappropriate use of IsPrivateV4Addr()
+
 Revision 1.119  2007/03/28 15:56:38  cheshire
 <rdar://problem/5085774> Add listing of NAT port mapping and GetAddrInfo requests in SIGINFO output
 
@@ -1598,7 +1601,7 @@ mDNSWindowsSetReverseMapSearchDomainList( void )
 	{
 		mDNSAddr addr;
 		
-		if (ifa->ifa_addr->sa_family == AF_INET && !SetupAddr(&addr, ifa->ifa_addr) && !IsPrivateV4Addr(&addr.ip.v4) && !(ifa->ifa_flags & IFF_LOOPBACK) && ifa->ifa_netmask)
+		if (ifa->ifa_addr->sa_family == AF_INET && !SetupAddr(&addr, ifa->ifa_addr) && !(ifa->ifa_flags & IFF_LOOPBACK) && ifa->ifa_netmask)
 		{
 			mDNSAddr	netmask;
 			domainname	domain;

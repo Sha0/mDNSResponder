@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.267  2007/03/28 20:59:27  cheshire
+<rdar://problem/4743285> Remove inappropriate use of IsPrivateV4Addr()
+
 Revision 1.266  2007/03/28 15:56:37  cheshire
 <rdar://problem/5085774> Add listing of NAT port mapping and GetAddrInfo requests in SIGINFO output
 
@@ -2976,8 +2979,8 @@ mDNSlocal mStatus handle_addrinfo_request(request_state *request)
 			{
 			for (intf = mDNSStorage.HostInterfaces; intf; intf = intf->next)
 				{
-				if      ((intf->ip.type == mDNSAddrType_IPv4) && !mDNSAddressIsv4LinkLocal(&intf->ip)) request->u.addrinfo.protocol |= kDNSServiceProtocol_IPv4;
-				else if ((intf->ip.type == mDNSAddrType_IPv6) && !mDNSAddressIsv6LinkLocal(&intf->ip)) request->u.addrinfo.protocol |= kDNSServiceProtocol_IPv6;
+				if      ((intf->ip.type == mDNSAddrType_IPv4) && !mDNSv4AddressIsLinkLocal(&intf->ip.ip.v4)) request->u.addrinfo.protocol |= kDNSServiceProtocol_IPv4;
+				else if ((intf->ip.type == mDNSAddrType_IPv6) && !mDNSv4AddressIsLinkLocal(&intf->ip.ip.v6)) request->u.addrinfo.protocol |= kDNSServiceProtocol_IPv6;
 				}
 			}
 		}

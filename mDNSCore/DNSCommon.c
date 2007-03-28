@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.137  2007/03/28 20:59:26  cheshire
+<rdar://problem/4743285> Remove inappropriate use of IsPrivateV4Addr()
+
 Revision 1.136  2007/03/28 15:56:37  cheshire
 <rdar://problem/5085774> Add listing of NAT port mapping and GetAddrInfo requests in SIGINFO output
 
@@ -250,7 +253,7 @@ mDNSexport const mDNSOpaque64 zeroOpaque64    = { { 0 } };
 #endif
 
 // return true for RFC1918 private addresses
-mDNSexport mDNSBool IsPrivateV4Addr(mDNSv4Addr *addr)
+mDNSexport mDNSBool mDNSv4AddrIsPrivate(mDNSv4Addr *addr)
 	{
 	return ((addr->b[0] == 10) ||                                 // 10/8 prefix
 			(addr->b[0] == 172 && (addr->b[1] & 0xF0) == 16) ||   // 172.16/12

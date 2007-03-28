@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.382  2007/03/28 21:01:29  cheshire
+<rdar://problem/4743285> Remove inappropriate use of IsPrivateV4Addr()
+
 Revision 1.381  2007/03/28 15:56:37  cheshire
 <rdar://problem/5085774> Add listing of NAT port mapping and GetAddrInfo requests in SIGINFO output
 
@@ -1970,7 +1973,7 @@ mDNSlocal NetworkInterfaceInfoOSX *FindRoutableIPv4(mDNS *const m, mDNSu32 scope
 	NetworkInterfaceInfoOSX *i;
 	for (i = m->p->InterfaceList; i; i = i->next)
 		if (i->Exists && i->scope_id == scope_id && i->ifinfo.ip.type == mDNSAddrType_IPv4)
-			if (!(i->ifinfo.ip.ip.v4.b[0] == 169 && i->ifinfo.ip.ip.v4.b[1] == 254))
+			if (!mDNSv4AddressIsLinkLocal(&i->ifinfo.ip.ip.v4))
 				return(i);
 	return(mDNSNULL);
 	}
@@ -2189,7 +2192,7 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 				// If the interface is an old one that went away and came back in less than a minute, then we're in a flapping scenario.
 				i->Occulting = !(i->ifa_flags & IFF_LOOPBACK) && (utc - i->LastSeen > 0 && utc - i->LastSeen < 60);
 				mDNS_RegisterInterface(m, n, i->Flashing && i->Occulting);
-				if (i->ifinfo.ip.type == mDNSAddrType_IPv4 &&  (i->ifinfo.ip.ip.v4.b[0] != 169 || i->ifinfo.ip.ip.v4.b[1] != 254)) count++;
+				if (!mDNSAddressIsLinkLocal(&i->ifinfo.ip)) count++;
 				LogOperation("SetupActiveInterfaces:   Registered    %5s(%lu) %.6a InterfaceID %p %#a/%d%s%s%s",
 					i->ifa_name, i->scope_id, &i->BSSID, primary, &n->ip, CountMaskBits(&n->mask),
 					i->Flashing        ? " (Flashing)"  : "",
@@ -2258,7 +2261,7 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m, mDNSs32 utc)
 					i->Occulting              ? " (Occulting)" : "",
 					i->ifinfo.InterfaceActive ? " (Primary)"   : "");
 				mDNS_DeregisterInterface(m, &i->ifinfo, i->Flashing && i->Occulting);
-				if (i->ifinfo.ip.type == mDNSAddrType_IPv4 && (i->ifinfo.ip.ip.v4.b[0] != 169 || i->ifinfo.ip.ip.v4.b[1] != 254)) count++;
+				if (!mDNSAddressIsLinkLocal(&i->ifinfo.ip)) count++;
 				i->ifinfo.InterfaceID = mDNSNULL;
 				// NOTE: If n->InterfaceID is set, that means we've called mDNS_RegisterInterface() for this interface,
 				// so we need to make sure we call mDNS_DeregisterInterface() before disposing it.
@@ -2563,7 +2566,6 @@ mDNSexport void mDNSPlatformSetSearchDomainList(void)
 			ifa->ifa_netmask                    &&
 			!(ifa->ifa_flags & IFF_LOOPBACK)	&&
 			!SetupAddr(&a, ifa->ifa_addr)		&&
-			!IsPrivateV4Addr(&a.ip.v4)			&&
 			!SetupAddr(&n, ifa->ifa_netmask))
 			{
 			char       buffer[256];
@@ -2615,9 +2617,7 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS * const m, mDNSAddr * v4
 		struct sockaddr_in saddr;
 
 		if (!CFStringGetCString(string, buf, 256, kCFStringEncodingUTF8))
-			{
 			LogMsg("Could not convert router to CString");
-			}
 		else
 			{
 			saddr.sin_len = sizeof(saddr);
@@ -2625,14 +2625,8 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS * const m, mDNSAddr * v4
 			saddr.sin_port = 0;
 			inet_aton(buf, &saddr.sin_addr);
 
-			if (AddrRequiresPPPConnection((struct sockaddr *)&saddr))
-				{
-				debugf("Ignoring router %s (requires PPP connection)", buf);
-				}
-			else
-				{
-				*(in_addr_t *)&r->ip.v4 = saddr.sin_addr.s_addr;
-				}
+			if (AddrRequiresPPPConnection((struct sockaddr *)&saddr)) debugf("Ignoring router %s (requires PPP connection)", buf);
+			else *(in_addr_t *)&r->ip.v4 = saddr.sin_addr.s_addr;
 			}
 		}
 
@@ -2649,11 +2643,7 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS * const m, mDNSAddr * v4
 
 		*v4 = *v6 = zeroAddr;
 
-		if (!CFStringGetCString(string, buf, 256, kCFStringEncodingUTF8))
-			{
-			LogMsg("Could not convert router to CString");
-			goto exit;
-			}
+		if (!CFStringGetCString(string, buf, 256, kCFStringEncodingUTF8)) { LogMsg("Could not convert router to CString"); goto exit; }
 
 		// find primary interface in list
 		while (ifa && (!v4->ip.v4.NotAnInteger || !HavePrimaryGlobalv6))
@@ -2685,41 +2675,28 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS * const m, mDNSAddr * v4
 		// V4 to communicate w/ our DNS server
 
 #ifdef _LEGACY_NAT_TRAVERSAL_
-		if ((v4->ip.v4.b[0] != 169 || v4->ip.v4.b[1] != 254)							&&
-			 (v4->ip.v4.NotAnInteger != m->AdvertisedV4.ip.v4.NotAnInteger	||
-			   memcmp(v6->ip.v6.b, m->AdvertisedV6.ip.v6.b, 16)				||
-			   r->ip.v4.NotAnInteger != m->Router.ip.v4.NotAnInteger))
-			{
-			static mDNSBool LegacyNATInitialized = mDNSfalse;
-
-			if (LegacyNATInitialized) { LNT_Destroy(); LegacyNATInitialized = mDNSfalse; }
-			if (r->ip.v4.NotAnInteger && IsPrivateV4Addr(&v4->ip.v4))
+		if (!mDNSv4AddressIsLinkLocal(&v4->ip.v4))
+			if (!mDNSSameIPv4Address(v4->ip.v4, m->AdvertisedV4.ip.v4) ||
+				!mDNSSameIPv6Address(v6->ip.v6, m->AdvertisedV6.ip.v6) ||
+				!mDNSSameIPv4Address(r->ip.v4, m->Router.ip.v4))
 				{
-				mStatus err = LNT_Init();
-				if (err)  LogMsg("ERROR: LNT_Init");
-				else LegacyNATInitialized = mDNStrue;
+				static mDNSBool LegacyNATInitialized = mDNSfalse;
+				if (LegacyNATInitialized) { LNT_Destroy(); LegacyNATInitialized = mDNSfalse; }
+				// We only do NAT traversal if we have an RFC 1918 address
+				if (r->ip.v4.NotAnInteger && mDNSv4AddrIsPrivate(&v4->ip.v4))
+					{
+					mStatus err = LNT_Init();
+					if (err) LogMsg("ERROR: LNT_Init");
+					else LegacyNATInitialized = mDNStrue;
+					}
 				}
-			}
 #endif
 		}
 
 	exit:
-
-	if (dict)
-		{
-		CFRelease(dict);
-		}
-
-	if (key)
-		{
-		CFRelease(key);
-		}
-
-	if (store)
-		{
-		CFRelease(store);
-		}
-
+	if (dict) CFRelease(dict);
+	if (key) CFRelease(key);
+	if (store) CFRelease(store);
 	return err;
 	}
 
