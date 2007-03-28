@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.313  2007/03/28 01:27:32  cheshire
+<rdar://problem/4996439> Unicast DNS polling server every three seconds
+StartLLQPolling was using INIT_UCAST_POLL_INTERVAL instead of LLQ_POLL_INTERVAL for the retry interval
+
 Revision 1.312  2007/03/27 23:48:21  cheshire
 Use mDNS_StopGetDomains(), not mDNS_StopQuery()
 
@@ -813,7 +817,7 @@ mDNSlocal void StartLLQPolling(mDNS * const m, LLQ_Info * info)
 	{
 	LogOperation("StartLLQPolling: %##s", info->question->qname.c);
 	info->state = LLQ_Poll;
-	info->question->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
+	info->question->ThisQInterval = LLQ_POLL_INTERVAL;
 	info->question->LastQTime     = m->timenow - info->question->ThisQInterval;	// trigger immediate poll
 	SetNextQueryTime(m, info->question);
 	}
@@ -1182,12 +1186,12 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void * context, mDNSBool ConnectionE
 				mDNS_Lock(m);
 				if (tcpInfo->llqInfo->state == LLQ_SecondaryRequest)
 					{
-					const rdataOPT *llq = GetLLQOptData(m, msg, (mDNSu8*) (msg + tcpInfo->replylen));
+					const rdataOPT *llq = GetLLQOptData(m, msg, (mDNSu8*)msg + tcpInfo->replylen);
 					if (llq) tcpInfo->llqInfo->id = llq->OptData.llq.id;
 					m->rec.r.resrec.RecordType = 0;
 					}
 
-				recvLLQResponse(m, msg, (mDNSu8*) (msg + tcpInfo->replylen), &tcpInfo->llqInfo->servAddr, tcpInfo->llqInfo->servPort);
+				recvLLQResponse(m, msg, (mDNSu8*)msg + tcpInfo->replylen, &tcpInfo->llqInfo->servAddr, tcpInfo->llqInfo->servPort);
 
 				mDNSPlatformMemFree(tcpInfo->reply);
 				tcpInfo->reply = mDNSNULL;
@@ -1370,6 +1374,7 @@ mDNSlocal void recvSetupResponse(mDNS *const m, const DNSMessage *const pktMsg, 
 
 	if (rcode && rcode != kDNSFlag1_RC_NXDomain)
 		{
+		LogMsg("ERROR: recvSetupResponse - rcode && rcode != kDNSFlag1_RC_NXDomain");
 		err = mStatus_UnknownErr;
 		goto exit;
 		}
@@ -1393,7 +1398,7 @@ mDNSlocal void recvSetupResponse(mDNS *const m, const DNSMessage *const pktMsg, 
 	llq = GetLLQOptData(m, pktMsg, end);
 	if (!llq)
 		{
-		debugf("recvSetupResponse - GetLLQAtIndex");
+		LogMsg("recvSetupResponse - GetLLQOptData"); { m->rec.r.resrec.RecordType = 0; DumpPacket(m, pktMsg, end); return; }
 		err = mStatus_UnknownErr;
 		goto exit;
 		}
