@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.119  2007/03/28 15:56:38  cheshire
+<rdar://problem/5085774> Add listing of NAT port mapping and GetAddrInfo requests in SIGINFO output
+
 Revision 1.118  2007/03/22 18:31:49  cheshire
 Put dst parameter first in mDNSPlatformStrCopy/mDNSPlatformMemCopy, like conventional Posix strcpy/memcpy
 
@@ -1595,7 +1598,7 @@ mDNSWindowsSetReverseMapSearchDomainList( void )
 	{
 		mDNSAddr addr;
 		
-		if (ifa->ifa_addr->sa_family == AF_INET && !SetupAddr(&addr, ifa->ifa_addr) && !IsPrivateV4Addr(&addr) && !(ifa->ifa_flags & IFF_LOOPBACK) && ifa->ifa_netmask)
+		if (ifa->ifa_addr->sa_family == AF_INET && !SetupAddr(&addr, ifa->ifa_addr) && !IsPrivateV4Addr(&addr.ip.v4) && !(ifa->ifa_flags & IFF_LOOPBACK) && ifa->ifa_netmask)
 		{
 			mDNSAddr	netmask;
 			domainname	domain;

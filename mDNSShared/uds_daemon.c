@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.266  2007/03/28 15:56:37  cheshire
+<rdar://problem/5085774> Add listing of NAT port mapping and GetAddrInfo requests in SIGINFO output
+
 Revision 1.265  2007/03/27 22:52:07  cheshire
 Fix crash in udsserver_automatic_browse_domain_changed
 
@@ -451,7 +454,7 @@ struct request_state
 			mDNSIPPort            receivedPublicPort;
 			uint32_t              requestedTTL;
 			uint32_t              receivedTTL;
-			mDNSAddr              addr;
+			mDNSv4Addr            addr;
 			NATTraversalInfo     *NATAddrinfo;
 			NATTraversalInfo     *NATMapinfo;
 			} portmapping;
@@ -2696,7 +2699,7 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 		{
 		mDNSBool ret;
 
-		request->u.portmapping.addr = zeroAddr;
+		request->u.portmapping.addr = zerov4Addr;
 
 		ret = uDNS_HandleNATQueryAddrReply(n, m, pkt, &request->u.portmapping.addr, &err);
 
@@ -2794,10 +2797,10 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 
 		data = rep->sdata;
 
-		*data++ = request->u.portmapping.addr.ip.v4.b[0];
-		*data++ = request->u.portmapping.addr.ip.v4.b[1];
-		*data++ = request->u.portmapping.addr.ip.v4.b[2];
-		*data++ = request->u.portmapping.addr.ip.v4.b[3];
+		*data++ = request->u.portmapping.addr.b[0];
+		*data++ = request->u.portmapping.addr.b[1];
+		*data++ = request->u.portmapping.addr.b[2];
+		*data++ = request->u.portmapping.addr.b[3];
 		*data++ = request->u.portmapping.protocol;
 		*data++ = request->u.portmapping.privatePort.b[0];
 		*data++ = request->u.portmapping.privatePort.b[1];
@@ -2944,45 +2947,44 @@ mDNSlocal mStatus handle_addrinfo_request(request_state *request)
 	{
 	char *ptr = request->msgdata;
 	char hostname[256];
-	uint32_t protocol;
 	domainname d;
 	mStatus err = 0;
 
 	DNSServiceFlags flags = get_flags(&ptr);
 	uint32_t interfaceIndex = get_uint32(&ptr);
-	mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
-	if (interfaceIndex && !InterfaceID) return(mStatus_BadParamErr);
-
-	protocol = get_uint32(&ptr);
-	if (protocol > (kDNSServiceProtocol_IPv4|kDNSServiceProtocol_IPv6)) return(mStatus_BadParamErr);
+	request->u.addrinfo.interface_id = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
+	if (interfaceIndex && !request->u.addrinfo.interface_id) return(mStatus_BadParamErr);
+	request->u.addrinfo.flags = flags;
+	request->u.addrinfo.protocol = get_uint32(&ptr);
+	if (request->u.addrinfo.protocol > (kDNSServiceProtocol_IPv4|kDNSServiceProtocol_IPv6)) return(mStatus_BadParamErr);
 
 	if (get_string(&ptr, hostname, 256) < 0) return(mStatus_BadParamErr);
 	if (!MakeDomainNameFromDNSNameString(&d, hostname)) { LogMsg("ERROR: handle_addrinfo_request: bad hostname: %s", hostname); return(mStatus_BadParamErr); }
 
-	if (!protocol)
+	if (!request->u.addrinfo.protocol)
 		{
 		NetworkInterfaceInfo *intf;
 		if (IsLocalDomain(&d))
 			{
 			for (intf = mDNSStorage.HostInterfaces; intf; intf = intf->next)
 				{
-				if      ((intf->ip.type == mDNSAddrType_IPv4) && !mDNSIPv4AddressIsZero(intf->ip.ip.v4)) protocol |= kDNSServiceProtocol_IPv4;
-				else if ((intf->ip.type == mDNSAddrType_IPv6) && !mDNSIPv6AddressIsZero(intf->ip.ip.v6)) protocol |= kDNSServiceProtocol_IPv6;
+				if      ((intf->ip.type == mDNSAddrType_IPv4) && !mDNSIPv4AddressIsZero(intf->ip.ip.v4)) request->u.addrinfo.protocol |= kDNSServiceProtocol_IPv4;
+				else if ((intf->ip.type == mDNSAddrType_IPv6) && !mDNSIPv6AddressIsZero(intf->ip.ip.v6)) request->u.addrinfo.protocol |= kDNSServiceProtocol_IPv6;
 				}
 			}
 		else
 			{
 			for (intf = mDNSStorage.HostInterfaces; intf; intf = intf->next)
 				{
-				if      ((intf->ip.type == mDNSAddrType_IPv4) && !mDNSAddressIsv4LinkLocal(&intf->ip)) protocol |= kDNSServiceProtocol_IPv4;
-				else if ((intf->ip.type == mDNSAddrType_IPv6) && !mDNSAddressIsv6LinkLocal(&intf->ip)) protocol |= kDNSServiceProtocol_IPv6;
+				if      ((intf->ip.type == mDNSAddrType_IPv4) && !mDNSAddressIsv4LinkLocal(&intf->ip)) request->u.addrinfo.protocol |= kDNSServiceProtocol_IPv4;
+				else if ((intf->ip.type == mDNSAddrType_IPv6) && !mDNSAddressIsv6LinkLocal(&intf->ip)) request->u.addrinfo.protocol |= kDNSServiceProtocol_IPv6;
 				}
 			}
 		}
 
-	if (protocol & kDNSServiceProtocol_IPv4)
+	if (request->u.addrinfo.protocol & kDNSServiceProtocol_IPv4)
 		{
-		request->u.addrinfo.q4.InterfaceID      = InterfaceID;
+		request->u.addrinfo.q4.InterfaceID      = request->u.addrinfo.interface_id;
 		request->u.addrinfo.q4.Target           = zeroAddr;
 		request->u.addrinfo.q4.qname            = d;
 		request->u.addrinfo.q4.qtype            = kDNSServiceType_A;
@@ -3002,9 +3004,9 @@ mDNSlocal mStatus handle_addrinfo_request(request_state *request)
 			}
 		}
 
-	if (!err && (protocol & kDNSServiceProtocol_IPv6))
+	if (!err && (request->u.addrinfo.protocol & kDNSServiceProtocol_IPv6))
 		{
-		request->u.addrinfo.q6.InterfaceID      = InterfaceID;
+		request->u.addrinfo.q6.InterfaceID      = request->u.addrinfo.interface_id;
 		request->u.addrinfo.q6.Target           = zeroAddr;
 		request->u.addrinfo.q6.qname            = d;
 		request->u.addrinfo.q6.qtype            = kDNSServiceType_AAAA;
@@ -3380,7 +3382,11 @@ mDNSexport int udsserver_exit(dnssd_sock_t skt)
 
 mDNSlocal void LogClientInfo(request_state *req)
 	{
-	if (req->terminate == regservice_termination_callback)
+	if (req->terminate == connected_registration_termination)
+		{
+		// ???
+		}
+	else if (req->terminate == regservice_termination_callback)
 		{
 		service_instance *ptr;
 		for (ptr = req->u.servicereg.instances; ptr; ptr = ptr->next)
@@ -3398,9 +3404,22 @@ mDNSlocal void LogClientInfo(request_state *req)
 		LogMsgNoIdent("%3d: DNSServiceQueryRecord      %##s", req->sd, req->u.queryrecord.q.qname.c);
 	else if (req->terminate == enum_termination_callback)
 		LogMsgNoIdent("%3d: DNSServiceEnumerateDomains %##s", req->sd, req->u.enumeration.q_all.qname.c);
-
-	// %%% Need to add listing of NAT port mapping requests and GetAddrInfo requests here too
-
+	else if (req->terminate == port_mapping_create_termination_callback)
+		LogMsgNoIdent("%3d: DNSServiceNATPortMapping   %s%s Private %d Public %d Granted %d TTL %d Granted %d Addr %.4a",
+			req->sd,
+			req->u.portmapping.protocol & kDNSServiceProtocol_TCP ? "tcp" : "   ",
+			req->u.portmapping.protocol & kDNSServiceProtocol_UDP ? "udp" : "   ",
+			mDNSVal16(req->u.portmapping.privatePort),
+			mDNSVal16(req->u.portmapping.requestedPublicPort),
+			mDNSVal16(req->u.portmapping.receivedPublicPort),
+			req->u.portmapping.requestedTTL,
+			req->u.portmapping.receivedTTL,
+			&req->u.portmapping.addr);
+	else if (req->terminate == addrinfo_termination_callback)
+		LogMsgNoIdent("%3d: DNSServiceGetAddrInfo      %s%s %##s", req->sd,
+			req->u.addrinfo.protocol & kDNSServiceProtocol_IPv4 ? "v4" : "  ",
+			req->u.addrinfo.protocol & kDNSServiceProtocol_IPv6 ? "v6" : "  ",
+			req->u.addrinfo.q4.qname.c);
 	}
 
 mDNSexport void udsserver_info(mDNS *const m)

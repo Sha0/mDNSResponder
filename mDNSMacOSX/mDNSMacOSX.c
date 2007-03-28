@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.381  2007/03/28 15:56:37  cheshire
+<rdar://problem/5085774> Add listing of NAT port mapping and GetAddrInfo requests in SIGINFO output
+
 Revision 1.380  2007/03/26 22:54:46  cheshire
 Fix compile error
 
@@ -2559,8 +2562,8 @@ mDNSexport void mDNSPlatformSetSearchDomainList(void)
 		if (ifa->ifa_addr->sa_family == AF_INET	&&
 			ifa->ifa_netmask                    &&
 			!(ifa->ifa_flags & IFF_LOOPBACK)	&&
-			!SetupAddr(&a, ifa->ifa_addr)	&&
-			!IsPrivateV4Addr(&a)				&&
+			!SetupAddr(&a, ifa->ifa_addr)		&&
+			!IsPrivateV4Addr(&a.ip.v4)			&&
 			!SetupAddr(&n, ifa->ifa_netmask))
 			{
 			char       buffer[256];
@@ -2690,7 +2693,7 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS * const m, mDNSAddr * v4
 			static mDNSBool LegacyNATInitialized = mDNSfalse;
 
 			if (LegacyNATInitialized) { LNT_Destroy(); LegacyNATInitialized = mDNSfalse; }
-			if (r->ip.v4.NotAnInteger && IsPrivateV4Addr(v4))
+			if (r->ip.v4.NotAnInteger && IsPrivateV4Addr(&v4->ip.v4))
 				{
 				mStatus err = LNT_Init();
 				if (err)  LogMsg("ERROR: LNT_Init");

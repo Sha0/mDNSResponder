@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.136  2007/03/28 15:56:37  cheshire
+<rdar://problem/5085774> Add listing of NAT port mapping and GetAddrInfo requests in SIGINFO output
+
 Revision 1.135  2007/03/28 01:20:05  cheshire
 <rdar://problem/4883206> Improve/create logging for secure browse
 
@@ -247,16 +250,11 @@ mDNSexport const mDNSOpaque64 zeroOpaque64    = { { 0 } };
 #endif
 
 // return true for RFC1918 private addresses
-mDNSexport mDNSBool IsPrivateV4Addr(mDNSAddr *addr)
+mDNSexport mDNSBool IsPrivateV4Addr(mDNSv4Addr *addr)
 	{
-	mDNSu8 *b;
-
-	if (addr->type != mDNSAddrType_IPv4) return mDNSfalse;
-	b = addr->ip.v4.b;
-		
-	return ((b[0] == 10) ||                              // 10/8 prefix
-			(b[0] == 172 && b[1] > 15 && b[1] < 32) ||   // 172.16/12
-			(b[0] == 192 && b[1] == 168));               // 192.168/16
+	return ((addr->b[0] == 10) ||                                 // 10/8 prefix
+			(addr->b[0] == 172 && (addr->b[1] & 0xF0) == 16) ||   // 172.16/12
+			(addr->b[0] == 192 && addr->b[1] == 168));            // 192.168/16
 	}
 
 mDNSexport const NetworkInterfaceInfo *GetFirstActiveInterface(const NetworkInterfaceInfo *intf)

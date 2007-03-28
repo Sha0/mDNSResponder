@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.53  2007/03/28 15:56:37  cheshire
+<rdar://problem/5085774> Add listing of NAT port mapping and GetAddrInfo requests in SIGINFO output
+
 Revision 1.52  2007/02/28 01:44:26  cheshire
 <rdar://problem/5027863> Byte order bugs in uDNS.c, uds_daemon.c, dnssd_clientstub.c
 
@@ -145,7 +148,7 @@ extern mStatus           uDNS_SetupDNSConfig(mDNS *const m);
 extern mStatus           uDNS_RegisterSearchDomains(mDNS *const m);
 extern NATTraversalInfo *uDNS_AllocNATInfo(mDNS *const m, NATOp_t op, mDNSIPPort privatePort, mDNSIPPort publicPort, mDNSu32 ttl, NATResponseHndlr callback);
 extern void              uDNS_FormatPortMaprequest(NATTraversalInfo *info);
-extern mDNSBool          uDNS_HandleNATQueryAddrReply(NATTraversalInfo *n, mDNS * const m, mDNSu8 *pkt, mDNSAddr *addr, mStatus *err);
+extern mDNSBool          uDNS_HandleNATQueryAddrReply(NATTraversalInfo *n, mDNS * const m, mDNSu8 *pkt, mDNSv4Addr *addr, mStatus *err);
 extern mDNSBool          uDNS_HandleNATPortMapReply(NATTraversalInfo *n, mDNS * const m, mDNSu8 *pkt);
 extern void              uDNS_SendNATMsg(NATTraversalInfo *info, mDNS *m);
 extern void              uDNS_DeleteNATPortMapping(mDNS *m, NATTraversalInfo *nat);

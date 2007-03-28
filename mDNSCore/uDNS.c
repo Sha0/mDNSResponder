@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.314  2007/03/28 15:56:37  cheshire
+<rdar://problem/5085774> Add listing of NAT port mapping and GetAddrInfo requests in SIGINFO output
+
 Revision 1.313  2007/03/28 01:27:32  cheshire
 <rdar://problem/4996439> Unicast DNS polling server every three seconds
 StartLLQPolling was using INIT_UCAST_POLL_INTERVAL instead of LLQ_POLL_INTERVAL for the retry interval
@@ -706,7 +709,7 @@ mDNSexport void uDNS_SendNATMsg(NATTraversalInfo *info, mDNS *m)
 	}
 
 // Called from both ReceiveNATAddrResponse and port_mapping_create_reply, when we get a NAT-PMP address request response
-mDNSexport mDNSBool uDNS_HandleNATQueryAddrReply(NATTraversalInfo *n, mDNS * const m, mDNSu8 *pkt, mDNSAddr *addr, mStatus *err)
+mDNSexport mDNSBool uDNS_HandleNATQueryAddrReply(NATTraversalInfo *n, mDNS * const m, mDNSu8 *pkt, mDNSv4Addr *addr, mStatus *err)
 	{
 	NATAddrReply *response = (NATAddrReply *)pkt;
 	(void) m;
@@ -717,7 +720,7 @@ mDNSexport mDNSBool uDNS_HandleNATQueryAddrReply(NATTraversalInfo *n, mDNS * con
 	if (!pkt) // timeout
 		{
 #ifdef _LEGACY_NAT_TRAVERSAL_
-		*err = LNT_GetPublicIP(&addr->ip.v4);
+		*err = LNT_GetPublicIP(addr);
 		if (*err) return mDNStrue;
 		else n->state = NATState_Legacy;
 #else
@@ -729,7 +732,7 @@ mDNSexport mDNSBool uDNS_HandleNATQueryAddrReply(NATTraversalInfo *n, mDNS * con
 	else
 		{
 		if (response->err) { LogMsg("uDNS_HandleNATQueryAddrReply: received error %d", response->err); *err = mStatus_NATTraversal; return mDNStrue; }
-		addr->ip.v4 = response->PubAddr;
+		*addr = response->PubAddr;
 		n->state    = NATState_Established;
 		}
 
@@ -756,7 +759,7 @@ mDNSlocal mDNSBool ReceiveNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *
 	addr.type = mDNSAddrType_IPv4;
 	addr.ip.v4 = rr->resrec.rdata->u.ipv4;
 
-	ret = uDNS_HandleNATQueryAddrReply(n, m, pkt, &addr, &err);
+	ret = uDNS_HandleNATQueryAddrReply(n, m, pkt, &addr.ip.v4, &err);
 	if (!ret) return ret;
 	if (err) goto end;
 
@@ -1512,7 +1515,7 @@ mDNSlocal void startLLQHandshakePrivate(mDNS *m, LLQ_Info *info, mDNSBool defer)
 			info->eventPort = port;
 		}
 
-	if (IsPrivateV4Addr(&m->AdvertisedV4))
+	if (IsPrivateV4Addr(&m->AdvertisedV4.ip.v4))
 		{
 		if (!info->NATInfoTCP)
 			{
@@ -1632,7 +1635,7 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info, mDNSBool defer)
 	mStatus err = mStatus_NoError;
 	mDNSs32 timenow = m->timenow;
 
-	if (IsPrivateV4Addr(&m->AdvertisedV4))
+	if (IsPrivateV4Addr(&m->AdvertisedV4.ip.v4))
 		{
 		if (!info->NATInfoUDP)
 			{
@@ -2361,7 +2364,7 @@ mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srs
 		srs->lease = mDNSfalse;
 		}
 
-	if (srs->RR_SRV.resrec.rdata->u.srv.port.NotAnInteger && IsPrivateV4Addr(&m->AdvertisedV4))
+	if (srs->RR_SRV.resrec.rdata->u.srv.port.NotAnInteger && IsPrivateV4Addr(&m->AdvertisedV4.ip.v4))
 		{ srs->state = regState_NATMap; StartNATPortMap(m, srs); }
 	else SendServiceRegistration(m, srs);
 	return;
@@ -2653,7 +2656,7 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 	NATTraversalInfo *nat = srs->NATinfo;
 	mDNSIPPort port = srs->RR_SRV.resrec.rdata->u.srv.port;
 	mDNSBool NATChanged = mDNSfalse;
-	mDNSBool NowBehindNAT = port.NotAnInteger && IsPrivateV4Addr(&m->AdvertisedV4);
+	mDNSBool NowBehindNAT = port.NotAnInteger && IsPrivateV4Addr(&m->AdvertisedV4.ip.v4);
 	mDNSBool WereBehindNAT = nat != mDNSNULL;
 	mDNSBool NATRouterChanged = nat && nat->Router.ip.v4.NotAnInteger != m->Router.ip.v4.NotAnInteger;
 	mDNSBool PortWasMapped = nat && (nat->state == NATState_Established || nat->state == NATState_Legacy) && nat->PublicPort.NotAnInteger != port.NotAnInteger;
@@ -2735,7 +2738,7 @@ mDNSlocal void AdvertiseHostname(mDNS *m, HostnameInfo *h)
 	{
 	if (m->AdvertisedV4.ip.v4.NotAnInteger && h->arv4.state == regState_Unregistered)
 		{
-		if (IsPrivateV4Addr(&m->AdvertisedV4))
+		if (IsPrivateV4Addr(&m->AdvertisedV4.ip.v4))
 			StartGetPublicAddr(m, &h->arv4);
 		else
 			{
