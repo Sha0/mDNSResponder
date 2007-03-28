@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.44  2007/03/28 01:20:05  cheshire
+<rdar://problem/4883206> Improve/create logging for secure browse
+
 Revision 1.43  2007/03/20 17:07:15  cheshire
 Rename "struct uDNS_TCPSocket_struct" to "TCPSocket", "struct uDNS_UDPSocket_struct" to "UDPSocket"
 
@@ -223,6 +226,7 @@ extern const mDNSu8 *LocateAnswers(const DNSMessage *const msg, const mDNSu8 *co
 extern const mDNSu8 *LocateAuthorities(const DNSMessage *const msg, const mDNSu8 *const end);
 extern const mDNSu8 *LocateAdditionals(const DNSMessage *const msg, const mDNSu8 *const end);
 extern const mDNSu8 *LocateLLQOptData(const DNSMessage *const msg, const mDNSu8 *const end);
+extern void DumpPacket(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end);
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK

@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.135  2007/03/28 01:20:05  cheshire
+<rdar://problem/4883206> Improve/create logging for secure browse
+
 Revision 1.134  2007/03/27 23:25:35  cheshire
 Fix error caching SOA records
 (cache entry was size of wire-format packed data, not size of in-memory structure)
@@ -332,6 +335,21 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd,
 		case kDNSType_AAAA:	mDNS_snprintf(buffer+length, Max-length, "%.16a", &rd->ipv6);       break;
 		case kDNSType_SRV:	mDNS_snprintf(buffer+length, Max-length, "%u %u %u %##s",
 								rd->srv.priority, rd->srv.weight, mDNSVal16(rd->srv.port), rd->srv.target.c); break;
+		case kDNSType_OPT:  length += mDNS_snprintf(buffer+length, Max-length, "%d Len %d ", rd->opt.opt, rd->opt.optlen);
+							length += mDNS_snprintf(buffer+length, Max-length, "Type %d Class %d ", rr->rrtype, rr->rrclass);
+							if (rd->opt.opt == kDNSOpt_LLQ)
+								{
+								length += mDNS_snprintf(buffer+length, Max-length, "Vers %d ", rd->opt.OptData.llq.vers);
+								length += mDNS_snprintf(buffer+length, Max-length, "Op %d ", rd->opt.OptData.llq.llqOp);
+								length += mDNS_snprintf(buffer+length, Max-length, "Err %d ", rd->opt.OptData.llq.err);
+								length += mDNS_snprintf(buffer+length, Max-length, "ID %08X%08X ", rd->opt.OptData.llq.id.l[0], rd->opt.OptData.llq.id.l[1]);
+								length += mDNS_snprintf(buffer+length, Max-length, "Lease %d", rd->opt.OptData.llq.lease);
+								}
+							else if (rd->opt.opt == kDNSOpt_Lease)
+								length += mDNS_snprintf(buffer+length, Max-length, "kDNSOpt_Lease Lease %d", rd->opt.OptData.lease);
+							else
+								length += mDNS_snprintf(buffer+length, Max-length, "Unknown opt %d", rd->opt.opt);
+							break;
 		default:			mDNS_snprintf(buffer+length, Max-length, "RDLen %d: %s", rr->rdlength, rd->data);
 							// Really should scan buffer to check if text is valid UTF-8 and only replace with dots if not
 							for (ptr = buffer; *ptr; ptr++) if (*ptr < ' ') *ptr = '.';
@@ -1995,6 +2013,38 @@ mDNSexport const mDNSu8 *LocateLLQOptData(const DNSMessage *const msg, const mDN
 			ptr = skipResourceRecord(msg, ptr, end);
 		}
 	return(mDNSNULL);
+	}
+
+mDNSlocal const mDNSu8 *DumpRecords(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *ptr, const mDNSu8 *const end, int count, char *label)
+	{
+	int i;
+	LogMsg("%2d %s", count, label);
+	for (i = 0; i < count && ptr; i++)
+		{
+		ptr = GetLargeResourceRecord(m, msg, ptr, end, mDNSInterface_Any, kDNSRecordTypePacketAns, &m->rec);
+		if (ptr) LogMsg("%2d %s", i, CRDisplayString(m, &m->rec.r));
+		m->rec.r.resrec.RecordType = 0;
+		}
+	return(ptr);
+	}
+
+mDNSexport void DumpPacket(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end)
+	{
+	const mDNSu8 *ptr = msg->data;
+	int i;
+	DNSQuestion q;
+
+	LogMsg("DNS %s %d bytes", msg->h.flags.b[0] & kDNSFlag0_QR_Response ? "Response" : "Query", end - msg->data);
+	LogMsg("%2d Questions", msg->h.numQuestions);
+	for (i = 0; i < msg->h.numQuestions && ptr; i++)
+		{
+		ptr = getQuestion(msg, ptr, end, mDNSInterface_Any, &q);
+		if (ptr) LogMsg("%2d %##s %s", i, q.qname.c, DNSTypeName(q.qtype));
+		}
+	ptr = DumpRecords(m, msg, ptr, end, msg->h.numAnswers,     "Answers");
+	ptr = DumpRecords(m, msg, ptr, end, msg->h.numAuthorities, "Authorities");
+	ptr = DumpRecords(m, msg, ptr, end, msg->h.numAdditionals, "Additionals");
+	LogMsg("--------");
 	}
 
 // ***************************************************************************
