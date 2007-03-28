@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.315  2007/03/28 21:02:18  cheshire
+<rdar://problem/3810563> Wide-Area Bonjour should work on multi-subnet private network
+
 Revision 1.314  2007/03/28 15:56:37  cheshire
 <rdar://problem/5085774> Add listing of NAT port mapping and GetAddrInfo requests in SIGINFO output
 
@@ -736,7 +739,7 @@ mDNSexport mDNSBool uDNS_HandleNATQueryAddrReply(NATTraversalInfo *n, mDNS * con
 		n->state    = NATState_Established;
 		}
 
-	if (IsPrivateV4Addr(addr)) { LogMsg("uDNS_HandleNATQueryAddrReply: Double NAT"); *err = mStatus_DoubleNAT; }
+	if (mDNSv4AddrIsPrivate(addr)) { LogMsg("uDNS_HandleNATQueryAddrReply: Double NAT"); *err = mStatus_DoubleNAT; }
 
 	return mDNStrue;
 	}
@@ -1458,64 +1461,32 @@ exit:
 mDNSlocal void startLLQHandshakePrivate(mDNS *m, LLQ_Info *info, mDNSBool defer)
 	{
 	tcpInfo_t *context;
-	mDNSs32 timenow = m->timenow;
 	mStatus err = mStatus_NoError;
-	DomainAuthInfo * authInfo = mDNSNULL;
-
-	// Let's look for credentials right now.  If we can't find them, then it's an error.
-
-	authInfo = GetAuthInfoForName(m, &info->question->qname);
-
-	if (!authInfo)
-		{
-		LogMsg("ERROR: startLLQHandshakePrivate: cannot find credentials for question %##s", info->question->qname.c);
-		err = mStatus_UnknownErr;
-		goto exit;
-		}
+	DomainAuthInfo *authInfo = GetAuthInfoForName(m, &info->question->qname);
+	if (!authInfo) { LogMsg("ERROR: startLLQHandshakePrivate: no credentials for %##s", info->question->qname.c); err = mStatus_UnknownErr; goto exit; }
 
 	if (!info->eventPort.NotAnInteger)
 		{
-		TCPSocket *	tcpSock = mDNSNULL;
-		UDPSocket *	udpSock = mDNSNULL;
-		mDNSIPPort		port = zeroIPPort;
-		mDNSBool		good = mDNSfalse;
-		int				i;
-
-		// Try 100 times to find sockets
-
-		for (i = 0; i < 100; i++)
+		info->tcpSock = mDNSNULL;
+		info->udpSock = mDNSNULL;
+		info->eventPort = zeroIPPort;
+		int i;
+		for (i = 0; i < 100; i++)		// Try 100 times to find sockets
 			{
-			tcpSock = mDNSPlatformTCPSocket(m, TCP_SOCKET_FLAGS, &port);
-
-			if (!tcpSock)
-				{
-				continue;
-				}
-
-			udpSock = mDNSPlatformUDPSocket(m, port);
-
-			if (!udpSock)
-				{
-				mDNSPlatformTCPCloseConnection(tcpSock);
-				continue;
-				}
-
-			good = mDNStrue;
-			break;
+			info->tcpSock = mDNSPlatformTCPSocket(m, TCP_SOCKET_FLAGS, &info->eventPort);
+			if (!info->tcpSock) continue;
+			info->udpSock = mDNSPlatformUDPSocket(m, info->eventPort);
+			if (info->udpSock) break;	
+			mDNSPlatformTCPCloseConnection(info->tcpSock);
+			info->tcpSock   = mDNSNULL;
+			info->eventPort = zeroIPPort;
 			}
-
-			if (!good)
-				{
-				err = mStatus_UnknownErr;
-				goto exit;
-				}
-
-			info->tcpSock   = tcpSock;
-			info->udpSock   = udpSock;
-			info->eventPort = port;
+		if (!info->tcpSock || !info->udpSock) { err = mStatus_UnknownErr; goto exit; }
 		}
 
-	if (IsPrivateV4Addr(&m->AdvertisedV4.ip.v4))
+	LogMsg("startLLQHandshakePrivate %#a %d %#a %d", &m->AdvertisedV4, mDNSv4AddrIsPrivate(&m->AdvertisedV4.ip.v4), &info->servAddr, mDNSAddrIsv4Private(&info->servAddr));
+
+	if (mDNSv4AddrIsPrivate(&m->AdvertisedV4.ip.v4)/* && !mDNSAddrIsv4Private(&info->servAddr)*/)
 		{
 		if (!info->NATInfoTCP)
 			{
@@ -1526,37 +1497,16 @@ mDNSlocal void startLLQHandshakePrivate(mDNS *m, LLQ_Info *info, mDNSBool defer)
 		else if (!info->NATInfoUDP)
 			{
 			info->state = LLQ_NatMapWaitUDP;
-
 			StartLLQNatMap(m, info);
-
 			goto exit;
 			}
-		else if (info->NATInfoTCP->state == NATState_Error || info->NATInfoUDP->state == NATState_Error)
-			{
-			err = mStatus_UnknownErr;
-			goto exit;
-			}
-		else if (info->NATInfoTCP->state != NATState_Established && info->NATInfoTCP->state != NATState_Legacy)
-			{
-			info->state = LLQ_NatMapWaitTCP;
-			goto exit;
-			}
-		else if (info->NATInfoUDP->state != NATState_Established && info->NATInfoUDP->state != NATState_Legacy)
-			{
-			info->state = LLQ_NatMapWaitUDP;
-			goto exit;
-			}
+		else if (info->NATInfoTCP->state == NATState_Error       || info->NATInfoUDP->state == NATState_Error ) { err = mStatus_UnknownErr;        goto exit; }
+		else if (info->NATInfoTCP->state != NATState_Established && info->NATInfoTCP->state != NATState_Legacy) { info->state = LLQ_NatMapWaitTCP; goto exit; }
+		else if (info->NATInfoUDP->state != NATState_Established && info->NATInfoUDP->state != NATState_Legacy) { info->state = LLQ_NatMapWaitUDP; goto exit; }
 		}
 
 	context = (tcpInfo_t *)mDNSPlatformMemAllocate(sizeof(tcpInfo_t));
-
-	if (!context)
-		{
-		LogMsg("ERROR: startLLQHandshakePrivate - memallocate failed");
-		err = mStatus_NoMemoryErr;
-		goto exit;
-		}
-
+	if (!context) { LogMsg("ERROR: startLLQHandshakePrivate - memallocate failed"); err = mStatus_NoMemoryErr; goto exit; }
 	mDNSPlatformMemZero(context, sizeof(tcpInfo_t));
 	context->m = m;
 	context->authInfo = authInfo;
@@ -1565,29 +1515,15 @@ mDNSlocal void startLLQHandshakePrivate(mDNS *m, LLQ_Info *info, mDNSBool defer)
 	if (!defer)
 		{
 		if (!info->tcpSock)
-			{
-			LogMsg("ERROR: startLLQHandshakePrivate - tcpSock is NULL.");
-			err = mStatus_UnknownErr;
-			}
+			{ LogMsg("ERROR: startLLQHandshakePrivate - tcpSock is NULL."); err = mStatus_UnknownErr; }
 		else if (!mDNSPlatformTCPIsConnected(info->tcpSock))
-			{
 			err = mDNSPlatformTCPConnect(info->tcpSock, &info->servAddr, info->servPort, 0, tcpCallback, context);
-			}
-		else
-			{
-			err = mStatus_ConnEstablished;
-			}
+		else err = mStatus_ConnEstablished;
 
-		if ((err != mStatus_ConnEstablished) && (err != mStatus_ConnPending))
-			{
-			LogMsg("startLLQHandshakePrivate: connection failed");
-			goto exit;
-			}
+		if ((err != mStatus_ConnEstablished) && (err != mStatus_ConnPending)) { LogMsg("startLLQHandshakePrivate: connection failed"); goto exit; }
 
 		if (err == mStatus_ConnEstablished)	// manually invoke callback if connection completes
-			{
 			tcpCallback(info->tcpSock, context, mDNStrue, mStatus_NoError);
-			}
 
 		err = mStatus_NoError;
 		}
@@ -1597,14 +1533,10 @@ mDNSlocal void startLLQHandshakePrivate(mDNS *m, LLQ_Info *info, mDNSBool defer)
 	info->state                      = LLQ_SecondaryRequest;
 	info->origLease                  = kLLQ_DefLease;
 	info->question->ThisQInterval    = (kLLQ_INIT_RESEND * mDNSPlatformOneSecond);
-	info->question->LastQTime        = timenow;
+	info->question->LastQTime        = m->timenow;
 
 exit:
-
-	if (err)
-		{
-		StartLLQPolling(m, info);
-		}
+	if (err) StartLLQPolling(m, info);
 	}
 
 mDNSlocal void RemoveLLQNatMappings(mDNS * m, LLQ_Info * llq)
@@ -1635,33 +1567,17 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info, mDNSBool defer)
 	mStatus err = mStatus_NoError;
 	mDNSs32 timenow = m->timenow;
 
-	if (IsPrivateV4Addr(&m->AdvertisedV4.ip.v4))
+	LogMsg("startLLQHandshake %#a %d %#a %d", &m->AdvertisedV4, mDNSv4AddrIsPrivate(&m->AdvertisedV4.ip.v4), &info->servAddr, mDNSAddrIsv4Private(&info->servAddr));
+
+	if (mDNSv4AddrIsPrivate(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsv4Private(&info->servAddr))
 		{
-		if (!info->NATInfoUDP)
-			{
-			info->state = LLQ_NatMapWaitUDP;
-			StartLLQNatMap(m, info);
-			}
-
-		if (info->NATInfoUDP->state == NATState_Error)
-			{
-			err = mStatus_UnknownErr;
-			goto exit;
-			}
-
-		if (info->NATInfoUDP->state != NATState_Established && info->NATInfoUDP->state != NATState_Legacy)
-			{
-			info->state = LLQ_NatMapWaitUDP;
-			goto exit;
-			}
+		if (!info->NATInfoUDP) { info->state = LLQ_NatMapWaitUDP; StartLLQNatMap(m, info); }
+		if (info->NATInfoUDP->state == NATState_Error) { err = mStatus_UnknownErr; goto exit; }
+		if (info->NATInfoUDP->state != NATState_Established && info->NATInfoUDP->state != NATState_Legacy) { info->state = LLQ_NatMapWaitUDP; goto exit; }
 		}
 
 	if (info->ntries++ >= kLLQ_MAX_TRIES)
-		{
-		LogMsg("startLLQHandshake: %d failed attempts for LLQ %##s.  Polling.", kLLQ_MAX_TRIES, q->qname.c, kLLQ_DEF_RETRY / 60);
-		err = mStatus_UnknownErr;
-		goto exit;
-		}
+		{ LogMsg("startLLQHandshake: %d failed attempts for LLQ %##s. Polling.", kLLQ_MAX_TRIES, q->qname.c); err = mStatus_UnknownErr; goto exit; }
 
     // set llq rdata
 	llqData.vers  = kLLQ_Vers;
@@ -1672,40 +1588,25 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info, mDNSBool defer)
 
 	initializeQuery(&msg, q);
 	end = putLLQ(&msg, msg.data, q, &llqData, mDNStrue);
-	if (!end)
-		{
-		LogMsg("ERROR: startLLQHandshake - putLLQ");
-		info->state = LLQ_Error;
-		return;
-		}
+	if (!end) { LogMsg("ERROR: startLLQHandshake - putLLQ"); info->state = LLQ_Error; return; }
 
 	if (!defer) // if we are to defer, we simply set the retry timers so the request goes out in the future
 		{
 		err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, &info->servAddr, info->servPort, mDNSNULL, mDNSNULL);
-
 		// on error, we procede as normal and retry after the appropriate interval
-
-		if (err)
-			{
-			debugf("ERROR: startLLQHandshake - mDNSSendDNSMessage returned %ld", err);
-			err = mStatus_NoError;
-			}
+		if (err) { debugf("ERROR: startLLQHandshake - mDNSSendDNSMessage returned %ld", err); err = mStatus_NoError; }
 		}
 
 	// update question/info state
 	info->state = LLQ_InitialRequest;
 	info->origLease = kLLQ_DefLease;
 	q->LastQTime = timenow;
-	q->ThisQInterval    = (kLLQ_INIT_RESEND * mDNSPlatformOneSecond);
+	q->ThisQInterval = (kLLQ_INIT_RESEND * mDNSPlatformOneSecond);
 
 	err = mStatus_NoError;
 
 exit:
-
-	if (err)
-		{
-		StartLLQPolling(m, info);
-		}
+	if (err) StartLLQPolling(m, info);
 	}
 
 mDNSlocal void LLQNatMapComplete(mDNS *m, NATTraversalInfo * n)
@@ -2364,7 +2265,10 @@ mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srs
 		srs->lease = mDNSfalse;
 		}
 
-	if (srs->RR_SRV.resrec.rdata->u.srv.port.NotAnInteger && IsPrivateV4Addr(&m->AdvertisedV4.ip.v4))
+	LogMsg("serviceRegistrationCallback %#a %d %#a %d", &m->AdvertisedV4, mDNSv4AddrIsPrivate(&m->AdvertisedV4.ip.v4), &srs->ns, mDNSAddrIsv4Private(&srs->ns));
+
+	if (srs->RR_SRV.resrec.rdata->u.srv.port.NotAnInteger &&
+		mDNSv4AddrIsPrivate(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsv4Private(&srs->ns))
 		{ srs->state = regState_NATMap; StartNATPortMap(m, srs); }
 	else SendServiceRegistration(m, srs);
 	return;
@@ -2439,7 +2343,8 @@ mDNSexport mDNSBool uDNS_HandleNATPortMapReply(NATTraversalInfo *n, mDNS *m, mDN
 	    // !!!KRS to be defensive, use SRVChanged flag on service and deregister here
 
 	n->PublicPort = reply->pub;
-	if (reply->pub.NotAnInteger != n->request.PortReq.pub.NotAnInteger) n->request.PortReq.pub = reply->pub; // set message buffer for refreshes
+	n->request.PortReq.pub = reply->pub; // Remember allocated port for future refreshes
+	LogOperation("uDNS_HandleNATPortMapReply %d", mDNSVal16(n->PublicPort));
 
 	n->retry = m->timenow + ((mDNSs32)n->lease * mDNSPlatformOneSecond / 2);	// retry half way to expiration
 
@@ -2656,7 +2561,7 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 	NATTraversalInfo *nat = srs->NATinfo;
 	mDNSIPPort port = srs->RR_SRV.resrec.rdata->u.srv.port;
 	mDNSBool NATChanged = mDNSfalse;
-	mDNSBool NowBehindNAT = port.NotAnInteger && IsPrivateV4Addr(&m->AdvertisedV4.ip.v4);
+	mDNSBool NowBehindNAT = port.NotAnInteger && mDNSv4AddrIsPrivate(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsv4Private(&srs->ns);
 	mDNSBool WereBehindNAT = nat != mDNSNULL;
 	mDNSBool NATRouterChanged = nat && nat->Router.ip.v4.NotAnInteger != m->Router.ip.v4.NotAnInteger;
 	mDNSBool PortWasMapped = nat && (nat->state == NATState_Established || nat->state == NATState_Legacy) && nat->PublicPort.NotAnInteger != port.NotAnInteger;
@@ -2738,7 +2643,7 @@ mDNSlocal void AdvertiseHostname(mDNS *m, HostnameInfo *h)
 	{
 	if (m->AdvertisedV4.ip.v4.NotAnInteger && h->arv4.state == regState_Unregistered)
 		{
-		if (IsPrivateV4Addr(&m->AdvertisedV4.ip.v4))
+		if (mDNSv4AddrIsPrivate(&m->AdvertisedV4.ip.v4))
 			StartGetPublicAddr(m, &h->arv4);
 		else
 			{
@@ -5321,10 +5226,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 	// This bit of trickery is to ensure that we're lazily calling RegisterSearchDomains.
 	// The RegisterSearchDomains boolean is set when we call uDNS_RegisterSearchDomains.
 	// This is called in uds_daemon.c
-	if (m->RegisterSearchDomains)
-		{
-		RegisterSearchDomains(m);	// note that we register name servers *before* search domains
-		}
+	if (m->RegisterSearchDomains) RegisterSearchDomains(m);	// note that we register name servers *before* search domains
 
 	// handle router and primary interface changes
 	v4 = v6 = r = zeroAddr;
@@ -5336,14 +5238,10 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
         // if we gained or lost DNS servers (e.g. logged into VPN) "toggle" primary address so it gets re-registered even if it is unchanged
 		mDNS_SetPrimaryInterfaceInfo(m, mDNSNULL, mDNSNULL, mDNSNULL);
 
-		if (v4.ip.v4.b[0] != 169 || v4.ip.v4.b[1] != 254)
-			{
-			mDNS_SetPrimaryInterfaceInfo(m, v4.ip.v4.b[0] ? &v4 : mDNSNULL, v6.ip.v6.b[0] ? &v6 : mDNSNULL, r.ip.v4.NotAnInteger ? &r : mDNSNULL);
-			}
-		else
-			{
+		if (mDNSv4AddressIsLinkLocal(&v4.ip.v4))
 			mDNS_SetPrimaryInterfaceInfo(m, mDNSNULL, mDNSNULL, mDNSNULL);	// primary IP is link-local
-			}
+		else
+			mDNS_SetPrimaryInterfaceInfo(m, v4.ip.v4.b[0] ? &v4 : mDNSNULL, v6.ip.v6.b[0] ? &v6 : mDNSNULL, r.ip.v4.NotAnInteger ? &r : mDNSNULL);
 		}
 	else
 		{
