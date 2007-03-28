@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.316  2007/03/28 21:16:27  cheshire
+Remove DumpPacket() call now that OPT pseudo-RR rrclass bug is fixed
+
 Revision 1.315  2007/03/28 21:02:18  cheshire
 <rdar://problem/3810563> Wide-Area Bonjour should work on multi-subnet private network
 
@@ -1404,7 +1407,7 @@ mDNSlocal void recvSetupResponse(mDNS *const m, const DNSMessage *const pktMsg, 
 	llq = GetLLQOptData(m, pktMsg, end);
 	if (!llq)
 		{
-		LogMsg("recvSetupResponse - GetLLQOptData"); { m->rec.r.resrec.RecordType = 0; DumpPacket(m, pktMsg, end); return; }
+		LogMsg("recvSetupResponse - GetLLQOptData");
 		err = mStatus_UnknownErr;
 		goto exit;
 		}
