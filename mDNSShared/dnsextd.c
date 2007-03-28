@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.69  2007/03/28 21:14:08  cheshire
+The rrclass field of an OPT pseudo-RR holds the sender's UDP payload size
+
 Revision 1.68  2007/03/28 18:20:50  cheshire
 Textual tidying
 
@@ -1687,6 +1690,7 @@ mDNSlocal void FormatLLQOpt(AuthRecord *opt, int opcode, const mDNSOpaque64 *con
 	{
 	bzero(opt, sizeof(*opt));
 	mDNS_SetupResourceRecord(opt, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
+	opt->resrec.rrclass = NormalMaxDNSMessageData;
 	opt->resrec.rdlength = LLQ_OPT_RDLEN;
 	opt->resrec.rdestimate = LLQ_OPT_RDLEN;
 	opt->resrec.rdata->u.opt.opt = kDNSOpt_LLQ;

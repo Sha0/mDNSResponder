@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.138  2007/03/28 21:14:08  cheshire
+The rrclass field of an OPT pseudo-RR holds the sender's UDP payload size
+
 Revision 1.137  2007/03/28 20:59:26  cheshire
 <rdar://problem/4743285> Remove inappropriate use of IsPrivateV4Addr()
 
@@ -337,7 +340,7 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd,
 		case kDNSType_SRV:	mDNS_snprintf(buffer+length, Max-length, "%u %u %u %##s",
 								rd->srv.priority, rd->srv.weight, mDNSVal16(rd->srv.port), rd->srv.target.c); break;
 		case kDNSType_OPT:  length += mDNS_snprintf(buffer+length, Max-length, "%d Len %d ", rd->opt.opt, rd->opt.optlen);
-							length += mDNS_snprintf(buffer+length, Max-length, "Type %d Class %d ", rr->rrtype, rr->rrclass);
+							length += mDNS_snprintf(buffer+length, Max-length, "Max UDP %d ", rr->rrclass);
 							if (rd->opt.opt == kDNSOpt_LLQ)
 								{
 								length += mDNS_snprintf(buffer+length, Max-length, "Vers %d ", rd->opt.OptData.llq.vers);
@@ -1665,9 +1668,8 @@ mDNSexport mDNSu8 *putDeleteAllRRSets(DNSMessage *msg, mDNSu8 *ptr, const domain
 mDNSexport mDNSu8 *putUpdateLease(DNSMessage *msg, mDNSu8 *end, mDNSu32 lease)
 	{
 	AuthRecord rr;
-	mDNS_SetupResourceRecord(&rr, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, 0, mDNSNULL, mDNSNULL);
-	rr.resrec.RecordType = kDNSRecordTypeKnownUnique;  // to avoid warnings in other layers
-	rr.resrec.rrtype     = kDNSType_OPT;
+	mDNS_SetupResourceRecord(&rr, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
+	rr.resrec.rrclass    = NormalMaxDNSMessageData;
 	rr.resrec.rdlength   = LEASE_OPT_RDLEN;
 	rr.resrec.rdestimate = LEASE_OPT_RDLEN;
 	rr.resrec.rdata->u.opt.opt           = kDNSOpt_Lease;
@@ -2006,8 +2008,6 @@ mDNSexport const mDNSu8 *LocateLLQOptData(const DNSMessage *const msg, const mDN
 			ptr[0] == 0                       &&		// Name must be root label
 			ptr[1] == (kDNSType_OPT >> 8  )   &&		// rrtype OPT
 			ptr[2] == (kDNSType_OPT & 0xFF)   &&
-			ptr[3] == (kDNSClass_IN >> 8  )   &&		// rrclass IN, don't care about TTL
-			ptr[4] == (kDNSClass_IN & 0xFF)   &&
 			((mDNSu16)ptr[9] << 8 | (mDNSu16)ptr[10]) >= (mDNSu16)LLQ_OPT_RDLEN)
 			return(ptr);
 		else
