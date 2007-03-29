@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.268  2007/03/29 00:13:58  cheshire
+Remove unnecessary fields from service_instance structure: autoname, autorename, allowremotequery, name
+
 Revision 1.267  2007/03/28 20:59:27  cheshire
 <rdar://problem/4743285> Remove inappropriate use of IsPrivateV4Addr()
 
@@ -363,17 +366,13 @@ typedef struct registered_record_entry
 typedef struct service_instance
 	{
 	struct service_instance *next;
-	mDNSBool autoname;				// Set if this name is tied to the Computer Name
-	mDNSBool autorename;			// Set if this client wants us to automatically rename on conflict
-	mDNSBool allowremotequery;		// Respond to unicast queries from outside the local link?
-	mDNSBool renameonmemfree;  		// Set on config change when we deregister original name
-	domainlabel name;
-	domainname domain;
-	mDNSBool default_local;			// is this the "local." from an empty-string registration?
 	request_state *request;
 	dnssd_sock_t sd;
 	AuthRecord *subtypes;
-	ServiceRecordSet srs; // note - must be last field in struct
+	mDNSBool renameonmemfree;  		// Set on config change when we deregister original name
+	mDNSBool default_local;			// is this the "local." from an empty-string registration?
+	domainname domain;
+	ServiceRecordSet srs;			// note - must be last field in struct
 	} service_instance;
 
 // for multi-domain default browsing
@@ -1228,10 +1227,12 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 	else
 		LogOperation("%3d: DNSServiceRegister(%##s, %u) CALLBACK %d",   instance->sd, srs->RR_SRV.resrec.name->c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port), result);
 
+	if (!instance->request && result != mStatus_MemFree) { LogMsg("regservice_callback: instance->request is NULL %d", result); return; }
+
 	if (result == mStatus_NoError)
 		{
-		request_state *req = instance->request;
-		if (instance->allowremotequery)
+		reply_state *rep;
+		if (instance->request->u.servicereg.allowremotequery)
 			{
 			ExtraResourceRecord *e;
 			srs->RR_ADV.AllowRemoteQuery = mDNStrue;
@@ -1241,24 +1242,19 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 			for (e = instance->srs.Extras; e; e = e->next) e->r.AllowRemoteQuery = mDNStrue;
 			}
 
-		if (!req) LogMsg("ERROR: regservice_callback - null request object");
-		else
-			{
-			reply_state *rep;
-			if (GenerateNTDResponse(srs->RR_SRV.resrec.name, srs->RR_SRV.resrec.InterfaceID, req, &rep) != mStatus_NoError)
-				LogMsg("%3d: regservice_callback: %##s is not valid DNS-SD SRV name", req->sd, srs->RR_SRV.resrec.name->c);
-			else append_reply(req, rep);
-			}
-		if (instance->autoname && CountPeerRegistrations(m, srs) == 0)
+		if (GenerateNTDResponse(srs->RR_SRV.resrec.name, srs->RR_SRV.resrec.InterfaceID, instance->request, &rep) != mStatus_NoError)
+			LogMsg("%3d: regservice_callback: %##s is not valid DNS-SD SRV name", instance->sd, srs->RR_SRV.resrec.name->c);
+		else append_reply(instance->request, rep);
+
+		if (instance->request->u.servicereg.autoname && CountPeerRegistrations(m, srs) == 0)
 			RecordUpdatedNiceLabel(m, 0);	// Successfully got new name, tell user immediately
 		}
 	else if (result == mStatus_MemFree)
 		{
-		if (instance->renameonmemfree)
+		if (instance->request && instance->renameonmemfree)
 			{
 			instance->renameonmemfree = 0;
-			instance->name = m->nicelabel;
-			err = mDNS_RenameAndReregisterService(m, srs, &instance->name);
+			err = mDNS_RenameAndReregisterService(m, srs, &instance->request->u.servicereg.name);
 			if (err) LogMsg("ERROR: regservice_callback - RenameAndReregisterService returned %ld", err);
 			// error should never happen - safest to log and continue
 			}
@@ -1267,9 +1263,9 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 		}
 	else if (result == mStatus_NameConflict)
 		{
-		if (instance->autorename)
+		if (instance->request->u.servicereg.autorename)
 			{
-			if (instance->autoname && CountPeerRegistrations(m, srs) == 0)
+			if (instance->request->u.servicereg.autoname && CountPeerRegistrations(m, srs) == 0)
 				{
 				// On conflict for an autoname service, rename and reregister *all* autoname services
 				IncrementLabelSuffix(&m->nicelabel, mDNStrue);
@@ -1280,19 +1276,15 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 			}
 		else
 			{
-			request_state *req = instance->request;
-			if (!req) { LogMsg("ERROR: regservice_callback: received result %ld with a NULL request pointer", result); return; }
 			free_service_instance(instance);
-			if (!SuppressError) deliver_async_error(req, reg_service_reply_op, result);
+			if (!SuppressError) deliver_async_error(instance->request, reg_service_reply_op, result);
 			}
 		}
 	else
 		{
-		request_state *req = instance->request;
-		if (!req) { LogMsg("ERROR: regservice_callback: received result %ld with a NULL request pointer", result); return; }
 		if (result != mStatus_NATTraversal) LogMsg("ERROR: unknown result in regservice_callback: %ld", result);
 		free_service_instance(instance);
-		if (!SuppressError) deliver_async_error(req, reg_service_reply_op, result);
+		if (!SuppressError) deliver_async_error(instance->request, reg_service_reply_op, result);
 		}
 	}
 
@@ -1651,14 +1643,10 @@ mDNSlocal mStatus register_service_instance(request_state *request, const domain
 		{ free_service_instance(instance); instance = NULL; FatalError("ERROR: malloc"); }
 	instance->request           = request;
 	instance->sd                = request->sd;
-	instance->autoname          = request->u.servicereg.autoname;
-	instance->autorename        = request->u.servicereg.autorename;
-	instance->allowremotequery  = request->u.servicereg.allowremotequery;
 	instance->renameonmemfree   = 0;
-	instance->name              = request->u.servicereg.name;
 	AssignDomainName(&instance->domain, domain);
 	instance->default_local = (request->u.servicereg.default_domain && SameDomainName(domain, &localdomain));
-	result = mDNS_RegisterService(&mDNSStorage, &instance->srs, &instance->name, &request->u.servicereg.type, domain, request->u.servicereg.host.c[0] ? &request->u.servicereg.host : NULL, request->u.servicereg.port,
+	result = mDNS_RegisterService(&mDNSStorage, &instance->srs, &request->u.servicereg.name, &request->u.servicereg.type, domain, request->u.servicereg.host.c[0] ? &request->u.servicereg.host : NULL, request->u.servicereg.port,
 								  request->u.servicereg.txtdata, request->u.servicereg.txtlen, instance->subtypes, request->u.servicereg.num_subtypes, request->u.servicereg.InterfaceID, regservice_callback, instance);
 
 	if (result) free_service_instance(instance);
@@ -2069,13 +2057,16 @@ mDNSexport void udsserver_handle_configchange(mDNS *const m)
 
 	for (req = all_requests; req; req = req->next)
 		if (req->terminate == regservice_termination_callback)
-			for (ptr = req->u.servicereg.instances; ptr; ptr = ptr->next)
-				if (ptr->autoname && !SameDomainLabelCS(ptr->name.c, m->nicelabel.c))
+			if (req->u.servicereg.autoname && !SameDomainLabelCS(req->u.servicereg.name.c, m->nicelabel.c))
+				{
+				req->u.servicereg.name = m->nicelabel;
+				for (ptr = req->u.servicereg.instances; ptr; ptr = ptr->next)
 					{
 					ptr->renameonmemfree = 1;
 					if (mDNS_DeregisterService(m, &ptr->srs))	// If service deregistered already, we can re-register immediately
 						regservice_callback(m, &ptr->srs, mStatus_MemFree);
 					}
+				}
 
 	// Let the platform layer get the current DNS information
 	mDNSPlatformGetDNSConfig(mDNSNULL, &regDomain, &browseDomains);
