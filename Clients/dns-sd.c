@@ -665,6 +665,7 @@ static void DNSSD_API MyRegisterRecordCallback(DNSServiceRef service, DNSRecordR
 		default:                          printf("Error %d\n", errorCode); break;
 		}
 	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
+	// DNSServiceRemoveRecord(service, record, 0); to test record removal
 	}
 
 static unsigned long getip(const char *const name)
@@ -889,8 +890,9 @@ int main(int argc, char **argv)
 					}
 #if HAS_NAT_PMP_API
 		case 'X':   {
-					if (argc != optind+4) goto Fail;
-					else
+					if (argc == optind)	// If no arguments, just fetch IP address
+						err = DNSServiceNATPortMappingCreate(&client, 0, 0, 0, 0, 0, 0, port_mapping_create_reply, NULL);
+					else if (argc == optind+4)
 						{
 						uint16_t PrivatePortAsNumber = atoi(argv[optind+1]);
 						uint16_t PublicPortAsNumber  = atoi(argv[optind+2]);
@@ -898,6 +900,7 @@ int main(int argc, char **argv)
 						Opaque16 mapPublicPort       = { { PublicPortAsNumber  >> 8, PublicPortAsNumber  & 0xFF } };
 						err = DNSServiceNATPortMappingCreate(&client, 0, 0, GetProtocol(argv[optind+0]), mapPrivatePort.NotAnInteger, mapPublicPort.NotAnInteger, atoi(argv[optind+3]), port_mapping_create_reply, NULL);
 						}
+					else goto Fail;
 					break;
 		            }
 #endif
