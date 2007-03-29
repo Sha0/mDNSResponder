@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.317  2007/03/29 00:09:31  cheshire
+Improve "uDNS_InitLongLivedQuery" log message
+
 Revision 1.316  2007/03/28 21:16:27  cheshire
 Remove DumpPacket() call now that OPT pseudo-RR rrclass bug is fixed
 
@@ -3977,7 +3980,7 @@ mDNSexport mStatus uDNS_InitLongLivedQuery(mDNS * const m, DNSQuestion * const q
 	question->LastQTime     = m->timenow;
     question->llq           = info;
 
-	LogOperation("uDNS_InitLongLivedQuery: %##s (%s) %p", question->qname.c, DNSTypeName(question->qtype), question->Private);
+	LogOperation("uDNS_InitLongLivedQuery: %##s %s %s", question->qname.c, DNSTypeName(question->qtype), question->Private ? "(Private)" : "");
 
     err = StartGetZoneData(m, &question->qname, lookupLLQSRV, startLLQHandshakeCallback, info);
 
