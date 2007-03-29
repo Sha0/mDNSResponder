@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.269  2007/03/29 01:31:44  cheshire
+Faulty logic was incorrectly suppressing some NAT port mapping callbacks
+
 Revision 1.268  2007/03/29 00:13:58  cheshire
 Remove unnecessary fields from service_instance structure: autoname, autorename, allowremotequery, name
 
@@ -2692,15 +2695,9 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 	if (request->u.portmapping.NATAddrinfo == n)
 		{
 		mDNSBool ret;
-
 		request->u.portmapping.addr = zerov4Addr;
-
 		ret = uDNS_HandleNATQueryAddrReply(n, m, pkt, &request->u.portmapping.addr, &err);
-
-		if (!ret)
-			{
-			return ret;
-			}
+		if (!ret) return ret;
 
 		if (err)
 			{
@@ -2731,18 +2728,13 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 		}
 	else if (request->u.portmapping.NATMapinfo == n)
 		{
-		mDNSBool ret;
-
-		ret = uDNS_HandleNATPortMapReply(n, m, pkt);
+		mDNSBool ret = uDNS_HandleNATPortMapReply(n, m, pkt);
 
 		switch (n->state)
 			{
 			case NATState_Init:
 			case NATState_Request:
-			case NATState_Refresh:
-				{
-				return ret;
-				}
+			case NATState_Refresh: return ret;
 
 			case NATState_Deleted:
 				{
@@ -2774,7 +2766,8 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 		return mDNSfalse;
 		}
 
-	if (!request->u.portmapping.privatePort.NotAnInteger || request->u.portmapping.receivedPublicPort.NotAnInteger)
+	// Only return a raw address lookup result if the client is not also requesting a port mapping too
+	if (request->u.portmapping.NATMapinfo == n || request->u.portmapping.protocol == 0)
 		{
 		// calculate reply data length
 		replyLen = sizeof(DNSServiceFlags);
@@ -2782,15 +2775,15 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 		replyLen += sizeof(DNSServiceErrorType);
 		replyLen += 2 * sizeof(uint16_t);  // publicAddress + privateAddress
 		replyLen += sizeof(uint8_t);       // protocol
-
+	
 		rep = create_reply(port_mapping_create_reply_op, replyLen, request);
-
+	
 		rep->rhdr->flags = dnssd_htonl(0);
 		rep->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(m, request->u.portmapping.interface_id));
 		rep->rhdr->error = dnssd_htonl(kDNSServiceErr_NoError);
-
+	
 		data = rep->sdata;
-
+	
 		*data++ = request->u.portmapping.addr.b[0];
 		*data++ = request->u.portmapping.addr.b[1];
 		*data++ = request->u.portmapping.addr.b[2];
@@ -2801,7 +2794,7 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 		*data++ = request->u.portmapping.receivedPublicPort.b[0];
 		*data++ = request->u.portmapping.receivedPublicPort.b[1];
 		put_uint32(request->u.portmapping.receivedTTL, &data);
-
+	
 		append_reply(request, rep);
 		}
 
