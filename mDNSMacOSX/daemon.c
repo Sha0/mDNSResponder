@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.298  2007/03/30 21:51:45  cheshire
+Minor code tidying
+
 Revision 1.297  2007/03/27 22:47:19  cheshire
 On memory corruption, if ForceAlerts is set, force a crash to get a stack trace
 
@@ -1107,18 +1110,11 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const srs, mStatus r
 			DNSServiceRegistration *r;
 			for (r = DNSServiceRegistrationList; r; r = r->next)
 				{
-				ServiceInstance *sp = r->regs, *prev = NULL;
-				while (sp)
+				ServiceInstance **sp = &r->regs;
+				while (*sp)
 					{
-					if (sp == si)
-						{
-						LogMsg("RegCallback: %##s Still in DNSServiceRegistration list; removing now", srs->RR_SRV.resrec.name->c);
-						if (prev) prev->next = sp->next;
-						else r->regs = sp->next;
-						break;
-						}
-					prev = sp;
-					sp = sp->next;
+					if (*sp == si) { LogMsg("RegCallback: %##s Still in list; removing", srs->RR_SRV.resrec.name->c); *sp = (*sp)->next; break; }
+					sp = &(*sp)->next;
 					}
 			    }
 			// END SANITY CHECK
@@ -1180,24 +1176,20 @@ mDNSexport void mDNSPlatformDefaultRegDomainChanged(const domainname *d, mDNSBoo
 		if (reg->DefaultDomain)
 			{
 			if (add)
-				{
 				AddServiceInstance(reg, d);
-				}
 			else
 				{
-				ServiceInstance *si = reg->regs, *prev = NULL;
-				while (si)
+				ServiceInstance **si = &reg->regs;
+				while (*si)
 					{
-					if (SameDomainName(&si->domain, d))
+					if (SameDomainName(&(*si)->domain, d))
 						{
-						if (prev) prev->next = si->next;
-						else reg->regs = si->next;
-						if (mDNS_DeregisterService(&mDNSStorage, &si->srs))
-							FreeServiceInstance(si);  // only free memory synchronously on error
+						ServiceInstance *s = *si;
+						*si = (*si)->next;
+						if (mDNS_DeregisterService(&mDNSStorage, &s->srs)) FreeServiceInstance(s);  // only free memory synchronously on error
 						break;
 						}
-					prev = si;
-					si = si->next;
+					si = &(*si)->next;
 					}
 				if (!si) debugf("Requested removal of default domain %##s not in client %5d's list", d, reg->ClientMachPort); // normal if registration failed
 				}
