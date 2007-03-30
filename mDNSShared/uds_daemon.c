@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.270  2007/03/30 21:55:30  cheshire
+Added comments
+
 Revision 1.269  2007/03/29 01:31:44  cheshire
 Faulty logic was incorrectly suppressing some NAT port mapping callbacks
 
@@ -2667,12 +2670,10 @@ mDNSlocal mStatus handle_setdomain_request(request_state *request)
 
 mDNSlocal void port_mapping_create_termination_callback(request_state *request)
 	{
-	mDNS_Lock(&mDNSStorage);
+	mDNS_Lock(&mDNSStorage);	// %%% BUG %%% Should not be trying to grab mDNSCore internal lock here. Should only be using supported public APIs.
 
 	if (request->u.portmapping.NATAddrinfo)
-		{
 		uDNS_FreeNATInfo(&mDNSStorage, request->u.portmapping.NATAddrinfo);
-		}
 
 	if (request->u.portmapping.NATMapinfo)
 		{
@@ -2694,6 +2695,12 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 
 	if (request->u.portmapping.NATAddrinfo == n)
 		{
+		// %%% BUG %%%
+		// This code shouldn't be here.
+		// The mDNSCore code is supposed to provide the core functionality.
+		// On top of that core, various client code can run.
+		// This UDS client (that wraps the core APIs and exports them across a Unix Domain Socket) is just one of the various mDNSCore clients.
+		// It shouldn't be sending and receiving packets. It should just call an mDNSCore API, and then get a callback when the work is done.
 		mDNSBool ret;
 		request->u.portmapping.addr = zerov4Addr;
 		ret = uDNS_HandleNATQueryAddrReply(n, m, pkt, &request->u.portmapping.addr, &err);
@@ -2710,13 +2717,9 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 		if (request->u.portmapping.privatePort.NotAnInteger && !request->u.portmapping.NATMapinfo)
 			{
 			if (request->u.portmapping.protocol & kDNSServiceProtocol_UDP)
-				{
 				request->u.portmapping.NATMapinfo = uDNS_AllocNATInfo(m, NATOp_MapUDP, request->u.portmapping.privatePort, request->u.portmapping.requestedPublicPort, request->u.portmapping.requestedTTL, port_mapping_create_reply);
-				}
 			else if (request->u.portmapping.protocol & kDNSServiceProtocol_TCP)
-				{
 				request->u.portmapping.NATMapinfo = uDNS_AllocNATInfo(m, NATOp_MapTCP, request->u.portmapping.privatePort, request->u.portmapping.requestedPublicPort, request->u.portmapping.requestedTTL, port_mapping_create_reply);
-				}
 
 			if (!request->u.portmapping.NATMapinfo) { deliver_async_error(request, port_mapping_create_reply_op, mStatus_NoMemoryErr); return mDNStrue; }
 			request->u.portmapping.NATMapinfo->context = request;
@@ -2835,7 +2838,7 @@ mDNSlocal mStatus handle_port_mapping_create_request(request_state *request)
 		if (!(protocol & (kDNSServiceProtocol_UDP | kDNSServiceProtocol_TCP))) return(mStatus_BadParamErr);
 		}
 
-	mDNS_Lock(&mDNSStorage);
+	mDNS_Lock(&mDNSStorage);	// %%% BUG %%% Should not be trying to grab mDNSCore internal lock here. Should only be using supported public APIs.
 
 	request->u.portmapping.interface_id                = InterfaceID;
 	request->u.portmapping.protocol                    = protocol;
