@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.383  2007/03/31 00:13:48  cheshire
+Remove LogMsg
+
 Revision 1.382  2007/03/28 21:01:29  cheshire
 <rdar://problem/4743285> Remove inappropriate use of IsPrivateV4Addr()
 
@@ -2521,7 +2524,7 @@ mDNSexport void mDNSPlatformSetDNSServers(mDNS *const m)
 // Get the search domains via OS X resolver routines or System Configuration routines
 mDNSexport void mDNSPlatformSetSearchDomainList(void)
 	{
-	LogMsg("mDNSPlatformSetSearchDomainList");
+	LogOperation("mDNSPlatformSetSearchDomainList");
 
 	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:mDNSPlatformSetSearchDomainList"), NULL, NULL);
 	if (store)
