@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.319  2007/03/31 01:10:53  cheshire
+Add debugging
+
 Revision 1.318  2007/03/31 00:17:11  cheshire
 Remove some LogMsgs
 
@@ -510,12 +513,12 @@ mDNSexport DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const n
 		for (ptr = m->AuthInfoList; ptr; ptr = ptr->next)
 			if (SameDomainName(&ptr->domain, n))
 				{
-				LogOperation("GetAuthInfoForName %##s %##s %##s", name->c, ptr->domain.c, ptr->keyname.c);
+				LogMsg("GetAuthInfoForName %##s %##s %##s", name->c, ptr->domain.c, ptr->keyname.c);
 				return(ptr);
 				}
 		n = (const domainname *)(n->c + 1 + n->c[0]);
 		}
-	LogOperation("GetAuthInfoForName none found for %##s", name->c);
+	LogMsg("GetAuthInfoForName none found for %##s", name->c);
 	return mDNSNULL;
 	}
 
@@ -4201,7 +4204,7 @@ mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 	if (!(ptr = putDeletionRecord(&msg, ptr, &rr->resrec))) { err = mStatus_UnknownErr; goto exit; }
 
 	rr->state = regState_DeregPending;
-	authInfo            = GetAuthInfoForName(m, rr->resrec.name);
+	authInfo  = GetAuthInfoForName(m, rr->resrec.name);
 
 	if (rr->Private)
 		{

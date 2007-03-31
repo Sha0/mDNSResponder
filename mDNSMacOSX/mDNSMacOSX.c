@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.384  2007/03/31 01:10:53  cheshire
+Add debugging
+
 Revision 1.383  2007/03/31 00:13:48  cheshire
 Remove LogMsg
 
@@ -2857,7 +2860,7 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 				for (ptr = m->AuthInfoList; ptr; ptr = ptr->next)
 					if (SameDomainName(&ptr->domain, &domain)) break;
 
-				LogOperation("SetDomainSecrets: %##s %##s", &domain.c, &keyname.c);
+				LogMsg("SetDomainSecrets: %##s %##s", &domain.c, &keyname.c);
 
 				if (ptr)	// If we found an entry for this domain already in our list, just clear its deltime flag and update key data
 					{
@@ -3017,6 +3020,7 @@ mDNSlocal OSStatus KeychainChanged(SecKeychainEvent keychainEvent, SecKeychainCa
 	if (err) LogMsg("SecKeychainGetPath failed: %d", err);
 	else if (strncmp(SYSTEM_KEYCHAIN_PATH, path, pathLen) == 0)
 		{
+		LogMsg("***   Keychain Changed   ***");
 		pthread_mutex_lock(&m->p->BigMutex);
 		mDNS_Lock(m);
 		SetDomainSecrets((mDNS*)context);
