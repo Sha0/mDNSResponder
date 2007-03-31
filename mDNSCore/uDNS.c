@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.318  2007/03/31 00:17:11  cheshire
+Remove some LogMsgs
+
 Revision 1.317  2007/03/29 00:09:31  cheshire
 Improve "uDNS_InitLongLivedQuery" log message
 
@@ -1573,7 +1576,7 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info, mDNSBool defer)
 	mStatus err = mStatus_NoError;
 	mDNSs32 timenow = m->timenow;
 
-	LogMsg("startLLQHandshake %#a %d %#a %d", &m->AdvertisedV4, mDNSv4AddrIsPrivate(&m->AdvertisedV4.ip.v4), &info->servAddr, mDNSAddrIsv4Private(&info->servAddr));
+	LogOperation("startLLQHandshake %#a %d %#a %d", &m->AdvertisedV4, mDNSv4AddrIsPrivate(&m->AdvertisedV4.ip.v4), &info->servAddr, mDNSAddrIsv4Private(&info->servAddr));
 
 	if (mDNSv4AddrIsPrivate(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsv4Private(&info->servAddr))
 		{
@@ -2271,7 +2274,7 @@ mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srs
 		srs->lease = mDNSfalse;
 		}
 
-	LogMsg("serviceRegistrationCallback %#a %d %#a %d", &m->AdvertisedV4, mDNSv4AddrIsPrivate(&m->AdvertisedV4.ip.v4), &srs->ns, mDNSAddrIsv4Private(&srs->ns));
+	LogOperation("serviceRegistrationCallback %#a %d %#a %d", &m->AdvertisedV4, mDNSv4AddrIsPrivate(&m->AdvertisedV4.ip.v4), &srs->ns, mDNSAddrIsv4Private(&srs->ns));
 
 	if (srs->RR_SRV.resrec.rdata->u.srv.port.NotAnInteger &&
 		mDNSv4AddrIsPrivate(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsv4Private(&srs->ns))
@@ -5005,7 +5008,7 @@ mDNSlocal void WakeServiceRegistrations(mDNS *m)
 mDNSexport void mDNS_AddSearchDomain(const domainname *const domain)
 	{
 	SearchListElem **p;
-	LogMsg("mDNS_AddSearchDomain %##s", domain->c);
+	LogOperation("mDNS_AddSearchDomain %##s", domain->c);
 
 	// Check to see if we already have this domain in our list
 	for (p = &SearchList; *p; p = &(*p)->next)
