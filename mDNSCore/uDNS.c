@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.320  2007/03/31 01:26:13  cheshire
+Take out GetAuthInfoForName syslog message
+
 Revision 1.319  2007/03/31 01:10:53  cheshire
 Add debugging
 
@@ -513,7 +516,7 @@ mDNSexport DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const n
 		for (ptr = m->AuthInfoList; ptr; ptr = ptr->next)
 			if (SameDomainName(&ptr->domain, n))
 				{
-				LogMsg("GetAuthInfoForName %##s %##s %##s", name->c, ptr->domain.c, ptr->keyname.c);
+				LogOperation("GetAuthInfoForName %##s %##s %##s", name->c, ptr->domain.c, ptr->keyname.c);
 				return(ptr);
 				}
 		n = (const domainname *)(n->c + 1 + n->c[0]);
