@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.597  2007/03/31 00:32:32  cheshire
+After skipping OPT and TSIG, clear m->rec.r.resrec.RecordType
+
 Revision 1.596  2007/03/28 20:59:26  cheshire
 <rdar://problem/4743285> Remove inappropriate use of IsPrivateV4Addr()
 
@@ -3859,7 +3862,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		ptr = GetLargeResourceRecord(m, response, ptr, end, InterfaceID, RecordType, &m->rec);
 		if (!ptr) goto exit;		// Break out of the loop and clean up our CacheFlushRecords list before exiting
 		// Don't want to cache OPT or TSIG pseudo-RRs
-		if (m->rec.r.resrec.rrtype == kDNSType_OPT || m->rec.r.resrec.rrtype == kDNSType_TSIG) continue;
+		if (m->rec.r.resrec.rrtype == kDNSType_OPT || m->rec.r.resrec.rrtype == kDNSType_TSIG)
+			{ m->rec.r.resrec.RecordType = 0; continue; }
 		
 		// Temporary:
 		// When we receive uDNS responses, we assume a long cache lifetime --
