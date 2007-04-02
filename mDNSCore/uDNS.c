@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.321  2007/04/02 23:44:09  cheshire
+Minor code tidying
+
 Revision 1.320  2007/03/31 01:26:13  cheshire
 Take out GetAuthInfoForName syslog message
 
@@ -377,7 +380,7 @@ typedef struct SearchListElem
 
 // for domain enumeration and default browsing/registration
 
-static SearchListElem *  SearchList           = mDNSNULL;	// where we search for _browse domains
+static SearchListElem *SearchList           = mDNSNULL;	// where we search for _browse domains
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -521,7 +524,7 @@ mDNSexport DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const n
 				}
 		n = (const domainname *)(n->c + 1 + n->c[0]);
 		}
-	LogMsg("GetAuthInfoForName none found for %##s", name->c);
+	LogOperation("GetAuthInfoForName none found for %##s", name->c);
 	return mDNSNULL;
 	}
 
@@ -573,17 +576,11 @@ mDNSexport NATTraversalInfo *uDNS_AllocNATInfo(mDNS *const m, NATOp_t op, mDNSIP
 	NATTraversalInfo *info = m->NATTraversals;
 
 	for (info = m->NATTraversals; info; info = info->next)
-		{
 		if (info->op == op && info->PrivatePort.NotAnInteger && (info->PrivatePort.NotAnInteger == privatePort.NotAnInteger))
-			{
 			break;
-			}
-		}
 
 	if (info)
-		{
 		info->refs++;
-		}
 	else
 		{
 		info = mDNSPlatformMemAllocate(sizeof(NATTraversalInfo));
@@ -639,17 +636,10 @@ mDNSlocal void SendInitialPMapReq(mDNS *m, NATTraversalInfo *info)
 	return;
 	}
 
-mDNSlocal NATTraversalInfo * AllocLLQNatMap(mDNS *const m, NATOp_t op, mDNSIPPort port, NATResponseHndlr callback)
+mDNSlocal NATTraversalInfo *AllocLLQNatMap(mDNS *const m, NATOp_t op, mDNSIPPort port, NATResponseHndlr callback)
 	{
-	NATTraversalInfo * info;
-
-	info = uDNS_AllocNATInfo(m, op, port, zeroIPPort, 0, callback);
-
-	if (!info)
-		{
-		LogMsg("AllocLLQNatMap: memory exhausted");
-		goto exit;
-		}
+	NATTraversalInfo *info = uDNS_AllocNATInfo(m, op, port, zeroIPPort, 0, callback);
+	if (!info) { LogMsg("AllocLLQNatMap: memory exhausted"); goto exit; }
 
 	if (info->state == NATState_Init)
 		{
@@ -670,7 +660,7 @@ exit:
 // unlink from list, deallocate
 mDNSexport mDNSBool uDNS_FreeNATInfo(mDNS *m, NATTraversalInfo *n)
 	{
-	NATTraversalInfo *ptr, *prev = mDNSNULL;
+	NATTraversalInfo **ptr = &m->NATTraversals;
 	ServiceRecordSet *s = m->ServiceRegistrations;
 
 	// Verify that object is not referenced by any services
@@ -684,18 +674,15 @@ mDNSexport mDNSBool uDNS_FreeNATInfo(mDNS *m, NATTraversalInfo *n)
 		s = s->next;
 		}
 
-	ptr = m->NATTraversals;
-	while (ptr)
+	while (*ptr)
 		{
-		if (ptr == n)
+		if (*ptr == n)
 			{
-			if (prev) prev->next = ptr->next;
-			else m->NATTraversals = ptr->next;
+			*ptr = (*ptr)->next;
 			mDNSPlatformMemFree(n);
 			return mDNStrue;
 			}
-		prev = ptr;
-		ptr = ptr->next;
+		ptr = &(*ptr)->next;
 		}
 	LogMsg("uDNS_FreeNATInfo: NATTraversalInfo not found in list");
 	return mDNSfalse;
@@ -727,7 +714,7 @@ mDNSexport void uDNS_SendNATMsg(NATTraversalInfo *info, mDNS *m)
 	}
 
 // Called from both ReceiveNATAddrResponse and port_mapping_create_reply, when we get a NAT-PMP address request response
-mDNSexport mDNSBool uDNS_HandleNATQueryAddrReply(NATTraversalInfo *n, mDNS * const m, mDNSu8 *pkt, mDNSv4Addr *addr, mStatus *err)
+mDNSexport mDNSBool uDNS_HandleNATQueryAddrReply(NATTraversalInfo *n, mDNS *const m, mDNSu8 *pkt, mDNSv4Addr *addr, mStatus *err)
 	{
 	NATAddrReply *response = (NATAddrReply *)pkt;
 	(void) m;
@@ -751,7 +738,8 @@ mDNSexport mDNSBool uDNS_HandleNATQueryAddrReply(NATTraversalInfo *n, mDNS * con
 		{
 		if (response->err) { LogMsg("uDNS_HandleNATQueryAddrReply: received error %d", response->err); *err = mStatus_NATTraversal; return mDNStrue; }
 		*addr = response->PubAddr;
-		n->state    = NATState_Established;
+		LogOperation("Received public IP address %.4a from NAT.", addr);
+		n->state = NATState_Established;
 		}
 
 	if (mDNSv4AddrIsPrivate(addr)) { LogMsg("uDNS_HandleNATQueryAddrReply: Double NAT"); *err = mStatus_DoubleNAT; }
@@ -765,30 +753,20 @@ mDNSlocal mDNSBool ReceiveNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *
 	mStatus err = mStatus_NoError;
 	AuthRecord *rr = mDNSNULL;
 	mDNSAddr addr;
-	mDNSBool ret;
 
 	rr = n->reg.RecordRegistration;
-	if (!rr)
-		{
-		LogMsg("RegisterHostnameRecord: registration cancelled");
-		return mDNSfalse;
-		}
+	if (!rr) { LogMsg("RegisterHostnameRecord: registration cancelled"); return mDNSfalse; }
 
 	addr.type = mDNSAddrType_IPv4;
 	addr.ip.v4 = rr->resrec.rdata->u.ipv4;
 
-	ret = uDNS_HandleNATQueryAddrReply(n, m, pkt, &addr.ip.v4, &err);
-	if (!ret) return ret;
-	if (err) goto end;
-
-	LogOperation("Received public IP address %#a from NAT.", &addr);
-
-	rr->resrec.rdata->u.ipv4 = addr.ip.v4;	// replace rdata w/ public address
-	mDNS_Register_internal(m, rr);
-
-end:
-
-	if (err)
+	if (!uDNS_HandleNATQueryAddrReply(n, m, pkt, &addr.ip.v4, &err)) return mDNSfalse;
+	if (!err)
+		{
+		rr->resrec.rdata->u.ipv4 = addr.ip.v4;	// replace rdata w/ public address
+		mDNS_Register_internal(m, rr);
+		}
+	else
 		{
 		uDNS_FreeNATInfo(m, n);
 		if (rr)
@@ -834,7 +812,7 @@ mDNSlocal void RefreshNATMapping(NATTraversalInfo *n, mDNS *m)
 	uDNS_SendNATMsg(n, m);
 	}
 
-mDNSlocal void StartLLQPolling(mDNS * const m, LLQ_Info * info)
+mDNSlocal void StartLLQPolling(mDNS *const m, LLQ_Info *info)
 	{
 	LogOperation("StartLLQPolling: %##s", info->question->qname.c);
 	info->state = LLQ_Poll;
@@ -843,38 +821,21 @@ mDNSlocal void StartLLQPolling(mDNS * const m, LLQ_Info * info)
 	SetNextQueryTime(m, info->question);
 	}
 
-mDNSlocal void StartLLQNatMap(mDNS *m, LLQ_Info * llq)
+mDNSlocal void StartLLQNatMap(mDNS *m, LLQ_Info *llq)
 	{
 	if (llq->state == LLQ_NatMapWaitTCP)
 		{
 		llq->NATInfoTCP = AllocLLQNatMap(m, NATOp_MapTCP, llq->eventPort, uDNS_HandleNATPortMapReply);
-
-		if (!llq->NATInfoTCP)
-			{
-			LogMsg("StartLLQNatMap: memory exhausted");
-			goto exit;
-			}
+		if (!llq->NATInfoTCP) { LogMsg("StartLLQNatMap: memory exhausted"); goto exit; }
 		}
 	else
 		{
-		if (llq->question->Private)
-			{
-			llq->NATInfoUDP = AllocLLQNatMap(m, NATOp_MapUDP, llq->eventPort, uDNS_HandleNATPortMapReply);
-			}
-		else
-			{
-			llq->NATInfoUDP = AllocLLQNatMap(m, NATOp_MapUDP, m->UnicastPort4, uDNS_HandleNATPortMapReply);
-			}
-
-		if (!llq->NATInfoUDP)
-			{
-			LogMsg("StartLLQNatMap: memory exhausted");
-			goto exit;
-			}
+		if (llq->question->Private) llq->NATInfoUDP = AllocLLQNatMap(m, NATOp_MapUDP, llq->eventPort,  uDNS_HandleNATPortMapReply);
+		else                        llq->NATInfoUDP = AllocLLQNatMap(m, NATOp_MapUDP, m->UnicastPort4, uDNS_HandleNATPortMapReply);
+		if (!llq->NATInfoUDP) { LogMsg("StartLLQNatMap: memory exhausted"); goto exit; }
 		}
 
 exit:
-
 	return;
 	}
 
@@ -1066,7 +1027,7 @@ mDNSlocal mDNSBool recvLLQResponse(mDNS *m, DNSMessage *msg, const mDNSu8 *end, 
 	return mDNSfalse;
 	}
 
-mDNSlocal void tcpCallback(TCPSocket *sock, void * context, mDNSBool ConnectionEstablished, mStatus err)
+mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEstablished, mStatus err)
 	{
 	tcpInfo_t		*	tcpInfo = (tcpInfo_t *)context;
 	mDNSBool			closed = mDNSfalse;
@@ -1343,7 +1304,7 @@ mDNSlocal void hndlRequestChallenge(mDNS *const m, const LLQOptData *const llq, 
 		{
 		case LLQErr_NoError: break;
 		case LLQErr_ServFull:
-			LogMsg("hndlRequestChallenge - received ServFull from server for LLQ %##s.  Retry in %lu sec", q->qname.c, llq->lease);
+			LogMsg("hndlRequestChallenge - received ServFull from server for LLQ %##s Retry in %lu sec", q->qname.c, llq->lease);
 			q->LastQTime     = m->timenow;
 			q->ThisQInterval = ((mDNSs32)llq->lease * mDNSPlatformOneSecond);
 			info->state = LLQ_Retry;
@@ -1554,7 +1515,7 @@ exit:
 	if (err) StartLLQPolling(m, info);
 	}
 
-mDNSlocal void RemoveLLQNatMappings(mDNS * m, LLQ_Info * llq)
+mDNSlocal void RemoveLLQNatMappings(mDNS *m, LLQ_Info *llq)
 	{
 	if (llq->NATInfoTCP && (--llq->NATInfoTCP->refs == 0))
 		{
@@ -1592,7 +1553,7 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info, mDNSBool defer)
 		}
 
 	if (info->ntries++ >= kLLQ_MAX_TRIES)
-		{ LogMsg("startLLQHandshake: %d failed attempts for LLQ %##s. Polling.", kLLQ_MAX_TRIES, q->qname.c); err = mStatus_UnknownErr; goto exit; }
+		{ LogMsg("startLLQHandshake: %d failed attempts for LLQ %##s Polling.", kLLQ_MAX_TRIES, q->qname.c); err = mStatus_UnknownErr; goto exit; }
 
     // set llq rdata
 	llqData.vers  = kLLQ_Vers;
@@ -1624,7 +1585,7 @@ exit:
 	if (err) StartLLQPolling(m, info);
 	}
 
-mDNSlocal void LLQNatMapComplete(mDNS *m, NATTraversalInfo * n)
+mDNSlocal void LLQNatMapComplete(mDNS *m, NATTraversalInfo *n)
 	{
 	if (!n) { LogMsg("Error: LLQNatMapComplete called with NULL NATTraversalInfo"); return; }
 	if (n->state != NATState_Established && n->state != NATState_Legacy && n->state != NATState_Error)
@@ -1726,7 +1687,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	NATTraversalInfo *nat = srs->NATinfo;
 	mDNSBool mapped = mDNSfalse;
 	const domainname *target;
-	DomainAuthInfo * authInfo;
+	DomainAuthInfo *authInfo;
 	AuthRecord *srv = &srs->RR_SRV;
 	mDNSu32 i;
 
@@ -2297,7 +2258,8 @@ error:
 	// NOTE: not safe to touch any client structures here
 	}
 
-// Called via function pointer when we get a NAT-PMP port request response
+// Called via function pointer when we get a NAT-PMP port request response,
+// or (incorrectly) from port_mapping_create_reply() in uds_daemon.c
 mDNSexport mDNSBool uDNS_HandleNATPortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt)
 	{
 	ServiceRecordSet *srs = n->reg.ServiceRegistration;
@@ -2359,7 +2321,7 @@ mDNSexport mDNSBool uDNS_HandleNATPortMapReply(NATTraversalInfo *n, mDNS *m, mDN
 
 	n->PublicPort = reply->pub;
 	n->request.PortReq.pub = reply->pub; // Remember allocated port for future refreshes
-	LogOperation("uDNS_HandleNATPortMapReply %d", mDNSVal16(n->PublicPort));
+	LogOperation("uDNS_HandleNATPortMapReply %p %X %d %d", n, reply->opcode, mDNSVal16(reply->priv), mDNSVal16(reply->pub));
 
 	n->retry = m->timenow + ((mDNSs32)n->lease * mDNSPlatformOneSecond / 2);	// retry half way to expiration
 
@@ -2431,7 +2393,7 @@ mDNSexport void uDNS_DeleteNATPortMapping(mDNS *m, NATTraversalInfo *nat)
 // if LLQ NAT context unreferenced, delete the mapping
 mDNSlocal void CheckForUnreferencedLLQMapping(mDNS *m)
 	{
-	NATTraversalInfo * n = m->NATTraversals;
+	NATTraversalInfo *n = m->NATTraversals;
 	DNSQuestion *q;
 
 	while (n)
@@ -2463,7 +2425,7 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 	mDNSOpaque16 id;
 	mDNSu8 *ptr = msg.data;
 	mDNSu8 *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
-	DomainAuthInfo * authInfo;
+	DomainAuthInfo *authInfo;
 	mStatus err = mStatus_UnknownErr;
 	mDNSu32 i;
 
@@ -3072,7 +3034,7 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 	DNSMessage msg;
 	mDNSu8 *ptr = msg.data;
 	mDNSu8 *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
-	DomainAuthInfo * authInfo;
+	DomainAuthInfo *authInfo;
 	mStatus err = mStatus_UnknownErr;
 
 	rr->id = mDNS_NewMessageID(m);
@@ -3201,7 +3163,7 @@ exit:
 		}
 	}
 
-mDNSlocal void hndlServiceUpdateReply(mDNS * const m, ServiceRecordSet *srs,  mStatus err)
+mDNSlocal void hndlServiceUpdateReply(mDNS *const m, ServiceRecordSet *srs,  mStatus err)
 	{
 	mDNSBool InvokeCallback = mDNSfalse;
 	NATTraversalInfo *nat = srs->NATinfo;
@@ -3871,11 +3833,11 @@ exit:
 		}
 	}
 
-mDNSlocal void startPrivateQueryCallback(mStatus err, mDNS *const m, void * context, const zoneData_t *zoneInfo)
+mDNSlocal void startPrivateQueryCallback(mStatus err, mDNS *const m, void *context, const zoneData_t *zoneInfo)
 	{
-	DNSQuestion * question = (DNSQuestion *) context;
-	tcpInfo_t * info;
-	DomainAuthInfo * authInfo = mDNSNULL;
+	DNSQuestion *question = (DNSQuestion *) context;
+	tcpInfo_t *info;
+	DomainAuthInfo *authInfo = mDNSNULL;
 	TCPSocket *	sock = mDNSNULL;
 	mDNSIPPort		port = zeroIPPort;
 
@@ -3964,7 +3926,7 @@ exit:
 		}
 	}
 
-mDNSexport mStatus uDNS_InitLongLivedQuery(mDNS * const m, DNSQuestion * const question)
+mDNSexport mStatus uDNS_InitLongLivedQuery(mDNS *const m, DNSQuestion *const question)
     {
     LLQ_Info *info;
     mStatus err = mStatus_NoError;
@@ -4012,7 +3974,7 @@ exit:
 	}
 
 // stopLLQ happens IN ADDITION to stopQuery
-void uDNS_StopLongLivedQuery(mDNS * const m, DNSQuestion * const question)
+void uDNS_StopLongLivedQuery(mDNS *const m, DNSQuestion *const question)
 	{
 	LLQ_Info *info = question->llq;
 	(void)m;	// unused
@@ -4196,7 +4158,7 @@ mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 	{
 	DNSMessage msg;
 	mDNSu8 *ptr = msg.data;
-	DomainAuthInfo * authInfo;
+	DomainAuthInfo *authInfo;
 	mDNSu8 *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
 	mStatus err = mStatus_NoError;
 
@@ -4566,7 +4528,7 @@ mDNSlocal mDNSs32 CheckNATMappings(mDNS *m, mDNSs32 timenow)
 	return nextevent;
 	}
 
-mDNSexport void uDNS_CheckQuery(mDNS * const m, DNSQuestion * q)
+mDNSexport void uDNS_CheckQuery(mDNS *const m, DNSQuestion *q)
 	{
 	LLQ_Info *llq;
 	mDNSs32 sendtime;
@@ -5182,7 +5144,7 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m)
 	return mStatus_NoError;
 	}
 
-mDNSexport mStatus uDNS_RegisterSearchDomains(mDNS * const m)
+mDNSexport mStatus uDNS_RegisterSearchDomains(mDNS *const m)
 	{
 	m->RegisterSearchDomains = mDNStrue;
 	return RegisterSearchDomains(m);
