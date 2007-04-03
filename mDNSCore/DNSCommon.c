@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.139  2007/04/03 19:18:39  cheshire
+Use mDNSSameIPv4Address (and similar) instead of accessing internal fields directly
+
 Revision 1.138  2007/03/28 21:14:08  cheshire
 The rrclass field of an OPT pseudo-RR holds the sender's UDP payload size
 
@@ -404,11 +407,8 @@ mDNSexport mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip)
 	{
 	switch(ip->type)
 		{
-		case mDNSAddrType_IPv4: return(mDNSBool)(ip->ip.v4.NotAnInteger == AllDNSLinkGroup_v4.ip.v4.NotAnInteger);
-		case mDNSAddrType_IPv6: return(mDNSBool)(ip->ip.v6.l[0] == AllDNSLinkGroup_v6.ip.v6.l[0] &&
-												 ip->ip.v6.l[1] == AllDNSLinkGroup_v6.ip.v6.l[1] &&
-												 ip->ip.v6.l[2] == AllDNSLinkGroup_v6.ip.v6.l[2] &&
-												 ip->ip.v6.l[3] == AllDNSLinkGroup_v6.ip.v6.l[3] );
+		case mDNSAddrType_IPv4: return(mDNSBool)(mDNSSameIPv4Address(ip->ip.v4, AllDNSLinkGroup_v4.ip.v4));
+		case mDNSAddrType_IPv6: return(mDNSBool)(mDNSSameIPv6Address(ip->ip.v6, AllDNSLinkGroup_v6.ip.v6));
 		default: return(mDNSfalse);
 		}
 	}
@@ -1099,10 +1099,10 @@ mDNSexport mDNSBool SameRDataBody(const ResourceRecord *const r1, const RDataBod
 		case kDNSType_CNAME:// Same as PTR
 		case kDNSType_PTR:	return(SameDomainName(&r1->rdata->u.name, &r2->name));
 
-		case kDNSType_SRV:	return(mDNSBool)(  	r1->rdata->u.srv.priority          == r2->srv.priority          &&
-												r1->rdata->u.srv.weight            == r2->srv.weight            &&
-												r1->rdata->u.srv.port.NotAnInteger == r2->srv.port.NotAnInteger &&
-												SameDomainName(&r1->rdata->u.srv.target, &r2->srv.target)       );
+		case kDNSType_SRV:	return(mDNSBool)(  	r1->rdata->u.srv.priority          == r2->srv.priority  &&
+												r1->rdata->u.srv.weight            == r2->srv.weight    &&
+												mDNSSameIPPort(r1->rdata->u.srv.port, r2->srv.port)     &&
+												SameDomainName(&r1->rdata->u.srv.target, &r2->srv.target));
 
 		default:			return(mDNSPlatformMemSame(r1->rdata->u.data, r2->data, r1->rdlength));
 		}
@@ -1138,7 +1138,7 @@ mDNSexport mDNSBool SameNameRecordAnswersQuestion(const ResourceRecord *const rr
 		rr->InterfaceID != q->InterfaceID) return(mDNSfalse);
 
 	// If ResourceRecord received via multicast, but question was unicast, then shouldn't use record to answer this question
-	if (rr->InterfaceID && q->TargetQID.NotAnInteger) return(mDNSfalse);
+	if (rr->InterfaceID && !mDNSOpaque16IsZero(q->TargetQID)) return(mDNSfalse);
 
 	// RR type CNAME matches any query type. QTYPE ANY matches any RR type. QCLASS ANY matches any RR class.
 	if (rr->rrtype != kDNSType_CNAME && rr->rrtype  != q->qtype  && q->qtype  != kDNSQType_ANY ) return(mDNSfalse);
@@ -1162,7 +1162,7 @@ mDNSexport mDNSBool ResourceRecordAnswersQuestion(const ResourceRecord *const rr
 		rr->InterfaceID != q->InterfaceID) return(mDNSfalse);
 
 	// If ResourceRecord received via multicast, but question was unicast, then shouldn't use record to answer this question
-	if (rr->InterfaceID && q->TargetQID.NotAnInteger) return(mDNSfalse);
+	if (rr->InterfaceID && !mDNSOpaque16IsZero(q->TargetQID)) return(mDNSfalse);
 
 	// RR type CNAME matches any query type. QTYPE ANY matches any RR type. QCLASS ANY matches any RR class.
 	if (rr->rrtype != kDNSType_CNAME && rr->rrtype  != q->qtype  && q->qtype  != kDNSQType_ANY ) return(mDNSfalse);

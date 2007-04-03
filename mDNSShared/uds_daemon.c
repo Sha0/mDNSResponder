@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.271  2007/04/03 19:22:32  cheshire
+Use mDNSSameIPv4Address (and similar) instead of accessing internal fields directly
+
 Revision 1.270  2007/03/30 21:55:30  cheshire
 Added comments
 
@@ -1200,7 +1203,7 @@ mDNSexport int CountExistingRegistrations(domainname *srv, mDNSIPPort port)
 	AuthRecord *rr;
 	for (rr = mDNSStorage.ResourceRecords; rr; rr=rr->next)
 		if (rr->resrec.rrtype == kDNSType_SRV &&
-			rr->resrec.rdata->u.srv.port.NotAnInteger == port.NotAnInteger &&
+			mDNSSameIPPort(rr->resrec.rdata->u.srv.port, port) &&
 			SameDomainName(rr->resrec.name, srv))
 			count++;
 	return(count);
@@ -1811,7 +1814,7 @@ mDNSlocal mStatus handle_regservice_request(request_state *request)
 	// Some clients use mDNS for lightweight copy protection, registering a pseudo-service with
 	// a port number of zero. When two instances of the protected client are allowed to run on one
 	// machine, we don't want to see misleading "Bogus client" messages in syslog and the console.
-	if (request->u.servicereg.port.NotAnInteger)
+	if (!mDNSIPPortIsZero(request->u.servicereg.port))
 		{
 		int count = CountExistingRegistrations(&srv, request->u.servicereg.port);
 		if (count)
@@ -2714,7 +2717,7 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 			return mDNStrue;
 			}
 
-		if (request->u.portmapping.privatePort.NotAnInteger && !request->u.portmapping.NATMapinfo)
+		if (!mDNSIPPortIsZero(request->u.portmapping.privatePort) && !request->u.portmapping.NATMapinfo)
 			{
 			if (request->u.portmapping.protocol & kDNSServiceProtocol_UDP)
 				request->u.portmapping.NATMapinfo = uDNS_AllocNATInfo(m, NATOp_MapUDP, request->u.portmapping.privatePort, request->u.portmapping.requestedPublicPort, request->u.portmapping.requestedTTL, port_mapping_create_reply);
@@ -2830,11 +2833,11 @@ mDNSlocal mStatus handle_port_mapping_create_request(request_state *request)
 	if (protocol == 0)
 		{
 		// If protocol == 0 (i.e. just request public address) then privatePort, publicPort, ttl must be zero too
-		if (privatePort.NotAnInteger || publicPort.NotAnInteger || ttl) return(mStatus_BadParamErr);
+		if (!mDNSIPPortIsZero(privatePort) || !mDNSIPPortIsZero(publicPort) || ttl) return(mStatus_BadParamErr);
 		}
 	else
 		{
-		if (!privatePort.NotAnInteger) return(mStatus_BadParamErr);
+		if (mDNSIPPortIsZero(privatePort)) return(mStatus_BadParamErr);
 		if (!(protocol & (kDNSServiceProtocol_UDP | kDNSServiceProtocol_TCP))) return(mStatus_BadParamErr);
 		}
 
@@ -2864,7 +2867,7 @@ mDNSlocal mStatus handle_port_mapping_create_request(request_state *request)
 	req->vers   = NATMAP_VERS;
 	req->opcode = NATOp_AddrRequest;
 
-	if (!mDNSStorage.Router.ip.v4.NotAnInteger)
+	if (mDNSIPv4AddressIsZero(mDNSStorage.Router.ip.v4))
 		debugf("No router.  Will retry NAT traversal in %ld ticks", NATMAP_INIT_RETRY);
 	else
 		uDNS_SendNATMsg(request->u.portmapping.NATAddrinfo, &mDNSStorage);
@@ -3467,7 +3470,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 		if (q->ThisQInterval) CacheActive++;
 		LogMsgNoIdent("%6d%6d %-6s%s %-6s%##s",
 			i, n, info ? info->ifname : "",
-			!q->TargetQID.NotAnInteger ? " " : q->llq ? "L" : "O", // mDNS, long-lived, or one-shot query?
+			mDNSOpaque16IsZero(q->TargetQID) ? " " : q->llq ? "L" : "O", // mDNS, long-lived, or one-shot query?
 			DNSTypeName(q->qtype), q->qname.c);
 		usleep(1000);	// Limit rate a little so we don't flood syslog too fast
 		}
