@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.272  2007/04/03 20:10:32  cheshire
+Show ADD/RMV in DNSServiceQueryRecord log message instead of just "RESULT"
+
 Revision 1.271  2007/04/03 19:22:32  cheshire
 Use mDNSSameIPv4Address (and similar) instead of accessing internal fields directly
 
@@ -2391,7 +2394,7 @@ mDNSlocal void queryrecord_result_callback(mDNS *const m, DNSQuestion *question,
 	size_t len;
 	(void)m; // Unused
 
-	LogOperation("%3d: DNSServiceQueryRecord(%##s, %s) RESULT %s", req->sd, question->qname.c, DNSTypeName(question->qtype), RRDisplayString(m, answer));
+	LogOperation("%3d: DNSServiceQueryRecord(%##s, %s) %s %s", req->sd, question->qname.c, DNSTypeName(question->qtype), AddRecord ? "ADD" : "RMV", RRDisplayString(m, answer));
 	//mDNS_StopQuery(m, question);
 
 	if (answer->rdlength == 0)
