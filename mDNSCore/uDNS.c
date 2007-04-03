@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.322  2007/04/03 19:53:06  cheshire
+Use mDNSSameIPPort (and similar) instead of accessing internal fields directly
+
 Revision 1.321  2007/04/02 23:44:09  cheshire
 Minor code tidying
 
@@ -576,7 +579,7 @@ mDNSexport NATTraversalInfo *uDNS_AllocNATInfo(mDNS *const m, NATOp_t op, mDNSIP
 	NATTraversalInfo *info = m->NATTraversals;
 
 	for (info = m->NATTraversals; info; info = info->next)
-		if (info->op == op && info->PrivatePort.NotAnInteger && (info->PrivatePort.NotAnInteger == privatePort.NotAnInteger))
+		if (info->op == op && !mDNSIPPortIsZero(info->PrivatePort) && mDNSSameIPPort(info->PrivatePort, privatePort))
 			break;
 
 	if (info)
@@ -625,7 +628,7 @@ mDNSexport void uDNS_FormatPortMaprequest(NATTraversalInfo *info)
 
 mDNSlocal void SendInitialPMapReq(mDNS *m, NATTraversalInfo *info)
 	{
-	if (!m->Router.ip.v4.NotAnInteger)
+	if (mDNSIPv4AddressIsZero(m->Router.ip.v4))
 		{
 		debugf("No router.  Will retry NAT traversal in %ld seconds", NATMAP_INIT_RETRY);
 		info->retry = m->timenow + NATMAP_INIT_RETRY;
@@ -695,7 +698,7 @@ mDNSexport void uDNS_SendNATMsg(NATTraversalInfo *info, mDNS *m)
 	if (info->state != NATState_Request && info->state != NATState_Refresh)
 		{ LogMsg("uDNS_SendNATMsg: Bad state %d", info->state); return; }
 
-	if (m->Router.ip.v4.NotAnInteger)
+	if (!mDNSIPv4AddressIsZero(m->Router.ip.v4))
 		{
 		// send msg if we have a router
 		const mDNSu8 *end = (mDNSu8 *)&info->request;
@@ -742,7 +745,7 @@ mDNSexport mDNSBool uDNS_HandleNATQueryAddrReply(NATTraversalInfo *n, mDNS *cons
 		n->state = NATState_Established;
 		}
 
-	if (mDNSv4AddrIsPrivate(addr)) { LogMsg("uDNS_HandleNATQueryAddrReply: Double NAT"); *err = mStatus_DoubleNAT; }
+	if (mDNSv4AddrIsRFC1918(addr)) { LogMsg("uDNS_HandleNATQueryAddrReply: Double NAT"); *err = mStatus_DoubleNAT; }
 
 	return mDNStrue;
 	}
@@ -795,7 +798,7 @@ mDNSlocal void StartGetPublicAddr(mDNS *m, AuthRecord *AddressRec)
 	req->vers = NATMAP_VERS;
 	req->opcode = NATOp_AddrRequest;
 
-	if (!m->Router.ip.v4.NotAnInteger)
+	if (mDNSIPv4AddressIsZero(m->Router.ip.v4))
 		{
 		debugf("No router.  Will retry NAT traversal in %ld ticks", NATMAP_INIT_RETRY);
 		return;
@@ -939,8 +942,8 @@ mDNSlocal mDNSBool recvLLQEvent(mDNS *m, DNSQuestion *q, DNSMessage *msg, const 
 		// If the server advertised an LLQ-specific port number then that implies that this zone
 		// *wants* to support LLQs, so if the setup fails (e.g. because we are behind a NAT)
 		// then we use a slightly faster polling rate to give slightly better user experience.
-		if (q->LongLived && q->llq->state == LLQ_Poll && q->llq->servPort.NotAnInteger) q->ThisQInterval = LLQ_POLL_INTERVAL;
-		else if (q->ThisQInterval < MAX_UCAST_POLL_INTERVAL)                            q->ThisQInterval = MAX_UCAST_POLL_INTERVAL;
+		if (q->LongLived && q->llq->state == LLQ_Poll && !mDNSIPPortIsZero(q->llq->servPort)) q->ThisQInterval = LLQ_POLL_INTERVAL;
+		else if (q->ThisQInterval < MAX_UCAST_POLL_INTERVAL)                                  q->ThisQInterval = MAX_UCAST_POLL_INTERVAL;
 
 		InitializeDNSMessage(&ack.h, msg->h.id, ResponseFlags);
 		ackEnd = putLLQ(&ack, ack.data, mDNSNULL, &opt->OptData.llq, mDNSfalse);
@@ -1006,7 +1009,7 @@ mDNSlocal mDNSBool recvLLQResponse(mDNS *m, DNSMessage *msg, const mDNSu8 *end, 
 				{
 				if (recvLLQEvent(m, q, msg, end, srcaddr, srcport)) { m->CurrentQuestion = mDNSNULL; return mDNStrue; }
 				}
-			else if (msg->h.id.NotAnInteger == q->TargetQID.NotAnInteger)
+			else if (mDNSSameOpaque16(msg->h.id, q->TargetQID))
 				{
 				if (llqInfo->state == LLQ_Refresh && msg->h.numAdditionals && !msg->h.numAnswers)
 					{ recvRefreshReply(m, msg, end, q); m->CurrentQuestion = mDNSNULL; return mDNStrue; }
@@ -1441,7 +1444,7 @@ mDNSlocal void startLLQHandshakePrivate(mDNS *m, LLQ_Info *info, mDNSBool defer)
 	DomainAuthInfo *authInfo = GetAuthInfoForName(m, &info->question->qname);
 	if (!authInfo) { LogMsg("ERROR: startLLQHandshakePrivate: no credentials for %##s", info->question->qname.c); err = mStatus_UnknownErr; goto exit; }
 
-	if (!info->eventPort.NotAnInteger)
+	if (mDNSIPPortIsZero(info->eventPort))
 		{
 		info->tcpSock = mDNSNULL;
 		info->udpSock = mDNSNULL;
@@ -1460,9 +1463,9 @@ mDNSlocal void startLLQHandshakePrivate(mDNS *m, LLQ_Info *info, mDNSBool defer)
 		if (!info->tcpSock || !info->udpSock) { err = mStatus_UnknownErr; goto exit; }
 		}
 
-	LogMsg("startLLQHandshakePrivate %#a %d %#a %d", &m->AdvertisedV4, mDNSv4AddrIsPrivate(&m->AdvertisedV4.ip.v4), &info->servAddr, mDNSAddrIsv4Private(&info->servAddr));
+	LogOperation("startLLQHandshakePrivate %#a %d %#a %d", &m->AdvertisedV4, mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4), &info->servAddr, mDNSAddrIsRFC1918(&info->servAddr));
 
-	if (mDNSv4AddrIsPrivate(&m->AdvertisedV4.ip.v4)/* && !mDNSAddrIsv4Private(&info->servAddr)*/)
+	if (mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsRFC1918(&info->servAddr))
 		{
 		if (!info->NATInfoTCP)
 			{
@@ -1543,9 +1546,9 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info, mDNSBool defer)
 	mStatus err = mStatus_NoError;
 	mDNSs32 timenow = m->timenow;
 
-	LogOperation("startLLQHandshake %#a %d %#a %d", &m->AdvertisedV4, mDNSv4AddrIsPrivate(&m->AdvertisedV4.ip.v4), &info->servAddr, mDNSAddrIsv4Private(&info->servAddr));
+	LogOperation("startLLQHandshake %#a %d %#a %d", &m->AdvertisedV4, mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4), &info->servAddr, mDNSAddrIsRFC1918(&info->servAddr));
 
-	if (mDNSv4AddrIsPrivate(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsv4Private(&info->servAddr))
+	if (mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsRFC1918(&info->servAddr))
 		{
 		if (!info->NATInfoUDP) { info->state = LLQ_NatMapWaitUDP; StartLLQNatMap(m, info); }
 		if (info->NATInfoUDP->state == NATState_Error) { err = mStatus_UnknownErr; goto exit; }
@@ -1693,7 +1696,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 
 	privport = zeroIPPort;
 
-	if (!srs->ns.ip.v4.NotAnInteger) { LogMsg("SendServiceRegistration - NS not set!"); return; }
+	if (mDNSIPv4AddressIsZero(srs->ns.ip.v4)) { LogMsg("SendServiceRegistration - NS not set!"); return; }
 
 	id = mDNS_NewMessageID(m);
 	InitializeDNSMessage(&msg.h, id, UpdateReqFlags);
@@ -1703,7 +1706,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	SetNewRData(&srs->RR_TXT.resrec, mDNSNULL, 0);
 
 	// replace port w/ NAT mapping if necessary
- 	if (nat && nat->PublicPort.NotAnInteger &&
+ 	if (nat && !mDNSIPPortIsZero(nat->PublicPort) &&
 		(nat->state == NATState_Established || nat->state == NATState_Refresh || nat->state == NATState_Legacy))
 		{
 		privport = srv->resrec.rdata->u.srv.port;
@@ -2229,7 +2232,7 @@ mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srs
 	AssignDomainName(&srs->zone, &zoneData->zoneName);
     srs->ns.type = mDNSAddrType_IPv4;
 	srs->ns = zoneData->primaryAddr;
-	if (zoneData->Port.NotAnInteger)
+	if (!mDNSIPPortIsZero(zoneData->Port))
 		{
 		srs->port = zoneData->Port;
 		srs->Private = zoneData->zonePrivate;
@@ -2241,10 +2244,10 @@ mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srs
 		srs->lease = mDNSfalse;
 		}
 
-	LogOperation("serviceRegistrationCallback %#a %d %#a %d", &m->AdvertisedV4, mDNSv4AddrIsPrivate(&m->AdvertisedV4.ip.v4), &srs->ns, mDNSAddrIsv4Private(&srs->ns));
+	LogOperation("serviceRegistrationCallback %#a %d %#a %d", &m->AdvertisedV4, mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4), &srs->ns, mDNSAddrIsRFC1918(&srs->ns));
 
-	if (srs->RR_SRV.resrec.rdata->u.srv.port.NotAnInteger &&
-		mDNSv4AddrIsPrivate(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsv4Private(&srs->ns))
+	if (!mDNSIPPortIsZero(srs->RR_SRV.resrec.rdata->u.srv.port) &&
+		mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsRFC1918(&srs->ns))
 		{ srs->state = regState_NATMap; StartNATPortMap(m, srs); }
 	else SendServiceRegistration(m, srs);
 	return;
@@ -2279,7 +2282,7 @@ mDNSexport mDNSBool uDNS_HandleNATPortMapReply(NATTraversalInfo *n, mDNS *m, mDN
 		mStatus err;
    		mDNSBool tcp = (n->op == NATOp_MapTCP);
 
-		pub = n->PublicPort.NotAnInteger ? n->PublicPort : priv; // initially request priv == pub if PublicPort is zero
+		pub = !mDNSIPPortIsZero(n->PublicPort) ? n->PublicPort : priv; // initially request priv == pub if PublicPort is zero
 		while (1)
 			{
 			err = LNT_MapPort(priv, pub, tcp);
@@ -2307,14 +2310,14 @@ mDNSexport mDNSBool uDNS_HandleNATPortMapReply(NATTraversalInfo *n, mDNS *m, mDN
 		}
 
 	if (reply->err) { LogMsg("uDNS_HandleNATPortMapReply: received error %d", reply->err); return mDNSfalse; }
-	if (priv.NotAnInteger != reply->priv.NotAnInteger) return mDNSfalse;	// packet does not match this request
+	if (!mDNSSameIPPort(priv, reply->priv)) return mDNSfalse;	// packet does not match this request
 
 	if (deletion) { n->state = NATState_Deleted; return mDNStrue; }
 
 	n->lease = reply->lease;
 	if (n->lease > 0x70000000UL / mDNSPlatformOneSecond) n->lease = 0x70000000UL / mDNSPlatformOneSecond;
 
-	if (n->state == NATState_Refresh && reply->pub.NotAnInteger != n->PublicPort.NotAnInteger)
+	if (n->state == NATState_Refresh && !mDNSSameIPPort(reply->pub, n->PublicPort))
 		LogMsg("uDNS_HandleNATPortMapReply: NAT refresh changed public port from %d to %d", mDNSVal16(n->PublicPort), mDNSVal16(reply->pub));
         // this should never happen
 	    // !!!KRS to be defensive, use SRVChanged flag on service and deregister here
@@ -2360,7 +2363,7 @@ mDNSexport mDNSBool uDNS_HandleNATPortMapReply(NATTraversalInfo *n, mDNS *m, mDN
 	if (!srs) { if (n->isLLQ) LLQNatMapComplete(m, n); return mDNStrue; }
 
 	register_service:
-	if (srs->ns.ip.v4.NotAnInteger) SendServiceRegistration(m, srs);	// non-zero server address means we already have necessary zone data to send update
+	if (!mDNSIPv4AddressIsZero(srs->ns.ip.v4)) SendServiceRegistration(m, srs);	// non-zero server address means we already have necessary zone data to send update
 	else
 		{
 		srs->state = regState_FetchingZoneData;
@@ -2528,7 +2531,7 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 	const domainname *const nt = GetServiceTarget(m, &srs->RR_SRV);
 	const domainname *const newtarget = nt ? nt : (domainname*)"";
 	mDNSBool TargetChanged = (newtarget->c[0] && srs->state == regState_NoTarget) || !SameDomainName(curtarget, newtarget);
-	mDNSBool HaveZoneData = srs->ns.ip.v4.NotAnInteger ? mDNStrue : mDNSfalse;
+	mDNSBool HaveZoneData  = !mDNSIPv4AddressIsZero(srs->ns.ip.v4);
 
 	// Nat state change if:
 	// We were behind a NAT, and now we are behind a new NAT, or
@@ -2537,11 +2540,11 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 
 	NATTraversalInfo *nat = srs->NATinfo;
 	mDNSIPPort port = srs->RR_SRV.resrec.rdata->u.srv.port;
-	mDNSBool NATChanged = mDNSfalse;
-	mDNSBool NowBehindNAT = port.NotAnInteger && mDNSv4AddrIsPrivate(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsv4Private(&srs->ns);
-	mDNSBool WereBehindNAT = nat != mDNSNULL;
-	mDNSBool NATRouterChanged = nat && nat->Router.ip.v4.NotAnInteger != m->Router.ip.v4.NotAnInteger;
-	mDNSBool PortWasMapped = nat && (nat->state == NATState_Established || nat->state == NATState_Legacy) && nat->PublicPort.NotAnInteger != port.NotAnInteger;
+	mDNSBool NATChanged       = mDNSfalse;
+	mDNSBool NowBehindNAT     = (!mDNSIPPortIsZero(port) && mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsRFC1918(&srs->ns));
+	mDNSBool WereBehindNAT    = (nat != mDNSNULL);
+	mDNSBool NATRouterChanged = (nat && !mDNSSameIPv4Address(nat->Router.ip.v4, m->Router.ip.v4));
+	mDNSBool PortWasMapped    = (nat && (nat->state == NATState_Established || nat->state == NATState_Legacy) && !mDNSSameIPPort(nat->PublicPort, port));
 
 	if (m->mDNS_busy != m->mDNS_reentrancy+1)
 		LogMsg("UpdateSRV: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
@@ -2618,9 +2621,9 @@ mDNSlocal void UpdateSRVRecords(mDNS *m)
 // register record or begin NAT traversal
 mDNSlocal void AdvertiseHostname(mDNS *m, HostnameInfo *h)
 	{
-	if (m->AdvertisedV4.ip.v4.NotAnInteger && h->arv4.state == regState_Unregistered)
+	if (!mDNSIPv4AddressIsZero(m->AdvertisedV4.ip.v4) && h->arv4.state == regState_Unregistered)
 		{
-		if (mDNSv4AddrIsPrivate(&m->AdvertisedV4.ip.v4))
+		if (mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4))
 			StartGetPublicAddr(m, &h->arv4);
 		else
 			{
@@ -2755,7 +2758,7 @@ mDNSlocal void GetStaticHostname(mDNS *m)
 		}
 
 	m->StaticHostname.c[0] = 0;
-	if (!m->AdvertisedV4.ip.v4.NotAnInteger) return;
+	if (mDNSIPv4AddressIsZero(m->AdvertisedV4.ip.v4)) return;
 	mDNSPlatformMemZero(q, sizeof(*q));
 	// Note: This is reverse order compared to a normal dotted-decimal IP address, so we can't use our customary "%.4a" format code
 	mDNS_snprintf(buf, MAX_ESCAPED_DOMAIN_NAME, "%d.%d.%d.%d.in-addr.arpa.", ip[3], ip[2], ip[1], ip[0]);
@@ -2787,10 +2790,10 @@ mDNSlocal void AssignHostnameInfoAuthRecord(mDNS *m, HostnameInfo *hi, AuthRecor
 	AssignDomainName(ar->resrec.name, &hi->fqdn);
 
 	// only set RData if we have a valid IP
-	if (ar == &hi->arv4 && m->AdvertisedV4.ip.v4.NotAnInteger)
+	if (ar == &hi->arv4 && !mDNSIPv4AddressIsZero(m->AdvertisedV4.ip.v4))
 		{
-		if (m->MappedV4.ip.v4.NotAnInteger) ar->resrec.rdata->u.ipv4 = m->MappedV4.ip.v4;
-		else                                ar->resrec.rdata->u.ipv4 = m->AdvertisedV4.ip.v4;
+		if (!mDNSIPv4AddressIsZero(m->MappedV4.ip.v4)) ar->resrec.rdata->u.ipv4 = m->MappedV4.ip.v4;
+		else                                           ar->resrec.rdata->u.ipv4 = m->AdvertisedV4.ip.v4;
 		}
 	else if (ar == &hi->arv6 && m->AdvertisedV6.ip.v6.b[0])
 		{
@@ -2812,11 +2815,11 @@ mDNSlocal void UpdateHostnameRegistrations(mDNS *m)
 
 		if (i->arv4.state != regState_Unregistered &&
 			i->arv4.resrec.RecordType != kDNSRecordTypeUnregistered &&
-			i->arv4.resrec.rdata->u.ipv4.NotAnInteger != m->AdvertisedV4.ip.v4.NotAnInteger &&
-			i->arv4.resrec.rdata->u.ipv4.NotAnInteger != m->MappedV4.ip.v4.NotAnInteger)
+			!mDNSSameIPv4Address(i->arv4.resrec.rdata->u.ipv4, m->AdvertisedV4.ip.v4) &&
+			!mDNSSameIPv4Address(i->arv4.resrec.rdata->u.ipv4, m->MappedV4.ip.v4))
 			uDNS_DeregisterRecord(m, &i->arv4);
 		else
-			if (m->AdvertisedV4.ip.v4.NotAnInteger) AssignHostnameInfoAuthRecord(m, i, &i->arv4);
+			if (!mDNSIPv4AddressIsZero(m->AdvertisedV4.ip.v4)) AssignHostnameInfoAuthRecord(m, i, &i->arv4);
 
 		if (i->arv6.resrec.RecordType != kDNSRecordTypeUnregistered &&
 			i->arv6.state != regState_Unregistered &&
@@ -2859,10 +2862,10 @@ mDNSexport void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSReco
 	new->StatusCallback = StatusCallback;
 	new->StatusContext = StatusContext;
 
-	if (m->AdvertisedV4.ip.v4.NotAnInteger) AssignHostnameInfoAuthRecord(m, new, &new->arv4);
-	if (m->AdvertisedV6.ip.v6.b[0]        ) AssignHostnameInfoAuthRecord(m, new, &new->arv6);
+	if (!mDNSIPv4AddressIsZero(m->AdvertisedV4.ip.v4)) AssignHostnameInfoAuthRecord(m, new, &new->arv4);
+	if (!mDNSIPv6AddressIsZero(m->AdvertisedV6.ip.v6)) AssignHostnameInfoAuthRecord(m, new, &new->arv6);
 
-	if (m->AdvertisedV6.ip.v6.b[0] || m->AdvertisedV4.ip.v4.NotAnInteger) AdvertiseHostname(m, new);
+	if (!mDNSIPv4AddressIsZero(m->AdvertisedV4.ip.v4) || !mDNSIPv6AddressIsZero(m->AdvertisedV6.ip.v6)) AdvertiseHostname(m, new);
 
 exit:
 	mDNS_Unlock(m);
@@ -2904,14 +2907,14 @@ mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr, co
 
 	mDNS_Lock(m);
 
-	v4Changed   = (v4addr ? v4addr->ip.v4.NotAnInteger : 0) != m->AdvertisedV4.ip.v4.NotAnInteger;
-	v6Changed   = v6addr ? !mDNSSameIPv6Address(v6addr->ip.v6, m->AdvertisedV6.ip.v6) : (m->AdvertisedV6.ip.v6.b[0] != 0);
-	RouterChanged = (router ? router->ip.v4.NotAnInteger : 0) != m->Router.ip.v4.NotAnInteger;
+	v4Changed     = !mDNSSameIPv4Address(m->AdvertisedV4.ip.v4, v4addr ? v4addr->ip.v4 : zerov4Addr);
+	v6Changed     = !mDNSSameIPv6Address(m->AdvertisedV6.ip.v6, v6addr ? v6addr->ip.v6 : zerov6Addr);
+	RouterChanged = !mDNSSameIPv4Address(m->Router.ip.v4,       router ? router->ip.v4 : zerov4Addr);
 
 	if (v4addr && (v4Changed || RouterChanged))
 		debugf("mDNS_SetPrimaryInterfaceInfo: address changed from %#a to %#a", &m->AdvertisedV4, v4addr);
 
-	if ((v4Changed || RouterChanged) && m->MappedV4.ip.v4.NotAnInteger) m->MappedV4.ip.v4 = zerov4Addr;
+	if ((v4Changed || RouterChanged) && !mDNSIPv4AddressIsZero(m->MappedV4.ip.v4)) m->MappedV4.ip.v4 = zerov4Addr;
 	if (v4addr) m->AdvertisedV4 = *v4addr; else m->AdvertisedV4.ip.v4 = zerov4Addr;
 	if (v6addr) m->AdvertisedV6 = *v6addr; else m->AdvertisedV6.ip.v6 = zerov6Addr;
 	if (router) m->Router       = *router; else m->Router.ip.v4 = zerov4Addr;
@@ -3461,7 +3464,7 @@ mDNSexport void uDNS_ReceiveNATMap(mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 
 	while (ptr)
 		{
-		if ((ptr->state == NATState_Request || ptr->state == NATState_Refresh) && (ptr->op | NATMAP_RESPONSE_MASK) == AddrReply->opcode && (ptr->PrivatePort.NotAnInteger == port.NotAnInteger))
+		if ((ptr->state == NATState_Request || ptr->state == NATState_Refresh) && (ptr->op | NATMAP_RESPONSE_MASK) == AddrReply->opcode && mDNSSameIPPort(ptr->PrivatePort, port))
 			if (ptr->ReceiveResponse(ptr, m, pkt)) break;	// note callback may invalidate ptr if it return value is non-zero
 		ptr = ptr->next;
 		}
@@ -3623,12 +3626,12 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 
 		if (uDNS_ReceiveTestQuestionResponse(m, msg, end, srcaddr)) return;
 
-		if (!msg->h.id.NotAnInteger) return;
+		if (mDNSOpaque16IsZero(msg->h.id)) return;
 
 		for (qptr = m->Questions; qptr; qptr = qptr->next)
 			{
 			//!!!KRS we should have a hashtable, hashed on message id
-			if (qptr->TargetQID.NotAnInteger == msg->h.id.NotAnInteger)
+			if (mDNSSameOpaque16(qptr->TargetQID, msg->h.id))
 				{
 				if (m->timenow - (qptr->LastQTime + RESPONSE_WINDOW) > 0)
 					{ debugf("uDNS_ReceiveMsg - response received after maximum allowed window.  Discarding"); return; }
@@ -3639,14 +3642,14 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 				}
 			}
 		}
-	if (QR_OP == UpdateR && msg->h.id.NotAnInteger)
+	if (QR_OP == UpdateR && !mDNSOpaque16IsZero(msg->h.id))
 		{
 		mDNSu32 lease = GetPktLease(m, msg, end);
 		mDNSs32 expire = (m->timenow + (((mDNSs32)lease * mDNSPlatformOneSecond)) * 3/4);
 
 		for (sptr = m->ServiceRegistrations; sptr; sptr = sptr->next)
 			{
-			if (sptr->id.NotAnInteger == msg->h.id.NotAnInteger)
+			if (mDNSSameOpaque16(sptr->id, msg->h.id))
 				{
 				err = checkUpdateResult(sptr->RR_SRV.resrec.name, rcode, m, msg, end);
 				if (!err && sptr->lease)
@@ -3663,7 +3666,7 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 			}
 		for (rptr = m->RecordRegistrations; rptr; rptr = rptr->next)
 			{
-			if (rptr->id.NotAnInteger == msg->h.id.NotAnInteger)
+			if (mDNSSameOpaque16(rptr->id, msg->h.id))
 				{
 				err = checkUpdateResult(rptr->resrec.name, rcode, m, msg, end);
 				if (!err && rptr->lease)
@@ -3795,7 +3798,7 @@ mDNSlocal void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqIn
 		goto exit;
 		}
 
-	if (!zoneInfo->Port.NotAnInteger)
+	if (mDNSIPPortIsZero(zoneInfo->Port))
 		{
 		debugf("LLQ port lookup failed - reverting to polling for %##s (%s)",
 			info->question->qname.c, DNSTypeName(info->question->qtype));
@@ -4075,7 +4078,7 @@ mDNSlocal void RecordRegistrationCallback(mStatus err, mDNS *const m, void *auth
 	// cache zone data
 	AssignDomainName(&newRR->zone, &zoneData->zoneName);
 	newRR->UpdateServer = zoneData->primaryAddr;
-	if (zoneData->Port.NotAnInteger)
+	if (!mDNSIPPortIsZero(zoneData->Port))
 		{
 		newRR->UpdatePort = zoneData->Port;
 		newRR->Private = zoneData->zonePrivate;
@@ -4824,7 +4827,7 @@ mDNSlocal void RestartQueries(mDNS *m)
 		q = m->CurrentQuestion;
 		m->CurrentQuestion = m->CurrentQuestion->next;
 
-		if (q->TargetQID.NotAnInteger)
+		if (!mDNSOpaque16IsZero(q->TargetQID))
 			{
 			llqInfo = q->llq;
 
@@ -5218,7 +5221,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 		if (mDNSv4AddressIsLinkLocal(&v4.ip.v4))
 			mDNS_SetPrimaryInterfaceInfo(m, mDNSNULL, mDNSNULL, mDNSNULL);	// primary IP is link-local
 		else
-			mDNS_SetPrimaryInterfaceInfo(m, v4.ip.v4.b[0] ? &v4 : mDNSNULL, v6.ip.v6.b[0] ? &v6 : mDNSNULL, r.ip.v4.NotAnInteger ? &r : mDNSNULL);
+			mDNS_SetPrimaryInterfaceInfo(m, v4.ip.v4.b[0] ? &v4 : mDNSNULL, v6.ip.v6.b[0] ? &v6 : mDNSNULL, !mDNSIPv4AddressIsZero(r.ip.v4) ? &r : mDNSNULL);
 		}
 	else
 		{
