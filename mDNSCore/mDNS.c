@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.598  2007/04/03 19:43:16  cheshire
+Use mDNSSameIPPort (and similar) instead of accessing internal fields directly
+
 Revision 1.597  2007/03/31 00:32:32  cheshire
 After skipping OPT and TSIG, clear m->rec.r.resrec.RecordType
 
@@ -314,7 +317,7 @@ mDNSexport void SetNextQueryTime(mDNS *const m, const DNSQuestion *const q)
 		mDNSs32 sendtime = q->LastQTime + q->ThisQInterval;
 
 		// Don't allow sendtime to be earlier than SuppressStdPort53Queries
-		if (q->TargetQID.NotAnInteger && !q->LongLived && m->SuppressStdPort53Queries && (sendtime - m->SuppressStdPort53Queries < 0))
+		if (!mDNSOpaque16IsZero(q->TargetQID) && !q->LongLived && m->SuppressStdPort53Queries && (sendtime - m->SuppressStdPort53Queries < 0))
 			sendtime = m->SuppressStdPort53Queries;
 
 		if (m->NextScheduledQuery - sendtime > 0)
@@ -344,6 +347,7 @@ mDNSlocal mDNSBool AddressIsLocalSubnet(mDNS *const m, const mDNSInterfaceID Int
 
 	if (addr->type == mDNSAddrType_IPv4)
 		{
+		// Normally we resist touching the NotAnInteger fields, but here we're doing tricky bitwise masking so we make an exception
 		if (mDNSv4AddressIsLinkLocal(&addr->ip.v4)) return(mDNStrue);
 		for (intf = m->HostInterfaces; intf; intf = intf->next)
 			if (intf->ip.type == addr->type && intf->InterfaceID == InterfaceID && intf->McastTxRx)
@@ -1899,11 +1903,11 @@ mDNSlocal void SendQueries(mDNS *const m)
 		//     *multicast* queries we're definitely going to send
 		for (q = m->Questions; q; q=q->next)
 			{
-			if (q->TargetQID.NotAnInteger && ActiveQuestion( q ) )
+			if (!mDNSOpaque16IsZero(q->TargetQID) && ActiveQuestion( q ) )
 				{
 				uDNS_CheckQuery( m, q );
 				}
-			else if (!q->TargetQID.NotAnInteger && q->Target.type && (q->SendQNow || TimeToSendThisQuestion(q, m->timenow)))
+			else if (mDNSOpaque16IsZero(q->TargetQID) && q->Target.type && (q->SendQNow || TimeToSendThisQuestion(q, m->timenow)))
 				{
 				mDNSu8       *qptr        = m->omsg.data;
 				const mDNSu8 *const limit = m->omsg.data + sizeof(m->omsg.data);
@@ -1919,7 +1923,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 				q->SendQNow          = mDNSNULL;
 				q->ExpectUnicastResp = NonZeroTime(m->timenow);
 				}
-			else if (!q->TargetQID.NotAnInteger && !q->Target.type && TimeToSendThisQuestion(q, m->timenow))
+			else if (mDNSOpaque16IsZero(q->TargetQID) && !q->Target.type && TimeToSendThisQuestion(q, m->timenow))
 				{
 				q->SendQNow = mDNSInterfaceMark;		// Mark this question for sending on all interfaces
 				if (maxExistingQuestionInterval < q->ThisQInterval)
@@ -1932,7 +1936,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 		// (b) to update the state variables for *all* the questions we're going to send
 		for (q = m->Questions; q; q=q->next)
 			{
-			if (!q->TargetQID.NotAnInteger && (q->SendQNow ||
+			if (mDNSOpaque16IsZero(q->TargetQID) && (q->SendQNow ||
 				(!q->Target.type && ActiveQuestion(q) && q->ThisQInterval <= maxExistingQuestionInterval && AccelerateThisQuery(m,q))))
 				{
 				// If at least halfway to next query time, advance to next interval
@@ -2063,7 +2067,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 			// Put query questions in this packet
 			for (q = m->Questions; q; q=q->next)
 				{
-				if (!q->TargetQID.NotAnInteger && (q->SendQNow == intf->InterfaceID))
+				if (mDNSOpaque16IsZero(q->TargetQID) && (q->SendQNow == intf->InterfaceID))
 					{
 					debugf("SendQueries: %s question for %##s (%s) at %d forecast total %d",
 						SuppressOnThisInterface(q->DupSuppress, intf) ? "Suppressing" : "Putting    ",
@@ -2974,7 +2978,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 #endif
         // 1. Retrigger all our questions
 		for (q = m->Questions; q; q=q->next)				// Scan our list of questions
-			if (!q->TargetQID.NotAnInteger && ActiveQuestion(q))
+			if (mDNSOpaque16IsZero(q->TargetQID) && ActiveQuestion(q))
 				{
 				q->ThisQInterval    = InitialQuestionInterval;	// MUST be > zero for an active question
 				q->RequestUnicast   = 2;						// Set to 2 because is decremented once *before* we check it
@@ -3680,7 +3684,7 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 		msg->h.numAdditionals, msg->h.numAdditionals == 1 ? "" : "s");
 	
 	responseend = ProcessQuery(m, msg, end, srcaddr, InterfaceID,
-		(srcport.NotAnInteger != MulticastDNSPort.NotAnInteger), mDNSAddrIsDNSMulticast(dstaddr), QueryWasLocalUnicast, &m->omsg);
+		!mDNSSameIPPort(srcport, MulticastDNSPort), mDNSAddrIsDNSMulticast(dstaddr), QueryWasLocalUnicast, &m->omsg);
 
 	if (responseend)	// If responseend is non-null, that means we built a unicast response packet
 		{
@@ -3707,7 +3711,7 @@ mDNSlocal const DNSQuestion *ExpectingUnicastResponseForQuestion(const mDNS *con
 	{
 	DNSQuestion *q;
 	for (q = m->Questions; q; q=q->next)
-		if (q->TargetQID.NotAnInteger == id.NotAnInteger       &&
+		if (mDNSSameOpaque16(q->TargetQID, id)                 &&
 			q->qtype                  == question->qtype       &&
 			q->qclass                 == question->qclass      &&
 			q->qnamehash              == question->qnamehash   &&
@@ -3723,10 +3727,10 @@ mDNSlocal mDNSBool ExpectingUnicastResponseForRecord(mDNS *const m, const mDNSAd
 	for (q = m->Questions; q; q=q->next)
 		if (ResourceRecordAnswersQuestion(&rr->resrec, q))
 			{
-			if (q->TargetQID.NotAnInteger)
+			if (!mDNSOpaque16IsZero(q->TargetQID))
 				{
 				// For now we don't do this check -- for LLQ updates, the ID doesn't seem to match the ID in the question
-				// if (q->TargetQID.NotAnInteger == id.NotAnInteger)
+				// if (mDNSSameOpaque16(q->TargetQID, id)
 					{
 					if (mDNSSameAddress(srcaddr, &q->Target))                  return(mDNStrue);
 					if (q->llq && mDNSSameAddress(srcaddr, &q->llq->servAddr)) return(mDNStrue);
@@ -3870,7 +3874,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		// In the case of LLQ queries we'll get remove events when the records actually do go away
 		// In the case of polling LLQs, we assume the record remains valid until the next poll
 		// In the case of one-shot queries, we should work out how to respect the real TTL
-		if (response->h.id.NotAnInteger)
+		if (!mDNSOpaque16IsZero(response->h.id))
 			{
 			// If the TTL is -1 for uDNS LLQ, that means "remove"
 			if (m->rec.r.resrec.rroriginalttl == 0xFFFFFFFF) m->rec.r.resrec.rroriginalttl = 0;
@@ -4174,7 +4178,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 	mDNSu8 *ptr = mDNSNULL;
 
 #ifndef UNICAST_DISABLED
-	if (srcport.NotAnInteger == NATPMPPort.NotAnInteger)
+	if (mDNSSameIPPort(srcport, NATPMPPort))
 		{
 		mDNS_Lock(m);
 		uDNS_ReceiveNATMap(m, pkt, (mDNSu16)(end - (mDNSu8 *)pkt));
@@ -4202,7 +4206,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 #ifndef UNICAST_DISABLED
 	if (!dstaddr || (!mDNSAddressIsAllDNSLinkGroup(dstaddr) && (QR_OP == StdR || QR_OP == UpdR)))
 		{
-		if (msg->h.id.NotAnInteger) ifid = mDNSInterface_Any;
+		if (!mDNSOpaque16IsZero(msg->h.id)) ifid = mDNSInterface_Any;
 		uDNS_ReceiveMsg(m, msg, end, srcaddr, srcport);
 		// Note: mDNSCore also needs to get access to received unicast responses
 		}
@@ -4231,7 +4235,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 // if both are targeted to the same address+port
 // (If Target address is zero, TargetPort is undefined)
 #define SameQTarget(A,B) (((A)->Target.type == mDNSAddrType_None && (B)->Target.type == mDNSAddrType_None) || \
-	(mDNSSameAddress(&(A)->Target, &(B)->Target) && (A)->TargetPort.NotAnInteger == (B)->TargetPort.NotAnInteger))
+	(mDNSSameAddress(&(A)->Target, &(B)->Target) && mDNSSameIPPort((A)->TargetPort, (B)->TargetPort)))
 
 mDNSlocal DNSQuestion *FindDuplicateQuestion(const mDNS *const m, const DNSQuestion *const question)
 	{
@@ -4270,7 +4274,7 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, const DNSQuestion *const 
 	}
 
 #define ValidQuestionTarget(Q) (((Q)->Target.type == mDNSAddrType_IPv4 || (Q)->Target.type == mDNSAddrType_IPv6) && \
-	((Q)->TargetPort.NotAnInteger == UnicastDNSPort.NotAnInteger || (Q)->TargetPort.NotAnInteger == MulticastDNSPort.NotAnInteger))
+	(mDNSSameIPPort((Q)->TargetPort, UnicastDNSPort) || mDNSSameIPPort((Q)->TargetPort, MulticastDNSPort)))
 
 mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const question)
 	{
@@ -4395,7 +4399,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		// (e.g. SOA, NS, etc.) and if we haven't finished setting up our own question and
 		// setting m->NewQuestions if necessary then we could end up recursively re-entering
 		// this routine with the question list data structures in an inconsistent state.
-		if (question->TargetQID.NotAnInteger)
+		if (!mDNSOpaque16IsZero(question->TargetQID))
 			{
 			// We ignore error returns in this case --
 			// There should be no errors that permanently kill a client's question
@@ -4420,7 +4424,7 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 	CacheRecord *rr;
 	DNSQuestion **q = &m->Questions;
 	
-	if (question->TargetQID.NotAnInteger && question->LongLived && question->llq)
+	if (!mDNSOpaque16IsZero(question->TargetQID) && question->LongLived && question->llq)
 		uDNS_StopLongLivedQuery(m, question);
 
 	if (question->InterfaceID == mDNSInterface_LocalOnly) q = &m->LocalOnlyQuestions;
@@ -4444,7 +4448,7 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 
 	// If there are any cache records referencing this as their active question, then see if any other
 	// question that is also referencing them, else their CRActiveQuestion needs to get set to NULL.
-	if (!question->TargetQID.NotAnInteger)
+	if (mDNSOpaque16IsZero(question->TargetQID))
 		{
 		for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
 			{
@@ -4599,7 +4603,7 @@ mDNSlocal mDNSBool MachineHasActiveIPv6(mDNS *const m)
 mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
 	ServiceInfoQuery *query = (ServiceInfoQuery *)question->QuestionContext;
-	mDNSBool PortChanged = (mDNSBool)(query->info->port.NotAnInteger != answer->rdata->u.srv.port.NotAnInteger);
+	mDNSBool PortChanged = !mDNSSameIPPort(query->info->port, answer->rdata->u.srv.port);
 	if (!AddRecord) return;
 	if (answer->rrtype != kDNSType_SRV) return;
 
@@ -5209,7 +5213,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 			}
 
 		for (q = m->Questions; q; q=q->next)							// Scan our list of questions
-			if (!q->TargetQID.NotAnInteger && (!q->InterfaceID || q->InterfaceID == set->InterfaceID))	// If not a wide-areq query, non-specific Q, or Q on this specific interface,
+			if (mDNSOpaque16IsZero(q->TargetQID) && (!q->InterfaceID || q->InterfaceID == set->InterfaceID))	// If not a wide-areq query, non-specific Q, or Q on this specific interface,
 				{														// then reactivate this question
 				mDNSs32 initial  = (flapping && q->FlappingInterface != set->InterfaceID) ? InitialQuestionInterval * 8 : InitialQuestionInterval;
 				mDNSs32 qdelay   = (flapping && q->FlappingInterface != set->InterfaceID) ? mDNSPlatformOneSecond   * 5 : 0;
@@ -5445,7 +5449,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	sr->SubTypes        = SubTypes;
 	
 	// If port number is zero, that means the client is really trying to do a RegisterNoSuchService
-	if (!port.NotAnInteger)
+	if (mDNSIPPortIsZero(port))
 		return(mDNS_RegisterNoSuchService(m, &sr->RR_SRV, name, type, domain, mDNSNULL, mDNSInterface_Any, NSSCallback, sr));
 
 	// Initialize the AuthRecord objects to sane values
@@ -5669,7 +5673,7 @@ mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordS
 mDNSexport mStatus mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr)
 	{
 	// If port number is zero, that means this was actually registered using mDNS_RegisterNoSuchService()
-	if (!sr->RR_SRV.resrec.rdata->u.srv.port.NotAnInteger) return(mDNS_DeregisterNoSuchService(m, &sr->RR_SRV));
+	if (mDNSIPPortIsZero(sr->RR_SRV.resrec.rdata->u.srv.port)) return(mDNS_DeregisterNoSuchService(m, &sr->RR_SRV));
 
 #ifndef UNICAST_DISABLED
 	if (!(sr->RR_SRV.resrec.InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(sr->RR_SRV.resrec.name)))
