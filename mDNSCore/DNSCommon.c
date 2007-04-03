@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.140  2007/04/03 19:37:58  cheshire
+Rename mDNSAddrIsv4Private() to more precise mDNSAddrIsRFC1918()
+
 Revision 1.139  2007/04/03 19:18:39  cheshire
 Use mDNSSameIPv4Address (and similar) instead of accessing internal fields directly
 
@@ -259,7 +262,7 @@ mDNSexport const mDNSOpaque64 zeroOpaque64    = { { 0 } };
 #endif
 
 // return true for RFC1918 private addresses
-mDNSexport mDNSBool mDNSv4AddrIsPrivate(mDNSv4Addr *addr)
+mDNSexport mDNSBool mDNSv4AddrIsRFC1918(mDNSv4Addr *addr)
 	{
 	return ((addr->b[0] == 10) ||                                 // 10/8 prefix
 			(addr->b[0] == 172 && (addr->b[1] & 0xF0) == 16) ||   // 172.16/12

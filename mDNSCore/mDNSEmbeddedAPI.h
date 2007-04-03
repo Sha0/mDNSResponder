@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.349  2007/04/03 19:37:58  cheshire
+Rename mDNSAddrIsv4Private() to more precise mDNSAddrIsRFC1918()
+
 Revision 1.348  2007/04/03 19:13:39  cheshire
 Added macros mDNSSameIPPort, mDNSSameOpaque16, mDNSIPPortIsZero, mDNSOpaque16IsZero
 
@@ -1836,8 +1839,8 @@ extern char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd, cha
 #define CRDisplayString(m, rr) GetRRDisplayString_rdb(&(rr)->resrec, &(rr)->resrec.rdata->u, (m)->MsgBuffer)
 extern mDNSBool mDNSSameAddress(const mDNSAddr *ip1, const mDNSAddr *ip2);
 extern void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText);
-extern mDNSBool mDNSv4AddrIsPrivate(mDNSv4Addr *addr);  // returns true for RFC1918 private addresses
-#define mDNSAddrIsv4Private(X) ((X)->type == mDNSAddrType_IPv4 && mDNSv4AddrIsPrivate(&(X)->ip.v4))
+extern mDNSBool mDNSv4AddrIsRFC1918(mDNSv4Addr *addr);  // returns true for RFC1918 private addresses
+#define mDNSAddrIsRFC1918(X) ((X)->type == mDNSAddrType_IPv4 && mDNSv4AddrIsRFC1918(&(X)->ip.v4))
 
 #define mDNSSameIPPort(A,B)      ((A).NotAnInteger == (B).NotAnInteger)
 #define mDNSSameOpaque16(A,B)    ((A).NotAnInteger == (B).NotAnInteger)
