@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.299  2007/04/03 19:19:33  cheshire
+Use mDNSIPPortIsZero() instead of peeking into 'NotAnInteger' field
+
 Revision 1.298  2007/03/30 21:51:45  cheshire
 Minor code tidying
 
@@ -1264,7 +1267,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	// Some clients use mDNS for lightweight copy protection, registering a pseudo-service with
 	// a port number of zero. When two instances of the protected client are allowed to run on one
 	// machine, we don't want to see misleading "Bogus client" messages in syslog and the console.
-	if (port.NotAnInteger)
+	if (!mDNSIPPortIsZero(port))
 		{
 		int count = CountExistingRegistrations(&srv, port);
 		if (count)
