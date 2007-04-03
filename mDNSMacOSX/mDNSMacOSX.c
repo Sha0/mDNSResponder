@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.385  2007/04/03 19:39:19  cheshire
+Fixed intel byte order bug in mDNSPlatformSetDNSServers()
+
 Revision 1.384  2007/03/31 01:10:53  cheshire
 Add debugging
 
@@ -610,7 +613,7 @@ mDNSlocal ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 		if (cmPtr->cmsg_level == IPPROTO_IP && cmPtr->cmsg_type == IP_RECVDSTADDR)
 			{
 			dstaddr->type = mDNSAddrType_IPv4;
-			dstaddr->ip.v4.NotAnInteger = *(u_int32_t*)CMSG_DATA(cmPtr);
+			dstaddr->ip.v4 = *(mDNSv4Addr*)CMSG_DATA(cmPtr);
 			}
 		if (cmPtr->cmsg_level == IPPROTO_IP && cmPtr->cmsg_type == IP_RECVIF)
 			{
@@ -1436,7 +1439,7 @@ mDNSlocal mStatus SetupSocket(mDNS *const m, KQSocketSet *cp, mDNSBool mcast, co
 	if (skt < 3) { LogMsg("SetupSocket: socket error %d errno %d (%s)", skt, errno, strerror(errno)); return(skt); }
 
 	// ... with a shared UDP port, if it's for multicast receiving
-	if (port.NotAnInteger) err = setsockopt(skt, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
+	if (!mDNSIPPortIsZero(port)) err = setsockopt(skt, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
 	if (err < 0) { errstr = "setsockopt - SO_REUSEPORT"; goto fail; }
 
 	if (sa_family == AF_INET)
@@ -2453,7 +2456,10 @@ mDNSexport void mDNSPlatformSetDNSServers(mDNS *const m)
 			int j, n;
 			domainname d;
 			dns_resolver_t *r = config->resolver[i];
-			if (r->port == MulticastDNSPort.NotAnInteger) continue; // ignore configurations for .local
+			// Ignore dnsinfo entries for mDNS domains (indicated by the fact that the resolver port is 5353, the mDNS port)
+			// Note: Unlike the BSD Sockets APIs (where TCP and UDP port numbers are universally in network byte order)
+			// in Apple's "dnsinfo.h" API the port number is declared to be a "uint16_t in host byte order"
+			if (r->port == 5353) continue;
 			if (r->search_order == DEFAULT_SEARCH_ORDER || !r->domain || !*r->domain) d.c[0] = 0; // we ignore domain for "default" resolver
 			else if (!MakeDomainNameFromDNSNameString(&d, r->domain)) { LogMsg("RegisterSplitDNS: bad domain %s", r->domain); continue; }
 
@@ -2461,7 +2467,7 @@ mDNSexport void mDNSPlatformSetDNSServers(mDNS *const m)
 			for (j = 0; j < config->n_resolver; j++)
 				{
 				dns_resolver_t *p = config->resolver[j];
-				if (p->port == MulticastDNSPort.NotAnInteger) continue;
+				if (p->port == 5353) continue; // Note: dns_resolver_t port is defined to be "uint16_t in host byte order"
 				if (p->search_order <= r->search_order)
 					{
 					domainname tmp;
@@ -2652,7 +2658,7 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS * const m, mDNSAddr * v4
 		if (!CFStringGetCString(string, buf, 256, kCFStringEncodingUTF8)) { LogMsg("Could not convert router to CString"); goto exit; }
 
 		// find primary interface in list
-		while (ifa && (!v4->ip.v4.NotAnInteger || !HavePrimaryGlobalv6))
+		while (ifa && (mDNSIPv4AddressIsZero(v4->ip.v4) || !HavePrimaryGlobalv6))
 			{
 			mDNSAddr tmp6 = zeroAddr;
 			if (!strcmp(buf, ifa->ifa_name))
@@ -2689,7 +2695,7 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS * const m, mDNSAddr * v4
 				static mDNSBool LegacyNATInitialized = mDNSfalse;
 				if (LegacyNATInitialized) { LNT_Destroy(); LegacyNATInitialized = mDNSfalse; }
 				// We only do NAT traversal if we have an RFC 1918 address
-				if (r->ip.v4.NotAnInteger && mDNSv4AddrIsPrivate(&v4->ip.v4))
+				if (mDNSv4AddrIsRFC1918(&v4->ip.v4))
 					{
 					mStatus err = LNT_Init();
 					if (err) LogMsg("ERROR: LNT_Init");
