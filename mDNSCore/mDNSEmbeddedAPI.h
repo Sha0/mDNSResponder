@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.348  2007/04/03 19:13:39  cheshire
+Added macros mDNSSameIPPort, mDNSSameOpaque16, mDNSIPPortIsZero, mDNSOpaque16IsZero
+
 Revision 1.347  2007/03/28 20:59:26  cheshire
 <rdar://problem/4743285> Remove inappropriate use of IsPrivateV4Addr()
 
@@ -1836,6 +1839,8 @@ extern void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText);
 extern mDNSBool mDNSv4AddrIsPrivate(mDNSv4Addr *addr);  // returns true for RFC1918 private addresses
 #define mDNSAddrIsv4Private(X) ((X)->type == mDNSAddrType_IPv4 && mDNSv4AddrIsPrivate(&(X)->ip.v4))
 
+#define mDNSSameIPPort(A,B)      ((A).NotAnInteger == (B).NotAnInteger)
+#define mDNSSameOpaque16(A,B)    ((A).NotAnInteger == (B).NotAnInteger)
 #define mDNSSameIPv4Address(A,B) ((A).NotAnInteger == (B).NotAnInteger)
 #define mDNSSameIPv6Address(A,B) ((A).l[0] == (B).l[0] && (A).l[1] == (B).l[1] && (A).l[2] == (B).l[2] && (A).l[3] == (B).l[3])
 #define mDNSSameEthAddress(A,B)  ((A)->w[0] == (B)->w[0] && (A)->w[1] == (B)->w[1] && (A)->w[2] == (B)->w[2])
@@ -1843,6 +1848,8 @@ extern mDNSBool mDNSv4AddrIsPrivate(mDNSv4Addr *addr);  // returns true for RFC1
 #define mDNSSameOpaque64(A,B)    ((A)->l[0] == (B)->l[0] && (A)->l[1] == (B)->l[1])
 #define mDNSOpaque64IsZero(A)    ((A)->l[0] == 0 && (A)->l[1] == 0)
 
+#define mDNSIPPortIsZero(A)      mDNSSameIPPort((A), zeroIPPort)
+#define mDNSOpaque16IsZero(A)    mDNSSameOpaque16((A), zeroIPPort)
 #define mDNSIPv4AddressIsZero(A) mDNSSameIPv4Address((A), zerov4Addr)
 #define mDNSIPv6AddressIsZero(A) mDNSSameIPv6Address((A), zerov6Addr)
 
