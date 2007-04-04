@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.300  2007/04/04 21:22:18  cheshire
+Suppress "Local Hostname changed" syslog message when name has not actually changed
+
 Revision 1.299  2007/04/03 19:19:33  cheshire
 Use mDNSIPPortIsZero() instead of peeking into 'NotAnInteger' field
 
@@ -415,15 +418,6 @@ mDNSlocal void validatelists(mDNS *const m)
 	for (s = m->ServiceRegistrations; s; s=s->next)
 		if (s->next == (ServiceRecordSet*)~0)
 			LogMemCorruption("ServiceRegistrations: %p is garbage (%lX)", s, s->next);
-
-	for (rr = m->RecordRegistrations; rr; rr=rr->next)
-		{
-		if (rr->resrec.RecordType == 0 || rr->resrec.RecordType == 0xFF)
-			LogMemCorruption("RecordRegistrations: %p is garbage (%X)", rr, rr->resrec.RecordType);
-		if (rr->resrec.name != &rr->namestorage)
-			LogMemCorruption("RecordRegistrations: %p name %p does not point to namestorage %p %##s",
-				rr, rr->resrec.name->c, rr->namestorage.c, rr->namestorage.c);
-		}
 
 	NATTraversalInfo            *n;
 	for (n = m->NATTraversals; n; n=n->next)
@@ -1499,7 +1493,8 @@ mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 	(void)m; // Unused
 	if (result == mStatus_NoError)
 		{
-		LogOperation("Local Hostname changed from \"%#s.local\" to \"%#s.local\"", m->p->userhostlabel.c, m->hostlabel.c);
+		if (!SameDomainLabelCS(m->p->userhostlabel.c, m->hostlabel.c))
+			LogOperation("Local Hostname changed from \"%#s.local\" to \"%#s.local\"", m->p->userhostlabel.c, m->hostlabel.c);
 		// One second pause in case we get a Computer Name update too -- don't want to alert the user twice
 		RecordUpdatedNiceLabel(m, mDNSPlatformOneSecond);
 		}
