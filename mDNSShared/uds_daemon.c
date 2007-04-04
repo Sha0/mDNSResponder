@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.275  2007/04/04 21:21:25  cheshire
+<rdar://problem/4546810> Fix crash: In regservice_callback service_instance was being referenced after being freed
+
 Revision 1.274  2007/04/04 01:30:42  cheshire
 <rdar://problem/5075200> DNSServiceAddRecord is failing to advertise NULL record
 Add SIGINFO output lising our advertised Authoritative Records
@@ -1195,10 +1198,6 @@ mDNSexport int CountPeerRegistrations(mDNS *const m, ServiceRecordSet *const srs
 		if (rr->resrec.rrtype == kDNSType_SRV && SameDomainName(rr->resrec.name, r->name) && !SameRData(&rr->resrec, r))
 			count++;
 
-	for (rr = m->RecordRegistrations; rr; rr=rr->next)
-		if (rr->state != regState_Unregistered && rr->resrec.rrtype == kDNSType_SRV && SameDomainName(rr->resrec.name, r->name) && !SameRData(&rr->resrec, r))
-			count++;
-
 	for (s = m->ServiceRegistrations; s; s = s->next)
 		if (s->state != regState_Unregistered && SameDomainName(s->RR_SRV.resrec.name, r->name) && !SameRData(&s->RR_SRV.resrec, r))
 			count++;
@@ -1295,15 +1294,15 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 			}
 		else
 			{
-			free_service_instance(instance);
 			if (!SuppressError) deliver_async_error(instance->request, reg_service_reply_op, result);
+			free_service_instance(instance);
 			}
 		}
 	else
 		{
 		if (result != mStatus_NATTraversal) LogMsg("ERROR: unknown result in regservice_callback: %ld", result);
-		free_service_instance(instance);
 		if (!SuppressError) deliver_async_error(instance->request, reg_service_reply_op, result);
+		free_service_instance(instance);
 		}
 	}
 
