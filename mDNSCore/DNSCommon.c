@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.141  2007/04/04 01:33:11  cheshire
+<rdar://problem/5075200> DNSServiceAddRecord is failing to advertise NULL record
+Overly defensive code was zeroing too much of the AuthRecord structure
+
 Revision 1.140  2007/04/03 19:37:58  cheshire
 Rename mDNSAddrIsv4Private() to more precise mDNSAddrIsRFC1918()
 
@@ -1028,12 +1032,6 @@ mDNSexport void IncrementLabelSuffix(domainlabel *name, mDNSBool RichText)
 mDNSexport void mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mDNSInterfaceID InterfaceID,
 	mDNSu16 rrtype, mDNSu32 ttl, mDNSu8 RecordType, mDNSRecordCallback Callback, void *Context)
 	{
-	// For now, until the uDNS code is fully integrated, it's helpful to zero the entire structure
-	// (e.g. uDNS_RegisterService short-circuits the usual mDNS_Register_internal record registration calls,
-	// so a bunch of fields don't get set up properly. In particular, if we don't zero rr->QueuedRData
-	// then the uDNS code crashes.
-	mDNSPlatformMemZero(rr, sizeof(*rr));
-	
 	// Don't try to store a TTL bigger than we can represent in platform time units
 	if (ttl > 0x7FFFFFFFUL / mDNSPlatformOneSecond)
 		ttl = 0x7FFFFFFFUL / mDNSPlatformOneSecond;
@@ -1073,6 +1071,25 @@ mDNSexport void mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mD
 
 	// Field Group 3: Transient state for Authoritative Records (set in mDNS_Register_internal)
 	// Field Group 4: Transient uDNS state for Authoritative Records (set in mDNS_Register_internal)
+
+	// For now, until the uDNS code is fully integrated, it's helpful to zero the uDNS state fields here too, just in case
+	// (e.g. uDNS_RegisterService short-circuits the usual mDNS_Register_internal record registration calls, so a bunch
+	// of fields don't get set up properly. In particular, if we don't zero rr->QueuedRData then the uDNS code crashes.)
+	rr->state             = regState_Zero;
+	rr->lease             = 0;
+	rr->expire            = 0;
+	rr->Private           = 0;
+	rr->id                = zeroID;
+	rr->zone.c[0]         = 0;
+	rr->UpdateServer      = zeroAddr;
+	rr->UpdatePort        = zeroIPPort;
+	rr->NATinfo           = 0;
+	rr->OrigRData         = 0;
+	rr->OrigRDLen         = 0;
+	rr->InFlightRData     = 0;
+	rr->InFlightRDLen     = 0;
+	rr->QueuedRData       = 0;
+	rr->QueuedRDLen       = 0;	
 
 	rr->namestorage.c[0]  = 0;		// MUST be set by client before calling mDNS_Register()
 	}
