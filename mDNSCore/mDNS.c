@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.600  2007/04/04 01:31:33  cheshire
+Improve debugging message
+
 Revision 1.599  2007/04/04 00:03:26  cheshire
 <rdar://problem/5089862> DNSServiceQueryRecord is returning kDNSServiceErr_NoSuchRecord for empty rdata
 
@@ -5590,9 +5593,10 @@ mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr,
 	if (ttl == 0) ttl = kStandardTTL;
 
 	extra->r.DependentOn = &sr->RR_SRV;
-	
-	debugf("mDNS_AddRecordToService adding record to %##s", extra->r.resrec.name->c);
-	
+
+	debugf("mDNS_AddRecordToService adding record to %##s %s %d",
+		extra->r.resrec.name->c, DNSTypeName(extra->r.resrec.rrtype), extra->r.resrec.rdlength);
+
 	status = mDNS_Register_internal(m, &extra->r);
 	if (status == mStatus_NoError) *e = extra;
 	mDNS_Unlock(m);
