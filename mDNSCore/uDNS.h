@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.54  2007/04/04 21:48:53  cheshire
+<rdar://problem/4720694> Combine unicast authoritative answer list with multicast list
+
 Revision 1.53  2007/03/28 15:56:37  cheshire
 <rdar://problem/5085774> Add listing of NAT port mapping and GetAddrInfo requests in SIGINFO output
 
@@ -127,6 +130,11 @@ extern mStatus uDNS_UpdateRecord(mDNS *m, AuthRecord *rr);
 
 extern void SetNextQueryTime(mDNS *const m, const DNSQuestion *const q);
 extern mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr);
+// mDNS_Dereg_normal is used for most calls to mDNS_Deregister_internal
+// mDNS_Dereg_conflict is used to indicate that this record is being forcibly deregistered because of a conflict
+// mDNS_Dereg_repeat is used when cleaning up, for records that may have already been forcibly deregistered
+typedef enum { mDNS_Dereg_normal, mDNS_Dereg_conflict, mDNS_Dereg_repeat } mDNS_Dereg_type;
+extern mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, mDNS_Dereg_type drt);
 extern mStatus uDNS_RegisterRecord(mDNS *const m, AuthRecord *const rr);
 extern mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr);
 

@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.601  2007/04/04 21:48:52  cheshire
+<rdar://problem/4720694> Combine unicast authoritative answer list with multicast list
+
 Revision 1.600  2007/04/04 01:31:33  cheshire
 Improve debugging message
 
@@ -470,40 +473,18 @@ mDNSlocal void AnswerLocalQuestions(mDNS *const m, AuthRecord *rr, mDNSBool AddR
 // When sending a unique record, all other records matching "SameResourceRecordSignature" must also be sent
 // When receiving a unique record, all old cache records matching "SameResourceRecordSignature" are flushed
 
-// SameNameSameRecordSignature is the same, except it skips the expensive SameDomainName() check,
-// which is at its most expensive and least useful in cases where we know in advance that the names match
-
-mDNSlocal mDNSBool SameResourceRecordSignature(const ResourceRecord *const r1, const ResourceRecord *const r2)
+mDNSlocal mDNSBool SameResourceRecordSignature(const AuthRecord *const r1, const AuthRecord *const r2)
 	{
 	if (!r1) { LogMsg("SameResourceRecordSignature ERROR: r1 is NULL"); return(mDNSfalse); }
 	if (!r2) { LogMsg("SameResourceRecordSignature ERROR: r2 is NULL"); return(mDNSfalse); }
-	if (r1->InterfaceID &&
-		r2->InterfaceID &&
-		r1->InterfaceID != r2->InterfaceID) return(mDNSfalse);
+	if (r1->resrec.InterfaceID &&
+		r2->resrec.InterfaceID &&
+		r1->resrec.InterfaceID != r2->resrec.InterfaceID) return(mDNSfalse);
 	return(mDNSBool)(
-		r1->rrtype == r2->rrtype &&
-		r1->rrclass == r2->rrclass &&
-		r1->namehash == r2->namehash &&
-		SameDomainName(r1->name, r2->name));
-	}
-
-mDNSlocal mDNSBool SameNameSameRecordSignature(const ResourceRecord *const r1, const ResourceRecord *const r2)
-	{
-	if (!r1) { LogMsg("SameNameSameRecordSignature ERROR: r1 is NULL"); return(mDNSfalse); }
-	if (!r2) { LogMsg("SameNameSameRecordSignature ERROR: r2 is NULL"); return(mDNSfalse); }
-	if (r1->InterfaceID &&
-		r2->InterfaceID &&
-		r1->InterfaceID != r2->InterfaceID) return(mDNSfalse);
-
-#if VerifySameNameAssumptions
-	if (r1->namehash != r2->namehash || !SameDomainName(r1->name, r2->name))
-		{
-		LogMsg("Bogus SameNameSameRecordSignature call: %##s does not match %##s", r1->name->c, r1->name->c);
-		return(mDNSfalse);
-		}
-#endif
-
-	return(r1->rrtype == r2->rrtype && r1->rrclass == r2->rrclass);
+		r1->resrec.rrtype   == r2->resrec.rrtype &&
+		r1->resrec.rrclass  == r2->resrec.rrclass &&
+		r1->resrec.namehash == r2->resrec.namehash &&
+		SameDomainName(r1->resrec.name, r2->resrec.name));
 	}
 
 // PacketRRMatchesSignature behaves as SameResourceRecordSignature, except that types may differ if our
@@ -679,7 +660,7 @@ mDNSlocal void SetTargetToHostName(mDNS *const m, AuthRecord *const rr)
 
 mDNSlocal void AcknowledgeRecord(mDNS *const m, AuthRecord *const rr)
 	{
-	if (!rr->Acknowledged && rr->RecordCallback)
+	if (rr->RecordCallback)
 		{
 		// CAUTION: MUST NOT do anything more with rr after calling rr->Callback(), because the client's callback function
 		// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
@@ -850,7 +831,7 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 			for (r = m->ResourceRecords; r; r=r->next)
 				{
 				const AuthRecord *s2 = r->RRSet ? r->RRSet : r;
-				if (s1 != s2 && SameResourceRecordSignature(&r->resrec, &rr->resrec) && !SameRData(&r->resrec, &rr->resrec))
+				if (s1 != s2 && SameResourceRecordSignature(r, rr) && !SameRData(&r->resrec, &rr->resrec))
 					break;
 				}
 			if (r)	// If we found a conflict, set RecordType = kDNSRecordTypeDeregistering so we'll deliver the callback
@@ -864,11 +845,6 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 			}
 		}
 
-#ifndef UNICAST_DISABLED
-	if (rr->resrec.InterfaceID == mDNSInterface_Any && !rr->ForceMCast && !IsLocalDomain(rr->resrec.name))
-		return uDNS_RegisterRecord(m, rr);
-#endif
-	
 	// Now that we've finished building our new record, make sure it's not identical to one we already have
 	for (r = m->ResourceRecords; r; r=r->next) if (RecordIsLocalDuplicate(r, rr)) break;
 	
@@ -894,6 +870,18 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	if (rr->resrec.RecordType != kDNSRecordTypeUnique && rr->resrec.RecordType != kDNSRecordTypeDeregistering)
 		AcknowledgeRecord(m, rr);
 
+#ifndef UNICAST_DISABLED
+	if (rr->resrec.InterfaceID == mDNSInterface_Any && !rr->ForceMCast && !IsLocalDomain(rr->resrec.name))
+		{
+		if (rr->resrec.RecordType == kDNSRecordTypeUnique) r->resrec.RecordType = kDNSRecordTypeVerified;
+		rr->ProbeCount    = 0;
+		rr->AnnounceCount = 0;
+		rr->state = regState_FetchingZoneData;
+		rr->lease = mDNStrue;
+		return uDNS_RegisterRecord(m, rr);
+		}
+#endif
+	
 	return(mStatus_NoError);
 	}
 
@@ -925,24 +913,15 @@ mDNSlocal void CompleteRDataUpdate(mDNS *const m, AuthRecord *const rr)
 		rr->UpdateCallback(m, rr, OldRData);					// ... and let the client know
 	}
 
-// mDNS_Dereg_normal is used for most calls to mDNS_Deregister_internal
-// mDNS_Dereg_conflict is used to indicate that this record is being forcibly deregistered because of a conflict
-// mDNS_Dereg_repeat is used when cleaning up, for records that may have already been forcibly deregistered
-typedef enum { mDNS_Dereg_normal, mDNS_Dereg_conflict, mDNS_Dereg_repeat } mDNS_Dereg_type;
-
 // NOTE: mDNS_Deregister_internal can call a user callback, which may change the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
-mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, mDNS_Dereg_type drt)
+// Exported so uDNS.c can call this
+mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, mDNS_Dereg_type drt)
 	{
 	AuthRecord *r2;
 	mDNSu8 RecordType = rr->resrec.RecordType;
 	AuthRecord **p = &m->ResourceRecords;	// Find this record in our list of active records
 
-#ifndef UNICAST_DISABLED
-    if (!(rr->resrec.InterfaceID == mDNSInterface_LocalOnly || rr->ForceMCast || IsLocalDomain(rr->resrec.name)))
-		return uDNS_DeregisterRecord(m, rr);
-#endif
-	
 	while (*p && *p != rr) p=&(*p)->next;
 
 	if (*p)
@@ -1048,6 +1027,11 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 		
 		if (rr->LocalAnswer) AnswerLocalQuestions(m, rr, mDNSfalse);
 
+#ifndef UNICAST_DISABLED
+		if (rr->resrec.InterfaceID != mDNSInterface_LocalOnly && !rr->ForceMCast && !IsLocalDomain(rr->resrec.name))
+			return uDNS_DeregisterRecord(m, rr);
+#endif
+
 		// CAUTION: MUST NOT do anything more with rr after calling rr->Callback(), because the client's callback function
 		// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
 		// In this case the likely client action to the mStatus_MemFree message is to free the memory,
@@ -1055,7 +1039,8 @@ mDNSlocal mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, 
 		mDNS_DropLockBeforeCallback();		// Allow client to legally make mDNS API calls from the callback
 		if (drt != mDNS_Dereg_conflict)
 			{
-			if (rr->RecordCallback) rr->RecordCallback(m, rr, mStatus_MemFree);			// MUST NOT touch rr after this
+			if (rr->RecordCallback)
+				rr->RecordCallback(m, rr, mStatus_MemFree);			// MUST NOT touch rr after this
 			}
 		else
 			{
@@ -1354,14 +1339,14 @@ mDNSlocal void SendResponses(mDNS *const m)
 				for (r2 = m->ResourceRecords; r2; r2=r2->next)
 					if (ResourceRecordIsValidAnswer(r2))
 						if (r2->ImmedAnswer != mDNSInterfaceMark &&
-							r2->ImmedAnswer != rr->ImmedAnswer && SameResourceRecordSignature(&r2->resrec, &rr->resrec))
+							r2->ImmedAnswer != rr->ImmedAnswer && SameResourceRecordSignature(r2, rr))
 							r2->ImmedAnswer = rr->ImmedAnswer;
 				}
 			else if (rr->ImmedAdditional)	// If we're sending this as additional, see that its whole RRSet is similarly marked
 				{
 				for (r2 = m->ResourceRecords; r2; r2=r2->next)
 					if (ResourceRecordIsValidAnswer(r2))
-						if (r2->ImmedAdditional != rr->ImmedAdditional && SameResourceRecordSignature(&r2->resrec, &rr->resrec))
+						if (r2->ImmedAdditional != rr->ImmedAdditional && SameResourceRecordSignature(r2, rr))
 							r2->ImmedAdditional = rr->ImmedAdditional;
 				}
 			}
@@ -1485,7 +1470,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 						for (a = m->ResourceRecords; a; a=a->next)
 							if (a->LastMCTime      == m->timenow &&
 								a->LastMCInterface == intf->InterfaceID &&
-								SameResourceRecordSignature(&a->resrec, &rr->resrec)) { SendAdditional = mDNStrue; break; }
+								SameResourceRecordSignature(a, rr)) { SendAdditional = mDNStrue; break; }
 						}
 					if (!SendAdditional)					// If we don't want to send this after all,
 						rr->ImmedAdditional = mDNSNULL;		// then cancel its ImmedAdditional field
@@ -2032,13 +2017,14 @@ mDNSlocal void SendQueries(mDNS *const m)
 						// A potential downside is that we could deliver a registration confirmation and then find out
 						// moments later that there's a name conflict, but applications have to be prepared to handle
 						// late conflicts anyway (e.g. on connection of network cable, etc.), so this is nothing new.
-						AcknowledgeRecord(m, rr);
+						if (!rr->Acknowledged) AcknowledgeRecord(m, rr);
 						}
 					}
 				// else, if it has now finished probing, move it to state Verified,
 				// and update m->NextScheduledResponse so it will be announced
 				else
 					{
+					if (!rr->Acknowledged) AcknowledgeRecord(m, rr);	// Defensive, just in case it got missed somehow
 					rr->resrec.RecordType     = kDNSRecordTypeVerified;
 					rr->ThisAPInterval = DefaultAnnounceIntervalForTypeUnique;
 					rr->LastAPTime     = m->timenow - DefaultAnnounceIntervalForTypeUnique;
@@ -2051,7 +2037,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 			{
 			AuthRecord *rr = m->CurrentRecord;
 			m->CurrentRecord = rr->next;
-			if (rr->resrec.RecordType == kDNSRecordTypeUnique && rr->ProbeCount == 0)
+			if (rr->resrec.RecordType == kDNSRecordTypeUnique && rr->ProbeCount == 0 && !rr->Acknowledged)
 				AcknowledgeRecord(m, rr);
 			}
 		}
@@ -3892,85 +3878,88 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		if (!AcceptableResponse) AcceptableResponse = ExpectingUnicastResponseForRecord(m, srcaddr, ResponseSrcLocal, response->h.id, &m->rec.r);
 
 		// 1. Check that this packet resource record does not conflict with any of ours
-		if (m->CurrentRecord)
-			LogMsg("mDNSCoreReceiveResponse ERROR m->CurrentRecord already set %s", ARDisplayString(m, m->CurrentRecord));
-		m->CurrentRecord = m->ResourceRecords;
-		while (m->CurrentRecord)
+		if (mDNSOpaque16IsZero(response->h.id))
 			{
-			AuthRecord *rr = m->CurrentRecord;
-			m->CurrentRecord = rr->next;
-			// We accept all multicast responses, and unicast responses resulting from queries we issued
-			// For other unicast responses, this code accepts them only for responses with an
-			// (apparently) local source address that pertain to a record of our own that's in probing state
-			if (!AcceptableResponse && !(ResponseSrcLocal && rr->resrec.RecordType == kDNSRecordTypeUnique)) continue;
-			if (PacketRRMatchesSignature(&m->rec.r, rr))		// If interface, name, type (if shared record) and class match...
+			if (m->CurrentRecord)
+				LogMsg("mDNSCoreReceiveResponse ERROR m->CurrentRecord already set %s", ARDisplayString(m, m->CurrentRecord));
+			m->CurrentRecord = m->ResourceRecords;
+			while (m->CurrentRecord)
 				{
-				// ... check to see if type and rdata are identical
-				if (m->rec.r.resrec.rrtype == rr->resrec.rrtype && SameRData(&m->rec.r.resrec, &rr->resrec))
+				AuthRecord *rr = m->CurrentRecord;
+				m->CurrentRecord = rr->next;
+				// We accept all multicast responses, and unicast responses resulting from queries we issued
+				// For other unicast responses, this code accepts them only for responses with an
+				// (apparently) local source address that pertain to a record of our own that's in probing state
+				if (!AcceptableResponse && !(ResponseSrcLocal && rr->resrec.RecordType == kDNSRecordTypeUnique)) continue;
+				if (PacketRRMatchesSignature(&m->rec.r, rr))		// If interface, name, type (if shared record) and class match...
 					{
-					// If the RR in the packet is identical to ours, just check they're not trying to lower the TTL on us
-					if (m->rec.r.resrec.rroriginalttl >= rr->resrec.rroriginalttl/2 || m->SleepState)
+					// ... check to see if type and rdata are identical
+					if (m->rec.r.resrec.rrtype == rr->resrec.rrtype && SameRData(&m->rec.r.resrec, &rr->resrec))
 						{
-						// If we were planning to send on this -- and only this -- interface, then we don't need to any more
-						if      (rr->ImmedAnswer == InterfaceID) { rr->ImmedAnswer = mDNSNULL; rr->ImmedUnicast = mDNSfalse; }
-						}
-					else
-						{
-						if      (rr->ImmedAnswer == mDNSNULL)    { rr->ImmedAnswer = InterfaceID;       m->NextScheduledResponse = m->timenow; }
-						else if (rr->ImmedAnswer != InterfaceID) { rr->ImmedAnswer = mDNSInterfaceMark; m->NextScheduledResponse = m->timenow; }
-						}
-					}
-				// else, the packet RR has different type or different rdata -- check to see if this is a conflict
-				else if (m->rec.r.resrec.rroriginalttl > 0 && PacketRRConflict(m, rr, &m->rec.r))
-					{
-					debugf("mDNSCoreReceiveResponse: Our Record: %08lX %s", rr->     resrec.rdatahash, ARDisplayString(m, rr));
-					debugf("mDNSCoreReceiveResponse: Pkt Record: %08lX %s", m->rec.r.resrec.rdatahash, CRDisplayString(m, &m->rec.r));
-
-					// If this record is marked DependentOn another record for conflict detection purposes,
-					// then *that* record has to be bumped back to probing state to resolve the conflict
-					while (rr->DependentOn) rr = rr->DependentOn;
-
-					// If we've just whacked this record's ProbeCount, don't need to do it again
-					if (rr->ProbeCount <= DefaultProbeCountForTypeUnique)
-						{
-						// If we'd previously verified this record, put it back to probing state and try again
-						if (rr->resrec.RecordType == kDNSRecordTypeVerified)
+						// If the RR in the packet is identical to ours, just check they're not trying to lower the TTL on us
+						if (m->rec.r.resrec.rroriginalttl >= rr->resrec.rroriginalttl/2 || m->SleepState)
 							{
-							debugf("mDNSCoreReceiveResponse: Reseting to Probing: %##s (%s)", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
-							rr->resrec.RecordType     = kDNSRecordTypeUnique;
-							rr->ProbeCount     = DefaultProbeCountForTypeUnique + 1;
-							rr->ThisAPInterval = DefaultAPIntervalForRecordType(kDNSRecordTypeUnique);
-							InitializeLastAPTime(m, rr);
-							RecordProbeFailure(m, rr);	// Repeated late conflicts also cause us to back off to the slower probing rate
-							}
-						// If we're probing for this record, we just failed
-						else if (rr->resrec.RecordType == kDNSRecordTypeUnique)
-							{
-							debugf("mDNSCoreReceiveResponse: Will rename %##s (%s)", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
-							mDNS_Deregister_internal(m, rr, mDNS_Dereg_conflict);
-							}
-						// We assumed this record must be unique, but we were wrong.
-						// (e.g. There are two mDNSResponders on the same machine giving
-						// different answers for the reverse mapping record.)
-						// This is simply a misconfiguration, and we don't try to recover from it.
-						else if (rr->resrec.RecordType == kDNSRecordTypeKnownUnique)
-							{
-							debugf("mDNSCoreReceiveResponse: Unexpected conflict on %##s (%s) -- discarding our record",
-								rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
-							mDNS_Deregister_internal(m, rr, mDNS_Dereg_conflict);
+							// If we were planning to send on this -- and only this -- interface, then we don't need to any more
+							if      (rr->ImmedAnswer == InterfaceID) { rr->ImmedAnswer = mDNSNULL; rr->ImmedUnicast = mDNSfalse; }
 							}
 						else
-							debugf("mDNSCoreReceiveResponse: Unexpected record type %X %##s (%s)",
-								rr->resrec.RecordType, rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
+							{
+							if      (rr->ImmedAnswer == mDNSNULL)    { rr->ImmedAnswer = InterfaceID;       m->NextScheduledResponse = m->timenow; }
+							else if (rr->ImmedAnswer != InterfaceID) { rr->ImmedAnswer = mDNSInterfaceMark; m->NextScheduledResponse = m->timenow; }
+							}
 						}
+					// else, the packet RR has different type or different rdata -- check to see if this is a conflict
+					else if (m->rec.r.resrec.rroriginalttl > 0 && PacketRRConflict(m, rr, &m->rec.r))
+						{
+						debugf("mDNSCoreReceiveResponse: Our Record: %08lX %s", rr->     resrec.rdatahash, ARDisplayString(m, rr));
+						debugf("mDNSCoreReceiveResponse: Pkt Record: %08lX %s", m->rec.r.resrec.rdatahash, CRDisplayString(m, &m->rec.r));
+	
+						// If this record is marked DependentOn another record for conflict detection purposes,
+						// then *that* record has to be bumped back to probing state to resolve the conflict
+						while (rr->DependentOn) rr = rr->DependentOn;
+	
+						// If we've just whacked this record's ProbeCount, don't need to do it again
+						if (rr->ProbeCount <= DefaultProbeCountForTypeUnique)
+							{
+							// If we'd previously verified this record, put it back to probing state and try again
+							if (rr->resrec.RecordType == kDNSRecordTypeVerified)
+								{
+								debugf("mDNSCoreReceiveResponse: Reseting to Probing: %##s (%s)", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
+								rr->resrec.RecordType     = kDNSRecordTypeUnique;
+								rr->ProbeCount     = DefaultProbeCountForTypeUnique + 1;
+								rr->ThisAPInterval = DefaultAPIntervalForRecordType(kDNSRecordTypeUnique);
+								InitializeLastAPTime(m, rr);
+								RecordProbeFailure(m, rr);	// Repeated late conflicts also cause us to back off to the slower probing rate
+								}
+							// If we're probing for this record, we just failed
+							else if (rr->resrec.RecordType == kDNSRecordTypeUnique)
+								{
+								debugf("mDNSCoreReceiveResponse: Will rename %##s (%s)", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
+								mDNS_Deregister_internal(m, rr, mDNS_Dereg_conflict);
+								}
+							// We assumed this record must be unique, but we were wrong.
+							// (e.g. There are two mDNSResponders on the same machine giving
+							// different answers for the reverse mapping record.)
+							// This is simply a misconfiguration, and we don't try to recover from it.
+							else if (rr->resrec.RecordType == kDNSRecordTypeKnownUnique)
+								{
+								debugf("mDNSCoreReceiveResponse: Unexpected conflict on %##s (%s) -- discarding our record",
+									rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
+								mDNS_Deregister_internal(m, rr, mDNS_Dereg_conflict);
+								}
+							else
+								debugf("mDNSCoreReceiveResponse: Unexpected record type %X %##s (%s)",
+									rr->resrec.RecordType, rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
+							}
+						}
+					// Else, matching signature, different type or rdata, but not a considered a conflict.
+					// If the packet record has the cache-flush bit set, then we check to see if we
+					// have any record(s) of the same type that we should re-assert to rescue them
+					// (see note about "multi-homing and bridged networks" at the end of this function).
+					else if (m->rec.r.resrec.rrtype == rr->resrec.rrtype)
+						if ((m->rec.r.resrec.RecordType & kDNSRecordTypePacketUniqueMask) && m->timenow - rr->LastMCTime > mDNSPlatformOneSecond/2)
+							{ rr->ImmedAnswer = mDNSInterfaceMark; m->NextScheduledResponse = m->timenow; }
 					}
-				// Else, matching signature, different type or rdata, but not a considered a conflict.
-				// If the packet record has the cache-flush bit set, then we check to see if we
-				// have any record(s) of the same type that we should re-assert to rescue them
-				// (see note about "multi-homing and bridged networks" at the end of this function).
-				else if (m->rec.r.resrec.rrtype == rr->resrec.rrtype)
-					if ((m->rec.r.resrec.RecordType & kDNSRecordTypePacketUniqueMask) && m->timenow - rr->LastMCTime > mDNSPlatformOneSecond/2)
-						{ rr->ImmedAnswer = mDNSInterfaceMark; m->NextScheduledResponse = m->timenow; }
 				}
 			}
 
@@ -4084,7 +4073,9 @@ exit:
 		// *decrease* a record's remaining lifetime, never *increase* it. If a record has less than
 		// one second to go, we simply leave it alone, and leave it to expire at its assigned time.
 		for (r2 = cg ? cg->members : mDNSNULL; r2; r2=r2->next)
-			if (SameNameSameRecordSignature(&r1->resrec, &r2->resrec))
+			if (r1->resrec.InterfaceID == r2->resrec.InterfaceID &&
+				r1->resrec.rrtype      == r2->resrec.rrtype &&
+				r1->resrec.rrclass     == r2->resrec.rrclass)
 				if (RRExpireTime(r2) - m->timenow > mDNSPlatformOneSecond)
 					{
 					// If record is recent, just ensure the whole RRSet has the same TTL (as required by DNS semantics)
@@ -5570,22 +5561,6 @@ mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr,
 		extra->r.resrec.rrtype, ttl, kDNSRecordTypeUnique, ServiceCallback, sr);
 	AssignDomainName(extra->r.resrec.name, sr->RR_SRV.resrec.name);
 	
-#ifndef UNICAST_DISABLED
-	if (!(sr->RR_SRV.resrec.InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(sr->RR_SRV.resrec.name)))
-		{
-		mDNS_Lock(m);
-		// BIND named (name daemon) doesn't allow TXT records with zero-length rdata. This is strictly speaking correct,
-		// since RFC 1035 specifies a TXT record as "One or more <character-string>s", not "Zero or more <character-string>s".
-		// Since some legacy apps try to create zero-length TXT records, we'll silently correct it here.
-		// (We have to duplicate this check here because uDNS_AddRecordToService() bypasses the usual mDNS_Register_internal() bottleneck)
-		if (extra->r.resrec.rrtype == kDNSType_TXT && extra->r.resrec.rdlength == 0)
-			{ extra->r.resrec.rdlength = 1; extra->r.resrec.rdata->u.txt.c[0] = 0; }
-		status = uDNS_AddRecordToService(m, sr, extra);
-		mDNS_Unlock(m);
-		return status;
-		}
-#endif
-	
 	mDNS_Lock(m);
 	e = &sr->Extras;
 	while (*e) e = &(*e)->next;
@@ -5598,7 +5573,19 @@ mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr,
 		extra->r.resrec.name->c, DNSTypeName(extra->r.resrec.rrtype), extra->r.resrec.rdlength);
 
 	status = mDNS_Register_internal(m, &extra->r);
-	if (status == mStatus_NoError) *e = extra;
+	if (status == mStatus_NoError)
+		{
+		*e = extra;
+#ifndef UNICAST_DISABLED
+		if (sr->RR_SRV.resrec.InterfaceID != mDNSInterface_LocalOnly && !IsLocalDomain(sr->RR_SRV.resrec.name))
+			{
+			extra->r.resrec.RecordType = kDNSRecordTypeShared;	// don't want it to conflict with the service name (???)
+			extra->r.RecordCallback = mDNSNULL;	// don't generate callbacks for extra RRs
+			if (sr->state != regState_Registered && sr->state != regState_Refresh) extra->r.state = regState_ExtraQueued;
+			}
+#endif
+		}
+
 	mDNS_Unlock(m);
 	return(status);
 	}
@@ -5623,11 +5610,6 @@ mDNSexport mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet 
 		extra->r.RecordCallback = MemFreeCallback;
 		extra->r.RecordContext  = Context;
 		*e = (*e)->next;
-#ifndef UNICAST_DISABLED
-		if (!(sr->RR_SRV.resrec.InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(sr->RR_SRV.resrec.name)))
-			status = uDNS_DeregisterRecord(m, &extra->r);
-		else
-#endif
 		status = mDNS_Deregister_internal(m, &extra->r, mDNS_Dereg_normal);
 		}
 	mDNS_Unlock(m);
@@ -5900,7 +5882,6 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 #ifndef UNICAST_DISABLED
 	m->nextevent                = timenow + 0x78000000;
 	m->ServiceRegistrations     = mDNSNULL;
-	m->RecordRegistrations      = mDNSNULL;
 	m->NATTraversals            = mDNSNULL;
 	m->NextMessageID            = 0;
 	m->Servers                  = mDNSNULL;

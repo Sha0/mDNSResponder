@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.352  2007/04/04 21:48:52  cheshire
+<rdar://problem/4720694> Combine unicast authoritative answer list with multicast list
+
 Revision 1.351  2007/04/04 01:27:45  cheshire
 Update comment
 
@@ -1472,7 +1475,6 @@ struct mDNS_struct
 	mDNSs32 SuppressStdPort53Queries;       // Wait before allowing the next standard unicast query to the user's configured DNS server
 
 	ServiceRecordSet *ServiceRegistrations;
-	AuthRecord       *RecordRegistrations;
 	NATTraversalInfo *NATTraversals;
 	mDNSu16           NextMessageID;
     DNSServer        *Servers;              // list of DNS servers
