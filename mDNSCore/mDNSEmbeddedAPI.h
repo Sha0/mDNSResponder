@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.351  2007/04/04 01:27:45  cheshire
+Update comment
+
 Revision 1.350  2007/04/04 00:03:26  cheshire
 <rdar://problem/5089862> DNSServiceQueryRecord is returning kDNSServiceErr_NoSuchRecord for empty rdata
 
@@ -873,7 +876,7 @@ struct AuthRecord_struct
 	RData *QueuedRData;		// if the client call Update while an update is in flight, we must finish the
 	mDNSu16 QueuedRDLen;	// pending operation (re-transmitting if necessary) THEN register the queued update
 
-	// Field Group 4: Large data objects go at the end
+	// Field Group 5: Large data objects go at the end
 	domainname      namestorage;
 	RData           rdatastorage;		// Normally the storage is right here, except for oversized records
 	// rdatastorage MUST be the last thing in the structure -- when using oversized AuthRecords, extra bytes
