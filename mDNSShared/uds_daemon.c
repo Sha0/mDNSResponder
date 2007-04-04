@@ -17,6 +17,10 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.274  2007/04/04 01:30:42  cheshire
+<rdar://problem/5075200> DNSServiceAddRecord is failing to advertise NULL record
+Add SIGINFO output lising our advertised Authoritative Records
+
 Revision 1.273  2007/04/04 00:03:27  cheshire
 <rdar://problem/5089862> DNSServiceQueryRecord is returning kDNSServiceErr_NoSuchRecord for empty rdata
 
@@ -1107,7 +1111,7 @@ mDNSlocal AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int GetTTL, int validat
 	rr->resrec.rdlength = rdlen;
 	rr->resrec.rdata->MaxRDLength = rdlen;
 	rdata = get_rdata(&msgbuf, rdlen);
-	memcpy(rr->resrec.rdata->u.data, rdata, rdlen);
+	mDNSPlatformMemCopy(rr->resrec.rdata->u.data, rdata, rdlen);
 	if (GetTTL) rr->resrec.rroriginalttl = get_uint32(&msgbuf);
 	rr->resrec.namehash = DomainNameHashValue(rr->resrec.name);
 	SetNewRData(&rr->resrec, mDNSNULL, 0);	// Sets rr->rdatahash for us
@@ -1406,27 +1410,18 @@ mDNSlocal mStatus handle_regrecord_request(request_state *request)
 mDNSlocal mStatus add_record_to_service(request_state *request, service_instance *instance, uint16_t rrtype, uint16_t rdlen, char *rdata, uint32_t ttl)
 	{
 	ServiceRecordSet *srs = &instance->srs;
-	ExtraResourceRecord *extra;
 	mStatus result;
-	int size;
-
-	if (rdlen > sizeof(RDataBody)) size = rdlen;
-	else size = sizeof(RDataBody);
-
-	extra = mallocL("ExtraResourceRecord", sizeof(*extra) - sizeof(RDataBody) + size);
-	if (!extra)
-		{
-		my_perror("ERROR: malloc");
-		return mStatus_NoMemoryErr;
-		}
+	int size = rdlen > sizeof(RDataBody) ? rdlen : sizeof(RDataBody);
+	ExtraResourceRecord *extra = mallocL("ExtraResourceRecord", sizeof(*extra) - sizeof(RDataBody) + size);
+	if (!extra) { my_perror("ERROR: malloc"); return mStatus_NoMemoryErr; }
 
 	mDNSPlatformMemZero(extra, sizeof(ExtraResourceRecord));  // OK if oversized rdata not zero'd
 	extra->r.resrec.rrtype = rrtype;
 	extra->r.rdatastorage.MaxRDLength = (mDNSu16) size;
 	extra->r.resrec.rdlength = rdlen;
-	memcpy(&extra->r.rdatastorage.u.data, rdata, rdlen);
+	mDNSPlatformMemCopy(&extra->r.rdatastorage.u.data, rdata, rdlen);
 
-	result =  mDNS_AddRecordToService(&mDNSStorage, srs , extra, &extra->r.rdatastorage, ttl);
+	result =  mDNS_AddRecordToService(&mDNSStorage, srs, extra, &extra->r.rdatastorage, ttl);
 	if (result) { freeL("ExtraResourceRecord/add_record_to_service", extra); return result; }
 
 	extra->ClientID = request->hdr.reg_index;
@@ -1451,8 +1446,8 @@ mDNSlocal mStatus handle_add_request(request_state *request)
 
 	if (!ttl) ttl = DefaultTTLforRRType(rrtype);
 
-	LogOperation("%3d: DNSServiceAddRecord(%##s, %s)", request->sd,
-		(request->u.servicereg.instances) ? request->u.servicereg.instances->srs.RR_SRV.resrec.name->c : NULL, DNSTypeName(rrtype));
+	LogOperation("%3d: DNSServiceAddRecord(%##s, %s, %d)", request->sd,
+		(request->u.servicereg.instances) ? request->u.servicereg.instances->srs.RR_SRV.resrec.name->c : NULL, DNSTypeName(rrtype), rdlen);
 
 	for (i = request->u.servicereg.instances; i; i = i->next)
 		{
@@ -1481,7 +1476,7 @@ mDNSlocal mStatus update_record(AuthRecord *rr, uint16_t rdlen, char *rdata, uin
 	newrd = mallocL("RData/update_record", sizeof(RData) - sizeof(RDataBody) + rdsize);
 	if (!newrd) FatalError("ERROR: malloc");
 	newrd->MaxRDLength = (mDNSu16) rdsize;
-	memcpy(&newrd->u, rdata, rdlen);
+	mDNSPlatformMemCopy(&newrd->u, rdata, rdlen);
 
 	// BIND named (name daemon) doesn't allow TXT records with zero-length rdata. This is strictly speaking correct,
 	// since RFC 1035 specifies a TXT record as "One or more <character-string>s", not "Zero or more <character-string>s".
@@ -1766,7 +1761,7 @@ mDNSlocal mStatus handle_regservice_request(request_state *request)
 		{
 		request->u.servicereg.txtdata = mallocL("service_info txtdata", request->u.servicereg.txtlen);
 		if (!request->u.servicereg.txtdata) FatalError("ERROR: handle_regservice_request - malloc");
-		memcpy(request->u.servicereg.txtdata, get_rdata(&ptr, request->u.servicereg.txtlen), request->u.servicereg.txtlen);
+		mDNSPlatformMemCopy(request->u.servicereg.txtdata, get_rdata(&ptr, request->u.servicereg.txtlen), request->u.servicereg.txtlen);
 		}
 	else request->u.servicereg.txtdata = NULL;
 
@@ -3427,7 +3422,8 @@ mDNSexport void udsserver_info(mDNS *const m)
 	mDNSu32 slot;
 	CacheGroup *cg;
 	DNSQuestion *q;
-	CacheRecord *rr;
+	CacheRecord *cr;
+	AuthRecord *ar;
 	request_state *req;
 
 	LogMsgNoIdent("Timenow 0x%08lX (%ld)", (mDNSu32)now, now);
@@ -3438,20 +3434,20 @@ mDNSexport void udsserver_info(mDNS *const m)
 		for(cg = m->rrcache_hash[slot]; cg; cg=cg->next)
 			{
 			CacheUsed++;	// Count one cache entity for the CacheGroup object
-			for (rr = cg->members; rr; rr=rr->next)
+			for (cr = cg->members; cr; cr=cr->next)
 				{
-				mDNSs32 remain = rr->resrec.rroriginalttl - (now - rr->TimeRcvd) / mDNSPlatformOneSecond;
-				NetworkInterfaceInfo *info = (NetworkInterfaceInfo *)rr->resrec.InterfaceID;
+				mDNSs32 remain = cr->resrec.rroriginalttl - (now - cr->TimeRcvd) / mDNSPlatformOneSecond;
+				NetworkInterfaceInfo *info = (NetworkInterfaceInfo *)cr->resrec.InterfaceID;
 				CacheUsed++;
-				if (rr->CRActiveQuestion) CacheActive++;
+				if (cr->CRActiveQuestion) CacheActive++;
 				LogMsgNoIdent("%3d %s%8ld %-6s%s %-6s%s",
 					slot,
-					rr->CRActiveQuestion ? "*" : " ",
+					cr->CRActiveQuestion ? "*" : " ",
 					remain,
 					info ? info->ifname : "-U-",
-					(rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) ? "-" : " ",
-					DNSTypeName(rr->resrec.rrtype),
-					CRDisplayString(m, rr));
+					(cr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) ? "-" : " ",
+					DNSTypeName(cr->resrec.rrtype),
+					CRDisplayString(m, cr));
 				usleep(1000);	// Limit rate a little so we don't flood syslog too fast
 				}
 			}
@@ -3461,6 +3457,10 @@ mDNSexport void udsserver_info(mDNS *const m)
 	if (m->rrcache_active != CacheActive)
 		LogMsgNoIdent("Cache use mismatch: rrcache_active is %lu, true count %lu", m->rrcache_active, CacheActive);
 	LogMsgNoIdent("Cache currently contains %lu records; %lu referenced by active questions", CacheUsed, CacheActive);
+
+	LogMsgNoIdent("--------- Auth Records ---------");
+	for (ar = m->ResourceRecords; ar; ar=ar->next)
+		LogMsgNoIdent("%s", ARDisplayString(m, ar));
 
 	LogMsgNoIdent("---------- Questions -----------");
 	LogMsgNoIdent("   Int  Next if      Type");
