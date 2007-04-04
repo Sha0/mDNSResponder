@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.350  2007/04/04 00:03:26  cheshire
+<rdar://problem/5089862> DNSServiceQueryRecord is returning kDNSServiceErr_NoSuchRecord for empty rdata
+
 Revision 1.349  2007/04/03 19:37:58  cheshire
 Rename mDNSAddrIsv4Private() to more precise mDNSAddrIsRFC1918()
 
@@ -648,7 +651,8 @@ enum
 	kDNSRecordTypePacketAns        = 0xC0,	// Received in the Answer      Section of a DNS Response
 	kDNSRecordTypePacketAnsUnique  = 0xD0,	// Received in the Answer      Section of a DNS Response with kDNSClass_UniqueRRSet set
 
-	kDNSRecordTypePacketAnsMask    = 0x40,	// True for PacketAns and    PacketAnsUnique
+	kDNSRecordTypeNegative         = 0xF0,	// Pseudo-RR generated to cache non-existence results like NXDomain
+
 	kDNSRecordTypePacketUniqueMask = 0x10	// True for PacketAddUnique, PacketAnsUnique, PacketAuthUnique
 	};
 

@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.599  2007/04/04 00:03:26  cheshire
+<rdar://problem/5089862> DNSServiceQueryRecord is returning kDNSServiceErr_NoSuchRecord for empty rdata
+
 Revision 1.598  2007/04/03 19:43:16  cheshire
 Use mDNSSameIPPort (and similar) instead of accessing internal fields directly
 
@@ -2255,7 +2258,7 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, CacheRecord *cons
 	if (rr->DelayDelivery) return;		// We'll come back later when CacheRecordDeferredAdd() calls us
 
 	// Only deliver negative answers if client has explicitly requested them
-	if (rr->resrec.rdata->MaxRDLength == 0 && !q->ReturnIntermed) return;
+	if (rr->resrec.RecordType == kDNSRecordTypeNegative && (!AddRecord || !q->ReturnIntermed)) return;
 
 	// For CNAME results to non-CNAME questions, only inform the client if they explicitly requested that
 	if (!followcname || q->ReturnIntermed)
@@ -4146,7 +4149,7 @@ exit:
 				{
 				LogOperation("Making negative cache entry for %##s (%s)", q.qname.c, DNSTypeName(q.qtype));
 				// Create empty resource record
-				m->rec.r.resrec.RecordType    = kDNSRecordTypePacketAnsUnique;
+				m->rec.r.resrec.RecordType    = kDNSRecordTypeNegative;
 				m->rec.r.resrec.InterfaceID   = mDNSInterface_Any;
 				m->rec.r.resrec.name          = &q.qname;
 				m->rec.r.resrec.rrtype        = q.qtype;

@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.273  2007/04/04 00:03:27  cheshire
+<rdar://problem/5089862> DNSServiceQueryRecord is returning kDNSServiceErr_NoSuchRecord for empty rdata
+
 Revision 1.272  2007/04/03 20:10:32  cheshire
 Show ADD/RMV in DNSServiceQueryRecord log message instead of just "RESULT"
 
@@ -2395,9 +2398,8 @@ mDNSlocal void queryrecord_result_callback(mDNS *const m, DNSQuestion *question,
 	(void)m; // Unused
 
 	LogOperation("%3d: DNSServiceQueryRecord(%##s, %s) %s %s", req->sd, question->qname.c, DNSTypeName(question->qtype), AddRecord ? "ADD" : "RMV", RRDisplayString(m, answer));
-	//mDNS_StopQuery(m, question);
 
-	if (answer->rdlength == 0)
+	if (answer->RecordType == kDNSRecordTypeNegative)
 		{
 		deliver_async_error(req, query_reply_op, kDNSServiceErr_NoSuchRecord);
 		return;
@@ -2466,7 +2468,7 @@ mDNSlocal mStatus handle_queryrecord_request(request_state *request)
 	request->u.queryrecord.q.QuestionCallback = queryrecord_result_callback;
 	request->u.queryrecord.q.QuestionContext  = request;
 
-	LogOperation("%3d: DNSServiceQueryRecord(%##s, %s) START", request->sd, request->u.queryrecord.q.qname.c, DNSTypeName(request->u.queryrecord.q.qtype));
+	LogOperation("%3d: DNSServiceQueryRecord(%##s, %s, %X) START", request->sd, request->u.queryrecord.q.qname.c, DNSTypeName(request->u.queryrecord.q.qtype), flags);
 	err = mDNS_StartQuery(&mDNSStorage, &request->u.queryrecord.q);
 	if (err) LogMsg("ERROR: mDNS_StartQuery: %d", (int)err);
 
