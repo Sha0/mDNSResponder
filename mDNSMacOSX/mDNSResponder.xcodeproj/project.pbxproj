@@ -972,6 +972,7 @@
 				D284BECE0ADD80A20027CCDF /* Frameworks */,
 				D284BED30ADD80A20027CCDF /* Rez */,
 				D284BED40ADD80A20027CCDF /* CopyFiles */,
+				FF37FAAD0BC581780044A5CF /* ShellScript */,
 			);
 			buildRules = (
 				D284BFB80ADD8E510027CCDF /* PBXBuildRule */,
@@ -1226,6 +1227,15 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "javah -force -J-Xbootclasspath/p:${CONFIGURATION_TEMP_DIR}/dns_sd.jar.build/JavaClasses -o ${CONFIGURATION_TEMP_DIR}/dns_sd.jar.build/DNSSD.java.h com.apple.dnssd.AppleDNSSD com.apple.dnssd.AppleBrowser com.apple.dnssd.AppleResolver com.apple.dnssd.AppleRegistration com.apple.dnssd.AppleQuery com.apple.dnssd.AppleDomainEnum com.apple.dnssd.AppleService com.apple.dnssd.AppleDNSRecord com.apple.dnssd.AppleRecordRegistrar";
+		};
+		FF37FAAD0BC581780044A5CF /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 8;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+			shellPath = /bin/tcsh;
+			shellScript = "# Install plist to tell launchd how to start dnsextd\nmkdir -p ${DSTROOT}${SYSTEM_LIBRARY_DIR}/LaunchDaemons\ncp ${SRCROOT}/LaunchDaemonInfo.dnsextd.plist ${DSTROOT}${SYSTEM_LIBRARY_DIR}/LaunchDaemons/com.apple.dnsextd.plist\n";
 		};
 		FFD41DDD06641B4200F0C438 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
