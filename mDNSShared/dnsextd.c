@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.70  2007/04/05 18:34:40  cheshire
+<rdar://problem/4838930> dnsextd gives "bind - Address already in use" error
+
 Revision 1.69  2007/03/28 21:14:08  cheshire
 The rrclass field of an OPT pseudo-RR holds the sender's UDP payload size
 
@@ -1259,6 +1262,7 @@ SetupSockets
 	DaemonInfo * self
 	)
 	{
+	static const int kOn = 1;
 	int					sockpair[2];
 	mDNSBool			private = mDNSfalse;
 	struct sockaddr_in	daddr;
@@ -1270,8 +1274,13 @@ SetupSockets
 	self->tcpsd = socket( AF_INET, SOCK_STREAM, 0 );
 	require_action( self->tcpsd != dnssd_InvalidSocket, exit, err = mStatus_UnknownErr; LogErr( "SetupSockets", "socket" ) );
 
+#if defined(SO_REUSEADDR)
+	err = setsockopt(self->tcpsd, SOL_SOCKET, SO_REUSEADDR, &kOn, sizeof(kOn));
+	require_action( !err, exit, LogErr( "SetupSockets", "SO_REUSEADDR self->tcpsd" ) );
+#endif
+
 	err = bind( self->tcpsd, ( struct sockaddr* ) &self->addr, sizeof( self->addr ) );
-	require_action( !err, exit, LogErr( "SetupSockets", "bind" ) );
+	require_action( !err, exit, LogErr( "SetupSockets", "bind self->tcpsd" ) );
 
 	err = listen( self->tcpsd, LISTENQ );
 	require_action( !err, exit, LogErr( "SetupSockets", "listen" ) );
@@ -1279,8 +1288,13 @@ SetupSockets
 	self->udpsd = socket( AF_INET, SOCK_DGRAM, 0 );
 	require_action( self->udpsd != dnssd_InvalidSocket, exit, err = mStatus_UnknownErr; LogErr( "SetupSockets", "socket" ) );
 
+#if defined(SO_REUSEADDR)
+	err = setsockopt(self->udpsd, SOL_SOCKET, SO_REUSEADDR, &kOn, sizeof(kOn));
+	require_action( !err, exit, LogErr( "SetupSockets", "SO_REUSEADDR self->udpsd" ) );
+#endif
+
 	err = bind( self->udpsd, ( struct sockaddr* ) &self->addr, sizeof( self->addr ) );
-	require_action( !err, exit, LogErr( "SetupSockets", "bind" ) );
+	require_action( !err, exit, LogErr( "SetupSockets", "bind self->udpsd" ) );
 
 	// set up sockets on which we receive llq requests
 
@@ -1292,8 +1306,13 @@ SetupSockets
 	self->llq_tcpsd = socket( AF_INET, SOCK_STREAM, 0 );
 	require_action( self->llq_tcpsd != dnssd_InvalidSocket, exit, err = mStatus_UnknownErr; LogErr( "SetupSockets", "socket" ) );
 
+#if defined(SO_REUSEADDR)
+	err = setsockopt(self->llq_tcpsd, SOL_SOCKET, SO_REUSEADDR, &kOn, sizeof(kOn));
+	require_action( !err, exit, LogErr( "SetupSockets", "SO_REUSEADDR self->llq_tcpsd" ) );
+#endif
+
 	err = bind( self->llq_tcpsd, ( struct sockaddr* ) &self->llq_addr, sizeof( self->llq_addr ) );
-	require_action( !err, exit, LogErr( "SetupSockets", "bind" ) );
+	require_action( !err, exit, LogErr( "SetupSockets", "bind self->llq_tcpsd" ) );
 
 	err = listen( self->llq_tcpsd, LISTENQ );
 	require_action( !err, exit, LogErr( "SetupSockets", "listen" ) );
@@ -1301,8 +1320,13 @@ SetupSockets
 	self->llq_udpsd = socket( AF_INET, SOCK_DGRAM, 0 );
 	require_action( self->llq_udpsd != dnssd_InvalidSocket, exit, err = mStatus_UnknownErr; LogErr( "SetupSockets", "socket" ) );
 
+#if defined(SO_REUSEADDR)
+	err = setsockopt(self->llq_udpsd, SOL_SOCKET, SO_REUSEADDR, &kOn, sizeof(kOn));
+	require_action( !err, exit, LogErr( "SetupSockets", "SO_REUSEADDR self->llq_udpsd" ) );
+#endif
+
 	err = bind(self->llq_udpsd, ( struct sockaddr* ) &self->llq_addr, sizeof( self->llq_addr ) );
-	require_action( !err, exit, LogErr( "SetupSockets", "bind" ) );
+	require_action( !err, exit, LogErr( "SetupSockets", "bind self->llq_udpsd" ) );
 
 	// set up Unix domain socket pair for LLQ polling thread to signal main thread that a change to the zone occurred
 
@@ -1324,8 +1348,13 @@ SetupSockets
 	self->tlssd = socket( AF_INET, SOCK_STREAM, 0 );
 	require_action( self->tlssd != dnssd_InvalidSocket, exit, err = mStatus_UnknownErr; LogErr( "SetupSockets", "socket" ) );
 
+#if defined(SO_REUSEADDR)
+	err = setsockopt(self->tlssd, SOL_SOCKET, SO_REUSEADDR, &kOn, sizeof(kOn));
+	require_action( !err, exit, LogErr( "SetupSockets", "SO_REUSEADDR self->tlssd" ) );
+#endif
+
 	err = bind( self->tlssd, ( struct sockaddr* ) &daddr, sizeof( daddr ) );
-	require_action( !err, exit, LogErr( "SetupSockets", "bind" ) );
+	require_action( !err, exit, LogErr( "SetupSockets", "bind self->tlssd" ) );
 
 	err = listen( self->tlssd, LISTENQ );
 	require_action( !err, exit, LogErr( "SetupSockets", "listen" ) );
@@ -3070,6 +3099,8 @@ int main(int argc, char *argv[])
 	DaemonInfo *d;
 	struct rlimit rlim;
 
+	Log("dnsextd starting");
+
 	d = malloc(sizeof(*d));
 	if (!d) { LogErr("main", "malloc"); exit(1); }
 	bzero(d, sizeof(DaemonInfo));
@@ -3099,7 +3130,7 @@ int main(int argc, char *argv[])
 		Log("Using default file descriptor resource limit");
 		}
 	
-	if (ProcessArgs(argc, argv, d) < 0) exit(1);
+	if (ProcessArgs(argc, argv, d) < 0) { LogErr("main", "ProcessArgs"); exit(1); }
 
 	if (!foreground)
 		{
@@ -3110,15 +3141,14 @@ int main(int argc, char *argv[])
 			}
 		}
 
-	if (InitLeaseTable(d) < 0) exit(1);
-	if (SetupSockets(d) < 0) exit(1);
-	if (SetUpdateSRV(d) < 0) exit(1);
+	if (InitLeaseTable(d) < 0) { LogErr("main", "InitLeaseTable"); exit(1); }
+	if (SetupSockets(d) < 0) { LogErr("main", "SetupSockets"); exit(1); }
+	if (SetUpdateSRV(d) < 0) { LogErr("main", "SetUpdateSRV"); exit(1); }
 
 	Run(d);
-	if (ClearUpdateSRV(d) < 0) exit(1);  // clear update srv's even if Run or pthread_create returns an error
+	if (ClearUpdateSRV(d) < 0) { LogErr("main", "ClearUpdateSRV"); exit(1); }  // clear update srv's even if Run or pthread_create returns an error
 	free(d);
 	exit(0);
- 
 	}
 
 
