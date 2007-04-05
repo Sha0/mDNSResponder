@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.389  2007/04/05 21:39:49  cheshire
+Debugging messages to help diagnose <rdar://problem/5095167> mDNSResponder periodically blocks in SSLRead
+
 Revision 1.388  2007/04/05 21:09:52  cheshire
 Condense sprawling code
 
@@ -1140,9 +1143,7 @@ mDNSexport mStatus mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr *dst, 
 		if (sock->flags & kTCPSocketFlags_UseTLS)
 			{
 #ifndef NO_SECURITYFRAMEWORK
-			mStatus tlsErr;
-
-			tlsErr = tlsSetupSock(sock, mDNSfalse);
+			mStatus tlsErr = tlsSetupSock(sock, mDNSfalse);
 
 			if (tlsErr)
 				{
@@ -1236,8 +1237,7 @@ mDNSexport void mDNSPlatformTCPCloseConnection(TCPSocket *sock)
 
 mDNSexport long mDNSPlatformReadTCP(TCPSocket *sock, void *buf, unsigned long buflen, mDNSBool *closed)
 	{
-	int nread;
-
+	long nread = 0;
 	*closed = mDNSfalse;
 
 	if (sock->flags & kTCPSocketFlags_UseTLS)
@@ -1245,28 +1245,18 @@ mDNSexport long mDNSPlatformReadTCP(TCPSocket *sock, void *buf, unsigned long bu
 #ifndef NO_SECURITYFRAMEWORK
 		if (!sock->handshake)
 			{
-			mStatus err;
-
-			err = SSLHandshake(sock->tlsContext);
-
+			mStatus err = SSLHandshake(sock->tlsContext);
 			if (err) LogMsg("ERROR: mDNSPlatformReadTCP: SSLHandshake failed with error code: %d", err);
-
 			sock->handshake = mDNStrue;
-			nread = 0;
 			}
 		else
 			{
-			size_t	processed;
-			mStatus err = SSLRead(sock->tlsContext, buf, buflen, &processed);
-
-			if (!err)
-				{
-				nread = (int) processed;
-				if (!nread) *closed = mDNStrue;
-				}
-			else if (err == errSSLClosedGraceful) { nread = 0; *closed = mDNStrue; }
-			else if (err == errSSLWouldBlock) nread = 0;
-			else { LogMsg("ERROR: mDNSPlatformReadTCP - SSLRead: %d", err); nread = -1; *closed = mDNStrue; }
+			LogOperation("Starting SSLRead %d %X", sock->fd, fcntl(sock->fd, F_GETFL, 0));
+			mStatus err = SSLRead(sock->tlsContext, buf, buflen, (size_t*)&nread);
+			LogOperation("SSLRead returned %d (%d) nread %d buflen %d", err, errSSLWouldBlock, nread, buflen);
+			if (err == errSSLClosedGraceful) { nread = 0; *closed = mDNStrue; }
+			else if (err && err != errSSLWouldBlock)
+				{ LogMsg("ERROR: mDNSPlatformReadTCP - SSLRead: %d", err); nread = -1; *closed = mDNStrue; }
 			}
 #else
 		nread = -1;
@@ -1276,14 +1266,12 @@ mDNSexport long mDNSPlatformReadTCP(TCPSocket *sock, void *buf, unsigned long bu
 	else
 		{
 		nread = recv(sock->fd, buf, buflen, 0);
-
-		if (nread < 0)
+		if (nread == 0) *closed = mDNStrue;
+		else if (nread < 0)
 			{
 			if (errno == EAGAIN) nread = 0;  // no data available (call would block)
 			else { LogMsg("ERROR: mDNSPlatformReadTCP - recv: %s", strerror(errno)); nread = -1; }
 			}
-		else if (!nread)
-			*closed = mDNStrue;
 		}
 
 	return nread;
@@ -1297,9 +1285,7 @@ mDNSexport long mDNSPlatformWriteTCP(TCPSocket *sock, const char *msg, unsigned 
 		{
 #ifndef NO_SECURITYFRAMEWORK
 		size_t	processed;
-		mStatus	err;
-
-		err = SSLWrite(sock->tlsContext, msg, len, &processed);
+		mStatus	err = SSLWrite(sock->tlsContext, msg, len, &processed);
 
 		if (!err) nsent = (int) processed;
 		else if (err == errSSLWouldBlock) nsent = 0;
