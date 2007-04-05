@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.301  2007/04/05 19:13:48  cheshire
+Use better name in SCPreferencesCreate
+
 Revision 1.300  2007/04/04 21:22:18  cheshire
 Suppress "Local Hostname changed" syslog message when name has not actually changed
 
@@ -1437,7 +1440,7 @@ mDNSlocal void RecordUpdatedName(const mDNS *const m, const domainlabel *const o
 	// We tag a zero-width non-breaking space at the end of the literal text to guarantee that, no matter what
 	// arbitrary computer name the user may choose, this exact text (with zero-width non-breaking space added)
 	// can never be one that occurs in the Localizable.strings translation file.
-	const SCPreferencesRef session   = SCPreferencesCreate(NULL, CFSTR("mDNSResponder"), NULL);
+	const SCPreferencesRef session   = SCPreferencesCreate(NULL, CFSTR("mDNSResponder RecordUpdatedName"), NULL);
 	if (!cfoldname || !cfnewname || !session || !SCPreferencesLock(session, 0))	// If we can't get the lock don't wait
 		LogMsg("RecordUpdatedName: ERROR: Couldn't create SCPreferences session");
 	else
