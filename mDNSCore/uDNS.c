@@ -22,6 +22,11 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.324  2007/04/05 20:43:30  cheshire
+Collapse sprawling code onto one line -- this is part of a bigger block of identical
+code that has been copied-and-pasted into six different places in the same file.
+This really needs to be turned into a subroutine.
+
 Revision 1.323  2007/04/04 21:48:52  cheshire
 <rdar://problem/4720694> Combine unicast authoritative answer list with multicast list
 
@@ -1745,15 +1750,9 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 		info->srs      = srs;
 		info->requestLen = (int) (ptr - ((mDNSu8*) &msg));
 
+		// This mDNSPlatformTCPSocket/mDNSPlatformTCPConnect pattern appears repeatedly -- should be folded into and single make-socket-and-connect routine
 		sock = mDNSPlatformTCPSocket(m, TCP_SOCKET_FLAGS, &port);
-
-		if (!sock)
-			{
-			LogMsg("SendServiceRegistration: uanble to create TCP socket");
-			mDNSPlatformMemFree(info);
-			goto exit;
-			}
-
+		if (!sock) { LogMsg("SendServiceRegistration: uanble to create TCP socket"); mDNSPlatformMemFree(info); goto exit; }
 		err = mDNSPlatformTCPConnect(sock, &srs->ns, srs->port, 0, tcpCallback, info);
 
 		// This pattern appears repeatedly -- should be a subroutine, or folded into mDNSPlatformTCPConnect()
@@ -2397,15 +2396,9 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 		info->srs      = srs;
 		info->requestLen = (int) (ptr - ((mDNSu8*) &msg));
 
+		// This mDNSPlatformTCPSocket/mDNSPlatformTCPConnect pattern appears repeatedly -- should be folded into and single make-socket-and-connect routine
 		sock = mDNSPlatformTCPSocket(m, TCP_SOCKET_FLAGS, &port);
-
-		if (!sock)
-			{
-			LogMsg("SendServiceDeregistration: unable to create TCP socket");
-			mDNSPlatformMemFree(info);
-			goto exit;
-			}
-
+		if (!sock) { LogMsg("SendServiceDeregistration: unable to create TCP socket"); mDNSPlatformMemFree(info); goto exit; }
 		err = mDNSPlatformTCPConnect(sock, &srs->ns, srs->port, 0, tcpCallback, info);
 
 		// This pattern appears repeatedly -- should be a subroutine, or folded into mDNSPlatformTCPConnect()
@@ -3010,22 +3003,15 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 			}
 
 		mDNSPlatformMemZero(info, sizeof(tcpInfo_t));
-
 		info->m          = m;
 		info->authInfo   = authInfo;
 		info->rr         = rr;
 		info->request    = msg;
 		info->requestLen = (int) (ptr - ((mDNSu8*) &msg));
 
+		// This mDNSPlatformTCPSocket/mDNSPlatformTCPConnect pattern appears repeatedly -- should be folded into and single make-socket-and-connect routine
 		sock = mDNSPlatformTCPSocket(m, TCP_SOCKET_FLAGS, &port);
-
-		if (!sock)
-			{
-			LogMsg("sendRecordRegistration: unable to create TCP socket");
-			mDNSPlatformMemFree(info);
-			goto exit;
-			}
-
+		if (!sock) { LogMsg("sendRecordRegistration: unable to create TCP socket"); mDNSPlatformMemFree(info); goto exit; }
 		err = mDNSPlatformTCPConnect(sock, &rr->UpdateServer, rr->UpdatePort, 0, tcpCallback, info);
 
 		// This pattern appears repeatedly -- should be a subroutine, or folded into mDNSPlatformTCPConnect()
@@ -3436,15 +3422,9 @@ mDNSlocal void hndlTruncatedAnswer(DNSQuestion *question, const mDNSAddr *src, m
 	context->m = m;
 	question->TargetQID = mDNS_NewMessageID(m);
 
+	// This mDNSPlatformTCPSocket/mDNSPlatformTCPConnect pattern appears repeatedly -- should be folded into and single make-socket-and-connect routine
 	sock = mDNSPlatformTCPSocket(m, kTCPSocketFlags_Zero, &port);
-
-	if (!sock)
-		{
-		LogMsg("ERROR: unable to create TCP socket");
-		err = mStatus_UnknownErr;
-		goto exit;
-		}
-
+	if (!sock) { LogMsg("ERROR: unable to create TCP socket"); err = mStatus_UnknownErr; goto exit; }
 	err = mDNSPlatformTCPConnect(sock, src, UnicastDNSPort, question->InterfaceID, tcpCallback, context);
 
 	// This pattern appears repeatedly -- should be a subroutine, or folded into mDNSPlatformTCPConnect()
@@ -3767,15 +3747,9 @@ mDNSlocal void startPrivateQueryCallback(mStatus err, mDNS *const m, void *conte
 	info->authInfo = authInfo;
 	question->TargetQID   = mDNS_NewMessageID(m);
 
+	// This mDNSPlatformTCPSocket/mDNSPlatformTCPConnect pattern appears repeatedly -- should be folded into and single make-socket-and-connect routine
 	sock = mDNSPlatformTCPSocket(m, TCP_SOCKET_FLAGS, &port);
-
-	if (!sock)
-		{
-		LogMsg("startPrivateQueryCallback: unable to create TCP socket");
-		err = mStatus_UnknownErr;
-		goto exit;
-		}
-
+	if (!sock) { LogMsg("startPrivateQueryCallback: unable to create TCP socket"); err = mStatus_UnknownErr; goto exit; }
 	err = mDNSPlatformTCPConnect(sock, &zoneInfo->primaryAddr, zoneInfo->Port, question->InterfaceID, tcpCallback, info);
 
 	// This pattern appears repeatedly -- should be a subroutine, or folded into mDNSPlatformTCPConnect()
@@ -4006,15 +3980,9 @@ mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 		info->rr       = rr;
 		info->requestLen = (int) (ptr - ((mDNSu8*) &msg));
 
+		// This mDNSPlatformTCPSocket/mDNSPlatformTCPConnect pattern appears repeatedly -- should be folded into and single make-socket-and-connect routine
 		sock = mDNSPlatformTCPSocket(m, TCP_SOCKET_FLAGS, &port);
-
-		if (!sock)
-			{
-			LogMsg("SendRecordDeregistration: unable to create TCP socket");
-			mDNSPlatformMemFree(info);
-			goto exit;
-			}
-
+		if (!sock) { LogMsg("SendRecordDeregistration: unable to create TCP socket"); mDNSPlatformMemFree(info); goto exit; }
 		err = mDNSPlatformTCPConnect(sock, &rr->UpdateServer, rr->UpdatePort, 0, tcpCallback, info);
 
 		// This pattern appears repeatedly -- should be a subroutine, or folded into mDNSPlatformTCPConnect()
