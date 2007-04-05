@@ -30,6 +30,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.92  2007/04/05 20:40:37  cheshire
+Remove unused mDNSPlatformTCPGetFlags()
+
 Revision 1.91  2007/03/22 18:31:48  cheshire
 Put dst parameter first in mDNSPlatformStrCopy/mDNSPlatformMemCopy, like conventional Posix strcpy/memcpy
 
@@ -384,12 +387,6 @@ mDNSexport TCPSocket *mDNSPlatformTCPAccept(TCPSocketFlags flags, int sd)
 	(void)flags;		// Unused
 	(void)sd;			// Unused
 	return NULL;
-	}
-
-mDNSexport int mDNSPlatformTCPGetFlags(TCPSocket *sock)
-	{
-	(void)sock;			// Unused
-	return 0;
 	}
 
 mDNSexport int mDNSPlatformTCPGetFD(TCPSocket *sock)

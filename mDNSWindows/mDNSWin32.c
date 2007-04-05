@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.121  2007/04/05 20:40:37  cheshire
+Remove unused mDNSPlatformTCPGetFlags()
+
 Revision 1.120  2007/03/28 20:59:27  cheshire
 <rdar://problem/4743285> Remove inappropriate use of IsPrivateV4Addr()
 
@@ -1168,15 +1171,6 @@ exit:
 
 	return nsent;
 }
-
-//===========================================================================================================================
-//	mDNSPlatformTCPGetFlags
-//===========================================================================================================================
-
-mDNSexport int mDNSPlatformTCPGetFlags( TCPSocket *sock )
-    {
-    return sock->flags;
-    }
 
 //===========================================================================================================================
 //	mDNSPlatformTCPGetFD

@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.353  2007/04/05 20:40:37  cheshire
+Remove unused mDNSPlatformTCPGetFlags()
+
 Revision 1.352  2007/04/04 21:48:52  cheshire
 <rdar://problem/4720694> Combine unicast authoritative answer list with multicast list
 
@@ -2045,7 +2048,6 @@ typedef enum
 typedef void (*TCPConnectionCallback)(TCPSocket *sock, void *context, mDNSBool ConnectionEstablished, mStatus err);
 extern TCPSocket *mDNSPlatformTCPSocket(mDNS *const m, TCPSocketFlags flags, mDNSIPPort *port);	// creates a tcp socket
 extern TCPSocket *mDNSPlatformTCPAccept(TCPSocketFlags flags, int sd);
-extern int            mDNSPlatformTCPGetFlags(TCPSocket *sock);
 extern int            mDNSPlatformTCPGetFD(TCPSocket *sock);
 extern mStatus        mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
 										  TCPConnectionCallback callback, void *context);

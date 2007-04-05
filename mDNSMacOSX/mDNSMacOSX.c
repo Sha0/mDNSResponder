@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.387  2007/04/05 20:40:37  cheshire
+Remove unused mDNSPlatformTCPGetFlags()
+
 Revision 1.386  2007/04/05 19:50:56  cheshire
 Fixed memory leak: GetCertChain() was not releasing cert returned by SecIdentityCopyCertificate()
 
@@ -1397,11 +1400,6 @@ mDNSexport long mDNSPlatformWriteTCP(TCPSocket *sock, const char * msg, unsigned
 		}
 
 	return nsent;
-	}
-
-mDNSexport int mDNSPlatformTCPGetFlags(TCPSocket *sock)
-	{
-	return sock->flags;
 	}
 
 mDNSexport int mDNSPlatformTCPGetFD(TCPSocket *sock)
