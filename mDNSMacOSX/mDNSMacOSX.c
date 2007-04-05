@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.386  2007/04/05 19:50:56  cheshire
+Fixed memory leak: GetCertChain() was not releasing cert returned by SecIdentityCopyCertificate()
+
 Revision 1.385  2007/04/03 19:39:19  cheshire
 Fixed intel byte order bug in mDNSPlatformSetDNSServers()
 
@@ -1140,9 +1143,7 @@ mDNSexport mStatus mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr * dst,
 		return errno;
  		}
 
-	// Set non-blocking
-
-	if (fcntl(sock->fd, F_SETFL, O_NONBLOCK) < 0)
+	if (fcntl(sock->fd, F_SETFL, fcntl(sock->fd, F_GETFL, 0) | O_NONBLOCK) < 0) // set non-blocking
 		{
 		LogMsg("ERROR: setsockopt O_NONBLOCK - %s", strerror(errno));
 		return mStatus_UnknownErr;
@@ -1615,137 +1616,71 @@ mDNSexport void mDNSPlatformUDPClose(UDPSocket *sock)
 	}
 
 #ifndef NO_SECURITYFRAMEWORK
-mDNSlocal CFArrayRef GetCertChain
-	(
-	SecIdentityRef identity
-	)
+mDNSlocal CFArrayRef GetCertChain(SecIdentityRef identity)
 	{
-	SecCertificateRef				cert			= NULL;
-	SecPolicySearchRef				searchRef		= NULL;
-	SecPolicyRef					policy			= NULL;
-	CFArrayRef						wrappedCert		= NULL;
-	SecTrustRef						trust			= NULL;
-	CFArrayRef						rawCertChain	= NULL;
-	CFMutableArrayRef				certChain		= NULL;
-	CSSM_TP_APPLE_EVIDENCE_INFO	*	statusChain		= NULL;
-	OSStatus						err				= 0;
-
-	if (!identity)
+	CFMutableArrayRef certChain = NULL;
+	if (!identity) { LogMsg("getCertChain: identity is NULL"); return(NULL); }
+	SecCertificateRef cert;
+	OSStatus err = SecIdentityCopyCertificate(identity, &cert);
+	if (err || !cert) LogMsg("getCertChain: SecIdentityCopyCertificate() returned %d", (int) err);
+	else
 		{
-		LogMsg("getCertChain: identity is NULL");
-		goto exit;
+		SecPolicySearchRef searchRef;
+		err = SecPolicySearchCreate(CSSM_CERT_X_509v3, &CSSMOID_APPLE_X509_BASIC, NULL, &searchRef);
+		if (err || !searchRef) LogMsg("getCertChain: SecPolicySearchCreate() returned %d", (int) err);
+		else
+			{
+			SecPolicyRef policy;
+			err = SecPolicySearchCopyNext(searchRef, &policy);
+			if (err || !policy) LogMsg("getCertChain: SecPolicySearchCopyNext() returned %d", (int) err);
+			else
+				{
+				CFArrayRef wrappedCert = CFArrayCreate(NULL, (const void**) &cert, 1, &kCFTypeArrayCallBacks);
+				if (!wrappedCert) LogMsg("getCertChain: wrappedCert is NULL");
+				else
+					{
+					SecTrustRef trust;
+					err = SecTrustCreateWithCertificates(wrappedCert, policy, &trust);
+					if (err || !trust) LogMsg("getCertChain: SecTrustCreateWithCertificates() returned %d", (int) err);
+					else
+						{
+						err = SecTrustEvaluate(trust, NULL);
+						if (err) LogMsg("getCertChain: SecTrustEvaluate() returned %d", (int) err);
+						else
+							{
+							CFArrayRef rawCertChain;
+							CSSM_TP_APPLE_EVIDENCE_INFO *statusChain = NULL;
+							err = SecTrustGetResult(trust, NULL, &rawCertChain, &statusChain);
+							if (err || !rawCertChain || !statusChain) LogMsg("getCertChain: SecTrustGetResult() returned %d", (int) err);
+							else
+								{
+								certChain = CFArrayCreateMutableCopy(NULL, 0, rawCertChain);
+								if (!certChain) LogMsg("getCertChain: certChain is NULL");
+								else
+									{
+									// Replace the SecCertificateRef at certChain[0] with a SecIdentityRef per documentation for SSLSetCertificate:
+									// <http://devworld.apple.com/documentation/Security/Reference/secureTransportRef/index.html>
+									CFArraySetValueAtIndex(certChain, 0, identity);
+									// Remove root from cert chain, but keep any and all intermediate certificates that have been signed by the root certificate
+									if (CFArrayGetCount(certChain) > 1) CFArrayRemoveValueAtIndex(certChain, CFArrayGetCount(certChain) - 1);
+									}
+								CFRelease(rawCertChain);
+								// Do not free statusChain:
+								// <http://developer.apple.com/documentation/Security/Reference/certifkeytrustservices/Reference/reference.html> says:
+								// certChain: Call the CFRelease function to release this object when you are finished with it.
+								// statusChain: Do not attempt to free this pointer; it remains valid until the trust management object is released...
+								}
+							}
+						CFRelease(trust);
+						}
+					CFRelease(wrappedCert);
+					}
+				CFRelease(policy);
+				}
+			CFRelease(searchRef);
+			}
+		CFRelease(cert);
 		}
-
-	err = SecIdentityCopyCertificate(identity, &cert);
-
-	if (err)
-		{
-		LogMsg("getCertChain: SecIdentityCopyCertificate() returned %d", (int) err);
-		goto exit;
-		}
-
-	err = SecPolicySearchCreate(CSSM_CERT_X_509v3, &CSSMOID_APPLE_X509_BASIC, NULL, &searchRef);
-
-	if (err)
-		{
-		LogMsg("getCertChain: SecPolicySearchCreate() returned %d", (int) err);
-		goto exit;
-		}
-
-	err = SecPolicySearchCopyNext(searchRef, &policy);
-
-	if (err)
-		{
-		LogMsg("getCertChain: SecPolicySearchCopyNext() returned %d", (int) err);
-		goto exit;
-		}
-
-	wrappedCert = CFArrayCreate(NULL, (const void**) &cert, 1, &kCFTypeArrayCallBacks);
-
-	if (!wrappedCert)
-		{
-		LogMsg("getCertChain: wrappedCert is NULL");
-		goto exit;
-		}
-
-	err = SecTrustCreateWithCertificates(wrappedCert, policy, &trust);
-
-	if (err)
-		{
-		LogMsg("getCertChain: SecTrustCreateWithCertificates() returned %d", (int) err);
-		goto exit;
-		}
-
-	err = SecTrustEvaluate(trust, NULL);
-
-	if (err)
-		{
-		LogMsg("getCertChain: SecTrustEvaluate() returned %d", (int) err);
-		goto exit;
-		}
-
-	err = SecTrustGetResult(trust, NULL, &rawCertChain, &statusChain);
-
-	if (err)
-		{
-		LogMsg("getCertChain: SecTrustGetResult() returned %d", (int) err);
-		goto exit;
-		}
-
-	certChain = CFArrayCreateMutableCopy(NULL, 0, rawCertChain);
-
-	if (!certChain)
-		{
-		LogMsg("getCertChain: certChain is NULL");
-		goto exit;
-		}
-
-	// Replace the SecCertificateRef at certChain[0] with a SecIdentityRef per documentation for SSLSetCertificate
-	// at http://devworld.apple.com/documentation/Security/Reference/secureTransportRef/index.html#//apple_ref/doc/uid/TP30000155
-
-	CFArraySetValueAtIndex(certChain, 0, identity);
-
-	// Remove root from cert chain, but keep any and all intermediate certificates that have been signed by the root
-	// certificate
-
-	if (CFArrayGetCount(certChain) > 1)
-		{
-		CFArrayRemoveValueAtIndex(certChain, CFArrayGetCount(certChain) - 1);
-		}
-
-	exit:
-
-	if (searchRef)
-		{
-		CFRelease(searchRef);
-		}
-
-	if (policy)
-		{
-		CFRelease(policy);
-		}
-
-	if (wrappedCert)
-		{
-		CFRelease(wrappedCert);
-		}
-
-	if (trust)
-		{
-		CFRelease(trust);
-		}
-
-	if (rawCertChain)
-		{
-		CFRelease(rawCertChain);
-		}
-
-	if (certChain && err)
-		{
-		CFRelease(certChain);
-		certChain = NULL;
-		}
-
 	return certChain;
 	}
 #endif /* NO_SECURITYFRAMEWORK */
