@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.c,v $
+Revision 1.9  2007/04/05 19:52:32  cheshire
+Display correct ident in syslog messages (i.e. in dnsextd, ProgramName is not "mDNSResponder")
+
 Revision 1.8  2007/01/20 01:43:27  cheshire
 <rdar://problem/4058383> Should not write log messages to /dev/console
 
@@ -127,7 +130,7 @@ mDNSexport void LogMsg(const char *format, ...)
 	va_start(ptr,format);
 	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
 	va_end(ptr);
-	WriteLogMsg("mDNSResponder", buffer, 0);
+	WriteLogMsg(ProgramName, buffer, 0);
 	}
 
 // Log message with specified ident string at the start
