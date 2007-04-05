@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.354  2007/04/05 22:55:34  cheshire
+<rdar://problem/5077076> Records are ending up in Lighthouse without expiry information
+
 Revision 1.353  2007/04/05 20:40:37  cheshire
 Remove unused mDNSPlatformTCPGetFlags()
 
@@ -685,7 +688,7 @@ typedef packedstruct
 	mDNSu16      llqOp;
 	mDNSu16      err;	// Or UDP reply port, in setup request
 	mDNSOpaque64 id;
-	mDNSu32      lease;
+	mDNSu32      llqlease;
 	} LLQOptData;
 
 // Windows adds pad bytes to sizeof(LLQOptData).
@@ -700,7 +703,7 @@ typedef packedstruct
 	{
 	mDNSu16 opt;
 	mDNSu16 optlen;
-	union { LLQOptData llq; mDNSu32 lease; } OptData;
+	union { LLQOptData llq; mDNSu32 updatelease; } OptData;
 	} rdataOPT;
 
 // StandardAuthRDSize is 264 (256+8), which is large enough to hold a maximum-sized SRV record (6 + 256 bytes)
@@ -862,7 +865,7 @@ struct AuthRecord_struct
 								// e.g. rr->resrec.RecordType can be kDNSRecordTypeUnregistered,
 								// and rr->state can be regState_Unregistered
 								// What if we find one of those statements is true and the other false? What does that mean?
-	mDNSBool     lease;			// dynamic update contains (should contain) lease option
+	mDNSBool     uselease;		// dynamic update contains (should contain) lease option
 	mDNSs32      expire;		// expiration of lease (-1 for static)
 	mDNSBool     Private;		// If zone is private, DNS updates may have to be encrypted to prevent eavesdropping
 	mDNSOpaque16 id;			// identifier to match update request and response
@@ -1038,14 +1041,14 @@ struct ServiceRecordSet_struct
 	// Hopefully much of this stuff can be simplified or eliminated
 
 	regState_t   state;
-	mDNSBool     lease;    // dynamic update contains (should contain) lease option
+	mDNSBool     srs_uselease;    // dynamic update contains (should contain) lease option
 	mDNSs32      expire;   // expiration of lease (-1 for static)
 	mDNSBool     TestForSelfConflict;  // on name conflict, check if we're just seeing our own orphaned records
 	mDNSBool     Private;  // If zone is private, DNS updates may have to be encrypted to prevent eavesdropping
 	mDNSOpaque16 id;
 	domainname   zone;     // the zone that is updated
 	mDNSAddr     ns;       // primary name server for the record's zone  !!!KRS not technically correct to cache longer than TTL
-	mDNSIPPort   port;     // port on which server accepts dynamic updates
+	mDNSIPPort   SRSUpdatePort;     // port on which server accepts dynamic updates
 	NATTraversalInfo *NATinfo; // may be NULL
     mDNSBool     ClientCallbackDeferred;  // invoke client callback on completion of pending operation(s)
 	mStatus      DeferredStatus;          // status to deliver when above flag is set
@@ -1339,7 +1342,7 @@ typedef packedstruct
 	mDNSOpaque16 unused;
 	mDNSIPPort priv;
 	mDNSIPPort pub;
-	mDNSu32    lease;
+	mDNSu32    NATReq_lease;
 	} NATPortMapRequest;
 
 typedef packedstruct
@@ -1350,7 +1353,7 @@ typedef packedstruct
 	mDNSu32    uptime;
 	mDNSIPPort priv;
 	mDNSIPPort pub;
-	mDNSu32    lease;
+	mDNSu32    NATRep_lease;
 	} NATPortMapReply;
 
 // Pass NULL for pkt on error (including timeout)
@@ -1367,7 +1370,7 @@ struct NATTraversalInfo_struct
     mDNSAddr Router;
 	mDNSIPPort PrivatePort;
     mDNSIPPort PublicPort;
-	mDNSu32 lease;
+	mDNSu32 PortMappingLease;
     union { NATAddrRequest AddrReq; NATPortMapRequest PortReq; } request;
 	mDNSs32 retry;                   // absolute time when we retry
 	mDNSs32 RetryInterval;           // delta between time sent and retry

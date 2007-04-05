@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.325  2007/04/05 22:55:35  cheshire
+<rdar://problem/5077076> Records are ending up in Lighthouse without expiry information
+
 Revision 1.324  2007/04/05 20:43:30  cheshire
 Collapse sprawling code onto one line -- this is part of a bigger block of identical
 code that has been copied-and-pasted into six different places in the same file.
@@ -601,7 +604,7 @@ mDNSexport NATTraversalInfo *uDNS_AllocNATInfo(mDNS *const m, NATOp_t op, mDNSIP
 		info->PrivatePort = privatePort;
 		info->PublicPort = publicPort;
 		info->Router = m->Router;
-		info->lease = ttl;
+		info->PortMappingLease = ttl;
 		info->refs = 1;
 		}
 exit:
@@ -612,7 +615,7 @@ exit:
 mDNSexport void uDNS_FormatPortMaprequest(NATTraversalInfo *info)
 	{
 	mDNSu8 *p = (mDNSu8 *)&info->request.PortReq;	// NATPortMapRequest packet
-	mDNSu32 lease = info->lease ? info->lease : NATMAP_DEFAULT_LEASE;
+	mDNSu32 lease = info->PortMappingLease ? info->PortMappingLease : NATMAP_DEFAULT_LEASE;
 
 	p[ 0] = NATMAP_VERS;
 	p[ 1] = info->op;
@@ -972,10 +975,10 @@ mDNSlocal void recvRefreshReply(mDNS *m, DNSMessage *msg, const mDNSu8 *end, DNS
 	if (!mDNSSameOpaque64(&pktData->OptData.llq.id, &qInfo->id)) { LogMsg("recvRefreshReply - ID mismatch.  Discarding");  return; }
 	if (pktData->OptData.llq.err != LLQErr_NoError) { LogMsg("recvRefreshReply: received error %d from server", pktData->OptData.llq.err); return; }
 
-	qInfo->expire    = q->LastQTime + ((mDNSs32)pktData->OptData.llq.lease * mDNSPlatformOneSecond);
-	q->ThisQInterval = ((mDNSs32)pktData->OptData.llq.lease * mDNSPlatformOneSecond/2);
+	qInfo->expire    = q->LastQTime + ((mDNSs32)pktData->OptData.llq.llqlease * mDNSPlatformOneSecond);
+	q->ThisQInterval = ((mDNSs32)pktData->OptData.llq.llqlease * mDNSPlatformOneSecond/2);
 
-	qInfo->origLease = pktData->OptData.llq.lease;
+	qInfo->origLease = pktData->OptData.llq.llqlease;
 	qInfo->state = LLQ_Established;
 	}
 
@@ -1053,7 +1056,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			llqData.err   = LLQErr_NoError;
 //			llqData.err   = tcpInfo->llqInfo->eventPort;
 			llqData.id    = zeroOpaque64;
-			llqData.lease = kLLQ_DefLease;
+			llqData.llqlease = kLLQ_DefLease;
 			initializeQuery(&tcpInfo->request, tcpInfo->llqInfo->question);
 			end = putLLQ(&tcpInfo->request, tcpInfo->request.data, tcpInfo->llqInfo->question, &llqData, mDNStrue);
 
@@ -1280,7 +1283,7 @@ mDNSlocal void sendChallengeResponse(const mDNS *const m, DNSQuestion *const q, 
 		llqBuf.llqOp = kLLQOp_Setup;
 		llqBuf.err   = LLQErr_NoError;
 		llqBuf.id    = info->id;
-		llqBuf.lease = info->origLease;
+		llqBuf.llqlease = info->origLease;
 		llq = &llqBuf;
 		}
 
@@ -1309,9 +1312,9 @@ mDNSlocal void hndlRequestChallenge(mDNS *const m, const LLQOptData *const llq, 
 		{
 		case LLQErr_NoError: break;
 		case LLQErr_ServFull:
-			LogMsg("hndlRequestChallenge - received ServFull from server for LLQ %##s Retry in %lu sec", q->qname.c, llq->lease);
+			LogMsg("hndlRequestChallenge - received ServFull from server for LLQ %##s Retry in %lu sec", q->qname.c, llq->llqlease);
 			q->LastQTime     = m->timenow;
-			q->ThisQInterval = ((mDNSs32)llq->lease * mDNSPlatformOneSecond);
+			q->ThisQInterval = ((mDNSs32)llq->llqlease * mDNSPlatformOneSecond);
 			info->state = LLQ_Retry;
 		case LLQErr_Static:
 			info->state = LLQ_Static;
@@ -1331,12 +1334,12 @@ mDNSlocal void hndlRequestChallenge(mDNS *const m, const LLQOptData *const llq, 
 			goto error;
 		}
 
-	if (info->origLease != llq->lease)
-		debugf("hndlRequestChallenge: requested lease %lu, granted lease %lu", info->origLease, llq->lease);
+	if (info->origLease != llq->llqlease)
+		debugf("hndlRequestChallenge: requested lease %lu, granted lease %lu", info->origLease, llq->llqlease);
 
 	// cache expiration in case we go to sleep before finishing setup
-	info->origLease = llq->lease;
-	info->expire = timenow + ((mDNSs32)llq->lease * mDNSPlatformOneSecond);
+	info->origLease = llq->llqlease;
+	info->expire = timenow + ((mDNSs32)llq->llqlease * mDNSPlatformOneSecond);
 
 	// update state
 	info->state  = LLQ_SecondaryRequest;
@@ -1422,10 +1425,10 @@ mDNSlocal void recvSetupResponse(mDNS *const m, const DNSMessage *const pktMsg, 
 		if (llq->OptData.llq.err) { LogMsg("recvSetupResponse - received error %d from server", llq->OptData.llq.err); info->state = LLQ_Error; goto exit; }
 		if (!mDNSSameOpaque64(&info->id, &llq->OptData.llq.id))
 			{ LogMsg("recvSetupResponse - ID changed.  discarding"); goto exit; } // this can happen rarely (on packet loss + reordering)
-		info->expire     = m->timenow + ((mDNSs32)llq->OptData.llq.lease * mDNSPlatformOneSecond);
+		info->expire     = m->timenow + ((mDNSs32)llq->OptData.llq.llqlease * mDNSPlatformOneSecond);
 		q->LastQTime     = m->timenow;
-		q->ThisQInterval = ((mDNSs32)llq->OptData.llq.lease * mDNSPlatformOneSecond / 2);
-		info->origLease  = llq->OptData.llq.lease;
+		q->ThisQInterval = ((mDNSs32)llq->OptData.llq.llqlease * mDNSPlatformOneSecond / 2);
+		info->origLease  = llq->OptData.llq.llqlease;
 		info->state      = LLQ_Established;
 		goto exit;
 		}
@@ -1549,7 +1552,7 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info, mDNSBool defer)
 		llqData.llqOp = kLLQOp_Setup;
 		llqData.err   = LLQErr_NoError;
 		llqData.id    = zeroOpaque64;
-		llqData.lease = kLLQ_DefLease;
+		llqData.llqlease = kLLQ_DefLease;
 
 		initializeQuery(&msg, q);
 		end = putLLQ(&msg, msg.data, q, &llqData, mDNStrue);
@@ -1719,7 +1722,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numUpdates, &srv->resrec, srv->resrec.rroriginalttl);
 	if (!ptr) { err = mStatus_UnknownErr; goto exit; }
 
-	if (srs->lease)
+	if (srs->srs_uselease)
 		{ ptr = putUpdateLease(&msg, ptr, DEFAULT_UPDATE_LEASE); if (!ptr) { err = mStatus_UnknownErr; goto exit; } }
 
 	if (srs->state != regState_Refresh && srs->state != regState_DeregDeferred && srs->state != regState_UpdatePending)
@@ -1753,7 +1756,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 		// This mDNSPlatformTCPSocket/mDNSPlatformTCPConnect pattern appears repeatedly -- should be folded into and single make-socket-and-connect routine
 		sock = mDNSPlatformTCPSocket(m, TCP_SOCKET_FLAGS, &port);
 		if (!sock) { LogMsg("SendServiceRegistration: uanble to create TCP socket"); mDNSPlatformMemFree(info); goto exit; }
-		err = mDNSPlatformTCPConnect(sock, &srs->ns, srs->port, 0, tcpCallback, info);
+		err = mDNSPlatformTCPConnect(sock, &srs->ns, srs->SRSUpdatePort, 0, tcpCallback, info);
 
 		// This pattern appears repeatedly -- should be a subroutine, or folded into mDNSPlatformTCPConnect()
 		if      (err == mStatus_ConnEstablished) { tcpCallback(sock, info, mDNStrue, mStatus_NoError); err = mStatus_NoError; }
@@ -1762,7 +1765,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 		}
 	else
 		{
-		err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &srs->ns, srs->port, mDNSNULL, authInfo);
+		err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &srs->ns, srs->SRSUpdatePort, mDNSNULL, authInfo);
 		if (err) debugf("ERROR: SendServiceRegistration - mDNSSendDNSMessage - %ld", err);
 		}
 
@@ -2160,14 +2163,14 @@ mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srs
 	srs->ns = zoneData->primaryAddr;
 	if (!mDNSIPPortIsZero(zoneData->Port))
 		{
-		srs->port = zoneData->Port;
+		srs->SRSUpdatePort = zoneData->Port;
 		srs->Private = zoneData->zonePrivate;
 		}
 	else
 		{
 		debugf("Update port not advertised via SRV - guessing port 53, no lease option");
-		srs->port = UnicastDNSPort;
-		srs->lease = mDNSfalse;
+		srs->SRSUpdatePort = UnicastDNSPort;
+		srs->srs_uselease = mDNSfalse;
 		}
 
 	LogOperation("serviceRegistrationCallback %#a %d %#a %d", &m->AdvertisedV4, mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4), &srs->ns, mDNSAddrIsRFC1918(&srs->ns));
@@ -2193,7 +2196,7 @@ mDNSexport mDNSBool uDNS_HandleNATPortMapReply(NATTraversalInfo *n, mDNS *m, mDN
 	{
 	ServiceRecordSet *srs = n->reg.ServiceRegistration;
 	mDNSIPPort priv = srs ? srs->RR_SRV.resrec.rdata->u.srv.port : n->PrivatePort;
-	mDNSBool deletion = !n->request.PortReq.lease;
+	mDNSBool deletion = !n->request.PortReq.NATReq_lease;
 	NATPortMapReply *reply = (NATPortMapReply *)pkt;
 	mDNSu8 *service = srs ? srs->RR_SRV.resrec.name->c : (mDNSu8 *)"\016LLQ event port";
 
@@ -2240,8 +2243,8 @@ mDNSexport mDNSBool uDNS_HandleNATPortMapReply(NATTraversalInfo *n, mDNS *m, mDN
 
 	if (deletion) { n->state = NATState_Deleted; return mDNStrue; }
 
-	n->lease = reply->lease;
-	if (n->lease > 0x70000000UL / mDNSPlatformOneSecond) n->lease = 0x70000000UL / mDNSPlatformOneSecond;
+	n->PortMappingLease = reply->NATRep_lease;
+	if (n->PortMappingLease > 0x70000000UL / mDNSPlatformOneSecond) n->PortMappingLease = 0x70000000UL / mDNSPlatformOneSecond;
 
 	if (n->state == NATState_Refresh && !mDNSSameIPPort(reply->pub, n->PublicPort))
 		LogMsg("uDNS_HandleNATPortMapReply: NAT refresh changed public port from %d to %d", mDNSVal16(n->PublicPort), mDNSVal16(reply->pub));
@@ -2252,7 +2255,7 @@ mDNSexport mDNSBool uDNS_HandleNATPortMapReply(NATTraversalInfo *n, mDNS *m, mDN
 	n->request.PortReq.pub = reply->pub; // Remember allocated port for future refreshes
 	LogOperation("uDNS_HandleNATPortMapReply %p %X %d %d", n, reply->opcode, mDNSVal16(reply->priv), mDNSVal16(reply->pub));
 
-	n->retry = m->timenow + ((mDNSs32)n->lease * mDNSPlatformOneSecond / 2);	// retry half way to expiration
+	n->retry = m->timenow + ((mDNSs32)n->PortMappingLease * mDNSPlatformOneSecond / 2);	// retry half way to expiration
 
 	if (n->state == NATState_Refresh) { n->state = NATState_Established; return mDNStrue; }
 	n->state = NATState_Established;
@@ -2303,7 +2306,7 @@ mDNSexport void uDNS_DeleteNATPortMapping(mDNS *m, NATTraversalInfo *nat)
 	if (nat->state == NATState_Established)	// let other edge-case states expire for simplicity
 		{
 		// zero lease
-		nat->request.PortReq.lease = 0;
+		nat->request.PortReq.NATReq_lease = 0;
 		nat->request.PortReq.pub = zeroIPPort;
 		nat->state = NATState_Request;
 		uDNS_SendNATMsg(nat, m);
@@ -2399,7 +2402,7 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 		// This mDNSPlatformTCPSocket/mDNSPlatformTCPConnect pattern appears repeatedly -- should be folded into and single make-socket-and-connect routine
 		sock = mDNSPlatformTCPSocket(m, TCP_SOCKET_FLAGS, &port);
 		if (!sock) { LogMsg("SendServiceDeregistration: unable to create TCP socket"); mDNSPlatformMemFree(info); goto exit; }
-		err = mDNSPlatformTCPConnect(sock, &srs->ns, srs->port, 0, tcpCallback, info);
+		err = mDNSPlatformTCPConnect(sock, &srs->ns, srs->SRSUpdatePort, 0, tcpCallback, info);
 
 		// This pattern appears repeatedly -- should be a subroutine, or folded into mDNSPlatformTCPConnect()
 		if      (err == mStatus_ConnEstablished) { tcpCallback(sock, info, mDNStrue, mStatus_NoError); err = mStatus_NoError; }
@@ -2408,7 +2411,7 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 		}
 	else
 		{
-		err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &srs->ns, srs->port, mDNSNULL, authInfo);
+		err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &srs->ns, srs->SRSUpdatePort, mDNSNULL, authInfo);
 		if (err && err != mStatus_TransientErr) { debugf("ERROR: SendServiceDeregistration - mDNSSendDNSMessage - %ld", err); goto exit; }
 		}
 
@@ -2982,8 +2985,10 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 		if (!ptr) { err = mStatus_UnknownErr; goto exit; }
 		}
 
-	if (rr->lease)
-		{ ptr = putUpdateLease(&msg, ptr, DEFAULT_UPDATE_LEASE); if (!ptr) { err = mStatus_UnknownErr; goto exit; } }
+	if (rr->uselease)
+		{
+		ptr = putUpdateLease(&msg, ptr, DEFAULT_UPDATE_LEASE); if (!ptr) { err = mStatus_UnknownErr; goto exit; }
+		}
 
 	authInfo = GetAuthInfoForName(m, rr->resrec.name);
 
@@ -3076,10 +3081,10 @@ mDNSlocal void hndlServiceUpdateReply(mDNS *const m, ServiceRecordSet *srs,  mSt
 				InvokeCallback = mDNStrue;
 				break;
 				}
-			else if (err == mStatus_UnknownErr && srs->lease)
+			else if (srs->srs_uselease && err == mStatus_UnknownErr && mDNSSameIPPort(srs->SRSUpdatePort, UnicastDNSPort))
 				{
 				LogMsg("Re-trying update of service %##s without lease option", srs->RR_SRV.resrec.name->c);
-				srs->lease = mDNSfalse;
+				srs->srs_uselease = mDNSfalse;
 				SendServiceRegistration(m, srs);
 				return;
 				}
@@ -3183,8 +3188,8 @@ mDNSlocal void hndlServiceUpdateReply(mDNS *const m, ServiceRecordSet *srs,  mSt
 				// extra resource record queued for this service - copy zone srs and register
 				AssignDomainName(&(*e)->r.zone, &srs->zone);
 				(*e)->r.UpdateServer    = srs->ns;
-				(*e)->r.UpdatePort  = srs->port;
-				(*e)->r.lease = srs->lease;
+				(*e)->r.UpdatePort  = srs->SRSUpdatePort;
+				(*e)->r.uselease = srs->srs_uselease;
 				sendRecordRegistration(m, &(*e)->r);
 				e = &(*e)->next;
 				}
@@ -3285,10 +3290,10 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 			}
 		else
 			{
-			if (rr->lease && err == mStatus_UnknownErr)
+			if (rr->uselease && err == mStatus_UnknownErr && mDNSSameIPPort(rr->UpdatePort, UnicastDNSPort))
 				{
 				LogMsg("Re-trying update of record %##s without lease option", rr->resrec.name->c);
-				rr->lease = mDNSfalse;
+				rr->uselease = mDNSfalse;
 				sendRecordRegistration(m, rr);
 				return;
 				}
@@ -3343,7 +3348,7 @@ mDNSexport void uDNS_ReceiveNATMap(mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 		{
 		if (len < sizeof(NATPortMapReply)) { LogMsg("NAT Traversal message too short (%d bytes)", len); return; }
 		port = PortMapReply->priv;
-		PortMapReply->lease = (mDNSs32) ((mDNSs32)pkt[12] << 24 | (mDNSs32)pkt[13] << 16 | (mDNSs32)pkt[14] << 8 | pkt[15]);
+		PortMapReply->NATRep_lease = (mDNSs32) ((mDNSs32)pkt[12] << 24 | (mDNSs32)pkt[13] << 16 | (mDNSs32)pkt[14] << 8 | pkt[15]);
 		}
 	else { LogMsg("Received NAT Traversal response with version unknown opcode 0x%X", AddrReply->opcode); return; }
 
@@ -3460,7 +3465,7 @@ mDNSlocal mDNSu32 GetPktLease(mDNS *m, DNSMessage *msg, const mDNSu8 *end)
 				{
 				if (lcr.r.resrec.rdlength < LEASE_OPT_RDLEN) continue;
 				if (lcr.r.resrec.rdata->u.opt.opt != kDNSOpt_Lease) continue;
-				return(lcr.r.resrec.rdata->u.opt.OptData.lease);
+				return(lcr.r.resrec.rdata->u.opt.OptData.updatelease);
 				}
 			}
 		}
@@ -3521,14 +3526,9 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 			if (mDNSSameOpaque16(sptr->id, msg->h.id))
 				{
 				err = checkUpdateResult(sptr->RR_SRV.resrec.name, rcode, m, msg, end);
-				if (!err && sptr->lease)
-					{
-					if (!lease)
-						sptr->lease = mDNSfalse;
-					else
-						if (sptr->expire - expire >= 0 || sptr->state != regState_UpdatePending)
-							sptr->expire = expire;
-					}
+				if (!err && sptr->srs_uselease && lease)
+					if (sptr->expire - expire >= 0 || sptr->state != regState_UpdatePending)
+						sptr->expire = expire;
 				hndlServiceUpdateReply(m, sptr, err);
 				return;
 				}
@@ -3538,14 +3538,9 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 			if (mDNSSameOpaque16(rptr->id, msg->h.id))
 				{
 				err = checkUpdateResult(rptr->resrec.name, rcode, m, msg, end);
-				if (!err && rptr->lease)
-					{
-					if (!lease)
-						rptr->lease = mDNSfalse;
-					else
-						if (rptr->expire - expire >= 0 || rptr->state != regState_UpdatePending)
-							rptr->expire = expire;
-					}
+				if (!err && rptr->uselease && lease)
+					if (rptr->expire - expire >= 0 || rptr->state != regState_UpdatePending)
+						rptr->expire = expire;
 				hndlRecordUpdateReply(m, rptr, err);
 				return;
 				}
@@ -3606,7 +3601,7 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease, TCPSocket 
 	llq.err   = LLQErr_NoError;
 //	llq.err   = info->eventPort;
 	llq.id    = info->id;
-	llq.lease = lease;
+	llq.llqlease = lease;
 
 	initializeQuery(&msg, q);
 	end = putLLQ(&msg, msg.data, q, &llq, mDNStrue);
@@ -3925,7 +3920,7 @@ mDNSlocal void RecordRegistrationCallback(mStatus err, mDNS *const m, void *auth
 		{
 		debugf("Update port not advertised via SRV - guessing port 53, no lease option");
 		newRR->UpdatePort = UnicastDNSPort;
-		newRR->lease = mDNSfalse;
+		newRR->uselease = mDNSfalse;
 		}
 
 	sendRecordRegistration(m, newRR);
@@ -4068,7 +4063,7 @@ mDNSexport mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	srs->RR_PTR.resrec.rroriginalttl = kWideAreaTTL;
 	for (i = 0; i < srs->NumSubTypes;i++) srs->SubTypes[i].resrec.rroriginalttl = kWideAreaTTL;
 
-	srs->lease = mDNStrue;
+	srs->srs_uselease = mDNStrue;
 
 	if (!GetServiceTarget(m, &srs->RR_SRV))
 		{
@@ -4366,7 +4361,7 @@ mDNSlocal mDNSs32 CheckRecordRegistrations(mDNS *m, mDNSs32 timenow)
 				}
 			if (rr->LastAPTime + rr->ThisAPInterval - nextevent < 0) nextevent = rr->LastAPTime + rr->ThisAPInterval;
 			}
-		if (rr->lease && rr->state == regState_Registered)
+		if (rr->uselease && rr->state == regState_Registered)
 			{
 			if (rr->expire - timenow < 0)
 				{
@@ -4411,7 +4406,7 @@ mDNSlocal mDNSs32 CheckServiceRegistrations(mDNS *m, mDNSs32 timenow)
 				nextevent = srs->RR_SRV.LastAPTime + srs->RR_SRV.ThisAPInterval;
 			}
 
-		if (srs->lease && srs->state == regState_Registered)
+		if (srs->srs_uselease && srs->state == regState_Registered)
 			{
 			if (srs->expire - timenow < 0)
 				{

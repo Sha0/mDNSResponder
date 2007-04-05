@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.142  2007/04/05 22:55:35  cheshire
+<rdar://problem/5077076> Records are ending up in Lighthouse without expiry information
+
 Revision 1.141  2007/04/04 01:33:11  cheshire
 <rdar://problem/5075200> DNSServiceAddRecord is failing to advertise NULL record
 Overly defensive code was zeroing too much of the AuthRecord structure
@@ -357,10 +360,10 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd,
 								length += mDNS_snprintf(buffer+length, Max-length, "Op %d ", rd->opt.OptData.llq.llqOp);
 								length += mDNS_snprintf(buffer+length, Max-length, "Err %d ", rd->opt.OptData.llq.err);
 								length += mDNS_snprintf(buffer+length, Max-length, "ID %08X%08X ", rd->opt.OptData.llq.id.l[0], rd->opt.OptData.llq.id.l[1]);
-								length += mDNS_snprintf(buffer+length, Max-length, "Lease %d", rd->opt.OptData.llq.lease);
+								length += mDNS_snprintf(buffer+length, Max-length, "Lease %d", rd->opt.OptData.llq.llqlease);
 								}
 							else if (rd->opt.opt == kDNSOpt_Lease)
-								length += mDNS_snprintf(buffer+length, Max-length, "kDNSOpt_Lease Lease %d", rd->opt.OptData.lease);
+								length += mDNS_snprintf(buffer+length, Max-length, "kDNSOpt_Lease Lease %d", rd->opt.OptData.updatelease);
 							else
 								length += mDNS_snprintf(buffer+length, Max-length, "Unknown opt %d", rd->opt.opt);
 							break;
@@ -1076,7 +1079,7 @@ mDNSexport void mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mD
 	// (e.g. uDNS_RegisterService short-circuits the usual mDNS_Register_internal record registration calls, so a bunch
 	// of fields don't get set up properly. In particular, if we don't zero rr->QueuedRData then the uDNS code crashes.)
 	rr->state             = regState_Zero;
-	rr->lease             = 0;
+	rr->uselease          = 0;
 	rr->expire            = 0;
 	rr->Private           = 0;
 	rr->id                = zeroID;
@@ -1418,13 +1421,13 @@ mDNSlocal mDNSu8 *putOptRData(mDNSu8 *ptr, const mDNSu8 *limit, ResourceRecord *
 			ptr = putVal16(ptr, opt->OptData.llq.err);
 			mDNSPlatformMemCopy(ptr, opt->OptData.llq.id.b, 8);  // 8-byte id
 			ptr += 8;
-			ptr = putVal32(ptr, opt->OptData.llq.lease);
+			ptr = putVal32(ptr, opt->OptData.llq.llqlease);
 			nput += LLQ_OPTLEN;
 			}
 		else if (opt->opt == kDNSOpt_Lease)
 			{
 			if (ptr + sizeof(mDNSs32) > limit) goto space_err;
-			ptr = putVal32(ptr, opt->OptData.lease);
+			ptr = putVal32(ptr, opt->OptData.updatelease);
 			nput += sizeof(mDNSs32);
 			}
 		else { LogMsg("putOptRData - unknown option %d", opt->opt); return mDNSNULL; }
@@ -1465,9 +1468,9 @@ mDNSlocal const mDNSu8 *getOptRdata(const mDNSu8 *ptr, const mDNSu8 *const limit
 			opt->OptData.llq.err = getVal16(&ptr);
 			mDNSPlatformMemCopy(opt->OptData.llq.id.b, ptr, 8);
 			ptr += 8;
-			opt->OptData.llq.lease = (mDNSu32) ((mDNSu32)ptr[0] << 24 | (mDNSu32)ptr[1] << 16 | (mDNSu32)ptr[2] << 8 | ptr[3]);
-			if (opt->OptData.llq.lease > 0x70000000UL / mDNSPlatformOneSecond)
-				opt->OptData.llq.lease = 0x70000000UL / mDNSPlatformOneSecond;
+			opt->OptData.llq.llqlease = (mDNSu32) ((mDNSu32)ptr[0] << 24 | (mDNSu32)ptr[1] << 16 | (mDNSu32)ptr[2] << 8 | ptr[3]);
+			if (opt->OptData.llq.llqlease > 0x70000000UL / mDNSPlatformOneSecond)
+				opt->OptData.llq.llqlease = 0x70000000UL / mDNSPlatformOneSecond;
 			ptr += sizeof(mDNSOpaque32);
 			nread += LLQ_OPTLEN;
 			}
@@ -1475,9 +1478,9 @@ mDNSlocal const mDNSu8 *getOptRdata(const mDNSu8 *ptr, const mDNSu8 *const limit
 			{
 			if ((unsigned)(limit - ptr) < sizeof(mDNSs32)) goto space_err;
 
-			opt->OptData.lease = (mDNSu32) ((mDNSu32)ptr[0] << 24 | (mDNSu32)ptr[1] << 16 | (mDNSu32)ptr[2] << 8 | ptr[3]);
-			if (opt->OptData.lease > 0x70000000UL / mDNSPlatformOneSecond)
-				opt->OptData.lease = 0x70000000UL / mDNSPlatformOneSecond;
+			opt->OptData.updatelease = (mDNSu32) ((mDNSu32)ptr[0] << 24 | (mDNSu32)ptr[1] << 16 | (mDNSu32)ptr[2] << 8 | ptr[3]);
+			if (opt->OptData.updatelease > 0x70000000UL / mDNSPlatformOneSecond)
+				opt->OptData.updatelease = 0x70000000UL / mDNSPlatformOneSecond;
 			ptr += sizeof(mDNSs32);
 			nread += sizeof(mDNSs32);
 			}
@@ -1694,7 +1697,7 @@ mDNSexport mDNSu8 *putUpdateLease(DNSMessage *msg, mDNSu8 *end, mDNSu32 lease)
 	rr.resrec.rdestimate = LEASE_OPT_RDLEN;
 	rr.resrec.rdata->u.opt.opt           = kDNSOpt_Lease;
 	rr.resrec.rdata->u.opt.optlen        = sizeof(mDNSs32);
-	rr.resrec.rdata->u.opt.OptData.lease = lease;
+	rr.resrec.rdata->u.opt.OptData.updatelease = lease;
 	end = PutResourceRecordTTLJumbo(msg, end, &msg->h.numAdditionals, &rr.resrec, 0);
 	if (!end) { LogMsg("ERROR: putUpdateLease - PutResourceRecordTTL"); return mDNSNULL; }
 	return end;

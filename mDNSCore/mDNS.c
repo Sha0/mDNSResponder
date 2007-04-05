@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.602  2007/04/05 22:55:35  cheshire
+<rdar://problem/5077076> Records are ending up in Lighthouse without expiry information
+
 Revision 1.601  2007/04/04 21:48:52  cheshire
 <rdar://problem/4720694> Combine unicast authoritative answer list with multicast list
 
@@ -777,7 +780,7 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 
 	// Field Group 4: Transient uDNS state for Authoritative Records
 	rr->state             = regState_Zero;
-	rr->lease             = 0;
+	rr->uselease          = 0;
 	rr->expire            = 0;
 	rr->Private           = 0;
 	rr->id                = zeroID;
@@ -877,7 +880,7 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 		rr->ProbeCount    = 0;
 		rr->AnnounceCount = 0;
 		rr->state = regState_FetchingZoneData;
-		rr->lease = mDNStrue;
+		rr->uselease = mDNStrue;
 		return uDNS_RegisterRecord(m, rr);
 		}
 #endif
@@ -5423,14 +5426,14 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	mDNSu32 i;
 
 	sr->state                  = regState_Zero;
-	sr->lease                  = 0;
+	sr->srs_uselease           = 0;
 	sr->expire                 = 0;
 	sr->TestForSelfConflict    = 0;
 	sr->Private                = 0;
 	sr->id                     = zeroID;
 	sr->zone.c[0]              = 0;
 	sr->ns                     = zeroAddr;
-	sr->port                   = zeroIPPort;
+	sr->SRSUpdatePort          = zeroIPPort;
 	sr->NATinfo                = 0;
 	sr->ClientCallbackDeferred = 0;
 	sr->DeferredStatus         = 0;

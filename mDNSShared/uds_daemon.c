@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.277  2007/04/05 22:55:36  cheshire
+<rdar://problem/5077076> Records are ending up in Lighthouse without expiry information
+
 Revision 1.276  2007/04/05 19:20:13  cheshire
 Non-blocking mode not being set correctly -- was clobbering other flags
 
@@ -2765,7 +2768,7 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 			case NATState_Legacy:
 				{
 				request->u.portmapping.receivedPublicPort = n->PublicPort;
-				request->u.portmapping.receivedTTL        = n->lease;
+				request->u.portmapping.receivedTTL        = n->PortMappingLease;
 				}
 			}
 		}

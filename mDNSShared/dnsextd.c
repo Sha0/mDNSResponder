@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.72  2007/04/05 22:55:37  cheshire
+<rdar://problem/5077076> Records are ending up in Lighthouse without expiry information
+
 Revision 1.71  2007/04/05 19:43:56  cheshire
 Added ProgramName and comment about '-d' option
 
@@ -851,7 +854,7 @@ mDNSlocal mDNSs32 GetPktLease(PktMsg *pkt)
 				{
 				if (lcr.r.resrec.rdlength < LEASE_OPT_RDLEN) continue;
 				if (lcr.r.resrec.rdata->u.opt.opt != kDNSOpt_Lease) continue;
-				lease = (mDNSs32)lcr.r.resrec.rdata->u.opt.OptData.lease;
+				lease = (mDNSs32)lcr.r.resrec.rdata->u.opt.OptData.updatelease;
 				break;
 				}
 			}
@@ -1732,7 +1735,7 @@ mDNSlocal void FormatLLQOpt(AuthRecord *opt, int opcode, const mDNSOpaque64 *con
 	opt->resrec.rdata->u.opt.OptData.llq.llqOp = opcode;
 	opt->resrec.rdata->u.opt.OptData.llq.err   = LLQErr_NoError;
 	opt->resrec.rdata->u.opt.OptData.llq.id    = *id;
-	opt->resrec.rdata->u.opt.OptData.llq.lease = lease;
+	opt->resrec.rdata->u.opt.OptData.llq.llqlease = lease;
 	}
 
 // Calculate effective remaining lease of an LLQ
@@ -2199,15 +2202,15 @@ mDNSlocal void LLQRefresh(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mDNSOpaqu
 	char addr[32];
 
 	inet_ntop(AF_INET, &e->cli.sin_addr, addr, 32);
-	VLog("%s LLQ for %##s from %s", llq->lease ? "Refreshing" : "Deleting", e->qname.c, addr);
+	VLog("%s LLQ for %##s from %s", llq->llqlease ? "Refreshing" : "Deleting", e->qname.c, addr);
 	
-	if (llq->lease)
+	if (llq->llqlease)
 		{
 		struct timeval t;
-		if (llq->lease < LLQ_MIN_LEASE) llq->lease = LLQ_MIN_LEASE;
-		else if (llq->lease > LLQ_MAX_LEASE) llq->lease = LLQ_MIN_LEASE;
+		if (llq->llqlease < LLQ_MIN_LEASE) llq->llqlease = LLQ_MIN_LEASE;
+		else if (llq->llqlease > LLQ_MAX_LEASE) llq->llqlease = LLQ_MIN_LEASE;
 		gettimeofday(&t, NULL);
-		e->expire = t.tv_sec + llq->lease;
+		e->expire = t.tv_sec + llq->llqlease;
 		}
 	
 	ack.src.sin_addr.s_addr = 0; // unused 
@@ -2215,14 +2218,14 @@ mDNSlocal void LLQRefresh(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mDNSOpaqu
 	end = putQuestion(&ack.msg, end, end + AbsoluteMaxDNSMessageData, &e->qname, e->qtype, kDNSClass_IN);
 	if (!end) { Log("Error: putQuestion"); return; }
 
-	FormatLLQOpt(&opt, kLLQOp_Refresh, &e->id, llq->lease ? LLQLease(e) : 0);
+	FormatLLQOpt(&opt, kLLQOp_Refresh, &e->id, llq->llqlease ? LLQLease(e) : 0);
 	end = PutResourceRecordTTLJumbo(&ack.msg, end, &ack.msg.h.numAdditionals, &opt.resrec, 0);
 	if (!end) { Log("Error: PutResourceRecordTTLJumbo"); return; }
 
 	ack.len = (int)(end - (mDNSu8 *)&ack.msg);
 	if (SendLLQ(d, &ack, e->cli, sock)) Log("Error: LLQRefresh");
 
-	if (llq->lease) e->state = Established;
+	if (llq->llqlease) e->state = Established;
 	else DeleteLLQ(d, e);
 	}
 
@@ -2242,8 +2245,8 @@ mDNSlocal void LLQCompleteHandshake(DaemonInfo *d, LLQEntry *e, LLQOptData *llq,
 		llq->vers  != kLLQ_Vers             ||
 		llq->llqOp != kLLQOp_Setup          ||
 		llq->err   != LLQErr_NoError        ||
-		llq->lease > e->lease + LLQ_LEASE_FUDGE ||
-		llq->lease < e->lease - LLQ_LEASE_FUDGE)
+		llq->llqlease > e->lease + LLQ_LEASE_FUDGE ||
+		llq->llqlease < e->lease - LLQ_LEASE_FUDGE)
 		{
 			Log("Incorrect challenge response from %s", addr);
 			return;
@@ -2342,7 +2345,7 @@ mDNSlocal void UpdateLLQ(DaemonInfo *d, LLQEntry *e, LLQOptData *llq, mDNSOpaque
 			if (mDNSOpaque64IsZero(&llq->id))
 				{
 				// client started over.  reset state.
-				LLQEntry *newe = NewLLQ(d, e->cli, &e->qname, e->qtype, llq->lease );
+				LLQEntry *newe = NewLLQ(d, e->cli, &e->qname, e->qtype, llq->llqlease );
 				if (!newe) return;
 				DeleteLLQ(d, e);
 				LLQSetupChallenge(d, newe, llq, msgID);
@@ -2444,7 +2447,7 @@ mDNSlocal int RecvLLQ( DaemonInfo *d, PktMsg *pkt, TCPSocket *sock )
 		if (!e)
 			{
 			// no entry - if zero ID, create new
-			e = NewLLQ(d, pkt->src, &q.qname, q.qtype, llq->lease );
+			e = NewLLQ(d, pkt->src, &q.qname, q.qtype, llq->llqlease );
 			if (!e) goto end;
 			}
 		UpdateLLQ(d, e, llq, pkt->msg.h.id, sock);
