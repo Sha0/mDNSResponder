@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.276  2007/04/05 19:20:13  cheshire
+Non-blocking mode not being set correctly -- was clobbering other flags
+
 Revision 1.275  2007/04/04 21:21:25  cheshire
 <rdar://problem/4546810> Fix crash: In regservice_callback service_instance was being referenced after being freed
 
@@ -541,6 +544,7 @@ static default_browse_list_t *default_browse_list = NULL;
 
 // globals
 mDNSexport mDNS mDNSStorage;
+mDNSexport const char ProgramName[] = "mDNSResponder";
 
 static dnssd_sock_t listenfd = dnssd_InvalidSocket;
 static request_state *all_requests = NULL;
@@ -3105,7 +3109,7 @@ mDNSlocal void request_callback(void *info)
 #if defined(_WIN32)
 		if (ioctlsocket(errfd, FIONBIO, &opt) != 0)
 #else
-		if (fcntl(errfd, F_SETFL, O_NONBLOCK) != 0)
+		if (fcntl(errfd, F_SETFL, fcntl(errfd, F_GETFL, 0) | O_NONBLOCK) != 0)
 #endif
 			{
 			my_perror("ERROR: could not set control socket to non-blocking mode");
@@ -3199,7 +3203,7 @@ mDNSlocal void connect_callback(void *info)
 #if defined(_WIN32)
 	if (ioctlsocket(sd, FIONBIO, &optval) != 0)
 #else
-	if (fcntl(sd, F_SETFL, O_NONBLOCK) != 0)
+	if (fcntl(sd, F_SETFL, fcntl(sd, F_GETFL, 0) | O_NONBLOCK) != 0)
 #endif
 		{
 		my_perror("ERROR: fcntl(sd, F_SETFL, O_NONBLOCK) - aborting client");
@@ -3299,7 +3303,7 @@ mDNSexport int udsserver_init(dnssd_sock_t skt)
 	//
 	if (ioctlsocket(listenfd, FIONBIO, &opt) != 0)
 #else
-	if (fcntl(listenfd, F_SETFL, O_NONBLOCK) != 0)
+	if (fcntl(listenfd, F_SETFL, fcntl(listenfd, F_GETFL, 0) | O_NONBLOCK) != 0)
 #endif
 		{
 		my_perror("ERROR: could not set listen socket to non-blocking mode");
