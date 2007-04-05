@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.388  2007/04/05 21:09:52  cheshire
+Condense sprawling code
+
 Revision 1.387  2007/04/05 20:40:37  cheshire
 Remove unused mDNSPlatformTCPGetFlags()
 
@@ -632,9 +635,7 @@ mDNSlocal ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 				}
 			}
 		if (cmPtr->cmsg_level == IPPROTO_IP && cmPtr->cmsg_type == IP_RECVTTL)
-			{
 			*ttl = *(u_char*)CMSG_DATA(cmPtr);
-			}
 		if (cmPtr->cmsg_level == IPPROTO_IPV6 && cmPtr->cmsg_type == IPV6_PKTINFO)
 			{
 			struct in6_pktinfo *ip6_info = (struct in6_pktinfo*)CMSG_DATA(cmPtr);
@@ -643,9 +644,7 @@ mDNSlocal ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 			myIfIndexToName(ip6_info->ipi6_ifindex, ifname);
 			}
 		if (cmPtr->cmsg_level == IPPROTO_IPV6 && cmPtr->cmsg_type == IPV6_HOPLIMIT)
-			{
 			*ttl = *(int*)CMSG_DATA(cmPtr);
-			}
 		}
 
 	return(n);
@@ -800,14 +799,13 @@ struct TCPSocket_struct
 	};
 
 #ifndef NO_SECURITYFRAMEWORK
-mDNSlocal OSStatus tlsWriteSock(SSLConnectionRef connection, const void * data, size_t * dataLength)
+mDNSlocal OSStatus tlsWriteSock(SSLConnectionRef connection, const void *data, size_t *dataLength)
 	{
 	UInt32			bytesSent = 0;
 	TCPSocket *	sock = (TCPSocket *) connection;
 	int 			length;
 	UInt32			dataLen = *dataLength;
 	const UInt8	*	dataPtr = (UInt8 *)data;
-	OSStatus		ortn;
 
 	*dataLength = 0;
 
@@ -825,44 +823,18 @@ mDNSlocal OSStatus tlsWriteSock(SSLConnectionRef connection, const void * data, 
 		selectresult = select(sock->fd + 1, NULL, &fds, NULL, &tv);
 
 		if (selectresult == 1)
-			{
 			length = send(sock->fd, (char*) dataPtr + bytesSent, dataLen - bytesSent, 0);
-			}
-		else if (selectresult == 0)
-			{
-			length = 0;
-			errno = EAGAIN;
-			break;
-			}
-		else
-			{
-			length = 0;
-			break;
-			}
+		else if (selectresult == 0) { length = 0; errno = EAGAIN; break; }
+		else { length = 0; break; }
 		}
 	while ((length > 0) && ((bytesSent += length) < dataLen));
 
-	if (length <= 0)
-		{
-		if (errno == EAGAIN)
-			{
-			ortn = errSSLWouldBlock;
-			}
-		else
-			{
-			ortn = errSSLClosedAbort;		// send() failed
-			}
-		}
-	else
-		{
-		ortn = noErr;
-		}
-
 	*dataLength = bytesSent;
-	return ortn;
+
+	return((length > 0) ? noErr : (errno == EAGAIN) ? errSSLWouldBlock : errSSLClosedAbort);
 	}
 
-mDNSlocal OSStatus tlsReadSock(SSLConnectionRef	connection, void * data, size_t * dataLength)
+mDNSlocal OSStatus tlsReadSock(SSLConnectionRef	connection, void *data, size_t *dataLength)
 	{
 	UInt32			bytesToGo = *dataLength;
 	UInt32 			initLen = bytesToGo;
@@ -915,17 +887,12 @@ mDNSlocal OSStatus tlsReadSock(SSLConnectionRef	connection, void * data, size_t 
 				break;
 				}
 			else
-				{
 				bytesRead = rrtn;
-				}
 
 			bytesToGo -= bytesRead;
 			currData  += bytesRead;
 
-			if (!bytesToGo)
-				{
-				break;
-				}
+			if (!bytesToGo) break;
 			}
 		else if (selectresult == 0)
 			{
@@ -989,7 +956,7 @@ mDNSlocal OSStatus tlsSetupSock(TCPSocket *sock, mDNSBool server)
 mDNSlocal void tcpKQSocketCallback(__unused int fd, __unused short filter, __unused u_int fflags, __unused intptr_t data, void *context)
 	{
 	#pragma unused(cfs, CallbackType, address, data)
-	TCPSocket * sock = context;
+	TCPSocket *sock = context;
 	mDNSBool connect = mDNSfalse;
 	mStatus err = mStatus_NoError;
 
@@ -1033,7 +1000,7 @@ mDNSlocal void tcpKQSocketCallback(__unused int fd, __unused short filter, __unu
 	// NOTE: the callback may call CloseConnection here, which frees the context structure!
 	}
 
-mDNSexport void KQueueWake(mDNS * const m)
+mDNSexport void KQueueWake(mDNS *const m)
 	{
 	char wake = 1;
 	if (send(m->p->WakeKQueueLoopFD, &wake, sizeof(wake), 0) == -1)
@@ -1052,7 +1019,7 @@ mDNSexport int KQueueAdd(int fd, short filter, u_int fflags, intptr_t data, cons
 	return 0;
 	}
 
-mDNSexport TCPSocket *mDNSPlatformTCPSocket(mDNS * const m, TCPSocketFlags flags, mDNSIPPort * port)
+mDNSexport TCPSocket *mDNSPlatformTCPSocket(mDNS *const m, TCPSocketFlags flags, mDNSIPPort *port)
 	{
 	(void) m;
 
@@ -1097,8 +1064,8 @@ error:
 	return(mDNSNULL);
 	}
 
-mDNSexport mStatus mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr * dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
-                                          TCPConnectionCallback callback, void * context)
+mDNSexport mStatus mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
+                                          TCPConnectionCallback callback, void *context)
 	{
 	struct sockaddr_in	saddr;
 	mStatus				err = mStatus_NoError;
@@ -1267,7 +1234,7 @@ mDNSexport void mDNSPlatformTCPCloseConnection(TCPSocket *sock)
 		}
 	}
 
-mDNSexport long mDNSPlatformReadTCP(TCPSocket *sock, void * buf, unsigned long buflen, mDNSBool * closed)
+mDNSexport long mDNSPlatformReadTCP(TCPSocket *sock, void *buf, unsigned long buflen, mDNSBool *closed)
 	{
 	int nread;
 
@@ -1282,10 +1249,7 @@ mDNSexport long mDNSPlatformReadTCP(TCPSocket *sock, void * buf, unsigned long b
 
 			err = SSLHandshake(sock->tlsContext);
 
-			if (err)
-				{
-				LogMsg("ERROR: mDNSPlatformReadTCP: SSLHandshake failed with error code: %d", err);
-				}
+			if (err) LogMsg("ERROR: mDNSPlatformReadTCP: SSLHandshake failed with error code: %d", err);
 
 			sock->handshake = mDNStrue;
 			nread = 0;
@@ -1293,34 +1257,16 @@ mDNSexport long mDNSPlatformReadTCP(TCPSocket *sock, void * buf, unsigned long b
 		else
 			{
 			size_t	processed;
-			mStatus	err;
-
-			err = SSLRead(sock->tlsContext, buf, buflen, &processed);
+			mStatus err = SSLRead(sock->tlsContext, buf, buflen, &processed);
 
 			if (!err)
 				{
 				nread = (int) processed;
-
-				if (!nread)
-					{
-					*closed = mDNStrue;
-					}
+				if (!nread) *closed = mDNStrue;
 				}
-			else if (err == errSSLClosedGraceful)
-				{
-				nread = 0;
-				*closed = mDNStrue;
-				}
-			else if (err == errSSLWouldBlock)
-				{
-				nread = 0;
-				}
-			else
-				{
-				LogMsg("ERROR: mDNSPlatformReadTCP - SSLRead: %d", err);
-				nread = -1;
-				*closed = mDNStrue;
-				}
+			else if (err == errSSLClosedGraceful) { nread = 0; *closed = mDNStrue; }
+			else if (err == errSSLWouldBlock) nread = 0;
+			else { LogMsg("ERROR: mDNSPlatformReadTCP - SSLRead: %d", err); nread = -1; *closed = mDNStrue; }
 			}
 #else
 		nread = -1;
@@ -1333,26 +1279,17 @@ mDNSexport long mDNSPlatformReadTCP(TCPSocket *sock, void * buf, unsigned long b
 
 		if (nread < 0)
 			{
-			if (errno == EAGAIN)
-				{
-				nread = 0;  // no data available (call would block)
-				}
-			else
-				{
-				LogMsg("ERROR: mDNSPlatformReadTCP - recv: %s", strerror(errno));
-				nread = -1;
-				}
+			if (errno == EAGAIN) nread = 0;  // no data available (call would block)
+			else { LogMsg("ERROR: mDNSPlatformReadTCP - recv: %s", strerror(errno)); nread = -1; }
 			}
 		else if (!nread)
-			{
 			*closed = mDNStrue;
-			}
 		}
 
 	return nread;
 	}
 
-mDNSexport long mDNSPlatformWriteTCP(TCPSocket *sock, const char * msg, unsigned long len)
+mDNSexport long mDNSPlatformWriteTCP(TCPSocket *sock, const char *msg, unsigned long len)
 	{
 	int nsent;
 
@@ -1364,19 +1301,9 @@ mDNSexport long mDNSPlatformWriteTCP(TCPSocket *sock, const char * msg, unsigned
 
 		err = SSLWrite(sock->tlsContext, msg, len, &processed);
 
-		if (!err)
-			{
-			nsent = (int) processed;
-			}
-		else if (err == errSSLWouldBlock)
-			{
-			nsent = 0;
-			}
-		else
-			{
-			LogMsg("ERROR: mDNSPlatformWriteTCP - SSLWrite returned %d", err);
-			nsent = -1;
-			}
+		if (!err) nsent = (int) processed;
+		else if (err == errSSLWouldBlock) nsent = 0;
+		else { LogMsg("ERROR: mDNSPlatformWriteTCP - SSLWrite returned %d", err); nsent = -1; }
 #else
 		nsent = -1;
 #endif /* NO_SECURITYFRAMEWORK */
@@ -1384,18 +1311,10 @@ mDNSexport long mDNSPlatformWriteTCP(TCPSocket *sock, const char * msg, unsigned
 	else
 		{
 		nsent = send(sock->fd, msg, len, 0);
-
 		if (nsent < 0)
 			{
-			if (errno == EAGAIN)
-				{
-				nsent = 0;
-				}
-			else
-				{
-				LogMsg("ERROR: mDNSPlatformWriteTCP - send %s", strerror(errno));
-				nsent = -1;
-				}
+			if (errno == EAGAIN) nsent = 0;
+			else { LogMsg("ERROR: mDNSPlatformWriteTCP - send %s", strerror(errno)); nsent = -1; }
 			}
 		}
 
@@ -1419,17 +1338,7 @@ mDNSlocal mStatus SetupSocket(mDNS *const m, KQSocketSet *cp, mDNSBool mcast, co
 	mStatus err = mStatus_NoError;
 	char *errstr = mDNSNULL;
 	int skt;
-
-	mDNSIPPort port;
-
-	if (inPort)
-		{
-		port = *inPort;
-		}
-	else
-		{
-		port = (mcast | m->CanReceiveUnicastOn5353) ? MulticastDNSPort : zeroIPPort;
-		}
+	mDNSIPPort port = inPort ? *inPort : (mcast || m->CanReceiveUnicastOn5353) ? MulticastDNSPort : zeroIPPort;
 
 	if (*s >= 0) { LogMsg("SetupSocket ERROR: socket %d is already set", *s); return(-1); }
 
@@ -2148,7 +2057,7 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 				{
 				if (i->sa_family == AF_INET && primary->ss.sktv4 == -1)
 					{
-					mStatus err = SetupSocket(m, &primary->ss, mDNStrue, &i->ifinfo.ip, mDNSNULL, AF_INET);
+					mStatus err = SetupSocket(m, &primary->ss, mDNStrue, &i->ifinfo.ip, &zeroIPPort, AF_INET);
 					if (err == 0) debugf("SetupActiveInterfaces:   v4 socket%2d %5s(%lu) %.6a InterfaceID %p %#a/%d",          primary->ss.sktv4, i->ifa_name, i->scope_id, &i->BSSID, n->InterfaceID, &n->ip, CountMaskBits(&n->mask));
 					else          LogMsg("SetupActiveInterfaces:   v4 socket%2d %5s(%lu) %.6a InterfaceID %p %#a/%d FAILED",   primary->ss.sktv4, i->ifa_name, i->scope_id, &i->BSSID, n->InterfaceID, &n->ip, CountMaskBits(&n->mask));
 					}
@@ -2528,7 +2437,7 @@ mDNSexport void mDNSPlatformSetSearchDomainList(void)
 		}
 	}
 
-mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS * const m, mDNSAddr * v4, mDNSAddr * v6, mDNSAddr * r)
+mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS *const m, mDNSAddr *v4, mDNSAddr *v6, mDNSAddr *r)
 	{
 	SCDynamicStoreRef	store	= NULL;
 	CFDictionaryRef		dict	= NULL;
