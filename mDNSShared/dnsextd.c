@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.71  2007/04/05 19:43:56  cheshire
+Added ProgramName and comment about '-d' option
+
 Revision 1.70  2007/04/05 18:34:40  cheshire
 <rdar://problem/4838930> dnsextd gives "bind - Address already in use" error
 
@@ -139,6 +142,7 @@ Revision 1.42  2006/07/05 22:48:19  cheshire
 //
 // Constants
 //
+mDNSexport const char ProgramName[] = "dnsextd";
 
 #define LOOPBACK					"127.0.0.1"
 #if !defined(LISTENQ)
@@ -1207,7 +1211,7 @@ mDNSlocal int ProcessArgs(int argc, char *argv[], DaemonInfo *d)
 			{
 			case 'f': free( cfgfile ); cfgfile = strdup( optarg ); require_action( cfgfile, arg_error, err = mStatus_NoMemoryErr ); break;
 			case 'h': PrintHelp();    return -1;
-			case 'd': foreground = 1; break;
+			case 'd': foreground = 1; break;		// Also used when launched via OS X's launchd mechanism
 			case 'v': verbose = 1;    break;
 			default:  goto arg_error;
 			}
