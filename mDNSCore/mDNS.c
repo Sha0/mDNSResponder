@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.603  2007/04/06 21:00:25  cheshire
+Fix log message typo
+
 Revision 1.602  2007/04/05 22:55:35  cheshire
 <rdar://problem/5077076> Records are ending up in Lighthouse without expiry information
 
@@ -695,7 +698,7 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	while (*d && *d != rr) d=&(*d)->next;
 	if (*d || *p)
 		{
-		LogMsg("Error! Tried to register a AuthRecord %p %##s (%s) that's already in the list",
+		LogMsg("Error! Tried to register AuthRecord %p %##s (%s) that's already in the list",
 			rr, rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
 		return(mStatus_AlreadyRegistered);
 		}
