@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.31  2007/04/06 19:50:05  cheshire
+Add ProgramName declaration
+
 Revision 1.30  2007/03/24 01:22:44  cheshire
 Add validator for uDNS data structures
 
@@ -153,6 +156,7 @@ extern int	mDNS_DebugMode;	// If non-zero, LogMsg() writes to stderr instead of 
 extern void LogMsg(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
 extern void LogMsgIdent(const char *ident, const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(2,3);
 extern void LogMsgNoIdent(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
+extern const char ProgramName[];	// Program Name for use with LogMsgIdent
 
 // Set this symbol to 1 to answer remote queries for our Address, reverse mapping PTR, and HINFO records
 #define ANSWER_REMOTE_HOSTNAME_QUERIES 0
