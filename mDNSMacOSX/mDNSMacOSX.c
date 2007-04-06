@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.390  2007/04/06 18:45:02  cheshire
+Fix SetupActiveInterfaces() -- accidentally changed SetupSocket parameter
+
 Revision 1.389  2007/04/05 21:39:49  cheshire
 Debugging messages to help diagnose <rdar://problem/5095167> mDNSResponder periodically blocks in SSLRead
 
@@ -2043,7 +2046,7 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 				{
 				if (i->sa_family == AF_INET && primary->ss.sktv4 == -1)
 					{
-					mStatus err = SetupSocket(m, &primary->ss, mDNStrue, &i->ifinfo.ip, &zeroIPPort, AF_INET);
+					mStatus err = SetupSocket(m, &primary->ss, mDNStrue, &i->ifinfo.ip, mDNSNULL, AF_INET);
 					if (err == 0) debugf("SetupActiveInterfaces:   v4 socket%2d %5s(%lu) %.6a InterfaceID %p %#a/%d",          primary->ss.sktv4, i->ifa_name, i->scope_id, &i->BSSID, n->InterfaceID, &n->ip, CountMaskBits(&n->mask));
 					else          LogMsg("SetupActiveInterfaces:   v4 socket%2d %5s(%lu) %.6a InterfaceID %p %#a/%d FAILED",   primary->ss.sktv4, i->ifa_name, i->scope_id, &i->BSSID, n->InterfaceID, &n->ip, CountMaskBits(&n->mask));
 					}
