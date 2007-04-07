@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.391  2007/04/07 01:01:48  cheshire
+<rdar://problem/5095167> mDNSResponder periodically blocks in SSLRead
+
 Revision 1.390  2007/04/06 18:45:02  cheshire
 Fix SetupActiveInterfaces() -- accidentally changed SetupSocket parameter
 
@@ -338,8 +341,6 @@ static SecKeychainRef ServerKC;
 
 #define DYNDNS_KEYCHAIN_SERVICE "DynDNS Shared Secret"
 #define SYSTEM_KEYCHAIN_PATH "/Library/Keychains/System.keychain"
-
-#define TLS_IO_TIMEOUT 10
 
 // ***************************************************************************
 // Functions
@@ -800,162 +801,55 @@ struct TCPSocket_struct
 	SSLContextRef tlsContext;
 #endif /* NO_SECURITYFRAMEWORK */
 	void *context;
+	mDNSBool setup;
+	mDNSBool handshakecomplete;
 	mDNSBool connected;
-	mDNSBool handshake;
 	};
 
 #ifndef NO_SECURITYFRAMEWORK
+
 mDNSlocal OSStatus tlsWriteSock(SSLConnectionRef connection, const void *data, size_t *dataLength)
 	{
-	UInt32			bytesSent = 0;
-	TCPSocket *	sock = (TCPSocket *) connection;
-	int 			length;
-	UInt32			dataLen = *dataLength;
-	const UInt8	*	dataPtr = (UInt8 *)data;
-
+	int ret = send(((TCPSocket *)connection)->fd, data, *dataLength, 0);
+	//if (ret >= 0) LogMsg("tlsWriteSock: %d\n", ret);
+	//else          LogMsg("tlsWriteSock: %d %d %s\n", ret, errno, strerror(errno));
+	if (ret >= 0 && (size_t)ret < *dataLength) { *dataLength = ret; return(errSSLWouldBlock); }
+	if (ret >= 0)                              { *dataLength = ret; return(noErr); }
 	*dataLength = 0;
-
-	do
-		{
-		int				selectresult;
-		fd_set			fds;
-		struct timeval	tv;
-
-		FD_ZERO(&fds);
-		FD_SET(sock->fd, &fds);
-		tv.tv_sec = TLS_IO_TIMEOUT;
-		tv.tv_usec = 0;
-
-		selectresult = select(sock->fd + 1, NULL, &fds, NULL, &tv);
-
-		if (selectresult == 1)
-			length = send(sock->fd, (char*) dataPtr + bytesSent, dataLen - bytesSent, 0);
-		else if (selectresult == 0) { length = 0; errno = EAGAIN; break; }
-		else { length = 0; break; }
-		}
-	while ((length > 0) && ((bytesSent += length) < dataLen));
-
-	*dataLength = bytesSent;
-
-	return((length > 0) ? noErr : (errno == EAGAIN) ? errSSLWouldBlock : errSSLClosedAbort);
+	if (errno == EAGAIN    ) return(errSSLWouldBlock);
+	if (errno == ENOENT    ) return(errSSLClosedGraceful);
+	if (errno == ECONNRESET) return(errSSLClosedAbort);
+	LogMsg("ERROR: tlsWriteSock: error %d %s\n", errno, strerror(errno));
+	return(errSSLClosedAbort);
 	}
 
-mDNSlocal OSStatus tlsReadSock(SSLConnectionRef	connection, void *data, size_t *dataLength)
+mDNSlocal OSStatus tlsReadSock(SSLConnectionRef connection, void *data, size_t *dataLength)
 	{
-	UInt32			bytesToGo = *dataLength;
-	UInt32 			initLen = bytesToGo;
-	UInt8		*	currData = (UInt8 *)data;
-	TCPSocket *	sock = (TCPSocket *) connection;
-	OSStatus		rtn = noErr;
-	UInt32			bytesRead;
-	int				rrtn;
-
+	int ret = recv(((TCPSocket *)connection)->fd, data, *dataLength, 0);
+	//if (ret >= 0) LogMsg("tlsSockRead: %d\n", ret);
+	//else          LogMsg("tlsSockRead: %d %d %s\n", ret, errno, strerror(errno));
+	if (ret >= 0 && (size_t)ret < *dataLength) { *dataLength = ret; return(errSSLWouldBlock); }
+	if (ret >= 0)                              { *dataLength = ret; return(noErr); }
 	*dataLength = 0;
-
-	for (;;)
-		{
-		int				selectresult;
-		fd_set			fds;
-		struct timeval	tv;
-
-		bytesRead = 0;
-
-		FD_ZERO(&fds);
-		FD_SET(sock->fd, &fds);
-		tv.tv_sec  = TLS_IO_TIMEOUT;
-		tv.tv_usec = 0;
-
-		selectresult = select(sock->fd + 1, &fds, NULL, NULL, &tv);
-
-		if (selectresult == 1)
-			{
-			rrtn = recv(sock->fd, currData, bytesToGo, 0);
-
-			if (rrtn <= 0)
-				{
-				switch (errno)
-					{
-					case ENOENT:
-						/* connection closed */
-						rtn = errSSLClosedGraceful;
-						break;
-					case ECONNRESET:
-						rtn = errSSLClosedAbort;
-						break;
-					case EAGAIN:
-						rtn = errSSLWouldBlock;
-						break;
-					default:
-						LogMsg("ERROR: tlsSockRead: read(%d) error %d\n", (int)bytesToGo, errno);
-						rtn = errSSLClosedAbort;		// recv() failed
-						break;
-					}
-				break;
-				}
-			else
-				bytesRead = rrtn;
-
-			bytesToGo -= bytesRead;
-			currData  += bytesRead;
-
-			if (!bytesToGo) break;
-			}
-		else if (selectresult == 0)
-			{
-			rtn = errSSLWouldBlock;
-			break;
-			}
-		else
-			{
-			LogMsg("ERROR: tlsSockRead: select(%d) error %d\n", (int)bytesToGo, errno);
-			rtn = errSSLClosedAbort;		// select() failed
-			break;
-			}
-		}
-
-	*dataLength = initLen - bytesToGo;
-
-	return rtn;
+	if (errno == EAGAIN    ) return(errSSLWouldBlock);
+	if (errno == ENOENT    ) return(errSSLClosedGraceful);
+	if (errno == ECONNRESET) return(errSSLClosedAbort);
+	LogMsg("ERROR: tlsSockRead: error %d %s\n", errno, strerror(errno));
+	return(errSSLClosedAbort);
 	}
 
 mDNSlocal OSStatus tlsSetupSock(TCPSocket *sock, mDNSBool server)
 	{
-	mStatus err = mStatus_NoError;
-
-	if ((sock->flags & kTCPSocketFlags_UseTLS) == 0)
-		{
-		LogMsg("ERROR: tlsSetupSock: socket is not a TLS socket");
-		err = mStatus_UnknownErr;
-		goto exit;
-		}
-
-	err = SSLNewContext(server, &sock->tlsContext);
-
-	if (err)
-		{
-		LogMsg("ERROR: tlsSetupSock: SSLNewContext failed with error code: %d", err);
-		goto exit;
-		}
+	mStatus err = SSLNewContext(server, &sock->tlsContext);
+	if (err) { LogMsg("ERROR: tlsSetupSock: SSLNewContext failed with error code: %d", err); return(err); }
 
 	err = SSLSetIOFuncs(sock->tlsContext, tlsReadSock, tlsWriteSock);
-
-	if (err)
-		{
-		LogMsg("ERROR: tlsSetupSock: SSLSetIOFuncs failed with error code: %d", err);
-		goto exit;
-		}
+	if (err) { LogMsg("ERROR: tlsSetupSock: SSLSetIOFuncs failed with error code: %d", err); return(err); }
 
 	err = SSLSetConnection(sock->tlsContext, (SSLConnectionRef) sock);
+	if (err) { LogMsg("ERROR: tlsSetupSock: SSLSetConnection failed with error code: %d", err); return(err); }
 
-	if (err)
-		{
-		LogMsg("ERROR: tlsSetupSock: SSLSetConnection failed with error code: %d", err);
-		goto exit;
-		}
-
-	exit:
-
-	return err;
+	return(err);
 	}
 #endif /* NO_SECURITYFRAMEWORK */
 
@@ -963,45 +857,33 @@ mDNSlocal void tcpKQSocketCallback(__unused int fd, __unused short filter, __unu
 	{
 	#pragma unused(cfs, CallbackType, address, data)
 	TCPSocket *sock = context;
-	mDNSBool connect = mDNSfalse;
 	mStatus err = mStatus_NoError;
 
-	if (!sock->connected)
+	//if (filter == EVFILT_READ ) LogMsg("myKQSocketCallBack: tcpKQSocketCallback %d is EVFILT_READ", filter);
+	//if (filter == EVFILT_WRITE) LogMsg("myKQSocketCallBack: tcpKQSocketCallback %d is EVFILT_WRITE", filter);
+	// EV_ONESHOT doesn't seem to work, so we add the filter with EV_ADD, and explicitly delete it here with EV_DELETE
+	if (filter == EVFILT_WRITE) KQueueSet(sock->fd, EV_DELETE, EVFILT_WRITE, &sock->kqEntry);
+
+	if (sock->flags & kTCPSocketFlags_UseTLS)
 		{
-		connect			= mDNStrue;
-		sock->connected = mDNStrue;  // prevent connected flag from being set in future callbacks
-
-		if (sock->flags & kTCPSocketFlags_UseTLS)
-			{
 #ifndef NO_SECURITYFRAMEWORK
-			err = tlsSetupSock(sock, mDNSfalse);
-
-			if (err)
-				{
-				LogMsg("ERROR: tcpKQSocketCallback: tlsSetupSock failed with error code: %d", err);
-				goto exit;
-				}
-
+		if (!sock->setup) { sock->setup = mDNStrue; tlsSetupSock(sock, mDNSfalse); }
+		if (!sock->handshakecomplete)
+			{
+			//LogMsg("tcpKQSocketCallback Starting SSLHandshake");
 			err = SSLHandshake(sock->tlsContext);
-
-			sock->handshake = mDNStrue;
-
-			if (err)
-				{
-				LogMsg("ERROR: tcpKQSocketCallback: SSLHandshake failed with error code: %d", err);
-				SSLDisposeContext(sock->tlsContext);
-				sock->tlsContext = NULL;
-				goto exit;
-				}
-#else
-			err = mStatus_UnsupportedErr;
-			goto exit;
-#endif /* NO_SECURITYFRAMEWORK */
+			//if (!err) LogMsg("tcpKQSocketCallback SSLHandshake complete");
+			if (!err) sock->handshakecomplete = mDNStrue;
+			else if (err == errSSLWouldBlock) return;
+			else { LogMsg("KQ SSLHandshake failed: %d", err); SSLDisposeContext(sock->tlsContext); sock->tlsContext = NULL; }
 			}
+#else
+		err = mStatus_UnsupportedErr;
+#endif /* NO_SECURITYFRAMEWORK */
 		}
 
-	exit:
-
+	mDNSBool connect = !sock->connected;
+	sock->connected = mDNStrue;
 	sock->callback(sock, sock->context, connect, err);
 	// NOTE: the callback may call CloseConnection here, which frees the context structure!
 	}
@@ -1013,16 +895,11 @@ mDNSexport void KQueueWake(mDNS *const m)
 		LogMsg("ERROR: KQueueWake: send failed with error code: %d - %s", errno, strerror(errno));
 	}
 
-mDNSexport int KQueueAdd(int fd, short filter, u_int fflags, intptr_t data, const KQueueEntry *const entryRef)
+mDNSexport int KQueueSet(int fd, u_short flags, short filter, const KQueueEntry *const entryRef)
 	{
-	struct kevent	new_event;
-	int				result = 0;
-
-	EV_SET(&new_event, fd, filter, EV_ADD, fflags, data, (void*)entryRef);
-
-	result = kevent(KQueueFD, &new_event, 1, NULL, 0, NULL);
-	if (result == -1) return errno;
-	return 0;
+	struct kevent new_event;
+	EV_SET(&new_event, fd, filter, flags, 0, 0, (void*)entryRef);
+	return (kevent(KQueueFD, &new_event, 1, NULL, 0, NULL) < 0) ? errno : 0;
 	}
 
 mDNSexport TCPSocket *mDNSPlatformTCPSocket(mDNS *const m, TCPSocketFlags flags, mDNSIPPort *port)
@@ -1033,8 +910,16 @@ mDNSexport TCPSocket *mDNSPlatformTCPSocket(mDNS *const m, TCPSocketFlags flags,
 	if (!sock) { LogMsg("mDNSPlatformTCPSocket: memory allocation failure"); return(mDNSNULL); }
 
 	mDNSPlatformMemZero(sock, sizeof(TCPSocket));
-	sock->flags = flags;
-	sock->fd    = socket(AF_INET, SOCK_STREAM, 0);
+	sock->callback          = mDNSNULL;
+	sock->fd                = socket(AF_INET, SOCK_STREAM, 0);
+	sock->kqEntry.context   = sock;
+	sock->kqEntry.callback  = tcpKQSocketCallback;
+	sock->flags             = flags;
+	sock->context           = mDNSNULL;
+	sock->setup             = mDNSfalse;
+	sock->handshakecomplete = mDNSfalse;
+	sock->connected         = mDNSfalse;
+	
 	if (sock->fd == -1)
 		{
 		LogMsg("mDNSPlatformTCPSocket: socket error %d errno %d (%s)", sock->fd, errno, strerror(errno));
@@ -1073,11 +958,14 @@ error:
 mDNSexport mStatus mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
                                           TCPConnectionCallback callback, void *context)
 	{
-	struct sockaddr_in	saddr;
-	mStatus				err = mStatus_NoError;
+	struct sockaddr_in saddr;
+	mStatus err = mStatus_NoError;
 
 	sock->callback = callback;
 	sock->context = context;
+	sock->setup             = mDNSfalse;
+	sock->handshakecomplete = mDNSfalse;
+	sock->connected         = mDNSfalse;
 
 	(void) InterfaceID;	//!!!KRS use this if non-zero!!!
 
@@ -1104,17 +992,18 @@ mDNSexport mStatus mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr *dst, 
 	sock->kqEntry.callback = tcpKQSocketCallback;
 
 	// Watch for connect complete (write is ready)
-	if (KQueueAdd(sock->fd, EVFILT_WRITE | EV_ONESHOT, 0, 0, &sock->kqEntry) == -1)
+	// EV_ONESHOT doesn't seem to work, so we add the filter with EV_ADD, and explicitly delete it in tcpKQSocketCallback using EV_DELETE
+	if (KQueueSet(sock->fd, EV_ADD /* | EV_ONESHOT */, EVFILT_WRITE, &sock->kqEntry))
 		{
-		LogMsg("ERROR: mDNSPlatformTCPConnect - KQueueAdd failed");
+		LogMsg("ERROR: mDNSPlatformTCPConnect - KQueueSet failed");
 		close(sock->fd);
 		return errno;
 		}
 
 	// Watch for incoming data
-	if (KQueueAdd(sock->fd, EVFILT_READ, 0, 0, &sock->kqEntry) == -1)
+	if (KQueueSet(sock->fd, EV_ADD, EVFILT_READ, &sock->kqEntry))
 		{
-		LogMsg("ERROR: mDNSPlatformTCPConnect - KQueueAdd failed");
+		LogMsg("ERROR: mDNSPlatformTCPConnect - KQueueSet failed");
 		close(sock->fd); // Closing the descriptor removes all filters from the kqueue
 		return errno;
  		}
@@ -1126,54 +1015,16 @@ mDNSexport mStatus mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr *dst, 
 		}
 
 	// initiate connection wth peer
-
 	if (connect(sock->fd, (struct sockaddr *)&saddr, sizeof(saddr)) < 0)
 		{
-		if (errno == EINPROGRESS)
-			{
-			sock->connected = mDNSfalse;
-			return mStatus_ConnPending;
-			}
+		if (errno == EINPROGRESS) return mStatus_ConnPending;
 		LogMsg("ERROR: mDNSPlatformTCPConnect - connect failed: %s", strerror(errno));
 		close(sock->fd);
 		return mStatus_ConnFailed;
 		}
 
-	sock->connected = mDNStrue;
-
-	if (err == mStatus_ConnEstablished)  // manually invoke callback if connection completes
-		{
-		if (sock->flags & kTCPSocketFlags_UseTLS)
-			{
-#ifndef NO_SECURITYFRAMEWORK
-			mStatus tlsErr = tlsSetupSock(sock, mDNSfalse);
-
-			if (tlsErr)
-				{
-				LogMsg("ERROR: mDNSPlatformTCPConnect: tlsSetupSock failed with error code: %d", err);
-				err = tlsErr;
-				goto exit;
-				}
-
-			tlsErr = SSLHandshake(sock->tlsContext);
-
-			sock->handshake = mDNStrue;
-
-			if (tlsErr)
-				{
-				LogMsg("ERROR: mDNSPlatformTCPConnect: SSLHandshake failed with error code: %d", err);
-				err = tlsErr;
-				goto exit;
-				}
-#else
-			err = mStatus_UnsupportedErr;
-			goto exit;
-#endif /* NO_SECURITYFRAMEWORK */
-			}
-		}
-
-	exit:
-
+	LogMsg("NOTE: mDNSPlatformTCPConnect completed synchronously");
+	// kQueue should notify us, but this LogMsg is to help track down if it doesn't
 	return err;
 	}
 
@@ -1185,7 +1036,7 @@ mDNSexport mDNSBool mDNSPlatformTCPIsConnected(TCPSocket *sock)
 // Why doesn't mDNSPlatformTCPAccept actually call accept() ?
 mDNSexport TCPSocket *mDNSPlatformTCPAccept(TCPSocketFlags flags, int fd)
 	{
-	mStatus							err = mStatus_NoError;
+	mStatus err = mStatus_NoError;
 
 	TCPSocket *sock = mallocL("TCPSocket/mDNSPlatformTCPAccept", sizeof(TCPSocket));
 	if (!sock) return(mDNSNULL);
@@ -1246,21 +1097,22 @@ mDNSexport long mDNSPlatformReadTCP(TCPSocket *sock, void *buf, unsigned long bu
 	if (sock->flags & kTCPSocketFlags_UseTLS)
 		{
 #ifndef NO_SECURITYFRAMEWORK
-		if (!sock->handshake)
+		if (!sock->handshakecomplete)
 			{
+			//LogMsg("mDNSPlatformReadTCP Starting SSLHandshake");
 			mStatus err = SSLHandshake(sock->tlsContext);
-			if (err) LogMsg("ERROR: mDNSPlatformReadTCP: SSLHandshake failed with error code: %d", err);
-			sock->handshake = mDNStrue;
+			//if (!err) LogMsg("mDNSPlatformReadTCP SSLHandshake complete");
+			if (!err) sock->handshakecomplete = mDNStrue;
+			else if (err == errSSLWouldBlock) return(0);
+			else { LogMsg("Read SSLHandshake failed: %d", err); SSLDisposeContext(sock->tlsContext); sock->tlsContext = NULL; }
 			}
-		else
-			{
-			LogOperation("Starting SSLRead %d %X", sock->fd, fcntl(sock->fd, F_GETFL, 0));
-			mStatus err = SSLRead(sock->tlsContext, buf, buflen, (size_t*)&nread);
-			LogOperation("SSLRead returned %d (%d) nread %d buflen %d", err, errSSLWouldBlock, nread, buflen);
-			if (err == errSSLClosedGraceful) { nread = 0; *closed = mDNStrue; }
-			else if (err && err != errSSLWouldBlock)
-				{ LogMsg("ERROR: mDNSPlatformReadTCP - SSLRead: %d", err); nread = -1; *closed = mDNStrue; }
-			}
+
+		//LogMsg("Starting SSLRead %d %X", sock->fd, fcntl(sock->fd, F_GETFL, 0));
+		mStatus err = SSLRead(sock->tlsContext, buf, buflen, (size_t*)&nread);
+		//LogMsg("SSLRead returned %d (%d) nread %d buflen %d", err, errSSLWouldBlock, nread, buflen);
+		if (err == errSSLClosedGraceful) { nread = 0; *closed = mDNStrue; }
+		else if (err && err != errSSLWouldBlock)
+			{ LogMsg("ERROR: mDNSPlatformReadTCP - SSLRead: %d", err); nread = -1; *closed = mDNStrue; }
 #else
 		nread = -1;
 		*closed = mDNStrue;
@@ -1456,7 +1308,7 @@ mDNSlocal mStatus SetupSocket(mDNS *const m, KQSocketSet *cp, mDNSBool mcast, co
 	*s = skt;
 	k->callback = myKQSocketCallBack;
 	k->context = cp;
-	KQueueAdd(*s, EVFILT_READ, 0, 0, k);
+	KQueueSet(*s, EV_ADD, EVFILT_READ, k);
 
 	return(err);
 
@@ -2388,7 +2240,7 @@ mDNSexport void mDNSPlatformSetSearchDomainList(void)
 							if (MakeDomainNameFromDNSNameString(&d, buf)) mDNS_AddSearchDomain(&d);
 						}
 					}
-				else	// No kSCPropNetDNSSearchDomains, so use 
+				else	// No kSCPropNetDNSSearchDomains, so use kSCPropNetDNSDomainName
 					{
 					CFStringRef string = CFDictionaryGetValue(dict, kSCPropNetDNSDomainName);
 					if (string && CFStringGetCString(string, buf, MAX_ESCAPED_DOMAIN_NAME, kCFStringEncodingUTF8))

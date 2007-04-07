@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.66  2007/04/07 01:01:48  cheshire
+<rdar://problem/5095167> mDNSResponder periodically blocks in SSLRead
+
 Revision 1.65  2007/03/07 02:50:50  cheshire
 <rdar://problem/4574528> Name conflict dialog doesn't appear if Bonjour is persistantly unable to find an available hostname
 
@@ -145,7 +148,7 @@ extern void NotifyOfElusiveBug(const char *title, const char *msg);	// Both stri
 extern void mDNSMacOSXNetworkChanged(mDNS *const m);
 extern int mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring);
 extern void KQueueWake(mDNS *const m);
-extern int KQueueAdd(int fd, short filter, u_int fflags, intptr_t data, const KQueueEntry *const entryRef);
+extern int KQueueSet(int fd, u_short flags, short filter, const KQueueEntry *const entryRef);
 
 // Allow platform layer to tell daemon when default registration/browse domains
 extern void DefaultRegDomainChanged(const domainname *d, mDNSBool add);

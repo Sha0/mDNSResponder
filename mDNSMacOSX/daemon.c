@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.302  2007/04/07 01:01:48  cheshire
+<rdar://problem/5095167> mDNSResponder periodically blocks in SSLRead
+
 Revision 1.301  2007/04/05 19:13:48  cheshire
 Use better name in SCPreferencesCreate
 
@@ -2496,7 +2499,7 @@ mDNSexport int main(int argc, char **argv)
 	// will be added to the kqueue so it will wake when data is sent.
 	static const KQueueEntry wakeKQEntry = {KQWokenFlushBytes, NULL};
 	PlatformStorage.WakeKQueueLoopFD = fdpair[0];
-	KQueueAdd(fdpair[1], EVFILT_READ, 0, 0, &wakeKQEntry);
+	KQueueSet(fdpair[1], EV_ADD, EVFILT_READ, &wakeKQEntry);
 	
 	OSXVers = mDNSMacOSXSystemBuildNumber(NULL);
 	status = mDNSDaemonInitialize();
@@ -2577,7 +2580,7 @@ mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *cont
 	newSource->kqs.context = newSource;
 	newSource->kqs.callback = kq_callback;
 
-	if (KQueueAdd(fd, EVFILT_READ, 0, 0, &newSource->kqs) == 0)
+	if (KQueueSet(fd, EV_ADD, EVFILT_READ, &newSource->kqs) == 0)
 		AddToTail(&gEventSources, newSource);
 	else
 		{
