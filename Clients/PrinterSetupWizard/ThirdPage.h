@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: ThirdPage.h,v $
+Revision 1.8  2007/04/13 21:38:46  herscher
+<rdar://problem/4528853> mDNS: When auto-highlighting items in lists, scroll list so highlighted item is in the middle
+
 Revision 1.7  2007/04/13 20:18:30  herscher
 <rdar://problem/4189721> mDNS: Epson shows up twice in the list
 
@@ -144,6 +147,10 @@ private:
 	void				SelectMatch(Printer * printer, Service * service, Manufacturer * manufacturer, Model * model);
 	void				SelectMatch(Manufacturers & manufacturers, Printer * printer, Service * service, Manufacturer * manufacturer, Model * model);
 	void				CopyPrinterSettings(Printer * printer, Service * service, Manufacturer * manufacturer, Model * model);
+	//
+	//<rdar://problem/4528853> mDNS: When auto-highlighting items in lists, scroll list so highlighted item is in the middle
+	//
+	void				AutoScroll(CListCtrl & list, int nIndex);
 
 	Manufacturers		m_manufacturers;
 

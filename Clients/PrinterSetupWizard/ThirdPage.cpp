@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.31  2007/04/13 21:38:46  herscher
+<rdar://problem/4528853> mDNS: When auto-highlighting items in lists, scroll list so highlighted item is in the middle
+
 Revision 1.30  2007/04/13 20:23:40  herscher
 Fixed mistake in previous checkin that reverted license text for this file
 
@@ -275,7 +278,10 @@ CThirdPage::SelectMatch(Printer * printer, Service * service, Manufacturer * man
 	if (nIndex != -1)
 	{
 		m_manufacturerListCtrl.SetItemState(nIndex, LVIS_SELECTED, LVIS_SELECTED);
-		m_manufacturerListCtrl.EnsureVisible(nIndex, FALSE);
+		//
+		//<rdar://problem/4528853> mDNS: When auto-highlighting items in lists, scroll list so highlighted item is in the middle
+		//
+		AutoScroll(m_manufacturerListCtrl, nIndex);
 	}
 
 	//
@@ -359,6 +365,47 @@ CThirdPage::CopyPrinterSettings( Printer * printer, Service * service, Manufactu
 		}
 
 		service->protocol = L"IPP";
+	}
+}
+
+
+// --------------------------------------------------------
+// AutoScroll
+//
+// Ensure selected item is in middle of list
+// --------------------------------------------------------
+void
+CThirdPage::AutoScroll( CListCtrl & list, int nIndex )
+{
+	//
+	//<rdar://problem/4528853> mDNS: When auto-highlighting items in lists, scroll list so highlighted item is in the middle
+	//
+
+	int		top;
+	int		count;
+
+	list.EnsureVisible( nIndex, FALSE );
+	
+	top		= list.GetTopIndex();
+	count	= list.GetCountPerPage();
+
+	if ( ( nIndex == top ) || ( ( nIndex + 1 ) == ( top + count ) ) )
+	{
+		CRect	rect;
+		int		rows;
+		
+		rows = ( count / 2 );
+
+		if ( nIndex == top )
+		{
+			list.GetItemRect(0, rect, LVIR_BOUNDS);
+			list.Scroll( CPoint( 0, rows * rect.Height() * -1 ) );
+		}
+		else
+		{
+			list.GetItemRect(0, rect, LVIR_BOUNDS);
+			list.Scroll( CPoint( 0, rows * rect.Height() ) );
+		}
 	}
 }
 
@@ -1208,7 +1255,11 @@ OSStatus CThirdPage::MatchPrinter(Manufacturers & manufacturers, Printer * print
 			if (nIndex != -1)
 			{
 				m_manufacturerListCtrl.SetItemState(nIndex, LVIS_SELECTED, LVIS_SELECTED);
-				m_manufacturerListCtrl.EnsureVisible(nIndex, FALSE);
+
+				//
+				//<rdar://problem/4528853> mDNS: When auto-highlighting items in lists, scroll list so highlighted item is in the middle
+				//
+				AutoScroll(m_manufacturerListCtrl, nIndex);
 			}
 		}
 	}
