@@ -1,33 +1,30 @@
-/*
+/* -*- Mode: C; tab-width: 4 -*-
+ *
  * Copyright (c) 1997-2004 Apple Computer, Inc. All rights reserved.
  *
- * @APPLE_LICENSE_HEADER_START@
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  * 
- * This file contains Original Code and/or Modifications of Original Code
- * as defined in and that are subject to the Apple Public Source License
- * Version 2.0 (the 'License'). You may not use this file except in
- * compliance with the License. Please obtain a copy of the License at
- * http://www.opensource.apple.com/apsl/ and read it before using this
- * file.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  * 
- * The Original Code and all software distributed under the License are
- * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
- * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
- * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
- * Please see the License for the specific language governing rights and
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
  * limitations under the License.
- * 
- * @APPLE_LICENSE_HEADER_END@
 
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.30  2007/04/13 20:23:40  herscher
+Fixed mistake in previous checkin that reverted license text for this file
+
 Revision 1.29  2007/04/13 18:10:24  herscher
 <rdar://problem/4496652> mDNS: Don't allow user to choose non-working driver
 
-Revision 1.27.2.1  2007/04/13 18:09:36  herscher
-<rdar://problem/4496652> mDNS: Don't allow user to choose non-working driver
+Revision 1.28  2006/08/14 23:24:09  cheshire
+Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
 Revision 1.27  2005/10/05 21:41:45  herscher
 <rdar://problem/4190104> Use "application/octet-stream" to determine if CUPS shared queue supports raw
