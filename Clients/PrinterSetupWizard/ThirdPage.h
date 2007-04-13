@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: ThirdPage.h,v $
+Revision 1.9  2007/04/13 23:42:20  herscher
+<rdar://problem/4580061> mDNS: Printers added using Bonjour should be set as the default printer.
+
 Revision 1.8  2007/04/13 21:38:46  herscher
 <rdar://problem/4528853> mDNS: When auto-highlighting items in lists, scroll list so highlighted item is in the middle
 
@@ -147,6 +150,10 @@ private:
 	void				SelectMatch(Printer * printer, Service * service, Manufacturer * manufacturer, Model * model);
 	void				SelectMatch(Manufacturers & manufacturers, Printer * printer, Service * service, Manufacturer * manufacturer, Model * model);
 	void				CopyPrinterSettings(Printer * printer, Service * service, Manufacturer * manufacturer, Model * model);
+	//
+	// <rdar://problem/4580061> mDNS: Printers added using Bonjour should be set as the default printer.
+	//
+	BOOL				DefaultPrinterExists();
 	//
 	//<rdar://problem/4528853> mDNS: When auto-highlighting items in lists, scroll list so highlighted item is in the middle
 	//

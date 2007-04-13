@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.32  2007/04/13 23:42:20  herscher
+<rdar://problem/4580061> mDNS: Printers added using Bonjour should be set as the default printer.
+
 Revision 1.31  2007/04/13 21:38:46  herscher
 <rdar://problem/4528853> mDNS: When auto-highlighting items in lists, scroll list so highlighted item is in the middle
 
@@ -366,6 +369,23 @@ CThirdPage::CopyPrinterSettings( Printer * printer, Service * service, Manufactu
 
 		service->protocol = L"IPP";
 	}
+}
+
+
+// --------------------------------------------------------
+// DefaultPrinterExists
+//
+// Checks to see if a default printer has been configured
+// on this machine
+// --------------------------------------------------------
+BOOL
+CThirdPage::DefaultPrinterExists()
+{
+	CPrintDialog dlg(FALSE);
+	
+	dlg.m_pd.Flags |= PD_RETURNDEFAULT;
+
+	return dlg.GetDefaults();
 }
 
 
@@ -1504,6 +1524,25 @@ CThirdPage::OnSetActive()
 		OnInitPage();
 		m_initialized = true;
 	}
+
+	//
+	// <rdar://problem/4580061> mDNS: Printers added using Bonjour should be set as the default printer.
+	//
+	if ( DefaultPrinterExists() )
+	{
+		m_defaultPrinterCtrl.SetCheck( BST_UNCHECKED );
+		printer->deflt = false;
+	}
+	else
+	{
+		m_defaultPrinterCtrl.SetCheck( BST_CHECKED );
+		printer->deflt = true;
+	}
+
+	//
+	// update the UI with the printer name
+	//
+	m_printerName.SetWindowText(printer->displayName);
 
 	//
 	// update the UI with the printer name
