@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: ThirdPage.h,v $
+Revision 1.7  2007/04/13 20:18:30  herscher
+<rdar://problem/4189721> mDNS: Epson shows up twice in the list
+
 Revision 1.6  2006/08/14 23:24:09  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -73,7 +76,18 @@ protected:
 
 private:
 
-	typedef std::map<CString, Manufacturer*> Manufacturers;
+	//
+	//<rdar://problem/4189721> mDNS: Epson shows up twice in the list.  Use case insensitive compare
+	//
+	struct compare_func
+	{
+		bool operator()( const CString & s1, const CString & s2 ) const
+		{
+			return s1.CompareNoCase( s2 ) < 0;
+		}
+	};
+
+	typedef std::map<CString, Manufacturer*, compare_func> Manufacturers;
 
 	//
 	// LoadPrintDriverDefsFromFile
