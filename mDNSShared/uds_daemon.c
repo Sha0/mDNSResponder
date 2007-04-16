@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.279  2007/04/16 21:53:49  cheshire
+Improve display of negative cache entries
+
 Revision 1.278  2007/04/16 20:49:40  cheshire
 Fix compile errors for mDNSPosix build
 
@@ -3454,7 +3457,8 @@ mDNSexport void udsserver_info(mDNS *const m)
 					cr->CRActiveQuestion ? "*" : " ",
 					remain,
 					info ? info->ifname : "-U-",
-					(cr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) ? "-" : " ",
+					(cr->resrec.RecordType == kDNSRecordTypeNegative)        ? "-" :
+					(cr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) ? " " : "+",
 					DNSTypeName(cr->resrec.rrtype),
 					CRDisplayString(m, cr));
 				usleep(1000);	// Limit rate a little so we don't flood syslog too fast

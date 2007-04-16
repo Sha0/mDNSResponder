@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.143  2007/04/16 21:53:49  cheshire
+Improve display of negative cache entries
+
 Revision 1.142  2007/04/05 22:55:35  cheshire
 <rdar://problem/5077076> Records are ending up in Lighthouse without expiry information
 
@@ -331,6 +334,7 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd,
 	#define Max (MaxMsg-1)
 	char *ptr = buffer;
 	mDNSu32 length = mDNS_snprintf(buffer, Max, "%4d %##s %s ", rr->rdlength, rr->name->c, DNSTypeName(rr->rrtype));
+	if (rr->RecordType == kDNSRecordTypeNegative) return(buffer);
 	if (!rr->rdlength) { mDNS_snprintf(buffer+length, Max-length, "<< ZERO RDATA LENGTH >>"); return(buffer); }
 	
 	switch (rr->rrtype)
