@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.41  2007/04/16 20:49:39  cheshire
+Fix compile errors for mDNSPosix build
+
 Revision 1.40  2007/02/28 01:51:22  cheshire
 Added comment about reverse-order IP address
 
@@ -85,6 +88,7 @@ static mDNS mDNSStorage;       // mDNS core uses this to store its globals
 static mDNS_PlatformSupport PlatformStorage;  // Stores this platform's globals
 #define RR_CACHE_SIZE 500
 static CacheEntity gRRCache[RR_CACHE_SIZE];
+mDNSexport const char ProgramName[] = "mDNSIdentify";
 
 static volatile int StopNow;	// 0 means running, 1 means stop because we got an answer, 2 means stop because of Ctrl-C
 static volatile int NumAnswers, NumAddr, NumAAAA, NumHINFO;

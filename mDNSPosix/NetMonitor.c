@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.87  2007/04/16 20:49:39  cheshire
+Fix compile errors for mDNSPosix build
+
 Revision 1.86  2007/03/22 18:31:48  cheshire
 Put dst parameter first in mDNSPlatformStrCopy/mDNSPlatformMemCopy, like conventional Posix strcpy/memcpy
 
@@ -155,6 +158,7 @@ struct FilterList_struct
 
 static mDNS mDNSStorage;						// mDNS core uses this to store its globals
 static mDNS_PlatformSupport PlatformStorage;	// Stores this platform's globals
+mDNSexport const char ProgramName[] = "mDNSNetMonitor";
 
 struct timeval tv_start, tv_end, tv_interval;
 static int FilterInterface = 0;

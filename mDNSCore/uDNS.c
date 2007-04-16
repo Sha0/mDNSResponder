@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.326  2007/04/16 20:49:39  cheshire
+Fix compile errors for mDNSPosix build
+
 Revision 1.325  2007/04/05 22:55:35  cheshire
 <rdar://problem/5077076> Records are ending up in Lighthouse without expiry information
 
@@ -1472,10 +1475,10 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info, mDNSBool defer)
 
 		if (mDNSIPPortIsZero(info->eventPort))
 			{
+			int i;
 			info->tcpSock = mDNSNULL;
 			info->udpSock = mDNSNULL;
 			info->eventPort = zeroIPPort;
-			int i;
 			for (i = 0; i < 100; i++)		// Try 100 times to find sockets
 				{
 				info->tcpSock = mDNSPlatformTCPSocket(m, TCP_SOCKET_FLAGS, &info->eventPort);

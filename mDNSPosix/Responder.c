@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: Responder.c,v $
+Revision 1.33  2007/04/16 20:49:39  cheshire
+Fix compile errors for mDNSPosix build
+
 Revision 1.32  2006/08/14 23:24:46  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -140,7 +143,9 @@ First checkin
 static mDNS mDNSStorage;       // mDNS core uses this to store its globals
 static mDNS_PlatformSupport PlatformStorage;  // Stores this platform's globals
 
-static const char *gProgramName = "mDNSResponderPosix";
+mDNSexport const char ProgramName[] = "mDNSResponderPosix";
+
+static const char *gProgramName = ProgramName;
 
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark ***** Signals

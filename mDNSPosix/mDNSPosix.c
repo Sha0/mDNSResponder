@@ -30,6 +30,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.93  2007/04/16 20:49:40  cheshire
+Fix compile errors for mDNSPosix build
+
 Revision 1.92  2007/04/05 20:40:37  cheshire
 Remove unused mDNSPlatformTCPGetFlags()
 
@@ -469,6 +472,7 @@ mDNSexport void mDNSPlatformGetDNSConfig(domainname *const fqdn, domainname *con
 
 mDNSexport void mDNSPlatformSetDNSServers(mDNS *const m)
 	{
+	(void) m;
 	}
 
 mDNSexport void mDNSPlatformSetSearchDomainList(void)

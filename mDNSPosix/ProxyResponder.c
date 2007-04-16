@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: ProxyResponder.c,v $
+Revision 1.43  2007/04/16 20:49:39  cheshire
+Fix compile errors for mDNSPosix build
+
 Revision 1.42  2007/03/06 22:45:53  cheshire
 
 <rdar://problem/4138615> argv buffer overflow issues
@@ -147,6 +150,7 @@ Add "$Log" header
 // Globals
 static mDNS mDNSStorage;       // mDNS core uses this to store its globals
 static mDNS_PlatformSupport PlatformStorage;  // Stores this platform's globals
+mDNSexport const char ProgramName[] = "mDNSProxyResponderPosix";
 
 //*************************************************************************************************************
 // Proxy Host Registration

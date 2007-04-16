@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: Client.c,v $
+Revision 1.19  2007/04/16 20:49:39  cheshire
+Fix compile errors for mDNSPosix build
+
 Revision 1.18  2006/08/14 23:24:46  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -98,7 +101,9 @@ static mDNS_PlatformSupport PlatformStorage;  // Stores this platform's globals
 #define RR_CACHE_SIZE 500
 static CacheEntity gRRCache[RR_CACHE_SIZE];
 
-static const char *gProgramName = "mDNSResponderPosix";
+mDNSexport const char ProgramName[] = "mDNSClientPosix";
+
+static const char *gProgramName = ProgramName;
 
 static void BrowseCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
     // A callback from the core mDNS code that indicates that we've received a 

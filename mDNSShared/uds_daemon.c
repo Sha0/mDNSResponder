@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.278  2007/04/16 20:49:40  cheshire
+Fix compile errors for mDNSPosix build
+
 Revision 1.277  2007/04/05 22:55:36  cheshire
 <rdar://problem/5077076> Records are ending up in Lighthouse without expiry information
 
@@ -2824,11 +2827,11 @@ mDNSlocal mStatus handle_port_mapping_create_request(request_state *request)
 	mStatus err = mStatus_NoError;
 
 	DNSServiceFlags flags = get_flags(&ptr);
-	(void)flags; // Unused
 	uint32_t interfaceIndex = get_uint32(&ptr);
 	mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
 	if (interfaceIndex && !InterfaceID) return(mStatus_BadParamErr);
 
+	(void)flags; // Unused
 	protocol         = *ptr++;
 	privatePort.b[0] = *ptr++;
 	privatePort.b[1] = *ptr++;
