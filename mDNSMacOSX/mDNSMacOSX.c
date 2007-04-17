@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.393  2007/04/17 19:21:29  cheshire
+<rdar://problem/5140339> Domain discovery not working over VPN
+
 Revision 1.392  2007/04/17 17:15:09  cheshire
 Change NO_CFUSERNOTIFICATION code so it still logs to syslog
 
@@ -1435,80 +1438,41 @@ mDNSlocal CFArrayRef GetCertChain(SecIdentityRef identity)
 
 mDNSexport mStatus mDNSPlatformTLSSetupCerts(void)
 	{
-#ifndef NO_SECURITYFRAMEWORK
+#ifdef NO_SECURITYFRAMEWORK
+	return mStatus_UnsupportedErr;
+#else
 	SecIdentityRef			identity = nil;
 	SecIdentitySearchRef	srchRef = nil;
 	OSStatus				err;
 
 	// Pick a keychain
-
 	err = SecKeychainOpen(SYSTEM_KEYCHAIN_PATH, &ServerKC);
-
-	if (err)
-		{
-		LogMsg("ERROR: mDNSPlatformTLSSetupCerts: SecKeychainOpen returned %d", (int) err);
-		goto exit;
-		}
+	if (err) { LogMsg("ERROR: mDNSPlatformTLSSetupCerts: SecKeychainOpen returned %d", (int) err); return err; }
 
 	// search for "any" identity matching specified key use
 	// In this app, we expect there to be exactly one
-	 
 	err = SecIdentitySearchCreate(ServerKC, CSSM_KEYUSE_DECRYPT, &srchRef);
-
-	if (err)
-		{
-		LogMsg("ERROR: mDNSPlatformTLSSetupCerts: SecIdentitySearchCreate returned %d", (int) err);
-		goto exit;
-		}
+	if (err) { LogMsg("ERROR: mDNSPlatformTLSSetupCerts: SecIdentitySearchCreate returned %d", (int) err); return err; }
 
 	err = SecIdentitySearchCopyNext(srchRef, &identity);
-
-	if (err)
-		{
-		LogMsg("ERROR: mDNSPlatformTLSSetupCerts: SecIdentitySearchCopyNext returned %d", (int) err);
-		goto exit;
-		}
+	if (err) { LogMsg("ERROR: mDNSPlatformTLSSetupCerts: SecIdentitySearchCopyNext returned %d", (int) err); return err; }
 
 	if (CFGetTypeID(identity) != SecIdentityGetTypeID())
-		{
-		LogMsg("ERROR: mDNSPlatformTLSSetupCerts: SecIdentitySearchCopyNext CFTypeID failure");
-		err = mStatus_UnknownErr;
-		goto exit;
-		}
+		{ LogMsg("ERROR: mDNSPlatformTLSSetupCerts: SecIdentitySearchCopyNext CFTypeID failure"); return mStatus_UnknownErr; }
 
 	// Found one. Call getCertChain to create the correct certificate chain.
-
 	ServerCerts = GetCertChain(identity);
+	if (ServerCerts == nil) { LogMsg("ERROR: mDNSPlatformTLSSetupCerts: getCertChain error"); return mStatus_UnknownErr; }
 
-	if (ServerCerts == nil)
-		{
-		LogMsg("ERROR: mDNSPlatformTLSSetupCerts: getCertChain error");
-		err = mStatus_UnknownErr;
-		goto exit;
-		}
-
-	exit:
-
-	return err;
-#else
-	return mStatus_UnsupportedErr;
+	return mStatus_NoError;
 #endif /* NO_SECURITYFRAMEWORK */
 	}
 
 mDNSexport  void  mDNSPlatformTLSTearDownCerts(void)
 	{
 #ifndef NO_SECURITYFRAMEWORK
-	if (ServerCerts)
-		{
-		CFRelease(ServerCerts);
-		ServerCerts = NULL;
-		}
-
-	if (ServerKC)
-		{
-		CFRelease(ServerKC);
-		ServerKC = NULL;
-		}
+	if (ServerCerts) { CFRelease(ServerCerts); ServerCerts = NULL; }
+	if (ServerKC)    { CFRelease(ServerKC);    ServerKC    = NULL; }
 #endif /* NO_SECURITYFRAMEWORK */
 	}
 
@@ -1992,45 +1956,94 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m, mDNSs32 utc)
 	return count;
 	}
 
-mDNSlocal mStatus GetDNSConfig(void **result)
+mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDNSBool setsearch, domainname *const fqdn, domainname *const regDomain, DNameListElem **browseDomains)
 	{
-#if MDNS_NO_DNSINFO
-	static int MessageShown = 0;
-	if (!MessageShown) { MessageShown = 1; LogMsg("Note: Compiled without Apple-specific Split-DNS support"); }
-	*result = NULL;
-	return mStatus_UnsupportedErr;
-#else
-
-	*result = dns_configuration_copy();
-
-	if (!*result)
-		{
-		// When running on 10.3 (build 7xxx) and earlier, we don't expect dns_configuration_copy() to succeed
-		if (mDNSMacOSXSystemBuildNumber(NULL) < 8) return mStatus_UnsupportedErr;
-
-		// On 10.4, calls to dns_configuration_copy() early in the boot process often fail.
-		// Apparently this is expected behaviour -- "not a bug".
-		// Accordingly, we suppress syslog messages for the first three minutes after boot.
-		// If we are still getting failures after three minutes, then we log them.
-		if ((mDNSu32)(mDNSPlatformRawTime()) < (mDNSu32)(mDNSPlatformOneSecond * 180)) return mStatus_NoError;
-
-		LogMsg("GetDNSConfig: Error: dns_configuration_copy returned NULL");
-		return mStatus_UnknownErr;
-		}
-	return mStatus_NoError;
-#endif // MDNS_NO_DNSINFO
-	}
-
-mDNSexport void mDNSPlatformGetDNSConfig(domainname *const fqdn, domainname *const regDomain, DNameListElem **browseDomains)
-	{
+	int i;
 	char buf[MAX_ESCAPED_DOMAIN_NAME];	// Max legal C-string name, including terminating NUL
+	domainname d;
 
 	// Need to set these here because we need to do this even if SCDynamicStoreCreate() or SCDynamicStoreCopyValue() below don't succeed
 	if (fqdn)          fqdn->c[0]      = 0;
 	if (regDomain)     regDomain->c[0] = 0;
 	if (browseDomains) *browseDomains  = NULL;
 
-	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:mDNSPlatformGetDNSConfig"), NULL, NULL);
+	LogOperation("mDNSPlatformSetDNSConfig %s%s%s%s%s",
+		setservers    ? "setservers " : "",
+		setsearch     ? "setsearch " : "",
+		fqdn          ? "fqdn " : "",
+		regDomain     ? "regDomain " : "",
+		browseDomains ? "browseDomains " : "");
+
+#ifndef MDNS_NO_DNSINFO
+	if (setservers || setsearch)
+		{
+		dns_config_t *config = dns_configuration_copy();
+		if (!config)
+			{
+			// When running on 10.3 (build 7xxx) and earlier, we don't expect dns_configuration_copy() to succeed
+			// On 10.4, calls to dns_configuration_copy() early in the boot process often fail.
+			// Apparently this is expected behaviour -- "not a bug".
+			// Accordingly, we suppress syslog messages for the first three minutes after boot.
+			// If we are still getting failures after three minutes, then we log them.
+			if (mDNSMacOSXSystemBuildNumber(NULL) > 7 && (mDNSu32)mDNSPlatformRawTime() > (mDNSu32)(mDNSPlatformOneSecond * 180))
+				LogMsg("GetDNSConfig: Error: dns_configuration_copy returned NULL");
+			}
+		else
+			{
+			LogOperation("mDNSPlatformSetDNSConfig: Registering %d resolvers", config->n_resolver);
+			for (i = 0; i < config->n_resolver; i++)
+				{
+				int j, n;
+				dns_resolver_t *r = config->resolver[i];
+				// Ignore dnsinfo entries for mDNS domains (indicated by the fact that the resolver port is 5353, the mDNS port)
+				// Note: Unlike the BSD Sockets APIs (where TCP and UDP port numbers are universally in network byte order)
+				// in Apple's "dnsinfo.h" API the port number is declared to be a "uint16_t in host byte order"
+				if (r->port == 5353) continue;
+				if (r->search_order == DEFAULT_SEARCH_ORDER || !r->domain || !*r->domain) d.c[0] = 0; // we ignore domain for "default" resolver
+				else if (!MakeDomainNameFromDNSNameString(&d, r->domain)) { LogMsg("RegisterSplitDNS: bad domain %s", r->domain); continue; }
+
+				if (setservers)
+					{
+					for (j = 0; j < config->n_resolver; j++)  // check if this is the lowest-weighted server for the domain
+						{
+						dns_resolver_t *p = config->resolver[j];
+						if (p->port == 5353) continue; // Note: dns_resolver_t port is defined to be "uint16_t in host byte order"
+						if (p->search_order <= r->search_order)
+							{
+							domainname tmp;
+							if (p->search_order == DEFAULT_SEARCH_ORDER || !p->domain || !*p->domain) tmp.c[0] = '\0';
+							else if (!MakeDomainNameFromDNSNameString(&tmp, p->domain)) { LogMsg("RegisterSplitDNS: bad domain %s", p->domain); continue; }
+							if (SameDomainName(&d, &tmp))
+								if (p->search_order < r->search_order || j < i) break;  // if equal weights, pick first in list, otherwise pick lower-weight (p)
+							}
+						}
+					if (j < config->n_resolver) // found a lower-weighted resolver for this domain
+						debugf("Rejecting DNS server in slot %d domain %##s (slot %d outranks)", i, d.c, j);
+					else
+						for (n = 0; n < r->n_nameserver; n++)
+							if (r->nameserver[n]->sa_family == AF_INET && !AddrRequiresPPPConnection(r->nameserver[n]))
+								{
+								mDNSAddr saddr;
+								// mDNSAddr saddr = { mDNSAddrType_IPv4, { { { 192, 168, 1, 1 } } } }; // for testing
+								debugf("Adding dns server from slot %d %#a for domain %##s", i, &saddr, d.c);
+								if (SetupAddr(&saddr, r->nameserver[n])) LogMsg("RegisterSplitDNS: bad IP address");
+								else mDNS_AddDNSServer(m, &saddr, &d);
+								}
+					}
+
+				if (setsearch)
+					for (j = 0; j < r->n_search; j++)
+						if (MakeDomainNameFromDNSNameString(&d, r->search[j]))
+							mDNS_AddSearchDomain(&d);
+				}
+			dns_configuration_free(config);
+			setservers = mDNSfalse;  // Done these now -- no need to fetch the same data from SCDynamicStore
+			setsearch  = mDNSfalse;
+			}
+		}
+#endif // MDNS_NO_DNSINFO
+
+	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:mDNSPlatformSetDNSConfig"), NULL, NULL);
 	if (store)
 		{
 		CFDictionaryRef dict = SCDynamicStoreCopyValue(store, CFSTR("Setup:/Network/DynamicDNS"));
@@ -2082,7 +2095,6 @@ mDNSexport void mDNSPlatformGetDNSConfig(domainname *const fqdn, domainname *con
 				CFArrayRef browseArray = CFDictionaryGetValue(dict, CFSTR("BrowseDomains"));
 				if (browseArray)
 					{
-					int i;
 					for (i = 0; i < CFArrayGetCount(browseArray); i++)
 						{
 						CFDictionaryRef browseDict = CFArrayGetValueAtIndex(browseArray, i);
@@ -2091,17 +2103,16 @@ mDNSexport void mDNSPlatformGetDNSConfig(domainname *const fqdn, domainname *con
 							CFStringRef name = CFDictionaryGetValue(browseDict, CFSTR("Domain"));
 							if (name)
 								{
-								domainname dname;
 								if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) ||
-									!MakeDomainNameFromDNSNameString(&dname, buf) || !dname.c[0])
+									!MakeDomainNameFromDNSNameString(&d, buf) || !d.c[0])
 									LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS browsing domain: %s", buf[0] ? buf : "(unknown)");
 								else
 									{
 									debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS browsing domain: %s", buf);
-									DNameListElem *browseDomain = (DNameListElem*) mallocL("DNameListElem/mDNSPlatformGetDNSConfig", sizeof(DNameListElem));
-									if (!browseDomain) { LogMsg("ERROR: mDNSPlatformGetDNSConfig: memory exhausted"); continue; }
+									DNameListElem *browseDomain = (DNameListElem*) mallocL("DNameListElem/mDNSPlatformSetDNSConfig", sizeof(DNameListElem));
+									if (!browseDomain) { LogMsg("ERROR: mDNSPlatformSetDNSConfig: memory exhausted"); continue; }
 									memset(browseDomain, 0, sizeof(DNameListElem));
-									AssignDomainName(&browseDomain->name, &dname);
+									AssignDomainName(&browseDomain->name, &d);
 									browseDomain->next = mDNSNULL;
 									*browseDomains = browseDomain;
 									browseDomains = &browseDomain->next;
@@ -2113,75 +2124,8 @@ mDNSexport void mDNSPlatformGetDNSConfig(domainname *const fqdn, domainname *con
 				}
 			CFRelease(dict);
 			}
-		CFRelease(store);
-		}
-	}
 
-// Get the list of DNS Servers
-mDNSexport void mDNSPlatformSetDNSServers(mDNS *const m)
-	{
-	(void)m;  // unused on 10.3 systems
-	void *v;
-	mStatus err = GetDNSConfig(&v);
-
-	mDNS_Lock(m);
-
-#if MDNS_NO_DNSINFO
-	(void)err;
-#else
-	if (!err && v)
-		{
-		dns_config_t *config = v;  // use void * to allow compilation on 10.3 systems
-		LogOperation("RegisterSplitDNS: Registering %d resolvers", config->n_resolver);
-		int i;
-		for (i = 0; i < config->n_resolver; i++)
-			{
-			int j, n;
-			domainname d;
-			dns_resolver_t *r = config->resolver[i];
-			// Ignore dnsinfo entries for mDNS domains (indicated by the fact that the resolver port is 5353, the mDNS port)
-			// Note: Unlike the BSD Sockets APIs (where TCP and UDP port numbers are universally in network byte order)
-			// in Apple's "dnsinfo.h" API the port number is declared to be a "uint16_t in host byte order"
-			if (r->port == 5353) continue;
-			if (r->search_order == DEFAULT_SEARCH_ORDER || !r->domain || !*r->domain) d.c[0] = 0; // we ignore domain for "default" resolver
-			else if (!MakeDomainNameFromDNSNameString(&d, r->domain)) { LogMsg("RegisterSplitDNS: bad domain %s", r->domain); continue; }
-
-			// check if this is the lowest-weighted server for the domain
-			for (j = 0; j < config->n_resolver; j++)
-				{
-				dns_resolver_t *p = config->resolver[j];
-				if (p->port == 5353) continue; // Note: dns_resolver_t port is defined to be "uint16_t in host byte order"
-				if (p->search_order <= r->search_order)
-					{
-					domainname tmp;
-					if (p->search_order == DEFAULT_SEARCH_ORDER || !p->domain || !*p->domain) tmp.c[0] = '\0';
-					else if (!MakeDomainNameFromDNSNameString(&tmp, p->domain)) { LogMsg("RegisterSplitDNS: bad domain %s", p->domain); continue; }
-					if (SameDomainName(&d, &tmp))
-						if (p->search_order < r->search_order || j < i) break;  // if equal weights, pick first in list, otherwise pick lower-weight (p)
-					}
-				}
-			if (j < config->n_resolver) // found a lower-weighted resolver for this domain
-				{ debugf("Rejecting DNS server in slot %d domain %##s (slot %d outranks)", i, d.c, j); continue; }
-			// we're using this resolver - find the first IPv4 address
-			for (n = 0; n < r->n_nameserver; n++)
-				{
-				if (r->nameserver[n]->sa_family == AF_INET && !AddrRequiresPPPConnection(r->nameserver[n]))
-					{
-					mDNSAddr saddr;
-					// mDNSAddr saddr = { mDNSAddrType_IPv4, { { { 192, 168, 1, 1 } } } }; // for testing
-					debugf("Adding dns server from slot %d %#a for domain %##s", i, &saddr, d.c);
-					if (SetupAddr(&saddr, r->nameserver[n])) LogMsg("RegisterSplitDNS: bad IP address");
-					else mDNS_AddDNSServer(m, &saddr, &d);
-					}
-				}
-			}
-		dns_configuration_free(config);
-		}
-	else
-#endif
-		{
-		SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:mDNSPlatformSetDNSServers"), NULL, NULL);
-		if (store)
+		if (setservers || setsearch)
 			{
 			CFStringRef key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
 			if (key)
@@ -2189,92 +2133,73 @@ mDNSexport void mDNSPlatformSetDNSServers(mDNS *const m)
 				CFDictionaryRef dict = SCDynamicStoreCopyValue(store, key);
 				if (dict)
 					{
-					CFArrayRef values = CFDictionaryGetValue(dict, kSCPropNetDNSServerAddresses);
-					if (values)
+					if (setservers)
 						{
-						int i;
-						for (i = 0; i < CFArrayGetCount(values); i++)
+						CFArrayRef values = CFDictionaryGetValue(dict, kSCPropNetDNSServerAddresses);
+						if (values)
 							{
-							CFStringRef s = CFArrayGetValueAtIndex(values, i);
-							char buf[256];
-							mDNSAddr addr = { mDNSAddrType_IPv4, { { { 0 } } } };
-							if (s && CFStringGetCString(s, buf, 256, kCFStringEncodingUTF8) &&
-								inet_aton(buf, (struct in_addr *) &addr.ip.v4))
-								mDNS_AddDNSServer(m, &addr, mDNSNULL);
+							for (i = 0; i < CFArrayGetCount(values); i++)
+								{
+								CFStringRef s = CFArrayGetValueAtIndex(values, i);
+								char buf[256];
+								mDNSAddr addr = { mDNSAddrType_IPv4, { { { 0 } } } };
+								if (s && CFStringGetCString(s, buf, 256, kCFStringEncodingUTF8) &&
+									inet_aton(buf, (struct in_addr *) &addr.ip.v4))
+									mDNS_AddDNSServer(m, &addr, mDNSNULL);
+								}
+							}
+						CFRelease(dict);
+						}
+					if (setsearch)
+						{
+						// First add the manual and/or DHCP-dicovered search domains
+						CFArrayRef searchDomains = CFDictionaryGetValue(dict, kSCPropNetDNSSearchDomains);
+						if (searchDomains)
+							{
+							for (i = 0; i < CFArrayGetCount(searchDomains); i++)
+								{
+								CFStringRef s = CFArrayGetValueAtIndex(searchDomains, i);
+								if (s && CFStringGetCString(s, buf, sizeof(buf), kCFStringEncodingUTF8))
+									if (MakeDomainNameFromDNSNameString(&d, buf)) mDNS_AddSearchDomain(&d);
+								}
+							}
+						else	// No kSCPropNetDNSSearchDomains, so use kSCPropNetDNSDomainName
+							{
+							CFStringRef string = CFDictionaryGetValue(dict, kSCPropNetDNSDomainName);
+							if (string && CFStringGetCString(string, buf, sizeof(buf), kCFStringEncodingUTF8))
+								if (MakeDomainNameFromDNSNameString(&d, buf)) mDNS_AddSearchDomain(&d);
+							}
+						CFRelease(dict);
+
+						// Then we add the inferred address-based configuration discovery domains
+						// (should really be in core code I think, not platform-specific)
+						struct ifaddrs *ifa = myGetIfAddrs(1);
+						while (ifa)
+							{
+							mDNSAddr a, n;
+							if (ifa->ifa_addr->sa_family == AF_INET	&&
+								ifa->ifa_netmask                    &&
+								!(ifa->ifa_flags & IFF_LOOPBACK)	&&
+								!SetupAddr(&a, ifa->ifa_addr)		&&
+								!SetupAddr(&n, ifa->ifa_netmask))
+								{
+								char       buffer[256];
+								// Note: This is reverse order compared to a normal dotted-decimal IP address, so we can't use our customary "%.4a" format code
+								sprintf(buffer, "%d.%d.%d.%d.in-addr.arpa.", a.ip.v4.b[3] & n.ip.v4.b[3],
+																			 a.ip.v4.b[2] & n.ip.v4.b[2],
+																			 a.ip.v4.b[1] & n.ip.v4.b[1],
+																			 a.ip.v4.b[0] & n.ip.v4.b[0]);
+								if (MakeDomainNameFromDNSNameString(&d, buffer)) mDNS_AddSearchDomain(&d);
+								}
+							ifa = ifa->ifa_next;
 							}
 						}
-					CFRelease(dict);
 					}
 				CFRelease(key);
 				}
-			CFRelease(store);
-			}
-		}
-	mDNS_Unlock(m);
-	}
-
-// Get the search domains via OS X resolver routines or System Configuration routines
-mDNSexport void mDNSPlatformSetSearchDomainList(void)
-	{
-	LogOperation("mDNSPlatformSetSearchDomainList");
-
-	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:mDNSPlatformSetSearchDomainList"), NULL, NULL);
-	if (store)
-		{
-		CFStringRef key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
-		if (key)
-			{
-			CFDictionaryRef dict = SCDynamicStoreCopyValue(store, key);
-			if (dict)
-				{
-				char buf[MAX_ESCAPED_DOMAIN_NAME];	// Max legal C-string name, including terminating NUL
-				domainname d;
-				CFArrayRef searchDomains = CFDictionaryGetValue(dict, kSCPropNetDNSSearchDomains);
-				if (searchDomains)
-					{
-					int i;
-					for (i = 0; i < CFArrayGetCount(searchDomains); i++)
-						{
-						CFStringRef s = CFArrayGetValueAtIndex(searchDomains, i);
-						if (s && CFStringGetCString(s, buf, MAX_ESCAPED_DOMAIN_NAME, kCFStringEncodingUTF8))
-							if (MakeDomainNameFromDNSNameString(&d, buf)) mDNS_AddSearchDomain(&d);
-						}
-					}
-				else	// No kSCPropNetDNSSearchDomains, so use kSCPropNetDNSDomainName
-					{
-					CFStringRef string = CFDictionaryGetValue(dict, kSCPropNetDNSDomainName);
-					if (string && CFStringGetCString(string, buf, MAX_ESCAPED_DOMAIN_NAME, kCFStringEncodingUTF8))
-						if (MakeDomainNameFromDNSNameString(&d, buf)) mDNS_AddSearchDomain(&d);
-					}
-				CFRelease(dict);
 				}
-			CFRelease(key);
-			}
+
 		CFRelease(store);
-		}
-
-	struct ifaddrs *ifa = myGetIfAddrs(1);
-	while (ifa)
-		{
-		mDNSAddr a, n;
-		if (ifa->ifa_addr->sa_family == AF_INET	&&
-			ifa->ifa_netmask                    &&
-			!(ifa->ifa_flags & IFF_LOOPBACK)	&&
-			!SetupAddr(&a, ifa->ifa_addr)		&&
-			!SetupAddr(&n, ifa->ifa_netmask))
-			{
-			char       buffer[256];
-			domainname d;
-
-			// Note: This is reverse order compared to a normal dotted-decimal IP address, so we can't use our customary "%.4a" format code
-			sprintf(buffer, "%d.%d.%d.%d.in-addr.arpa.", a.ip.v4.b[3] & n.ip.v4.b[3],
-														 a.ip.v4.b[2] & n.ip.v4.b[2],
-														 a.ip.v4.b[1] & n.ip.v4.b[1],
-														 a.ip.v4.b[0] & n.ip.v4.b[0]);
-
-			if (MakeDomainNameFromDNSNameString(&d, buffer)) mDNS_AddSearchDomain(&d);
-			}
-		ifa = ifa->ifa_next;
 		}
 	}
 
@@ -2909,6 +2834,10 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 
 mDNSexport mStatus mDNSPlatformInit(mDNS *const m)
 	{
+#if MDNS_NO_DNSINFO
+	LogMsg("Note: Compiled without Apple-specific Split-DNS support");
+#endif
+
 	mStatus result = mDNSPlatformInit_setup(m);
 
 	// We don't do asynchronous initialization on OS X, so by the time we get here the setup will already

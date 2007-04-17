@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.280  2007/04/17 19:21:29  cheshire
+<rdar://problem/5140339> Domain discovery not working over VPN
+
 Revision 1.279  2007/04/16 21:53:49  cheshire
 Improve display of negative cache entries
 
@@ -2091,7 +2094,9 @@ mDNSexport void udsserver_handle_configchange(mDNS *const m)
 				}
 
 	// Let the platform layer get the current DNS information
-	mDNSPlatformGetDNSConfig(mDNSNULL, &regDomain, &browseDomains);
+	mDNS_Lock(m);
+	mDNSPlatformSetDNSConfig(m, mDNSfalse, mDNSfalse, mDNSNULL, &regDomain, &browseDomains);
+	mDNS_Unlock(m);
 
 	// Did our registration domain change?
 	if (!SameDomainName(&regDomain, &m->RegDomain))

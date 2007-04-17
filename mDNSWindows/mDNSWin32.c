@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.122  2007/04/17 19:21:29  cheshire
+<rdar://problem/5140339> Domain discovery not working over VPN
+
 Revision 1.121  2007/04/05 20:40:37  cheshire
 Remove unused mDNSPlatformTCPGetFlags()
 
@@ -286,7 +289,7 @@ mDNSlocal BOOL					gWaitListChanged		= FALSE;
 //	mDNSPlatformInit
 //===========================================================================================================================
 
-mStatus	mDNSPlatformInit( mDNS * const inMDNS )
+mDNSexport mStatus	mDNSPlatformInit( mDNS * const inMDNS )
 {
 	mStatus		err;
 	WSADATA		wsaData;
@@ -450,7 +453,7 @@ exit:
 //	mDNSPlatformClose
 //===========================================================================================================================
 
-void	mDNSPlatformClose( mDNS * const inMDNS )
+mDNSexport void	mDNSPlatformClose( mDNS * const inMDNS )
 {
 	mStatus		err;
 	
@@ -523,7 +526,7 @@ void	mDNSPlatformClose( mDNS * const inMDNS )
 //	mDNSPlatformSendUDP
 //===========================================================================================================================
 
-mStatus
+mDNSexport mStatus
 	mDNSPlatformSendUDP( 
 		const mDNS * const			inMDNS, 
 		const void * const	        inMsg, 
@@ -605,7 +608,7 @@ exit:
 //	mDNSPlatformLock
 //===========================================================================================================================
 
-void	mDNSPlatformLock( const mDNS * const inMDNS )
+mDNSexport void	mDNSPlatformLock( const mDNS * const inMDNS )
 {
 	check( inMDNS );
 	
@@ -619,7 +622,7 @@ void	mDNSPlatformLock( const mDNS * const inMDNS )
 //	mDNSPlatformUnlock
 //===========================================================================================================================
 
-void	mDNSPlatformUnlock( const mDNS * const inMDNS )
+mDNSexport void	mDNSPlatformUnlock( const mDNS * const inMDNS )
 {
 	check( inMDNS );
 	check( inMDNS->p );
@@ -646,7 +649,7 @@ void	mDNSPlatformUnlock( const mDNS * const inMDNS )
 //	mDNSPlatformStrCopy
 //===========================================================================================================================
 
-void	mDNSPlatformStrCopy( void *inDst, const void *inSrc )
+mDNSexport void	mDNSPlatformStrCopy( void *inDst, const void *inSrc )
 {
 	check( inSrc );
 	check( inDst );
@@ -658,7 +661,7 @@ void	mDNSPlatformStrCopy( void *inDst, const void *inSrc )
 //	mDNSPlatformStrLen
 //===========================================================================================================================
 
-mDNSu32	mDNSPlatformStrLen( const void *inSrc )
+mDNSexport mDNSu32	mDNSPlatformStrLen( const void *inSrc )
 {
 	check( inSrc );
 	
@@ -669,7 +672,7 @@ mDNSu32	mDNSPlatformStrLen( const void *inSrc )
 //	mDNSPlatformMemCopy
 //===========================================================================================================================
 
-void	mDNSPlatformMemCopy( void *inDst, const void *inSrc, mDNSu32 inSize )
+mDNSexport void	mDNSPlatformMemCopy( void *inDst, const void *inSrc, mDNSu32 inSize )
 {
 	check( inSrc );
 	check( inDst );
@@ -681,7 +684,7 @@ void	mDNSPlatformMemCopy( void *inDst, const void *inSrc, mDNSu32 inSize )
 //	mDNSPlatformMemSame
 //===========================================================================================================================
 
-mDNSBool	mDNSPlatformMemSame( const void *inDst, const void *inSrc, mDNSu32 inSize )
+mDNSexport mDNSBool	mDNSPlatformMemSame( const void *inDst, const void *inSrc, mDNSu32 inSize )
 {
 	check( inSrc );
 	check( inDst );
@@ -693,7 +696,7 @@ mDNSBool	mDNSPlatformMemSame( const void *inDst, const void *inSrc, mDNSu32 inSi
 //	mDNSPlatformMemZero
 //===========================================================================================================================
 
-void	mDNSPlatformMemZero( void *inDst, mDNSu32 inSize )
+mDNSexport void	mDNSPlatformMemZero( void *inDst, mDNSu32 inSize )
 {
 	check( inDst );
 	
@@ -750,7 +753,7 @@ mDNSexport mStatus	mDNSPlatformTimeInit( void )
 //	mDNSPlatformRawTime
 //===========================================================================================================================
 
-mDNSs32	mDNSPlatformRawTime( void )
+mDNSexport mDNSs32	mDNSPlatformRawTime( void )
 {
 	return( (mDNSs32) GetTickCount() );
 }
@@ -768,7 +771,7 @@ mDNSexport mDNSs32	mDNSPlatformUTC( void )
 //	mDNSPlatformInterfaceNameToID
 //===========================================================================================================================
 
-mStatus	mDNSPlatformInterfaceNameToID( mDNS * const inMDNS, const char *inName, mDNSInterfaceID *outID )
+mDNSexport mStatus	mDNSPlatformInterfaceNameToID( mDNS * const inMDNS, const char *inName, mDNSInterfaceID *outID )
 {
 	mStatus					err;
 	mDNSInterfaceData *		ifd;
@@ -804,7 +807,7 @@ exit:
 //	mDNSPlatformInterfaceIDToInfo
 //===========================================================================================================================
 
-mStatus	mDNSPlatformInterfaceIDToInfo( mDNS * const inMDNS, mDNSInterfaceID inID, mDNSPlatformInterfaceInfo *outInfo )
+mDNSexport mStatus	mDNSPlatformInterfaceIDToInfo( mDNS * const inMDNS, mDNSInterfaceID inID, mDNSPlatformInterfaceInfo *outInfo )
 {
 	mStatus					err;
 	mDNSInterfaceData *		ifd;
@@ -838,7 +841,7 @@ exit:
 //	mDNSPlatformInterfaceIDfromInterfaceIndex
 //===========================================================================================================================
 
-mDNSInterfaceID	mDNSPlatformInterfaceIDfromInterfaceIndex( mDNS * const inMDNS, mDNSu32 inIndex )
+mDNSexport mDNSInterfaceID	mDNSPlatformInterfaceIDfromInterfaceIndex( mDNS * const inMDNS, mDNSu32 inIndex )
 {
 	mDNSInterfaceID		id;
 	
@@ -868,7 +871,7 @@ mDNSInterfaceID	mDNSPlatformInterfaceIDfromInterfaceIndex( mDNS * const inMDNS, 
 //	mDNSPlatformInterfaceIndexfromInterfaceID
 //===========================================================================================================================
 	
-mDNSu32	mDNSPlatformInterfaceIndexfromInterfaceID( mDNS * const inMDNS, mDNSInterfaceID inID )
+mDNSexport mDNSu32	mDNSPlatformInterfaceIndexfromInterfaceID( mDNS * const inMDNS, mDNSInterfaceID inID )
 {
 	mDNSu32		index;
 	
@@ -1088,7 +1091,7 @@ exit:
 //	mDNSPlatformTCPCloseConnection
 //===========================================================================================================================
 
-void	mDNSPlatformTCPCloseConnection( TCPSocket *sock )
+mDNSexport void	mDNSPlatformTCPCloseConnection( TCPSocket *sock )
 {
 	TCPSocket *	inserted  = gTCPConnectionList;
 	TCPSocket *	last = NULL;
@@ -1123,7 +1126,7 @@ void	mDNSPlatformTCPCloseConnection( TCPSocket *sock )
 //	mDNSPlatformReadTCP
 //===========================================================================================================================
 
-long	mDNSPlatformReadTCP( TCPSocket *sock, void *inBuffer, unsigned long inBufferSize, mDNSBool * closed )
+mDNSexport long	mDNSPlatformReadTCP( TCPSocket *sock, void *inBuffer, unsigned long inBufferSize, mDNSBool * closed )
 {
 	int	nread;
 
@@ -1152,7 +1155,7 @@ long	mDNSPlatformReadTCP( TCPSocket *sock, void *inBuffer, unsigned long inBuffe
 //	mDNSPlatformWriteTCP
 //===========================================================================================================================
 
-long	mDNSPlatformWriteTCP( TCPSocket *sock, const char *inMsg, unsigned long inMsgSize )
+mDNSexport long	mDNSPlatformWriteTCP( TCPSocket *sock, const char *inMsg, unsigned long inMsgSize )
 {
 	int			nsent;
 	OSStatus	err;
@@ -1227,11 +1230,14 @@ mDNSPlatformTLSTearDownCerts(void)
 }
 
 //===========================================================================================================================
-//	mDNSPlatformGetDNSConfig
+//	mDNSPlatformSetDNSConfig
 //===========================================================================================================================
 
+mDNSlocal void SetDNSServers( mDNS *const m );
+mDNSlocal void SetSearchDomainList( void );
+
 void
-mDNSPlatformGetDNSConfig(domainname * const fqdn, domainname *const regDomain, DNameListElem ** browseDomains)
+mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDNSBool setsearch, domainname *const fqdn, domainname *const regDomain, DNameListElem **browseDomains)
 {
 	LPSTR		name = NULL;
 	char		subKeyName[kRegistryMaxKeyLength + 1];
@@ -1245,6 +1251,9 @@ mDNSPlatformGetDNSConfig(domainname * const fqdn, domainname *const regDomain, D
 	domainname	dname;
 	DWORD		i;
 	OSStatus	err;
+
+	if (setservers) SetDNSServers(m);
+	if (setsearch) SetSearchDomainList();
 
 	// Initialize
 
@@ -1364,7 +1373,7 @@ exit:
 //	mDNSPlatformDynDNSHostNameStatusChanged
 //===========================================================================================================================
 
-void
+mDNSexport void
 mDNSPlatformDynDNSHostNameStatusChanged(domainname *const dname, mStatus status)
 {
 	char		uname[MAX_ESCAPED_DOMAIN_NAME];
@@ -1523,14 +1532,14 @@ exit:
 
 
 //===========================================================================================================================
-//	mDNSPlatformSetSearchDomainList
+//	SetSearchDomainList
 //===========================================================================================================================
 
-static void mDNSWindowsSetDomainFromDHCP( void );
-static void mDNSWindowsSetReverseMapSearchDomainList( void );
+mDNSlocal void SetDomainFromDHCP( void );
+mDNSlocal void SetReverseMapSearchDomainList( void );
 
-void
-mDNSPlatformSetSearchDomainList( void )
+mDNSlocal void
+SetSearchDomainList( void )
 {
 	char			*	searchList	= NULL;
 	DWORD				searchListLen;
@@ -1576,17 +1585,17 @@ exit:
 		RegCloseKey( key );
 	}
 
-	mDNSWindowsSetDomainFromDHCP();
-	mDNSWindowsSetReverseMapSearchDomainList();
+	SetDomainFromDHCP();
+	SetReverseMapSearchDomainList();
 }
 
 
 //===========================================================================================================================
-//	mDNSWindowsSetReverseMapSearchDomainList
+//	SetReverseMapSearchDomainList
 //===========================================================================================================================
 
-static void
-mDNSWindowsSetReverseMapSearchDomainList( void )
+mDNSlocal void
+SetReverseMapSearchDomainList( void )
 {
 	struct ifaddrs	*	ifa;
 
@@ -1623,11 +1632,11 @@ exit:
 
 
 //===========================================================================================================================
-//	mDNSPlatformSetDNSServers
+//	SetDNSServers
 //===========================================================================================================================
 
-void
-mDNSPlatformSetDNSServers( mDNS *const m )
+mDNSlocal void
+SetDNSServers( mDNS *const m )
 {
 	PIP_PER_ADAPTER_INFO	pAdapterInfo	=	NULL;
 	FIXED_INFO			*	fixedInfo	= NULL;
@@ -1716,11 +1725,11 @@ exit:
 
 
 //===========================================================================================================================
-//	mDNSWindowsGetDHCPDomain
+//	SetDomainFromDHCP
 //===========================================================================================================================
 
-static void
-mDNSWindowsSetDomainFromDHCP( void )
+mDNSlocal void
+SetDomainFromDHCP( void )
 {
 	DNameListElem	*	head		= NULL;
 	int					i			= 0;
@@ -1817,7 +1826,7 @@ exit:
 //	mDNSPlatformGetPrimaryInterface
 //===========================================================================================================================
 
-mStatus
+mDNSexport mStatus
 mDNSPlatformGetPrimaryInterface( mDNS * const m, mDNSAddr * v4, mDNSAddr * v6, mDNSAddr * router )
 {
 	IP_ADAPTER_INFO *	pAdapterInfo;
@@ -1885,7 +1894,7 @@ exit:
 //	mDNSPlatformDefaultRegDomainChanged
 //===========================================================================================================================
 
-void
+mDNSexport void
 mDNSPlatformDefaultRegDomainChanged( const domainname * d, mDNSBool add )
 {
 	DEBUG_UNUSED( d );
@@ -1904,7 +1913,7 @@ mDNSPlatformDefaultRegDomainChanged( const domainname * d, mDNSBool add )
 //===========================================================================================================================
 
 #if( MDNS_DEBUGMSGS )
-void	debugf_( const char *inFormat, ... )
+mDNSexport void	debugf_( const char *inFormat, ... )
 {
 	char		buffer[ 512 ];
     va_list		args;
@@ -1923,7 +1932,7 @@ void	debugf_( const char *inFormat, ... )
 //===========================================================================================================================
 
 #if( MDNS_DEBUGMSGS > 1 )
-void	verbosedebugf_( const char *inFormat, ... )
+mDNSexport void	verbosedebugf_( const char *inFormat, ... )
 {
 	char		buffer[ 512 ];
     va_list		args;
@@ -1942,7 +1951,7 @@ void	verbosedebugf_( const char *inFormat, ... )
 //===========================================================================================================================
 
 /*
-void	LogMsg( const char *inFormat, ... )
+mDNSexport void	LogMsg( const char *inFormat, ... )
 {
 	char		buffer[ 512 ];
     va_list		args;
@@ -3836,7 +3845,7 @@ exit:
 //	getifaddrs
 //===========================================================================================================================
 
-int	getifaddrs( struct ifaddrs **outAddrs )
+mDNSlocal int	getifaddrs( struct ifaddrs **outAddrs )
 {
 	int		err;
 	
@@ -4417,7 +4426,7 @@ exit:
 //	freeifaddrs
 //===========================================================================================================================
 
-void	freeifaddrs( struct ifaddrs *inIFAs )
+mDNSlocal void	freeifaddrs( struct ifaddrs *inIFAs )
 {
 	struct ifaddrs *		p;
 	struct ifaddrs *		q;
@@ -4660,7 +4669,7 @@ exit:
 //	GetWindowsVersionString
 //===========================================================================================================================
 
-OSStatus	GetWindowsVersionString( char *inBuffer, size_t inBufferSize )
+mDNSlocal OSStatus	GetWindowsVersionString( char *inBuffer, size_t inBufferSize )
 {
 #if( !defined( VER_PLATFORM_WIN32_CE ) )
 	#define VER_PLATFORM_WIN32_CE		3
@@ -4761,7 +4770,7 @@ exit:
 //	RegQueryString
 //===========================================================================================================================
 
-static mStatus
+mDNSlocal mStatus
 RegQueryString( HKEY key, LPCSTR valueName, LPSTR * string, DWORD * stringLen, DWORD * enabled )
 {
 	DWORD	type;
@@ -4810,7 +4819,7 @@ exit:
 //	StringToAddress
 //===========================================================================================================================
 
-static mStatus StringToAddress( mDNSAddr * ip, LPSTR string )
+mDNSlocal mStatus StringToAddress( mDNSAddr * ip, LPSTR string )
 {
 	struct sockaddr_in6 sa6;
 	struct sockaddr_in	sa4;
@@ -4979,7 +4988,7 @@ exit:
 //	ConvertLsaStringToUTF8
 //===========================================================================================================================
 
-static OSStatus
+mDNSlocal OSStatus
 MakeUTF8StringFromLsaString( char * output, size_t len, PLSA_UNICODE_STRING input )
 {
 	size_t		size;

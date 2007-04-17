@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.355  2007/04/17 19:21:29  cheshire
+<rdar://problem/5140339> Domain discovery not working over VPN
+
 Revision 1.354  2007/04/05 22:55:34  cheshire
 <rdar://problem/5077076> Records are ending up in Lighthouse without expiry information
 
@@ -2069,9 +2072,7 @@ extern void           mDNSPlatformTLSTearDownCerts(void);
 // Platforms that support unicast browsing and dynamic update registration for clients who do not specify a domain
 // in browse/registration calls must implement these routines to get the "default" browse/registration list.
 
-extern void         mDNSPlatformGetDNSConfig(domainname *const fqdn, domainname *const regDomain, DNameListElem ** browseDomains);
-extern void         mDNSPlatformSetDNSServers(mDNS *const m);
-extern void         mDNSPlatformSetSearchDomainList(void);
+extern void         mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDNSBool setsearch, domainname *const fqdn, domainname *const regDomain, DNameListElem **browseDomains);
 extern mStatus      mDNSPlatformGetPrimaryInterface(mDNS *const m, mDNSAddr *v4, mDNSAddr *v6, mDNSAddr *router);
 extern void         mDNSPlatformDefaultRegDomainChanged(const domainname *d, mDNSBool add);
 extern void         mDNSPlatformDynDNSHostNameStatusChanged(domainname *const dname, mStatus status);

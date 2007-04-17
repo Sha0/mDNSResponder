@@ -30,6 +30,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.94  2007/04/17 19:21:29  cheshire
+<rdar://problem/5140339> Domain discovery not working over VPN
+
 Revision 1.93  2007/04/16 20:49:40  cheshire
 Fix compile errors for mDNSPosix build
 
@@ -463,20 +466,14 @@ mDNSexport void mDNSPlatformTLSTearDownCerts(void)
 #pragma mark ***** DDNS Config Platform Functions
 #endif
 
-mDNSexport void mDNSPlatformGetDNSConfig(domainname *const fqdn, domainname *const regDomain, DNameListElem ** browseDomains)
-	{
-	(void) fqdn;
-	(void) regDomain;
-	(void) browseDomains;
-	}
-
-mDNSexport void mDNSPlatformSetDNSServers(mDNS *const m)
+mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDNSBool setsearch, domainname *const fqdn, domainname *const regDomain, DNameListElem **browseDomains)
 	{
 	(void) m;
-	}
-
-mDNSexport void mDNSPlatformSetSearchDomainList(void)
-	{
+	(void) setservers;
+	(void) fqdn;
+	(void) setsearch;
+	(void) regDomain;
+	(void) browseDomains;
 	}
 
 mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS * const m, mDNSAddr * v4, mDNSAddr * v6, mDNSAddr * router)

@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.327  2007/04/17 19:21:29  cheshire
+<rdar://problem/5140339> Domain discovery not working over VPN
+
 Revision 1.326  2007/04/16 20:49:39  cheshire
 Fix compile errors for mDNSPosix build
 
@@ -4771,7 +4774,7 @@ mDNSexport void udns_validatelists(void)
 // This should probably move to the UDS daemon -- the concept of legacy clients and automatic registration / automatic browsing
 // is really a UDS API issue, not something intrinsic to uDNS
 
-mDNSlocal mStatus RegisterSearchDomains(mDNS *const m)
+mDNSexport mStatus uDNS_RegisterSearchDomains(mDNS *const m)
 	{
 	SearchListElem **p = &SearchList, *ptr;
 	mStatus err;
@@ -4779,8 +4782,11 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m)
 	// step 1: mark each element for removal (-1)
 	for (ptr = SearchList; ptr; ptr = ptr->next) ptr->flag = -1;
 
-	// get all the domains from the platform layer
-	mDNSPlatformSetSearchDomainList();
+	// Client has requested domain enumeration or automatic browse -- time to make sure we have the search domains from the platform layer
+	mDNS_Lock(m);
+	m->RegisterSearchDomains = mDNStrue;
+	mDNSPlatformSetDNSConfig(m, mDNSfalse, m->RegisterSearchDomains, mDNSNULL, mDNSNULL, mDNSNULL);
+	mDNS_Unlock(m);
 
 	if (m->RegDomain.c[0]) mDNS_AddSearchDomain(&m->RegDomain);	// implicitly browse reg domain too (no-op if same as BrowseDomain)
 
@@ -4842,12 +4848,6 @@ mDNSlocal mStatus RegisterSearchDomains(mDNS *const m)
 	return mStatus_NoError;
 	}
 
-mDNSexport mStatus uDNS_RegisterSearchDomains(mDNS *const m)
-	{
-	m->RegisterSearchDomains = mDNStrue;
-	return RegisterSearchDomains(m);
-	}
-
 // Construction of Default Browse domain list (i.e. when clients pass NULL) is as follows:
 // 1) query for b._dns-sd._udp.local on LocalOnly interface
 //    (.local manually generated via explicit callback)
@@ -4864,8 +4864,26 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
     domainname      fqdn;
     DNSServer       *ptr, **p = &m->Servers;
 
+	mDNS_Lock(m);
+
 	// Let the platform layer get the current DNS information
-	mDNSPlatformGetDNSConfig(&fqdn, mDNSNULL, mDNSNULL);
+	// The m->RegisterSearchDomains boolean is so that we lazily get the search domain list only on-demand
+	// (no need to hit the network with domain enumeration queries until we actually need that information).
+	for (ptr = m->Servers; ptr; ptr = ptr->next) ptr->del = mDNStrue;
+	mDNSPlatformSetDNSConfig(m, mDNStrue, m->RegisterSearchDomains, &fqdn, mDNSNULL, mDNSNULL);
+	while (*p)
+		{
+		if ((*p)->del)
+			{
+			ptr = *p;
+			*p = (*p)->next;
+			mDNSPlatformMemFree(ptr);
+			}
+		else
+			p = &(*p)->next;
+		}
+
+	mDNS_Unlock(m);
 
 	// Did our FQDN change?
 	if (!SameDomainName(&fqdn, &m->FQDN))
@@ -4880,25 +4898,6 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 			mDNS_AddDynDNSHostName(m, &m->FQDN, DynDNSHostNameCallback, mDNSNULL);
 			}
 		}
-
-	for (ptr = m->Servers; ptr; ptr = ptr->next) ptr->del = mDNStrue;
-	mDNSPlatformSetDNSServers(m);
-	while (*p)
-		{
-		if ((*p)->del)
-			{
-			ptr = *p;
-			*p = (*p)->next;
-			mDNSPlatformMemFree(ptr);
-			}
-		else
-			p = &(*p)->next;
-		}
-
-	// This bit of trickery is to ensure that we're lazily calling RegisterSearchDomains.
-	// The RegisterSearchDomains boolean is set when we call uDNS_RegisterSearchDomains.
-	// This is called in uds_daemon.c
-	if (m->RegisterSearchDomains) RegisterSearchDomains(m);	// note that we register name servers *before* search domains
 
 	// handle router and primary interface changes
 	v4 = v6 = r = zeroAddr;
