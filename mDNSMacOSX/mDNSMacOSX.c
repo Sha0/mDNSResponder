@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.392  2007/04/17 17:15:09  cheshire
+Change NO_CFUSERNOTIFICATION code so it still logs to syslog
+
 Revision 1.391  2007/04/07 01:01:48  cheshire
 <rdar://problem/5095167> mDNSResponder periodically blocks in SSLRead
 
@@ -353,7 +356,6 @@ static SecKeychainRef ServerKC;
 // other end, and that device (e.g. a modem bank) is probably not answering Multicast DNS queries anyway.
 #define MulticastInterface(i) ((i->ifa_flags & IFF_MULTICAST) && !(i->ifa_flags & IFF_POINTOPOINT))
 
-#ifndef NO_CFUSERNOTIFICATION
 mDNSexport void NotifyOfElusiveBug(const char *title, const char *msg)	// Both strings are UTF-8 text
 	{
 	static int notifyCount = 0;
@@ -380,18 +382,16 @@ mDNSexport void NotifyOfElusiveBug(const char *title, const char *msg)	// Both s
 	LogMsg("%s", msg);
 	// Display a notification to the user
 	notifyCount++;
+
+#ifndef NO_CFUSERNOTIFICATION
 	static const char footer[] = "(Note: This message only appears on machines with 17.x.x.x IP addresses — i.e. at Apple — not on customer machines.)";
 	CFStringRef alertHeader  = CFStringCreateWithCString(NULL, title,  kCFStringEncodingUTF8);
 	CFStringRef alertBody    = CFStringCreateWithCString(NULL, msg,    kCFStringEncodingUTF8);
 	CFStringRef alertFooter  = CFStringCreateWithCString(NULL, footer, kCFStringEncodingUTF8);
 	CFStringRef alertMessage = CFStringCreateWithFormat(NULL, NULL, CFSTR("%@\r\r%@"), alertBody, alertFooter);
 	CFUserNotificationDisplayNotice(0.0, kCFUserNotificationStopAlertLevel, NULL, NULL, NULL, alertHeader, alertMessage, NULL);
-	}
-#else
-mDNSexport void NotifyOfElusiveBug(__unused const char *title, __unused const char *msg)
-	{
-	}
 #endif /* NO_CFUSERNOTIFICATION */
+	}
 
 mDNSlocal struct ifaddrs* myGetIfAddrs(int refresh)
 	{
