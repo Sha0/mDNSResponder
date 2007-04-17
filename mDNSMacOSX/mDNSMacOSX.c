@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.394  2007/04/17 23:05:50  cheshire
+<rdar://problem/3957358> Shouldn't send domain queries when we have 169.254 or loopback address
+
 Revision 1.393  2007/04/17 19:21:29  cheshire
 <rdar://problem/5140339> Domain discovery not working over VPN
 
@@ -1974,6 +1977,33 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 		regDomain     ? "regDomain " : "",
 		browseDomains ? "browseDomains " : "");
 
+	// Add the inferred address-based configuration discovery domains
+	// (should really be in core code I think, not platform-specific)
+	if (setsearch)
+		{
+		struct ifaddrs *ifa = myGetIfAddrs(1);
+		while (ifa)
+			{
+			mDNSAddr a, n;
+			if (ifa->ifa_addr->sa_family == AF_INET	&&
+				ifa->ifa_netmask                    &&
+				!(ifa->ifa_flags & IFF_LOOPBACK)	&&
+				!SetupAddr(&a, ifa->ifa_addr)		&&
+				!SetupAddr(&n, ifa->ifa_netmask)	&&
+				!mDNSv4AddressIsLinkLocal(&a.ip.v4)  )
+				{
+				char       buffer[256];
+				// Note: This is reverse order compared to a normal dotted-decimal IP address, so we can't use our customary "%.4a" format code
+				sprintf(buffer, "%d.%d.%d.%d.in-addr.arpa.", a.ip.v4.b[3] & n.ip.v4.b[3],
+															 a.ip.v4.b[2] & n.ip.v4.b[2],
+															 a.ip.v4.b[1] & n.ip.v4.b[1],
+															 a.ip.v4.b[0] & n.ip.v4.b[0]);
+				if (MakeDomainNameFromDNSNameString(&d, buffer)) mDNS_AddSearchDomain(&d);
+				}
+			ifa = ifa->ifa_next;
+			}
+		}
+
 #ifndef MDNS_NO_DNSINFO
 	if (setservers || setsearch)
 		{
@@ -2148,11 +2178,10 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 									mDNS_AddDNSServer(m, &addr, mDNSNULL);
 								}
 							}
-						CFRelease(dict);
 						}
 					if (setsearch)
 						{
-						// First add the manual and/or DHCP-dicovered search domains
+						// Add the manual and/or DHCP-dicovered search domains
 						CFArrayRef searchDomains = CFDictionaryGetValue(dict, kSCPropNetDNSSearchDomains);
 						if (searchDomains)
 							{
@@ -2169,35 +2198,12 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 							if (string && CFStringGetCString(string, buf, sizeof(buf), kCFStringEncodingUTF8))
 								if (MakeDomainNameFromDNSNameString(&d, buf)) mDNS_AddSearchDomain(&d);
 							}
-						CFRelease(dict);
-
-						// Then we add the inferred address-based configuration discovery domains
-						// (should really be in core code I think, not platform-specific)
-						struct ifaddrs *ifa = myGetIfAddrs(1);
-						while (ifa)
-							{
-							mDNSAddr a, n;
-							if (ifa->ifa_addr->sa_family == AF_INET	&&
-								ifa->ifa_netmask                    &&
-								!(ifa->ifa_flags & IFF_LOOPBACK)	&&
-								!SetupAddr(&a, ifa->ifa_addr)		&&
-								!SetupAddr(&n, ifa->ifa_netmask))
-								{
-								char       buffer[256];
-								// Note: This is reverse order compared to a normal dotted-decimal IP address, so we can't use our customary "%.4a" format code
-								sprintf(buffer, "%d.%d.%d.%d.in-addr.arpa.", a.ip.v4.b[3] & n.ip.v4.b[3],
-																			 a.ip.v4.b[2] & n.ip.v4.b[2],
-																			 a.ip.v4.b[1] & n.ip.v4.b[1],
-																			 a.ip.v4.b[0] & n.ip.v4.b[0]);
-								if (MakeDomainNameFromDNSNameString(&d, buffer)) mDNS_AddSearchDomain(&d);
-								}
-							ifa = ifa->ifa_next;
-							}
 						}
+					CFRelease(dict);
 					}
 				CFRelease(key);
 				}
-				}
+			}
 
 		CFRelease(store);
 		}
