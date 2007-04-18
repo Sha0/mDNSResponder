@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.356  2007/04/18 20:56:46  cheshire
+Added mDNS_AddSearchDomain_CString macro
+
 Revision 1.355  2007/04/17 19:21:29  cheshire
 <rdar://problem/5140339> Domain discovery not working over VPN
 
@@ -1948,6 +1951,8 @@ extern void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr,  const
 extern void mDNS_UpdateLLQs(mDNS *m);
 extern void mDNS_AddDNSServer(mDNS *const m, const mDNSAddr *dnsAddr, const domainname *domain);
 extern void mDNS_AddSearchDomain(const domainname *const domain);
+
+#define mDNS_AddSearchDomain_CString(X) do { domainname d; if (MakeDomainNameFromDNSNameString(&d, (X))) mDNS_AddSearchDomain(&d); } while(0)
 
 // Routines called by the core, exported by DNSDigest.c
 
