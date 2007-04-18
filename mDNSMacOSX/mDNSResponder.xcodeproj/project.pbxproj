@@ -160,6 +160,7 @@
 		DB2CC4610662DE4D00335AB3 /* TXTRecord.java in Sources */ = {isa = PBXBuildFile; fileRef = DB2CC44F0662DD1100335AB3 /* TXTRecord.java */; };
 		FF2C5FB10A48B8680066DA11 /* DNSSDRecordRegistrar.java in Sources */ = {isa = PBXBuildFile; fileRef = FF2C5FB00A48B8680066DA11 /* DNSSDRecordRegistrar.java */; };
 		FF2C5FB30A48B86E0066DA11 /* RegisterRecordListener.java in Sources */ = {isa = PBXBuildFile; fileRef = FF2C5FB20A48B86E0066DA11 /* RegisterRecordListener.java */; };
+		FF85880C0BD59A2C0080D89F /* mDNSResponder.sb in CopyFiles */ = {isa = PBXBuildFile; fileRef = FF85880B0BD599F40080D89F /* mDNSResponder.sb */; };
 		FFA572330AF18F1C0055A0F1 /* dnssd_ipc.c in Sources */ = {isa = PBXBuildFile; fileRef = F5E11B5A04A28126019798ED /* dnssd_ipc.c */; };
 		FFA572340AF18F1C0055A0F1 /* dnssd_clientlib.c in Sources */ = {isa = PBXBuildFile; fileRef = FFFA38620AEEDB090065B80A /* dnssd_clientlib.c */; };
 		FFA572350AF18F1C0055A0F1 /* dnssd_clientstub.c in Sources */ = {isa = PBXBuildFile; fileRef = FFFA38640AEEDB130065B80A /* dnssd_clientstub.c */; };
@@ -355,6 +356,16 @@
 			);
 			runOnlyForDeploymentPostprocessing = 1;
 		};
+		FF8588160BD59A6A0080D89F /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 8;
+			dstPath = /usr/share/sandbox;
+			dstSubfolderSpec = 0;
+			files = (
+				FF85880C0BD59A2C0080D89F /* mDNSResponder.sb in CopyFiles */,
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+		};
 		FF93944E0AF193B900C5D655 /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 8;
@@ -404,7 +415,7 @@
 		D284BED90ADD80A20027CCDF /* dnsextd */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = dnsextd; sourceTree = BUILT_PRODUCTS_DIR; };
 		D284BEE80ADD80A70027CCDF /* ddnswriteconfig */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = ddnswriteconfig; sourceTree = BUILT_PRODUCTS_DIR; };
 		D284BF0C0ADD80B00027CCDF /* Bonjour.prefPane */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Bonjour.prefPane; sourceTree = BUILT_PRODUCTS_DIR; };
-		D284C04D0ADD95D30027CCDF /* Info-PreferencePane.plist */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = text.xml; name = "Info-PreferencePane.plist"; path = "PreferencePane/Info-PreferencePane.plist"; sourceTree = "<group>"; };
+		D284C04D0ADD95D30027CCDF /* Info-PreferencePane.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xml; name = "Info-PreferencePane.plist"; path = "PreferencePane/Info-PreferencePane.plist"; sourceTree = "<group>"; };
 		DB2CC4430662DD1100335AB3 /* BaseListener.java */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.java; name = BaseListener.java; path = ../mDNSShared/Java/BaseListener.java; sourceTree = SOURCE_ROOT; };
 		DB2CC4440662DD1100335AB3 /* BrowseListener.java */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.java; name = BrowseListener.java; path = ../mDNSShared/Java/BrowseListener.java; sourceTree = SOURCE_ROOT; };
 		DB2CC4450662DD1100335AB3 /* DNSRecord.java */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.java; name = DNSRecord.java; path = ../mDNSShared/Java/DNSRecord.java; sourceTree = SOURCE_ROOT; };
@@ -448,11 +459,12 @@
 		FF2C5FB20A48B86E0066DA11 /* RegisterRecordListener.java */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.java; name = RegisterRecordListener.java; path = ../mDNSShared/Java/RegisterRecordListener.java; sourceTree = SOURCE_ROOT; };
 		FF354EB108516C63007C00E1 /* installtool */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.perl; name = installtool; path = PreferencePane/installtool; sourceTree = SOURCE_ROOT; };
 		FF485D5105632E0000130380 /* mDNSResponder.8 */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = mDNSResponder.8; path = ../mDNSShared/mDNSResponder.8; sourceTree = SOURCE_ROOT; };
+		FF85880B0BD599F40080D89F /* mDNSResponder.sb */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = mDNSResponder.sb; sourceTree = SOURCE_ROOT; };
 		FFA572390AF18F1C0055A0F1 /* libdns_sd_debug.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libdns_sd_debug.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		FFA572450AF18F450055A0F1 /* libdns_sd_profile.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libdns_sd_profile.a; sourceTree = BUILT_PRODUCTS_DIR; };
-		FFA572480AF18FCC0055A0F1 /* DNSServiceDiscovery.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = DNSServiceDiscovery.c; sourceTree = "<group>"; };
-		FFA572600AF1908D0055A0F1 /* DNSServiceDiscovery.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = DNSServiceDiscovery.h; sourceTree = "<group>"; };
-		FFA572630AF190C20055A0F1 /* dns_sd.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = dns_sd.h; path = ../mDNSShared/dns_sd.h; sourceTree = SOURCE_ROOT; };
+		FFA572480AF18FCC0055A0F1 /* DNSServiceDiscovery.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = DNSServiceDiscovery.c; sourceTree = "<group>"; };
+		FFA572600AF1908D0055A0F1 /* DNSServiceDiscovery.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DNSServiceDiscovery.h; sourceTree = "<group>"; };
+		FFA572630AF190C20055A0F1 /* dns_sd.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = dns_sd.h; path = ../mDNSShared/dns_sd.h; sourceTree = SOURCE_ROOT; };
 		FFB765840AEED9C700583A2C /* libdns_sd.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libdns_sd.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		FFCB6D73075D539900B8AF62 /* PlatformCommon.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = PlatformCommon.c; path = ../mDNSShared/PlatformCommon.c; sourceTree = SOURCE_ROOT; };
 		FFD41DDA0664157900F0C438 /* dns_sd.jar */ = {isa = PBXFileReference; explicitFileType = archive.jar; includeInIndex = 0; path = dns_sd.jar; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -615,6 +627,7 @@
 				FF1C919D07021D77001048AB /* dns-sd.1 */,
 				FF485D5105632E0000130380 /* mDNSResponder.8 */,
 				FFF4F63A06CFE4DD00459EFD /* dnsextd.8 */,
+				FF85880B0BD599F40080D89F /* mDNSResponder.sb */,
 				7F18A9F60587CEF6001880B3 /* DNSCommon.c */,
 				7F18A9F70587CEF6001880B3 /* uDNS.c */,
 				FF25794606C9A8BF00376F7B /* dnsextd.c */,
@@ -871,6 +884,7 @@
 				D284BE640ADD80740027CCDF /* Frameworks */,
 				D284BE690ADD80740027CCDF /* Rez */,
 				D284BE6A0ADD80740027CCDF /* CopyFiles */,
+				FF8588160BD59A6A0080D89F /* CopyFiles */,
 				D284BE6C0ADD80740027CCDF /* ShellScript */,
 			);
 			buildRules = (
@@ -1199,7 +1213,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "if [ -e /usr/local/include/dnsinfo.h ]\nthen\nrm -f \"${CONFIGURATION_TEMP_DIR}/dnsinfo.h\"\nrm -f \"${CONFIGURATION_TEMP_DIR}/libdnsinfo.a\"\nelse\necho \"#define MDNS_NO_DNSINFO 1\" > ${CONFIGURATION_TEMP_DIR}/dnsinfo.h\ntouch ${CONFIGURATION_TEMP_DIR}/empty.c\ncc -arch i386 -arch ppc ${CONFIGURATION_TEMP_DIR}/empty.c -c -o \"${CONFIGURATION_TEMP_DIR}/libdnsinfo.a\"\nrm -f ${CONFIGURATION_TEMP_DIR}/empty.c\nfi";
+			shellScript = "if [ -e /usr/local/include/dnsinfo.h ]\nthen\nrm -f \"${CONFIGURATION_TEMP_DIR}/dnsinfo.h\"\nrm -f \"${CONFIGURATION_TEMP_DIR}/libdnsinfo.a\"\nelse\necho \"#define MDNS_NO_DNSINFO 1\" > ${CONFIGURATION_TEMP_DIR}/dnsinfo.h\ntouch ${CONFIGURATION_TEMP_DIR}/empty.c\ncc -arch i386 -arch ppc ${CONFIGURATION_TEMP_DIR}/empty.c -c -o \"${CONFIGURATION_TEMP_DIR}/libdnsinfo.a\"\nrm -f ${CONFIGURATION_TEMP_DIR}/empty.c\nfi\n\nif [ -e /usr/include/sandbox.h ]\nthen\nrm -f \"${CONFIGURATION_TEMP_DIR}/sandbox.h\"\nelse\necho \"#define MDNS_NO_SANDBOX 1\" > ${CONFIGURATION_TEMP_DIR}/sandbox.h\nfi\n";
 		};
 		D284BE6C0ADD80740027CCDF /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -1217,7 +1231,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "if [ -e /usr/local/include/dnsinfo.h ]\nthen\nrm -f \"${CONFIGURATION_TEMP_DIR}/dnsinfo.h\"\nrm -f \"${CONFIGURATION_TEMP_DIR}/libdnsinfo.a\"\nelse\necho \"#define MDNS_NO_DNSINFO 1\" > ${CONFIGURATION_TEMP_DIR}/dnsinfo.h\ntouch ${CONFIGURATION_TEMP_DIR}/empty.c\ncc ${CONFIGURATION_TEMP_DIR}/empty.c -c -o \"${CONFIGURATION_TEMP_DIR}/libdnsinfo.a\"\nrm -f ${CONFIGURATION_TEMP_DIR}/empty.c\nfi";
+			shellScript = "if [ -e /usr/local/include/dnsinfo.h ]\nthen\nrm -f \"${CONFIGURATION_TEMP_DIR}/dnsinfo.h\"\nrm -f \"${CONFIGURATION_TEMP_DIR}/libdnsinfo.a\"\nelse\necho \"#define MDNS_NO_DNSINFO 1\" > ${CONFIGURATION_TEMP_DIR}/dnsinfo.h\ntouch ${CONFIGURATION_TEMP_DIR}/empty.c\ncc -arch i386 -arch ppc ${CONFIGURATION_TEMP_DIR}/empty.c -c -o \"${CONFIGURATION_TEMP_DIR}/libdnsinfo.a\"\nrm -f ${CONFIGURATION_TEMP_DIR}/empty.c\nfi\n\nif [ -e /usr/include/sandbox.h ]\nthen\nrm -f \"${CONFIGURATION_TEMP_DIR}/sandbox.h\"\nelse\necho \"#define MDNS_NO_SANDBOX 1\" > ${CONFIGURATION_TEMP_DIR}/sandbox.h\nfi\n";
 		};
 		DB2CC4550662DE1700335AB3 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;

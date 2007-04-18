@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.303  2007/04/18 00:50:47  cheshire
+<rdar://problem/5141540> Sandbox mDNSResponder
+
 Revision 1.302  2007/04/07 01:01:48  cheshire
 <rdar://problem/5095167> mDNSResponder periodically blocks in SSLRead
 
@@ -187,6 +190,7 @@ Revision 1.261  2006/01/06 01:22:28  cheshire
 #include <pwd.h>
 #include <sys/event.h>
 #include <pthread.h>
+#include <sandbox.h>
 #include <SystemConfiguration/SCPreferencesSetSpecific.h>
 
 #include "DNSServiceDiscoveryRequestServer.h"
@@ -2501,12 +2505,6 @@ mDNSexport int main(int argc, char **argv)
 	PlatformStorage.WakeKQueueLoopFD = fdpair[0];
 	KQueueSet(fdpair[1], EV_ADD, EVFILT_READ, &wakeKQEntry);
 	
-	OSXVers = mDNSMacOSXSystemBuildNumber(NULL);
-	status = mDNSDaemonInitialize();
-	if (status) { LogMsg("Daemon start: mDNSDaemonInitialize failed"); goto exit; }
-	status = udsserver_init(launchd_fd);
-	if (status) { LogMsg("Daemon start: udsserver_init failed"); goto exit; }
-	
 #if CAN_UPDATE_DYNAMIC_STORE_WITHOUT_BEING_ROOT
 	// Now that we're finished with anything privileged, switch over to running as "nobody"
 	const struct passwd *pw = getpwnam("nobody");
@@ -2515,6 +2513,22 @@ mDNSexport int main(int argc, char **argv)
 	else
 		setuid(-2);		// User "nobody" is -2; use that value if "nobody" does not appear in the password database
 #endif
+
+	// Invoke sandbox profile /usr/share/sandbox/mDNSResponder.sb
+#if MDNS_NO_SANDBOX
+	LogMsg("Note: Compiled without Apple Sandbox support");
+#else
+	char *sandbox_msg;
+	int sandbox_err = sandbox_init("mDNSResponder", SANDBOX_NAMED, &sandbox_msg);
+	if (sandbox_err) { LogMsg("sandbox_init error %s", sandbox_msg); sandbox_free_error(sandbox_msg); }
+	else LogOperation("Now running under sandbox restrictions");
+#endif
+
+	OSXVers = mDNSMacOSXSystemBuildNumber(NULL);
+	status = mDNSDaemonInitialize();
+	if (status) { LogMsg("Daemon start: mDNSDaemonInitialize failed"); goto exit; }
+	status = udsserver_init(launchd_fd);
+	if (status) { LogMsg("Daemon start: udsserver_init failed"); goto exit; }
 	
 	// Start the kqueue thread
 	i = pthread_create(&KQueueThread, NULL, KQueueLoop, &mDNSStorage);
