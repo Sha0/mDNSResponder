@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.328  2007/04/18 20:57:20  cheshire
+Commented out "GetAuthInfoForName none found" debugging message
+
 Revision 1.327  2007/04/17 19:21:29  cheshire
 <rdar://problem/5140339> Domain discovery not working over VPN
 
@@ -550,7 +553,7 @@ mDNSexport DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const n
 				}
 		n = (const domainname *)(n->c + 1 + n->c[0]);
 		}
-	LogOperation("GetAuthInfoForName none found for %##s", name->c);
+	//LogOperation("GetAuthInfoForName none found for %##s", name->c);
 	return mDNSNULL;
 	}
 
