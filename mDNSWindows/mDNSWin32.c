@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.123  2007/04/18 21:00:40  cheshire
+Use mDNS_AddSearchDomain_CString() instead of MakeDomainNameFromDNSNameString ... mDNS_AddSearchDomain
+
 Revision 1.122  2007/04/17 19:21:29  cheshire
 <rdar://problem/5140339> Domain discovery not working over VPN
 
@@ -1561,15 +1564,7 @@ SetSearchDomainList( void )
 	while ( tok )
 	{
 		if ( ( strcmp( tok, "" ) != 0 ) && ( strcmp( tok, "." ) != 0 ) )
-		{
-			domainname domain;
-
-			if ( MakeDomainNameFromDNSNameString( &domain, tok ) )
-			{
-				mDNS_AddSearchDomain( &domain );
-			}
-		}
-
+			mDNS_AddSearchDomain_CString(tok);
 		tok = strtok( NULL, "," );
 	}
 
@@ -1607,7 +1602,6 @@ SetReverseMapSearchDomainList( void )
 		if (ifa->ifa_addr->sa_family == AF_INET && !SetupAddr(&addr, ifa->ifa_addr) && !(ifa->ifa_flags & IFF_LOOPBACK) && ifa->ifa_netmask)
 		{
 			mDNSAddr	netmask;
-			domainname	domain;
 			char		buffer[256];
 			
 			if (!SetupAddr(&netmask, ifa->ifa_netmask))
@@ -1616,11 +1610,7 @@ SetReverseMapSearchDomainList( void )
                                                              addr.ip.v4.b[2] & netmask.ip.v4.b[2],
                                                              addr.ip.v4.b[1] & netmask.ip.v4.b[1],
                                                              addr.ip.v4.b[0] & netmask.ip.v4.b[0]);
-				
-				if ( MakeDomainNameFromDNSNameString( &domain, buffer ) )
-				{
-					mDNS_AddSearchDomain( &domain );
-				}
+				mDNS_AddSearchDomain_CString(buffer);
 			}
 		}
 	
@@ -1794,10 +1784,7 @@ SetDomainFromDHCP( void )
 				check_noerr( err );
 			}
 
-			if ( domain && domain[0] && ( MakeDomainNameFromDNSNameString( &dname, domain ) || !dname.c[0] ) )
-			{
-				mDNS_AddSearchDomain( &dname );
-			}
+			if ( domain && domain[0] ) mDNS_AddSearchDomain_CString(domain);
 
 			break;
 		}
