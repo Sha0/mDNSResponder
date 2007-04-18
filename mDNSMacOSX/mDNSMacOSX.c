@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.395  2007/04/18 20:58:34  cheshire
+<rdar://problem/5140339> Domain discovery not working over VPN
+Needed different code to handle the case where there's only a single search domain
+
 Revision 1.394  2007/04/17 23:05:50  cheshire
 <rdar://problem/3957358> Shouldn't send domain queries when we have 169.254 or loopback address
 
@@ -1998,7 +2002,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 															 a.ip.v4.b[2] & n.ip.v4.b[2],
 															 a.ip.v4.b[1] & n.ip.v4.b[1],
 															 a.ip.v4.b[0] & n.ip.v4.b[0]);
-				if (MakeDomainNameFromDNSNameString(&d, buffer)) mDNS_AddSearchDomain(&d);
+				mDNS_AddSearchDomain_CString(buffer);
 				}
 			ifa = ifa->ifa_next;
 			}
@@ -2062,9 +2066,15 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 					}
 
 				if (setsearch)
-					for (j = 0; j < r->n_search; j++)
-						if (MakeDomainNameFromDNSNameString(&d, r->search[j]))
-							mDNS_AddSearchDomain(&d);
+					{
+					// Due to the vagaries of Apple's SystemConfiguration and dnsinfo.h APIs, if there are no search domains
+					// listed, then you're supposed to interpret the "domain" field as also being the search domain, but if
+					// there *are* search domains listed, then you're supposed to ignore the "domain" field completely and
+					// instead use the search domain list as the sole authority for what domains to search and in what order
+					// (and the domain from the "domain" field will also appear somewhere in that list).
+					if (r->n_search == 0) mDNS_AddSearchDomain_CString(r->domain);
+					else for (j = 0; j < r->n_search; j++) mDNS_AddSearchDomain_CString(r->search[j]);
+					}
 				}
 			dns_configuration_free(config);
 			setservers = mDNSfalse;  // Done these now -- no need to fetch the same data from SCDynamicStore
@@ -2189,14 +2199,19 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 								{
 								CFStringRef s = CFArrayGetValueAtIndex(searchDomains, i);
 								if (s && CFStringGetCString(s, buf, sizeof(buf), kCFStringEncodingUTF8))
-									if (MakeDomainNameFromDNSNameString(&d, buf)) mDNS_AddSearchDomain(&d);
+									mDNS_AddSearchDomain_CString(buf);
 								}
 							}
 						else	// No kSCPropNetDNSSearchDomains, so use kSCPropNetDNSDomainName
 							{
+							// Due to the vagaries of Apple's SystemConfiguration and dnsinfo.h APIs, if there are no search domains
+							// listed, then you're supposed to interpret the "domain" field as also being the search domain, but if
+							// there *are* search domains listed, then you're supposed to ignore the "domain" field completely and
+							// instead use the search domain list as the sole authority for what domains to search and in what order
+							// (and the domain from the "domain" field will also appear somewhere in that list).
 							CFStringRef string = CFDictionaryGetValue(dict, kSCPropNetDNSDomainName);
 							if (string && CFStringGetCString(string, buf, sizeof(buf), kCFStringEncodingUTF8))
-								if (MakeDomainNameFromDNSNameString(&d, buf)) mDNS_AddSearchDomain(&d);
+								mDNS_AddSearchDomain_CString(buf);
 							}
 						}
 					CFRelease(dict);
