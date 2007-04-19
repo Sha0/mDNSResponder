@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.607  2007/04/19 23:56:25  cheshire
+Don't do cache-flush processing for LLQ answers
+
 Revision 1.606  2007/04/19 22:50:53  cheshire
 <rdar://problem/4246187> Identical client queries should reference a single shared core query
 
@@ -3798,6 +3801,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	int i;
 	mDNSBool ResponseMCast    = dstaddr && mDNSAddrIsDNSMulticast(dstaddr);
 	mDNSBool ResponseSrcLocal = !srcaddr || AddressIsLocalSubnet(m, InterfaceID, srcaddr);
+	const mDNSu8 *IsLLQResponse = LocateLLQOptData(response, end);
 
 	// "(CacheRecord*)1" is a special (non-zero) end-of-list marker
 	// We use this non-zero marker so that records in our CacheFlushRecords list will always have NextInCFList
@@ -3825,7 +3829,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 
 	// We ignore questions (if any) in mDNS response packets
 	// Also, if this is an LLQ response, we handle it much the same
-	if (ResponseMCast || LocateLLQOptData(response, end))
+	if (ResponseMCast || IsLLQResponse)
 		ptr = LocateAnswers(response, end);
 	// Otherwise, for one-shot queries, any answers in our cache that are not also contained
 	// in this response packet are immediately deemed to be invalid.
@@ -3997,7 +4001,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					if (m->rec.r.resrec.RecordType & kDNSRecordTypePacketUniqueMask)
 						{
 						// If this packet record has the kDNSClass_UniqueRRSet flag set, then add it to our cache flushing list
-						if (rr->NextInCFList == mDNSNULL && cfp != &rr->NextInCFList)
+						if (rr->NextInCFList == mDNSNULL && cfp != &rr->NextInCFList && !IsLLQResponse)
 							{ *cfp = rr; cfp = &rr->NextInCFList; *cfp = (CacheRecord*)1; }
 
 						// If this packet record is marked unique, and our previous cached copy was not, then fix it
@@ -4050,7 +4054,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 			if (!rr && m->rec.r.resrec.rroriginalttl > 0)
 				{
 				rr = CreateNewCacheEntry(m, slot, cg);
-				if (rr && rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask)
+				if (rr && rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask && !IsLLQResponse)
 					{ *cfp = rr; cfp = &rr->NextInCFList; *cfp = (CacheRecord*)1; }
 				}
 			}
