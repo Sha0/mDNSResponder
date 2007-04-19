@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.357  2007/04/19 18:14:51  cheshire
+In mDNS_AddSearchDomain_CString check for NULL pointer before calling MakeDomainNameFromDNSNameString()
+
 Revision 1.356  2007/04/18 20:56:46  cheshire
 Added mDNS_AddSearchDomain_CString macro
 
@@ -1952,7 +1955,8 @@ extern void mDNS_UpdateLLQs(mDNS *m);
 extern void mDNS_AddDNSServer(mDNS *const m, const mDNSAddr *dnsAddr, const domainname *domain);
 extern void mDNS_AddSearchDomain(const domainname *const domain);
 
-#define mDNS_AddSearchDomain_CString(X) do { domainname d; if (MakeDomainNameFromDNSNameString(&d, (X))) mDNS_AddSearchDomain(&d); } while(0)
+#define mDNS_AddSearchDomain_CString(X) \
+	do { domainname d; if ((X) && MakeDomainNameFromDNSNameString(&d, (X)) && d.c[0]) mDNS_AddSearchDomain(&d); } while(0)
 
 // Routines called by the core, exported by DNSDigest.c
 
