@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.281  2007/04/19 23:25:20  cheshire
+Added debugging message
+
 Revision 1.280  2007/04/17 19:21:29  cheshire
 <rdar://problem/5140339> Domain discovery not working over VPN
 
@@ -1674,7 +1677,11 @@ mDNSlocal mStatus register_service_instance(request_state *request, const domain
 	result = mDNS_RegisterService(&mDNSStorage, &instance->srs, &request->u.servicereg.name, &request->u.servicereg.type, domain, request->u.servicereg.host.c[0] ? &request->u.servicereg.host : NULL, request->u.servicereg.port,
 								  request->u.servicereg.txtdata, request->u.servicereg.txtlen, instance->subtypes, request->u.servicereg.num_subtypes, request->u.servicereg.InterfaceID, regservice_callback, instance);
 
-	if (result) free_service_instance(instance);
+	if (result)
+		{
+		LogMsg("register_service_instance %#s.%##s%##s error %d", &request->u.servicereg.name, &request->u.servicereg.type, domain->c, result);
+		free_service_instance(instance);
+		}
 	else
 		{
 		instance->next = request->u.servicereg.instances;
