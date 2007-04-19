@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.332  2007/04/19 20:34:32  cheshire
+Add debugging log message in uDNS_CheckQuery()
+
 Revision 1.331  2007/04/19 20:06:41  cheshire
 Rename field 'Private' (sounds like a boolean) to more informative 'AuthInfo' (it's a DomainAuthInfo pointer)
 
@@ -4236,7 +4239,9 @@ mDNSexport void uDNS_CheckQuery(mDNS *const m, DNSQuestion *q)
 			}
 		else if ((q->LastQTime + q->ThisQInterval) - m->timenow <= 0)
 			{
-			LogOperation("Adjusting LastQTime for %##s (%s) by %d (%d %d)", q->qname.c, DNSTypeName(q->qtype), m->timenow - q->LastQTime, llq->state, q->ThisQInterval);
+			// This should never happen. Any LLQ not in states LLQ_InitialRequest to LLQ_Established should not have have ThisQInterval set.
+			// (uDNS_CheckQuery() is only called for DNSQuestions with non-zero ThisQInterval)
+			LogMsg("uDNS_CheckQuery: LastQTime for %##s (%s) %d is %d", q->qname.c, DNSTypeName(q->qtype), llq->state, q->ThisQInterval);
 			q->LastQTime = m->timenow;
 			}
 		}
