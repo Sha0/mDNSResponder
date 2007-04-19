@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.329  2007/04/19 18:03:52  cheshire
+Improved "mDNS_AddSearchDomain" log message
+
 Revision 1.328  2007/04/18 20:57:20  cheshire
 Commented out "GetAuthInfoForName none found" debugging message
 
@@ -402,7 +405,7 @@ typedef struct SearchListElem
 	} SearchListElem;
 
 // for domain enumeration and default browsing/registration
-static SearchListElem *SearchList           = mDNSNULL;	// where we search for _browse domains
+static SearchListElem *SearchList = mDNSNULL;	// where we search for _browse domains
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -4680,7 +4683,6 @@ mDNSlocal void WakeServiceRegistrations(mDNS *m)
 mDNSexport void mDNS_AddSearchDomain(const domainname *const domain)
 	{
 	SearchListElem **p;
-	LogOperation("mDNS_AddSearchDomain %##s", domain->c);
 
 	// Check to see if we already have this domain in our list
 	for (p = &SearchList; *p; p = &(*p)->next)
@@ -4688,6 +4690,7 @@ mDNSexport void mDNS_AddSearchDomain(const domainname *const domain)
 			{
 			// If domain is already in list, and marked for deletion, change it to "leave alone
 			if ((*p)->flag == -1) (*p)->flag = 0;
+			LogOperation("mDNS_AddSearchDomain already in list %##s", domain->c);
 			return;
 			}
 
@@ -4698,6 +4701,7 @@ mDNSexport void mDNS_AddSearchDomain(const domainname *const domain)
 	AssignDomainName(&(*p)->domain, domain);
 	(*p)->flag = 1;	// add
 	(*p)->next = mDNSNULL;
+	LogOperation("mDNS_AddSearchDomain created new %##s", domain->c);
 	}
 
 mDNSlocal void DynDNSHostNameCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
