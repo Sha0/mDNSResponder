@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.144  2007/04/19 18:02:43  cheshire
+<rdar://problem/5140504> Unicast DNS response records should tagged with kDNSRecordTypePacketUnique bit
+
 Revision 1.143  2007/04/16 21:53:49  cheshire
 Improve display of negative cache entries
 
@@ -1877,7 +1880,10 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 	// Note: We don't have to adjust m->NextCacheCheck here -- this is just getting a record into memory for
 	// us to look at. If we decide to copy it into the cache, then we'll update m->NextCacheCheck accordingly.
 	pktrdlength           = (mDNSu16)((mDNSu16)ptr[8] <<  8 | ptr[9]);
-	if (ptr[2] & (kDNSClass_UniqueRRSet >> 8))
+
+	// If mDNS record has cache-flush bit set, we mark it unique
+	// For uDNS records, all are implicitly deemed unique (a single DNS server is always authoritative for the entire RRSet)
+	if (ptr[2] & (kDNSClass_UniqueRRSet >> 8) || !InterfaceID)
 		RecordType |= kDNSRecordTypePacketUniqueMask;
 	ptr += 10;
 	if (ptr + pktrdlength > end) { debugf("GetLargeResourceRecord: RDATA exceeds end of packet"); return(mDNSNULL); }
