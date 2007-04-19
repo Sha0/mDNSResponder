@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.335  2007/04/19 23:57:20  cheshire
+Temporary workaround for some AirPort base stations that don't seem to like us requesting public port zero
+
 Revision 1.334  2007/04/19 23:21:51  cheshire
 Fixed a couple of places where the StartGetZoneData check was backwards
 
@@ -673,7 +676,9 @@ mDNSlocal void SendInitialPMapReq(mDNS *m, NATTraversalInfo *info)
 
 mDNSlocal NATTraversalInfo *AllocLLQNatMap(mDNS *const m, NATOp_t op, mDNSIPPort port, NATResponseHndlr callback)
 	{
-	NATTraversalInfo *info = uDNS_AllocNATInfo(m, op, port, zeroIPPort, 0, callback);
+	// Some AirPort base stations don't seem to like us requesting public port zero
+	//NATTraversalInfo *info = uDNS_AllocNATInfo(m, op, port, zeroIPPort, 0, callback);
+	NATTraversalInfo *info = uDNS_AllocNATInfo(m, op, port, port, 0, callback);
 	if (!info) { LogMsg("AllocLLQNatMap: memory exhausted"); goto exit; }
 
 	if (info->state == NATState_Init)
@@ -2059,8 +2064,10 @@ mDNSlocal void StartNATPortMap(mDNS *m, ServiceRecordSet *srs)
 	else if (SameDomainLabel(p, (mDNSu8 *)"\x4" "_udp")) op = NATOp_MapUDP;
 	else { LogMsg("StartNATPortMap: could not determine transport protocol of service %##s", srs->RR_SRV.resrec.name->c); goto error; }
 
-	if (srs->NATinfo) { LogMsg("Error: StartNATPortMap - NAT info already initialized!");  uDNS_FreeNATInfo(m, srs->NATinfo); }
-	info = uDNS_AllocNATInfo(m, op, srs->RR_SRV.resrec.rdata->u.srv.port, zeroIPPort, 0, uDNS_HandleNATPortMapReply);
+	if (srs->NATinfo) { LogMsg("Error: StartNATPortMap - NAT info already initialized!"); uDNS_FreeNATInfo(m, srs->NATinfo); }
+	// Some AirPort base stations don't seem to like us requesting public port zero
+	//info = uDNS_AllocNATInfo(m, op, srs->RR_SRV.resrec.rdata->u.srv.port, zeroIPPort, 0, uDNS_HandleNATPortMapReply);
+	info = uDNS_AllocNATInfo(m, op, srs->RR_SRV.resrec.rdata->u.srv.port, srs->RR_SRV.resrec.rdata->u.srv.port, 0, uDNS_HandleNATPortMapReply);
 	srs->NATinfo = info;
 	info->reg.ServiceRegistration = srs;
 	info->state = NATState_Request;
@@ -2078,7 +2085,7 @@ mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srs
 	ServiceRecordSet *srs = (ServiceRecordSet *)srsPtr;
 
 	if (err) goto error;
-	if (!zoneData) { LogMsg("ERROR: serviceRegistrationCallback invoked with NULL result and no error");  goto error; }
+	if (!zoneData) { LogMsg("ERROR: serviceRegistrationCallback invoked with NULL result and no error"); goto error; }
 
 	if (srs->state == regState_Cancelled)
 		{
