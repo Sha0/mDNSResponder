@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.334  2007/04/19 23:21:51  cheshire
+Fixed a couple of places where the StartGetZoneData check was backwards
+
 Revision 1.333  2007/04/19 22:50:53  cheshire
 <rdar://problem/4246187> Identical client queries should reference a single shared core query
 
@@ -3640,7 +3643,7 @@ mDNSlocal void startPrivateQueryCallback(mStatus err, mDNS *const m, void *conte
 	// If we get here it means that the GetZoneData operation has completed, and is is about to cancel
 	// its question and free the ntaContext memory. We no longer need to hold onto our pointer (which
 	// we use for cleaning up if our LLQ is cancelled *before* the GetZoneData operation has completes).
-	question->llq->nta = mDNSNULL;
+	if (question->llq) question->llq->nta = mDNSNULL;
 
 	if (err)
 		{
@@ -3861,7 +3864,7 @@ error:
 
 mDNSexport mStatus uDNS_RegisterRecord(mDNS *const m, AuthRecord *const rr)
 	{
-	return (StartGetZoneData(m, rr->resrec.name, lookupUpdateSRV, RecordRegistrationCallback, rr) != mDNSNULL);
+	return StartGetZoneData(m, rr->resrec.name, lookupUpdateSRV, RecordRegistrationCallback, rr) ? mStatus_NoError : mStatus_NoMemoryErr;
 	}
 
 mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
@@ -3993,7 +3996,7 @@ mDNSexport mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 		}
 
 	srs->state = regState_FetchingZoneData;
-	return (StartGetZoneData(m, srs->RR_SRV.resrec.name, lookupUpdateSRV, serviceRegistrationCallback, srs) != mDNSNULL);
+	return StartGetZoneData(m, srs->RR_SRV.resrec.name, lookupUpdateSRV, serviceRegistrationCallback, srs) ? mStatus_NoError : mStatus_NoMemoryErr;
 	}
 
 mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
@@ -4167,7 +4170,6 @@ mDNSlocal mDNSs32 CheckNATMappings(mDNS *m, mDNSs32 timenow)
 
 mDNSexport void uDNS_CheckQuery(mDNS *const m, DNSQuestion *q)
 	{
-	LLQ_Info *llq;
 	mDNSs32 sendtime;
 	DNSMessage msg;
 	mStatus err = mStatus_NoError;
@@ -4176,12 +4178,12 @@ mDNSexport void uDNS_CheckQuery(mDNS *const m, DNSQuestion *q)
 	if (m->CurrentQuestion)
 		LogMsg("uDNS_CheckQuery: ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
 	m->CurrentQuestion = q;
-	llq = q->llq;
 
 	if (q != m->CurrentQuestion) { m->CurrentQuestion = mDNSNULL; return; }
 
-	if (q->LongLived && llq->state != LLQ_Poll)
+	if (q->LongLived && q->llq && q->llq->state != LLQ_Poll)
 		{
+		LLQ_Info *llq = q->llq;
 		if (llq->state >= LLQ_InitialRequest && llq->state <= LLQ_Established)
 			{
 			if ((q->LastQTime + q->ThisQInterval) - m->timenow <= 0)
@@ -4238,7 +4240,7 @@ mDNSexport void uDNS_CheckQuery(mDNS *const m, DNSQuestion *q)
 						if (!private)
 							err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, &server->addr, UnicastDNSPort, mDNSNULL, mDNSNULL);
 						else
-							llq->nta = StartGetZoneData(m, &q->qname, q->LongLived ? lookupLLQSRV : lookupQuerySRV, startPrivateQueryCallback, q);
+							StartGetZoneData(m, &q->qname, q->LongLived ? lookupLLQSRV : lookupQuerySRV, startPrivateQueryCallback, q);
 						}
 
 					m->SuppressStdPort53Queries = NonZeroTime(m->timenow + (mDNSPlatformOneSecond+99)/100);
