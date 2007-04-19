@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.358  2007/04/19 20:06:41  cheshire
+Rename field 'Private' (sounds like a boolean) to more informative 'AuthInfo' (it's a DomainAuthInfo pointer)
+
 Revision 1.357  2007/04/19 18:14:51  cheshire
 In mDNS_AddSearchDomain_CString check for NULL pointer before calling MakeDomainNameFromDNSNameString()
 
@@ -1221,7 +1224,7 @@ struct DNSQuestion_struct
 	mDNSBool              SendOnAll;		// Set if we're sending this question on all active interfaces
 	mDNSu32               RequestUnicast;	// Non-zero if we want to send query with kDNSQClass_UnicastResponse bit set
 	mDNSs32               LastQTxTime;		// Last time this Q was sent on one (but not necessarily all) interfaces
-	DomainAuthInfo       *Private;			// Non-NULL if query is currently being done using Private DNS
+	DomainAuthInfo       *AuthInfo;			// Non-NULL if query is currently being done using Private DNS
 	mDNSu32               CNAMEReferrals;	// Count of how many CNAME redirections we've done
 
 	// Wide Area fields.  These are used internally by the uDNS core

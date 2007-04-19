@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.605  2007/04/19 20:06:41  cheshire
+Rename field 'Private' (sounds like a boolean) to more informative 'AuthInfo' (it's a DomainAuthInfo pointer)
+
 Revision 1.604  2007/04/19 18:03:04  cheshire
 Add "const" declaration
 
@@ -1903,10 +1906,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 		//     *multicast* queries we're definitely going to send
 		for (q = m->Questions; q; q=q->next)
 			{
-			if (!mDNSOpaque16IsZero(q->TargetQID) && ActiveQuestion( q ) )
-				{
-				uDNS_CheckQuery( m, q );
-				}
+			if (ActiveQuestion(q) && !mDNSOpaque16IsZero(q->TargetQID)) uDNS_CheckQuery(m, q);
 			else if (mDNSOpaque16IsZero(q->TargetQID) && q->Target.type && (q->SendQNow || TimeToSendThisQuestion(q, m->timenow)))
 				{
 				mDNSu8       *qptr        = m->omsg.data;
@@ -4372,7 +4372,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		question->SendOnAll         = mDNSfalse;
 		question->RequestUnicast    = 0;
 		question->LastQTxTime       = m->timenow;
-		question->Private           = GetAuthInfoForName(m, &question->qname);
+		question->AuthInfo          = GetAuthInfoForName(m, &question->qname);
 		question->CNAMEReferrals    = 0;
 		question->RestartTime       = 0;
 		question->sock              = mDNSNULL;
