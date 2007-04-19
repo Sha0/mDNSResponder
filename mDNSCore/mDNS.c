@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.604  2007/04/19 18:03:04  cheshire
+Add "const" declaration
+
 Revision 1.603  2007/04/06 21:00:25  cheshire
 Fix log message typo
 
@@ -4060,7 +4063,7 @@ exit:
 		{
 		CacheRecord *r1 = CacheFlushRecords, *r2;
 		const mDNSu32 slot = HashSlot(r1->resrec.name);
-		CacheGroup *cg = CacheGroupForRecord(m, slot, &r1->resrec);
+		const CacheGroup *cg = CacheGroupForRecord(m, slot, &r1->resrec);
 		CacheFlushRecords = CacheFlushRecords->NextInCFList;
 		r1->NextInCFList = mDNSNULL;
 		
