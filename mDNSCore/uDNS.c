@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.330  2007/04/19 19:51:54  cheshire
+Get rid of unnecessary initializeQuery() routine
+
 Revision 1.329  2007/04/19 18:03:52  cheshire
 Improved "mDNS_AddSearchDomain" log message
 
@@ -859,12 +862,6 @@ exit:
 	return;
 	}
 
-mDNSlocal void initializeQuery(DNSMessage *msg, DNSQuestion *question)
-	{
-	mDNSPlatformMemZero(msg, sizeof(*msg));
-    InitializeDNSMessage(&msg->h, question->TargetQID, uQueryFlags);
-	}
-
 mDNSlocal mDNSu8 *putLLQ(DNSMessage *const msg, mDNSu8 *ptr, const DNSQuestion *const question, const LLQOptData *const data, mDNSBool includeQuestion)
 	{
 	AuthRecord rr;
@@ -897,7 +894,7 @@ mDNSlocal mDNSu8 *putLLQ(DNSMessage *const msg, mDNSu8 *ptr, const DNSQuestion *
 
 mDNSlocal mStatus constructQueryMsg(DNSMessage *msg, mDNSu8 **endPtr, DNSQuestion *const question)
 	{
-	initializeQuery(msg, question);
+	InitializeDNSMessage(&msg->h, question->TargetQID, uQueryFlags);
 
 	*endPtr = putQuestion(msg, msg->data, msg->data + AbsoluteMaxDNSMessageData, &question->qname, question->qtype, question->qclass);
     if (!*endPtr)
@@ -1069,7 +1066,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 //			llqData.err   = tcpInfo->llqInfo->eventPort;
 			llqData.id    = zeroOpaque64;
 			llqData.llqlease = kLLQ_DefLease;
-			initializeQuery(&tcpInfo->request, tcpInfo->llqInfo->question);
+			InitializeDNSMessage(&tcpInfo->request.h, tcpInfo->llqInfo->question->TargetQID, uQueryFlags);
 			end = putLLQ(&tcpInfo->request, tcpInfo->request.data, tcpInfo->llqInfo->question, &llqData, mDNStrue);
 
 			if (!end)
@@ -1566,7 +1563,7 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info, mDNSBool defer)
 		llqData.id    = zeroOpaque64;
 		llqData.llqlease = kLLQ_DefLease;
 
-		initializeQuery(&msg, q);
+		InitializeDNSMessage(&msg.h, q->TargetQID, uQueryFlags);
 		end = putLLQ(&msg, msg.data, q, &llqData, mDNStrue);
 		if (!end) { LogMsg("ERROR: startLLQHandshake - putLLQ"); info->state = LLQ_Error; return; }
 
@@ -3615,7 +3612,7 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease, TCPSocket 
 	llq.id    = info->id;
 	llq.llqlease = lease;
 
-	initializeQuery(&msg, q);
+    InitializeDNSMessage(&msg.h, q->TargetQID, uQueryFlags);
 	end = putLLQ(&msg, msg.data, q, &llq, mDNStrue);
 	if (!end) { LogMsg("ERROR: sendLLQRefresh - putLLQ"); return; }
 
