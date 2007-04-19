@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.606  2007/04/19 22:50:53  cheshire
+<rdar://problem/4246187> Identical client queries should reference a single shared core query
+
 Revision 1.605  2007/04/19 20:06:41  cheshire
 Rename field 'Private' (sounds like a boolean) to more informative 'AuthInfo' (it's a DomainAuthInfo pointer)
 
@@ -2612,7 +2615,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 					ShouldQueryImmediately = mDNSfalse;
 		}
 
-	if (m->CurrentQuestion == q && ShouldQueryImmediately)
+	if (m->CurrentQuestion == q && ShouldQueryImmediately && ActiveQuestion(q))
 		{
 		q->ThisQInterval  = InitialQuestionInterval;
 		q->LastQTime      = m->timenow - q->ThisQInterval;
@@ -4263,7 +4266,7 @@ mDNSlocal DNSQuestion *FindDuplicateQuestion(const mDNS *const m, const DNSQuest
 
 // This is called after a question is deleted, in case other identical questions were being
 // suppressed as duplicates
-mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, const DNSQuestion *const question)
+mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const question)
 	{
 	DNSQuestion *q;
 	for (q = m->Questions; q; q=q->next)		// Scan our list of questions
@@ -4275,6 +4278,9 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, const DNSQuestion *const 
 			q->RecentAnswerPkts = 0;
 			q->DuplicateOf      = FindDuplicateQuestion(m, q);
 			q->LastQTxTime      = question->LastQTxTime;
+			q->llq              = question->llq;
+			question->llq = mDNSNULL;	// Clear old pointer so LLQ info doesn't get killed when original question is stopped
+			if (q->llq) LogOperation("UpdateQuestionDuplicates transferred LLQ info");
 			SetNextQueryTime(m,q);
 			}
 	}
@@ -4382,11 +4388,11 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 			question->DupSuppress[i].InterfaceID = mDNSNULL;
 
 		if (!question->DuplicateOf)
-			verbosedebugf("mDNS_StartQuery: Question %##s (%s) %p %d (%p) started",
+			LogOperation("mDNS_StartQuery: Question %##s (%s) %p %d (%p) started",
 				question->qname.c, DNSTypeName(question->qtype), question->InterfaceID,
 				question->LastQTime + question->ThisQInterval - m->timenow, question);
 		else
-			verbosedebugf("mDNS_StartQuery: Question %##s (%s) %p %d (%p) duplicate of (%p)",
+			LogOperation("mDNS_StartQuery: Question %##s (%s) %p %d (%p) duplicate of (%p)",
 				question->qname.c, DNSTypeName(question->qtype), question->InterfaceID,
 				question->LastQTime + question->ThisQInterval - m->timenow, question, question->DuplicateOf);
 
@@ -4397,26 +4403,25 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		else
 			{
 			if (!m->NewQuestions) m->NewQuestions = question;
-			SetNextQueryTime(m,question);
-			}
 
-		// If the question's id is non-zero, then it's Wide Area
-		// MUST NOT do this Wide Area setup until last -- this code may itself issue queries
-		// (e.g. SOA, NS, etc.) and if we haven't finished setting up our own question and
-		// setting m->NewQuestions if necessary then we could end up recursively re-entering
-		// this routine with the question list data structures in an inconsistent state.
-		if (!mDNSOpaque16IsZero(question->TargetQID))
-			{
-			// We ignore error returns in this case --
-			// There should be no errors that permanently kill a client's question
-			// Any errors are transient, and that's not the client's fault
-			if (question->LongLived)
-				uDNS_InitLongLivedQuery(m, question);
-			else
+			// If the question's id is non-zero, then it's Wide Area
+			// MUST NOT do this Wide Area setup until near the end of
+			// mDNS_StartQuery_internal -- this code may itself issue queries (e.g. SOA,
+			// NS, etc.) and if we haven't finished setting up our own question and setting
+			// m->NewQuestions if necessary then we could end up recursively re-entering
+			// this routine with the question list data structures in an inconsistent state.
+			if (!mDNSOpaque16IsZero(question->TargetQID) && !question->DuplicateOf)
 				{
-				question->ThisQInterval = INIT_UCAST_POLL_INTERVAL / 2;
-				question->LastQTime     = m->timenow - question->ThisQInterval;
+				if (question->LongLived)
+					uDNS_InitLongLivedQuery(m, question);
+				else
+					{
+					question->ThisQInterval = INIT_UCAST_POLL_INTERVAL / 2;
+					question->LastQTime     = m->timenow - question->ThisQInterval;
+					}
 				}
+
+			SetNextQueryTime(m,question);
 			}
 
 		return(mStatus_NoError);
@@ -4430,8 +4435,7 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 	CacheRecord *rr;
 	DNSQuestion **q = &m->Questions;
 	
-	if (!mDNSOpaque16IsZero(question->TargetQID) && question->LongLived && question->llq)
-		uDNS_StopLongLivedQuery(m, question);
+	//LogOperation("mDNS_StopQuery_internal %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
 
 	if (question->InterfaceID == mDNSInterface_LocalOnly) q = &m->LocalOnlyQuestions;
 	while (*q && *q != question) q=&(*q)->next;
@@ -4451,6 +4455,19 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 	UpdateQuestionDuplicates(m, question);
 	// But don't trash ThisQInterval until afterwards.
 	question->ThisQInterval = -1;
+	// And don't kill the LLQ info until UpdateQuestionDuplicates has had a chance to move
+	// it to a new active question, if appropriate
+	if (!mDNSOpaque16IsZero(question->TargetQID) && question->LongLived && question->llq)
+		{
+		if (question->llq->nta)
+			{
+			DNSQuestion *q = &question->llq->nta->question;
+			LogOperation("uDNS_StopLongLivedQuery cancelling associated GetZoneData Query %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+			mDNS_StopQuery_internal(m, q);
+			mDNSPlatformMemFree(question->llq->nta);
+			}
+		uDNS_StopLongLivedQuery(m, question);
+		}
 
 	// If there are any cache records referencing this as their active question, then see if any other
 	// question that is also referencing them, else their CRActiveQuestion needs to get set to NULL.
@@ -5977,15 +5994,25 @@ mDNSexport void mDNS_Close(mDNS *const m)
 	// Make sure there are nothing but deregistering records remaining in the list
 	if (m->CurrentRecord)
 		LogMsg("mDNS_Close ERROR m->CurrentRecord already set %s", ARDisplayString(m, m->CurrentRecord));
+
+	// First we deregister any non-shared records. In particular, we want to make sure we deregister
+	// any extra records added to a Service Record Set first, before we deregister its PTR record.
 	m->CurrentRecord = m->ResourceRecords;
 	while (m->CurrentRecord)
 		{
 		AuthRecord *rr = m->CurrentRecord;
-		if (rr->resrec.RecordType != kDNSRecordTypeDeregistering)
-			{
-			debugf("mDNS_Close: Record type %X still in ResourceRecords list %##s", rr->resrec.RecordType, rr->resrec.name->c);
+		if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
 			mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
-			}
+		else
+			m->CurrentRecord = rr->next;
+		}
+
+	// Now deregister any remaining records we didn't get the first time through
+	while (m->CurrentRecord)
+		{
+		AuthRecord *rr = m->CurrentRecord;
+		if (rr->resrec.RecordType != kDNSRecordTypeDeregistering)
+			mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
 		else
 			m->CurrentRecord = rr->next;
 		}

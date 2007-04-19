@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.359  2007/04/19 22:50:53  cheshire
+<rdar://problem/4246187> Identical client queries should reference a single shared core query
+
 Revision 1.358  2007/04/19 20:06:41  cheshire
 Rename field 'Private' (sounds like a boolean) to more informative 'AuthInfo' (it's a DomainAuthInfo pointer)
 
@@ -767,6 +770,7 @@ typedef struct NTAContext_struct NTAContext;
 typedef struct mDNS_struct mDNS;
 typedef struct mDNS_PlatformSupport_struct mDNS_PlatformSupport;
 typedef struct NATTraversalInfo_struct NATTraversalInfo;
+typedef struct ntaContext_struct ntaContext;
 
 // Note: Within an mDNSRecordCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute()
 typedef void mDNSRecordCallback(mDNS *const m, AuthRecord *const rr, mStatus result);
@@ -1057,6 +1061,7 @@ struct ServiceRecordSet_struct
 	mDNSs32      expire;   // expiration of lease (-1 for static)
 	mDNSBool     TestForSelfConflict;  // on name conflict, check if we're just seeing our own orphaned records
 	mDNSBool     Private;  // If zone is private, DNS updates may have to be encrypted to prevent eavesdropping
+	ntaContext  *nta;
 	mDNSOpaque16 id;
 	domainname   zone;     // the zone that is updated
 	mDNSAddr     ns;       // primary name server for the record's zone  !!!KRS not technically correct to cache longer than TTL
@@ -1139,6 +1144,7 @@ typedef struct
 	LLQ_State state;
 	NATTraversalInfo *NATInfoTCP;	// This is used if we're browsing behind a NAT
 	NATTraversalInfo *NATInfoUDP;
+	ntaContext  *nta;
 	mDNSAddr servAddr;
 	mDNSIPPort servPort;
 	mDNSIPPort eventPort;			// This is non-zero if this is a private LLQ.  It is the port number that both the TCP
@@ -1282,6 +1288,49 @@ struct ServiceInfoQuery_struct
 	ServiceInfo                  *info;
 	mDNSServiceInfoQueryCallback *ServiceInfoQueryCallback;
 	void                         *ServiceInfoQueryContext;
+	};
+
+// state machine states
+typedef enum
+	{
+	lookupSOA = 1,	// 1
+	foundZone,		// 2
+	lookupNS,		// 3
+	foundNS,		// 4
+	lookupA,		// 5
+	foundA,			// 6
+	lookupPort,		// 7
+	foundPort		// 8
+	} ntaState;
+
+typedef enum { lookupUpdateSRV, lookupQuerySRV, lookupLLQSRV } AsyncOpTarget;
+
+typedef struct                    
+	{
+	domainname zoneName;
+	mDNSAddr   primaryAddr;
+	mDNSu16    zoneClass;
+	mDNSIPPort Port;	// Depending on context, may be update port, query port, or LLQ port
+	mDNSBool   zonePrivate;
+	} zoneData_t;
+
+typedef void AsyncOpCallback(mStatus err, mDNS *const m, void *info, const zoneData_t *result);
+
+struct ntaContext_struct
+	{
+	domainname      origName;			// name we originally try to convert
+	domainname      *curSOA;			// name we have an outstanding SOA query for
+	ntaState        state;				// determines what we do upon receiving a packet
+	mDNS            *m;
+	domainname      zone;				// left-hand-side of SOA record
+	mDNSu16         zoneClass;
+	domainname      ns;					// mname in SOA rdata, verified in confirmNS state
+	mDNSv4Addr      addr;				// address of nameserver
+	DNSQuestion     question;			// storage for any active question
+	AsyncOpTarget   target;
+	mDNSIPPort      ntaPort;			// Depending on target, may be update port, query port, or LLQ port
+	AsyncOpCallback *ntaCallback;		// caller-specified function to be called upon completion
+	void            *callbackInfo;
 	};
 
 // ***************************************************************************
