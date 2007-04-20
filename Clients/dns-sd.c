@@ -811,12 +811,16 @@ int main(int argc, char **argv)
 					//enum_reply(client, kDNSServiceFlagsAdd, 0, 0, "dns-sd.ibm.com.", NULL);
 					break;
 
-		case 'B':	if (argc < optind+1) goto Fail;
+		case 'B':	{
+					char buffer[64], *typ;
+					typ = (argc < optind+1) ? "_http" : argv[optind+0]; // If no type argument, browse for advertised web pages
 					dom = (argc < optind+2) ? "" : argv[optind+1];  // Missing domain argument is the same as empty string i.e. use system default(s)
 					if (dom[0] == '.' && dom[1] == 0) dom[0] = 0;   // We allow '.' on the command line as a synonym for empty string
-					printf("Browsing for %s%s%s\n", argv[optind+0], dom[0] ? "." : "", dom);
-					err = DNSServiceBrowse(&client, 0, opinterface, argv[optind+0], dom, browse_reply, NULL);
+					if (!strchr(typ, '.')) { snprintf(buffer, sizeof(buffer), "%s._tcp", typ); typ = buffer; }
+					printf("Browsing for %s%s%s\n", typ, dom[0] ? "." : "", dom);
+					err = DNSServiceBrowse(&client, 0, opinterface, typ, dom, browse_reply, NULL);
 					break;
+					}
 
 		case 'L':	if (argc < optind+2) goto Fail;
 					dom = (argc < optind+3) ? "local" : argv[optind+2];
