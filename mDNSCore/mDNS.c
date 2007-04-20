@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.608  2007/04/20 19:45:31  cheshire
+In LogAllOperations mode, dump out unknown DNS packets in their entirety
+
 Revision 1.607  2007/04/19 23:56:25  cheshire
 Don't do cache-flush processing for LLQ answers
 
@@ -4227,8 +4230,13 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 	if      (QR_OP == StdQ) mDNSCoreReceiveQuery   (m, msg, end, srcaddr, srcport, dstaddr, dstport, ifid);
 	else if (QR_OP == StdR) mDNSCoreReceiveResponse(m, msg, end, srcaddr, srcport, dstaddr, dstport, ifid);
 	else if (QR_OP != UpdR)
+		{
 		LogMsg("Unknown DNS packet type %02X%02X from %#-15a:%-5d to %#-15a:%-5d on %p (ignored)",
 			msg->h.flags.b[0], msg->h.flags.b[1], srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), InterfaceID);
+#if LogAllOperations
+		DumpPacket(m, msg, end);
+#endif
+		}
 
 	// Packet reception often causes a change to the task list:
 	// 1. Inbound queries can cause us to need to send responses
