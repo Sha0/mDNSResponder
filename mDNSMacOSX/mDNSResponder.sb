@@ -24,6 +24,9 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # $Log: mDNSResponder.sb,v $
+# Revision 1.3  2007/04/20 19:42:14  cheshire
+# Condense rules a bit to bring file under Seatbelt's 4K limit
+#
 # Revision 1.2  2007/04/19 01:47:49  cheshire
 # Refinements to sandbox profile, e.g. allow writing to /dev/console early in the boot process
 #
@@ -33,8 +36,9 @@
 #############################################################################
 
 version "0.4beta";
-#dem default;
-#dem-server com.apple.seatbelt.learner;
+
+# WARNING! SEATBELT CURRENTLY CAN'T HANDLE PROFILES LARGER THAN 4K
+# MAKE SURE THE SIZE OF THIS FILE DOESN'T EXCEED 4K
 
 # To help debugging, "signal FPE" will trigger a fake floating-point exception, which
 # will crash the process and show the call stack leading to the offending operation.
@@ -44,55 +48,34 @@ version "0.4beta";
 #deny default;
 signal FPE default;
 
+# Use "debug on" to discover what operation is causing an exception
+
 #debug on;
 
-allow net UNIX;
-allow net_inbound;
-allow net_outbound;
-allow net_accept;
+# Rules start here
 
-allow sysctl_ro;
+allow net;				# Allow networking, plus Unix Domain Sockets
+allow sysctl_ro;		# To get hardware model information
+allow fs_read_mdata;	# Needed for dyld to work
 
-allow fs_read_mdata;
+allow fs_write_data -regex "^/dev/console\$";	# Needed for syslog early in the boot process
 
-allow fs_read_data -regex "^/usr/sbin\$";
-allow fs_read_data -regex "^/usr/sbin/mDNSResponder\$";
-allow fs_read_data -regex "^/dev/urandom\$";
-allow fs_read_data -regex "^/private/var/db/dyld/dyld_shared_cache_i386\$";
-allow fs_read_data -regex "^/System/Library/Security\$";
-allow fs_read_data -regex "^[rxsafe "/usr/lib/libSystem.B.dylib"]\$";
-allow fs_read_data -regex "^[rxsafe "/System/Library/CoreServices/SystemVersion.plist"]\$";
-allow fs_read_data -regex "^[rxsafe "/System/Library/CoreServices/SystemVersion.bundle"]\$";
-allow fs_read_data -regex "^[rxsafe "/System/Library/CoreServices/SystemVersion.bundle/English.lproj"]\$";
-allow fs_read_data -regex "^[rxsafe "/System/Library/CoreServices/SystemVersion.bundle/English.lproj/SystemVersion.strings"]\$";
-allow fs_read_data -regex "^[rxsafe "/Library/Preferences/.GlobalPreferences.plist"]\$";
-allow fs_read_data -regex "^[rxsafe "/Library/Preferences/SystemConfiguration/preferences.plist"]\$";
-allow fs_read_data -regex "^[rxsafe "/Library/Preferences/SystemConfiguration/preferences.plist-new"]\$";
-allow fs_read_data -regex "^[rxsafe "/Library/Preferences/SystemConfiguration/preferences.plist/preferences.plist"]\$";
-allow fs_read_data -regex "^[rxsafe "/Library/Keychains/System.keychain"]\$";
-allow fs_read_data -regex "^/private/var/root/Library/Preferences/ByHost/\.GlobalPreferences\..*\.plist\$";
-allow fs_read_data -regex "^[rxsafe "/private/var/root/Library/Preferences/.GlobalPreferences.plist"]\$";
-allow fs_read_data -regex "^[rxsafe "/private/var/tmp/mds/system/mdsObject.db"]\$";
-allow fs_read_data -regex "^[rxsafe "/private/var/tmp/mds/system/mdsDirectory.db"]\$";
+# Allow us to create our PID file
+allow fs_write      -regex "^/private/var/run/mDNSResponder\.pid\$";
 
-allow fs_read_sdata -regex "^[rxsafe "/Library/Preferences/SystemConfiguration/preferences.plist-new"]\$";
-allow fs_read_sdata -regex "^[rxsafe "/Library/Preferences/SystemConfiguration/preferences.plist/preferences.plist"]\$";
+# Allow us to read system version and settings
+allow fs_read_data  -regex "^/usr/sbin(/mDNSResponder)?\$";		# Needed for CFCopyVersionDictionary()
+allow fs_read_data  -regex "^/System/Library/CoreServices/SystemVersion.*\$";
+allow fs_read_data  -regex "^/(private/var/root/)?Library/Preferences/(ByHost/)?\.GlobalPreferences.*\.plist\$";
 
-allow fs_write -regex "^[rxsafe "/private/var/run/mDNSResponder.pid"]\$";
-allow fs_write -regex "^[rxsafe "/Library/Preferences/SystemConfiguration/preferences.plist-new"]\$";
-allow fs_write -regex "^/private/var/run/mDNSResponder\$";
+# Allow access to System Keychain
+allow fs_write_data -regex "^/private/var/tmp/mds/system/mds.lock\$";
+allow fs_read_data  -regex "^/private/var/tmp/mds/system/mdsObject.db\$";
+allow fs_read_data  -regex "^/private/var/tmp/mds/system/mdsDirectory.db\$";
+allow fs_read_data  -regex "^/Library/Keychains/System.keychain\$";
+allow fs_read_data  -regex "^/System/Library/Security\$";
 
-allow fs_write_data -regex "^/dev/console\$";
-allow fs_write_data -regex "^[rxsafe "/Library/Preferences/SystemConfiguration/preferences.plist-new"]\$";
-allow fs_write_data -regex "^[rxsafe "/Library/Preferences/SystemConfiguration/preferences.plist/preferences.plist"]\$";
-allow fs_write_data -regex "^[rxsafe "/private/var/tmp/mds/system/mds.lock"]\$";
-
-allow fs_write_mdata -regex "^[rxsafe "/Library/Preferences/SystemConfiguration/preferences.plist-new"]\$";
-allow fs_write_mdata -regex "^[rxsafe "/Library/Preferences/SystemConfiguration/preferences.plist/preferences.plist"]\$";
-
-allow fs_write_sdata_flags -regex "^[rxsafe "/Library/Preferences/SystemConfiguration/preferences.plist-new"]\$";
-allow fs_write_sdata -regex "^[rxsafe "/Library/Preferences/SystemConfiguration/preferences.plist-new"]\$";
-allow fs_write_sdata -regex "^[rxsafe "/Library/Preferences/SystemConfiguration/preferences.plist/preferences.plist"]\$";
-allow fs_write_sdata_flags -regex "^[rxsafe "/Library/Preferences/SystemConfiguration/preferences.plist/preferences.plist"]\$";
-allow fs_write_sdata_esclation -regex "^[rxsafe "/Library/Preferences/SystemConfiguration/preferences.plist-new"]\$";
-allow fs_write_sdata_esclation -regex "^[rxsafe "/Library/Preferences/SystemConfiguration/preferences.plist/preferences.plist"]\$";
+# After name conflict, allow mDNSResponder to persistently save new unique name for next time
+allow fs_read_data  -regex "^/Library/Preferences/SystemConfiguration/preferences.plist\$";
+allow fs_write      -regex "^/Library/Preferences/SystemConfiguration/preferences.plist-new\$";
+allow fs_write      -regex "^/Library/Preferences/SystemConfiguration/preferences.plist/preferences.plist\$";
