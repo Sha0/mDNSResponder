@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: UtilTypes.h,v $
+Revision 1.16  2007/04/20 22:58:10  herscher
+<rdar://problem/4826126> mDNS: Printer Wizard doesn't offer generic HP printers or generic PS support on Vista RC2
+
 Revision 1.15  2006/08/14 23:24:09  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -94,6 +97,7 @@ namespace PrinterSetupWizard
 	typedef std::list<Printer*>	Printers;
 	typedef std::list<Service*>	Services;
 	typedef std::list<Model*>	Models;
+	typedef std::list<CString>	Decorations;
 
 	struct Printer
 	{
@@ -216,6 +220,7 @@ namespace PrinterSetupWizard
 		CString		name;
 		CString		tag;
 		Models		models;
+		Decorations	decorations;
 
 		Model*
 		find( const CString & name );

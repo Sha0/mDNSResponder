@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.33  2007/04/20 22:58:10  herscher
+<rdar://problem/4826126> mDNS: Printer Wizard doesn't offer generic HP printers or generic PS support on Vista RC2
+
 Revision 1.32  2007/04/13 23:42:20  herscher
 <rdar://problem/4580061> mDNS: Printers added using Bonjour should be set as the default printer.
 
@@ -143,9 +146,14 @@ First checked in
 
 //
 // This is the printer description file that is shipped
-// with Windows
+// with Windows XP and below
 //
 #define kNTPrintFile		L"inf\\ntprint.inf"
+
+//
+// Windows Vista ships with a set of prn*.inf files
+//
+#define kVistaPrintFiles	L"inf\\prn*.inf"
 
 //
 // These are pre-defined names for Generic manufacturer and model
@@ -185,6 +193,9 @@ CThirdPage::CThirdPage()
 	static const int	bufferSize	= 32768;
 	TCHAR				windowsDirectory[bufferSize];
 	CString				header;
+	WIN32_FIND_DATA		findFileData;
+	HANDLE				findHandle;
+	CString				prnFiles;
 	CString				ntPrint;
 	OSStatus			err;
 	BOOL				ok;
@@ -202,9 +213,38 @@ CThirdPage::CThirdPage()
 	err = translate_errno( ok, errno_compat(), kUnknownErr );
 	require_noerr( err, exit );
  
-	ntPrint.Format(L"%s\\%s", windowsDirectory, kNTPrintFile);
-	err = LoadPrintDriverDefsFromFile( m_manufacturers, ntPrint, false );
-	require_noerr(err, exit);
+	// 
+	// <rdar://problem/4826126>
+	//
+	// If there are no *prn.inf files, we'll assume that the information
+	// is in ntprint.inf
+	//
+	prnFiles.Format( L"%s\\%s", windowsDirectory, kVistaPrintFiles );
+	findHandle = FindFirstFile( prnFiles, &findFileData );
+ 
+	if ( findHandle != INVALID_HANDLE_VALUE )
+	{
+		CString absolute;
+
+		absolute.Format( L"%s\\inf\\%s", windowsDirectory, findFileData.cFileName );
+		err = LoadPrintDriverDefsFromFile( m_manufacturers, absolute, false );
+		require_noerr( err, exit );
+
+		while ( FindNextFile( findHandle, &findFileData ) )
+		{
+			absolute.Format( L"%s\\inf\\%s", windowsDirectory, findFileData.cFileName );
+			err = LoadPrintDriverDefsFromFile( m_manufacturers, absolute, false );
+			require_noerr( err, exit );
+		}
+
+		FindClose( findHandle );
+	}
+	else
+	{
+		ntPrint.Format(L"%s\\%s", windowsDirectory, kNTPrintFile);
+		err = LoadPrintDriverDefsFromFile( m_manufacturers, ntPrint, false );
+		require_noerr(err, exit);
+	}
 
 	//
 	// load printer drivers that have been installed on this machine
@@ -584,14 +624,27 @@ CThirdPage::LoadPrintDriverDefsFromFile(Manufacturers & manufacturers, const CSt
 			}
 			else
 			{
+				CString name;
+				int		curPos;
+
+				//
 				// remove the leading and trailing delimiters
 				//
 				s.Remove('[');
 				s.Remove(']');
 
+				// 
+				// <rdar://problem/4826126>
+				//
+				// Ignore decorations in model declarations
+				//
+				curPos	= 0;
+				name	= s.Tokenize( L".", curPos ); 
+
+				//
 				// check to see if this is a printer entry
 				//
-				iter = manufacturers.find(s);
+				iter = manufacturers.find( name );
 
 				if (iter != manufacturers.end())
 				{
@@ -679,6 +732,22 @@ CThirdPage::LoadPrintDriverDefsFromFile(Manufacturers & manufacturers, const CSt
 					curPos	=	0;
 					val		=	val.Tokenize(L",", curPos);
 
+					for ( ;; )
+					{
+						CString decoration;
+
+						decoration = val.Tokenize( L",", curPos );
+
+						if ( decoration.GetLength() > 0 )
+						{
+							manufacturer->decorations.push_back( decoration );
+						}
+						else
+						{
+							break;
+						}
+					}
+
 					manufacturer->name = NormalizeManufacturerName( key );
 					manufacturer->tag  = val;
 
@@ -726,6 +795,15 @@ CThirdPage::LoadPrintDriverDefsFromFile(Manufacturers & manufacturers, const CSt
 						{
 							continue;
 						}
+					}
+
+					//
+					// Stock Vista printer inf files embed guids in the model
+					// declarations for Epson printers. Let's ignore those.
+					//
+					if ( name.Find( L"{", 0 ) != -1 )
+					{
+						continue;
 					}
 
 					try
@@ -1538,11 +1616,6 @@ CThirdPage::OnSetActive()
 		m_defaultPrinterCtrl.SetCheck( BST_CHECKED );
 		printer->deflt = true;
 	}
-
-	//
-	// update the UI with the printer name
-	//
-	m_printerName.SetWindowText(printer->displayName);
 
 	//
 	// update the UI with the printer name
