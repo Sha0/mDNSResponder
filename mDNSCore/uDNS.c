@@ -22,6 +22,10 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.336  2007/04/20 21:16:12  cheshire
+Fixed bogus double-registration of host name -- was causing these warning messages in syslog:
+Error! Tried to register AuthRecord 0181FB0C host.example.com. (Addr) that's already in the list
+
 Revision 1.335  2007/04/19 23:57:20  cheshire
 Temporary workaround for some AirPort base stations that don't seem to like us requesting public port zero
 
@@ -2478,19 +2482,21 @@ mDNSlocal void UpdateSRVRecords(mDNS *m)
 // register record or begin NAT traversal
 mDNSlocal void AdvertiseHostname(mDNS *m, HostnameInfo *h)
 	{
-	if (!mDNSIPv4AddressIsZero(m->AdvertisedV4.ip.v4) && h->arv4.state == regState_Unregistered)
+	if (!mDNSIPv4AddressIsZero(m->AdvertisedV4.ip.v4) && h->arv4.resrec.RecordType == kDNSRecordTypeUnregistered && h->arv4.state == regState_Unregistered)
 		{
 		if (mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4))
 			StartGetPublicAddr(m, &h->arv4);
 		else
 			{
 			LogMsg("Advertising %##s IP %.4a", h->arv4.resrec.name->c, &m->AdvertisedV4.ip.v4);
+			h->arv4.resrec.RecordType = kDNSRecordTypeKnownUnique;
 			mDNS_Register_internal(m, &h->arv4);
 			}
 		}
-	if (!mDNSIPv6AddressIsZero(m->AdvertisedV6.ip.v6) && h->arv6.state == regState_Unregistered)
+	if (!mDNSIPv6AddressIsZero(m->AdvertisedV6.ip.v6) && h->arv6.resrec.RecordType == kDNSRecordTypeUnregistered && h->arv6.state == regState_Unregistered)
 		{
 		LogMsg("Advertising %##s IP %.16a", h->arv4.resrec.name->c, &m->AdvertisedV6.ip.v6);
+		h->arv6.resrec.RecordType = kDNSRecordTypeKnownUnique;
 		mDNS_Register_internal(m, &h->arv6);
 		}
 	}
@@ -2643,7 +2649,9 @@ mDNSlocal void GetStaticHostname(mDNS *m)
 
 mDNSlocal void AssignHostnameInfoAuthRecord(mDNS *m, HostnameInfo *hi, AuthRecord *ar)
 	{
-	mDNS_SetupResourceRecord(ar, mDNSNULL, 0, (mDNSu16) (ar == &hi->arv4 ? kDNSType_A : kDNSType_AAAA),  1, kDNSRecordTypeKnownUnique, HostnameCallback, hi);
+	if (ar->resrec.RecordType) LogMsg("AssignHostnameInfoAuthRecord Warning: Updating records while it's already in the active list");
+	// We create the record here with type kDNSRecordTypeUnregistered, and then update it to kDNSRecordTypeKnownUnique right before calling mDNS_Register_internal
+	mDNS_SetupResourceRecord(ar, mDNSNULL, 0, (mDNSu16) (ar == &hi->arv4 ? kDNSType_A : kDNSType_AAAA),  1, kDNSRecordTypeUnregistered, HostnameCallback, hi);
 	AssignDomainName(ar->resrec.name, &hi->fqdn);
 
 	// only set RData if we have a valid IP
@@ -2656,37 +2664,6 @@ mDNSlocal void AssignHostnameInfoAuthRecord(mDNS *m, HostnameInfo *hi, AuthRecor
 		ar->resrec.rdata->u.ipv6 = m->AdvertisedV6.ip.v6;
 
 	ar->state = regState_Unregistered;
-	}
-
-// Deregister hostnames and register new names for each host domain with the current global
-// values for the hostlabel and primary IP address
-mDNSlocal void UpdateHostnameRegistrations(mDNS *m)
-	{
-	HostnameInfo *i;
-
-	for (i = m->Hostnames; i; i = i->next)
-		{
-		LogOperation("UpdateHostnameRegistrations %##s", i->fqdn.c);
-
-		if (i->arv4.state != regState_Unregistered &&
-			i->arv4.resrec.RecordType != kDNSRecordTypeUnregistered &&
-			!mDNSSameIPv4Address(i->arv4.resrec.rdata->u.ipv4, m->AdvertisedV4.ip.v4) &&
-			!mDNSSameIPv4Address(i->arv4.resrec.rdata->u.ipv4, m->MappedV4.ip.v4))
-			mDNS_Deregister_internal(m, &i->arv4, mDNS_Dereg_normal);
-		else
-			if (!mDNSIPv4AddressIsZero(m->AdvertisedV4.ip.v4)) AssignHostnameInfoAuthRecord(m, i, &i->arv4);
-
-		if (i->arv6.resrec.RecordType != kDNSRecordTypeUnregistered &&
-			i->arv6.state != regState_Unregistered &&
-			!mDNSSameIPv6Address(i->arv6.resrec.rdata->u.ipv6, m->AdvertisedV6.ip.v6))
-			mDNS_Deregister_internal(m, &i->arv6, mDNS_Dereg_normal);
-		else
-			if (!mDNSIPv6AddressIsZero(m->AdvertisedV6.ip.v6)) AssignHostnameInfoAuthRecord(m, i, &i->arv6);
-
-		// Not totally sure about this. We might want to wait until the deregistration has completed before registering the new records?
-
-		AdvertiseHostname(m, i);
-		}
 	}
 
 mDNSexport void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSRecordCallback *StatusCallback, const void *StatusContext)
@@ -2710,6 +2687,7 @@ mDNSexport void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSReco
 	mDNSPlatformMemZero(new, sizeof(*new));
 	new->arv4.state = regState_Unregistered;
 	new->arv6.state = regState_Unregistered;
+
     new->next = m->Hostnames;
 	m->Hostnames = new;
 
@@ -2777,9 +2755,36 @@ mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr, co
 
 	if ((v4Changed || RouterChanged || v6Changed) && v4addr)
 		{
-		LogOperation("mDNS_SetPrimaryInterfaceInfo: v4Changed %d RouterChanged %d v6Changed %d v4addr %#a", v4Changed, RouterChanged, v6Changed, v4addr);
-		// don't update these unless we've got V4
-		UpdateHostnameRegistrations(m);
+		HostnameInfo *i;
+		LogOperation("mDNS_SetPrimaryInterfaceInfo: %s%s%s%#a",
+			v4Changed     ? "v4Changed "     : "",
+			RouterChanged ? "RouterChanged " : "",
+			v6Changed     ? "v6Changed "     : "", v4addr);
+
+		for (i = m->Hostnames; i; i = i->next)
+			{
+			LogOperation("UpdateHostnameRegistrations %##s", i->fqdn.c);
+	
+			if (i->arv4.state != regState_Unregistered &&
+				i->arv4.resrec.RecordType > kDNSRecordTypeDeregistering &&
+				!mDNSSameIPv4Address(i->arv4.resrec.rdata->u.ipv4, m->AdvertisedV4.ip.v4) &&
+				!mDNSSameIPv4Address(i->arv4.resrec.rdata->u.ipv4, m->MappedV4.ip.v4))
+				mDNS_Deregister_internal(m, &i->arv4, mDNS_Dereg_normal);
+			else
+				if (!mDNSIPv4AddressIsZero(m->AdvertisedV4.ip.v4)) AssignHostnameInfoAuthRecord(m, i, &i->arv4);
+	
+			if (i->arv6.resrec.RecordType > kDNSRecordTypeDeregistering &&
+				i->arv6.state != regState_Unregistered &&
+				!mDNSSameIPv6Address(i->arv6.resrec.rdata->u.ipv6, m->AdvertisedV6.ip.v6))
+				mDNS_Deregister_internal(m, &i->arv6, mDNS_Dereg_normal);
+			else
+				if (!mDNSIPv6AddressIsZero(m->AdvertisedV6.ip.v6)) AssignHostnameInfoAuthRecord(m, i, &i->arv6);
+
+			// AdvertiseHostname will only register new address records.
+			// For records still in the process of deregistering it will ignore them, and let the mStatus_MemFree callback handle them.
+			AdvertiseHostname(m, i);
+			}
+
 		UpdateSRVRecords(m);
 		GetStaticHostname(m);	// look up reverse map record to find any static hostnames for our IP address
 		}
@@ -4828,24 +4833,16 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 	v4 = v6 = r = zeroAddr;
 	v4.type = r.type = mDNSAddrType_IPv4;
 
-	if (mDNSPlatformGetPrimaryInterface(m, &v4, &v6, &r) == mStatus_NoError)
+	if (mDNSPlatformGetPrimaryInterface(m, &v4, &v6, &r) == mStatus_NoError && !mDNSv4AddressIsLinkLocal(&v4.ip.v4))
 		{
-		// handle primary interface changes
-        // if we gained or lost DNS servers (e.g. logged into VPN) "toggle" primary address so it gets re-registered even if it is unchanged
-		mDNS_SetPrimaryInterfaceInfo(m, mDNSNULL, mDNSNULL, mDNSNULL);
-
-		if (mDNSv4AddressIsLinkLocal(&v4.ip.v4))
-			mDNS_SetPrimaryInterfaceInfo(m, mDNSNULL, mDNSNULL, mDNSNULL);	// primary IP is link-local
-		else
-			mDNS_SetPrimaryInterfaceInfo(m,
-				!mDNSIPv4AddressIsZero(v4.ip.v4) ? &v4 : mDNSNULL,
-				!mDNSIPv6AddressIsZero(v6.ip.v6) ? &v6 : mDNSNULL,
-				!mDNSIPv4AddressIsZero(r .ip.v4) ? &r  : mDNSNULL);
+		mDNS_SetPrimaryInterfaceInfo(m,
+			!mDNSIPv4AddressIsZero(v4.ip.v4) ? &v4 : mDNSNULL,
+			!mDNSIPv6AddressIsZero(v6.ip.v6) ? &v6 : mDNSNULL,
+			!mDNSIPv4AddressIsZero(r .ip.v4) ? &r  : mDNSNULL);
 		}
 	else
 		{
 		mDNS_SetPrimaryInterfaceInfo(m, mDNSNULL, mDNSNULL, mDNSNULL);
-
 		if (m->FQDN.c[0]) mDNSPlatformDynDNSHostNameStatusChanged(&m->FQDN, 1);	// Set status to 1 to indicate temporary failure
 		}
 
