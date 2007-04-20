@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.282  2007/04/20 21:17:24  cheshire
+For naming consistency, kDNSRecordTypeNegative should be kDNSRecordTypePacketNegative
+
 Revision 1.281  2007/04/19 23:25:20  cheshire
 Added debugging message
 
@@ -2418,7 +2421,7 @@ mDNSlocal void queryrecord_result_callback(mDNS *const m, DNSQuestion *question,
 
 	LogOperation("%3d: DNSServiceQueryRecord(%##s, %s) %s %s", req->sd, question->qname.c, DNSTypeName(question->qtype), AddRecord ? "ADD" : "RMV", RRDisplayString(m, answer));
 
-	if (answer->RecordType == kDNSRecordTypeNegative)
+	if (answer->RecordType == kDNSRecordTypePacketNegative)
 		{
 		deliver_async_error(req, query_reply_op, kDNSServiceErr_NoSuchRecord);
 		return;
@@ -3469,7 +3472,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 					cr->CRActiveQuestion ? "*" : " ",
 					remain,
 					info ? info->ifname : "-U-",
-					(cr->resrec.RecordType == kDNSRecordTypeNegative)        ? "-" :
+					(cr->resrec.RecordType == kDNSRecordTypePacketNegative)  ? "-" :
 					(cr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) ? " " : "+",
 					DNSTypeName(cr->resrec.rrtype),
 					CRDisplayString(m, cr));

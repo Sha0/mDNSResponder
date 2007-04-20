@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.145  2007/04/20 21:17:24  cheshire
+For naming consistency, kDNSRecordTypeNegative should be kDNSRecordTypePacketNegative
+
 Revision 1.144  2007/04/19 18:02:43  cheshire
 <rdar://problem/5140504> Unicast DNS response records should tagged with kDNSRecordTypePacketUnique bit
 
@@ -337,7 +340,7 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd,
 	#define Max (MaxMsg-1)
 	char *ptr = buffer;
 	mDNSu32 length = mDNS_snprintf(buffer, Max, "%4d %##s %s ", rr->rdlength, rr->name->c, DNSTypeName(rr->rrtype));
-	if (rr->RecordType == kDNSRecordTypeNegative) return(buffer);
+	if (rr->RecordType == kDNSRecordTypePacketNegative) return(buffer);
 	if (!rr->rdlength) { mDNS_snprintf(buffer+length, Max-length, "<< ZERO RDATA LENGTH >>"); return(buffer); }
 	
 	switch (rr->rrtype)

@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.360  2007/04/20 21:17:24  cheshire
+For naming consistency, kDNSRecordTypeNegative should be kDNSRecordTypePacketNegative
+
 Revision 1.359  2007/04/19 22:50:53  cheshire
 <rdar://problem/4246187> Identical client queries should reference a single shared core query
 
@@ -678,7 +681,7 @@ enum
 	kDNSRecordTypePacketAns        = 0xC0,	// Received in the Answer      Section of a DNS Response
 	kDNSRecordTypePacketAnsUnique  = 0xD0,	// Received in the Answer      Section of a DNS Response with kDNSClass_UniqueRRSet set
 
-	kDNSRecordTypeNegative         = 0xF0,	// Pseudo-RR generated to cache non-existence results like NXDomain
+	kDNSRecordTypePacketNegative   = 0xF0,	// Pseudo-RR generated to cache non-existence results like NXDomain
 
 	kDNSRecordTypePacketUniqueMask = 0x10	// True for PacketAddUnique, PacketAnsUnique, PacketAuthUnique
 	};

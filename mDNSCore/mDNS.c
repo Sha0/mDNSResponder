@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.609  2007/04/20 21:17:24  cheshire
+For naming consistency, kDNSRecordTypeNegative should be kDNSRecordTypePacketNegative
+
 Revision 1.608  2007/04/20 19:45:31  cheshire
 In LogAllOperations mode, dump out unknown DNS packets in their entirety
 
@@ -2265,7 +2268,7 @@ mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, CacheRecord *cons
 	if (rr->DelayDelivery) return;		// We'll come back later when CacheRecordDeferredAdd() calls us
 
 	// Only deliver negative answers if client has explicitly requested them
-	if (rr->resrec.RecordType == kDNSRecordTypeNegative && (!AddRecord || !q->ReturnIntermed)) return;
+	if (rr->resrec.RecordType == kDNSRecordTypePacketNegative && (!AddRecord || !q->ReturnIntermed)) return;
 
 	// For CNAME results to non-CNAME questions, only inform the client if they explicitly requested that
 	if (!followcname || q->ReturnIntermed)
@@ -4162,7 +4165,7 @@ exit:
 				{
 				LogOperation("Making negative cache entry for %##s (%s)", q.qname.c, DNSTypeName(q.qtype));
 				// Create empty resource record
-				m->rec.r.resrec.RecordType    = kDNSRecordTypeNegative;
+				m->rec.r.resrec.RecordType    = kDNSRecordTypePacketNegative;
 				m->rec.r.resrec.InterfaceID   = mDNSInterface_Any;
 				m->rec.r.resrec.name          = &q.qname;
 				m->rec.r.resrec.rrtype        = q.qtype;
