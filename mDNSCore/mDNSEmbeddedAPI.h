@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.361  2007/04/21 19:43:33  cheshire
+Code tidying: represent NAT opcodes as bitwise combinations rather than numerical additions
+
 Revision 1.360  2007/04/20 21:17:24  cheshire
 For naming consistency, kDNSRecordTypeNegative should be kDNSRecordTypePacketNegative
 
@@ -1354,9 +1357,9 @@ typedef enum
 	NATOp_MapUDP         = 1,
 	NATOp_MapTCP         = 2,
 	
-	NATOp_AddrResponse   = 128 + 0,
-	NATOp_MapUDPResponse = 128 + 1,
-	NATOp_MapTCPResponse = 128 + 2,
+	NATOp_AddrResponse   = 0x80 | 0,
+	NATOp_MapUDPResponse = 0x80 | 1,
+	NATOp_MapTCPResponse = 0x80 | 2,
 	} NATOp_t;
 
 enum
