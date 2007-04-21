@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.338  2007/04/21 19:44:11  cheshire
+Improve uDNS_HandleNATPortMapReply log message
+
 Revision 1.337  2007/04/21 02:03:00  cheshire
 Also need to set AddressRec->resrec.RecordType in the NAT case too
 
@@ -2161,32 +2164,14 @@ mDNSexport mDNSBool uDNS_HandleNATPortMapReply(NATTraversalInfo *n, mDNS *m, mDN
 	if (!pkt && !deletion) // timeout
 		{
 #ifdef _LEGACY_NAT_TRAVERSAL_
-		mDNSIPPort pub;
 		int ntries = 0;
-		mStatus err;
-   		mDNSBool tcp = (n->op == NATOp_MapTCP);
-
-		pub = !mDNSIPPortIsZero(n->PublicPort) ? n->PublicPort : priv; // initially request priv == pub if PublicPort is zero
+		mDNSIPPort pub = mDNSIPPortIsZero(n->PublicPort) ? priv : n->PublicPort; // initially request priv == pub if PublicPort is zero
 		while (1)
 			{
-			err = LNT_MapPort(priv, pub, tcp);
-			if (!err)
-				{
-				n->PublicPort = pub;
-				n->state = NATState_Legacy;
-				goto end;
-				}
-			else if (err != mStatus_AlreadyRegistered || ++ntries > LEGACY_NATMAP_MAX_TRIES)
-				{
-				n->state = NATState_Error;
-				goto end;
-				}
-			else
-				{
-				// the mapping we want is taken - try a random port
-				mDNSu16 RandPort = mDNSRandom(DYN_PORT_MAX - DYN_PORT_MIN) + DYN_PORT_MIN;
-				pub = mDNSOpaque16fromIntVal(RandPort);
-				}
+			mStatus err = LNT_MapPort(priv, pub, (n->op == NATOp_MapTCP));
+			if (!err) { n->PublicPort = pub; n->state = NATState_Legacy; goto end; }
+			else if (err != mStatus_AlreadyRegistered || ++ntries > LEGACY_NATMAP_MAX_TRIES) { n->state = NATState_Error; goto end; }
+			else pub = mDNSOpaque16fromIntVal(DYN_PORT_MIN + mDNSRandom(DYN_PORT_MAX - DYN_PORT_MIN));	// Try again
 			}
 #else
 		goto end;
@@ -2208,7 +2193,10 @@ mDNSexport mDNSBool uDNS_HandleNATPortMapReply(NATTraversalInfo *n, mDNS *m, mDN
 
 	n->PublicPort = reply->pub;
 	n->request.PortReq.pub = reply->pub; // Remember allocated port for future refreshes
-	LogOperation("uDNS_HandleNATPortMapReply %p %X %d %d", n, reply->opcode, mDNSVal16(reply->priv), mDNSVal16(reply->pub));
+	LogOperation("uDNS_HandleNATPortMapReply %p %X (%s) Local Port %d External Port %d", n, reply->opcode,
+		reply->opcode == 0x81 ? "UDP Response" :
+		reply->opcode == 0x82 ? "TCP Response" : "?",
+		mDNSVal16(reply->priv), mDNSVal16(reply->pub));
 
 	n->retry = m->timenow + ((mDNSs32)n->PortMappingLease * (mDNSPlatformOneSecond / 2));	// retry half way to expiration
 
