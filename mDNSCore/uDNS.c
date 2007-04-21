@@ -22,6 +22,9 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.337  2007/04/21 02:03:00  cheshire
+Also need to set AddressRec->resrec.RecordType in the NAT case too
+
 Revision 1.336  2007/04/20 21:16:12  cheshire
 Fixed bogus double-registration of host name -- was causing these warning messages in syslog:
 Error! Tried to register AuthRecord 0181FB0C host.example.com. (Addr) that's already in the list
@@ -808,6 +811,7 @@ mDNSlocal mDNSBool ReceiveNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *
 	if (!err)
 		{
 		rr->resrec.rdata->u.ipv4 = addr.ip.v4;	// replace rdata w/ public address
+		rr->resrec.RecordType = kDNSRecordTypeKnownUnique;
 		mDNS_Register_internal(m, rr);
 		}
 	else
@@ -829,7 +833,7 @@ mDNSlocal void StartGetPublicAddr(mDNS *m, AuthRecord *AddressRec)
 	NATAddrRequest *req;
 
 	NATTraversalInfo *info = uDNS_AllocNATInfo(m, NATOp_AddrRequest, zeroIPPort, zeroIPPort, 0, ReceiveNATAddrResponse);
-	if (!info) { mDNS_Register_internal(m, AddressRec); return; }
+	if (!info) { AddressRec->resrec.RecordType = kDNSRecordTypeKnownUnique; mDNS_Register_internal(m, AddressRec); return; }
 	AddressRec->NATinfo = info;
 	info->reg.RecordRegistration = AddressRec;
 	info->state = NATState_Request;
