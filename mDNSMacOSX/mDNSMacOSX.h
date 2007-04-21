@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.67  2007/04/21 21:47:47  cheshire
+<rdar://problem/4376383> Daemon: Add watchdog timer
+
 Revision 1.66  2007/04/07 01:01:48  cheshire
 <rdar://problem/5095167> mDNSResponder periodically blocks in SSLRead
 
@@ -86,11 +89,12 @@ Revision 1.52  2006/01/05 21:41:49  cheshire
 
 typedef struct NetworkInterfaceInfoOSX_struct NetworkInterfaceInfoOSX;
 
-typedef void (*KQueueEventCallback)(int fd, short filter, u_int fflags, intptr_t data, void *context);
+typedef void (*KQueueEventCallback)(int fd, short filter, void *context);
 typedef struct
 	{
-	KQueueEventCallback	callback;
-	void				*context;
+	KQueueEventCallback	 KQcallback;
+	void                *KQcontext;
+	const char const    *KQtask;		// For debugging messages
 	} KQueueEntry;
 
 typedef struct
@@ -139,6 +143,7 @@ struct mDNS_PlatformSupport_struct
 	io_connect_t             PowerConnection;
 	io_object_t              PowerNotifier;
 	pthread_mutex_t          BigMutex;
+	mDNSs32                  BigMutexStartTime;
 	int						 WakeKQueueLoopFD;
 	};
 
@@ -147,8 +152,31 @@ extern int KQueueFD;
 extern void NotifyOfElusiveBug(const char *title, const char *msg);	// Both strings are UTF-8 text
 extern void mDNSMacOSXNetworkChanged(mDNS *const m);
 extern int mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring);
-extern void KQueueWake(mDNS *const m);
+
 extern int KQueueSet(int fd, u_short flags, short filter, const KQueueEntry *const entryRef);
+
+// When events are processed on the non-kqueue thread (i.e. CFRunLoop notifications like Sleep/Wake,
+// Interface changes, Keychain changes, etc.) they must use KQueueLock/KQueueUnlock to lock out the kqueue thread
+extern void KQueueLock(mDNS *const m);
+extern void KQueueUnlock(mDNS *const m, const char const *task);
+
+// If any event takes more than WatchDogReportingThreshold milliseconds to be processed, we log a warning message
+// General event categories are:
+//  o Mach client request initiated / terminated
+//  o UDS client request
+//  o Handling UDP packets received from the network
+//  o Environmental change events:
+//    - network interface changes
+//    - sleep/wake
+//    - keychain changes
+//  o Name conflict dialog dismissal
+//  o Reception of Unix signal (e.g. SIGINFO)
+//  o Idle task processing
+// If we find that we're getting warnings for any of these categories, and it's not evident
+// what's causing the problem, we may need to subdivide some categories into finer-grained
+// sub-categories (e.g. "Idle task processing" covers a pretty broad range of sub-tasks).
+
+#define WatchDogReportingThreshold 50
 
 // Allow platform layer to tell daemon when default registration/browse domains
 extern void DefaultRegDomainChanged(const domainname *d, mDNSBool add);

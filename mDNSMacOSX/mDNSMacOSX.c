@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.396  2007/04/21 21:47:47  cheshire
+<rdar://problem/4376383> Daemon: Add watchdog timer
+
 Revision 1.395  2007/04/18 20:58:34  cheshire
 <rdar://problem/5140339> Domain discovery not working over VPN
 Needed different code to handle the case where there's only a single search domain
@@ -670,7 +673,7 @@ mDNSlocal ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 // On entry, context points to our KQSocketSet
 // If ss->info is NULL, we received this packet on our anonymous unicast socket
 // If ss->info is non-NULL, we received this packet on port 5353 on the indicated interface
-mDNSlocal void myKQSocketCallBack(int s1, short filter, __unused u_int fflags, __unused intptr_t data, void *context)
+mDNSlocal void myKQSocketCallBack(int s1, short filter, void *context)
 	{
 	const KQSocketSet *const ss = (const KQSocketSet *)context;
 	mDNS *const m = ss->m;
@@ -863,7 +866,7 @@ mDNSlocal OSStatus tlsSetupSock(TCPSocket *sock, mDNSBool server)
 	}
 #endif /* NO_SECURITYFRAMEWORK */
 
-mDNSlocal void tcpKQSocketCallback(__unused int fd, __unused short filter, __unused u_int fflags, __unused intptr_t data, void *context)
+mDNSlocal void tcpKQSocketCallback(__unused int fd, short filter, void *context)
 	{
 	#pragma unused(cfs, CallbackType, address, data)
 	TCPSocket *sock = context;
@@ -898,18 +901,30 @@ mDNSlocal void tcpKQSocketCallback(__unused int fd, __unused short filter, __unu
 	// NOTE: the callback may call CloseConnection here, which frees the context structure!
 	}
 
-mDNSexport void KQueueWake(mDNS *const m)
-	{
-	char wake = 1;
-	if (send(m->p->WakeKQueueLoopFD, &wake, sizeof(wake), 0) == -1)
-		LogMsg("ERROR: KQueueWake: send failed with error code: %d - %s", errno, strerror(errno));
-	}
-
 mDNSexport int KQueueSet(int fd, u_short flags, short filter, const KQueueEntry *const entryRef)
 	{
 	struct kevent new_event;
 	EV_SET(&new_event, fd, filter, flags, 0, 0, (void*)entryRef);
 	return (kevent(KQueueFD, &new_event, 1, NULL, 0, NULL) < 0) ? errno : 0;
+	}
+
+mDNSexport void KQueueLock(mDNS *const m)
+	{
+	pthread_mutex_lock(&m->p->BigMutex);
+	m->p->BigMutexStartTime = mDNSPlatformRawTime();
+	}
+
+mDNSexport void KQueueUnlock(mDNS *const m, const char const *task)
+	{
+	mDNSs32 end = mDNSPlatformRawTime();
+	if (end - m->p->BigMutexStartTime >= WatchDogReportingThreshold)
+		LogMsg("WARNING: %s took %dms to complete", task, end - m->p->BigMutexStartTime);
+
+	pthread_mutex_unlock(&m->p->BigMutex);
+
+	char wake = 1;
+	if (send(m->p->WakeKQueueLoopFD, &wake, sizeof(wake), 0) == -1)
+		LogMsg("ERROR: KQueueWake: send failed with error code: %d - %s", errno, strerror(errno));
 	}
 
 mDNSexport TCPSocket *mDNSPlatformTCPSocket(mDNS *const m, TCPSocketFlags flags, mDNSIPPort *port)
@@ -922,8 +937,9 @@ mDNSexport TCPSocket *mDNSPlatformTCPSocket(mDNS *const m, TCPSocketFlags flags,
 	mDNSPlatformMemZero(sock, sizeof(TCPSocket));
 	sock->callback          = mDNSNULL;
 	sock->fd                = socket(AF_INET, SOCK_STREAM, 0);
-	sock->kqEntry.context   = sock;
-	sock->kqEntry.callback  = tcpKQSocketCallback;
+	sock->kqEntry.KQcallback= tcpKQSocketCallback;
+	sock->kqEntry.KQcontext = sock;
+	sock->kqEntry.KQtask    = "mDNSPlatformTCPSocket";
 	sock->flags             = flags;
 	sock->context           = mDNSNULL;
 	sock->setup             = mDNSfalse;
@@ -998,8 +1014,9 @@ mDNSexport mStatus mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr *dst, 
 		return mStatus_UnknownErr;
 		}
 
-	sock->kqEntry.context = sock;
-	sock->kqEntry.callback = tcpKQSocketCallback;
+	sock->kqEntry.KQcallback = tcpKQSocketCallback;
+	sock->kqEntry.KQcontext  = sock;
+	sock->kqEntry.KQtask     = "Outgoing TCP";
 
 	// Watch for connect complete (write is ready)
 	// EV_ONESHOT doesn't seem to work, so we add the filter with EV_ADD, and explicitly delete it in tcpKQSocketCallback using EV_DELETE
@@ -1316,8 +1333,9 @@ mDNSlocal mStatus SetupSocket(mDNS *const m, KQSocketSet *cp, mDNSBool mcast, co
 
 	fcntl(skt, F_SETFL, fcntl(skt, F_GETFL, 0) | O_NONBLOCK); // set non-blocking
 	*s = skt;
-	k->callback = myKQSocketCallBack;
-	k->context = cp;
+	k->KQcallback = myKQSocketCallBack;
+	k->KQcontext  = cp;
+	k->KQtask     = "UDP packet reception";
 	KQueueSet(*s, EV_ADD, EVFILT_READ, k);
 
 	return(err);
@@ -1623,8 +1641,9 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 	i->ss.m     = m;
 	i->ss.info  = i;
 	i->ss.sktv4 = i->ss.sktv6 = -1;
-	i->ss.kqsv4.context  = i->ss.kqsv6.context  = &i->ss;
-	i->ss.kqsv4.callback = i->ss.kqsv6.callback = myKQSocketCallBack;
+	i->ss.kqsv4.KQcallback = i->ss.kqsv6.KQcallback = myKQSocketCallBack;
+	i->ss.kqsv4.KQcontext  = i->ss.kqsv6.KQcontext  = &i->ss;
+	i->ss.kqsv4.KQtask     = i->ss.kqsv6.KQtask     = "UDP packet reception";
 
 	*p = i;
 	return(i);
@@ -2550,7 +2569,7 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 	(void)store;        // Parameter not used
 	(void)changedKeys;  // Parameter not used
 	mDNS *const m = (mDNS *const)context;
-	pthread_mutex_lock(&m->p->BigMutex);
+	KQueueLock(m);
 	mDNS_Lock(m);
 
 	mDNSs32 delay = mDNSPlatformOneSecond * 2;							// Start off assuming a two-second delay
@@ -2585,8 +2604,7 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 		m->SuppressSending - m->p->NetworkChanged < 0)
 		m->SuppressSending = m->p->NetworkChanged;
 	mDNS_Unlock(m);
-	pthread_mutex_unlock(&m->p->BigMutex);
-	KQueueWake(m);
+	KQueueUnlock(m, "NetworkChanged");
 	}
 
 mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
@@ -2656,12 +2674,11 @@ mDNSlocal OSStatus KeychainChanged(SecKeychainEvent keychainEvent, SecKeychainCa
 	else if (strncmp(SYSTEM_KEYCHAIN_PATH, path, pathLen) == 0)
 		{
 		LogMsg("***   Keychain Changed   ***");
-		pthread_mutex_lock(&m->p->BigMutex);
+		KQueueLock(m);
 		mDNS_Lock(m);
 		SetDomainSecrets((mDNS*)context);
 		mDNS_Unlock(m);
-		pthread_mutex_unlock(&m->p->BigMutex);
-		KQueueWake(m);
+		KQueueUnlock(m, "KeychainChanged");
 		}
 	return 0;
 	}
@@ -2670,7 +2687,7 @@ mDNSlocal OSStatus KeychainChanged(SecKeychainEvent keychainEvent, SecKeychainCa
 mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messageType, void *messageArgument)
 	{
 	mDNS *const m = (mDNS *const)refcon;
-	pthread_mutex_lock(&m->p->BigMutex);
+	KQueueLock(m);
 	(void)service;    // Parameter not used
 	switch(messageType)
 		{
@@ -2696,8 +2713,7 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 		default:								LogOperation("PowerChanged unknown message %X", messageType);						break;
 		}
 	IOAllowPowerChange(m->p->PowerConnection, (long)messageArgument);
-	pthread_mutex_unlock(&m->p->BigMutex);
-	KQueueWake(m);
+	KQueueUnlock(m, "Sleep/Wake");
 	}
 #endif /* NO_IOPOWER */
 
@@ -2806,8 +2822,9 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
  	m->p->unicastsockets.m     = m;
 	m->p->unicastsockets.info  = NULL;
 	m->p->unicastsockets.sktv4 = m->p->unicastsockets.sktv6 = -1;
-	m->p->unicastsockets.kqsv4.context  = m->p->unicastsockets.kqsv6.context  = &m->p->unicastsockets;
-	m->p->unicastsockets.kqsv4.callback = m->p->unicastsockets.kqsv6.callback = myKQSocketCallBack;
+	m->p->unicastsockets.kqsv4.KQcallback = m->p->unicastsockets.kqsv6.KQcallback = myKQSocketCallBack;
+	m->p->unicastsockets.kqsv4.KQcontext  = m->p->unicastsockets.kqsv6.KQcontext  = &m->p->unicastsockets;
+	m->p->unicastsockets.kqsv4.KQtask     = m->p->unicastsockets.kqsv6.KQtask     = "UDP packet reception";
 
 	err = SetupSocket(m, &m->p->unicastsockets, mDNSfalse, &zeroAddr, mDNSNULL, AF_INET);
 #ifndef NO_IPV6

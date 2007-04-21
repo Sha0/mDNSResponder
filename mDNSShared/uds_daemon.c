@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.283  2007/04/21 21:47:47  cheshire
+<rdar://problem/4376383> Daemon: Add watchdog timer
+
 Revision 1.282  2007/04/20 21:17:24  cheshire
 For naming consistency, kDNSRecordTypeNegative should be kDNSRecordTypePacketNegative
 
@@ -3053,7 +3056,7 @@ mDNSlocal mStatus handle_addrinfo_request(request_state *request)
 	return(err);
 	}
 
-mDNSlocal void request_callback(void *info)
+mDNSlocal void request_callback(int fd, short filter, void *info)
 	{
 	request_state *request = info;
 	transfer_state result;
@@ -3062,6 +3065,8 @@ mDNSlocal void request_callback(void *info)
 #if defined(_WIN32)
 	u_long opt = 1;
 #endif
+	(void)fd; // Unused
+	(void)filter; // Unused
 
 	result = read_msg(request);
 	if (result == t_morecoming) return;
@@ -3192,7 +3197,7 @@ mDNSlocal void request_callback(void *info)
 	request->bufsize    = 0;
 	}
 
-mDNSlocal void connect_callback(void *info)
+mDNSlocal void connect_callback(int fd, short filter, void *info)
 	{
 	request_state **p = &all_requests;
 	dnssd_sock_t sd;
@@ -3200,6 +3205,8 @@ mDNSlocal void connect_callback(void *info)
 	unsigned long optval;
 	dnssd_sockaddr_t cliaddr;
 	request_state *request;
+	(void)fd; // Unused
+	(void)filter; // Unused
 	(void)info; // Unused
 
 	len = (dnssd_socklen_t) sizeof(cliaddr);

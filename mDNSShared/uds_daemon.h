@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.h,v $
+Revision 1.21  2007/04/21 21:47:47  cheshire
+<rdar://problem/4376383> Daemon: Add watchdog timer
+
 Revision 1.20  2007/02/14 01:58:19  cheshire
 <rdar://problem/4995831> Don't delete Unix Domain Socket on exit if we didn't create it on startup
 
@@ -113,7 +116,7 @@ extern void udsserver_default_reg_domain_changed(const domainname *d, mDNSBool a
 
 /* Routines that uds_daemon expects to link against: */
 
-typedef	void (*udsEventCallback)(void *context);
+typedef	void (*udsEventCallback)(int fd, short filter, void *context);
 
 extern mStatus udsSupportAddFDToEventLoop(dnssd_sock_t fd, udsEventCallback callback, void *context);
 extern mStatus udsSupportRemoveFDFromEventLoop(dnssd_sock_t fd); // Note: This also CLOSES the file descriptor as well

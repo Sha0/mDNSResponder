@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.304  2007/04/21 21:47:47  cheshire
+<rdar://problem/4376383> Daemon: Add watchdog timer
+
 Revision 1.303  2007/04/18 00:50:47  cheshire
 <rdar://problem/5141540> Sandbox mDNSResponder
 
@@ -650,7 +653,7 @@ mDNSlocal mDNSBool CheckForExistingClient(mach_port_t c)
 
 mDNSlocal void ClientDeathCallback(CFMachPortRef unusedport, void *voidmsg, CFIndex size, void *info)
 	{
-	pthread_mutex_lock(&PlatformStorage.BigMutex);
+	KQueueLock(&mDNSStorage);
 	mach_msg_header_t *msg = (mach_msg_header_t *)voidmsg;
 	(void)unusedport; // Unused
 	(void)size; // Unused
@@ -663,8 +666,7 @@ mDNSlocal void ClientDeathCallback(CFMachPortRef unusedport, void *voidmsg, CFIn
 		/* Deallocate the send right that came in the dead name notification */
 		mach_port_destroy(mach_task_self(), deathMessage->not_port);
 		}
-	pthread_mutex_unlock(&PlatformStorage.BigMutex);
-	KQueueWake(&mDNSStorage);
+	KQueueUnlock(&mDNSStorage, "Mach AbortClient");
 	}
 
 mDNSlocal void EnableDeathNotificationForClient(mach_port_t ClientMachPort, void *m)
@@ -1372,7 +1374,7 @@ mDNSlocal CFRunLoopSourceRef    gNotificationRLS = NULL;
 mDNSlocal void NotificationCallBackDismissed(CFUserNotificationRef userNotification, CFOptionFlags responseFlags)
 	{
 	LogOperation("NotificationCallBackDismissed");
-	pthread_mutex_lock(&PlatformStorage.BigMutex);
+	KQueueLock(&mDNSStorage);
 	(void)responseFlags;	// Unused
 	if (userNotification != gNotification) LogMsg("NotificationCallBackDismissed: Wrong CFUserNotificationRef");
 	if (gNotificationRLS)
@@ -1392,8 +1394,7 @@ mDNSlocal void NotificationCallBackDismissed(CFUserNotificationRef userNotificat
 	gNotificationUserHostLabel = gNotificationPrefHostLabel;
 	gNotificationUserNiceLabel = gNotificationPrefNiceLabel;
 	PlatformStorage.HostNameConflict = 0;	// Clear our indicator, now user has acknowledged seeing dialog
-	pthread_mutex_unlock(&PlatformStorage.BigMutex);
-	KQueueWake(&mDNSStorage);
+	KQueueUnlock(&mDNSStorage, "NotificationCallBackDismissed");
 	}
 
 mDNSlocal void ShowNameConflictNotification(CFStringRef header, CFStringRef subtext)
@@ -1807,7 +1808,7 @@ mDNSlocal void DNSserverCallback(CFMachPortRef port, void *msg, CFIndex size, vo
 	(void)size;		// Unused
 	(void)info;		// Unused
 
-	pthread_mutex_lock(&PlatformStorage.BigMutex);
+	KQueueLock(&mDNSStorage);
 	
 	/* allocate a reply buffer */
 	reply = CFAllocatorAllocate(NULL, provide_DNSServiceDiscoveryRequest_subsystem.maxsize, 0);
@@ -1887,8 +1888,7 @@ mDNSlocal void DNSserverCallback(CFMachPortRef port, void *msg, CFIndex size, vo
     CFAllocatorDeallocate(NULL, reply);
 	
 done:
-	pthread_mutex_unlock(&PlatformStorage.BigMutex);
-	KQueueWake(&mDNSStorage);
+	KQueueUnlock(&mDNSStorage, "Mach client event");
 	}
 
 mDNSlocal kern_return_t registerBootstrapService()
@@ -2059,7 +2059,7 @@ mDNSlocal void SignalCallback(CFMachPortRef port, void *msg, CFIndex size, void 
 	(void)size;		// Unused
 	(void)info;		// Unused
 	mach_msg_header_t *m = (mach_msg_header_t *)msg;
-	pthread_mutex_lock(&PlatformStorage.BigMutex);
+	KQueueLock(&mDNSStorage);
 	switch(m->msgh_id)
 		{
 		case SIGHUP:  
@@ -2070,8 +2070,7 @@ mDNSlocal void SignalCallback(CFMachPortRef port, void *msg, CFIndex size, void 
 		                mDNSMacOSXNetworkChanged(&mDNSStorage); break;
 		default: LogMsg("SignalCallback: Unknown signal %d", m->msgh_id); break;
 		}
-	pthread_mutex_unlock(&PlatformStorage.BigMutex);
-	KQueueWake(&mDNSStorage);
+	KQueueUnlock(&mDNSStorage, "Unix Signal");
 	}
 
 // On 10.2 the MachServerName is DNSServiceDiscoveryServer
@@ -2279,7 +2278,7 @@ mDNSlocal void ShowTaskSchedulingError(mDNS *const m)
 	mDNS_Unlock(&mDNSStorage);
 	}
 
-mDNSlocal void KQWokenFlushBytes(int fd, __unused short filter, __unused u_int fflags, __unused intptr_t data, __unused void *context)
+mDNSlocal void KQWokenFlushBytes(int fd, __unused short filter, __unused void *context)
 	{
 	// Read all of the bytes so we won't wake again.
 	char    buffer[100];
@@ -2312,11 +2311,14 @@ mDNSlocal void * KQueueLoop(void* m_param)
 	for ( ; ; )
 		{
 		#define kEventsToReadAtOnce 1
-		struct kevent   new_events[kEventsToReadAtOnce];
+		struct kevent new_events[kEventsToReadAtOnce];
 
 		// Run mDNS_Execute to find out the time we next need to wake up
-		mDNSs32 nextTimerEvent = mDNSDaemonIdle(m);
-		nextTimerEvent = udsserver_idle(nextTimerEvent);
+		mDNSs32 start          = mDNSPlatformRawTime();
+		mDNSs32 nextTimerEvent = udsserver_idle(mDNSDaemonIdle(m));
+		mDNSs32 end            = mDNSPlatformRawTime();
+		if (end - start >= WatchDogReportingThreshold)
+			LogMsg("WARNING: Idle task took %dms to complete", end - start);
 		
 		// Convert absolute wakeup time to a relative time from now
 		mDNSs32 ticks = nextTimerEvent - mDNS_TimeNow(m);
@@ -2384,7 +2386,11 @@ mDNSlocal void * KQueueLoop(void* m_param)
 			for (i = 0; i < events_found; i++)
 				{
 				const KQueueEntry *const kqentry = new_events[i].udata;
-				kqentry->callback(new_events[i].ident, new_events[i].filter, new_events[i].fflags, new_events[i].data, kqentry->context);
+				mDNSs32 start = mDNSPlatformRawTime();
+				kqentry->KQcallback(new_events[i].ident, new_events[i].filter, kqentry->KQcontext);
+				mDNSs32 end   = mDNSPlatformRawTime();
+				if (end - start >= WatchDogReportingThreshold)
+					LogMsg("WARNING: %s took %dms to complete", kqentry->KQtask, end - start);
 				}
 			}
 		}
@@ -2501,7 +2507,7 @@ mDNSexport int main(int argc, char **argv)
 	// Socket pair returned us two identical sockets connected to each other
 	// We will use the first socket to send the second socket. The second socket
 	// will be added to the kqueue so it will wake when data is sent.
-	static const KQueueEntry wakeKQEntry = {KQWokenFlushBytes, NULL};
+	static const KQueueEntry wakeKQEntry = { KQWokenFlushBytes, NULL, "kqueue wakeup after CFRunLoop event" };
 	PlatformStorage.WakeKQueueLoopFD = fdpair[0];
 	KQueueSet(fdpair[1], EV_ADD, EVFILT_READ, &wakeKQEntry);
 	
@@ -2520,7 +2526,7 @@ mDNSexport int main(int argc, char **argv)
 #else
 	char *sandbox_msg;
 	int sandbox_err = sandbox_init("mDNSResponder", SANDBOX_NAMED, &sandbox_msg);
-	if (sandbox_err) { LogMsg("sandbox_init error %s", sandbox_msg); sandbox_free_error(sandbox_msg); }
+	if (sandbox_err) { LogMsg("WARNING: sandbox_init error %s", sandbox_msg); sandbox_free_error(sandbox_msg); }
 	else LogOperation("Now running under sandbox restrictions");
 #endif
 
@@ -2553,22 +2559,13 @@ exit:
 // We keep a list of client-supplied event sources in PosixEventSource records
 struct KQSocketEventSource
 	{
-	udsEventCallback            Callback;
-	void                        *Context;
-	int                         fd;
 	struct  KQSocketEventSource *Next;
+	int                         fd;
 	KQueueEntry                 kqs;
 	};
 typedef struct KQSocketEventSource KQSocketEventSource;
 
 static GenLinkedList gEventSources;			// linked list of KQSocketEventSources
-
-mDNSlocal void kq_callback(__unused int fd, __unused short filter, __unused u_int fflags, __unused intptr_t data, void *context) 
-	// Called by KQueueLoop when data appears on socket
-	{
-	KQSocketEventSource *source = context;
-	source->Callback(source->Context);
-	}
 
 mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *context)
 	// Arrange things so that callback is called with context when data appears on fd
@@ -2588,11 +2585,10 @@ mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *cont
 		return mStatus_NoMemoryErr;
 
 	mDNSPlatformMemZero(newSource, sizeof(*newSource));
-	newSource->Callback = callback;
-	newSource->Context = context;
 	newSource->fd = fd;
-	newSource->kqs.context = newSource;
-	newSource->kqs.callback = kq_callback;
+	newSource->kqs.KQcallback = callback;
+	newSource->kqs.KQcontext  = context;
+	newSource->kqs.KQtask     = "UDS client";
 
 	if (KQueueSet(fd, EV_ADD, EVFILT_READ, &newSource->kqs) == 0)
 		AddToTail(&gEventSources, newSource);
