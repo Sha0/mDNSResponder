@@ -30,6 +30,11 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.306  2007/04/22 19:11:51  cheshire
+Some quirk of RemoveFromList (GenLinkedList.c) was corrupting the list and causing a crash
+if the element being removed was not the last in the list. Fixed by removing GenLinkedList.c
+from the project and just using simple vanilla C linked-list manipulation instead.
+
 Revision 1.305  2007/04/22 06:02:03  cheshire
 <rdar://problem/4615977> Query should immediately return failure when no server
 
@@ -207,8 +212,6 @@ Revision 1.261  2006/01/06 01:22:28  cheshire
 #include "mDNSMacOSX.h"				// Defines the specific types needed to run mDNS on this platform
 
 #include "uds_daemon.h"				// Interface to the server side implementation of dns_sd.h
-
-#include "GenLinkedList.h"
 
 #include <DNSServiceDiscovery/DNSServiceDiscovery.h>
 
@@ -2560,32 +2563,20 @@ exit:
 // uds_daemon.c support routines /////////////////////////////////////////////
 
 // We keep a list of client-supplied event sources in PosixEventSource records
-struct KQSocketEventSource
+typedef struct KQSocketEventSource
 	{
-	struct  KQSocketEventSource *Next;
+	struct  KQSocketEventSource *next;
 	int                         fd;
 	KQueueEntry                 kqs;
-	};
-typedef struct KQSocketEventSource KQSocketEventSource;
+	} KQSocketEventSource;
 
-static GenLinkedList gEventSources;			// linked list of KQSocketEventSources
+static KQSocketEventSource *gEventSources;
 
+// Arrange things so that callback is called with context when data appears on fd
 mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *context)
-	// Arrange things so that callback is called with context when data appears on fd
 	{
-	KQSocketEventSource *newSource;
-
-	if (gEventSources.LinkOffset == 0)
-		InitLinkedList(&gEventSources, offsetof(KQSocketEventSource, Next));
-
-	if (fd >= FD_SETSIZE || fd < 0)
-		return mStatus_UnsupportedErr;
-	if (callback == NULL)
-		return mStatus_BadParamErr;
-
-	newSource = (KQSocketEventSource*) mallocL("KQSocketEventSource", sizeof *newSource);
-	if (NULL == newSource)
-		return mStatus_NoMemoryErr;
+	KQSocketEventSource *newSource = (KQSocketEventSource*) mallocL("KQSocketEventSource", sizeof *newSource);
+	if (!newSource) return mStatus_NoMemoryErr;
 
 	mDNSPlatformMemZero(newSource, sizeof(*newSource));
 	newSource->fd = fd;
@@ -2594,31 +2585,31 @@ mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *cont
 	newSource->kqs.KQtask     = "UDS client";
 
 	if (KQueueSet(fd, EV_ADD, EVFILT_READ, &newSource->kqs) == 0)
-		AddToTail(&gEventSources, newSource);
+		{
+		KQSocketEventSource **p = &gEventSources;
+		while (*p) p = &(*p)->next;
+		*p = newSource;
+		return mStatus_NoError;
+		}
 	else
 		{
 		close(fd);
 		free(newSource);
 		return mStatus_NoMemoryErr;
 		}
-
-	return mStatus_NoError;
 	}
 
 mStatus udsSupportRemoveFDFromEventLoop(int fd)		// Note: This also CLOSES the file descriptor
-	// Reverse what was done in udsSupportAddFDToEventLoop().
 	{
-	KQSocketEventSource *iSource;
-
-	for (iSource=(KQSocketEventSource*)gEventSources.Head; iSource; iSource = iSource->Next)
+	KQSocketEventSource **p = &gEventSources;
+	while (*p && (*p)->fd != fd) p = &(*p)->next;
+	if (*p) 
 		{
-		if (fd == iSource->fd)
-			{
-			RemoveFromList(&gEventSources, iSource);
-			close(iSource->fd);
-			freeL("KQSocketEventSource", iSource);
-			return mStatus_NoError;
-			}
+		KQSocketEventSource *s = *p;
+		*p = (*p)->next;
+		close(s->fd);
+		freeL("KQSocketEventSource", s);
+		return mStatus_NoError;
 		}
 	return mStatus_NoSuchNameErr;
 	}

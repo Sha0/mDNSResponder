@@ -62,7 +62,6 @@
 		D284BE590ADD80740027CCDF /* uDNS.c in Sources */ = {isa = PBXBuildFile; fileRef = 7F18A9F70587CEF6001880B3 /* uDNS.c */; };
 		D284BE5A0ADD80740027CCDF /* DNSCommon.c in Sources */ = {isa = PBXBuildFile; fileRef = 7F18A9F60587CEF6001880B3 /* DNSCommon.c */; };
 		D284BE5B0ADD80740027CCDF /* DNSDigest.c in Sources */ = {isa = PBXBuildFile; fileRef = 7F461DB5062DBF2900672BF3 /* DNSDigest.c */; };
-		D284BE5C0ADD80740027CCDF /* GenLinkedList.c in Sources */ = {isa = PBXBuildFile; fileRef = DBAAFE2C057E8F660085CAD0 /* GenLinkedList.c */; };
 		D284BE5D0ADD80740027CCDF /* mDNSDebug.c in Sources */ = {isa = PBXBuildFile; fileRef = DBAAFE29057E8F4D0085CAD0 /* mDNSDebug.c */; };
 		D284BE5E0ADD80740027CCDF /* uds_daemon.c in Sources */ = {isa = PBXBuildFile; fileRef = F525E72804AA167501F1CF4D /* uds_daemon.c */; };
 		D284BE5F0ADD80740027CCDF /* dnssd_ipc.c in Sources */ = {isa = PBXBuildFile; fileRef = F5E11B5A04A28126019798ED /* dnssd_ipc.c */; };
@@ -86,7 +85,6 @@
 		D284BE810ADD80800027CCDF /* uDNS.c in Sources */ = {isa = PBXBuildFile; fileRef = 7F18A9F70587CEF6001880B3 /* uDNS.c */; };
 		D284BE820ADD80800027CCDF /* DNSCommon.c in Sources */ = {isa = PBXBuildFile; fileRef = 7F18A9F60587CEF6001880B3 /* DNSCommon.c */; };
 		D284BE830ADD80800027CCDF /* DNSDigest.c in Sources */ = {isa = PBXBuildFile; fileRef = 7F461DB5062DBF2900672BF3 /* DNSDigest.c */; };
-		D284BE840ADD80800027CCDF /* GenLinkedList.c in Sources */ = {isa = PBXBuildFile; fileRef = DBAAFE2C057E8F660085CAD0 /* GenLinkedList.c */; };
 		D284BE850ADD80800027CCDF /* mDNSDebug.c in Sources */ = {isa = PBXBuildFile; fileRef = DBAAFE29057E8F4D0085CAD0 /* mDNSDebug.c */; };
 		D284BE860ADD80800027CCDF /* uds_daemon.c in Sources */ = {isa = PBXBuildFile; fileRef = F525E72804AA167501F1CF4D /* uds_daemon.c */; };
 		D284BE870ADD80800027CCDF /* dnssd_ipc.c in Sources */ = {isa = PBXBuildFile; fileRef = F5E11B5A04A28126019798ED /* dnssd_ipc.c */; };
@@ -1273,7 +1271,6 @@
 				D284BE590ADD80740027CCDF /* uDNS.c in Sources */,
 				D284BE5A0ADD80740027CCDF /* DNSCommon.c in Sources */,
 				D284BE5B0ADD80740027CCDF /* DNSDigest.c in Sources */,
-				D284BE5C0ADD80740027CCDF /* GenLinkedList.c in Sources */,
 				D284BE5D0ADD80740027CCDF /* mDNSDebug.c in Sources */,
 				D284BE5E0ADD80740027CCDF /* uds_daemon.c in Sources */,
 				D284BE5F0ADD80740027CCDF /* dnssd_ipc.c in Sources */,
@@ -1294,7 +1291,6 @@
 				D284BE810ADD80800027CCDF /* uDNS.c in Sources */,
 				D284BE820ADD80800027CCDF /* DNSCommon.c in Sources */,
 				D284BE830ADD80800027CCDF /* DNSDigest.c in Sources */,
-				D284BE840ADD80800027CCDF /* GenLinkedList.c in Sources */,
 				D284BE850ADD80800027CCDF /* mDNSDebug.c in Sources */,
 				D284BE860ADD80800027CCDF /* uds_daemon.c in Sources */,
 				D284BE870ADD80800027CCDF /* dnssd_ipc.c in Sources */,
