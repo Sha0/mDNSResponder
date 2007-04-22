@@ -30,6 +30,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.95  2007/04/22 20:15:46  cheshire
+Add missing parameters for mDNSPosixEventCallback
+
 Revision 1.94  2007/04/17 19:21:29  cheshire
 <rdar://problem/5140339> Domain discovery not working over VPN
 
@@ -492,7 +495,7 @@ mDNSexport void mDNSPlatformDefaultRegDomainChanged(const domainname *d, mDNSBoo
 	(void) add;
 	}
 
-mDNSexport void mDNSPlatformDynDNSHostNameStatusChanged(domainname *const dname, mStatus status)
+mDNSexport void mDNSPlatformDynDNSHostNameStatusChanged(const domainname *const dname, const mStatus status)
 	{
 	(void) dname;
 	(void) status;
@@ -1174,13 +1177,16 @@ mDNSlocal mDNSu32		ProcessRoutingNotification(int sd)
 #endif // USES_NETLINK
 
 // Called when data appears on interface change notification socket
-mDNSlocal void InterfaceChangeCallback(void *context)
+mDNSlocal void InterfaceChangeCallback(int fd, short filter, void *context)
 	{
 	IfChangeRec		*pChgRec = (IfChangeRec*) context;
 	fd_set			readFDs;
 	mDNSu32		changedInterfaces = 0;
 	struct timeval	zeroTimeout = { 0, 0 };
-	
+
+	(void)fd; // Unused
+	(void)filter; // Unused
+
 	FD_ZERO(&readFDs);
 	FD_SET(pChgRec->NotifySD, &readFDs);
 	
@@ -1610,7 +1616,7 @@ mStatus mDNSPosixRunEventLoopOnce(mDNS *m, const struct timeval *pTimeout,
 			{
 			if (FD_ISSET(iSource->fd, &listenFDs))
 				{
-				iSource->Callback(iSource->Context);
+				iSource->Callback(iSource->fd, 0, iSource->Context);
 				break;	// in case callback removed elements from gEventSources
 				}
 			}

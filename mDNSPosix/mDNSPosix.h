@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSPosix.h,v $
+Revision 1.19  2007/04/22 20:15:46  cheshire
+Add missing parameters for mDNSPosixEventCallback
+
 Revision 1.18  2006/08/14 23:24:47  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -130,7 +133,7 @@ extern mStatus mDNSPlatformPosixRefreshInterfaceList(mDNS *const m);
 extern void mDNSPosixGetFDSet(mDNS *m, int *nfds, fd_set *readfds, struct timeval *timeout);
 extern void mDNSPosixProcessFDSet(mDNS *const m, fd_set *readfds);
 
-typedef	void (*mDNSPosixEventCallback)( void *context);
+typedef	void (*mDNSPosixEventCallback)(int fd, short filter, void *context);
 
 extern mStatus mDNSPosixAddFDToEventLoop( int fd, mDNSPosixEventCallback callback, void *context);
 extern mStatus mDNSPosixRemoveFDFromEventLoop( int fd);
