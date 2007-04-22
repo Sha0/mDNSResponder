@@ -30,6 +30,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.96  2007/04/22 20:29:59  cheshire
+Fix locking error
+
 Revision 1.95  2007/04/22 20:15:46  cheshire
 Add missing parameters for mDNSPosixEventCallback
 
@@ -102,6 +105,7 @@ Revision 1.74  2006/01/05 21:45:27  cheshire
 */
 
 #include "mDNSEmbeddedAPI.h"           // Defines the interface provided to the client layer above
+#include "DNSCommon.h"
 #include "mDNSPosix.h"				 // Defines the specific types needed to run mDNS on this platform
 #include "dns_sd.h"
 
@@ -1275,7 +1279,9 @@ mDNSexport mStatus mDNSPlatformInit(mDNS *const m)
 	if (err == mStatus_NoError) err = SetupInterfaceList(m);
 
 	// Tell mDNS core about DNS Servers
+	mDNS_Lock(m);
 	if (err == mStatus_NoError) ParseDNSServers(m, uDNS_SERVERS_FILE);
+	mDNS_Unlock(m);
 
 	if (err == mStatus_NoError)
 		{
