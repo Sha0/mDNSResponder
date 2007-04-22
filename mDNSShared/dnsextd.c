@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.73  2007/04/22 06:02:03  cheshire
+<rdar://problem/4615977> Query should immediately return failure when no server
+
 Revision 1.72  2007/04/05 22:55:37  cheshire
 <rdar://problem/5077076> Records are ending up in Lighthouse without expiry information
 
@@ -1004,8 +1007,8 @@ mDNSlocal mDNSu8 *PutUpdateSRV(DaemonInfo *d, DNSZone * zone, PktMsg *pkt, mDNSu
 	if (gethostname(hostname, 1024) < 0 || !MakeDomainNameFromDNSNameString(&rr.resrec.rdata->u.srv.target, hostname))
 		rr.resrec.rdata->u.srv.target.c[0] = '\0';
 	
-	MakeDomainNameFromDNSNameString(rr.resrec.name, regtype);
-	AppendDomainName(rr.resrec.name, &zone->name);
+	MakeDomainNameFromDNSNameString(&rr.namestorage, regtype);
+	AppendDomainName(&rr.namestorage, &zone->name);
 	VLog("%s  %s", registration ? "Registering SRV record" : "Deleting existing RRSet",
 		 GetRRDisplayString_rdb(&rr.resrec, &rr.resrec.rdata->u, buf));
 	if (registration) ptr = PutResourceRecord(&pkt->msg, ptr, &pkt->msg.h.mDNS_numUpdates, &rr.resrec);

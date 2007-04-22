@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.305  2007/04/22 06:02:03  cheshire
+<rdar://problem/4615977> Query should immediately return failure when no server
+
 Revision 1.304  2007/04/21 21:47:47  cheshire
 <rdar://problem/4376383> Daemon: Add watchdog timer
 
@@ -1748,7 +1751,7 @@ fail:
 
 mDNSlocal mStatus RemoveRecord(ServiceRecordSet *srs, ExtraResourceRecord *extra, mach_port_t client)
 	{
-	domainname *name = srs->RR_SRV.resrec.name;
+	const domainname *const name = srs->RR_SRV.resrec.name;
 	mStatus err = mStatus_NoError;
 
 	// Do the operation
@@ -2044,7 +2047,7 @@ mDNSlocal void INFOCallback(void)
 				&i->ifinfo.ip);
 		}
 
-	for (s = mDNSStorage.Servers; s; s = s->next)
+	for (s = mDNSStorage.DNSServers; s; s = s->next)
 		LogMsgNoIdent("DNS Server %#a %##s", &s->addr, s->domain.c);
 
 	mDNSs32 now = mDNS_TimeNow(&mDNSStorage);

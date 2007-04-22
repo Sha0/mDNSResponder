@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.55  2007/04/22 06:02:03  cheshire
+<rdar://problem/4615977> Query should immediately return failure when no server
+
 Revision 1.54  2007/04/04 21:48:53  cheshire
 <rdar://problem/4720694> Combine unicast authoritative answer list with multicast list
 
@@ -141,7 +144,7 @@ extern mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr);
 extern mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs);
 extern mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs);
 
-extern void    uDNS_CheckQuery (mDNS *const m, DNSQuestion *question);
+extern void    uDNS_CheckQuery (mDNS *const m);
 
 // integer fields of msg header must be in HOST byte order before calling this routine
 extern void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,

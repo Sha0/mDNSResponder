@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSDigest.c,v $
+Revision 1.22  2007/04/22 06:02:02  cheshire
+<rdar://problem/4615977> Query should immediately return failure when no server
+
 Revision 1.21  2007/03/22 18:31:48  cheshire
 Put dst parameter first in mDNSPlatformStrCopy/mDNSPlatformMemCopy, like conventional Posix strcpy/memcpy
 
@@ -1419,7 +1422,7 @@ mDNSexport mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 
 	mDNS_SetupResourceRecord(&tsig, mDNSNULL, 0, kDNSType_TSIG, 0, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
 
 	// key name
-	AssignDomainName(tsig.resrec.name, &info->keyname);
+	AssignDomainName(&tsig.namestorage, &info->keyname);
 	MD5_Update(&c, info->keyname.c, DomainNameLength(&info->keyname));
 
 	// class

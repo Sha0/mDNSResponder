@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.362  2007/04/22 06:02:02  cheshire
+<rdar://problem/4615977> Query should immediately return failure when no server
+
 Revision 1.361  2007/04/21 19:43:33  cheshire
 Code tidying: represent NAT opcodes as bitwise combinations rather than numerical additions
 
@@ -789,19 +792,19 @@ typedef void mDNSRecordUpdateCallback(mDNS *const m, AuthRecord *const rr, RData
 
 typedef struct
 	{
-	mDNSu8          RecordType;			// See enum above
-	mDNSInterfaceID InterfaceID;		// Set if this RR is specific to one interface
+	mDNSu8           RecordType;		// See enum above
+	mDNSInterfaceID  InterfaceID;		// Set if this RR is specific to one interface
 										// For records received off the wire, InterfaceID is *always* set to the receiving interface
 										// For our authoritative records, InterfaceID is usually zero, except for those few records
 										// that are interface-specific (e.g. address records, especially linklocal addresses)
-	domainname     *name;
-	mDNSu16         rrtype;
-	mDNSu16         rrclass;
-	mDNSu32         rroriginalttl;		// In seconds
-	mDNSu16         rdlength;			// Size of the raw rdata, in bytes
-	mDNSu16         rdestimate;			// Upper bound on size of rdata after name compression
-	mDNSu32         namehash;			// Name-based (i.e. case-insensitive) hash of name
-	mDNSu32         rdatahash;			// For rdata containing domain name (e.g. PTR, SRV, CNAME etc.), case-insensitive name hash
+	const domainname *name;
+	mDNSu16          rrtype;
+	mDNSu16          rrclass;
+	mDNSu32          rroriginalttl;		// In seconds
+	mDNSu16          rdlength;			// Size of the raw rdata, in bytes
+	mDNSu16          rdestimate;		// Upper bound on size of rdata after name compression
+	mDNSu32          namehash;			// Name-based (i.e. case-insensitive) hash of name
+	mDNSu32          rdatahash;			// For rdata containing domain name (e.g. PTR, SRV, CNAME etc.), case-insensitive name hash
 										// else, for all other rdata, 32-bit hash of the raw rdata
 										// Note: This requirement is important. Various routines like AddAdditionalsToResponseList(),
 										// ReconfirmAntecedents(), etc., use rdatahash as a pre-flight check to see
@@ -1241,8 +1244,9 @@ struct DNSQuestion_struct
 
 	// Wide Area fields.  These are used internally by the uDNS core
 	mDNSs32               RestartTime;      // Mark when we restart a suspended query
-	TCPSocket        *sock;			// For secure operations
-	LLQ_Info              *llq;             // NULL for 1-shot queries
+	DNSServer            *DNSServer;
+	TCPSocket            *sock;             // For secure operations
+	LLQ_Info             *llq;              // NULL for 1-shot queries
 
 	// Client API fields: The client must set up these fields *before* calling mDNS_StartQuery()
 	mDNSInterfaceID       InterfaceID;		// Non-zero if you want to issue queries only on a single specific IP interface
@@ -1550,7 +1554,7 @@ struct mDNS_struct
 	ServiceRecordSet *ServiceRegistrations;
 	NATTraversalInfo *NATTraversals;
 	mDNSu16           NextMessageID;
-    DNSServer        *Servers;              // list of DNS servers
+    DNSServer        *DNSServers;           // list of DNS servers
 
 	mDNSAddr          Router;
 	mDNSAddr          AdvertisedV4;         // IPv4 address pointed to by hostname
@@ -2142,7 +2146,7 @@ extern void           mDNSPlatformTLSTearDownCerts(void);
 extern void         mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDNSBool setsearch, domainname *const fqdn, domainname *const regDomain, DNameListElem **browseDomains);
 extern mStatus      mDNSPlatformGetPrimaryInterface(mDNS *const m, mDNSAddr *v4, mDNSAddr *v6, mDNSAddr *router);
 extern void         mDNSPlatformDefaultRegDomainChanged(const domainname *d, mDNSBool add);
-extern void         mDNSPlatformDynDNSHostNameStatusChanged(domainname *const dname, mStatus status);
+extern void         mDNSPlatformDynDNSHostNameStatusChanged(const domainname *const dname, const mStatus status);
 
 
 #ifdef _LEGACY_NAT_TRAVERSAL_
@@ -2204,6 +2208,9 @@ extern void     mDNSCoreReceive(mDNS *const m, void *const msg, const mDNSu8 *co
 extern void     mDNSCoreMachineSleep(mDNS *const m, mDNSBool wake);
 
 extern mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip);
+
+extern void MakeNegativeCacheRecord(mDNS *const m, const domainname *const name, const mDNSu32 namehash, const mDNSu16 rrtype, const mDNSu16 rrclass);
+extern void AnswerQuestionWithResourceRecord(mDNS *const m, CacheRecord *const rr, const mDNSBool AddRecord);
 
 // ***************************************************************************
 #if 0

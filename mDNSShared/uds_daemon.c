@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.284  2007/04/22 06:02:03  cheshire
+<rdar://problem/4615977> Query should immediately return failure when no server
+
 Revision 1.283  2007/04/21 21:47:47  cheshire
 <rdar://problem/4376383> Daemon: Add watchdog timer
 
@@ -672,7 +675,7 @@ mDNSexport AuthRecord *AllocateSubTypes(mDNSs32 NumSubTypes, char *p)
 			mDNS_SetupResourceRecord(&st[i], mDNSNULL, mDNSInterface_Any, kDNSQType_ANY, kStandardTTL, 0, mDNSNULL, mDNSNULL);
 			while (*p) p++;
 			p++;
-			if (!MakeDomainNameFromDNSNameString(st[i].resrec.name, p))
+			if (!MakeDomainNameFromDNSNameString(&st[i].namestorage, p))
 				{ freeL("ServiceSubTypes", st); return(mDNSNULL); }
 			}
 		}
@@ -781,10 +784,10 @@ mDNSlocal void AbortUnlinkAndFree(request_state *req)
 	if (*p) { *p = req->next; freeL("request_state/AbortUnlinkAndFree", req); }
 	}
 
-mDNSlocal reply_state *create_reply(reply_op_t op, size_t datalen, request_state *request)
+mDNSlocal reply_state *create_reply(const reply_op_t op, const size_t datalen, request_state *const request)
 	{
 	reply_state *reply;
-	int totallen;
+	int totallen = (int) (datalen + sizeof(ipc_msg_hdr));
 
 	if ((unsigned)datalen < sizeof(reply_hdr))
 		{
@@ -792,7 +795,6 @@ mDNSlocal reply_state *create_reply(reply_op_t op, size_t datalen, request_state
 		return NULL;
 		}
 
-	totallen = (int) (datalen + sizeof(ipc_msg_hdr));
 	reply = mallocL("reply_state", sizeof(reply_state));
 	if (!reply) FatalError("ERROR: malloc");
 	mDNSPlatformMemZero(reply, sizeof(reply_state));
@@ -834,7 +836,7 @@ mDNSlocal void deliver_async_error(request_state *req, reply_op_t op, mStatus er
 // Generates a response message giving name, type, domain, plus interface index,
 // suitable for a browse result or service registration result.
 // On successful completion rep is set to point to a malloc'd reply_state struct
-mDNSlocal mStatus GenerateNTDResponse(domainname *servicename, mDNSInterfaceID id, request_state *request, reply_state **rep)
+mDNSlocal mStatus GenerateNTDResponse(const domainname *const servicename, const mDNSInterfaceID id, request_state *const request, reply_state **const rep)
 	{
 	domainlabel name;
 	domainname type, dom;
@@ -1127,7 +1129,7 @@ mDNSlocal AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int GetTTL, int validat
 	mDNS_SetupResourceRecord(rr, mDNSNULL, mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex),
 		type, 0, (mDNSu8) ((flags & kDNSServiceFlagsShared) ? kDNSRecordTypeShared : kDNSRecordTypeUnique), mDNSNULL, mDNSNULL);
 
-	if (!MakeDomainNameFromDNSNameString(rr->resrec.name, name))
+	if (!MakeDomainNameFromDNSNameString(&rr->namestorage, name))
 		{
 		LogMsg("ERROR: bad name: %s", name);
 		freeL("AuthRecord/read_rr_from_ipc_msg", rr);
@@ -1991,8 +1993,8 @@ mDNSlocal void RegisterBrowseDomainPTR(mDNS *m, const domainname *d, int type)
 	mStatus err;
 	ARListElem *browse = mDNSPlatformMemAllocate(sizeof(*browse));
 	mDNS_SetupResourceRecord(&browse->ar, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200,  kDNSRecordTypeShared, FreeARElemCallback, browse);
-	MakeDomainNameFromDNSNameString(browse->ar.resrec.name, mDNS_DomainTypeNames[type]);
-	AppendDNSNameString            (browse->ar.resrec.name, "local");
+	MakeDomainNameFromDNSNameString(&browse->ar.namestorage, mDNS_DomainTypeNames[type]);
+	AppendDNSNameString            (&browse->ar.namestorage, "local");
 	AssignDomainName(&browse->ar.resrec.rdata->u.name, d);
 	err = mDNS_Register(m, &browse->ar);
 	if (err)
@@ -2074,7 +2076,7 @@ mDNSlocal void UpdateDeviceInfoRecord(mDNS *const m)
 			{
 			mDNSu8 len = m->HIHardware.c[0] < 255 - 6 ? m->HIHardware.c[0] : 255 - 6;
 			mDNS_SetupResourceRecord(&m->DeviceInfo, mDNSNULL, mDNSNULL, kDNSType_TXT, kStandardTTL, kDNSRecordTypeAdvisory, mDNSNULL, mDNSNULL);
-			ConstructServiceName(m->DeviceInfo.resrec.name, &m->nicelabel, &DeviceInfoName, &localdomain);
+			ConstructServiceName(&m->DeviceInfo.namestorage, &m->nicelabel, &DeviceInfoName, &localdomain);
 			mDNSPlatformMemCopy(m->DeviceInfo.resrec.rdata->u.data + 1, "model=", 6);
 			mDNSPlatformMemCopy(m->DeviceInfo.resrec.rdata->u.data + 7, m->HIHardware.c + 1, len);
 			m->DeviceInfo.resrec.rdata->u.data[0] = 6 + len;	// "model=" plus the device string

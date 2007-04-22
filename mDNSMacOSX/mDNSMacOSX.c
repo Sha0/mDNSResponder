@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.397  2007/04/22 06:02:03  cheshire
+<rdar://problem/4615977> Query should immediately return failure when no server
+
 Revision 1.396  2007/04/21 21:47:47  cheshire
 <rdar://problem/4376383> Daemon: Add watchdog timer
 
@@ -2360,7 +2363,7 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS *const m, mDNSAddr *v4, 
 	return err;
 	}
 
-mDNSexport void mDNSPlatformDynDNSHostNameStatusChanged(domainname *const dname, mStatus status)
+mDNSexport void mDNSPlatformDynDNSHostNameStatusChanged(const domainname *const dname, const mStatus status)
 	{
 	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:mDNSPlatformDynDNSHostNameStatusChanged"), NULL, NULL);
 	if (store)

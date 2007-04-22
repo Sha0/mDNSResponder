@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.146  2007/04/22 06:02:02  cheshire
+<rdar://problem/4615977> Query should immediately return failure when no server
+
 Revision 1.145  2007/04/20 21:17:24  cheshire
 For naming consistency, kDNSRecordTypeNegative should be kDNSRecordTypePacketNegative
 
@@ -1637,15 +1640,14 @@ mDNSexport mDNSu8 *putZone(DNSMessage *const msg, mDNSu8 *ptr, mDNSu8 *limit, co
 	}
 
 // for dynamic updates
-mDNSexport mDNSu8 *putPrereqNameNotInUse(domainname *name, DNSMessage *msg, mDNSu8 *ptr, mDNSu8 *end)
+mDNSexport mDNSu8 *putPrereqNameNotInUse(const domainname *const name, DNSMessage *const msg, mDNSu8 *const ptr, mDNSu8 *const end)
 	{
 	AuthRecord prereq;
 	mDNS_SetupResourceRecord(&prereq, mDNSNULL, mDNSInterface_Any, kDNSQType_ANY, kStandardTTL, 0, mDNSNULL, mDNSNULL);
-	AssignDomainName(prereq.resrec.name, name);
+	AssignDomainName(&prereq.namestorage, name);
 	prereq.resrec.rrtype = kDNSQType_ANY;
 	prereq.resrec.rrclass = kDNSClass_NONE;
-	ptr = putEmptyResourceRecord(msg, ptr, end, &msg->h.mDNS_numPrereqs, &prereq);
-	return ptr;
+	return putEmptyResourceRecord(msg, ptr, end, &msg->h.mDNS_numPrereqs, &prereq);
 	}
 
 // for dynamic updates
@@ -1870,7 +1872,7 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 	rr->NextInCFList      = mDNSNULL;
 
 	rr->resrec.InterfaceID       = InterfaceID;
-	ptr = getDomainName(msg, ptr, end, rr->resrec.name);
+	ptr = getDomainName(msg, ptr, end, &largecr->namestorage);
 	if (!ptr) { debugf("GetLargeResourceRecord: Malformed RR name"); return(mDNSNULL); }
 
 	if (ptr + 10 > end) { debugf("GetLargeResourceRecord: Malformed RR -- no type/class/ttl/len!"); return(mDNSNULL); }

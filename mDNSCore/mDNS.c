@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.610  2007/04/22 06:02:02  cheshire
+<rdar://problem/4615977> Query should immediately return failure when no server
+
 Revision 1.609  2007/04/20 21:17:24  cheshire
 For naming consistency, kDNSRecordTypeNegative should be kDNSRecordTypePacketNegative
 
@@ -1763,7 +1766,7 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 // Depth 3: PTR "_services._dns-sd._udp.local." refers to "_example._tcp.local."; may be stale
 // Currently depths 4 and 5 are not expected to occur; if we did get to depth 5 we'd reconfim any records we
 // found referring to the given name, but not recursively descend any further reconfirm *their* antecedents.
-mDNSlocal void ReconfirmAntecedents(mDNS *const m, domainname *name, mDNSu32 namehash, int depth)
+mDNSlocal void ReconfirmAntecedents(mDNS *const m, const domainname *const name, const mDNSu32 namehash, const int depth)
 	{
 	mDNSu32 slot;
 	CacheGroup *cg;
@@ -1916,9 +1919,13 @@ mDNSlocal void SendQueries(mDNS *const m)
 		//     *WideArea*  queries need to be sent
 		//     *unicast*   queries need to be sent
 		//     *multicast* queries we're definitely going to send
-		for (q = m->Questions; q; q=q->next)
+		if (m->CurrentQuestion)
+			LogMsg("SendQueries ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
+		m->CurrentQuestion = m->Questions;
+		while (m->CurrentQuestion)
 			{
-			if (ActiveQuestion(q) && !mDNSOpaque16IsZero(q->TargetQID)) uDNS_CheckQuery(m, q);
+			q = m->CurrentQuestion;
+			if (ActiveQuestion(q) && !mDNSOpaque16IsZero(q->TargetQID)) uDNS_CheckQuery(m);
 			else if (mDNSOpaque16IsZero(q->TargetQID) && q->Target.type && (q->SendQNow || TimeToSendThisQuestion(q, m->timenow)))
 				{
 				mDNSu8       *qptr        = m->omsg.data;
@@ -1941,6 +1948,10 @@ mDNSlocal void SendQueries(mDNS *const m)
 				if (maxExistingQuestionInterval < q->ThisQInterval)
 					maxExistingQuestionInterval = q->ThisQInterval;
 				}
+			// If m->CurrentQuestion wasn't modified out from under us, advance it now
+			// We can't do this at the start of the loop because uDNS_CheckQuery() depends on having
+			// m->CurrentQuestion point to the right question
+			if (q == m->CurrentQuestion) m->CurrentQuestion = m->CurrentQuestion->next;
 			}
 
 		// Scan our list of questions
@@ -2231,10 +2242,11 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 // Any code walking either list must use the m->CurrentQuestion (and possibly m->CurrentRecord) mechanism to protect against this.
 // In fact, to enforce this, the routine will *only* answer the question currently pointed to by m->CurrentQuestion,
 // which will be auto-advanced (possibly to NULL) if the client callback cancels the question.
-mDNSlocal void AnswerQuestionWithResourceRecord(mDNS *const m, CacheRecord *const rr, const mDNSBool AddRecord)
+mDNSexport void AnswerQuestionWithResourceRecord(mDNS *const m, CacheRecord *const rr, const mDNSBool AddRecord)
 	{
 	DNSQuestion *const q = m->CurrentQuestion;
-	mDNSBool followcname = rr->resrec.rrtype == kDNSType_CNAME && q->qtype != kDNSType_CNAME;
+	mDNSBool followcname = rr->resrec.RecordType != kDNSRecordTypePacketNegative && AddRecord &&
+							rr->resrec.rrtype == kDNSType_CNAME && q->qtype != kDNSType_CNAME;
 	verbosedebugf("AnswerQuestionWithResourceRecord:%4lu %s %s", q->CurrentAnswers, AddRecord ? "Add" : "Rmv", CRDisplayString(m, rr));
 
 	// Note: Use caution here. In the case of records with rr->DelayDelivery set, AnswerQuestionWithResourceRecord(... mDNStrue)
@@ -3715,7 +3727,7 @@ mDNSlocal mDNSBool TrustedSource(const mDNS *const m, const mDNSAddr *const srca
 	DNSServer *s;
 	(void)m; // Unused
 	(void)srcaddr; // Unused
-	for (s = m->Servers; s; s = s->next)
+	for (s = m->DNSServers; s; s = s->next)
 		if (mDNSSameAddress(srcaddr, &s->addr)) return(mDNStrue);
 	return(mDNSfalse);
 	}
@@ -4164,24 +4176,29 @@ exit:
 			if (!rr)
 				{
 				LogOperation("Making negative cache entry for %##s (%s)", q.qname.c, DNSTypeName(q.qtype));
-				// Create empty resource record
-				m->rec.r.resrec.RecordType    = kDNSRecordTypePacketNegative;
-				m->rec.r.resrec.InterfaceID   = mDNSInterface_Any;
-				m->rec.r.resrec.name          = &q.qname;
-				m->rec.r.resrec.rrtype        = q.qtype;
-				m->rec.r.resrec.rrclass       = q.qclass;
-				m->rec.r.resrec.rroriginalttl = 60; // What should we use for the TTL? TTL from SOA for domain?
-				m->rec.r.resrec.rdlength      = 0;
-				m->rec.r.resrec.rdestimate    = 0;
-				m->rec.r.resrec.namehash      = q.qnamehash;
-				m->rec.r.resrec.rdatahash     = 0;
-				m->rec.r.resrec.rdata = (RData*)&m->rec.r.rdatastorage;
-				m->rec.r.resrec.rdata->MaxRDLength = m->rec.r.resrec.rdlength;
+				MakeNegativeCacheRecord(m, &q.qname, q.qnamehash, q.qtype, q.qclass);
 				CreateNewCacheEntry(m, slot, cg);
 				m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 				}
 			}
 		}
+	}
+
+mDNSexport void MakeNegativeCacheRecord(mDNS *const m, const domainname *const name, const mDNSu32 namehash, const mDNSu16 rrtype, const mDNSu16 rrclass)
+	{
+	// Create empty resource record
+	m->rec.r.resrec.RecordType    = kDNSRecordTypePacketNegative;
+	m->rec.r.resrec.InterfaceID   = mDNSInterface_Any;
+	m->rec.r.resrec.name          = name;	// Will be updated to point to cg->name when we call CreateNewCacheEntry
+	m->rec.r.resrec.rrtype        = rrtype;
+	m->rec.r.resrec.rrclass       = rrclass;
+	m->rec.r.resrec.rroriginalttl = 60; // What should we use for the TTL? TTL from SOA for domain?
+	m->rec.r.resrec.rdlength      = 0;
+	m->rec.r.resrec.rdestimate    = 0;
+	m->rec.r.resrec.namehash      = namehash;
+	m->rec.r.resrec.rdatahash     = 0;
+	m->rec.r.resrec.rdata = (RData*)&m->rec.r.rdatastorage;
+	m->rec.r.resrec.rdata->MaxRDLength = m->rec.r.resrec.rdlength;
 	}
 
 mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *const end,
@@ -4300,6 +4317,39 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const questi
 			}
 	}
 
+// CountLabels() returns number of labels in name, excluding final root label
+// (e.g. for "apple.com." CountLabels returns 2.)
+mDNSlocal int CountLabels(const domainname *d)
+	{
+	int count = 0;
+	const mDNSu8 *ptr;
+	for (ptr = d->c; *ptr; ptr = ptr + ptr[0] + 1) count++;
+	return count;
+	}
+
+// lookup a DNS Server, matching by name in split-dns configurations.  Result stored in addr parameter if successful
+mDNSlocal DNSServer *GetServerForName(mDNS *m, const domainname *name)
+    {
+	DNSServer *curmatch = mDNSNULL, *p = m->DNSServers;
+	int i, curmatchlen = -1;
+	int ncount = name ? CountLabels(name) : 0;
+
+	while (p)
+		{
+		int scount = CountLabels(&p->domain);
+		if (scount <= ncount && scount > curmatchlen)
+			{
+			// only inspect if server's domain is longer than current best match and shorter than the name itself
+			const domainname *tail = name;
+			for (i = 0; i < ncount - scount; i++)
+				tail = (const domainname *)(tail->c + 1 + tail->c[0]);	// find "tail" (scount labels) of name
+			if (SameDomainName(tail, &p->domain)) { curmatch = p; curmatchlen = scount; }
+			}
+		p = p->next;
+		}
+	return(curmatch);
+	}
+
 #define ValidQuestionTarget(Q) (((Q)->Target.type == mDNSAddrType_IPv4 || (Q)->Target.type == mDNSAddrType_IPv6) && \
 	(mDNSSameIPPort((Q)->TargetPort, UnicastDNSPort) || mDNSSameIPPort((Q)->TargetPort, MulticastDNSPort)))
 
@@ -4396,6 +4446,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		question->AuthInfo          = GetAuthInfoForName(m, &question->qname);
 		question->CNAMEReferrals    = 0;
 		question->RestartTime       = 0;
+		question->DNSServer         = mDNSNULL;
 		question->sock              = mDNSNULL;
 		question->llq               = mDNSNULL;
 
@@ -4425,17 +4476,20 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 			// NS, etc.) and if we haven't finished setting up our own question and setting
 			// m->NewQuestions if necessary then we could end up recursively re-entering
 			// this routine with the question list data structures in an inconsistent state.
-			if (!mDNSOpaque16IsZero(question->TargetQID) && !question->DuplicateOf)
+			if (!mDNSOpaque16IsZero(question->TargetQID))
 				{
-				if (question->LongLived)
-					uDNS_InitLongLivedQuery(m, question);
-				else
+				question->DNSServer = GetServerForName(m, &question->qname);
+				if (!question->DuplicateOf)
 					{
-					question->ThisQInterval = INIT_UCAST_POLL_INTERVAL / 2;
-					question->LastQTime     = m->timenow - question->ThisQInterval;
+					if (question->LongLived)
+						uDNS_InitLongLivedQuery(m, question);
+					else
+						{
+						question->ThisQInterval = INIT_UCAST_POLL_INTERVAL / 2;
+						question->LastQTime     = m->timenow - question->ThisQInterval;
+						}
 					}
 				}
-
 			SetNextQueryTime(m,question);
 			}
 
@@ -5010,7 +5064,7 @@ mDNSlocal void AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 #endif
 	// 1. Set up Address record to map from host name ("foo.local.") to IP address
 	// 2. Set up reverse-lookup PTR record to map from our address back to our host name
-	AssignDomainName(set->RR_A.resrec.name, &m->MulticastHostname);
+	AssignDomainName(&set->RR_A.namestorage, &m->MulticastHostname);
 	if (set->ip.type == mDNSAddrType_IPv4)
 		{
 		set->RR_A.resrec.rrtype = kDNSType_A;
@@ -5035,7 +5089,7 @@ mDNSlocal void AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 		mDNS_snprintf(&buffer[64], sizeof(buffer)-64, "ip6.arpa.");
 		}
 
-	MakeDomainNameFromDNSNameString(set->RR_PTR.resrec.name, buffer);
+	MakeDomainNameFromDNSNameString(&set->RR_PTR.namestorage, buffer);
 	set->RR_PTR.HostTarget = mDNStrue;	// Tell mDNS that the target of this PTR is to be kept in sync with our host name
 	set->RR_PTR.ForceMCast = mDNStrue;	// This PTR points to our dot-local name, so don't ever try to write it into a uDNS server
 
@@ -5047,7 +5101,7 @@ mDNSlocal void AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	if (!NO_HINFO && m->HIHardware.c[0] > 0 && m->HISoftware.c[0] > 0 && m->HIHardware.c[0] + m->HISoftware.c[0] <= 254)
 		{
 		mDNSu8 *p = set->RR_HINFO.resrec.rdata->u.data;
-		AssignDomainName(set->RR_HINFO.resrec.name, &m->MulticastHostname);
+		AssignDomainName(&set->RR_HINFO.namestorage, &m->MulticastHostname);
 		set->RR_HINFO.DependentOn = &set->RR_A;
 		mDNSPlatformMemCopy(p, &m->HIHardware, 1 + (mDNSu32)m->HIHardware.c[0]);
 		p += 1 + (int)p[0];
@@ -5504,11 +5558,11 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	// Set up the record names
 	// For now we only create an advisory record for the main type, not for subtypes
 	// We need to gain some operational experience before we decide if there's a need to create them for subtypes too
-	if (ConstructServiceName(sr->RR_ADV.resrec.name, (const domainlabel*)"\x09_services", (const domainname*)"\x07_dns-sd\x04_udp", domain) == mDNSNULL)
+	if (ConstructServiceName(&sr->RR_ADV.namestorage, (const domainlabel*)"\x09_services", (const domainname*)"\x07_dns-sd\x04_udp", domain) == mDNSNULL)
 		return(mStatus_BadParamErr);
-	if (ConstructServiceName(sr->RR_PTR.resrec.name, mDNSNULL, type, domain) == mDNSNULL) return(mStatus_BadParamErr);
-	if (ConstructServiceName(sr->RR_SRV.resrec.name, name,     type, domain) == mDNSNULL) return(mStatus_BadParamErr);
-	AssignDomainName(sr->RR_TXT.resrec.name, sr->RR_SRV.resrec.name);
+	if (ConstructServiceName(&sr->RR_PTR.namestorage, mDNSNULL, type, domain) == mDNSNULL) return(mStatus_BadParamErr);
+	if (ConstructServiceName(&sr->RR_SRV.namestorage, name,     type, domain) == mDNSNULL) return(mStatus_BadParamErr);
+	AssignDomainName(&sr->RR_TXT.namestorage, sr->RR_SRV.resrec.name);
 	
 	// 1. Set up the ADV record rdata to advertise our service type
 	AssignDomainName(&sr->RR_ADV.resrec.rdata->u.name, sr->RR_PTR.resrec.name);
@@ -5529,8 +5583,8 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 		st.c[1+st.c[0]] = 0;			// Only want the first label, not the whole FQDN (particularly for mDNS_RenameAndReregisterService())
 		AppendDomainName(&st, type);
 		mDNS_SetupResourceRecord(&sr->SubTypes[i], mDNSNULL, InterfaceID, kDNSType_PTR, kStandardTTL, kDNSRecordTypeShared, ServiceCallback, sr);
-		if (ConstructServiceName(sr->SubTypes[i].resrec.name, mDNSNULL, &st, domain) == mDNSNULL) return(mStatus_BadParamErr);
-		AssignDomainName(&sr->SubTypes[i].resrec.rdata->u.name, sr->RR_SRV.resrec.name);
+		if (ConstructServiceName(&sr->SubTypes[i].namestorage, mDNSNULL, &st, domain) == mDNSNULL) return(mStatus_BadParamErr);
+		AssignDomainName(&sr->SubTypes[i].resrec.rdata->u.name, &sr->RR_SRV.namestorage);
 		sr->SubTypes[i].Additional1 = &sr->RR_SRV;
 		sr->SubTypes[i].Additional2 = &sr->RR_TXT;
 		}
@@ -5558,7 +5612,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 #ifndef UNICAST_DISABLED
 	// If the client has specified an explicit InterfaceID,
 	// then we do a multicast registration on that interface, even for unicast domains.
-	if (!(InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(sr->RR_SRV.resrec.name)))
+	if (!(InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(&sr->RR_SRV.namestorage)))
 		{
 		mStatus status;
 		mDNS_Lock(m);
@@ -5600,7 +5654,7 @@ mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr,
 	extra->next = mDNSNULL;
 	mDNS_SetupResourceRecord(&extra->r, rdata, sr->RR_PTR.resrec.InterfaceID,
 		extra->r.resrec.rrtype, ttl, kDNSRecordTypeUnique, ServiceCallback, sr);
-	AssignDomainName(extra->r.resrec.name, sr->RR_SRV.resrec.name);
+	AssignDomainName(&extra->r.namestorage, sr->RR_SRV.resrec.name);
 	
 	mDNS_Lock(m);
 	e = &sr->Extras;
@@ -5786,7 +5840,7 @@ mDNSexport mStatus mDNS_RegisterNoSuchService(mDNS *const m, AuthRecord *const r
 	const mDNSInterfaceID InterfaceID, mDNSRecordCallback Callback, void *Context)
 	{
 	mDNS_SetupResourceRecord(rr, mDNSNULL, InterfaceID, kDNSType_SRV, kHostNameTTL, kDNSRecordTypeUnique, Callback, Context);
-	if (ConstructServiceName(rr->resrec.name, name, type, domain) == mDNSNULL) return(mStatus_BadParamErr);
+	if (ConstructServiceName(&rr->namestorage, name, type, domain) == mDNSNULL) return(mStatus_BadParamErr);
 	rr->resrec.rdata->u.srv.priority    = 0;
 	rr->resrec.rdata->u.srv.weight      = 0;
 	rr->resrec.rdata->u.srv.port        = zeroIPPort;
@@ -5799,7 +5853,7 @@ mDNSexport mStatus mDNS_AdvertiseDomains(mDNS *const m, AuthRecord *rr,
 	mDNS_DomainType DomainType, const mDNSInterfaceID InterfaceID, char *domname)
 	{
 	mDNS_SetupResourceRecord(rr, mDNSNULL, InterfaceID, kDNSType_PTR, kStandardTTL, kDNSRecordTypeShared, mDNSNULL, mDNSNULL);
-	if (!MakeDomainNameFromDNSNameString(rr->resrec.name, mDNS_DomainTypeNames[DomainType])) return(mStatus_BadParamErr);
+	if (!MakeDomainNameFromDNSNameString(&rr->namestorage, mDNS_DomainTypeNames[DomainType])) return(mStatus_BadParamErr);
 	if (!MakeDomainNameFromDNSNameString(&rr->resrec.rdata->u.name, domname))                 return(mStatus_BadParamErr);
 	return(mDNS_Register(m, rr));
 	}
@@ -5925,7 +5979,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->ServiceRegistrations     = mDNSNULL;
 	m->NATTraversals            = mDNSNULL;
 	m->NextMessageID            = 0;
-	m->Servers                  = mDNSNULL;
+	m->DNSServers               = mDNSNULL;
 	m->Router                   = zeroAddr;
 	m->AdvertisedV4             = zeroAddr;
 	m->MappedV4                 = zeroAddr;
@@ -5953,6 +6007,87 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 #endif
 
 	return(result);
+	}
+
+mDNSlocal void DynDNSHostNameCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
+	{
+	(void)m;	// unused
+	debugf("NameStatusCallback: result %d for registration of name %##s", result, rr->resrec.name->c);
+	mDNSPlatformDynDNSHostNameStatusChanged(rr->resrec.name, result);
+	}
+
+mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
+	{
+	mDNSAddr        v4, v6, r;
+    domainname      fqdn;
+    DNSServer       *ptr, **p = &m->DNSServers;
+    DNSQuestion *q;
+
+	mDNS_Lock(m);
+
+	// Let the platform layer get the current DNS information
+	// The m->RegisterSearchDomains boolean is so that we lazily get the search domain list only on-demand
+	// (no need to hit the network with domain enumeration queries until we actually need that information).
+	for (ptr = m->DNSServers; ptr; ptr = ptr->next) ptr->del = mDNStrue;
+	mDNSPlatformSetDNSConfig(m, mDNStrue, m->RegisterSearchDomains, &fqdn, mDNSNULL, mDNSNULL);
+	while (*p)
+		{
+		if ((*p)->del)
+			{
+			ptr = *p;
+			*p = (*p)->next;
+			mDNSPlatformMemFree(ptr);
+			}
+		else
+			p = &(*p)->next;
+		}
+
+	for (q = m->Questions; q; q=q->next)
+		if (ActiveQuestion(q) && !mDNSOpaque16IsZero(q->TargetQID) && !q->DuplicateOf)
+			{
+			DNSServer *s = GetServerForName(m, &q->qname);
+			if (q->DNSServer != s)
+				{
+				// If DNS Server for this question has changed, reactivate it
+				q->DNSServer = s;
+				q->ThisQInterval = mDNSPlatformOneSecond/2; // InitialQuestionInterval
+				}
+			}
+
+	mDNS_Unlock(m);
+
+	// Did our FQDN change?
+	if (!SameDomainName(&fqdn, &m->FQDN))
+		{
+		if (m->FQDN.c[0]) mDNS_RemoveDynDNSHostName(m, &m->FQDN);
+
+		AssignDomainName(&m->FQDN, &fqdn);
+
+		if (m->FQDN.c[0])
+			{
+			mDNSPlatformDynDNSHostNameStatusChanged(&m->FQDN, 1);
+			mDNS_AddDynDNSHostName(m, &m->FQDN, DynDNSHostNameCallback, mDNSNULL);
+			}
+		}
+
+	// handle router and primary interface changes
+	v4 = v6 = r = zeroAddr;
+	v4.type = r.type = mDNSAddrType_IPv4;
+
+	if (mDNSPlatformGetPrimaryInterface(m, &v4, &v6, &r) == mStatus_NoError && !mDNSv4AddressIsLinkLocal(&v4.ip.v4))
+		{
+		mDNS_SetPrimaryInterfaceInfo(m,
+			!mDNSIPv4AddressIsZero(v4.ip.v4) ? &v4 : mDNSNULL,
+			!mDNSIPv6AddressIsZero(v6.ip.v6) ? &v6 : mDNSNULL,
+			!mDNSIPv4AddressIsZero(r .ip.v4) ? &r  : mDNSNULL);
+		}
+	else
+		{
+		mDNS_SetPrimaryInterfaceInfo(m, mDNSNULL, mDNSNULL, mDNSNULL);
+		if (m->FQDN.c[0]) mDNSPlatformDynDNSHostNameStatusChanged(&m->FQDN, 1);	// Set status to 1 to indicate temporary failure
+		}
+
+	return mStatus_NoError;
 	}
 
 mDNSexport void mDNSCoreInitComplete(mDNS *const m, mStatus result)
