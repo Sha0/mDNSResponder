@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: ProxyResponder.c,v $
+Revision 1.44  2007/04/22 20:16:25  cheshire
+Fix compiler errors (const parameter declarations)
+
 Revision 1.43  2007/04/16 20:49:39  cheshire
 Fix compile errors for mDNSPosix build
 
@@ -184,13 +187,13 @@ mDNSlocal mStatus mDNS_RegisterProxyHost(mDNS *m, ProxyHost *p)
 	mDNS_SetupResourceRecord(&p->RR_A,   mDNSNULL, mDNSInterface_Any, kDNSType_A,   60, kDNSRecordTypeUnique,      HostNameCallback, p);
 	mDNS_SetupResourceRecord(&p->RR_PTR, mDNSNULL, mDNSInterface_Any, kDNSType_PTR, 60, kDNSRecordTypeKnownUnique, HostNameCallback, p);
 
-	p->RR_A.resrec.name->c[0] = 0;
-	AppendDomainLabel(p->RR_A.resrec.name, &p->hostlabel);
-	AppendLiteralLabelString(p->RR_A.resrec.name, "local");
+	p->RR_A.namestorage.c[0] = 0;
+	AppendDomainLabel(&p->RR_A.namestorage, &p->hostlabel);
+	AppendLiteralLabelString(&p->RR_A.namestorage, "local");
 
 	// Note: This is reverse order compared to a normal dotted-decimal IP address, so we can't use our customary "%.4a" format code
 	mDNS_snprintf(buffer, sizeof(buffer), "%d.%d.%d.%d.in-addr.arpa.", p->ip.b[3], p->ip.b[2], p->ip.b[1], p->ip.b[0]);
-	MakeDomainNameFromDNSNameString(p->RR_PTR.resrec.name, buffer);
+	MakeDomainNameFromDNSNameString(&p->RR_PTR.namestorage, buffer);
 	p->RR_PTR.ForceMCast = mDNStrue; // This PTR points to our dot-local name, so don't ever try to write it into a uDNS server
 
 	p->RR_A.  resrec.rdata->u.ipv4 = p->ip;

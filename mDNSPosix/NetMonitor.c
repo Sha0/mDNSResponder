@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.88  2007/04/22 20:16:25  cheshire
+Fix compiler errors (const parameter declarations)
+
 Revision 1.87  2007/04/16 20:49:39  cheshire
 Fix compile errors for mDNSPosix build
 
@@ -438,7 +441,7 @@ mDNSexport mDNSBool ExtractServiceType(const domainname *const fqdn, domainname 
 	return(mDNStrue);
 	}
 
-mDNSlocal void recordstat(HostEntry *entry, domainname *fqdn, int op, mDNSu16 rrtype)
+mDNSlocal void recordstat(HostEntry *entry, const domainname *fqdn, int op, mDNSu16 rrtype)
 	{
 	ActivityStat **s = &stats;
 	domainname srvtype;
