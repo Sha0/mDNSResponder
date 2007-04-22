@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.612  2007/04/22 20:39:38  cheshire
+<rdar://problem/4633194> Add 20 to 120ms random delay to browses
+
 Revision 1.611  2007/04/22 18:16:29  cheshire
 Removed incorrect ActiveQuestion(q) check that was preventing suspended questions from getting reactivated
 
@@ -2643,6 +2646,14 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 		{
 		q->ThisQInterval  = InitialQuestionInterval;
 		q->LastQTime      = m->timenow - q->ThisQInterval;
+		if (mDNSOpaque16IsZero(q->TargetQID))
+			{
+			// Compute random delay in the range 1-6 seconds, then divide by 50 to get 20-120ms
+			if (!m->RandomQueryDelay)
+				m->RandomQueryDelay = (mDNSPlatformOneSecond + mDNSRandom(mDNSPlatformOneSecond*5) - 1) / 50 + 1;
+			q->LastQTime += m->RandomQueryDelay;
+			}
+		
 		m->NextScheduledQuery = m->timenow;
 		}
 
@@ -4424,15 +4435,14 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 
 		// Note: In the case where we already have the answer to this question in our cache, that may be all the client
 		// wanted, and they may immediately cancel their question. In this case, sending an actual query on the wire would
-		// be a waste. For that reason, we schedule our first query to go out in half a second. If AnswerNewQuestion() finds
-		// that we have *no* relevant answers currently in our cache, then it will accelerate that to go out immediately.
-		if (!m->RandomQueryDelay) m->RandomQueryDelay = 1 + (mDNSs32)mDNSRandom((mDNSu32)InitialQuestionInterval);
-
+		// be a waste. For that reason, we schedule our first query to go out in half a second (InitialQuestionInterval).
+		// If AnswerNewQuestion() finds that we have *no* relevant answers currently in our cache, then it will accelerate
+		// that to go out immediately.
 		question->next              = mDNSNULL;
 		question->qnamehash         = DomainNameHashValue(&question->qname);	// MUST do this before FindDuplicateQuestion()
 		question->DelayAnswering    = CheckForSoonToExpireRecords(m, &question->qname, question->qnamehash, HashSlot(&question->qname));
-		question->LastQTime         = m->timenow - m->RandomQueryDelay;		// Avoid inter-machine synchronization
-		question->ThisQInterval     = InitialQuestionInterval * 2;			// MUST be > zero for an active question
+		question->LastQTime         = m->timenow;
+		question->ThisQInterval     = InitialQuestionInterval;					// MUST be > zero for an active question
 		question->ExpectUnicastResp = 0;
 		question->LastAnswerPktNum  = m->PktNum;
 		question->RecentAnswerPkts  = 0;
@@ -6053,7 +6063,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 				{
 				// If DNS Server for this question has changed, reactivate it
 				q->DNSServer = s;
-				q->ThisQInterval = mDNSPlatformOneSecond/2; // InitialQuestionInterval
+				q->ThisQInterval = InitialQuestionInterval;
 				}
 			}
 
