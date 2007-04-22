@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.611  2007/04/22 18:16:29  cheshire
+Removed incorrect ActiveQuestion(q) check that was preventing suspended questions from getting reactivated
+
 Revision 1.610  2007/04/22 06:02:02  cheshire
 <rdar://problem/4615977> Query should immediately return failure when no server
 
@@ -6043,7 +6046,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 		}
 
 	for (q = m->Questions; q; q=q->next)
-		if (ActiveQuestion(q) && !mDNSOpaque16IsZero(q->TargetQID) && !q->DuplicateOf)
+		if (!mDNSOpaque16IsZero(q->TargetQID) && !q->DuplicateOf)
 			{
 			DNSServer *s = GetServerForName(m, &q->qname);
 			if (q->DNSServer != s)
