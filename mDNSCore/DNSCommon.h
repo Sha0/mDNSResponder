@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.46  2007/04/22 20:18:10  cheshire
+Add comment about mDNSRandom()
+
 Revision 1.45  2007/04/22 06:02:02  cheshire
 <rdar://problem/4615977> Query should immediately return failure when no server
 
@@ -132,7 +135,7 @@ typedef enum
 extern const NetworkInterfaceInfo *GetFirstActiveInterface(const NetworkInterfaceInfo *intf);
 extern mDNSInterfaceID GetNextActiveInterfaceID(const NetworkInterfaceInfo *intf);
 
-extern mDNSu32 mDNSRandom(mDNSu32 max);
+extern mDNSu32 mDNSRandom(mDNSu32 max);		// Returns pseudo-random result form zero to max inclusive
 extern mDNSu32 mDNSRandomFromFixedSeed(mDNSu32 seed, mDNSu32 max);
 
 // ***************************************************************************

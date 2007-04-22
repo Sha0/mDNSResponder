@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.147  2007/04/22 20:18:10  cheshire
+Add comment about mDNSRandom()
+
 Revision 1.146  2007/04/22 06:02:02  cheshire
 <rdar://problem/4615977> Query should immediately return failure when no server
 
@@ -388,7 +391,7 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd,
 	return(buffer);
 	}
 
-mDNSexport mDNSu32 mDNSRandom(mDNSu32 max)
+mDNSexport mDNSu32 mDNSRandom(mDNSu32 max)		// Returns pseudo-random result form zero to max inclusive
 	{
 	static mDNSu32 seed = 0;
 	mDNSu32 mask = 1;
