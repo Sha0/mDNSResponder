@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.285  2007/04/22 19:03:39  cheshire
+Minor code tidying
+
 Revision 1.284  2007/04/22 06:02:03  cheshire
 <rdar://problem/4615977> Query should immediately return failure when no server
 
@@ -3202,26 +3205,21 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 mDNSlocal void connect_callback(int fd, short filter, void *info)
 	{
 	request_state **p = &all_requests;
-	dnssd_sock_t sd;
-	dnssd_socklen_t len;
-	unsigned long optval;
 	dnssd_sockaddr_t cliaddr;
+	dnssd_socklen_t len = (dnssd_socklen_t) sizeof(cliaddr);
+	dnssd_sock_t sd = accept(listenfd, (struct sockaddr*) &cliaddr, &len);
+	const unsigned long optval = 1;
 	request_state *request;
+
 	(void)fd; // Unused
 	(void)filter; // Unused
 	(void)info; // Unused
 
-	len = (dnssd_socklen_t) sizeof(cliaddr);
-
-	sd = accept(listenfd, (struct sockaddr*) &cliaddr, &len);
-
 	if (sd == dnssd_InvalidSocket)
 		{
-		if (dnssd_errno() == dnssd_EWOULDBLOCK) return;
-		my_perror("ERROR: accept");
+		if (dnssd_errno() != dnssd_EWOULDBLOCK) my_perror("ERROR: accept");
 		return;
 		}
-	optval = 1;
 
 #ifdef SO_NOSIGPIPE
 	// Some environments (e.g. OS X) support turning off SIGPIPE for a socket
@@ -3252,8 +3250,7 @@ mDNSlocal void connect_callback(int fd, short filter, void *info)
 	request->sd = sd;
 
 	LogOperation("%3d: Adding FD", request->sd);
-	if (mStatus_NoError != udsSupportAddFDToEventLoop(sd, request_callback, request))
-		return;
+	if (mStatus_NoError != udsSupportAddFDToEventLoop(sd, request_callback, request)) return;
 
 	request->next = mDNSNULL;
 	while (*p) p=&(*p)->next;
