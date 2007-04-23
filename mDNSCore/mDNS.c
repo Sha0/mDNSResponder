@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.613  2007/04/23 04:58:20  cheshire
+<rdar://problem/5072548> Crash when setting extremely large TXT records
+
 Revision 1.612  2007/04/22 20:39:38  cheshire
 <rdar://problem/4633194> Add 20 to 120ms random delay to browses
 
@@ -1441,9 +1444,8 @@ mDNSlocal void SendResponses(mDNS *const m)
 				if (rr->resrec.RecordType == kDNSRecordTypeDeregistering)
 					{
 					newptr = PutResourceRecordTTL(&m->omsg, responseptr, &m->omsg.h.numAnswers, &rr->resrec, 0);
-					if (!newptr && m->omsg.h.numAnswers) break;
-					numDereg++;
-					responseptr = newptr;
+					if (newptr) { responseptr = newptr; numDereg++; }
+					else if (m->omsg.h.numAnswers) break;
 					}
 				else if (rr->NewRData && !m->SleepState)					// If we have new data for this record
 					{
@@ -1453,10 +1455,8 @@ mDNSlocal void SendResponses(mDNS *const m)
 					if (ResourceRecordIsValidAnswer(rr) && rr->RequireGoodbye)
 						{
 						newptr = PutResourceRecordTTL(&m->omsg, responseptr, &m->omsg.h.numAnswers, &rr->resrec, 0);
-						if (!newptr && m->omsg.h.numAnswers) break;
-						numDereg++;
-						responseptr = newptr;
-						rr->RequireGoodbye = mDNSfalse;
+						if (newptr) { responseptr = newptr; numDereg++; rr->RequireGoodbye = mDNSfalse; }
+						else if (m->omsg.h.numAnswers) break;
 						}
 					// Now try to see if we can fit the update in the same packet (not fatal if we can't)
 					SetNewRData(&rr->resrec, rr->NewRData, rr->newrdlength);
@@ -1473,10 +1473,13 @@ mDNSlocal void SendResponses(mDNS *const m)
 						rr->resrec.rrclass |= kDNSClass_UniqueRRSet;		// Temporarily set the cache flush bit so PutResourceRecord will set it
 					newptr = PutResourceRecordTTL(&m->omsg, responseptr, &m->omsg.h.numAnswers, &rr->resrec, m->SleepState ? 0 : rr->resrec.rroriginalttl);
 					rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;			// Make sure to clear cache flush bit back to normal state
-					if (!newptr && m->omsg.h.numAnswers) break;
-					rr->RequireGoodbye = (mDNSu8) (!m->SleepState);
-					if (rr->LastAPTime == m->timenow) numAnnounce++; else numAnswer++;
-					responseptr = newptr;
+					if (newptr)
+						{
+						responseptr = newptr;
+						rr->RequireGoodbye = (mDNSu8) (!m->SleepState);
+						if (rr->LastAPTime == m->timenow) numAnnounce++; else numAnswer++;
+						}
+					else if (m->omsg.h.numAnswers) break;
 					}
 				// If sending on all interfaces, go to next interface; else we're finished now
 				if (rr->ImmedAnswer == mDNSInterfaceMark && rr->resrec.InterfaceID == mDNSInterface_Any)
