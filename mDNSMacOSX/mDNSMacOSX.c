@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.399  2007/04/23 22:28:47  cheshire
+Allan Nathanson informs us we should only be looking at the search list for resolver[0], not all of them
+
 Revision 1.398  2007/04/23 04:57:00  cheshire
 Log messages for debugging <rdar://problem/4570952> IPv6 multicast not working properly
 
@@ -2090,17 +2093,18 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 								else mDNS_AddDNSServer(m, &saddr, &d);
 								}
 					}
-
-				if (setsearch)
-					{
-					// Due to the vagaries of Apple's SystemConfiguration and dnsinfo.h APIs, if there are no search domains
-					// listed, then you're supposed to interpret the "domain" field as also being the search domain, but if
-					// there *are* search domains listed, then you're supposed to ignore the "domain" field completely and
-					// instead use the search domain list as the sole authority for what domains to search and in what order
-					// (and the domain from the "domain" field will also appear somewhere in that list).
-					if (r->n_search == 0) mDNS_AddSearchDomain_CString(r->domain);
-					else for (j = 0; j < r->n_search; j++) mDNS_AddSearchDomain_CString(r->search[j]);
-					}
+				}
+			if (setsearch)
+				{
+				// Due to the vagaries of Apple's SystemConfiguration and dnsinfo.h APIs, if there are no search domains
+				// listed, then you're supposed to interpret the "domain" field as also being the search domain, but if
+				// there *are* search domains listed, then you're supposed to ignore the "domain" field completely and
+				// instead use the search domain list as the sole authority for what domains to search and in what order
+				// (and the domain from the "domain" field will also appear somewhere in that list).
+				// Also, all search domains get added to the search list for resolver[0], so the domains and/or
+				// search lists for other resolvers in the list need to be ignored.
+				if (config->resolver[0]->n_search == 0) mDNS_AddSearchDomain_CString(config->resolver[0]->domain);
+				else for (i = 0; i < config->resolver[0]->n_search; i++) mDNS_AddSearchDomain_CString(config->resolver[0]->search[i]);
 				}
 			dns_configuration_free(config);
 			setservers = mDNSfalse;  // Done these now -- no need to fetch the same data from SCDynamicStore
