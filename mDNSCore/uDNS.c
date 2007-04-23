@@ -22,6 +22,12 @@
     Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.340  2007/04/23 22:01:23  cheshire
+<rdar://problem/5094009> IPv6 filtering in AirPort base station breaks Wide-Area Bonjour
+As of March 2007, AirPort base stations now block incoming IPv6 connections by default, so there's no point
+advertising IPv6 addresses in DNS any more -- we have to assume that most of the time a host's IPv6 address
+probably won't work for incoming connections (but its IPv4 address probably will, using NAT-PMP).
+
 Revision 1.339  2007/04/22 06:02:03  cheshire
 <rdar://problem/4615977> Query should immediately return failure when no server
 
@@ -794,22 +800,11 @@ mDNSexport mDNSBool uDNS_HandleNATQueryAddrReply(NATTraversalInfo *n, mDNS *cons
 mDNSlocal mDNSBool ReceiveNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt)
 	{
 	mStatus err = mStatus_NoError;
-	AuthRecord *rr = mDNSNULL;
-	mDNSAddr addr;
-
-	rr = n->reg.RecordRegistration;
+	AuthRecord *rr = n->reg.RecordRegistration;
 	if (!rr) { LogMsg("RegisterHostnameRecord: registration cancelled"); return mDNSfalse; }
 
-	addr.type = mDNSAddrType_IPv4;
-	addr.ip.v4 = rr->resrec.rdata->u.ipv4;
-
-	if (!uDNS_HandleNATQueryAddrReply(n, m, pkt, &addr.ip.v4, &err)) return mDNSfalse;
-	if (!err)
-		{
-		rr->resrec.rdata->u.ipv4 = addr.ip.v4;	// replace rdata w/ public address
-		rr->resrec.RecordType = kDNSRecordTypeKnownUnique;
-		mDNS_Register_internal(m, rr);
-		}
+	if (!uDNS_HandleNATQueryAddrReply(n, m, pkt, &rr->resrec.rdata->u.ipv4, &err)) return mDNSfalse;
+	if (!err) mDNS_Register_internal(m, rr);
 	else
 		{
 		uDNS_FreeNATInfo(m, n);
@@ -827,9 +822,9 @@ mDNSlocal mDNSBool ReceiveNATAddrResponse(NATTraversalInfo *n, mDNS *m, mDNSu8 *
 mDNSlocal void StartGetPublicAddr(mDNS *m, AuthRecord *AddressRec)
 	{
 	NATAddrRequest *req;
-
 	NATTraversalInfo *info = uDNS_AllocNATInfo(m, NATOp_AddrRequest, zeroIPPort, zeroIPPort, 0, ReceiveNATAddrResponse);
-	if (!info) { AddressRec->resrec.RecordType = kDNSRecordTypeKnownUnique; mDNS_Register_internal(m, AddressRec); return; }
+	if (!info) return;
+
 	AddressRec->NATinfo = info;
 	info->reg.RecordRegistration = AddressRec;
 	info->state = NATState_Request;
@@ -2464,30 +2459,33 @@ mDNSlocal void UpdateSRVRecords(mDNS *m)
 	for (srs = m->ServiceRegistrations; srs; srs = srs->next) UpdateSRV(m, srs);
 	}
 
+// Forward reference: AdvertiseHostname references HostnameCallback, and HostnameCallback calls AdvertiseHostname
+mDNSlocal void HostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus result);
+
 // register record or begin NAT traversal
 mDNSlocal void AdvertiseHostname(mDNS *m, HostnameInfo *h)
 	{
-	if (!mDNSIPv4AddressIsZero(m->AdvertisedV4.ip.v4) && h->arv4.resrec.RecordType == kDNSRecordTypeUnregistered && h->arv4.state == regState_Unregistered)
+	if (!mDNSIPv4AddressIsZero(m->AdvertisedV4.ip.v4) && h->arv4.resrec.RecordType == kDNSRecordTypeUnregistered)
 		{
-		if (mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4))
-			StartGetPublicAddr(m, &h->arv4);
-		else
-			{
-			LogMsg("Advertising %##s IP %.4a", h->arv4.resrec.name->c, &m->AdvertisedV4.ip.v4);
-			h->arv4.resrec.RecordType = kDNSRecordTypeKnownUnique;
-			mDNS_Register_internal(m, &h->arv4);
-			}
+		mDNS_SetupResourceRecord(&h->arv4, mDNSNULL, 0, kDNSType_A, 1, kDNSRecordTypeKnownUnique, HostnameCallback, h);
+		AssignDomainName(&h->arv4.namestorage, &h->fqdn);
+		h->arv4.resrec.rdata->u.ipv4 = m->AdvertisedV4.ip.v4;
+		h->arv4.state = regState_Unregistered;
+		LogMsg("Advertising %##s IP %.4a", h->arv4.resrec.name->c, &m->AdvertisedV4.ip.v4);
+		if (mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4)) StartGetPublicAddr(m, &h->arv4);
+		else mDNS_Register_internal(m, &h->arv4);
 		}
-	if (!mDNSIPv6AddressIsZero(m->AdvertisedV6.ip.v6) && h->arv6.resrec.RecordType == kDNSRecordTypeUnregistered && h->arv6.state == regState_Unregistered)
+
+	if (!mDNSIPv6AddressIsZero(m->AdvertisedV6.ip.v6) && h->arv6.resrec.RecordType == kDNSRecordTypeUnregistered)
 		{
-		LogMsg("Advertising %##s IP %.16a", h->arv4.resrec.name->c, &m->AdvertisedV6.ip.v6);
-		h->arv6.resrec.RecordType = kDNSRecordTypeKnownUnique;
+		mDNS_SetupResourceRecord(&h->arv6, mDNSNULL, 0, kDNSType_AAAA, 1, kDNSRecordTypeKnownUnique, HostnameCallback, h);
+		AssignDomainName(&h->arv6.namestorage, &h->fqdn);
+		h->arv6.resrec.rdata->u.ipv6 = m->AdvertisedV6.ip.v6;
+		h->arv6.state = regState_Unregistered;
+		LogMsg("Advertising %##s IP %.16a", h->arv6.resrec.name->c, &m->AdvertisedV6.ip.v6);
 		mDNS_Register_internal(m, &h->arv6);
 		}
 	}
-
-// Forward reference: HostnameCallback calls AssignHostnameInfoAuthRecord, and AssignHostnameInfoAuthRecord references HostnameCallback
-mDNSlocal void AssignHostnameInfoAuthRecord(mDNS *m, HostnameInfo *hi, AuthRecord *ar);
 
 mDNSlocal void HostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
 	{
@@ -2499,10 +2497,11 @@ mDNSlocal void HostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 			{
 			// If we're still in the Hostnames list, update to new address
 			HostnameInfo *i;
+			LogMsg("Got mStatus_MemFree for %s", ARDisplayString(m, rr));
 			for (i = m->Hostnames; i; i = i->next)
 				{
-				if (rr == &i->arv4) { mDNS_Lock(m); AssignHostnameInfoAuthRecord(m, i, &i->arv4); AdvertiseHostname(m, i); mDNS_Unlock(m); return; }
-				if (rr == &i->arv6) { mDNS_Lock(m); AssignHostnameInfoAuthRecord(m, i, &i->arv6); AdvertiseHostname(m, i); mDNS_Unlock(m); return; }
+				if (rr == &i->arv4) { mDNS_Lock(m); AdvertiseHostname(m, i); mDNS_Unlock(m); return; }
+				if (rr == &i->arv6) { mDNS_Lock(m); AdvertiseHostname(m, i); mDNS_Unlock(m); return; }
 				}
 
 			// Else, we're not still in the Hostnames list, so free the memory
@@ -2632,25 +2631,6 @@ mDNSlocal void GetStaticHostname(mDNS *m)
 	if (err) LogMsg("Error: GetStaticHostname - StartQuery returned error %d", err);
 	}
 
-mDNSlocal void AssignHostnameInfoAuthRecord(mDNS *m, HostnameInfo *hi, AuthRecord *ar)
-	{
-	if (ar->resrec.RecordType) LogMsg("AssignHostnameInfoAuthRecord Warning: Updating records while it's already in the active list");
-	// We create the record here with type kDNSRecordTypeUnregistered, and then update it to kDNSRecordTypeKnownUnique right before calling mDNS_Register_internal
-	mDNS_SetupResourceRecord(ar, mDNSNULL, 0, (mDNSu16) (ar == &hi->arv4 ? kDNSType_A : kDNSType_AAAA),  1, kDNSRecordTypeUnregistered, HostnameCallback, hi);
-	AssignDomainName(&ar->namestorage, &hi->fqdn);
-
-	// only set RData if we have a valid IP
-	if (ar == &hi->arv4 && !mDNSIPv4AddressIsZero(m->AdvertisedV4.ip.v4))
-		{
-		if (!mDNSIPv4AddressIsZero(m->MappedV4.ip.v4)) ar->resrec.rdata->u.ipv4 = m->MappedV4.ip.v4;
-		else                                           ar->resrec.rdata->u.ipv4 = m->AdvertisedV4.ip.v4;
-		}
-	else if (ar == &hi->arv6 && !mDNSIPv6AddressIsZero(m->AdvertisedV6.ip.v6))
-		ar->resrec.rdata->u.ipv6 = m->AdvertisedV6.ip.v6;
-
-	ar->state = regState_Unregistered;
-	}
-
 mDNSexport void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSRecordCallback *StatusCallback, const void *StatusContext)
    {
 	HostnameInfo *ptr, *new;
@@ -2661,10 +2641,8 @@ mDNSexport void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSReco
 
 	// check if domain already registered
 	for (ptr = m->Hostnames; ptr; ptr = ptr->next)
-		{
 		if (SameDomainName(fqdn, &ptr->fqdn))
 			{ LogMsg("Host Domain %##s already in list", fqdn->c); goto exit; }
-		}
 
 	// allocate and format new address record
 	new = mDNSPlatformMemAllocate(sizeof(*new));
@@ -2680,10 +2658,7 @@ mDNSexport void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSReco
 	new->StatusCallback = StatusCallback;
 	new->StatusContext = StatusContext;
 
-	if (!mDNSIPv4AddressIsZero(m->AdvertisedV4.ip.v4)) AssignHostnameInfoAuthRecord(m, new, &new->arv4);
-	if (!mDNSIPv6AddressIsZero(m->AdvertisedV6.ip.v6)) AssignHostnameInfoAuthRecord(m, new, &new->arv6);
-
-	if (!mDNSIPv4AddressIsZero(m->AdvertisedV4.ip.v4) || !mDNSIPv6AddressIsZero(m->AdvertisedV6.ip.v6)) AdvertiseHostname(m, new);
+	AdvertiseHostname(m, new);
 
 exit:
 	mDNS_Unlock(m);
@@ -2706,6 +2681,8 @@ mDNSexport void mDNS_RemoveDynDNSHostName(mDNS *m, const domainname *fqdn)
 		// below could free the memory, and we have to make sure we don't touch hi fields after that.
 		mDNSBool f4 = hi->arv4.resrec.RecordType != kDNSRecordTypeUnregistered && hi->arv4.state != regState_Unregistered;
 		mDNSBool f6 = hi->arv6.resrec.RecordType != kDNSRecordTypeUnregistered && hi->arv6.state != regState_Unregistered;
+		if (f4) LogOperation("mDNS_RemoveDynDNSHostName removing v4 %##s", fqdn);
+		if (f6) LogOperation("mDNS_RemoveDynDNSHostName removing v6 %##s", fqdn);
 		*ptr = (*ptr)->next; // unlink
 		if (f4) mDNS_Deregister_internal(m, &hi->arv4, mDNS_Dereg_normal);
 		if (f6) mDNS_Deregister_internal(m, &hi->arv6, mDNS_Dereg_normal);
@@ -2725,6 +2702,8 @@ mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr, co
 
 	mDNS_Lock(m);
 
+	if (v4addr && !mDNSv4AddressIsLinkLocal(&v4addr->ip.v4)) v6addr = mDNSNULL;
+
 	v4Changed     = !mDNSSameIPv4Address(m->AdvertisedV4.ip.v4, v4addr ? v4addr->ip.v4 : zerov4Addr);
 	v6Changed     = !mDNSSameIPv6Address(m->AdvertisedV6.ip.v6, v6addr ? v6addr->ip.v6 : zerov6Addr);
 	RouterChanged = !mDNSSameIPv4Address(m->Router.ip.v4,       router ? router->ip.v4 : zerov4Addr);
@@ -2732,13 +2711,12 @@ mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr, co
 	if (v4addr && (v4Changed || RouterChanged))
 		debugf("mDNS_SetPrimaryInterfaceInfo: address changed from %#a to %#a", &m->AdvertisedV4, v4addr);
 
-	if ((v4Changed || RouterChanged) && !mDNSIPv4AddressIsZero(m->MappedV4.ip.v4)) m->MappedV4.ip.v4 = zerov4Addr;
 	if (v4addr) m->AdvertisedV4 = *v4addr; else m->AdvertisedV4.ip.v4 = zerov4Addr;
 	if (v6addr) m->AdvertisedV6 = *v6addr; else m->AdvertisedV6.ip.v6 = zerov6Addr;
-	if (router) m->Router       = *router; else m->Router.ip.v4 = zerov4Addr;
+	if (router) m->Router       = *router; else m->Router      .ip.v4 = zerov4Addr;
 	// setting router to zero indicates that nat mappings must be reestablished when router is reset
 
-	if ((v4Changed || RouterChanged || v6Changed) && v4addr)
+	if (v4Changed || RouterChanged || v6Changed)
 		{
 		HostnameInfo *i;
 		LogOperation("mDNS_SetPrimaryInterfaceInfo: %s%s%s%#a",
@@ -2748,22 +2726,21 @@ mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr, co
 
 		for (i = m->Hostnames; i; i = i->next)
 			{
-			LogOperation("UpdateHostnameRegistrations %##s", i->fqdn.c);
+			LogOperation("mDNS_SetPrimaryInterfaceInfo updating host name registrations for %##s", i->fqdn.c);
 	
-			if (i->arv4.state != regState_Unregistered &&
-				i->arv4.resrec.RecordType > kDNSRecordTypeDeregistering &&
-				!mDNSSameIPv4Address(i->arv4.resrec.rdata->u.ipv4, m->AdvertisedV4.ip.v4) &&
-				!mDNSSameIPv4Address(i->arv4.resrec.rdata->u.ipv4, m->MappedV4.ip.v4))
+			if (i->arv4.resrec.RecordType > kDNSRecordTypeDeregistering &&
+				!mDNSSameIPv4Address(i->arv4.resrec.rdata->u.ipv4, m->AdvertisedV4.ip.v4))
+				{
+				LogOperation("mDNS_SetPrimaryInterfaceInfo deregistering %s", ARDisplayString(m, &i->arv4));
 				mDNS_Deregister_internal(m, &i->arv4, mDNS_Dereg_normal);
-			else
-				if (!mDNSIPv4AddressIsZero(m->AdvertisedV4.ip.v4)) AssignHostnameInfoAuthRecord(m, i, &i->arv4);
+				}
 	
 			if (i->arv6.resrec.RecordType > kDNSRecordTypeDeregistering &&
-				i->arv6.state != regState_Unregistered &&
 				!mDNSSameIPv6Address(i->arv6.resrec.rdata->u.ipv6, m->AdvertisedV6.ip.v6))
+				{
+				LogOperation("mDNS_SetPrimaryInterfaceInfo deregistering %s", ARDisplayString(m, &i->arv6));
 				mDNS_Deregister_internal(m, &i->arv6, mDNS_Dereg_normal);
-			else
-				if (!mDNSIPv6AddressIsZero(m->AdvertisedV6.ip.v6)) AssignHostnameInfoAuthRecord(m, i, &i->arv6);
+				}
 
 			// AdvertiseHostname will only register new address records.
 			// For records still in the process of deregistering it will ignore them, and let the mStatus_MemFree callback handle them.
