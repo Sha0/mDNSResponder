@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.398  2007/04/23 04:57:00  cheshire
+Log messages for debugging <rdar://problem/4570952> IPv6 multicast not working properly
+
 Revision 1.397  2007/04/22 06:02:03  cheshire
 <rdar://problem/4615977> Query should immediately return failure when no server
 
@@ -712,6 +715,7 @@ mDNSlocal void myKQSocketCallBack(int s1, short filter, void *context)
 			senderAddr.type = mDNSAddrType_IPv4;
 			senderAddr.ip.v4.NotAnInteger = sin->sin_addr.s_addr;
 			senderPort.NotAnInteger = sin->sin_port;
+			//LogOperation("myKQSocketCallBack received IPv4 packet from %#a to %#a on %d %s", &senderAddr, &destAddr, s1, ss->info ? ss->info->ifa_name : "(unicast)");
 			}
 		else if (from.ss_family == AF_INET6)
 			{
@@ -719,7 +723,7 @@ mDNSlocal void myKQSocketCallBack(int s1, short filter, void *context)
 			senderAddr.type = mDNSAddrType_IPv6;
 			senderAddr.ip.v6 = *(mDNSv6Addr*)&sin6->sin6_addr;
 			senderPort.NotAnInteger = sin6->sin6_port;
-			//LogOperation("myKQSocketCallBack received IPv6 packet from %#a to %#a", &senderAddr, &destAddr);
+			//LogOperation("myKQSocketCallBack received IPv6 packet from %#a to %#a on %d %s", &senderAddr, &destAddr, s1, ss->info ? ss->info->ifa_name : "(unicast)");
 			}
 		else
 			{
