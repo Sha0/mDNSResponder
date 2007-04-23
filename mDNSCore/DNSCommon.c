@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.149  2007/04/23 21:43:00  cheshire
+Remove debugging check
+
 Revision 1.148  2007/04/23 04:55:29  cheshire
 Add some defensive null pointer checks
 
@@ -1576,7 +1579,7 @@ mDNSexport mDNSu8 *PutResourceRecordTTLWithLimit(DNSMessage *const msg, mDNSu8 *
 		return(ptr);
 		}
 
-	if (!ptr) { LogMsg("PutResourceRecordTTLWithLimit ptr is null"); *(long*)0=0; return(mDNSNULL); }
+	if (!ptr) { LogMsg("PutResourceRecordTTLWithLimit ptr is null"); return(mDNSNULL); }
 
 	ptr = putDomainNameAsLabels(msg, ptr, limit, rr->name);
 	if (!ptr || ptr + 10 >= limit) return(mDNSNULL);	// If we're out-of-space, return mDNSNULL
