@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.614  2007/04/23 21:52:45  cheshire
+<rdar://problem/5094009> IPv6 filtering in AirPort base station breaks Wide-Area Bonjour
+
 Revision 1.613  2007/04/23 04:58:20  cheshire
 <rdar://problem/5072548> Crash when setting extremely large TXT records
 
@@ -902,14 +905,16 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 		*p = rr;
 		}
 
-	// For records that are not going to probe, acknowledge them right away
-	if (rr->resrec.RecordType != kDNSRecordTypeUnique && rr->resrec.RecordType != kDNSRecordTypeDeregistering)
-		AcknowledgeRecord(m, rr);
-
-#ifndef UNICAST_DISABLED
-	if (rr->resrec.InterfaceID == mDNSInterface_Any && !rr->ForceMCast && !IsLocalDomain(rr->resrec.name))
+	if (rr->resrec.InterfaceID != mDNSInterface_Any || rr->ForceMCast || IsLocalDomain(rr->resrec.name))
 		{
-		if (rr->resrec.RecordType == kDNSRecordTypeUnique) r->resrec.RecordType = kDNSRecordTypeVerified;
+		// For records that are not going to probe, acknowledge them right away
+		if (rr->resrec.RecordType != kDNSRecordTypeUnique && rr->resrec.RecordType != kDNSRecordTypeDeregistering)
+			AcknowledgeRecord(m, rr);
+		}
+#ifndef UNICAST_DISABLED
+	else
+		{
+		if (rr->resrec.RecordType == kDNSRecordTypeUnique) rr->resrec.RecordType = kDNSRecordTypeVerified;
 		rr->ProbeCount    = 0;
 		rr->AnnounceCount = 0;
 		rr->state = regState_FetchingZoneData;
@@ -1042,15 +1047,12 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 		rr->next = mDNSNULL;
 
 		if      (RecordType == kDNSRecordTypeUnregistered)
-			debugf("mDNS_Deregister_internal: Record %##s (%s) already marked kDNSRecordTypeUnregistered",
-				rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
+			LogMsg("mDNS_Deregister_internal: %s already marked kDNSRecordTypeUnregistered", ARDisplayString(m, rr));
 		else if (RecordType == kDNSRecordTypeDeregistering)
-			debugf("mDNS_Deregister_internal: Record %##s (%s) already marked kDNSRecordTypeDeregistering",
-				rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
+			LogMsg("mDNS_Deregister_internal: %s already marked kDNSRecordTypeDeregistering", ARDisplayString(m, rr));
 		else
 			{
-			verbosedebugf("mDNS_Deregister_internal: Deleting record for %##s (%s)",
-				rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
+			verbosedebugf("mDNS_Deregister_internal: Deleting record for %s", ARDisplayString(m, rr));
 			rr->resrec.RecordType = kDNSRecordTypeUnregistered;
 			}
 
@@ -1064,8 +1066,23 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 		if (rr->LocalAnswer) AnswerLocalQuestions(m, rr, mDNSfalse);
 
 #ifndef UNICAST_DISABLED
+		// This is bad. This code seems to assume that uDNS_DeregisterRecord() is an atomic synchronous operation.
+		// In the case of UDP, this is almost true -- we just fire off the DNS update request and forget about it
+		// (although that still ignores the case of needing retransmissions).
+		// In the case of Private DNS over TCP, it's *never* an atomic synchronous operation because we have to
+		// wait for the TCP connection to complete, so by the time the connection is set up and 'tcpCallback'
+		// gets invoked, there's a good chance the client will already have free'd or reused this record.
+		// We need to make uDNS_DeregisterRecord fully asynchronous like the kDNSRecordTypeShared deregistration
+		// above, with an mStatus_MemFree callback to the client when it's finished.
 		if (rr->resrec.InterfaceID != mDNSInterface_LocalOnly && !rr->ForceMCast && !IsLocalDomain(rr->resrec.name))
-			return uDNS_DeregisterRecord(m, rr);
+			{
+			mStatus err;
+			// Temporary hack: Restore RecordType so uDNS_DeregisterRecord can send its immediate packet (which it shouldn't be doing)
+			rr->resrec.RecordType = RecordType;
+			err = uDNS_DeregisterRecord(m, rr);
+			rr->resrec.RecordType = kDNSRecordTypeUnregistered;
+			return err;
+			}
 #endif
 
 		// CAUTION: MUST NOT do anything more with rr after calling rr->Callback(), because the client's callback function
@@ -5998,7 +6015,6 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->DNSServers               = mDNSNULL;
 	m->Router                   = zeroAddr;
 	m->AdvertisedV4             = zeroAddr;
-	m->MappedV4                 = zeroAddr;
 	m->AdvertisedV6             = zeroAddr;
 	m->AuthInfoList             = mDNSNULL;
 	m->Hostnames                = mDNSNULL;
