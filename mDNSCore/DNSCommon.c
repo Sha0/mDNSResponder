@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.148  2007/04/23 04:55:29  cheshire
+Add some defensive null pointer checks
+
 Revision 1.147  2007/04/22 20:18:10  cheshire
 Add comment about mDNSRandom()
 
@@ -1356,6 +1359,8 @@ mDNSexport mDNSu8 *putDomainNameAsLabels(const DNSMessage *const msg,
 	const mDNSu8 *      pointer     = mDNSNULL;
 	const mDNSu8 *const searchlimit = ptr;
 
+	if (!ptr) { LogMsg("putDomainNameAsLabels ptr is null"); return(mDNSNULL); }
+
 	while (*np && ptr < limit-1)		// While we've got characters in the name, and space to write them in the message...
 		{
 		if (*np > MAX_DOMAIN_LABEL)
@@ -1570,6 +1575,8 @@ mDNSexport mDNSu8 *PutResourceRecordTTLWithLimit(DNSMessage *const msg, mDNSu8 *
 		LogMsg("PutResourceRecord ERROR! Attempt to put kDNSRecordTypeUnregistered %##s (%s)", rr->name->c, DNSTypeName(rr->rrtype));
 		return(ptr);
 		}
+
+	if (!ptr) { LogMsg("PutResourceRecordTTLWithLimit ptr is null"); *(long*)0=0; return(mDNSNULL); }
 
 	ptr = putDomainNameAsLabels(msg, ptr, limit, rr->name);
 	if (!ptr || ptr + 10 >= limit) return(mDNSNULL);	// If we're out-of-space, return mDNSNULL
