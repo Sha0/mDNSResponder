@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.150  2007/04/24 00:17:33  cheshire
+Made LocateLLQOptData guard against packets with bogus numAdditionals value
+
 Revision 1.149  2007/04/23 21:43:00  cheshire
 Remove debugging check
 
@@ -2047,13 +2050,12 @@ mDNSexport const mDNSu8 *LocateLLQOptData(const DNSMessage *const msg, const mDN
 	{
 	int i;
 	const mDNSu8 *ptr = LocateAdditionals(msg, end);
-	if (!ptr) return(mDNSNULL);
 
 	// Locate the OPT record.
 	// According to RFC 2671, "One OPT pseudo-RR can be added to the additional data section of either a request or a response."
 	// This implies that there may be *at most* one OPT record per DNS message, in the Additional Section,
 	// but not necessarily the *last* entry in the Additional Section.
-	for (i = 0; i < msg->h.numAdditionals; i++)
+	for (i = 0; ptr && i < msg->h.numAdditionals; i++)
 		{
 		if (ptr + 10 + LLQ_OPT_RDLEN <= end   &&		// Make sure we have 10+22 bytes of data
 			ptr[0] == 0                       &&		// Name must be root label
