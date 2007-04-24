@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.363  2007/04/24 00:09:47  cheshire
+Remove MappedV4 field from mDNS_struct (not actually used anywhere)
+
 Revision 1.362  2007/04/22 06:02:02  cheshire
 <rdar://problem/4615977> Query should immediately return failure when no server
 
@@ -1558,7 +1561,6 @@ struct mDNS_struct
 
 	mDNSAddr          Router;
 	mDNSAddr          AdvertisedV4;         // IPv4 address pointed to by hostname
-	mDNSAddr          MappedV4;             // Cache of public address if PrimaryIP is behind a NAT
 	mDNSAddr          AdvertisedV6;         // IPv6 address pointed to by hostname
 
 	DomainAuthInfo   *AuthInfoList;         // list of domains requiring authentication for updates
