@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.400  2007/04/24 21:50:27  cheshire
+Debugging: Show list of changedKeys in NetworkChanged callback
+
 Revision 1.399  2007/04/23 22:28:47  cheshire
 Allan Nathanson informs us we should only be looking at the search list for resolver[0], not all of them
 
@@ -366,6 +369,13 @@ static SecKeychainRef ServerKC;
 
 #define DYNDNS_KEYCHAIN_SERVICE "DynDNS Shared Secret"
 #define SYSTEM_KEYCHAIN_PATH "/Library/Keychains/System.keychain"
+
+CFStringRef NetworkChangedKey_IPv4;
+CFStringRef NetworkChangedKey_IPv6;
+CFStringRef NetworkChangedKey_Hostnames;
+CFStringRef NetworkChangedKey_Computername;
+CFStringRef NetworkChangedKey_DNS;
+CFStringRef NetworkChangedKey_DynamicDNS = CFSTR("Setup:/Network/DynamicDNS");
 
 // ***************************************************************************
 // Functions
@@ -997,8 +1007,8 @@ mDNSexport mStatus mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr *dst, 
 	struct sockaddr_in saddr;
 	mStatus err = mStatus_NoError;
 
-	sock->callback = callback;
-	sock->context = context;
+	sock->callback          = callback;
+	sock->context           = context;
 	sock->setup             = mDNSfalse;
 	sock->handshakecomplete = mDNSfalse;
 	sock->connected         = mDNSfalse;
@@ -2116,7 +2126,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:mDNSPlatformSetDNSConfig"), NULL, NULL);
 	if (store)
 		{
-		CFDictionaryRef dict = SCDynamicStoreCopyValue(store, CFSTR("Setup:/Network/DynamicDNS"));
+		CFDictionaryRef dict = SCDynamicStoreCopyValue(store, NetworkChangedKey_DynamicDNS);
 		if (dict)
 			{
 			if (fqdn)
@@ -2587,25 +2597,26 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 
 	int c = CFArrayGetCount(changedKeys);								// Count changes
 	CFRange range = { 0, c };
-	CFStringRef k1 = SCDynamicStoreKeyCreateComputerName(NULL);
-	CFStringRef k2 = SCDynamicStoreKeyCreateHostNames(NULL);
-	int c1 = 0, c2 = 0, c3 = 0;
-	if (k1 && k2)
-		{
-		c1 = (CFArrayContainsValue(changedKeys, range, k1) != 0);	// See if ComputerName changed
-		c2 = (CFArrayContainsValue(changedKeys, range, k2) != 0);	// See if Local Hostname changed
-		c3 = (CFArrayContainsValue(changedKeys, range, CFSTR("Setup:/Network/DynamicDNS")) != 0);
-		if (c && c - c1 - c2 - c3 == 0) delay = mDNSPlatformOneSecond/10;	// If these were the only changes, shorten delay
-		}
-	if (k1) CFRelease(k1);
-	if (k2) CFRelease(k2);
+	int c1 = (CFArrayContainsValue(changedKeys, range, NetworkChangedKey_Hostnames   ) != 0);
+	int c2 = (CFArrayContainsValue(changedKeys, range, NetworkChangedKey_Computername) != 0);
+	int c3 = (CFArrayContainsValue(changedKeys, range, NetworkChangedKey_DynamicDNS  ) != 0);
+	if (c && c - c1 - c2 - c3 == 0) delay = mDNSPlatformOneSecond/10;	// If these were the only changes, shorten delay
 
+#if LogAllOperations
 	LogOperation("***   NetworkChanged   *** %d change%s %s%s%sdelay %d",
 		c, c>1?"s":"",
-		c1 ? "(Computer Name) "  : "",
-		c2 ? "(Local Hostname) " : "",
+		c1 ? "(Local Hostname) " : "",
+		c2 ? "(Computer Name) "  : "",
 		c3 ? "(DynamicDNS) "     : "",
 		delay);
+	int i;
+	for (i=0; i<c; i++)
+		{
+		char buf[256];
+		if (!CFStringGetCString(CFArrayGetValueAtIndex(changedKeys, i), buf, sizeof(buf), kCFStringEncodingUTF8)) buf[0] = 0;
+		LogOperation("NetworkChanged: %s", buf);
+		}
+#endif
 
 	if (!m->p->NetworkChanged ||
 		m->p->NetworkChanged - NonZeroTime(m->timenow + delay) < 0)
@@ -2614,6 +2625,7 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 	if (!m->SuppressSending ||
 		m->SuppressSending - m->p->NetworkChanged < 0)
 		m->SuppressSending = m->p->NetworkChanged;
+
 	mDNS_Unlock(m);
 	KQueueUnlock(m, "NetworkChanged");
 	}
@@ -2623,26 +2635,20 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	mStatus err = -1;
 	SCDynamicStoreContext context = { 0, m, NULL, NULL, NULL };
 	SCDynamicStoreRef     store    = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:WatchForNetworkChanges"), NetworkChanged, &context);
-	CFStringRef           key1     = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetIPv4);
-	CFStringRef           key2     = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetIPv6);
-	CFStringRef           key3     = SCDynamicStoreKeyCreateComputerName(NULL);
-	CFStringRef           key4     = SCDynamicStoreKeyCreateHostNames(NULL);
-	CFStringRef           key5     = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
+	CFMutableArrayRef     keys     = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 	CFStringRef           pattern1 = SCDynamicStoreKeyCreateNetworkInterfaceEntity(NULL, kSCDynamicStoreDomainState, kSCCompAnyRegex, kSCEntNetIPv4);
 	CFStringRef           pattern2 = SCDynamicStoreKeyCreateNetworkInterfaceEntity(NULL, kSCDynamicStoreDomainState, kSCCompAnyRegex, kSCEntNetIPv6);
-
-	CFMutableArrayRef     keys     = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 	CFMutableArrayRef     patterns = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 
 	if (!store) { LogMsg("SCDynamicStoreCreate failed: %s", SCErrorString(SCError())); goto error; }
-	if (!key1 || !key2 || !key3 || !key4 || !keys || !pattern1 || !pattern2 || !patterns) goto error;
+	if (!keys || !pattern1 || !pattern2 || !patterns) goto error;
 
-	CFArrayAppendValue(keys, key1);
-	CFArrayAppendValue(keys, key2);
-	CFArrayAppendValue(keys, key3);
-	CFArrayAppendValue(keys, key4);
-	CFArrayAppendValue(keys, key5);
-	CFArrayAppendValue(keys, CFSTR("Setup:/Network/DynamicDNS"));
+	CFArrayAppendValue(keys, NetworkChangedKey_IPv4);
+	CFArrayAppendValue(keys, NetworkChangedKey_IPv6);
+	CFArrayAppendValue(keys, NetworkChangedKey_Hostnames);
+	CFArrayAppendValue(keys, NetworkChangedKey_Computername);
+	CFArrayAppendValue(keys, NetworkChangedKey_DNS);
+	CFArrayAppendValue(keys, NetworkChangedKey_DynamicDNS);
 	CFArrayAppendValue(patterns, pattern1);
 	CFArrayAppendValue(patterns, pattern2);
 	CFArrayAppendValue(patterns, CFSTR("State:/Network/Interface/[^/]+/AirPort"));
@@ -2661,15 +2667,10 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	if (store)    CFRelease(store);
 
 	exit:
-	if (key1)     CFRelease(key1);
-	if (key2)     CFRelease(key2);
-	if (key3)     CFRelease(key3);
-	if (key4)     CFRelease(key4);
-	if (key5)     CFRelease(key5);
-	if (pattern1) CFRelease(pattern1);
-	if (pattern2) CFRelease(pattern2);
-	if (keys)     CFRelease(keys);
 	if (patterns) CFRelease(patterns);
+	if (pattern2) CFRelease(pattern2);
+	if (pattern1) CFRelease(pattern1);
+	if (keys)     CFRelease(keys);
 
 	return(err);
 	}
@@ -2862,6 +2863,13 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	UpdateInterfaceList(m, utc);
 	SetupActiveInterfaces(m, utc);
 
+	NetworkChangedKey_IPv4         = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetIPv4);
+	NetworkChangedKey_IPv6         = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetIPv6);
+	NetworkChangedKey_Hostnames    = SCDynamicStoreKeyCreateHostNames(NULL);
+	NetworkChangedKey_Computername = SCDynamicStoreKeyCreateComputerName(NULL);
+	NetworkChangedKey_DNS          = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
+	if (!NetworkChangedKey_IPv4 || !NetworkChangedKey_IPv6 || !NetworkChangedKey_Hostnames || !NetworkChangedKey_Computername || !NetworkChangedKey_DNS)
+		return(mStatus_NoMemoryErr);
 	err = WatchForNetworkChanges(m);
 	if (err) return(err);
 
