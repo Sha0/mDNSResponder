@@ -19,9 +19,13 @@
  * is supposed to be malloc-free so that it runs in constant memory determined at compile-time.
  * Any dynamic run-time requirements should be handled by the platform layer below or client layer above
 
-    Change History (most recent first):
+	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.341  2007/04/24 02:07:42  cheshire
+<rdar://problem/4246187> Identical client queries should reference a single shared core query
+Deleted some more redundant code
+
 Revision 1.340  2007/04/23 22:01:23  cheshire
 <rdar://problem/5094009> IPv6 filtering in AirPort base station breaks Wide-Area Bonjour
 As of March 2007, AirPort base stations now block incoming IPv6 connections by default, so there's no point
@@ -430,15 +434,15 @@ typedef struct
 
 typedef struct SearchListElem
 	{
-    struct SearchListElem *next;
-    domainname domain;
-    int flag;		// -1 means delete, 0 means unchanged, +1 means newly added
-    DNSQuestion BrowseQ;
-    DNSQuestion DefBrowseQ;
-    DNSQuestion LegacyBrowseQ;
-    DNSQuestion RegisterQ;
-    DNSQuestion DefRegisterQ;
-    ARListElem *AuthRecs;
+	struct SearchListElem *next;
+	domainname domain;
+	int flag;		// -1 means delete, 0 means unchanged, +1 means newly added
+	DNSQuestion BrowseQ;
+	DNSQuestion DefBrowseQ;
+	DNSQuestion LegacyBrowseQ;
+	DNSQuestion RegisterQ;
+	DNSQuestion DefRegisterQ;
+	ARListElem *AuthRecs;
 	} SearchListElem;
 
 // for domain enumeration and default browsing/registration
@@ -514,7 +518,7 @@ mDNSlocal void SetRecordRetry(mDNS *const m, AuthRecord *rr, mStatus SendErr)
 #endif
 
 mDNSexport void mDNS_AddDNSServer(mDNS *const m, const mDNSAddr *addr, const domainname *d)
-    {
+	{
 	DNSServer **p = &m->DNSServers;
 
 	if (!d) d = (const domainname *)"";
@@ -542,7 +546,7 @@ mDNSexport void mDNS_AddDNSServer(mDNS *const m, const mDNSAddr *addr, const dom
 	(*p)->teststate = DNSServer_Untested;
 	AssignDomainName(&(*p)->domain, d);
 	(*p)->next = mDNSNULL;
-    }
+	}
 
  // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -679,7 +683,7 @@ mDNSlocal void SendInitialPMapReq(mDNS *m, NATTraversalInfo *info)
 		info->RetryInterval = NATMAP_INIT_RETRY;
 		return;
 		}
-    uDNS_SendNATMsg(info, m);
+	uDNS_SendNATMsg(info, m);
 	return;
 	}
 
@@ -829,7 +833,7 @@ mDNSlocal void StartGetPublicAddr(mDNS *m, AuthRecord *AddressRec)
 	info->reg.RecordRegistration = AddressRec;
 	info->state = NATState_Request;
 
-    // format message
+	// format message
 	req = &info->request.AddrReq;
 	req->vers = NATMAP_VERS;
 	req->opcode = NATOp_AddrRequest;
@@ -913,11 +917,11 @@ mDNSlocal mStatus constructQueryMsg(DNSMessage *msg, mDNSu8 **endPtr, DNSQuestio
 	InitializeDNSMessage(&msg->h, question->TargetQID, uQueryFlags);
 
 	*endPtr = putQuestion(msg, msg->data, msg->data + AbsoluteMaxDNSMessageData, &question->qname, question->qtype, question->qclass);
-    if (!*endPtr)
-        {
-        LogMsg("ERROR: Unicast query out of space in packet");
-        return mStatus_UnknownErr;
-        }
+	if (!*endPtr)
+	    {
+	    LogMsg("ERROR: Unicast query out of space in packet");
+	    return mStatus_UnknownErr;
+	    }
 	return mStatus_NoError;
 	}
 
@@ -1663,7 +1667,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 		}
 
 	// construct update packet
-    // set zone
+	// set zone
 	ptr = putZone(&msg, ptr, end, &srs->zone, mDNSOpaque16fromIntVal(srv->resrec.rrclass));
 	if (!ptr) { err = mStatus_UnknownErr; goto exit; }
 
@@ -1834,9 +1838,9 @@ mDNSlocal const domainname *PRIVATE_QUERY_SERVICE_TYPE  = (const domainname*)"\x
 mDNSlocal const domainname *PRIVATE_LLQ_SERVICE_TYPE    = (const domainname*)"\x0C_dns-llq-tls"    "\x04_tcp";
 
 #define ntaContextSRV(X) (\
-	(X)->target == lookupUpdateSRV ? (context->question.AuthInfo ? PRIVATE_UPDATE_SERVICE_TYPE : PUBLIC_UPDATE_SERVICE_TYPE) : \
-	(X)->target == lookupQuerySRV  ? (context->question.AuthInfo ? PRIVATE_QUERY_SERVICE_TYPE  : (const domainname*)""     ) : \
-	(X)->target == lookupLLQSRV    ? (context->question.AuthInfo ? PRIVATE_LLQ_SERVICE_TYPE    : PUBLIC_LLQ_SERVICE_TYPE   ) : \
+	(X)->target == lookupUpdateSRV ? ((X)->zonePrivate ? PRIVATE_UPDATE_SERVICE_TYPE : PUBLIC_UPDATE_SERVICE_TYPE) : \
+	(X)->target == lookupQuerySRV  ? ((X)->zonePrivate ? PRIVATE_QUERY_SERVICE_TYPE  : (const domainname*)""     ) : \
+	(X)->target == lookupLLQSRV    ? ((X)->zonePrivate ? PRIVATE_LLQ_SERVICE_TYPE    : PUBLIC_LLQ_SERVICE_TYPE   ) : \
 	(const domainname*)"")
 
 // Forward reference: hndlLookupSOA references GetZoneData_QuestionCallback and vice versa
@@ -1846,6 +1850,14 @@ mDNSlocal mStatus GetZoneData_StartQuery(ntaContext *hndlrContext, mDNSu16 qtype
 	{
 	mDNS *const m = hndlrContext->m;
 	mStatus status;
+
+	if (qtype == kDNSType_SRV)
+		{
+		LogOperation("lookupDNSPort %##s", ntaContextSRV(hndlrContext));
+		hndlrContext->question.qname.c[0] = 0;
+		AppendDomainName(&hndlrContext->question.qname, ntaContextSRV(hndlrContext));
+		AppendDomainName(&hndlrContext->question.qname, &hndlrContext->zoneName);
+		}
 
 	hndlrContext->question.ThisQInterval       = -1;		// So that GetZoneData_QuestionCallback() knows whether to cancel this question (Is this necessary?)
 	hndlrContext->question.InterfaceID         = mDNSInterface_Any;
@@ -1874,184 +1886,105 @@ mDNSlocal mStatus GetZoneData_StartQuery(ntaContext *hndlrContext, mDNSu16 qtype
 mDNSlocal void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
 	ntaContext *context = (ntaContext*)question->QuestionContext;
-	mStatus err;
-	zoneData_t result;
-	(void)m;	// unused
 
-	LogOperation("GetZoneData_QuestionCallback: %s %d %s", AddRecord ? "Add" : "Rmv", context->state, RRDisplayString(m, answer));
+	LogOperation("GetZoneData_QuestionCallback: %s %s", AddRecord ? "Add" : "Rmv", RRDisplayString(m, answer));
+
 	if (!AddRecord) return;
+	if (answer->rrtype != question->qtype) return; // Don't care about CNAMEs
 
-	switch (context->state)
+	if (answer->rrtype == kDNSType_SOA)
 		{
-		case lookupSOA:
+		LogOperation("GOT lookupSOA %s", RRDisplayString(m, answer));
+		mDNS_StopQuery(m, question);
+		if (answer->rdlength)
 			{
-			LogOperation("GOT lookupSOA %s", RRDisplayString(m, answer));
-			if (answer->rrtype != kDNSType_SOA) return; // Don't care about CNAMEs
-			if (answer->rdlength)
-				{
-				AssignDomainName(&context->zone, answer->name);
-				context->zoneClass = answer->rrclass;
-				AssignDomainName(&context->ns, &answer->rdata->u.soa.mname);
-				context->state = foundZone;
-				}
-			else
-				{
-				if (!context->curSOA->c[0])	// we've gone down to the root and have not found an SOA
-					LogMsg("ERROR: hndlLookupSOA - recursed to root label of %##s without finding SOA", context->origName.c);
-				else
-					{
-					mDNS_StopQuery(context->m, &context->question);
-					context->curSOA = (domainname *)(context->curSOA->c + context->curSOA->c[0]+1);
-					AssignDomainName(&context->question.qname, context->curSOA);
-					GetZoneData_StartQuery(context, kDNSType_SOA);
-					}
-				return;
-				}
-			} break;
-
-		case lookupNS:
+			AssignDomainName(&context->zoneName, answer->name);
+			context->zoneClass = answer->rrclass;
+			AssignDomainName(&context->ns, &answer->rdata->u.soa.mname);
+			// We've just learned the zone. Confirm that an NS record exists
+			AssignDomainName(&context->question.qname, &context->zoneName);
+			GetZoneData_StartQuery(context, kDNSType_NS);
+			}
+		else if (context->curSOA->c[0])
 			{
-			LogOperation("GOT lookupNS %s", RRDisplayString(m, answer));
-			if (answer->rrtype != kDNSType_NS) return; // Don't care about CNAMEs
-			if (!SameDomainName(&context->ns, &answer->rdata->u.name)) return;		// Ignore NS if name doesn't match
-			context->state = foundNS;
-			} break;
-
-		case lookupA:
-			{
-			LogOperation("GOT lookupA %s", RRDisplayString(m, answer));
-			if (answer->rrtype != kDNSType_A) return; // Don't care about CNAMEs
-			context->addr  = answer->rdata->u.ipv4;
-			context->state = foundA;
-			} break;
-
-		case lookupPort:
-			{
-			LogOperation("GOT lookupPort SRV %s", RRDisplayString(m, answer));
-			if (answer->rdlength)
-				{
-				context->ntaPort = answer->rdata->u.srv.port;
-				context->state   = foundPort;
-				}
-			else
-				{
-				// We failed to find our desired SRV record.
-				// If we were trying to find _dns-update-tls or _dns-llq-tls then we retry,
-				// looking for the non-TLS variant, otherwise we just give up and return zero
-				// Note: Changing context->question.AuthInfo causes ntaContextSRV() to yield a different SRV name when building the query
-				DomainAuthInfo *wasPrivate = context->question.AuthInfo;
-				context->question.AuthInfo = mDNSNULL;
-				if (wasPrivate && context->target != lookupQuerySRV)
-					context->state   = foundA;		// Try again, non-private this time
-				else
-					{
-					context->ntaPort = zeroIPPort;	// Give up and return zero
-					context->state   = foundPort;
-					}
-				}
-			} break;
-
-		default: return;
+			context->curSOA = (domainname *)(context->curSOA->c + context->curSOA->c[0]+1);
+			AssignDomainName(&context->question.qname, context->curSOA);
+			GetZoneData_StartQuery(context, kDNSType_SOA);
+			}
+		else
+			LogMsg("ERROR: hndlLookupSOA - recursed to root label of %##s without finding SOA", context->origName.c);
 		}
-
-	if (question && context->state > 0)
-		LogOperation("GetZoneData_QuestionCallback: %d Question %##s (%s)", context->state, question->qname.c, DNSTypeName(question->qtype));
-
-	// stop any active question
-	if (context->question.ThisQInterval >= 0) mDNS_StopQuery(context->m, &context->question);
-
-	switch (context->state)
+	else if (answer->rrtype == kDNSType_NS)
 		{
-		case lookupSOA: // 1 should never happen
-		case foundZone: // 2
-			// we've just learned the zone.  confirm that an NS record exists
-			AssignDomainName(&context->question.qname, &context->zone);
-			err = GetZoneData_StartQuery(context, kDNSType_NS);
-			if (err) LogMsg("confirmNS: GetZoneData_StartQuery returned error %ld (breaking until next periodic retransmission", err);
-			context->state = lookupNS;
-			return;	// break from SM until we receive another packet
-
-		case lookupNS: // 3 should never happen
-		case foundNS: // 4
-			context->state = lookupA;
-			AssignDomainName(&context->question.qname, &context->ns);
-			err = GetZoneData_StartQuery(context, kDNSType_A);
-			if (err) LogMsg("queryNSAddr: GetZoneData_StartQuery returned error %ld (breaking until next periodic retransmission)", err);
-			return;
-
-		case lookupA: // 5 should never happen
-		case foundA: // 6
-			LogOperation("lookupDNSPort %##s", ntaContextSRV(context));
-			// query the server for the update port for the zone
-			context->state = lookupPort;
-			context->question.qname.c[0] = 0;
-			AppendDomainName(&context->question.qname, ntaContextSRV(context));
-			AppendDomainName(&context->question.qname, &context->zone);
-			err = GetZoneData_StartQuery(context, kDNSType_SRV);
-			if (err) LogMsg("lookupDNSPort: GetZoneData_StartQuery returned error %ld (breaking until next periodic retransmission)", err);
-			return;		// break from state machine until we receive another packet
-		case lookupPort: // 7 should never happen
-		case foundPort: break; // 8
+		LogOperation("GOT lookupNS %s", RRDisplayString(m, answer));
+		if (!SameDomainName(&context->ns, &answer->rdata->u.name)) return;		// Ignore NS if name doesn't match
+		mDNS_StopQuery(m, question);
+		AssignDomainName(&context->question.qname, &context->ns);
+		GetZoneData_StartQuery(context, kDNSType_A);
 		}
-
-	if (context->state != foundPort)
+	else if (answer->rrtype == kDNSType_A)
 		{
-		LogMsg("ERROR: GetZoneData_Callback - exited state machine with state %d", context->state);
-		goto error;
+		LogOperation("GOT lookupA %s", RRDisplayString(m, answer));
+		mDNS_StopQuery(m, question);
+		if (answer->rrtype != kDNSType_A) return; // Don't care about CNAMEs
+		context->addr.type  = mDNSAddrType_IPv4;
+		context->addr.ip.v4 = answer->rdata->u.ipv4;
+		GetZoneData_StartQuery(context, kDNSType_SRV);
 		}
-
-	result.primaryAddr.ip.v4 = context->addr;
-	result.primaryAddr.type = mDNSAddrType_IPv4;
-	AssignDomainName(&result.zoneName, &context->zone);
-	result.zoneClass   = context->zoneClass;
-	result.zonePrivate = (context->question.AuthInfo != mDNSNULL);
-	result.Port        = context->ntaPort;
-	context->ntaCallback(mStatus_NoError, context->m, context->callbackInfo, &result);
-	goto cleanup;
-
-error:
-	if (context && context->ntaCallback)
-		context->ntaCallback(mStatus_UnknownErr, context->m, context->callbackInfo, mDNSNULL);
-cleanup:
-	if (context && context->question.ThisQInterval >= 0) mDNS_StopQuery(context->m, &context->question);
-	if (context) mDNSPlatformMemFree(context);
+	else if (answer->rrtype == kDNSType_SRV)
+		{
+		LogOperation("GOT lookupPort SRV %s", RRDisplayString(m, answer));
+		mDNS_StopQuery(m, question);
+		if (!answer->rdlength && context->zonePrivate && context->target != lookupQuerySRV)
+			{
+			context->zonePrivate = mDNSfalse;	// Causes ntaContextSRV() to yield a different SRV name when building the query
+			GetZoneData_StartQuery(context, kDNSType_SRV);		// Try again, non-private this time
+			}
+		else
+			{
+			if (answer->rdlength) context->Port = answer->rdata->u.srv.port;
+			else { context->zonePrivate = mDNSfalse; context->Port = zeroIPPort;}
+			context->ntaCallback(mStatus_NoError, context->m, context->callbackInfo, context);
+			mDNSPlatformMemFree(context);
+			}
+		}
 	}
 
 // state machine entry routine
 // initialization
 mDNSlocal ntaContext *StartGetZoneData(mDNS *const m, const domainname *const name, const AsyncOpTarget target, AsyncOpCallback callback, void *callbackInfo)
-    {
-    ntaContext *context = (ntaContext*)mDNSPlatformMemAllocate(sizeof(ntaContext));
-    if (!context) { LogMsg("ERROR: StartGetZoneData - mDNSPlatformMemAllocate failed"); return mDNSNULL; }
+	{
+	ntaContext *context = (ntaContext*)mDNSPlatformMemAllocate(sizeof(ntaContext));
+	if (!context) { LogMsg("ERROR: StartGetZoneData - mDNSPlatformMemAllocate failed"); return mDNSNULL; }
 
 	if (m->mDNS_busy != m->mDNS_reentrancy+1)
 		LogMsg("StartGetZoneData: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
 	mDNSPlatformMemZero(context, sizeof(ntaContext));
-    AssignDomainName(&context->origName, name);
-    context->curSOA          = &context->origName;
-    context->state           = lookupSOA;
-    context->m               = m;
-    context->zone.c[0]       = 0;
-    context->zoneClass       = 0;
-    context->ns.c[0]         = 0;
-    context->addr            = zerov4Addr;
-    context->target          = target;
-    context->ntaCallback     = callback;
-    context->callbackInfo    = callbackInfo;
+	AssignDomainName(&context->origName, name);
+	context->curSOA          = &context->origName;
+	context->m               = m;
+	context->zoneName.c[0]   = 0;
+	context->zoneClass       = 0;
+	context->ns.c[0]         = 0;
+	context->addr            = zeroAddr;
+	context->target          = target;
+	context->zonePrivate     = GetAuthInfoForName(m, name) ? mDNStrue : mDNSfalse;
+	context->ntaCallback     = callback;
+	context->callbackInfo    = callbackInfo;
 
-    context->question.QuestionContext = context;
+	context->question.QuestionContext = context;
 	AssignDomainName(&context->question.qname, context->curSOA);
 
 	mDNS_DropLockBeforeCallback();		// GetZoneData_StartQuery expects to be called from a normal callback, so we emulate that here
 	GetZoneData_StartQuery(context, kDNSType_SOA);
 	mDNS_ReclaimLockAfterCallback();
 
-    return context;
-    }
+	return context;
+	}
 
 // Forward reference: StartNATPortMap references serviceRegistrationCallback and vice versa
-mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srsPtr, const zoneData_t *result);
+mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srsPtr, const ntaContext *result);
 
 mDNSlocal void StartNATPortMap(mDNS *m, ServiceRecordSet *srs)
 	{
@@ -2079,7 +2012,7 @@ mDNSlocal void StartNATPortMap(mDNS *m, ServiceRecordSet *srs)
 	srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, lookupUpdateSRV, serviceRegistrationCallback, srs);
 	}
 
-mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srsPtr, const zoneData_t *zoneData)
+mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srsPtr, const ntaContext *zoneData)
 	{
 	ServiceRecordSet *srs = (ServiceRecordSet *)srsPtr;
 
@@ -2105,8 +2038,8 @@ mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srs
 
 	// cache zone data
 	AssignDomainName(&srs->zone, &zoneData->zoneName);
-    srs->ns.type = mDNSAddrType_IPv4;
-	srs->ns = zoneData->primaryAddr;
+	srs->ns.type = mDNSAddrType_IPv4;
+	srs->ns = zoneData->addr;
 	if (!mDNSIPPortIsZero(zoneData->Port))
 		{
 		srs->SRSUpdatePort = zoneData->Port;
@@ -2176,8 +2109,8 @@ mDNSexport mDNSBool uDNS_HandleNATPortMapReply(NATTraversalInfo *n, mDNS *m, mDN
 
 	if (n->state == NATState_Refresh && !mDNSSameIPPort(reply->pub, n->PublicPort))
 		LogMsg("uDNS_HandleNATPortMapReply: NAT refresh changed public port from %d to %d", mDNSVal16(n->PublicPort), mDNSVal16(reply->pub));
-        // this should never happen
-	    // !!!KRS to be defensive, use SRVChanged flag on service and deregister here
+	    // this should never happen
+		// !!!KRS to be defensive, use SRVChanged flag on service and deregister here
 
 	n->PublicPort = reply->pub;
 	n->request.PortReq.pub = reply->pub; // Remember allocated port for future refreshes
@@ -2295,7 +2228,7 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 	id = mDNS_NewMessageID(m);
 	InitializeDNSMessage(&msg.h, id, UpdateReqFlags);
 
-    // put zone
+	// put zone
 	ptr = putZone(&msg, ptr, end, &srs->zone, mDNSOpaque16fromIntVal(srs->RR_SRV.resrec.rrclass));
 	if (!ptr) { LogMsg("ERROR: SendServiceDeregistration - putZone"); err = mStatus_UnknownErr; goto exit; }
 
@@ -2609,18 +2542,18 @@ mDNSlocal void GetStaticHostname(mDNS *m)
 	mDNSPlatformMemZero(q, sizeof(*q));
 	// Note: This is reverse order compared to a normal dotted-decimal IP address, so we can't use our customary "%.4a" format code
 	mDNS_snprintf(buf, MAX_ESCAPED_DOMAIN_NAME, "%d.%d.%d.%d.in-addr.arpa.", ip[3], ip[2], ip[1], ip[0]);
-    if (!MakeDomainNameFromDNSNameString(&q->qname, buf)) { LogMsg("Error: GetStaticHostname - bad name %s", buf); return; }
+	if (!MakeDomainNameFromDNSNameString(&q->qname, buf)) { LogMsg("Error: GetStaticHostname - bad name %s", buf); return; }
 
 	q->InterfaceID      = mDNSInterface_Any;
-    q->Target           = zeroAddr;
-    q->qtype            = kDNSType_PTR;
-    q->qclass           = kDNSClass_IN;
-    q->LongLived        = mDNSfalse;
-    q->ExpectUnique     = mDNSfalse;
-    q->ForceMCast       = mDNSfalse;
-    q->ReturnIntermed   = mDNStrue;
-    q->QuestionCallback = FoundStaticHostname;
-    q->QuestionContext  = mDNSNULL;
+	q->Target           = zeroAddr;
+	q->qtype            = kDNSType_PTR;
+	q->qclass           = kDNSClass_IN;
+	q->LongLived        = mDNSfalse;
+	q->ExpectUnique     = mDNSfalse;
+	q->ForceMCast       = mDNSfalse;
+	q->ReturnIntermed   = mDNStrue;
+	q->QuestionCallback = FoundStaticHostname;
+	q->QuestionContext  = mDNSNULL;
 
 	// Seems like a hack -- if this code is allowed to issue API calls, then it should have been called in the appropriate state in the first place
 	// and if it's not allowed to issue API calls, then deliberately circumventing the locking check like this seems like it's asking for
@@ -2651,7 +2584,7 @@ mDNSexport void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSReco
 	new->arv4.state = regState_Unregistered;
 	new->arv6.state = regState_Unregistered;
 
-    new->next = m->Hostnames;
+	new->next = m->Hostnames;
 	m->Hostnames = new;
 
 	AssignDomainName(&new->fqdn, fqdn);
@@ -2865,7 +2798,7 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 	rr->id = mDNS_NewMessageID(m);
 	InitializeDNSMessage(&msg.h, rr->id, UpdateReqFlags);
 
-    // set zone
+	// set zone
 	ptr = putZone(&msg, ptr, end, &rr->zone, mDNSOpaque16fromIntVal(rr->resrec.rrclass));
 	if (!ptr) { err = mStatus_UnknownErr; goto exit; }
 
@@ -3494,7 +3427,7 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease, TCPSocket 
 	llq.id    = info->id;
 	llq.llqlease = lease;
 
-    InitializeDNSMessage(&msg.h, q->TargetQID, uQueryFlags);
+	InitializeDNSMessage(&msg.h, q->TargetQID, uQueryFlags);
 	end = putLLQ(&msg, msg.data, q, &llq, mDNStrue);
 	if (!end) { LogMsg("ERROR: sendLLQRefresh - putLLQ"); return; }
 
@@ -3508,7 +3441,7 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease, TCPSocket 
 	}
 
 // wrapper for startLLQHandshake, invoked by async op callback
-mDNSlocal void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqInfo, const zoneData_t *zoneInfo)
+mDNSlocal void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqInfo, const ntaContext *zoneInfo)
 	{
 	LLQ_Info *info = (LLQ_Info *)llqInfo;
 
@@ -3517,7 +3450,7 @@ mDNSlocal void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqIn
 	// we use for cleaning up if our LLQ is cancelled *before* the GetZoneData operation has completes).
 	info->nta = mDNSNULL;
 
-    // check state first to make sure it is OK to touch question object
+	// check state first to make sure it is OK to touch question object
 	if (info->state == LLQ_Cancelled)
 		{
 		// StopQuery was called while we were getting the zone info
@@ -3567,13 +3500,13 @@ mDNSlocal void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqIn
 		goto exit;
 		}
 
-    // cache necessary zone data
-	info->servAddr  = zoneInfo->primaryAddr;
+	// cache necessary zone data
+	info->servAddr  = zoneInfo->addr;
 	info->servPort  = zoneInfo->Port;
 	if (!zoneInfo->zonePrivate)
 		info->question->AuthInfo = mDNSNULL;
 
-    info->ntries = 0;
+	info->ntries = 0;
 
 	if (info->state == LLQ_SuspendDeferred) info->state = LLQ_Suspended;
 	else startLLQHandshake(m, info, mDNSfalse);
@@ -3583,7 +3516,7 @@ exit:
 	if (err && info) info->state = LLQ_Error;
 	}
 
-mDNSlocal void startPrivateQueryCallback(mStatus err, mDNS *const m, void *context, const zoneData_t *zoneInfo)
+mDNSlocal void startPrivateQueryCallback(mStatus err, mDNS *const m, void *context, const ntaContext *zoneInfo)
 	{
 	DNSQuestion *question = (DNSQuestion *) context;
 	tcpInfo_t *info;
@@ -3646,7 +3579,7 @@ mDNSlocal void startPrivateQueryCallback(mStatus err, mDNS *const m, void *conte
 	// This mDNSPlatformTCPSocket/mDNSPlatformTCPConnect pattern appears repeatedly -- should be folded into and single make-socket-and-connect routine
 	sock = mDNSPlatformTCPSocket(m, TCP_SOCKET_FLAGS, &port);
 	if (!sock) { LogMsg("startPrivateQueryCallback: unable to create TCP socket"); err = mStatus_UnknownErr; goto exit; }
-	err = mDNSPlatformTCPConnect(sock, &zoneInfo->primaryAddr, zoneInfo->Port, question->InterfaceID, tcpCallback, info);
+	err = mDNSPlatformTCPConnect(sock, &zoneInfo->addr, zoneInfo->Port, question->InterfaceID, tcpCallback, info);
 
 	// This pattern appears repeatedly -- should be a subroutine, or folded into mDNSPlatformTCPConnect()
 	if (err == mStatus_ConnEstablished) tcpCallback(sock, info, mDNStrue, mStatus_NoError);
@@ -3740,7 +3673,7 @@ void uDNS_StopLongLivedQuery(mDNS *const m, DNSQuestion *const question)
 #pragma mark - Dynamic Updates
 #endif
 
-mDNSlocal void RecordRegistrationCallback(mStatus err, mDNS *const m, void *authPtr, const zoneData_t *zoneData)
+mDNSlocal void RecordRegistrationCallback(mStatus err, mDNS *const m, void *authPtr, const ntaContext *zoneData)
 	{
 	AuthRecord *newRR = (AuthRecord*)authPtr;
 	AuthRecord *ptr;
@@ -3783,7 +3716,7 @@ mDNSlocal void RecordRegistrationCallback(mStatus err, mDNS *const m, void *auth
 
 	// cache zone data
 	AssignDomainName(&newRR->zone, &zoneData->zoneName);
-	newRR->UpdateServer = zoneData->primaryAddr;
+	newRR->UpdateServer = zoneData->addr;
 	if (!mDNSIPPortIsZero(zoneData->Port))
 		{
 		newRR->UpdatePort = zoneData->Port;
@@ -3885,13 +3818,13 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 	switch (rr->state)
 		{
 		case regState_NATMap:
-            // we're in the middle of a NAT traversal operation
-            rr->NATinfo = mDNSNULL;
+	        // we're in the middle of a NAT traversal operation
+	        rr->NATinfo = mDNSNULL;
 			if (!n) LogMsg("uDNS_DeregisterRecord: no NAT info context");
 			else uDNS_FreeNATInfo(m, n); // cause response to outstanding request to be ignored.
-			                             // Note: normally here we're trying to determine our public address,
-			                             // in which case there is not state to be torn down.
-			                             // For simplicity, we allow other operations to expire.
+				                         // Note: normally here we're trying to determine our public address,
+				                         // in which case there is not state to be torn down.
+				                         // For simplicity, we allow other operations to expire.
 			rr->state = regState_Unregistered;
 			break;
 		case regState_ExtraQueued: rr->state = regState_Unregistered; break;
@@ -4670,7 +4603,7 @@ mDNSexport mStatus uDNS_RegisterSearchDomains(mDNS *const m)
 			mDNS_StopGetDomains(m, &ptr->LegacyBrowseQ);
 			mDNSPlatformMemFree(ptr);
 
-            // deregister records generated from answers to the query
+	        // deregister records generated from answers to the query
 			while (arList)
 				{
 				ARListElem *dereg = arList;

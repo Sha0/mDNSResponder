@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.364  2007/04/24 02:07:42  cheshire
+<rdar://problem/4246187> Identical client queries should reference a single shared core query
+Deleted some more redundant code
+
 Revision 1.363  2007/04/24 00:09:47  cheshire
 Remove MappedV4 field from mDNS_struct (not actually used anywhere)
 
@@ -1303,45 +1307,23 @@ struct ServiceInfoQuery_struct
 	void                         *ServiceInfoQueryContext;
 	};
 
-// state machine states
-typedef enum
-	{
-	lookupSOA = 1,	// 1
-	foundZone,		// 2
-	lookupNS,		// 3
-	foundNS,		// 4
-	lookupA,		// 5
-	foundA,			// 6
-	lookupPort,		// 7
-	foundPort		// 8
-	} ntaState;
-
 typedef enum { lookupUpdateSRV, lookupQuerySRV, lookupLLQSRV } AsyncOpTarget;
 
-typedef struct                    
-	{
-	domainname zoneName;
-	mDNSAddr   primaryAddr;
-	mDNSu16    zoneClass;
-	mDNSIPPort Port;	// Depending on context, may be update port, query port, or LLQ port
-	mDNSBool   zonePrivate;
-	} zoneData_t;
-
-typedef void AsyncOpCallback(mStatus err, mDNS *const m, void *info, const zoneData_t *result);
+typedef void AsyncOpCallback(mStatus err, mDNS *const m, void *info, const ntaContext *result);
 
 struct ntaContext_struct
 	{
 	domainname      origName;			// name we originally try to convert
 	domainname      *curSOA;			// name we have an outstanding SOA query for
-	ntaState        state;				// determines what we do upon receiving a packet
 	mDNS            *m;
-	domainname      zone;				// left-hand-side of SOA record
+	domainname      zoneName;			// left-hand-side of SOA record
 	mDNSu16         zoneClass;
 	domainname      ns;					// mname in SOA rdata, verified in confirmNS state
-	mDNSv4Addr      addr;				// address of nameserver
+	mDNSAddr        addr;				// address of nameserver
 	DNSQuestion     question;			// storage for any active question
 	AsyncOpTarget   target;
-	mDNSIPPort      ntaPort;			// Depending on target, may be update port, query port, or LLQ port
+	mDNSBool        zonePrivate;
+	mDNSIPPort      Port;			// Depending on target, may be update port, query port, or LLQ port
 	AsyncOpCallback *ntaCallback;		// caller-specified function to be called upon completion
 	void            *callbackInfo;
 	};
