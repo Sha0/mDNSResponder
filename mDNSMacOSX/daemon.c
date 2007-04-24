@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.307  2007/04/24 18:32:00  cheshire
+Grab a copy of KQtask string pointer in case KQcallback deletes the task
+
 Revision 1.306  2007/04/22 19:11:51  cheshire
 Some quirk of RemoveFromList (GenLinkedList.c) was corrupting the list and causing a crash
 if the element being removed was not the last in the list. Fixed by removing GenLinkedList.c
@@ -2393,10 +2396,11 @@ mDNSlocal void * KQueueLoop(void* m_param)
 				{
 				const KQueueEntry *const kqentry = new_events[i].udata;
 				mDNSs32 start = mDNSPlatformRawTime();
+				const char *const KQtask = kqentry->KQtask;	// Grab a copy in case KQcallback deletes the task
 				kqentry->KQcallback(new_events[i].ident, new_events[i].filter, kqentry->KQcontext);
 				mDNSs32 end   = mDNSPlatformRawTime();
 				if (end - start >= WatchDogReportingThreshold)
-					LogMsg("WARNING: %s took %dms to complete", kqentry->KQtask, end - start);
+					LogMsg("WARNING: %s took %dms to complete", KQtask, end - start);
 				}
 			}
 		}
