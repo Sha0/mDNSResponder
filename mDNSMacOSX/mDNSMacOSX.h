@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.68  2007/04/24 00:10:15  cheshire
+Increase WatchDogReportingThreshold to 250ms for customer builds
+
 Revision 1.67  2007/04/21 21:47:47  cheshire
 <rdar://problem/4376383> Daemon: Add watchdog timer
 
@@ -176,7 +179,11 @@ extern void KQueueUnlock(mDNS *const m, const char const *task);
 // what's causing the problem, we may need to subdivide some categories into finer-grained
 // sub-categories (e.g. "Idle task processing" covers a pretty broad range of sub-tasks).
 
+#if LogAllOperations
 #define WatchDogReportingThreshold 50
+#else
+#define WatchDogReportingThreshold 250
+#endif
 
 // Allow platform layer to tell daemon when default registration/browse domains
 extern void DefaultRegDomainChanged(const domainname *d, mDNSBool add);
