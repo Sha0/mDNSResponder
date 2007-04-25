@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.343  2007/04/25 16:40:08  cheshire
+Add comment explaining uDNS_recvLLQResponse logic
+
 Revision 1.342  2007/04/25 02:14:38  cheshire
 <rdar://problem/4246187> uDNS: Identical client queries should reference a single shared core query
 Additional fixes to make LLQs work properly
@@ -1087,6 +1090,8 @@ exit:
 	if (err) StartLLQPolling(m, info);
 	}
 
+// Returns mDNStrue if mDNSCoreReceiveResponse should treat this packet as a series of add/remove instructions (like an mDNS response)
+// Returns mDNSfalse if mDNSCoreReceiveResponse should treat this as a single authoritative result (like a normal unicast DNS response)
 mDNSexport mDNSBool uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *const srcaddr, const mDNSIPPort srcport)
 	{
 	DNSQuestion pktQ, *q;
@@ -1137,7 +1142,8 @@ mDNSexport mDNSBool uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *const 
 								LogMsg("uDNS_recvLLQResponse: recvSetupResponse");
 								recvSetupResponse(m, msg->h.flags.b[1] & kDNSFlag1_RC, q, opt);
 								m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
-								// 
+								// If this is our Ack+Answers packet resulting from a correct challenge response, then it's a full list
+								// of answers, and any cache answers we have that are not included in this packet need to be flushed
 								return (oldstate != LLQ_SecondaryRequest);
 								}
 							}
