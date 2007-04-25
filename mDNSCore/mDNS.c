@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.616  2007/04/25 16:38:32  cheshire
+If negative cache entry already exists, reactivate it instead of creating a new one
+
 Revision 1.615  2007/04/25 02:14:38  cheshire
 <rdar://problem/4246187> uDNS: Identical client queries should reference a single shared core query
 Additional fixes to make LLQs work properly
@@ -4210,7 +4213,12 @@ exit:
 			const mDNSu32 slot = HashSlot(&q.qname);
 			CacheGroup *cg = CacheGroupForName(m, slot, q.qnamehash, &q.qname);
 			for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
-				if (SameNameRecordAnswersQuestion(&rr->resrec, &q) && rr->resrec.rroriginalttl) break;
+				if (SameNameRecordAnswersQuestion(&rr->resrec, &q))
+					{
+					if (rr->resrec.rroriginalttl) break;
+					if (rr->resrec.RecordType == kDNSRecordTypePacketNegative)
+						{ rr->TimeRcvd = m->timenow; rr->resrec.rroriginalttl = 60; break; }
+					}
 			if (!rr)
 				{
 				LogOperation("Making negative cache entry for %##s (%s)", q.qname.c, DNSTypeName(q.qtype));
