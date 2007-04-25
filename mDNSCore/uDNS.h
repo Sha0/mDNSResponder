@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.56  2007/04/25 02:14:38  cheshire
+<rdar://problem/4246187> uDNS: Identical client queries should reference a single shared core query
+Additional fixes to make LLQs work properly
+
 Revision 1.55  2007/04/22 06:02:03  cheshire
 <rdar://problem/4615977> Query should immediately return failure when no server
 
@@ -160,6 +164,7 @@ extern mStatus           uDNS_RegisterSearchDomains(mDNS *const m);
 extern NATTraversalInfo *uDNS_AllocNATInfo(mDNS *const m, NATOp_t op, mDNSIPPort privatePort, mDNSIPPort publicPort, mDNSu32 ttl, NATResponseHndlr callback);
 extern void              uDNS_FormatPortMaprequest(NATTraversalInfo *info);
 extern mDNSBool          uDNS_HandleNATQueryAddrReply(NATTraversalInfo *n, mDNS * const m, mDNSu8 *pkt, mDNSv4Addr *addr, mStatus *err);
+extern mDNSBool          uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *const srcaddr, const mDNSIPPort srcport);
 extern mDNSBool          uDNS_HandleNATPortMapReply(NATTraversalInfo *n, mDNS * const m, mDNSu8 *pkt);
 extern void              uDNS_SendNATMsg(NATTraversalInfo *info, mDNS *m);
 extern void              uDNS_DeleteNATPortMapping(mDNS *m, NATTraversalInfo *nat);

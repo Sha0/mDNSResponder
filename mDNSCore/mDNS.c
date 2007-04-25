@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.615  2007/04/25 02:14:38  cheshire
+<rdar://problem/4246187> uDNS: Identical client queries should reference a single shared core query
+Additional fixes to make LLQs work properly
+
 Revision 1.614  2007/04/23 21:52:45  cheshire
 <rdar://problem/5094009> IPv6 filtering in AirPort base station breaks Wide-Area Bonjour
 
@@ -2294,7 +2298,7 @@ mDNSexport void AnswerQuestionWithResourceRecord(mDNS *const m, CacheRecord *con
 	// (If we have an answer in the cache, then we'll automatically ask again in time to stop it expiring.)
 	if ((AddRecord == 2 && !q->RequestUnicast) ||
 		(AddRecord == 1 && (q->ExpectUnique || (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask))))
-		if (ActiveQuestion(q))
+		if (ActiveQuestion(q) && !q->llq)
 			{
 			q->LastQTime        = m->timenow;
 			q->LastQTxTime      = m->timenow;
@@ -3853,7 +3857,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	int i;
 	mDNSBool ResponseMCast    = dstaddr && mDNSAddrIsDNSMulticast(dstaddr);
 	mDNSBool ResponseSrcLocal = !srcaddr || AddressIsLocalSubnet(m, InterfaceID, srcaddr);
-	const mDNSu8 *IsLLQResponse = LocateLLQOptData(response, end);
+	mDNSBool IsLLQEvent = uDNS_recvLLQResponse(m, response, end, srcaddr, srcport);
 
 	// "(CacheRecord*)1" is a special (non-zero) end-of-list marker
 	// We use this non-zero marker so that records in our CacheFlushRecords list will always have NextInCFList
@@ -3881,7 +3885,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 
 	// We ignore questions (if any) in mDNS response packets
 	// Also, if this is an LLQ response, we handle it much the same
-	if (ResponseMCast || IsLLQResponse)
+	if (ResponseMCast || IsLLQEvent)
 		ptr = LocateAnswers(response, end);
 	// Otherwise, for one-shot queries, any answers in our cache that are not also contained
 	// in this response packet are immediately deemed to be invalid.
@@ -4053,7 +4057,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					if (m->rec.r.resrec.RecordType & kDNSRecordTypePacketUniqueMask)
 						{
 						// If this packet record has the kDNSClass_UniqueRRSet flag set, then add it to our cache flushing list
-						if (rr->NextInCFList == mDNSNULL && cfp != &rr->NextInCFList && !IsLLQResponse)
+						if (rr->NextInCFList == mDNSNULL && cfp != &rr->NextInCFList && !IsLLQEvent)
 							{ *cfp = rr; cfp = &rr->NextInCFList; *cfp = (CacheRecord*)1; }
 
 						// If this packet record is marked unique, and our previous cached copy was not, then fix it
@@ -4106,7 +4110,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 			if (!rr && m->rec.r.resrec.rroriginalttl > 0)
 				{
 				rr = CreateNewCacheEntry(m, slot, cg);
-				if (rr && rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask && !IsLLQResponse)
+				if (rr && rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask && !IsLLQEvent)
 					{ *cfp = rr; cfp = &rr->NextInCFList; *cfp = (CacheRecord*)1; }
 				}
 			}
