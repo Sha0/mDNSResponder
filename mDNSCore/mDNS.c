@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.618  2007/04/25 19:26:01  cheshire
+m->NextScheduledQuery was getting set too early in SendQueries()
+Improved "SendQueries didn't send all its queries" debugging message
+
 Revision 1.617  2007/04/25 17:48:22  cheshire
 Update debugging message
 
@@ -379,9 +383,7 @@ mDNSexport void SetNextQueryTime(mDNS *const m, const DNSQuestion *const q)
 			sendtime = m->SuppressStdPort53Queries;
 
 		if (m->NextScheduledQuery - sendtime > 0)
-			{
 			m->NextScheduledQuery = sendtime;
-			}
 		}
 	}
 
@@ -1931,7 +1933,6 @@ mDNSlocal void SendQueries(mDNS *const m)
 	if (m->timenow - m->NextScheduledQuery >= 0)
 		{
 		CacheRecord *rr;
-		m->NextScheduledQuery = m->timenow + 0x78000000;
 
 		// We're expecting to send a query anyway, so see if any expiring cache records are close enough
 		// to their NextRequiredQuery to be worth batching them together with this one
@@ -1947,9 +1948,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 					}
 
 		if (m->SuppressStdPort53Queries && m->timenow - m->SuppressStdPort53Queries >= 0)
-			{
 			m->SuppressStdPort53Queries = 0; // If suppression time has passed, clear it
-			}
 			
 		// Scan our list of questions to see which:
 		//     *WideArea*  queries need to be sent
@@ -1993,6 +1992,10 @@ mDNSlocal void SendQueries(mDNS *const m)
 		// Scan our list of questions
 		// (a) to see if there are any more that are worth accelerating, and
 		// (b) to update the state variables for *all* the questions we're going to send
+		// Note: Don't set NextScheduledQuery until here, because uDNS_CheckQuery in the loop above can add new questions to the list,
+		// which causes NextScheduledQuery to get (incorrectly) set to m->timenow. Setting it here is the right place, because the very
+		// next thing we do is scan the list and call SetNextQueryTime() for every question we find, so we know we end up with the right value.
+		m->NextScheduledQuery = m->timenow + 0x78000000;
 		for (q = m->Questions; q; q=q->next)
 			{
 			if (mDNSOpaque16IsZero(q->TargetQID) && (q->SendQNow ||
@@ -2952,9 +2955,13 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 			if (m->timenow - m->NextScheduledQuery >= 0 || m->timenow - m->NextScheduledProbe >= 0) SendQueries(m);
 			if (m->timenow - m->NextScheduledQuery >= 0)
 				{
+				DNSQuestion *q;
 				LogMsg("mDNS_Execute: SendQueries didn't send all its queries (%d - %d = %d) will try again in one second",
 					m->timenow, m->NextScheduledQuery, m->timenow - m->NextScheduledQuery);
 				m->NextScheduledQuery = m->timenow + mDNSPlatformOneSecond;
+				for (q = m->Questions; q; q=q->next)
+					if (ActiveQuestion(q) && q->LastQTime + q->ThisQInterval - m->timenow <= 0)
+						LogMsg("mDNS_Execute: SendQueries didn't send %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 				}
 			if (m->timenow - m->NextScheduledProbe >= 0)
 				{
