@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.344  2007/04/25 17:54:07  cheshire
+Don't cancel Private LLQs using a clear-text UDP packet
+
 Revision 1.343  2007/04/25 16:40:08  cheshire
 Add comment explaining uDNS_recvLLQResponse logic
 
@@ -587,7 +590,7 @@ mDNSexport DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const n
 		for (ptr = m->AuthInfoList; ptr; ptr = ptr->next)
 			if (SameDomainName(&ptr->domain, n))
 				{
-				LogOperation("GetAuthInfoForName %##s %##s %##s", name->c, ptr->domain.c, ptr->keyname.c);
+				LogOperation("GetAuthInfoForName %##s Matched %##s Key name %##s", name->c, ptr->domain.c, ptr->keyname.c);
 				return(ptr);
 				}
 		n = (const domainname *)(n->c + 1 + n->c[0]);
@@ -1139,9 +1142,10 @@ mDNSexport mDNSBool uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *const 
 							if (mDNSSameAddress(srcaddr, &q->llq->servAddr))
 								{
 								LLQ_State oldstate = q->llq->state;
-								LogMsg("uDNS_recvLLQResponse: recvSetupResponse");
+								//LogMsg("uDNS_recvLLQResponse: recvSetupResponse state %d", oldstate);
 								recvSetupResponse(m, msg->h.flags.b[1] & kDNSFlag1_RC, q, opt);
 								m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
+								//DumpPacket(m, msg, end);
 								// If this is our Ack+Answers packet resulting from a correct challenge response, then it's a full list
 								// of answers, and any cache answers we have that are not included in this packet need to be flushed
 								return (oldstate != LLQ_SecondaryRequest);
@@ -3327,19 +3331,22 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 #pragma mark - Query Routines
 #endif
 
-mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease, TCPSocket *sock)
+mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 	{
 	DNSMessage msg;
 	mDNSu8 *end;
 	LLQOptData llq;
-	LLQ_Info *info = q->llq;
 	mStatus err;
 
-	if ((info->state == LLQ_Refresh && info->ntries >= kLLQ_MAX_TRIES) ||
-		info->expire - m->timenow < 0)
+	// If this is supposed to be a private question and the server dropped the TCP connection,
+	// we don't want to cancel it with a clear-text UDP packet, and andit's not worth the expense of
+	// setting up a new TLS session just to cancel the outstanding LLQ, so we just let it expire naturally
+	if (lease == 0 && q->AuthInfo && !q->llq->tcpSock) return;
+
+	if ((q->llq->state == LLQ_Refresh && q->llq->ntries >= kLLQ_MAX_TRIES) || q->llq->expire - m->timenow < 0)
 		{
 		LogMsg("Unable to refresh LLQ %##s - will retry in %d minutes", q->qname.c, kLLQ_DEF_RETRY/60);
-		info->state      = LLQ_Retry;
+		q->llq->state    = LLQ_Retry;
 		q->LastQTime     = m->timenow;
 		q->ThisQInterval = kLLQ_DEF_RETRY * mDNSPlatformOneSecond;
 		return;
@@ -3349,20 +3356,20 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease, TCPSocket 
 	llq.vers  = kLLQ_Vers;
 	llq.llqOp = kLLQOp_Refresh;
 	llq.err   = LLQErr_NoError;
-//	llq.err   = info->eventPort;
-	llq.id    = info->id;
+//	llq.err   = q->llq->eventPort;
+	llq.id    = q->llq->id;
 	llq.llqlease = lease;
 
 	InitializeDNSMessage(&msg.h, q->TargetQID, uQueryFlags);
 	end = putLLQ(&msg, msg.data, q, &llq, mDNStrue);
 	if (!end) { LogMsg("ERROR: sendLLQRefresh - putLLQ"); return; }
 
-	err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, &info->servAddr, info->servPort, sock, GetAuthInfoForName(m, &q->qname));
+	err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, &q->llq->servAddr, q->llq->servPort, q->llq->tcpSock, q->AuthInfo);
 	if (err) debugf("ERROR: sendLLQRefresh - mDNSSendDNSMessage returned %ld", err);
 
-	if (info->state == LLQ_Established) info->ntries = 1;
-	else info->ntries++;
-	info->state = LLQ_Refresh;
+	if (q->llq->state == LLQ_Established) q->llq->ntries = 1;
+	else q->llq->ntries++;
+	q->llq->state = LLQ_Refresh;
 	q->LastQTime = m->timenow;
 	}
 
@@ -3446,7 +3453,6 @@ mDNSlocal void startPrivateQueryCallback(mStatus err, mDNS *const m, void *conte
 	{
 	DNSQuestion *question = (DNSQuestion *) context;
 	tcpInfo_t *info;
-	DomainAuthInfo *authInfo = mDNSNULL;
 	TCPSocket *	sock = mDNSNULL;
 	mDNSIPPort		port = zeroIPPort;
 
@@ -3479,9 +3485,7 @@ mDNSlocal void startPrivateQueryCallback(mStatus err, mDNS *const m, void *conte
 		// Next call to uDNS_CheckQuery() will do this as a non-private query
 		}
 
-	authInfo = GetAuthInfoForName(m, &question->qname);
-
-	if (!authInfo)
+	if (!question->AuthInfo)
 		{
 		LogMsg("ERROR: startPrivateQueryCallback: cannot find credentials for question %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
 		err = mStatus_UnknownErr;
@@ -3499,7 +3503,7 @@ mDNSlocal void startPrivateQueryCallback(mStatus err, mDNS *const m, void *conte
 	mDNSPlatformMemZero(info, sizeof(tcpInfo_t));
 	info->m        = m;
 	info->question = question;
-	info->authInfo = authInfo;
+	info->authInfo = question->AuthInfo;
 	question->TargetQID   = mDNS_NewMessageID(m);
 
 	// This mDNSPlatformTCPSocket/mDNSPlatformTCPConnect pattern appears repeatedly -- should be folded into and single make-socket-and-connect routine
@@ -3574,7 +3578,7 @@ void uDNS_StopLongLivedQuery(mDNS *const m, DNSQuestion *const question)
 		case LLQ_Established:
 		case LLQ_Refresh:
 			// refresh w/ lease 0
-			sendLLQRefresh(m, question, 0, question->llq->tcpSock);
+			sendLLQRefresh(m, question, 0);
 			goto end;
 		default:
 			debugf("stopLLQ - silently discarding LLQ in state %d", question->llq->state);
@@ -3991,7 +3995,7 @@ mDNSexport void uDNS_CheckQuery(mDNS *const m)
 				{
 				// sanity check to avoid packet flood bugs
 				if (!q->ThisQInterval) LogMsg("ERROR: retry timer not set for LLQ %##s (%s) in state %d", q->qname.c, DNSTypeName(q->qtype), llq->state);
-				else if (llq->state == LLQ_Established || llq->state == LLQ_Refresh) sendLLQRefresh(m, q, llq->origLease, llq->tcpSock);
+				else if (llq->state == LLQ_Established || llq->state == LLQ_Refresh) sendLLQRefresh(m, q, llq->origLease);
 				else if (llq->state == LLQ_InitialRequest                          ) startLLQHandshake(m, llq, mDNSfalse);
 				else if (llq->state == LLQ_SecondaryRequest                        ) sendChallengeResponse(m, q, mDNSNULL);
 				else if (llq->state == LLQ_Retry                                   ) { llq->ntries = 0; startLLQHandshake(m, llq, mDNSfalse); }
@@ -4204,7 +4208,7 @@ mDNSlocal void SuspendLLQs(mDNS *m, mDNSBool DeregisterActive)
 				if (DeregisterActive && (llq->state == LLQ_Established || llq->state == LLQ_Refresh))
 					{
 					debugf("Deleting LLQ %##s", q->qname.c);
-					sendLLQRefresh(m, q, 0, llq->tcpSock);
+					sendLLQRefresh(m, q, 0);
 					}
 				debugf("Marking %##s suspended", q->qname.c);
 				llq->state = LLQ_Suspended;
