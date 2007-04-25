@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.345  2007/04/25 18:05:11  cheshire
+Don't try to restart inactive (duplicate) queries
+
 Revision 1.344  2007/04/25 17:54:07  cheshire
 Don't cancel Private LLQs using a clear-text UDP packet
 
@@ -4246,38 +4249,33 @@ mDNSlocal void SuspendLLQs(mDNS *m, mDNSBool DeregisterActive)
 
 mDNSlocal void RestartQueries(mDNS *m)
 	{
-	DNSQuestion *q;
-	LLQ_Info *llqInfo;
-
 	if (m->CurrentQuestion)
 		LogMsg("RestartQueries: ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
 	m->CurrentQuestion = m->Questions;
 	while (m->CurrentQuestion)
 		{
-		q = m->CurrentQuestion;
+		DNSQuestion *q = m->CurrentQuestion;
 		m->CurrentQuestion = m->CurrentQuestion->next;
 
-		if (!mDNSOpaque16IsZero(q->TargetQID))
+		if (!mDNSOpaque16IsZero(q->TargetQID) && !q->DuplicateOf)
 			{
-			llqInfo = q->llq;
-
 			q->RestartTime = m->timenow;
 			if (q->LongLived)
 				{
-				if (!llqInfo) { LogMsg("Error: RestartQueries - %##s long-lived with NULL info", q->qname.c); continue; }
-				if (llqInfo->state == LLQ_Suspended || llqInfo->state == LLQ_NatMapWaitTCP || llqInfo->state == LLQ_NatMapWaitUDP)
+				if (!q->llq) { LogMsg("Error: RestartQueries - %##s long-lived with NULL info", q->qname.c); continue; }
+				if (q->llq->state == LLQ_Suspended || q->llq->state == LLQ_NatMapWaitTCP || q->llq->state == LLQ_NatMapWaitUDP)
 					{
-					llqInfo->ntries = -1;
-					startLLQHandshake(m, llqInfo, mDNStrue);	// we set defer to true since several events that may generate restarts often arrive in rapid succession, and this cuts unnecessary packets
+					q->llq->ntries = -1;
+					startLLQHandshake(m, q->llq, mDNStrue);	// we set defer to true since several events that may generate restarts often arrive in rapid succession, and this cuts unnecessary packets
 					}
-				else if (llqInfo->state == LLQ_SuspendDeferred)
-					llqInfo->state = LLQ_GetZoneInfo; // we never finished getting zone data - proceed as usual
-				else if (llqInfo->state == LLQ_SuspendedPoll)
+				else if (q->llq->state == LLQ_SuspendDeferred)
+					q->llq->state = LLQ_GetZoneInfo; // we never finished getting zone data - proceed as usual
+				else if (q->llq->state == LLQ_SuspendedPoll)
 					{
 					// if we were polling, we may have had bad zone data due to firewall, etc. - refetch
-					llqInfo->ntries = 0;
-					llqInfo->state = LLQ_GetZoneInfo;
-					llqInfo->nta = StartGetZoneData(m, &q->qname, lookupLLQSRV, startLLQHandshakeCallback, llqInfo);
+					q->llq->ntries = 0;
+					q->llq->state = LLQ_GetZoneInfo;
+					q->llq->nta = StartGetZoneData(m, &q->qname, lookupLLQSRV, startLLQHandshakeCallback, q->llq);
 					}
 				}
 			else { q->LastQTime = m->timenow; q->ThisQInterval = INIT_UCAST_POLL_INTERVAL; } // trigger poll in 1 second (to reduce packet rate when restarts come in rapid succession)
