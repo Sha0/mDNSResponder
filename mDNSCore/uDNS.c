@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.346  2007/04/25 19:16:59  cheshire
+Don't set SuppressStdPort53Queries unless we do actually send a DNS packet
+
 Revision 1.345  2007/04/25 18:05:11  cheshire
 Don't try to restart inactive (duplicate) queries
 
@@ -4047,12 +4050,14 @@ mDNSexport void uDNS_CheckQuery(mDNS *const m)
 						{
 						//LogMsg("uDNS_CheckQuery %d %p %##s (%s)", (q->LastQTime + q->ThisQInterval) - m->timenow, private, q->qname.c, DNSTypeName(q->qtype));
 						if (!private)
+							{
 							err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, &q->DNSServer->addr, UnicastDNSPort, mDNSNULL, mDNSNULL);
+							m->SuppressStdPort53Queries = NonZeroTime(m->timenow + (mDNSPlatformOneSecond+99)/100);
+							}
 						else
 							StartGetZoneData(m, &q->qname, q->LongLived ? lookupLLQSRV : lookupQuerySRV, startPrivateQueryCallback, q);
 						}
 
-					m->SuppressStdPort53Queries = NonZeroTime(m->timenow + (mDNSPlatformOneSecond+99)/100);
 					if (err) debugf("ERROR: uDNS_idle - mDNSSendDNSMessage - %ld", err); // surpress syslog messages if we have no network
 					else if (!q->LongLived && q->ThisQInterval < MAX_UCAST_POLL_INTERVAL)
 						{
