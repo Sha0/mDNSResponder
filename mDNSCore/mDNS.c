@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.617  2007/04/25 17:48:22  cheshire
+Update debugging message
+
 Revision 1.616  2007/04/25 16:38:32  cheshire
 If negative cache entry already exists, reactivate it instead of creating a new one
 
@@ -4084,7 +4087,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 						}
 					else if (m->rec.r.resrec.rroriginalttl > 0)
 						{
-						if (rr->resrec.rroriginalttl == 0) debugf("uDNS rescuing %s", CRDisplayString(m, rr));
+						//if (rr->resrec.rroriginalttl == 0) LogMsg("uDNS rescuing %s", CRDisplayString(m, rr));
 						rr->resrec.rroriginalttl = m->rec.r.resrec.rroriginalttl;
 						rr->UnansweredQueries = 0;
 						rr->MPUnansweredQ     = 0;
