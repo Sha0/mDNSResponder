@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.286  2007/04/26 16:00:01  cheshire
+Show interface number in DNSServiceBrowse RESULT output
+
 Revision 1.285  2007/04/22 19:03:39  cheshire
 Minor code tidying
 
@@ -1901,8 +1904,9 @@ mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const Resourc
 		return;
 		}
 
-	LogOperation("%3d: DNSServiceBrowse(%##s, %s) RESULT %s %s",
-		req->sd, question->qname.c, DNSTypeName(question->qtype), AddRecord ? "Add" : "Rmv", RRDisplayString(m, answer));
+	LogOperation("%3d: DNSServiceBrowse(%##s, %s) RESULT %s %d: %s",
+		req->sd, question->qname.c, DNSTypeName(question->qtype), AddRecord ? "Add" : "Rmv",
+		mDNSPlatformInterfaceIndexfromInterfaceID(m, answer->InterfaceID), RRDisplayString(m, answer));
 
 	if (AddRecord) rep->rhdr->flags |= dnssd_htonl(kDNSServiceFlagsAdd);
 
