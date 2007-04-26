@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.349  2007/04/26 16:04:06  cheshire
+In mDNS_AddDNSServer, check whether port matches
+In uDNS_CheckQuery, handle case where startLLQHandshake changes q->llq->state to LLQ_Poll
+
 Revision 1.348  2007/04/26 04:01:59  cheshire
 Copy-and-paste error: Test should be "if (result == DNSServer_Passed)" not "if (result == DNSServer_Failed)"
 
@@ -551,7 +555,7 @@ mDNSexport void mDNS_AddDNSServer(mDNS *const m, const domainname *d, const mDNS
 
 	while (*p)	// Check if we already have this {server,domain} pair registered
 		{
-		if (mDNSSameAddress(&(*p)->addr, addr) && SameDomainName(&(*p)->domain, d))
+		if (mDNSSameAddress(&(*p)->addr, addr) && mDNSSameIPPort((*p)->port, port) && SameDomainName(&(*p)->domain, d))
 			{
 			if (!(*p)->del) LogMsg("Note: DNS Server %#a for domain %##s registered more than once", addr, d->c);
 			(*p)->del = mDNSfalse;
@@ -1444,9 +1448,10 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info, mDNSBool defer)
 			if (!info->tcpSock || !info->udpSock) { err = mStatus_UnknownErr; goto exit; }
 			}
 
-		LogOperation("startLLQHandshakePrivate Addr %#a%s Server %#a%s",
+		LogOperation("startLLQHandshakePrivate Addr %#a%s Server %#a%s %##s (%s)",
 			&m->AdvertisedV4, mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) ? " (RFC 1918)" : "",
-			&info->servAddr,  mDNSAddrIsRFC1918(&info->servAddr)          ? " (RFC 1918)" : "");
+			&info->servAddr,  mDNSAddrIsRFC1918(&info->servAddr)          ? " (RFC 1918)" : "",
+			info->question->qname.c, DNSTypeName(info->question->qtype));
 
 		if (mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsRFC1918(&info->servAddr))
 			{
@@ -1491,9 +1496,10 @@ mDNSlocal void startLLQHandshake(mDNS *m, LLQ_Info *info, mDNSBool defer)
 		LLQOptData llqData;
 		DNSQuestion *q = info->question;
 
-		LogOperation("startLLQHandshake Addr %#a%s Server %#a%s",
+		LogOperation("startLLQHandshake Addr %#a%s Server %#a%s %##s (%s)",
 			&m->AdvertisedV4, mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) ? " (RFC 1918)" : "",
-			&info->servAddr,  mDNSAddrIsRFC1918(&info->servAddr)          ? " (RFC 1918)" : "");
+			&info->servAddr,  mDNSAddrIsRFC1918(&info->servAddr)          ? " (RFC 1918)" : "",
+			info->question->qname.c, DNSTypeName(info->question->qtype));
 
 		if (mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsRFC1918(&info->servAddr))
 			{
@@ -4001,103 +4007,96 @@ mDNSlocal mDNSs32 CheckNATMappings(mDNS *m)
 mDNSexport void uDNS_CheckQuery(mDNS *const m)
 	{
 	DNSQuestion *q = m->CurrentQuestion;
+	mDNSs32 sendtime = q->LastQTime + q->ThisQInterval;
+	// Don't allow sendtime to be earlier than SuppressStdPort53Queries
+	if (!q->LongLived && m->SuppressStdPort53Queries && sendtime - m->SuppressStdPort53Queries < 0)
+		sendtime = m->SuppressStdPort53Queries;
+	if (m->timenow - sendtime < 0) return;
 
 	if (q->LongLived && q->llq && q->llq->state != LLQ_Poll)
 		{
-		LLQ_Info *llq = q->llq;
-		if (llq->state >= LLQ_InitialRequest && llq->state <= LLQ_Established)
+		if (q->llq->state >= LLQ_InitialRequest && q->llq->state <= LLQ_Established)
 			{
-			if ((q->LastQTime + q->ThisQInterval) - m->timenow <= 0)
-				{
-				// sanity check to avoid packet flood bugs
-				if (!q->ThisQInterval) LogMsg("ERROR: retry timer not set for LLQ %##s (%s) in state %d", q->qname.c, DNSTypeName(q->qtype), llq->state);
-				else if (llq->state == LLQ_Established || llq->state == LLQ_Refresh) sendLLQRefresh(m, q, llq->origLease);
-				else if (llq->state == LLQ_InitialRequest                          ) startLLQHandshake(m, llq, mDNSfalse);
-				else if (llq->state == LLQ_SecondaryRequest                        ) sendChallengeResponse(m, q, mDNSNULL);
-				else if (llq->state == LLQ_Retry                                   ) { llq->ntries = 0; startLLQHandshake(m, llq, mDNSfalse); }
-				}
+			// sanity check to avoid packet flood bugs
+			if      (q->llq->state == LLQ_Established || q->llq->state == LLQ_Refresh) sendLLQRefresh(m, q, q->llq->origLease);
+			else if (q->llq->state == LLQ_InitialRequest                             ) startLLQHandshake(m, q->llq, mDNSfalse);
+			else if (q->llq->state == LLQ_SecondaryRequest                           ) sendChallengeResponse(m, q, mDNSNULL);
+			else if (q->llq->state == LLQ_Retry                                      ) { q->llq->ntries = 0; startLLQHandshake(m, q->llq, mDNSfalse); }
 			}
-		else if ((q->LastQTime + q->ThisQInterval) - m->timenow <= 0)
+		else
 			{
 			// This should never happen. Any LLQ not in states LLQ_InitialRequest to LLQ_Established should not have have ThisQInterval set.
 			// (uDNS_CheckQuery() is only called for DNSQuestions with non-zero ThisQInterval)
-			LogMsg("uDNS_CheckQuery: LastQTime for %##s (%s) %d is %d", q->qname.c, DNSTypeName(q->qtype), llq->state, q->ThisQInterval);
+			LogMsg("uDNS_CheckQuery: LastQTime for %##s (%s) %d is %d", q->qname.c, DNSTypeName(q->qtype), q->llq->state, q->ThisQInterval);
 			q->LastQTime = m->timenow;
 			}
 		}
-	else
+
+	// We repeat the check above (rather than just making this the "else" case) because startLLQHandshake can change q->llq->state to LLQ_Poll
+	if (!(q->LongLived && q->llq && q->llq->state != LLQ_Poll))
 		{
-		mDNSs32 sendtime = q->LastQTime + q->ThisQInterval;
-
-		// Don't allow sendtime to be earlier than SuppressStdPort53Queries
-		if (!q->LongLived && m->SuppressStdPort53Queries && sendtime - m->SuppressStdPort53Queries < 0)
-			sendtime = m->SuppressStdPort53Queries;
-
-		if (sendtime - m->timenow <= 0)
+		if (q->qDNSServer)
 			{
-			if (q->qDNSServer)
+			DNSMessage msg;
+			mDNSu8 *end;
+			mStatus err = mStatus_NoError;
+			DomainAuthInfo *private = mDNSNULL;
+
+			if (q->qDNSServer->teststate == DNSServer_Untested)
 				{
-				DNSMessage msg;
-				mDNSu8 *end;
-				mStatus err = mStatus_NoError;
-				DomainAuthInfo *private = mDNSNULL;
-
-				if (q->qDNSServer->teststate == DNSServer_Untested)
-					{
-					LogOperation("Sending DNS test query to %#a:%d", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port));
-					q->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
-					InitializeDNSMessage(&msg.h, mDNS_NewMessageID(m), uQueryFlags);
-					end = putQuestion(&msg, msg.data, msg.data + AbsoluteMaxDNSMessageData, DNSRelayTestQuestion, kDNSType_PTR, kDNSClass_IN);
-					}
-				else
-					{
-					err = constructQueryMsg(&msg, &end, q);
-					private = q->AuthInfo;
-					}
-
-				if (err) LogMsg("Error: uDNS_CheckQuery - constructQueryMsg. Skipping question %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
-				else
-					{
-					if (q->qDNSServer->teststate != DNSServer_Failed)
-						{
-						//LogMsg("uDNS_CheckQuery %d %p %##s (%s)", (q->LastQTime + q->ThisQInterval) - m->timenow, private, q->qname.c, DNSTypeName(q->qtype));
-						if (!private)
-							{
-							err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, &q->qDNSServer->addr, q->qDNSServer->port, mDNSNULL, mDNSNULL);
-							m->SuppressStdPort53Queries = NonZeroTime(m->timenow + (mDNSPlatformOneSecond+99)/100);
-							}
-						else
-							StartGetZoneData(m, &q->qname, q->LongLived ? lookupLLQSRV : lookupQuerySRV, startPrivateQueryCallback, q);
-						}
-
-					if (err) debugf("ERROR: uDNS_idle - mDNSSendDNSMessage - %ld", err); // surpress syslog messages if we have no network
-					else if (!q->LongLived && q->ThisQInterval < MAX_UCAST_POLL_INTERVAL)
-						{
-						q->ThisQInterval = q->ThisQInterval * 2;	// don't increase interval if send failed
-						//LogMsg("Adjusted ThisQInterval to %d for %##s (%s)", q->ThisQInterval, q->qname.c, DNSTypeName(q->qtype));
-						}
-					else if (q->LongLived && q->llq && q->llq->state == LLQ_Poll)
-						{
-						// Bit of a hack here -- if we dropped the interval down to do the DNS test query, need to put
-						// it back or we'll poll every three seconds. The real solution is that the DNS test query
-						// should be a real query in its own right, which other queries are blocked on, rather than
-						// being shoehorned in here and borrowing another question's q->LastQTime and q->ThisQInterval
-						q->ThisQInterval = LLQ_POLL_INTERVAL;
-						}
-					}
+				LogOperation("Sending DNS test query to %#a:%d", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port));
+				q->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
+				InitializeDNSMessage(&msg.h, mDNS_NewMessageID(m), uQueryFlags);
+				end = putQuestion(&msg, msg.data, msg.data + AbsoluteMaxDNSMessageData, DNSRelayTestQuestion, kDNSType_PTR, kDNSClass_IN);
 				}
 			else
 				{
-				LogMsg("uDNS_CheckQuery no DNS server for %##s", q->qname.c);
-				MakeNegativeCacheRecord(m, &q->qname, q->qnamehash, q->qtype, q->qclass);
-				// Inactivate this question until the next change of DNS servers (do this before AnswerQuestionWithResourceRecord)
-				q->ThisQInterval = 0;
-				AnswerQuestionWithResourceRecord(m, &m->rec.r, 2);	// 2 means non-cached result
-				m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
+				err = constructQueryMsg(&msg, &end, q);
+				private = q->AuthInfo;
 				}
 
-			q->LastQTime = m->timenow;
+			if (err) LogMsg("Error: uDNS_CheckQuery - constructQueryMsg. Skipping question %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+			else
+				{
+				if (q->qDNSServer->teststate != DNSServer_Failed)
+					{
+					//LogMsg("uDNS_CheckQuery %d %p %##s (%s)", sendtime - m->timenow, private, q->qname.c, DNSTypeName(q->qtype));
+					if (!private)
+						{
+						err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, &q->qDNSServer->addr, q->qDNSServer->port, mDNSNULL, mDNSNULL);
+						m->SuppressStdPort53Queries = NonZeroTime(m->timenow + (mDNSPlatformOneSecond+99)/100);
+						}
+					else
+						StartGetZoneData(m, &q->qname, q->LongLived ? lookupLLQSRV : lookupQuerySRV, startPrivateQueryCallback, q);
+					}
+
+				if (err) debugf("ERROR: uDNS_idle - mDNSSendDNSMessage - %ld", err); // surpress syslog messages if we have no network
+				else if (!q->LongLived && q->ThisQInterval < MAX_UCAST_POLL_INTERVAL)
+					{
+					q->ThisQInterval = q->ThisQInterval * 2;	// don't increase interval if send failed
+					//LogMsg("Adjusted ThisQInterval to %d for %##s (%s)", q->ThisQInterval, q->qname.c, DNSTypeName(q->qtype));
+					}
+				else if (q->LongLived && q->llq && q->llq->state == LLQ_Poll)
+					{
+					// Bit of a hack here -- if we dropped the interval down to do the DNS test query, need to put
+					// it back or we'll poll every three seconds. The real solution is that the DNS test query
+					// should be a real query in its own right, which other queries are blocked on, rather than
+					// being shoehorned in here and borrowing another question's q->LastQTime and q->ThisQInterval
+					q->ThisQInterval = LLQ_POLL_INTERVAL;
+					}
+				}
 			}
+		else
+			{
+			LogMsg("uDNS_CheckQuery no DNS server for %##s", q->qname.c);
+			MakeNegativeCacheRecord(m, &q->qname, q->qnamehash, q->qtype, q->qclass);
+			// Inactivate this question until the next change of DNS servers (do this before AnswerQuestionWithResourceRecord)
+			q->ThisQInterval = 0;
+			AnswerQuestionWithResourceRecord(m, &m->rec.r, 2);	// 2 means non-cached result
+			m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
+			}
+
+		q->LastQTime = m->timenow;
 		}
 	}
 
