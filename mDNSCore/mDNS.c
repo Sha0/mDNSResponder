@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.621  2007/04/26 15:43:22  cheshire
+Make sure DNSServer *s is non-null before using value in LogOperation
+
 Revision 1.620  2007/04/26 13:11:05  cheshire
 Fixed crash when logging out of VPN
 
@@ -6114,8 +6117,10 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 			if (q->qDNSServer != s)
 				{
 				// If DNS Server for this question has changed, reactivate it
-				LogOperation("Updating DNS Server from %#a to %#a for %##s (%s)",
-					&q->qDNSServer->addr, &s->addr, q->qname.c, DNSTypeName(q->qtype));
+				LogOperation("Updating DNS Server from %#a:%d to %#a:%d for %##s (%s)",
+					q->qDNSServer ? &q->qDNSServer->addr : mDNSNULL, q->qDNSServer ? q->qDNSServer->port : zeroIPPort,
+					s             ? &s->addr             : mDNSNULL, s             ? s->port             : zeroIPPort,
+					q->qname.c, DNSTypeName(q->qtype));
 				q->qDNSServer = s;
 				q->ThisQInterval = InitialQuestionInterval;
 				}
