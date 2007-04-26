@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.620  2007/04/26 13:11:05  cheshire
+Fixed crash when logging out of VPN
+
 Revision 1.619  2007/04/26 00:35:15  cheshire
 <rdar://problem/5140339> uDNS: Domain discovery not working over VPN
 Fixes to make sure results update correctly when connectivity changes (e.g. a DNS server
@@ -6105,7 +6108,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 
 	// Update our qDNSServer pointers before we go and free the DNSServer object memory
 	for (q = m->Questions; q; q=q->next)
-		if (!mDNSOpaque16IsZero(q->TargetQID) && !q->DuplicateOf)
+		if (!mDNSOpaque16IsZero(q->TargetQID))
 			{
 			DNSServer *s = GetServerForName(m, &q->qname);
 			if (q->qDNSServer != s)
