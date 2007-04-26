@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.350  2007/04/26 22:47:14  cheshire
+Defensive coding: tcpCallback only needs to check "if (closed)", not "if (!n && closed)"
+
 Revision 1.349  2007/04/26 16:04:06  cheshire
 In mDNS_AddDNSServer, check whether port matches
 In uDNS_CheckQuery, handle case where startLLQHandshake changes q->llq->state to LLQ_Poll
@@ -1254,7 +1257,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 				err = mStatus_ConnFailed;
 				goto exit;
 				}
-			else if (!n && closed)
+			else if (closed)
 				{
 				// It's perfectly fine for this socket to close after the first reply. The server might
 				// be sending gratuitous replies using UDP and doesn't have a need to leave the TCP socket open.
@@ -1293,7 +1296,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			err = mStatus_ConnFailed;
 			goto exit;
 			}
-		else if (!n && closed)
+		else if (closed)
 			{
 			LogMsg("ERROR: socket close prematurely");
 			err = mStatus_ConnFailed;
@@ -3577,7 +3580,7 @@ mDNSexport mStatus uDNS_InitLongLivedQuery(mDNS *const m, DNSQuestion *const q)
 	}
 
 // stopLLQ happens IN ADDITION to stopQuery
-void uDNS_StopLongLivedQuery(mDNS *const m, DNSQuestion *const question)
+mDNSexport void uDNS_StopLongLivedQuery(mDNS *const m, DNSQuestion *const question)
 	{
 	(void)m;	// unused
 
