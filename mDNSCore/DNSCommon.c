@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.151  2007/04/26 13:35:25  cheshire
+Add kDNSType_SOA case in SameRDataBody, and a comment in GetLargeResourceRecord about why this is important
+
 Revision 1.150  2007/04/24 00:17:33  cheshire
 Made LocateLLQOptData guard against packets with bogus numAdditionals value
 
@@ -1145,12 +1148,23 @@ mDNSexport mDNSBool SameRDataBody(const ResourceRecord *const r1, const RDataBod
 	switch(r1->rrtype)
 		{
 		case kDNSType_CNAME:// Same as PTR
+		case kDNSType_NS:
 		case kDNSType_PTR:	return(SameDomainName(&r1->rdata->u.name, &r2->name));
 
-		case kDNSType_SRV:	return(mDNSBool)(  	r1->rdata->u.srv.priority          == r2->srv.priority  &&
-												r1->rdata->u.srv.weight            == r2->srv.weight    &&
-												mDNSSameIPPort(r1->rdata->u.srv.port, r2->srv.port)     &&
+		case kDNSType_SRV:	return(mDNSBool)(  	r1->rdata->u.srv.priority == r2->srv.priority       &&
+												r1->rdata->u.srv.weight   == r2->srv.weight         &&
+												mDNSSameIPPort(r1->rdata->u.srv.port, r2->srv.port) &&
 												SameDomainName(&r1->rdata->u.srv.target, &r2->srv.target));
+
+		case kDNSType_SOA:	return(mDNSBool)(  	r1->rdata->u.soa.serial   == r2->soa.serial             &&
+												r1->rdata->u.soa.refresh  == r2->soa.refresh            &&
+												r1->rdata->u.soa.retry    == r2->soa.retry              &&
+												r1->rdata->u.soa.expire   == r2->soa.expire             &&
+												r1->rdata->u.soa.min      == r2->soa.min                &&
+												SameDomainName(&r1->rdata->u.soa.mname, &r2->soa.mname) &&
+												SameDomainName(&r1->rdata->u.soa.rname, &r2->soa.rname));
+
+		case kDNSType_OPT:	// Okay to use memory compare because there are no 'holes' in the in-memory representation
 
 		default:			return(mDNSPlatformMemSame(r1->rdata->u.data, r2->data, r1->rdlength));
 		}
@@ -1915,6 +1929,11 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 
 	if (!RecordType) LogMsg("GetLargeResourceRecord: No RecordType for %##s", rr->resrec.name->c);
 
+	// IMPORTANT: Any record type we understand and unpack into a structure containing domainnames needs to have
+	// a corresponding case in SameRDataBody() to do a semantic comparison of the structure instead of a blind
+	// bitwise memory compare. This is because a domainname is a fixed size structure holding variable-length data.
+	// Any bytes past the logical end of the name are undefined, and a blind bitwise memory compare may indicate that
+	// two domainnames are different when semantically they are the same name and it's only the unused bytes that differ.
 	switch (rr->resrec.rrtype)
 		{
 		case kDNSType_A:	if (pktrdlength != sizeof(mDNSv4Addr)) return(mDNSNULL);
