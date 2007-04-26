@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.402  2007/04/26 22:54:57  cheshire
+Debugging messages to help track down <rdar://problem/5164206> mDNSResponder takes 50%+ CPU
+
 Revision 1.401  2007/04/26 00:35:16  cheshire
 <rdar://problem/5140339> uDNS: Domain discovery not working over VPN
 Fixes to make sure results update correctly when connectivity changes (e.g. a DNS server
@@ -1172,12 +1175,22 @@ mDNSexport long mDNSPlatformReadTCP(TCPSocket *sock, void *buf, unsigned long bu
 		}
 	else
 		{
+		static int CLOSEDcount = 0;
+		static int EAGAINcount = 0;
 		nread = recv(sock->fd, buf, buflen, 0);
-		if (nread == 0) *closed = mDNStrue;
-		else if (nread < 0)
+
+		if (nread > 0) { CLOSEDcount = 0; EAGAINcount = 0; } // On success, clear our error counters
+		else if (nread == 0)
 			{
-			if (errno == EAGAIN) nread = 0;  // no data available (call would block)
-			else { LogMsg("ERROR: mDNSPlatformReadTCP - recv: %s", strerror(errno)); nread = -1; }
+			*closed = mDNStrue;
+			if ((++CLOSEDcount % 1000) == 0) { LogMsg("ERROR: mDNSPlatformReadTCP - recv %d got CLOSED %d times", sock->fd, CLOSEDcount); sleep(1); }
+			}
+		// else nread is negative -- see what kind of error we got
+		else if (errno != EAGAIN) { LogMsg("ERROR: mDNSPlatformReadTCP - recv: %d %s", errno, strerror(errno)); nread = -1; }
+		else // errno is EAGAIN (EWOULDBLOCK) -- no data available
+			{
+			nread = 0;
+			if ((++EAGAINcount % 1000) == 0) { LogMsg("ERROR: mDNSPlatformReadTCP - recv %d got EAGAIN %d times", sock->fd, EAGAINcount); sleep(1); }
 			}
 		}
 
