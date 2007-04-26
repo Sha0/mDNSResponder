@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.622  2007/04/26 16:09:22  cheshire
+mDNS_StopQueryWithRemoves should ignore kDNSRecordTypePacketNegative records
+
 Revision 1.621  2007/04/26 15:43:22  cheshire
 Make sure DNSServer *s is non-null before using value in LogOperation
 
@@ -4693,9 +4696,9 @@ mDNSexport mStatus mDNS_StopQueryWithRemoves(mDNS *const m, DNSQuestion *const q
 		CacheGroup *const cg = CacheGroupForName(m, slot, question->qnamehash, &question->qname);
 		LogOperation("Generating terminal removes for %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
 		for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
-			if (SameNameRecordAnswersQuestion(&rr->resrec, question))
+			if (rr->resrec.RecordType != kDNSRecordTypePacketNegative && SameNameRecordAnswersQuestion(&rr->resrec, question))
 				{
-				// Don't use mDNS_DropLockBeforeCallback() here
+				// Don't use mDNS_DropLockBeforeCallback() here, since we don't allow API calls
 				if (question->QuestionCallback)
 					question->QuestionCallback(m, question, &rr->resrec, mDNSfalse);
 				}
