@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.348  2007/04/26 04:01:59  cheshire
+Copy-and-paste error: Test should be "if (result == DNSServer_Passed)" not "if (result == DNSServer_Failed)"
+
 Revision 1.347  2007/04/26 00:35:15  cheshire
 <rdar://problem/5140339> uDNS: Domain discovery not working over VPN
 Fixes to make sure results update correctly when connectivity changes (e.g. a DNS server
@@ -3197,7 +3200,7 @@ mDNSlocal mDNSBool uDNS_ReceiveTestQuestionResponse(mDNS *const m, DNSMessage *c
 			DNSQuestion *q;
 			s->teststate = result;
 			found = mDNStrue;
-			if (result == DNSServer_Failed)		// Unblock any questions that were waiting for this result
+			if (result == DNSServer_Passed)		// Unblock any questions that were waiting for this result
 				for (q = m->Questions; q; q=q->next)
 					if (q->qDNSServer == s)
 						q->LastQTime = m->timenow - q->ThisQInterval;
