@@ -17,6 +17,11 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.401  2007/04/26 00:35:16  cheshire
+<rdar://problem/5140339> uDNS: Domain discovery not working over VPN
+Fixes to make sure results update correctly when connectivity changes (e.g. a DNS server
+inside the firewall may give answers where a public one gives none, and vice versa.)
+
 Revision 1.400  2007/04/24 21:50:27  cheshire
 Debugging: Show list of changedKeys in NetworkChanged callback
 
@@ -2100,7 +2105,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 								// mDNSAddr saddr = { mDNSAddrType_IPv4, { { { 192, 168, 1, 1 } } } }; // for testing
 								debugf("Adding dns server from slot %d %#a for domain %##s", i, &saddr, d.c);
 								if (SetupAddr(&saddr, r->nameserver[n])) LogMsg("RegisterSplitDNS: bad IP address");
-								else mDNS_AddDNSServer(m, &saddr, &d);
+								else mDNS_AddDNSServer(m, &d, &saddr, r->port ? mDNSOpaque16fromIntVal(r->port) : UnicastDNSPort);
 								}
 					}
 				}
@@ -2225,7 +2230,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 								mDNSAddr addr = { mDNSAddrType_IPv4, { { { 0 } } } };
 								if (s && CFStringGetCString(s, buf, 256, kCFStringEncodingUTF8) &&
 									inet_aton(buf, (struct in_addr *) &addr.ip.v4))
-									mDNS_AddDNSServer(m, &addr, mDNSNULL);
+									mDNS_AddDNSServer(m, mDNSNULL, &addr, UnicastDNSPort);
 								}
 							}
 						}

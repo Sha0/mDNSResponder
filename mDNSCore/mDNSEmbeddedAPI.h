@@ -54,6 +54,11 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.365  2007/04/26 00:35:15  cheshire
+<rdar://problem/5140339> uDNS: Domain discovery not working over VPN
+Fixes to make sure results update correctly when connectivity changes (e.g. a DNS server
+inside the firewall may give answers where a public one gives none, and vice versa.)
+
 Revision 1.364  2007/04/24 02:07:42  cheshire
 <rdar://problem/4246187> Identical client queries should reference a single shared core query
 Deleted some more redundant code
@@ -997,6 +1002,7 @@ typedef struct DNSServer
 	{
     struct DNSServer *next;
     mDNSAddr   addr;
+    mDNSIPPort port;
     mDNSBool   del;			// Set when we're planning to delete this from the list
     mDNSu32    teststate;	// Have we sent bug-detection query to this server?
     domainname domain;		// name->server matching for "split dns"
@@ -1238,7 +1244,8 @@ struct DNSQuestion_struct
 	mDNSu32               CurrentAnswers;	// Number of records currently in the cache that answer this question
 	mDNSu32               LargeAnswers;		// Number of answers with rdata > 1024 bytes
 	mDNSu32               UniqueAnswers;	// Number of answers received with kDNSClass_UniqueRRSet bit set
-	mDNSInterfaceID       FlappingInterface;// Set when an interface goes away, to flag if remove events are delivered for this Q
+	mDNSInterfaceID       FlappingInterface1;// Set when an interface goes away, to flag if remove events are delivered for this Q
+	mDNSInterfaceID       FlappingInterface2;// Set when an interface goes away, to flag if remove events are delivered for this Q
 	DNSQuestion          *DuplicateOf;
 	DNSQuestion          *NextInDQList;
 	DupSuppressInfo       DupSuppress[DupSuppressInfoSize];
@@ -1251,7 +1258,7 @@ struct DNSQuestion_struct
 
 	// Wide Area fields.  These are used internally by the uDNS core
 	mDNSs32               RestartTime;      // Mark when we restart a suspended query
-	DNSServer            *DNSServer;
+	DNSServer            *qDNSServer;
 	TCPSocket            *sock;             // For secure operations
 	LLQ_Info             *llq;              // NULL for 1-shot queries
 
@@ -1998,7 +2005,7 @@ extern void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSRecordCa
 extern void mDNS_RemoveDynDNSHostName(mDNS *m, const domainname *fqdn);
 extern void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr,  const mDNSAddr *v6addr, const mDNSAddr *router);
 extern void mDNS_UpdateLLQs(mDNS *m);
-extern void mDNS_AddDNSServer(mDNS *const m, const mDNSAddr *dnsAddr, const domainname *domain);
+extern void mDNS_AddDNSServer(mDNS *const m, const domainname *d, const mDNSAddr *addr, const mDNSIPPort port);
 extern void mDNS_AddSearchDomain(const domainname *const domain);
 
 #define mDNS_AddSearchDomain_CString(X) \

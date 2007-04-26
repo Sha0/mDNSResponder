@@ -38,6 +38,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.619  2007/04/26 00:35:15  cheshire
+<rdar://problem/5140339> uDNS: Domain discovery not working over VPN
+Fixes to make sure results update correctly when connectivity changes (e.g. a DNS server
+inside the firewall may give answers where a public one gives none, and vice versa.)
+
 Revision 1.618  2007/04/25 19:26:01  cheshire
 m->NextScheduledQuery was getting set too early in SendQueries()
 Improved "SendQueries didn't send all its queries" debugging message
@@ -1979,6 +1984,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 				}
 			else if (mDNSOpaque16IsZero(q->TargetQID) && !q->Target.type && TimeToSendThisQuestion(q, m->timenow))
 				{
+				//LogOperation("Time to send %##s (%s) %d", q->qname.c, DNSTypeName(q->qtype), m->timenow - (q->LastQTime + q->ThisQInterval));
 				q->SendQNow = mDNSInterfaceMark;		// Mark this question for sending on all interfaces
 				if (maxExistingQuestionInterval < q->ThisQInterval)
 					maxExistingQuestionInterval = q->ThisQInterval;
@@ -2006,6 +2012,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 				// treat this as logically a repeat of the last transmission, without advancing the interval
 				if (m->timenow - (q->LastQTime + q->ThisQInterval/2) >= 0)
 					{
+					//LogOperation("Accelerating %##s (%s) %d", q->qname.c, DNSTypeName(q->qtype), m->timenow - (q->LastQTime + q->ThisQInterval));
 					q->SendQNow = mDNSInterfaceMark;	// Mark this question for sending on all interfaces
 					q->ThisQInterval *= 2;
 					if (q->ThisQInterval > MaxQuestionInterval)
@@ -2486,7 +2493,8 @@ mDNSlocal void CacheRecordRmv(mDNS *const m, CacheRecord *rr)
 		if (ResourceRecordAnswersQuestion(&rr->resrec, q))
 			{
 			verbosedebugf("CacheRecordRmv %p %s", rr, CRDisplayString(m, rr));
-			q->FlappingInterface = mDNSNULL;
+			q->FlappingInterface1 = mDNSNULL;
+			q->FlappingInterface2 = mDNSNULL;
 			if (q->CurrentAnswers == 0)
 				LogMsg("CacheRecordRmv ERROR: How can CurrentAnswers already be zero for %p %##s (%s)?",
 					q, q->qname.c, DNSTypeName(q->qtype));
@@ -4393,7 +4401,7 @@ mDNSlocal DNSServer *GetServerForName(mDNS *m, const domainname *name)
 	while (p)
 		{
 		int scount = CountLabels(&p->domain);
-		if (scount <= ncount && scount > curmatchlen)
+		if (!p->del && scount <= ncount && scount > curmatchlen)
 			{
 			// only inspect if server's domain is longer than current best match and shorter than the name itself
 			const domainname *tail = name;
@@ -4491,7 +4499,8 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		question->CurrentAnswers    = 0;
 		question->LargeAnswers      = 0;
 		question->UniqueAnswers     = 0;
-		question->FlappingInterface = mDNSNULL;
+		question->FlappingInterface1 = mDNSNULL;
+		question->FlappingInterface2 = mDNSNULL;
 		question->DuplicateOf       = FindDuplicateQuestion(m, question);
 		question->NextInDQList      = mDNSNULL;
 		question->SendQNow          = mDNSNULL;
@@ -4501,7 +4510,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		question->AuthInfo          = GetAuthInfoForName(m, &question->qname);
 		question->CNAMEReferrals    = 0;
 		question->RestartTime       = 0;
-		question->DNSServer         = mDNSNULL;
+		question->qDNSServer        = mDNSNULL;
 		question->sock              = mDNSNULL;
 		question->llq               = mDNSNULL;
 
@@ -4533,7 +4542,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 			// this routine with the question list data structures in an inconsistent state.
 			if (!mDNSOpaque16IsZero(question->TargetQID))
 				{
-				question->DNSServer = GetServerForName(m, &question->qname);
+				question->qDNSServer = GetServerForName(m, &question->qname);
 				if (!question->DuplicateOf)
 					{
 					if (question->LongLived)
@@ -5359,21 +5368,20 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 				m->SuppressProbes = (m->timenow + delay);
 			}
 
-		for (q = m->Questions; q; q=q->next)							// Scan our list of questions
-			if (mDNSOpaque16IsZero(q->TargetQID) && (!q->InterfaceID || q->InterfaceID == set->InterfaceID))	// If not a wide-areq query, non-specific Q, or Q on this specific interface,
-				{														// then reactivate this question
-				mDNSs32 initial  = (flapping && q->FlappingInterface != set->InterfaceID) ? InitialQuestionInterval * 8 : InitialQuestionInterval;
-				mDNSs32 qdelay   = (flapping && q->FlappingInterface != set->InterfaceID) ? mDNSPlatformOneSecond   * 5 : 0;
-				if (flapping && q->FlappingInterface == set->InterfaceID)
-					LogOperation("No cache records for %##s (%s) expired; no need for immediate question", q->qname.c, DNSTypeName(q->qtype));
+		for (q = m->Questions; q; q=q->next)								// Scan our list of questions
+			if (!q->InterfaceID || q->InterfaceID == set->InterfaceID)		// If non-specific Q, or Q on this specific interface,
+				{															// then reactivate this question
+				mDNSBool dodelay = flapping && (q->FlappingInterface1 == set->InterfaceID || q->FlappingInterface2 == set->InterfaceID);
+				mDNSs32 initial  = dodelay ? InitialQuestionInterval * 8 : InitialQuestionInterval;
+				mDNSs32 qdelay   = dodelay ? mDNSPlatformOneSecond   * 5 : 0;
+				if (dodelay) LogOperation("No cache records for expired %##s (%s); okay to delay questions a little", q->qname.c, DNSTypeName(q->qtype));
 					
 				if (!q->ThisQInterval || q->ThisQInterval > initial)
 					{
 					q->ThisQInterval = initial;
 					q->RequestUnicast = 2; // Set to 2 because is decremented once *before* we check it
 					}
-				if (q->LastQTime - (m->timenow - q->ThisQInterval + qdelay) > 0)
-					q->LastQTime = (m->timenow - q->ThisQInterval + qdelay);
+				q->LastQTime = m->timenow - q->ThisQInterval + qdelay;
 				q->RecentAnswerPkts = 0;
 				SetNextQueryTime(m,q);
 				}
@@ -5465,7 +5473,10 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 				{
 				if (q->InterfaceID == set->InterfaceID) q->ThisQInterval = 0;
 				if (!q->InterfaceID || q->InterfaceID == set->InterfaceID)
-					q->FlappingInterface = set->InterfaceID;
+					{
+					q->FlappingInterface2 = q->FlappingInterface1;
+					q->FlappingInterface1 = set->InterfaceID;		// Keep history of the last two interfaces to go away
+					}
 				}
 
 			// 2. Flush any cache records received on this interface
@@ -5476,7 +5487,14 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 					// If this interface is deemed flapping,
 					// postpone deleting the cache records in case the interface comes back again
 					if (!flapping) PurgeCacheResourceRecord(m, rr);
-					else mDNS_Reconfirm_internal(m, rr, kDefaultReconfirmTimeForFlappingInterface);
+					else
+						{
+						// We want these record to go away in 30 seconds
+						// We set UnansweredQueries = MaxUnansweredQueries so we don't waste time doing any queries for them --
+						// if the interface does come back, any relevant questions will be reactivated anyway
+						mDNS_Reconfirm_internal(m, rr, kDefaultReconfirmTimeForFlappingInterface);
+						rr->UnansweredQueries = MaxUnansweredQueries;
+						}
 					}
 			}
 		}
@@ -6084,6 +6102,22 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 	// (no need to hit the network with domain enumeration queries until we actually need that information).
 	for (ptr = m->DNSServers; ptr; ptr = ptr->next) ptr->del = mDNStrue;
 	mDNSPlatformSetDNSConfig(m, mDNStrue, m->RegisterSearchDomains, &fqdn, mDNSNULL, mDNSNULL);
+
+	// Update our qDNSServer pointers before we go and free the DNSServer object memory
+	for (q = m->Questions; q; q=q->next)
+		if (!mDNSOpaque16IsZero(q->TargetQID) && !q->DuplicateOf)
+			{
+			DNSServer *s = GetServerForName(m, &q->qname);
+			if (q->qDNSServer != s)
+				{
+				// If DNS Server for this question has changed, reactivate it
+				LogOperation("Updating DNS Server from %#a to %#a for %##s (%s)",
+					&q->qDNSServer->addr, &s->addr, q->qname.c, DNSTypeName(q->qtype));
+				q->qDNSServer = s;
+				q->ThisQInterval = InitialQuestionInterval;
+				}
+			}
+
 	while (*p)
 		{
 		if ((*p)->del)
@@ -6095,18 +6129,6 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 		else
 			p = &(*p)->next;
 		}
-
-	for (q = m->Questions; q; q=q->next)
-		if (!mDNSOpaque16IsZero(q->TargetQID) && !q->DuplicateOf)
-			{
-			DNSServer *s = GetServerForName(m, &q->qname);
-			if (q->DNSServer != s)
-				{
-				// If DNS Server for this question has changed, reactivate it
-				q->DNSServer = s;
-				q->ThisQInterval = InitialQuestionInterval;
-				}
-			}
 
 	mDNS_Unlock(m);
 

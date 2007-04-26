@@ -17,6 +17,11 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.74  2007/04/26 00:35:16  cheshire
+<rdar://problem/5140339> uDNS: Domain discovery not working over VPN
+Fixes to make sure results update correctly when connectivity changes (e.g. a DNS server
+inside the firewall may give answers where a public one gives none, and vice versa.)
+
 Revision 1.73  2007/04/22 06:02:03  cheshire
 <rdar://problem/4615977> Query should immediately return failure when no server
 
@@ -3174,8 +3179,8 @@ void mDNSCoreReceive(mDNS *const m, void *const msg, const mDNSu8 *const end,
                                 const mDNSAddr *const srcaddr, const mDNSIPPort srcport,
                                 const mDNSAddr *const dstaddr, const mDNSIPPort dstport, const mDNSInterfaceID iid)
 	{ ( void ) m; ( void ) msg; ( void ) end; ( void ) srcaddr; ( void ) srcport; ( void ) dstaddr; ( void ) dstport; ( void ) iid; }
-void mDNS_AddDNSServer(mDNS * const m, const mDNSAddr * dnsAddr, const domainname * domain)
-	{ ( void ) m; ( void ) dnsAddr; ( void ) domain; }
+void mDNS_AddDNSServer(mDNS *const m, const domainname *d, const mDNSAddr *addr, const mDNSIPPort port)
+	{ ( void ) m; ( void ) d; ( void ) addr; ( void ) port; }
 void mDNS_AddSearchDomain(const domainname *const domain) { (void)domain; }
 void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSRecordCallback *StatusCallback, const void *StatusContext)
 	{ ( void ) m; ( void ) fqdn; ( void ) StatusCallback; ( void ) StatusContext; }

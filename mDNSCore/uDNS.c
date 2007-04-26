@@ -22,6 +22,11 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.347  2007/04/26 00:35:15  cheshire
+<rdar://problem/5140339> uDNS: Domain discovery not working over VPN
+Fixes to make sure results update correctly when connectivity changes (e.g. a DNS server
+inside the firewall may give answers where a public one gives none, and vice versa.)
+
 Revision 1.346  2007/04/25 19:16:59  cheshire
 Don't set SuppressStdPort53Queries unless we do actually send a DNS packet
 
@@ -531,7 +536,7 @@ mDNSlocal void SetRecordRetry(mDNS *const m, AuthRecord *rr, mStatus SendErr)
 #pragma mark - Name Server List Management
 #endif
 
-mDNSexport void mDNS_AddDNSServer(mDNS *const m, const mDNSAddr *addr, const domainname *d)
+mDNSexport void mDNS_AddDNSServer(mDNS *const m, const domainname *d, const mDNSAddr *addr, const mDNSIPPort port)
 	{
 	DNSServer **p = &m->DNSServers;
 
@@ -556,6 +561,7 @@ mDNSexport void mDNS_AddDNSServer(mDNS *const m, const mDNSAddr *addr, const dom
 	*p = mDNSPlatformMemAllocate(sizeof(**p));
 	if (!*p) { LogMsg("Error: mDNS_AddDNSServer - malloc"); return; }
 	(*p)->addr      = *addr;
+	(*p)->port      = port;
 	(*p)->del       = mDNSfalse;
 	(*p)->teststate = DNSServer_Untested;
 	AssignDomainName(&(*p)->domain, d);
@@ -3162,7 +3168,7 @@ mDNSlocal const domainname *DNSRelayTestQuestion = (const domainname*)
 
 // Returns mDNStrue if response was handled
 mDNSlocal mDNSBool uDNS_ReceiveTestQuestionResponse(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
-	const mDNSAddr *const srcaddr)
+	const mDNSAddr *const srcaddr, const mDNSIPPort srcport)
 	{
 	const mDNSu8 *ptr = msg->data;
 	DNSQuestion q;
@@ -3187,36 +3193,37 @@ mDNSlocal mDNSBool uDNS_ReceiveTestQuestionResponse(mDNS *const m, DNSMessage *c
 	// 3. Find occurrences of this server in our list, and mark them appropriately
 	for (s = m->DNSServers; s; s = s->next)
 		if (mDNSSameAddress(srcaddr, &s->addr) && s->teststate != result)
-			{ s->teststate = result; found = mDNStrue; }
+			{
+			DNSQuestion *q;
+			s->teststate = result;
+			found = mDNStrue;
+			if (result == DNSServer_Failed)		// Unblock any questions that were waiting for this result
+				for (q = m->Questions; q; q=q->next)
+					if (q->qDNSServer == s)
+						q->LastQTime = m->timenow - q->ThisQInterval;
+			}
 
 	// 4. Assuming we found the server in question in our list (don't want to risk being victim of a deliberate DOS attack here)
 	// log a message to let the user know why Wide-Area Service Discovery isn't working
 	if (found && result == DNSServer_Failed)
 		LogMsg("NOTE: Wide-Area Service Discovery disabled to avoid crashing defective DNS relay %#a.", srcaddr);
 
-	return(mDNStrue); // Return mDNStrue to tell uDNS_ReceiveMsg it doens't need to process this packet further
+	LogOperation("DNS Server %#a:%d passed", srcaddr, mDNSVal16(srcport));
+
+	return(mDNStrue); // Return mDNStrue to tell uDNS_ReceiveMsg it doesn't need to process this packet further
 	}
 
-mDNSlocal void hndlTruncatedAnswer(DNSQuestion *question, const mDNSAddr *src, mDNS *m)
+mDNSlocal void hndlTruncatedAnswer(mDNS *m, DNSQuestion *question, const mDNSAddr *src, const mDNSIPPort srcport)
 	{
 	TCPSocket *sock = mDNSNULL;
 	tcpInfo_t *context;
 	mDNSIPPort port = zeroIPPort;
 	mStatus err = mStatus_NoError;
 
-	if (!src)
-		{
-		LogMsg("hndlTruncatedAnswer: TCP DNS response had TC bit set: ignoring");
-		return;
-		}
+	if (!src) { LogMsg("hndlTruncatedAnswer: TCP DNS response had TC bit set: ignoring"); return; }
 
 	context = (tcpInfo_t *)mDNSPlatformMemAllocate(sizeof(tcpInfo_t));
-	if (!context)
-		{
-		LogMsg("ERROR: hndlTruncatedAnswer - memallocate failed");
-		err = mStatus_UnknownErr;
-		goto exit;
-		}
+	if (!context) { LogMsg("ERROR: hndlTruncatedAnswer - memallocate failed"); err = mStatus_UnknownErr; goto exit; }
 
 	mDNSPlatformMemZero(context, sizeof(tcpInfo_t));
 	context->question = question;
@@ -3226,7 +3233,7 @@ mDNSlocal void hndlTruncatedAnswer(DNSQuestion *question, const mDNSAddr *src, m
 	// This mDNSPlatformTCPSocket/mDNSPlatformTCPConnect pattern appears repeatedly -- should be folded into and single make-socket-and-connect routine
 	sock = mDNSPlatformTCPSocket(m, kTCPSocketFlags_Zero, &port);
 	if (!sock) { LogMsg("ERROR: unable to create TCP socket"); err = mStatus_UnknownErr; goto exit; }
-	err = mDNSPlatformTCPConnect(sock, src, UnicastDNSPort, question->InterfaceID, tcpCallback, context);
+	err = mDNSPlatformTCPConnect(sock, src, srcport, question->InterfaceID, tcpCallback, context);
 
 	// This pattern appears repeatedly -- should be a subroutine, or folded into mDNSPlatformTCPConnect()
 	if      (err == mStatus_ConnEstablished) { tcpCallback(sock, context, mDNStrue, mStatus_NoError); err = mStatus_NoError; }
@@ -3293,11 +3300,11 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 	if (QR_OP == StdR)
 		{
 		//if (srcaddr && recvLLQResponse(m, msg, end, srcaddr, srcport)) return;
-		if (uDNS_ReceiveTestQuestionResponse(m, msg, end, srcaddr)) return;
+		if (uDNS_ReceiveTestQuestionResponse(m, msg, end, srcaddr, srcport)) return;
 		if (!mDNSOpaque16IsZero(msg->h.id))
 			for (qptr = m->Questions; qptr; qptr = qptr->next)
 				if (msg->h.flags.b[0] & kDNSFlag0_TC && mDNSSameOpaque16(qptr->TargetQID, msg->h.id) && m->timenow - qptr->LastQTime < RESPONSE_WINDOW)
-					{ hndlTruncatedAnswer(qptr, srcaddr, m); return; }
+					{ hndlTruncatedAnswer(m, qptr, srcaddr, srcport); return; }
 		}
 	if (QR_OP == UpdateR && !mDNSOpaque16IsZero(msg->h.id))
 		{
@@ -4025,15 +4032,17 @@ mDNSexport void uDNS_CheckQuery(mDNS *const m)
 
 		if (sendtime - m->timenow <= 0)
 			{
-			if (q->DNSServer)
+			if (q->qDNSServer)
 				{
 				DNSMessage msg;
 				mDNSu8 *end;
 				mStatus err = mStatus_NoError;
 				DomainAuthInfo *private = mDNSNULL;
 
-				if (q->DNSServer->teststate == DNSServer_Untested)
+				if (q->qDNSServer->teststate == DNSServer_Untested)
 					{
+					LogOperation("Sending DNS test query to %#a:%d", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port));
+					q->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
 					InitializeDNSMessage(&msg.h, mDNS_NewMessageID(m), uQueryFlags);
 					end = putQuestion(&msg, msg.data, msg.data + AbsoluteMaxDNSMessageData, DNSRelayTestQuestion, kDNSType_PTR, kDNSClass_IN);
 					}
@@ -4046,12 +4055,12 @@ mDNSexport void uDNS_CheckQuery(mDNS *const m)
 				if (err) LogMsg("Error: uDNS_CheckQuery - constructQueryMsg. Skipping question %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 				else
 					{
-					if (q->DNSServer->teststate != DNSServer_Failed)
+					if (q->qDNSServer->teststate != DNSServer_Failed)
 						{
 						//LogMsg("uDNS_CheckQuery %d %p %##s (%s)", (q->LastQTime + q->ThisQInterval) - m->timenow, private, q->qname.c, DNSTypeName(q->qtype));
 						if (!private)
 							{
-							err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, &q->DNSServer->addr, UnicastDNSPort, mDNSNULL, mDNSNULL);
+							err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, &q->qDNSServer->addr, q->qDNSServer->port, mDNSNULL, mDNSNULL);
 							m->SuppressStdPort53Queries = NonZeroTime(m->timenow + (mDNSPlatformOneSecond+99)/100);
 							}
 						else
@@ -4063,6 +4072,14 @@ mDNSexport void uDNS_CheckQuery(mDNS *const m)
 						{
 						q->ThisQInterval = q->ThisQInterval * 2;	// don't increase interval if send failed
 						//LogMsg("Adjusted ThisQInterval to %d for %##s (%s)", q->ThisQInterval, q->qname.c, DNSTypeName(q->qtype));
+						}
+					else if (q->LongLived && q->llq && q->llq->state == LLQ_Poll)
+						{
+						// Bit of a hack here -- if we dropped the interval down to do the DNS test query, need to put
+						// it back or we'll poll every three seconds. The real solution is that the DNS test query
+						// should be a real query in its own right, which other queries are blocked on, rather than
+						// being shoehorned in here and borrowing another question's q->LastQTime and q->ThisQInterval
+						q->ThisQInterval = LLQ_POLL_INTERVAL;
 						}
 					}
 				}

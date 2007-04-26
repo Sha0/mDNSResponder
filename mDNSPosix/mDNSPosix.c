@@ -30,6 +30,11 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.97  2007/04/26 00:35:16  cheshire
+<rdar://problem/5140339> uDNS: Domain discovery not working over VPN
+Fixes to make sure results update correctly when connectivity changes (e.g. a DNS server
+inside the firewall may give answers where a public one gives none, and vice versa.)
+
 Revision 1.96  2007/04/22 20:29:59  cheshire
 Fix locking error
 
@@ -546,7 +551,7 @@ mDNSexport int ParseDNSServers(mDNS *m, const char *filePath)
 			mDNSAddr DNSAddr;
 			DNSAddr.type = mDNSAddrType_IPv4;
 			DNSAddr.ip.v4.NotAnInteger = ina.s_addr;
-			mDNS_AddDNSServer(m, &DNSAddr, NULL);
+			mDNS_AddDNSServer(m, NULL, &DNSAddr, UnicastDNSPort);
 			numOfServers++;
 			}
 		}  
