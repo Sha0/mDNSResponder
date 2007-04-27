@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: ControlPanel.cpp,v $
+Revision 1.4  2007/04/27 20:42:11  herscher
+<rdar://problem/5078828> mDNS: Bonjour Control Panel for Windows doesn't work on Vista
+
 Revision 1.3  2006/08/14 23:25:28  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -133,7 +136,11 @@ LRESULT
 CCPApplet::OnRun(CWnd* pParentWnd)
 {
 	LRESULT		lResult = 1;
-	CWnd	*	pWnd	= (CWnd*) m_uiClass->CreateObject(); 
+	CWnd	*	pWnd;
+
+	InitCommonControls();
+
+	pWnd = (CWnd*) m_uiClass->CreateObject(); 
 
 	if ( pWnd )
 	{
