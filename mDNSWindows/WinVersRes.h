@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: WinVersRes.h,v $
+Revision 1.55  2007/04/27 20:34:31  herscher
+<rdar://problem/5159673> mDNS: Company name needs to be changed to Apple Inc.
+
 Revision 1.54  2006/08/14 23:25:21  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -186,6 +189,9 @@ First checked in.
 
 #define MASTER_PROD_NAME	"Bonjour"
 
+// Define the company name for mDNSResponder on Windows
+#define MASTER_COMPANY_NAME   "Apple Inc."
+
 // Define the product version for mDNSResponder on Windows
 #define MASTER_PROD_VERS		1,0,3,1
 #define MASTER_PROD_VERS_STR	"1,0,3,1"
@@ -193,6 +199,6 @@ First checked in.
 #define MASTER_PROD_VERS_STR3 "Explorer Plugin 1.0.3.1"
 
 // Define the legal copyright
-#define MASTER_LEGAL_COPYRIGHT "Copyright (C) 2003-2006 Apple Computer, Inc."
+#define MASTER_LEGAL_COPYRIGHT "Copyright (C) 2003-2007 Apple Inc."
 
 #endif // WINRESVERS_H

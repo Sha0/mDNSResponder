@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: jdns_sd.rc,v $
+Revision 1.5  2007/04/27 20:34:31  herscher
+<rdar://problem/5159673> mDNS: Company name needs to be changed to Apple Inc.
+
 Revision 1.4  2006/08/14 23:26:04  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -61,11 +64,11 @@ BEGIN
     BEGIN
         BLOCK "040904b0"
         BEGIN
-            VALUE "CompanyName", "Apple Computer, Inc."
+            VALUE "CompanyName", MASTER_COMPANY_NAME
             VALUE "FileDescription", MASTER_PROD_NAME " support for Java"
             VALUE "FileVersion", MASTER_PROD_VERS_STR
             VALUE "InternalName", "jdns_sd"
-            VALUE "LegalCopyright", "Copyright (C) 2004"
+            VALUE "LegalCopyright", MASTER_LEGAL_COPYRIGHT
             VALUE "OriginalFilename", "jdns_sd.dll"
             VALUE "ProductName", MASTER_PROD_NAME
             VALUE "ProductVersion", MASTER_PROD_VERS_STR
