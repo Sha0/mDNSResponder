@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.352  2007/04/27 19:49:53  cheshire
+In uDNS_ReceiveTestQuestionResponse, also check that srcport matches
+
 Revision 1.351  2007/04/27 19:28:02  cheshire
 Any code that calls StartGetZoneData needs to keep a handle to the structure, so
 it can cancel it if necessary. (First noticed as a crash in Apple Remote Desktop
@@ -3165,7 +3168,7 @@ mDNSlocal mDNSBool uDNS_ReceiveTestQuestionResponse(mDNS *const m, DNSMessage *c
 
 	// 3. Find occurrences of this server in our list, and mark them appropriately
 	for (s = m->DNSServers; s; s = s->next)
-		if (mDNSSameAddress(srcaddr, &s->addr) && s->teststate != result)
+		if (mDNSSameAddress(srcaddr, &s->addr) && mDNSSameIPPort(srcport, s->port) && s->teststate != result)
 			{
 			DNSQuestion *q;
 			s->teststate = result;
