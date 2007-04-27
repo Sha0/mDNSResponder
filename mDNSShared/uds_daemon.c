@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.287  2007/04/27 19:03:22  cheshire
+Check q->LongLived not q->llq to tell if a query is LongLived
+
 Revision 1.286  2007/04/26 16:00:01  cheshire
 Show interface number in DNSServiceBrowse RESULT output
 
@@ -3513,7 +3516,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 		if (q->ThisQInterval) CacheActive++;
 		LogMsgNoIdent("%6d%6d %-6s%s %-6s%##s",
 			i, n, info ? info->ifname : "",
-			mDNSOpaque16IsZero(q->TargetQID) ? " " : q->llq ? "L" : "O", // mDNS, long-lived, or one-shot query?
+			mDNSOpaque16IsZero(q->TargetQID) ? " " : q->LongLived ? "L" : "O", // mDNS, long-lived, or one-shot query?
 			DNSTypeName(q->qtype), q->qname.c);
 		usleep(1000);	// Limit rate a little so we don't flood syslog too fast
 		}
