@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.624  2007/04/27 21:04:30  cheshire
+On network configuration change, need to call uDNS_RegisterSearchDomains
+
 Revision 1.623  2007/04/27 19:28:01  cheshire
 Any code that calls StartGetZoneData needs to keep a handle to the structure, so
 it can cancel it if necessary. (First noticed as a crash in Apple Remote Desktop
@@ -6161,13 +6164,16 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
     DNSServer       *ptr, **p = &m->DNSServers;
     DNSQuestion *q;
 
+	if (m->RegisterSearchDomains) uDNS_RegisterSearchDomains(m);
+
 	mDNS_Lock(m);
 
 	// Let the platform layer get the current DNS information
 	// The m->RegisterSearchDomains boolean is so that we lazily get the search domain list only on-demand
 	// (no need to hit the network with domain enumeration queries until we actually need that information).
 	for (ptr = m->DNSServers; ptr; ptr = ptr->next) ptr->del = mDNStrue;
-	mDNSPlatformSetDNSConfig(m, mDNStrue, m->RegisterSearchDomains, &fqdn, mDNSNULL, mDNSNULL);
+
+	mDNSPlatformSetDNSConfig(m, mDNStrue, mDNSfalse, &fqdn, mDNSNULL, mDNSNULL);
 
 	// Update our qDNSServer pointers before we go and free the DNSServer object memory
 	for (q = m->Questions; q; q=q->next)
