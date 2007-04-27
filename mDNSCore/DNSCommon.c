@@ -17,6 +17,12 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.152  2007/04/27 19:28:01  cheshire
+Any code that calls StartGetZoneData needs to keep a handle to the structure, so
+it can cancel it if necessary. (First noticed as a crash in Apple Remote Desktop
+-- it would start a query and then quickly cancel it, and then when
+StartGetZoneData completed, it had a dangling pointer and crashed.)
+
 Revision 1.151  2007/04/26 13:35:25  cheshire
 Add kDNSType_SOA case in SameRDataBody, and a comment in GetLargeResourceRecord about why this is important
 
@@ -1115,6 +1121,7 @@ mDNSexport void mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mD
 	rr->UpdateServer      = zeroAddr;
 	rr->UpdatePort        = zeroIPPort;
 	rr->NATinfo           = 0;
+	rr->nta               = mDNSNULL;
 	rr->OrigRData         = 0;
 	rr->OrigRDLen         = 0;
 	rr->InFlightRData     = 0;

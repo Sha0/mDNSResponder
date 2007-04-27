@@ -38,6 +38,12 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.623  2007/04/27 19:28:01  cheshire
+Any code that calls StartGetZoneData needs to keep a handle to the structure, so
+it can cancel it if necessary. (First noticed as a crash in Apple Remote Desktop
+-- it would start a query and then quickly cancel it, and then when
+StartGetZoneData completed, it had a dangling pointer and crashed.)
+
 Revision 1.622  2007/04/26 16:09:22  cheshire
 mDNS_StopQueryWithRemoves should ignore kDNSRecordTypePacketNegative records
 
@@ -850,6 +856,7 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	rr->UpdateServer      = zeroAddr;
 	rr->UpdatePort        = zeroIPPort;
 	rr->NATinfo           = 0;
+	rr->nta               = mDNSNULL;
 	rr->OrigRData         = 0;
 	rr->OrigRDLen         = 0;
 	rr->InFlightRData     = 0;
@@ -2323,7 +2330,7 @@ mDNSexport void AnswerQuestionWithResourceRecord(mDNS *const m, CacheRecord *con
 	// (If we have an answer in the cache, then we'll automatically ask again in time to stop it expiring.)
 	if ((AddRecord == 2 && !q->RequestUnicast) ||
 		(AddRecord == 1 && (q->ExpectUnique || (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask))))
-		if (ActiveQuestion(q) && !q->llq)
+		if (ActiveQuestion(q) && !q->LongLived)
 			{
 			q->LastQTime        = m->timenow;
 			q->LastQTxTime      = m->timenow;
@@ -3825,9 +3832,9 @@ mDNSlocal mDNSBool ExpectingUnicastResponseForRecord(mDNS *const m, const mDNSAd
 				// For now we don't do this check -- for LLQ updates, the ID doesn't seem to match the ID in the question
 				// if (mDNSSameOpaque16(q->TargetQID, id)
 					{
-					if (mDNSSameAddress(srcaddr, &q->Target))                  return(mDNStrue);
-					if (q->llq && mDNSSameAddress(srcaddr, &q->llq->servAddr)) return(mDNStrue);
-					if (TrustedSource(m, srcaddr))                             return(mDNStrue);
+					if (mDNSSameAddress(srcaddr, &q->Target))                   return(mDNStrue);
+					if (q->LongLived && mDNSSameAddress(srcaddr, &q->servAddr)) return(mDNStrue);
+					if (TrustedSource(m, srcaddr))                              return(mDNStrue);
 					LogMsg("WARNING: Ignoring suspect uDNS response from %#a for %s", srcaddr, CRDisplayString(m, rr));
 					return(mDNSfalse);
 					}
@@ -3952,7 +3959,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		{
 		// All responses sent via LL multicast are acceptable for caching
 		// All responses received over our outbound TCP connections are acceptable for caching
-		mDNSBool AcceptableResponse = ResponseMCast || !srcaddr;
+		mDNSBool AcceptableResponse = ResponseMCast || !dstaddr;
 		// (Note that just because we are willing to cache something, that doesn't necessarily make it a trustworthy answer
 		// to any specific question -- any code reading records from the cache needs to make that determination for itself.)
 
@@ -4376,18 +4383,48 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const questi
 	DNSQuestion *q;
 	for (q = m->Questions; q; q=q->next)		// Scan our list of questions
 		if (q->DuplicateOf == question)			// To see if any questions were referencing this as their duplicate
-			{
-			q->ThisQInterval    = question->ThisQInterval;
-			q->RequestUnicast   = question->RequestUnicast;
-			q->LastQTime        = question->LastQTime;
-			q->RecentAnswerPkts = 0;
-			q->DuplicateOf      = FindDuplicateQuestion(m, q);
-			q->LastQTxTime      = question->LastQTxTime;
-			q->llq              = question->llq;
-			question->llq = mDNSNULL;	// Clear old pointer so LLQ info doesn't get killed when original question is stopped
-			if (q->llq) LogOperation("UpdateQuestionDuplicates transferred LLQ info");
-			SetNextQueryTime(m,q);
-			}
+			if ((q->DuplicateOf = FindDuplicateQuestion(m, q)) == mDNSNULL)
+				{
+				// If q used to be a duplicate, but now is not,
+				// then inherit the state from the question that's going away
+				q->LastQTime         = question->LastQTime;
+				q->ThisQInterval     = question->ThisQInterval;
+				q->ExpectUnicastResp = question->ExpectUnicastResp;
+				q->LastAnswerPktNum  = question->LastAnswerPktNum;
+				q->RecentAnswerPkts  = question->RecentAnswerPkts;
+				q->RequestUnicast    = question->RequestUnicast;
+				q->LastQTxTime       = question->LastQTxTime;
+				q->CNAMEReferrals    = question->CNAMEReferrals;
+				q->RestartTime       = question->RestartTime;
+				q->nta               = question->nta;
+				q->servAddr          = question->servAddr;
+				q->servPort          = question->servPort;
+
+				q->state             = question->state;
+				q->NATInfoTCP        = question->NATInfoTCP;
+				q->NATInfoUDP        = question->NATInfoUDP;
+				q->eventPort         = question->eventPort;
+				q->tcpSock           = question->tcpSock;
+				q->udpSock           = question->udpSock;
+				q->origLease         = question->origLease;
+				q->expire            = question->expire;
+				q->ntries            = question->ntries;
+				q->id                = question->id;
+
+				// If we've got a GetZoneData in progress, transfer it to the newly active question
+				question->nta        = mDNSNULL;
+				question->NATInfoTCP = mDNSNULL;
+				question->NATInfoUDP = mDNSNULL;
+				question->tcpSock    = mDNSNULL;
+				question->udpSock    = mDNSNULL;
+				if (q->nta       ) LogOperation("UpdateQuestionDuplicates transferred nta pointer");
+				if (q->NATInfoTCP) LogOperation("UpdateQuestionDuplicates transferred NATInfoTCP pointer");
+				if (q->NATInfoUDP) LogOperation("UpdateQuestionDuplicates transferred NATInfoUDP pointer");
+				if (q->tcpSock   ) LogOperation("UpdateQuestionDuplicates transferred tcpSock pointer");
+				if (q->udpSock   ) LogOperation("UpdateQuestionDuplicates transferred udpSock pointer");
+	
+				SetNextQueryTime(m,q);
+				}
 	}
 
 // CountLabels() returns number of labels in name, excluding final root label
@@ -4518,10 +4555,23 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		question->LastQTxTime       = m->timenow;
 		question->AuthInfo          = GetAuthInfoForName(m, &question->qname);
 		question->CNAMEReferrals    = 0;
+
 		question->RestartTime       = 0;
 		question->qDNSServer        = mDNSNULL;
-		question->sock              = mDNSNULL;
-		question->llq               = mDNSNULL;
+		question->nta               = mDNSNULL;
+		question->servAddr          = zeroAddr;
+		question->servPort          = zeroIPPort;
+
+		question->state             = LLQ_GetZoneInfo;
+		question->NATInfoTCP        = mDNSNULL;
+		question->NATInfoUDP        = mDNSNULL;
+		question->eventPort         = zeroIPPort;
+		question->tcpSock           = mDNSNULL;
+		question->udpSock           = mDNSNULL;
+		question->origLease         = 0;
+		question->expire            = 0;
+		question->ntries            = 0;
+		question->id                = zeroOpaque64;
 
 		for (i=0; i<DupSuppressInfoSize; i++)
 			question->DupSuppress[i].InterfaceID = mDNSNULL;
@@ -4555,7 +4605,14 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 				if (!question->DuplicateOf)
 					{
 					if (question->LongLived)
-						uDNS_InitLongLivedQuery(m, question);
+						{
+						question->ThisQInterval = 0;	// Question is suspended, waiting for GetZoneData to complete
+						question->LastQTime     = m->timenow;
+						LogOperation("uDNS_InitLongLivedQuery: %##s %s %s %d",
+							question->qname.c, DNSTypeName(question->qtype), question->AuthInfo ? "(Private)" : "", question->ThisQInterval);
+						question->nta = StartGetZoneData(m, &question->qname, lookupLLQSRV, startLLQHandshakeCallback, question);
+						if (!question->nta) LogMsg("ERROR: startLLQ - StartGetZoneData failed");
+						}
 					else
 						{
 						question->ThisQInterval = INIT_UCAST_POLL_INTERVAL / 2;
@@ -4568,6 +4625,13 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 
 		return(mStatus_NoError);
 		}
+	}
+
+mDNSlocal void CancelGetZoneData(mDNS *const m, ntaContext* nta)
+	{
+	LogOperation("CancelGetZoneData %##s (%s)", nta->question.qname.c, DNSTypeName(nta->question.qtype));
+	mDNS_StopQuery_internal(m, &nta->question);
+	mDNSPlatformMemFree(nta);
 	}
 
 mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const question)
@@ -4597,19 +4661,12 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 	UpdateQuestionDuplicates(m, question);
 	// But don't trash ThisQInterval until afterwards.
 	question->ThisQInterval = -1;
-	// And don't kill the LLQ info until UpdateQuestionDuplicates has had a chance to move
+	// And don't kill the GetZoneData info until UpdateQuestionDuplicates has had a chance to move
 	// it to a new active question, if appropriate
-	if (!mDNSOpaque16IsZero(question->TargetQID) && question->LongLived && question->llq)
-		{
-		if (question->llq->nta)
-			{
-			DNSQuestion *q = &question->llq->nta->question;
-			LogOperation("uDNS_StopLongLivedQuery cancelling associated GetZoneData Query %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
-			mDNS_StopQuery_internal(m, q);
-			mDNSPlatformMemFree(question->llq->nta);
-			}
-		uDNS_StopLongLivedQuery(m, question);
-		}
+	if (question->nta) CancelGetZoneData(m, question->nta);
+	if (question->tcpSock) mDNSPlatformTCPCloseConnection(question->tcpSock);
+	if (question->udpSock) mDNSPlatformUDPClose          (question->udpSock);
+	if (!mDNSOpaque16IsZero(question->TargetQID) && question->LongLived) uDNS_StopLongLivedQuery(m, question);
 
 	// If there are any cache records referencing this as their active question, then see if any other
 	// question that is also referencing them, else their CRActiveQuestion needs to get set to NULL.

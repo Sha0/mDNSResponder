@@ -54,6 +54,12 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.366  2007/04/27 19:28:02  cheshire
+Any code that calls StartGetZoneData needs to keep a handle to the structure, so
+it can cancel it if necessary. (First noticed as a crash in Apple Remote Desktop
+-- it would start a query and then quickly cancel it, and then when
+StartGetZoneData completed, it had a dangling pointer and crashed.)
+
 Revision 1.365  2007/04/26 00:35:15  cheshire
 <rdar://problem/5140339> uDNS: Domain discovery not working over VPN
 Fixes to make sure results update correctly when connectivity changes (e.g. a DNS server
@@ -912,6 +918,7 @@ struct AuthRecord_struct
 								// !!!KRS not technically correct to cache longer than TTL
 								// SDC Perhaps should keep a reference to the relevant SRV record in the cache?
 	NATTraversalInfo *NATinfo;	// NAT traversal context; may be NULL
+	ntaContext  *nta;
 
 	// uDNS_UpdateRecord support fields
 	// Do we really need all these in *addition* to NewRData and newrdlength above?
@@ -1161,26 +1168,6 @@ typedef enum
 	LLQ_Cancelled         = 19
 	} LLQ_State;
 
-typedef struct
-	{
-	LLQ_State state;
-	NATTraversalInfo *NATInfoTCP;	// This is used if we're browsing behind a NAT
-	NATTraversalInfo *NATInfoUDP;
-	ntaContext  *nta;
-	mDNSAddr servAddr;
-	mDNSIPPort servPort;
-	mDNSIPPort eventPort;			// This is non-zero if this is a private LLQ.  It is the port number that both the TCP
-	                                // and the UDP socket are bound to.  This allows us to receive event notifications via
-	                                // TCP or UDP.
-	TCPSocket *tcpSock;
-	UDPSocket *udpSock;
-	DNSQuestion *question;
-	mDNSu32 origLease;  // seconds (relative)
-	mDNSs32 expire; // ticks (absolute)
-    mDNSs16 ntries;
-	mDNSOpaque64 id;
-	} LLQ_Info;
-
 // LLQ constants
 #define kDNSOpt_LLQ	   1
 #define kDNSOpt_Lease  2
@@ -1256,11 +1243,27 @@ struct DNSQuestion_struct
 	DomainAuthInfo       *AuthInfo;			// Non-NULL if query is currently being done using Private DNS
 	mDNSu32               CNAMEReferrals;	// Count of how many CNAME redirections we've done
 
-	// Wide Area fields.  These are used internally by the uDNS core
-	mDNSs32               RestartTime;      // Mark when we restart a suspended query
-	DNSServer            *qDNSServer;
-	TCPSocket            *sock;             // For secure operations
-	LLQ_Info             *llq;              // NULL for 1-shot queries
+	// Wide Area fields. These are used internally by the uDNS core
+	mDNSs32               RestartTime;		// Mark when we restart a suspended query
+	DNSServer            *qDNSServer;		// Caching server for this query (in the absence of an SRV saying otherwise)
+
+	ntaContext           *nta;				// Used for getting zone data for private or LLQ query
+	mDNSAddr              servAddr;			// Address and port learned from _dns-llq, _dns-llq-tls or _dns-query-tls SRV query
+	mDNSIPPort            servPort;
+
+	// LLQ-specific fields. These fields are only meaningful when LongLived flag is set
+	LLQ_State             state;
+	NATTraversalInfo     *NATInfoTCP;		// This is used if we're browsing behind a NAT
+	NATTraversalInfo     *NATInfoUDP;
+	mDNSIPPort            eventPort;		// This is non-zero if this is a private LLQ.  It is the port number that both the TCP
+											// and the UDP socket are bound to.  This allows us to receive event notifications via
+											// TCP or UDP.
+	TCPSocket            *tcpSock;
+	UDPSocket            *udpSock;
+	mDNSu32               origLease;		// seconds (relative)
+	mDNSs32               expire;			// ticks (absolute)
+    mDNSs16               ntries;
+	mDNSOpaque64          id;
 
 	// Client API fields: The client must set up these fields *before* calling mDNS_StartQuery()
 	mDNSInterfaceID       InterfaceID;		// Non-zero if you want to issue queries only on a single specific IP interface

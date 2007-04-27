@@ -17,6 +17,12 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.57  2007/04/27 19:28:02  cheshire
+Any code that calls StartGetZoneData needs to keep a handle to the structure, so
+it can cancel it if necessary. (First noticed as a crash in Apple Remote Desktop
+-- it would start a query and then quickly cancel it, and then when
+StartGetZoneData completed, it had a dangling pointer and crashed.)
+
 Revision 1.56  2007/04/25 02:14:38  cheshire
 <rdar://problem/4246187> uDNS: Identical client queries should reference a single shared core query
 Additional fixes to make LLQs work properly
@@ -119,8 +125,11 @@ Revision 1.33  2006/07/05 22:53:28  cheshire
 
 // Entry points into unicast-specific routines
 
-extern mStatus uDNS_InitLongLivedQuery(mDNS *const m, DNSQuestion *const question);
-extern void    uDNS_StopLongLivedQuery (mDNS *const m, DNSQuestion *const question);
+extern ntaContext *StartGetZoneData(mDNS *const m, const domainname *const name, const AsyncOpTarget target, AsyncOpCallback callback, void *callbackInfo);
+
+extern void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqInfo, const ntaContext *zoneInfo);
+
+extern void    uDNS_StopLongLivedQuery(mDNS *const m, DNSQuestion *const question);
 
 extern void uDNS_Sleep(mDNS *const m);
 extern void uDNS_Wake(mDNS *const m);
