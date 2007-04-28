@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.403  2007/04/28 01:31:59  cheshire
+Improve debugging support for catching memory corruption problems
+
 Revision 1.402  2007/04/26 22:54:57  cheshire
 Debugging messages to help track down <rdar://problem/5164206> mDNSResponder takes 50%+ CPU
 
@@ -2564,7 +2567,7 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 					}
 				else		// else make a new DomainAuthInfo structure to hold this data
 					{
-					ptr = (DomainAuthInfo*)mDNSPlatformMemAllocate(sizeof(*ptr));
+					ptr = (DomainAuthInfo*)mallocL("DomainAuthInfo", sizeof(*ptr));
 					if (!ptr) { LogMsg("SetSecretForDomain: No memory"); goto nextitem; }
 					mDNS_SetSecretForDomain(m, ptr, &domain, &keyname, keystring);
 					}
@@ -3025,5 +3028,7 @@ mDNSexport mDNSu32  mDNSPlatformStrLen (                 const void *src)       
 mDNSexport void     mDNSPlatformMemCopy(      void *dst, const void *src, mDNSu32 len) { memcpy(dst, src, len); }
 mDNSexport mDNSBool mDNSPlatformMemSame(const void *dst, const void *src, mDNSu32 len) { return(memcmp(dst, src, len) == 0); }
 mDNSexport void     mDNSPlatformMemZero(      void *dst,                  mDNSu32 len) { bzero(dst, len); }
+#if !(APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING)
 mDNSexport void *   mDNSPlatformMemAllocate(mDNSu32 len) { return(mallocL("mDNSPlatformMemAllocate", len)); }
+#endif
 mDNSexport void     mDNSPlatformMemFree    (void *mem)   { freeL("mDNSPlatformMemFree", mem); }

@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.367  2007/04/28 01:31:59  cheshire
+Improve debugging support for catching memory corruption problems
+
 Revision 1.366  2007/04/27 19:28:02  cheshire
 Any code that calls StartGetZoneData needs to keep a handle to the structure, so
 it can cancel it if necessary. (First noticed as a crash in Apple Remote Desktop
@@ -2079,7 +2082,11 @@ extern mDNSu32  mDNSPlatformStrLen      (                 const void *src);
 extern void     mDNSPlatformMemCopy     (      void *dst, const void *src, mDNSu32 len);
 extern mDNSBool mDNSPlatformMemSame     (const void *dst, const void *src, mDNSu32 len);
 extern void     mDNSPlatformMemZero     (      void *dst,                  mDNSu32 len);
+#if APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING
+#define         mDNSPlatformMemAllocate(X) mallocL(#X, X)
+#else
 extern void *   mDNSPlatformMemAllocate (mDNSu32 len);
+#endif
 extern void     mDNSPlatformMemFree     (void *mem);
 extern mDNSu32  mDNSPlatformRandomSeed  (void);
 extern mStatus  mDNSPlatformTimeInit    (void);

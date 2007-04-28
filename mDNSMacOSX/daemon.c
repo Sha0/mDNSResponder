@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.308  2007/04/28 01:31:59  cheshire
+Improve debugging support for catching memory corruption problems
+
 Revision 1.307  2007/04/24 18:32:00  cheshire
 Grab a copy of KQtask string pointer in case KQcallback deletes the task
 
@@ -369,7 +372,6 @@ mDNSexport void LogMemCorruption(const char *format, ...)
 #if ForceAlerts
 	*(long*)0 = 0;	// Trick to crash and get a stack trace right here, if that's what we want
 #endif
-
 	}
 
 mDNSlocal void validatelists(mDNS *const m)
@@ -417,15 +419,22 @@ mDNSlocal void validatelists(mDNS *const m)
 
 	DNSQuestion                 *q;
 	for (q = m->Questions; q; q=q->next)
-		if (q->ThisQInterval == (mDNSs32)~0)
-			LogMemCorruption("Questions list: %p is garbage (%lX)", q, q->ThisQInterval);
+		if (q->ThisQInterval == (mDNSs32)~0 || q->next == (DNSQuestion*)~0)
+			LogMemCorruption("Questions list: %p is garbage (%lX %p)", q, q->ThisQInterval, q->next);
 
 	CacheGroup                  *cg;
 	CacheRecord                 *cr;
 	mDNSu32 slot;
 	FORALL_CACHERECORDS(slot, cg, cr)
+		{
 		if (cr->resrec.RecordType == 0 || cr->resrec.RecordType == 0xFF)
-			LogMemCorruption("Cache slot %lu: %p is garbage (%X)", slot, rr, rr->resrec.RecordType);
+			LogMemCorruption("Cache slot %lu: %p is garbage (%X)", slot, rr, cr->resrec.RecordType);
+		if (cr->CRActiveQuestion)
+			{
+			for (q = m->Questions; q; q=q->next) if (q == cr->CRActiveQuestion) break;
+			if (!q) LogMemCorruption("Cache slot %lu: CRActiveQuestion %p not in m->Questions list %s", slot, cr->CRActiveQuestion, CRDisplayString(m, cr));
+			}
+		}
 
 	// Check platform-layer lists
 
