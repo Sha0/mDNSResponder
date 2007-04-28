@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.625  2007/04/28 01:34:21  cheshire
+Fixed crashing bug: We need to update rr->CRActiveQuestion pointers for *all* questions
+(Code was explicitly ignoring wide-area unicast questions, leading to stale pointers and crashes)
+
 Revision 1.624  2007/04/27 21:04:30  cheshire
 On network configuration change, need to call uDNS_RegisterSearchDomains
 
@@ -4664,30 +4668,21 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 	UpdateQuestionDuplicates(m, question);
 	// But don't trash ThisQInterval until afterwards.
 	question->ThisQInterval = -1;
-	// And don't kill the GetZoneData info until UpdateQuestionDuplicates has had a chance to move
-	// it to a new active question, if appropriate
-	if (question->nta) CancelGetZoneData(m, question->nta);
-	if (question->tcpSock) mDNSPlatformTCPCloseConnection(question->tcpSock);
-	if (question->udpSock) mDNSPlatformUDPClose          (question->udpSock);
-	if (!mDNSOpaque16IsZero(question->TargetQID) && question->LongLived) uDNS_StopLongLivedQuery(m, question);
 
 	// If there are any cache records referencing this as their active question, then see if any other
 	// question that is also referencing them, else their CRActiveQuestion needs to get set to NULL.
-	if (mDNSOpaque16IsZero(question->TargetQID))
+	for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
 		{
-		for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
+		if (rr->CRActiveQuestion == question)
 			{
-			if (rr->CRActiveQuestion == question)
-				{
-				DNSQuestion *q;
-				for (q = m->Questions; q; q=q->next)		// Scan our list of questions
-					if (ActiveQuestion(q) && ResourceRecordAnswersQuestion(&rr->resrec, q))
-						break;
-				verbosedebugf("mDNS_StopQuery_internal: Cache RR %##s (%s) setting CRActiveQuestion to %p",
-					rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype), q);
-				rr->CRActiveQuestion = q;		// Question used to be active; new value may or may not be null
-				if (!q) m->rrcache_active--;	// If no longer active, decrement rrcache_active count
-				}
+			DNSQuestion *q;
+			for (q = m->Questions; q; q=q->next)		// Scan our list of questions
+				if (ActiveQuestion(q) && ResourceRecordAnswersQuestion(&rr->resrec, q))
+					break;
+			verbosedebugf("mDNS_StopQuery_internal: Cache RR %##s (%s) setting CRActiveQuestion to %p",
+				rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype), q);
+			rr->CRActiveQuestion = q;		// Question used to be active; new value may or may not be null
+			if (!q) m->rrcache_active--;	// If no longer active, decrement rrcache_active count
 			}
 		}
 
@@ -4713,6 +4708,15 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 	question->next = mDNSNULL;
 
 	// LogMsg("mDNS_StopQuery_internal: Question %##s (%s) removed", question->qname.c, DNSTypeName(question->qtype));
+
+	// And finally, cancel any associated GetZoneData operation that's still running.
+	// Must not do this until last, because there's a good chance the GetZoneData question is the next in the list,
+	// so if we delete it earlier in this routine, we could find that our "question->next" pointer above
+	// 
+	if (question->nta) CancelGetZoneData(m, question->nta);
+	if (question->tcpSock) mDNSPlatformTCPCloseConnection(question->tcpSock);
+	if (question->udpSock) mDNSPlatformUDPClose          (question->udpSock);
+	if (!mDNSOpaque16IsZero(question->TargetQID) && question->LongLived) uDNS_StopLongLivedQuery(m, question);
 
 	return(mStatus_NoError);
 	}
