@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.353  2007/04/28 01:28:25  cheshire
+Fixed memory leak on error path in FoundDomain
+
 Revision 1.352  2007/04/27 19:49:53  cheshire
 In uDNS_ReceiveTestQuestionResponse, also check that srcport matches
 
@@ -916,7 +919,7 @@ mDNSlocal void StartLLQNatMap(mDNS *m, LLQ_Info *llq)
 	else
 		{
 		if (llq->AuthInfo) llq->NATInfoUDP = AllocLLQNatMap(m, NATOp_MapUDP, llq->eventPort,  uDNS_HandleNATPortMapReply);
-		else                         llq->NATInfoUDP = AllocLLQNatMap(m, NATOp_MapUDP, m->UnicastPort4, uDNS_HandleNATPortMapReply);
+		else               llq->NATInfoUDP = AllocLLQNatMap(m, NATOp_MapUDP, m->UnicastPort4, uDNS_HandleNATPortMapReply);
 		if (!llq->NATInfoUDP) { LogMsg("StartLLQNatMap: memory exhausted"); goto exit; }
 		}
 
@@ -4367,7 +4370,7 @@ mDNSexport void mDNS_AddSearchDomain(const domainname *const domain)
 	for (p = &SearchList; *p; p = &(*p)->next)
 		if (SameDomainName(&(*p)->domain, domain))
 			{
-			// If domain is already in list, and marked for deletion, change it to "leave alone
+			// If domain is already in list, and marked for deletion, change it to "leave alone"
 			if ((*p)->flag == -1) (*p)->flag = 0;
 			LogOperation("mDNS_AddSearchDomain already in list %##s", domain->c);
 			return;
@@ -4394,6 +4397,9 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 	SearchListElem *slElem = question->QuestionContext;
 	mStatus err;
 
+	if (answer->rrtype != kDNSType_PTR) return;
+	if (answer->RecordType == kDNSRecordTypePacketNegative) return;
+
 	if (AddRecord)
 		{
 		const char *name;
@@ -4405,18 +4411,13 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 		else if (question == &slElem->LegacyBrowseQ) name = mDNS_DomainTypeNames[mDNS_DomainTypeBrowseLegacy];
 		else if (question == &slElem->RegisterQ)     name = mDNS_DomainTypeNames[mDNS_DomainTypeRegistration];
 		else if (question == &slElem->DefRegisterQ)  name = mDNS_DomainTypeNames[mDNS_DomainTypeRegistrationDefault];
-		else { LogMsg("FoundDomain - unknown question"); return; }
+		else { LogMsg("FoundDomain - unknown question"); mDNSPlatformMemFree(arElem); return; }
 
 		MakeDomainNameFromDNSNameString(&arElem->ar.namestorage, name);
 		AppendDNSNameString            (&arElem->ar.namestorage, "local");
 		AssignDomainName(&arElem->ar.resrec.rdata->u.name, &answer->rdata->u.name);
 		err = mDNS_Register(m, &arElem->ar);
-		if (err)
-			{
-			LogMsg("ERROR: FoundDomain - mDNS_Register returned %d", err);
-			mDNSPlatformMemFree(arElem);
-			return;
-			}
+		if (err) { LogMsg("ERROR: FoundDomain - mDNS_Register returned %d", err); mDNSPlatformMemFree(arElem); return; }
 		arElem->next = slElem->AuthRecs;
 		slElem->AuthRecs = arElem;
 		}
