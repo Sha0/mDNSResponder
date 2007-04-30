@@ -510,9 +510,9 @@ typedef int32_t  DNSServiceErrorType;
 
 DNSServiceErrorType DNSSD_API DNSServiceGetProperty
     (
-    char    *attr,      /* Requested attribute (DNSSD_GetProperty_DaemonVersion) */
-    void    *result,    /* Pointer to place to store result */
-    size_t  size        /* size of result location */
+    char     *attr,      /* Requested attribute (DNSSD_GetProperty_DaemonVersion) */
+    void     *result,    /* Pointer to place to store result */
+    uint32_t size        /* size of result location */
     );
 
 
