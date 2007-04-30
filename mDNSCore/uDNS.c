@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.356  2007/04/30 21:51:06  cheshire
+Updated comments
+
 Revision 1.355  2007/04/30 21:33:38  cheshire
 Fix crash when a callback unregisters a service while the UpdateSRVRecords() loop
 is iterating through the m->ServiceRegistrations list
@@ -1368,8 +1371,8 @@ exit:
 				//mDNS_DropLockBeforeCallback();
 				tcpInfo->srs->ServiceCallback(m, tcpInfo->srs, err);
 				//mDNS_ReclaimLockAfterCallback();
-				//!!!KRS will mem still be free'd on error?
-				// NOTE: not safe to touch any client structures here
+				// NOTE: not safe to touch any client structures here --
+				// once we issue the callback, client is free to reuse or deallocate the srs memory
 				}
 			}
 
@@ -1583,15 +1586,13 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	mDNSu8 *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
 	mDNSOpaque16 id;
 	mStatus err = mStatus_NoError;
-	mDNSIPPort privport;
+	mDNSIPPort privport = zeroIPPort;
 	NATTraversalInfo *nat = srs->NATinfo;
 	mDNSBool mapped = mDNSfalse;
 	const domainname *target;
 	DomainAuthInfo *authInfo;
 	AuthRecord *srv = &srs->RR_SRV;
 	mDNSu32 i;
-
-	privport = zeroIPPort;
 
 	if (mDNSIPv4AddressIsZero(srs->ns.ip.v4)) { LogMsg("SendServiceRegistration - NS not set!"); return; }
 
@@ -1733,8 +1734,8 @@ exit:
 		mDNS_DropLockBeforeCallback();
 		srs->ServiceCallback(m, srs, err);
 		mDNS_ReclaimLockAfterCallback();
-		//!!!KRS will mem still be free'd on error?
-		// NOTE: not safe to touch any client structures here
+		// NOTE: not safe to touch any client structures here --
+		// once we issue the callback, client is free to reuse or deallocate the srs memory
 		}
 	}
 
@@ -4092,7 +4093,6 @@ mDNSlocal mDNSs32 CheckRecordRegistrations(mDNS *m)
 	AuthRecord *rr;
  	mDNSs32 nextevent = m->timenow + 0x3FFFFFFF;
 
-	//!!!KRS list should be pre-sorted by expiration
 	for (rr = m->ResourceRecords; rr; rr = rr->next)
 		{
 		if (rr->state == regState_Pending || rr->state == regState_DeregPending || rr->state == regState_UpdatePending || rr->state == regState_DeregDeferred || rr->state == regState_Refresh)
