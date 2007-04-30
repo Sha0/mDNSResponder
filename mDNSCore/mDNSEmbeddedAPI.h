@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.368  2007/04/30 21:33:38  cheshire
+Fix crash when a callback unregisters a service while the UpdateSRVRecords() loop
+is iterating through the m->ServiceRegistrations list
+
 Revision 1.367  2007/04/28 01:31:59  cheshire
 Improve debugging support for catching memory corruption problems
 
@@ -1083,11 +1087,15 @@ struct ServiceRecordSet_struct
 	// These internal state fields are used internally by mDNSCore; the client layer needn't be concerned with them.
 	// No fields need to be set up by the client prior to calling mDNS_RegisterService();
 	// all required data is passed as parameters to that function.
-	ServiceRecordSet    *next;
 
 	// Begin uDNS info ****************
 	// Hopefully much of this stuff can be simplified or eliminated
 
+	// NOTE: The current uDNS code keeps an explicit list of registered services, and handles them
+	// differently to how individual records are treated (this is probably a mistake). What this means is
+	// that ServiceRecordSets for uDNS are kept in a linked list, whereas ServiceRecordSets for mDNS exist
+	// just as a convenient placeholder to group the component records together and are not kept on any list.
+	ServiceRecordSet    *uDNS_next;
 	regState_t   state;
 	mDNSBool     srs_uselease;    // dynamic update contains (should contain) lease option
 	mDNSs32      expire;   // expiration of lease (-1 for static)

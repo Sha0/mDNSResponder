@@ -17,6 +17,10 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.288  2007/04/30 21:33:39  cheshire
+Fix crash when a callback unregisters a service while the UpdateSRVRecords() loop
+is iterating through the m->ServiceRegistrations list
+
 Revision 1.287  2007/04/27 19:03:22  cheshire
 Check q->LongLived not q->llq to tell if a query is LongLived
 
@@ -1234,7 +1238,7 @@ mDNSexport int CountPeerRegistrations(mDNS *const m, ServiceRecordSet *const srs
 		if (rr->resrec.rrtype == kDNSType_SRV && SameDomainName(rr->resrec.name, r->name) && !SameRData(&rr->resrec, r))
 			count++;
 
-	for (s = m->ServiceRegistrations; s; s = s->next)
+	for (s = m->ServiceRegistrations; s; s = s->uDNS_next)
 		if (s->state != regState_Unregistered && SameDomainName(s->RR_SRV.resrec.name, r->name) && !SameRData(&s->RR_SRV.resrec, r))
 			count++;
 

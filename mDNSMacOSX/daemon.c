@@ -30,6 +30,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.309  2007/04/30 21:33:38  cheshire
+Fix crash when a callback unregisters a service while the UpdateSRVRecords() loop
+is iterating through the m->ServiceRegistrations list
+
 Revision 1.308  2007/04/28 01:31:59  cheshire
 Improve debugging support for catching memory corruption problems
 
@@ -446,9 +450,9 @@ mDNSlocal void validatelists(mDNS *const m)
 	// Check uDNS lists
 
 	ServiceRecordSet            *s;
-	for (s = m->ServiceRegistrations; s; s=s->next)
-		if (s->next == (ServiceRecordSet*)~0)
-			LogMemCorruption("ServiceRegistrations: %p is garbage (%lX)", s, s->next);
+	for (s = m->ServiceRegistrations; s; s=s->uDNS_next)
+		if (s->uDNS_next == (ServiceRecordSet*)~0)
+			LogMemCorruption("ServiceRegistrations: %p is garbage (%lX)", s, s->uDNS_next);
 
 	NATTraversalInfo            *n;
 	for (n = m->NATTraversals; n; n=n->next)

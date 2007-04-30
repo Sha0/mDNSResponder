@@ -22,9 +22,13 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.355  2007/04/30 21:33:38  cheshire
+Fix crash when a callback unregisters a service while the UpdateSRVRecords() loop
+is iterating through the m->ServiceRegistrations list
+
 Revision 1.354  2007/04/30 01:30:04  cheshire
 GetZoneData_QuestionCallback needs to call client callback function on error, so client knows operation is finished
-RecordRegistrationCallback and serviceRegistrationCallback need to clear nta reference when they're invoked
+RecordRegistrationCallback and serviceRegistrationCallback need to clean nta reference when they're invoked
 
 Revision 1.353  2007/04/28 01:28:25  cheshire
 Fixed memory leak on error path in FoundDomain
@@ -496,6 +500,13 @@ typedef struct SearchListElem
 // for domain enumeration and default browsing/registration
 static SearchListElem *SearchList = mDNSNULL;	// where we search for _browse domains
 
+// Temporary workaround to make ServiceRecordSet list management safe.
+// Ideally a ServiceRecordSet shouldn't be a special entity that's given special treatment by the uDNS code
+// -- it should just be a grouping of records that are treated the same as any other registered records.
+// In that case it may no longer be necessary to keep an explicit list of ServiceRecordSets, which in turn
+// would avoid the perils of modifying that list cleanly while some other piece of code is iterating through it.
+static ServiceRecordSet *CurrentServiceRecordSet = mDNSNULL;
+
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark - General Utility Functions
@@ -536,12 +547,14 @@ mDNSlocal void unlinkSRS(mDNS *const m, ServiceRecordSet *srs)
 		else n = n->next;
 		}
 
-	for (p = &m->ServiceRegistrations; *p; p = &(*p)->next)
+	for (p = &m->ServiceRegistrations; *p; p = &(*p)->uDNS_next)
 		if (*p == srs)
 			{
 			ExtraResourceRecord *e;
-			*p = srs->next;
-			srs->next = mDNSNULL;
+			*p = srs->uDNS_next;
+			if (CurrentServiceRecordSet == srs)
+				CurrentServiceRecordSet = srs->uDNS_next;
+			srs->uDNS_next = mDNSNULL;
 			for (e=srs->Extras; e; e=e->next)
 				if (UnlinkAuthRecord(m, &e->r))
 					LogMsg("unlinkSRS: extra record %##s not found", e->r.resrec.name->c);
@@ -773,7 +786,7 @@ mDNSexport mDNSBool uDNS_FreeNATInfo(mDNS *m, NATTraversalInfo *n)
 			LogMsg("Error: Freeing NAT info object still referenced by Service Record Set %##s!", s->RR_SRV.resrec.name->c);
 			s->NATinfo = mDNSNULL;
 			}
-		s = s->next;
+		s = s->uDNS_next;
 		}
 
 	while (*ptr)
@@ -1713,7 +1726,7 @@ exit:
 
 	if (err)
 		{
-		LogMsg("SendServiceRegistration - Error formatting message");
+		LogMsg("SendServiceRegistration - Error formatting message %d", err);
 
 		unlinkSRS(m, srs);
 		srs->state = regState_Unregistered;
@@ -2330,8 +2343,16 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 
 mDNSlocal void UpdateSRVRecords(mDNS *m)
 	{
-	ServiceRecordSet *srs;
-	for (srs = m->ServiceRegistrations; srs; srs = srs->next) UpdateSRV(m, srs);
+	if (CurrentServiceRecordSet)
+		LogMsg("UpdateSRVRecords ERROR CurrentServiceRecordSet already set");
+	CurrentServiceRecordSet = m->ServiceRegistrations;
+	
+	while (CurrentServiceRecordSet)
+		{
+		ServiceRecordSet *s = CurrentServiceRecordSet;
+		CurrentServiceRecordSet = CurrentServiceRecordSet->uDNS_next;
+		UpdateSRV(m, s);
+		}
 	}
 
 // Forward reference: AdvertiseHostname references HostnameCallback, and HostnameCallback calls AdvertiseHostname
@@ -3269,8 +3290,6 @@ mDNSlocal mDNSu32 GetPktLease(mDNS *m, DNSMessage *msg, const mDNSu8 *end)
 mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *const srcaddr, const mDNSIPPort srcport)
 	{
 	DNSQuestion *qptr;
-	AuthRecord *rptr;
-	ServiceRecordSet *sptr;
 	mStatus err = mStatus_NoError;
 
 	mDNSu8 StdR    = kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery;
@@ -3302,8 +3321,15 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 		mDNSu32 lease = GetPktLease(m, msg, end);
 		mDNSs32 expire = (m->timenow + (((mDNSs32)lease * mDNSPlatformOneSecond)) * 3/4);
 
-		for (sptr = m->ServiceRegistrations; sptr; sptr = sptr->next)
+		if (CurrentServiceRecordSet)
+			LogMsg("uDNS_ReceiveMsg ERROR CurrentServiceRecordSet already set");
+		CurrentServiceRecordSet = m->ServiceRegistrations;
+
+		while (CurrentServiceRecordSet)
 			{
+			ServiceRecordSet *sptr = CurrentServiceRecordSet;
+			CurrentServiceRecordSet = CurrentServiceRecordSet->uDNS_next;
+
 			if (mDNSSameOpaque16(sptr->id, msg->h.id))
 				{
 				err = checkUpdateResult(m, sptr->RR_SRV.resrec.name, rcode, msg, end);
@@ -3311,11 +3337,18 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 					if (sptr->expire - expire >= 0 || sptr->state != regState_UpdatePending)
 						sptr->expire = expire;
 				hndlServiceUpdateReply(m, sptr, err);
+				CurrentServiceRecordSet = mDNSNULL;
 				return;
 				}
 			}
-		for (rptr = m->ResourceRecords; rptr; rptr = rptr->next)
+
+		if (m->CurrentRecord)
+			LogMsg("uDNS_ReceiveMsg ERROR m->CurrentRecord already set %s", ARDisplayString(m, m->CurrentRecord));
+		m->CurrentRecord = m->ResourceRecords;
+		while (m->CurrentRecord)
 			{
+			AuthRecord *rptr = m->CurrentRecord;
+			m->CurrentRecord = m->CurrentRecord->next;
 			if (mDNSSameOpaque16(rptr->id, msg->h.id))
 				{
 				err = checkUpdateResult(m, rptr->resrec.name, rcode, msg, end);
@@ -3323,6 +3356,7 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 					if (rptr->expire - expire >= 0 || rptr->state != regState_UpdatePending)
 						rptr->expire = expire;
 				hndlRecordUpdateReply(m, rptr, err);
+				m->CurrentRecord = mDNSNULL;
 				return;
 				}
 			}
@@ -3758,11 +3792,11 @@ mDNSexport mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	{
 	mDNSu32 i;
 	ServiceRecordSet **p = &m->ServiceRegistrations;
-	while (*p && *p != srs) p=&(*p)->next;
+	while (*p && *p != srs) p=&(*p)->uDNS_next;
 	if (*p) { LogMsg("uDNS_RegisterService: %p %##s already in list", srs, srs->RR_SRV.resrec.name->c); return(mStatus_AlreadyRegistered); }
 
+	srs->uDNS_next = mDNSNULL;
 	*p = srs;
-	srs->next = mDNSNULL;
 
 	srs->RR_SRV.resrec.rroriginalttl = kWideAreaTTL;
 	srs->RR_TXT.resrec.rroriginalttl = kWideAreaTTL;
@@ -3852,7 +3886,7 @@ mDNSexport mStatus uDNS_UpdateRecord(mDNS *m, AuthRecord *rr)
 	regState_t *stateptr = mDNSNULL;
 
 	// find the record in registered service list
-	for (parent = m->ServiceRegistrations; parent; parent = parent->next)
+	for (parent = m->ServiceRegistrations; parent; parent = parent->uDNS_next)
 		if (&parent->RR_TXT == rr) { stateptr = &parent->state; break; }
 
 	if (!parent)
@@ -4094,16 +4128,17 @@ mDNSlocal mDNSs32 CheckRecordRegistrations(mDNS *m)
 
 mDNSlocal mDNSs32 CheckServiceRegistrations(mDNS *m)
 	{
-	ServiceRecordSet *s = m->ServiceRegistrations;
 	mDNSs32 nextevent = m->timenow + 0x3FFFFFFF;
 
+	if (CurrentServiceRecordSet)
+		LogMsg("CheckServiceRegistrations ERROR CurrentServiceRecordSet already set");
+	CurrentServiceRecordSet = m->ServiceRegistrations;
+
 	// Note: ServiceRegistrations list is in the order they were created; important for in-order event delivery
-	while (s)
+	while (CurrentServiceRecordSet)
 		{
-		ServiceRecordSet *srs = s;
-		// NOTE: Must advance s here -- SendServiceDeregistration may delete the object we're looking at,
-		// and then if we tried to do srs = srs->next at the end we'd be referencing a dead object
-		s = s->next;
+		ServiceRecordSet *srs = CurrentServiceRecordSet;
+		CurrentServiceRecordSet = CurrentServiceRecordSet->uDNS_next;
 		if (srs->state == regState_Pending || srs->state == regState_DeregPending || srs->state == regState_DeregDeferred || srs->state == regState_Refresh || srs->state == regState_UpdatePending)
 			{
 			if (srs->RR_SRV.LastAPTime + srs->RR_SRV.ThisAPInterval - m->timenow < 0)
@@ -4355,7 +4390,7 @@ mDNSlocal void SleepServiceRegistrations(mDNS *m)
 			info->state = regState_NoTarget;	// when we wake, we'll re-register (and optionally nat-map) once our address record completes
 			srs->RR_SRV.resrec.rdata->u.srv.target.c[0] = 0;
 			}
-		srs = srs->next;
+		srs = srs->uDNS_next;
 		}
 	}
 
@@ -4370,7 +4405,7 @@ mDNSlocal void WakeServiceRegistrations(mDNS *m)
 			srs->RR_SRV.LastAPTime = m->timenow;
 			srs->RR_SRV.ThisAPInterval = INIT_UCAST_POLL_INTERVAL;
 			}
-		srs = srs->next;
+		srs = srs->uDNS_next;
 		}
 	}
 
