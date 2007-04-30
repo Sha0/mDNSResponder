@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.354  2007/04/30 01:30:04  cheshire
+GetZoneData_QuestionCallback needs to call client callback function on error, so client knows operation is finished
+RecordRegistrationCallback and serviceRegistrationCallback need to clear nta reference when they're invoked
+
 Revision 1.353  2007/04/28 01:28:25  cheshire
 Fixed memory leak on error path in FoundDomain
 
@@ -1842,7 +1846,11 @@ mDNSlocal void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *question
 			GetZoneData_StartQuery(context, kDNSType_SOA);
 			}
 		else
+			{
 			LogMsg("ERROR: hndlLookupSOA - recursed to root label of %##s without finding SOA", context->origName.c);
+			context->ntaCallback(mStatus_NoSuchNameErr, context->m, context->callbackInfo, context);
+			mDNSPlatformMemFree(context);
+			}
 		}
 	else if (answer->rrtype == kDNSType_NS)
 		{
@@ -1945,6 +1953,8 @@ mDNSlocal void StartNATPortMap(mDNS *m, ServiceRecordSet *srs)
 mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srsPtr, const ntaContext *zoneData)
 	{
 	ServiceRecordSet *srs = (ServiceRecordSet *)srsPtr;
+	
+	srs->nta = mDNSNULL;
 
 	if (err) goto error;
 	if (!zoneData) { LogMsg("ERROR: serviceRegistrationCallback invoked with NULL result and no error"); goto error; }
@@ -3562,6 +3572,8 @@ mDNSlocal void RecordRegistrationCallback(mStatus err, mDNS *const m, void *auth
 	{
 	AuthRecord *newRR = (AuthRecord*)authPtr;
 	AuthRecord *ptr;
+
+	newRR->nta = mDNSNULL;
 
 	// make sure record is still in list
 	for (ptr = m->ResourceRecords; ptr; ptr = ptr->next) if (ptr == newRR) break;
