@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.626  2007/04/30 04:21:13  cheshire
+Can't safely call AnswerLocalQuestions() from within mDNS_Deregister() -- need to defer it until mDNS_Execute time
+
 Revision 1.625  2007/04/28 01:34:21  cheshire
 Fixed crashing bug: We need to update rr->CRActiveQuestion pointers for *all* questions
 (Code was explicitly ignoring wide-area unicast questions, leading to stale pointers and crashes)
@@ -1068,9 +1071,21 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 
 	// If this is a shared record and we've announced it at least once,
 	// we need to retract that announcement before we delete the record
-	if (RecordType == kDNSRecordTypeShared && rr->RequireGoodbye)
+
+	// If this is a record (including mDNSInterface_LocalOnly records) for which we've given local answers then
+	// it's tempting to just do "AnswerLocalQuestions(m, rr, mDNSfalse)" here, but that would not not be safe.
+	// The AnswerLocalQuestions routine walks the question list invoking client callbacks, using the "m->CurrentQuestion"
+	// mechanism to cope with the client callback modifying the question list while that's happening.
+	// However, mDNS_Deregister could have been called from a client callback (e.g. from the domain enumeration callback FoundDomain)
+	// which means that the "m->CurrentQuestion" mechanism is already in use to protect that list, so we can't use it twice.
+	// More generally, if we invoke callbacks from within a client callback, then those callbacks could deregister other
+	// records, thereby invoking yet more callbacks, without limit.
+	// The solution is to defer delivering the "Remove" events until mDNS_Execute time, just like we do for sending
+	// actual goodbye packets.
+	
+	if (RecordType == kDNSRecordTypeShared && (rr->RequireGoodbye || rr->LocalAnswer))
 		{
-		verbosedebugf("mDNS_Deregister_internal: Sending deregister for %##s (%s)",
+		LogMsg("mDNS_Deregister_internal: Sending deregister for %##s (%s)",
 			rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
 		rr->resrec.RecordType    = kDNSRecordTypeDeregistering;
 		rr->resrec.rroriginalttl = 0;
@@ -1103,8 +1118,6 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 		// If we have an update queued up which never executed, give the client a chance to free that memory
 		if (rr->NewRData) CompleteRDataUpdate(m, rr);	// Update our rdata, clear the NewRData pointer, and return memory to the client
 		
-		if (rr->LocalAnswer) AnswerLocalQuestions(m, rr, mDNSfalse);
-
 #ifndef UNICAST_DISABLED
 		// This is bad. This code seems to assume that uDNS_DeregisterRecord() is an atomic synchronous operation.
 		// In the case of UDP, this is almost true -- we just fire off the DNS update request and forget about it
@@ -1297,6 +1310,7 @@ mDNSlocal void CompleteDeregistration(mDNS *const m, AuthRecord *rr)
 	// that it should go ahead and immediately dispose of this registration
 	rr->resrec.RecordType = kDNSRecordTypeShared;
 	rr->RequireGoodbye    = mDNSfalse;
+	if (rr->LocalAnswer) { AnswerLocalQuestions(m, rr, mDNSfalse); rr->LocalAnswer = mDNSfalse; }
 	mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);		// Don't touch rr after this
 	}
 
