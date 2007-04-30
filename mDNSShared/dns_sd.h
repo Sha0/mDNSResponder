@@ -479,6 +479,43 @@ typedef uint32_t DNSServiceFlags;
 typedef uint32_t DNSServiceProtocol;
 typedef int32_t  DNSServiceErrorType;
 
+
+/*********************************************************************************************
+ *
+ * Version checking
+ *
+ *********************************************************************************************/
+
+/* DNSServiceGetProperty() Parameters:
+ *
+ * attr:            The requested attribute.
+ *                  Currently the only attribute defined is kDNSServiceProperty_DaemonVersion
+ *
+ * result:          Place to store result.
+ *                  For retrieving DaemonVersion, this should be the address of a uint32_t
+ *
+ * size:            The size of the result location.
+ *                  For retrieving DaemonVersion, this should be sizeof(uint32_t)
+ *
+ * return value:    Returns kDNSServiceErr_NoError on succeses, or kDNSServiceErr_ServiceNotRunning
+ *                  if the daemon (or "system service" on Windows) is not running.
+ *
+ * Example usage:
+ * uint32_t version;
+ * DNSServiceErrorType err = DNSServiceGetProperty(kDNSServiceProperty_DaemonVersion, &version, sizeof(version));
+ * printf("Bonjour version is %d\n", version);
+ */
+
+#define kDNSServiceProperty_DaemonVersion "DaemonVersion"
+
+DNSServiceErrorType DNSSD_API DNSServiceGetProperty
+    (
+    char    *attr,      /* Requested attribute (DNSSD_GetProperty_DaemonVersion) */
+    void    *result,    /* Pointer to place to store result */
+    size_t  size        /* size of result location */
+    );
+
+
 /*********************************************************************************************
  *
  * Unix Domain Socket access, DNSServiceRef deallocation, and data processing functions
