@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.627  2007/04/30 19:29:13  cheshire
+Fix display of port number in "Updating DNS Server" message
+
 Revision 1.626  2007/04/30 04:21:13  cheshire
 Can't safely call AnswerLocalQuestions() from within mDNS_Deregister() -- need to defer it until mDNS_Execute time
 
@@ -6202,8 +6205,8 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 				{
 				// If DNS Server for this question has changed, reactivate it
 				LogOperation("Updating DNS Server from %#a:%d to %#a:%d for %##s (%s)",
-					q->qDNSServer ? &q->qDNSServer->addr : mDNSNULL, q->qDNSServer ? q->qDNSServer->port : zeroIPPort,
-					s             ? &s->addr             : mDNSNULL, s             ? s->port             : zeroIPPort,
+					q->qDNSServer ? &q->qDNSServer->addr : mDNSNULL, mDNSVal16(q->qDNSServer ? q->qDNSServer->port : zeroIPPort),
+					s             ? &s->addr             : mDNSNULL, mDNSVal16(s             ? s->port             : zeroIPPort),
 					q->qname.c, DNSTypeName(q->qtype));
 				q->qDNSServer = s;
 				q->ThisQInterval = InitialQuestionInterval;
