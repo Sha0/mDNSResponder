@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.358  2007/05/01 21:46:31  cheshire
+Move GetLLQOptData/GetPktLease from uDNS.c into DNSCommon.c so that dnsextd can use them
+
 Revision 1.357  2007/05/01 01:33:49  cheshire
 Removed "#define LLQ_Info DNSQuestion" and manually reconciled code that was still referring to "LLQ_Info"
 
@@ -989,21 +992,6 @@ mDNSlocal mStatus constructQueryMsg(DNSMessage *msg, mDNSu8 **endPtr, DNSQuestio
 	    return mStatus_UnknownErr;
 	    }
 	return mStatus_NoError;
-	}
-
-// On success, GetLLQOptData returns pointer to storage within shared "m->rec";
-// it is callers responsibilty to clear m->rec.r.resrec.RecordType after use
-// Note: An OPT RDataBody actually contains one or more variable-length rdataOPT objects packed together
-// The code that currently calls this assumes there's only one, instead of iterating through the set
-mDNSlocal const rdataOPT *GetLLQOptData(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end)
-	{
-	const mDNSu8 *ptr = LocateLLQOptData(msg, end);
-	if (ptr)
-		{
-		ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAdd, &m->rec);
-		if (ptr) return(&m->rec.r.resrec.rdata->u.opt);
-		}
-	return(mDNSNULL);
 	}
 
 mDNSlocal void sendChallengeResponse(const mDNS *const m, DNSQuestion *const q, const LLQOptData *llq)
@@ -3260,28 +3248,6 @@ exit:
 		mDNS_StopQuery(m, question);
 		mDNS_ReclaimLockAfterCallback();
 		}
-	}
-
-mDNSlocal mDNSu32 GetPktLease(mDNS *m, DNSMessage *msg, const mDNSu8 *end)
-	{
-	const mDNSu8 *ptr = LocateAdditionals(msg, end);
-	if (ptr)
-		{
-		int i;
-		for (i = 0; i < msg->h.numAdditionals; i++)
-			{
-			LargeCacheRecord lcr;
-			ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAdd, &lcr);
-			if (!ptr) break;
-			if (lcr.r.resrec.rrtype == kDNSType_OPT)
-				{
-				if (lcr.r.resrec.rdlength < LEASE_OPT_RDLEN) continue;
-				if (lcr.r.resrec.rdata->u.opt.opt != kDNSOpt_Lease) continue;
-				return(lcr.r.resrec.rdata->u.opt.OptData.updatelease);
-				}
-			}
-		}
-	return(0);
 	}
 
 mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *const srcaddr, const mDNSIPPort srcport)

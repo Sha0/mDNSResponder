@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.153  2007/05/01 21:46:31  cheshire
+Move GetLLQOptData/GetPktLease from uDNS.c into DNSCommon.c so that dnsextd can use them
+
 Revision 1.152  2007/04/27 19:28:01  cheshire
 Any code that calls StartGetZoneData needs to keep a handle to the structure, so
 it can cancel it if necessary. (First noticed as a crash in Apple Remote Desktop
@@ -409,7 +412,7 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd,
 	return(buffer);
 	}
 
-mDNSexport mDNSu32 mDNSRandom(mDNSu32 max)		// Returns pseudo-random result form zero to max inclusive
+mDNSexport mDNSu32 mDNSRandom(mDNSu32 max)		// Returns pseudo-random result from zero to max inclusive
 	{
 	static mDNSu32 seed = 0;
 	mDNSu32 mask = 1;
@@ -2093,6 +2096,58 @@ mDNSexport const mDNSu8 *LocateLLQOptData(const DNSMessage *const msg, const mDN
 			ptr = skipResourceRecord(msg, ptr, end);
 		}
 	return(mDNSNULL);
+	}
+
+// On success, GetLLQOptData returns pointer to storage within shared "m->rec";
+// it is callers responsibilty to clear m->rec.r.resrec.RecordType after use
+// Note: An OPT RDataBody actually contains one or more variable-length rdataOPT objects packed together
+// The code that currently calls this assumes there's only one, instead of iterating through the set
+mDNSexport const rdataOPT *GetLLQOptData(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end)
+	{
+	const mDNSu8 *ptr = LocateLLQOptData(msg, end);
+	if (ptr)
+		{
+		ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAdd, &m->rec);
+		if (ptr) return(&m->rec.r.resrec.rdata->u.opt);
+		}
+	return(mDNSNULL);
+	}
+
+mDNSexport const mDNSu8 *LocateLeaseOptData(const DNSMessage *const msg, const mDNSu8 *const end)
+	{
+	int i;
+	const mDNSu8 *ptr = LocateAdditionals(msg, end);
+
+	// Locate the OPT record.
+	// According to RFC 2671, "One OPT pseudo-RR can be added to the additional data section of either a request or a response."
+	// This implies that there may be *at most* one OPT record per DNS message, in the Additional Section,
+	// but not necessarily the *last* entry in the Additional Section.
+	for (i = 0; ptr && i < msg->h.numAdditionals; i++)
+		{
+		if (ptr + 10 + LEASE_OPT_RDLEN <= end &&		// Make sure we have 10+8 bytes of data
+			ptr[0] == 0                       &&		// Name must be root label
+			ptr[1] == (kDNSType_OPT >> 8  )   &&		// rrtype OPT
+			ptr[2] == (kDNSType_OPT & 0xFF)   &&
+			((mDNSu16)ptr[9] << 8 | (mDNSu16)ptr[10]) >= (mDNSu16)LEASE_OPT_RDLEN)
+			return(ptr);
+		else
+			ptr = skipResourceRecord(msg, ptr, end);
+		}
+	return(mDNSNULL);
+	}
+
+// Get the lease life of records in a dynamic update
+// returns 0 on error or if no lease present
+mDNSexport mDNSu32 GetPktLease(mDNS *m, DNSMessage *msg, const mDNSu8 *end)
+	{
+	LargeCacheRecord lcr;
+	const mDNSu8 *ptr = LocateLeaseOptData(msg, end);
+	if (!ptr) return(0);
+	ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAdd, &lcr);
+	if (!ptr) return(0);
+	if (lcr.r.resrec.rdlength < LEASE_OPT_RDLEN) return(0);
+	if (lcr.r.resrec.rdata->u.opt.opt != kDNSOpt_Lease) return(0);
+	return(lcr.r.resrec.rdata->u.opt.OptData.updatelease);
 	}
 
 mDNSlocal const mDNSu8 *DumpRecords(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *ptr, const mDNSu8 *const end, int count, char *label)

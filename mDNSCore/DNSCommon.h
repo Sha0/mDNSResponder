@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.47  2007/05/01 21:46:31  cheshire
+Move GetLLQOptData/GetPktLease from uDNS.c into DNSCommon.c so that dnsextd can use them
+
 Revision 1.46  2007/04/22 20:18:10  cheshire
 Add comment about mDNSRandom()
 
@@ -135,7 +138,7 @@ typedef enum
 extern const NetworkInterfaceInfo *GetFirstActiveInterface(const NetworkInterfaceInfo *intf);
 extern mDNSInterfaceID GetNextActiveInterfaceID(const NetworkInterfaceInfo *intf);
 
-extern mDNSu32 mDNSRandom(mDNSu32 max);		// Returns pseudo-random result form zero to max inclusive
+extern mDNSu32 mDNSRandom(mDNSu32 max);		// Returns pseudo-random result from zero to max inclusive
 extern mDNSu32 mDNSRandomFromFixedSeed(mDNSu32 seed, mDNSu32 max);
 
 // ***************************************************************************
@@ -232,6 +235,9 @@ extern const mDNSu8 *LocateAnswers(const DNSMessage *const msg, const mDNSu8 *co
 extern const mDNSu8 *LocateAuthorities(const DNSMessage *const msg, const mDNSu8 *const end);
 extern const mDNSu8 *LocateAdditionals(const DNSMessage *const msg, const mDNSu8 *const end);
 extern const mDNSu8 *LocateLLQOptData(const DNSMessage *const msg, const mDNSu8 *const end);
+extern const rdataOPT *GetLLQOptData(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end);
+extern const mDNSu8 *LocateLeaseOptData(const DNSMessage *const msg, const mDNSu8 *const end);
+extern mDNSu32 GetPktLease(mDNS *m, DNSMessage *msg, const mDNSu8 *end);
 extern void DumpPacket(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end);
 
 // ***************************************************************************
