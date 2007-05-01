@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.76  2007/05/01 23:53:26  cheshire
+<rdar://problem/5175318> dnsextd should refuse updates without attached lease
+
 Revision 1.75  2007/05/01 00:18:12  cheshire
 Use "-launchd" instead of "-d" when starting via launchd
 (-d sets foreground mode, which writes errors to stderr, which is ignored when starting via launchd)
@@ -846,35 +849,6 @@ exit:
 // Dynamic Update Utility Routines
 //
 
-// Get the lease life of records in a dynamic update
-// returns -1 on error or if no lease present
-mDNSlocal mDNSs32 GetPktLease(PktMsg *pkt)
-	{
-	mDNSs32 lease = -1;
-	const mDNSu8 *ptr = NULL, *end = (mDNSu8 *)&pkt->msg + pkt->len;
-	LargeCacheRecord lcr;
-	int i;
-	
-	HdrNToH(pkt);
-	ptr = LocateAdditionals(&pkt->msg, end);
-	if (ptr)
-		for (i = 0; i < pkt->msg.h.numAdditionals; i++)
-			{
-			ptr = GetLargeResourceRecord(NULL, &pkt->msg, ptr, end, 0, kDNSRecordTypePacketAdd, &lcr);
-			if (!ptr) { Log("Unable to read additional record"); break; }
-			if (lcr.r.resrec.rrtype == kDNSType_OPT)
-				{
-				if (lcr.r.resrec.rdlength < LEASE_OPT_RDLEN) continue;
-				if (lcr.r.resrec.rdata->u.opt.opt != kDNSOpt_Lease) continue;
-				lease = (mDNSs32)lcr.r.resrec.rdata->u.opt.OptData.updatelease;
-				break;
-				}
-			}
-
-	HdrHToN(pkt);
-	return lease;
-	}
-
 // check if a request and server response complete a successful dynamic update
 mDNSlocal mDNSBool SuccessfulUpdateTransaction(PktMsg *request, PktMsg *reply)
 	{
@@ -1631,7 +1605,36 @@ HandleRequest
 	char			addrbuf[32];
 	TCPSocket *	sock = NULL;
 	mStatus			err;
-	
+	mDNSs32		lease = 0;
+	if ((request->msg.h.flags.b[0] & kDNSFlag0_QROP_Mask) == kDNSFlag0_OP_Update)
+		{
+		int i, adds = 0, dels = 0;
+		const mDNSu8 *ptr, *end = (mDNSu8 *)&request->msg + request->len;
+		HdrNToH(request);
+		lease = GetPktLease(NULL, &request->msg, end);
+		ptr = LocateAuthorities(&request->msg, end);
+		for (i = 0; i < request->msg.h.mDNS_numUpdates; i++)
+			{
+			LargeCacheRecord lcr;
+			ptr = GetLargeResourceRecord(NULL, &request->msg, ptr, end, 0, kDNSRecordTypePacketAns, &lcr);
+			if (lcr.r.resrec.rroriginalttl) adds++; else dels++;
+			}
+		HdrHToN(request);
+		if (adds && !lease)
+			{
+			static const mDNSOpaque16 UpdateRefused = { { kDNSFlag0_QR_Response | kDNSFlag0_OP_Update, kDNSFlag1_RC_Refused } };
+			Log("Rejecting Update Request with %d additions but no lease", adds);
+			reply = malloc(sizeof(*reply));
+			bzero(&reply->src, sizeof(reply->src));
+			reply->len = sizeof(DNSMessageHeader);
+			reply->zone = NULL;
+			reply->isZonePublic = 0;
+			InitializeDNSMessage(&reply->msg.h, request->msg.h.id, UpdateRefused);
+			return(reply);
+			}
+		if (lease > 1200)	// Don't allow lease greater than 20 minutes
+			lease = 1200;
+		}
 	// Send msg to server, read reply
 
 	if ( request->len <= 512 )
@@ -1667,20 +1670,16 @@ HandleRequest
 		}
 	
 	// IMPORTANT: reply is in network byte order at this point in the code
-	// We keep it this way because we sent it back to the client in the same form
+	// We keep it this way because we send it back to the client in the same form
 	
 	// Is it an update?
 
 	if ( reply && ( ( reply->msg.h.flags.b[0] & kDNSFlag0_QROP_Mask ) == ( kDNSFlag0_OP_Update | kDNSFlag0_QR_Response ) ) )
 		{
 		char 		pingmsg[4];
-		mDNSs32		lease;
-		mDNSBool	ok;
-
-		ok = SuccessfulUpdateTransaction( request, reply );
+		mDNSBool	ok = SuccessfulUpdateTransaction( request, reply );
 		require_action( ok, exit, err = mStatus_UnknownErr; VLog( "Message from %s not a successful update.", inet_ntop(AF_INET, &request->src.sin_addr, addrbuf, 32 ) ) );
 
-		lease = GetPktLease( request );
 		UpdateLeaseTable( request, self, lease );
 
 		if ( lease > 0 )
@@ -1692,6 +1691,7 @@ HandleRequest
 				Log("HandleRequest - unable to format lease reply");
 				}
 
+			// %%% Looks like a potential memory leak -- who frees the original reply?
 			reply = leaseReply;
 			}
 
@@ -3173,6 +3173,9 @@ int main(int argc, char *argv[])
 	if (SetUpdateSRV(d) < 0) { LogErr("main", "SetUpdateSRV"); exit(1); }
 
 	Run(d);
+
+	Log("dnsextd stopping");
+
 	if (ClearUpdateSRV(d) < 0) { LogErr("main", "ClearUpdateSRV"); exit(1); }  // clear update srv's even if Run or pthread_create returns an error
 	free(d);
 	exit(0);
