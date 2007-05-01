@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.75  2007/05/01 00:18:12  cheshire
+Use "-launchd" instead of "-d" when starting via launchd
+(-d sets foreground mode, which writes errors to stderr, which is ignored when starting via launchd)
+
 Revision 1.74  2007/04/26 00:35:16  cheshire
 <rdar://problem/5140339> uDNS: Domain discovery not working over VPN
 Fixes to make sure results update correctly when connectivity changes (e.g. a DNS server
@@ -3111,6 +3115,7 @@ exit:
 
 int main(int argc, char *argv[])
 	{
+	int started_via_launchd = 0;
 	DaemonInfo *d;
 	struct rlimit rlim;
 
@@ -3145,9 +3150,16 @@ int main(int argc, char *argv[])
 		Log("Using default file descriptor resource limit");
 		}
 	
+	if (!strcasecmp(argv[1], "-launchd"))
+		{
+		Log("started_via_launchd");
+		started_via_launchd = 1;
+		argv++;
+		argc--;
+		}
 	if (ProcessArgs(argc, argv, d) < 0) { LogErr("main", "ProcessArgs"); exit(1); }
 
-	if (!foreground)
+	if (!foreground && !started_via_launchd)
 		{
 		if (daemon(0,0))
 			{

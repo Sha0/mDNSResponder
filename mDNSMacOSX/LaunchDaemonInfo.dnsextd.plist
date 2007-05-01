@@ -11,7 +11,7 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>/usr/sbin/dnsextd</string>
-		<string>-d</string>
+		<string>-launchd</string>
 	</array>
 	<key>ServiceIPC</key>
 	<false/>
