@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.369  2007/05/01 21:21:42  cheshire
+Add missing parentheses in LEASE_OPT_RDLEN definition
+
 Revision 1.368  2007/04/30 21:33:38  cheshire
 Fix crash when a callback unregisters a service while the UpdateSRVRecords() loop
 is iterating through the m->ServiceRegistrations list
@@ -1192,8 +1195,8 @@ typedef enum
 #define kLLQOp_Refresh   2
 #define kLLQOp_Event     3
 
-#define LLQ_OPT_RDLEN ((2 * sizeof(mDNSu16)) + LLQ_OPTLEN)
-#define LEASE_OPT_RDLEN (2 * sizeof(mDNSu16)) + sizeof(mDNSs32)
+#define LLQ_OPT_RDLEN   ((2 * sizeof(mDNSu16)) + LLQ_OPTLEN     )
+#define LEASE_OPT_RDLEN ((2 * sizeof(mDNSu16)) + sizeof(mDNSs32))
 
 // LLQ Errror Codes
 enum
