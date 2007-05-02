@@ -1745,7 +1745,6 @@
 				INSTALL_PATH = /usr/lib/java;
 				LIBRARY_STYLE = DYNAMIC;
 				MACH_O_TYPE = mh_dylib;
-				MACOSX_DEPLOYMENT_TARGET = 10.2;
 				MVERS = "\"mDNSResponder (Engineering Build)\"";
 				OTHER_CFLAGS = "";
 				OTHER_LIBTOOL_FLAGS = "";
