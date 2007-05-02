@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.404  2007/05/02 19:41:53  cheshire
+No need to alarm people with "Connection reset by peer" syslog message
+
 Revision 1.403  2007/04/28 01:31:59  cheshire
 Improve debugging support for catching memory corruption problems
 
@@ -1189,6 +1192,7 @@ mDNSexport long mDNSPlatformReadTCP(TCPSocket *sock, void *buf, unsigned long bu
 			if ((++CLOSEDcount % 1000) == 0) { LogMsg("ERROR: mDNSPlatformReadTCP - recv %d got CLOSED %d times", sock->fd, CLOSEDcount); sleep(1); }
 			}
 		// else nread is negative -- see what kind of error we got
+		else if (errno == ECONNRESET) { nread = 0; *closed = mDNStrue; }
 		else if (errno != EAGAIN) { LogMsg("ERROR: mDNSPlatformReadTCP - recv: %d %s", errno, strerror(errno)); nread = -1; }
 		else // errno is EAGAIN (EWOULDBLOCK) -- no data available
 			{
