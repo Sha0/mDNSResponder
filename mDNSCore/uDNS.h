@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.58  2007/05/02 22:21:33  cheshire
+<rdar://problem/5167331> RegisterRecord and RegisterService need to cancel StartGetZoneData
+
 Revision 1.57  2007/04/27 19:28:02  cheshire
 Any code that calls StartGetZoneData needs to keep a handle to the structure, so
 it can cancel it if necessary. (First noticed as a crash in Apple Remote Desktop
@@ -126,6 +129,7 @@ Revision 1.33  2006/07/05 22:53:28  cheshire
 // Entry points into unicast-specific routines
 
 extern ntaContext *StartGetZoneData(mDNS *const m, const domainname *const name, const AsyncOpTarget target, AsyncOpCallback callback, void *callbackInfo);
+extern void CancelGetZoneData(mDNS *const m, ntaContext* nta);
 
 extern void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqInfo, const ntaContext *zoneInfo);
 
@@ -151,10 +155,11 @@ extern mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr);
 // mDNS_Dereg_repeat is used when cleaning up, for records that may have already been forcibly deregistered
 typedef enum { mDNS_Dereg_normal, mDNS_Dereg_conflict, mDNS_Dereg_repeat } mDNS_Dereg_type;
 extern mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, mDNS_Dereg_type drt);
-extern mStatus uDNS_RegisterRecord(mDNS *const m, AuthRecord *const rr);
+extern void RecordRegistrationCallback(mStatus err, mDNS *const m, void *authPtr, const ntaContext *zoneData);
 extern mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr);
 
-extern mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs);
+extern void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srsPtr, const ntaContext *result);
+extern const domainname *GetServiceTarget(mDNS *m, AuthRecord *srv);
 extern mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs);
 
 extern void    uDNS_CheckQuery (mDNS *const m);

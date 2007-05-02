@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.628  2007/05/02 22:21:33  cheshire
+<rdar://problem/5167331> RegisterRecord and RegisterService need to cancel StartGetZoneData
+
 Revision 1.627  2007/04/30 19:29:13  cheshire
 Fix display of port number in "Updating DNS Server" message
 
@@ -965,7 +968,8 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 		rr->AnnounceCount = 0;
 		rr->state = regState_FetchingZoneData;
 		rr->uselease = mDNStrue;
-		return uDNS_RegisterRecord(m, rr);
+		rr->nta = StartGetZoneData(m, rr->resrec.name, lookupUpdateSRV, RecordRegistrationCallback, rr);
+		return rr->nta ? mStatus_NoError : mStatus_NoMemoryErr;
 		}
 #endif
 	
@@ -1133,6 +1137,7 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 		if (rr->resrec.InterfaceID != mDNSInterface_LocalOnly && !rr->ForceMCast && !IsLocalDomain(rr->resrec.name))
 			{
 			mStatus err;
+			if (rr->nta) { CancelGetZoneData(m, rr->nta); rr->nta = mDNSNULL; }
 			// Temporary hack: Restore RecordType so uDNS_DeregisterRecord can send its immediate packet (which it shouldn't be doing)
 			rr->resrec.RecordType = RecordType;
 			err = uDNS_DeregisterRecord(m, rr);
@@ -4425,27 +4430,28 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const questi
 				q->servPort          = question->servPort;
 
 				q->state             = question->state;
-				q->NATInfoTCP        = question->NATInfoTCP;
-				q->NATInfoUDP        = question->NATInfoUDP;
+			//	q->NATInfoTCP        = question->NATInfoTCP;
+			//	q->NATInfoUDP        = question->NATInfoUDP;
 				q->eventPort         = question->eventPort;
-				q->tcpSock           = question->tcpSock;
-				q->udpSock           = question->udpSock;
+			//	q->tcpSock           = question->tcpSock;
+			//	q->udpSock           = question->udpSock;
 				q->origLease         = question->origLease;
 				q->expire            = question->expire;
 				q->ntries            = question->ntries;
 				q->id                = question->id;
 
-				// If we've got a GetZoneData in progress, transfer it to the newly active question
-				question->nta        = mDNSNULL;
-				question->NATInfoTCP = mDNSNULL;
-				question->NATInfoUDP = mDNSNULL;
-				question->tcpSock    = mDNSNULL;
-				question->udpSock    = mDNSNULL;
-				if (q->nta       ) LogOperation("UpdateQuestionDuplicates transferred nta pointer");
-				if (q->NATInfoTCP) LogOperation("UpdateQuestionDuplicates transferred NATInfoTCP pointer");
-				if (q->NATInfoUDP) LogOperation("UpdateQuestionDuplicates transferred NATInfoUDP pointer");
-				if (q->tcpSock   ) LogOperation("UpdateQuestionDuplicates transferred tcpSock pointer");
-				if (q->udpSock   ) LogOperation("UpdateQuestionDuplicates transferred udpSock pointer");
+				question->nta        = mDNSNULL;	// If we've got a GetZoneData in progress, transfer it to the newly active question
+			//	question->NATInfoTCP = mDNSNULL;	
+			//	question->NATInfoUDP = mDNSNULL;
+			//	question->tcpSock    = mDNSNULL;
+			//	question->udpSock    = mDNSNULL;
+				if (q->nta) { LogOperation("UpdateQuestionDuplicates transferred nta pointer"); q->nta->callbackInfo = q; }
+
+				// Need to work out how to safely transfer this state too -- appropriate context pointers need to be updated or the code will crash
+				if (question->NATInfoTCP)   LogOperation("UpdateQuestionDuplicates did not transfer NATInfoTCP pointer");
+				if (question->NATInfoUDP)   LogOperation("UpdateQuestionDuplicates did not transfer NATInfoUDP pointer");
+				if (question->tcpSock   )   LogOperation("UpdateQuestionDuplicates did not transfer tcpSock pointer");
+				if (question->udpSock   )   LogOperation("UpdateQuestionDuplicates did not transfer udpSock pointer");
 	
 				SetNextQueryTime(m,q);
 				}
@@ -4651,7 +4657,8 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		}
 	}
 
-mDNSlocal void CancelGetZoneData(mDNS *const m, ntaContext* nta)
+// CancelGetZoneData is an internal routine (i.e. must be called with the lock already held)
+mDNSexport void CancelGetZoneData(mDNS *const m, ntaContext* nta)
 	{
 	LogOperation("CancelGetZoneData %##s (%s)", nta->question.qname.c, DNSTypeName(nta->question.qtype));
 	mDNS_StopQuery_internal(m, &nta->question);
@@ -5660,6 +5667,36 @@ mDNSlocal void NSSCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
 	ServiceRecordSet *sr = (ServiceRecordSet *)rr->RecordContext;
 	if (sr->ServiceCallback)
 		sr->ServiceCallback(m, sr, result);
+	}
+
+mDNSlocal mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
+	{
+	mDNSu32 i;
+	ServiceRecordSet **p = &m->ServiceRegistrations;
+	while (*p && *p != srs) p=&(*p)->uDNS_next;
+	if (*p) { LogMsg("uDNS_RegisterService: %p %##s already in list", srs, srs->RR_SRV.resrec.name->c); return(mStatus_AlreadyRegistered); }
+
+	srs->uDNS_next = mDNSNULL;
+	*p = srs;
+
+	srs->RR_SRV.resrec.rroriginalttl = kWideAreaTTL;
+	srs->RR_TXT.resrec.rroriginalttl = kWideAreaTTL;
+	srs->RR_PTR.resrec.rroriginalttl = kWideAreaTTL;
+	for (i = 0; i < srs->NumSubTypes;i++) srs->SubTypes[i].resrec.rroriginalttl = kWideAreaTTL;
+
+	srs->srs_uselease = mDNStrue;
+
+	if (!GetServiceTarget(m, &srs->RR_SRV))
+		{
+		// defer registration until we've got a target
+		debugf("uDNS_RegisterService - no target for %##s", srs->RR_SRV.resrec.name->c);
+		srs->state = regState_NoTarget;
+		return mStatus_NoError;
+		}
+
+	srs->state = regState_FetchingZoneData;
+	srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, lookupUpdateSRV, serviceRegistrationCallback, srs);
+	return srs->nta ? mStatus_NoError : mStatus_NoMemoryErr;
 	}
 
 // Note:

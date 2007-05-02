@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.359  2007/05/02 22:21:33  cheshire
+<rdar://problem/5167331> RegisterRecord and RegisterService need to cancel StartGetZoneData
+
 Revision 1.358  2007/05/01 21:46:31  cheshire
 Move GetLLQOptData/GetPktLease from uDNS.c into DNSCommon.c so that dnsextd can use them
 
@@ -1545,7 +1548,7 @@ mDNSlocal void LLQNatMapComplete(mDNS *m, NATTraversalInfo *n)
 
 // if we ever want to refine support for multiple hostnames, we can add logic matching service names to a particular hostname
 // for now, we grab the first registered DynDNS name, if any, or a static name we learned via a reverse-map query
-mDNSlocal const domainname *GetServiceTarget(mDNS *m, AuthRecord *srv)
+mDNSexport const domainname *GetServiceTarget(mDNS *m, AuthRecord *srv)
 	{
 	if (!srv->HostTarget)		// If not automatically tracking this host's current name, just return the exising target
 		return(&srv->resrec.rdata->u.srv.target);
@@ -1723,45 +1726,6 @@ exit:
 		}
 	}
 
-/* StartGetZoneData
- *
- * Asynchronously find the address of the nameserver for the enclosing zone for a given domain name,
- * i.e. the server to which update and LLQ requests will be sent for a given name.  Once the address is
- * derived, it will be passed to the callback, along with a context pointer.  If the zone cannot
- * be determined or if an error occurs, an all-zeros address will be passed and a message will be
- * written to the syslog.
- *
- * If the FindUpdatePort arg is set, the port on which the server accepts dynamic updates is determined
- * by querying for the _dns-update._udp.<zone>. SRV record.  Likewise, if the FindLLQPort arg is set,
- * the port on which the server accepts long lived queries is determined by querying for
- * _dns-llq._udp.<zone>. record.  If either of these queries fail, or flags are not specified,
- * the llqPort and updatePort fields in the result structure are set to zero.
- *
- *  Steps for deriving the zone name are as follows:
- *
- * Query for an SOA record for the required domain.  If we don't get an answer (or an SOA in the Authority
- * section), we strip the leading label from the name and repeat, until we get an answer.
- *
- * The name of the SOA record is our enclosing zone.  The mname field in the SOA rdata is the domain
- * name of the primary NS.
- *
- * We verify that there is an NS record with this zone for a name and the mname for its rdata.
- * (!!!KRS this seems redundant, but BIND does this, and it should normally be zero-overhead since
- * the NS query will get us address records in the additionals section, which we'd otherwise have to
- * explicitly query for.)
- *
- * We then query for the address record for this nameserver (if it is not in the addionals section of
- * the NS record response.)
- */
-
-// state machine actions
-typedef enum
-	{
-	smContinue,	// continue immediately to next state
-	smBreak,	// break until next packet/timeout
-	smError		// terminal error - cleanup and abort
-	} smAction;
-
 mDNSlocal const domainname *PUBLIC_UPDATE_SERVICE_TYPE  = (const domainname*)"\x0B_dns-update"     "\x04_udp";
 mDNSlocal const domainname *PUBLIC_LLQ_SERVICE_TYPE     = (const domainname*)"\x08_dns-llq"        "\x04_udp";
 
@@ -1778,6 +1742,7 @@ mDNSlocal const domainname *PRIVATE_LLQ_SERVICE_TYPE    = (const domainname*)"\x
 // Forward reference: hndlLookupSOA references GetZoneData_QuestionCallback and vice versa
 mDNSlocal void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord);
 
+// GetZoneData_StartQuery is called from normal client context (lock not held, or client callback)
 mDNSlocal mStatus GetZoneData_StartQuery(ntaContext *hndlrContext, mDNSu16 qtype)
 	{
 	mDNS *const m = hndlrContext->m;
@@ -1815,6 +1780,7 @@ mDNSlocal mStatus GetZoneData_StartQuery(ntaContext *hndlrContext, mDNSu16 qtype
 	return(status);
 	}
 
+// GetZoneData_QuestionCallback is called from normal client callback context (core API calls allowed)
 mDNSlocal void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
 	ntaContext *context = (ntaContext*)question->QuestionContext;
@@ -1886,8 +1852,7 @@ mDNSlocal void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *question
 		}
 	}
 
-// state machine entry routine
-// initialization
+// StartGetZoneData is an internal routine (i.e. must be called with the lock already held)
 mDNSexport ntaContext *StartGetZoneData(mDNS *const m, const domainname *const name, const AsyncOpTarget target, AsyncOpCallback callback, void *callbackInfo)
 	{
 	ntaContext *context = (ntaContext*)mDNSPlatformMemAllocate(sizeof(ntaContext));
@@ -1919,9 +1884,6 @@ mDNSexport ntaContext *StartGetZoneData(mDNS *const m, const domainname *const n
 	return context;
 	}
 
-// Forward reference: StartNATPortMap references serviceRegistrationCallback and vice versa
-mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srsPtr, const ntaContext *result);
-
 mDNSlocal void StartNATPortMap(mDNS *m, ServiceRecordSet *srs)
 	{
 	NATOp_t op;
@@ -1945,10 +1907,11 @@ mDNSlocal void StartNATPortMap(mDNS *m, ServiceRecordSet *srs)
 	return;
 
 	error:
+	if (srs->nta) CancelGetZoneData(m, srs->nta); // Make sure we cancel old one before we start a new one
 	srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, lookupUpdateSRV, serviceRegistrationCallback, srs);
 	}
 
-mDNSlocal void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srsPtr, const ntaContext *zoneData)
+mDNSexport void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srsPtr, const ntaContext *zoneData)
 	{
 	ServiceRecordSet *srs = (ServiceRecordSet *)srsPtr;
 	
@@ -2098,6 +2061,7 @@ mDNSexport mDNSBool uDNS_HandleNATPortMapReply(NATTraversalInfo *n, mDNS *m, mDN
 	else
 		{
 		srs->state = regState_FetchingZoneData;
+		if (srs->nta) CancelGetZoneData(m, srs->nta); // Make sure we cancel old one before we start a new one
 		srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, lookupUpdateSRV, serviceRegistrationCallback, srs);
 		}
 	return mDNStrue;
@@ -2303,6 +2267,7 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 				if (!HaveZoneData)
 					{
 					srs->state = regState_FetchingZoneData;
+					if (srs->nta) CancelGetZoneData(m, srs->nta); // Make sure we cancel old one before we start a new one
 					srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, lookupUpdateSRV, serviceRegistrationCallback, srs);
 					}
 				else
@@ -2838,7 +2803,7 @@ exit:
 
 	if (err)
 		{
-		LogMsg("sendRecordRegistration: Error formatting message");
+		LogMsg("sendRecordRegistration: Error formatting message %d", err);
 
 		if (rr->state != regState_Unregistered)
 			{
@@ -3562,7 +3527,7 @@ mDNSexport void uDNS_StopLongLivedQuery(mDNS *const m, DNSQuestion *const questi
 #pragma mark - Dynamic Updates
 #endif
 
-mDNSlocal void RecordRegistrationCallback(mStatus err, mDNS *const m, void *authPtr, const ntaContext *zoneData)
+mDNSexport void RecordRegistrationCallback(mStatus err, mDNS *const m, void *authPtr, const ntaContext *zoneData)
 	{
 	AuthRecord *newRR = (AuthRecord*)authPtr;
 	AuthRecord *ptr;
@@ -3634,13 +3599,6 @@ error:
 		newRR->RecordCallback(m, newRR, err);
 	mDNS_ReclaimLockAfterCallback();
 	// NOTE: not safe to touch any client structures here
-	}
-
-
-mDNSexport mStatus uDNS_RegisterRecord(mDNS *const m, AuthRecord *const rr)
-	{
-	rr->nta = StartGetZoneData(m, rr->resrec.name, lookupUpdateSRV, RecordRegistrationCallback, rr);
-	return rr->nta ? mStatus_NoError : mStatus_NoMemoryErr;
 	}
 
 mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
@@ -3748,36 +3706,6 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 	return mStatus_NoError;
 	}
 
-mDNSexport mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
-	{
-	mDNSu32 i;
-	ServiceRecordSet **p = &m->ServiceRegistrations;
-	while (*p && *p != srs) p=&(*p)->uDNS_next;
-	if (*p) { LogMsg("uDNS_RegisterService: %p %##s already in list", srs, srs->RR_SRV.resrec.name->c); return(mStatus_AlreadyRegistered); }
-
-	srs->uDNS_next = mDNSNULL;
-	*p = srs;
-
-	srs->RR_SRV.resrec.rroriginalttl = kWideAreaTTL;
-	srs->RR_TXT.resrec.rroriginalttl = kWideAreaTTL;
-	srs->RR_PTR.resrec.rroriginalttl = kWideAreaTTL;
-	for (i = 0; i < srs->NumSubTypes;i++) srs->SubTypes[i].resrec.rroriginalttl = kWideAreaTTL;
-
-	srs->srs_uselease = mDNStrue;
-
-	if (!GetServiceTarget(m, &srs->RR_SRV))
-		{
-		// defer registration until we've got a target
-		debugf("uDNS_RegisterService - no target for %##s", srs->RR_SRV.resrec.name->c);
-		srs->state = regState_NoTarget;
-		return mStatus_NoError;
-		}
-
-	srs->state = regState_FetchingZoneData;
-	srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, lookupUpdateSRV, serviceRegistrationCallback, srs);
-	return srs->nta ? mStatus_NoError : mStatus_NoMemoryErr;
-	}
-
 mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 	{
 	NATTraversalInfo *nat = srs->NATinfo;
@@ -3785,6 +3713,8 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 
 	// don't re-register with a new target following deregistration
 	srs->SRVChanged = srs->SRVUpdateDeferred = mDNSfalse;
+
+	if (srs->nta) { CancelGetZoneData(m, srs->nta); srs->nta = mDNSNULL; }
 
 	if (nat)
 		{
@@ -4243,6 +4173,7 @@ mDNSlocal void RestartQueries(mDNS *m)
 					// if we were polling, we may have had bad zone data due to firewall, etc. - refetch
 					q->ntries = 0;
 					q->state = LLQ_GetZoneInfo;
+					if (q->nta) CancelGetZoneData(m, q->nta); // Make sure we cancel old one before we start a new one
 					q->nta = StartGetZoneData(m, &q->qname, lookupLLQSRV, startLLQHandshakeCallback, q);
 					}
 				}
@@ -4314,23 +4245,22 @@ mDNSlocal void SleepServiceRegistrations(mDNS *m)
 	ServiceRecordSet *srs = m->ServiceRegistrations;
 	while (srs)
 		{
-		ServiceRecordSet *info = srs;
-		NATTraversalInfo *nat = info->NATinfo;
+		if (srs->nta) { CancelGetZoneData(m, srs->nta); srs->nta = mDNSNULL; }
 
-		if (nat)
+		if (srs->NATinfo)
 			{
-			if (nat->state == NATState_Established || nat->state == NATState_Refresh || nat->state == NATState_Legacy)
-				uDNS_DeleteNATPortMapping(m, nat);
-			nat->reg.ServiceRegistration = mDNSNULL;
+			if (srs->NATinfo->state == NATState_Established || srs->NATinfo->state == NATState_Refresh || srs->NATinfo->state == NATState_Legacy)
+				uDNS_DeleteNATPortMapping(m, srs->NATinfo);
+			srs->NATinfo->reg.ServiceRegistration = mDNSNULL;
 			srs->NATinfo = mDNSNULL;
-			uDNS_FreeNATInfo(m, nat);
+			uDNS_FreeNATInfo(m, srs->NATinfo);
 			}
 
-		if (info->state == regState_UpdatePending)
+		if (srs->state == regState_UpdatePending)
 			{
 			// act as if the update succeeded, since we're about to delete the name anyway
 			AuthRecord *txt = &srs->RR_TXT;
-			info->state = regState_Registered;
+			srs->state = regState_Registered;
 			// deallocate old RData
 			if (txt->UpdateCallback) txt->UpdateCallback(m, txt, txt->OrigRData);
 			SetNewRData(&txt->resrec, txt->InFlightRData, txt->InFlightRDLen);
@@ -4338,13 +4268,13 @@ mDNSlocal void SleepServiceRegistrations(mDNS *m)
 			txt->InFlightRData = mDNSNULL;
 			}
 
-		if (info->state == regState_Registered || info->state == regState_Refresh)
+		if (srs->state == regState_Registered || srs->state == regState_Refresh)
 			{
 			mDNSOpaque16 origid = srs->id;
-			info->state = regState_DeregPending;	// state expected by SendDereg()
+			srs->state = regState_DeregPending;	// state expected by SendDereg()
 			SendServiceDeregistration(m, srs);
-			info->id = origid;
-			info->state = regState_NoTarget;	// when we wake, we'll re-register (and optionally nat-map) once our address record completes
+			srs->id = origid;
+			srs->state = regState_NoTarget;	// when we wake, we'll re-register (and optionally nat-map) once our address record completes
 			srs->RR_SRV.resrec.rdata->u.srv.target.c[0] = 0;
 			}
 		srs = srs->uDNS_next;
