@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.370  2007/05/02 22:18:09  cheshire
+Renamed NATTraversalInfo_struct context to NATTraversalContext
+
 Revision 1.369  2007/05/01 21:21:42  cheshire
 Add missing parentheses in LEASE_OPT_RDLEN definition
 
@@ -1337,19 +1340,19 @@ typedef void AsyncOpCallback(mStatus err, mDNS *const m, void *info, const ntaCo
 
 struct ntaContext_struct
 	{
-	domainname      origName;			// name we originally try to convert
-	domainname      *curSOA;			// name we have an outstanding SOA query for
 	mDNS            *m;
-	domainname      zoneName;			// left-hand-side of SOA record
-	mDNSu16         zoneClass;
-	domainname      ns;					// mname in SOA rdata, verified in confirmNS state
-	mDNSAddr        addr;				// address of nameserver
-	DNSQuestion     question;			// storage for any active question
+	domainname      origName;			// name we originally try to convert
 	AsyncOpTarget   target;
-	mDNSBool        zonePrivate;
-	mDNSIPPort      Port;			// Depending on target, may be update port, query port, or LLQ port
+	domainname      *curSOA;			// points to somewhere within origName
+	domainname      zoneName;			// Discovered result: left-hand-side of SOA record
+	mDNSu16         zoneClass;			// Discovered result:
+	domainname      ns;					// Discovered result: mname in SOA rdata, verified in confirmNS state
+	mDNSAddr        addr;				// Discovered result: address of nameserver
+	mDNSBool        zonePrivate;		// Discovered result: Does zone require encrypted queries?
+	mDNSIPPort      Port;				// Discovered result: Depending on target, may be update port, query port, or LLQ port
 	AsyncOpCallback *ntaCallback;		// caller-specified function to be called upon completion
 	void            *callbackInfo;
+	DNSQuestion     question;			// storage for any active question
 	};
 
 // ***************************************************************************
@@ -1398,7 +1401,7 @@ typedef enum
 	NATState_Deleted      = 6
 	} NATState_t;
 // Note: we have no explicit "cancelled" state, where a service/interface is deregistered while we
- // have an outstanding NAT request.  This is conveyed by the "reg" pointer being set to NULL
+// have an outstanding NAT request.  This is conveyed by the "reg" pointer being set to NULL
 
 typedef packedstruct
 	{
@@ -1458,7 +1461,7 @@ struct NATTraversalInfo_struct
 	NATState_t state;
 	NATTraversalInfo *next;
 	mDNSBool isLLQ;
-	void *context;
+	void *NATTraversalContext;
 	unsigned refs;
 	};
 

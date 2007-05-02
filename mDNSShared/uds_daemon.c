@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.289  2007/05/02 22:18:08  cheshire
+Renamed NATTraversalInfo_struct context to NATTraversalContext
+
 Revision 1.288  2007/04/30 21:33:39  cheshire
 Fix crash when a callback unregisters a service while the UpdateSRVRecords() loop
 is iterating through the m->ServiceRegistrations list
@@ -2737,7 +2740,7 @@ mDNSlocal void port_mapping_create_termination_callback(request_state *request)
 mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt)
 	{
 	mStatus err = mStatus_NoError;
-	request_state *request = n->context;
+	request_state *request = n->NATTraversalContext;
 	reply_state *rep;
 	int replyLen;
 	char *data;
@@ -2771,7 +2774,7 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 				request->u.portmapping.NATMapinfo = uDNS_AllocNATInfo(m, NATOp_MapTCP, request->u.portmapping.privatePort, request->u.portmapping.requestedPublicPort, request->u.portmapping.requestedTTL, port_mapping_create_reply);
 
 			if (!request->u.portmapping.NATMapinfo) { deliver_async_error(request, port_mapping_create_reply_op, mStatus_NoMemoryErr); return mDNStrue; }
-			request->u.portmapping.NATMapinfo->context = request;
+			request->u.portmapping.NATMapinfo->NATTraversalContext = request;
 			request->u.portmapping.NATMapinfo->reg.RecordRegistration = NULL;
 			request->u.portmapping.NATMapinfo->state                  = NATState_Request;
 			uDNS_FormatPortMaprequest(request->u.portmapping.NATMapinfo);
@@ -2904,7 +2907,7 @@ mDNSlocal mStatus handle_port_mapping_create_request(request_state *request)
 	request->u.portmapping.NATAddrinfo = uDNS_AllocNATInfo(&mDNSStorage, NATOp_AddrRequest, zeroIPPort, zeroIPPort, 0, port_mapping_create_reply);
 	if (!request->u.portmapping.NATAddrinfo) { mDNS_Unlock(&mDNSStorage); return(mStatus_NoMemoryErr); }
 
-	request->u.portmapping.NATAddrinfo->context                = request;
+	request->u.portmapping.NATAddrinfo->NATTraversalContext    = request;
 	request->u.portmapping.NATAddrinfo->reg.RecordRegistration = NULL;
 	request->u.portmapping.NATAddrinfo->state                  = NATState_Request;
 
