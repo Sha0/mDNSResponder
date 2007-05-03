@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.361  2007/05/03 23:50:48  cheshire
+<rdar://problem/4669229> mDNSResponder ignores bogus null target in SRV record
+In the case of negative answers for the address record, set the server address to zerov4Addr
+
 Revision 1.360  2007/05/03 22:40:38  cheshire
 <rdar://problem/4669229> mDNSResponder ignores bogus null target in SRV record
 
@@ -1813,7 +1817,7 @@ mDNSlocal void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *question
 		LogOperation("GOT lookupA %s", RRDisplayString(m, answer));
 		mDNS_StopQuery(m, question);
 		zd->Addr.type  = mDNSAddrType_IPv4;
-		zd->Addr.ip.v4 = answer->rdata->u.ipv4;
+		zd->Addr.ip.v4 = (answer->rdlength == 4) ? answer->rdata->u.ipv4 : zerov4Addr;
 		zd->ZoneDataCallback(m, mStatus_NoError, zd);
 		mDNSPlatformMemFree(zd);
 		}
