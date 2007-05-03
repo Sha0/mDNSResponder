@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.371  2007/05/03 22:40:37  cheshire
+<rdar://problem/4669229> mDNSResponder ignores bogus null target in SRV record
+
 Revision 1.370  2007/05/02 22:18:09  cheshire
 Renamed NATTraversalInfo_struct context to NATTraversalContext
 
@@ -806,11 +809,10 @@ typedef struct AuthRecord_struct AuthRecord;
 typedef struct CacheRecord_struct CacheRecord;
 typedef struct CacheGroup_struct CacheGroup;
 typedef struct DNSQuestion_struct DNSQuestion;
-typedef struct NTAContext_struct NTAContext;
+typedef struct ZoneData_struct ZoneData;
 typedef struct mDNS_struct mDNS;
 typedef struct mDNS_PlatformSupport_struct mDNS_PlatformSupport;
 typedef struct NATTraversalInfo_struct NATTraversalInfo;
-typedef struct ntaContext_struct ntaContext;
 
 // Note: Within an mDNSRecordCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute()
 typedef void mDNSRecordCallback(mDNS *const m, AuthRecord *const rr, mStatus result);
@@ -931,7 +933,7 @@ struct AuthRecord_struct
 								// !!!KRS not technically correct to cache longer than TTL
 								// SDC Perhaps should keep a reference to the relevant SRV record in the cache?
 	NATTraversalInfo *NATinfo;	// NAT traversal context; may be NULL
-	ntaContext  *nta;
+	ZoneData  *nta;
 
 	// uDNS_UpdateRecord support fields
 	// Do we really need all these in *addition* to NewRData and newrdlength above?
@@ -1107,7 +1109,7 @@ struct ServiceRecordSet_struct
 	mDNSs32      expire;   // expiration of lease (-1 for static)
 	mDNSBool     TestForSelfConflict;  // on name conflict, check if we're just seeing our own orphaned records
 	mDNSBool     Private;  // If zone is private, DNS updates may have to be encrypted to prevent eavesdropping
-	ntaContext  *nta;
+	ZoneData  *nta;
 	mDNSOpaque16 id;
 	domainname   zone;     // the zone that is updated
 	mDNSAddr     ns;       // primary name server for the record's zone  !!!KRS not technically correct to cache longer than TTL
@@ -1264,7 +1266,7 @@ struct DNSQuestion_struct
 	mDNSs32               RestartTime;		// Mark when we restart a suspended query
 	DNSServer            *qDNSServer;		// Caching server for this query (in the absence of an SRV saying otherwise)
 
-	ntaContext           *nta;				// Used for getting zone data for private or LLQ query
+	ZoneData           *nta;				// Used for getting zone data for private or LLQ query
 	mDNSAddr              servAddr;			// Address and port learned from _dns-llq, _dns-llq-tls or _dns-query-tls SRV query
 	mDNSIPPort            servPort;
 
@@ -1334,26 +1336,28 @@ struct ServiceInfoQuery_struct
 	void                         *ServiceInfoQueryContext;
 	};
 
-typedef enum { lookupUpdateSRV, lookupQuerySRV, lookupLLQSRV } AsyncOpTarget;
+typedef enum { ZoneServiceUpdate, ZoneServiceQuery, ZoneServiceLLQ } ZoneService;
 
-typedef void AsyncOpCallback(mStatus err, mDNS *const m, void *info, const ntaContext *result);
+typedef void ZoneDataCallback(mDNS *const m, mStatus err, const ZoneData *result);
 
-struct ntaContext_struct
+struct ZoneData_struct
 	{
-	mDNS            *m;
-	domainname      origName;			// name we originally try to convert
-	AsyncOpTarget   target;
-	domainname      *curSOA;			// points to somewhere within origName
-	domainname      zoneName;			// Discovered result: left-hand-side of SOA record
-	mDNSu16         zoneClass;			// Discovered result:
-	domainname      ns;					// Discovered result: mname in SOA rdata, verified in confirmNS state
-	mDNSAddr        addr;				// Discovered result: address of nameserver
-	mDNSBool        zonePrivate;		// Discovered result: Does zone require encrypted queries?
-	mDNSIPPort      Port;				// Discovered result: Depending on target, may be update port, query port, or LLQ port
-	AsyncOpCallback *ntaCallback;		// caller-specified function to be called upon completion
-	void            *callbackInfo;
-	DNSQuestion     question;			// storage for any active question
+	domainname       ChildName;			// Name for which we're trying to find the responsible server
+	ZoneService      ZoneService;		// Which service we're seeking for this zone (update, query, or LLQ)
+	domainname       *CurrentSOA;		// Points to somewhere within ChildName
+	domainname       ZoneName;			// Discovered result: Left-hand-side of SOA record
+	mDNSu16          ZoneClass;			// Discovered result: DNS Class from SOA record
+	domainname       Host;				// Discovered result: Target host from SRV record
+	mDNSIPPort       Port;				// Discovered result: Update port, query port, or LLQ port from SRV record
+	mDNSAddr         Addr;				// Discovered result: Address of Target host from SRV record
+	mDNSBool         ZonePrivate;		// Discovered result: Does zone require encrypted queries?
+	ZoneDataCallback *ZoneDataCallback;	// Caller-specified function to be called upon completion
+	void             *ZoneDataContext;
+	DNSQuestion      question;			// Storage for any active question
 	};
+
+extern ZoneData *StartGetZoneData(mDNS *const m, const domainname *const name, const ZoneService target, ZoneDataCallback callback, void *callbackInfo);
+extern void CancelGetZoneData(mDNS *const m, ZoneData *nta);
 
 // ***************************************************************************
 #if 0

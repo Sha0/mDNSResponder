@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.630  2007/05/03 22:40:38  cheshire
+<rdar://problem/4669229> mDNSResponder ignores bogus null target in SRV record
+
 Revision 1.629  2007/05/03 00:15:51  cheshire
 <rdar://problem/4410011> Eliminate looping SOA lookups
 
@@ -971,7 +974,7 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 		rr->AnnounceCount = 0;
 		rr->state = regState_FetchingZoneData;
 		rr->uselease = mDNStrue;
-		rr->nta = StartGetZoneData(m, rr->resrec.name, lookupUpdateSRV, RecordRegistrationCallback, rr);
+		rr->nta = StartGetZoneData(m, rr->resrec.name, ZoneServiceUpdate, RecordRegistrationCallback, rr);
 		return rr->nta ? mStatus_NoError : mStatus_NoMemoryErr;
 		}
 #endif
@@ -4491,7 +4494,7 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const questi
 			//	question->NATInfoUDP = mDNSNULL;
 			//	question->tcpSock    = mDNSNULL;
 			//	question->udpSock    = mDNSNULL;
-				if (q->nta) { LogOperation("UpdateQuestionDuplicates transferred nta pointer"); q->nta->callbackInfo = q; }
+				if (q->nta) { LogOperation("UpdateQuestionDuplicates transferred nta pointer"); q->nta->ZoneDataContext = q; }
 
 				// Need to work out how to safely transfer this state too -- appropriate context pointers need to be updated or the code will crash
 				if (question->NATInfoTCP)   LogOperation("UpdateQuestionDuplicates did not transfer NATInfoTCP pointer");
@@ -4669,7 +4672,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 						question->LastQTime     = m->timenow;
 						LogOperation("uDNS_InitLongLivedQuery: %##s %s %s %d",
 							question->qname.c, DNSTypeName(question->qtype), question->AuthInfo ? "(Private)" : "", question->ThisQInterval);
-						question->nta = StartGetZoneData(m, &question->qname, lookupLLQSRV, startLLQHandshakeCallback, question);
+						question->nta = StartGetZoneData(m, &question->qname, ZoneServiceLLQ, startLLQHandshakeCallback, question);
 						if (!question->nta) LogMsg("ERROR: startLLQ - StartGetZoneData failed");
 						}
 					else
@@ -4687,7 +4690,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 	}
 
 // CancelGetZoneData is an internal routine (i.e. must be called with the lock already held)
-mDNSexport void CancelGetZoneData(mDNS *const m, ntaContext* nta)
+mDNSexport void CancelGetZoneData(mDNS *const m, ZoneData *nta)
 	{
 	LogOperation("CancelGetZoneData %##s (%s)", nta->question.qname.c, DNSTypeName(nta->question.qtype));
 	mDNS_StopQuery_internal(m, &nta->question);
@@ -5724,7 +5727,7 @@ mDNSlocal mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 		}
 
 	srs->state = regState_FetchingZoneData;
-	srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, lookupUpdateSRV, serviceRegistrationCallback, srs);
+	srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, serviceRegistrationCallback, srs);
 	return srs->nta ? mStatus_NoError : mStatus_NoMemoryErr;
 	}
 

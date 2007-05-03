@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.59  2007/05/03 22:40:38  cheshire
+<rdar://problem/4669229> mDNSResponder ignores bogus null target in SRV record
+
 Revision 1.58  2007/05/02 22:21:33  cheshire
 <rdar://problem/5167331> RegisterRecord and RegisterService need to cancel StartGetZoneData
 
@@ -128,10 +131,7 @@ Revision 1.33  2006/07/05 22:53:28  cheshire
 
 // Entry points into unicast-specific routines
 
-extern ntaContext *StartGetZoneData(mDNS *const m, const domainname *const name, const AsyncOpTarget target, AsyncOpCallback callback, void *callbackInfo);
-extern void CancelGetZoneData(mDNS *const m, ntaContext* nta);
-
-extern void startLLQHandshakeCallback(mStatus err, mDNS *const m, void *llqInfo, const ntaContext *zoneInfo);
+extern void startLLQHandshakeCallback(mDNS *const m, mStatus err, const ZoneData *zoneInfo);
 
 extern void    uDNS_StopLongLivedQuery(mDNS *const m, DNSQuestion *const question);
 
@@ -155,10 +155,10 @@ extern mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr);
 // mDNS_Dereg_repeat is used when cleaning up, for records that may have already been forcibly deregistered
 typedef enum { mDNS_Dereg_normal, mDNS_Dereg_conflict, mDNS_Dereg_repeat } mDNS_Dereg_type;
 extern mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, mDNS_Dereg_type drt);
-extern void RecordRegistrationCallback(mStatus err, mDNS *const m, void *authPtr, const ntaContext *zoneData);
+extern void RecordRegistrationCallback(mDNS *const m, mStatus err, const ZoneData *zoneData);
 extern mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr);
 
-extern void serviceRegistrationCallback(mStatus err, mDNS *const m, void *srsPtr, const ntaContext *result);
+extern void serviceRegistrationCallback(mDNS *const m, mStatus err, const ZoneData *result);
 extern const domainname *GetServiceTarget(mDNS *m, AuthRecord *srv);
 extern mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs);
 
