@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.629  2007/05/03 00:15:51  cheshire
+<rdar://problem/4410011> Eliminate looping SOA lookups
+
 Revision 1.628  2007/05/02 22:21:33  cheshire
 <rdar://problem/5167331> RegisterRecord and RegisterService need to cancel StartGetZoneData
 
@@ -3912,6 +3915,24 @@ mDNSlocal CacheRecord *CreateNewCacheEntry(mDNS *const m, const mDNSu32 slot, Ca
 	return(rr);
 	}
 
+// CountLabels() returns number of labels in name, excluding final root label
+// (e.g. for "apple.com." CountLabels returns 2.)
+mDNSlocal int CountLabels(const domainname *d)
+	{
+	int count = 0;
+	const mDNSu8 *ptr;
+	for (ptr = d->c; *ptr; ptr = ptr + ptr[0] + 1) count++;
+	return count;
+	}
+
+// SkipLeadingLabels skips over the first 'skip' labels in the domainname,
+// returning a pointer to the suffix with 'skip' labels removed.
+mDNSlocal const domainname *SkipLeadingLabels(const domainname *d, int skip)
+	{
+	while (skip > 0 && d->c[0]) { d = (const domainname *)(d->c + 1 + d->c[0]); skip--; }
+	return(d);
+	}
+
 // NOTE: mDNSCoreReceiveResponse calls mDNS_Deregister_internal which can call a user callback, which may change
 // the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
@@ -4273,7 +4294,7 @@ exit:
 		if (ptr && ExpectingUnicastResponseForQuestion(m, response->h.id, &q))
 			{
 			CacheRecord *rr;
-			const mDNSu32 slot = HashSlot(&q.qname);
+			mDNSu32 slot = HashSlot(&q.qname);
 			CacheGroup *cg = CacheGroupForName(m, slot, q.qnamehash, &q.qname);
 			for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
 				if (SameNameRecordAnswersQuestion(&rr->resrec, &q))
@@ -4284,10 +4305,35 @@ exit:
 					}
 			if (!rr)
 				{
-				LogOperation("Making negative cache entry for %##s (%s)", q.qname.c, DNSTypeName(q.qtype));
-				MakeNegativeCacheRecord(m, &q.qname, q.qnamehash, q.qtype, q.qclass);
-				CreateNewCacheEntry(m, slot, cg);
-				m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
+				int repeat = 0;
+				const domainname *name = &q.qname;
+				mDNSu32           hash = q.qnamehash;
+				// Special check for SOA queries: If we queried for a.b.c.d.com, and got no answer,
+				// with an Authority Section SOA record for d.com, then this is a hint that the authority
+				// is d.com, and consequently SOA records b.c.d.com and c.d.com don't exist either.
+				if (q.qtype == kDNSType_SOA && response->h.numAuthorities == 1 &&
+					(ptr = LocateAuthorities(response, end)) != mDNSNULL &&
+					(ptr = GetLargeResourceRecord(m, response, ptr, end, InterfaceID, kDNSRecordTypePacketAuth, &m->rec)) != mDNSNULL)
+					{
+					int qcount = CountLabels(&q.qname);
+					int scount = CountLabels(m->rec.r.resrec.name);
+					if (qcount - 1 > scount)
+						if (SameDomainName(SkipLeadingLabels(&q.qname, qcount - scount), m->rec.r.resrec.name))
+							repeat = qcount - 1 - scount;
+					m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
+					}
+				while (1)
+					{
+					LogOperation("Making negative cache entry for %##s (%s)", name->c, DNSTypeName(q.qtype));
+					MakeNegativeCacheRecord(m, name, hash, q.qtype, q.qclass);
+					CreateNewCacheEntry(m, slot, cg);
+					m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
+					if (!repeat) break;
+					repeat--;
+					name = (const domainname *)(name->c + 1 + name->c[0]);
+					hash = DomainNameHashValue(name);
+					slot = HashSlot(name);
+					}
 				}
 			}
 		}
@@ -4457,35 +4503,18 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const questi
 				}
 	}
 
-// CountLabels() returns number of labels in name, excluding final root label
-// (e.g. for "apple.com." CountLabels returns 2.)
-mDNSlocal int CountLabels(const domainname *d)
-	{
-	int count = 0;
-	const mDNSu8 *ptr;
-	for (ptr = d->c; *ptr; ptr = ptr + ptr[0] + 1) count++;
-	return count;
-	}
-
 // lookup a DNS Server, matching by name in split-dns configurations.  Result stored in addr parameter if successful
 mDNSlocal DNSServer *GetServerForName(mDNS *m, const domainname *name)
     {
-	DNSServer *curmatch = mDNSNULL, *p = m->DNSServers;
-	int i, curmatchlen = -1;
-	int ncount = name ? CountLabels(name) : 0;
+	DNSServer *curmatch = mDNSNULL, *p;
+	int curmatchlen = -1, ncount = name ? CountLabels(name) : 0;
 
-	while (p)
+	for (p = m->DNSServers; p; p = p->next)
 		{
 		int scount = CountLabels(&p->domain);
-		if (!p->del && scount <= ncount && scount > curmatchlen)
-			{
-			// only inspect if server's domain is longer than current best match and shorter than the name itself
-			const domainname *tail = name;
-			for (i = 0; i < ncount - scount; i++)
-				tail = (const domainname *)(tail->c + 1 + tail->c[0]);	// find "tail" (scount labels) of name
-			if (SameDomainName(tail, &p->domain)) { curmatch = p; curmatchlen = scount; }
-			}
-		p = p->next;
+		if (!p->del && ncount >= scount && scount > curmatchlen)
+			if (SameDomainName(SkipLeadingLabels(name, ncount - scount), &p->domain))
+				{ curmatch = p; curmatchlen = scount; }
 		}
 	return(curmatch);
 	}
