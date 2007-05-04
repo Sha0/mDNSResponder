@@ -38,6 +38,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.634  2007/05/04 22:09:08  cheshire
+Only do "restarting exponential backoff sequence" for mDNS questions
+In mDNS_RegisterInterface, only retrigger mDNS questions
+In uDNS_SetupDNSConfig, use ActivateUnicastQuery() instead of just setting q->ThisQInterval directly
+
 Revision 1.633  2007/05/04 21:45:12  cheshire
 Get rid of unused q->RestartTime; Get rid of uDNS_Close (synonym for uDNS_Sleep)
 
@@ -2478,7 +2483,7 @@ mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
 			if (q->LastAnswerPktNum != m->PktNum)
 				{
 				q->LastAnswerPktNum = m->PktNum;
-				if (ActiveQuestion(q) && ++q->RecentAnswerPkts >= 10 &&
+				if (mDNSOpaque16IsZero(q->TargetQID) && ActiveQuestion(q) && ++q->RecentAnswerPkts >= 10 &&
 					q->ThisQInterval > InitialQuestionInterval*32 && m->timenow - q->LastQTxTime < mDNSPlatformOneSecond)
 					{
 					LogMsg("CacheRecordAdd: %##s (%s) got immediate answer burst; restarting exponential backoff sequence",
@@ -4538,6 +4543,28 @@ mDNSlocal DNSServer *GetServerForName(mDNS *m, const domainname *name)
 #define ValidQuestionTarget(Q) (((Q)->Target.type == mDNSAddrType_IPv4 || (Q)->Target.type == mDNSAddrType_IPv6) && \
 	(mDNSSameIPPort((Q)->TargetPort, UnicastDNSPort) || mDNSSameIPPort((Q)->TargetPort, MulticastDNSPort)))
 
+mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question)
+	{
+	if (!question->DuplicateOf)
+		{
+		if (question->LongLived)
+			{
+			question->ThisQInterval = 0;	// Question is suspended, waiting for GetZoneData to complete
+			question->LastQTime     = m->timenow;
+			LogOperation("uDNS_InitLongLivedQuery: %##s %s %s %d",
+				question->qname.c, DNSTypeName(question->qtype), question->AuthInfo ? "(Private)" : "", question->ThisQInterval);
+			if (question->nta) CancelGetZoneData(m, question->nta);
+			question->nta = StartGetZoneData(m, &question->qname, ZoneServiceLLQ, startLLQHandshakeCallback, question);
+			if (!question->nta) LogMsg("ERROR: startLLQ - StartGetZoneData failed");
+			}
+		else
+			{
+			question->ThisQInterval = INIT_UCAST_POLL_INTERVAL / 2;
+			question->LastQTime     = m->timenow - question->ThisQInterval;
+			}
+		}
+	}
+
 mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const question)
 	{
 	if (question->Target.type && !ValidQuestionTarget(question))
@@ -4676,23 +4703,7 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 			if (!mDNSOpaque16IsZero(question->TargetQID))
 				{
 				question->qDNSServer = GetServerForName(m, &question->qname);
-				if (!question->DuplicateOf)
-					{
-					if (question->LongLived)
-						{
-						question->ThisQInterval = 0;	// Question is suspended, waiting for GetZoneData to complete
-						question->LastQTime     = m->timenow;
-						LogOperation("uDNS_InitLongLivedQuery: %##s %s %s %d",
-							question->qname.c, DNSTypeName(question->qtype), question->AuthInfo ? "(Private)" : "", question->ThisQInterval);
-						question->nta = StartGetZoneData(m, &question->qname, ZoneServiceLLQ, startLLQHandshakeCallback, question);
-						if (!question->nta) LogMsg("ERROR: startLLQ - StartGetZoneData failed");
-						}
-					else
-						{
-						question->ThisQInterval = INIT_UCAST_POLL_INTERVAL / 2;
-						question->LastQTime     = m->timenow - question->ThisQInterval;
-						}
-					}
+				ActivateUnicastQuery(m, question);
 				}
 			SetNextQueryTime(m,question);
 			}
@@ -5510,22 +5521,23 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 			}
 
 		for (q = m->Questions; q; q=q->next)								// Scan our list of questions
-			if (!q->InterfaceID || q->InterfaceID == set->InterfaceID)		// If non-specific Q, or Q on this specific interface,
-				{															// then reactivate this question
-				mDNSBool dodelay = flapping && (q->FlappingInterface1 == set->InterfaceID || q->FlappingInterface2 == set->InterfaceID);
-				mDNSs32 initial  = dodelay ? InitialQuestionInterval * 8 : InitialQuestionInterval;
-				mDNSs32 qdelay   = dodelay ? mDNSPlatformOneSecond   * 5 : 0;
-				if (dodelay) LogOperation("No cache records for expired %##s (%s); okay to delay questions a little", q->qname.c, DNSTypeName(q->qtype));
-					
-				if (!q->ThisQInterval || q->ThisQInterval > initial)
-					{
-					q->ThisQInterval = initial;
-					q->RequestUnicast = 2; // Set to 2 because is decremented once *before* we check it
+			if (mDNSOpaque16IsZero(q->TargetQID))
+				if (!q->InterfaceID || q->InterfaceID == set->InterfaceID)		// If non-specific Q, or Q on this specific interface,
+					{															// then reactivate this question
+					mDNSBool dodelay = flapping && (q->FlappingInterface1 == set->InterfaceID || q->FlappingInterface2 == set->InterfaceID);
+					mDNSs32 initial  = dodelay ? InitialQuestionInterval * 8 : InitialQuestionInterval;
+					mDNSs32 qdelay   = dodelay ? mDNSPlatformOneSecond   * 5 : 0;
+					if (dodelay) LogOperation("No cache records for expired %##s (%s); okay to delay questions a little", q->qname.c, DNSTypeName(q->qtype));
+						
+					if (!q->ThisQInterval || q->ThisQInterval > initial)
+						{
+						q->ThisQInterval = initial;
+						q->RequestUnicast = 2; // Set to 2 because is decremented once *before* we check it
+						}
+					q->LastQTime = m->timenow - q->ThisQInterval + qdelay;
+					q->RecentAnswerPkts = 0;
+					SetNextQueryTime(m,q);
 					}
-				q->LastQTime = m->timenow - q->ThisQInterval + qdelay;
-				q->RecentAnswerPkts = 0;
-				SetNextQueryTime(m,q);
-				}
 		
 		// For all our non-specific authoritative resource records (and any dormant records specific to this interface)
 		// we now need them to re-probe if necessary, and then re-announce.
@@ -6291,7 +6303,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 					s             ? &s->addr             : mDNSNULL, mDNSVal16(s             ? s->port             : zeroIPPort),
 					q->qname.c, DNSTypeName(q->qtype));
 				q->qDNSServer = s;
-				q->ThisQInterval = InitialQuestionInterval;
+				ActivateUnicastQuery(m, q);
 				}
 			}
 
