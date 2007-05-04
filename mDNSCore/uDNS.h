@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.60  2007/05/04 21:46:10  cheshire
+Get rid of uDNS_Close (synonym for uDNS_Sleep)
+
 Revision 1.59  2007/05/03 22:40:38  cheshire
 <rdar://problem/4669229> mDNSResponder ignores bogus null target in SRV record
 
@@ -137,7 +140,6 @@ extern void    uDNS_StopLongLivedQuery(mDNS *const m, DNSQuestion *const questio
 
 extern void uDNS_Sleep(mDNS *const m);
 extern void uDNS_Wake(mDNS *const m);
-#define uDNS_Close uDNS_Sleep
 
 // uDNS_UpdateRecord
 // following fields must be set, and the update validated, upon entry.
