@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.372  2007/05/04 22:15:29  cheshire
+Get rid of unused q->RestartTime
+
 Revision 1.371  2007/05/03 22:40:37  cheshire
 <rdar://problem/4669229> mDNSResponder ignores bogus null target in SRV record
 
@@ -1263,7 +1266,6 @@ struct DNSQuestion_struct
 	mDNSu32               CNAMEReferrals;	// Count of how many CNAME redirections we've done
 
 	// Wide Area fields. These are used internally by the uDNS core
-	mDNSs32               RestartTime;		// Mark when we restart a suspended query
 	DNSServer            *qDNSServer;		// Caching server for this query (in the absence of an SRV saying otherwise)
 
 	ZoneData           *nta;				// Used for getting zone data for private or LLQ query
@@ -1597,9 +1599,9 @@ struct mDNS_struct
 	LargeCacheRecord  rec;                  // Resource Record extracted from received message
 	};
 
-#define FORALL_CACHERECORDS(SLOT,CG,CR)                          \
-	for ((SLOT) = 0; (SLOT) < CACHE_HASH_SLOTS; (SLOT)++)        \
-		for((CG)=m->rrcache_hash[(SLOT)]; (CG); (CG)=(CG)->next) \
+#define FORALL_CACHERECORDS(SLOT,CG,CR)                           \
+	for ((SLOT) = 0; (SLOT) < CACHE_HASH_SLOTS; (SLOT)++)         \
+		for ((CG)=m->rrcache_hash[(SLOT)]; (CG); (CG)=(CG)->next) \
 			for ((CR) = (CG)->members; (CR); (CR)=(CR)->next)
 
 // ***************************************************************************
