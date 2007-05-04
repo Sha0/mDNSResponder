@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.632  2007/05/04 20:20:50  cheshire
+<rdar://problem/5167331> RegisterRecord and RegisterService need to cancel StartGetZoneData
+Need to set srs->nta = mDNSNULL; when regState_NoTarget
+
 Revision 1.631  2007/05/04 00:39:42  cheshire
 <rdar://problem/4410011> Eliminate looping SOA lookups
 When creating a cascade of negative SOA cache entries, CacheGroup pointer cg needs to be updated
@@ -5730,6 +5734,7 @@ mDNSlocal mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 		// defer registration until we've got a target
 		debugf("uDNS_RegisterService - no target for %##s", srs->RR_SRV.resrec.name->c);
 		srs->state = regState_NoTarget;
+		srs->nta   = mDNSNULL;
 		return mStatus_NoError;
 		}
 
