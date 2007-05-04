@@ -38,6 +38,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.631  2007/05/04 00:39:42  cheshire
+<rdar://problem/4410011> Eliminate looping SOA lookups
+When creating a cascade of negative SOA cache entries, CacheGroup pointer cg needs to be updated
+each time round the loop to reference the right CacheGroup for each newly fabricated SOA name
+
 Revision 1.630  2007/05/03 22:40:38  cheshire
 <rdar://problem/4669229> mDNSResponder ignores bogus null target in SRV record
 
@@ -2351,9 +2356,10 @@ mDNSexport void AnswerQuestionWithResourceRecord(mDNS *const m, CacheRecord *con
 	// If any counters or similar are added here, care must be taken to ensure that they are not double-incremented by this.
 
 	rr->LastUsed = m->timenow;
-	if (ActiveQuestion(q) && rr->CRActiveQuestion != q)
+	if (!q->DuplicateOf && rr->CRActiveQuestion != q)
 		{
 		if (!rr->CRActiveQuestion) m->rrcache_active++;	// If not previously active, increment rrcache_active count
+		debugf("AnswerQuestionWithResourceRecord: Updating CRActiveQuestion to %p for cache record %s", q, CRDisplayString(m,rr));
 		rr->CRActiveQuestion = q;						// We know q is non-null
 		SetNextCacheCheckTime(m, rr);
 		}
@@ -2652,7 +2658,7 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m, CacheGroup *const cg)
 					}
 				}
 			verbosedebugf("CheckCacheExpiration:%6d %5d %s",
-				(event-m->timenow) / mDNSPlatformOneSecond, CacheCheckGracePeriod(rr), CRDisplayString(m, rr));
+				(event - m->timenow) / mDNSPlatformOneSecond, CacheCheckGracePeriod(rr), CRDisplayString(m, rr));
 			if (m->NextCacheCheck - (event + CacheCheckGracePeriod(rr)) > 0)
 				m->NextCacheCheck = (event + CacheCheckGracePeriod(rr));
 			rp = &rr->next;
@@ -4336,6 +4342,7 @@ exit:
 					name = (const domainname *)(name->c + 1 + name->c[0]);
 					hash = DomainNameHashValue(name);
 					slot = HashSlot(name);
+					cg   = CacheGroupForName(m, slot, hash, name);
 					}
 				}
 			}
@@ -4725,8 +4732,8 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 	// But don't trash ThisQInterval until afterwards.
 	question->ThisQInterval = -1;
 
-	// If there are any cache records referencing this as their active question, then see if any other
-	// question that is also referencing them, else their CRActiveQuestion needs to get set to NULL.
+	// If there are any cache records referencing this as their active question, then see if there is any
+	// other question that is also referencing them, else their CRActiveQuestion needs to get set to NULL.
 	for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
 		{
 		if (rr->CRActiveQuestion == question)
@@ -4735,8 +4742,7 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 			for (q = m->Questions; q; q=q->next)		// Scan our list of questions
 				if (ActiveQuestion(q) && ResourceRecordAnswersQuestion(&rr->resrec, q))
 					break;
-			verbosedebugf("mDNS_StopQuery_internal: Cache RR %##s (%s) setting CRActiveQuestion to %p",
-				rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype), q);
+			debugf("mDNS_StopQuery_internal: Updating CRActiveQuestion to %p for cache record %s", q, CRDisplayString(m,rr));
 			rr->CRActiveQuestion = q;		// Question used to be active; new value may or may not be null
 			if (!q) m->rrcache_active--;	// If no longer active, decrement rrcache_active count
 			}
@@ -4767,8 +4773,9 @@ mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const ques
 
 	// And finally, cancel any associated GetZoneData operation that's still running.
 	// Must not do this until last, because there's a good chance the GetZoneData question is the next in the list,
-	// so if we delete it earlier in this routine, we could find that our "question->next" pointer above
-	// 
+	// so if we delete it earlier in this routine, we could find that our "question->next" pointer above is already
+	// invalid before we even use it. By making sure that we update m->CurrentQuestion and m->NewQuestions if necessary
+	// *first*, then they're all ready to be updated a second time if necessary when we cancel our GetZoneData query.
 	if (question->nta) CancelGetZoneData(m, question->nta);
 	if (question->tcpSock) mDNSPlatformTCPCloseConnection(question->tcpSock);
 	if (question->udpSock) mDNSPlatformUDPClose          (question->udpSock);
