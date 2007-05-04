@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.405  2007/05/04 20:21:39  cheshire
+Improve "connect failed" error message
+
 Revision 1.404  2007/05/02 19:41:53  cheshire
 No need to alarm people with "Connection reset by peer" syslog message
 
@@ -439,7 +442,7 @@ mDNSexport void NotifyOfElusiveBug(const char *title, const char *msg)	// Both s
 #endif /* NO_CFUSERNOTIFICATION */
 	}
 
-mDNSlocal struct ifaddrs* myGetIfAddrs(int refresh)
+mDNSlocal struct ifaddrs *myGetIfAddrs(int refresh)
 	{
 	static struct ifaddrs *ifa = NULL;
 
@@ -1079,7 +1082,7 @@ mDNSexport mStatus mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr *dst, 
 	if (connect(sock->fd, (struct sockaddr *)&saddr, sizeof(saddr)) < 0)
 		{
 		if (errno == EINPROGRESS) return mStatus_ConnPending;
-		LogMsg("ERROR: mDNSPlatformTCPConnect - connect failed: %s", strerror(errno));
+		LogMsg("ERROR: mDNSPlatformTCPConnect - connect failed: socket %d: Error %d %s", sock->fd, errno, strerror(errno));
 		close(sock->fd);
 		return mStatus_ConnFailed;
 		}
