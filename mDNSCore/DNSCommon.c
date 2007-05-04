@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.154  2007/05/04 20:19:53  cheshire
+Improve DumpPacket() output
+
 Revision 1.153  2007/05/01 21:46:31  cheshire
 Move GetLLQOptData/GetPktLease from uDNS.c into DNSCommon.c so that dnsextd can use them
 
@@ -2169,7 +2172,11 @@ mDNSexport void DumpPacket(mDNS *const m, const DNSMessage *const msg, const mDN
 	int i;
 	DNSQuestion q;
 
-	LogMsg("DNS %s %d bytes", msg->h.flags.b[0] & kDNSFlag0_QR_Response ? "Response" : "Query", end - msg->data);
+	LogMsg("DNS %s %02X%02X %d bytes",
+		msg->h.flags.b[0] & kDNSFlag0_QR_Response ? "Response" : "Query",
+		msg->h.flags.b[0], msg->h.flags.b[1],
+		end - msg->data);
+
 	LogMsg("%2d Questions", msg->h.numQuestions);
 	for (i = 0; i < msg->h.numQuestions && ptr; i++)
 		{
