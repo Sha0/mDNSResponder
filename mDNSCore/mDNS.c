@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.633  2007/05/04 21:45:12  cheshire
+Get rid of unused q->RestartTime; Get rid of uDNS_Close (synonym for uDNS_Sleep)
+
 Revision 1.632  2007/05/04 20:20:50  cheshire
 <rdar://problem/5167331> RegisterRecord and RegisterService need to cancel StartGetZoneData
 Need to set srs->nta = mDNSNULL; when regState_NoTarget
@@ -4484,7 +4487,6 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const questi
 				q->RequestUnicast    = question->RequestUnicast;
 				q->LastQTxTime       = question->LastQTxTime;
 				q->CNAMEReferrals    = question->CNAMEReferrals;
-				q->RestartTime       = question->RestartTime;
 				q->nta               = question->nta;
 				q->servAddr          = question->servAddr;
 				q->servPort          = question->servPort;
@@ -4629,7 +4631,6 @@ mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const que
 		question->AuthInfo          = GetAuthInfoForName(m, &question->qname);
 		question->CNAMEReferrals    = 0;
 
-		question->RestartTime       = 0;
 		question->qDNSServer        = mDNSNULL;
 		question->nta               = mDNSNULL;
 		question->servAddr          = zeroAddr;
@@ -6366,7 +6367,7 @@ mDNSexport void mDNS_Close(mDNS *const m)
 	m->mDNS_shutdown = mDNStrue;
 
 #ifndef UNICAST_DISABLED
-	uDNS_Close(m);
+	uDNS_Sleep(m);
 #endif
 	rrcache_totalused = m->rrcache_totalused;
 	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
