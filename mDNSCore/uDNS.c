@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.363  2007/05/04 22:12:48  cheshire
+Work towards solving <rdar://problem/5176892> "uDNS_CheckQuery: LastQTime" log messages
+When code gets in this invalid state, double ThisQInterval each time, to avoid excessive logging
+
 Revision 1.362  2007/05/04 21:23:05  cheshire
 <rdar://problem/5167263> Private DNS always returns no answers in the initial LLQ setup response
 Preparatory work to enable us to do a four-way LLQ handshake over TCP, if we decide that's what we want
@@ -631,7 +635,7 @@ mDNSexport void mDNS_AddDNSServer(mDNS *const m, const domainname *d, const mDNS
 	(*p)->next = mDNSNULL;
 	}
 
- // ***************************************************************************
+// ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark - authorization management
 #endif
@@ -699,7 +703,7 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 	return(mStatus_NoError);
 	}
 
- // ***************************************************************************
+// ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark - NAT Traversal
 #endif
@@ -938,6 +942,11 @@ mDNSlocal void RefreshNATMapping(NATTraversalInfo *n, mDNS *m)
 	uDNS_SendNATMsg(n, m);
 	}
 
+// ***************************************************************************
+#if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark - Long-Lived Queries
+#endif
+
 mDNSlocal void StartLLQPolling(mDNS *const m, DNSQuestion *q)
 	{
 	LogOperation("StartLLQPolling: %##s", q->qname.c);
@@ -1137,11 +1146,11 @@ mDNSlocal void recvSetupResponse(mDNS *const m, mDNSu8 rcode, DNSQuestion *const
 		if (opt->OptData.llq.err) { LogMsg("ERROR: recvSetupResponse %##s code %d from server", q->qname.c, opt->OptData.llq.err); q->state = LLQ_Error; goto fail; }
 		if (!mDNSSameOpaque64(&q->id, &opt->OptData.llq.id))
 			{ LogMsg("recvSetupResponse - ID changed.  discarding"); goto exit; } // this can happen rarely (on packet loss + reordering)
-		q->expire     = m->timenow + ((mDNSs32)opt->OptData.llq.llqlease *  mDNSPlatformOneSecond    );
+		q->expire        = m->timenow + ((mDNSs32)opt->OptData.llq.llqlease *  mDNSPlatformOneSecond    );
 		q->LastQTime     = m->timenow;
 		q->ThisQInterval =              ((mDNSs32)opt->OptData.llq.llqlease * (mDNSPlatformOneSecond / 2));
-		q->origLease  = opt->OptData.llq.llqlease;
-		q->state      = LLQ_Established;
+		q->origLease     = opt->OptData.llq.llqlease;
+		q->state         = LLQ_Established;
 		goto exit;
 		}
 
@@ -2130,7 +2139,7 @@ mDNSlocal void CheckForUnreferencedLLQMapping(mDNS *m)
 		}
 	}
 
- // ***************************************************************************
+// ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark - host name and interface management
 #endif
@@ -3330,7 +3339,7 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 	if ((q->state == LLQ_Refresh && q->ntries >= kLLQ_MAX_TRIES) || q->expire - m->timenow < 0)
 		{
 		LogMsg("Unable to refresh LLQ %##s - will retry in %d minutes", q->qname.c, kLLQ_DEF_RETRY/60);
-		q->state    = LLQ_Retry;
+		q->state         = LLQ_Retry;
 		q->LastQTime     = m->timenow;
 		q->ThisQInterval = kLLQ_DEF_RETRY * mDNSPlatformOneSecond;
 		return;
@@ -3918,8 +3927,10 @@ mDNSexport void uDNS_CheckQuery(mDNS *const m)
 			{
 			// This should never happen. Any LLQ not in states LLQ_InitialRequest to LLQ_Established should not have have ThisQInterval set.
 			// (uDNS_CheckQuery() is only called for DNSQuestions with non-zero ThisQInterval)
-			LogMsg("uDNS_CheckQuery: LastQTime for %##s (%s) %d is %d", q->qname.c, DNSTypeName(q->qtype), q->state, q->ThisQInterval);
+			LogMsg("uDNS_CheckQuery: %##s (%s) state %d sendtime %d ThisQInterval %d",
+				q->qname.c, DNSTypeName(q->qtype), q->state, sendtime - m->timenow, q->ThisQInterval);
 			q->LastQTime = m->timenow;
+			q->ThisQInterval *= 2;
 			}
 		}
 
@@ -4176,7 +4187,6 @@ mDNSlocal void RestartQueries(mDNS *m)
 
 		if (!mDNSOpaque16IsZero(q->TargetQID) && !q->DuplicateOf)
 			{
-			q->RestartTime = m->timenow;
 			if (q->LongLived)
 				{
 				if (q->state == LLQ_Suspended || q->state == LLQ_NatMapWaitTCP || q->state == LLQ_NatMapWaitUDP)
@@ -4195,7 +4205,7 @@ mDNSlocal void RestartQueries(mDNS *m)
 					q->nta = StartGetZoneData(m, &q->qname, ZoneServiceLLQ, startLLQHandshakeCallback, q);
 					}
 				}
-			else { q->LastQTime = m->timenow; q->ThisQInterval = INIT_UCAST_POLL_INTERVAL; } // trigger poll in 1 second (to reduce packet rate when restarts come in rapid succession)
+			else { q->LastQTime = m->timenow; q->ThisQInterval = INIT_UCAST_POLL_INTERVAL; } // trigger poll in 3 seconds (to reduce packet rate when restarts come in rapid succession)
 			}
 		}
 	m->CurrentQuestion = mDNSNULL;
