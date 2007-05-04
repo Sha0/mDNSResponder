@@ -1541,7 +1541,6 @@
 				JAVA_COMPILER_TARGET_VM_VERSION = 1.4;
 				JAVA_SOURCE_SUBDIR = .;
 				LIBRARY_STYLE = STATIC;
-				MACOSX_DEPLOYMENT_TARGET = 10.2;
 				MVERS = "\"mDNSResponder (Engineering Build)\"";
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
