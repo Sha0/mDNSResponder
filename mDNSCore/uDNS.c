@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.362  2007/05/04 21:23:05  cheshire
+<rdar://problem/5167263> Private DNS always returns no answers in the initial LLQ setup response
+Preparatory work to enable us to do a four-way LLQ handshake over TCP, if we decide that's what we want
+
 Revision 1.361  2007/05/03 23:50:48  cheshire
 <rdar://problem/4669229> mDNSResponder ignores bogus null target in SRV record
 In the case of negative answers for the address record, set the server address to zerov4Addr
@@ -1033,67 +1037,20 @@ mDNSlocal void sendChallengeResponse(const mDNS *const m, DNSQuestion *const q, 
 		}
 
 	q->LastQTime     = m->timenow;
-	q->ThisQInterval = (kLLQ_INIT_RESEND * q->ntries * mDNSPlatformOneSecond);
+	q->ThisQInterval = q->tcpSock ? 0 : (kLLQ_INIT_RESEND * q->ntries * mDNSPlatformOneSecond);		// If using TCP, don't need to retransmit
 
 	if (constructQueryMsg(&response, &responsePtr, q)) goto error;
 	responsePtr = putLLQ(&response, responsePtr, q, llq, mDNSfalse);
 	if (!responsePtr) { LogMsg("ERROR: sendChallengeResponse - putLLQ"); goto error; }
 
-	err = mDNSSendDNSMessage(m, &response, responsePtr, mDNSInterface_Any, &q->servAddr, q->servPort, mDNSNULL, mDNSNULL);
+	//LogOperation("sendChallengeResponse %#a:%d %d %p %d", &q->servAddr, mDNSVal16(q->servPort), q->tcpSock, q->AuthInfo, responsePtr - (mDNSu8 *)&response);
+	err = mDNSSendDNSMessage(m, &response, responsePtr, mDNSInterface_Any, &q->servAddr, q->servPort, q->tcpSock, q->AuthInfo);
 	if (err) debugf("ERROR: sendChallengeResponse - mDNSSendDNSMessage returned %ld", err);
 	// on error, we procede as normal and retry after the appropriate interval
 
 	return;
 
 	error:
-	q->state = LLQ_Error;
-	}
-
-mDNSlocal void hndlRequestChallenge(mDNS *const m, const LLQOptData *const llq, DNSQuestion *const q)
-	{
-	switch(llq->err)
-		{
-		case LLQErr_NoError: break;
-		case LLQErr_ServFull:
-			LogMsg("hndlRequestChallenge - received ServFull from server for LLQ %##s Retry in %lu sec", q->qname.c, llq->llqlease);
-			q->LastQTime     = m->timenow;
-			q->ThisQInterval = ((mDNSs32)llq->llqlease * mDNSPlatformOneSecond);
-			q->state = LLQ_Retry;
-		case LLQErr_Static:
-			q->state = LLQ_Static;
-			LogMsg("LLQ %##s: static", q->qname.c);
-			return;
-		case LLQErr_FormErr:
-			LogMsg("ERROR: hndlRequestChallenge - received FormErr from server for LLQ %##s", q->qname.c);
-			goto error;
-		case LLQErr_BadVers:
-			LogMsg("ERROR: hndlRequestChallenge - received BadVers from server");
-			goto error;
-		case LLQErr_UnknownErr:
-			LogMsg("ERROR: hndlRequestChallenge - received UnknownErr from server for LLQ %##s", q->qname.c);
-			goto error;
-		default:
-			LogMsg("ERROR: hndlRequestChallenge - received invalid error %d for LLQ %##s", llq->err, q->qname.c);
-			goto error;
-		}
-
-	if (q->origLease != llq->llqlease)
-		debugf("hndlRequestChallenge: requested lease %lu, granted lease %lu", q->origLease, llq->llqlease);
-
-	// cache expiration in case we go to sleep before finishing setup
-	q->origLease = llq->llqlease;
-	q->expire = m->timenow + ((mDNSs32)llq->llqlease * mDNSPlatformOneSecond);
-
-	// update state
-	q->state  = LLQ_SecondaryRequest;
-	q->id     = llq->id;
-	// if (q->ntries == 1) return;	// Test for simulating loss of challenge response packet
-	q->ntries = 0; // first attempt to send response
-
-	sendChallengeResponse(m, q, llq);
-	return;
-
-error:
 	q->state = LLQ_Error;
 	}
 
@@ -1112,12 +1069,61 @@ mDNSlocal void recvSetupResponse(mDNS *const m, mDNSu8 rcode, DNSQuestion *const
 
 	if (q->state == LLQ_InitialRequest)
 		{
-		hndlRequestChallenge(m, &opt->OptData.llq, q);
+		const LLQOptData *const llq = &opt->OptData.llq;
+		//LogOperation("Got LLQ_InitialRequest");
+
+		switch(llq->err)
+			{
+			case LLQErr_NoError: break;
+			case LLQErr_ServFull:
+				LogMsg("hndlRequestChallenge - received ServFull from server for LLQ %##s Retry in %lu sec", q->qname.c, llq->llqlease);
+				q->LastQTime     = m->timenow;
+				q->ThisQInterval = ((mDNSs32)llq->llqlease * mDNSPlatformOneSecond);
+				q->state = LLQ_Retry;
+			case LLQErr_Static:
+				q->state = LLQ_Static;
+				q->ThisQInterval = 0;
+				LogMsg("LLQ %##s: static", q->qname.c);
+				goto exit;
+			case LLQErr_FormErr:
+				LogMsg("ERROR: hndlRequestChallenge - received FormErr from server for LLQ %##s", q->qname.c);
+				goto error;
+			case LLQErr_BadVers:
+				LogMsg("ERROR: hndlRequestChallenge - received BadVers from server");
+				goto error;
+			case LLQErr_UnknownErr:
+				LogMsg("ERROR: hndlRequestChallenge - received UnknownErr from server for LLQ %##s", q->qname.c);
+				goto error;
+			default:
+				LogMsg("ERROR: hndlRequestChallenge - received invalid error %d for LLQ %##s", llq->err, q->qname.c);
+				goto error;
+			}
+	
+		if (q->origLease != llq->llqlease)
+			debugf("hndlRequestChallenge: requested lease %lu, granted lease %lu", q->origLease, llq->llqlease);
+	
+		// cache expiration in case we go to sleep before finishing setup
+		q->origLease = llq->llqlease;
+		q->expire = m->timenow + ((mDNSs32)llq->llqlease * mDNSPlatformOneSecond);
+	
+		// update state
+		q->state  = LLQ_SecondaryRequest;
+		q->id     = llq->id;
+		// if (q->ntries == 1) goto exit;	// Test for simulating loss of challenge response packet
+		q->ntries = 0; // first attempt to send response
+	
+		sendChallengeResponse(m, q, llq);
+		goto exit;
+	
+		error:
+		q->state = LLQ_Error;
 		goto exit;
 		}
 
 	if (q->state == LLQ_SecondaryRequest)
 		{
+		//LogOperation("Got LLQ_SecondaryRequest");
+
 		// Fix this immediately if not sooner.  Copy the id from the LLQOptData into our DNSQuestion struct.  This is only
 		// an issue for private LLQs, because we skip parts 2 and 3 of the handshake.  This is related to a bigger
 		// problem of the current implementation of TCP LLQ setup: we're not handling state transitions correctly
@@ -1198,12 +1204,12 @@ mDNSexport mDNSBool uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *const 
 							if (mDNSSameAddress(srcaddr, &q->servAddr))
 								{
 								LLQ_State oldstate = q->state;
-								//LogMsg("uDNS_recvLLQResponse: recvSetupResponse state %d", oldstate);
 								recvSetupResponse(m, msg->h.flags.b[1] & kDNSFlag1_RC, q, opt);
 								m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 								//DumpPacket(m, msg, end);
 								// If this is our Ack+Answers packet resulting from a correct challenge response, then it's a full list
 								// of answers, and any cache answers we have that are not included in this packet need to be flushed
+								//LogMsg("uDNS_recvLLQResponse: recvSetupResponse state %d returning %d", oldstate, oldstate != LLQ_SecondaryRequest);
 								return (oldstate != LLQ_SecondaryRequest);
 								}
 							}
@@ -1211,11 +1217,14 @@ mDNSexport mDNSBool uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *const 
 					}
 				}
 			m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
+			//LogMsg("uDNS_recvLLQResponse: returning 0");
 			}
 		}
 	return mDNSfalse;
 	}
 
+// tcpCallback is called to handle events (e.g. connection opening and data reception) on TCP connections for
+// Private DNS operations -- private queries, private LLQs, private record updates and private service updates
 mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEstablished, mStatus err)
 	{
 	tcpInfo_t		*	tcpInfo = (tcpInfo_t *)context;
@@ -1464,9 +1473,10 @@ mDNSlocal void startLLQHandshake(mDNS *m, DNSQuestion *q, mDNSBool defer)
 			}
 
 		// update question state
-		q->state         = LLQ_SecondaryRequest;
+		//q->state         = LLQ_InitialRequest;
+		q->state         = LLQ_SecondaryRequest;		// Right now, for private DNS, we skip the four-way LLQ handshake
 		q->origLease     = kLLQ_DefLease;
-		q->ThisQInterval = (kLLQ_INIT_RESEND * mDNSPlatformOneSecond);
+		q->ThisQInterval = 0;
 		q->LastQTime     = m->timenow;
 		}
 	else
@@ -1511,8 +1521,8 @@ mDNSlocal void startLLQHandshake(mDNS *m, DNSQuestion *q, mDNSBool defer)
 		// update question state
 		q->state         = LLQ_InitialRequest;
 		q->origLease     = kLLQ_DefLease;
-		q->LastQTime     = m->timenow;
 		q->ThisQInterval = (kLLQ_INIT_RESEND * mDNSPlatformOneSecond);
+		q->LastQTime     = m->timenow - q->ThisQInterval;
 
 		err = mStatus_NoError;
 		}
