@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.374  2007/05/07 22:07:47  cheshire
+<rdar://problem/4738025> Enhance GetLargeResourceRecord to decompress more record types
+
 Revision 1.373  2007/05/07 20:43:45  cheshire
 <rdar://problem/4241419> Reduce the number of queries and announcements
 
@@ -438,13 +441,47 @@ typedef enum				// From RFC 1035
 	kDNSType_MINFO,			// 14 Mailbox information
 	kDNSType_MX,			// 15 Mail Exchanger
 	kDNSType_TXT,			// 16 Arbitrary text string
+	kDNSType_RP,			// 17 Responsible person.
+	kDNSType_AFSDB,			// 18 AFS cell database.
+	kDNSType_X25,			// 19 X_25 calling address.
+	kDNSType_ISDN,			// 20 ISDN calling address.
+	kDNSType_RT,			// 21 Router.
+	kDNSType_NSAP,			// 22 NSAP address.
+	kDNSType_NSAP_PTR,		// 23 Reverse NSAP lookup (deprecated).
+	kDNSType_SIG,			// 24 Security signature.
+	kDNSType_KEY,			// 25 Security key.
+	kDNSType_PX,			// 26 X.400 mail mapping.
+	kDNSType_GPOS,			// 27 Geographical position (withdrawn).
+	kDNSType_AAAA,			// 28 IPv6 Address.
+	kDNSType_LOC,			// 29 Location Information.
+	kDNSType_NXT,			// 30 Next domain (security).
+	kDNSType_EID,			// 31 Endpoint identifier.
+	kDNSType_NIMLOC,		// 32 Nimrod Locator.
+	kDNSType_SRV,			// 33 Service record.
+	kDNSType_ATMA,			// 34 ATM Address
+	kDNSType_NAPTR,			// 35 Naming Authority PoinTeR
+	kDNSType_KX,			// 36 Key Exchange
+	kDNSType_CERT,			// 37 Certification record
+	kDNSType_A6,			// 38 IPv6 Address (deprecated)
+	kDNSType_DNAME,			// 39 Non-terminal DNAME (for IPv6)
+	kDNSType_SINK,			// 40 Kitchen sink (experimentatl)
+	kDNSType_OPT,			// 41 EDNS0 option (meta-RR)
+	kDNSType_APL,			// 42 Address Prefix List
+	kDNSType_DS,			// 43 Delegation Signer
+	kDNSType_SSHFP,			// 44 SSH Key Fingerprint
+	kDNSType_IPSECKEY,		// 45 IPSECKEY
+	kDNSType_RRSIG,			// 46 RRSIG
+	kDNSType_NSEC,			// 47 NSEC
+	kDNSType_DNSKEY,		// 48 DNSKEY
+	kDNSType_DHCID,			// 49 DHCID
 
-	kDNSType_AAAA = 28,		// 28 IPv6 address
-	kDNSType_SRV  = 33,		// 33 Service record
-	kDNSType_OPT  = 41,     // EDNS0 OPT record
-	kDNSType_TSIG = 250,    // 250 Transaction Signature
-
-	kDNSQType_ANY = 255		// Not a DNS type, but a DNS query type, meaning "all types"
+	kDNSType_TKEY = 249,	// 249 Transaction key
+	kDNSType_TSIG,			// 250 Transaction signature.
+	kDNSType_IXFR,			// 251 Incremental zone transfer.
+	kDNSType_AXFR,			// 252 Transfer zone of authority.
+	kDNSType_MAILB,			// 253 Transfer mailbox records.
+	kDNSType_MAILA,			// 254 Transfer mail agent records.
+	kDNSQType_ANY			// Not a DNS type, but a DNS query type, meaning "all types"
 	} DNS_TypeValues;
 
 // ***************************************************************************
@@ -734,6 +771,8 @@ enum
 
 typedef packedstruct { mDNSu16 priority; mDNSu16 weight; mDNSIPPort port; domainname target;   } rdataSRV;
 typedef packedstruct { mDNSu16 preference;                                domainname exchange; } rdataMX;
+typedef packedstruct { domainname mbox; domainname txt;                                        } rdataRP;
+typedef packedstruct { mDNSu16 preference; domainname map822; domainname mapx400;              } rdataPX;
 
 typedef packedstruct
 	{
@@ -795,12 +834,14 @@ typedef union
 	{
 	mDNSu8      data[StandardAuthRDSize];
 	mDNSv4Addr  ipv4;		// For 'A' record
+	domainname  name;		// For PTR, NS, CNAME, DNAME
+	rdataSOA    soa;
+	UTF8str255  txt;
+	rdataMX     mx;
+	rdataRP     rp;
+	rdataPX     px;
 	mDNSv6Addr  ipv6;		// For 'AAAA' record
-	domainname  name;		// For PTR, NS, and CNAME records
-	UTF8str255  txt;		// For TXT record
-	rdataSRV    srv;		// For SRV record
-	rdataMX     mx;			// For MX record
-	rdataSOA    soa;		// For SOA record
+	rdataSRV    srv;
 	rdataOPT    opt;		// For EDNS0 OPT record; RDataBody may contain multiple variable-length rdataOPT objects packed together
 	} RDataBody;
 

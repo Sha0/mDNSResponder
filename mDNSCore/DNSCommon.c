@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.155  2007/05/07 22:07:47  cheshire
+<rdar://problem/4738025> Enhance GetLargeResourceRecord to decompress more record types
+
 Revision 1.154  2007/05/04 20:19:53  cheshire
 Improve DumpPacket() output
 
@@ -1956,17 +1959,34 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 							rr->resrec.rdata->u.ipv4.b[3] = ptr[3];
 							break;
 
-		case kDNSType_CNAME:// Same as PTR
 		case kDNSType_NS:
-		case kDNSType_PTR:	ptr = getDomainName(msg, ptr, end, &rr->resrec.rdata->u.name);
+		case kDNSType_CNAME:
+		case kDNSType_PTR:
+		case kDNSType_DNAME:ptr = getDomainName(msg, ptr, end, &rr->resrec.rdata->u.name);
 							if (ptr != end) { debugf("GetLargeResourceRecord: Malformed CNAME/PTR RDATA name"); return(mDNSNULL); }
 							//debugf("%##s PTR %##s rdlen %d", rr->resrec.name.c, rr->resrec.rdata->u.name.c, pktrdlength);
 							break;
 
-		case kDNSType_NULL:	//Same as TXT
-		case kDNSType_HINFO://Same as TXT
-		case kDNSType_TSIG: //Same as TXT
-		case kDNSType_TXT:  if (pktrdlength > rr->resrec.rdata->MaxRDLength)
+		case kDNSType_SOA:  ptr = getDomainName(msg, ptr, end, &rr->resrec.rdata->u.soa.mname);
+							if (!ptr)              { debugf("GetLargeResourceRecord: Malformed SOA RDATA mname"); return mDNSNULL; }
+							ptr = getDomainName(msg, ptr, end, &rr->resrec.rdata->u.soa.rname);
+							if (!ptr)              { debugf("GetLargeResourceRecord: Malformed SOA RDATA rname"); return mDNSNULL; }
+			                if (ptr + 0x14 != end) { debugf("GetLargeResourceRecord: Malformed SOA RDATA");       return mDNSNULL; }
+                			rr->resrec.rdata->u.soa.serial  = (mDNSs32) ((mDNSs32)ptr[0x00] << 24 | (mDNSs32)ptr[0x01] << 16 | (mDNSs32)ptr[0x02] << 8 | ptr[0x03]);
+			                rr->resrec.rdata->u.soa.refresh = (mDNSu32) ((mDNSu32)ptr[0x04] << 24 | (mDNSu32)ptr[0x05] << 16 | (mDNSu32)ptr[0x06] << 8 | ptr[0x07]);
+			                rr->resrec.rdata->u.soa.retry   = (mDNSu32) ((mDNSu32)ptr[0x08] << 24 | (mDNSu32)ptr[0x09] << 16 | (mDNSu32)ptr[0x0A] << 8 | ptr[0x0B]);
+			                rr->resrec.rdata->u.soa.expire  = (mDNSu32) ((mDNSu32)ptr[0x0C] << 24 | (mDNSu32)ptr[0x0D] << 16 | (mDNSu32)ptr[0x0E] << 8 | ptr[0x0F]);
+			                rr->resrec.rdata->u.soa.min     = (mDNSu32) ((mDNSu32)ptr[0x10] << 24 | (mDNSu32)ptr[0x11] << 16 | (mDNSu32)ptr[0x12] << 8 | ptr[0x13]);
+			                break;
+
+		case kDNSType_NULL:
+		case kDNSType_HINFO:
+		case kDNSType_TSIG:
+		case kDNSType_TXT:
+		case kDNSType_X25:
+		case kDNSType_ISDN:
+		case kDNSType_LOC:
+		case kDNSType_DHCID:if (pktrdlength > rr->resrec.rdata->MaxRDLength)
 								{
 								debugf("GetLargeResourceRecord: %s rdata size (%d) exceeds storage (%d)",
 									DNSTypeName(rr->resrec.rrtype), pktrdlength, rr->resrec.rdata->MaxRDLength);
@@ -1974,6 +1994,30 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 								}
 							rr->resrec.rdlength = pktrdlength;
 							mDNSPlatformMemCopy(rr->resrec.rdata->u.data, ptr, pktrdlength);
+							break;
+
+		case kDNSType_MX:
+		case kDNSType_AFSDB:
+		case kDNSType_RT:
+		case kDNSType_KX:	if (pktrdlength < 3) return(mDNSNULL);	// Preference + domainname
+							rr->resrec.rdata->u.mx.preference = (mDNSu16)((mDNSu16)ptr[0] <<  8 | ptr[1]);
+							ptr = getDomainName(msg, ptr+2, end, &rr->resrec.rdata->u.mx.exchange);
+							if (ptr != end) { debugf("GetLargeResourceRecord: Malformed MX name"); return(mDNSNULL); }
+							//debugf("%##s SRV %##s rdlen %d", rr->resrec.name.c, rr->resrec.rdata->u.srv.target.c, pktrdlength);
+							break;
+
+		case kDNSType_RP:	ptr = getDomainName(msg, ptr, end, &rr->resrec.rdata->u.rp.mbox);
+							if (!ptr)       { debugf("GetLargeResourceRecord: Malformed RP mbox"); return mDNSNULL; }
+							ptr = getDomainName(msg, ptr, end, &rr->resrec.rdata->u.rp.txt);
+							if (ptr != end) { debugf("GetLargeResourceRecord: Malformed RP txt"); return mDNSNULL; }
+							break;
+
+		case kDNSType_PX:	if (pktrdlength < 4) return(mDNSNULL);	// Preference + domainname + domainname
+							rr->resrec.rdata->u.px.preference = (mDNSu16)((mDNSu16)ptr[0] <<  8 | ptr[1]);
+							ptr = getDomainName(msg, ptr, end, &rr->resrec.rdata->u.px.map822);
+							if (!ptr)       { debugf("GetLargeResourceRecord: Malformed PX map822"); return mDNSNULL; }
+							ptr = getDomainName(msg, ptr, end, &rr->resrec.rdata->u.px.mapx400);
+							if (ptr != end) { debugf("GetLargeResourceRecord: Malformed PX mapx400"); return mDNSNULL; }
 							break;
 
 		case kDNSType_AAAA:	if (pktrdlength != sizeof(mDNSv6Addr)) return(mDNSNULL);
@@ -1989,18 +2033,6 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 							if (ptr != end) { debugf("GetLargeResourceRecord: Malformed SRV RDATA name"); return(mDNSNULL); }
 							//debugf("%##s SRV %##s rdlen %d", rr->resrec.name.c, rr->resrec.rdata->u.srv.target.c, pktrdlength);
 							break;
-
-		case kDNSType_SOA:  ptr = getDomainName(msg, ptr, end, &rr->resrec.rdata->u.soa.mname);
-							if (!ptr)              { debugf("GetLargeResourceRecord: Malformed SOA RDATA mname"); return mDNSNULL; }
-							ptr = getDomainName(msg, ptr, end, &rr->resrec.rdata->u.soa.rname);
-							if (!ptr)              { debugf("GetLargeResourceRecord: Malformed SOA RDATA rname"); return mDNSNULL; }
-			                if (ptr + 0x14 != end) { debugf("GetLargeResourceRecord: Malformed SOA RDATA");       return mDNSNULL; }
-                			rr->resrec.rdata->u.soa.serial  = (mDNSs32) ((mDNSs32)ptr[0x00] << 24 | (mDNSs32)ptr[0x01] << 16 | (mDNSs32)ptr[0x02] << 8 | ptr[0x03]);
-			                rr->resrec.rdata->u.soa.refresh = (mDNSu32) ((mDNSu32)ptr[0x04] << 24 | (mDNSu32)ptr[0x05] << 16 | (mDNSu32)ptr[0x06] << 8 | ptr[0x07]);
-			                rr->resrec.rdata->u.soa.retry   = (mDNSu32) ((mDNSu32)ptr[0x08] << 24 | (mDNSu32)ptr[0x09] << 16 | (mDNSu32)ptr[0x0A] << 8 | ptr[0x0B]);
-			                rr->resrec.rdata->u.soa.expire  = (mDNSu32) ((mDNSu32)ptr[0x0C] << 24 | (mDNSu32)ptr[0x0D] << 16 | (mDNSu32)ptr[0x0E] << 8 | ptr[0x0F]);
-			                rr->resrec.rdata->u.soa.min     = (mDNSu32) ((mDNSu32)ptr[0x10] << 24 | (mDNSu32)ptr[0x11] << 16 | (mDNSu32)ptr[0x12] << 8 | ptr[0x13]);
-			                break;
 
 		case kDNSType_OPT:  ptr = getOptRdata(ptr, end, largecr, pktrdlength); break;
 							if (ptr != end) { LogMsg("GetLargeResourceRecord: Malformed OptRdata"); return(mDNSNULL); }
