@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.61  2007/05/07 20:43:45  cheshire
+<rdar://problem/4241419> Reduce the number of queries and announcements
+
 Revision 1.60  2007/05/04 21:46:10  cheshire
 Get rid of uDNS_Close (synonym for uDNS_Sleep)
 
@@ -131,6 +134,11 @@ Revision 1.33  2006/07/05 22:53:28  cheshire
 #define RESPONSE_WINDOW (60 * mDNSPlatformOneSecond)         // require server responses within one minute of request
 
 #define DEFAULT_UPDATE_LEASE 7200
+
+#define QuestionIntervalStep 3
+#define QuestionIntervalStep2 (QuestionIntervalStep*QuestionIntervalStep)
+#define QuestionIntervalStep3 (QuestionIntervalStep*QuestionIntervalStep*QuestionIntervalStep)
+#define InitialQuestionInterval ((mDNSPlatformOneSecond+QuestionIntervalStep-1) / QuestionIntervalStep)
 
 // Entry points into unicast-specific routines
 

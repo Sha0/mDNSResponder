@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.635  2007/05/07 20:43:45  cheshire
+<rdar://problem/4241419> Reduce the number of queries and announcements
+
 Revision 1.634  2007/05/04 22:09:08  cheshire
 Only do "restarting exponential backoff sequence" for mDNS questions
 In mDNS_RegisterInterface, only retrigger mDNS questions
@@ -427,7 +430,6 @@ mDNSexport const char *const mDNS_DomainTypeNames[] =
 #pragma mark - General Utility Functions
 #endif
 
-#define InitialQuestionInterval (mDNSPlatformOneSecond/2)
 #define ActiveQuestion(Q) ((Q)->ThisQInterval > 0 && !(Q)->DuplicateOf)
 #define TimeToSendThisQuestion(Q,time) (ActiveQuestion(Q) && (time) - ((Q)->LastQTime + (Q)->ThisQInterval) >= 0)
 
@@ -555,7 +557,7 @@ mDNSlocal void AnswerLocalQuestions(mDNS *const m, AuthRecord *rr, mDNSBool AddR
 #define DefaultProbeCountForTypeUnique ((mDNSu8)3)
 #define DefaultProbeCountForRecordType(X)      ((X) == kDNSRecordTypeUnique ? DefaultProbeCountForTypeUnique : (mDNSu8)0)
 
-#define InitialAnnounceCount ((mDNSu8)10)
+#define InitialAnnounceCount ((mDNSu8)8)
 
 // Note that the announce intervals use exponential backoff, doubling each time. The probe intervals do not.
 // This means that because the announce interval is doubled after sending the first packet, the first
@@ -710,10 +712,6 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr)
 			m->SuppressProbes = m->NextScheduledQuery;
 		}
 	
-	// We announce to flush stale data from other caches. It is a reasonable assumption that any
-	// old stale copies will probably have the same TTL we're using, so announcing longer than
-	// this serves no purpose -- any stale copies of that record will have expired by then anyway.
-	rr->AnnounceUntil   = m->timenow + TicksTTL(rr);
 	rr->LastAPTime      = m->SuppressProbes - rr->ThisAPInterval;
 	// Set LastMCTime to now, to inhibit multicast responses
 	// (no need to send additional multicast responses when we're announcing anyway)
@@ -874,7 +872,6 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	rr->NR_AdditionalTo   = mDNSNULL;
 	rr->ThisAPInterval    = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
 	if (!rr->HostTarget) InitializeLastAPTime(m, rr);
-//	rr->AnnounceUntil     = Set for us in InitializeLastAPTime()
 //	rr->LastAPTime        = Set for us in InitializeLastAPTime()
 //	rr->LastMCTime        = Set for us in InitializeLastAPTime()
 //	rr->LastMCInterface   = Set for us in InitializeLastAPTime()
@@ -1071,7 +1068,6 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 				dup->v4Requester     = rr->v4Requester;
 				dup->v6Requester     = rr->v6Requester;
 				dup->ThisAPInterval  = rr->ThisAPInterval;
-				dup->AnnounceUntil   = rr->AnnounceUntil;
 				dup->LastAPTime      = rr->LastAPTime;
 				dup->LastMCTime      = rr->LastMCTime;
 				dup->LastMCInterface = rr->LastMCInterface;
@@ -1504,7 +1500,6 @@ mDNSlocal void SendResponses(mDNS *const m)
 				rr->AnnounceCount--;
 				rr->ThisAPInterval *= 2;
 				rr->LastAPTime = m->timenow;
-				if (rr->LastAPTime + rr->ThisAPInterval - rr->AnnounceUntil >= 0) rr->AnnounceCount = 0;
 				debugf("Announcing %##s (%s) %d", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype), rr->AnnounceCount);
 				}
 			}
@@ -1826,25 +1821,6 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 					}
 				}
 
-		// Traffic reduction:
-		// If we already have at least one unique answer in the cache,
-		// OR we have so many shared answers that the KA list is too big to fit in one packet
-		// The we suppress queries number 3 and 5:
-		// Query 1 (immediately;      ThisQInterval =  1 sec; request unicast replies)
-		// Query 2 (after  1 second;  ThisQInterval =  2 sec; send normally)
-		// Query 3 (after  2 seconds; ThisQInterval =  4 sec; may suppress)
-		// Query 4 (after  4 seconds; ThisQInterval =  8 sec; send normally)
-		// Query 5 (after  8 seconds; ThisQInterval = 16 sec; may suppress)
-		// Query 6 (after 16 seconds; ThisQInterval = 32 sec; send normally)
-		if (q->UniqueAnswers || newptr + forecast >= limit)
-			if (q->ThisQInterval == InitialQuestionInterval * 8 || q->ThisQInterval == InitialQuestionInterval * 32)
-				{
-				query->h.numQuestions--;
-				ka = *kalistptrptr;		// Go back to where we started and retract these answer records
-				while (*ka) { CacheRecord *rr = *ka; *ka = mDNSNULL; ka = &rr->NextInKAList; }
-				return(mDNStrue);		// Return true: pretend we succeeded, even though we actually suppressed this question
-				}
-
 		// Success! Update our state pointers, increment UnansweredQueries as appropriate, and return
 		*queryptr        = newptr;				// Update the packet pointer
 		*answerforecast  = forecast;			// Update the forecast
@@ -2041,7 +2017,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 				InitializeDNSMessage(&m->omsg.h, q->TargetQID, QueryFlags);
 				qptr = putQuestion(&m->omsg, qptr, limit, &q->qname, q->qtype, q->qclass);
 				mDNSSendDNSMessage(m, &m->omsg, qptr, mDNSInterface_Any, &q->Target, q->TargetPort, mDNSNULL, mDNSNULL );
-				q->ThisQInterval    *= 2;
+				q->ThisQInterval    *= QuestionIntervalStep;
 				if (q->ThisQInterval > MaxQuestionInterval)
 					q->ThisQInterval = MaxQuestionInterval;
 				q->LastQTime         = m->timenow;
@@ -2082,10 +2058,10 @@ mDNSlocal void SendQueries(mDNS *const m)
 					{
 					//LogOperation("Accelerating %##s (%s) %d", q->qname.c, DNSTypeName(q->qtype), m->timenow - (q->LastQTime + q->ThisQInterval));
 					q->SendQNow = mDNSInterfaceMark;	// Mark this question for sending on all interfaces
-					q->ThisQInterval *= 2;
+					q->ThisQInterval *= QuestionIntervalStep;
 					if (q->ThisQInterval > MaxQuestionInterval)
 						q->ThisQInterval = MaxQuestionInterval;
-					else if (q->CurrentAnswers == 0 && q->ThisQInterval == InitialQuestionInterval * 8)
+					else if (q->CurrentAnswers == 0 && q->ThisQInterval == InitialQuestionInterval * QuestionIntervalStep2)
 						{
 						// Generally don't need to log this.
 						// It's not especially noteworthy if a query finds no results -- this usually happens for domain
@@ -2484,7 +2460,7 @@ mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
 				{
 				q->LastAnswerPktNum = m->PktNum;
 				if (mDNSOpaque16IsZero(q->TargetQID) && ActiveQuestion(q) && ++q->RecentAnswerPkts >= 10 &&
-					q->ThisQInterval > InitialQuestionInterval*32 && m->timenow - q->LastQTxTime < mDNSPlatformOneSecond)
+					q->ThisQInterval > InitialQuestionInterval * QuestionIntervalStep3 && m->timenow - q->LastQTxTime < mDNSPlatformOneSecond)
 					{
 					LogMsg("CacheRecordAdd: %##s (%s) got immediate answer burst; restarting exponential backoff sequence",
 						q->qname.c, DNSTypeName(q->qtype));
@@ -4559,7 +4535,7 @@ mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question)
 			}
 		else
 			{
-			question->ThisQInterval = INIT_UCAST_POLL_INTERVAL / 2;
+			question->ThisQInterval = (INIT_UCAST_POLL_INTERVAL + 2) / 3;
 			question->LastQTime     = m->timenow - question->ThisQInterval;
 			}
 		}
@@ -4893,7 +4869,7 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
     if (question->InterfaceID != mDNSInterface_LocalOnly && !question->ForceMCast && !IsLocalDomain(&question->qname))
 		{
 		question->LongLived     = mDNStrue;
-		question->ThisQInterval = INIT_UCAST_POLL_INTERVAL / 2;
+		question->ThisQInterval = (INIT_UCAST_POLL_INTERVAL + 2) / 3;
 		question->LastQTime     = m->timenow - question->ThisQInterval;
 		}
 #endif // UNICAST_DISABLED
@@ -5525,8 +5501,8 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 				if (!q->InterfaceID || q->InterfaceID == set->InterfaceID)		// If non-specific Q, or Q on this specific interface,
 					{															// then reactivate this question
 					mDNSBool dodelay = flapping && (q->FlappingInterface1 == set->InterfaceID || q->FlappingInterface2 == set->InterfaceID);
-					mDNSs32 initial  = dodelay ? InitialQuestionInterval * 8 : InitialQuestionInterval;
-					mDNSs32 qdelay   = dodelay ? mDNSPlatformOneSecond   * 5 : 0;
+					mDNSs32 initial  = dodelay ? InitialQuestionInterval * QuestionIntervalStep2 : InitialQuestionInterval;
+					mDNSs32 qdelay   = dodelay ? mDNSPlatformOneSecond * 5 : 0;
 					if (dodelay) LogOperation("No cache records for expired %##s (%s); okay to delay questions a little", q->qname.c, DNSTypeName(q->qtype));
 						
 					if (!q->ThisQInterval || q->ThisQInterval > initial)

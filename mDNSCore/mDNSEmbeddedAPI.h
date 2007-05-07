@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.373  2007/05/07 20:43:45  cheshire
+<rdar://problem/4241419> Reduce the number of queries and announcements
+
 Revision 1.372  2007/05/04 22:15:29  cheshire
 Get rid of unused q->RestartTime
 
@@ -910,7 +913,6 @@ struct AuthRecord_struct
 	const mDNSu8   *NR_AnswerTo;		// Set if this record was selected by virtue of being a direct answer to a question
 	AuthRecord     *NR_AdditionalTo;	// Set if this record was selected by virtue of being additional to another
 	mDNSs32         ThisAPInterval;		// In platform time units: Current interval for announce/probe
-	mDNSs32         AnnounceUntil;		// In platform time units: Creation time + TTL
 	mDNSs32         LastAPTime;			// In platform time units: Last time we sent announcement/probe
 	mDNSs32         LastMCTime;			// Last time we multicast this record (used to guard against packet-storm attacks)
 	mDNSInterfaceID LastMCInterface;	// Interface this record was multicast on at the time LastMCTime was recorded

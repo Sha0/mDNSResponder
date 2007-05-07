@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.364  2007/05/07 20:43:45  cheshire
+<rdar://problem/4241419> Reduce the number of queries and announcements
+
 Revision 1.363  2007/05/04 22:12:48  cheshire
 Work towards solving <rdar://problem/5176892> "uDNS_CheckQuery: LastQTime" log messages
 When code gets in this invalid state, double ThisQInterval each time, to avoid excessive logging
@@ -3460,8 +3463,8 @@ mDNSlocal void startPrivateQueryCallback(mDNS *const m, mStatus err, const ZoneD
 		{
 		debugf("Private port lookup failed -- retrying without TLS -- %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 		q->AuthInfo = mDNSNULL;
-		q->ThisQInterval = mDNSPlatformOneSecond/2; // InitialQuestionInterval
-		q->LastQTime = m->timenow;// - q->ThisQInterval;
+		q->ThisQInterval = InitialQuestionInterval;
+		q->LastQTime = m->timenow - q->ThisQInterval;
 		SetNextQueryTime(m, q);
 		goto exit;
 		// Next call to uDNS_CheckQuery() will do this as a non-private query
@@ -3979,7 +3982,7 @@ mDNSexport void uDNS_CheckQuery(mDNS *const m)
 				if (err) debugf("ERROR: uDNS_idle - mDNSSendDNSMessage - %ld", err); // surpress syslog messages if we have no network
 				else if (!q->LongLived && q->ThisQInterval < MAX_UCAST_POLL_INTERVAL)
 					{
-					q->ThisQInterval = q->ThisQInterval * 2;	// don't increase interval if send failed
+					q->ThisQInterval = q->ThisQInterval * QuestionIntervalStep;	// Only increase interval if send succeeded
 					//LogMsg("Adjusted ThisQInterval to %d for %##s (%s)", q->ThisQInterval, q->qname.c, DNSTypeName(q->qtype));
 					}
 				else if (q->LongLived && q->state == LLQ_Poll)
