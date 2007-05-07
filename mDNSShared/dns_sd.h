@@ -332,6 +332,15 @@ enum
     kDNSServiceType_DNAME     = 39,     /* Non-terminal DNAME (for IPv6) */
     kDNSServiceType_SINK      = 40,     /* Kitchen sink (experimentatl) */
     kDNSServiceType_OPT       = 41,     /* EDNS0 option (meta-RR) */
+    kDNSServiceType_APL       = 42,     /* Address Prefix List */
+    kDNSServiceType_DS        = 43,     /* Delegation Signer */
+    kDNSServiceType_SSHFP     = 44,     /* SSH Key Fingerprint */
+    kDNSServiceType_IPSECKEY  = 45,     /* IPSECKEY */
+    kDNSServiceType_RRSIG     = 46,     /* RRSIG */
+    kDNSServiceType_NSEC      = 47,     /* NSEC */
+    kDNSServiceType_DNSKEY    = 48,     /* DNSKEY */
+    kDNSServiceType_DHCID     = 49,     /* DHCID */
+
     kDNSServiceType_TKEY      = 249,    /* Transaction key */
     kDNSServiceType_TSIG      = 250,    /* Transaction signature. */
     kDNSServiceType_IXFR      = 251,    /* Incremental zone transfer. */
@@ -488,21 +497,26 @@ typedef int32_t  DNSServiceErrorType;
 
 /* DNSServiceGetProperty() Parameters:
  *
- * attr:            The requested attribute.
- *                  Currently the only attribute defined is kDNSServiceProperty_DaemonVersion
+ * attribute:       The requested attribute.
+ *                  Currently the only attribute defined is kDNSServiceProperty_DaemonVersion.
  *
  * result:          Place to store result.
- *                  For retrieving DaemonVersion, this should be the address of a uint32_t
+ *                  For retrieving DaemonVersion, this should be the address of a uint32_t.
  *
- * size:            The size of the result location.
- *                  For retrieving DaemonVersion, this should be sizeof(uint32_t)
+ * size:            Pointer to uint32_t containing size of the result location.
+ *                  For retrieving DaemonVersion, this should be sizeof(uint32_t).
+ *                  On return the uint32_t is updated to the size of the data returned.
+ *                  For DaemonVersion, the returned size is always sizeof(uint32_t), but
+ *                  future attributes could be defined which return variable-sized results.
  *
  * return value:    Returns kDNSServiceErr_NoError on succeses, or kDNSServiceErr_ServiceNotRunning
  *                  if the daemon (or "system service" on Windows) is not running.
  *
  * Example usage:
+ *
  * uint32_t version;
- * DNSServiceErrorType err = DNSServiceGetProperty(kDNSServiceProperty_DaemonVersion, &version, sizeof(version));
+ * uint32_t size = sizeof(version);
+ * DNSServiceErrorType err = DNSServiceGetProperty(kDNSServiceProperty_DaemonVersion, &version, &size);
  * printf("Bonjour version is %d\n", version);
  */
 
@@ -510,9 +524,9 @@ typedef int32_t  DNSServiceErrorType;
 
 DNSServiceErrorType DNSSD_API DNSServiceGetProperty
     (
-    char     *attr,      /* Requested attribute (DNSSD_GetProperty_DaemonVersion) */
-    void     *result,    /* Pointer to place to store result */
-    uint32_t size        /* size of result location */
+    const char *attribute, /* Requested attribute (DNSSD_GetProperty_DaemonVersion) */
+    void       *result,    /* Pointer to place to store result */
+    uint32_t   *size       /* size of result location */
     );
 
 
