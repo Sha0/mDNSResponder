@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.69  2007/05/08 00:56:17  cheshire
+<rdar://problem/4118503> Share single socket instead of creating separate socket for each active interface
+
 Revision 1.68  2007/04/24 00:10:15  cheshire
 Increase WatchDogReportingThreshold to 250ms for customer builds
 
@@ -103,7 +106,6 @@ typedef struct
 typedef struct
 	{
 	mDNS                    *m;
-	NetworkInterfaceInfoOSX *info;
 	int                      sktv4;
 	KQueueEntry				 kqsv4;
 	int                      sktv6;
@@ -124,17 +126,17 @@ struct NetworkInterfaceInfoOSX_struct
 	mDNSBool                 Flashing;			// Set if interface appeared for less than 60 seconds and then vanished
 	mDNSBool                 Occulting;			// Set if interface vanished for less than 60 seconds and then came back
 	char                    *ifa_name;			// Memory for this is allocated using malloc
+	unsigned int             ifa_flags;
+	struct in_addr           ifa_v4addr;
 	mDNSu32                  scope_id;			// interface index / IPv6 scope ID
 	mDNSEthAddr              BSSID;				// BSSID of 802.11 base station, if applicable
 	u_short                  sa_family;
-	unsigned int             ifa_flags;
-	KQSocketSet              ss;
 	};
 
 struct mDNS_PlatformSupport_struct
 	{
 	NetworkInterfaceInfoOSX *InterfaceList;
-	KQSocketSet              unicastsockets;
+	KQSocketSet              permanentsockets;
 	domainlabel              userhostlabel;		// The hostlabel as it was set in System Preferences the last time we looked
 	domainlabel              usernicelabel;		// The nicelabel as it was set in System Preferences the last time we looked
 	mDNSs32                  NotifyUser;

@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.310  2007/05/08 00:56:17  cheshire
+<rdar://problem/4118503> Share single socket instead of creating separate socket for each active interface
+
 Revision 1.309  2007/04/30 21:33:38  cheshire
 Fix crash when a callback unregisters a service while the UpdateSRVRecords() loop
 is iterating through the m->ServiceRegistrations list
@@ -2055,11 +2058,12 @@ mDNSlocal void INFOCallback(void)
 			LogMsgNoIdent("Interface: %s %5s(%lu) %.6a DORMANT %d",
 				i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id, &i->BSSID, utc - i->LastSeen);
 		else
-			LogMsgNoIdent("Interface: %s %5s(%lu) %.6a %s %s %2d %s %2d InterfaceID %p %s %s %#a",
+			LogMsgNoIdent("Interface: %s %5s(%lu) %.6a %s %s %-15.4a %s InterfaceID %p %s %s %#a",
 				i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id, &i->BSSID,
 				i->ifinfo.InterfaceActive ? "Active" : "      ",
-				i->ifinfo.IPv4Available ? "v4" : "  ", i->ss.sktv4,
-				i->ifinfo.IPv6Available ? "v6" : "  ", i->ss.sktv6,
+				i->ifinfo.IPv4Available ? "v4" : "  ",
+				i->ifinfo.IPv4Available ? (mDNSv4Addr*)&i->ifa_v4addr : &zerov4Addr,
+				i->ifinfo.IPv6Available ? "v6" : "  ",
 				i->ifinfo.InterfaceID,
 				i->ifinfo.Advertise ? "Adv"  : "   ",
 				i->ifinfo.McastTxRx ? "TxRx" : "    ",
@@ -2308,7 +2312,7 @@ mDNSlocal void KQWokenFlushBytes(int fd, __unused short filter, __unused void *c
 	while (read > 0) read = recv(fd, buffer, sizeof(buffer), MSG_DONTWAIT);
 	}
 
-mDNSlocal void * KQueueLoop(void* m_param)
+mDNSlocal void * KQueueLoop(void *m_param)
 	{
 	mDNS            *m = m_param;
 	int             numevents = 0;
