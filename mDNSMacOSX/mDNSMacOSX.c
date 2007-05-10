@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.407  2007/05/10 21:40:28  cheshire
+Don't log unnecessary "Address already in use" errors when joining multicast groups
+
 Revision 1.406  2007/05/08 00:56:17  cheshire
 <rdar://problem/4118503> Share single socket instead of creating separate socket for each active interface
 
@@ -1881,7 +1884,9 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 					imr.imr_multiaddr.s_addr = AllDNSLinkGroup_v4.ip.v4.NotAnInteger;
 					imr.imr_interface        = primary->ifa_v4addr;
 					mStatus err = setsockopt(m->p->permanentsockets.sktv4, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imr, sizeof(imr));
-					if (err < 0) LogMsg("setsockopt - IP_ADD_MEMBERSHIP error %ld errno %d (%s)", err, errno, strerror(errno));
+					// Joining same group twice can give "Address already in use" error -- no need to report that
+					if (err < 0 && errno != EADDRINUSE)
+						LogMsg("setsockopt - IP_ADD_MEMBERSHIP error %ld errno %d (%s)", err, errno, strerror(errno));
 					}
 #ifndef NO_IPV6
 				if (i->sa_family == AF_INET6)
@@ -1890,7 +1895,9 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 					i6mr.ipv6mr_interface = primary->scope_id;
 					i6mr.ipv6mr_multiaddr = *(struct in6_addr*)&AllDNSLinkGroup_v6.ip.v6;
 					mStatus err = setsockopt(m->p->permanentsockets.sktv6, IPPROTO_IPV6, IPV6_JOIN_GROUP, &i6mr, sizeof(i6mr));
-					if (err < 0) LogMsg("setsockopt - IPV6_JOIN_GROUP error %ld errno %d (%s)", err, errno, strerror(errno));
+					// Joining same group twice can give "Address already in use" error -- no need to report that
+					if (err < 0 && errno != EADDRINUSE)
+						LogMsg("setsockopt - IPV6_JOIN_GROUP error %ld errno %d (%s)", err, errno, strerror(errno));
 					}
 #endif
 				}
