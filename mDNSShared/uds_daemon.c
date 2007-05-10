@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.290  2007/05/10 23:30:57  cheshire
+<rdar://problem/4084490> Only one browse gets remove events when disabling browse domain
+
 Revision 1.289  2007/05/02 22:18:08  cheshire
 Renamed NATTraversalInfo_struct context to NATTraversalContext
 
@@ -1989,11 +1992,10 @@ mDNSlocal void udsserver_automatic_browse_domain_changed(const domainname *d, mD
 					*ptr = (*ptr)->next;
 					mDNS_StopQueryWithRemoves(&mDNSStorage, &remove->q);
 					freeL("browser_t/udsserver_automatic_browse_domain_changed", remove);
-					return;
+					break;
 					}
 				ptr = &(*ptr)->next;
 				}
-			LogMsg("Requested removal of default domain %##s not in list for sd %d", d->c, request->sd);
 			}
 		}
 	}
@@ -3478,7 +3480,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 
 	LogMsgNoIdent("Slt Q     TTL if    U Type rdlen");
 	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
-		for(cg = m->rrcache_hash[slot]; cg; cg=cg->next)
+		for (cg = m->rrcache_hash[slot]; cg; cg=cg->next)
 			{
 			CacheUsed++;	// Count one cache entity for the CacheGroup object
 			for (cr = cg->members; cr; cr=cr->next)
