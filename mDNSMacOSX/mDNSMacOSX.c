@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.409  2007/05/10 22:39:48  cheshire
+<rdar://problem/4118503> Share single socket instead of creating separate socket for each active interface
+Only define CountMaskBits for builds with debugging messages
+
 Revision 1.408  2007/05/10 22:19:00  cheshire
 <rdar://problem/4118503> Share single socket instead of creating separate socket for each active interface
 Don't deliver multicast packets for which we can't find an associated InterfaceID
@@ -1832,6 +1836,9 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 	return(mStatus_NoError);
 	}
 
+#if LogAllOperations || MDNS_DEBUGMSGS
+// Returns number of leading one-bits in mask: 0-32 for IPv4, 0-128 for IPv6
+// Returns -1 if all the one-bits are not contiguous
 mDNSlocal int CountMaskBits(mDNSAddr *mask)
 	{
 	int i = 0, bits = 0;
@@ -1845,6 +1852,7 @@ mDNSlocal int CountMaskBits(mDNSAddr *mask)
 	while (i < bytes) if (mask->ip.v6.b[i++]) return(-1);
 	return(bits);
 	}
+#endif
 
 // returns count of non-link local V4 addresses registered
 mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
