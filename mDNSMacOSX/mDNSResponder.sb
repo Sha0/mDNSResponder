@@ -1,3 +1,5 @@
+# -*- tab-width: 4 -*-
+#
 # Copyright (c) 2007 Apple Inc. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without 
@@ -24,6 +26,9 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # $Log: mDNSResponder.sb,v $
+# Revision 1.6  2007/05/10 21:12:14  cheshire
+# <rdar://problem/5149833> Start using "debug deny" mode in Seatbelt
+#
 # Revision 1.5  2007/05/10 19:41:25  cheshire
 # <rdar://problem/5182549> Have to use "deny mach_lookup_default" because "signal" doesn't work
 #
@@ -46,8 +51,11 @@
 
 version "0.4beta";
 
-# Use "debug on" to discover what operation is causing an exception
+# Use "debug on" to log all operations examined by seatbelt, whether allowed or not.
+# Use "debug deny" to log only operations that are disallowed by seatbelt (i.e. "deny" or "signal")
+# to discover what specific attempted operation is causing an exception.
 #debug on;
+debug deny;
 
 # To help debugging, "signal FPE" will trigger a fake floating-point exception, which
 # will crash the process and show the call stack leading to the offending operation.
