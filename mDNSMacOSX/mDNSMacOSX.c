@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.408  2007/05/10 22:19:00  cheshire
+<rdar://problem/4118503> Share single socket instead of creating separate socket for each active interface
+Don't deliver multicast packets for which we can't find an associated InterfaceID
+
 Revision 1.407  2007/05/10 21:40:28  cheshire
 Don't log unnecessary "Address already in use" errors when joining multicast groups
 
@@ -776,7 +780,13 @@ mDNSlocal void myKQSocketCallBack(int s1, short filter, void *context)
 		mDNSInterfaceID InterfaceID = mDNSNULL;
 		NetworkInterfaceInfo *intf = m->HostInterfaces;
 		while (intf && strcmp(intf->ifname, packetifname)) intf = intf->next;
+		// When going to sleep we deregister all our interfaces, but if the machine
+		// takes a few seconds to sleep we may continue to receive multicasts
+		// during that time, which would confuse mDNSCoreReceive, because as far
+		// as it's concerned, we should have no active interfaces any more.
+		// Hence we ignore multicasts for which we can find no matching InterfaceID.
 		if (intf) InterfaceID = intf->InterfaceID;
+		else if (mDNSAddrIsDNSMulticast(&destAddr)) continue;
 
 //		LogMsg("myKQSocketCallBack got packet from %#a to %#a on interface %#a/%s",
 //			&senderAddr, &destAddr, &ss->info->ifinfo.ip, ss->info->ifa_name);
