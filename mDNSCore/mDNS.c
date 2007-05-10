@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.636  2007/05/10 23:27:15  cheshire
+Update mDNS_Deregister_internal debugging messages
+
 Revision 1.635  2007/05/07 20:43:45  cheshire
 <rdar://problem/4241419> Reduce the number of queries and announcements
 
@@ -1111,8 +1114,7 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 	
 	if (RecordType == kDNSRecordTypeShared && (rr->RequireGoodbye || rr->LocalAnswer))
 		{
-		LogMsg("mDNS_Deregister_internal: Sending deregister for %##s (%s)",
-			rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
+		verbosedebugf("mDNS_Deregister_internal: Sending deregister for %s", ARDisplayString(m, rr));
 		rr->resrec.RecordType    = kDNSRecordTypeDeregistering;
 		rr->resrec.rroriginalttl = 0;
 		rr->ImmedAnswer          = mDNSInterfaceMark;
@@ -4488,7 +4490,11 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const questi
 			//	question->NATInfoUDP = mDNSNULL;
 			//	question->tcpSock    = mDNSNULL;
 			//	question->udpSock    = mDNSNULL;
-				if (q->nta) { LogOperation("UpdateQuestionDuplicates transferred nta pointer"); q->nta->ZoneDataContext = q; }
+				if (q->nta)
+					{
+					LogOperation("UpdateQuestionDuplicates transferred nta pointer for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+					q->nta->ZoneDataContext = q;
+					}
 
 				// Need to work out how to safely transfer this state too -- appropriate context pointers need to be updated or the code will crash
 				if (question->NATInfoTCP)   LogOperation("UpdateQuestionDuplicates did not transfer NATInfoTCP pointer");
