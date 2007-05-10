@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.365  2007/05/10 21:19:18  cheshire
+Rate-limit DNS test queries to at most one per three seconds
+(useful when we have a dozen active WAB queries, and then we join a new network)
+
 Revision 1.364  2007/05/07 20:43:45  cheshire
 <rdar://problem/4241419> Reduce the number of queries and announcements
 
@@ -634,6 +638,7 @@ mDNSexport void mDNS_AddDNSServer(mDNS *const m, const domainname *d, const mDNS
 	(*p)->port      = port;
 	(*p)->del       = mDNSfalse;
 	(*p)->teststate = DNSServer_Untested;
+	(*p)->lasttest  = m->timenow - INIT_UCAST_POLL_INTERVAL;
 	AssignDomainName(&(*p)->domain, d);
 	(*p)->next = mDNSNULL;
 	}
@@ -3943,27 +3948,28 @@ mDNSexport void uDNS_CheckQuery(mDNS *const m)
 		if (q->qDNSServer)
 			{
 			DNSMessage msg;
-			mDNSu8 *end;
+			mDNSu8 *end = msg.data;
 			mStatus err = mStatus_NoError;
 			DomainAuthInfo *private = mDNSNULL;
 
-			if (q->qDNSServer->teststate == DNSServer_Untested)
-				{
-				LogOperation("Sending DNS test query to %#a:%d", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port));
-				q->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
-				InitializeDNSMessage(&msg.h, mDNS_NewMessageID(m), uQueryFlags);
-				end = putQuestion(&msg, msg.data, msg.data + AbsoluteMaxDNSMessageData, DNSRelayTestQuestion, kDNSType_PTR, kDNSClass_IN);
-				}
-			else
+			if (q->qDNSServer->teststate != DNSServer_Untested)
 				{
 				err = constructQueryMsg(&msg, &end, q);
 				private = q->AuthInfo;
+				}
+			else if (m->timenow - q->qDNSServer->lasttest >= INIT_UCAST_POLL_INTERVAL)	// Make sure at least three seconds has elapsed since last test query
+				{
+				LogOperation("Sending DNS test query to %#a:%d", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port));
+				q->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
+				q->qDNSServer->lasttest = m->timenow;
+				InitializeDNSMessage(&msg.h, mDNS_NewMessageID(m), uQueryFlags);
+				end = putQuestion(&msg, msg.data, msg.data + AbsoluteMaxDNSMessageData, DNSRelayTestQuestion, kDNSType_PTR, kDNSClass_IN);
 				}
 
 			if (err) LogMsg("Error: uDNS_CheckQuery - constructQueryMsg. Skipping question %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 			else
 				{
-				if (q->qDNSServer->teststate != DNSServer_Failed)
+				if (end > msg.data && q->qDNSServer->teststate != DNSServer_Failed)
 					{
 					//LogMsg("uDNS_CheckQuery %d %p %##s (%s)", sendtime - m->timenow, private, q->qname.c, DNSTypeName(q->qtype));
 					if (private)

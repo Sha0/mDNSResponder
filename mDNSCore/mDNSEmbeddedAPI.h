@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.375  2007/05/10 21:19:18  cheshire
+Rate-limit DNS test queries to at most one per three seconds
+(useful when we have a dozen active WAB queries, and then we join a new network)
+
 Revision 1.374  2007/05/07 22:07:47  cheshire
 <rdar://problem/4738025> Enhance GetLargeResourceRecord to decompress more record types
 
@@ -1073,6 +1077,7 @@ typedef struct DNSServer
     mDNSIPPort port;
     mDNSBool   del;			// Set when we're planning to delete this from the list
     mDNSu32    teststate;	// Have we sent bug-detection query to this server?
+    mDNSs32    lasttest;	// Time we sent last bug-detection query to this server
     domainname domain;		// name->server matching for "split dns"
 	} DNSServer;
 
