@@ -26,6 +26,9 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # $Log: mDNSResponder.sb,v $
+# Revision 1.7  2007/05/12 01:57:56  cheshire
+# <rdar://problem/5197938> Seatbelt: mDNSResponder needs to be able to access preferences.plist-lock
+#
 # Revision 1.6  2007/05/10 21:12:14  cheshire
 # <rdar://problem/5149833> Start using "debug deny" mode in Seatbelt
 #
@@ -97,4 +100,5 @@ allow fs_read_data  -regex "^/Library/Keychains/System.keychain\$";
 # After name conflict, allow mDNSResponder to persistently save new unique name for next time
 allow fs_read_data  -regex "^/Library/Preferences/SystemConfiguration/preferences.plist\$";
 allow fs_write      -regex "^/Library/Preferences/SystemConfiguration/preferences.plist-new\$";
+allow fs_write      -regex "^/Library/Preferences/SystemConfiguration/preferences.plist-lock\$";
 allow fs_write      -regex "^/Library/Preferences/SystemConfiguration/preferences.plist/preferences.plist\$";
