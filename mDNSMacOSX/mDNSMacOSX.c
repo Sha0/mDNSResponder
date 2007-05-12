@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.410  2007/05/12 01:05:00  cheshire
+Updated debugging messages
+
 Revision 1.409  2007/05/10 22:39:48  cheshire
 <rdar://problem/4118503> Share single socket instead of creating separate socket for each active interface
 Only define CountMaskBits for builds with debugging messages
@@ -764,7 +767,7 @@ mDNSlocal void myKQSocketCallBack(int s1, short filter, void *context)
 			senderAddr.type = mDNSAddrType_IPv4;
 			senderAddr.ip.v4.NotAnInteger = sin->sin_addr.s_addr;
 			senderPort.NotAnInteger = sin->sin_port;
-			//LogOperation("myKQSocketCallBack received IPv4 packet from %#a to %#a on %d %s", &senderAddr, &destAddr, s1, ss->info ? ss->info->ifa_name : "(unicast)");
+			//LogOperation("myKQSocketCallBack received IPv4 packet from %#-15a to %#-15a on skt %d %s", &senderAddr, &destAddr, s1, packetifname);
 			}
 		else if (from.ss_family == AF_INET6)
 			{
@@ -772,7 +775,7 @@ mDNSlocal void myKQSocketCallBack(int s1, short filter, void *context)
 			senderAddr.type = mDNSAddrType_IPv6;
 			senderAddr.ip.v6 = *(mDNSv6Addr*)&sin6->sin6_addr;
 			senderPort.NotAnInteger = sin6->sin6_port;
-			//LogOperation("myKQSocketCallBack received IPv6 packet from %#a to %#a on %d %s", &senderAddr, &destAddr, s1, ss->info ? ss->info->ifa_name : "(unicast)");
+			//LogOperation("myKQSocketCallBack received IPv6 packet from %#-15a to %#-15a on skt %d %s", &senderAddr, &destAddr, s1, packetifname);
 			}
 		else
 			{
