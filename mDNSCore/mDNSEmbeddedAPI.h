@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.376  2007/05/14 23:51:49  cheshire
+Added constants MAX_REVERSE_MAPPING_NAME_V4 and MAX_REVERSE_MAPPING_NAME_V6
+
 Revision 1.375  2007/05/10 21:19:18  cheshire
 Rate-limit DNS test queries to at most one per three seconds
 (useful when we have a dozen active WAB queries, and then we join a new network)
@@ -642,6 +645,14 @@ typedef struct { mDNSu8 c[256]; } UTF8str255;		// Null-terminated C string
 // It is for domain names, where dots are used as label separators, that proper escaping is vital.
 #define MAX_ESCAPED_DOMAIN_LABEL 254
 #define MAX_ESCAPED_DOMAIN_NAME 1005
+
+// MAX_REVERSE_MAPPING_NAME
+// For IPv4: "123.123.123.123.in-addr.arpa."  30 bytes including terminating NUL
+// For IPv6: "x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.ip6.arpa."  74 bytes including terminating NUL
+
+#define MAX_REVERSE_MAPPING_NAME_V4 30
+#define MAX_REVERSE_MAPPING_NAME_V6 74
+#define MAX_REVERSE_MAPPING_NAME    74
 
 // Most records have a TTL of 75 minutes, so that their 80% cache-renewal query occurs once per hour.
 // For records containing a hostname (in the name on the left, or in the rdata on the right),
