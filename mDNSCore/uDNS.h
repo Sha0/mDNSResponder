@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.62  2007/05/14 23:53:00  cheshire
+Export mDNS_StartQuery_internal and mDNS_StopQuery_internal so they can be called from uDNS.c
+
 Revision 1.61  2007/05/07 20:43:45  cheshire
 <rdar://problem/4241419> Reduce the number of queries and announcements
 
@@ -165,6 +168,9 @@ extern mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr);
 // mDNS_Dereg_repeat is used when cleaning up, for records that may have already been forcibly deregistered
 typedef enum { mDNS_Dereg_normal, mDNS_Dereg_conflict, mDNS_Dereg_repeat } mDNS_Dereg_type;
 extern mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, mDNS_Dereg_type drt);
+extern mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const question);
+extern mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const question);
+
 extern void RecordRegistrationCallback(mDNS *const m, mStatus err, const ZoneData *zoneData);
 extern mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr);
 

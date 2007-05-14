@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.637  2007/05/14 23:53:00  cheshire
+Export mDNS_StartQuery_internal and mDNS_StopQuery_internal so they can be called from uDNS.c
+
 Revision 1.636  2007/05/10 23:27:15  cheshire
 Update mDNS_Deregister_internal debugging messages
 
@@ -2326,10 +2329,6 @@ mDNSlocal void SendQueries(mDNS *const m)
 #pragma mark - RR List Management & Task Management
 #endif
 
-// Temp forward declarations
-mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const question);
-mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const question);
-
 // NOTE: AnswerQuestionWithResourceRecord can call a user callback, which may change the record list and/or question list.
 // Any code walking either list must use the m->CurrentQuestion (and possibly m->CurrentRecord) mechanism to protect against this.
 // In fact, to enforce this, the routine will *only* answer the question currently pointed to by m->CurrentQuestion,
@@ -4547,7 +4546,7 @@ mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question)
 		}
 	}
 
-mDNSlocal mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const question)
+mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const question)
 	{
 	if (question->Target.type && !ValidQuestionTarget(question))
 		{
@@ -4702,7 +4701,7 @@ mDNSexport void CancelGetZoneData(mDNS *const m, ZoneData *nta)
 	mDNSPlatformMemFree(nta);
 	}
 
-mDNSlocal mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const question)
+mDNSexport mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const question)
 	{
 	const mDNSu32 slot = HashSlot(&question->qname);
 	CacheGroup *cg = CacheGroupForName(m, slot, question->qnamehash, &question->qname);
@@ -5246,7 +5245,7 @@ mDNSlocal NetworkInterfaceInfo *FindFirstAdvertisedInterface(mDNS *const m)
 
 mDNSlocal void AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	{
-	char buffer[256];
+	char buffer[MAX_REVERSE_MAPPING_NAME];
 	NetworkInterfaceInfo *primary = FindFirstAdvertisedInterface(m);
 	if (!primary) primary = set; // If no existing advertised interface, this new NetworkInterfaceInfo becomes our new primary
 
