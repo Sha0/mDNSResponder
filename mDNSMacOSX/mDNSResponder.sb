@@ -26,6 +26,9 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # $Log: mDNSResponder.sb,v $
+# Revision 1.9  2007/05/14 22:08:26  cheshire
+# <rdar://problem/5200986> Seatbelt: Need to escape literal dots in filename patterns
+#
 # Revision 1.8  2007/05/14 19:39:31  cheshire
 # <rdar://problem/5198345> Seatbelt killed mDNSResponder in CFTimeZoneCopyDefault
 # <rdar://problem/5199456> Seatbelt killed mDNSResponder in SecKeychainOpen
@@ -95,16 +98,16 @@ allow fs_read_data  -regex "^/System/Library/CoreServices/SystemVersion.*\$";
 allow fs_read_data  -regex "^/(private/var/root/)?Library/Preferences/(ByHost/)?\.GlobalPreferences.*\.plist\$";
 
 # Allow access to System Keychain
-allow fs_write_data -regex "^/private/var/tmp/mds/system/mds.lock\$";
-allow fs_read_data  -regex "^/private/var/tmp/mds/system/mdsObject.db\$";
-allow fs_read_data  -regex "^/private/var/tmp/mds/system/mdsDirectory.db\$";
+allow fs_write_data -regex "^/private/var/tmp/mds/system/mds\.lock\$";
+allow fs_read_data  -regex "^/private/var/tmp/mds/system/mdsObject\.db\$";
+allow fs_read_data  -regex "^/private/var/tmp/mds/system/mdsDirectory\.db\$";
 allow fs_read_data  -regex "^/System/Library/Security\$";
 allow fs_read_data  -regex "^/System/Library/Keychains/System.*\$";
-allow fs_read_data  -regex "^/Library/Keychains/System.keychain\$";
+allow fs_read_data  -regex "^/Library/Keychains/System\.keychain\$";
 
 # After name conflict, allow mDNSResponder to persistently save new unique name for next time
-allow fs_read_data  -regex "^/Library/Preferences/com.apple.security.plist\$";
-allow fs_read_data  -regex "^/Library/Preferences/SystemConfiguration/preferences.plist\$";
-allow fs_write      -regex "^/Library/Preferences/SystemConfiguration/preferences.plist-new\$";
-allow fs_write      -regex "^/Library/Preferences/SystemConfiguration/preferences.plist-lock\$";
-allow fs_write      -regex "^/Library/Preferences/SystemConfiguration/preferences.plist/preferences.plist\$";
+allow fs_read_data  -regex "^/Library/Preferences/com\.apple\.security\.plist\$";
+allow fs_read_data  -regex "^/Library/Preferences/SystemConfiguration/preferences\.plist\$";
+allow fs_write      -regex "^/Library/Preferences/SystemConfiguration/preferences\.plist-new\$";
+allow fs_write      -regex "^/Library/Preferences/SystemConfiguration/preferences\.plist-lock\$";
+allow fs_write      -regex "^/Library/Preferences/SystemConfiguration/preferences\.plist/preferences\.plist\$";
