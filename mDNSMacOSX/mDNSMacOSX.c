@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.411  2007/05/14 23:54:55  cheshire
+Instead of sprintf, use safer length-limited mDNS_snprintf
+
 Revision 1.410  2007/05/12 01:05:00  cheshire
 Updated debugging messages
 
@@ -2032,13 +2035,12 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 				!SetupAddr(&n, ifa->ifa_netmask)	&&
 				!mDNSv4AddressIsLinkLocal(&a.ip.v4)  )
 				{
-				char       buffer[256];
 				// Note: This is reverse order compared to a normal dotted-decimal IP address, so we can't use our customary "%.4a" format code
-				sprintf(buffer, "%d.%d.%d.%d.in-addr.arpa.", a.ip.v4.b[3] & n.ip.v4.b[3],
-															 a.ip.v4.b[2] & n.ip.v4.b[2],
-															 a.ip.v4.b[1] & n.ip.v4.b[1],
-															 a.ip.v4.b[0] & n.ip.v4.b[0]);
-				mDNS_AddSearchDomain_CString(buffer);
+				mDNS_snprintf(buf, sizeof(buf), "%d.%d.%d.%d.in-addr.arpa.", a.ip.v4.b[3] & n.ip.v4.b[3],
+																			 a.ip.v4.b[2] & n.ip.v4.b[2],
+																			 a.ip.v4.b[1] & n.ip.v4.b[1],
+																			 a.ip.v4.b[0] & n.ip.v4.b[0]);
+				mDNS_AddSearchDomain_CString(buf);
 				}
 			ifa = ifa->ifa_next;
 			}
