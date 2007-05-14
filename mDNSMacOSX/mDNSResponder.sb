@@ -26,6 +26,10 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # $Log: mDNSResponder.sb,v $
+# Revision 1.8  2007/05/14 19:39:31  cheshire
+# <rdar://problem/5198345> Seatbelt killed mDNSResponder in CFTimeZoneCopyDefault
+# <rdar://problem/5199456> Seatbelt killed mDNSResponder in SecKeychainOpen
+#
 # Revision 1.7  2007/05/12 01:57:56  cheshire
 # <rdar://problem/5197938> Seatbelt: mDNSResponder needs to be able to access preferences.plist-lock
 #
@@ -86,6 +90,7 @@ allow fs_write      -regex "^/private/var/run/mDNSResponder\.pid\$";
 
 # Allow us to read system version and settings
 allow fs_read_data  -regex "^/usr/sbin(/mDNSResponder)?\$";		# Needed for CFCopyVersionDictionary()
+allow fs_read_data  -regex "^/usr/share/zoneinfo/.*\$";
 allow fs_read_data  -regex "^/System/Library/CoreServices/SystemVersion.*\$";
 allow fs_read_data  -regex "^/(private/var/root/)?Library/Preferences/(ByHost/)?\.GlobalPreferences.*\.plist\$";
 
@@ -98,6 +103,7 @@ allow fs_read_data  -regex "^/System/Library/Keychains/System.*\$";
 allow fs_read_data  -regex "^/Library/Keychains/System.keychain\$";
 
 # After name conflict, allow mDNSResponder to persistently save new unique name for next time
+allow fs_read_data  -regex "^/Library/Preferences/com.apple.security.plist\$";
 allow fs_read_data  -regex "^/Library/Preferences/SystemConfiguration/preferences.plist\$";
 allow fs_write      -regex "^/Library/Preferences/SystemConfiguration/preferences.plist-new\$";
 allow fs_write      -regex "^/Library/Preferences/SystemConfiguration/preferences.plist-lock\$";
