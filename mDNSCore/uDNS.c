@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.366  2007/05/15 00:43:05  cheshire
+<rdar://problem/4983538> uDNS serviceRegistrationCallback locking failures
+
 Revision 1.365  2007/05/10 21:19:18  cheshire
 Rate-limit DNS test queries to at most one per three seconds
 (useful when we have a dozen active WAB queries, and then we join a new network)
@@ -1600,6 +1603,7 @@ mDNSexport const domainname *GetServiceTarget(mDNS *m, AuthRecord *srv)
 		}
 	}
 
+// Called with lock held
 mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	{
 	DNSMessage msg;
@@ -1614,6 +1618,9 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	DomainAuthInfo *authInfo;
 	AuthRecord *srv = &srs->RR_SRV;
 	mDNSu32 i;
+
+	if (m->mDNS_busy != m->mDNS_reentrancy+1)
+		LogMsg("SendServiceRegistration: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
 	if (mDNSIPv4AddressIsZero(srs->ns.ip.v4)) { LogMsg("SendServiceRegistration - NS not set!"); return; }
 
@@ -1752,11 +1759,12 @@ exit:
 
 		unlinkSRS(m, srs);
 		srs->state = regState_Unregistered;
+
 		mDNS_DropLockBeforeCallback();
 		srs->ServiceCallback(m, srs, err);
 		mDNS_ReclaimLockAfterCallback();
-		// NOTE: not safe to touch any client structures here --
-		// once we issue the callback, client is free to reuse or deallocate the srs memory
+		// CAUTION: MUST NOT do anything more with rr after calling rr->Callback(), because the client's callback function
+		// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
 		}
 	}
 
@@ -1946,25 +1954,18 @@ mDNSlocal void StartNATPortMap(mDNS *m, ServiceRecordSet *srs)
 	srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, serviceRegistrationCallback, srs);
 	}
 
+// Called in normal callback context (i.e. mDNS_busy and mDNS_reentrancy are both 1)
 mDNSexport void serviceRegistrationCallback(mDNS *const m, mStatus err, const ZoneData *zoneData)
 	{
 	ServiceRecordSet *srs = (ServiceRecordSet *)zoneData->ZoneDataContext;
 	
+	if (m->mDNS_busy != m->mDNS_reentrancy)
+		LogMsg("serviceRegistrationCallback: mDNS_busy (%ld) != mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
+
 	srs->nta = mDNSNULL;
 
 	if (err) goto error;
 	if (!zoneData) { LogMsg("ERROR: serviceRegistrationCallback invoked with NULL result and no error"); goto error; }
-
-	if (srs->state == regState_Cancelled)
-		{
-		// client cancelled registration while fetching zone data
-		srs->state = regState_Unregistered;
-		unlinkSRS(m, srs);
-		mDNS_DropLockBeforeCallback();
-		srs->ServiceCallback(m, srs, mStatus_MemFree);
-		mDNS_ReclaimLockAfterCallback();
-		return;
-		}
 
 	if (srs->RR_SRV.resrec.rrclass != zoneData->ZoneClass)
 		{
@@ -1993,16 +1994,23 @@ mDNSexport void serviceRegistrationCallback(mDNS *const m, mStatus err, const Zo
 	if (!mDNSIPPortIsZero(srs->RR_SRV.resrec.rdata->u.srv.port) &&
 		mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsRFC1918(&srs->ns))
 		{ srs->state = regState_NATMap; StartNATPortMap(m, srs); }
-	else SendServiceRegistration(m, srs);
+	else
+		{
+		mDNS_Lock(m);
+		SendServiceRegistration(m, srs);
+		mDNS_Unlock(m);
+		}
 	return;
 
 error:
 	unlinkSRS(m, srs);
 	srs->state = regState_Unregistered;
-	mDNS_DropLockBeforeCallback();
+
+	// Don't need to do the mDNS_DropLockBeforeCallback stuff here, because this code is
+	// *already* being invoked in the right callback context, with mDNS_reentrancy correctly incremented.
 	srs->ServiceCallback(m, srs, err);
-	mDNS_ReclaimLockAfterCallback();
-	// NOTE: not safe to touch any client structures here
+	// CAUTION: MUST NOT do anything more with rr after calling rr->Callback(), because the client's callback function
+	// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
 	}
 
 // Called via function pointer when we get a NAT-PMP port request response,
@@ -2231,6 +2239,7 @@ exit:
 		}
 	}
 
+// Called with lock held
 mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 	{
 	ExtraResourceRecord *e;
@@ -2274,7 +2283,6 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 	switch(srs->state)
 		{
 		case regState_FetchingZoneData:
-		case regState_Cancelled:
 		case regState_DeregPending:
 		case regState_DeregDeferred:
 		case regState_Unregistered:
@@ -2326,6 +2334,7 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 		}
 	}
 
+// Called with lock held
 mDNSlocal void UpdateSRVRecords(mDNS *m)
 	{
 	if (CurrentServiceRecordSet)
@@ -2468,28 +2477,21 @@ mDNSlocal void FoundStaticHostname(mDNS *const m, DNSQuestion *question, const R
 		}
 	}
 
+// Called with lock held
 mDNSlocal void GetStaticHostname(mDNS *m)
 	{
-	char buf[MAX_ESCAPED_DOMAIN_NAME];
+	char buf[MAX_REVERSE_MAPPING_NAME_V4];
 	DNSQuestion *q = &m->ReverseMap;
 	mDNSu8 *ip = m->AdvertisedV4.ip.v4.b;
 	mStatus err;
 
-	if (m->ReverseMap.ThisQInterval != -1)
-		{
-		// Seems like a hack -- if this code is allowed to issue API calls, then it should have been called in the appropriate state in the first place
-		// and if it's not allowed to issue API calls, then deliberately circumventing the locking check like this seems like it's asking for
-		// tricky hard-to-diagnose crashing bugs
-		mDNS_DropLockBeforeCallback();
-		mDNS_StopQuery(m, q);
-		mDNS_ReclaimLockAfterCallback();
-		}
+	if (m->ReverseMap.ThisQInterval != -1) mDNS_StopQuery_internal(m, q);
 
 	m->StaticHostname.c[0] = 0;
 	if (mDNSIPv4AddressIsZero(m->AdvertisedV4.ip.v4)) return;
 	mDNSPlatformMemZero(q, sizeof(*q));
 	// Note: This is reverse order compared to a normal dotted-decimal IP address, so we can't use our customary "%.4a" format code
-	mDNS_snprintf(buf, MAX_ESCAPED_DOMAIN_NAME, "%d.%d.%d.%d.in-addr.arpa.", ip[3], ip[2], ip[1], ip[0]);
+	mDNS_snprintf(buf, sizeof(buf), "%d.%d.%d.%d.in-addr.arpa.", ip[3], ip[2], ip[1], ip[0]);
 	if (!MakeDomainNameFromDNSNameString(&q->qname, buf)) { LogMsg("Error: GetStaticHostname - bad name %s", buf); return; }
 
 	q->InterfaceID      = mDNSInterface_Any;
@@ -2503,12 +2505,7 @@ mDNSlocal void GetStaticHostname(mDNS *m)
 	q->QuestionCallback = FoundStaticHostname;
 	q->QuestionContext  = mDNSNULL;
 
-	// Seems like a hack -- if this code is allowed to issue API calls, then it should have been called in the appropriate state in the first place
-	// and if it's not allowed to issue API calls, then deliberately circumventing the locking check like this seems like it's asking for
-	// tricky hard-to-diagnose crashing bugs
-	mDNS_DropLockBeforeCallback();
-	err = mDNS_StartQuery(m, q);
-	mDNS_ReclaimLockAfterCallback();
+	err = mDNS_StartQuery_internal(m, q);
 	if (err) LogMsg("Error: GetStaticHostname - StartQuery returned error %d", err);
 	}
 
@@ -2573,9 +2570,14 @@ mDNSexport void mDNS_RemoveDynDNSHostName(mDNS *m, const domainname *fqdn)
 	mDNS_Unlock(m);
 	}
 
+// Currently called without holding the lock
+// Maybe we should change that?
 mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr, const mDNSAddr *v6addr, const mDNSAddr *router)
 	{
 	mDNSBool v4Changed, v6Changed, RouterChanged;
+
+	if (m->mDNS_busy != m->mDNS_reentrancy)
+		LogMsg("mDNS_SetPrimaryInterfaceInfo: mDNS_busy (%ld) != mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
 	if (v4addr && v4addr->type != mDNSAddrType_IPv4) { LogMsg("mDNS_SetPrimaryInterfaceInfo v4 address - incorrect type.  Discarding. %#a", v4addr); return; }
 	if (v6addr && v6addr->type != mDNSAddrType_IPv6) { LogMsg("mDNS_SetPrimaryInterfaceInfo v6 address - incorrect type.  Discarding. %#a", v6addr); return; }
@@ -2735,6 +2737,7 @@ mDNSlocal mStatus checkUpdateResult(mDNS *const m, const domainname *const displ
 		}
 	}
 
+// Called with lock held
 mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 	{
 	DNSMessage msg;
@@ -2742,6 +2745,9 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 	mDNSu8 *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
 	DomainAuthInfo *authInfo;
 	mStatus err = mStatus_UnknownErr;
+
+	if (m->mDNS_busy != m->mDNS_reentrancy+1)
+		LogMsg("sendRecordRegistration: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
 	rr->id = mDNS_NewMessageID(m);
 	InitializeDNSMessage(&msg.h, rr->id, UpdateReqFlags);
@@ -2849,16 +2855,22 @@ exit:
 		mDNS_DropLockBeforeCallback();
 		if (rr->RecordCallback) rr->RecordCallback(m, rr, err);
 		mDNS_ReclaimLockAfterCallback();
-		// NOTE: not safe to touch any client structures here
+		// CAUTION: MUST NOT do anything more with rr after calling rr->Callback(), because the client's callback function
+		// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
 		}
 	}
 
+// Called with lock held
 mDNSlocal void hndlServiceUpdateReply(mDNS *const m, ServiceRecordSet *srs,  mStatus err)
 	{
 	mDNSBool InvokeCallback = mDNSfalse;
 	NATTraversalInfo *nat = srs->NATinfo;
 	ExtraResourceRecord **e = &srs->Extras;
 	AuthRecord *txt = &srs->RR_TXT;
+
+	if (m->mDNS_busy != m->mDNS_reentrancy+1)
+		LogMsg("hndlServiceUpdateReply: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
+
 	switch (srs->state)
 		{
 		case regState_Pending:
@@ -2952,7 +2964,6 @@ mDNSlocal void hndlServiceUpdateReply(mDNS *const m, ServiceRecordSet *srs,  mSt
 			break;
 		case regState_FetchingZoneData:
 		case regState_Registered:
-		case regState_Cancelled:
 		case regState_Unregistered:
 		case regState_NATMap:
 		case regState_NoTarget:
@@ -3022,19 +3033,25 @@ mDNSlocal void hndlServiceUpdateReply(mDNS *const m, ServiceRecordSet *srs,  mSt
 		}
 
 	mDNS_DropLockBeforeCallback();
-	if (InvokeCallback) srs->ServiceCallback(m, srs, err);
+	if (InvokeCallback)
+		srs->ServiceCallback(m, srs, err);
 	else if (srs->ClientCallbackDeferred)
 		{
 		srs->ClientCallbackDeferred = mDNSfalse;
 		srs->ServiceCallback(m, srs, srs->DeferredStatus);
 		}
 	mDNS_ReclaimLockAfterCallback();
-	// NOTE: do not touch structures after calling ServiceCallback
+	// CAUTION: MUST NOT do anything more with rr after calling rr->Callback(), because the client's callback function
+	// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
 	}
 
+// Called with lock held
 mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 	{
 	mDNSBool InvokeCallback = mDNStrue;
+
+	if (m->mDNS_busy != m->mDNS_reentrancy+1)
+		LogMsg("hndlRecordUpdateReply: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
 	if (rr->state == regState_UpdatePending)
 		{
@@ -3114,12 +3131,14 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 		return;
 		}
 
-	if (InvokeCallback)
+	if (InvokeCallback && rr->RecordCallback)
 		{
 		mDNS_DropLockBeforeCallback();
-		if (rr->RecordCallback) rr->RecordCallback(m, rr, err);
+		rr->RecordCallback(m, rr, err);
 		mDNS_ReclaimLockAfterCallback();
 		}
+	// CAUTION: MUST NOT do anything more with rr after calling rr->Callback(), because the client's callback function
+	// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
 	}
 
 mDNSexport void uDNS_ReceiveNATMap(mDNS *m, mDNSu8 *pkt, mDNSu16 len)
@@ -3239,17 +3258,10 @@ mDNSlocal void hndlTruncatedAnswer(mDNS *m, DNSQuestion *question, const mDNSAdd
 
 exit:
 
-	if (err)
-		{
-		// Seems like a hack -- if this code is allowed to issue API calls, then it should have been called in the appropriate state in the first place
-		// and if it's not allowed to issue API calls, then deliberately circumventing the locking check like this seems like it's asking for
-		// tricky hard-to-diagnose crashing bugs
-		mDNS_DropLockBeforeCallback();
-		mDNS_StopQuery(m, question);
-		mDNS_ReclaimLockAfterCallback();
-		}
+	if (err) mDNS_StopQuery_internal(m, question);
 	}
 
+// Called with the lock held
 mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *const srcaddr, const mDNSIPPort srcport)
 	{
 	DNSQuestion *qptr;
@@ -3437,6 +3449,7 @@ exit:
 	if (err && q) q->state = LLQ_Error;
 	}
 
+// Called in normal callback context (i.e. mDNS_busy and mDNS_reentrancy are both 1)
 mDNSlocal void startPrivateQueryCallback(mDNS *const m, mStatus err, const ZoneData *zoneInfo)
 	{
 	DNSQuestion *q = (DNSQuestion *) zoneInfo->ZoneDataContext;
@@ -3511,15 +3524,7 @@ mDNSlocal void startPrivateQueryCallback(mDNS *const m, mStatus err, const ZoneD
 
 exit:
 
-	if (err)
-		{
-		// Seems like a hack -- if this code is allowed to issue API calls, then it should have been called in the appropriate state in the first place
-		// and if it's not allowed to issue API calls, then deliberately circumventing the locking check like this seems like it's asking for
-		// tricky hard-to-diagnose crashing bugs
-		mDNS_DropLockBeforeCallback();
-		mDNS_StopQuery(m, q);
-		mDNS_ReclaimLockAfterCallback();
-		}
+	if (err) mDNS_StopQuery(m, q);
 	}
 
 // stopLLQ happens IN ADDITION to stopQuery
@@ -3562,10 +3567,14 @@ mDNSexport void uDNS_StopLongLivedQuery(mDNS *const m, DNSQuestion *const questi
 #pragma mark - Dynamic Updates
 #endif
 
+// Called in normal callback context (i.e. mDNS_busy and mDNS_reentrancy are both 1)
 mDNSexport void RecordRegistrationCallback(mDNS *const m, mStatus err, const ZoneData *zoneData)
 	{
 	AuthRecord *newRR = (AuthRecord*)zoneData->ZoneDataContext;
 	AuthRecord *ptr;
+
+	if (m->mDNS_busy != m->mDNS_reentrancy)
+		LogMsg("RecordRegistrationCallback: mDNS_busy (%ld) != mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
 	newRR->nta = mDNSNULL;
 
@@ -3576,16 +3585,6 @@ mDNSexport void RecordRegistrationCallback(mDNS *const m, mStatus err, const Zon
 	// check error/result
 	if (err) { LogMsg("RecordRegistrationCallback: error %ld", err); goto error; }
 	if (!zoneData) { LogMsg("ERROR: RecordRegistrationCallback invoked with NULL result and no error"); goto error; }
-
-	if (newRR->state == regState_Cancelled)
-		{
-		//!!!KRS we should send a memfree callback here!
-		debugf("Registration of %##s type %d cancelled prior to update",
-			   newRR->resrec.name->c, newRR->resrec.rrtype);
-		newRR->state = regState_Unregistered;
-		UnlinkAuthRecord(m, newRR);
-		return;
-		}
 
 	if (newRR->resrec.rrclass != zoneData->ZoneClass)
 		{
@@ -3629,11 +3628,13 @@ error:
 		UnlinkAuthRecord(m, newRR);
 		newRR->state = regState_Unregistered;
 		}
-	mDNS_DropLockBeforeCallback();
+
+	// Don't need to do the mDNS_DropLockBeforeCallback stuff here, because this code is
+	// *already* being invoked in the right callback context, with mDNS_reentrancy correctly incremented.
 	if (newRR->RecordCallback)
 		newRR->RecordCallback(m, newRR, err);
-	mDNS_ReclaimLockAfterCallback();
-	// NOTE: not safe to touch any client structures here
+	// CAUTION: MUST NOT do anything more with rr after calling rr->Callback(), because the client's callback function
+	// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
 	}
 
 mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
@@ -3715,17 +3716,16 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 			rr->state = regState_Unregistered;
 			break;
 		case regState_ExtraQueued: rr->state = regState_Unregistered; break;
-		case regState_FetchingZoneData: rr->state = regState_Cancelled; return mStatus_NoError;
 		case regState_Refresh:
 		case regState_Pending:
 		case regState_UpdatePending:
 			rr->state = regState_DeregDeferred;
 			LogMsg("Deferring deregistration of record %##s until registration completes", rr->resrec.name->c);
 			return mStatus_NoError;
+		case regState_FetchingZoneData:
 		case regState_Registered: break;
 		case regState_DeregPending: break;
 		case regState_DeregDeferred: LogMsg("regState_DeregDeferred %##s type %s", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype)); return mStatus_NoError;
-		case regState_Cancelled:     LogMsg("regState_Cancelled     %##s type %s", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype)); return mStatus_NoError;
 		case regState_Unregistered:  LogMsg("regState_Unregistered  %##s type %s", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype)); return mStatus_NoError;
 		case regState_NATError:      LogMsg("regState_NATError      %##s type %s", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype)); return mStatus_NoError;
 		case regState_NoTarget:      LogMsg("regState_NoTarget      %##s type %s", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype)); return mStatus_NoError;
@@ -3741,10 +3741,14 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 	return mStatus_NoError;
 	}
 
+// Called with lock held
 mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 	{
 	NATTraversalInfo *nat = srs->NATinfo;
 	char *errmsg = "Unknown State";
+
+	if (m->mDNS_busy != m->mDNS_reentrancy+1)
+		LogMsg("uDNS_DeregisterService: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
 	// don't re-register with a new target following deregistration
 	srs->SRVChanged = srs->SRVUpdateDeferred = mDNSfalse;
@@ -3765,10 +3769,6 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 		case regState_Unregistered:
 			debugf("uDNS_DeregisterService - service %##s not registered", srs->RR_SRV.resrec.name->c);
 			return mStatus_BadReferenceErr;
-		case regState_FetchingZoneData:
-			// let the async op complete, then terminate
-			srs->state = regState_Cancelled;
-			return mStatus_NoError;	// deliver memfree upon completion of async op
 		case regState_Pending:
 		case regState_Refresh:
 		case regState_UpdatePending:
@@ -3777,7 +3777,6 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 			return mStatus_NoError;
 		case regState_DeregPending:
 		case regState_DeregDeferred:
-		case regState_Cancelled:
 			debugf("Double deregistration of service %##s", srs->RR_SRV.resrec.name->c);
 			return mStatus_NoError;
 		case regState_NATError:	// not registered
@@ -3789,6 +3788,7 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 			srs->ServiceCallback(m, srs, mStatus_MemFree);
 			mDNS_ReclaimLockAfterCallback();
 			return mStatus_NoError;
+		case regState_FetchingZoneData:
 		case regState_Registered:
 			srs->state = regState_DeregPending;
 			SendServiceDeregistration(m, srs);
@@ -3826,7 +3826,6 @@ mDNSexport mStatus uDNS_UpdateRecord(mDNS *m, AuthRecord *rr)
 		{
 		case regState_DeregPending:
 		case regState_DeregDeferred:
-		case regState_Cancelled:
 		case regState_Unregistered:
 			// not actively registered
 			goto unreg_error;
