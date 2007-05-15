@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.367  2007/05/15 23:38:00  cheshire
+Need to grab lock before calling sendRecordRegistration();
+
 Revision 1.366  2007/05/15 00:43:05  cheshire
 <rdar://problem/4983538> uDNS serviceRegistrationCallback locking failures
 
@@ -3619,7 +3622,9 @@ mDNSexport void RecordRegistrationCallback(mDNS *const m, mStatus err, const Zon
 		newRR->uselease = mDNSfalse;
 		}
 
+	mDNS_Lock(m);	// sendRecordRegistration expects to be called with the lock held
 	sendRecordRegistration(m, newRR);
+	mDNS_Unlock(m);
 	return;
 
 error:
