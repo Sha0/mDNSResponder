@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.412  2007/05/15 21:49:21  cheshire
+Get rid of "#pragma unused"
+
 Revision 1.411  2007/05/14 23:54:55  cheshire
 Instead of sprintf, use safer length-limited mDNS_snprintf
 
@@ -558,8 +561,6 @@ mDNSlocal mDNSBool AddrRequiresPPPConnection(const struct sockaddr *addr)
 mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const msg, const mDNSu8 *const end,
 	mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstPort)
 	{
-	#pragma unused(m)
-
 	// Note: For this platform we've adopted the convention that InterfaceIDs are secretly pointers
 	// to the NetworkInterfaceInfoOSX structure that holds the active sockets. The mDNSCore code
 	// doesn't know that and doesn't need to know that -- it just treats InterfaceIDs as opaque identifiers.
@@ -911,7 +912,6 @@ mDNSlocal OSStatus tlsSetupSock(TCPSocket *sock, mDNSBool server)
 
 mDNSlocal void tcpKQSocketCallback(__unused int fd, short filter, void *context)
 	{
-	#pragma unused(cfs, CallbackType, address, data)
 	TCPSocket *sock = context;
 	mStatus err = mStatus_NoError;
 
