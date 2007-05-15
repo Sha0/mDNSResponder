@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.156  2007/05/15 00:29:00  cheshire
+Print «ZERO ADDRESS» for %#a with a zero mDNSAddr
+
 Revision 1.155  2007/05/07 22:07:47  cheshire
 <rdar://problem/4738025> Enhance GetLargeResourceRecord to decompress more record types
 
@@ -2537,7 +2540,9 @@ mDNSexport mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt
 										default:                F.precision =  0; break;
 										}
 									}
-								switch (F.precision)
+								if (F.altForm && !F.precision)
+									i = mDNS_snprintf(mDNS_VACB, sizeof(mDNS_VACB), "«ZERO ADDRESS»");
+								else switch (F.precision)
 									{
 									case  4: i = mDNS_snprintf(mDNS_VACB, sizeof(mDNS_VACB), "%d.%d.%d.%d",
 														a[0], a[1], a[2], a[3]); break;
