@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.311  2007/05/15 21:47:21  cheshire
+Get rid of "#pragma unused(m)"
+
 Revision 1.310  2007/05/08 00:56:17  cheshire
 <rdar://problem/4118503> Share single socket instead of creating separate socket for each active interface
 
@@ -710,10 +713,10 @@ mDNSlocal void EnableDeathNotificationForClient(mach_port_t ClientMachPort, void
 mDNSlocal void DomainEnumFound(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
 	kern_return_t status;
-	#pragma unused(m)
 	char buffer[MAX_ESCAPED_DOMAIN_NAME];
 	DNSServiceDomainEnumerationReplyResultType rt;
 	DNSServiceDomainEnumeration *x = (DNSServiceDomainEnumeration *)question->QuestionContext;
+	(void)m; // Unused
 
 	debugf("DomainEnumFound: %##s PTR %##s", answer->name->c, answer->rdata->u.name.c);
 	if (answer->rrtype != kDNSType_PTR) return;
