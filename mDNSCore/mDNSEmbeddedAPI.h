@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.377  2007/05/15 00:43:33  cheshire
+Remove unused regState_Cancelled
+
 Revision 1.376  2007/05/14 23:51:49  cheshire
 Added constants MAX_REVERSE_MAPPING_NAME_V4 and MAX_REVERSE_MAPPING_NAME_V6
 
@@ -917,7 +920,6 @@ typedef enum
 	regState_Registered        = 3,     // update sent, reply received
 	regState_DeregPending      = 4,     // dereg sent, reply not received
 	regState_DeregDeferred     = 5,     // dereg requested while in Pending state - send dereg AFTER registration is confirmed
-	regState_Cancelled         = 6,     // update not sent, reg. cancelled by client
 	regState_Unregistered      = 8,     // not in any list
 	regState_Refresh           = 9,     // outstanding refresh (or target change) message
 	regState_NATMap            = 10,    // establishing NAT port mapping or learning public address
