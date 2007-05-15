@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.77  2007/05/15 21:57:17  cheshire
+<rdar://problem/4608220> Use dnssd_SocketValid(x) macro instead of just
+assuming that all negative values (or zero!) are invalid socket numbers
+
 Revision 1.76  2007/05/01 23:53:26  cheshire
 <rdar://problem/5175318> dnsextd should refuse updates without attached lease
 
@@ -1265,7 +1269,7 @@ SetupSockets
 	// set up sockets on which we all ns requests
 
 	self->tcpsd = socket( AF_INET, SOCK_STREAM, 0 );
-	require_action( self->tcpsd != dnssd_InvalidSocket, exit, err = mStatus_UnknownErr; LogErr( "SetupSockets", "socket" ) );
+	require_action( dnssd_SocketValid(self->tcpsd), exit, err = mStatus_UnknownErr; LogErr( "SetupSockets", "socket" ) );
 
 #if defined(SO_REUSEADDR)
 	err = setsockopt(self->tcpsd, SOL_SOCKET, SO_REUSEADDR, &kOn, sizeof(kOn));
@@ -1279,7 +1283,7 @@ SetupSockets
 	require_action( !err, exit, LogErr( "SetupSockets", "listen" ) );
 
 	self->udpsd = socket( AF_INET, SOCK_DGRAM, 0 );
-	require_action( self->udpsd != dnssd_InvalidSocket, exit, err = mStatus_UnknownErr; LogErr( "SetupSockets", "socket" ) );
+	require_action( dnssd_SocketValid(self->udpsd), exit, err = mStatus_UnknownErr; LogErr( "SetupSockets", "socket" ) );
 
 #if defined(SO_REUSEADDR)
 	err = setsockopt(self->udpsd, SOL_SOCKET, SO_REUSEADDR, &kOn, sizeof(kOn));
@@ -1297,7 +1301,7 @@ SetupSockets
 	self->llq_addr.sin_port			= ( self->llq_port.NotAnInteger ) ? self->llq_port.NotAnInteger : DNSEXTPort.NotAnInteger;
 
 	self->llq_tcpsd = socket( AF_INET, SOCK_STREAM, 0 );
-	require_action( self->llq_tcpsd != dnssd_InvalidSocket, exit, err = mStatus_UnknownErr; LogErr( "SetupSockets", "socket" ) );
+	require_action( dnssd_SocketValid(self->llq_tcpsd), exit, err = mStatus_UnknownErr; LogErr( "SetupSockets", "socket" ) );
 
 #if defined(SO_REUSEADDR)
 	err = setsockopt(self->llq_tcpsd, SOL_SOCKET, SO_REUSEADDR, &kOn, sizeof(kOn));
@@ -1311,7 +1315,7 @@ SetupSockets
 	require_action( !err, exit, LogErr( "SetupSockets", "listen" ) );
 
 	self->llq_udpsd = socket( AF_INET, SOCK_DGRAM, 0 );
-	require_action( self->llq_udpsd != dnssd_InvalidSocket, exit, err = mStatus_UnknownErr; LogErr( "SetupSockets", "socket" ) );
+	require_action( dnssd_SocketValid(self->llq_udpsd), exit, err = mStatus_UnknownErr; LogErr( "SetupSockets", "socket" ) );
 
 #if defined(SO_REUSEADDR)
 	err = setsockopt(self->llq_udpsd, SOL_SOCKET, SO_REUSEADDR, &kOn, sizeof(kOn));
@@ -1332,14 +1336,14 @@ SetupSockets
 	// set up socket on which we receive private requests
 
 	self->llq_tcpsd = socket( AF_INET, SOCK_STREAM, 0 );
-	require_action( self->tlssd != dnssd_InvalidSocket, exit, err = mStatus_UnknownErr; LogErr( "SetupSockets", "socket" ) );
+	require_action( dnssd_SocketValid(self->tlssd), exit, err = mStatus_UnknownErr; LogErr( "SetupSockets", "socket" ) );
 	bzero(&daddr, sizeof(daddr));
 	daddr.sin_family		= AF_INET;
 	daddr.sin_addr.s_addr	= zerov4Addr.NotAnInteger;
 	daddr.sin_port			= ( self->private_port.NotAnInteger ) ? self->private_port.NotAnInteger : PrivateDNSPort.NotAnInteger;
 
 	self->tlssd = socket( AF_INET, SOCK_STREAM, 0 );
-	require_action( self->tlssd != dnssd_InvalidSocket, exit, err = mStatus_UnknownErr; LogErr( "SetupSockets", "socket" ) );
+	require_action( dnssd_SocketValid(self->tlssd), exit, err = mStatus_UnknownErr; LogErr( "SetupSockets", "socket" ) );
 
 #if defined(SO_REUSEADDR)
 	err = setsockopt(self->tlssd, SOL_SOCKET, SO_REUSEADDR, &kOn, sizeof(kOn));

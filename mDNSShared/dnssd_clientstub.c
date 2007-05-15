@@ -28,6 +28,10 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.67  2007/05/15 21:57:16  cheshire
+<rdar://problem/4608220> Use dnssd_SocketValid(x) macro instead of just
+assuming that all negative values (or zero!) are invalid socket numbers
+
 Revision 1.66  2007/03/27 22:23:04  cheshire
 Add "dnssd_clientstub" prefix onto syslog messages
 
@@ -278,11 +282,12 @@ static DNSServiceRef connect_to_server(void)
 
 	sdr = malloc(sizeof(_DNSServiceRef_t));
 	if (!sdr) { syslog(LOG_WARNING, "dnssd_clientstub connect_to_server: malloc failed"); return NULL; }
+
 	sdr->sockfd = socket(AF_DNSSD, SOCK_STREAM, 0);
-	if (sdr->sockfd == dnssd_InvalidSocket)
+	if (!dnssd_SocketValid(sdr->sockfd))
 		{
-		free(sdr);
 		syslog(LOG_WARNING, "dnssd_clientstub connect_to_server: socket failed %d %s", errno, strerror(errno));
+		free(sdr);
 		return NULL;
 		}
 
@@ -309,7 +314,6 @@ static DNSServiceRef connect_to_server(void)
 		else
 			{
 			dnssd_close(sdr->sockfd);
-			sdr->sockfd = dnssd_InvalidSocket;
 			free(sdr);
 			return NULL;
 			}
@@ -327,16 +331,19 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceRef sdr, 
 	dnssd_socklen_t len = (dnssd_socklen_t) sizeof(caddr);
 	DNSServiceErrorType err;
 
-	if (!hdr           ) { syslog(LOG_WARNING, "dnssd_clientstub deliver_request: !hdr"                  ); return kDNSServiceErr_Unknown; }
-	if (sdr->sockfd < 0) { syslog(LOG_WARNING, "dnssd_clientstub deliver_request: sockfd %d", sdr->sockfd); return kDNSServiceErr_Unknown; }
+	if (!hdr)
+		{ syslog(LOG_WARNING, "dnssd_clientstub deliver_request: !hdr"                  ); return kDNSServiceErr_Unknown; }
+	if (!dnssd_SocketValid(sdr->sockfd))
+		{ syslog(LOG_WARNING, "dnssd_clientstub deliver_request: sockfd %d", sdr->sockfd); return kDNSServiceErr_Unknown; }
 
 	if (!reuse_sd)
 		{
 		// Setup temporary error socket
-		if ((listenfd = socket(AF_DNSSD, SOCK_STREAM, 0)) < 0) goto cleanup;
+		listenfd = socket(AF_DNSSD, SOCK_STREAM, 0);
+		if (!dnssd_SocketValid(listenfd)) goto cleanup;
 		bzero(&caddr, sizeof(caddr));
 
-#if defined(USE_TCP_LOOPBACK)
+		#if defined(USE_TCP_LOOPBACK)
 			{
 			union { uint16_t s; u_char b[2]; } port;
 			caddr.sin_family      = AF_INET;
@@ -350,57 +357,62 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceRef sdr, 
 			data[0] = port.b[0];  // don't switch the byte order, as the
 			data[1] = port.b[1];  // daemon expects it in network byte order
 			}
-#else
+		#else
 			{
 			mode_t mask = umask(0);
 			caddr.sun_family = AF_LOCAL;
-// According to Stevens (section 3.2), there is no portable way to
-// determine whether sa_len is defined on a particular platform.
-#ifndef NOT_HAVE_SA_LEN
+			// According to Stevens (section 3.2), there is no portable way to
+			// determine whether sa_len is defined on a particular platform.
+			#ifndef NOT_HAVE_SA_LEN
 			caddr.sun_len = sizeof(struct sockaddr_un);
-#endif
-			//syslog(LOG_WARNING, "dnssd_clientstub deliver_request: creating UDS: %s\n", data);
+			#endif
+			//syslog(LOG_WARNING, "dnssd_clientstub deliver_request: creating UDS: %s", data);
 			strcpy(caddr.sun_path, data);
 			ret = bind(listenfd, (struct sockaddr *)&caddr, sizeof(caddr));
 			umask(mask);
 			if (ret < 0) goto cleanup;
 			listen(listenfd, 1);
 			}
-#endif
+		#endif
 		}
 
+	// At this point, our listening socket is set up and waiting, if necessary, for the daemon to connect back to
 	ConvertHeaderBytes(hdr);
-	//syslog(LOG_WARNING, "dnssd_clientstub deliver_request writing %ld bytes\n", datalen + sizeof(ipc_msg_hdr));
-	//syslog(LOG_WARNING, "dnssd_clientstub deliver_request name is %s\n", (char *)msg + sizeof(ipc_msg_hdr));
+	//syslog(LOG_WARNING, "dnssd_clientstub deliver_request writing %ld bytes", datalen + sizeof(ipc_msg_hdr));
+	//if (!reuse_sd) syslog(LOG_WARNING, "dnssd_clientstub deliver_request name is %s", data);
 	if (write_all(sdr->sockfd, (char *)hdr, datalen + sizeof(ipc_msg_hdr)) < 0) goto cleanup;
 
 	if (reuse_sd) errsd = sdr->sockfd;
 	else
 		{
-		//syslog(LOG_WARNING, "dnssd_clientstub deliver_request: accept\n");
+		//syslog(LOG_WARNING, "dnssd_clientstub deliver_request: accept");
+		// At this point we may block in accept for a few milliseconds waiting for the daemon to connect back to us,
+		// but that's okay -- the daemon is a trusted service and we know if won't take more than a few milliseconds to repond.
 		len = sizeof(daddr);
 		errsd = accept(listenfd, (struct sockaddr *)&daddr, &len);
-		//syslog(LOG_WARNING, "dnssd_clientstub deliver_request: accept returned %d\n", errsd);
-		if (errsd < 0) goto cleanup;
+		//syslog(LOG_WARNING, "dnssd_clientstub deliver_request: accept returned %d", errsd);
+		if (!dnssd_SocketValid(errsd)) goto cleanup;
 		}
 
+	// At this point we may block in read_all for a few milliseconds waiting for the daemon to send us the error code,
+	// but that's okay -- the daemon is a trusted service and we know if won't take more than a few milliseconds to repond.
 	if (read_all(errsd, (char*)&err, (int)sizeof(err)) < 0)
-		err = kDNSServiceErr_Unknown;	// read_all will have written a message to syslog for us
+		err = kDNSServiceErr_Unknown;	// On failure read_all will have written a message to syslog for us
 	else
 		err = ntohl(err);
 
-	//syslog(LOG_WARNING, "dnssd_clientstub deliver_request: retrieved error code %d\n", err);
+	//syslog(LOG_WARNING, "dnssd_clientstub deliver_request: retrieved error code %d", err);
 
 cleanup:
 	if (!reuse_sd)
 		{
-		if (listenfd > 0) dnssd_close(listenfd);
-		if (errsd    > 0) dnssd_close(errsd);
+		if (dnssd_SocketValid(listenfd)) dnssd_close(listenfd);
+		if (dnssd_SocketValid(errsd))    dnssd_close(errsd);
 #if !defined(USE_TCP_LOOPBACK)
-		// syslog(LOG_WARNING, "dnssd_clientstub deliver_request: removing UDS: %s\n", data);
+		// syslog(LOG_WARNING, "dnssd_clientstub deliver_request: removing UDS: %s", data);
 		if (unlink(data) != 0)
 			syslog(LOG_WARNING, "dnssd_clientstub WARNING: unlink(\"%s\") failed errno %d (%s)", data, errno, strerror(errno));
-		// else syslog(LOG_WARNING, "dnssd_clientstub deliver_request: removed UDS: %s\n", data);
+		// else syslog(LOG_WARNING, "dnssd_clientstub deliver_request: removed UDS: %s", data);
 #endif
 		}
 	free(hdr);
@@ -421,7 +433,7 @@ DNSServiceErrorType DNSSD_API DNSServiceProcessResult(DNSServiceRef sdRef)
 	ipc_msg_hdr hdr;
 	char *data;
 
-	if (!sdRef || sdRef->sockfd < 0 || !sdRef->process_reply)
+	if (!sdRef || !dnssd_SocketValid(sdRef->sockfd) || !sdRef->process_reply)
 		return kDNSServiceErr_BadReference;
 
 	// return NoError on EWOULDBLOCK. This will handle the case
@@ -446,7 +458,7 @@ DNSServiceErrorType DNSSD_API DNSServiceProcessResult(DNSServiceRef sdRef)
 void DNSSD_API DNSServiceRefDeallocate(DNSServiceRef sdRef)
 	{
 	if (!sdRef) return;
-	if (sdRef->sockfd > 0) dnssd_close(sdRef->sockfd);
+	if (dnssd_SocketValid(sdRef->sockfd)) dnssd_close(sdRef->sockfd);
 	free(sdRef);
 	}
 
@@ -473,7 +485,8 @@ static void handle_resolve_response(DNSServiceRef sdr, ipc_msg_hdr *hdr, char *d
 	txtlen = get_uint16(&data);
 	txtrecord = (unsigned char *)get_rdata(&data, txtlen);
 
-	if (!err && str_error) { err = kDNSServiceErr_Unknown; syslog(LOG_WARNING, "dnssd_clientstub handle_resolve_response: error reading result from daemon"); }
+	if (!err && str_error)
+		{ err = kDNSServiceErr_Unknown; syslog(LOG_WARNING, "dnssd_clientstub handle_resolve_response: error reading result from daemon"); }
 
 	((DNSServiceResolveReply)sdr->app_callback)(sdr, flags, ifi, err, fullname, target, port.s, txtlen, txtrecord, sdr->app_context);
 	}
@@ -1033,7 +1046,7 @@ DNSServiceErrorType DNSSD_API DNSServiceRegisterRecord
 	int f2 = (flags & kDNSServiceFlagsUnique) != 0;
 	if (f1 + f2 != 1) return kDNSServiceErr_BadParam;
 
-	if (!sdRef || sdRef->op != connection || sdRef->sockfd < 0)
+	if (!sdRef || sdRef->op != connection || !dnssd_SocketValid(sdRef->sockfd))
 		return kDNSServiceErr_BadReference;
 	*RecordRef = NULL;
 

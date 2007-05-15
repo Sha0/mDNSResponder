@@ -17,6 +17,10 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.291  2007/05/15 21:57:16  cheshire
+<rdar://problem/4608220> Use dnssd_SocketValid(x) macro instead of just
+assuming that all negative values (or zero!) are invalid socket numbers
+
 Revision 1.290  2007/05/10 23:30:57  cheshire
 <rdar://problem/4084490> Only one browse gets remove events when disabling browse domain
 
@@ -764,9 +768,13 @@ mDNSlocal void abort_request(request_state *req)
 	LogOperation("%3d: Removing FD", req->sd);
 	udsSupportRemoveFDFromEventLoop(req->sd);					// Note: This also closes file descriptor req->sd for us
 
+#if APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING
 	// Don't use dnssd_InvalidSocket (-1) because that's the sentinel value MACOSX_MDNS_MALLOC_DEBUGGING uses
 	// for detecting when the memory for an object is inadvertently freed while the object is still on some list
 	req->sd = -2;
+#else
+	req->sd = dnssd_InvalidSocket;
+#endif
 
 	// free pending replies
 	rep = req->replies;
@@ -3125,7 +3133,7 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 		mStatus err = 0;
 		int nwritten;
 		dnssd_sock_t errfd = socket(AF_DNSSD, SOCK_STREAM, 0);
-		if (errfd == dnssd_InvalidSocket) { my_perror("ERROR: socket"); AbortUnlinkAndFree(request); return; }
+		if (!dnssd_SocketValid(errfd)) { my_perror("ERROR: socket"); AbortUnlinkAndFree(request); return; }
 
 		//LogOperation("request_callback: Opened dedicated errfd %d", errfd);
 
@@ -3231,7 +3239,7 @@ mDNSlocal void connect_callback(int fd, short filter, void *info)
 	(void)filter; // Unused
 	(void)info; // Unused
 
-	if (sd == dnssd_InvalidSocket)
+	if (!dnssd_SocketValid(sd))
 		{
 		if (dnssd_errno() != dnssd_EWOULDBLOCK) my_perror("ERROR: accept");
 		return;
@@ -3294,12 +3302,12 @@ mDNSexport int udsserver_init(dnssd_sock_t skt)
 			}
 		}
 
-	if (skt != dnssd_InvalidSocket)
+	if (dnssd_SocketValid(skt))
 		listenfd = skt;
 	else
 		{
 		listenfd = socket(AF_DNSSD, SOCK_STREAM, 0);
-		if (listenfd == dnssd_InvalidSocket)
+		if (!dnssd_SocketValid(listenfd))
 			{
 			my_perror("ERROR: socket(AF_DNSSD, SOCK_STREAM, 0); failed");
 			goto error;
@@ -3405,7 +3413,7 @@ mDNSexport int udsserver_exit(dnssd_sock_t skt)
 	{
 	// If the launching environment created no listening socket,
 	// that means we created it ourselves, so we should clean it up on exit
-	if (skt == dnssd_InvalidSocket)
+	if (!dnssd_SocketValid(skt))
 		{
 		dnssd_close(listenfd);
 #if !defined(USE_TCP_LOOPBACK)

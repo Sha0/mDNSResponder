@@ -28,6 +28,10 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.29  2007/05/15 21:57:16  cheshire
+<rdar://problem/4608220> Use dnssd_SocketValid(x) macro instead of just
+assuming that all negative values (or zero!) are invalid socket numbers
+
 Revision 1.28  2007/03/21 19:01:57  cheshire
 <rdar://problem/5078494> IPC code not 64-bit-savvy: assumes long=32bits, and short=16bits
 
@@ -114,6 +118,7 @@ Update to APSL 2.0
 #if defined(WIN32)
 #	include <winsock2.h>
 #	define dnssd_InvalidSocket	INVALID_SOCKET
+#	define dnssd_SocketValid(s) ((s) != INVALID_SOCKET)
 #	define dnssd_EWOULDBLOCK	WSAEWOULDBLOCK
 #	define dnssd_EINTR			WSAEINTR
 #	define dnssd_sock_t			SOCKET
@@ -134,6 +139,7 @@ Update to APSL 2.0
 #	include <sys/socket.h>
 #	include <netinet/in.h>
 #	define dnssd_InvalidSocket	-1
+#	define dnssd_SocketValid(s) ((s) >= 0)
 #	define dnssd_EWOULDBLOCK	EWOULDBLOCK
 #	define dnssd_EINTR			EINTR
 #	define dnssd_EPIPE			EPIPE
