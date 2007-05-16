@@ -28,6 +28,10 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.69  2007/05/16 16:58:27  cheshire
+<rdar://problem/4471320> Improve reliability of kDNSServiceFlagsMoreComing flag on multiprocessor machines
+As long as select indicates that data is waiting, loop within DNSServiceProcessResult delivering additional results
+
 Revision 1.68  2007/05/16 01:06:52  cheshire
 <rdar://problem/4471320> Improve reliability of kDNSServiceFlagsMoreComing flag on multiprocessor machines
 
@@ -453,36 +457,55 @@ int DNSSD_API DNSServiceRefSockFD(DNSServiceRef sdRef)
 // from the daemon on the socket contained in sdRef, the call will block.
 DNSServiceErrorType DNSSD_API DNSServiceProcessResult(DNSServiceRef sdRef)
 	{
-	DNSServiceErrorType err = kDNSServiceErr_NoError;
-	CallbackHeader cbh;
-	char *data;
+	int morebytes = 0;
 
 	if (!sdRef || !dnssd_SocketValid(sdRef->sockfd) || !sdRef->process_reply)
 		return kDNSServiceErr_BadReference;
 
-	// return NoError on EWOULDBLOCK. This will handle the case
-	// where a non-blocking socket is told there is data, but it was a false positive.
-	// On error, read_all will have written a message to syslog for us
-	if (read_all(sdRef->sockfd, (void *)&cbh.ipc_hdr, sizeof(cbh.ipc_hdr)) < 0)
-		return (dnssd_errno() == dnssd_EWOULDBLOCK) ? kDNSServiceErr_NoError : kDNSServiceErr_Unknown;
-
-	ConvertHeaderBytes(&cbh.ipc_hdr);
-	if (cbh.ipc_hdr.version != VERSION) return kDNSServiceErr_Incompatible;
-	data = malloc(cbh.ipc_hdr.datalen);
-	if (!data) return kDNSServiceErr_NoMemory;
-	if (read_all(sdRef->sockfd, data, cbh.ipc_hdr.datalen) < 0)
-		err = kDNSServiceErr_Unknown; // read_all will have written a message to syslog for us
-	else
+	do
 		{
-		char *ptr = data;
-		cbh.cb_flags     = get_flags(&ptr);
-		cbh.cb_interface = get_uint32(&ptr);
-		cbh.cb_err       = get_error_code(&ptr);
-		if (more_bytes(sdRef->sockfd)) cbh.cb_flags |= kDNSServiceFlagsMoreComing;
-		sdRef->process_reply(sdRef, &cbh, ptr);
-		}
-	free(data);
-	return err;
+		CallbackHeader cbh;
+		char *data;
+	
+		// return NoError on EWOULDBLOCK. This will handle the case
+		// where a non-blocking socket is told there is data, but it was a false positive.
+		// On error, read_all will have written a message to syslog for us
+		if (read_all(sdRef->sockfd, (void *)&cbh.ipc_hdr, sizeof(cbh.ipc_hdr)) < 0)
+			{
+			if (dnssd_errno() == dnssd_EWOULDBLOCK)
+				{
+				if (morebytes)
+					syslog(LOG_WARNING, "dnssd_clientstub DNSServiceProcessResult error: select indicated data was waiting but read_all returned EWOULDBLOCK");
+				return kDNSServiceErr_NoError;
+				}
+			else
+				{
+				syslog(LOG_WARNING, "dnssd_clientstub DNSServiceProcessResult error %d reading result from daemon", dnssd_errno());
+				return kDNSServiceErr_Unknown;
+				}
+			}
+	
+		ConvertHeaderBytes(&cbh.ipc_hdr);
+		if (cbh.ipc_hdr.version != VERSION) return kDNSServiceErr_Incompatible;
+	
+		data = malloc(cbh.ipc_hdr.datalen);
+		if (!data) return kDNSServiceErr_NoMemory;
+		if (read_all(sdRef->sockfd, data, cbh.ipc_hdr.datalen) < 0)
+			{ free(data); return kDNSServiceErr_Unknown; } // read_all will have written a message to syslog for us
+		else
+			{
+			char *ptr = data;
+			cbh.cb_flags     = get_flags(&ptr);
+			cbh.cb_interface = get_uint32(&ptr);
+			cbh.cb_err       = get_error_code(&ptr);
+			morebytes = more_bytes(sdRef->sockfd);
+			if (morebytes) cbh.cb_flags |= kDNSServiceFlagsMoreComing;
+			sdRef->process_reply(sdRef, &cbh, ptr);
+			}
+		free(data);
+		} while (morebytes);
+
+	return kDNSServiceErr_NoError;
 	}
 
 void DNSSD_API DNSServiceRefDeallocate(DNSServiceRef sdRef)
