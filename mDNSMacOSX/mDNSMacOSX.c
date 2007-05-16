@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.413  2007/05/16 16:43:27  cheshire
+Only log "bind" failures for our shared mDNS port and for binding to zero
+-- other attempts to bind to a particular port may legitimately fail
+
 Revision 1.412  2007/05/15 21:49:21  cheshire
 Get rid of "#pragma unused"
 
@@ -1359,13 +1363,18 @@ mDNSlocal mStatus SetupSocket(KQSocketSet *cp, const mDNSIPPort port, u_short sa
 	return(err);
 
 	fail:
-	LogMsg("%s error %ld errno %d (%s)", errstr, err, errno, strerror(errno));
-	if (!strcmp(errstr, "bind") && errno == EADDRINUSE)
+	// For "bind" failures, only write log messages for our shared mDNS port, or for binding to zero
+	if (strcmp(errstr, "bind") || mDNSSameIPPort(port, MulticastDNSPort) || mDNSIPPortIsZero(port))
+		LogMsg("%s error %ld errno %d (%s)", errstr, err, errno, strerror(errno));
+
+	// If we got a "bind" failure with an EADDRINUSE error for our shared mDNS port, display error alert
+	if (!strcmp(errstr, "bind") && mDNSSameIPPort(port, MulticastDNSPort) && errno == EADDRINUSE)
 		NotifyOfElusiveBug("Setsockopt SO_REUSEPORT failed",
 			"Congratulations, you've reproduced an elusive bug.\r"
 			"Please contact the current assignee of <rdar://problem/3814904>.\r"
 			"Alternatively, you can send email to radar-3387020@group.apple.com. (Note number is different.)\r"
 			"If possible, please leave your machine undisturbed so that someone can come to investigate the problem.");
+
 	close(skt);
 	return(err);
 	}
@@ -1385,7 +1394,7 @@ mDNSexport UDPSocket *mDNSPlatformUDPSocket(mDNS *const m, const mDNSIPPort port
 	p->ss.sktv4 = -1;
 	p->ss.sktv6 = -1;
 	err = SetupSocket(&p->ss, port, AF_INET);
-	if (err) { LogMsg("mDNSPlatformUDPSocket: SetupSocket failed"); freeL("UDPSocket", p); return(mDNSNULL); }
+	if (err) { LogMsg("mDNSPlatformUDPSocket: SetupSocket %d failed", mDNSVal16(port)); freeL("UDPSocket", p); return(mDNSNULL); }
 	return(p);
 	}
 
