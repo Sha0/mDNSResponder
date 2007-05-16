@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.30  2007/05/16 01:06:52  cheshire
+<rdar://problem/4471320> Improve reliability of kDNSServiceFlagsMoreComing flag on multiprocessor machines
+
 Revision 1.29  2007/05/15 21:57:16  cheshire
 <rdar://problem/4608220> Use dnssd_SocketValid(x) macro instead of just
 assuming that all negative values (or zero!) are invalid socket numbers
@@ -235,21 +238,13 @@ typedef packedstruct
     {
     uint32_t version;
     uint32_t datalen;
-    uint32_t flags;
+    uint32_t ipc_flags;
     uint32_t op;		// request_op_t or reply_op_t
     client_context_t client_context; // context passed from client, returned by server in corresponding reply
     uint32_t reg_index;            // identifier for a record registered via DNSServiceRegisterRecord() on a
     // socket connected by DNSServiceConnect().  Must be unique in the scope of the connection, such that and
     // index/socket pair uniquely identifies a record.  (Used to select records for removal by DNSServiceRemoveRecord())
     } ipc_msg_hdr;
-
-// client stub callback to process message from server and deliver results to client application
-typedef void (*process_reply_callback)
-    (
-    DNSServiceRef sdr,
-    ipc_msg_hdr *hdr,
-    char *msg
-    );
 
 // routines to write to and extract data from message buffers.
 // caller responsible for bounds checking.

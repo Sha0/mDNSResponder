@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_ipc.c,v $
+Revision 1.19  2007/05/16 01:06:52  cheshire
+<rdar://problem/4471320> Improve reliability of kDNSServiceFlagsMoreComing flag on multiprocessor machines
+
 Revision 1.18  2007/03/21 19:01:57  cheshire
 <rdar://problem/5078494> IPC code not 64-bit-savvy: assumes long=32bits, and short=16bits
 
@@ -133,7 +136,7 @@ void ConvertHeaderBytes(ipc_msg_hdr *hdr)
 	{
 	hdr->version   = htonl(hdr->version);
 	hdr->datalen   = htonl(hdr->datalen);
-	hdr->flags     = htonl(hdr->flags);
+	hdr->ipc_flags = htonl(hdr->ipc_flags);
 	hdr->op        = htonl(hdr->op );
 	hdr->reg_index = htonl(hdr->reg_index);
 	}

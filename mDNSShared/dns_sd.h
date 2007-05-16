@@ -138,11 +138,12 @@ enum
     kDNSServiceFlagsMoreComing          = 0x1,
     /* MoreComing indicates to a callback that at least one more result is
      * queued and will be delivered following immediately after this one.
-     * Applications should not update their UI to display browse
-     * results when the MoreComing flag is set, because this would
-     * result in a great deal of ugly flickering on the screen.
-     * Applications should instead wait until until MoreComing is not set,
-     * and then update their UI.
+     * When the MoreComing flag is set, applications should not immediately
+     * update their UI, because this can result in a great deal of ugly flickering
+     * on the screen, and can waste a great deal of CPU time repeatedly updating
+     * the screen with content that is then immediately erased, over and over.
+     * Applications should wait until until MoreComing is not set, and then
+     * update their UI when no more changes are imminent.
      * When MoreComing is not set, that doesn't mean there will be no more
      * answers EVER, just that there are no more answers immediately
      * available right now at this instant. If more answers become available
@@ -254,6 +255,20 @@ enum
      * ...
      * DNSServiceRefDeallocate(BrowseRef); // Terminate the browse operation
      * DNSServiceRefDeallocate(MainRef);   // Terminate the shared connection
+     *
+     * Note that when callbacks are invoked using a shared DNSServiceRef, the
+     * kDNSServiceFlagsMoreComing flag applies collectively to *all* active
+     * operations sharing the same DNSServiceRef. If the MoreComing flag is
+     * set it means that there are more results queued on this DNSServiceRef,
+     * but not necessarily more results for this particular callback function. 
+     * The implication of this for client programmers is that when a callback
+     * is invoked with the MoreComing flag set, the code should update its
+     * internal data structures with the new result, and set a variable indicating
+     * that its UI needs to be updated. Then, later when a callback is eventually
+     * invoked with the MoreComing flag not set, the code should update *all*
+     * stale UI elements related to that shared DNSServiceRef that need updating,
+     * not just the UI elements related to the particular callback that happened
+     * to be the last one to be invoked.
      */
 
     };

@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.292  2007/05/16 01:06:52  cheshire
+<rdar://problem/4471320> Improve reliability of kDNSServiceFlagsMoreComing flag on multiprocessor machines
+
 Revision 1.291  2007/05/15 21:57:16  cheshire
 <rdar://problem/4608220> Use dnssd_SocketValid(x) macro instead of just
 assuming that all negative values (or zero!) are invalid socket numbers
@@ -3119,13 +3122,13 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 		}
 
 	// check if client wants silent operation
-	if (request->hdr.flags & IPC_FLAGS_NOREPLY) request->no_reply = 1;
+	if (request->hdr.ipc_flags & IPC_FLAGS_NOREPLY) request->no_reply = 1;
 
 	dedicated_error_socket = (request->hdr.op == reg_record_request    || request->hdr.op == add_record_request ||
 							  request->hdr.op == update_record_request || request->hdr.op == remove_record_request);
 
-	if (((request->hdr.flags & IPC_FLAGS_REUSE_SOCKET) == 0) != dedicated_error_socket)
-		LogMsg("WARNING: client request %d with incorrect flags setting 0x%X", request->hdr.op, request->hdr.flags);
+	if (((request->hdr.ipc_flags & IPC_FLAGS_REUSE_SOCKET) == 0) != dedicated_error_socket)
+		LogMsg("WARNING: client request %d with incorrect flags setting 0x%X", request->hdr.op, request->hdr.ipc_flags);
 
 	// check if primary socket is to be used for synchronous errors, else open new socket
 	if (dedicated_error_socket)
