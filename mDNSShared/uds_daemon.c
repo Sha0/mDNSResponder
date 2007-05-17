@@ -17,6 +17,12 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.293  2007/05/17 19:46:20  cheshire
+Routine name deliver_async_error() is misleading. What it actually does is write a message header
+(containing an error code) followed by 256 bytes of garbage zeroes onto a client connection,
+thereby trashing it and making it useless for any subsequent communication. It's destructive,
+and not very useful. Changing name to generate_final_fatal_reply_with_garbage().
+
 Revision 1.292  2007/05/16 01:06:52  cheshire
 <rdar://problem/4471320> Improve reliability of kDNSServiceFlagsMoreComing flag on multiprocessor machines
 
@@ -472,17 +478,17 @@ struct request_state
 	dnssd_sock_t sd;
 
 	transfer_state ts;
-	uint32_t hdr_bytes;		// bytes of header already read
+	uint32_t hdr_bytes;				// bytes of header already read
 	ipc_msg_hdr hdr;
-	uint32_t data_bytes;	// bytes of message data already read
-	char *msgbuf;		// pointer to data storage to pass to free()
-	char *msgdata;		// pointer to data to be read from (may be modified)
-	int bufsize;		// size of data storage
+	uint32_t data_bytes;			// bytes of message data already read
+	char *msgbuf;					// pointer to data storage to pass to free()
+	char *msgdata;					// pointer to data to be read from (may be modified)
+	int bufsize;					// size of data storage
 
 	// reply, termination, error, and client context info
-	int no_reply;		// don't send asynchronous replies to client
-	int time_blocked;           // record time of a blocked client
-	struct reply_state *replies;  // corresponding (active) reply list
+	int no_reply;					// don't send asynchronous replies to client
+	int time_blocked;				// record time of a blocked client
+	struct reply_state *replies;	// corresponding (active) reply list
 	undelivered_error_t *u_err;
 	req_termination_fn terminate;
 
@@ -565,20 +571,16 @@ typedef struct
 
 typedef struct reply_state
 	{
-	// state of the transmission
 	dnssd_sock_t sd;
 	transfer_state ts;
 	uint32_t nwriten;
 	uint32_t len;
-	// context of the reply
-	request_state *request;  // the request that this answers
-	struct reply_state *next;   // if there are multiple unsent replies
-	// pointer into message buffer - allows fields to be changed after message is formatted
-	ipc_msg_hdr *mhdr;
+	request_state *request;		// the request that this answers
+	struct reply_state *next;	// if there are multiple unsent replies
+	ipc_msg_hdr *mhdr;			// pointer into message buffer - allows fields to be changed after message is formatted
 	reply_hdr *rhdr;
-	char *sdata;  // pointer to start of call-specific data
-	// pointer to malloc'd buffer
-	char *msgbuf;
+	char *sdata;				// pointer to start of call-specific data
+	char *msgbuf;				// pointer to malloc'd buffer
 	} reply_state;
 
 #ifdef _HAVE_SETDOMAIN_SUPPORT_
@@ -599,8 +601,6 @@ mDNSexport const char ProgramName[] = "mDNSResponder";
 static dnssd_sock_t listenfd = dnssd_InvalidSocket;
 static request_state *all_requests = NULL;
 
-#define MAX_TIME_BLOCKED 60 * mDNSPlatformOneSecond  // try to send data to a blocked client for 60 seconds before
-													 // terminating connection
 #define MSG_PAD_BYTES 5                              // pad message buffer (read from client) with n zero'd bytes to guarantee
 													 // n get_string() calls w/o buffer overrun
 // initialization, setup/teardown functions
@@ -853,7 +853,9 @@ mDNSlocal void append_reply(request_state *req, reply_state *rep)
 	rep->next = NULL;
 	}
 
-mDNSlocal void deliver_async_error(request_state *req, reply_op_t op, mStatus err)
+// This is not really a useful routine. It writes a message header (with an error code) followed by 256 bytes of
+// garbage zeroes onto the client connection, thereby trashing it and making it useless for any subsequent communication.
+mDNSlocal void generate_final_fatal_reply_with_garbage(request_state *req, reply_op_t op, mStatus err)
 	{
 	if (!req->no_reply)
 		{
@@ -1351,14 +1353,14 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 			}
 		else
 			{
-			if (!SuppressError) deliver_async_error(instance->request, reg_service_reply_op, result);
+			if (!SuppressError) generate_final_fatal_reply_with_garbage(instance->request, reg_service_reply_op, result);
 			free_service_instance(instance);
 			}
 		}
 	else
 		{
 		if (result != mStatus_NATTraversal) LogMsg("ERROR: unknown result in regservice_callback: %ld", result);
-		if (!SuppressError) deliver_async_error(instance->request, reg_service_reply_op, result);
+		if (!SuppressError) generate_final_fatal_reply_with_garbage(instance->request, reg_service_reply_op, result);
 		free_service_instance(instance);
 		}
 	}
@@ -2458,7 +2460,7 @@ mDNSlocal void queryrecord_result_callback(mDNS *const m, DNSQuestion *question,
 
 	if (answer->RecordType == kDNSRecordTypePacketNegative)
 		{
-		deliver_async_error(req, query_reply_op, kDNSServiceErr_NoSuchRecord);
+		generate_final_fatal_reply_with_garbage(req, query_reply_op, kDNSServiceErr_NoSuchRecord);
 		return;
 		}
 
@@ -2773,7 +2775,7 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 
 		if (err)
 			{
-			deliver_async_error(request, port_mapping_create_reply_op, kDNSServiceErr_NATPortMappingUnsupported);
+			generate_final_fatal_reply_with_garbage(request, port_mapping_create_reply_op, kDNSServiceErr_NATPortMappingUnsupported);
 			uDNS_FreeNATInfo(m, n);
 			request->u.portmapping.NATAddrinfo = mDNSNULL;
 			return mDNStrue;
@@ -2786,7 +2788,7 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 			else if (request->u.portmapping.protocol & kDNSServiceProtocol_TCP)
 				request->u.portmapping.NATMapinfo = uDNS_AllocNATInfo(m, NATOp_MapTCP, request->u.portmapping.privatePort, request->u.portmapping.requestedPublicPort, request->u.portmapping.requestedTTL, port_mapping_create_reply);
 
-			if (!request->u.portmapping.NATMapinfo) { deliver_async_error(request, port_mapping_create_reply_op, mStatus_NoMemoryErr); return mDNStrue; }
+			if (!request->u.portmapping.NATMapinfo) { generate_final_fatal_reply_with_garbage(request, port_mapping_create_reply_op, mStatus_NoMemoryErr); return mDNStrue; }
 			request->u.portmapping.NATMapinfo->NATTraversalContext = request;
 			request->u.portmapping.NATMapinfo->reg.RecordRegistration = NULL;
 			request->u.portmapping.NATMapinfo->state                  = NATState_Request;
@@ -2806,7 +2808,7 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 
 			case NATState_Deleted:
 				{
-				deliver_async_error(request, port_mapping_create_reply_op, kDNSServiceErr_Invalid);
+				generate_final_fatal_reply_with_garbage(request, port_mapping_create_reply_op, kDNSServiceErr_Invalid);
 				uDNS_FreeNATInfo(m, n);
 				request->u.portmapping.NATMapinfo = mDNSNULL;
 				return ret;
@@ -2814,7 +2816,7 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 
 			case NATState_Error:
 				{
-				deliver_async_error(request, port_mapping_create_reply_op, kDNSServiceErr_NATPortMappingUnsupported);
+				generate_final_fatal_reply_with_garbage(request, port_mapping_create_reply_op, kDNSServiceErr_NATPortMappingUnsupported);
 				uDNS_FreeNATInfo(m, n);
 				request->u.portmapping.NATMapinfo = mDNSNULL;
 				return ret;
@@ -2969,7 +2971,7 @@ mDNSlocal void addrinfo_result_callback(mDNS *const m, DNSQuestion *question, co
 
 	if (answer->rdlength == 0)
 		{
-		deliver_async_error(request, query_reply_op, kDNSServiceErr_NoSuchRecord);
+		generate_final_fatal_reply_with_garbage(request, query_reply_op, kDNSServiceErr_NoSuchRecord);
 		return;
 		}
 
@@ -3585,9 +3587,10 @@ mDNSexport mDNSs32 udsserver_idle(mDNSs32 nextevent)
 			{
 			if (!(*req)->time_blocked) (*req)->time_blocked = now;
 			debugf("udsserver_idle: client has been blocked for %ld seconds", (now - (*req)->time_blocked) / mDNSPlatformOneSecond);
-			if (now - (*req)->time_blocked >= MAX_TIME_BLOCKED)
+			if (now - (*req)->time_blocked >= 60 * mDNSPlatformOneSecond)
 				{
-				LogMsg("Could not write data to client %d after %ld seconds - aborting connection", (*req)->sd, MAX_TIME_BLOCKED / mDNSPlatformOneSecond);
+				LogMsg("Could not write data to client %d after %ld seconds - aborting connection",
+					(*req)->sd, (now - (*req)->time_blocked) / mDNSPlatformOneSecond);
 				LogClientInfo(*req);
 				abort_request(*req);
 				result = t_terminated;
