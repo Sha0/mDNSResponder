@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.414  2007/05/17 22:00:59  cheshire
+<rdar://problem/5210966> Lower network change delay from two seconds to one second
+
 Revision 1.413  2007/05/16 16:43:27  cheshire
 Only log "bind" failures for our shared mDNS port and for binding to zero
 -- other attempts to bind to a particular port may legitimately fail
@@ -2601,14 +2604,14 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 	KQueueLock(m);
 	mDNS_Lock(m);
 
-	mDNSs32 delay = mDNSPlatformOneSecond * 2;							// Start off assuming a two-second delay
+	mDNSs32 delay = mDNSPlatformOneSecond;					// Start off assuming a one-second delay
 
-	int c = CFArrayGetCount(changedKeys);								// Count changes
+	int c = CFArrayGetCount(changedKeys);					// Count changes
 	CFRange range = { 0, c };
 	int c1 = (CFArrayContainsValue(changedKeys, range, NetworkChangedKey_Hostnames   ) != 0);
 	int c2 = (CFArrayContainsValue(changedKeys, range, NetworkChangedKey_Computername) != 0);
 	int c3 = (CFArrayContainsValue(changedKeys, range, NetworkChangedKey_DynamicDNS  ) != 0);
-	if (c && c - c1 - c2 - c3 == 0) delay = mDNSPlatformOneSecond/10;	// If these were the only changes, shorten delay
+	if (c && c - c1 - c2 - c3 == 0) delay = mDNSPlatformOneSecond/20;	// If these were the only changes, shorten delay
 
 #if LogAllOperations
 	LogOperation("***   NetworkChanged   *** %d change%s %s%s%sdelay %d",
@@ -2622,7 +2625,7 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 		{
 		char buf[256];
 		if (!CFStringGetCString(CFArrayGetValueAtIndex(changedKeys, i), buf, sizeof(buf), kCFStringEncodingUTF8)) buf[0] = 0;
-		LogOperation("NetworkChanged: %s", buf);
+		LogOperation("***   NetworkChanged: %s", buf);
 		}
 #endif
 
