@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.89  2007/05/17 19:12:42  cheshire
+Tidy up code layout
+
 Revision 1.88  2007/04/22 20:16:25  cheshire
 Fix compiler errors (const parameter declarations)
 
@@ -232,7 +235,7 @@ typedef struct
 static HostList IPv4HostList = { 0, 0, 0 };
 static HostList IPv6HostList = { 0, 0, 0 };
 
-mDNSlocal HostEntry *FindHost(const mDNSAddr *addr, HostList* list)
+mDNSlocal HostEntry *FindHost(const mDNSAddr *addr, HostList *list)
 	{
 	long	i;
 	
@@ -246,7 +249,7 @@ mDNSlocal HostEntry *FindHost(const mDNSAddr *addr, HostList* list)
 	return NULL;
 	}
 	
-mDNSlocal HostEntry *AddHost(const mDNSAddr *addr, HostList* list)
+mDNSlocal HostEntry *AddHost(const mDNSAddr *addr, HostList *list)
 	{
 	int i;
 	HostEntry *entry;

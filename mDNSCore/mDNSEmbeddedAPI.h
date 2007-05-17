@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.378  2007/05/17 19:11:46  cheshire
+Tidy up code layout
+
 Revision 1.377  2007/05/15 00:43:33  cheshire
 Remove unused regState_Cancelled
 
@@ -2207,29 +2210,28 @@ typedef enum
 typedef void (*TCPConnectionCallback)(TCPSocket *sock, void *context, mDNSBool ConnectionEstablished, mStatus err);
 extern TCPSocket *mDNSPlatformTCPSocket(mDNS *const m, TCPSocketFlags flags, mDNSIPPort *port);	// creates a tcp socket
 extern TCPSocket *mDNSPlatformTCPAccept(TCPSocketFlags flags, int sd);
-extern int            mDNSPlatformTCPGetFD(TCPSocket *sock);
-extern mStatus        mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
-										  TCPConnectionCallback callback, void *context);
-extern mDNSBool       mDNSPlatformTCPIsConnected(TCPSocket *sock);
-extern void           mDNSPlatformTCPCloseConnection(TCPSocket *sock);
-extern long           mDNSPlatformReadTCP(TCPSocket *sock, void *buf, unsigned long buflen, mDNSBool *closed);
-extern long           mDNSPlatformWriteTCP(TCPSocket *sock, const char *msg, unsigned long len);
+extern int        mDNSPlatformTCPGetFD(TCPSocket *sock);
+extern mStatus    mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
+                                         TCPConnectionCallback callback, void *context);
+extern mDNSBool   mDNSPlatformTCPIsConnected(TCPSocket *sock);
+extern void       mDNSPlatformTCPCloseConnection(TCPSocket *sock);
+extern long       mDNSPlatformReadTCP(TCPSocket *sock, void *buf, unsigned long buflen, mDNSBool *closed);
+extern long       mDNSPlatformWriteTCP(TCPSocket *sock, const char *msg, unsigned long len);
 extern UDPSocket *mDNSPlatformUDPSocket(mDNS *const m, mDNSIPPort port);
-extern void           mDNSPlatformUDPClose(UDPSocket *sock);
+extern void       mDNSPlatformUDPClose(UDPSocket *sock);
 
 // mDNSPlatformTLSSetupCerts/mDNSPlatformTLSTearDownCerts used by dnsextd
-extern mStatus        mDNSPlatformTLSSetupCerts(void);
-extern void           mDNSPlatformTLSTearDownCerts(void);
+extern mStatus    mDNSPlatformTLSSetupCerts(void);
+extern void       mDNSPlatformTLSTearDownCerts(void);
 
 
 // Platforms that support unicast browsing and dynamic update registration for clients who do not specify a domain
 // in browse/registration calls must implement these routines to get the "default" browse/registration list.
 
-extern void         mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDNSBool setsearch, domainname *const fqdn, domainname *const regDomain, DNameListElem **browseDomains);
-extern mStatus      mDNSPlatformGetPrimaryInterface(mDNS *const m, mDNSAddr *v4, mDNSAddr *v6, mDNSAddr *router);
-extern void         mDNSPlatformDefaultRegDomainChanged(const domainname *d, mDNSBool add);
-extern void         mDNSPlatformDynDNSHostNameStatusChanged(const domainname *const dname, const mStatus status);
-
+extern void       mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDNSBool setsearch, domainname *const fqdn, domainname *const regDomain, DNameListElem **browseDomains);
+extern mStatus    mDNSPlatformGetPrimaryInterface(mDNS *const m, mDNSAddr *v4, mDNSAddr *v6, mDNSAddr *router);
+extern void       mDNSPlatformDefaultRegDomainChanged(const domainname *d, mDNSBool add);
+extern void       mDNSPlatformDynDNSHostNameStatusChanged(const domainname *const dname, const mStatus status);
 
 #ifdef _LEGACY_NAT_TRAVERSAL_
 // Support for legacy NAT traversal protocols, implemented by the platform layer and callable by the core.
