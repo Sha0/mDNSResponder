@@ -480,7 +480,7 @@ static void DNSSD_API qr_reply(DNSServiceRef sdRef, const DNSServiceFlags flags,
 	char *op = (flags & kDNSServiceFlagsAdd) ? "Add" : "Rmv";
 	const unsigned char *rd  = rdata;
 	const unsigned char *end = (const unsigned char *) rdata + rdlen;
-	char rdb[1000];
+	char rdb[1000], *p = rdb;
 	int unknowntype = 0;
 
 	(void)sdRef;    // Unused
@@ -491,36 +491,37 @@ static void DNSSD_API qr_reply(DNSServiceRef sdRef, const DNSServiceFlags flags,
 
 	if (num_printed++ == 0) printf("Timestamp     A/R Flags if %-30s%4s%4s Rdata\n", "Name", "T", "C");
 	printtimestamp();
-	if (errorCode == kDNSServiceErr_NoSuchRecord)
-		printf("No Such Record\n");
-	else if (errorCode)
-		printf("Error code %d\n", errorCode);
-	else
-		{
-		switch (rrtype)
-			{
-			case kDNSServiceType_A: sprintf(rdb, "%d.%d.%d.%d", rd[0], rd[1], rd[2], rd[3]); break;
-			case kDNSServiceType_AAAA: sprintf(rdb, "%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X",
-				rd[0x0], rd[0x1], rd[0x2], rd[0x3], rd[0x4], rd[0x5], rd[0x6], rd[0x7],
-				rd[0x8], rd[0x9], rd[0xA], rd[0xB], rd[0xC], rd[0xD], rd[0xE], rd[0xF]); break;
-				break;
-			default : sprintf(rdb, "%d bytes%s", rdlen, rdlen ? ":" : ""); unknowntype = 1; break;
-			}
 
-		printf("%s%6X%3d %-30s%4d%4d %s", op, flags, ifIndex, fullname, rrtype, rrclass, rdb);
-		if (unknowntype) while (rd < end) printf(" %02X", *rd++);
-		printf("\n");
-	
-		if (operation == 'C')
-			if (flags & kDNSServiceFlagsAdd)
-				DNSServiceReconfirmRecord(flags, ifIndex, fullname, rrtype, rrclass, rdlen, rdata);
+	switch (rrtype)
+		{
+		case kDNSServiceType_A: sprintf(rdb, "%d.%d.%d.%d", rd[0], rd[1], rd[2], rd[3]); break;
+		case kDNSServiceType_AAAA: sprintf(rdb, "%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X",
+			rd[0x0], rd[0x1], rd[0x2], rd[0x3], rd[0x4], rd[0x5], rd[0x6], rd[0x7],
+			rd[0x8], rd[0x9], rd[0xA], rd[0xB], rd[0xC], rd[0xD], rd[0xE], rd[0xF]); break;
+		case kDNSServiceType_CNAME:
+			while (*rd) { p += sprintf(p, "%.*s.", *rd, rd+1); rd += 1 + *rd; }
+			break;
+		default : sprintf(rdb, "%d bytes%s", rdlen, rdlen ? ":" : ""); unknowntype = 1; break;
 		}
+
+	printf("%s%6X%3d %-30s%4d%4d %s", op, flags, ifIndex, fullname, rrtype, rrclass, rdb);
+	if (unknowntype) while (rd < end) printf(" %02X", *rd++);
+	if (errorCode)
+		{
+		if (errorCode == kDNSServiceErr_NoSuchRecord) printf("   No Such Record");
+		else                                          printf("   Error code %d", errorCode);
+		}
+	printf("\n");
+
+	if (operation == 'C')
+		if (flags & kDNSServiceFlagsAdd)
+			DNSServiceReconfirmRecord(flags, ifIndex, fullname, rrtype, rrclass, rdlen, rdata);
 
 	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
 	}
 
 #if HAS_NAT_PMP_API
-static void DNSSD_API port_mapping_create_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode, uint32_t publicAddress, uint32_t protocol, uint16_t privatePort, uint16_t publicPort, uint32_t ttl, void * context)
+static void DNSSD_API port_mapping_create_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode, uint32_t publicAddress, uint32_t protocol, uint16_t privatePort, uint16_t publicPort, uint32_t ttl, void *context)
 	{
 	(void)sdRef;       // Unused
 	(void)context;     // Unused
@@ -531,8 +532,8 @@ static void DNSSD_API port_mapping_create_reply(DNSServiceRef sdRef, DNSServiceF
 	if (errorCode) printf("Error code %d\n", errorCode);
 	else
 		{
-		const unsigned char * digits = ( const unsigned char* ) &publicAddress;
-		char                  addr[256];
+		const unsigned char *digits = (const unsigned char *)&publicAddress;
+		char                 addr[256];
 
 		sprintf(addr, "%d.%d.%d.%d", digits[0], digits[1], digits[2], digits[3]);
 		printf("%-4d %-20s %-15d %-15d %-15d %d\n", ifIndex, addr, protocol, ntohs(privatePort), ntohs(publicPort), ttl);
@@ -545,35 +546,35 @@ static void DNSSD_API port_mapping_create_reply(DNSServiceRef sdRef, DNSServiceF
 static void DNSSD_API addrinfo_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex, DNSServiceErrorType errorCode, const char *hostname, const struct sockaddr *address, uint32_t ttl, void *context)
 	{
 	char *op = (flags & kDNSServiceFlagsAdd) ? "Add" : "Rmv";
+	char addr[256] = "";
 	(void) sdRef;
 	(void) context;
 	
 	if (num_printed++ == 0) printf("Timestamp     A/R Flags if %-25s %-40s %s\n", "Hostname", "Address", "TTL");
 	printtimestamp();
-	if (errorCode) printf("Error code %d\n", errorCode);
-	else
-		{
-		char addr[256];
 
-		if (address)
-			{
-			if (address->sa_family == AF_INET)
-				{
-				const unsigned char * digits = ( const unsigned char* ) &( ( struct sockaddr_in* ) address)->sin_addr;
-				sprintf(addr, "%d.%d.%d.%d", digits[0], digits[1], digits[2], digits[3]);
-				}
-			else if (address->sa_family == AF_INET6)
-				{
-				const unsigned char * digits = ( const unsigned char* ) &( ( struct sockaddr_in6* ) address)->sin6_addr;
-				sprintf(addr, "%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X",
-						digits[0], digits[1], digits[2], digits[3], digits[4], digits[5], digits[6], digits[7], digits[8],
-						digits[9], digits[10], digits[11], digits[12], digits[13], digits[14], digits[15]);
-				}
-			}
-			
-		printf("%s%6X%3d %-25s %-40s %d\n", op, flags, interfaceIndex, hostname, addr, ttl);
+	if (address && address->sa_family == AF_INET)
+		{
+		const unsigned char *digits = (const unsigned char *) &((struct sockaddr_in *)address)->sin_addr;
+		sprintf(addr, "%d.%d.%d.%d", digits[0], digits[1], digits[2], digits[3]);
 		}
-	fflush(stdout);
+	else if (address && address->sa_family == AF_INET6)
+		{
+		const unsigned char *digits = (const unsigned char *) &((struct sockaddr_in6 *)address)->sin6_addr;
+		sprintf(addr, "%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X",
+				digits[0x0], digits[0x1], digits[0x2], digits[0x3], digits[0x4], digits[0x5], digits[0x6], digits[0x7],
+				digits[0x8], digits[0x9], digits[0xA], digits[0xB], digits[0xC], digits[0xD], digits[0xE], digits[0xF]);
+		}
+
+	printf("%s%6X%3d %-25s %-40s %d", op, flags, interfaceIndex, hostname, addr, ttl);
+	if (errorCode)
+		{
+		if (errorCode == kDNSServiceErr_NoSuchRecord) printf("   No Such Record");
+		else                                          printf("   Error code %d", errorCode);
+		}
+	printf("\n");
+
+	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
 	}
 #endif
 
@@ -624,15 +625,15 @@ static void HandleEvents(void)
 		}
 	}
 
-static int getfirstoption( int argc, char **argv, const char *optstr, int *pOptInd)
+static int getfirstoption(int argc, char **argv, const char *optstr, int *pOptInd)
 // Return the recognized option in optstr and the option index of the next arg.
 #if NOT_HAVE_GETOPT
 	{
 	int i;
-	for ( i=1; i < argc; i++)
+	for (i=1; i < argc; i++)
 		{
-		if ( argv[i][0] == '-' && &argv[i][1] && 
-			 NULL != strchr( optstr, argv[i][1]))
+		if (argv[i][0] == '-' && &argv[i][1] && 
+			 NULL != strchr(optstr, argv[i][1]))
 			{
 			*pOptInd = i + 1;
 			return argv[i][1];
@@ -642,14 +643,14 @@ static int getfirstoption( int argc, char **argv, const char *optstr, int *pOptI
 	}
 #else
 	{
-	int operation = getopt(argc, (char * const *)argv, optstr);
+	int operation = getopt(argc, (char *const *)argv, optstr);
 	*pOptInd = optind;
 	return operation;
 	}
 #endif
 
 static void DNSSD_API MyRegisterRecordCallback(DNSServiceRef service, DNSRecordRef record, const DNSServiceFlags flags,
-    DNSServiceErrorType errorCode, void * context)
+    DNSServiceErrorType errorCode, void *context)
 	{
 	char *name = (char *)context;
 	
@@ -672,7 +673,7 @@ static unsigned long getip(const char *const name)
 	{
 	unsigned long ip = 0;
 	struct addrinfo hints;
-	struct addrinfo * addrs = NULL;
+	struct addrinfo *addrs = NULL;
 
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_INET;
@@ -911,10 +912,7 @@ int main(int argc, char **argv)
 #if HAS_ADDRINFO_API
 		case 'G':   {
 					if (argc != optind+2) goto Fail;
-					else
-						{
-						err = DNSServiceGetAddrInfo(&client, 0, 0, GetProtocol(argv[optind+0]), argv[optind+1], addrinfo_reply, NULL);
-						}
+					else err = DNSServiceGetAddrInfo(&client, kDNSServiceFlagsReturnIntermediates, 0, GetProtocol(argv[optind+0]), argv[optind+1], addrinfo_reply, NULL);
 					break;
 		            }
 #endif

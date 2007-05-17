@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.70  2007/05/17 20:58:22  cheshire
+<rdar://problem/4647145> DNSServiceQueryRecord should return useful information with NXDOMAIN
+
 Revision 1.69  2007/05/16 16:58:27  cheshire
 <rdar://problem/4471320> Improve reliability of kDNSServiceFlagsMoreComing flag on multiprocessor machines
 As long as select indicates that data is waiting, loop within DNSServiceProcessResult delivering additional results
@@ -674,41 +677,41 @@ static void handle_addrinfo_response(DNSServiceRef sdr, CallbackHeader *cbh, cha
 	uint32_t ttl;
 	char hostname[kDNSServiceMaxDomainName];
 	int str_error = 0;
-	uint16_t rrtype, rdlen;
+	uint16_t rrtype, rrclass, rdlen;
 	char *rdata;
 	struct sockaddr_in  sa4;
 	struct sockaddr_in6 sa6;
 	struct sockaddr   * sa = NULL;
 
 	if (get_string(&data, hostname, kDNSServiceMaxDomainName) < 0) str_error = 1;
-	rrtype = get_uint16(&data);
-	rdlen  = get_uint16(&data);
-	rdata  = get_rdata(&data, rdlen);
-	ttl    = get_uint32(&data);
+	rrtype  = get_uint16(&data);
+	rrclass = get_uint16(&data);
+	rdlen   = get_uint16(&data);
+	rdata   = get_rdata(&data, rdlen);
+	ttl     = get_uint32(&data);
 	
 	if (!cbh->cb_err && str_error)
 		{ cbh->cb_err = kDNSServiceErr_Unknown; syslog(LOG_WARNING, "dnssd_clientstub handle_addrinfo_response: error reading result from daemon"); }
 
-	if (!cbh->cb_err)
+	if (rrtype == kDNSServiceType_A)
 		{
-		if (rrtype == kDNSServiceType_A)
-			{
-			memcpy(&sa4.sin_addr, rdata, rdlen);
-			sa = (struct sockaddr*) &sa4;
-			#ifndef NOT_HAVE_SA_LEN
-			sa->sa_len = sizeof(struct sockaddr_in);
-			#endif
-			sa->sa_family = AF_INET;
-			}
-		else if (rrtype == kDNSServiceType_AAAA)
-			{
-			memcpy(&sa6.sin6_addr, rdata, rdlen);
-			sa = (struct sockaddr*) &sa6;
-			#ifndef NOT_HAVE_SA_LEN
-			sa->sa_len = sizeof(struct sockaddr_in6);
-			#endif
-			sa->sa_family = AF_INET6;
-			}
+		sa = (struct sockaddr *)&sa4;
+		bzero(&sa4, sizeof(sa4));
+		#ifndef NOT_HAVE_SA_LEN
+		sa->sa_len = sizeof(struct sockaddr_in);
+		#endif
+		sa->sa_family = AF_INET;
+		if (!cbh->cb_err) memcpy(&sa4.sin_addr, rdata, rdlen);
+		}
+	else if (rrtype == kDNSServiceType_AAAA)
+		{
+		sa = (struct sockaddr *)&sa6;
+		bzero(&sa6, sizeof(sa6));
+		#ifndef NOT_HAVE_SA_LEN
+		sa->sa_len = sizeof(struct sockaddr_in6);
+		#endif
+		sa->sa_family = AF_INET6;
+		if (!cbh->cb_err) memcpy(&sa6.sin6_addr, rdata, rdlen);
 		}
 
 	((DNSServiceGetAddrInfoReply)sdr->app_callback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, hostname, sa, ttl, sdr->app_context);
