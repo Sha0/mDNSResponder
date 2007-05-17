@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.368  2007/05/17 19:12:16  cheshire
+Updated comment about finding matching pair of sockets
+
 Revision 1.367  2007/05/15 23:38:00  cheshire
 Need to grab lock before calling sendRecordRegistration();
 
@@ -1445,7 +1448,7 @@ mDNSlocal void startLLQHandshake(mDNS *m, DNSQuestion *q, mDNSBool defer)
 			q->tcpSock = mDNSNULL;
 			q->udpSock = mDNSNULL;
 			q->eventPort = zeroIPPort;
-			for (i = 0; i < 100; i++)		// Try 100 times to find sockets
+			for (i = 0; i < 100; i++)		// Try 100 times to find matching pair of sockets
 				{
 				q->tcpSock = mDNSPlatformTCPSocket(m, kTCPSocketFlags_UseTLS, &q->eventPort);
 				if (!q->tcpSock) continue;
