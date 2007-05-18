@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.31  2007/05/18 17:56:20  cheshire
+Rename port_mapping_create_reply_op to port_mapping_reply_op
+
 Revision 1.30  2007/05/16 01:06:52  cheshire
 <rdar://problem/4471320> Improve reliability of kDNSServiceFlagsMoreComing flag on multiprocessor machines
 
@@ -199,8 +202,9 @@ Update to APSL 2.0
 
 typedef enum
     {
-    connection = 1,           // connected socket via DNSServiceConnect()
-    reg_record_request,	  // reg/remove record only valid for connected sockets
+    request_op_none = 0,	// No request yet received on this connection
+    connection = 1,			// connected socket via DNSServiceConnect()
+    reg_record_request,		// reg/remove record only valid for connected sockets
     remove_record_request,
     enumeration_request,
     reg_service_request,
@@ -223,7 +227,7 @@ typedef enum
     resolve_reply_op,
     query_reply_op,
     reg_record_reply_op,
-    port_mapping_create_reply_op,
+    port_mapping_reply_op,
 	addrinfo_reply_op
     } reply_op_t;
 
