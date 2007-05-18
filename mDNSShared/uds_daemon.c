@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.298  2007/05/18 21:22:35  cheshire
+Convert uint16_t etc. to their locally-defined equivalents, like the rest of the core code
+
 Revision 1.297  2007/05/18 20:33:11  cheshire
 Avoid declaring lots of uninitialized variables in read_rr_from_ipc_msg
 
@@ -447,7 +450,7 @@ typedef void (*req_termination_fn)(request_state *request);
 typedef struct registered_record_entry
 	{
 	struct registered_record_entry *next;
-	uint32_t key;
+	mDNSu32 key;
 	AuthRecord *rr;		// Variable-sized AuthRecord
 	client_context_t client_context;
 	request_state *rstate;
@@ -483,9 +486,9 @@ struct request_state
 	dnssd_sock_t sd;
 
 	transfer_state ts;
-	uint32_t hdr_bytes;				// bytes of header already read
+	mDNSu32 hdr_bytes;				// bytes of header already read
 	ipc_msg_hdr hdr;
-	uint32_t data_bytes;			// bytes of message data already read
+	mDNSu32 data_bytes;			// bytes of message data already read
 	char *msgbuf;					// pointer to data storage to pass to free()
 	char *msgptr;					// pointer to data to be read from (may be modified)
 	char *msgend;					// pointer to byte after last byte of message
@@ -512,7 +515,7 @@ struct request_state
 		struct
 			{
 			mDNSInterfaceID InterfaceID;
-			uint16_t txtlen;
+			mDNSu16 txtlen;
 			void *txtdata;
 			mDNSIPPort port;
 			domainlabel name;
@@ -529,20 +532,20 @@ struct request_state
 		struct
 			{
 			mDNSInterfaceID       interface_id;
-			uint32_t              flags;
-			uint32_t              protocol;
+			mDNSu32              flags;
+			mDNSu32              protocol;
 			DNSQuestion           q4;
 			DNSQuestion           q6;
 			} addrinfo;
 		struct
 			{
 			mDNSInterfaceID       interface_id;
-			uint8_t               protocol;
+			mDNSu8               protocol;
 			mDNSIPPort            privatePort;
 			mDNSIPPort            ReqPub;	// Requested public port
 			mDNSIPPort            ActPub;	// Actual public port assigned by NAT gateway
-			uint32_t              requestedTTL;
-			uint32_t              receivedTTL;
+			mDNSu32              requestedTTL;
+			mDNSu32              receivedTTL;
 			mDNSv4Addr            addr;
 			NATTraversalInfo     *NATAddrinfo;
 			NATTraversalInfo     *NATMapinfo;
@@ -571,7 +574,7 @@ struct request_state
 typedef struct
 	{
 	DNSServiceFlags flags;			// Note: This field is in NETWORK byte order
-	uint32_t ifi;					// Note: This field is in NETWORK byte order
+	mDNSu32 ifi;					// Note: This field is in NETWORK byte order
 	DNSServiceErrorType error;		// Note: This field is in NETWORK byte order
 	} reply_hdr;
 
@@ -579,8 +582,8 @@ typedef struct reply_state
 	{
 	dnssd_sock_t sd;
 	transfer_state ts;
-	uint32_t nwriten;
-	uint32_t len;
+	mDNSu32 nwriten;
+	mDNSu32 len;
 	request_state *request;		// the request that this answers
 	struct reply_state *next;	// if there are multiple unsent replies
 	char *msgbuf;				// pointer to malloc'd buffer
@@ -629,9 +632,9 @@ mDNSlocal void FatalError(char *errmsg)
 	abort();		// On platforms where writing to zero doesn't generate an exception, abort instead
 	}
 
-mDNSlocal uint32_t dnssd_htonl(uint32_t l)
+mDNSlocal mDNSu32 dnssd_htonl(mDNSu32 l)
 	{
-	uint32_t ret;
+	mDNSu32 ret;
 	char *data = (char*) &ret;
 	put_uint32(l, &data);
 	return ret;
@@ -766,7 +769,7 @@ mDNSlocal mStatus GenerateNTDResponse(const domainname *const servicename, const
 
 		// Calculate reply data length
 		len = sizeof(DNSServiceFlags);
-		len += sizeof(uint32_t);  // if index
+		len += sizeof(mDNSu32);  // if index
 		len += sizeof(DNSServiceErrorType);
 		len += (int) (strlen(namestr) + 1);
 		len += (int) (strlen(typestr) + 1);
@@ -794,12 +797,12 @@ mDNSlocal mStatus GenerateNTDResponse(const domainname *const servicename, const
 mDNSlocal AuthRecord *read_rr_from_ipc_msg(char **ptr, int GetTTL, int validate_flags)
 	{
 	DNSServiceFlags flags = get_flags(ptr);
-	uint32_t interfaceIndex = get_uint32(ptr);
+	mDNSu32 interfaceIndex = get_uint32(ptr);
 	char name[256];
 	int str_err = get_string(ptr, name, sizeof(name));
-	uint16_t type  = get_uint16(ptr);
-	uint16_t class = get_uint16(ptr);
-	uint16_t rdlen = get_uint16(ptr);
+	mDNSu16 type  = get_uint16(ptr);
+	mDNSu16 class = get_uint16(ptr);
+	mDNSu16 rdlen = get_uint16(ptr);
 	char *rdata = get_rdata(ptr, rdlen);
 	int storage_size = rdlen > sizeof(RDataBody) ? rdlen : sizeof(RDataBody);
 	AuthRecord *rr;
@@ -1059,7 +1062,7 @@ mDNSlocal void regrecord_callback(mDNS *const m, AuthRecord *rr, mStatus result)
 		{
 		registered_record_entry *re = rr->RecordContext;
 		request_state *request = re->rstate;
-		int len = sizeof(DNSServiceFlags) + sizeof(uint32_t) + sizeof(DNSServiceErrorType);
+		int len = sizeof(DNSServiceFlags) + sizeof(mDNSu32) + sizeof(DNSServiceErrorType);
 		reply_state *reply = create_reply(reg_record_reply_op, len, request);
 		reply->mhdr->client_context = re->client_context;
 		reply->rhdr->flags = dnssd_htonl(0);
@@ -1122,7 +1125,7 @@ mDNSlocal mStatus handle_regrecord_request(request_state *request)
 	return(err);
 	}
 
-mDNSlocal mStatus add_record_to_service(request_state *request, service_instance *instance, uint16_t rrtype, uint16_t rdlen, char *rdata, uint32_t ttl)
+mDNSlocal mStatus add_record_to_service(request_state *request, service_instance *instance, mDNSu16 rrtype, mDNSu16 rdlen, char *rdata, mDNSu32 ttl)
 	{
 	ServiceRecordSet *srs = &instance->srs;
 	mStatus result;
@@ -1148,10 +1151,10 @@ mDNSlocal mStatus handle_add_request(request_state *request)
 	service_instance *i;
 	mStatus result = mStatus_UnknownErr;
 	DNSServiceFlags flags  = get_flags(&request->msgptr);
-	uint16_t        rrtype = get_uint16(&request->msgptr);
-	uint16_t        rdlen  = get_uint16(&request->msgptr);
+	mDNSu16        rrtype = get_uint16(&request->msgptr);
+	mDNSu16        rdlen  = get_uint16(&request->msgptr);
 	char           *rdata  = get_rdata(&request->msgptr, rdlen);
-	uint32_t        ttl    = get_uint32(&request->msgptr);
+	mDNSu32        ttl    = get_uint32(&request->msgptr);
 	if (!ttl) ttl = DefaultTTLforRRType(rrtype);
 	(void)flags; // Unused
 
@@ -1174,7 +1177,7 @@ mDNSlocal void update_callback(mDNS *const m, AuthRecord *const rr, RData *oldrd
 	if (oldrd != &rr->rdatastorage) freeL("RData/update_callback", oldrd);
 	}
 
-mDNSlocal mStatus update_record(AuthRecord *rr, uint16_t rdlen, char *rdata, uint32_t ttl)
+mDNSlocal mStatus update_record(AuthRecord *rr, mDNSu16 rdlen, char *rdata, mDNSu32 ttl)
 	{
 	int rdsize;
 	RData *newrd;
@@ -1199,9 +1202,9 @@ mDNSlocal mStatus update_record(AuthRecord *rr, uint16_t rdlen, char *rdata, uin
 
 mDNSlocal mStatus handle_update_request(request_state *request)
 	{
-	uint16_t rdlen;
+	mDNSu16 rdlen;
 	char *ptr, *rdata;
-	uint32_t ttl;
+	mDNSu32 ttl;
 	mStatus result = mStatus_BadReferenceErr;
 	service_instance *i;
 	AuthRecord *rr = NULL;
@@ -1528,7 +1531,7 @@ mDNSlocal mStatus handle_regservice_request(request_state *request)
 	mStatus err;
 
 	DNSServiceFlags flags = get_flags(&ptr);
-	uint32_t interfaceIndex = get_uint32(&ptr);
+	mDNSu32 interfaceIndex = get_uint32(&ptr);
 	mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
 	if (interfaceIndex && !InterfaceID)
 		{ LogMsg("ERROR: handle_regservice_request - Couldn't find interfaceIndex %d", interfaceIndex); return(mStatus_BadParamErr); }
@@ -1983,7 +1986,7 @@ mDNSlocal mStatus handle_browse_request(request_state *request)
 	mStatus err = mStatus_NoError;
 
 	DNSServiceFlags flags = get_flags(&ptr);
-	uint32_t interfaceIndex = get_uint32(&ptr);
+	mDNSu32 interfaceIndex = get_uint32(&ptr);
 	mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
 	if (interfaceIndex && !InterfaceID) return(mStatus_BadParamErr);
 
@@ -2075,11 +2078,11 @@ mDNSlocal void resolve_result_callback(mDNS *const m, DNSQuestion *question, con
 
 	// calculate reply length
 	len += sizeof(DNSServiceFlags);
-	len += sizeof(uint32_t);  // interface index
+	len += sizeof(mDNSu32);  // interface index
 	len += sizeof(DNSServiceErrorType);
 	len += strlen(fullname) + 1;
 	len += strlen(target) + 1;
-	len += 2 * sizeof(uint16_t);  // port, txtLen
+	len += 2 * sizeof(mDNSu16);  // port, txtLen
 	len += req->u.resolve.txt->rdlength;
 
 	// allocate/init reply header
@@ -2117,7 +2120,7 @@ mDNSlocal mStatus handle_resolve_request(request_state *request)
 
 	// extract the data from the message
 	DNSServiceFlags flags = get_flags(&ptr);
-	uint32_t interfaceIndex = get_uint32(&ptr);
+	mDNSu32 interfaceIndex = get_uint32(&ptr);
 	mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
 	if (interfaceIndex && !InterfaceID)
 		{ LogMsg("ERROR: handle_resolve_request bad interfaceIndex %d", interfaceIndex); return(mStatus_BadParamErr); }
@@ -2211,12 +2214,12 @@ mDNSlocal void queryrecord_result_callback(mDNS *const m, DNSQuestion *question,
 		ConvertDomainNameToCString(answer->name, name);
 
 	len = sizeof(DNSServiceFlags);	// calculate reply data length
-	len += sizeof(uint32_t);		// interface index
+	len += sizeof(mDNSu32);		// interface index
 	len += sizeof(DNSServiceErrorType);
 	len += strlen(name) + 1;
-	len += 3 * sizeof(uint16_t);	// type, class, rdlen
+	len += 3 * sizeof(mDNSu16);	// type, class, rdlen
 	len += answer->rdlength;
-	len += sizeof(uint32_t);		// TTL
+	len += sizeof(mDNSu32);		// TTL
 
 	rep = create_reply(req->hdr.op == query_request ? query_reply_op : addrinfo_reply_op, len, req);
 
@@ -2259,11 +2262,11 @@ mDNSlocal mStatus handle_queryrecord_request(request_state *request)
 	{
 	char *ptr = request->msgptr;
 	char name[256];
-	uint16_t rrtype, rrclass;
+	mDNSu16 rrtype, rrclass;
 	mStatus err;
 
 	DNSServiceFlags flags = get_flags(&ptr);
-	uint32_t interfaceIndex = get_uint32(&ptr);
+	mDNSu32 interfaceIndex = get_uint32(&ptr);
 	mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
 	if (interfaceIndex && !InterfaceID) return(mStatus_BadParamErr);
 
@@ -2302,14 +2305,14 @@ mDNSlocal mStatus handle_queryrecord_request(request_state *request)
 #endif
 
 mDNSlocal reply_state *format_enumeration_reply(request_state *request,
-	const char *domain, DNSServiceFlags flags, uint32_t ifi, DNSServiceErrorType err)
+	const char *domain, DNSServiceFlags flags, mDNSu32 ifi, DNSServiceErrorType err)
 	{
 	size_t len;
 	reply_state *reply;
 	char *data;
 
 	len = sizeof(DNSServiceFlags);
-	len += sizeof(uint32_t);
+	len += sizeof(mDNSu32);
 	len += sizeof(DNSServiceErrorType);
 	len += strlen(domain) + 1;
 
@@ -2367,7 +2370,7 @@ mDNSlocal mStatus handle_enum_request(request_state *request)
 	DNSServiceFlags reg = flags & kDNSServiceFlagsRegistrationDomains;
 	mDNS_DomainType t_all     = reg ? mDNS_DomainTypeRegistration        : mDNS_DomainTypeBrowse;
 	mDNS_DomainType t_default = reg ? mDNS_DomainTypeRegistrationDefault : mDNS_DomainTypeBrowseDefault;
-	uint32_t interfaceIndex = get_uint32(&ptr);
+	mDNSu32 interfaceIndex = get_uint32(&ptr);
 	mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
 	if (interfaceIndex && !InterfaceID) return(mStatus_BadParamErr);
 
@@ -2618,10 +2621,10 @@ mDNSlocal mDNSBool port_mapping_reply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt)
 		{
 		// calculate reply data length
 		replyLen = sizeof(DNSServiceFlags);
-		replyLen += 3 * sizeof(uint32_t);  // if index + addr + ttl
+		replyLen += 3 * sizeof(mDNSu32);  // if index + addr + ttl
 		replyLen += sizeof(DNSServiceErrorType);
-		replyLen += 2 * sizeof(uint16_t);  // publicAddress + privateAddress
-		replyLen += sizeof(uint8_t);       // protocol
+		replyLen += 2 * sizeof(mDNSu16);  // publicAddress + privateAddress
+		replyLen += sizeof(mDNSu8);       // protocol
 	
 		rep = create_reply(port_mapping_reply_op, replyLen, request);
 	
@@ -2651,15 +2654,15 @@ mDNSlocal mDNSBool port_mapping_reply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt)
 mDNSlocal mStatus handle_port_mapping_request(request_state *request)
 	{
 	char *ptr = request->msgptr;
-	uint8_t protocol;
+	mDNSu8 protocol;
 	mDNSIPPort privatePort;
 	mDNSIPPort publicPort;
-	uint32_t ttl;
+	mDNSu32 ttl;
 	NATAddrRequest *req;
 	mStatus err = mStatus_NoError;
 
 	DNSServiceFlags flags = get_flags(&ptr);
-	uint32_t interfaceIndex = get_uint32(&ptr);
+	mDNSu32 interfaceIndex = get_uint32(&ptr);
 	mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
 	if (interfaceIndex && !InterfaceID) return(mStatus_BadParamErr);
 
@@ -2753,7 +2756,7 @@ mDNSlocal mStatus handle_addrinfo_request(request_state *request)
 	mStatus err = 0;
 
 	DNSServiceFlags flags = get_flags(&ptr);
-	uint32_t interfaceIndex = get_uint32(&ptr);
+	mDNSu32 interfaceIndex = get_uint32(&ptr);
 	request->u.addrinfo.interface_id = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
 	if (interfaceIndex && !request->u.addrinfo.interface_id) return(mStatus_BadParamErr);
 	request->u.addrinfo.flags = flags;
@@ -2848,7 +2851,7 @@ mDNSlocal mStatus handle_addrinfo_request(request_state *request)
 // if there is no data on the socket, the socket will be closed and t_terminated will be returned
 mDNSlocal int read_msg(request_state *req)
 	{
-	uint32_t nleft;
+	mDNSu32 nleft;
 	int nread;
 
 	if (req->ts == t_terminated || req->ts == t_error)
@@ -2950,64 +2953,64 @@ rerror:
 // returns 0 on success, -1 on error.
 mDNSlocal int validate_message(request_state *rstate)
 	{
-	uint32_t min_size;
+	mDNSu32 min_size;
 
 	switch(rstate->hdr.op)
 		{
 		case resolve_request: min_size = 	sizeof(DNSServiceFlags) +	// flags
-						sizeof(uint32_t) + 		// interface
+						sizeof(mDNSu32) + 		// interface
 						(3 * sizeof(char));           	// name, regtype, domain
 						break;
 		case query_request: min_size = 		sizeof(DNSServiceFlags) + 	// flags
-						sizeof(uint32_t) +		// interface
+						sizeof(mDNSu32) +		// interface
 						sizeof(char) + 			// fullname
-						(2 * sizeof(uint16_t)); 	// type, class
+						(2 * sizeof(mDNSu16)); 	// type, class
 						break;
 		case browse_request: min_size = 	sizeof(DNSServiceFlags) +	// flags
-						sizeof(uint32_t) +		// interface
+						sizeof(mDNSu32) +		// interface
 						(2 * sizeof(char)); 		// regtype, domain
 						break;
 		case reg_service_request: min_size = 	sizeof(DNSServiceFlags) +	// flags
-						sizeof(uint32_t) +		// interface
+						sizeof(mDNSu32) +		// interface
 						(4 * sizeof(char)) + 		// name, type, domain, host
-						(2 * sizeof(uint16_t));		// port, textlen
+						(2 * sizeof(mDNSu16));		// port, textlen
 						break;
 		case enumeration_request: min_size =	sizeof(DNSServiceFlags) +	// flags
-						sizeof(uint32_t); 		// interface
+						sizeof(mDNSu32); 		// interface
 						break;
 		case reg_record_request: min_size = 	sizeof(DNSServiceFlags) +	// flags
-						sizeof(uint32_t) + 		// interface
+						sizeof(mDNSu32) + 		// interface
 						sizeof(char) + 			// fullname
-						(3 * sizeof(uint16_t)) +	// type, class, rdlen
-						sizeof(uint32_t);		// ttl
+						(3 * sizeof(mDNSu16)) +	// type, class, rdlen
+						sizeof(mDNSu32);		// ttl
 						break;
 		case add_record_request: min_size = 	sizeof(DNSServiceFlags) +	// flags
-						(2 * sizeof(uint16_t)) + 	// type, rdlen
-						sizeof(uint32_t);		// ttl
+						(2 * sizeof(mDNSu16)) + 	// type, rdlen
+						sizeof(mDNSu32);		// ttl
 						break;
 		case update_record_request: min_size =	sizeof(DNSServiceFlags) +	// flags
-						sizeof(uint16_t) +		// rdlen
-						sizeof(uint32_t); 		// ttl
+						sizeof(mDNSu16) +		// rdlen
+						sizeof(mDNSu32); 		// ttl
 						break;
 		case remove_record_request: min_size =	sizeof(DNSServiceFlags);	// flags
 						break;
 		case reconfirm_record_request: min_size=sizeof(DNSServiceFlags) +	// flags
-						sizeof(uint32_t) + 		// interface
+						sizeof(mDNSu32) + 		// interface
 						sizeof(char) + 			// fullname
-						(3 * sizeof(uint16_t));		// type, class, rdlen
+						(3 * sizeof(mDNSu16));		// type, class, rdlen
 						break;
 		case setdomain_request: min_size = sizeof(DNSServiceFlags) + sizeof(char);  // flags + domain
 			break;
 		case port_mapping_request: min_size = sizeof(DNSServiceFlags) + 	// flags
-						sizeof(uint32_t) +             // interface
-						sizeof(uint8_t)  +             // protocol
-						sizeof(uint16_t) +             // private port
-						sizeof(uint16_t) +             // public port
-						sizeof(uint32_t);
+						sizeof(mDNSu32) +             // interface
+						sizeof(mDNSu8)  +             // protocol
+						sizeof(mDNSu16) +             // private port
+						sizeof(mDNSu16) +             // public port
+						sizeof(mDNSu32);
 			break;
 		case addrinfo_request: min_size = sizeof(DNSServiceFlags) + // flags
-						sizeof(uint32_t) +             // interface
-						sizeof(uint32_t) +             // protocol
+						sizeof(mDNSu32) +             // interface
+						sizeof(mDNSu32) +             // protocol
 						sizeof(char);                  // hostname
 			break;
 		default:
