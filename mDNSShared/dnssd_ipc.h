@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.32  2007/05/18 20:31:20  cheshire
+Rename port_mapping_create_request to port_mapping_request
+
 Revision 1.31  2007/05/18 17:56:20  cheshire
 Rename port_mapping_create_reply_op to port_mapping_reply_op
 
@@ -215,7 +218,7 @@ typedef enum
     add_record_request,
     update_record_request,
     setdomain_request,
-    port_mapping_create_request,
+    port_mapping_request,
 	addrinfo_request
     } request_op_t;
 
