@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.301  2007/05/18 23:55:22  cheshire
+<rdar://problem/4454655> Allow multiple register/browse/resolve operations to share single Unix Domain Socket
+
 Revision 1.300  2007/05/18 21:27:11  cheshire
 Rename connected_registration_termination to connection_termination
 
@@ -488,9 +491,13 @@ typedef struct browser_t
 struct request_state
 	{
 	request_state *next;
-
+	request_state *primary;			// If this operation is on a shared socket, pointer to
+									// primary request_state for the original DNSServiceConnect() operation
 	dnssd_sock_t sd;
 
+	// NOTE: On a shared connection these fields in the primary structure, including hdr, are re-used
+	// for each new request. This is because, until we've read the ipc_msg_hdr to find out what the
+	// operation is, we don't know if we're going to need to allocate a new request_state or not.
 	transfer_state ts;
 	mDNSu32 hdr_bytes;				// bytes of header already read
 	ipc_msg_hdr hdr;
@@ -503,8 +510,6 @@ struct request_state
 	int no_reply;					// don't send asynchronous replies to client
 	int time_blocked;				// record time of a blocked client
 	struct reply_state *replies;	// corresponding (active) reply list
-	mStatus resultcode;				// Note: This field is in NETWORK byte order
-	int     resultcode_bytes;
 	req_termination_fn terminate;
 
 	union
@@ -654,29 +659,32 @@ mDNSlocal void my_perror(char *errmsg)
 
 mDNSlocal void abort_request(request_state *req)
 	{
+	// First stop whatever mDNSCore operation we were doing
 	if (req->terminate) req->terminate(req);
 
-	LogOperation("%3d: Removing FD", req->sd);
-	udsSupportRemoveFDFromEventLoop(req->sd);		// Note: This also closes file descriptor req->sd for us
-
-#if APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING
-	// Don't use dnssd_InvalidSocket (-1) because that's the sentinel value MACOSX_MDNS_MALLOC_DEBUGGING uses
-	// for detecting when the memory for an object is inadvertently freed while the object is still on some list
-	req->sd = -2;
-#else
-	req->sd = dnssd_InvalidSocket;
-#endif
-
-	while (req->replies)	// free pending replies
+	// Now, if this request_state is not subbordinate to some other primary, close file descriptor and discard replies
+	if (!req->primary)
 		{
-		reply_state *ptr = req->replies;
-		req->replies = req->replies->next;
-		if (ptr->msgbuf) freeL("reply_state msgbuf (abort)", ptr->msgbuf);
-		freeL("reply_state (abort)", ptr);
+		LogOperation("%3d: Removing FD", req->sd);
+		udsSupportRemoveFDFromEventLoop(req->sd);		// Note: This also closes file descriptor req->sd for us
+
+		while (req->replies)	// free pending replies
+			{
+			reply_state *ptr = req->replies;
+			req->replies = req->replies->next;
+			if (ptr->msgbuf) freeL("reply_state msgbuf (abort)", ptr->msgbuf);
+			freeL("reply_state (abort)", ptr);
+			}
 		}
 
-	req->resultcode = -1;		// Set resultcode non-zero so that udsserver_idle will unlink this request from the list and free the memory
-	req->resultcode_bytes = 0;
+	// Set req->sd to something invalid, so that udsserver_idle knows to unlink and free this structure
+	#if APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING
+		// Don't use dnssd_InvalidSocket (-1) because that's the sentinel value MACOSX_MDNS_MALLOC_DEBUGGING uses
+		// for detecting when the memory for an object is inadvertently freed while the object is still on some list
+		req->sd = -2;
+	#else
+		req->sd = dnssd_InvalidSocket;
+	#endif
 	}
 
 #if APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING
@@ -731,9 +739,11 @@ mDNSlocal reply_state *create_reply(const reply_op_t op, const size_t datalen, r
 	}
 
 // Append a reply to the list in a request object
+// If our request is sharing a connection, then we append our reply_state onto the primary's list
 mDNSlocal void append_reply(request_state *req, reply_state *rep)
 	{
-	reply_state **ptr = &req->replies;
+	request_state *r = req->primary ? req->primary : req;
+	reply_state **ptr = &r->replies;
 	while (*ptr) ptr = &(*ptr)->next;
 	*ptr = rep;
 	rep->next = NULL;
@@ -741,6 +751,8 @@ mDNSlocal void append_reply(request_state *req, reply_state *rep)
 
 // This is not really a useful routine. It writes a message header (with an error code) followed by 256 bytes of
 // garbage zeroes onto the client connection, thereby trashing it and making it useless for any subsequent communication.
+// WARNING: This means that this routine is fundamentally incompatible with kDNSServiceFlagsShareConnection
+// All the places that use generate_final_fatal_reply_with_garbage() need to be changed to generate syntactically valid messages instead
 mDNSlocal void generate_final_fatal_reply_with_garbage(request_state *req, reply_op_t op, mStatus err)
 	{
 	if (!req->no_reply)
@@ -754,7 +766,8 @@ mDNSlocal void generate_final_fatal_reply_with_garbage(request_state *req, reply
 // Generates a response message giving name, type, domain, plus interface index,
 // suitable for a browse result or service registration result.
 // On successful completion rep is set to point to a malloc'd reply_state struct
-mDNSlocal mStatus GenerateNTDResponse(const domainname *const servicename, const mDNSInterfaceID id, request_state *const request, reply_state **const rep)
+mDNSlocal mStatus GenerateNTDResponse(const domainname *const servicename, const mDNSInterfaceID id,
+	request_state *const request, reply_state **const rep, reply_op_t op)
 	{
 	domainlabel name;
 	domainname type, dom;
@@ -782,7 +795,7 @@ mDNSlocal mStatus GenerateNTDResponse(const domainname *const servicename, const
 		len += (int) (strlen(domstr) + 1);
 
 		// Build reply header
-		*rep = create_reply(query_reply_op, len, request);
+		*rep = create_reply(op, len, request);
 		(*rep)->rhdr->flags = dnssd_htonl(0);
 		(*rep)->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, id));
 		(*rep)->rhdr->error = dnssd_htonl(kDNSServiceErr_NoError);
@@ -985,7 +998,7 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 			for (e = instance->srs.Extras; e; e = e->next) e->r.AllowRemoteQuery = mDNStrue;
 			}
 
-		if (GenerateNTDResponse(srs->RR_SRV.resrec.name, srs->RR_SRV.resrec.InterfaceID, instance->request, &rep) != mStatus_NoError)
+		if (GenerateNTDResponse(srs->RR_SRV.resrec.name, srs->RR_SRV.resrec.InterfaceID, instance->request, &rep, reg_service_reply_op) != mStatus_NoError)
 			LogMsg("%3d: regservice_callback: %##s is not valid DNS-SD SRV name", instance->sd, srs->RR_SRV.resrec.name->c);
 		else append_reply(instance->request, rep);
 
@@ -1091,6 +1104,21 @@ mDNSlocal void regrecord_callback(mDNS *const m, AuthRecord *rr, mStatus result)
 
 mDNSlocal void connection_termination(request_state *request)
 	{
+	request_state **req = &all_requests;
+	while (*req)
+		{
+		if ((*req)->primary == request)
+			{
+			// Since we're already doing a list traversal, we unlink the request directly instead of using AbortUnlinkAndFree()
+			request_state *tmp = *req;
+			abort_request(tmp);
+			*req = tmp->next;
+			freeL("request_state/connection_termination", tmp);
+			}
+		else
+			req = &(*req)->next;
+		}
+
 	while (request->u.reg_recs)
 		{
 		registered_record_entry *ptr = request->u.reg_recs;
@@ -1098,6 +1126,26 @@ mDNSlocal void connection_termination(request_state *request)
 		ptr->rr->RecordContext = NULL;
 		mDNS_Deregister(&mDNSStorage, ptr->rr);		// Will free ptr->rr for us
 		freeL("registered_record_entry/connection_termination", ptr);
+		}
+	}
+
+mDNSlocal void handle_cancel_request(request_state *request)
+	{
+	request_state **req = &all_requests;
+	while (*req)
+		{
+		if ((*req)->primary == request &&
+			(*req)->hdr.client_context.ptr64[0] == request->hdr.client_context.ptr64[0] &&
+			(*req)->hdr.client_context.ptr64[1] == request->hdr.client_context.ptr64[2])
+			{
+			// Since we're already doing a list traversal, we unlink the request directly instead of using AbortUnlinkAndFree()
+			request_state *tmp = *req;
+			abort_request(tmp);
+			*req = tmp->next;
+			freeL("request_state/handle_cancel_request", tmp);
+			}
+		else
+			req = &(*req)->next;
 		}
 	}
 
@@ -1126,8 +1174,6 @@ mDNSlocal mStatus handle_regrecord_request(request_state *request)
 
 	LogOperation("%3d: DNSServiceRegisterRecord %s", request->sd, RRDisplayString(&mDNSStorage, &rr->resrec));
 	err = mDNS_Register(&mDNSStorage, rr);
-	if (!err) request->terminate = connection_termination;
-
 	return(err);
 	}
 
@@ -1666,7 +1712,7 @@ mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const Resourc
 	if (answer->rrtype != kDNSType_PTR)
 		{ LogMsg("%3d: FoundInstance: Should not be called with rrtype %d (not a PTR record)", req->sd, answer->rrtype); return; }
 
-	if (GenerateNTDResponse(&answer->rdata->u.name, answer->InterfaceID, req, &rep) != mStatus_NoError)
+	if (GenerateNTDResponse(&answer->rdata->u.name, answer->InterfaceID, req, &rep, browse_reply_op) != mStatus_NoError)
 		{
 		LogMsg("%3d: FoundInstance: %##s PTR %##s received from network is not valid DNS-SD service pointer",
 			req->sd, answer->name->c, answer->rdata->u.name.c);
@@ -2414,21 +2460,21 @@ mDNSlocal mStatus handle_enum_request(request_state *request)
 
 mDNSlocal mStatus handle_reconfirm_request(request_state *request)
 	{
+	mStatus status = mStatus_BadParamErr;
 	AuthRecord *rr = read_rr_from_ipc_msg(&request->msgptr, 0, 0);
 	if (rr)
 		{
-		mStatus status = mDNS_ReconfirmByValue(&mDNSStorage, &rr->resrec);
+		status = mDNS_ReconfirmByValue(&mDNSStorage, &rr->resrec);
 		LogOperation(
 			(status == mStatus_NoError) ?
 			"%3d: DNSServiceReconfirmRecord(%s) interface %d initiated" :
 			"%3d: DNSServiceReconfirmRecord(%s) interface %d failed: %d",
 			request->sd, RRDisplayString(&mDNSStorage, &rr->resrec),
 			mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, rr->resrec.InterfaceID), status);
-		status = 0;  // Adding this line eliminates a build failure when building mDNSPosix on Tiger
 		}
 	freeL("AuthRecord/handle_reconfirm_request", rr);
 	// We always want to abort a DNSServiceReconfirmRecord() immediately -- there are no asynchronous results to return
-	return(-1);
+	return(status);
 	}
 
 #ifdef _HAVE_SETDOMAIN_SUPPORT_
@@ -2673,7 +2719,7 @@ mDNSlocal mStatus handle_port_mapping_request(request_state *request)
 	if (interfaceIndex && !InterfaceID) return(mStatus_BadParamErr);
 
 	(void)flags; // Unused
-	protocol         = *ptr++;
+	protocol         = get_uint32(&ptr);
 	privatePort.b[0] = *ptr++;
 	privatePort.b[1] = *ptr++;
 	publicPort .b[0] = *ptr++;
@@ -2852,6 +2898,16 @@ mDNSlocal mStatus handle_addrinfo_request(request_state *request)
 #pragma mark - Main Request Handler etc.
 #endif
 
+mDNSlocal request_state *NewRequest(void)
+	{
+	request_state **p = &all_requests;
+	while (*p) p=&(*p)->next;
+	*p = mallocL("request_state", sizeof(request_state));
+	if (!*p) FatalError("ERROR: malloc");
+	mDNSPlatformMemZero(*p, sizeof(request_state));
+	return(*p);
+	}
+
 // read_msg may be called any time when the transfer state (req->ts) is t_morecoming.
 // returns the current state of the request (morecoming, error, complete, terminated.)
 // if there is no data on the socket, the socket will be closed and t_terminated will be returned
@@ -2954,137 +3010,88 @@ rerror:
 	return t_error;
 	}
 
-// check that the message delivered by the client is sufficiently long to extract the required data from the buffer
-// without overrunning it.
-// returns 0 on success, -1 on error.
-mDNSlocal int validate_message(request_state *rstate)
-	{
-	mDNSu32 min_size;
+#define RecordOrientedOp(X) \
+	((X) == reg_record_request || (X) == add_record_request || (X) == update_record_request || (X) == remove_record_request)
 
-	switch(rstate->hdr.op)
-		{
-		case resolve_request: min_size = 	sizeof(DNSServiceFlags) +	// flags
-						sizeof(mDNSu32) + 		// interface
-						(3 * sizeof(char));           	// name, regtype, domain
-						break;
-		case query_request: min_size = 		sizeof(DNSServiceFlags) + 	// flags
-						sizeof(mDNSu32) +		// interface
-						sizeof(char) + 			// fullname
-						(2 * sizeof(mDNSu16)); 	// type, class
-						break;
-		case browse_request: min_size = 	sizeof(DNSServiceFlags) +	// flags
-						sizeof(mDNSu32) +		// interface
-						(2 * sizeof(char)); 		// regtype, domain
-						break;
-		case reg_service_request: min_size = 	sizeof(DNSServiceFlags) +	// flags
-						sizeof(mDNSu32) +		// interface
-						(4 * sizeof(char)) + 		// name, type, domain, host
-						(2 * sizeof(mDNSu16));		// port, textlen
-						break;
-		case enumeration_request: min_size =	sizeof(DNSServiceFlags) +	// flags
-						sizeof(mDNSu32); 		// interface
-						break;
-		case reg_record_request: min_size = 	sizeof(DNSServiceFlags) +	// flags
-						sizeof(mDNSu32) + 		// interface
-						sizeof(char) + 			// fullname
-						(3 * sizeof(mDNSu16)) +	// type, class, rdlen
-						sizeof(mDNSu32);		// ttl
-						break;
-		case add_record_request: min_size = 	sizeof(DNSServiceFlags) +	// flags
-						(2 * sizeof(mDNSu16)) + 	// type, rdlen
-						sizeof(mDNSu32);		// ttl
-						break;
-		case update_record_request: min_size =	sizeof(DNSServiceFlags) +	// flags
-						sizeof(mDNSu16) +		// rdlen
-						sizeof(mDNSu32); 		// ttl
-						break;
-		case remove_record_request: min_size =	sizeof(DNSServiceFlags);	// flags
-						break;
-		case reconfirm_record_request: min_size=sizeof(DNSServiceFlags) +	// flags
-						sizeof(mDNSu32) + 		// interface
-						sizeof(char) + 			// fullname
-						(3 * sizeof(mDNSu16));		// type, class, rdlen
-						break;
-		case setdomain_request: min_size = sizeof(DNSServiceFlags) + sizeof(char);  // flags + domain
-			break;
-		case port_mapping_request: min_size = sizeof(DNSServiceFlags) + 	// flags
-						sizeof(mDNSu32) +             // interface
-						sizeof(mDNSu8)  +             // protocol
-						sizeof(mDNSu16) +             // private port
-						sizeof(mDNSu16) +             // public port
-						sizeof(mDNSu32);
-			break;
-		case addrinfo_request: min_size = sizeof(DNSServiceFlags) + // flags
-						sizeof(mDNSu32) +             // interface
-						sizeof(mDNSu32) +             // protocol
-						sizeof(char);                  // hostname
-			break;
-		default:
-			LogMsg("ERROR: validate_message - unsupported request type: %d", rstate->hdr.op);
-		return -1;
-	}
-
-	return (rstate->data_bytes >= min_size ? 0 : -1);
-	}
+// The lightweight operations are the ones that don't need a dedicated request_state structure allocated for them
+#define LightweightOp(X) (RecordOrientedOp(X) || (X) == cancel_request)
 
 mDNSlocal void request_callback(int fd, short filter, void *info)
 	{
-	request_state *request = info;
+	mStatus err = 0;
+	request_state *req = info;
 	transfer_state result;
 	dnssd_sockaddr_t cliaddr;
 	int dedicated_error_socket;
+	dnssd_sock_t errfd = req->sd;
+	int nwritten;
 #if defined(_WIN32)
 	u_long opt = 1;
 #endif
+	mDNSs32 min_size = sizeof(DNSServiceFlags);
 	(void)fd; // Unused
 	(void)filter; // Unused
 
-	result = read_msg(request);
+	result = read_msg(req);
 	if (result == t_morecoming) return;
-	if (result == t_terminated || result == t_error) { AbortUnlinkAndFree(request); return; }
+	if (result == t_terminated || result == t_error) { AbortUnlinkAndFree(req); return; }
 
-	if (request->hdr.version != VERSION)
+	if (req->hdr.version != VERSION)
 		{
 		LogMsg("ERROR: client incompatible with daemon (client version = %d, "
-			   "daemon version = %d)\n", request->hdr.version, VERSION);
-		AbortUnlinkAndFree(request);
+			   "daemon version = %d)\n", req->hdr.version, VERSION);
+		AbortUnlinkAndFree(req);
 		return;
 		}
 
-	if (validate_message(request) < 0)
+	switch(req->hdr.op)            //          Interface       + other data
 		{
-		// note that we cannot deliver an error message if validation fails, since the path to the error socket
-		// may be contained in the (invalid) message body for some message types
-		AbortUnlinkAndFree(request);
-		LogMsg("Invalid message sent by client - may indicate a malicious program running on this machine!");
-		return;
+		case connection_request:       min_size = 0;                                                                           break;
+		case reg_service_request:      min_size += sizeof(mDNSu32) + 4 /* name, type, domain, host */ + 4 /* port, textlen */; break;
+		case add_record_request:       min_size +=                   4 /* type, rdlen */              + 4 /* ttl */;           break;
+		case update_record_request:    min_size +=                   2 /* rdlen */                    + 4 /* ttl */;           break;
+		case remove_record_request:                                                                                            break;
+		case browse_request:           min_size += sizeof(mDNSu32) + 2 /* type, domain */;                                     break;
+		case resolve_request:          min_size += sizeof(mDNSu32) + 3 /* type, type, domain */;                               break;
+		case query_request:            min_size += sizeof(mDNSu32) + 1 /* name */                     + 4 /* type, class*/;    break;
+		case enumeration_request:      min_size += sizeof(mDNSu32);                                                            break;
+		case reg_record_request:       min_size += sizeof(mDNSu32) + 1 /* name */ + 6 /* type, class, rdlen */ + 4 /* ttl */;  break;
+		case reconfirm_record_request: min_size += sizeof(mDNSu32) + 1 /* name */ + 6 /* type, class, rdlen */;                break;
+		case setdomain_request:        min_size +=                   1 /* domain */;                                           break;
+		case port_mapping_request:     min_size += sizeof(mDNSu32) + 4 /* udp/tcp */ + 4 /* int/ext port */    + 4 /* ttl */;  break;
+		case addrinfo_request:         min_size += sizeof(mDNSu32) + 4 /* v4/v6 */   + 1 /* hostname */;                       break;
+		case cancel_request:           min_size = 0;                                                                           break;
+		default: LogMsg("ERROR: validate_message - unsupported req type: %d", req->hdr.op); min_size = -1;                     break;
 		}
+
+	if ((mDNSs32)req->data_bytes < min_size)
+		{ LogMsg("Invalid message %d bytes; min for %d is %d", req->data_bytes, req->hdr.op, min_size); AbortUnlinkAndFree(req); return; }
+
+	if (LightweightOp(req->hdr.op) && !req->terminate)
+		{ LogMsg("Reg/Add/Update/Remove %d require existing connection", req->hdr.op);                  AbortUnlinkAndFree(req); return; }
 
 	// check if client wants silent operation
-	if (request->hdr.ipc_flags & IPC_FLAGS_NOREPLY) request->no_reply = 1;
+	if (req->hdr.ipc_flags & IPC_FLAGS_NOREPLY) req->no_reply = 1;
 
-	dedicated_error_socket = (request->hdr.op == reg_record_request    || request->hdr.op == add_record_request ||
-							  request->hdr.op == update_record_request || request->hdr.op == remove_record_request);
+	dedicated_error_socket = (req->terminate && req->hdr.op != cancel_request);
 
-	if (((request->hdr.ipc_flags & IPC_FLAGS_REUSE_SOCKET) == 0) != dedicated_error_socket)
-		LogMsg("WARNING: client request %d with incorrect flags setting 0x%X", request->hdr.op, request->hdr.ipc_flags);
+	if (((req->hdr.ipc_flags & IPC_FLAGS_REUSE_SOCKET) == 0) != dedicated_error_socket)
+		LogMsg("WARNING: client req %d with incorrect flags setting 0x%X", req->hdr.op, req->hdr.ipc_flags);
 
 	// check if primary socket is to be used for synchronous errors, else open new socket
 	if (dedicated_error_socket)
 		{
-		mStatus err = 0;
-		int nwritten;
-		dnssd_sock_t errfd = socket(AF_DNSSD, SOCK_STREAM, 0);
-		if (!dnssd_SocketValid(errfd)) { my_perror("ERROR: socket"); AbortUnlinkAndFree(request); return; }
+		errfd = socket(AF_DNSSD, SOCK_STREAM, 0);
+		if (!dnssd_SocketValid(errfd)) { my_perror("ERROR: socket"); AbortUnlinkAndFree(req); return; }
 
 		//LogOperation("request_callback: Opened dedicated errfd %d", errfd);
 
 		#if defined(USE_TCP_LOOPBACK)
 			{
 			mDNSOpaque16 port;
-			port.b[0] = request->msgptr[0];
-			port.b[1] = request->msgptr[1];
-			request->msgptr += 2;
+			port.b[0] = req->msgptr[0];
+			port.b[1] = req->msgptr[1];
+			req->msgptr += 2;
 			cliaddr.sin_family      = AF_INET;
 			cliaddr.sin_port        = port.NotAnInteger;
 			cliaddr.sin_addr.s_addr = inet_addr(MDNS_TCP_SERVERADDR);
@@ -3092,7 +3099,7 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 		#else
 			{
 			char ctrl_path[MAX_CTLPATH];
-			get_string(&request->msgptr, ctrl_path, 256);	// path is first element in message buffer
+			get_string(&req->msgptr, ctrl_path, 256);	// path is first element in message buffer
 			mDNSPlatformMemZero(&cliaddr, sizeof(cliaddr));
 			cliaddr.sun_family = AF_LOCAL;
 			mDNSPlatformStrCopy(cliaddr.sun_path, ctrl_path);
@@ -3103,7 +3110,7 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 			{
 			//LogOperation("request_callback: Couldn't connect to “%s”", cliaddr.sun_path);
 			my_perror("ERROR: connect");
-			AbortUnlinkAndFree(request);
+			AbortUnlinkAndFree(req);
 			return;
 			}
 #if defined(_WIN32)
@@ -3113,20 +3120,53 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 #endif
 			{
 			my_perror("ERROR: could not set control socket to non-blocking mode");
-			AbortUnlinkAndFree(request);
+			AbortUnlinkAndFree(req);
 			return;
 			}
+		}
 
-		switch(request->hdr.op)
-			{
-			case reg_record_request:    err = handle_regrecord_request   (request); break;
-			case add_record_request:    err = handle_add_request         (request); break;
-			case update_record_request: err = handle_update_request      (request); break;
-			case remove_record_request: err = handle_removerecord_request(request); break;
-			default: LogMsg("%3d: ERROR: udsserver_recv_request - unsupported request type: %d", request->sd, request->hdr.op);
-			}
-		freeL("request_state msgbuf", request->msgbuf);
+	// If req->terminate is already set, this means this operation is sharing an existing connection
+	if (req->terminate && !LightweightOp(req->hdr.op))
+		{
+		request_state *newreq = NewRequest();
+		newreq->primary = req;
+		newreq->sd      = req->sd;
+		newreq->hdr     = req->hdr;
+		newreq->msgbuf  = req->msgbuf;
+		newreq->msgptr  = req->msgptr;
+		newreq->msgend  = req->msgend;
+		req = newreq;
+		}
 
+	switch(req->hdr.op)
+		{
+		// These are all operations that have their own first-class request_state object
+		case connection_request:           req->terminate = connection_termination; break;
+		case resolve_request:              err = handle_resolve_request     (req); break;
+		case query_request:                err = handle_queryrecord_request (req); break;
+		case browse_request:               err = handle_browse_request      (req); break;
+		case reg_service_request:          err = handle_regservice_request  (req); break;
+		case enumeration_request:          err = handle_enum_request        (req); break;
+		case reconfirm_record_request:     err = handle_reconfirm_request   (req); break;
+		case setdomain_request:            err = handle_setdomain_request   (req); break;
+		case port_mapping_request:         err = handle_port_mapping_request(req); break;
+		case addrinfo_request:             err = handle_addrinfo_request    (req); break;
+
+		// These are all operations that work with an existing request_state object
+		case reg_record_request:           err = handle_regrecord_request   (req); break;
+		case add_record_request:           err = handle_add_request         (req); break;
+		case update_record_request:        err = handle_update_request      (req); break;
+		case remove_record_request:        err = handle_removerecord_request(req); break;
+		case cancel_request:                     handle_cancel_request      (req); break;
+		default: LogMsg("%3d: ERROR: Unsupported UDS req: %d", req->sd, req->hdr.op);
+		}
+
+	// req->msgbuf may be NULL, e.g. for connection_request or remove_record_request
+	if (req->msgbuf) freeL("request_state msgbuf", req->msgbuf);
+
+	// There's no return data for a cancel request (DNSServiceRefDeallocate returns no result)
+	if (req->hdr.op != cancel_request)
+		{
 		//LogOperation("request_callback: Returning error code %d on socket %d", err, errfd);
 		err = dnssd_htonl(err);
 		nwritten = send(errfd, (dnssd_sockbuf_t) &err, sizeof(err), 0);
@@ -3136,50 +3176,27 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 			LogMsg("ERROR: failed to write error response back to caller: %d %d %s",
 				nwritten, dnssd_errno(), dnssd_strerror(dnssd_errno()));
 		//else LogOperation("request_callback: Returned error code %d on socket %d", err, errfd);
-		dnssd_close(errfd);
-		//LogOperation("request_callback: Closed errfd %d", errfd);
-		}
-	else
-		{
-		mStatus err = 0;
-		switch(request->hdr.op)
-			{
-			case resolve_request:              err = handle_resolve_request     (request); break;
-			case query_request:                err = handle_queryrecord_request (request); break;
-			case browse_request:               err = handle_browse_request      (request); break;
-			case reg_service_request:          err = handle_regservice_request  (request); break;
-			case enumeration_request:          err = handle_enum_request        (request); break;
-			case reconfirm_record_request:     err = handle_reconfirm_request   (request); break;
-			case setdomain_request:            err = handle_setdomain_request   (request); break;
-			case port_mapping_request:         err = handle_port_mapping_request(request); break;
-			case addrinfo_request:             err = handle_addrinfo_request    (request); break;
-			default: LogMsg("%3d: ERROR: udsserver_recv_request - unsupported request type: %d", request->sd, request->hdr.op);
-			}
-		freeL("request_state msgbuf", request->msgbuf);
-
-		if (request->resultcode_bytes)
-			LogMsg("request_callback: ERROR: still haven't sent previous result (%d) %d", request->resultcode_bytes, dnssd_htonl(request->resultcode));
-		request->resultcode       = dnssd_htonl(err);
-		request->resultcode_bytes = sizeof(request->resultcode);
+		
+		if (errfd != req->sd) dnssd_close(errfd);
+		//if (errfd != req->sd) LogOperation("request_callback: Closed errfd %d", errfd);
 		}
 
-	// Reset ready to accept the next request on this pipe
-	request->ts         = t_morecoming;
-	request->hdr_bytes  = 0;
-	request->data_bytes = 0;
-	request->msgbuf     = mDNSNULL;
-	request->msgptr     = mDNSNULL;
-	request->msgend     = 0;
+	// Reset ready to accept the next req on this pipe
+	if (req->primary) req = req->primary;
+	req->ts         = t_morecoming;
+	req->hdr_bytes  = 0;
+	req->data_bytes = 0;
+	req->msgbuf     = mDNSNULL;
+	req->msgptr     = mDNSNULL;
+	req->msgend     = 0;
 	}
 
 mDNSlocal void connect_callback(int fd, short filter, void *info)
 	{
-	request_state **p = &all_requests;
 	dnssd_sockaddr_t cliaddr;
 	dnssd_socklen_t len = (dnssd_socklen_t) sizeof(cliaddr);
 	dnssd_sock_t sd = accept(listenfd, (struct sockaddr*) &cliaddr, &len);
 	const unsigned long optval = 1;
-	request_state *request;
 
 	(void)fd; // Unused
 	(void)filter; // Unused
@@ -3211,20 +3228,14 @@ mDNSlocal void connect_callback(int fd, short filter, void *info)
 		dnssd_close(sd);
 		return;
 		}
-
-	// allocate a request_state struct that will live with the socket
-	request = mallocL("request_state/connect_callback", sizeof(request_state));
-	if (!request) FatalError("ERROR: malloc");
-	mDNSPlatformMemZero(request, sizeof(request_state));
-	request->ts = t_morecoming;
-	request->sd = sd;
-
-	LogOperation("%3d: Adding FD", request->sd);
-	if (mStatus_NoError != udsSupportAddFDToEventLoop(sd, request_callback, request)) return;
-
-	request->next = mDNSNULL;
-	while (*p) p=&(*p)->next;
-	*p = request;
+	else
+		{
+		request_state *request = NewRequest();
+		request->ts = t_morecoming;
+		request->sd = sd;
+		LogOperation("%3d: Adding FD", request->sd);
+		udsSupportAddFDToEventLoop(sd, request_callback, request);
+		}
 	}
 
 mDNSexport int udsserver_init(dnssd_sock_t skt)
@@ -3524,64 +3535,39 @@ mDNSexport mDNSs32 udsserver_idle(mDNSs32 nextevent)
 
 	while (*req)
 		{
-		// 1. If we have a resultcode to send to the client, do it now
-		if ((*req)->resultcode_bytes)
+		while ((*req)->replies)		// Send queued replies
 			{
-			char *end = (char *)&(*req)->resultcode + sizeof((*req)->resultcode);
-			int nwritten = send((*req)->sd, end - (*req)->resultcode_bytes, (*req)->resultcode_bytes, 0);
-			if (nwritten < 0)
+			transfer_state result;
+			if ((*req)->replies->next) (*req)->replies->rhdr->flags |= dnssd_htonl(kDNSServiceFlagsMoreComing);
+			result = send_msg((*req)->replies);	// Returns t_morecoming if buffer full because client is not reading
+			if (result == t_complete)
 				{
-				if (dnssd_errno() != dnssd_EINTR && dnssd_errno() != dnssd_EWOULDBLOCK)
-					{ my_perror("ERROR: send - unable to deliver error to client\n"); (*req)->resultcode_bytes = 0; }
+				reply_state *fptr = (*req)->replies;
+				(*req)->replies = (*req)->replies->next;
+				freeL("reply_state/udsserver_idle", fptr);
+				(*req)->time_blocked = 0; // reset failure counter after successful send
+				continue;
 				}
-			else
-				{
-				if (nwritten > (*req)->resultcode_bytes)
-					nwritten = (*req)->resultcode_bytes;
-				(*req)->resultcode_bytes -= nwritten;
-				}
-			if ((*req)->resultcode_bytes == 0 && (*req)->resultcode != 0) abort_request(*req);
+			else if (result == t_terminated || result == t_error) abort_request(*req);
+			break;
 			}
 
-		// 2. If we've successfully sent the resultcode, now see if we have any replies in our list to send to the client
-		if ((*req)->resultcode_bytes == 0)
-			{
-			while ((*req)->replies)
-				{
-				transfer_state result;
-				if ((*req)->replies->next) (*req)->replies->rhdr->flags |= dnssd_htonl(kDNSServiceFlagsMoreComing);
-				result = send_msg((*req)->replies);	// Returns t_morecoming if buffer full because client is not reading
-				if (result == t_complete)
-					{
-					reply_state *fptr = (*req)->replies;
-					(*req)->replies = (*req)->replies->next;
-					freeL("reply_state/udsserver_idle", fptr);
-					(*req)->time_blocked = 0; // reset failure counter after successful send
-					continue;
-					}
-				else if (result == t_terminated || result == t_error) abort_request(*req);
-				break;
-				}
-			}
-
-		// 3. If we failed to send everything, check our time_blocked timer
-		if ((*req)->resultcode_bytes || (*req)->replies)
+		if ((*req)->replies)		// If we failed to send everything, check our time_blocked timer
 			{
 			if (!(*req)->time_blocked) (*req)->time_blocked = NonZeroTime(now);
-			else if (now - (*req)->time_blocked >= 60 * mDNSPlatformOneSecond)
+			if (now - (*req)->time_blocked >= 60 * mDNSPlatformOneSecond)
 				{
 				LogMsg("Could not write data to client %d after %ld seconds - aborting connection",
 					(*req)->sd, (now - (*req)->time_blocked) / mDNSPlatformOneSecond);
 				LogClientInfo(*req);
 				abort_request(*req);
 				}
-			else if (nextevent - now > mDNSPlatformOneSecond) nextevent = now + mDNSPlatformOneSecond;  // try again in a second
+			else if (nextevent - now > mDNSPlatformOneSecond) nextevent = now + mDNSPlatformOneSecond;
 			}
 
-		// 4. If this request is finished, unlink it from the list and free the memory
-		if ((*req)->resultcode_bytes == 0 && (*req)->resultcode != 0)
+		if (!dnssd_SocketValid((*req)->sd)) // If this request is finished, unlink it from the list and free the memory
 			{
-			// Since we're already doing a list traversal, we unlink the request manually instead of calling AbortUnlinkAndFree()
+			// Since we're already doing a list traversal, we unlink the request directly instead of using AbortUnlinkAndFree()
 			request_state *tmp = *req;
 			*req = tmp->next;
 			freeL("request_state/udsserver_idle", tmp);

@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.33  2007/05/18 23:55:22  cheshire
+<rdar://problem/4454655> Allow multiple register/browse/resolve operations to share single Unix Domain Socket
+
 Revision 1.32  2007/05/18 20:31:20  cheshire
 Rename port_mapping_create_request to port_mapping_request
 
@@ -206,7 +209,7 @@ Update to APSL 2.0
 typedef enum
     {
     request_op_none = 0,	// No request yet received on this connection
-    connection = 1,			// connected socket via DNSServiceConnect()
+    connection_request = 1,	// connected socket via DNSServiceConnect()
     reg_record_request,		// reg/remove record only valid for connected sockets
     remove_record_request,
     enumeration_request,
@@ -219,7 +222,8 @@ typedef enum
     update_record_request,
     setdomain_request,
     port_mapping_request,
-	addrinfo_request
+	addrinfo_request,
+	cancel_request = 63
     } request_op_t;
 
 typedef enum
