@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.296  2007/05/18 19:04:19  cheshire
+Rename msgdata to msgptr (may be modified); rename (currently unused) bufsize to msgend
+
 Revision 1.295  2007/05/18 17:57:13  cheshire
 Reorder functions in file to arrange them in logical groups; added "#pragma mark" headers for each group
 
@@ -481,8 +484,8 @@ struct request_state
 	ipc_msg_hdr hdr;
 	uint32_t data_bytes;			// bytes of message data already read
 	char *msgbuf;					// pointer to data storage to pass to free()
-	char *msgdata;					// pointer to data to be read from (may be modified)
-	int bufsize;					// size of data storage
+	char *msgptr;					// pointer to data to be read from (may be modified)
+	char *msgend;					// pointer to byte after last byte of message
 
 	// reply, termination, error, and client context info
 	int no_reply;					// don't send asynchronous replies to client
@@ -715,7 +718,7 @@ mDNSlocal reply_state *create_reply(const reply_op_t op, const size_t datalen, r
 	return reply;
 	}
 
-// append a reply to the list in a request object
+// Append a reply to the list in a request object
 mDNSlocal void append_reply(request_state *req, reply_state *rep)
 	{
 	reply_state **ptr = &req->replies;
@@ -785,7 +788,7 @@ mDNSlocal mStatus GenerateNTDResponse(const domainname *const servicename, const
 // returns a resource record (allocated w/ malloc) containing the data found in an IPC message
 // data must be in format flags, interfaceIndex, name, rrtype, rrclass, rdlen, rdata, (optional)ttl
 // (ttl only extracted/set if ttl argument is non-zero). Returns NULL for a bad-parameter error
-mDNSlocal AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int GetTTL, int validate_flags)
+mDNSlocal AuthRecord *read_rr_from_ipc_msg(char **ptr, int GetTTL, int validate_flags)
 	{
 	char *rdata, name[256];
 	AuthRecord *rr;
@@ -794,7 +797,7 @@ mDNSlocal AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int GetTTL, int validat
 	uint16_t type, class, rdlen;
 	int storage_size;
 
-	flags = get_flags(&msgbuf);
+	flags = get_flags(ptr);
 	if (validate_flags &&
 		!((flags & kDNSServiceFlagsShared) == kDNSServiceFlagsShared) &&
 		!((flags & kDNSServiceFlagsUnique) == kDNSServiceFlagsUnique))
@@ -803,15 +806,15 @@ mDNSlocal AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int GetTTL, int validat
 		return NULL;
 		}
 
-	interfaceIndex = get_uint32(&msgbuf);
-	if (get_string(&msgbuf, name, 256) < 0)
+	interfaceIndex = get_uint32(ptr);
+	if (get_string(ptr, name, 256) < 0)
 		{
 		LogMsg("ERROR: read_rr_from_ipc_msg - get_string");
 		return NULL;
 		}
-	type = get_uint16(&msgbuf);
-	class = get_uint16(&msgbuf);
-	rdlen = get_uint16(&msgbuf);
+	type  = get_uint16(ptr);
+	class = get_uint16(ptr);
+	rdlen = get_uint16(ptr);
 
 	if (rdlen > sizeof(RDataBody)) storage_size = rdlen;
 	else storage_size = sizeof(RDataBody);
@@ -832,9 +835,9 @@ mDNSlocal AuthRecord *read_rr_from_ipc_msg(char *msgbuf, int GetTTL, int validat
 	rr->resrec.rrclass = class;
 	rr->resrec.rdlength = rdlen;
 	rr->resrec.rdata->MaxRDLength = rdlen;
-	rdata = get_rdata(&msgbuf, rdlen);
+	rdata = get_rdata(ptr, rdlen);
 	mDNSPlatformMemCopy(rr->resrec.rdata->u.data, rdata, rdlen);
-	if (GetTTL) rr->resrec.rroriginalttl = get_uint32(&msgbuf);
+	if (GetTTL) rr->resrec.rroriginalttl = get_uint32(ptr);
 	rr->resrec.namehash = DomainNameHashValue(rr->resrec.name);
 	SetNewRData(&rr->resrec, mDNSNULL, 0);	// Sets rr->rdatahash for us
 	return rr;
@@ -1100,7 +1103,7 @@ mDNSlocal mStatus handle_regrecord_request(request_state *request)
 	registered_record_entry *re;
 	mStatus err;
 
-	AuthRecord *rr = read_rr_from_ipc_msg(request->msgdata, 1, 1);
+	AuthRecord *rr = read_rr_from_ipc_msg(&request->msgptr, 1, 1);
 	if (!rr) return(mStatus_BadParamErr);
 
 	// allocate registration entry, link into list
@@ -1148,21 +1151,15 @@ mDNSlocal mStatus add_record_to_service(request_state *request, service_instance
 
 mDNSlocal mStatus handle_add_request(request_state *request)
 	{
-	uint32_t ttl;
-	uint16_t rrtype, rdlen;
-	char *ptr, *rdata;
-	mStatus result = mStatus_UnknownErr;
-	DNSServiceFlags flags;
 	service_instance *i;
-
-	ptr = request->msgdata;
-	flags = get_flags(&ptr);
-	rrtype = get_uint16(&ptr);
-	rdlen = get_uint16(&ptr);
-	rdata = get_rdata(&ptr, rdlen);
-	ttl = get_uint32(&ptr);
-
+	mStatus result = mStatus_UnknownErr;
+	DNSServiceFlags flags  = get_flags(&request->msgptr);
+	uint16_t        rrtype = get_uint16(&request->msgptr);
+	uint16_t        rdlen  = get_uint16(&request->msgptr);
+	char           *rdata  = get_rdata(&request->msgptr, rdlen);
+	uint32_t        ttl    = get_uint32(&request->msgptr);
 	if (!ttl) ttl = DefaultTTLforRRType(rrtype);
+	(void)flags; // Unused
 
 	LogOperation("%3d: DNSServiceAddRecord(%##s, %s, %d)", request->sd,
 		(request->u.servicereg.instances) ? request->u.servicereg.instances->srs.RR_SRV.resrec.name->c : NULL, DNSTypeName(rrtype), rdlen);
@@ -1216,7 +1213,7 @@ mDNSlocal mStatus handle_update_request(request_state *request)
 	AuthRecord *rr = NULL;
 
 	// get the message data
-	ptr = request->msgdata;
+	ptr = request->msgptr;
 	get_flags(&ptr);	// flags unused
 	rdlen = get_uint16(&ptr);
 	rdata = get_rdata(&ptr, rdlen);
@@ -1307,7 +1304,7 @@ mDNSlocal mStatus handle_removerecord_request(request_state *request)
 	mStatus err = mStatus_BadReferenceErr;
 	char *ptr;
 
-	ptr = request->msgdata;
+	ptr = request->msgptr;
 	get_flags(&ptr);	// flags unused
 
 	if (request->terminate == connected_registration_termination)
@@ -1529,7 +1526,7 @@ mDNSexport void udsserver_default_reg_domain_changed(const domainname *d, mDNSBo
 
 mDNSlocal mStatus handle_regservice_request(request_state *request)
 	{
-	char *ptr = request->msgdata;
+	char *ptr = request->msgptr;
 	char name[256];	// Lots of spare space for extra-long names that we'll auto-truncate down to 63 bytes
 	char domain[MAX_ESCAPED_DOMAIN_NAME], host[MAX_ESCAPED_DOMAIN_NAME];
 	char type_as_string[MAX_ESCAPED_DOMAIN_NAME];
@@ -1984,7 +1981,7 @@ mDNSlocal void TrackLegacyBrowseDomains(mDNS *const m)
 
 mDNSlocal mStatus handle_browse_request(request_state *request)
 	{
-	char *ptr = request->msgdata;
+	char *ptr = request->msgptr;
 
 	char regtype[MAX_ESCAPED_DOMAIN_NAME], domain[MAX_ESCAPED_DOMAIN_NAME];
 	domainname typedn, d, temp;
@@ -2119,7 +2116,7 @@ mDNSlocal void resolve_termination_callback(request_state *request)
 
 mDNSlocal mStatus handle_resolve_request(request_state *request)
 	{
-	char *ptr = request->msgdata;
+	char *ptr = request->msgptr;
 	char name[256], regtype[MAX_ESCAPED_DOMAIN_NAME], domain[MAX_ESCAPED_DOMAIN_NAME];
 	domainname fqdn;
 	mStatus err;
@@ -2266,7 +2263,7 @@ mDNSlocal void queryrecord_termination_callback(request_state *request)
 
 mDNSlocal mStatus handle_queryrecord_request(request_state *request)
 	{
-	char *ptr = request->msgdata;
+	char *ptr = request->msgptr;
 	char name[256];
 	uint16_t rrtype, rrclass;
 	mStatus err;
@@ -2369,7 +2366,7 @@ mDNSlocal void enum_result_callback(mDNS *const m,
 
 mDNSlocal mStatus handle_enum_request(request_state *request)
 	{
-	char *ptr = request->msgdata;
+	char *ptr = request->msgptr;
 	mStatus err;
 
 	DNSServiceFlags flags = get_flags(&ptr);
@@ -2414,7 +2411,7 @@ mDNSlocal mStatus handle_enum_request(request_state *request)
 
 mDNSlocal mStatus handle_reconfirm_request(request_state *request)
 	{
-	AuthRecord *rr = read_rr_from_ipc_msg(request->msgdata, 0, 0);
+	AuthRecord *rr = read_rr_from_ipc_msg(&request->msgptr, 0, 0);
 	if (rr)
 		{
 		mStatus status = mDNS_ReconfirmByValue(&mDNSStorage, &rr->resrec);
@@ -2441,7 +2438,7 @@ mDNSlocal void free_defdomain(mDNS *const m, AuthRecord *const rr, mStatus resul
 
 mDNSlocal mStatus handle_setdomain_request(request_state *request)
 	{
-	char *ptr = request->msgdata;
+	char *ptr = request->msgptr;
 	mStatus err = mStatus_NoError;
 	char domainstr[MAX_ESCAPED_DOMAIN_NAME];
 	domainname domain;
@@ -2659,7 +2656,7 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 
 mDNSlocal mStatus handle_port_mapping_create_request(request_state *request)
 	{
-	char *ptr = request->msgdata;
+	char *ptr = request->msgptr;
 	uint8_t protocol;
 	mDNSIPPort privatePort;
 	mDNSIPPort publicPort;
@@ -2756,7 +2753,7 @@ mDNSlocal void addrinfo_termination_callback(request_state *request)
 
 mDNSlocal mStatus handle_addrinfo_request(request_state *request)
 	{
-	char *ptr = request->msgdata;
+	char *ptr = request->msgptr;
 	char hostname[256];
 	domainname d;
 	mStatus err = 0;
@@ -2859,7 +2856,6 @@ mDNSlocal int read_msg(request_state *req)
 	{
 	uint32_t nleft;
 	int nread;
-	char buf[4];   // dummy for death notification
 
 	if (req->ts == t_terminated || req->ts == t_error)
 		{
@@ -2868,8 +2864,9 @@ mDNSlocal int read_msg(request_state *req)
 		return t_error;
 		}
 
-	if (req->ts == t_complete)
-		{  // this must be death or something is wrong
+	if (req->ts == t_complete)	// this must be death or something is wrong
+		{
+		char buf[4];	// dummy for death notification
 		nread = recv(req->sd, buf, 4, 0);
 		if (!nread) { req->ts = t_terminated; return t_terminated; }
 		if (nread < 0) goto rerror;
@@ -2923,13 +2920,9 @@ mDNSlocal int read_msg(request_state *req)
 		if (!req->msgbuf)  // allocate the buffer first time through
 			{
 			req->msgbuf = mallocL("request_state msgbuf", req->hdr.datalen + MSG_PAD_BYTES);
-			if (!req->msgbuf)
-				{
-				my_perror("ERROR: malloc");
-				req->ts = t_error;
-				return t_error;
-				}
-			req->msgdata = req->msgbuf;
+			if (!req->msgbuf) { my_perror("ERROR: malloc"); req->ts = t_error; return t_error; }
+			req->msgptr = req->msgbuf;
+			req->msgend = req->msgbuf + req->hdr.datalen;
 			mDNSPlatformMemZero(req->msgbuf, req->hdr.datalen + MSG_PAD_BYTES);
 			}
 		nleft = req->hdr.datalen - req->data_bytes;
@@ -3086,9 +3079,9 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 		#if defined(USE_TCP_LOOPBACK)
 			{
 			mDNSOpaque16 port;
-			port.b[0] = request->msgdata[0];
-			port.b[1] = request->msgdata[1];
-			request->msgdata += 2;
+			port.b[0] = request->msgptr[0];
+			port.b[1] = request->msgptr[1];
+			request->msgptr += 2;
 			cliaddr.sin_family      = AF_INET;
 			cliaddr.sin_port        = port.NotAnInteger;
 			cliaddr.sin_addr.s_addr = inet_addr(MDNS_TCP_SERVERADDR);
@@ -3096,7 +3089,7 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 		#else
 			{
 			char ctrl_path[MAX_CTLPATH];
-			get_string(&request->msgdata, ctrl_path, 256);	// path is first element in message buffer
+			get_string(&request->msgptr, ctrl_path, 256);	// path is first element in message buffer
 			mDNSPlatformMemZero(&cliaddr, sizeof(cliaddr));
 			cliaddr.sun_family = AF_LOCAL;
 			mDNSPlatformStrCopy(cliaddr.sun_path, ctrl_path);
@@ -3172,8 +3165,8 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 	request->hdr_bytes  = 0;
 	request->data_bytes = 0;
 	request->msgbuf     = mDNSNULL;
-	request->msgdata    = mDNSNULL;
-	request->bufsize    = 0;
+	request->msgptr     = mDNSNULL;
+	request->msgend     = 0;
 	}
 
 mDNSlocal void connect_callback(int fd, short filter, void *info)
@@ -3379,10 +3372,10 @@ mDNSexport int udsserver_exit(dnssd_sock_t skt)
 
 mDNSlocal void LogClientInfo(request_state *req)
 	{
-	if (req->terminate == connected_registration_termination)
-		{
-		// ???
-		}
+	if (!req->terminate)
+		LogMsgNoIdent("%3d: No operation yet on this socket", req->sd);
+	else if (req->terminate == connected_registration_termination)
+		LogMsgNoIdent("%3d: DNSServiceCreateConnection", req->sd);
 	else if (req->terminate == regservice_termination_callback)
 		{
 		service_instance *ptr;
@@ -3417,6 +3410,8 @@ mDNSlocal void LogClientInfo(request_state *req)
 			req->u.addrinfo.protocol & kDNSServiceProtocol_IPv4 ? "v4" : "  ",
 			req->u.addrinfo.protocol & kDNSServiceProtocol_IPv6 ? "v6" : "  ",
 			req->u.addrinfo.q4.qname.c);
+	else
+		LogMsgNoIdent("%3d: Unrecognized operation %p", req->sd, req->terminate);
 	}
 
 mDNSexport void udsserver_info(mDNS *const m)
