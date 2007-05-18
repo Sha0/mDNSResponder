@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.300  2007/05/18 21:27:11  cheshire
+Rename connected_registration_termination to connection_termination
+
 Revision 1.299  2007/05/18 21:24:34  cheshire
 Rename rstate to request
 
@@ -1086,7 +1089,7 @@ mDNSlocal void regrecord_callback(mDNS *const m, AuthRecord *rr, mStatus result)
 		}
 	}
 
-mDNSlocal void connected_registration_termination(request_state *request)
+mDNSlocal void connection_termination(request_state *request)
 	{
 	while (request->u.reg_recs)
 		{
@@ -1094,7 +1097,7 @@ mDNSlocal void connected_registration_termination(request_state *request)
 		request->u.reg_recs = request->u.reg_recs->next;
 		ptr->rr->RecordContext = NULL;
 		mDNS_Deregister(&mDNSStorage, ptr->rr);		// Will free ptr->rr for us
-		freeL("registered_record_entry/connected_registration_termination", ptr);
+		freeL("registered_record_entry/connection_termination", ptr);
 		}
 	}
 
@@ -1123,7 +1126,7 @@ mDNSlocal mStatus handle_regrecord_request(request_state *request)
 
 	LogOperation("%3d: DNSServiceRegisterRecord %s", request->sd, RRDisplayString(&mDNSStorage, &rr->resrec));
 	err = mDNS_Register(&mDNSStorage, rr);
-	if (!err) request->terminate = connected_registration_termination;
+	if (!err) request->terminate = connection_termination;
 
 	return(err);
 	}
@@ -1219,7 +1222,7 @@ mDNSlocal mStatus handle_update_request(request_state *request)
 	rdata = get_rdata(&ptr, rdlen);
 	ttl = get_uint32(&ptr);
 
-	if (request->terminate == connected_registration_termination)
+	if (request->terminate == connection_termination)
 		{
 		// update an individually registered record
 		registered_record_entry *reptr;
@@ -1307,7 +1310,7 @@ mDNSlocal mStatus handle_removerecord_request(request_state *request)
 	ptr = request->msgptr;
 	get_flags(&ptr);	// flags unused
 
-	if (request->terminate == connected_registration_termination)
+	if (request->terminate == connection_termination)
 		err = remove_record(request);  // remove individually registered record
 	else
 		{
@@ -3374,7 +3377,7 @@ mDNSlocal void LogClientInfo(request_state *req)
 	{
 	if (!req->terminate)
 		LogMsgNoIdent("%3d: No operation yet on this socket", req->sd);
-	else if (req->terminate == connected_registration_termination)
+	else if (req->terminate == connection_termination)
 		LogMsgNoIdent("%3d: DNSServiceCreateConnection", req->sd);
 	else if (req->terminate == regservice_termination_callback)
 		{
