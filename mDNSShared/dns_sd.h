@@ -234,9 +234,8 @@ enum
     kDNSServiceFlagsShareConnection     = 0x4000
     /* For efficiency, clients that perform many concurrent operations may want to use a single
      * Unix Domain Socket connection with the background daemon, instead of having a different
-     * separate connection for each independent operation. To use this mode, clients first call
-     * DNSServiceCreateConnection(&MainRef) to initialize the main DNSServiceRef, setting the
-     * ShareConnection flag to tell the library that it should create a shareable DNSServiceRef.
+     * separate connection for each independent operation. To use this mode, clients first
+     * call DNSServiceCreateConnection(&MainRef) to initialize the main DNSServiceRef.
      * For each subsequent operation that is to share that same connection, the client copies
      * the MainRef, and then passes the address of that copy, setting the ShareConnection flag
      * to tell the library that this DNSServiceRef is not a typical uninitialized DNSServiceRef;
