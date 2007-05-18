@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.299  2007/05/18 21:24:34  cheshire
+Rename rstate to request
+
 Revision 1.298  2007/05/18 21:22:35  cheshire
 Convert uint16_t etc. to their locally-defined equivalents, like the rest of the core code
 
@@ -453,7 +456,7 @@ typedef struct registered_record_entry
 	mDNSu32 key;
 	AuthRecord *rr;		// Variable-sized AuthRecord
 	client_context_t client_context;
-	request_state *rstate;
+	request_state *request;
 	} registered_record_entry;
 
 // A single registered service: ServiceRecordSet + bookkeeping
@@ -873,13 +876,13 @@ mDNSexport void FreeExtraRR(mDNS *const m, AuthRecord *const rr, mStatus result)
 
 mDNSlocal void free_service_instance(service_instance *srv)
 	{
-	request_state *rstate = srv->request;
+	request_state *request = srv->request;
 	ExtraResourceRecord *e = srv->srs.Extras, *tmp;
 
 	// clear pointers from parent struct
-	if (rstate)
+	if (request)
 		{
-		service_instance **p = &rstate->u.servicereg.instances;
+		service_instance **p = &request->u.servicereg.instances;
 		while (*p)
 			{
 			if (*p == srv)
@@ -1061,7 +1064,7 @@ mDNSlocal void regrecord_callback(mDNS *const m, AuthRecord *rr, mStatus result)
 	else
 		{
 		registered_record_entry *re = rr->RecordContext;
-		request_state *request = re->rstate;
+		request_state *request = re->request;
 		int len = sizeof(DNSServiceFlags) + sizeof(mDNSu32) + sizeof(DNSServiceErrorType);
 		reply_state *reply = create_reply(reg_record_reply_op, len, request);
 		reply->mhdr->client_context = re->client_context;
@@ -1108,7 +1111,7 @@ mDNSlocal mStatus handle_regrecord_request(request_state *request)
 	if (!re) FatalError("ERROR: malloc");
 	re->key = request->hdr.reg_index;
 	re->rr = rr;
-	re->rstate = request;
+	re->request = request;
 	re->client_context = request->hdr.client_context;
 	rr->RecordContext = re;
 	rr->RecordCallback = regrecord_callback;
