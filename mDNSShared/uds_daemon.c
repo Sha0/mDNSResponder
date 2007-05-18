@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.297  2007/05/18 20:33:11  cheshire
+Avoid declaring lots of uninitialized variables in read_rr_from_ipc_msg
+
 Revision 1.296  2007/05/18 19:04:19  cheshire
 Rename msgdata to msgptr (may be modified); rename (currently unused) bufsize to msgend
 
@@ -790,14 +793,17 @@ mDNSlocal mStatus GenerateNTDResponse(const domainname *const servicename, const
 // (ttl only extracted/set if ttl argument is non-zero). Returns NULL for a bad-parameter error
 mDNSlocal AuthRecord *read_rr_from_ipc_msg(char **ptr, int GetTTL, int validate_flags)
 	{
-	char *rdata, name[256];
+	DNSServiceFlags flags = get_flags(ptr);
+	uint32_t interfaceIndex = get_uint32(ptr);
+	char name[256];
+	int str_err = get_string(ptr, name, sizeof(name));
+	uint16_t type  = get_uint16(ptr);
+	uint16_t class = get_uint16(ptr);
+	uint16_t rdlen = get_uint16(ptr);
+	char *rdata = get_rdata(ptr, rdlen);
+	int storage_size = rdlen > sizeof(RDataBody) ? rdlen : sizeof(RDataBody);
 	AuthRecord *rr;
-	DNSServiceFlags flags;
-	uint32_t interfaceIndex;
-	uint16_t type, class, rdlen;
-	int storage_size;
 
-	flags = get_flags(ptr);
 	if (validate_flags &&
 		!((flags & kDNSServiceFlagsShared) == kDNSServiceFlagsShared) &&
 		!((flags & kDNSServiceFlagsUnique) == kDNSServiceFlagsUnique))
@@ -806,18 +812,7 @@ mDNSlocal AuthRecord *read_rr_from_ipc_msg(char **ptr, int GetTTL, int validate_
 		return NULL;
 		}
 
-	interfaceIndex = get_uint32(ptr);
-	if (get_string(ptr, name, 256) < 0)
-		{
-		LogMsg("ERROR: read_rr_from_ipc_msg - get_string");
-		return NULL;
-		}
-	type  = get_uint16(ptr);
-	class = get_uint16(ptr);
-	rdlen = get_uint16(ptr);
-
-	if (rdlen > sizeof(RDataBody)) storage_size = rdlen;
-	else storage_size = sizeof(RDataBody);
+	if (str_err) { LogMsg("ERROR: read_rr_from_ipc_msg - get_string"); return NULL; }
 
 	rr = mallocL("AuthRecord/read_rr_from_ipc_msg", sizeof(AuthRecord) - sizeof(RDataBody) + storage_size);
 	if (!rr) FatalError("ERROR: malloc");
@@ -835,7 +830,6 @@ mDNSlocal AuthRecord *read_rr_from_ipc_msg(char **ptr, int GetTTL, int validate_
 	rr->resrec.rrclass = class;
 	rr->resrec.rdlength = rdlen;
 	rr->resrec.rdata->MaxRDLength = rdlen;
-	rdata = get_rdata(ptr, rdlen);
 	mDNSPlatformMemCopy(rr->resrec.rdata->u.data, rdata, rdlen);
 	if (GetTTL) rr->resrec.rroriginalttl = get_uint32(ptr);
 	rr->resrec.namehash = DomainNameHashValue(rr->resrec.name);
@@ -2516,7 +2510,7 @@ mDNSlocal mStatus handle_setdomain_request(request_state *request)
 #pragma mark - DNSServiceNATPortMappingCreate
 #endif
 
-mDNSlocal void port_mapping_create_termination_callback(request_state *request)
+mDNSlocal void port_mapping_termination_callback(request_state *request)
 	{
 	// %%% BUG %%% Should not be trying to grab mDNSCore internal lock here.
 	// Should only be using supported APIs from mDNSEmbeddedAPI.h.
@@ -2535,7 +2529,7 @@ mDNSlocal void port_mapping_create_termination_callback(request_state *request)
 	}
 
 // Called via function pointer when we get a NAT-PMP address request or port mapping response
-mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt)
+mDNSlocal mDNSBool port_mapping_reply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt)
 	{
 	mStatus err = mStatus_NoError;
 	request_state *request = n->NATTraversalContext;
@@ -2569,7 +2563,7 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 			{
 			NATOp_t op = (request->u.pm.protocol & kDNSServiceProtocol_UDP) ? NATOp_MapUDP : NATOp_MapTCP;
 			request->u.pm.NATMapinfo = uDNS_AllocNATInfo(m, op,
-				request->u.pm.privatePort, request->u.pm.ReqPub, request->u.pm.requestedTTL, port_mapping_create_reply);
+				request->u.pm.privatePort, request->u.pm.ReqPub, request->u.pm.requestedTTL, port_mapping_reply);
 			if (!request->u.pm.NATMapinfo)
 				{ generate_final_fatal_reply_with_garbage(request, port_mapping_reply_op, mStatus_NoMemoryErr); return mDNStrue; }
 			request->u.pm.NATMapinfo->NATTraversalContext = request;
@@ -2615,7 +2609,7 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 		}
 	else
 		{
-		LogMsg("port_mapping_create_reply called with unknown NATInfo object");
+		LogMsg("port_mapping_reply called with unknown NATInfo object");
 		return mDNSfalse;
 		}
 
@@ -2654,7 +2648,7 @@ mDNSlocal mDNSBool port_mapping_create_reply(NATTraversalInfo *n, mDNS *m, mDNSu
 	return mDNStrue;
 	}
 
-mDNSlocal mStatus handle_port_mapping_create_request(request_state *request)
+mDNSlocal mStatus handle_port_mapping_request(request_state *request)
 	{
 	char *ptr = request->msgptr;
 	uint8_t protocol;
@@ -2706,7 +2700,7 @@ mDNSlocal mStatus handle_port_mapping_create_request(request_state *request)
 		request->sd, protocol, mDNSVal16(privatePort), mDNSVal16(publicPort), ttl);
 
 	request->u.pm.NATAddrinfo =
-		uDNS_AllocNATInfo(&mDNSStorage, NATOp_AddrRequest, zeroIPPort, zeroIPPort, 0, port_mapping_create_reply);
+		uDNS_AllocNATInfo(&mDNSStorage, NATOp_AddrRequest, zeroIPPort, zeroIPPort, 0, port_mapping_reply);
 	if (!request->u.pm.NATAddrinfo) { mDNS_Unlock(&mDNSStorage); return(mStatus_NoMemoryErr); }
 
 	request->u.pm.NATAddrinfo->NATTraversalContext    = request;
@@ -2725,7 +2719,7 @@ mDNSlocal mStatus handle_port_mapping_create_request(request_state *request)
 
 	mDNS_Unlock(&mDNSStorage);
 
-	if (!err) request->terminate = port_mapping_create_termination_callback;
+	if (!err) request->terminate = port_mapping_termination_callback;
 
 	return(err);
 	}
@@ -3004,7 +2998,7 @@ mDNSlocal int validate_message(request_state *rstate)
 						break;
 		case setdomain_request: min_size = sizeof(DNSServiceFlags) + sizeof(char);  // flags + domain
 			break;
-		case port_mapping_create_request: min_size = sizeof(DNSServiceFlags) + 	// flags
+		case port_mapping_request: min_size = sizeof(DNSServiceFlags) + 	// flags
 						sizeof(uint32_t) +             // interface
 						sizeof(uint8_t)  +             // protocol
 						sizeof(uint16_t) +             // private port
@@ -3141,15 +3135,15 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 		mStatus err = 0;
 		switch(request->hdr.op)
 			{
-			case resolve_request:              err = handle_resolve_request              (request); break;
-			case query_request:                err = handle_queryrecord_request          (request); break;
-			case browse_request:               err = handle_browse_request               (request); break;
-			case reg_service_request:          err = handle_regservice_request           (request); break;
-			case enumeration_request:          err = handle_enum_request                 (request); break;
-			case reconfirm_record_request:     err = handle_reconfirm_request            (request); break;
-			case setdomain_request:            err = handle_setdomain_request            (request); break;
-			case port_mapping_create_request:  err = handle_port_mapping_create_request  (request); break;
-			case addrinfo_request:             err = handle_addrinfo_request             (request); break;
+			case resolve_request:              err = handle_resolve_request     (request); break;
+			case query_request:                err = handle_queryrecord_request (request); break;
+			case browse_request:               err = handle_browse_request      (request); break;
+			case reg_service_request:          err = handle_regservice_request  (request); break;
+			case enumeration_request:          err = handle_enum_request        (request); break;
+			case reconfirm_record_request:     err = handle_reconfirm_request   (request); break;
+			case setdomain_request:            err = handle_setdomain_request   (request); break;
+			case port_mapping_request:         err = handle_port_mapping_request(request); break;
+			case addrinfo_request:             err = handle_addrinfo_request    (request); break;
 			default: LogMsg("%3d: ERROR: udsserver_recv_request - unsupported request type: %d", request->sd, request->hdr.op);
 			}
 		freeL("request_state msgbuf", request->msgbuf);
@@ -3394,7 +3388,7 @@ mDNSlocal void LogClientInfo(request_state *req)
 		LogMsgNoIdent("%3d: DNSServiceQueryRecord      %##s", req->sd, req->u.queryrecord.q.qname.c);
 	else if (req->terminate == enum_termination_callback)
 		LogMsgNoIdent("%3d: DNSServiceEnumerateDomains %##s", req->sd, req->u.enumeration.q_all.qname.c);
-	else if (req->terminate == port_mapping_create_termination_callback)
+	else if (req->terminate == port_mapping_termination_callback)
 		LogMsgNoIdent("%3d: DNSServiceNATPortMapping   %s%s Int %d Ext %d Granted %d TTL %d Granted %d Addr %.4a",
 			req->sd,
 			req->u.pm.protocol & kDNSServiceProtocol_TCP ? "tcp" : "   ",
