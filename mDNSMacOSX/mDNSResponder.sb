@@ -26,6 +26,9 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # $Log: mDNSResponder.sb,v $
+# Revision 1.11  2007/05/20 16:29:06  cheshire
+# <rdar://problem/5213725> Seatbelt killed mDNSResponder trying to access /usr/share/icu/icudt36l.dat
+#
 # Revision 1.10  2007/05/15 00:21:39  cheshire
 # <rdar://problem/5202374> Seatbelt killed mDNSResponder reading /private/var/root/Library/Preferences/com.apple.security.plist
 #
@@ -96,6 +99,7 @@ allow fs_write      -regex "^/private/var/run/mDNSResponder\.pid\$";
 
 # Allow us to read system version and settings
 allow fs_read_data  -regex "^/usr/sbin(/mDNSResponder)?\$";		# Needed for CFCopyVersionDictionary()
+allow fs_read_data  -regex "^/usr/share/icu/.*\$";
 allow fs_read_data  -regex "^/usr/share/zoneinfo/.*\$";
 allow fs_read_data  -regex "^/System/Library/CoreServices/SystemVersion.*\$";
 allow fs_read_data  -regex "^/(private/var/root/)?Library/Preferences/(ByHost/)?\.GlobalPreferences.*\.plist\$";
