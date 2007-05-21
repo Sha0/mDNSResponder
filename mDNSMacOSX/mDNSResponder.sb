@@ -26,6 +26,9 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # $Log: mDNSResponder.sb,v $
+# Revision 1.12  2007/05/21 23:52:27  cheshire
+# <rdar://problem/5216638> Seatbelt killed mDNSResponder generating Module Directory Services cache
+#
 # Revision 1.11  2007/05/20 16:29:06  cheshire
 # <rdar://problem/5213725> Seatbelt killed mDNSResponder trying to access /usr/share/icu/icudt36l.dat
 #
@@ -106,9 +109,7 @@ allow fs_read_data  -regex "^/(private/var/root/)?Library/Preferences/(ByHost/)?
 allow fs_read_data  -regex "^/(private/var/root/)?Library/Preferences/com\.apple\.security\.plist\$";
 
 # Allow access to System Keychain
-allow fs_write_data -regex "^/private/var/tmp/mds/system/mds\.lock\$";
-allow fs_read_data  -regex "^/private/var/tmp/mds/system/mdsObject\.db\$";
-allow fs_read_data  -regex "^/private/var/tmp/mds/system/mdsDirectory\.db\$";
+allow fs_write_data -regex "^/private/var/tmp/mds/system/.*\$";		# Module Directory Services cache
 allow fs_read_data  -regex "^/System/Library/Security\$";
 allow fs_read_data  -regex "^/System/Library/Keychains/System.*\$";
 allow fs_read_data  -regex "^/Library/Keychains/System\.keychain\$";
