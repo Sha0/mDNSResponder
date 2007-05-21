@@ -124,8 +124,9 @@ typedef union { unsigned char b[2]; unsigned short NotAnInteger; } Opaque16;
 
 static int operation;
 static uint32_t opinterface = kDNSServiceInterfaceIndexAny;
-static DNSServiceRef client  = NULL;
-static DNSServiceRef client2 = NULL;
+static DNSServiceRef client    = NULL;
+static DNSServiceRef client_pa = NULL;	// DNSServiceRef for RegisterProxyAddressRecord
+
 static int num_printed;
 static char addtest = 0;
 static DNSRecordRef record = NULL;
@@ -583,8 +584,8 @@ static void DNSSD_API addrinfo_reply(DNSServiceRef sdRef, DNSServiceFlags flags,
 
 static void HandleEvents(void)
 	{
-	int dns_sd_fd  = client  ? DNSServiceRefSockFD(client ) : -1;
-	int dns_sd_fd2 = client2 ? DNSServiceRefSockFD(client2) : -1;
+	int dns_sd_fd  = client    ? DNSServiceRefSockFD(client   ) : -1;
+	int dns_sd_fd2 = client_pa ? DNSServiceRefSockFD(client_pa) : -1;
 	int nfds = dns_sd_fd + 1;
 	fd_set readfds;
 	struct timeval tv;
@@ -600,8 +601,8 @@ static void HandleEvents(void)
 		FD_ZERO(&readfds);
 
 		// 2. Add the fd for our client(s) to the fd_set
-		if (client ) FD_SET(dns_sd_fd , &readfds);
-		if (client2) FD_SET(dns_sd_fd2, &readfds);
+		if (client   ) FD_SET(dns_sd_fd , &readfds);
+		if (client_pa) FD_SET(dns_sd_fd2, &readfds);
 
 		// 3. Set up the timeout.
 		tv.tv_sec  = timeOut;
@@ -611,8 +612,8 @@ static void HandleEvents(void)
 		if (result > 0)
 			{
 			DNSServiceErrorType err = kDNSServiceErr_NoError;
-			if      (client  && FD_ISSET(dns_sd_fd , &readfds)) err = DNSServiceProcessResult(client );
-			else if (client2 && FD_ISSET(dns_sd_fd2, &readfds)) err = DNSServiceProcessResult(client2);
+			if      (client    && FD_ISSET(dns_sd_fd , &readfds)) err = DNSServiceProcessResult(client   );
+			else if (client_pa && FD_ISSET(dns_sd_fd2, &readfds)) err = DNSServiceProcessResult(client_pa);
 			if (err) { fprintf(stderr, "DNSServiceProcessResult returned %d\n", err); stopNow = 1; }
 			}
 		else if (result == 0)
@@ -835,7 +836,7 @@ int main(int argc, char **argv)
 					break;
 
 		case 'P':	if (argc < optind+6) goto Fail;
-					err = RegisterProxyAddressRecord(&client2, argv[optind+4], argv[optind+5]);
+					err = RegisterProxyAddressRecord(&client_pa, argv[optind+4], argv[optind+5]);
 					if (err) break;
 					err = RegisterService(&client, argv[optind+0], argv[optind+1], argv[optind+2], argv[optind+4], argv[optind+3], argc-(optind+6), argv+(optind+6));
 					break;
@@ -893,6 +894,7 @@ int main(int argc, char **argv)
 					if (!err) err = DNSServiceUpdateRecord(client, NULL, 0, sizeof(TXT)-1, TXT, 0);
 					break;
 					}
+
 #if HAS_NAT_PMP_API
 		case 'X':   {
 					if (argc == optind)	// If no arguments, just fetch IP address
@@ -909,6 +911,7 @@ int main(int argc, char **argv)
 					break;
 		            }
 #endif
+
 #if HAS_ADDRINFO_API
 		case 'G':   {
 					if (argc != optind+2) goto Fail;
@@ -916,6 +919,7 @@ int main(int argc, char **argv)
 					break;
 		            }
 #endif
+
 		default: goto Fail;
 		}
 
@@ -923,8 +927,8 @@ int main(int argc, char **argv)
 	HandleEvents();
 
 	// Be sure to deallocate the DNSServiceRef when you're finished
-	if (client ) DNSServiceRefDeallocate(client );
-	if (client2) DNSServiceRefDeallocate(client2);
+	if (client   ) DNSServiceRefDeallocate(client   );
+	if (client_pa) DNSServiceRefDeallocate(client_pa);
 	return 0;
 
 Fail:
