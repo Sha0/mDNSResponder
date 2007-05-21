@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.302  2007/05/21 18:54:54  cheshire
+Add "Cancel" LogOperation message when we get a cancel_request command over the UDS
+
 Revision 1.301  2007/05/18 23:55:22  cheshire
 <rdar://problem/4454655> Allow multiple register/browse/resolve operations to share single Unix Domain Socket
 
@@ -1132,6 +1135,7 @@ mDNSlocal void connection_termination(request_state *request)
 mDNSlocal void handle_cancel_request(request_state *request)
 	{
 	request_state **req = &all_requests;
+	LogOperation("%3d: Cancel", request->sd);
 	while (*req)
 		{
 		if ((*req)->primary == request &&
