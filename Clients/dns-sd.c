@@ -126,6 +126,7 @@ static int operation;
 static uint32_t opinterface = kDNSServiceInterfaceIndexAny;
 static DNSServiceRef client    = NULL;
 static DNSServiceRef client_pa = NULL;	// DNSServiceRef for RegisterProxyAddressRecord
+static DNSServiceRef sc1, sc2, sc3;		// DNSServiceRefs for kDNSServiceFlagsShareConnection testing
 
 static int num_printed;
 static char addtest = 0;
@@ -335,6 +336,10 @@ static void DNSSD_API browse_reply(DNSServiceRef client, const DNSServiceFlags f
 	if (errorCode) printf("Error code %d\n", errorCode);
 	else printf("%s%6X%3d %-25s %-25s %s\n", op, flags, ifIndex, replyDomain, replyType, replyName);
 	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
+
+	// To test selective cancellation of operations of shared sockets,
+	// cancel the current operation when we've got a multiple of five results
+	//if (operation == 'S' && num_printed % 5 == 0) DNSServiceRefDeallocate(client);
 	}
 
 static void ShowTXTRecord(uint16_t txtLen, const unsigned char *txtRecord)
@@ -787,7 +792,7 @@ int main(int argc, char **argv)
 		}
 
 	if (argc < 2) goto Fail;        // Minimum command line is the command name and one argument
-	operation = getfirstoption(argc, argv, "EFBLRPQCAUNTMI"
+	operation = getfirstoption(argc, argv, "EFBLRPQCAUNTMIS"
 								#if HAS_NAT_PMP_API
 									"X"
 								#endif
@@ -920,6 +925,27 @@ int main(int argc, char **argv)
 		            }
 #endif
 
+		case 'S':	{
+					Opaque16 registerPort = { { 0x23, 0x45 } };
+					err = DNSServiceCreateConnection(&client);
+					if (err) { fprintf(stderr, "DNSServiceCreateConnection failed %ld\n", (long int)err); return (-1); }
+
+					sc1 = client;
+					err = DNSServiceBrowse(&sc1, kDNSServiceFlagsShareConnection, 0, "_http._tcp", "", browse_reply, NULL);
+					if (err) { fprintf(stderr, "DNSServiceBrowse _http._tcp failed %ld\n", (long int)err); return (-1); }
+
+					sc2 = client;
+					err = DNSServiceBrowse(&sc2, kDNSServiceFlagsShareConnection, 0, "_ftp._tcp", "", browse_reply, NULL);
+					if (err) { fprintf(stderr, "DNSServiceBrowse _ftp._tcp failed %ld\n", (long int)err); return (-1); }
+
+					sc3 = client;
+					err = DNSServiceRegister(&sc3, kDNSServiceFlagsShareConnection, 0, "kDNSServiceFlagsShareConnection",
+						"_http._tcp", "local", NULL, registerPort.NotAnInteger, 0, NULL, reg_reply, NULL);
+					if (err) { fprintf(stderr, "SharedConnection DNSServiceRegister failed %ld\n", (long int)err); return (-1); }
+
+					break;
+					}
+
 		default: goto Fail;
 		}
 
@@ -952,5 +978,6 @@ Fail:
 	fprintf(stderr, "%s -T                            (Test creating a large TXT record)\n", a0);
 	fprintf(stderr, "%s -M      (Test creating a registration with multiple TXT records)\n", a0);
 	fprintf(stderr, "%s -I   (Test registering and then immediately updating TXT record)\n", a0);
+	fprintf(stderr, "%s -S                 (Test multiple operations on a shared socket)\n", a0);
 	return 0;
 	}
