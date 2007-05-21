@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.379  2007/05/21 18:04:40  cheshire
+Updated comments -- port_mapping_create_reply renamed to port_mapping_reply
+
 Revision 1.378  2007/05/17 19:11:46  cheshire
 Tidy up code layout
 
@@ -1518,7 +1521,7 @@ struct NATTraversalInfo_struct
 	NATResponseHndlr ReceiveResponse;	// Should be one of:
 										// ReceiveNATAddrResponse (uDNS.c)
 										// uDNS_HandleNATPortMapReply(uDNS.c)
-										// port_mapping_create_reply (uds_daemon.c)
+										// port_mapping_reply (uds_daemon.c)
 	union { AuthRecord *RecordRegistration; ServiceRecordSet *ServiceRegistration; } reg;
     mDNSAddr Router;
 	mDNSIPPort PrivatePort;

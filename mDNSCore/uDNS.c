@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.369  2007/05/21 18:04:40  cheshire
+Updated comments -- port_mapping_create_reply renamed to port_mapping_reply
+
 Revision 1.368  2007/05/17 19:12:16  cheshire
 Updated comment about finding matching pair of sockets
 
@@ -870,7 +873,7 @@ mDNSexport void uDNS_SendNATMsg(NATTraversalInfo *info, mDNS *m)
 	info->retry = m->timenow + info->RetryInterval;
 	}
 
-// Called from both ReceiveNATAddrResponse and port_mapping_create_reply, when we get a NAT-PMP address request response
+// Called from both ReceiveNATAddrResponse and port_mapping_reply, when we get a NAT-PMP address request response
 mDNSexport mDNSBool uDNS_HandleNATQueryAddrReply(NATTraversalInfo *n, mDNS *const m, mDNSu8 *pkt, mDNSv4Addr *addr, mStatus *err)
 	{
 	NATAddrReply *response = (NATAddrReply *)pkt;
@@ -2020,7 +2023,7 @@ error:
 	}
 
 // Called via function pointer when we get a NAT-PMP port request response,
-// or (incorrectly) from port_mapping_create_reply() in uds_daemon.c
+// or (incorrectly) from port_mapping_reply() in uds_daemon.c
 mDNSexport mDNSBool uDNS_HandleNATPortMapReply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt)
 	{
 	ServiceRecordSet *srs = n->reg.ServiceRegistration;
