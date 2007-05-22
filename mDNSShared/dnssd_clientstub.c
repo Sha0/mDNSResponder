@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.73  2007/05/22 01:20:47  cheshire
+To determine current operation, need to check hdr->op, not sdr->op
+
 Revision 1.72  2007/05/22 01:07:42  cheshire
 <rdar://problem/3563675> API: Need a way to get version/feature information
 
@@ -396,8 +399,12 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 	DNSServiceErrorType err;
 	int MakeSeparateReturnSocket = 0;
 
+	// Note: need to check hdr->op, not sdr->op.
+	// hdr->op contains the code for the specific operation we're currently doing, whereas sdr->op
+	// contains the original parent DNSServiceOp (e.g. for an add_record_request, hdr->op will be
+	// add_record_request but the parent sdr->op will be connection_request or reg_service_request)
 	if (sdr->primary ||
-		sdr->op == reg_record_request || sdr->op == add_record_request || sdr->op == update_record_request || sdr->op == remove_record_request)
+		hdr->op == reg_record_request || hdr->op == add_record_request || hdr->op == update_record_request || hdr->op == remove_record_request)
 		MakeSeparateReturnSocket = 1;
 
 	if (!hdr)
