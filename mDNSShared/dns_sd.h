@@ -26,6 +26,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+
 /*! @header     DNS Service Discovery
  *
  * @discussion  This section describes the functions, callbacks, and data structures
@@ -53,8 +54,30 @@
  *              for the local network.
  */
 
+
+/* _DNS_SD_H contains the mDNSResponder version number for this header file, formatted as follows:
+ *   Major part of the build number * 10000 +
+ *   minor part of the build number *   100
+ * For example, Mac OS X 10.4.9 has mDNSResponder-108.4, which would be represented as
+ * version 1080400. This allows C code to do simple greater-than and less-than comparisons:
+ * e.g. an application that requires the DNSServiceGetProperty() call (new in mDNSResponder-126) can check:
+ *
+ *   #if _DNS_SD_H+0 >= 1260000
+ *   ... some C code that calls DNSServiceGetProperty() ...
+ *   #endif
+ *
+ * The version defined in this header file symbol allows for compile-time
+ * checking, so that C code building with earlier versions of the header file
+ * can avoid compile errors trying to use functions that aren't even defined
+ * in those earlier versions. Similar checks may also be performed at run-time:
+ *  => weak linking -- to avoid link failures if run with an earler
+ *     version of the library that's missing some desired symbol, or
+ *  => DNSServiceGetProperty(DaemonVersion) -- to verify whether the running daemon
+ *     ("system service" on Windows) meets some required minimum functionality level.
+ */
+
 #ifndef _DNS_SD_H
-#define _DNS_SD_H 125
+#define _DNS_SD_H 1260000
 
 #ifdef  __cplusplus
     extern "C" {
@@ -511,8 +534,8 @@ typedef int32_t  DNSServiceErrorType;
 
 /* DNSServiceGetProperty() Parameters:
  *
- * attribute:       The requested attribute.
- *                  Currently the only attribute defined is kDNSServiceProperty_DaemonVersion.
+ * property:        The requested property.
+ *                  Currently the only property defined is kDNSServiceProperty_DaemonVersion.
  *
  * result:          Place to store result.
  *                  For retrieving DaemonVersion, this should be the address of a uint32_t.
@@ -521,27 +544,42 @@ typedef int32_t  DNSServiceErrorType;
  *                  For retrieving DaemonVersion, this should be sizeof(uint32_t).
  *                  On return the uint32_t is updated to the size of the data returned.
  *                  For DaemonVersion, the returned size is always sizeof(uint32_t), but
- *                  future attributes could be defined which return variable-sized results.
+ *                  future properties could be defined which return variable-sized results.
  *
  * return value:    Returns kDNSServiceErr_NoError on succeses, or kDNSServiceErr_ServiceNotRunning
  *                  if the daemon (or "system service" on Windows) is not running.
+ */
+
+DNSServiceErrorType DNSSD_API DNSServiceGetProperty
+    (
+    const char *property,  /* Requested property (i.e. kDNSServiceProperty_DaemonVersion) */
+    void       *result,    /* Pointer to place to store result */
+    uint32_t   *size       /* size of result location */
+    );
+
+/*
+ * When requesting kDNSServiceProperty_DaemonVersion, the result pointer must point
+ * to a 32-bit unsigned integer, and the size parameter must be set to sizeof(uint32_t).
+ *
+ * On return, the 32-bit unsigned integer contains the version number, formatted as follows:
+ *   Major part of the build number * 10000 +
+ *   minor part of the build number *   100
+ *
+ * For example, Mac OS X 10.4.9 has mDNSResponder-108.4, which would be represented as
+ * version 1080400. This allows applications to do simple greater-than and less-than comparisons:
+ * e.g. an application that requires at least mDNSResponder-108.4 can check:
+ *
+ *   if (version >= 1080400) ...
  *
  * Example usage:
  *
  * uint32_t version;
  * uint32_t size = sizeof(version);
  * DNSServiceErrorType err = DNSServiceGetProperty(kDNSServiceProperty_DaemonVersion, &version, &size);
- * printf("Bonjour version is %d\n", version);
+ * if (!err) printf("Bonjour version is %d.%d\n", version / 10000, version / 100 % 100);
  */
 
 #define kDNSServiceProperty_DaemonVersion "DaemonVersion"
-
-DNSServiceErrorType DNSSD_API DNSServiceGetProperty
-    (
-    const char *attribute, /* Requested attribute (DNSSD_GetProperty_DaemonVersion) */
-    void       *result,    /* Pointer to place to store result */
-    uint32_t   *size       /* size of result location */
-    );
 
 
 /*********************************************************************************************
