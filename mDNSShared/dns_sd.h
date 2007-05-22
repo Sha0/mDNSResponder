@@ -2237,18 +2237,20 @@ DNSServiceErrorType DNSSD_API DNSServiceSetDefaultDomainForUser
     const char                         *domain
     );
 
-// Symbol defined to tell System Configuration Framework where to look in the Dynamic Store
-// for the list of PrivateDNS domains that need to be handed off to mDNSResponder
-// (the complete key is "State:/Network/PrivateDNS")
+/* Symbol defined to tell System Configuration Framework where to look in the Dynamic Store
+ * for the list of PrivateDNS domains that need to be handed off to mDNSResponder
+ * (the complete key is "State:/Network/PrivateDNS")
+ */
 #define kDNSServiceCompPrivateDNS "PrivateDNS"
 
 #endif //__APPLE_API_PRIVATE
 
-// Some C compiler cleverness. We can make the compiler check certain things for us,
-// and report errors at compile-time if anything is wrong. The usual way to do this would
-// be to use a run-time "if" statement or the conventional run-time "assert" mechanism, but
-// then you don't find out what's wrong until you run the software. This way, if the assertion
-// condition is false, the array size is negative, and the complier complains immediately.
+/* Some C compiler cleverness. We can make the compiler check certain things for us,
+ * and report errors at compile-time if anything is wrong. The usual way to do this would
+ * be to use a run-time "if" statement or the conventional run-time "assert" mechanism, but
+ * then you don't find out what's wrong until you run the software. This way, if the assertion
+ * condition is false, the array size is negative, and the complier complains immediately.
+ */
 
 struct DNS_SD_CompileTimeAssertionChecks
     {
