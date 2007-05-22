@@ -79,23 +79,23 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT ws2_32.lib ..\mDNSWindows\DLL\Rele
 #include <sys/types.h>		// For u_char
 
 #ifdef _WIN32
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <process.h>
-typedef int        pid_t;
-#define getpid     _getpid
-#define strcasecmp _stricmp
-#define snprintf   _snprintf
-static const char kFilePathSep = '\\';
+	#include <winsock2.h>
+	#include <ws2tcpip.h>
+	#include <process.h>
+	typedef int        pid_t;
+	#define getpid     _getpid
+	#define strcasecmp _stricmp
+	#define snprintf   _snprintf
+	static const char kFilePathSep = '\\';
 #else
-#include <unistd.h>			// For getopt() and optind
-#include <netdb.h>			// For getaddrinfo()
-#include <sys/time.h>		// For struct timeval
-#include <sys/socket.h>		// For AF_INET
-#include <netinet/in.h>		// For struct sockaddr_in()
-#include <arpa/inet.h>		// For inet_addr()
-#include <net/if.h>			// For if_nametoindex()
-static const char kFilePathSep = '/';
+	#include <unistd.h>			// For getopt() and optind
+	#include <netdb.h>			// For getaddrinfo()
+	#include <sys/time.h>		// For struct timeval
+	#include <sys/socket.h>		// For AF_INET
+	#include <netinet/in.h>		// For struct sockaddr_in()
+	#include <arpa/inet.h>		// For inet_addr()
+	#include <net/if.h>			// For if_nametoindex()
+	static const char kFilePathSep = '/';
 #endif
 
 #if (TEST_NEW_CLIENTSTUB && !defined(__APPLE_API_PRIVATE))
@@ -792,7 +792,7 @@ int main(int argc, char **argv)
 		}
 
 	if (argc < 2) goto Fail;        // Minimum command line is the command name and one argument
-	operation = getfirstoption(argc, argv, "EFBLRPQCAUNTMIS"
+	operation = getfirstoption(argc, argv, "EFBLRPQCAUNTMISV"
 								#if HAS_NAT_PMP_API
 									"X"
 								#endif
@@ -946,6 +946,15 @@ int main(int argc, char **argv)
 					break;
 					}
 
+		case 'V':   {
+					uint32_t v;
+					uint32_t size = sizeof(v);
+					err = DNSServiceGetProperty(kDNSServiceProperty_DaemonVersion, &v, &size);
+					if (err) fprintf(stderr, "DNSServiceGetProperty failed %ld\n", (long int)err);
+					else printf("Currently running daemon (system service) is version %d.%d\n", v / 10000, v / 100 % 100);
+					exit(0);
+    				}
+
 		default: goto Fail;
 		}
 
@@ -979,5 +988,6 @@ Fail:
 	fprintf(stderr, "%s -M      (Test creating a registration with multiple TXT records)\n", a0);
 	fprintf(stderr, "%s -I   (Test registering and then immediately updating TXT record)\n", a0);
 	fprintf(stderr, "%s -S                 (Test multiple operations on a shared socket)\n", a0);
++	fprintf(stderr, "%s -V    (Get version of currently running daemon / system service)\n", a0);
 	return 0;
 	}

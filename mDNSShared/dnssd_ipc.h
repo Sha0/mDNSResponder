@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.34  2007/05/22 01:07:42  cheshire
+<rdar://problem/3563675> API: Need a way to get version/feature information
+
 Revision 1.33  2007/05/18 23:55:22  cheshire
 <rdar://problem/4454655> Allow multiple register/browse/resolve operations to share single Unix Domain Socket
 
@@ -135,7 +138,6 @@ Update to APSL 2.0
 #	define dnssd_EINTR			WSAEINTR
 #	define dnssd_sock_t			SOCKET
 #	define dnssd_socklen_t		int
-#	define dnssd_sockbuf_t		const char*
 #	define dnssd_close(sock)	closesocket(sock)
 #	define dnssd_errno()		WSAGetLastError()
 #	define ssize_t				int
@@ -157,7 +159,6 @@ Update to APSL 2.0
 #	define dnssd_EPIPE			EPIPE
 #	define dnssd_sock_t			int
 #	define dnssd_socklen_t		unsigned int
-#	define dnssd_sockbuf_t		const char*
 #	define dnssd_close(sock)	close(sock)
 #	define dnssd_errno()		errno
 #endif
@@ -220,9 +221,11 @@ typedef enum
     reconfirm_record_request,
     add_record_request,
     update_record_request,
-    setdomain_request,
-    port_mapping_request,
+    setdomain_request,		// Up to here is in Tiger and B4W 1.0.3
+	getproperty_request,	// New in B4W 1.0.4
+    port_mapping_request,	// New in Leopard and B4W 2.0
 	addrinfo_request,
+
 	cancel_request = 63
     } request_op_t;
 
@@ -233,12 +236,19 @@ typedef enum
     browse_reply_op,
     resolve_reply_op,
     query_reply_op,
-    reg_record_reply_op,
-    port_mapping_reply_op,
+    reg_record_reply_op,	// Up to here is in Tiger and B4W 1.0.3
+    getproperty_reply_op,	// New in B4W 1.0.4
+    port_mapping_reply_op,	// New in Leopard and B4W 2.0
 	addrinfo_reply_op
     } reply_op_t;
 
-// allow 64-bit client to interoperate w/ 32-bit daemon
+#if defined(_WIN64)
+#	pragma pack(4)
+#endif
+
+// Define context object big enough to hold a 64-bit pointer,
+// to accomodate 64-bit clients communicating with 32-bit daemon.
+// There's no reason for the daemon to ever be a 64-bit process, but its clients might be
 typedef packedunion
     {
     void *context;

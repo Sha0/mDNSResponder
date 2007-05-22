@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.72  2007/05/22 01:07:42  cheshire
+<rdar://problem/3563675> API: Need a way to get version/feature information
+
 Revision 1.71  2007/05/18 23:55:22  cheshire
 <rdar://problem/4454655> Allow multiple register/browse/resolve operations to share single Unix Domain Socket
 
@@ -574,6 +577,38 @@ void DNSSD_API DNSServiceRefDeallocate(DNSServiceRef sdRef)
 			free(p);
 			}
 		}
+	}
+
+DNSServiceErrorType DNSSD_API DNSServiceGetProperty(const char *property, void *result, uint32_t *size)
+	{
+	char *ptr;
+	size_t len = strlen(property) + 1;
+	ipc_msg_hdr *hdr;
+	DNSServiceOp *tmp;
+	uint32_t actualsize;
+
+	DNSServiceErrorType err = ConnectToServer(&tmp, 0, getproperty_request, NULL, NULL, NULL);
+	if (err) return err;
+
+	hdr = create_hdr(getproperty_request, &len, &ptr, 0, NULL);
+	if (!hdr) { DNSServiceRefDeallocate(tmp); return kDNSServiceErr_NoMemory; }
+
+	put_string(property, &ptr);
+	err = deliver_request(hdr, tmp);		// Will free hdr for us
+	if (read_all(tmp->sockfd, (char*)&actualsize, (int)sizeof(actualsize)) < 0)
+		{ DNSServiceRefDeallocate(tmp); return kDNSServiceErr_ServiceNotRunning; }
+
+	actualsize = ntohl(actualsize);
+	if (read_all(tmp->sockfd, (char*)result, actualsize < *size ? actualsize : *size) < 0)
+		{ DNSServiceRefDeallocate(tmp); return kDNSServiceErr_ServiceNotRunning; }
+	DNSServiceRefDeallocate(tmp);
+
+	// Swap version result back to local process byte order
+	if (!strcmp(property, kDNSServiceProperty_DaemonVersion) && *size >= 4)
+		*(uint32_t*)result = ntohl(*(uint32_t*)result);
+
+	*size = actualsize;
+	return kDNSServiceErr_NoError;
 	}
 
 static void handle_resolve_response(DNSServiceOp *sdr, CallbackHeader *cbh, char *data)
@@ -1211,7 +1246,7 @@ DNSServiceErrorType DNSSD_API DNSServiceReconfirmRecord
 	DNSServiceOp *tmp;
 
 	DNSServiceErrorType err = ConnectToServer(&tmp, flags, reconfirm_record_request, NULL, NULL, NULL);
-	if (err) return err;	// On error ConnectToServer leaves *sdRef set to NULL
+	if (err) return err;
 
 	len = sizeof(DNSServiceFlags);
 	len += sizeof(uint32_t);

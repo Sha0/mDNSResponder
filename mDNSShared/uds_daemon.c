@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.304  2007/05/22 01:07:42  cheshire
+<rdar://problem/3563675> API: Need a way to get version/feature information
+
 Revision 1.303  2007/05/22 00:32:58  cheshire
 Make a send_all() subroutine -- will be helpful for implementing DNSServiceGetProperty(DaemonVersion)
 
@@ -2577,6 +2580,33 @@ mDNSlocal mStatus handle_setdomain_request(request_state *request)
 	return(err);
 	}
 
+typedef packedstruct
+	{
+	mStatus err;
+	mDNSu32 len;
+	mDNSu32 vers;
+	} DaemonVersionReply;
+
+mDNSlocal void handle_getproperty_request(request_state *request)
+	{
+	const mStatus BadParamErr = dnssd_htonl(mStatus_BadParamErr);
+	char *ptr = request->msgptr;
+	char prop[256];
+	if (get_string(&ptr, prop, sizeof(prop)) >= 0)
+		{
+		LogOperation("%3d: DNSServiceGetProperty(%s)", request->sd, prop);
+		if (!strcmp(prop, kDNSServiceProperty_DaemonVersion))
+			{
+			DaemonVersionReply x = { 0, dnssd_htonl(4), dnssd_htonl(_DNS_SD_H) };
+			send_all(request->sd, (const char *)&x, sizeof(x));
+			return;
+			}
+		}
+
+	// If we didn't recogize the requested property name, return BadParamErr
+	send_all(request->sd, (const char *)&BadParamErr, sizeof(BadParamErr));
+	}
+
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
@@ -3075,6 +3105,7 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 		case reg_record_request:       min_size += sizeof(mDNSu32) + 1 /* name */ + 6 /* type, class, rdlen */ + 4 /* ttl */;  break;
 		case reconfirm_record_request: min_size += sizeof(mDNSu32) + 1 /* name */ + 6 /* type, class, rdlen */;                break;
 		case setdomain_request:        min_size +=                   1 /* domain */;                                           break;
+		case getproperty_request:      min_size = 2;                                                                           break;
 		case port_mapping_request:     min_size += sizeof(mDNSu32) + 4 /* udp/tcp */ + 4 /* int/ext port */    + 4 /* ttl */;  break;
 		case addrinfo_request:         min_size += sizeof(mDNSu32) + 4 /* v4/v6 */   + 1 /* hostname */;                       break;
 		case cancel_request:           min_size = 0;                                                                           break;
@@ -3166,6 +3197,7 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 		case enumeration_request:          err = handle_enum_request        (req); break;
 		case reconfirm_record_request:     err = handle_reconfirm_request   (req); break;
 		case setdomain_request:            err = handle_setdomain_request   (req); break;
+		case getproperty_request:                handle_getproperty_request (req); break;
 		case port_mapping_request:         err = handle_port_mapping_request(req); break;
 		case addrinfo_request:             err = handle_addrinfo_request    (req); break;
 
@@ -3182,7 +3214,9 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 	if (req->msgbuf) freeL("request_state msgbuf", req->msgbuf);
 
 	// There's no return data for a cancel request (DNSServiceRefDeallocate returns no result)
-	if (req->hdr.op != cancel_request)
+	// For a DNSServiceGetProperty call, the handler already generated the response,
+	// so no need to do it again here
+	if (req->hdr.op != cancel_request && req->hdr.op != getproperty_request)
 		{
 		err = dnssd_htonl(err);
 		send_all(errfd, (const char *)&err, sizeof(err));
