@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.312  2007/05/22 19:07:21  cheshire
+Add comment explaining RR_CACHE_SIZE calculation
+
 Revision 1.311  2007/05/15 21:47:21  cheshire
 Get rid of "#pragma unused(m)"
 
@@ -245,7 +248,10 @@ Revision 1.261  2006/01/06 01:22:28  cheshire
 
 static mDNS_PlatformSupport PlatformStorage;
 
-// Start off with a default cache of 16K (about 100 records)
+// Start off with a default cache of 16K (99 records)
+// Each time we grow the cache we add another 99 records
+// 99 * 164 = 16236 bytes.
+// This fits in four 4kB pages, with 148 bytes spare for memory block headers and similar overhead
 #define RR_CACHE_SIZE ((16*1024) / sizeof(CacheRecord))
 static CacheEntity rrcachestorage[RR_CACHE_SIZE];
 
@@ -1574,6 +1580,7 @@ mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 		{
 		// Allocate another chunk of cache storage
 		CacheEntity *storage = mallocL("mStatus_GrowCache", sizeof(CacheEntity) * RR_CACHE_SIZE);
+		//LogOperation("GrowCache %d * %d = %d", sizeof(CacheEntity), RR_CACHE_SIZE, sizeof(CacheEntity) * RR_CACHE_SIZE);
 		if (storage) mDNS_GrowCache(m, storage, RR_CACHE_SIZE);
 		}
 	else if (result == mStatus_ConfigChanged)
