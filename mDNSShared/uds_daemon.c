@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.303  2007/05/22 00:32:58  cheshire
+Make a send_all() subroutine -- will be helpful for implementing DNSServiceGetProperty(DaemonVersion)
+
 Revision 1.302  2007/05/21 18:54:54  cheshire
 Add "Cancel" LogOperation message when we get a cancel_request command over the UDS
 
@@ -872,6 +875,17 @@ mDNSlocal int build_domainname_from_strings(domainname *srv, char *name, char *r
 	if (!MakeDomainNameFromDNSNameString(&d, domain)) return -1;
 	if (!ConstructServiceName(srv, &n, &t, &d)) return -1;
 	return 0;
+	}
+
+mDNSlocal void send_all(dnssd_sock_t s, const char *ptr, int len)
+	{
+	int n = send(s, ptr, len, 0);
+	// On a freshly-created Unix Domain Socket, the kernel should *never* fail to buffer a small write for us
+	// (four bytes for a typical error code return, 12 bytes for DNSServiceGetProperty(DaemonVersion)).
+	// If it does fail, we don't attempt to handle this failure, but we do log it so we know something is wrong.
+	if (n < len)
+		LogMsg("ERROR: failed to write error response back to caller: %d/%d %d %s",
+			n, len, dnssd_errno(), dnssd_strerror(dnssd_errno()));
 	}
 
 // ***************************************************************************
@@ -3028,7 +3042,6 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 	dnssd_sockaddr_t cliaddr;
 	int dedicated_error_socket;
 	dnssd_sock_t errfd = req->sd;
-	int nwritten;
 #if defined(_WIN32)
 	u_long opt = 1;
 #endif
@@ -3171,18 +3184,9 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 	// There's no return data for a cancel request (DNSServiceRefDeallocate returns no result)
 	if (req->hdr.op != cancel_request)
 		{
-		//LogOperation("request_callback: Returning error code %d on socket %d", err, errfd);
 		err = dnssd_htonl(err);
-		nwritten = send(errfd, (dnssd_sockbuf_t) &err, sizeof(err), 0);
-		// On a freshly-created Unix Domain Socket, the kernel should *never* fail to buffer a four-byte write for us.
-		// If not, we don't attempt to handle this failure, but we do log it.
-		if (nwritten < (int)sizeof(err))
-			LogMsg("ERROR: failed to write error response back to caller: %d %d %s",
-				nwritten, dnssd_errno(), dnssd_strerror(dnssd_errno()));
-		//else LogOperation("request_callback: Returned error code %d on socket %d", err, errfd);
-		
+		send_all(errfd, (const char *)&err, sizeof(err));
 		if (errfd != req->sd) dnssd_close(errfd);
-		//if (errfd != req->sd) LogOperation("request_callback: Closed errfd %d", errfd);
 		}
 
 	// Reset ready to accept the next req on this pipe
