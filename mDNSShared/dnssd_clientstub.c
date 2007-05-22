@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.74  2007/05/22 18:28:38  cheshire
+Fixed compile errors in posix build
+
 Revision 1.73  2007/05/22 01:20:47  cheshire
 To determine current operation, need to check hdr->op, not sdr->op
 
@@ -182,7 +185,7 @@ struct _DNSServiceRef_t
 	ProcessReplyFn  ProcessReply;		// Function pointer to the code to handle received messages
 	void           *AppCallback;		// Client callback function and context
 	void           *AppContext;
-	} _DNSServiceRef_t;
+	};
 
 struct _DNSRecordRef_t
 	{
@@ -241,10 +244,10 @@ static int read_all(dnssd_sock_t sd, char *buf, int len)
 // Returns 1 if more bytes remain to be read on socket descriptor sd
 static int more_bytes(dnssd_sock_t sd)
 	{
+	struct timeval tv = { 0, 0 };
 	fd_set readfds;
 	FD_ZERO(&readfds);
 	FD_SET(sd, &readfds);
-	struct timeval tv = { 0, 0 };
 	return(select(sd+1, &readfds, (fd_set*)NULL, (fd_set*)NULL, &tv) > 0);
 	}
 
@@ -889,24 +892,22 @@ DNSServiceErrorType DNSSD_API DNSServiceBrowse
 	return err;
 	}
 
-DNSServiceErrorType DNSSD_API DNSServiceSetDefaultDomainForUser
-	(
-	DNSServiceFlags  flags,
-	const char      *domain
-	)
+DNSServiceErrorType DNSSD_API DNSServiceSetDefaultDomainForUser(DNSServiceFlags flags, const char *domain)
 	{
-	DNSServiceOp *sdr;
-	DNSServiceErrorType err;
-	char *ptr = NULL;
+	DNSServiceOp *tmp;
+	char *ptr;
 	size_t len = sizeof(flags) + strlen(domain) + 1;
-	ipc_msg_hdr *hdr = create_hdr(setdomain_request, &len, &ptr, 0, NULL);
-	if (!hdr) return kDNSServiceErr_NoMemory;
+	ipc_msg_hdr *hdr;
+	DNSServiceErrorType err = ConnectToServer(&tmp, 0, setdomain_request, NULL, NULL, NULL);
+	if (err) return err;
+
+	hdr = create_hdr(setdomain_request, &len, &ptr, 0, NULL);
+	if (!hdr) { DNSServiceRefDeallocate(tmp); return kDNSServiceErr_NoMemory; }
 
 	put_flags(flags, &ptr);
 	put_string(domain, &ptr);
-
-	err = deliver_request(hdr, sdr);		// Will free hdr for us
-	DNSServiceRefDeallocate(sdr);
+	err = deliver_request(hdr, tmp);		// Will free hdr for us
+	DNSServiceRefDeallocate(tmp);
 	return err;
 	}
 
