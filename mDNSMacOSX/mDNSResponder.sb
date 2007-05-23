@@ -26,6 +26,10 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # $Log: mDNSResponder.sb,v $
+# Revision 1.13  2007/05/23 01:47:59  cheshire
+# Need to list fs_read_data permission explicitly --
+# unlike fs_read/fs_write, fs_read_data does NOT automatically inherit from fs_write_data
+#
 # Revision 1.12  2007/05/21 23:52:27  cheshire
 # <rdar://problem/5216638> Seatbelt killed mDNSResponder generating Module Directory Services cache
 #
@@ -110,6 +114,7 @@ allow fs_read_data  -regex "^/(private/var/root/)?Library/Preferences/com\.apple
 
 # Allow access to System Keychain
 allow fs_write_data -regex "^/private/var/tmp/mds/system/.*\$";		# Module Directory Services cache
+allow fs_read_data  -regex "^/private/var/tmp/mds/system/.*\$";		# fs_read_data does NOT inherit from fs_write_data
 allow fs_read_data  -regex "^/System/Library/Security\$";
 allow fs_read_data  -regex "^/System/Library/Keychains/System.*\$";
 allow fs_read_data  -regex "^/Library/Keychains/System\.keychain\$";
