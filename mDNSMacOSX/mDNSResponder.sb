@@ -26,6 +26,9 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # $Log: mDNSResponder.sb,v $
+# Revision 1.14  2007/05/23 17:40:08  cheshire
+# <rdar://problem/5221397> Seatbelt killed mDNSResponder trying to read X509Anchors and X509Certificates
+#
 # Revision 1.13  2007/05/23 01:47:59  cheshire
 # Need to list fs_read_data permission explicitly --
 # unlike fs_read/fs_write, fs_read_data does NOT automatically inherit from fs_write_data
@@ -116,7 +119,7 @@ allow fs_read_data  -regex "^/(private/var/root/)?Library/Preferences/com\.apple
 allow fs_write_data -regex "^/private/var/tmp/mds/system/.*\$";		# Module Directory Services cache
 allow fs_read_data  -regex "^/private/var/tmp/mds/system/.*\$";		# fs_read_data does NOT inherit from fs_write_data
 allow fs_read_data  -regex "^/System/Library/Security\$";
-allow fs_read_data  -regex "^/System/Library/Keychains/System.*\$";
+allow fs_read_data  -regex "^/System/Library/Keychains/.*\$";
 allow fs_read_data  -regex "^/Library/Keychains/System\.keychain\$";
 
 # After name conflict, allow mDNSResponder to persistently save new unique name for next time
