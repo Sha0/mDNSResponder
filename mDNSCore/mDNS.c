@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.638  2007/05/23 00:43:16  cheshire
+If uDNS UDP response has TC (truncated) bit set, don't interpret it as being the entire RRSet
+
 Revision 1.637  2007/05/14 23:53:00  cheshire
 Export mDNS_StartQuery_internal and mDNS_StopQuery_internal so they can be called from uDNS.c
 
@@ -2581,7 +2584,7 @@ mDNSlocal void ReleaseCacheEntity(mDNS *const m, CacheEntity *e)
 mDNSlocal void ReleaseCacheGroup(mDNS *const m, CacheGroup **cp)
 	{
 	CacheEntity *e = (CacheEntity *)(*cp);
-	//LogMsg("ReleaseCacheGroup: Releasing CacheGroup for %p, %##s", (*cp)->name->c, (*cp)->name->c);
+	//LogMsg("ReleaseCacheGroup:  Releasing CacheGroup for %p, %##s", (*cp)->name->c, (*cp)->name->c);
 	if ((*cp)->rrcache_tail != &(*cp)->members)
 		LogMsg("ERROR: (*cp)->members == mDNSNULL but (*cp)->rrcache_tail != &(*cp)->members)");
 	//if ((*cp)->name != (domainname*)((*cp)->namestorage))
@@ -2594,6 +2597,7 @@ mDNSlocal void ReleaseCacheGroup(mDNS *const m, CacheGroup **cp)
 
 mDNSlocal void ReleaseCacheRecord(mDNS *const m, CacheRecord *r)
 	{
+	//LogMsg("ReleaseCacheRecord: Releasing %s", CRDisplayString(m, r));
 	if (r->resrec.rdata && r->resrec.rdata != (RData*)&r->rdatastorage) mDNSPlatformMemFree(r->resrec.rdata);
 	r->resrec.rdata = mDNSNULL;
 	ReleaseCacheEntity(m, (CacheEntity *)r);
@@ -2616,7 +2620,8 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m, CacheGroup *const cg)
 		if (m->timenow - event >= 0)	// If expired, delete it
 			{
 			*rp = rr->next;				// Cut it from the list
-			verbosedebugf("CheckCacheExpiration: Deleting %s", CRDisplayString(m, rr));
+			verbosedebugf("CheckCacheExpiration: Deleting%7d %4d %s",
+				m->timenow - rr->TimeRcvd, rr->resrec.rroriginalttl, CRDisplayString(m, rr));
 			if (rr->CRActiveQuestion)	// If this record has one or more active questions, tell them it's going away
 				{
 				CacheRecordRmv(m, rr);
@@ -3968,9 +3973,13 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		response->h.numAuthorities, response->h.numAuthorities == 1 ? "y,  " : "ies,",
 		response->h.numAdditionals, response->h.numAdditionals == 1 ? "" : "s");
 
-	// We ignore questions (if any) in mDNS response packets
-	// Also, if this is an LLQ response, we handle it much the same
-	if (ResponseMCast || IsLLQEvent)
+	// 1. We ignore questions (if any) in mDNS response packets
+	// 2. If this is an LLQ response, we handle it much the same
+	// 3. If we get a uDNS UDP response with the TC (truncated) bit set, then we can't treat this
+	//    answer as being the authoritative complete RRSet, and respond by deleting all other
+	//    matching cache records that don't appear in this packet.
+	// Otherwise, this is a authoritative uDNS answer, so arrange for any stale records to be purged
+	if (ResponseMCast || IsLLQEvent || (response->h.flags.b[0] & kDNSFlag0_TC))
 		ptr = LocateAnswers(response, end);
 	// Otherwise, for one-shot queries, any answers in our cache that are not also contained
 	// in this response packet are immediately deemed to be invalid.
