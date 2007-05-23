@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.370  2007/05/23 00:30:59  cheshire
+Don't change question->TargetQID when repeating query over TCP
+
 Revision 1.369  2007/05/21 18:04:40  cheshire
 Updated comments -- port_mapping_create_reply renamed to port_mapping_reply
 
@@ -3253,7 +3256,6 @@ mDNSlocal void hndlTruncatedAnswer(mDNS *m, DNSQuestion *question, const mDNSAdd
 	context->m = m;
 	context->Addr = *src;
 	context->Port = srcport;
-	question->TargetQID = mDNS_NewMessageID(m);
 
 	// This mDNSPlatformTCPSocket/mDNSPlatformTCPConnect pattern appears repeatedly -- should be folded into and single make-socket-and-connect routine
 	sock = mDNSPlatformTCPSocket(m, kTCPSocketFlags_Zero, &port);
@@ -3270,7 +3272,7 @@ exit:
 	if (err) mDNS_StopQuery_internal(m, question);
 	}
 
-// Called with the lock held
+// Called from mDNSCoreReceive with the lock held
 mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *const srcaddr, const mDNSIPPort srcport)
 	{
 	DNSQuestion *qptr;
