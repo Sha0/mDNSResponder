@@ -38,6 +38,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.639  2007/05/23 00:51:33  cheshire
+Increase threshold for shedding cache records from 512 to 3000. The 512 figure was calculated when
+each cache entry took about 700 bytes; now they're only 164 bytes. Also, machines have more RAM these
+days, and there are more services being advertised using DNS-SD, so it makes sense to cache more.
+
 Revision 1.638  2007/05/23 00:43:16  cheshire
 If uDNS UDP response has TC (truncated) bit set, don't interpret it as being the entire RRSet
 
@@ -2801,10 +2806,11 @@ mDNSlocal CacheEntity *GetCacheEntity(mDNS *const m, const CacheGroup *const Pre
 		
 		// We don't want to be vulnerable to a malicious attacker flooding us with an infinite
 		// number of bogus records so that we keep growing our cache until the machine runs out of memory.
-		// To guard against this, if we're actively using less than 1/32 of our cache, then we
-		// purge all the unused records and recycle them, instead of allocating more memory.
-		if (m->rrcache_size >= 512 && m->rrcache_size / 32 > m->rrcache_active)
-			debugf("Possible denial-of-service attack in progress: m->rrcache_size %lu; m->rrcache_active %lu",
+		// To guard against this, if our cache grows above 512kB (approx 3168 records at 164 bytes each),
+		// and we're actively using less than 1/32 of that cache, then we purge all the unused records
+		// and recycle them, instead of allocating more memory.
+		if (m->rrcache_size > 3000 && m->rrcache_size / 32 > m->rrcache_active)
+			LogOperation("Possible denial-of-service attack in progress: m->rrcache_size %lu; m->rrcache_active %lu",
 				m->rrcache_size, m->rrcache_active);
 		else
 			{
@@ -2818,7 +2824,7 @@ mDNSlocal CacheEntity *GetCacheEntity(mDNS *const m, const CacheGroup *const Pre
 	// Enumerating the entire cache is moderately expensive, so when we do it, we reclaim all the records we can in one pass.
 	if (!m->rrcache_free)
 		{
-		#if MDNS_DEBUGMSGS
+		#if LogAllOperations || MDNS_DEBUGMSGS
 		mDNSu32 oldtotalused = m->rrcache_totalused;
 		#endif
 		mDNSu32 slot;
@@ -2848,9 +2854,8 @@ mDNSlocal CacheEntity *GetCacheEntity(mDNS *const m, const CacheGroup *const Pre
 				else ReleaseCacheGroup(m, cp);
 				}
 			}
-		#if MDNS_DEBUGMSGS
-		debugf("Clear unused records; m->rrcache_totalused was %lu; now %lu", oldtotalused, m->rrcache_totalused);
-		#endif
+		LogOperation("GetCacheEntity recycled %d records to reduce cache from %d to %d",
+			oldtotalused - m->rrcache_totalused, oldtotalused, m->rrcache_totalused);
 		}
 
 	if (m->rrcache_free)	// If there are records in the free list, take one
@@ -2859,7 +2864,7 @@ mDNSlocal CacheEntity *GetCacheEntity(mDNS *const m, const CacheGroup *const Pre
 		m->rrcache_free = e->next;
 		if (++m->rrcache_totalused >= m->rrcache_report)
 			{
-			debugf("RR Cache now using %ld objects", m->rrcache_totalused);
+			LogOperation("RR Cache now using %ld objects", m->rrcache_totalused);
 			if (m->rrcache_report < 100) m->rrcache_report += 10;
 			else                         m->rrcache_report += 100;
 			}
