@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.157  2007/05/23 00:32:15  cheshire
+Don't treat uDNS responses as an entire RRSet (kDNSRecordTypePacketUniqueMask)
+when received in a truncated UDP response
+
 Revision 1.156  2007/05/15 00:29:00  cheshire
 Print «ZERO ADDRESS» for %#a with a zero mDNSAddr
 
@@ -1936,8 +1940,9 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 	pktrdlength           = (mDNSu16)((mDNSu16)ptr[8] <<  8 | ptr[9]);
 
 	// If mDNS record has cache-flush bit set, we mark it unique
-	// For uDNS records, all are implicitly deemed unique (a single DNS server is always authoritative for the entire RRSet)
-	if (ptr[2] & (kDNSClass_UniqueRRSet >> 8) || !InterfaceID)
+	// For uDNS records, all are implicitly deemed unique (a single DNS server is always
+	// authoritative for the entire RRSet), unless this is a truncated response
+	if (ptr[2] & (kDNSClass_UniqueRRSet >> 8) || (!InterfaceID && !(msg->h.flags.b[0] & kDNSFlag0_TC)))
 		RecordType |= kDNSRecordTypePacketUniqueMask;
 	ptr += 10;
 	if (ptr + pktrdlength > end) { debugf("GetLargeResourceRecord: RDATA exceeds end of packet"); return(mDNSNULL); }
