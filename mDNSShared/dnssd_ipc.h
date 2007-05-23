@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.35  2007/05/23 18:59:22  cheshire
+Remove unnecessary IPC_FLAGS_REUSE_SOCKET
+
 Revision 1.34  2007/05/22 01:07:42  cheshire
 <rdar://problem/3563675> API: Need a way to get version/feature information
 
@@ -191,8 +194,6 @@ Update to APSL 2.0
 // IPC data encoding constants and types
 #define VERSION 1
 #define IPC_FLAGS_NOREPLY 1	// set flag if no asynchronous replies are to be sent to client
-#define IPC_FLAGS_REUSE_SOCKET 2 // set flag if synchronous errors are to be sent via the primary socket
-                                // (if not set, first string in message buffer must be path to error socket
 
 // Structure packing macro. If we're not using GNUC, it's not fatal. Most compilers naturally pack the on-the-wire
 // structures correctly anyway, so a plain "struct" is usually fine. In the event that structures are not packed

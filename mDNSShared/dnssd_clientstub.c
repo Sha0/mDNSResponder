@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.75  2007/05/23 18:59:22  cheshire
+Remove unnecessary IPC_FLAGS_REUSE_SOCKET
+
 Revision 1.74  2007/05/22 18:28:38  cheshire
 Fixed compile errors in posix build
 
@@ -255,8 +258,9 @@ static int more_bytes(dnssd_sock_t sd)
  *
  * allocate and initialize an ipc message header. Value of len should initially be the
  * length of the data, and is set to the value of the data plus the header. data_start
- * is set to point to the beginning of the data section. reuse_socket should be non-zero
- * for calls that can receive an immediate error return value on their primary socket.
+ * is set to point to the beginning of the data section. SeparateReturnSocket should be
+ * non-zero for calls that can't receive an immediate error return value on their primary
+ * socket, and therefore require a separate return path for the error code result.
  * if zero, the path to a control socket is appended at the beginning of the message buffer.
  * data_start is set past this string.
  */
@@ -298,7 +302,6 @@ static ipc_msg_hdr *create_hdr(uint32_t op, size_t *len, char **data_start, int 
 	hdr->op                     = op;
 	hdr->client_context.context = cookie;
 	hdr->reg_index              = 0;
-	if (!SeparateReturnSocket) hdr->ipc_flags |= IPC_FLAGS_REUSE_SOCKET;
 	*data_start = msg + sizeof(ipc_msg_hdr);
 #if defined(USE_TCP_LOOPBACK)
 	// Put dummy data in for the port, since we don't know what it is yet.

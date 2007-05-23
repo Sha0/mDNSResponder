@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.305  2007/05/23 18:59:22  cheshire
+Remove unnecessary IPC_FLAGS_REUSE_SOCKET
+
 Revision 1.304  2007/05/22 01:07:42  cheshire
 <rdar://problem/3563675> API: Need a way to get version/feature information
 
@@ -3122,9 +3125,6 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 	if (req->hdr.ipc_flags & IPC_FLAGS_NOREPLY) req->no_reply = 1;
 
 	dedicated_error_socket = (req->terminate && req->hdr.op != cancel_request);
-
-	if (((req->hdr.ipc_flags & IPC_FLAGS_REUSE_SOCKET) == 0) != dedicated_error_socket)
-		LogMsg("WARNING: client req %d with incorrect flags setting 0x%X", req->hdr.op, req->hdr.ipc_flags);
 
 	// check if primary socket is to be used for synchronous errors, else open new socket
 	if (dedicated_error_socket)
