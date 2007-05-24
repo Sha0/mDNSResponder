@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.371  2007/05/24 00:11:44  cheshire
+Remove unnecessary lenbuf field from tcpInfo_t
+
 Revision 1.370  2007/05/23 00:30:59  cheshire
 Don't change question->TargetQID when repeating query over TCP
 
@@ -525,7 +528,6 @@ typedef struct
 	mDNSAddr          Addr;
 	mDNSIPPort        Port;
 	DNSMessage       *reply;
-	mDNSu8            lenbuf[2];
 	mDNSu16           replylen;
 	unsigned long     nread;
 	int               numReplies;
@@ -1304,16 +1306,11 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 		}
 	else
 		{
-		if (tcpInfo->nread < 2)
+		if (tcpInfo->nread < 2)			// First read the two-byte length preceeding the DNS message
 			{
-			// read msg len
-			n = mDNSPlatformReadTCP(sock, tcpInfo->lenbuf + tcpInfo->nread, sizeof(tcpInfo->lenbuf) - tcpInfo->nread, &closed);
-			if (n < 0)
-				{
-				LogMsg("ERROR:tcpCallback - attempt to read message length failed (read returned %d)", n);
-				err = mStatus_ConnFailed;
-				goto exit;
-				}
+			char *lenptr = (char *)&tcpInfo->replylen;
+			n = mDNSPlatformReadTCP(sock, lenptr + tcpInfo->nread, 2 - tcpInfo->nread, &closed);
+			if (n < 0) { LogMsg("ERROR:tcpCallback - attempt to read message length failed (%d)", n); err = mStatus_ConnFailed; goto exit; }
 			else if (closed)
 				{
 				// It's perfectly fine for this socket to close after the first reply. The server might
@@ -1325,31 +1322,29 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 				}
 
 			tcpInfo->nread += n;
-			if (tcpInfo->nread < (int) sizeof(tcpInfo->lenbuf)) goto exit;
-			tcpInfo->replylen = (mDNSu16) ((mDNSu16) tcpInfo->lenbuf[0] << 8 | tcpInfo->lenbuf[1]);
+			if (tcpInfo->nread < 2) goto exit;
 
+			tcpInfo->replylen = (mDNSu16)((mDNSu16)lenptr[0] << 8 | lenptr[1]);
 			if (tcpInfo->replylen < sizeof(DNSMessageHeader))
 				{ LogMsg("ERROR: tcpCallback - length too short (%d bytes)", tcpInfo->replylen); err = mStatus_UnknownErr; goto exit; }
 
 			tcpInfo->reply = mDNSPlatformMemAllocate(tcpInfo->replylen);
-
-			if (!tcpInfo->reply)
-				{ LogMsg("ERROR: tcpCallback - malloc failed"); err = mStatus_NoMemoryErr; goto exit; }
+			if (!tcpInfo->reply) { LogMsg("ERROR: tcpCallback - malloc failed"); err = mStatus_NoMemoryErr; goto exit; }
 			}
 
-		n = mDNSPlatformReadTCP(sock, ((char *)tcpInfo->reply) + (tcpInfo->nread - sizeof(tcpInfo->lenbuf)), tcpInfo->replylen - (tcpInfo->nread - sizeof(tcpInfo->lenbuf)), &closed);
+		n = mDNSPlatformReadTCP(sock, ((char *)tcpInfo->reply) + (tcpInfo->nread - 2), tcpInfo->replylen - (tcpInfo->nread - 2), &closed);
 
 		if      (n < 0)  { LogMsg("ERROR: tcpCallback - read returned %d", n); err = mStatus_ConnFailed; goto exit; }
 		else if (closed) { LogMsg("ERROR: socket close prematurely");          err = mStatus_ConnFailed; goto exit; }
 
 		tcpInfo->nread += n;
 
-		if ((tcpInfo->nread - sizeof(tcpInfo->lenbuf)) == tcpInfo->replylen)
+		if ((tcpInfo->nread - 2) == tcpInfo->replylen)
 			{
-			DNSMessage *msg = tcpInfo->reply;
+			mDNSu8 *end = (mDNSu8 *)tcpInfo->reply + tcpInfo->replylen;
 			tcpInfo->numReplies++;
-			mDNSCoreReceive(m, msg, (mDNSu8 *)msg + tcpInfo->replylen, &tcpInfo->Addr, tcpInfo->Port, mDNSNULL, zeroIPPort, 0);
-			//DumpPacket(m, msg, (mDNSu8*)msg + tcpInfo->replylen);
+			mDNSCoreReceive(m, tcpInfo->reply, end, &tcpInfo->Addr, tcpInfo->Port, mDNSNULL, zeroIPPort, 0);
+			//DumpPacket(m, tcpInfo->reply, end);
 			mDNSPlatformMemFree(tcpInfo->reply);
 			if (tcpInfo->question && tcpInfo->question->LongLived)
 				{
@@ -3268,7 +3263,6 @@ mDNSlocal void hndlTruncatedAnswer(mDNS *m, DNSQuestion *question, const mDNSAdd
 	else                                     { LogMsg("hndlTruncatedAnswer: connection failed"); }
 
 exit:
-
 	if (err) mDNS_StopQuery_internal(m, question);
 	}
 
