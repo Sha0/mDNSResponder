@@ -466,7 +466,8 @@ static void DNSSD_API reg_reply(DNSServiceRef client, const DNSServiceFlags flag
 
 	if (errorCode == kDNSServiceErr_NoError)
 		{
-		printf("Name now registered and active\n");
+		if (flags & kDNSServiceFlagsAdd) printf("Name now registered and active\n"); 
+		else printf("Name registration removed\n"); 
 		if (operation == 'A' || operation == 'U' || operation == 'N') timeOut = 5;
 		}
 	else if (errorCode == kDNSServiceErr_NameConflict)

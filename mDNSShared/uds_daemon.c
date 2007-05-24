@@ -17,6 +17,11 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.306  2007/05/24 22:31:35  vazquez
+Bug #: 4272956
+Reviewed by: Stuart Cheshire
+<rdar://problem/4272956> WWDC API: Return ADD/REMOVE events in registration callback
+
 Revision 1.305  2007/05/23 18:59:22  cheshire
 Remove unnecessary IPC_FLAGS_REUSE_SOCKET
 
@@ -487,6 +492,7 @@ typedef struct service_instance
 	dnssd_sock_t sd;
 	AuthRecord *subtypes;
 	mDNSBool renameonmemfree;  		// Set on config change when we deregister original name
+    mDNSBool clientnotified;		// Has client been notified of successful registration yet?
 	mDNSBool default_local;			// is this the "local." from an empty-string registration?
 	domainname domain;
 	ServiceRecordSet srs;			// note - must be last field in struct
@@ -779,7 +785,7 @@ mDNSlocal void generate_final_fatal_reply_with_garbage(request_state *req, reply
 // suitable for a browse result or service registration result.
 // On successful completion rep is set to point to a malloc'd reply_state struct
 mDNSlocal mStatus GenerateNTDResponse(const domainname *const servicename, const mDNSInterfaceID id,
-	request_state *const request, reply_state **const rep, reply_op_t op)
+	request_state *const request, reply_state **const rep, reply_op_t op, DNSServiceFlags flags)
 	{
 	domainlabel name;
 	domainname type, dom;
@@ -808,7 +814,7 @@ mDNSlocal mStatus GenerateNTDResponse(const domainname *const servicename, const
 
 		// Build reply header
 		*rep = create_reply(op, len, request);
-		(*rep)->rhdr->flags = dnssd_htonl(0);
+		(*rep)->rhdr->flags = dnssd_htonl(flags);
 		(*rep)->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, id));
 		(*rep)->rhdr->error = dnssd_htonl(kDNSServiceErr_NoError);
 
@@ -979,6 +985,15 @@ mDNSexport int CountExistingRegistrations(domainname *srv, mDNSIPPort port)
 	return(count);
 	}
 
+mDNSlocal void SendServiceRemovalNotification(ServiceRecordSet *const srs)
+	{
+	reply_state *rep;
+	service_instance *instance = srs->ServiceContext;
+	if (GenerateNTDResponse(srs->RR_SRV.resrec.name, srs->RR_SRV.resrec.InterfaceID, instance->request, &rep, reg_service_reply_op, 0) != mStatus_NoError)
+		LogMsg("%3d: regservice_callback: %##s is not valid DNS-SD SRV name", instance->sd, srs->RR_SRV.resrec.name->c);
+	else { append_reply(instance->request, rep); instance->clientnotified = mDNSfalse; }
+	}
+
 // service registration callback performs three duties - frees memory for deregistered services,
 // handles name conflicts, and delivers completed registration information to the client (via
 // process_service_registraion())
@@ -1021,9 +1036,9 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 			for (e = instance->srs.Extras; e; e = e->next) e->r.AllowRemoteQuery = mDNStrue;
 			}
 
-		if (GenerateNTDResponse(srs->RR_SRV.resrec.name, srs->RR_SRV.resrec.InterfaceID, instance->request, &rep, reg_service_reply_op) != mStatus_NoError)
+		if (GenerateNTDResponse(srs->RR_SRV.resrec.name, srs->RR_SRV.resrec.InterfaceID, instance->request, &rep, reg_service_reply_op, kDNSServiceFlagsAdd) != mStatus_NoError)
 			LogMsg("%3d: regservice_callback: %##s is not valid DNS-SD SRV name", instance->sd, srs->RR_SRV.resrec.name->c);
-		else append_reply(instance->request, rep);
+		else { append_reply(instance->request, rep); instance->clientnotified = mDNStrue; }
 
 		if (instance->request->u.servicereg.autoname && CountPeerRegistrations(m, srs) == 0)
 			RecordUpdatedNiceLabel(m, 0);	// Successfully got new name, tell user immediately
@@ -1048,10 +1063,13 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 				{
 				// On conflict for an autoname service, rename and reregister *all* autoname services
 				IncrementLabelSuffix(&m->nicelabel, mDNStrue);
-				m->MainCallback(m, mStatus_ConfigChanged);
+				m->MainCallback(m, mStatus_ConfigChanged);	// will call back into udsserver_handle_configchange()
 				}
 			else	// On conflict for a non-autoname service, rename and reregister just that one service
+				{
+				if (instance->clientnotified) SendServiceRemovalNotification(srs);
 				mDNS_RenameAndReregisterService(m, srs, mDNSNULL);
+				}
 			}
 		else
 			{
@@ -1513,6 +1531,7 @@ mDNSlocal mStatus register_service_instance(request_state *request, const domain
 	instance->request           = request;
 	instance->sd                = request->sd;
 	instance->renameonmemfree   = 0;
+	instance->clientnotified    = mDNSfalse;
 	AssignDomainName(&instance->domain, domain);
 	instance->default_local = (request->u.servicereg.default_domain && SameDomainName(domain, &localdomain));
 	result = mDNS_RegisterService(&mDNSStorage, &instance->srs,
@@ -1582,6 +1601,7 @@ mDNSexport void udsserver_default_reg_domain_changed(const domainname *d, mDNSBo
 					mStatus err;
 					service_instance *si = *p;
 					*p = si->next;
+					if (si->clientnotified) SendServiceRemovalNotification(&si->srs);
 					err = mDNS_DeregisterService(&mDNSStorage, &si->srs);
 					if (err)
 						{
@@ -1729,6 +1749,7 @@ static ARListElem *SCPrefBrowseDomains = mDNSNULL;
 
 mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
+	const DNSServiceFlags flags = AddRecord ? kDNSServiceFlagsAdd : 0;
 	request_state *req = question->QuestionContext;
 	reply_state *rep;
 	(void)m; // Unused
@@ -1736,7 +1757,7 @@ mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const Resourc
 	if (answer->rrtype != kDNSType_PTR)
 		{ LogMsg("%3d: FoundInstance: Should not be called with rrtype %d (not a PTR record)", req->sd, answer->rrtype); return; }
 
-	if (GenerateNTDResponse(&answer->rdata->u.name, answer->InterfaceID, req, &rep, browse_reply_op) != mStatus_NoError)
+	if (GenerateNTDResponse(&answer->rdata->u.name, answer->InterfaceID, req, &rep, browse_reply_op, flags) != mStatus_NoError)
 		{
 		LogMsg("%3d: FoundInstance: %##s PTR %##s received from network is not valid DNS-SD service pointer",
 			req->sd, answer->name->c, answer->rdata->u.name.c);
@@ -1746,8 +1767,6 @@ mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const Resourc
 	LogOperation("%3d: DNSServiceBrowse(%##s, %s) RESULT %s %d: %s",
 		req->sd, question->qname.c, DNSTypeName(question->qtype), AddRecord ? "Add" : "Rmv",
 		mDNSPlatformInterfaceIndexfromInterfaceID(m, answer->InterfaceID), RRDisplayString(m, answer));
-
-	if (AddRecord) rep->rhdr->flags |= dnssd_htonl(kDNSServiceFlagsAdd);
 
 	append_reply(req, rep);
 	}
@@ -1950,6 +1969,7 @@ mDNSexport void udsserver_handle_configchange(mDNS *const m)
 				for (ptr = req->u.servicereg.instances; ptr; ptr = ptr->next)
 					{
 					ptr->renameonmemfree = 1;
+					if (ptr->clientnotified) SendServiceRemovalNotification(&ptr->srs);
 					if (mDNS_DeregisterService(m, &ptr->srs)) // If service was deregistered already
 						regservice_callback(m, &ptr->srs, mStatus_MemFree); // we can re-register immediately
 					}
