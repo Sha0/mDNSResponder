@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.380  2007/05/25 00:04:51  cheshire
+Added comment explaining rdlength
+
 Revision 1.379  2007/05/21 18:04:40  cheshire
 Updated comments -- port_mapping_create_reply renamed to port_mapping_reply
 
@@ -905,7 +908,8 @@ typedef struct
 	mDNSu16          rrtype;
 	mDNSu16          rrclass;
 	mDNSu32          rroriginalttl;		// In seconds
-	mDNSu16          rdlength;			// Size of the raw rdata, in bytes
+	mDNSu16          rdlength;			// Size of the raw rdata, in bytes, in the on-the-wire format
+										// (in-memory storage may be larger, for structures containing 'holes', like SOA)
 	mDNSu16          rdestimate;		// Upper bound on size of rdata after name compression
 	mDNSu32          namehash;			// Name-based (i.e. case-insensitive) hash of name
 	mDNSu32          rdatahash;			// For rdata containing domain name (e.g. PTR, SRV, CNAME etc.), case-insensitive name hash
