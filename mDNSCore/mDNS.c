@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.640  2007/05/25 00:25:44  cheshire
+<rdar://problem/5227737> Need to enhance putRData to output all current known types
+
 Revision 1.639  2007/05/23 00:51:33  cheshire
 Increase threshold for shedding cache records from 512 to 3000. The 512 figure was calculated when
 each cache entry took about 700 bytes; now they're only 164 bytes. Also, machines have more RAM these
@@ -3891,8 +3894,21 @@ mDNSlocal mDNSBool ExpectingUnicastResponseForRecord(mDNS *const m, const mDNSAd
 mDNSlocal CacheRecord *CreateNewCacheEntry(mDNS *const m, const mDNSu32 slot, CacheGroup *cg)
 	{
 	CacheRecord *rr = mDNSNULL;
+
+	// Certain data types need more space for in-memory storage than their in-packet rdlength would imply
+	// Currently this applies only to rdata types containing more than one domainname,
+	// or types where the domainname is not the last item in the structure
+	mDNSu16 RDLength;
+	switch (m->rec.r.resrec.rrtype)
+		{
+		case kDNSType_SOA: RDLength = sizeof(rdataSOA);         break;
+		case kDNSType_RP:  RDLength = sizeof(rdataRP);          break;
+		case kDNSType_PX:  RDLength = sizeof(rdataPX);          break;
+		default:           RDLength = m->rec.r.resrec.rdlength; break;
+		}
+
 	if (!cg) cg = GetCacheGroup(m, slot, &m->rec.r.resrec);			// If we don't have a CacheGroup for this name, make one now
-	if (cg)  rr = GetCacheRecord(m, cg, m->rec.r.resrec.rdlength);	// Make a cache record, being careful not to recycle cg
+	if (cg)  rr = GetCacheRecord(m, cg, RDLength);	// Make a cache record, being careful not to recycle cg
 	if (!rr) NoCacheAnswer(m, &m->rec.r);
 	else
 		{
@@ -3902,12 +3918,12 @@ mDNSlocal CacheRecord *CreateNewCacheEntry(mDNS *const m, const mDNSu32 slot, Ca
 		rr->resrec.name  = cg->name;			// And set rr->resrec.name to point into our CacheGroup header
 
 		// If this is an oversized record with external storage allocated, copy rdata to external storage
-		if      (rr->resrec.rdata == (RData*)&rr->rdatastorage && m->rec.r.resrec.rdlength > InlineCacheRDSize)
+		if      (rr->resrec.rdata == (RData*)&rr->rdatastorage && RDLength > InlineCacheRDSize)
 			LogMsg("rr->resrec.rdata == &rr->rdatastorage but length > InlineCacheRDSize %##s", m->rec.r.resrec.name->c);
-		else if (rr->resrec.rdata != (RData*)&rr->rdatastorage && m->rec.r.resrec.rdlength <= InlineCacheRDSize)
+		else if (rr->resrec.rdata != (RData*)&rr->rdatastorage && RDLength <= InlineCacheRDSize)
 			LogMsg("rr->resrec.rdata != &rr->rdatastorage but length <= InlineCacheRDSize %##s", m->rec.r.resrec.name->c);
-		if (m->rec.r.resrec.rdlength > InlineCacheRDSize)
-			mDNSPlatformMemCopy(rr->resrec.rdata, m->rec.r.resrec.rdata, sizeofRDataHeader + m->rec.r.resrec.rdlength);
+		if (RDLength > InlineCacheRDSize)
+			mDNSPlatformMemCopy(rr->resrec.rdata, m->rec.r.resrec.rdata, sizeofRDataHeader + RDLength);
 
 		rr->next = mDNSNULL;					// Clear 'next' pointer
 		*(cg->rrcache_tail) = rr;				// Append this record to tail of cache slot list

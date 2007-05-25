@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.307  2007/05/25 00:25:44  cheshire
+<rdar://problem/5227737> Need to enhance putRData to output all current known types
+
 Revision 1.306  2007/05/24 22:31:35  vazquez
 Bug #: 4272956
 Reviewed by: Stuart Cheshire
@@ -2340,7 +2343,10 @@ mDNSlocal void queryrecord_result_callback(mDNS *const m, DNSQuestion *question,
 		put_uint16(answer->rrtype, &data);
 		put_uint16(answer->rrclass, &data);
 		put_uint16(answer->rdlength, &data);
-		put_rdata(answer->rdlength, answer->rdata->u.data, &data);
+		//put_rdata(answer->rdlength, answer->rdata->u.data, &data);
+		if (!putRData(mDNSNULL, (mDNSu8 *)data, (mDNSu8 *)rep->rhdr + len, answer))
+			LogMsg("queryrecord_result_callback putRData failed %d", (mDNSu8 *)rep->rhdr + len - (mDNSu8 *)data);
+		data += answer->rdlength;
 		put_uint32(AddRecord ? answer->rroriginalttl : 0, &data);
 		}
 

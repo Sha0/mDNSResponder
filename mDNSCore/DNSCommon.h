@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.48  2007/05/25 00:25:44  cheshire
+<rdar://problem/5227737> Need to enhance putRData to output all current known types
+
 Revision 1.47  2007/05/01 21:46:31  cheshire
 Move GetLLQOptData/GetPktLease from uDNS.c into DNSCommon.c so that dnsextd can use them
 
@@ -193,7 +196,7 @@ extern mDNSBool ValidateRData(const mDNSu16 rrtype, const mDNSu16 rdlength, cons
 extern void InitializeDNSMessage(DNSMessageHeader *h, mDNSOpaque16 id, mDNSOpaque16 flags);
 extern const mDNSu8 *FindCompressionPointer(const mDNSu8 *const base, const mDNSu8 *const end, const mDNSu8 *const domname);
 extern mDNSu8 *putDomainNameAsLabels(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, const domainname *const name);
-extern mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, ResourceRecord *rr);
+extern mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, const ResourceRecord *const rr);
 
 // If we have a single large record to put in the packet, then we allow the packet to be up to 9K bytes,
 // but in the normal case we try to keep the packets below 1500 to avoid IP fragmentation on standard Ethernet

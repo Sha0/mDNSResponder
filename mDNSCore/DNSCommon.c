@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.158  2007/05/25 00:25:43  cheshire
+<rdar://problem/5227737> Need to enhance putRData to output all current known types
+
 Revision 1.157  2007/05/23 00:32:15  cheshire
 Don't treat uDNS responses as an entire RRSet (kDNSRecordTypePacketUniqueMask)
 when received in a truncated UDP response
@@ -1170,14 +1173,10 @@ mDNSexport mDNSBool SameRDataBody(const ResourceRecord *const r1, const RDataBod
 	{
 	switch(r1->rrtype)
 		{
-		case kDNSType_CNAME:// Same as PTR
 		case kDNSType_NS:
-		case kDNSType_PTR:	return(SameDomainName(&r1->rdata->u.name, &r2->name));
-
-		case kDNSType_SRV:	return(mDNSBool)(  	r1->rdata->u.srv.priority == r2->srv.priority       &&
-												r1->rdata->u.srv.weight   == r2->srv.weight         &&
-												mDNSSameIPPort(r1->rdata->u.srv.port, r2->srv.port) &&
-												SameDomainName(&r1->rdata->u.srv.target, &r2->srv.target));
+		case kDNSType_CNAME:
+		case kDNSType_PTR:
+		case kDNSType_DNAME:return(SameDomainName(&r1->rdata->u.name, &r2->name));
 
 		case kDNSType_SOA:	return(mDNSBool)(  	r1->rdata->u.soa.serial   == r2->soa.serial             &&
 												r1->rdata->u.soa.refresh  == r2->soa.refresh            &&
@@ -1186,6 +1185,24 @@ mDNSexport mDNSBool SameRDataBody(const ResourceRecord *const r1, const RDataBod
 												r1->rdata->u.soa.min      == r2->soa.min                &&
 												SameDomainName(&r1->rdata->u.soa.mname, &r2->soa.mname) &&
 												SameDomainName(&r1->rdata->u.soa.rname, &r2->soa.rname));
+
+		case kDNSType_MX:
+		case kDNSType_AFSDB:
+		case kDNSType_RT:
+		case kDNSType_KX:	return(mDNSBool)(  	r1->rdata->u.mx.preference == r2->mx.preference &&
+												SameDomainName(&r1->rdata->u.mx.exchange, &r2->mx.exchange));
+
+		case kDNSType_RP:	return(mDNSBool)(  	SameDomainName(&r1->rdata->u.rp.mbox, &r2->rp.mbox) &&
+												SameDomainName(&r1->rdata->u.rp.txt,  &r2->rp.txt));
+
+		case kDNSType_PX:	return(mDNSBool)(  	r1->rdata->u.px.preference == r2->px.preference          &&
+												SameDomainName(&r1->rdata->u.px.map822,  &r2->px.map822) &&
+												SameDomainName(&r1->rdata->u.px.mapx400, &r2->px.mapx400));
+
+		case kDNSType_SRV:	return(mDNSBool)(  	r1->rdata->u.srv.priority == r2->srv.priority       &&
+												r1->rdata->u.srv.weight   == r2->srv.weight         &&
+												mDNSSameIPPort(r1->rdata->u.srv.port, r2->srv.port) &&
+												SameDomainName(&r1->rdata->u.srv.target, &r2->srv.target));
 
 		case kDNSType_OPT:	// Okay to use memory compare because there are no 'holes' in the in-memory representation
 
@@ -1262,20 +1279,43 @@ mDNSexport mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate
 	switch (rr->rrtype)
 		{
 		case kDNSType_A:	return(sizeof(rd->ipv4));
-		case kDNSType_CNAME:// Same as PTR
-		case kDNSType_NS:   // Same as PTR
-		case kDNSType_PTR:	return(CompressedDomainNameLength(&rd->name, name));
-		case kDNSType_HINFO:return(mDNSu16)(2 + (int)rd->data[0] + (int)rd->data[1 + (int)rd->data[0]]);
-		case kDNSType_NULL:	// Same as TXT -- not self-describing, so have to just trust rdlength
-		case kDNSType_TSIG: // Same as TXT -- not self-describing, so have to just trust rdlength
-		case kDNSType_TXT:  return(rr->rdlength); // TXT is not self-describing, so have to just trust rdlength
-		case kDNSType_AAAA:	return(sizeof(rd->ipv6));
-		case kDNSType_SRV:	return(mDNSu16)(6 + CompressedDomainNameLength(&rd->srv.target, name));
-		case kDNSType_SOA:  if (!estimate) return(sizeof(rdataSOA));
-							return(mDNSu16)(CompressedDomainNameLength(&rd->soa.mname, name) +
+
+		case kDNSType_NS:
+		case kDNSType_CNAME:
+		case kDNSType_PTR:
+		case kDNSType_DNAME:return(CompressedDomainNameLength(&rd->name, name));
+
+		case kDNSType_SOA:  return(mDNSu16)(CompressedDomainNameLength(&rd->soa.mname, name) +
 											CompressedDomainNameLength(&rd->soa.rname, name) +
 											5 * sizeof(mDNSOpaque32));
+
+		case kDNSType_NULL:
+		case kDNSType_TSIG:
+		case kDNSType_TXT:
+		case kDNSType_X25:
+		case kDNSType_ISDN:
+		case kDNSType_LOC:
+		case kDNSType_DHCID:return(rr->rdlength); // Not self-describing, so have to just trust rdlength
+
+		case kDNSType_HINFO:return(mDNSu16)(2 + (int)rd->data[0] + (int)rd->data[1 + (int)rd->data[0]]);
+
+		case kDNSType_MX:
+		case kDNSType_AFSDB:
+		case kDNSType_RT:
+		case kDNSType_KX:	return(mDNSu16)(2 + CompressedDomainNameLength(&rd->mx.exchange, name));
+
+		case kDNSType_RP:	return(mDNSu16)(CompressedDomainNameLength(&rd->rp.mbox, name) +
+											CompressedDomainNameLength(&rd->rp.txt, name));
+
+		case kDNSType_PX:	return(mDNSu16)(2 + CompressedDomainNameLength(&rd->px.map822, name) +
+												CompressedDomainNameLength(&rd->px.mapx400, name));
+
+		case kDNSType_AAAA:	return(sizeof(rd->ipv6));
+
+		case kDNSType_SRV:	return(mDNSu16)(6 + CompressedDomainNameLength(&rd->srv.target, name));
+
 		case kDNSType_OPT:  return(rr->rdlength);
+
 		default:			debugf("Warning! Don't know how to get length of resource type %d", rr->rrtype);
 							return(rr->rdlength);
 		}
@@ -1464,7 +1504,7 @@ mDNSlocal mDNSu8 *putVal32(mDNSu8 *ptr, mDNSu32 val)
 	return ptr + sizeof(mDNSu32);
 	}
 
-mDNSlocal mDNSu8 *putOptRData(mDNSu8 *ptr, const mDNSu8 *limit, ResourceRecord *rr)
+mDNSlocal mDNSu8 *putOptRData(mDNSu8 *ptr, const mDNSu8 *limit, const ResourceRecord *const rr)
 	{
 	int nput = 0;
 	rdataOPT *opt;
@@ -1560,7 +1600,8 @@ mDNSlocal const mDNSu8 *getOptRdata(const mDNSu8 *ptr, const mDNSu8 *const limit
 	return mDNSNULL;
 	}
 
-mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, ResourceRecord *rr)
+// msg points to the message we're building (pass mDNSNULL if we don't want to use compression pointers)
+mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, const ResourceRecord *const rr)
 	{
 	switch (rr->rrtype)
 		{
@@ -1576,8 +1617,51 @@ mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNS
 							*ptr++ = rr->rdata->u.ipv4.b[3];
 							return(ptr);
 
-		case kDNSType_CNAME:// Same as PTR
-		case kDNSType_PTR:	return(putDomainNameAsLabels(msg, ptr, limit, &rr->rdata->u.name));
+		case kDNSType_NS:
+		case kDNSType_CNAME:
+		case kDNSType_PTR:
+		case kDNSType_DNAME:return(putDomainNameAsLabels(msg, ptr, limit, &rr->rdata->u.name));
+
+		case kDNSType_SOA:  ptr = putDomainNameAsLabels(msg, ptr, limit, &rr->rdata->u.soa.mname);
+							if (!ptr) return(mDNSNULL);
+							ptr = putDomainNameAsLabels(msg, ptr, limit, &rr->rdata->u.soa.rname);
+							if (!ptr || ptr + 20 > limit) return(mDNSNULL);
+							ptr = putVal32(ptr, rr->rdata->u.soa.serial);
+							ptr = putVal32(ptr, rr->rdata->u.soa.refresh);
+							ptr = putVal32(ptr, rr->rdata->u.soa.retry);
+							ptr = putVal32(ptr, rr->rdata->u.soa.expire);
+							ptr = putVal32(ptr, rr->rdata->u.soa.min);
+			                return(ptr);
+
+		case kDNSType_NULL:
+		case kDNSType_HINFO:
+		case kDNSType_TSIG:
+		case kDNSType_TXT:
+		case kDNSType_X25:
+		case kDNSType_ISDN:
+		case kDNSType_LOC:
+		case kDNSType_DHCID:if (ptr + rr->rdlength > limit) return(mDNSNULL);
+							mDNSPlatformMemCopy(ptr, rr->rdata->u.data, rr->rdlength);
+							return(ptr + rr->rdlength);
+
+		case kDNSType_MX:
+		case kDNSType_AFSDB:
+		case kDNSType_RT:
+		case kDNSType_KX:	if (ptr + 3 > limit) return(mDNSNULL);
+							ptr = putVal16(ptr, rr->rdata->u.mx.preference);
+							return(putDomainNameAsLabels(msg, ptr, limit, &rr->rdata->u.mx.exchange));
+
+		case kDNSType_RP:	ptr = putDomainNameAsLabels(msg, ptr, limit, &rr->rdata->u.rp.mbox);
+							if (!ptr) return(mDNSNULL);
+							ptr = putDomainNameAsLabels(msg, ptr, limit, &rr->rdata->u.rp.txt);
+			                return(ptr);
+
+		case kDNSType_PX:	if (ptr + 5 > limit) return(mDNSNULL);
+							ptr = putVal16(ptr, rr->rdata->u.px.preference);
+							ptr = putDomainNameAsLabels(msg, ptr, limit, &rr->rdata->u.px.map822);
+							if (!ptr) return(mDNSNULL);
+							ptr = putDomainNameAsLabels(msg, ptr, limit, &rr->rdata->u.px.mapx400);
+			                return(ptr);
 
 		case kDNSType_AAAA:	if (rr->rdlength != sizeof(rr->rdata->u.ipv6))
 								{
@@ -1588,7 +1672,7 @@ mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNS
 							mDNSPlatformMemCopy(ptr, &rr->rdata->u.ipv6, sizeof(rr->rdata->u.ipv6));
 							return(ptr + sizeof(rr->rdata->u.ipv6));
 
-		case kDNSType_SRV:	if (ptr + 6 > limit) return(mDNSNULL);
+		case kDNSType_SRV:	if (ptr + 7 > limit) return(mDNSNULL);
 							*ptr++ = (mDNSu8)(rr->rdata->u.srv.priority >> 8);
 							*ptr++ = (mDNSu8)(rr->rdata->u.srv.priority &  0xFF);
 							*ptr++ = (mDNSu8)(rr->rdata->u.srv.weight   >> 8);
@@ -1596,13 +1680,11 @@ mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNS
 							*ptr++ = rr->rdata->u.srv.port.b[0];
 							*ptr++ = rr->rdata->u.srv.port.b[1];
 							return(putDomainNameAsLabels(msg, ptr, limit, &rr->rdata->u.srv.target));
+
 		case kDNSType_OPT:	return putOptRData(ptr, limit, rr);
 							
 		default:			debugf("putRData: Warning! Writing unknown resource type %d as raw data", rr->rrtype);
-							// Fall through to common code below
-		case kDNSType_HINFO:
-		case kDNSType_TXT:
-		case kDNSType_TSIG:	if (ptr + rr->rdlength > limit) return(mDNSNULL);
+							if (ptr + rr->rdlength > limit) return(mDNSNULL);
 							mDNSPlatformMemCopy(ptr, rr->rdata->u.data, rr->rdlength);
 							return(ptr + rr->rdlength);
 		}
@@ -2014,7 +2096,7 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 							//debugf("%##s SRV %##s rdlen %d", rr->resrec.name.c, rr->resrec.rdata->u.srv.target.c, pktrdlength);
 							break;
 
-		case kDNSType_RP:	ptr = getDomainName(msg, ptr, end, &rr->resrec.rdata->u.rp.mbox);
+		case kDNSType_RP:	ptr = getDomainName(msg, ptr, end, &rr->resrec.rdata->u.rp.mbox);	// Domainname + domainname
 							if (!ptr)       { debugf("GetLargeResourceRecord: Malformed RP mbox"); return mDNSNULL; }
 							ptr = getDomainName(msg, ptr, end, &rr->resrec.rdata->u.rp.txt);
 							if (ptr != end) { debugf("GetLargeResourceRecord: Malformed RP txt"); return mDNSNULL; }
