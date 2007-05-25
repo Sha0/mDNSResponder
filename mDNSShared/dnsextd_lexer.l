@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: dnsextd_lexer.l,v $
+Revision 1.4  2007/05/25 20:01:43  cheshire
+<rdar://problem/5226767> /usr/bin/flex failures prevent mDNSResponder from building
+Only define "int yylineno" on flex 2.5.4 and earlier
+
 Revision 1.3  2006/08/14 23:24:56  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -37,7 +41,9 @@ Revision 1.1  2006/07/06 00:09:05  cheshire
 
 extern YYSTYPE yylval;
 
-#if defined(__APPLE__)
+/* Mac OS X 10.4 has flex version 2.5.4, which doesn't define yylineno for us */
+/* Mac OS X 10.5 has flex version 2.5.33, which does define yylineno          */
+#if YY_FLEX_MAJOR_VERSION <= 2 && YY_FLEX_MINOR_VERSION <= 5 && YY_FLEX_SUBMINOR_VERSION <= 4
 int yylineno = 1;
 #endif
 
