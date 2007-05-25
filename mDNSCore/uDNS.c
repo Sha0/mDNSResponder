@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.372  2007/05/25 17:03:45  cheshire
+lenptr needs to be declared unsigned, otherwise sign extension can mess up the shifting and ORing operations
+
 Revision 1.371  2007/05/24 00:11:44  cheshire
 Remove unnecessary lenbuf field from tcpInfo_t
 
@@ -1016,7 +1019,7 @@ mDNSlocal mDNSu8 *putLLQ(DNSMessage *const msg, mDNSu8 *ptr, const DNSQuestion *
 
 	// format opt rr (fields not specified are zero-valued)
 	mDNS_SetupResourceRecord(&rr, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
-	opt->rdlength = LLQ_OPT_RDLEN;
+	opt->rdlength   = LLQ_OPT_RDLEN;
 	opt->rdestimate = LLQ_OPT_RDLEN;
 
 	optRD = &rr.resrec.rdata->u.opt;
@@ -1308,7 +1311,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 		{
 		if (tcpInfo->nread < 2)			// First read the two-byte length preceeding the DNS message
 			{
-			char *lenptr = (char *)&tcpInfo->replylen;
+			mDNSu8 *lenptr = (mDNSu8 *)&tcpInfo->replylen;
 			n = mDNSPlatformReadTCP(sock, lenptr + tcpInfo->nread, 2 - tcpInfo->nread, &closed);
 			if (n < 0) { LogMsg("ERROR:tcpCallback - attempt to read message length failed (%d)", n); err = mStatus_ConnFailed; goto exit; }
 			else if (closed)
@@ -1316,7 +1319,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 				// It's perfectly fine for this socket to close after the first reply. The server might
 				// be sending gratuitous replies using UDP and doesn't have a need to leave the TCP socket open.
 				// We'll only log this event if we've never received a reply before.
-				if (tcpInfo->numReplies == 0) LogMsg("ERROR: socket close prematurely");
+				if (tcpInfo->numReplies == 0) LogMsg("ERROR: socket closed prematurely %d", tcpInfo->nread);
 				err = mStatus_ConnFailed;
 				goto exit;
 				}
@@ -1334,8 +1337,8 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 
 		n = mDNSPlatformReadTCP(sock, ((char *)tcpInfo->reply) + (tcpInfo->nread - 2), tcpInfo->replylen - (tcpInfo->nread - 2), &closed);
 
-		if      (n < 0)  { LogMsg("ERROR: tcpCallback - read returned %d", n); err = mStatus_ConnFailed; goto exit; }
-		else if (closed) { LogMsg("ERROR: socket close prematurely");          err = mStatus_ConnFailed; goto exit; }
+		if      (n < 0)  { LogMsg("ERROR: tcpCallback - read returned %d", n);            err = mStatus_ConnFailed; goto exit; }
+		else if (closed) { LogMsg("ERROR: socket closed prematurely %d", tcpInfo->nread); err = mStatus_ConnFailed; goto exit; }
 
 		tcpInfo->nread += n;
 
