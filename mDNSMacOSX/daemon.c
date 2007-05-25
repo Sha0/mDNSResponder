@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.313  2007/05/25 16:02:05  cheshire
+When MACOSX_MDNS_MALLOC_DEBUGGING is enabled, log suspiciously large memory allocations
+
 Revision 1.312  2007/05/22 19:07:21  cheshire
 Add comment explaining RR_CACHE_SIZE calculation
 
@@ -481,7 +484,7 @@ void *mallocL(char *msg, unsigned int size)
 		}
 	else
 		{
-		LogMalloc("malloc( %s : %lu ) = %p", msg, size, &mem[2]);
+		if (MACOSX_MDNS_MALLOC_DEBUGGING >= 2 || size > 24000) LogMsg("malloc( %s : %lu ) = %p", msg, size, &mem[2]);
 		mem[0] = 0xDEAD1234;
 		mem[1] = size;
 		//mDNSPlatformMemZero(&mem[2], size);
@@ -498,11 +501,9 @@ void freeL(char *msg, void *x)
 	else
 		{
 		unsigned long *mem = ((unsigned long *)x) - 2;
-		if (mem[0] != 0xDEAD1234)
-			{ LogMsg("free( %s @ %p ) !!!! NOT ALLOCATED !!!!", msg, &mem[2]); return; }
-		if (mem[1] > 24000)
-			{ LogMsg("free( %s : %ld @ %p) too big!", msg, mem[1], &mem[2]); return; }
-		LogMalloc("free( %s : %ld @ %p)", msg, mem[1], &mem[2]);
+		if (mem[0] != 0xDEAD1234) { LogMsg("free( %s @ %p ) !!!! NOT ALLOCATED !!!!", msg, &mem[2]); return; }
+		if (mem[1] > 24000)       { LogMsg("free( %s : %ld @ %p) suspiciously large", msg, mem[1], &mem[2]); return; }
+		if (MACOSX_MDNS_MALLOC_DEBUGGING >= 2) LogMsg("free( %s : %ld @ %p)", msg, mem[1], &mem[2]);
 		//mDNSPlatformMemZero(mem, mem[1]+8);
 		memset(mem, 0xFF, mem[1]+8);
 		validatelists(&mDNSStorage);
