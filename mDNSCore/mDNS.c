@@ -38,6 +38,12 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.641  2007/05/25 00:30:24  cheshire
+When checking for duplicate questions, make sure privacy (or not) status, and long-lived (or not)
+status matches. This is particularly important when doing a private query for an SOA record,
+which will result in a call StartGetZoneData which does a non-private query for the same SOA record.
+If the latter is tagged as a duplicate of the former, then we have deadlock, and neither will complete.
+
 Revision 1.640  2007/05/25 00:25:44  cheshire
 <rdar://problem/5227737> Need to enhance putRData to output all current known types
 
@@ -4474,6 +4480,8 @@ mDNSlocal DNSQuestion *FindDuplicateQuestion(const mDNS *const m, const DNSQuest
 			SameQTarget(q, question)                &&			// and same unicast/multicast target settings
 			q->qtype       == question->qtype       &&			// type,
 			q->qclass      == question->qclass      &&			// class,
+			q->AuthInfo    == question->AuthInfo    &&			// and privacy status matches
+			q->LongLived   == question->LongLived   &&			// and long-lived status matches
 			q->qnamehash   == question->qnamehash   &&
 			SameDomainName(&q->qname, &question->qname))		// and name
 			return(q);
