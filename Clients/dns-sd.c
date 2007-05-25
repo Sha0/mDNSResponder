@@ -481,6 +481,16 @@ static void DNSSD_API reg_reply(DNSServiceRef client, const DNSServiceFlags flag
 	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
 	}
 
+// Output the wire-format domainname pointed to by rd
+static int snprintd(char *p, int max, const unsigned char **rd)
+	{
+	const char *const buf = p;
+	const char *const end = p + max;
+	while (**rd) { p += snprintf(p, end-p, "%.*s.", **rd, *rd+1); *rd += 1 + **rd; }
+	*rd += 1;	// Advance over the final zero byte
+	return(p-buf);
+	}
+
 static void DNSSD_API qr_reply(DNSServiceRef sdRef, const DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
 	const char *fullname, uint16_t rrtype, uint16_t rrclass, uint16_t rdlen, const void *rdata, uint32_t ttl, void *context)
 	{
@@ -501,14 +511,39 @@ static void DNSSD_API qr_reply(DNSServiceRef sdRef, const DNSServiceFlags flags,
 
 	switch (rrtype)
 		{
-		case kDNSServiceType_A: sprintf(rdb, "%d.%d.%d.%d", rd[0], rd[1], rd[2], rd[3]); break;
-		case kDNSServiceType_AAAA: sprintf(rdb, "%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X",
-			rd[0x0], rd[0x1], rd[0x2], rd[0x3], rd[0x4], rd[0x5], rd[0x6], rd[0x7],
-			rd[0x8], rd[0x9], rd[0xA], rd[0xB], rd[0xC], rd[0xD], rd[0xE], rd[0xF]); break;
-		case kDNSServiceType_CNAME:
-			while (*rd) { p += sprintf(p, "%.*s.", *rd, rd+1); rd += 1 + *rd; }
+		case kDNSServiceType_A:
+			snprintf(rdb, sizeof(rdb), "%d.%d.%d.%d", rd[0], rd[1], rd[2], rd[3]);
 			break;
-		default : sprintf(rdb, "%d bytes%s", rdlen, rdlen ? ":" : ""); unknowntype = 1; break;
+
+		case kDNSServiceType_NS:
+		case kDNSServiceType_CNAME:
+		case kDNSServiceType_PTR:
+		case kDNSServiceType_DNAME:
+			p += snprintd(p, sizeof(rdb), &rd);
+			break;
+
+		case kDNSServiceType_SOA:
+			p += snprintd(p, rdb + sizeof(rdb) - p, &rd);		// mname
+			p += snprintf(p, rdb + sizeof(rdb) - p, " ");
+			p += snprintd(p, rdb + sizeof(rdb) - p, &rd);		// rname
+			p += snprintf(p, rdb + sizeof(rdb) - p, " Ser %d Ref %d Ret %d Exp %d Min %d",
+				ntohl(*(long*)rd), ntohl(*(long*)(rd+4)), ntohl(*(long*)(rd+8)), ntohl(*(long*)(rd+12)), ntohl(*(long*)(rd+16)));
+			break;
+
+		case kDNSServiceType_AAAA:
+			snprintf(rdb, sizeof(rdb), "%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X",
+				rd[0x0], rd[0x1], rd[0x2], rd[0x3], rd[0x4], rd[0x5], rd[0x6], rd[0x7],
+				rd[0x8], rd[0x9], rd[0xA], rd[0xB], rd[0xC], rd[0xD], rd[0xE], rd[0xF]);
+			break;
+
+		case kDNSServiceType_SRV:
+			p += snprintf(p, rdb + sizeof(rdb) - p, "%d %d %d ",	// priority, weight, port
+				ntohs(*(unsigned short*)rd), ntohs(*(unsigned short*)(rd+2)), ntohs(*(unsigned short*)(rd+4)));
+			rd += 6;
+			p += snprintd(p, rdb + sizeof(rdb) - p, &rd);			// target host
+			break;
+
+		default : snprintf(rdb, sizeof(rdb), "%d bytes%s", rdlen, rdlen ? ":" : ""); unknowntype = 1; break;
 		}
 
 	printf("%s%6X%3d %-30s%4d%4d %s", op, flags, ifIndex, fullname, rrtype, rrclass, rdb);
@@ -542,7 +577,7 @@ static void DNSSD_API port_mapping_create_reply(DNSServiceRef sdRef, DNSServiceF
 		const unsigned char *digits = (const unsigned char *)&publicAddress;
 		char                 addr[256];
 
-		sprintf(addr, "%d.%d.%d.%d", digits[0], digits[1], digits[2], digits[3]);
+		snprintf(addr, sizeof(addr), "%d.%d.%d.%d", digits[0], digits[1], digits[2], digits[3]);
 		printf("%-4d %-20s %-15d %-15d %-15d %d\n", ifIndex, addr, protocol, ntohs(privatePort), ntohs(publicPort), ttl);
 		}
 	fflush(stdout);
@@ -563,12 +598,12 @@ static void DNSSD_API addrinfo_reply(DNSServiceRef sdRef, DNSServiceFlags flags,
 	if (address && address->sa_family == AF_INET)
 		{
 		const unsigned char *digits = (const unsigned char *) &((struct sockaddr_in *)address)->sin_addr;
-		sprintf(addr, "%d.%d.%d.%d", digits[0], digits[1], digits[2], digits[3]);
+		snprintf(addr, sizeof(addr), "%d.%d.%d.%d", digits[0], digits[1], digits[2], digits[3]);
 		}
 	else if (address && address->sa_family == AF_INET6)
 		{
 		const unsigned char *digits = (const unsigned char *) &((struct sockaddr_in6 *)address)->sin6_addr;
-		sprintf(addr, "%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X",
+		snprintf(addr, sizeof(addr), "%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X",
 				digits[0x0], digits[0x1], digits[0x2], digits[0x3], digits[0x4], digits[0x5], digits[0x6], digits[0x7],
 				digits[0x8], digits[0x9], digits[0xA], digits[0xB], digits[0xC], digits[0xD], digits[0xE], digits[0xF]);
 		}
