@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.32  2007/05/25 16:03:03  cheshire
+Remove unused LogMalloc
+
 Revision 1.31  2007/04/06 19:50:05  cheshire
 Add ProgramName declaration
 
@@ -174,18 +177,6 @@ extern void udns_validatelists(void);
 #else
 #define mallocL(X,Y) malloc(Y)
 #define freeL(X,Y) free(Y)
-#endif
-
-#if APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING >= 2
-#define LogMalloc LogMsg
-#else
-	#if (defined( __GNUC__ ))
-		#define	LogMalloc(ARGS...) ((void)0)
-	#elif (defined( __MWERKS__ ))
-		#define	LogMalloc( ... )
-	#else
-		#define LogMalloc 1 ? ((void)0) : (void)
-	#endif
 #endif
 
 #define LogAllOperations 0
