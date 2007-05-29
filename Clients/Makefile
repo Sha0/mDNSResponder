@@ -15,6 +15,9 @@
 # limitations under the License.
 #
 # $Log: Makefile,v $
+# Revision 1.11  2007/05/29 19:57:33  cheshire
+# Use "-Wall" for stricter compiler warnings
+#
 # Revision 1.10  2006/09/21 00:56:37  cheshire
 # <rdar://problem/4245577> Need 64-bit version of dns-sd command-line tool
 # Add in missing "build/" in targets line for builds other than OS X
@@ -75,10 +78,10 @@ build:
 	mkdir build
 
 build/dns-sd: build dns-sd.c
-	cc $(filter %.c %.o, $+) $(LIBS) -I../mDNSShared -o $@
+	cc $(filter %.c %.o, $+) $(LIBS) -I../mDNSShared -Wall -o $@
 
 build/dns-sd64: build dns-sd.c
-	cc $(filter %.c %.o, $+) $(LIBS) -I../mDNSShared -o $@ -m64
+	cc $(filter %.c %.o, $+) $(LIBS) -I../mDNSShared -Wall -o $@ -m64
 
 # Note, we can make a 'fat' version of dns-sd using 'lipo', as shown below, but we
 # don't, because we don't want or need a 'fat' version of dns-sd, because it will
