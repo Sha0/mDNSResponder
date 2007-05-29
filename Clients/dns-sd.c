@@ -527,7 +527,7 @@ static void DNSSD_API qr_reply(DNSServiceRef sdRef, const DNSServiceFlags flags,
 			p += snprintf(p, rdb + sizeof(rdb) - p, " ");
 			p += snprintd(p, rdb + sizeof(rdb) - p, &rd);		// rname
 			p += snprintf(p, rdb + sizeof(rdb) - p, " Ser %d Ref %d Ret %d Exp %d Min %d",
-				ntohl(*(long*)rd), ntohl(*(long*)(rd+4)), ntohl(*(long*)(rd+8)), ntohl(*(long*)(rd+12)), ntohl(*(long*)(rd+16)));
+				ntohl(((uint32_t*)rd)[0]), ntohl(((uint32_t*)rd)[1]), ntohl(((uint32_t*)rd)[2]), ntohl(((uint32_t*)rd)[3]), ntohl(((uint32_t*)rd)[4]));
 			break;
 
 		case kDNSServiceType_AAAA:
