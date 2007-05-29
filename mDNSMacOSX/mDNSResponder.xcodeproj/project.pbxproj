@@ -109,7 +109,7 @@
 		D284BEC80ADD80A20027CCDF /* mDNSDebug.c in Sources */ = {isa = PBXBuildFile; fileRef = DBAAFE29057E8F4D0085CAD0 /* mDNSDebug.c */; };
 		D284BEC90ADD80A20027CCDF /* GenLinkedList.c in Sources */ = {isa = PBXBuildFile; fileRef = DBAAFE2C057E8F660085CAD0 /* GenLinkedList.c */; };
 		D284BECA0ADD80A20027CCDF /* mDNSMacOSX.c in Sources */ = {isa = PBXBuildFile; fileRef = 6575FBEB022EAF7200000109 /* mDNSMacOSX.c */; };
-		D284BECB0ADD80A20027CCDF /* dnsextd_lexer.l in Sources */ = {isa = PBXBuildFile; fileRef = FF13FFEA0A5DA44A00897C81 /* dnsextd_lexer.l */; };
+		D284BECB0ADD80A20027CCDF /* dnsextd_lexer.l in Sources */ = {isa = PBXBuildFile; fileRef = FF13FFEA0A5DA44A00897C81 /* dnsextd_lexer.l */; settings = {COMPILER_FLAGS = "-Wno-error"; }; };
 		D284BECC0ADD80A20027CCDF /* dnsextd_parser.y in Sources */ = {isa = PBXBuildFile; fileRef = FF13FFEC0A5DA45500897C81 /* dnsextd_parser.y */; };
 		D284BECD0ADD80A20027CCDF /* PlatformCommon.c in Sources */ = {isa = PBXBuildFile; fileRef = FFCB6D73075D539900B8AF62 /* PlatformCommon.c */; };
 		D284BECF0ADD80A20027CCDF /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 09AB6884FE841BABC02AAC07 /* CoreFoundation.framework */; };
