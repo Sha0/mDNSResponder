@@ -26,6 +26,9 @@
 ; SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ;
 ; $Log: mDNSResponder.sb,v $
+; Revision 1.16  2007/05/29 23:32:46  cheshire
+; Rearrange file so SPI warning isn't deleted when CVS history is trimmed from installed copy
+;
 ; Revision 1.15  2007/05/25 22:45:17  jvidrine
 ; <rdar://problem/5227658> Update mDNSResponder.sb to Seatbelt Profile Language version 1
 ;
@@ -73,26 +76,22 @@
 ; Revision 1.1  2007/04/18 00:50:47  cheshire
 ; <rdar://problem/5141540> Sandbox mDNSResponder
 ;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;;
-;; common rules for various BSD daemons
-;; Copyright (c) 2007 Apple Inc.  All Rights reserved.
-;;
-;; WARNING: The sandbox rules in this file currently constitute
-;; Apple System Private Interface and are subject to change at any time and
-;; without notice. The contents of this file are also auto-generated and not
-;; user editable; it may be overwritten at any time.
-;;
+;############################################################################
 
 ; WARNING! SEATBELT CURRENTLY CAN'T HANDLE PROFILES LARGER THAN 16K
 ; MAKE SURE THE SIZE OF THIS FILE FROM "version" TO THE END DOESN'T EXCEED 16K
 
 (version 1)
 
+; WARNING: The sandbox rule capabilities and syntax used in this file are currently an
+; Apple SPI (System Private Interface) and are subject to change at any time without notice.
+; Apple may in future announce an official public supported sandbox API, but until then Developers
+; are cautioned not to build products that use or depend on the sandbox facilities illustrated here.
+
 ; Use "debug on" to log all operations examined by seatbelt, whether allowed or not.
 ; Use "debug deny" to log only operations that are disallowed by seatbelt (i.e. "deny" or "signal")
 ; to discover what specific attempted operation is causing an exception.
+
 ;(debug on)
 (debug deny)
 
@@ -110,34 +109,33 @@
 
 ; Rules to allow the operations mDNSResponder needs start here
 
-(allow network*)				; Allow networking, plus Unix Domain Sockets
-(allow sysctl-read)		; To get hardware model information
+(allow network*)			; Allow networking, including Unix Domain Sockets
+(allow sysctl-read)			; To get hardware model information
 (allow file-read-metadata)	; Needed for dyld to work
 (allow ipc-posix-shm)       ; Needed for POSIX shared memory
 
-; Needed for syslog early in the boot process
-(allow file-read-data file-write-data (regex "^/dev/console\$"))
-(allow file-read-data  (regex "^/dev/random\$"))
+(allow file-read-data file-write-data (regex "^/dev/console\$"))	; Needed for syslog early in the boot process
+(allow file-read-data                 (regex "^/dev/random\$"))
 
 ; Allow us to create our PID file
-(allow file-read* file-write* (regex "^/private/var/run/mDNSResponder\.pid\$"))
+(allow file-read*     file-write*     (regex "^/private/var/run/mDNSResponder\.pid\$"))
 
 ; Allow us to read system version and settings
-(allow file-read-data  (regex "^/usr/sbin(/mDNSResponder)?\$"))		; Needed for CFCopyVersionDictionary()
-(allow file-read-data  (regex "^/usr/share/icu/.*\$"))
-(allow file-read-data  (regex "^/usr/share/zoneinfo/.*\$"))
-(allow file-read-data  (regex "^/System/Library/CoreServices/SystemVersion.*\$"))
-(allow file-read-data  (regex "^/(private/var/root/)?Library/Preferences/(ByHost/)?\.GlobalPreferences.*\.plist\$"))
-(allow file-read-data  (regex "^/(private/var/root/)?Library/Preferences/com\.apple\.security\.plist\$"))
+(allow file-read-data                 (regex "^/usr/sbin(/mDNSResponder)?\$"))		; Needed for CFCopyVersionDictionary()
+(allow file-read-data                 (regex "^/usr/share/icu/.*\$"))
+(allow file-read-data                 (regex "^/usr/share/zoneinfo/.*\$"))
+(allow file-read-data                 (regex "^/System/Library/CoreServices/SystemVersion.*\$"))
+(allow file-read-data                 (regex "^/(private/var/root/)?Library/Preferences/(ByHost/)?\.GlobalPreferences.*\.plist\$"))
+(allow file-read-data                 (regex "^/(private/var/root/)?Library/Preferences/com\.apple\.security\.plist\$"))
 
 ; Allow access to System Keychain
 (allow file-read-data file-write-data (regex "^/private/var/tmp/mds/system/.*\$")) ; Module Directory Services cache
-(allow file-read-data  (regex "^/System/Library/Security\$"))
-(allow file-read-data  (regex "^/System/Library/Keychains/.*\$"))
-(allow file-read-data  (regex "^/Library/Keychains/System\.keychain\$"))
+(allow file-read-data                 (regex "^/System/Library/Security\$"))
+(allow file-read-data                 (regex "^/System/Library/Keychains/.*\$"))
+(allow file-read-data                 (regex "^/Library/Keychains/System\.keychain\$"))
 
 ; After name conflict, allow mDNSResponder to persistently save new unique name for next time
-(allow file-read* file-write*      (regex "^/Library/Preferences/SystemConfiguration/preferences\.plist\$"))
-(allow file-read* file-write*      (regex "^/Library/Preferences/SystemConfiguration/preferences\.plist-new\$"))
-(allow file-read* file-write*      (regex "^/Library/Preferences/SystemConfiguration/preferences\.plist-lock\$"))
-(allow file-read* file-write*      (regex "^/Library/Preferences/SystemConfiguration/preferences\.plist/preferences\.plist\$"))
+(allow file-read*     file-write*     (regex "^/Library/Preferences/SystemConfiguration/preferences\.plist\$"))
+(allow file-read*     file-write*     (regex "^/Library/Preferences/SystemConfiguration/preferences\.plist-new\$"))
+(allow file-read*     file-write*     (regex "^/Library/Preferences/SystemConfiguration/preferences\.plist-lock\$"))
+(allow file-read*     file-write*     (regex "^/Library/Preferences/SystemConfiguration/preferences\.plist/preferences\.plist\$"))
