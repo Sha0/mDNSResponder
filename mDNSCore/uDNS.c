@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.373  2007/05/31 00:25:43  cheshire
+<rdar://problem/5238688> Only send dnsbugtest query for questions where it's warranted
+
 Revision 1.372  2007/05/25 17:03:45  cheshire
 lenptr needs to be declared unsigned, otherwise sign extension can mess up the shifting and ORing operations
 
@@ -3186,6 +3189,42 @@ mDNSexport void uDNS_ReceiveNATMap(mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 		}
 	}
 
+// <rdar://problem/3925163> Shorten DNS-SD queries to avoid NAT bugs
+// <rdar://problem/4288449> Add check to avoid crashing NAT gateways that have buggy DNS relay code
+//
+// We know of bugs in home NAT gateways that cause them to crash if they receive certain DNS queries.
+// The DNS queries that make them crash are perfectly legal DNS queries, but even if they weren't,
+// the gateway shouldn't crash -- in today's world of viruses and network attacks, software has to
+// be written assuming that a malicious attacker could send them any packet, properly-formed or not.
+// Still, we don't want to be crashing people's home gateways, so we go out of our way to avoid
+// the queries that crash them.
+//
+// Some examples:
+//
+// 1. Any query where the name ends in ".in-addr.arpa." and the text before this is 32 or more bytes.
+//    The query type does not need to be PTR -- the gateway will crash for any query type.
+//    e.g. "ping long-name-crashes-the-buggy-router.in-addr.arpa" will crash one of these.
+//
+// 2. Any query that results in a large response with the TC bit set.
+// 
+// 3. Any PTR query that doesn't begin with four decimal numbers.
+//    These gateways appear to assume that the only possible PTR query is a reverse-mapping query
+//    (e.g. "1.0.168.192.in-addr.arpa") and if they ever get a PTR query where the first four
+//    labels are not all decimal numbers in the range 0-255, they handle that by crashing.
+//    These gateways also ignore the remainder of the name following the four decimal numbers
+//    -- whether or not it actually says in-addr.arpa, they just make up an answer anyway.
+//
+// The challenge therefore is to craft a query that will discern that the DNS server
+// is one of these buggy ones without crashing it. To do this we send this query:
+//     dig -t ptr 1.0.0.127.dnsbugtest.1.0.0.127.in-addr.arpa.
+//
+// The text preceeding the ".in-addr.arpa." is under 32 bytes, so it won't cause crash (1).
+// It will not yield a large response with the TC bit set, so it won't cause crash (2).
+// It starts with four decimal numbers, so it won't cause crash (3).
+// Finally, the correct response to this query is NXDOMAIN or a similar error, but the
+// gateways that ignore the remainder of the name following the four decimal numbers
+// give themselves away by actually returning a result for this nonsense query.
+
 mDNSlocal const domainname *DNSRelayTestQuestion = (const domainname*)
 	"\x1" "1" "\x1" "0" "\x1" "0" "\x3" "127" "\xa" "dnsbugtest"
 	"\x1" "1" "\x1" "0" "\x1" "0" "\x3" "127" "\x7" "in-addr" "\x4" "arpa";
@@ -3921,6 +3960,26 @@ mDNSlocal mDNSs32 CheckNATMappings(mDNS *m)
 	return nextevent;
 	}
 
+// See comments above for DNSRelayTestQuestion
+// If this is the kind of query that has the risk of crashing buggy DNS servers, we do a test question first
+mDNSlocal mDNSBool NoTestQuery(DNSQuestion *q)
+	{
+	int i;
+	mDNSu8 *p = q->qname.c;
+	if (q->qtype != kDNSType_PTR) return(mDNStrue);		// Don't need a test query for any non-PTR queries
+	for (i=0; i<4; i++)		// If qname does not begin with num.num.num.num, can't skip the test query
+		{
+		if (p[0] < 1 || p[0] > 3) return(mDNSfalse);
+		if (              p[1] < '0' || p[1] > '9' ) return(mDNSfalse);
+		if (p[0] >= 2 && (p[2] < '0' || p[2] > '9')) return(mDNSfalse);
+		if (p[0] >= 3 && (p[3] < '0' || p[3] > '9')) return(mDNSfalse);
+		p += 1 + p[0];
+		}
+	// If remainder of qname is ".in-addr.arpa.", this is a vanilla reverse-mapping query and
+	// we can safely do it without needing a test query first, otherwise we need the test query.
+	return(SameDomainName((domainname*)p, (const domainname*)"\x7" "in-addr" "\x4" "arpa"));
+	}
+
 mDNSexport void uDNS_CheckQuery(mDNS *const m)
 	{
 	DNSQuestion *q = m->CurrentQuestion;
@@ -3961,7 +4020,7 @@ mDNSexport void uDNS_CheckQuery(mDNS *const m)
 			mStatus err = mStatus_NoError;
 			DomainAuthInfo *private = mDNSNULL;
 
-			if (q->qDNSServer->teststate != DNSServer_Untested)
+			if (q->qDNSServer->teststate != DNSServer_Untested || NoTestQuery(q))
 				{
 				err = constructQueryMsg(&msg, &end, q);
 				private = q->AuthInfo;
@@ -3978,7 +4037,7 @@ mDNSexport void uDNS_CheckQuery(mDNS *const m)
 			if (err) LogMsg("Error: uDNS_CheckQuery - constructQueryMsg. Skipping question %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 			else
 				{
-				if (end > msg.data && q->qDNSServer->teststate != DNSServer_Failed)
+				if (end > msg.data && (q->qDNSServer->teststate != DNSServer_Failed || NoTestQuery(q)))
 					{
 					//LogMsg("uDNS_CheckQuery %d %p %##s (%s)", sendtime - m->timenow, private, q->qname.c, DNSTypeName(q->qtype));
 					if (private)
