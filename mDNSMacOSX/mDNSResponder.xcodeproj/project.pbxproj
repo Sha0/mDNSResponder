@@ -158,7 +158,6 @@
 		DB2CC4610662DE4D00335AB3 /* TXTRecord.java in Sources */ = {isa = PBXBuildFile; fileRef = DB2CC44F0662DD1100335AB3 /* TXTRecord.java */; };
 		FF2C5FB10A48B8680066DA11 /* DNSSDRecordRegistrar.java in Sources */ = {isa = PBXBuildFile; fileRef = FF2C5FB00A48B8680066DA11 /* DNSSDRecordRegistrar.java */; };
 		FF2C5FB30A48B86E0066DA11 /* RegisterRecordListener.java in Sources */ = {isa = PBXBuildFile; fileRef = FF2C5FB20A48B86E0066DA11 /* RegisterRecordListener.java */; };
-		FF85880C0BD59A2C0080D89F /* mDNSResponder.sb in CopyFiles */ = {isa = PBXBuildFile; fileRef = FF85880B0BD599F40080D89F /* mDNSResponder.sb */; };
 		FFA572330AF18F1C0055A0F1 /* dnssd_ipc.c in Sources */ = {isa = PBXBuildFile; fileRef = F5E11B5A04A28126019798ED /* dnssd_ipc.c */; };
 		FFA572340AF18F1C0055A0F1 /* dnssd_clientlib.c in Sources */ = {isa = PBXBuildFile; fileRef = FFFA38620AEEDB090065B80A /* dnssd_clientlib.c */; };
 		FFA572350AF18F1C0055A0F1 /* dnssd_clientstub.c in Sources */ = {isa = PBXBuildFile; fileRef = FFFA38640AEEDB130065B80A /* dnssd_clientstub.c */; };
@@ -351,16 +350,6 @@
 			dstSubfolderSpec = 0;
 			files = (
 				D284BED50ADD80A20027CCDF /* dnsextd.8 in CopyFiles */,
-			);
-			runOnlyForDeploymentPostprocessing = 1;
-		};
-		FF8588160BD59A6A0080D89F /* CopyFiles */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 8;
-			dstPath = /usr/share/sandbox;
-			dstSubfolderSpec = 0;
-			files = (
-				FF85880C0BD59A2C0080D89F /* mDNSResponder.sb in CopyFiles */,
 			);
 			runOnlyForDeploymentPostprocessing = 1;
 		};
@@ -1220,7 +1209,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 1;
 			shellPath = /bin/tcsh;
-			shellScript = "# Install plist to tell launchd to start mDNSResponder\nmkdir -p ${DSTROOT}${SYSTEM_LIBRARY_DIR}/LaunchDaemons\ncp ${SRCROOT}/LaunchDaemonInfo.plist ${DSTROOT}${SYSTEM_LIBRARY_DIR}/LaunchDaemons/com.apple.mDNSResponder.plist\n\n# Install mDNSResponder.bundle containing language localizations\nmkdir -p ${DSTROOT}${SYSTEM_LIBRARY_DIR}/CoreServices\ncp -R ${SRCROOT}/mDNSResponder-bundle ${DSTROOT}${SYSTEM_LIBRARY_DIR}/CoreServices/mDNSResponder.bundle\n\n# Remove unwanted CVS directories\nfind ${DSTROOT}${SYSTEM_LIBRARY_DIR}/CoreServices/mDNSResponder.bundle -depth -name CVS -exec rm -rf {} \\;\n\n# Expand UTF-8 files to UTF-16 (at one time this appeared to be necessary, but it's not, so we don't do it any more)\n#foreach file (`find ${DSTROOT}${SYSTEM_LIBRARY_DIR}/CoreServices/mDNSResponder.bundle -name Localizable.strings`)\n#iconv -f utf-8 -t utf-16 ${file} > ${file}.new\n#mv -f ${file}.new ${file}\n#end\n\n# Remove French localization (not wanted for Apple B&I builds)\nrm -rf ${DSTROOT}${SYSTEM_LIBRARY_DIR}/CoreServices/mDNSResponder.bundle/Resources/French.lproj\n\n# Copy Sandbox profile, stripping initial license header to make the file fit in the 4kB (16kB?) Sandbox profile limit\nawk '/^\\(version 1\\)$/,EOF' ${SRCROOT}/mDNSResponder.sb > ${DSTROOT}/usr/share/sandbox/mDNSResponder.sb\n";
+			shellScript = "# Install plist to tell launchd to start mDNSResponder\nmkdir -p ${DSTROOT}${SYSTEM_LIBRARY_DIR}/LaunchDaemons\ncp ${SRCROOT}/LaunchDaemonInfo.plist ${DSTROOT}${SYSTEM_LIBRARY_DIR}/LaunchDaemons/com.apple.mDNSResponder.plist\n\n# Install mDNSResponder.bundle containing language localizations\nmkdir -p ${DSTROOT}${SYSTEM_LIBRARY_DIR}/CoreServices\ncp -R ${SRCROOT}/mDNSResponder-bundle ${DSTROOT}${SYSTEM_LIBRARY_DIR}/CoreServices/mDNSResponder.bundle\n\n# Remove unwanted CVS directories\nfind ${DSTROOT}${SYSTEM_LIBRARY_DIR}/CoreServices/mDNSResponder.bundle -depth -name CVS -exec rm -rf {} \\;\n\n# Expand UTF-8 files to UTF-16 (at one time this appeared to be necessary, but it's not, so we don't do it any more)\n#foreach file (`find ${DSTROOT}${SYSTEM_LIBRARY_DIR}/CoreServices/mDNSResponder.bundle -name Localizable.strings`)\n#iconv -f utf-8 -t utf-16 ${file} > ${file}.new\n#mv -f ${file}.new ${file}\n#end\n\n# Remove French localization (not wanted for Apple B&I builds)\nrm -rf ${DSTROOT}${SYSTEM_LIBRARY_DIR}/CoreServices/mDNSResponder.bundle/Resources/French.lproj\n\n# Copy Sandbox profile, stripping initial license header to make the file fit in the 4kB (16kB?) Sandbox profile limit\n#mkdir -p ${DSTROOT}/usr/share/sandbox\n#awk '/^\\(version 1\\)$/,EOF' ${SRCROOT}/mDNSResponder.sb > ${DSTROOT}/usr/share/sandbox/mDNSResponder.sb\n";
 		};
 		D284BE760ADD80800027CCDF /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
