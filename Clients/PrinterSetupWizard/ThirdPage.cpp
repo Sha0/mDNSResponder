@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.34  2007/06/06 19:53:48  cheshire
+<rdar://problem/5187308> Move build train to Visual Studio 2005
+
 Revision 1.33  2007/04/20 22:58:10  herscher
 <rdar://problem/4826126> mDNS: Printer Wizard doesn't offer generic HP printers or generic PS support on Vista RC2
 
@@ -1521,7 +1524,7 @@ OSStatus CThirdPage::OnInitPage()
 
 	check( m_printerImage == NULL );
 	
-	m_printerImage = (CStatic*) GetDlgItem( IDR_MANIFEST );
+	m_printerImage = (CStatic*) GetDlgItem( 1 );	// 1 == IDR_MANIFEST
 	check( m_printerImage );
 
 	if ( m_printerImage != NULL )
