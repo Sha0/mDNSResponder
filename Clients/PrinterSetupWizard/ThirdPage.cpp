@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.36  2007/06/06 20:39:10  cheshire
+<rdar://problem/5254377> Printer Setup Wizard started crashing in Bonjour104A8, after update to Visual Studio 2005
+
 Revision 1.35  2007/06/06 20:08:01  cheshire
 <rdar://problem/4528853> mDNS: When auto-highlighting items in lists, scroll list so highlighted item is in the middle
 AutoScroll model list as well as manufacturer list
@@ -994,7 +997,7 @@ CThirdPage::LoadGenericPrintDriverDefs( Manufacturers & manufacturers )
 	// First try and find our generic driver names
 
 	iter = m_manufacturers.find(L"HP");
-	require_action( iter != manufacturers.end(), exit, err = kUnknownErr );
+	require_action( iter != m_manufacturers.end(), exit, err = kUnknownErr );
 	manufacturer = iter->second;
 
 	// Look for Postscript
