@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.37  2007/06/08 06:30:26  herscher
+<rdar://problem/5257700> Fix uninitialized pointers when detecting generic PCL and PS drivers
+
 Revision 1.36  2007/06/06 20:39:10  cheshire
 <rdar://problem/5254377> Printer Setup Wizard started crashing in Bonjour104A8, after update to Visual Studio 2005
 
@@ -192,6 +195,10 @@ enum PrinterParsingState
 IMPLEMENT_DYNAMIC(CThirdPage, CPropertyPage)
 CThirdPage::CThirdPage()
 	: CPropertyPage(CThirdPage::IDD),
+		m_manufacturerSelected( NULL ),
+		m_modelSelected( NULL ),
+		m_genericPostscript( NULL ),
+		m_genericPCL( NULL ),
 		m_initialized(false),
 		m_printerImage( NULL )
 {
@@ -1012,7 +1019,6 @@ CThirdPage::LoadGenericPrintDriverDefs( Manufacturers & manufacturers )
 	if ( model )
 	{
 		psDriverName = model->name;
-	
 	}
 
 	// Look for PCL
@@ -1475,12 +1481,12 @@ CThirdPage::MatchGeneric( Manufacturers & manufacturers, Printer * printer, Serv
 	pdl = q->pdl;
 	pdl.MakeLower();
 
-	if ( pdl.Find( kPDLPCLKey ) != -1 )
+	if ( m_genericPCL && ( pdl.Find( kPDLPCLKey ) != -1 ) )
 	{
 		*model	= m_genericPCL;
 		ok		= TRUE;
 	}
-	else if ( pdl.Find( kPDLPostscriptKey ) != -1 )
+	else if ( m_genericPostscript && ( pdl.Find( kPDLPostscriptKey ) != -1 ) )
 	{
 		*model	= m_genericPostscript;
 		ok		= TRUE;
