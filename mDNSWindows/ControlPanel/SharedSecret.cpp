@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: SharedSecret.cpp,v $
+Revision 1.6  2007/06/12 20:06:06  herscher
+<rdar://problem/5263387> ControlPanel was inadvertently adding a trailing dot to all key names.
+
 Revision 1.5  2006/08/14 23:25:28  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -115,12 +118,12 @@ CSharedSecret::Commit( CString zone )
 	// If there isn't a trailing dot, add one because the mDNSResponder
 	// presents names with the trailing dot.
 
-	if ( zone.ReverseFind( '.' ) != zone.GetLength() )
+	if ( zone.ReverseFind( '.' ) != ( zone.GetLength() - 1 ) )
 	{
 		zone += '.';
 	}
 
-	if ( m_key.ReverseFind( '.' ) != m_key.GetLength() )
+	if ( m_key.ReverseFind( '.' ) != ( m_key.GetLength() - 1 ) )
 	{
 		m_key += '.';
 	}
