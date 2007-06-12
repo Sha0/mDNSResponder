@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.374  2007/06/12 02:15:26  cheshire
+Fix incorrect "DNS Server passed" LogOperation message
+
 Revision 1.373  2007/05/31 00:25:43  cheshire
 <rdar://problem/5238688> Only send dnsbugtest query for questions where it's warranted
 
@@ -3237,7 +3240,6 @@ mDNSlocal mDNSBool uDNS_ReceiveTestQuestionResponse(mDNS *const m, DNSMessage *c
 	DNSQuestion q;
 	DNSServer *s;
 	mDNSu32 result = 0;
-	mDNSBool found = mDNSfalse;
 
 	// 1. Find out if this is an answer to one of our test questions
 	if (msg->h.numQuestions != 1) return(mDNSfalse);
@@ -3258,20 +3260,17 @@ mDNSlocal mDNSBool uDNS_ReceiveTestQuestionResponse(mDNS *const m, DNSMessage *c
 		if (mDNSSameAddress(srcaddr, &s->addr) && mDNSSameIPPort(srcport, s->port) && s->teststate != result)
 			{
 			DNSQuestion *q;
-			s->teststate = result;
-			found = mDNStrue;
+			if (s->teststate != result)
+				{
+				s->teststate = result;
+				if (result == DNSServer_Passed) LogOperation("DNS Server %#a:%d passed", srcaddr, mDNSVal16(srcport));
+				else LogMsg("NOTE: Wide-Area Service Discovery disabled to avoid crashing defective DNS relay %#a:%d", srcaddr, mDNSVal16(srcport));
+				}
 			if (result == DNSServer_Passed)		// Unblock any questions that were waiting for this result
 				for (q = m->Questions; q; q=q->next)
 					if (q->qDNSServer == s)
 						q->LastQTime = m->timenow - q->ThisQInterval;
 			}
-
-	// 4. Assuming we found the server in question in our list (don't want to risk being victim of a deliberate DOS attack here)
-	// log a message to let the user know why Wide-Area Service Discovery isn't working
-	if (found && result == DNSServer_Failed)
-		LogMsg("NOTE: Wide-Area Service Discovery disabled to avoid crashing defective DNS relay %#a.", srcaddr);
-
-	LogOperation("DNS Server %#a:%d passed", srcaddr, mDNSVal16(srcport));
 
 	return(mDNStrue); // Return mDNStrue to tell uDNS_ReceiveMsg it doesn't need to process this packet further
 	}
