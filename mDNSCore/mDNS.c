@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.642  2007/06/15 21:54:50  cheshire
+<rdar://problem/4883206> Add packet logging to help debugging private browsing over TLS
+
 Revision 1.641  2007/05/25 00:30:24  cheshire
 When checking for duplicate questions, make sure privacy (or not) status, and long-lived (or not)
 status matches. This is particularly important when doing a private query for an SOA record,
@@ -4443,11 +4446,8 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 		{
 		LogMsg("Unknown DNS packet type %02X%02X from %#-15a:%-5d to %#-15a:%-5d on %p (ignored)",
 			msg->h.flags.b[0], msg->h.flags.b[1], srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), InterfaceID);
-#if LogAllOperations
-		DumpPacket(m, msg, end);
-#endif
 		}
-
+    if (mDNS_LogLevel >= MDNS_LOG_DEBUG) DumpPacket(m, msg, end);
 	// Packet reception often causes a change to the task list:
 	// 1. Inbound queries can cause us to need to send responses
 	// 2. Conflicing response packets received from other hosts can cause us to need to send defensive responses

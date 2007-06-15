@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.33  2007/06/15 21:54:50  cheshire
+<rdar://problem/4883206> Add packet logging to help debugging private browsing over TLS
+
 Revision 1.32  2007/05/25 16:03:03  cheshire
 Remove unused LogMalloc
 
@@ -155,11 +158,24 @@ extern void verbosedebugf_(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1
 #endif
 
 // LogMsg is used even in shipping code, to write truly serious error messages to syslog (or equivalent)
-extern int	mDNS_DebugMode;	// If non-zero, LogMsg() writes to stderr instead of syslog
+typedef enum
+	{
+	MDNS_LOG_NONE,
+	MDNS_LOG_ERROR,
+	MDNS_LOG_WARN,
+	MDNS_LOG_INFO,
+	MDNS_LOG_DEBUG,
+	MDNS_LOG_VERBOSE_DEBUG
+	} LogLevel_t;
+
+extern LogLevel_t mDNS_LogLevel;
+extern int        mDNS_DebugMode;	// If non-zero, LogMsg() writes to stderr instead of syslog
+extern const char ProgramName[];	// Program Name for use with LogMsgIdent
+
 extern void LogMsg(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
 extern void LogMsgIdent(const char *ident, const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(2,3);
 extern void LogMsgNoIdent(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
-extern const char ProgramName[];	// Program Name for use with LogMsgIdent
+extern void SigLogLevel(void);
 
 // Set this symbol to 1 to answer remote queries for our Address, reverse mapping PTR, and HINFO records
 #define ANSWER_REMOTE_HOSTNAME_QUERIES 0

@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.315  2007/06/15 21:54:51  cheshire
+<rdar://problem/4883206> Add packet logging to help debugging private browsing over TLS
+
 Revision 1.314  2007/06/15 19:23:17  cheshire
 <rdar://problem/5254053> mDNSResponder renames my host without asking
 Improve log messages, to distinguish user-initiated renames from automatic (name conflict) renames
@@ -2109,6 +2112,7 @@ mDNSlocal void SignalCallback(CFMachPortRef port, void *msg, CFIndex size, void 
 		case SIGINFO:   INFOCallback(); break;
 		case SIGUSR1:   LogMsg("SIGUSR1: Simulate Network Configuration Change Event");
 		                mDNSMacOSXNetworkChanged(&mDNSStorage); break;
+		case SIGUSR2:   SigLogLevel(); break;
 		default: LogMsg("SignalCallback: Unknown signal %d", m->msgh_id); break;
 		}
 	KQueueUnlock(&mDNSStorage, "Unix Signal");
@@ -2512,6 +2516,7 @@ mDNSexport int main(int argc, char **argv)
 	signal(SIGTERM, HandleSIG);		// Machine shutting down: Detach from and exit cleanly like Ctrl-C
 	signal(SIGINFO, HandleSIG);		// (Debugging) Write state snapshot to syslog
 	signal(SIGUSR1, HandleSIG);		// (Debugging) Simulate network change notification from System Configuration Framework
+	signal(SIGUSR2, HandleSIG);		// (Debugging) Change log level
 
 	// First do the all the initialization we need root privilege for, before we change to user "nobody"
 	mDNSStorage.p = &PlatformStorage;	// Make sure mDNSStorage.p is set up, because validatelists uses it

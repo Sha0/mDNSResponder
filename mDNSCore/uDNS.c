@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.375  2007/06/15 21:54:51  cheshire
+<rdar://problem/4883206> Add packet logging to help debugging private browsing over TLS
+
 Revision 1.374  2007/06/12 02:15:26  cheshire
 Fix incorrect "DNS Server passed" LogOperation message
 
@@ -1353,7 +1356,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			mDNSu8 *end = (mDNSu8 *)tcpInfo->reply + tcpInfo->replylen;
 			tcpInfo->numReplies++;
 			mDNSCoreReceive(m, tcpInfo->reply, end, &tcpInfo->Addr, tcpInfo->Port, mDNSNULL, zeroIPPort, 0);
-			//DumpPacket(m, tcpInfo->reply, end);
+			if (mDNS_LogLevel >= MDNS_LOG_DEBUG) DumpPacket(m, tcpInfo->reply, end);
 			mDNSPlatformMemFree(tcpInfo->reply);
 			if (tcpInfo->question && tcpInfo->question->LongLived)
 				{

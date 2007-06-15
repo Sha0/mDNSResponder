@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.c,v $
+Revision 1.10  2007/06/15 21:54:51  cheshire
+<rdar://problem/4883206> Add packet logging to help debugging private browsing over TLS
+
 Revision 1.9  2007/04/05 19:52:32  cheshire
 Display correct ident in syslog messages (i.e. in dnsextd, ProgramName is not "mDNSResponder")
 
@@ -72,6 +75,8 @@ Changes necessary to support mDNSResponder on Linux.
 #endif
 
 #include "mDNSEmbeddedAPI.h"
+
+mDNSexport LogLevel_t mDNS_LogLevel = MDNS_LOG_NONE;
 
 #if MDNS_DEBUGMSGS
 mDNSexport int mDNS_DebugMode = mDNStrue;
@@ -153,4 +158,25 @@ mDNSexport void LogMsgNoIdent(const char *format, ...)
 	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
 	va_end(ptr);
 	WriteLogMsg("", buffer, 0);
+	}
+
+mDNSlocal const char *CStringForLogLevel(LogLevel_t level)
+	{
+	switch (level) 
+		{
+        case MDNS_LOG_NONE:          return "MDNS_LOG_NONE";
+        case MDNS_LOG_ERROR:         return "MDNS_LOG_ERROR";
+        case MDNS_LOG_WARN:          return "MDNS_LOG_WARN";
+        case MDNS_LOG_INFO:          return "MDNS_LOG_INFO";
+        case MDNS_LOG_DEBUG:         return "MDNS_LOG_DEBUG";
+        case MDNS_LOG_VERBOSE_DEBUG: return "MDNS_LOG_VERBOSE_DEBUG";
+        default:                     return "MDNS_LOG_UNKNOWN"; 
+		}
+	}
+
+mDNSexport void SigLogLevel(void)
+	{
+	if (mDNS_LogLevel < MDNS_LOG_VERBOSE_DEBUG) mDNS_LogLevel++;
+	else mDNS_LogLevel = MDNS_LOG_NONE;
+	LogMsg("Log Level Changed to %s", CStringForLogLevel(mDNS_LogLevel));
 	}
