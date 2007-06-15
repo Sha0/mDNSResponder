@@ -30,6 +30,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.314  2007/06/15 19:23:17  cheshire
+<rdar://problem/5254053> mDNSResponder renames my host without asking
+Improve log messages, to distinguish user-initiated renames from automatic (name conflict) renames
+
 Revision 1.313  2007/05/25 16:02:05  cheshire
 When MACOSX_MDNS_MALLOC_DEBUGGING is enabled, log suspiciously large memory allocations
 
@@ -2258,7 +2262,7 @@ mDNSlocal mDNSs32 mDNSDaemonIdle(mDNS *const m)
 			{
 			if (!SameDomainLabelCS(m->p->usernicelabel.c, m->nicelabel.c))
 				{
-				LogMsg("Updating Computer Name from \"%#s\" to \"%#s\"", m->p->usernicelabel.c, m->nicelabel.c);
+				LogMsg("Name Conflict: Updated Computer Name from \"%#s\" to \"%#s\"", m->p->usernicelabel.c, m->nicelabel.c);
 				gNotificationPrefNiceLabel = m->p->usernicelabel = m->nicelabel;
 				RecordUpdatedName(m, &gNotificationUserNiceLabel, &gNotificationPrefNiceLabel, CFS_ComputerName, "", CFS_ComputerNameMsg);
 				// Clear m->p->NotifyUser here -- even if the hostlabel has changed too, we don't want to bug the user with *two* alerts
@@ -2266,7 +2270,7 @@ mDNSlocal mDNSs32 mDNSDaemonIdle(mDNS *const m)
 				}
 			if (!SameDomainLabelCS(m->p->userhostlabel.c, m->hostlabel.c))
 				{
-				LogMsg("Updating Local Hostname from \"%#s.local\" to \"%#s.local\"", m->p->userhostlabel.c, m->hostlabel.c);
+				LogMsg("Name Conflict: Updated Local Hostname from \"%#s.local\" to \"%#s.local\"", m->p->userhostlabel.c, m->hostlabel.c);
 				m->p->HostNameConflict = 0;	// Clear our indicator, now name change has been successful
 				gNotificationPrefHostLabel = m->p->userhostlabel = m->hostlabel;
 				RecordUpdatedName(m, &gNotificationUserHostLabel, &gNotificationPrefHostLabel, CFS_LocalHostName, ".local", CFS_LocalHostNameMsg);

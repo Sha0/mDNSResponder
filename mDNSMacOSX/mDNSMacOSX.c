@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.415  2007/06/15 19:23:38  cheshire
+<rdar://problem/5254053> mDNSResponder renames my host without asking
+Improve log messages, to distinguish user-initiated renames from automatic (name conflict) renames
+
 Revision 1.414  2007/05/17 22:00:59  cheshire
 <rdar://problem/5210966> Lower network change delay from two seconds to one second
 
@@ -1838,7 +1842,8 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 		debugf("Usernicelabel (%#s) unchanged since last time; not changing m->nicelabel (%#s)", m->p->usernicelabel.c, m->nicelabel.c);
 	else
 		{
-		debugf("Updating m->nicelabel to %#s", nicelabel.c);
+		if (m->p->usernicelabel.c[0])	// Don't show message first time through, when we first read name from prefs on boot
+			LogMsg("User updated Computer Name from %#s to %#s", m->p->usernicelabel.c, nicelabel.c);
 		m->p->usernicelabel = m->nicelabel = nicelabel;
 		}
 
@@ -1846,7 +1851,8 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 		debugf("Userhostlabel (%#s) unchanged since last time; not changing m->hostlabel (%#s)", m->p->userhostlabel.c, m->hostlabel.c);
 	else
 		{
-		debugf("Updating m->hostlabel to %#s", hostlabel.c);
+		if (m->p->userhostlabel.c[0])	// Don't show message first time through, when we first read name from prefs on boot
+			LogMsg("User updated Local Hostname from %#s to %#s", m->p->userhostlabel.c, hostlabel.c);
 		m->p->userhostlabel = m->hostlabel = hostlabel;
 		mDNS_SetFQDN(m);
 		}
@@ -2546,7 +2552,7 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 				for (ptr = m->AuthInfoList; ptr; ptr = ptr->next)
 					if (SameDomainName(&ptr->domain, &domain)) break;
 
-				LogMsg("SetDomainSecrets: %##s %##s", &domain.c, &keyname.c);
+				LogOperation("SetDomainSecrets: %##s %##s", &domain.c, &keyname.c);
 
 				if (ptr)	// If we found an entry for this domain already in our list, just clear its deltime flag and update key data
 					{
@@ -2614,19 +2620,19 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 	if (c && c - c1 - c2 - c3 == 0) delay = mDNSPlatformOneSecond/20;	// If these were the only changes, shorten delay
 
 #if LogAllOperations
+	int i;
+	for (i=0; i<c; i++)
+		{
+		char buf[256];
+		if (!CFStringGetCString(CFArrayGetValueAtIndex(changedKeys, i), buf, sizeof(buf), kCFStringEncodingUTF8)) buf[0] = 0;
+		LogOperation("***   NetworkChanged SC key: %s", buf);
+		}
 	LogOperation("***   NetworkChanged   *** %d change%s %s%s%sdelay %d",
 		c, c>1?"s":"",
 		c1 ? "(Local Hostname) " : "",
 		c2 ? "(Computer Name) "  : "",
 		c3 ? "(DynamicDNS) "     : "",
 		delay);
-	int i;
-	for (i=0; i<c; i++)
-		{
-		char buf[256];
-		if (!CFStringGetCString(CFArrayGetValueAtIndex(changedKeys, i), buf, sizeof(buf), kCFStringEncodingUTF8)) buf[0] = 0;
-		LogOperation("***   NetworkChanged: %s", buf);
-		}
 #endif
 
 	if (!m->p->NetworkChanged ||
@@ -2696,7 +2702,7 @@ mDNSlocal OSStatus KeychainChanged(SecKeychainEvent keychainEvent, SecKeychainCa
 	if (err) LogMsg("SecKeychainGetPath failed: %d", err);
 	else if (strncmp(SYSTEM_KEYCHAIN_PATH, path, pathLen) == 0)
 		{
-		LogMsg("***   Keychain Changed   ***");
+		LogOperation("***   Keychain Changed   ***");
 		KQueueLock(m);
 		mDNS_Lock(m);
 		SetDomainSecrets((mDNS*)context);
