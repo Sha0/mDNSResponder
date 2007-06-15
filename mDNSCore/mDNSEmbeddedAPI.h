@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.381  2007/06/15 18:11:16  cheshire
+<rdar://problem/5174466> mDNSResponder crashed in memove() near end of MobileSafari stress test
+Made AssignDomainName more defensive when source name is garbage
+
 Revision 1.380  2007/05/25 00:04:51  cheshire
 Added comment explaining rdlength
 
@@ -1931,7 +1935,8 @@ extern mDNSOpaque16 mDNS_NewMessageID(mDNS *const m);
 // A simple C structure assignment of a domainname can cause a protection fault by accessing unmapped memory,
 // because that object is defined to be 256 bytes long, but not all domainname objects are truly the full size.
 // This macro uses mDNSPlatformMemCopy() to make sure it only touches the actual bytes that are valid.
-#define AssignDomainName(DST, SRC) mDNSPlatformMemCopy((DST)->c, (SRC)->c, DomainNameLength((SRC)))
+#define AssignDomainName(DST, SRC) do { mDNSu16 len = DomainNameLength((SRC)); \
+	if (len <= MAX_DOMAIN_NAME) mDNSPlatformMemCopy((DST)->c, (SRC)->c, len); else (DST)->c[0] = 0; } while(0)
 
 // Comparison functions
 #define SameDomainLabelCS(A,B) ((A)[0] == (B)[0] && mDNSPlatformMemSame((A)+1, (B)+1, (A)[0]))
