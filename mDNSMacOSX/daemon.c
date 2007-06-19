@@ -30,6 +30,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.316  2007/06/19 19:27:11  cheshire
+<rdar://problem/5141540> Sandbox mDNSResponder
+Weak-link sandbox_init, so mDNSResponder can be run on Tiger for regression testing
+
 Revision 1.315  2007/06/15 21:54:51  cheshire
 <rdar://problem/4883206> Add packet logging to help debugging private browsing over TLS
 
@@ -2497,6 +2501,8 @@ mDNSlocal void LaunchdCheckin(void)
 	launch_data_free(resp);
 	}
 
+extern int sandbox_init(const char *profile, uint64_t flags, char **errorbuf) __attribute__((weak_import));
+
 mDNSexport int main(int argc, char **argv)
 	{
 	int i;
@@ -2571,10 +2577,15 @@ mDNSexport int main(int argc, char **argv)
 #if MDNS_NO_SANDBOX
 	LogMsg("Note: Compiled without Apple Sandbox support");
 #else
-	char *sandbox_msg;
-	int sandbox_err = sandbox_init("mDNSResponder", SANDBOX_NAMED, &sandbox_msg);
-	if (sandbox_err) { LogMsg("WARNING: sandbox_init error %s", sandbox_msg); sandbox_free_error(sandbox_msg); }
-	else LogOperation("Now running under sandbox restrictions");
+	if (!sandbox_init)
+		LogMsg("Note: Running without Apple Sandbox support (not available on this OS)");
+	else
+		{
+		char *sandbox_msg;
+		int sandbox_err = sandbox_init("mDNSResponder", SANDBOX_NAMED, &sandbox_msg);
+		if (sandbox_err) { LogMsg("WARNING: sandbox_init error %s", sandbox_msg); sandbox_free_error(sandbox_msg); }
+		else LogOperation("Now running under Apple Sandbox restrictions");
+		}
 #endif
 
 	OSXVers = mDNSMacOSXSystemBuildNumber(NULL);
