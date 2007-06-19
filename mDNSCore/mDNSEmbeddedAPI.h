@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.382  2007/06/19 20:31:59  cheshire
+Add DNSServer_Disabled state
+Add mDNSInterfaceID for DNS servers reachable over specific interfaces
+
 Revision 1.381  2007/06/15 18:11:16  cheshire
 <rdar://problem/5174466> mDNSResponder crashed in memove() near end of MobileSafari stress test
 Made AssignDomainName more defensive when source name is garbage
@@ -1093,19 +1097,21 @@ typedef struct HostnameInfo
 enum
 	{
 	DNSServer_Untested = 0,
-	DNSServer_Failed   = 1,
-	DNSServer_Passed   = 2
+	DNSServer_Passed   = 1,
+	DNSServer_Failed   = 2,
+	DNSServer_Disabled = 3
 	};
 
 typedef struct DNSServer
 	{
     struct DNSServer *next;
-    mDNSAddr   addr;
-    mDNSIPPort port;
-    mDNSBool   del;			// Set when we're planning to delete this from the list
-    mDNSu32    teststate;	// Have we sent bug-detection query to this server?
-    mDNSs32    lasttest;	// Time we sent last bug-detection query to this server
-    domainname domain;		// name->server matching for "split dns"
+    mDNSInterfaceID interface;	// For specialized uses; we can have DNS servers reachable over specific interfaces
+    mDNSAddr        addr;
+    mDNSIPPort      port;
+    mDNSBool        del;		// Set when we're planning to delete this from the list
+    mDNSu32         teststate;	// Have we sent bug-detection query to this server?
+    mDNSs32         lasttest;	// Time we sent last bug-detection query to this server
+    domainname      domain;		// name->server matching for "split dns"
 	} DNSServer;
 
 typedef struct NetworkInterfaceInfo_struct NetworkInterfaceInfo;
