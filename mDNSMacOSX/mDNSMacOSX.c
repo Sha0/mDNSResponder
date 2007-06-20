@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.417  2007/06/20 01:44:00  cheshire
+More information in "Network Configuration Change" message
+
 Revision 1.416  2007/06/20 01:10:12  cheshire
 <rdar://problem/5280520> Sync iPhone changes into main mDNSResponder code
 
@@ -2657,8 +2660,10 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 	}
 
 mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
-   {
-	LogOperation("***   Network Configuration Change   ***");
+	{
+	LogOperation("***   Network Configuration Change   ***  (%d)%s",
+		m->p->NetworkChanged ? mDNS_TimeNow(m) - m->p->NetworkChanged : 0,
+		m->p->NetworkChanged ? "": " (no scheduled configuration change)");
 	m->p->NetworkChanged = 0;		// If we received a network change event and deferred processing, we're now dealing with it
 	mDNSs32 utc = mDNSPlatformUTC();
 	MarkAllInterfacesInactive(m, utc);
