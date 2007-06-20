@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.317  2007/06/20 01:10:12  cheshire
+<rdar://problem/5280520> Sync iPhone changes into main mDNSResponder code
+
 Revision 1.316  2007/06/19 19:27:11  cheshire
 <rdar://problem/5141540> Sandbox mDNSResponder
 Weak-link sandbox_init, so mDNSResponder can be run on Tiger for regression testing
@@ -2093,7 +2096,15 @@ mDNSlocal void INFOCallback(void)
 		}
 
 	for (s = mDNSStorage.DNSServers; s; s = s->next)
-		LogMsgNoIdent("DNS Server %#a %##s", &s->addr, s->domain.c);
+		{
+		NetworkInterfaceInfoOSX *ifx = (NetworkInterfaceInfoOSX *)s->interface;
+		LogMsgNoIdent("DNS Server %##s %s%s%#a:%d %s",
+			s->domain.c, ifx ? ifx->ifa_name : "", ifx ? " " : "", &s->addr, mDNSVal16(s->port),
+			s->teststate == DNSServer_Untested ? "(Untested)" :
+			s->teststate == DNSServer_Passed   ? ""           :
+			s->teststate == DNSServer_Failed   ? "(Failed)"   :
+			s->teststate == DNSServer_Disabled ? "(Disabled)" : "(Unknown state)");
+		}
 
 	mDNSs32 now = mDNS_TimeNow(&mDNSStorage);
 	LogMsgNoIdent("Timenow 0x%08lX (%ld)", (mDNSu32)now, now);

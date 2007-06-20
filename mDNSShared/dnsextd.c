@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.78  2007/06/20 01:10:13  cheshire
+<rdar://problem/5280520> Sync iPhone changes into main mDNSResponder code
+
 Revision 1.77  2007/05/15 21:57:17  cheshire
 <rdar://problem/4608220> Use dnssd_SocketValid(x) macro instead of just
 assuming that all negative values (or zero!) are invalid socket numbers
@@ -3198,8 +3201,8 @@ void mDNSCoreReceive(mDNS *const m, void *const msg, const mDNSu8 *const end,
                                 const mDNSAddr *const srcaddr, const mDNSIPPort srcport,
                                 const mDNSAddr *const dstaddr, const mDNSIPPort dstport, const mDNSInterfaceID iid)
 	{ ( void ) m; ( void ) msg; ( void ) end; ( void ) srcaddr; ( void ) srcport; ( void ) dstaddr; ( void ) dstport; ( void ) iid; }
-void mDNS_AddDNSServer(mDNS *const m, const domainname *d, const mDNSAddr *addr, const mDNSIPPort port)
-	{ ( void ) m; ( void ) d; ( void ) addr; ( void ) port; }
+DNSServer *mDNS_AddDNSServer(mDNS *const m, const domainname *d, const mDNSInterfaceID interface, const mDNSAddr *addr, const mDNSIPPort port)
+	{ ( void ) m; ( void ) d; ( void ) interface; ( void ) addr; ( void ) port; return(NULL); }
 void mDNS_AddSearchDomain(const domainname *const domain) { (void)domain; }
 void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSRecordCallback *StatusCallback, const void *StatusContext)
 	{ ( void ) m; ( void ) fqdn; ( void ) StatusCallback; ( void ) StatusContext; }

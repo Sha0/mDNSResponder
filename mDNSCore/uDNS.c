@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.376  2007/06/20 01:10:12  cheshire
+<rdar://problem/5280520> Sync iPhone changes into main mDNSResponder code
+
 Revision 1.375  2007/06/15 21:54:51  cheshire
 <rdar://problem/4883206> Add packet logging to help debugging private browsing over TLS
 
@@ -639,7 +642,7 @@ mDNSlocal void SetRecordRetry(mDNS *const m, AuthRecord *rr, mStatus SendErr)
 #pragma mark - Name Server List Management
 #endif
 
-mDNSexport void mDNS_AddDNSServer(mDNS *const m, const domainname *d, const mDNSAddr *addr, const mDNSIPPort port)
+mDNSexport DNSServer *mDNS_AddDNSServer(mDNS *const m, const domainname *d, const mDNSInterfaceID interface, const mDNSAddr *addr, const mDNSIPPort port)
 	{
 	DNSServer **p = &m->DNSServers;
 
@@ -651,25 +654,31 @@ mDNSexport void mDNS_AddDNSServer(mDNS *const m, const domainname *d, const mDNS
 
 	while (*p)	// Check if we already have this {server,domain} pair registered
 		{
-		if (mDNSSameAddress(&(*p)->addr, addr) && mDNSSameIPPort((*p)->port, port) && SameDomainName(&(*p)->domain, d))
+		if ((*p)->interface == interface && (*p)->teststate != DNSServer_Disabled &&
+			mDNSSameAddress(&(*p)->addr, addr) && mDNSSameIPPort((*p)->port, port) && SameDomainName(&(*p)->domain, d))
 			{
 			if (!(*p)->del) LogMsg("Note: DNS Server %#a for domain %##s registered more than once", addr, d->c);
 			(*p)->del = mDNSfalse;
-			return;
+			return(*p);
 			}
 		p=&(*p)->next;
 		}
 
 	// allocate, add to list
 	*p = mDNSPlatformMemAllocate(sizeof(**p));
-	if (!*p) { LogMsg("Error: mDNS_AddDNSServer - malloc"); return; }
-	(*p)->addr      = *addr;
-	(*p)->port      = port;
-	(*p)->del       = mDNSfalse;
-	(*p)->teststate = DNSServer_Untested;
-	(*p)->lasttest  = m->timenow - INIT_UCAST_POLL_INTERVAL;
-	AssignDomainName(&(*p)->domain, d);
-	(*p)->next = mDNSNULL;
+	if (!*p) LogMsg("Error: mDNS_AddDNSServer - malloc");
+	else
+		{
+		(*p)->interface = interface;
+		(*p)->addr      = *addr;
+		(*p)->port      = port;
+		(*p)->del       = mDNSfalse;
+		(*p)->teststate = DNSServer_Untested;
+		(*p)->lasttest  = m->timenow - INIT_UCAST_POLL_INTERVAL;
+		AssignDomainName(&(*p)->domain, d);
+		(*p)->next = mDNSNULL;
+		}
+	return(*p);
 	}
 
 // ***************************************************************************
@@ -3968,6 +3977,7 @@ mDNSlocal mDNSBool NoTestQuery(DNSQuestion *q)
 	{
 	int i;
 	mDNSu8 *p = q->qname.c;
+	if (q->AuthInfo) return(mDNStrue);		// Don't need a test query for private queries sent directly to authoritative server over TLS/TCP
 	if (q->qtype != kDNSType_PTR) return(mDNStrue);		// Don't need a test query for any non-PTR queries
 	for (i=0; i<4; i++)		// If qname does not begin with num.num.num.num, can't skip the test query
 		{
@@ -4015,7 +4025,7 @@ mDNSexport void uDNS_CheckQuery(mDNS *const m)
 	// We repeat the check above (rather than just making this the "else" case) because startLLQHandshake can change q->state to LLQ_Poll
 	if (!(q->LongLived && q->state != LLQ_Poll))
 		{
-		if (q->qDNSServer)
+		if (q->qDNSServer && q->qDNSServer->teststate != DNSServer_Disabled)
 			{
 			DNSMessage msg;
 			mDNSu8 *end = msg.data;
@@ -4050,7 +4060,7 @@ mDNSexport void uDNS_CheckQuery(mDNS *const m)
 						}
 					else
 						{
-						err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, &q->qDNSServer->addr, q->qDNSServer->port, mDNSNULL, mDNSNULL);
+						err = mDNSSendDNSMessage(m, &msg, end, q->qDNSServer->interface, &q->qDNSServer->addr, q->qDNSServer->port, mDNSNULL, mDNSNULL);
 						m->SuppressStdPort53Queries = NonZeroTime(m->timenow + (mDNSPlatformOneSecond+99)/100);
 						}
 					}
@@ -4073,7 +4083,8 @@ mDNSexport void uDNS_CheckQuery(mDNS *const m)
 			}
 		else
 			{
-			LogMsg("uDNS_CheckQuery no DNS server for %##s", q->qname.c);
+			if (!q->qDNSServer) LogMsg("uDNS_CheckQuery no DNS server for %##s", q->qname.c);
+			else LogMsg("uDNS_CheckQuery DNS server %#a:%d for %##s is disabled", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qname.c);
 			MakeNegativeCacheRecord(m, &q->qname, q->qnamehash, q->qtype, q->qclass);
 			// Inactivate this question until the next change of DNS servers (do this before AnswerQuestionWithResourceRecord)
 			q->ThisQInterval = 0;

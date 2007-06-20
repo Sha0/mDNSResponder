@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.643  2007/06/20 01:10:12  cheshire
+<rdar://problem/5280520> Sync iPhone changes into main mDNSResponder code
+
 Revision 1.642  2007/06/15 21:54:50  cheshire
 <rdar://problem/4883206> Add packet logging to help debugging private browsing over TLS
 
@@ -5667,6 +5670,15 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 						mDNS_Reconfirm_internal(m, rr, kDefaultReconfirmTimeForFlappingInterface);
 						rr->UnansweredQueries = MaxUnansweredQueries;
 						}
+					}
+
+			// 3. 
+			DNSServer *s;
+			for (s = m->DNSServers; s; s = s->next)
+				if (s->interface == set->InterfaceID)
+					{
+					s->interface = mDNSInterface_Any;
+					s->teststate = DNSServer_Disabled;
 					}
 			}
 		}

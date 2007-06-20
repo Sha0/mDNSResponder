@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.125  2007/06/20 01:10:13  cheshire
+<rdar://problem/5280520> Sync iPhone changes into main mDNSResponder code
+
 Revision 1.124  2007/04/26 00:35:16  cheshire
 <rdar://problem/5140339> uDNS: Domain discovery not working over VPN
 Fixes to make sure results update correctly when connectivity changes (e.g. a DNS server
@@ -1702,7 +1705,7 @@ SetDNSServers( mDNS *const m )
 	{
 		mDNSAddr addr;
 		err = StringToAddress( &addr, ipAddr->IpAddress.String );
-		if ( !err ) mDNS_AddDNSServer(m, mDNSNULL, addr, UnicastDNSPort);
+		if ( !err ) mDNS_AddDNSServer(m, mDNSNULL, mDNSInterface_Any, addr, UnicastDNSPort);
 	}
 
 exit:

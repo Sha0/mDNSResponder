@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.416  2007/06/20 01:10:12  cheshire
+<rdar://problem/5280520> Sync iPhone changes into main mDNSResponder code
+
 Revision 1.415  2007/06/15 19:23:38  cheshire
 <rdar://problem/5254053> mDNSResponder renames my host without asking
 Improve log messages, to distinguish user-initiated renames from automatic (name conflict) renames
@@ -406,6 +409,8 @@ Add (commented out) trigger value for testing "mach_absolute_time went backwards
 #include <IOKit/IOMessage.h>
 #include <mach/mach_time.h>
 
+#define kInterfaceSpecificOption "interface="
+
 // ***************************************************************************
 // Globals
 
@@ -579,6 +584,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 	char *ifa_name = info ? info->ifa_name : "unicast";
 	struct sockaddr_storage to;
 	int s = -1, err;
+	mStatus result = mStatus_NoError;
 
 	// Sanity check: Make sure that if we're sending a query via unicast, we're sending it using our
 	// anonymous socket created for this purpose, so that we'll receive the response.
@@ -598,10 +604,28 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 		sin_to->sin_port           = dstPort.NotAnInteger;
 		sin_to->sin_addr.s_addr    = dst->ip.v4.NotAnInteger;
 		s = m->p->permanentsockets.sktv4;
-		if (info)	// Specify outgoing interface for this multicast
+		if (info)	// Specify outgoing interface
 			{
-			err = setsockopt(s, IPPROTO_IP, IP_MULTICAST_IF, &info->ifa_v4addr, sizeof(info->ifa_v4addr));
-			if (err < 0) LogMsg("setsockopt - IP_MULTICAST_IF error %.4a %ld errno %d (%s)", &info->ifa_v4addr, err, errno, strerror(errno));
+			if (!mDNSAddrIsDNSMulticast(dst))
+				{
+				#ifdef IP_FORCE_OUT_IFP
+					setsockopt(s, IPPROTO_IP, IP_FORCE_OUT_IFP, ifa_name, strlen(ifa_name) + 1);
+				#else
+					{
+					static int displayed = 0;
+					if (!displayed)
+						{
+						displayed = 1;
+						LogMsg("IP_FORCE_OUT_IFP Socket option not defined -- cannot specify interface for unicast packets");
+						}
+					}
+				#endif
+				}
+			else
+				{
+				err = setsockopt(s, IPPROTO_IP, IP_MULTICAST_IF, &info->ifa_v4addr, sizeof(info->ifa_v4addr));
+				if (err < 0) LogMsg("setsockopt - IP_MULTICAST_IF error %.4a %ld errno %d (%s)", &info->ifa_v4addr, err, errno, strerror(errno));
+				}
 			}
 		}
 	else if (dst->type == mDNSAddrType_IPv6)
@@ -614,7 +638,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 		sin6_to->sin6_addr           = *(struct in6_addr*)&dst->ip.v6;
 		sin6_to->sin6_scope_id       = info ? info->scope_id : 0;
 		s = m->p->permanentsockets.sktv6;
-		if (info)	// Specify outgoing interface for this multicast
+		if (info && mDNSAddrIsDNSMulticast(dst))	// Specify outgoing interface
 			{
 			err = setsockopt(s, IPPROTO_IPV6, IPV6_MULTICAST_IF, &info->scope_id, sizeof(info->scope_id));
 			if (err < 0) LogMsg("setsockopt - IPV6_MULTICAST_IF error %ld errno %d (%s)", err, errno, strerror(errno));
@@ -629,7 +653,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 	// Don't send if it would cause dial-on-demand connection initiation.
 	// As an optimization, don't bother consulting reachability API / routing
 	// table when sending Multicast DNS since we ignore PPP interfaces for mDNS traffic.
-	if (!mDNSAddrIsDNSMulticast(dst) && AddrRequiresPPPConnection((struct sockaddr *)&to))
+	if (!info && !mDNSAddrIsDNSMulticast(dst) && AddrRequiresPPPConnection((struct sockaddr *)&to))
 		{
 		debugf("mDNSPlatformSendUDP: Surpressing sending to avoid dial-on-demand connection");
 		return mStatus_NoError;
@@ -665,10 +689,15 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 			LogMsg("mDNSPlatformSendUDP sendto failed to send packet on InterfaceID %p %5s/%ld to %#a:%d skt %d error %d errno %d (%s) %lu",
 				InterfaceID, ifa_name, dst->type, dst, mDNSVal16(dstPort), s, err, errno, strerror(errno), (mDNSu32)(m->timenow));
 			}
-		return(mStatus_UnknownErr);
+		result = mStatus_UnknownErr;
 		}
 
-	return(mStatus_NoError);
+#ifdef IP_FORCE_OUT_IFP
+	if (dst->type == mDNSAddrType_IPv4 && info && !mDNSAddrIsDNSMulticast(dst))
+		setsockopt(s, IPPROTO_IP, IP_FORCE_OUT_IFP, "", 1);
+#endif
+
+	return(result);
 	}
 
 mDNSlocal ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
@@ -1813,7 +1842,11 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 	if (InfoSocket >= 0) close(InfoSocket);
 #endif
 
-	mDNS_snprintf(defaultname, sizeof(defaultname), "Macintosh-%02X%02X%02X%02X%02X%02X",
+#ifndef kDefaultLocalHostNamePrefix
+#define kDefaultLocalHostNamePrefix "Macintosh"
+#endif
+
+	mDNS_snprintf(defaultname, sizeof(defaultname), kDefaultLocalHostNamePrefix "-%02X%02X%02X%02X%02X%02X",
 		PrimaryMAC.b[0], PrimaryMAC.b[1], PrimaryMAC.b[2], PrimaryMAC.b[3], PrimaryMAC.b[4], PrimaryMAC.b[5]);
 
 	// Set up the nice label
@@ -2081,19 +2114,19 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 		else
 			{
 			LogOperation("mDNSPlatformSetDNSConfig: Registering %d resolvers", config->n_resolver);
-			for (i = 0; i < config->n_resolver; i++)
+			if (setservers)
 				{
-				int j, n;
-				dns_resolver_t *r = config->resolver[i];
-				// Ignore dnsinfo entries for mDNS domains (indicated by the fact that the resolver port is 5353, the mDNS port)
-				// Note: Unlike the BSD Sockets APIs (where TCP and UDP port numbers are universally in network byte order)
-				// in Apple's "dnsinfo.h" API the port number is declared to be a "uint16_t in host byte order"
-				if (r->port == 5353) continue;
-				if (r->search_order == DEFAULT_SEARCH_ORDER || !r->domain || !*r->domain) d.c[0] = 0; // we ignore domain for "default" resolver
-				else if (!MakeDomainNameFromDNSNameString(&d, r->domain)) { LogMsg("RegisterSplitDNS: bad domain %s", r->domain); continue; }
-
-				if (setservers)
+				for (i = 0; i < config->n_resolver; i++)
 					{
+					int j, n;
+					dns_resolver_t *r = config->resolver[i];
+					// Ignore dnsinfo entries for mDNS domains (indicated by the fact that the resolver port is 5353, the mDNS port)
+					// Note: Unlike the BSD Sockets APIs (where TCP and UDP port numbers are universally in network byte order)
+					// in Apple's "dnsinfo.h" API the port number is declared to be a "uint16_t in host byte order"
+					if (r->port == 5353) continue;
+					if (r->search_order == DEFAULT_SEARCH_ORDER || !r->domain || !*r->domain) d.c[0] = 0; // we ignore domain for "default" resolver
+					else if (!MakeDomainNameFromDNSNameString(&d, r->domain)) { LogMsg("RegisterSplitDNS: bad domain %s", r->domain); continue; }
+
 					for (j = 0; j < config->n_resolver; j++)  // check if this is the lowest-weighted server for the domain
 						{
 						dns_resolver_t *p = config->resolver[j];
@@ -2110,15 +2143,52 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 					if (j < config->n_resolver) // found a lower-weighted resolver for this domain
 						debugf("Rejecting DNS server in slot %d domain %##s (slot %d outranks)", i, d.c, j);
 					else
+						{
+						mDNSInterfaceID interface = mDNSInterface_Any;
+						int disabled  = 0;
+						
+						// DNS server option parsing
+						if (r->options != NULL)
+							{
+							char *nextOption = r->options;
+							char *currentOption = NULL;
+							while ((currentOption = strsep(&nextOption, " ")) != NULL && currentOption[0] != 0)
+								{
+								// The option may be in the form of interface=xxx where xxx is an interface name.
+								if (strncmp(currentOption, kInterfaceSpecificOption, sizeof(kInterfaceSpecificOption) - 1) == 0)
+									{
+									NetworkInterfaceInfoOSX *i;
+									char	ifname[IF_NAMESIZE+1];
+									mDNSu32	ifindex = 0;
+									// If something goes wrong finding the interface, create the server entry anyhow but mark it as disabled.
+									// This allows us to block these special queries from going out on the wire.
+									strlcpy(ifname, currentOption + sizeof(kInterfaceSpecificOption)-1, sizeof(ifname));
+									ifindex = if_nametoindex(ifname);
+									if (ifindex == 0) { disabled = 1; LogMsg("RegisterSplitDNS: interfaceSpecific - interface %s not found", ifname); continue; }
+									LogOperation("%s: Interface specific entry: %s on %s (%d)", __FUNCTION__, r->domain, ifname, ifindex);
+									// Find the interface, can't use mDNSPlatformInterfaceIDFromInterfaceIndex
+									// because that will call mDNSMacOSXNetworkChanged if the interface doesn't exist
+									for (i = m->p->InterfaceList; i; i = i->next)
+										if (i->ifinfo.InterfaceID && i->scope_id == ifindex) break;
+									if (i != NULL) interface = i->ifinfo.InterfaceID;
+									if (interface == mDNSNULL) { disabled = 1; LogMsg("RegisterSplitDNS: interfaceSpecific - index %d (%s) not found", ifindex, ifname); continue; }
+									}
+								}
+							}
 						for (n = 0; n < r->n_nameserver; n++)
-							if (r->nameserver[n]->sa_family == AF_INET && !AddrRequiresPPPConnection(r->nameserver[n]))
+							if (r->nameserver[n]->sa_family == AF_INET && (interface || disabled || !AddrRequiresPPPConnection(r->nameserver[n])))
 								{
 								mDNSAddr saddr;
 								// mDNSAddr saddr = { mDNSAddrType_IPv4, { { { 192, 168, 1, 1 } } } }; // for testing
 								debugf("Adding dns server from slot %d %#a for domain %##s", i, &saddr, d.c);
 								if (SetupAddr(&saddr, r->nameserver[n])) LogMsg("RegisterSplitDNS: bad IP address");
-								else mDNS_AddDNSServer(m, &d, &saddr, r->port ? mDNSOpaque16fromIntVal(r->port) : UnicastDNSPort);
+								else
+									{
+									DNSServer *s = mDNS_AddDNSServer(m, &d, mDNSInterface_Any, &saddr, r->port ? mDNSOpaque16fromIntVal(r->port) : UnicastDNSPort);
+									if (s && disabled) s->teststate = DNSServer_Disabled;
+									}
 								}
+						}
 					}
 				}
 			if (setsearch)
@@ -2242,7 +2312,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 								mDNSAddr addr = { mDNSAddrType_IPv4, { { { 0 } } } };
 								if (s && CFStringGetCString(s, buf, 256, kCFStringEncodingUTF8) &&
 									inet_aton(buf, (struct in_addr *) &addr.ip.v4))
-									mDNS_AddDNSServer(m, mDNSNULL, &addr, UnicastDNSPort);
+									mDNS_AddDNSServer(m, mDNSNULL, mDNSInterface_Any, &addr, UnicastDNSPort);
 								}
 							}
 						}
@@ -2692,6 +2762,7 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	return(err);
 	}
 
+#ifndef NO_SECURITYFRAMEWORK
 mDNSlocal OSStatus KeychainChanged(SecKeychainEvent keychainEvent, SecKeychainCallbackInfo *info, void *context)
 	{
 	mDNS *const m = (mDNS *const)context;
@@ -2711,6 +2782,7 @@ mDNSlocal OSStatus KeychainChanged(SecKeychainEvent keychainEvent, SecKeychainCa
 		}
 	return 0;
 	}
+#endif
 
 #ifndef NO_IOPOWER
 mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messageType, void *messageArgument)
@@ -2893,8 +2965,10 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	SetDomainSecrets(m);
 	mDNS_Unlock(m);
 
+#ifndef NO_SECURITYFRAMEWORK
 	err = SecKeychainAddCallback(KeychainChanged, kSecAddEventMask|kSecDeleteEventMask|kSecUpdateEventMask, m);
 	if (err) return(err);
+#endif
 
 #ifndef NO_IOPOWER
 	m->p->PowerConnection = IORegisterForSystemPower(m, &m->p->PowerPortRef, PowerChanged, &m->p->PowerNotifier);

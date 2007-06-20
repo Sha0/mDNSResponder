@@ -30,6 +30,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.98  2007/06/20 01:10:13  cheshire
+<rdar://problem/5280520> Sync iPhone changes into main mDNSResponder code
+
 Revision 1.97  2007/04/26 00:35:16  cheshire
 <rdar://problem/5140339> uDNS: Domain discovery not working over VPN
 Fixes to make sure results update correctly when connectivity changes (e.g. a DNS server
@@ -551,7 +554,7 @@ mDNSexport int ParseDNSServers(mDNS *m, const char *filePath)
 			mDNSAddr DNSAddr;
 			DNSAddr.type = mDNSAddrType_IPv4;
 			DNSAddr.ip.v4.NotAnInteger = ina.s_addr;
-			mDNS_AddDNSServer(m, NULL, &DNSAddr, UnicastDNSPort);
+			mDNS_AddDNSServer(m, NULL, mDNSInterface_Any, &DNSAddr, UnicastDNSPort);
 			numOfServers++;
 			}
 		}  

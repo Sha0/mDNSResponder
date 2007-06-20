@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.383  2007/06/20 01:10:12  cheshire
+<rdar://problem/5280520> Sync iPhone changes into main mDNSResponder code
+
 Revision 1.382  2007/06/19 20:31:59  cheshire
 Add DNSServer_Disabled state
 Add mDNSInterfaceID for DNS servers reachable over specific interfaces
@@ -1349,7 +1352,7 @@ struct DNSQuestion_struct
 	// Wide Area fields. These are used internally by the uDNS core
 	DNSServer            *qDNSServer;		// Caching server for this query (in the absence of an SRV saying otherwise)
 
-	ZoneData           *nta;				// Used for getting zone data for private or LLQ query
+	ZoneData             *nta;				// Used for getting zone data for private or LLQ query
 	mDNSAddr              servAddr;			// Address and port learned from _dns-llq, _dns-llq-tls or _dns-query-tls SRV query
 	mDNSIPPort            servPort;
 
@@ -2113,7 +2116,7 @@ extern void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSRecordCa
 extern void mDNS_RemoveDynDNSHostName(mDNS *m, const domainname *fqdn);
 extern void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr,  const mDNSAddr *v6addr, const mDNSAddr *router);
 extern void mDNS_UpdateLLQs(mDNS *m);
-extern void mDNS_AddDNSServer(mDNS *const m, const domainname *d, const mDNSAddr *addr, const mDNSIPPort port);
+extern DNSServer *mDNS_AddDNSServer(mDNS *const m, const domainname *d, const mDNSInterfaceID interface, const mDNSAddr *addr, const mDNSIPPort port);
 extern void mDNS_AddSearchDomain(const domainname *const domain);
 
 #define mDNS_AddSearchDomain_CString(X) \
