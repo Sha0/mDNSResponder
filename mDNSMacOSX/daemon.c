@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.318  2007/06/20 01:45:40  cheshire
+When showing dormant interfaces, display last-seen IP address for that dormant interface
+
 Revision 1.317  2007/06/20 01:10:12  cheshire
 <rdar://problem/5280520> Sync iPhone changes into main mDNSResponder code
 
@@ -2080,8 +2083,9 @@ mDNSlocal void INFOCallback(void)
 	for (i = mDNSStorage.p->InterfaceList; i; i = i->next)
 		{
 		if (!i->Exists)
-			LogMsgNoIdent("Interface: %s %5s(%lu) %.6a DORMANT %d",
-				i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id, &i->BSSID, utc - i->LastSeen);
+			LogMsgNoIdent("Interface: %s %5s(%lu) %.6a %#a dormant for %d seconds",
+				i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id, &i->BSSID,
+				&i->ifinfo.ip, utc - i->LastSeen);
 		else
 			LogMsgNoIdent("Interface: %s %5s(%lu) %.6a %s %s %-15.4a %s InterfaceID %p %s %s %#a",
 				i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id, &i->BSSID,
