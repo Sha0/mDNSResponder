@@ -17,6 +17,11 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.418  2007/06/21 16:37:43  jgraessley
+Bug #: 5280520
+Reviewed by: Stuart Cheshire
+Additional changes to get this compiling on the embedded platform.
+
 Revision 1.417  2007/06/20 01:44:00  cheshire
 More information in "Network Configuration Change" message
 
@@ -1168,13 +1173,14 @@ mDNSexport TCPSocket *mDNSPlatformTCPAccept(TCPSocketFlags flags, int fd)
 
 		err = SSLSetCertificate(sock->tlsContext, ServerCerts);
 		if (err) { LogMsg("ERROR: mDNSPlatformTCPAccept: SSLSetCertificate failed with error code: %d", err); goto exit; }
-
 #else
 		err = mStatus_UnsupportedErr;
 #endif /* NO_SECURITYFRAMEWORK */
 		}
-
+#ifndef NO_SECURITYFRAMEWORK
 exit:
+#endif
+
 	if (err) { freeL("TCPSocket/mDNSPlatformTCPAccept", sock); return(mDNSNULL); }
 	return(sock);
 	}

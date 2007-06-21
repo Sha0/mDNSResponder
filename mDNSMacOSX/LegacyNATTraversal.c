@@ -17,6 +17,11 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.19  2007/06/21 16:37:43  jgraessley
+Bug #: 5280520
+Reviewed by: Stuart Cheshire
+Additional changes to get this compiling on the embedded platform.
+
 Revision 1.18  2007/05/09 01:43:32  cheshire
 <rdar://problem/5187028> Change sprintf and strcpy to their safer snprintf and strlcpy equivalents
 
@@ -77,6 +82,8 @@ Revision 1.1  2004/08/18 17:35:41  ksekar
 
 
 */
+
+#ifdef _LEGACY_NAT_TRAVERSAL_
 
 #include "mDNSEmbeddedAPI.h"
 #include "mDNSMacOSX.h"
@@ -3043,3 +3050,5 @@ int LNT_Destroy()
 	g_fControlURLSet = FALSE;
 	return NA_E_SUCCESS;
 }
+
+#endif /* _LEGACY_NAT_TRAVERSAL_ */
