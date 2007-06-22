@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.420  2007/06/22 21:52:14  cheshire
+<rdar://problem/5234463> Write the Multicast DNS domains to the DynamicStore
+
 Revision 1.419  2007/06/22 21:32:00  cheshire
 <rdar://problem/5239020> Use SecKeychainCopyDefault instead of SecKeychainOpen
 
@@ -2547,7 +2550,6 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 	(void)m;
 	LogMsg("Note: SetDomainSecrets: no keychain support");
 #else
-
 	LogOperation("SetDomainSecrets");
 
 	// Rather than immediately deleting all keys now, we mark them for deletion in ten seconds.
@@ -2561,6 +2563,13 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 
 	CFMutableArrayRef sa = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 	if (!sa) { LogMsg("SetDomainSecrets: CFArrayCreateMutable failed"); return; }
+
+	CFArrayAppendValue(sa, CFSTR("local"));
+	CFArrayAppendValue(sa, CFSTR("254.169.in-addr.arpa"));
+	CFArrayAppendValue(sa, CFSTR("8.e.f.ip6.arpa"));
+	CFArrayAppendValue(sa, CFSTR("9.e.f.ip6.arpa"));
+	CFArrayAppendValue(sa, CFSTR("a.e.f.ip6.arpa"));
+	CFArrayAppendValue(sa, CFSTR("b.e.f.ip6.arpa"));
 
 	SecKeychainRef skc;
 	OSStatus err = SecKeychainCopyDefault(&skc);
@@ -2657,12 +2666,12 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 				CFRelease(itemRef);
 				}
 			CFRelease(searchRef);
-			SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:SetDomainSecrets"), NULL, NULL);
-			if (!store) LogMsg("SetDomainSecrets: SCDynamicStoreCreate failed");
-			else { SCDynamicStoreSetValue(store, CFSTR("State:/Network/" kDNSServiceCompPrivateDNS), sa); CFRelease(store); }
 			}
 		CFRelease(skc);
 		}
+	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:SetDomainSecrets"), NULL, NULL);
+	if (!store) LogMsg("SetDomainSecrets: SCDynamicStoreCreate failed");
+	else { SCDynamicStoreSetValue(store, CFSTR("State:/Network/" kDNSServiceCompPrivateDNS), sa); CFRelease(store); }
 	CFRelease(sa);
 #endif /* NO_SECURITYFRAMEWORK */
 	}
