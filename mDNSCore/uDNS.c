@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.377  2007/06/22 21:27:21  cheshire
+Modified "could not convert shared secret from base64" log message
+
 Revision 1.376  2007/06/20 01:10:12  cheshire
 <rdar://problem/5280520> Sync iPhone changes into main mDNSResponder code
 
@@ -737,7 +740,11 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 
 	if (DNSDigest_ConstructHMACKeyfromBase64(info, b64keydata) < 0)
 		{
-		LogMsg("ERROR: mDNS_SetSecretForDomain: could not convert shared secret %s from base64", b64keydata);
+		#if LogAllOperations
+			LogMsg("ERROR: mDNS_SetSecretForDomain: could not convert shared secret %s from base64", b64keydata);
+		#else
+			LogMsg("ERROR: mDNS_SetSecretForDomain: could not convert shared secret from base64");
+		#endif
 		return(mStatus_BadParamErr);
 		}
 
