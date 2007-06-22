@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.419  2007/06/22 21:32:00  cheshire
+<rdar://problem/5239020> Use SecKeychainCopyDefault instead of SecKeychainOpen
+
 Revision 1.418  2007/06/21 16:37:43  jgraessley
 Bug #: 5280520
 Reviewed by: Stuart Cheshire
@@ -432,7 +435,6 @@ static SecKeychainRef ServerKC;
 #endif /* NO_SECURITYFRAMEWORK */
 
 #define DYNDNS_KEYCHAIN_SERVICE "DynDNS Shared Secret"
-#define SYSTEM_KEYCHAIN_PATH "/Library/Keychains/System.keychain"
 
 CFStringRef NetworkChangedKey_IPv4;
 CFStringRef NetworkChangedKey_IPv6;
@@ -1543,8 +1545,8 @@ mDNSexport mStatus mDNSPlatformTLSSetupCerts(void)
 	OSStatus				err;
 
 	// Pick a keychain
-	err = SecKeychainOpen(SYSTEM_KEYCHAIN_PATH, &ServerKC);
-	if (err) { LogMsg("ERROR: mDNSPlatformTLSSetupCerts: SecKeychainOpen returned %d", (int) err); return err; }
+	err = SecKeychainCopyDefault(&ServerKC);
+	if (err) { LogMsg("ERROR: mDNSPlatformTLSSetupCerts: SecKeychainCopyDefault returned %d", (int) err); return err; }
 
 	// search for "any" identity matching specified key use
 	// In this app, we expect there to be exactly one
@@ -2561,8 +2563,8 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 	if (!sa) { LogMsg("SetDomainSecrets: CFArrayCreateMutable failed"); return; }
 
 	SecKeychainRef skc;
-	OSStatus err = SecKeychainOpen(SYSTEM_KEYCHAIN_PATH, &skc);
-	if (err) LogMsg("SetDomainSecrets: SecKeychainOpen %d", err);
+	OSStatus err = SecKeychainCopyDefault(&skc);
+	if (err) LogMsg("SetDomainSecrets: SecKeychainCopyDefault %d", err);
 	else
 		{
 		SecKeychainSearchRef searchRef;
@@ -2776,20 +2778,22 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 #ifndef NO_SECURITYFRAMEWORK
 mDNSlocal OSStatus KeychainChanged(SecKeychainEvent keychainEvent, SecKeychainCallbackInfo *info, void *context)
 	{
-	mDNS *const m = (mDNS *const)context;
-	char         path[1024];
-	UInt32       pathLen = sizeof(path);
-	OSStatus     err = SecKeychainGetPath(info->keychain, &pathLen, path);
 	(void) keychainEvent;
-	if (err) LogMsg("SecKeychainGetPath failed: %d", err);
-	else if (strncmp(SYSTEM_KEYCHAIN_PATH, path, pathLen) == 0)
+	mDNS *const m = (mDNS *const)context;
+	SecKeychainRef skc;
+	OSStatus err = SecKeychainCopyDefault(&skc);
+	if (!err)
 		{
-		LogOperation("***   Keychain Changed   ***");
-		KQueueLock(m);
-		mDNS_Lock(m);
-		SetDomainSecrets((mDNS*)context);
-		mDNS_Unlock(m);
-		KQueueUnlock(m, "KeychainChanged");
+		if (info->keychain == skc)
+			{
+			LogOperation("***   Keychain Changed   ***");
+			KQueueLock(m);
+			mDNS_Lock(m);
+			SetDomainSecrets((mDNS*)context);
+			mDNS_Unlock(m);
+			KQueueUnlock(m, "KeychainChanged");
+			}
+		CFRelease(skc);
 		}
 	return 0;
 	}
