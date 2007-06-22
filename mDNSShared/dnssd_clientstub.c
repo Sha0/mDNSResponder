@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.76  2007/06/22 20:12:18  cheshire
+<rdar://problem/5277024> Leak in DNSServiceRefDeallocate
+
 Revision 1.75  2007/05/23 18:59:22  cheshire
 Remove unnecessary IPC_FLAGS_REUSE_SOCKET
 
@@ -585,7 +588,7 @@ void DNSSD_API DNSServiceRefDeallocate(DNSServiceRef sdRef)
 		if (dnssd_SocketValid(sdRef->sockfd)) dnssd_close(sdRef->sockfd);
 		while (sdRef)
 			{
-			DNSServiceOp *p = sdRef->next;
+			DNSServiceOp *p = sdRef;
 			sdRef = sdRef->next;
 			free(p);
 			}
