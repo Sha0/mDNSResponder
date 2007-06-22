@@ -30,6 +30,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.319  2007/06/22 20:47:08  cheshire
+<rdar://problem/5285417> DOS charset changes from CP932 to CP850 after Computer Name conflict
+Made a "SafeSCPreferencesSetComputerName" routine to set the Computer Name without changing the machine's default character set
+
 Revision 1.318  2007/06/20 01:45:40  cheshire
 When showing dormant interfaces, display last-seen IP address for that dormant interface
 
@@ -1477,6 +1481,17 @@ mDNSlocal void ShowNameConflictNotification(CFStringRef header, CFStringRef subt
 	}
 #endif /* NO_CFUSERNOTIFICATION */
 
+// We want to write the new Computer Name to System Preferences, without disturbing the user-selected
+// system-wide default character set used for things like AppleTalk NBP and NETBIOS service advertising.
+// Since both are set by the same call, we need to take care to set the name without changing the default character set.
+mDNSlocal Boolean SafeSCPreferencesSetComputerName(SCPreferencesRef prefs, CFStringRef name)
+	{
+	CFStringEncoding charset = kCFStringEncodingUTF8;					// Defensive coding -- assume UTF8
+	CFStringRef cfs = SCDynamicStoreCopyComputerName(NULL, &charset);	// Get Computer Name and system default character set
+	CFRelease(cfs);														// Discard the old name we don't care about
+	return(SCPreferencesSetComputerName(prefs, name, charset));			// Set new name, preserving current default character set
+	}
+
 static CFStringRef CFS_OQ;
 static CFStringRef CFS_CQ;
 static CFStringRef CFS_Format;
@@ -1500,7 +1515,7 @@ mDNSlocal void RecordUpdatedName(const mDNS *const m, const domainlabel *const o
 	// We tag a zero-width non-breaking space at the end of the literal text to guarantee that, no matter what
 	// arbitrary computer name the user may choose, this exact text (with zero-width non-breaking space added)
 	// can never be one that occurs in the Localizable.strings translation file.
-	const SCPreferencesRef session   = SCPreferencesCreate(NULL, CFSTR("mDNSResponder RecordUpdatedName"), NULL);
+	const SCPreferencesRef session = SCPreferencesCreate(NULL, CFSTR("mDNSResponder RecordUpdatedName"), NULL);
 	if (!cfoldname || !cfnewname || !session || !SCPreferencesLock(session, 0))	// If we can't get the lock don't wait
 		LogMsg("RecordUpdatedName: ERROR: Couldn't create SCPreferences session");
 	else
@@ -1515,7 +1530,7 @@ mDNSlocal void RecordUpdatedName(const mDNS *const m, const domainlabel *const o
 			(OSXVers < 8) ? CFStringCreateMutable(NULL, 0) : (CFMutableStringRef)CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 		Boolean result;
 		if (newdl == &gNotificationPrefHostLabel) result = SCPreferencesSetLocalHostName(session, cfnewname);
-		else result = SCPreferencesSetComputerName(session, cfnewname, kCFStringEncodingUTF8);
+		else result = SafeSCPreferencesSetComputerName(session, cfnewname);
 		if (!result || !SCPreferencesCommitChanges(session) || !SCPreferencesApplyChanges(session) || !s1 || !s2 || !alertHeader)
 			LogMsg("RecordUpdatedName: ERROR: Couldn't update SCPreferences");
 		else if (m->p->NotifyUser)
