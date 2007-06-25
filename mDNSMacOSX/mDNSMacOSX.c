@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.421  2007/06/25 20:58:11  cheshire
+<rdar://problem/5234463> Write the Multicast DNS domains to the DynamicStore
+Additional refinement: Add mDNS domain list new new DynamicStore entity "State:/Network/MulticastDNS"
+
 Revision 1.420  2007/06/22 21:52:14  cheshire
 <rdar://problem/5234463> Write the Multicast DNS domains to the DynamicStore
 
@@ -2550,6 +2554,7 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 	(void)m;
 	LogMsg("Note: SetDomainSecrets: no keychain support");
 #else
+
 	LogOperation("SetDomainSecrets");
 
 	// Rather than immediately deleting all keys now, we mark them for deletion in ten seconds.
@@ -2563,13 +2568,6 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 
 	CFMutableArrayRef sa = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 	if (!sa) { LogMsg("SetDomainSecrets: CFArrayCreateMutable failed"); return; }
-
-	CFArrayAppendValue(sa, CFSTR("local"));
-	CFArrayAppendValue(sa, CFSTR("254.169.in-addr.arpa"));
-	CFArrayAppendValue(sa, CFSTR("8.e.f.ip6.arpa"));
-	CFArrayAppendValue(sa, CFSTR("9.e.f.ip6.arpa"));
-	CFArrayAppendValue(sa, CFSTR("a.e.f.ip6.arpa"));
-	CFArrayAppendValue(sa, CFSTR("b.e.f.ip6.arpa"));
 
 	SecKeychainRef skc;
 	OSStatus err = SecKeychainCopyDefault(&skc);
@@ -2674,6 +2672,24 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 	else { SCDynamicStoreSetValue(store, CFSTR("State:/Network/" kDNSServiceCompPrivateDNS), sa); CFRelease(store); }
 	CFRelease(sa);
 #endif /* NO_SECURITYFRAMEWORK */
+	}
+
+mDNSlocal void SetLocalDomains(void)
+	{
+	CFMutableArrayRef sa = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
+	if (!sa) { LogMsg("SetLocalDomains: CFArrayCreateMutable failed"); return; }
+
+	CFArrayAppendValue(sa, CFSTR("local"));
+	CFArrayAppendValue(sa, CFSTR("254.169.in-addr.arpa"));
+	CFArrayAppendValue(sa, CFSTR("8.e.f.ip6.arpa"));
+	CFArrayAppendValue(sa, CFSTR("9.e.f.ip6.arpa"));
+	CFArrayAppendValue(sa, CFSTR("a.e.f.ip6.arpa"));
+	CFArrayAppendValue(sa, CFSTR("b.e.f.ip6.arpa"));
+
+	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:SetLocalDomains"), NULL, NULL);
+	if (!store) LogMsg("SetLocalDomains: SCDynamicStoreCreate failed");
+	else { SCDynamicStoreSetValue(store, CFSTR("State:/Network/" kDNSServiceCompMulticastDNS), sa); CFRelease(store); }
+	CFRelease(sa);
 	}
 
 mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
@@ -2987,6 +3003,7 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 
 	mDNS_Lock(m);
 	SetDomainSecrets(m);
+	SetLocalDomains();
 	mDNS_Unlock(m);
 
 #ifndef NO_SECURITYFRAMEWORK
