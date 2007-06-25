@@ -2241,7 +2241,8 @@ DNSServiceErrorType DNSSD_API DNSServiceSetDefaultDomainForUser
  * for the list of PrivateDNS domains that need to be handed off to mDNSResponder
  * (the complete key is "State:/Network/PrivateDNS")
  */
-#define kDNSServiceCompPrivateDNS "PrivateDNS"
+#define kDNSServiceCompPrivateDNS   "PrivateDNS"
+#define kDNSServiceCompMulticastDNS "MulticastDNS"
 
 #endif //__APPLE_API_PRIVATE
 
