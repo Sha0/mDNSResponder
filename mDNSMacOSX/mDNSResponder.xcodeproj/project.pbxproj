@@ -178,6 +178,7 @@
 		FFFA38630AEEDB090065B80A /* dnssd_clientlib.c in Sources */ = {isa = PBXBuildFile; fileRef = FFFA38620AEEDB090065B80A /* dnssd_clientlib.c */; };
 		FFFA38650AEEDB130065B80A /* dnssd_clientstub.c in Sources */ = {isa = PBXBuildFile; fileRef = FFFA38640AEEDB130065B80A /* dnssd_clientstub.c */; };
 		FFFA38660AEEDB2B0065B80A /* dnssd_ipc.c in Sources */ = {isa = PBXBuildFile; fileRef = F5E11B5A04A28126019798ED /* dnssd_ipc.c */; };
+		FFFF8F810C3307C400722979 /* dnsextd.conf in CopyFiles */ = {isa = PBXBuildFile; fileRef = FFFF8F800C3307AC00722979 /* dnsextd.conf */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXBuildRule section */
@@ -373,6 +374,16 @@
 			);
 			runOnlyForDeploymentPostprocessing = 1;
 		};
+		FFFF8F770C32F0FD00722979 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 8;
+			dstPath = /etc;
+			dstSubfolderSpec = 0;
+			files = (
+				FFFF8F810C3307C400722979 /* dnsextd.conf in CopyFiles */,
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -394,7 +405,7 @@
 		7F461DB5062DBF2900672BF3 /* DNSDigest.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = DNSDigest.c; path = ../mDNSCore/DNSDigest.c; sourceTree = SOURCE_ROOT; };
 		7F869685066EE02400D2A2DC /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = /System/Library/Frameworks/Security.framework; sourceTree = "<absolute>"; };
 		7FC8F9D406D14E66007E879D /* LegacyNATTraversal.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = LegacyNATTraversal.c; sourceTree = SOURCE_ROOT; };
-		D284BE730ADD80740027CCDF /* mDNSResponder */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = mDNSResponder; sourceTree = BUILT_PRODUCTS_DIR; };
+		D284BE730ADD80740027CCDF /* mDNSResponder */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "compiled.mach-o.executable"; path = mDNSResponder; sourceTree = BUILT_PRODUCTS_DIR; };
 		D284BE950ADD80800027CCDF /* mDNSResponder.debug */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = mDNSResponder.debug; sourceTree = BUILT_PRODUCTS_DIR; };
 		D284BEA30ADD808B0027CCDF /* mDNS */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = mDNS; sourceTree = BUILT_PRODUCTS_DIR; };
 		D284BEB00ADD80920027CCDF /* dns-sd */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "dns-sd"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -466,6 +477,7 @@
 		FFFB0DAE07B43CBA00B88D48 /* ConfigurationAuthority.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = ConfigurationAuthority.c; sourceTree = "<group>"; };
 		FFFB0DAF07B43CBA00B88D48 /* ddnswriteconfig.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ddnswriteconfig.m; sourceTree = "<group>"; };
 		FFFB0DB407B43D2700B88D48 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = /System/Library/Frameworks/Foundation.framework; sourceTree = "<absolute>"; };
+		FFFF8F800C3307AC00722979 /* dnsextd.conf */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = dnsextd.conf; path = ../mDNSShared/dnsextd.conf; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -614,6 +626,7 @@
 				FF1C919D07021D77001048AB /* dns-sd.1 */,
 				FF485D5105632E0000130380 /* mDNSResponder.8 */,
 				FFF4F63A06CFE4DD00459EFD /* dnsextd.8 */,
+				FFFF8F800C3307AC00722979 /* dnsextd.conf */,
 				FF85880B0BD599F40080D89F /* mDNSResponder.sb */,
 				7F18A9F60587CEF6001880B3 /* DNSCommon.c */,
 				7F18A9F70587CEF6001880B3 /* uDNS.c */,
@@ -871,7 +884,6 @@
 				D284BE640ADD80740027CCDF /* Frameworks */,
 				D284BE690ADD80740027CCDF /* Rez */,
 				D284BE6A0ADD80740027CCDF /* CopyFiles */,
-				FF8588160BD59A6A0080D89F /* CopyFiles */,
 				D284BE6C0ADD80740027CCDF /* ShellScript */,
 			);
 			buildRules = (
@@ -973,6 +985,7 @@
 				D284BECE0ADD80A20027CCDF /* Frameworks */,
 				D284BED30ADD80A20027CCDF /* Rez */,
 				D284BED40ADD80A20027CCDF /* CopyFiles */,
+				FFFF8F770C32F0FD00722979 /* CopyFiles */,
 				FF37FAAD0BC581780044A5CF /* ShellScript */,
 			);
 			buildRules = (
