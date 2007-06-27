@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.378  2007/06/27 20:25:10  cheshire
+Expanded dnsbugtest comment, explaining requirement that we also need these
+test queries to black-hole before they get to the root name servers.
+
 Revision 1.377  2007/06/22 21:27:21  cheshire
 Modified "could not convert shared secret from base64" log message
 
@@ -3228,7 +3232,7 @@ mDNSexport void uDNS_ReceiveNATMap(mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 //    e.g. "ping long-name-crashes-the-buggy-router.in-addr.arpa" will crash one of these.
 //
 // 2. Any query that results in a large response with the TC bit set.
-// 
+//
 // 3. Any PTR query that doesn't begin with four decimal numbers.
 //    These gateways appear to assume that the only possible PTR query is a reverse-mapping query
 //    (e.g. "1.0.168.192.in-addr.arpa") and if they ever get a PTR query where the first four
@@ -3236,13 +3240,19 @@ mDNSexport void uDNS_ReceiveNATMap(mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 //    These gateways also ignore the remainder of the name following the four decimal numbers
 //    -- whether or not it actually says in-addr.arpa, they just make up an answer anyway.
 //
-// The challenge therefore is to craft a query that will discern that the DNS server
-// is one of these buggy ones without crashing it. To do this we send this query:
+// The challenge therefore is to craft a query that will discern whether the DNS server
+// is one of these buggy ones, without crashing it. Furthermore we don't want our test
+// queries making it all the way to the root name servers, putting extra load on those
+// name servers and giving Apple a bad reputation. To this end we send this query:
 //     dig -t ptr 1.0.0.127.dnsbugtest.1.0.0.127.in-addr.arpa.
 //
 // The text preceeding the ".in-addr.arpa." is under 32 bytes, so it won't cause crash (1).
 // It will not yield a large response with the TC bit set, so it won't cause crash (2).
 // It starts with four decimal numbers, so it won't cause crash (3).
+// The name falls within the "1.0.0.127.in-addr.arpa." domain, the reverse-mapping name for the local
+// loopback address, and therefore the query will black-hole at the first properly-configured DNS server
+// it reaches, making it highly unlikely that this query will make it all the way to the root.
+//
 // Finally, the correct response to this query is NXDOMAIN or a similar error, but the
 // gateways that ignore the remainder of the name following the four decimal numbers
 // give themselves away by actually returning a result for this nonsense query.
