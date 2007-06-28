@@ -26,6 +26,9 @@
 ; SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ;
 ; $Log: mDNSResponder.sb,v $
+; Revision 1.17  2007/06/28 20:34:45  cheshire
+; Updated comments to reflect new seatbelt language syntax
+;
 ; Revision 1.16  2007/05/29 23:32:46  cheshire
 ; Rearrange file so SPI warning isn't deleted when CVS history is trimmed from installed copy
 ;
@@ -88,23 +91,23 @@
 ; Apple may in future announce an official public supported sandbox API, but until then Developers
 ; are cautioned not to build products that use or depend on the sandbox facilities illustrated here.
 
-; Use "debug on" to log all operations examined by seatbelt, whether allowed or not.
-; Use "debug deny" to log only operations that are disallowed by seatbelt (i.e. "deny" or "signal")
+; Use "debug all" to log all operations examined by seatbelt, whether allowed or not.
+; Use "debug deny" to log only operations that are denied by seatbelt
 ; to discover what specific attempted operation is causing an exception.
 
-;(debug on)
+;(debug all)
 (debug deny)
 
-; To help debugging, "signal FPE" will trigger a fake floating-point exception, which
-; will crash the process and show the call stack leading to the offending operation.
+; To help debugging, "with send-signal SIGFPE" will trigger a fake floating-point exception,
+; which will crash the process and show the call stack leading to the offending operation.
 ; For the shipping version "deny" is probably better because it vetoes the operation
 ; without killing the process.
 
 ;(deny default)
 (deny default (with send-signal SIGFPE))
 
-; Special exception: "signal" command doesn't work with the mach-lookup operation,
-; so have to make that a "deny" instead
+; Special exception: "send-signal" command doesn't work with the mach-lookup operation,
+; so have to make that a plain "deny" instead
 (deny mach-lookup)
 
 ; Rules to allow the operations mDNSResponder needs start here
