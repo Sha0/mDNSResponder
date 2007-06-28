@@ -26,6 +26,9 @@
 ; SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ;
 ; $Log: mDNSResponder.sb,v $
+; Revision 1.18  2007/06/28 20:43:35  cheshire
+; <rdar://problem/5298202> Seatbelt: mDNSResponder needs to be able to access /dev/autofs_nowait
+;
 ; Revision 1.17  2007/06/28 20:34:45  cheshire
 ; Updated comments to reflect new seatbelt language syntax
 ;
@@ -123,7 +126,8 @@
 ; Allow us to create our PID file
 (allow file-read*     file-write*     (regex "^/private/var/run/mDNSResponder\.pid\$"))
 
-; Allow us to read system version and settings
+; Allow us to read system version, settings, and other miscellaneous necessary file system accesses
+(allow file-read-data                 (regex "^/dev/autofs_nowait\$"))				; Used by CF to circumvent automount triggers
 (allow file-read-data                 (regex "^/usr/sbin(/mDNSResponder)?\$"))		; Needed for CFCopyVersionDictionary()
 (allow file-read-data                 (regex "^/usr/share/icu/.*\$"))
 (allow file-read-data                 (regex "^/usr/share/zoneinfo/.*\$"))
