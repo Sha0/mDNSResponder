@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.320  2007/06/28 21:16:27  cheshire
+Rename "m->nextevent" as more informative "m->NextuDNSEvent"
+
 Revision 1.319  2007/06/22 20:47:08  cheshire
 <rdar://problem/5285417> DOS charset changes from CP932 to CP850 after Computer Name conflict
 Made a "SafeSCPreferencesSetComputerName" routine to set the Computer Name without changing the machine's default character set
@@ -2342,8 +2345,8 @@ mDNSlocal void ShowTaskSchedulingError(mDNS *const m)
 	if (m->SuppressSending && m->timenow - m->SuppressSending >= 0)
 		LogMsg("Task Scheduling Error: m->SuppressSending %d",       m->timenow - m->SuppressSending);
 #ifndef UNICAST_DISABLED
-	if (m->timenow - m->nextevent             >= 0)
-		LogMsg("Task Scheduling Error: nextevent %d",                m->timenow - m->nextevent);
+	if (m->timenow - m->NextuDNSEvent         >= 0)
+		LogMsg("Task Scheduling Error: NextuDNSEvent %d",            m->timenow - m->NextuDNSEvent);
 #endif
 	if (m->timenow - m->NextCacheCheck        >= 0)
 		LogMsg("Task Scheduling Error: m->NextCacheCheck %d",        m->timenow - m->NextCacheCheck);

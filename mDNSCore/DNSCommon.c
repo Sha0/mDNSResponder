@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.159  2007/06/28 21:17:17  cheshire
+Rename "m->nextevent" as more informative "m->NextuDNSEvent"
+
 Revision 1.158  2007/05/25 00:25:43  cheshire
 <rdar://problem/5227737> Need to enhance putRData to output all current known types
 
@@ -2443,7 +2446,7 @@ mDNSlocal mDNSs32 GetNextScheduledEvent(const mDNS *const m)
 	if (m->NewLocalRecords && LocalRecordReady(m->NewLocalRecords)) return(m->timenow);
 	if (m->SuppressSending)                                         return(m->SuppressSending);
 #ifndef UNICAST_DISABLED
-	if (e - m->nextevent             > 0) e = m->nextevent;
+	if (e - m->NextuDNSEvent         > 0) e = m->NextuDNSEvent;
 #endif
 	if (e - m->NextCacheCheck        > 0) e = m->NextCacheCheck;
 	if (e - m->NextScheduledQuery    > 0) e = m->NextScheduledQuery;
