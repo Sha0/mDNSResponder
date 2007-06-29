@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.384  2007/06/29 00:08:07  vazquez
+<rdar://problem/5301908> Clean up NAT state machine (necessary for 6 other fixes)
+
 Revision 1.383  2007/06/20 01:10:12  cheshire
 <rdar://problem/5280520> Sync iPhone changes into main mDNSResponder code
 
@@ -908,6 +911,110 @@ typedef void mDNSRecordCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 // The internal data structures of the mDNS code may not be in a state where mDNS API calls may be made safely.
 typedef void mDNSRecordUpdateCallback(mDNS *const m, AuthRecord *const rr, RData *OldRData);
 
+// ***************************************************************************
+#if 0
+#pragma mark - NAT Traversal structures and constants
+#endif
+
+#define NATMAP_MAX_RETRY_INTERVAL	((mDNSPlatformOneSecond * 60) * 15) // Max retry interval is 15 minutes
+#define NATMAP_MIN_RETRY_INTERVAL	(mDNSPlatformOneSecond * 2)             // Min retry interval is 2 seconds
+#define NATMAP_INIT_RETRY (mDNSPlatformOneSecond / 4)      // start at 250ms w/ exponential decay
+#define NATMAP_DEFAULT_LEASE (60 * 60)                             // lease life in seconds
+#define NATMAP_VERS 0
+
+typedef enum
+	{
+	AddrRequestFlag = 0x1,
+	MapUDPFlag	= 0x2,
+	MapTCPFlag	= 0x4,
+	LegacyFlag	= 0x10
+	} NATOptFlags_t;
+	
+typedef enum
+	{
+	NATOp_AddrRequest    = 0,
+	NATOp_MapUDP         = 1,
+	NATOp_MapTCP         = 2,
+	
+	NATOp_AddrResponse   = 0x80 | 0,
+	NATOp_MapUDPResponse = 0x80 | 1,
+	NATOp_MapTCPResponse = 0x80 | 2,
+	} NATOp_t;
+
+enum
+	{
+	NATErr_None = 0,
+	NATErr_Vers = 1,
+	NATErr_Refused = 2,
+	NATErr_NetFail = 3,
+	NATErr_Res = 4,
+	NATErr_Opcode = 5
+	};
+
+typedef mDNSu16 NATErr_t;
+
+typedef packedstruct
+	{
+	mDNSu8 vers;
+	mDNSu8 opcode;
+	} NATAddrRequest;
+
+typedef packedstruct
+	{
+	mDNSu8     vers;
+	mDNSu8     opcode;
+	mDNSu16    err;
+	mDNSu32    uptime;
+	mDNSv4Addr PubAddr;
+	} NATAddrReply;
+
+typedef packedstruct
+	{
+	mDNSu8 vers;
+	mDNSu8 opcode;
+	mDNSOpaque16 unused;
+	mDNSIPPort priv;
+	mDNSIPPort pub;
+	mDNSu32    NATReq_lease;
+	} NATPortMapRequest;
+
+typedef packedstruct
+	{
+	mDNSu8     vers;
+	mDNSu8     opcode;
+	mDNSu16    err;
+	mDNSu32    uptime;
+	mDNSIPPort priv;
+	mDNSIPPort pub;
+	mDNSu32    NATRep_lease;
+	} NATPortMapReply;
+
+typedef void (*NATTraversalClientCallback)(mDNS *m, mDNSv4Addr ExternalAddress, NATTraversalInfo *n, mStatus err);
+
+struct NATTraversalInfo_struct
+	{
+	// Internal state fields. These are used internally by mDNSCore; the client layer needn't be concerned with them.
+	NATTraversalInfo	*next;
+
+	NATPortMapRequest NATPortReq;	// request packet
+	
+	NATOptFlags_t	opFlags;		// flags for everything that needs to be done
+	mDNSIPPort	publicPort;		// established public port mapping
+	
+	// PortMapping fields
+	mDNSs32		retryPortMap;		// absolute time when we retry
+	mDNSs32		retryIntervalPortMap;	// delta between time sent and retry
+	mDNSs32     ExpiryTime;
+	
+	// Client API fields: The client must set up these fields *before* making any NAT traversal API calls
+	NATTraversalClientCallback	clientCallback;	// returns response to whoever called the API
+	void			*clientContext;
+	mDNSu8		protocol;
+	mDNSIPPort	privatePort;
+	mDNSIPPort	publicPortreq;		// requested public port mapping
+	mDNSu32		portMappingLease;	// ttl
+	};
+	
 typedef struct
 	{
 	mDNSu8           RecordType;		// See enum above
@@ -1016,7 +1123,7 @@ struct AuthRecord_struct
 	mDNSIPPort   UpdatePort;	// port on which server accepts dynamic updates
 								// !!!KRS not technically correct to cache longer than TTL
 								// SDC Perhaps should keep a reference to the relevant SRV record in the cache?
-	NATTraversalInfo *NATinfo;	// NAT traversal context; may be NULL
+	NATTraversalInfo NATinfo;	// NAT traversal context; may be NULL
 	ZoneData  *nta;
 
 	// uDNS_UpdateRecord support fields
@@ -1201,7 +1308,7 @@ struct ServiceRecordSet_struct
 	domainname   zone;     // the zone that is updated
 	mDNSAddr     ns;       // primary name server for the record's zone  !!!KRS not technically correct to cache longer than TTL
 	mDNSIPPort   SRSUpdatePort;     // port on which server accepts dynamic updates
-	NATTraversalInfo *NATinfo; // may be NULL
+	NATTraversalInfo NATinfo; // may be NULL
     mDNSBool     ClientCallbackDeferred;  // invoke client callback on completion of pending operation(s)
 	mStatus      DeferredStatus;          // status to deliver when above flag is set
     mDNSBool     SRVUpdateDeferred;       // do we need to change target or port once current operation completes?
@@ -1358,8 +1465,8 @@ struct DNSQuestion_struct
 
 	// LLQ-specific fields. These fields are only meaningful when LongLived flag is set
 	LLQ_State             state;
-	NATTraversalInfo     *NATInfoTCP;		// This is used if we're browsing behind a NAT
-	NATTraversalInfo     *NATInfoUDP;
+	NATTraversalInfo      NATInfoTCP;		// This is used if we're browsing behind a NAT
+	NATTraversalInfo      NATInfoUDP;
 	mDNSIPPort            eventPort;		// This is non-zero if this is a private LLQ.  It is the port number that both the TCP
 											// and the UDP socket are bound to.  This allows us to receive event notifications via
 											// TCP or UDP.
@@ -1444,116 +1551,6 @@ struct ZoneData_struct
 
 extern ZoneData *StartGetZoneData(mDNS *const m, const domainname *const name, const ZoneService target, ZoneDataCallback callback, void *callbackInfo);
 extern void CancelGetZoneData(mDNS *const m, ZoneData *nta);
-
-// ***************************************************************************
-#if 0
-#pragma mark - NAT Traversal structures and constants
-#endif
-
-#define NATMAP_INIT_RETRY (mDNSPlatformOneSecond / 4)          // start at 250ms w/ exponential decay
-#define NATMAP_MAX_RETRY mDNSPlatformOneSecond                 // back off to once per second
-#define NATMAP_MAX_TRIES 3                                     // for max 3 tries
-#define NATMAP_DEFAULT_LEASE (60 * 60)  // lease life in seconds
-#define NATMAP_VERS 0
-#define NATMAP_RESPONSE_MASK 0x80
-
-typedef enum
-	{
-	NATOp_AddrRequest    = 0,
-	NATOp_MapUDP         = 1,
-	NATOp_MapTCP         = 2,
-	
-	NATOp_AddrResponse   = 0x80 | 0,
-	NATOp_MapUDPResponse = 0x80 | 1,
-	NATOp_MapTCPResponse = 0x80 | 2,
-	} NATOp_t;
-
-enum
-	{
-	NATErr_None = 0,
-	NATErr_Vers = 1,
-	NATErr_Refused = 2,
-	NATErr_NetFail = 3,
-	NATErr_Res = 4,
-	NATErr_Opcode = 5
-	};
-
-typedef mDNSu16 NATErr_t;
-
-typedef enum
-	{
-	NATState_Init         = 0,
-	NATState_Request      = 1,
-	NATState_Established  = 2,
-	NATState_Legacy       = 3,
-	NATState_Error        = 4,
-	NATState_Refresh      = 5,
-	NATState_Deleted      = 6
-	} NATState_t;
-// Note: we have no explicit "cancelled" state, where a service/interface is deregistered while we
-// have an outstanding NAT request.  This is conveyed by the "reg" pointer being set to NULL
-
-typedef packedstruct
-	{
-	mDNSu8 vers;
-	mDNSu8 opcode;
-	} NATAddrRequest;
-
-typedef packedstruct
-	{
-	mDNSu8     vers;
-	mDNSu8     opcode;
-	mDNSu16    err;
-	mDNSu32    uptime;
-	mDNSv4Addr PubAddr;
-	} NATAddrReply;
-
-typedef packedstruct
-	{
-	mDNSu8 vers;
-	mDNSu8 opcode;
-	mDNSOpaque16 unused;
-	mDNSIPPort priv;
-	mDNSIPPort pub;
-	mDNSu32    NATReq_lease;
-	} NATPortMapRequest;
-
-typedef packedstruct
-	{
-	mDNSu8     vers;
-	mDNSu8     opcode;
-	mDNSu16    err;
-	mDNSu32    uptime;
-	mDNSIPPort priv;
-	mDNSIPPort pub;
-	mDNSu32    NATRep_lease;
-	} NATPortMapReply;
-
-// Pass NULL for pkt on error (including timeout)
-typedef mDNSBool (*NATResponseHndlr)(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt);
-
-struct NATTraversalInfo_struct
-	{
-	NATOp_t op;
-	NATResponseHndlr ReceiveResponse;	// Should be one of:
-										// ReceiveNATAddrResponse (uDNS.c)
-										// uDNS_HandleNATPortMapReply(uDNS.c)
-										// port_mapping_reply (uds_daemon.c)
-	union { AuthRecord *RecordRegistration; ServiceRecordSet *ServiceRegistration; } reg;
-    mDNSAddr Router;
-	mDNSIPPort PrivatePort;
-    mDNSIPPort PublicPort;
-	mDNSu32 PortMappingLease;
-    union { NATAddrRequest AddrReq; NATPortMapRequest PortReq; } request;
-	mDNSs32 retry;                   // absolute time when we retry
-	mDNSs32 RetryInterval;           // delta between time sent and retry
-	int ntries;
-	NATState_t state;
-	NATTraversalInfo *next;
-	mDNSBool isLLQ;
-	void *NATTraversalContext;
-	unsigned refs;
-	};
 
 typedef struct DNameListElem
 	{
@@ -1649,12 +1646,11 @@ struct mDNS_struct
 	mDNSs32 SuppressProbes;
 
 	// unicast-specific data
-	mDNSs32           nextevent;
+	mDNSs32           NextuDNSEvent;		// uDNS next event
     mDNSs32           NextSRVUpdate;        // Time to perform delayed update
 	mDNSs32 SuppressStdPort53Queries;       // Wait before allowing the next standard unicast query to the user's configured DNS server
 
 	ServiceRecordSet *ServiceRegistrations;
-	NATTraversalInfo *NATTraversals;
 	mDNSu16           NextMessageID;
     DNSServer        *DNSServers;           // list of DNS servers
 
@@ -1676,6 +1672,14 @@ struct mDNS_struct
     mDNSBool          RegisterSearchDomains;
 	domainname		  RegDomain;            // Default wide-area zone for service registration
 	DNameListElem    *DefRegList;           // manually generated list of domains where we register for empty string registrations
+
+	// NAT traversal fields
+	NATTraversalInfo *NATTraversals;
+	NATTraversalInfo *CurrentNATTraversal;
+	NATAddrRequest    NATAddrReq;
+	mDNSs32		      retryGetAddr;			// absolute time when we retry
+	mDNSs32		      retryIntervalGetAddr;	// delta between time sent and retry
+	mDNSv4Addr        ExternalAddress;
 
 	// Fixed storage, to avoid creating large objects on the stack
 	DNSMessage        imsg;                 // Incoming message received from wire
@@ -1847,6 +1851,9 @@ extern mStatus mDNS_StopQueryWithRemoves(mDNS *const m, DNSQuestion *const quest
 extern mStatus mDNS_Reconfirm (mDNS *const m, CacheRecord *const cacherr);
 extern mStatus mDNS_ReconfirmByValue(mDNS *const m, ResourceRecord *const rr);
 extern mDNSs32 mDNS_TimeNow(const mDNS *const m);
+
+extern mStatus mDNS_StartNATOperation(mDNS *const m, NATTraversalInfo *traversal);
+extern mStatus mDNS_StopNATOperation(mDNS *const m, NATTraversalInfo *traversal);
 
 // ***************************************************************************
 #if 0

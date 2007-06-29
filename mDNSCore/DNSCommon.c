@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.160  2007/06/29 00:06:42  vazquez
+<rdar://problem/5301908> Clean up NAT state machine (necessary for 6 other fixes)
+
 Revision 1.159  2007/06/28 21:17:17  cheshire
 Rename "m->nextevent" as more informative "m->NextuDNSEvent"
 
@@ -1142,7 +1145,7 @@ mDNSexport void mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mD
 	rr->zone.c[0]         = 0;
 	rr->UpdateServer      = zeroAddr;
 	rr->UpdatePort        = zeroIPPort;
-	rr->NATinfo           = 0;
+	mDNSPlatformMemZero(&rr->NATinfo, sizeof(rr->NATinfo));
 	rr->nta               = mDNSNULL;
 	rr->OrigRData         = 0;
 	rr->OrigRDLen         = 0;

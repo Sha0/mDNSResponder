@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.63  2007/06/29 00:09:24  vazquez
+<rdar://problem/5301908> Clean up NAT state machine (necessary for 6 other fixes)
+
 Revision 1.62  2007/05/14 23:53:00  cheshire
 Export mDNS_StartQuery_internal and mDNS_StopQuery_internal so they can be called from uDNS.c
 
@@ -184,22 +187,16 @@ extern void    uDNS_CheckQuery (mDNS *const m);
 extern void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
 	const mDNSAddr *const srcaddr, const mDNSIPPort srcport);
 
-extern void uDNS_ReceiveNATMap(mDNS *m, mDNSu8 *pkt, mDNSu16 len);
-
 // returns time of next scheduled event
 extern void uDNS_Execute(mDNS *const m);
 
 extern mStatus           uDNS_SetupDNSConfig(mDNS *const m);
 extern mStatus           uDNS_RegisterSearchDomains(mDNS *const m);
-extern NATTraversalInfo *uDNS_AllocNATInfo(mDNS *const m, NATOp_t op, mDNSIPPort privatePort, mDNSIPPort publicPort, mDNSu32 ttl, NATResponseHndlr callback);
-extern void              uDNS_FormatPortMaprequest(NATTraversalInfo *info);
-extern mDNSBool          uDNS_HandleNATQueryAddrReply(NATTraversalInfo *n, mDNS * const m, mDNSu8 *pkt, mDNSv4Addr *addr, mStatus *err);
 extern mDNSBool          uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *const srcaddr, const mDNSIPPort srcport);
-extern mDNSBool          uDNS_HandleNATPortMapReply(NATTraversalInfo *n, mDNS * const m, mDNSu8 *pkt);
-extern void              uDNS_SendNATMsg(NATTraversalInfo *info, mDNS *m);
-extern void              uDNS_DeleteNATPortMapping(mDNS *m, NATTraversalInfo *nat);
-extern mDNSBool          uDNS_FreeNATInfo(mDNS *m, NATTraversalInfo *n);
 extern DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const name);
+
+// NAT traversal
+extern void	uDNS_ReceiveNATPMPPacket(mDNS *m, mDNSu8 *pkt, mDNSu16 len);	// Called for each received NAT-PMP packet
 
 #ifdef	__cplusplus
 	}

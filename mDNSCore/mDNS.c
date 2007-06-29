@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.644  2007/06/29 00:07:29  vazquez
+<rdar://problem/5301908> Clean up NAT state machine (necessary for 6 other fixes)
+
 Revision 1.643  2007/06/20 01:10:12  cheshire
 <rdar://problem/5280520> Sync iPhone changes into main mDNSResponder code
 
@@ -920,7 +923,7 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	rr->zone.c[0]         = 0;
 	rr->UpdateServer      = zeroAddr;
 	rr->UpdatePort        = zeroIPPort;
-	rr->NATinfo           = 0;
+	mDNSPlatformMemZero(&rr->NATinfo, sizeof(rr->NATinfo));
 	rr->nta               = mDNSNULL;
 	rr->OrigRData         = 0;
 	rr->OrigRDLen         = 0;
@@ -4413,7 +4416,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 	if (mDNSSameIPPort(srcport, NATPMPPort))
 		{
 		mDNS_Lock(m);
-		uDNS_ReceiveNATMap(m, pkt, (mDNSu16)(end - (mDNSu8 *)pkt));
+		uDNS_ReceiveNATPMPPacket(m, pkt, (mDNSu16)(end - (mDNSu8 *)pkt));
 		mDNS_Unlock(m);
 		return;
 		}
@@ -4537,8 +4540,6 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const questi
 					}
 
 				// Need to work out how to safely transfer this state too -- appropriate context pointers need to be updated or the code will crash
-				if (question->NATInfoTCP)   LogOperation("UpdateQuestionDuplicates did not transfer NATInfoTCP pointer");
-				if (question->NATInfoUDP)   LogOperation("UpdateQuestionDuplicates did not transfer NATInfoUDP pointer");
 				if (question->tcpSock   )   LogOperation("UpdateQuestionDuplicates did not transfer tcpSock pointer");
 				if (question->udpSock   )   LogOperation("UpdateQuestionDuplicates did not transfer udpSock pointer");
 	
@@ -4686,8 +4687,8 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 		question->servPort          = zeroIPPort;
 
 		question->state             = LLQ_GetZoneInfo;
-		question->NATInfoTCP        = mDNSNULL;
-		question->NATInfoUDP        = mDNSNULL;
+		mDNSPlatformMemZero(&question->NATInfoTCP, sizeof(question->NATInfoTCP));
+		mDNSPlatformMemZero(&question->NATInfoUDP, sizeof(question->NATInfoUDP));
 		question->eventPort         = zeroIPPort;
 		question->tcpSock           = mDNSNULL;
 		question->udpSock           = mDNSNULL;
@@ -5814,7 +5815,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	sr->zone.c[0]              = 0;
 	sr->ns                     = zeroAddr;
 	sr->SRSUpdatePort          = zeroIPPort;
-	sr->NATinfo                = 0;
+	mDNSPlatformMemZero(&sr->NATinfo, sizeof(sr->NATinfo));
 	sr->ClientCallbackDeferred = 0;
 	sr->DeferredStatus         = 0;
 	sr->SRVUpdateDeferred      = 0;
@@ -6263,9 +6264,16 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->SuppressProbes          = 0;
 
 #ifndef UNICAST_DISABLED
-	m->nextevent                = timenow + 0x78000000;
+	m->NextuDNSEvent            = timenow + 0x78000000;
 	m->ServiceRegistrations     = mDNSNULL;
 	m->NATTraversals            = mDNSNULL;
+	m->CurrentNATTraversal      = mDNSNULL;
+	m->NATAddrReq.vers          = 0;
+	m->NATAddrReq.opcode        = 0;
+	m->retryGetAddr             = 0;	// absolute time when we retry
+	m->retryIntervalGetAddr     = 0;	// delta between time sent and retry
+	m->ExternalAddress          = zerov4Addr;
+
 	m->NextMessageID            = 0;
 	m->DNSServers               = mDNSNULL;
 	m->Router                   = zeroAddr;

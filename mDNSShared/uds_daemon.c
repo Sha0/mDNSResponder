@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.308  2007/06/29 00:10:07  vazquez
+<rdar://problem/5301908> Clean up NAT state machine (necessary for 6 other fixes)
+
 Revision 1.307  2007/05/25 00:25:44  cheshire
 <rdar://problem/5227737> Need to enhance putRData to output all current known types
 
@@ -563,24 +566,23 @@ struct request_state
 			} servicereg;
 		struct
 			{
-			mDNSInterfaceID       interface_id;
+			mDNSInterfaceID      interface_id;
 			mDNSu32              flags;
 			mDNSu32              protocol;
-			DNSQuestion           q4;
-			DNSQuestion           q6;
+			DNSQuestion          q4;
+			DNSQuestion          q6;
 			} addrinfo;
 		struct
 			{
-			mDNSInterfaceID       interface_id;
+			mDNSInterfaceID      interface_id;
 			mDNSu8               protocol;
-			mDNSIPPort            privatePort;
-			mDNSIPPort            ReqPub;	// Requested public port
-			mDNSIPPort            ActPub;	// Actual public port assigned by NAT gateway
+			mDNSIPPort           privatePort;
+			mDNSIPPort           requestedPub;	// Requested public port
+			mDNSIPPort           actualPub;		// Actual public port assigned by NAT gateway
 			mDNSu32              requestedTTL;
 			mDNSu32              receivedTTL;
-			mDNSv4Addr            addr;
-			NATTraversalInfo     *NATAddrinfo;
-			NATTraversalInfo     *NATMapinfo;
+			mDNSv4Addr           addr;
+			NATTraversalInfo     NATinfo;
 			} pm;
 		struct
 			{
@@ -2644,140 +2646,65 @@ mDNSlocal void handle_getproperty_request(request_state *request)
 
 mDNSlocal void port_mapping_termination_callback(request_state *request)
 	{
-	// %%% BUG %%% Should not be trying to grab mDNSCore internal lock here.
-	// Should only be using supported APIs from mDNSEmbeddedAPI.h.
-	mDNS_Lock(&mDNSStorage);
-
-	if (request->u.pm.NATAddrinfo)
-		uDNS_FreeNATInfo(&mDNSStorage, request->u.pm.NATAddrinfo);
-
-	if (request->u.pm.NATMapinfo)
-		{
-		uDNS_DeleteNATPortMapping(&mDNSStorage, request->u.pm.NATMapinfo);
-		uDNS_FreeNATInfo(&mDNSStorage, request->u.pm.NATMapinfo);
-		}
-
-	mDNS_Unlock(&mDNSStorage);
+	mDNS_StopNATOperation(&mDNSStorage, &request->u.pm.NATinfo);
 	}
 
 // Called via function pointer when we get a NAT-PMP address request or port mapping response
-mDNSlocal mDNSBool port_mapping_reply(NATTraversalInfo *n, mDNS *m, mDNSu8 *pkt)
+mDNSlocal void port_mapping_create_request_callback(mDNS *m, mDNSv4Addr ExternalAddress, NATTraversalInfo *n, mStatus err)
 	{
-	mStatus err = mStatus_NoError;
-	request_state *request = n->NATTraversalContext;
+	request_state *request = (request_state *)n->clientContext;
 	reply_state *rep;
 	int replyLen;
 	char *data;
 
-	if (request->u.pm.NATAddrinfo == n)
+	if (!request) { LogMsg("port_mapping_create_request_callback called with unknown request_state object"); return; }
+
+	if (err)
 		{
-		// %%% BUG %%%
-		// This code shouldn't be here.
-		// The mDNSCore code is supposed to provide the core functionality.
-		// On top of that core, various client code can run.
-		// This UDS client (that wraps the core APIs and exports them across a Unix Domain Socket)
-		// is just one of the various possible mDNSCore clients. It shouldn't be sending and receiving
-		// packets. It should just call an mDNSCore API, and then get a callback when the work is done.
-		mDNSBool ret;
-		request->u.pm.addr = zerov4Addr;
-		ret = uDNS_HandleNATQueryAddrReply(n, m, pkt, &request->u.pm.addr, &err);
-		if (!ret) return ret;
-
-		if (err)
-			{
-			generate_final_fatal_reply_with_garbage(request, port_mapping_reply_op, kDNSServiceErr_NATPortMappingUnsupported);
-			uDNS_FreeNATInfo(m, n);
-			request->u.pm.NATAddrinfo = mDNSNULL;
-			return mDNStrue;
-			}
-
-		if (!mDNSIPPortIsZero(request->u.pm.privatePort) && !request->u.pm.NATMapinfo)
-			{
-			NATOp_t op = (request->u.pm.protocol & kDNSServiceProtocol_UDP) ? NATOp_MapUDP : NATOp_MapTCP;
-			request->u.pm.NATMapinfo = uDNS_AllocNATInfo(m, op,
-				request->u.pm.privatePort, request->u.pm.ReqPub, request->u.pm.requestedTTL, port_mapping_reply);
-			if (!request->u.pm.NATMapinfo)
-				{ generate_final_fatal_reply_with_garbage(request, port_mapping_reply_op, mStatus_NoMemoryErr); return mDNStrue; }
-			request->u.pm.NATMapinfo->NATTraversalContext = request;
-			request->u.pm.NATMapinfo->reg.RecordRegistration = NULL;
-			request->u.pm.NATMapinfo->state                  = NATState_Request;
-			uDNS_FormatPortMaprequest(request->u.pm.NATMapinfo);
-			uDNS_SendNATMsg(request->u.pm.NATMapinfo, m);
-			}
-		}
-	else if (request->u.pm.NATMapinfo == n)
-		{
-		mDNSBool ret = uDNS_HandleNATPortMapReply(n, m, pkt);
-
-		switch (n->state)
-			{
-			case NATState_Init:
-			case NATState_Request:
-			case NATState_Refresh: return ret;
-
-			case NATState_Deleted:
-				{
-				generate_final_fatal_reply_with_garbage(request, port_mapping_reply_op, kDNSServiceErr_Invalid);
-				uDNS_FreeNATInfo(m, n);
-				request->u.pm.NATMapinfo = mDNSNULL;
-				return ret;
-				}
-
-			case NATState_Error:
-				{
-				generate_final_fatal_reply_with_garbage(request, port_mapping_reply_op, kDNSServiceErr_NATPortMappingUnsupported);
-				uDNS_FreeNATInfo(m, n);
-				request->u.pm.NATMapinfo = mDNSNULL;
-				return ret;
-				}
-
-			case NATState_Established:
-			case NATState_Legacy:
-				{
-				request->u.pm.ActPub      = n->PublicPort;
-				request->u.pm.receivedTTL = n->PortMappingLease;
-				}
-			}
-		}
-	else
-		{
-		LogMsg("port_mapping_reply called with unknown NATInfo object");
-		return mDNSfalse;
+		LogMsg("port_mapping_create_request_callback received error %d", err);
+		generate_final_fatal_reply_with_garbage(request, port_mapping_reply_op, kDNSServiceErr_Invalid);
+		mDNS_StopNATOperation(&mDNSStorage, &request->u.pm.NATinfo);		// Do we need to do this?
+		return;
 		}
 
-	// Only return a raw address lookup result if the client is not also requesting a port mapping too
-	if (request->u.pm.NATMapinfo == n || request->u.pm.protocol == 0)
+	if (request->u.pm.NATinfo.retryPortMap == -1)
 		{
-		// calculate reply data length
-		replyLen = sizeof(DNSServiceFlags);
-		replyLen += 3 * sizeof(mDNSu32);  // if index + addr + ttl
-		replyLen += sizeof(DNSServiceErrorType);
-		replyLen += 2 * sizeof(mDNSu16);  // publicAddress + privateAddress
-		replyLen += sizeof(mDNSu8);       // protocol
-	
-		rep = create_reply(port_mapping_reply_op, replyLen, request);
-	
-		rep->rhdr->flags = dnssd_htonl(0);
-		rep->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(m, request->u.pm.interface_id));
-		rep->rhdr->error = dnssd_htonl(kDNSServiceErr_NoError);
-	
-		data = rep->sdata;
-	
-		*data++ = request->u.pm.addr.b[0];
-		*data++ = request->u.pm.addr.b[1];
-		*data++ = request->u.pm.addr.b[2];
-		*data++ = request->u.pm.addr.b[3];
-		*data++ = request->u.pm.protocol;
-		*data++ = request->u.pm.privatePort.b[0];
-		*data++ = request->u.pm.privatePort.b[1];
-		*data++ = request->u.pm.ActPub.b[0];
-		*data++ = request->u.pm.ActPub.b[1];
-		put_uint32(request->u.pm.receivedTTL, &data);
-	
-		append_reply(request, rep);
+		generate_final_fatal_reply_with_garbage(request, port_mapping_reply_op, kDNSServiceErr_Invalid);
+		mDNS_StopNATOperation(&mDNSStorage, &request->u.pm.NATinfo);		// Do we need to do this?
+		return;
 		}
 
-	return mDNStrue;
+	request->u.pm.actualPub = n->publicPort;
+	request->u.pm.receivedTTL = n->portMappingLease;
+	request->u.pm.addr = ExternalAddress;
+
+	// calculate reply data length
+	replyLen = sizeof(DNSServiceFlags);
+	replyLen += 3 * sizeof(mDNSu32);  // if index + addr + ttl
+	replyLen += sizeof(DNSServiceErrorType);
+	replyLen += 2 * sizeof(mDNSu16);  // publicAddress + privateAddress
+	replyLen += sizeof(mDNSu8);       // protocol
+
+	rep = create_reply(port_mapping_reply_op, replyLen, request);
+
+	rep->rhdr->flags = dnssd_htonl(0);
+	rep->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(m, request->u.pm.interface_id));
+	rep->rhdr->error = dnssd_htonl(err);
+
+	data = rep->sdata;
+
+	*data++ = request->u.pm.addr.b[0];
+	*data++ = request->u.pm.addr.b[1];
+	*data++ = request->u.pm.addr.b[2];
+	*data++ = request->u.pm.addr.b[3];
+	*data++ = request->u.pm.protocol;
+	*data++ = request->u.pm.privatePort.b[0];
+	*data++ = request->u.pm.privatePort.b[1];
+	*data++ = request->u.pm.actualPub.b[0];
+	*data++ = request->u.pm.actualPub.b[1];
+	put_uint32(request->u.pm.receivedTTL, &data);
+
+	append_reply(request, rep);
 	}
 
 mDNSlocal mStatus handle_port_mapping_request(request_state *request)
@@ -2787,7 +2714,6 @@ mDNSlocal mStatus handle_port_mapping_request(request_state *request)
 	mDNSIPPort privatePort;
 	mDNSIPPort publicPort;
 	mDNSu32 ttl;
-	NATAddrRequest *req;
 	mStatus err = mStatus_NoError;
 
 	DNSServiceFlags flags = get_flags(&ptr);
@@ -2814,43 +2740,24 @@ mDNSlocal mStatus handle_port_mapping_request(request_state *request)
 		if (!(protocol & (kDNSServiceProtocol_UDP | kDNSServiceProtocol_TCP))) return(mStatus_BadParamErr);
 		}
 
-	// %%% BUG %%% Should not be trying to grab mDNSCore internal lock here.
-	// Should only be using supported APIs from mDNSEmbeddedAPI.h.
-	mDNS_Lock(&mDNSStorage);
-
 	request->u.pm.interface_id = InterfaceID;
 	request->u.pm.protocol     = protocol;
 	request->u.pm.privatePort  = privatePort;
-	request->u.pm.ReqPub       = publicPort;
-	request->u.pm.ActPub       = zeroIPPort;
+	request->u.pm.requestedPub       = publicPort;
+	request->u.pm.actualPub       = zeroIPPort;
 	request->u.pm.requestedTTL = ttl;
 	request->u.pm.receivedTTL  = 0;
-	request->u.pm.NATAddrinfo  = mDNSNULL;
-	request->u.pm.NATMapinfo   = mDNSNULL;
-
-	LogOperation("%3d: DNSServiceNATPortMappingCreate(%X, %u, %u, %d) START",
-		request->sd, protocol, mDNSVal16(privatePort), mDNSVal16(publicPort), ttl);
-
-	request->u.pm.NATAddrinfo =
-		uDNS_AllocNATInfo(&mDNSStorage, NATOp_AddrRequest, zeroIPPort, zeroIPPort, 0, port_mapping_reply);
-	if (!request->u.pm.NATAddrinfo) { mDNS_Unlock(&mDNSStorage); return(mStatus_NoMemoryErr); }
-
-	request->u.pm.NATAddrinfo->NATTraversalContext    = request;
-	request->u.pm.NATAddrinfo->reg.RecordRegistration = NULL;
-	request->u.pm.NATAddrinfo->state                  = NATState_Request;
-
-	// format message
-	req         = &request->u.pm.NATAddrinfo->request.AddrReq;
-	req->vers   = NATMAP_VERS;
-	req->opcode = NATOp_AddrRequest;
-
-	if (mDNSIPv4AddressIsZero(mDNSStorage.Router.ip.v4))
-		debugf("No router. Will retry NAT traversal in %ld ticks", NATMAP_INIT_RETRY);
-	else
-		uDNS_SendNATMsg(request->u.pm.NATAddrinfo, &mDNSStorage);
-
-	mDNS_Unlock(&mDNSStorage);
-
+	
+	mDNSPlatformMemZero(&request->u.pm.NATinfo, sizeof(NATTraversalInfo));
+	request->u.pm.NATinfo.clientCallback   = port_mapping_create_request_callback;
+	request->u.pm.NATinfo.clientContext    = request;
+	request->u.pm.NATinfo.protocol         = protocol;
+	request->u.pm.NATinfo.privatePort      = request->u.pm.privatePort;
+	request->u.pm.NATinfo.publicPortreq    = request->u.pm.requestedPub;
+	request->u.pm.NATinfo.portMappingLease = request->u.pm.requestedTTL;
+	
+	LogOperation("%3d: DNSServiceNATPortMappingCreate(%X, %u, %u, %d) START", request->sd, protocol, mDNSVal16(privatePort), mDNSVal16(publicPort), ttl);
+	err = mDNS_StartNATOperation(&mDNSStorage, &request->u.pm.NATinfo);
 	if (!err) request->terminate = port_mapping_termination_callback;
 
 	return(err);
@@ -3482,8 +3389,8 @@ mDNSlocal void LogClientInfo(request_state *req)
 			req->u.pm.protocol & kDNSServiceProtocol_TCP ? "tcp" : "   ",
 			req->u.pm.protocol & kDNSServiceProtocol_UDP ? "udp" : "   ",
 			mDNSVal16(req->u.pm.privatePort),
-			mDNSVal16(req->u.pm.ReqPub),
-			mDNSVal16(req->u.pm.ActPub),
+			mDNSVal16(req->u.pm.requestedPub),
+			mDNSVal16(req->u.pm.actualPub),
 			req->u.pm.requestedTTL,
 			req->u.pm.receivedTTL,
 			&req->u.pm.addr);
