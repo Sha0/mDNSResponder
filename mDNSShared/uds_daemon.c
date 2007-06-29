@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.309  2007/06/29 23:12:49  vazquez
+<rdar://problem/5294103> Stop using generate_final_fatal_reply_with_garbage
+
 Revision 1.308  2007/06/29 00:10:07  vazquez
 <rdar://problem/5301908> Clean up NAT state machine (necessary for 6 other fixes)
 
@@ -772,25 +775,11 @@ mDNSlocal void append_reply(request_state *req, reply_state *rep)
 	rep->next = NULL;
 	}
 
-// This is not really a useful routine. It writes a message header (with an error code) followed by 256 bytes of
-// garbage zeroes onto the client connection, thereby trashing it and making it useless for any subsequent communication.
-// WARNING: This means that this routine is fundamentally incompatible with kDNSServiceFlagsShareConnection
-// All the places that use generate_final_fatal_reply_with_garbage() need to be changed to generate syntactically valid messages instead
-mDNSlocal void generate_final_fatal_reply_with_garbage(request_state *req, reply_op_t op, mStatus err)
-	{
-	if (!req->no_reply)
-		{
-		reply_state *reply = create_reply(op, 256, req);
-		reply->rhdr->error = dnssd_htonl(err);
-		append_reply(req, reply);
-		}
-	}
-
 // Generates a response message giving name, type, domain, plus interface index,
 // suitable for a browse result or service registration result.
 // On successful completion rep is set to point to a malloc'd reply_state struct
 mDNSlocal mStatus GenerateNTDResponse(const domainname *const servicename, const mDNSInterfaceID id,
-	request_state *const request, reply_state **const rep, reply_op_t op, DNSServiceFlags flags)
+	request_state *const request, reply_state **const rep, reply_op_t op, DNSServiceFlags flags, mStatus err)
 	{
 	domainlabel name;
 	domainname type, dom;
@@ -821,7 +810,7 @@ mDNSlocal mStatus GenerateNTDResponse(const domainname *const servicename, const
 		*rep = create_reply(op, len, request);
 		(*rep)->rhdr->flags = dnssd_htonl(flags);
 		(*rep)->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, id));
-		(*rep)->rhdr->error = dnssd_htonl(kDNSServiceErr_NoError);
+		(*rep)->rhdr->error = dnssd_htonl(err);
 
 		// Build reply body
 		data = (*rep)->sdata;
@@ -994,7 +983,7 @@ mDNSlocal void SendServiceRemovalNotification(ServiceRecordSet *const srs)
 	{
 	reply_state *rep;
 	service_instance *instance = srs->ServiceContext;
-	if (GenerateNTDResponse(srs->RR_SRV.resrec.name, srs->RR_SRV.resrec.InterfaceID, instance->request, &rep, reg_service_reply_op, 0) != mStatus_NoError)
+	if (GenerateNTDResponse(srs->RR_SRV.resrec.name, srs->RR_SRV.resrec.InterfaceID, instance->request, &rep, reg_service_reply_op, 0, mStatus_NoError) != mStatus_NoError)
 		LogMsg("%3d: regservice_callback: %##s is not valid DNS-SD SRV name", instance->sd, srs->RR_SRV.resrec.name->c);
 	else { append_reply(instance->request, rep); instance->clientnotified = mDNSfalse; }
 	}
@@ -1007,6 +996,7 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 	mStatus err;
 	mDNSBool SuppressError = mDNSfalse;
 	service_instance *instance = srs->ServiceContext;
+	reply_state         *rep;
 	(void)m; // Unused
 	if (!srs)      { LogMsg("regservice_callback: srs is NULL %d",                 result); return; }
 	if (!instance) { LogMsg("regservice_callback: srs->ServiceContext is NULL %d", result); return; }
@@ -1030,7 +1020,6 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 
 	if (result == mStatus_NoError)
 		{
-		reply_state *rep;
 		if (instance->request->u.servicereg.allowremotequery)
 			{
 			ExtraResourceRecord *e;
@@ -1041,7 +1030,7 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 			for (e = instance->srs.Extras; e; e = e->next) e->r.AllowRemoteQuery = mDNStrue;
 			}
 
-		if (GenerateNTDResponse(srs->RR_SRV.resrec.name, srs->RR_SRV.resrec.InterfaceID, instance->request, &rep, reg_service_reply_op, kDNSServiceFlagsAdd) != mStatus_NoError)
+		if (GenerateNTDResponse(srs->RR_SRV.resrec.name, srs->RR_SRV.resrec.InterfaceID, instance->request, &rep, reg_service_reply_op, kDNSServiceFlagsAdd, result) != mStatus_NoError)
 			LogMsg("%3d: regservice_callback: %##s is not valid DNS-SD SRV name", instance->sd, srs->RR_SRV.resrec.name->c);
 		else { append_reply(instance->request, rep); instance->clientnotified = mDNStrue; }
 
@@ -1078,14 +1067,24 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 			}
 		else
 			{
-			if (!SuppressError) generate_final_fatal_reply_with_garbage(instance->request, reg_service_reply_op, result);
+			if (!SuppressError) 
+				{
+				if (GenerateNTDResponse(srs->RR_SRV.resrec.name, srs->RR_SRV.resrec.InterfaceID, instance->request, &rep, reg_service_reply_op, kDNSServiceFlagsAdd, result) != mStatus_NoError)
+					LogMsg("%3d: regservice_callback: %##s is not valid DNS-SD SRV name", instance->sd, srs->RR_SRV.resrec.name->c);
+				else { append_reply(instance->request, rep); instance->clientnotified = mDNStrue; }
+				}
 			free_service_instance(instance);
 			}
 		}
 	else
 		{
 		if (result != mStatus_NATTraversal) LogMsg("ERROR: unknown result in regservice_callback: %ld", result);
-		if (!SuppressError) generate_final_fatal_reply_with_garbage(instance->request, reg_service_reply_op, result);
+		if (!SuppressError) 
+			{
+			if (GenerateNTDResponse(srs->RR_SRV.resrec.name, srs->RR_SRV.resrec.InterfaceID, instance->request, &rep, reg_service_reply_op, kDNSServiceFlagsAdd, result) != mStatus_NoError)
+				LogMsg("%3d: regservice_callback: %##s is not valid DNS-SD SRV name", instance->sd, srs->RR_SRV.resrec.name->c);
+			else { append_reply(instance->request, rep); instance->clientnotified = mDNStrue; }
+			}
 		free_service_instance(instance);
 		}
 	}
@@ -1762,7 +1761,7 @@ mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const Resourc
 	if (answer->rrtype != kDNSType_PTR)
 		{ LogMsg("%3d: FoundInstance: Should not be called with rrtype %d (not a PTR record)", req->sd, answer->rrtype); return; }
 
-	if (GenerateNTDResponse(&answer->rdata->u.name, answer->InterfaceID, req, &rep, browse_reply_op, flags) != mStatus_NoError)
+	if (GenerateNTDResponse(&answer->rdata->u.name, answer->InterfaceID, req, &rep, browse_reply_op, flags, mStatus_NoError) != mStatus_NoError)
 		{
 		LogMsg("%3d: FoundInstance: %##s PTR %##s received from network is not valid DNS-SD service pointer",
 			req->sd, answer->name->c, answer->rdata->u.name.c);
@@ -2658,21 +2657,6 @@ mDNSlocal void port_mapping_create_request_callback(mDNS *m, mDNSv4Addr External
 	char *data;
 
 	if (!request) { LogMsg("port_mapping_create_request_callback called with unknown request_state object"); return; }
-
-	if (err)
-		{
-		LogMsg("port_mapping_create_request_callback received error %d", err);
-		generate_final_fatal_reply_with_garbage(request, port_mapping_reply_op, kDNSServiceErr_Invalid);
-		mDNS_StopNATOperation(&mDNSStorage, &request->u.pm.NATinfo);		// Do we need to do this?
-		return;
-		}
-
-	if (request->u.pm.NATinfo.retryPortMap == -1)
-		{
-		generate_final_fatal_reply_with_garbage(request, port_mapping_reply_op, kDNSServiceErr_Invalid);
-		mDNS_StopNATOperation(&mDNSStorage, &request->u.pm.NATinfo);		// Do we need to do this?
-		return;
-		}
 
 	request->u.pm.actualPub = n->publicPort;
 	request->u.pm.receivedTTL = n->portMappingLease;
