@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.645  2007/06/29 22:55:54  cheshire
+Move declaration of DNSServer *s; Fixed incomplete comment.
+
 Revision 1.644  2007/06/29 00:07:29  vazquez
 <rdar://problem/5301908> Clean up NAT state machine (necessary for 6 other fixes)
 
@@ -5636,6 +5639,8 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 			CacheGroup *cg;
 			CacheRecord *rr;
 			DNSQuestion *q;
+			DNSServer *s;
+
 			LogOperation("mDNS_DeregisterInterface: Last representative of InterfaceID %p %s (%#a) deregistered;"
 				" marking questions etc. dormant", set->InterfaceID, set->ifname, &set->ip);
 
@@ -5673,8 +5678,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 						}
 					}
 
-			// 3. 
-			DNSServer *s;
+			// 3. Any DNS servers specific to this interface are now unusable
 			for (s = m->DNSServers; s; s = s->next)
 				if (s->interface == set->InterfaceID)
 					{
