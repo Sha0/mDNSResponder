@@ -26,6 +26,9 @@
 ; SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ;
 ; $Log: mDNSResponder.sb,v $
+; Revision 1.19  2007/07/02 23:37:50  cheshire
+; <rdar://problem/5267615> Need to list of allowed mach-lookup operations explicitly in mDNSResponder.sb
+;
 ; Revision 1.18  2007/06/28 20:43:35  cheshire
 ; <rdar://problem/5298202> Seatbelt: mDNSResponder needs to be able to access /dev/autofs_nowait
 ;
@@ -109,25 +112,36 @@
 ;(deny default)
 (deny default (with send-signal SIGFPE))
 
-; Special exception: "send-signal" command doesn't work with the mach-lookup operation,
-; so have to make that a plain "deny" instead
+; Special exception: "send-signal" command doesn't work with the mach-* operations,
+; so for those we have to use a plain unadorned "deny" instead
+; (which means we may not get any notification of unintentional mach-* denials)
 (deny mach-lookup)
+(deny mach-priv-host-port)
+
+; Mach communications
+; These are needed for things like getpwnam, hostname changes, & keychain
+(allow mach-lookup (global-name
+					"com.apple.ocspd"
+					"com.apple.SecurityServer"
+					"com.apple.SystemConfiguration.configd"
+					"com.apple.system.DirectoryService.libinfo_v1"
+					"com.apple.system.notification_center"))
 
 ; Rules to allow the operations mDNSResponder needs start here
 
 (allow network*)			; Allow networking, including Unix Domain Sockets
 (allow sysctl-read)			; To get hardware model information
 (allow file-read-metadata)	; Needed for dyld to work
-(allow ipc-posix-shm)       ; Needed for POSIX shared memory
+(allow ipc-posix-shm)		; Needed for POSIX shared memory
 
-(allow file-read-data file-write-data (regex "^/dev/console\$"))	; Needed for syslog early in the boot process
 (allow file-read-data                 (regex "^/dev/random\$"))
+(allow file-read-data file-write-data (regex "^/dev/console\$"))		; Needed for syslog early in the boot process
+(allow file-read-data                 (regex "^/dev/autofs_nowait\$"))	; Used by CF to circumvent automount triggers
 
 ; Allow us to create our PID file
 (allow file-read*     file-write*     (regex "^/private/var/run/mDNSResponder\.pid\$"))
 
 ; Allow us to read system version, settings, and other miscellaneous necessary file system accesses
-(allow file-read-data                 (regex "^/dev/autofs_nowait\$"))				; Used by CF to circumvent automount triggers
 (allow file-read-data                 (regex "^/usr/sbin(/mDNSResponder)?\$"))		; Needed for CFCopyVersionDictionary()
 (allow file-read-data                 (regex "^/usr/share/icu/.*\$"))
 (allow file-read-data                 (regex "^/usr/share/zoneinfo/.*\$"))
