@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.380  2007/07/02 22:08:47  cheshire
+Fixed crash in "Received public IP address" message
+
 Revision 1.379  2007/06/29 00:08:49  vazquez
 <rdar://problem/5301908> Clean up NAT state machine (necessary for 6 other fixes)
 
@@ -885,7 +888,7 @@ mDNSlocal void natTraversalHandleReply(NATTraversalInfo *n, mDNS *const m, mDNSu
 			{ 
 			// only change if address is different
 			m->ExternalAddress = addrReply->PubAddr; 
-			LogOperation("Received public IP address %.4a from NAT.", m->ExternalAddress); 
+			LogOperation("Received public IP address %.4a from NAT", &m->ExternalAddress); 
 			if (mDNSv4AddrIsRFC1918(&m->ExternalAddress)) { LogMsg("natTraversalHandleReply: Double NAT"); err = mStatus_DoubleNAT; }
 			addrChanged = mDNStrue;
 			}
