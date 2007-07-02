@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.77  2007/07/02 23:07:13  cheshire
+<rdar://problem/5308280> Reduce DNS-SD client syslog error messages
+
 Revision 1.76  2007/06/22 20:12:18  cheshire
 <rdar://problem/5277024> Leak in DNSServiceRefDeallocate
 
@@ -188,6 +191,7 @@ struct _DNSServiceRef_t
 	dnssd_sock_t    sockfd;				// Connected socket between client and daemon
 	uint32_t        op;					// request_op_t or reply_op_t
 	uint32_t        max_index;			// Largest assigned record index - 0 if no additional records registered
+	uint32_t        logcounter;			// Counter used to control number of syslog messages we write
 	ProcessReplyFn  ProcessReply;		// Function pointer to the code to handle received messages
 	void           *AppCallback;		// Client callback function and context
 	void           *AppContext;
@@ -216,7 +220,9 @@ static int write_all(dnssd_sock_t sd, char *buf, int len)
 			{
 			// Should never happen. If it does, it indicates some OS bug,
 			// or that the mDNSResponder daemon crashed (which should never happen).
-			syslog(LOG_WARNING, "dnssd_clientstub write_all(%d) failed %d/%d %d %s", sd, num_written, len, errno, strerror(errno));
+			syslog(LOG_WARNING, "dnssd_clientstub write_all(%d) failed %d/%d %d %s", sd, num_written, len,
+				(num_written < 0) ? errno           : 0,
+				(num_written < 0) ? strerror(errno) : "");
 			return -1;
 			}
 		buf += num_written;
@@ -238,7 +244,9 @@ static int read_all(dnssd_sock_t sd, char *buf, int len)
 			{
 			// Should never happen. If it does, it indicates some OS bug,
 			// or that the mDNSResponder daemon crashed (which should never happen).
-			syslog(LOG_WARNING, "dnssd_clientstub read_all(%d) failed %d/%d %d %s", sd, num_read, len, errno, strerror(errno));
+			syslog(LOG_WARNING, "dnssd_clientstub read_all(%d) failed %d/%d %d %s", sd, num_read, len,
+				(num_read < 0) ? errno           : 0,
+				(num_read < 0) ? strerror(errno) : "");
 			return -1;
 			}
 		buf += num_read;
@@ -346,6 +354,7 @@ static DNSServiceErrorType ConnectToServer(DNSServiceRef *ref, DNSServiceFlags f
 	sdr->sockfd        = dnssd_InvalidSocket;
 	sdr->op            = op;
 	sdr->max_index     = 0;
+	sdr->logcounter    = 0;
 	sdr->ProcessReply  = ProcessReply;
 	sdr->AppCallback   = AppCallback;
 	sdr->AppContext    = AppContext;
@@ -526,29 +535,35 @@ DNSServiceErrorType DNSSD_API DNSServiceProcessResult(DNSServiceRef sdRef)
 	
 		// return NoError on EWOULDBLOCK. This will handle the case
 		// where a non-blocking socket is told there is data, but it was a false positive.
-		// On error, read_all will have written a message to syslog for us
+		// On error, read_all will write a message to syslog for us, so don't need to duplicate that here
 		if (read_all(sdRef->sockfd, (void *)&cbh.ipc_hdr, sizeof(cbh.ipc_hdr)) < 0)
 			{
-			if (dnssd_errno() == dnssd_EWOULDBLOCK)
-				{
-				if (morebytes)
-					syslog(LOG_WARNING, "dnssd_clientstub DNSServiceProcessResult error: select indicated data was waiting but read_all returned EWOULDBLOCK");
-				return kDNSServiceErr_NoError;
-				}
+			if (dnssd_errno() != dnssd_EWOULDBLOCK)
+				{ sdRef->ProcessReply = NULL; return kDNSServiceErr_Unknown; }
 			else
 				{
-				syslog(LOG_WARNING, "dnssd_clientstub DNSServiceProcessResult error %d reading result from daemon", dnssd_errno());
-				return kDNSServiceErr_Unknown;
+				if (morebytes && sdRef->logcounter < 100)
+					{
+					sdRef->logcounter++;
+					syslog(LOG_WARNING, "dnssd_clientstub DNSServiceProcessResult error: select indicated data was waiting but read_all returned EWOULDBLOCK");
+					}
+				return kDNSServiceErr_NoError;
 				}
 			}
 	
 		ConvertHeaderBytes(&cbh.ipc_hdr);
-		if (cbh.ipc_hdr.version != VERSION) return kDNSServiceErr_Incompatible;
+		if (cbh.ipc_hdr.version != VERSION)
+			{
+			syslog(LOG_WARNING, "dnssd_clientstub DNSServiceProcessResult daemon version %d does not match client version %d",
+				cbh.ipc_hdr.version, VERSION);
+			sdRef->ProcessReply = NULL;
+			return kDNSServiceErr_Incompatible;
+			}
 	
 		data = malloc(cbh.ipc_hdr.datalen);
 		if (!data) return kDNSServiceErr_NoMemory;
-		if (read_all(sdRef->sockfd, data, cbh.ipc_hdr.datalen) < 0)
-			{ free(data); return kDNSServiceErr_Unknown; } // read_all will have written a message to syslog for us
+		if (read_all(sdRef->sockfd, data, cbh.ipc_hdr.datalen) < 0) // On error, read_all will write a message to syslog for us
+			{ free(data); sdRef->ProcessReply = NULL; return kDNSServiceErr_Unknown; }
 		else
 			{
 			char *ptr = data;
@@ -1048,8 +1063,8 @@ static void ConnectionResponse(DNSServiceOp *sdr, CallbackHeader *cbh, char *dat
 		{
 		//DNSServiceOp *x = cbh->ipc_hdr.client_context.context;
 		while (sdr && sdr != cbh->ipc_hdr.client_context.context) sdr = sdr->next;
-		if (sdr) sdr->ProcessReply(sdr, cbh, data);
-		// WARNING: Don't touch sdr after this -- clinet may have called DNSServiceRefDeallocate
+		if (sdr && sdr->ProcessReply) sdr->ProcessReply(sdr, cbh, data);
+		// WARNING: Don't touch sdr after this -- client may have called DNSServiceRefDeallocate
 		return;
 		}
 
