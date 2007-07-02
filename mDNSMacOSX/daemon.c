@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.321  2007/07/02 21:54:20  cheshire
+Fix compile error in MACOSX_MDNS_MALLOC_DEBUGGING checks
+
 Revision 1.320  2007/06/28 21:16:27  cheshire
 Rename "m->nextevent" as more informative "m->NextuDNSEvent"
 
@@ -495,7 +498,8 @@ mDNSlocal void validatelists(mDNS *const m)
 
 	NATTraversalInfo            *n;
 	for (n = m->NATTraversals; n; n=n->next)
-		if (n->op > 2) LogMemCorruption("NATTraversals: %p is garbage", n);
+		if (n->clientCallback == (NATTraversalClientCallback)~0)
+			LogMemCorruption("NATTraversals: %p is garbage", n);
 	}
 
 void *mallocL(char *msg, unsigned int size)
