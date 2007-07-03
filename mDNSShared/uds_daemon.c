@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.310  2007/07/03 19:56:50  cheshire
+Add LogOperation message for DNSServiceSetDefaultDomainForUser
+
 Revision 1.309  2007/06/29 23:12:49  vazquez
 <rdar://problem/5294103> Stop using generate_final_fatal_reply_with_garbage
 
@@ -2553,10 +2556,10 @@ mDNSlocal mStatus handle_setdomain_request(request_state *request)
 	if (get_string(&ptr, domainstr, MAX_ESCAPED_DOMAIN_NAME) < 0 ||
 		!MakeDomainNameFromDNSNameString(&domain, domainstr)) return(mStatus_BadParamErr);
 
-	debugf("%3d: DNSServiceSetDefaultDomainForUser(%##s)", request->sd, domain.c);
+	LogOperation("%3d: DNSServiceSetDefaultDomainForUser(%##s)", request->sd, domain.c);
 
 #ifdef _HAVE_SETDOMAIN_SUPPORT_
-	// this functionality currently only used for Apple-specific configuration, so we don't burned other platforms by mandating
+	// This functionality currently only used for Apple-specific configuration, so we don't burden other platforms by mandating
 	// the existence of this socket option
 	xuclen = sizeof(xuc);
 	if (getsockopt(request->sd, 0, LOCAL_PEERCRED, &xuc, &xuclen))
