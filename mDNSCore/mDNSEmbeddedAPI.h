@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.386  2007/07/03 20:54:11  cheshire
+Tidied up code layout of NATTraversalInfo_struct fields and comments
+
 Revision 1.385  2007/07/03 00:40:23  vazquez
 More changes for <rdar://problem/5301908> Clean up NAT state machine (necessary for 6 other fixes)
 Safely deal with packet replies and client callbacks
@@ -998,28 +1001,28 @@ typedef void (*NATTraversalClientCallback)(mDNS *m, mDNSv4Addr ExternalAddress, 
 struct NATTraversalInfo_struct
 	{
 	// Internal state fields. These are used internally by mDNSCore; the client layer needn't be concerned with them.
-	NATTraversalInfo	*next;
+	NATTraversalInfo *next;
 
-	NATPortMapRequest NATPortReq;	// request packet
+	NATPortMapRequest NATPortReq;			// request packet
 	
-	NATOptFlags_t	opFlags;			// flags for everything that needs to be done
-	mDNSIPPort	publicPort;			// established public port mapping
-	mDNSIPPort	lastPublicPort;		// last public port mapping we got
-	mDNSv4Addr	lastExternalAddress;	// last external address we got
-	mStatus		lastError;			// set when there is a port mapping error
+	NATOptFlags_t    opFlags;				// flags for everything that needs to be done
+	mDNSIPPort       publicPort;			// established public port mapping
+	mDNSIPPort       lastPublicPort;		// last public port mapping we got
+	mDNSv4Addr       lastExternalAddress;	// last external address we got
+	mStatus          lastError;				// set when there is a port mapping error
 	
 	// PortMapping fields
-	mDNSs32		retryPortMap;		// absolute time when we retry
-	mDNSs32		retryIntervalPortMap;	// delta between time sent and retry
-	mDNSs32		ExpiryTime;
+	mDNSs32          retryPortMap;			// absolute time when we retry
+	mDNSs32          retryIntervalPortMap;	// delta between time sent and retry
+	mDNSs32          ExpiryTime;
 	
 	// Client API fields: The client must set up these fields *before* making any NAT traversal API calls
-	NATTraversalClientCallback	clientCallback;	// returns response to whoever called the API
-	void			*clientContext;
-	mDNSu8		protocol;
-	mDNSIPPort	privatePort;
-	mDNSIPPort	publicPortreq;		// requested public port mapping
-	mDNSu32		portMappingLease;	// ttl
+	NATTraversalClientCallback clientCallback; // returns response to whoever called the API
+	void             *clientContext;
+	mDNSu8           protocol;
+	mDNSIPPort       privatePort;
+	mDNSIPPort       publicPortreq;			// requested public port mapping
+	mDNSu32          portMappingLease;		// ttl
 	};
 	
 typedef struct
