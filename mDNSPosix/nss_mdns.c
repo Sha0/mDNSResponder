@@ -1910,9 +1910,12 @@ load_config (config_t * conf)
 		if (errcode)
 		{
 			// Critical error, give up
+			fclose(cf);
 			return errcode;
 		}
 	}
+	
+	fclose (cf);
 	
 	return 0;
 }
