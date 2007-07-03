@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.385  2007/07/03 00:40:23  vazquez
+More changes for <rdar://problem/5301908> Clean up NAT state machine (necessary for 6 other fixes)
+Safely deal with packet replies and client callbacks
+
 Revision 1.384  2007/06/29 00:08:07  vazquez
 <rdar://problem/5301908> Clean up NAT state machine (necessary for 6 other fixes)
 
@@ -998,13 +1002,16 @@ struct NATTraversalInfo_struct
 
 	NATPortMapRequest NATPortReq;	// request packet
 	
-	NATOptFlags_t	opFlags;		// flags for everything that needs to be done
-	mDNSIPPort	publicPort;		// established public port mapping
+	NATOptFlags_t	opFlags;			// flags for everything that needs to be done
+	mDNSIPPort	publicPort;			// established public port mapping
+	mDNSIPPort	lastPublicPort;		// last public port mapping we got
+	mDNSv4Addr	lastExternalAddress;	// last external address we got
+	mStatus		lastError;			// set when there is a port mapping error
 	
 	// PortMapping fields
 	mDNSs32		retryPortMap;		// absolute time when we retry
 	mDNSs32		retryIntervalPortMap;	// delta between time sent and retry
-	mDNSs32     ExpiryTime;
+	mDNSs32		ExpiryTime;
 	
 	// Client API fields: The client must set up these fields *before* making any NAT traversal API calls
 	NATTraversalClientCallback	clientCallback;	// returns response to whoever called the API
