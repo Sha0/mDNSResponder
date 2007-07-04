@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.382  2007/07/04 00:49:43  vazquez
+Clean up extraneous comments
+
 Revision 1.381  2007/07/03 00:41:14  vazquez
  More changes for <rdar://problem/5301908> Clean up NAT state machine (necessary for 6 other fixes)
  Safely deal with packet replies and client callbacks
@@ -931,7 +934,6 @@ mDNSlocal void natTraversalHandlePortMapReply(NATTraversalInfo *n, mDNS *const m
 	n->lastError = err;
 	}
 
-// Main starting point for client-initiated NAT traversal configuration.
 // Must be called with the mDNS_Lock held
 mDNSlocal mStatus mDNS_StartNATOperation_internal(mDNS *const m, NATTraversalInfo *traversal)
 	{
@@ -4066,10 +4068,8 @@ mDNSlocal mDNSs32 CheckNATMappings(mDNS *m)
 	mStatus err = mStatus_NoError;
 	mDNSs32 nexteventPM = m->timenow + 0x3FFFFFFF;
 
-//	LogMsg("CheckNATMappings");
 	if (m->NATTraversals && m->retryGetAddr - m->timenow < 0)	// we have exceeded the timer interval
 		{
-//		LogMsg("CheckNATMappings: Exceeded timer interval for getting public address, m->retryIntervalGetAddr: %d", m->retryIntervalGetAddr);
 		err = uDNS_SendNATMsg(m, mDNSNULL, AddrRequestFlag);
 		if (!err)
 			{
@@ -4092,7 +4092,6 @@ mDNSlocal mDNSs32 CheckNATMappings(mDNS *m)
 			{
 			if (cur->retryPortMap - m->timenow < 0)		// we have exceeded the timer interval
 				{
-//				LogMsg("CheckNATMappings: Exceeded timer interval for doing port mapping, cur->retryIntervalPortMap: %d", cur->retryIntervalPortMap);
 				if (!mDNSIPPortIsZero(cur->publicPort) && cur->ExpiryTime - m->timenow < 0)	// Mapping has expired
 					{
 					cur->publicPort = zeroIPPort;
