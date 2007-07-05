@@ -177,7 +177,7 @@ enum
     kDNSServiceFlagsDefault             = 0x4,
     /* Flags for domain enumeration and browse/query reply callbacks.
      * "Default" applies only to enumeration and is only valid in
-     * conjuction with "Add". An enumeration callback with the "Add"
+     * conjunction with "Add". An enumeration callback with the "Add"
      * flag NOT set indicates a "Remove", i.e. the domain is no longer
      * valid.
      */
@@ -255,30 +255,32 @@ enum
      */
 
     kDNSServiceFlagsShareConnection     = 0x4000
-    /* For efficiency, clients that perform many concurrent operations may want to use a single
-     * Unix Domain Socket connection with the background daemon, instead of having a different
+    /* For efficiency, clients that perform many concurrent operations may want to use a
+     * single Unix Domain Socket connection with the background daemon, instead of having a
      * separate connection for each independent operation. To use this mode, clients first
      * call DNSServiceCreateConnection(&MainRef) to initialize the main DNSServiceRef.
      * For each subsequent operation that is to share that same connection, the client copies
      * the MainRef, and then passes the address of that copy, setting the ShareConnection flag
      * to tell the library that this DNSServiceRef is not a typical uninitialized DNSServiceRef;
      * it's a copy of an existing DNSServiceRef whose connection information should be reused.
-     * Calling DNSServiceRefDeallocate() for a particular operation's DNSServiceRef terminates
-     * just that operation. Calling DNSServiceRefDeallocate() for the main DNSServiceRef
-     * terminates the shared connection and all operations that were still using it; the
-     * DNSServiceRefs for any active operations still using that shared connection are implicitly
-     * disposed, and don't need to be disposed separately with DNSServiceRefDeallocate() calls.
      *
      * For example:
+     *
+     * DNSServiceErrorType error;
      * DNSServiceRef MainRef;
-     * DNSServiceCreateConnection(&MainRef);
-     * DNSServiceRef BrowseRef = MainRef;
-     * DNSServiceBrowse(&BrowseRef, ...);
+     * error = DNSServiceCreateConnection(&MainRef);
+     * if (error) ...
+     * DNSServiceRef BrowseRef = MainRef;  // Important: COPY the primary DNSServiceRef first...
+     * error = DNSServiceBrowse(&BrowseRef, kDNSServiceFlagsShareConnection, ...); // then use the copy
+     * if (error) ...
      * ...
      * DNSServiceRefDeallocate(BrowseRef); // Terminate the browse operation
      * DNSServiceRefDeallocate(MainRef);   // Terminate the shared connection
      *
-     * Note that when callbacks are invoked using a shared DNSServiceRef, the
+     * Notes:
+     *
+     * 1. Collective kDNSServiceFlagsMoreComing flag
+     * When callbacks are invoked using a shared DNSServiceRef, the
      * kDNSServiceFlagsMoreComing flag applies collectively to *all* active
      * operations sharing the same DNSServiceRef. If the MoreComing flag is
      * set it means that there are more results queued on this DNSServiceRef,
@@ -291,6 +293,21 @@ enum
      * stale UI elements related to that shared DNSServiceRef that need updating,
      * not just the UI elements related to the particular callback that happened
      * to be the last one to be invoked.
+     *
+     * 2. Only share DNSServiceRef's created with DNSServiceCreateConnection
+     * Calling DNSServiceCreateConnection(&ref) creates a special shareable DNSServiceRef.
+     * DNSServiceRef's created by other calls like DNSServiceBrowse() or DNSServiceResolve()
+     * cannot be shared by copying them and using kDNSServiceFlagsShareConnection.
+     *
+     * 3. Don't double-deallocate
+     * Calling DNSServiceRefDeallocate(ref) for a particular operation's DNSServiceRef terminates
+     * just that operation. Calling DNSServiceRefDeallocate(ref) for the main shared DNSServiceRef
+     * (the parent DNSServiceRef, originally created by DNSServiceCreateConnection(&ref))
+     * automatically terminates the shared connection and all operations that were still using it.
+     * After doing this, DO NOT then attempt to deallocate any remaining subordinate DNSServiceRef's.
+     * The memory used by those subordinate DNSServiceRef's has already been freed, so any attempt
+     * to do a DNSServiceRefDeallocate (or any other operation) on them will result in accesses
+     * to freed memory, leading to crashes or other equally undesirable results.
      */
 
     };
@@ -367,7 +384,7 @@ enum
     kDNSServiceType_CERT      = 37,     /* Certification record */
     kDNSServiceType_A6        = 38,     /* IPv6 Address (deprecated) */
     kDNSServiceType_DNAME     = 39,     /* Non-terminal DNAME (for IPv6) */
-    kDNSServiceType_SINK      = 40,     /* Kitchen sink (experimentatl) */
+    kDNSServiceType_SINK      = 40,     /* Kitchen sink (experimental) */
     kDNSServiceType_OPT       = 41,     /* EDNS0 option (meta-RR) */
     kDNSServiceType_APL       = 42,     /* Address Prefix List */
     kDNSServiceType_DS        = 43,     /* Delegation Signer */
@@ -546,7 +563,7 @@ typedef int32_t  DNSServiceErrorType;
  *                  For DaemonVersion, the returned size is always sizeof(uint32_t), but
  *                  future properties could be defined which return variable-sized results.
  *
- * return value:    Returns kDNSServiceErr_NoError on succeses, or kDNSServiceErr_ServiceNotRunning
+ * return value:    Returns kDNSServiceErr_NoError on success, or kDNSServiceErr_ServiceNotRunning
  *                  if the daemon (or "system service" on Windows) is not running.
  */
 
@@ -591,19 +608,22 @@ DNSServiceErrorType DNSSD_API DNSServiceGetProperty
 /* DNSServiceRefSockFD()
  *
  * Access underlying Unix domain socket for an initialized DNSServiceRef.
- * The DNS Service Discovery implmementation uses this socket to communicate between
- * the client and the mDNSResponder daemon. The application MUST NOT directly read from
- * or write to this socket. Access to the socket is provided so that it can be used as a
- * run loop source, or in a select() loop: when data is available for reading on the socket,
- * DNSServiceProcessResult() should be called, which will extract the daemon's reply from
- * the socket, and pass it to the appropriate application callback. By using a run loop or
- * select(), results from the daemon can be processed asynchronously. Without using these
- * constructs, DNSServiceProcessResult() will block until the response from the daemon arrives.
- * The client is responsible for ensuring that the data on the socket is processed in a timely
- * fashion - the daemon may terminate its connection with a client that does not clear its
- * socket buffer.
+ * The DNS Service Discovery implementation uses this socket to communicate between the client and
+ * the mDNSResponder daemon. The application MUST NOT directly read from or write to this socket.
+ * Access to the socket is provided so that it can be used as a kqueue event source, a CFRunLoop
+ * event source, in a select() loop, etc. When the underlying event management subsystem (kqueue/
+ * select/CFRunLoop etc.) indicates to the client that data is available for reading on the
+ * socket, the client should call DNSServiceProcessResult(), which will extract the daemon's
+ * reply from the socket, and pass it to the appropriate application callback. By using a run
+ * loop or select(), results from the daemon can be processed asynchronously. Alternatively,
+ * a client can choose to fork a thread and have it loop calling "DNSServiceProcessResult(ref);"
+ * If DNSServiceProcessResult() is called when no data is available for reading on the socket, it
+ * will block until data does become available, and then process the data and return to the caller.
+ * When data arrives on the socket, the client is responsible for calling DNSServiceProcessResult(ref)
+ * in a timely fashion -- if the client allows a large backlog of data to build up the daemon
+ * may terminate the connection.
  *
- * sdRef:            A DNSServiceRef initialized by any of the DNSService calls.
+ * sdRef:           A DNSServiceRef initialized by any of the DNSService calls.
  *
  * return value:    The DNSServiceRef's underlying socket descriptor, or -1 on
  *                  error.
@@ -738,10 +758,10 @@ typedef void (DNSSD_API *DNSServiceDomainEnumReply)
  * context:         An application context pointer which is passed to the callback function
  *                  (may be NULL).
  *
- * return value:    Returns kDNSServiceErr_NoError on succeses (any subsequent, asynchronous
+ * return value:    Returns kDNSServiceErr_NoError on success (any subsequent, asynchronous
  *                  errors are delivered to the callback), otherwise returns an error code indicating
  *                  the error that occurred (the callback is not invoked and the DNSServiceRef
- *                  is not initialized.)
+ *                  is not initialized).
  */
 
 DNSServiceErrorType DNSSD_API DNSServiceEnumerateDomains
@@ -897,10 +917,10 @@ typedef void (DNSSD_API *DNSServiceRegisterReply)
  * context:         An application context pointer which is passed to the callback function
  *                  (may be NULL).
  *
- * return value:    Returns kDNSServiceErr_NoError on succeses (any subsequent, asynchronous
+ * return value:    Returns kDNSServiceErr_NoError on success (any subsequent, asynchronous
  *                  errors are delivered to the callback), otherwise returns an error code indicating
  *                  the error that occurred (the callback is never invoked and the DNSServiceRef
- *                  is not initialized.)
+ *                  is not initialized).
  */
 
 DNSServiceErrorType DNSSD_API DNSServiceRegister
@@ -1126,10 +1146,10 @@ typedef void (DNSSD_API *DNSServiceBrowseReply)
  * context:         An application context pointer which is passed to the callback function
  *                  (may be NULL).
  *
- * return value:    Returns kDNSServiceErr_NoError on succeses (any subsequent, asynchronous
+ * return value:    Returns kDNSServiceErr_NoError on success (any subsequent, asynchronous
  *                  errors are delivered to the callback), otherwise returns an error code indicating
  *                  the error that occurred (the callback is not invoked and the DNSServiceRef
- *                  is not initialized.)
+ *                  is not initialized).
  */
 
 DNSServiceErrorType DNSSD_API DNSServiceBrowse
@@ -1254,10 +1274,10 @@ typedef void (DNSSD_API *DNSServiceResolveReply)
  * context:         An application context pointer which is passed to the callback function
  *                  (may be NULL).
  *
- * return value:    Returns kDNSServiceErr_NoError on succeses (any subsequent, asynchronous
+ * return value:    Returns kDNSServiceErr_NoError on success (any subsequent, asynchronous
  *                  errors are delivered to the callback), otherwise returns an error code indicating
  *                  the error that occurred (the callback is never invoked and the DNSServiceRef
- *                  is not initialized.)
+ *                  is not initialized).
  */
 
 DNSServiceErrorType DNSSD_API DNSServiceResolve
@@ -1373,10 +1393,10 @@ typedef void (DNSSD_API *DNSServiceQueryRecordReply)
  * context:         An application context pointer which is passed to the callback function
  *                  (may be NULL).
  *
- * return value:    Returns kDNSServiceErr_NoError on succeses (any subsequent, asynchronous
+ * return value:    Returns kDNSServiceErr_NoError on success (any subsequent, asynchronous
  *                  errors are delivered to the callback), otherwise returns an error code indicating
  *                  the error that occurred (the callback is never invoked and the DNSServiceRef
- *                  is not initialized.)
+ *                  is not initialized).
  */
 
 DNSServiceErrorType DNSSD_API DNSServiceQueryRecord
@@ -1488,7 +1508,7 @@ typedef void (DNSSD_API *DNSServiceGetAddrInfoReply)
  * context:         An application context pointer which is passed to the callback function
  *                  (may be NULL).
  *
- * return value:    Returns kDNSServiceErr_NoError on successes (any subsequent, asynchronous
+ * return value:    Returns kDNSServiceErr_NoError on success (any subsequent, asynchronous
  *                  errors are delivered to the callback), otherwise returns an error code indicating
  *                  the error that occurred.
  */
@@ -1606,10 +1626,10 @@ DNSServiceErrorType DNSSD_API DNSServiceCreateConnection(DNSServiceRef *sdRef);
  * context:         An application context pointer which is passed to the callback function
  *                  (may be NULL).
  *
- * return value:    Returns kDNSServiceErr_NoError on succeses (any subsequent, asynchronous
+ * return value:    Returns kDNSServiceErr_NoError on success (any subsequent, asynchronous
  *                  errors are delivered to the callback), otherwise returns an error code indicating
  *                  the error that occurred (the callback is never invoked and the DNSRecordRef is
- *                  not initialized.)
+ *                  not initialized).
  */
 
 DNSServiceErrorType DNSSD_API DNSServiceRegisterRecord
@@ -1789,7 +1809,7 @@ typedef void (DNSSD_API *DNSServiceNATPortMappingReply)
  * context:         An application context pointer which is passed to the callback function
  *                  (may be NULL).
  *
- * return value:    Returns kDNSServiceErr_NoError on successes (any subsequent, asynchronous
+ * return value:    Returns kDNSServiceErr_NoError on success (any subsequent, asynchronous
  *                  errors are delivered to the callback), otherwise returns an error code indicating
  *                  the error that occurred.
  *
@@ -2227,8 +2247,8 @@ DNSServiceErrorType DNSSD_API TXTRecordGetItemAtIndex
  *
  * domain:          The domain to be used for the caller's UID.
  *
- * return value:    Returns kDNSServiceErr_NoError on succeses, otherwise returns
- *                  an error code indicating the error that occurred
+ * return value:    Returns kDNSServiceErr_NoError on success, otherwise returns
+ *                  an error code indicating the error that occurred.
  */
 
 DNSServiceErrorType DNSSD_API DNSServiceSetDefaultDomainForUser
