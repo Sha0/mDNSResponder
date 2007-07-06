@@ -743,7 +743,7 @@ static DNSServiceErrorType RegisterProxyAddressRecord(DNSServiceRef *sdRef, cons
 	DNSServiceErrorType err = DNSServiceCreateConnection(sdRef);
 	if (err) { fprintf(stderr, "DNSServiceCreateConnection returned %d\n", err); return(err); }
 	addr = getip(ip);
-	return(DNSServiceRegisterRecord(*sdRef, &record, kDNSServiceFlagsUnique, kDNSServiceInterfaceIndexAny, host,
+	return(DNSServiceRegisterRecord(*sdRef, &record, kDNSServiceFlagsUnique, opinterface, host,
 		kDNSServiceType_A, kDNSServiceClass_IN, sizeof(addr), &addr, 240, MyRegisterRecordCallback, (void*)host));
 	// Note, should probably add support for creating proxy AAAA records too, one day
 	}
@@ -940,13 +940,15 @@ int main(int argc, char **argv)
 		case 'X':   {
 					if (argc == optind)	// If no arguments, just fetch IP address
 						err = DNSServiceNATPortMappingCreate(&client, 0, 0, 0, 0, 0, 0, port_mapping_create_reply, NULL);
-					else if (argc == optind+4)
+					else if (argc >= optind+2)
 						{
-						uint16_t PrivatePortAsNumber = atoi(argv[optind+1]);
-						uint16_t PublicPortAsNumber  = atoi(argv[optind+2]);
-						Opaque16 mapPrivatePort      = { { PrivatePortAsNumber >> 8, PrivatePortAsNumber & 0xFF } };
-						Opaque16 mapPublicPort       = { { PublicPortAsNumber  >> 8, PublicPortAsNumber  & 0xFF } };
-						err = DNSServiceNATPortMappingCreate(&client, 0, 0, GetProtocol(argv[optind+0]), mapPrivatePort.NotAnInteger, mapPublicPort.NotAnInteger, atoi(argv[optind+3]), port_mapping_create_reply, NULL);
+						DNSServiceProtocol prot  = GetProtocol(argv[optind+0]);						// Must specify TCP or UDP
+						uint16_t IntPortAsNumber = atoi(argv[optind+1]);							// Must specify internal port
+						uint16_t ExtPortAsNumber = (argc < optind+3) ? 0 : atoi(argv[optind+2]);	// Optional desired external port
+						uint32_t ttl             = (argc < optind+4) ? 0 : atoi(argv[optind+3]);	// Optional desired lease lifetime
+						Opaque16 intp = { { IntPortAsNumber >> 8, IntPortAsNumber & 0xFF } };
+						Opaque16 extp = { { ExtPortAsNumber >> 8, ExtPortAsNumber & 0xFF } };
+						err = DNSServiceNATPortMappingCreate(&client, 0, 0, prot, intp.NotAnInteger, extp.NotAnInteger, ttl, port_mapping_create_reply, NULL);
 						}
 					else goto Fail;
 					break;
@@ -956,7 +958,7 @@ int main(int argc, char **argv)
 #if HAS_ADDRINFO_API
 		case 'G':   {
 					if (argc != optind+2) goto Fail;
-					else err = DNSServiceGetAddrInfo(&client, kDNSServiceFlagsReturnIntermediates, 0, GetProtocol(argv[optind+0]), argv[optind+1], addrinfo_reply, NULL);
+					else err = DNSServiceGetAddrInfo(&client, kDNSServiceFlagsReturnIntermediates, opinterface, GetProtocol(argv[optind+0]), argv[optind+1], addrinfo_reply, NULL);
 					break;
 		            }
 #endif
@@ -967,15 +969,15 @@ int main(int argc, char **argv)
 					if (err) { fprintf(stderr, "DNSServiceCreateConnection failed %ld\n", (long int)err); return (-1); }
 
 					sc1 = client;
-					err = DNSServiceBrowse(&sc1, kDNSServiceFlagsShareConnection, 0, "_http._tcp", "", browse_reply, NULL);
+					err = DNSServiceBrowse(&sc1, kDNSServiceFlagsShareConnection, opinterface, "_http._tcp", "", browse_reply, NULL);
 					if (err) { fprintf(stderr, "DNSServiceBrowse _http._tcp failed %ld\n", (long int)err); return (-1); }
 
 					sc2 = client;
-					err = DNSServiceBrowse(&sc2, kDNSServiceFlagsShareConnection, 0, "_ftp._tcp", "", browse_reply, NULL);
+					err = DNSServiceBrowse(&sc2, kDNSServiceFlagsShareConnection, opinterface, "_ftp._tcp", "", browse_reply, NULL);
 					if (err) { fprintf(stderr, "DNSServiceBrowse _ftp._tcp failed %ld\n", (long int)err); return (-1); }
 
 					sc3 = client;
-					err = DNSServiceRegister(&sc3, kDNSServiceFlagsShareConnection, 0, "kDNSServiceFlagsShareConnection",
+					err = DNSServiceRegister(&sc3, kDNSServiceFlagsShareConnection, opinterface, "kDNSServiceFlagsShareConnection",
 						"_http._tcp", "local", NULL, registerPort.NotAnInteger, 0, NULL, reg_reply, NULL);
 					if (err) { fprintf(stderr, "SharedConnection DNSServiceRegister failed %ld\n", (long int)err); return (-1); }
 
@@ -1012,7 +1014,7 @@ Fail:
 	fprintf(stderr, "%s -Q <FQDN> <rrtype> <rrclass> (Generic query for any record type)\n", a0);
 	fprintf(stderr, "%s -C <FQDN> <rrtype> <rrclass>   (Query; reconfirming each result)\n", a0);
 #if HAS_NAT_PMP_API
-	fprintf(stderr, "%s -X udp/tcp/udptcp <PrivPort> <PubPort> <TTL>  (NAT Port Mapping)\n", a0);
+	fprintf(stderr, "%s -X udp/tcp/udptcp <IntPort> <ExtPort> <TTL>   (NAT Port Mapping)\n", a0);
 #endif
 #if HAS_ADDRINFO_API
 	fprintf(stderr, "%s -G v4/v6/v4v6 <Hostname>  (Get address information for hostname)\n", a0);
