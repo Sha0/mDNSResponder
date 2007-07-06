@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.647  2007/07/06 21:17:55  cheshire
+Initialize m->retryGetAddr to timenow + 0x78000000;
+
 Revision 1.646  2007/07/06 18:55:49  cheshire
 Initialize m->NextScheduledNATOp
 
@@ -6278,7 +6281,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->CurrentNATTraversal      = mDNSNULL;
 	m->NATAddrReq.vers          = 0;
 	m->NATAddrReq.opcode        = 0;
-	m->retryGetAddr             = 0;	// absolute time when we retry
+	m->retryGetAddr             = timenow + 0x78000000;	// absolute time when we retry
 	m->retryIntervalGetAddr     = 0;	// delta between time sent and retry
 	m->ExternalAddress          = zerov4Addr;
 
