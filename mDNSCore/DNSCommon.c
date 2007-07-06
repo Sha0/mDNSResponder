@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.161  2007/07/06 18:56:26  cheshire
+Check m->NextScheduledNATOp in GetNextScheduledEvent()
+
 Revision 1.160  2007/06/29 00:06:42  vazquez
 <rdar://problem/5301908> Clean up NAT state machine (necessary for 6 other fixes)
 
@@ -2455,6 +2458,7 @@ mDNSlocal mDNSs32 GetNextScheduledEvent(const mDNS *const m)
 	if (e - m->NextScheduledQuery    > 0) e = m->NextScheduledQuery;
 	if (e - m->NextScheduledProbe    > 0) e = m->NextScheduledProbe;
 	if (e - m->NextScheduledResponse > 0) e = m->NextScheduledResponse;
+	if (e - m->NextScheduledNATOp    > 0) e = m->NextScheduledNATOp;
 	return(e);
 	}
 
