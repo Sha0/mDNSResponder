@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.384  2007/07/06 21:20:21  cheshire
+Fix scheduling error (was causing "Task Scheduling Error: Continuously busy for more than a second")
+
 Revision 1.383  2007/07/06 18:59:59  cheshire
 Avoid spinning in an infinite loop when uDNS_SendNATMsg() returns an error
 
@@ -850,7 +853,7 @@ mDNSlocal void natTraversalHandleAddressReply(mDNS *const m, mDNSu8 *pkt)
 		{ 
 		// only change if address is different
 		m->ExternalAddress = addr; 
-		LogOperation("Received public IP address %.4a from NAT.", &m->ExternalAddress); 
+		LogOperation("Received external IP address %.4a from NAT", &m->ExternalAddress); 
 		if (mDNSv4AddrIsRFC1918(&m->ExternalAddress)) LogMsg("natTraversalHandleAddressReply: Double NAT");
 		}
 	m->retryIntervalGetAddr = NATMAP_MAX_RETRY_INTERVAL;
@@ -985,7 +988,7 @@ mDNSlocal mStatus mDNS_StopNATOperation_internal(mDNS *m, NATTraversalInfo *trav
 	NATTraversalInfo **ptr = &m->NATTraversals;
 	
 	while (*ptr && *ptr != traversal) ptr=&(*ptr)->next;
-	if (*ptr) *ptr = (*ptr)->next;
+	if (*ptr) *ptr = (*ptr)->next;		// If we found it, cut this NATTraversalInfo struct from our list
 	else
 		{
 		LogMsg("mDNS_StopNATOperation: NATTraversalInfo %p not found in list", traversal);
@@ -2391,9 +2394,12 @@ mDNSlocal void AdvertiseHostname(mDNS *m, HostnameInfo *h)
 		LogMsg("Advertising %##s IP %.4a", h->arv4.resrec.name->c, &m->AdvertisedV4.ip.v4);
 		if (mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4)) 
 			{
-			mDNSPlatformMemZero(&h->arv4.NATinfo, sizeof(NATTraversalInfo));
-			h->arv4.NATinfo.clientCallback = hostnameGetPublicAddressCallback;
-			h->arv4.NATinfo.clientContext = h;
+			h->arv4.NATinfo.clientCallback   = hostnameGetPublicAddressCallback;
+			h->arv4.NATinfo.clientContext    = h;
+			h->arv4.NATinfo.protocol         = 0;
+			h->arv4.NATinfo.privatePort      = zeroIPPort;
+			h->arv4.NATinfo.publicPortreq    = zeroIPPort;
+			h->arv4.NATinfo.portMappingLease = 0;
 			mDNS_StartNATOperation_internal(m, &h->arv4.NATinfo);
 			}
 		else mDNS_Register_internal(m, &h->arv4);
@@ -4069,18 +4075,24 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 	mStatus err = mStatus_NoError;
 	m->NextScheduledNATOp = m->timenow + 0x3FFFFFFF;
 
-	if (m->NATTraversals && m->retryGetAddr - m->timenow < 0)	// we have exceeded the timer interval
+	if (m->NATTraversals)
 		{
-		err = uDNS_SendNATMsg(m, mDNSNULL, AddrRequestFlag);
-		if (!err)
+		if (m->timenow - m->retryGetAddr >= 0)	// we have exceeded the timer interval
 			{
-			if      (m->retryIntervalGetAddr     < NATMAP_INIT_RETRY)         m->retryIntervalGetAddr = NATMAP_INIT_RETRY;
-			else if (m->retryIntervalGetAddr * 2 > NATMAP_MAX_RETRY_INTERVAL) m->retryIntervalGetAddr = NATMAP_MAX_RETRY_INTERVAL;
-			else m->retryIntervalGetAddr *= 2;
+			err = uDNS_SendNATMsg(m, mDNSNULL, AddrRequestFlag);
+			if (!err)
+				{
+				if      (m->retryIntervalGetAddr     < NATMAP_INIT_RETRY)         m->retryIntervalGetAddr = NATMAP_INIT_RETRY;
+				else if (m->retryIntervalGetAddr * 2 > NATMAP_MAX_RETRY_INTERVAL) m->retryIntervalGetAddr = NATMAP_MAX_RETRY_INTERVAL;
+				else m->retryIntervalGetAddr *= 2;
+				}
+			// Always update m->retryGetAddr, even if we fail to send the packet. Otherwise in cases where we can't send the packet
+			// (like when we have no active interfaces) we'll spin in an infinite loop repeatedly failing to send the packet
+			m->retryGetAddr = m->timenow + m->retryIntervalGetAddr;
 			}
-		// Always update m->retryGetAddr, even if we fail to send the packet. Otherwise in cases where we can't send the packet
-		// (like when we have no active interfaces) we'll spin in an infinite loop repeatedly failing to send the packet
-		m->NextScheduledNATOp = m->retryGetAddr = m->timenow + m->retryIntervalGetAddr;
+	
+		if (m->NextScheduledNATOp - m->retryGetAddr > 0)
+			m->NextScheduledNATOp = m->retryGetAddr;
 		}
 
 	if (m->CurrentNATTraversal) LogMsg("WARNING m->CurrentNATTraversal already in use");
@@ -4093,7 +4105,7 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 		// check for any outstanding request or refresh
 		if (cur->opFlags & (MapTCPFlag | MapUDPFlag))
 			{
-			if (cur->retryPortMap - m->timenow < 0)		// we have exceeded the timer interval
+			if (m->timenow - cur->retryPortMap >= 0)		// we have exceeded the timer interval
 				{
 				if (!mDNSIPPortIsZero(cur->publicPort) && cur->ExpiryTime - m->timenow < 0)	// Mapping has expired
 					{
@@ -4128,11 +4140,11 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 					}
 				cur->retryPortMap = m->timenow + cur->retryIntervalPortMap;
 				}
+
+			if (m->NextScheduledNATOp - cur->retryPortMap > 0)
+				m->NextScheduledNATOp = cur->retryPortMap;
 			}
 
-		if (m->NextScheduledNATOp - cur->retryPortMap > 0)
-			m->NextScheduledNATOp = cur->retryPortMap;
-		
 		// Notify the client if necessary
 		// XXX: this check for the callback should not be here, but it is because internal clients are not doing the start/stop nat operation correctly...
 		if (cur->clientCallback)
