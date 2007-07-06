@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.311  2007/07/06 21:19:18  cheshire
+Add list of NAT traversals to SIGINFO output
+
 Revision 1.310  2007/07/03 19:56:50  cheshire
 Add LogOperation message for DNSServiceSetDefaultDomainForUser
 
@@ -3400,6 +3403,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 	CacheRecord *cr;
 	AuthRecord *ar;
 	request_state *req;
+	NATTraversalInfo *nat;
 
 	LogMsgNoIdent("Timenow 0x%08lX (%ld)", (mDNSu32)now, now);
 	LogMsgNoIdent("------------ Cache -------------");
@@ -3460,6 +3464,19 @@ mDNSexport void udsserver_info(mDNS *const m)
 	LogMsgNoIdent("---- Active Client Requests ----");
 	for (req = all_requests; req; req=req->next)
 		LogClientInfo(req);
+
+	LogMsgNoIdent("---- NAT Traversals ----");
+	for (nat = m->NATTraversals; nat; nat=nat->next)
+		{
+		if (nat->protocol)
+			LogMsgNoIdent("%p %2X Int %5d Ext %5d Err %d Retry %d Interval %d Expire %d", nat,
+				nat->opFlags, mDNSVal16(nat->privatePort), mDNSVal16(nat->publicPort), nat->Error,
+				nat->retryPortMap - now,
+				nat->retryIntervalPortMap,
+				nat->ExpiryTime - now);
+		else
+			LogMsgNoIdent("%p Address Request Retry %d Interval %d", nat, m->retryGetAddr - now, m->retryIntervalGetAddr);
+		}
 	}
 
 mDNSlocal int send_msg(reply_state *rep)
