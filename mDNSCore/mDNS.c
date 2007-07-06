@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.646  2007/07/06 18:55:49  cheshire
+Initialize m->NextScheduledNATOp
+
 Revision 1.645  2007/06/29 22:55:54  cheshire
 Move declaration of DNSServer *s; Fixed incomplete comment.
 
@@ -6229,6 +6232,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->NextScheduledQuery      = timenow + 0x78000000;
 	m->NextScheduledProbe      = timenow + 0x78000000;
 	m->NextScheduledResponse   = timenow + 0x78000000;
+	m->NextScheduledNATOp      = timenow + 0x78000000;
 	m->RandomQueryDelay        = 0;
 	m->RandomReconfirmDelay    = 0;
 	m->PktNum                  = 0;
