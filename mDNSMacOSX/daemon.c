@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.322  2007/07/06 18:58:16  cheshire
+Check m->NextScheduledNATOp in ShowTaskSchedulingError()
+
 Revision 1.321  2007/07/02 21:54:20  cheshire
 Fix compile error in MACOSX_MDNS_MALLOC_DEBUGGING checks
 
@@ -2360,6 +2363,8 @@ mDNSlocal void ShowTaskSchedulingError(mDNS *const m)
 		LogMsg("Task Scheduling Error: m->NextScheduledProbe %d",    m->timenow - m->NextScheduledProbe);
 	if (m->timenow - m->NextScheduledResponse >= 0)
 		LogMsg("Task Scheduling Error: m->NextScheduledResponse %d", m->timenow - m->NextScheduledResponse);
+	if (m->timenow - m->NextScheduledNATOp >= 0)
+		LogMsg("Task Scheduling Error: m->NextScheduledNATOp %d",    m->timenow - m->NextScheduledNATOp);
 
 	mDNS_Unlock(&mDNSStorage);
 	}
