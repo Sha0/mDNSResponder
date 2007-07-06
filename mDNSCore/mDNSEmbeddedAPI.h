@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.387  2007/07/06 18:55:15  cheshire
+Add explicit NextScheduledNATOp scheduling variable
+
 Revision 1.386  2007/07/03 20:54:11  cheshire
 Tidied up code layout of NATTraversalInfo_struct fields and comments
 
@@ -1009,7 +1012,8 @@ struct NATTraversalInfo_struct
 	mDNSIPPort       publicPort;			// established public port mapping
 	mDNSIPPort       lastPublicPort;		// last public port mapping we got
 	mDNSv4Addr       lastExternalAddress;	// last external address we got
-	mStatus          lastError;				// set when there is a port mapping error
+	mStatus          Error;					// set when there is a port mapping error
+	mStatus          lastError;				// Last error code we delivered to callback
 	
 	// PortMapping fields
 	mDNSs32          retryPortMap;			// absolute time when we retry
@@ -1619,6 +1623,7 @@ struct mDNS_struct
 	mDNSs32  NextScheduledQuery;		// Next time to send query in its exponential backoff sequence
 	mDNSs32  NextScheduledProbe;		// Next time to probe for new authoritative record
 	mDNSs32  NextScheduledResponse;		// Next time to send authoritative record(s) in responses
+	mDNSs32  NextScheduledNATOp;		// Next time to send NAT-traversal packets
 	mDNSs32  RandomQueryDelay;			// For de-synchronization of query packets on the wire
 	mDNSu32  RandomReconfirmDelay;		// For de-synchronization of reconfirmation queries on the wire
 	mDNSs32  PktNum;					// Unique sequence number assigned to each received packet
