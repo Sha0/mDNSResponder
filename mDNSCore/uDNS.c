@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.385  2007/07/09 23:50:18  cheshire
+unlinkSRS needs to call mDNS_StopNATOperation_internal(), not mDNS_StopNATOperation()
+
 Revision 1.384  2007/07/06 21:20:21  cheshire
 Fix scheduling error (was causing "Task Scheduling Error: Continuously busy for more than a second")
 
@@ -619,11 +622,14 @@ mDNSlocal mStatus UnlinkAuthRecord(mDNS *const m, AuthRecord *const rr)
 	return(mStatus_NoSuchRecord);
 	}
 
+mDNSlocal mStatus mDNS_StopNATOperation_internal(mDNS *m, NATTraversalInfo *traversal);
+
+// unlinkSRS is an internal routine (i.e. must be called with the lock already held)
 mDNSlocal void unlinkSRS(mDNS *const m, ServiceRecordSet *srs)
 	{
 	ServiceRecordSet **p;
 
-	mDNS_StopNATOperation(m, &srs->NATinfo);
+	mDNS_StopNATOperation_internal(m, &srs->NATinfo);
 
 	for (p = &m->ServiceRegistrations; *p; p = &(*p)->uDNS_next)
 		if (*p == srs)
