@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.648  2007/07/09 23:48:12  cheshire
+Add parentheses around bitwise operation for clarity
+
 Revision 1.647  2007/07/06 21:17:55  cheshire
 Initialize m->retryGetAddr to timenow + 0x78000000;
 
@@ -4249,7 +4252,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 			if (!rr && m->rec.r.resrec.rroriginalttl > 0)
 				{
 				rr = CreateNewCacheEntry(m, slot, cg);
-				if (rr && rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask && !IsLLQEvent)
+				if (rr && (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) && !IsLLQEvent)
 					{ *cfp = rr; cfp = &rr->NextInCFList; *cfp = (CacheRecord*)1; }
 				}
 			}
