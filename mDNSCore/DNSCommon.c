@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.162  2007/07/10 01:59:33  cheshire
+<rdar://problem/3557903> Performance: Core code will not work on platforms with small stacks
+Fixed GetPktLease to use shared m->rec instead of putting LargeCacheRecord on the stack
+
 Revision 1.161  2007/07/06 18:56:26  cheshire
 Check m->NextScheduledNATOp in GetNextScheduledEvent()
 
@@ -2274,14 +2278,13 @@ mDNSexport const mDNSu8 *LocateLeaseOptData(const DNSMessage *const msg, const m
 // returns 0 on error or if no lease present
 mDNSexport mDNSu32 GetPktLease(mDNS *m, DNSMessage *msg, const mDNSu8 *end)
 	{
-	LargeCacheRecord lcr;
+	mDNSu32 result = 0;
 	const mDNSu8 *ptr = LocateLeaseOptData(msg, end);
-	if (!ptr) return(0);
-	ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAdd, &lcr);
-	if (!ptr) return(0);
-	if (lcr.r.resrec.rdlength < LEASE_OPT_RDLEN) return(0);
-	if (lcr.r.resrec.rdata->u.opt.opt != kDNSOpt_Lease) return(0);
-	return(lcr.r.resrec.rdata->u.opt.OptData.updatelease);
+	if (ptr) ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAdd, &m->rec);
+	if (ptr && m->rec.r.resrec.rdlength >= LEASE_OPT_RDLEN && m->rec.r.resrec.rdata->u.opt.opt == kDNSOpt_Lease)
+		result = m->rec.r.resrec.rdata->u.opt.OptData.updatelease;
+	m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
+	return(result);
 	}
 
 mDNSlocal const mDNSu8 *DumpRecords(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *ptr, const mDNSu8 *const end, int count, char *label)
