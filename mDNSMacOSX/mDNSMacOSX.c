@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.422  2007/07/10 01:21:20  cheshire
+Added (commented out) line for displaying key data for debugging
+
 Revision 1.421  2007/06/25 20:58:11  cheshire
 <rdar://problem/5234463> Write the Multicast DNS domains to the DynamicStore
 Additional refinement: Add mDNS domain list new new DynamicStore entity "State:/Network/MulticastDNS"
@@ -2641,6 +2644,9 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 					if (SameDomainName(&ptr->domain, &domain)) break;
 
 				LogOperation("SetDomainSecrets: %##s %##s", &domain.c, &keyname.c);
+				// Uncomment the line below to view the keys as they're read out of the system keychain
+				// DO NOT SHIP CODE THIS WAY OR YOU'LL LEAK SECRET DATA INTO A PUBLICLY READABLE FILE!
+				//LogOperation("SetDomainSecrets: %##s %##s %s", &domain.c, &keyname.c, keystring);
 
 				if (ptr)	// If we found an entry for this domain already in our list, just clear its deltime flag and update key data
 					{
