@@ -22,6 +22,11 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.386  2007/07/10 01:57:28  cheshire
+<rdar://problem/5196524> uDNS: mDNSresponder is leaking TCP connections to DNS server
+Turned vast chunks of replicated code into a subroutine MakeTCPConn(...);
+Made routines hold on to the reference it returns instead of leaking it
+
 Revision 1.385  2007/07/09 23:50:18  cheshire
 unlinkSRS needs to call mDNS_StopNATOperation_internal(), not mDNS_StopNATOperation()
 
@@ -560,9 +565,10 @@ Revision 1.227  2006/01/09 20:47:05  cheshire
 	#pragma warning(disable:4706)
 #endif
 
-typedef struct
+typedef struct tcpInfo_t
 	{
 	mDNS             *m;
+	TCPSocket        *sock;
 	DNSMessage        request;
 	int               requestLen;
 	DomainAuthInfo   *authInfo;
@@ -1135,10 +1141,9 @@ mDNSlocal mStatus constructQueryMsg(DNSMessage *msg, mDNSu8 **endPtr, DNSQuestio
 	return mStatus_NoError;
 	}
 
-mDNSlocal void sendChallengeResponse(const mDNS *const m, DNSQuestion *const q, const LLQOptData *llq)
+mDNSlocal void sendChallengeResponse(mDNS *const m, DNSQuestion *const q, const LLQOptData *llq)
 	{
-	DNSMessage response;
-	mDNSu8 *responsePtr = response.data;
+	mDNSu8 *responsePtr = m->omsg.data;
 	mStatus err;
 	LLQOptData llqBuf;
 
@@ -1166,12 +1171,12 @@ mDNSlocal void sendChallengeResponse(const mDNS *const m, DNSQuestion *const q, 
 	q->LastQTime     = m->timenow;
 	q->ThisQInterval = q->tcpSock ? 0 : (kLLQ_INIT_RESEND * q->ntries * mDNSPlatformOneSecond);		// If using TCP, don't need to retransmit
 
-	if (constructQueryMsg(&response, &responsePtr, q)) goto error;
-	responsePtr = putLLQ(&response, responsePtr, q, llq, mDNSfalse);
+	if (constructQueryMsg(&m->omsg, &responsePtr, q)) goto error;
+	responsePtr = putLLQ(&m->omsg, responsePtr, q, llq, mDNSfalse);
 	if (!responsePtr) { LogMsg("ERROR: sendChallengeResponse - putLLQ"); goto error; }
 
-	//LogOperation("sendChallengeResponse %#a:%d %d %p %d", &q->servAddr, mDNSVal16(q->servPort), q->tcpSock, q->AuthInfo, responsePtr - (mDNSu8 *)&response);
-	err = mDNSSendDNSMessage(m, &response, responsePtr, mDNSInterface_Any, &q->servAddr, q->servPort, q->tcpSock, q->AuthInfo);
+	//LogOperation("sendChallengeResponse %#a:%d %d %p %d", &q->servAddr, mDNSVal16(q->servPort), q->tcpSock, q->AuthInfo, responsePtr - (mDNSu8 *)&m->omsg);
+	err = mDNSSendDNSMessage(m, &m->omsg, responsePtr, mDNSInterface_Any, &q->servAddr, q->servPort, q->tcpSock, q->AuthInfo);
 	if (err) debugf("ERROR: sendChallengeResponse - mDNSSendDNSMessage returned %ld", err);
 	// on error, we procede as normal and retry after the appropriate interval
 
@@ -1300,13 +1305,12 @@ mDNSexport mDNSBool uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *const 
 						{
 						if (opt->OptData.llq.llqOp == kLLQOp_Event && mDNSSameOpaque64(&opt->OptData.llq.id, &q->id))
 							{
-							DNSMessage ack;
 							mDNSu8 *ackEnd;
 							if (q->LongLived && q->state == LLQ_Poll && !mDNSIPPortIsZero(q->servPort)) q->ThisQInterval = LLQ_POLL_INTERVAL;
 							else if (q->ThisQInterval < MAX_UCAST_POLL_INTERVAL)                        q->ThisQInterval = MAX_UCAST_POLL_INTERVAL;
-							InitializeDNSMessage(&ack.h, msg->h.id, ResponseFlags);
-							ackEnd = putLLQ(&ack, ack.data, mDNSNULL, &opt->OptData.llq, mDNSfalse);
-							if (ackEnd) mDNSSendDNSMessage(m, &ack, ackEnd, mDNSInterface_Any, srcaddr, srcport, mDNSNULL, mDNSNULL);
+							InitializeDNSMessage(&m->omsg.h, msg->h.id, ResponseFlags);
+							ackEnd = putLLQ(&m->omsg, m->omsg.data, mDNSNULL, &opt->OptData.llq, mDNSfalse);
+							if (ackEnd) mDNSSendDNSMessage(m, &m->omsg, ackEnd, mDNSInterface_Any, srcaddr, srcport, mDNSNULL, mDNSNULL);
 							m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 							return mDNStrue;
 							}
@@ -1511,6 +1515,38 @@ exit:
 		}
 	}
 
+mDNSlocal tcpInfo_t *MakeTCPConn(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
+	TCPSocketFlags flags, const mDNSAddr *const Addr, const mDNSIPPort Port,
+	DNSQuestion *const question, ServiceRecordSet *const srs, AuthRecord *const rr, DomainAuthInfo *const authInfo)
+	{
+	mStatus err;
+	mDNSIPPort srcport = zeroIPPort;
+	tcpInfo_t *info = (tcpInfo_t *)mDNSPlatformMemAllocate(sizeof(tcpInfo_t));
+	if (!info) { LogMsg("ERROR: MakeTCP - memallocate failed"); return(mDNSNULL); }
+
+	mDNSPlatformMemZero(info, sizeof(tcpInfo_t));
+	info->m          = m;
+	if (msg)
+		{
+		info->request    = *msg;
+		info->requestLen = (int) (end - ((mDNSu8*)msg));
+		}
+	info->authInfo   = authInfo;
+	info->question   = question;
+	info->srs        = srs;
+	info->rr         = rr;
+	info->Addr       = *Addr;
+	info->Port       = Port;
+
+	info->sock = mDNSPlatformTCPSocket(m, flags, &srcport);
+	if (!info->sock) { LogMsg("SendServiceRegistration: uanble to create TCP socket"); mDNSPlatformMemFree(info); return(mDNSNULL); }
+	err = mDNSPlatformTCPConnect(info->sock, Addr, Port, 0, tcpCallback, info);
+
+	if      (err == mStatus_ConnEstablished) { tcpCallback(info->sock, info, mDNStrue, mStatus_NoError); }
+	else if (err != mStatus_ConnPending    ) { LogMsg("MakeTCPConnection: connection failed"); mDNSPlatformMemFree(info); return(mDNSNULL); }
+	return(info);
+	}
+
 mDNSlocal void RemoveLLQNatMappings(mDNS *m, DNSQuestion *q)
 	{
 	if (&q->NATInfoTCP.clientContext)
@@ -1602,7 +1638,6 @@ mDNSlocal void startLLQHandshake(mDNS *m, DNSQuestion *q, mDNSBool defer)
 		}
 	else
 		{
-		DNSMessage msg;
 		mDNSu8 *end;
 		LLQOptData llqData;
 
@@ -1632,13 +1667,13 @@ mDNSlocal void startLLQHandshake(mDNS *m, DNSQuestion *q, mDNSBool defer)
 		llqData.id    = zeroOpaque64;
 		llqData.llqlease = kLLQ_DefLease;
 
-		InitializeDNSMessage(&msg.h, q->TargetQID, uQueryFlags);
-		end = putLLQ(&msg, msg.data, q, &llqData, mDNStrue);
+		InitializeDNSMessage(&m->omsg.h, q->TargetQID, uQueryFlags);
+		end = putLLQ(&m->omsg, m->omsg.data, q, &llqData, mDNStrue);
 		if (!end) { LogMsg("ERROR: startLLQHandshake - putLLQ"); q->state = LLQ_Error; return; }
 
 		if (!defer) // if we are to defer, we simply set the retry timers so the request goes out in the future
 			{
-			err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, &q->servAddr, q->servPort, mDNSNULL, mDNSNULL);
+			err = mDNSSendDNSMessage(m, &m->omsg, end, mDNSInterface_Any, &q->servAddr, q->servPort, mDNSNULL, mDNSNULL);
 			// on error, we procede as normal and retry after the appropriate interval
 			if (err) { debugf("ERROR: startLLQHandshake - mDNSSendDNSMessage returned %ld", err); err = mStatus_NoError; }
 			}
@@ -1710,9 +1745,8 @@ mDNSexport const domainname *GetServiceTarget(mDNS *m, AuthRecord *srv)
 // Called with lock held
 mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	{
-	DNSMessage msg;
-	mDNSu8 *ptr = msg.data;
-	mDNSu8 *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
+	mDNSu8 *ptr = m->omsg.data;
+	mDNSu8 *end = (mDNSu8 *)&m->omsg + sizeof(DNSMessage);
 	mDNSOpaque16 id;
 	mStatus err = mStatus_NoError;
 	mDNSIPPort privport = zeroIPPort;
@@ -1728,7 +1762,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	if (mDNSIPv4AddressIsZero(srs->ns.ip.v4)) { LogMsg("SendServiceRegistration - NS not set!"); return; }
 
 	id = mDNS_NewMessageID(m);
-	InitializeDNSMessage(&msg.h, id, UpdateReqFlags);
+	InitializeDNSMessage(&m->omsg.h, id, UpdateReqFlags);
 
 	// setup resource records
 	SetNewRData(&srs->RR_PTR.resrec, mDNSNULL, 0);
@@ -1745,42 +1779,42 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 
 	// construct update packet
 	// set zone
-	ptr = putZone(&msg, ptr, end, &srs->zone, mDNSOpaque16fromIntVal(srv->resrec.rrclass));
+	ptr = putZone(&m->omsg, ptr, end, &srs->zone, mDNSOpaque16fromIntVal(srv->resrec.rrclass));
 	if (!ptr) { err = mStatus_UnknownErr; goto exit; }
 
 	if (srs->TestForSelfConflict)
 		{
 		// update w/ prereq that SRV already exist to make sure previous registration was ours, and delete any stale TXT records
-		if (!(ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numPrereqs, &srs->RR_SRV.resrec, 0))) { err = mStatus_UnknownErr; goto exit; }
-		if (!(ptr = putDeleteRRSet(&msg, ptr, srs->RR_TXT.resrec.name, srs->RR_TXT.resrec.rrtype)))       { err = mStatus_UnknownErr; goto exit; }
+		if (!(ptr = PutResourceRecordTTLJumbo(&m->omsg, ptr, &m->omsg.h.mDNS_numPrereqs, &srs->RR_SRV.resrec, 0))) { err = mStatus_UnknownErr; goto exit; }
+		if (!(ptr = putDeleteRRSet(&m->omsg, ptr, srs->RR_TXT.resrec.name, srs->RR_TXT.resrec.rrtype)))       { err = mStatus_UnknownErr; goto exit; }
 		}
 
 	else if (srs->state != regState_Refresh && srs->state != regState_UpdatePending)
 		{
 		// use SRV name for prereq
-		ptr = putPrereqNameNotInUse(srv->resrec.name, &msg, ptr, end);
+		ptr = putPrereqNameNotInUse(srv->resrec.name, &m->omsg, ptr, end);
 		if (!ptr) { err = mStatus_UnknownErr; goto exit; }
 		}
 
 	//!!!KRS Need to do bounds checking and use TCP if it won't fit!!!
-	if (!(ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numUpdates, &srs->RR_PTR.resrec, srs->RR_PTR.resrec.rroriginalttl))) { err = mStatus_UnknownErr; goto exit; }
+	if (!(ptr = PutResourceRecordTTLJumbo(&m->omsg, ptr, &m->omsg.h.mDNS_numUpdates, &srs->RR_PTR.resrec, srs->RR_PTR.resrec.rroriginalttl))) { err = mStatus_UnknownErr; goto exit; }
 
 	for (i = 0; i < srs->NumSubTypes; i++)
-		if (!(ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numUpdates, &srs->SubTypes[i].resrec, srs->SubTypes[i].resrec.rroriginalttl))) { err = mStatus_UnknownErr; goto exit; }
+		if (!(ptr = PutResourceRecordTTLJumbo(&m->omsg, ptr, &m->omsg.h.mDNS_numUpdates, &srs->SubTypes[i].resrec, srs->SubTypes[i].resrec.rroriginalttl))) { err = mStatus_UnknownErr; goto exit; }
 
 	if (srs->state == regState_UpdatePending) // we're updating the txt record
 		{
 		AuthRecord *txt = &srs->RR_TXT;
 		// delete old RData
 		SetNewRData(&txt->resrec, txt->OrigRData, txt->OrigRDLen);
-		if (!(ptr = putDeletionRecord(&msg, ptr, &srs->RR_TXT.resrec))) { err = mStatus_UnknownErr; goto exit; }	// delete old rdata
+		if (!(ptr = putDeletionRecord(&m->omsg, ptr, &srs->RR_TXT.resrec))) { err = mStatus_UnknownErr; goto exit; }	// delete old rdata
 
 		// add new RData
 		SetNewRData(&txt->resrec, txt->InFlightRData, txt->InFlightRDLen);
-		if (!(ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numUpdates, &srs->RR_TXT.resrec, srs->RR_TXT.resrec.rroriginalttl))) { err = mStatus_UnknownErr; goto exit; }
+		if (!(ptr = PutResourceRecordTTLJumbo(&m->omsg, ptr, &m->omsg.h.mDNS_numUpdates, &srs->RR_TXT.resrec, srs->RR_TXT.resrec.rroriginalttl))) { err = mStatus_UnknownErr; goto exit; }
 		}
 	else
-		if (!(ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numUpdates, &srs->RR_TXT.resrec, srs->RR_TXT.resrec.rroriginalttl))) { err = mStatus_UnknownErr; goto exit; }
+		if (!(ptr = PutResourceRecordTTLJumbo(&m->omsg, ptr, &m->omsg.h.mDNS_numUpdates, &srs->RR_TXT.resrec, srs->RR_TXT.resrec.rroriginalttl))) { err = mStatus_UnknownErr; goto exit; }
 
 	target = GetServiceTarget(m, srv);
 	if (!target)
@@ -1796,11 +1830,11 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 		SetNewRData(&srv->resrec, mDNSNULL, 0);
 		}
 
-	ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numUpdates, &srv->resrec, srv->resrec.rroriginalttl);
+	ptr = PutResourceRecordTTLJumbo(&m->omsg, ptr, &m->omsg.h.mDNS_numUpdates, &srv->resrec, srv->resrec.rroriginalttl);
 	if (!ptr) { err = mStatus_UnknownErr; goto exit; }
 
 	if (srs->srs_uselease)
-		{ ptr = putUpdateLease(&msg, ptr, DEFAULT_UPDATE_LEASE); if (!ptr) { err = mStatus_UnknownErr; goto exit; } }
+		{ ptr = putUpdateLease(&m->omsg, ptr, DEFAULT_UPDATE_LEASE); if (!ptr) { err = mStatus_UnknownErr; goto exit; } }
 
 	if (srs->state != regState_Refresh && srs->state != regState_DeregDeferred && srs->state != regState_UpdatePending)
 		srs->state = regState_Pending;
@@ -1809,42 +1843,10 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	authInfo = GetAuthInfoForName(m, srs->RR_SRV.resrec.name);
 
 	if (srs->Private)
-		{
-		tcpInfo_t		*	info;
-		TCPSocket *		sock;
-		mDNSIPPort			port = zeroIPPort;
-
-		info = (tcpInfo_t *)mDNSPlatformMemAllocate(sizeof(tcpInfo_t));
-
-		if (!info)
-			{
-			LogMsg("ERROR: SendServiceRegistration - memallocate failed");
-			err = mStatus_UnknownErr;
-			goto exit;
-			}
-
-		mDNSPlatformMemZero(info, sizeof(tcpInfo_t));
-		info->request  = msg;
-		info->m        = m;
-		info->authInfo = authInfo;
-		info->srs      = srs;
-		info->requestLen = (int) (ptr - ((mDNSu8*) &msg));
-		info->Addr     = srs->ns;
-		info->Port     = srs->SRSUpdatePort;
-
-		// This mDNSPlatformTCPSocket/mDNSPlatformTCPConnect pattern appears repeatedly -- should be folded into and single make-socket-and-connect routine
-		sock = mDNSPlatformTCPSocket(m, kTCPSocketFlags_UseTLS, &port);
-		if (!sock) { LogMsg("SendServiceRegistration: uanble to create TCP socket"); mDNSPlatformMemFree(info); goto exit; }
-		err = mDNSPlatformTCPConnect(sock, &info->Addr, info->Port, 0, tcpCallback, info);
-
-		// This pattern appears repeatedly -- should be a subroutine, or folded into mDNSPlatformTCPConnect()
-		if      (err == mStatus_ConnEstablished) { tcpCallback(sock, info, mDNStrue, mStatus_NoError); err = mStatus_NoError; }
-		else if (err == mStatus_ConnPending    ) { err = mStatus_NoError; }
-		else                                     { LogMsg("SendServiceRegistration: connection failed"); mDNSPlatformMemFree(info); goto exit; }
-		}
+		srs->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &srs->ns, srs->SRSUpdatePort, mDNSNULL, srs, mDNSNULL, authInfo);
 	else
 		{
-		err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &srs->ns, srs->SRSUpdatePort, mDNSNULL, authInfo);
+		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &srs->ns, srs->SRSUpdatePort, mDNSNULL, authInfo);
 		if (err) debugf("ERROR: SendServiceRegistration - mDNSSendDNSMessage - %ld", err);
 		}
 
@@ -2175,67 +2177,34 @@ error:
 
 mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 	{
-	DNSMessage msg;
 	mDNSOpaque16 id;
-	mDNSu8 *ptr = msg.data;
-	mDNSu8 *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
+	mDNSu8 *ptr = m->omsg.data;
+	mDNSu8 *end = (mDNSu8 *)&m->omsg + sizeof(DNSMessage);
 	DomainAuthInfo *authInfo;
 	mStatus err = mStatus_UnknownErr;
 	mDNSu32 i;
 
 	id = mDNS_NewMessageID(m);
-	InitializeDNSMessage(&msg.h, id, UpdateReqFlags);
+	InitializeDNSMessage(&m->omsg.h, id, UpdateReqFlags);
 
 	// put zone
-	ptr = putZone(&msg, ptr, end, &srs->zone, mDNSOpaque16fromIntVal(srs->RR_SRV.resrec.rrclass));
+	ptr = putZone(&m->omsg, ptr, end, &srs->zone, mDNSOpaque16fromIntVal(srs->RR_SRV.resrec.rrclass));
 	if (!ptr) { LogMsg("ERROR: SendServiceDeregistration - putZone"); err = mStatus_UnknownErr; goto exit; }
 
-	if (!(ptr = putDeleteAllRRSets(&msg, ptr, srs->RR_SRV.resrec.name))) { err = mStatus_UnknownErr; goto exit; } // this deletes SRV, TXT, and Extras
-	if (!(ptr = putDeletionRecord(&msg, ptr, &srs->RR_PTR.resrec))) { err = mStatus_UnknownErr; goto exit; }
+	if (!(ptr = putDeleteAllRRSets(&m->omsg, ptr, srs->RR_SRV.resrec.name))) { err = mStatus_UnknownErr; goto exit; } // this deletes SRV, TXT, and Extras
+	if (!(ptr = putDeletionRecord(&m->omsg, ptr, &srs->RR_PTR.resrec))) { err = mStatus_UnknownErr; goto exit; }
 	for (i = 0; i < srs->NumSubTypes; i++)
-		if (!(ptr = putDeletionRecord(&msg, ptr, &srs->SubTypes[i].resrec))) { err = mStatus_UnknownErr; goto exit; }
+		if (!(ptr = putDeletionRecord(&m->omsg, ptr, &srs->SubTypes[i].resrec))) { err = mStatus_UnknownErr; goto exit; }
 
 	srs->id    = id;
 	srs->state = regState_DeregPending;
 	authInfo     = GetAuthInfoForName(m, srs->RR_SRV.resrec.name);
 
 	if (srs->Private)
-		{
-		tcpInfo_t		*	info;
-		TCPSocket *		sock;
-		mDNSIPPort			port = zeroIPPort;
-
-		info = (tcpInfo_t *)mDNSPlatformMemAllocate(sizeof(tcpInfo_t));
-
-		if (!info)
-			{
-			LogMsg("ERROR: SendServiceDeregistration - memallocate failed");
-			err = mStatus_UnknownErr;
-			goto exit;
-			}
-
-		mDNSPlatformMemZero(info, sizeof(tcpInfo_t));
-		info->request  = msg;
-		info->m        = m;
-		info->authInfo = authInfo;
-		info->srs      = srs;
-		info->requestLen = (int) (ptr - ((mDNSu8*) &msg));
-		info->Addr     = srs->ns;
-		info->Port     = srs->SRSUpdatePort;
-
-		// This mDNSPlatformTCPSocket/mDNSPlatformTCPConnect pattern appears repeatedly -- should be folded into and single make-socket-and-connect routine
-		sock = mDNSPlatformTCPSocket(m, kTCPSocketFlags_UseTLS, &port);
-		if (!sock) { LogMsg("SendServiceDeregistration: unable to create TCP socket"); mDNSPlatformMemFree(info); goto exit; }
-		err = mDNSPlatformTCPConnect(sock, &info->Addr, info->Port, 0, tcpCallback, info);
-
-		// This pattern appears repeatedly -- should be a subroutine, or folded into mDNSPlatformTCPConnect()
-		if      (err == mStatus_ConnEstablished) { tcpCallback(sock, info, mDNStrue, mStatus_NoError); err = mStatus_NoError; }
-		else if (err == mStatus_ConnPending    ) { err = mStatus_NoError; }
-		else                                     { LogMsg("SendServiceDeregistration: connection failed"); mDNSPlatformMemFree(info); goto exit; }
-		}
+		srs->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &srs->ns, srs->SRSUpdatePort, mDNSNULL, srs, mDNSNULL, authInfo);
 	else
 		{
-		err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &srs->ns, srs->SRSUpdatePort, mDNSNULL, authInfo);
+		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &srs->ns, srs->SRSUpdatePort, mDNSNULL, authInfo);
 		if (err && err != mStatus_TransientErr) { debugf("ERROR: SendServiceDeregistration - mDNSSendDNSMessage - %ld", err); goto exit; }
 		}
 
@@ -2692,7 +2661,6 @@ mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr, co
 
 mDNSlocal mStatus ParseTSIGError(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, const domainname *const displayname)
 	{
-	LargeCacheRecord lcr;
 	const mDNSu8 *ptr;
 	mStatus err = mStatus_NoError;
 	int i;
@@ -2702,14 +2670,14 @@ mDNSlocal mStatus ParseTSIGError(mDNS *const m, const DNSMessage *const msg, con
 
 	for (i = 0; i < msg->h.numAdditionals; i++)
 		{
-		ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAdd, &lcr);
+		ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAdd, &m->rec);
 		if (!ptr) goto finish;
-		if (lcr.r.resrec.rrtype == kDNSType_TSIG)
+		if (m->rec.r.resrec.rrtype == kDNSType_TSIG)
 			{
 			mDNSu32 macsize;
-			mDNSu8 *rd = lcr.r.resrec.rdata->u.data;
-			mDNSu8 *rdend = rd + lcr.r.resrec.rdlength;
-			int alglen = DomainNameLengthLimit(&lcr.r.resrec.rdata->u.name, rdend);
+			mDNSu8 *rd = m->rec.r.resrec.rdata->u.data;
+			mDNSu8 *rdend = rd + m->rec.r.resrec.rdlength;
+			int alglen = DomainNameLengthLimit(&m->rec.r.resrec.rdata->u.name, rdend);
 			if (alglen > MAX_DOMAIN_NAME) goto finish;
 			rd += alglen;                                       // algorithm name
 			if (rd + 6 > rdend) goto finish;
@@ -2732,9 +2700,11 @@ mDNSlocal mStatus ParseTSIGError(mDNS *const m, const DNSMessage *const msg, con
 			else if (err)                    { LogMsg("%##s: unknown tsig error %d", displayname->c, err); err = mStatus_UnknownErr; }
 			goto finish;
 			}
+		m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 		}
 
 	finish:
+	m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 	return err;
 	}
 
@@ -2788,9 +2758,8 @@ mDNSlocal mStatus checkUpdateResult(mDNS *const m, const domainname *const displ
 // Called with lock held
 mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 	{
-	DNSMessage msg;
-	mDNSu8 *ptr = msg.data;
-	mDNSu8 *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
+	mDNSu8 *ptr = m->omsg.data;
+	mDNSu8 *end = (mDNSu8 *)&m->omsg + sizeof(DNSMessage);
 	DomainAuthInfo *authInfo;
 	mStatus err = mStatus_UnknownErr;
 
@@ -2798,21 +2767,21 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 		LogMsg("sendRecordRegistration: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
 	rr->id = mDNS_NewMessageID(m);
-	InitializeDNSMessage(&msg.h, rr->id, UpdateReqFlags);
+	InitializeDNSMessage(&m->omsg.h, rr->id, UpdateReqFlags);
 
 	// set zone
-	ptr = putZone(&msg, ptr, end, &rr->zone, mDNSOpaque16fromIntVal(rr->resrec.rrclass));
+	ptr = putZone(&m->omsg, ptr, end, &rr->zone, mDNSOpaque16fromIntVal(rr->resrec.rrclass));
 	if (!ptr) { err = mStatus_UnknownErr; goto exit; }
 
 	if (rr->state == regState_UpdatePending)
 		{
 		// delete old RData
 		SetNewRData(&rr->resrec, rr->OrigRData, rr->OrigRDLen);
-		if (!(ptr = putDeletionRecord(&msg, ptr, &rr->resrec))) { err = mStatus_UnknownErr; goto exit; } // delete old rdata
+		if (!(ptr = putDeletionRecord(&m->omsg, ptr, &rr->resrec))) { err = mStatus_UnknownErr; goto exit; } // delete old rdata
 
 		// add new RData
 		SetNewRData(&rr->resrec, rr->InFlightRData, rr->InFlightRDLen);
-		if (!(ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numUpdates, &rr->resrec, rr->resrec.rroriginalttl))) { err = mStatus_UnknownErr; goto exit; }
+		if (!(ptr = PutResourceRecordTTLJumbo(&m->omsg, ptr, &m->omsg.h.mDNS_numUpdates, &rr->resrec, rr->resrec.rroriginalttl))) { err = mStatus_UnknownErr; goto exit; }
 		}
 
 	else
@@ -2820,64 +2789,32 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 		if (rr->resrec.RecordType == kDNSRecordTypeKnownUnique)
 			{
 			// KnownUnique: Delete any previous value
-			ptr = putDeleteRRSet(&msg, ptr, rr->resrec.name, rr->resrec.rrtype);
+			ptr = putDeleteRRSet(&m->omsg, ptr, rr->resrec.name, rr->resrec.rrtype);
 			if (!ptr) { err = mStatus_UnknownErr; goto exit; }
 			}
 
 		else if (rr->resrec.RecordType != kDNSRecordTypeShared)
 			{
-			ptr = putPrereqNameNotInUse(rr->resrec.name, &msg, ptr, end);
+			ptr = putPrereqNameNotInUse(rr->resrec.name, &m->omsg, ptr, end);
 			if (!ptr) { err = mStatus_UnknownErr; goto exit; }
 			}
 
-		ptr = PutResourceRecordTTLJumbo(&msg, ptr, &msg.h.mDNS_numUpdates, &rr->resrec, rr->resrec.rroriginalttl);
+		ptr = PutResourceRecordTTLJumbo(&m->omsg, ptr, &m->omsg.h.mDNS_numUpdates, &rr->resrec, rr->resrec.rroriginalttl);
 		if (!ptr) { err = mStatus_UnknownErr; goto exit; }
 		}
 
 	if (rr->uselease)
 		{
-		ptr = putUpdateLease(&msg, ptr, DEFAULT_UPDATE_LEASE); if (!ptr) { err = mStatus_UnknownErr; goto exit; }
+		ptr = putUpdateLease(&m->omsg, ptr, DEFAULT_UPDATE_LEASE); if (!ptr) { err = mStatus_UnknownErr; goto exit; }
 		}
 
 	authInfo = GetAuthInfoForName(m, rr->resrec.name);
 
 	if (rr->Private)
-		{
-		tcpInfo_t	*	info;
-		TCPSocket *	sock;
-		mDNSIPPort		port = zeroIPPort;
-
-		info = (tcpInfo_t *)mDNSPlatformMemAllocate(sizeof(tcpInfo_t));
-
-		if (!info)
-			{
-			LogMsg("ERROR: sendRecordRegistration - memallocate failed");
-			err = mStatus_UnknownErr;
-			goto exit;
-			}
-
-		mDNSPlatformMemZero(info, sizeof(tcpInfo_t));
-		info->m          = m;
-		info->authInfo   = authInfo;
-		info->rr         = rr;
-		info->request    = msg;
-		info->requestLen = (int) (ptr - ((mDNSu8*) &msg));
-		info->Addr       = rr->UpdateServer;
-		info->Port       = rr->UpdatePort;
-
-		// This mDNSPlatformTCPSocket/mDNSPlatformTCPConnect pattern appears repeatedly -- should be folded into and single make-socket-and-connect routine
-		sock = mDNSPlatformTCPSocket(m, kTCPSocketFlags_UseTLS, &port);
-		if (!sock) { LogMsg("sendRecordRegistration: unable to create TCP socket"); mDNSPlatformMemFree(info); goto exit; }
-		err = mDNSPlatformTCPConnect(sock, &info->Addr, info->Port, 0, tcpCallback, info);
-
-		// This pattern appears repeatedly -- should be a subroutine, or folded into mDNSPlatformTCPConnect()
-		if      (err == mStatus_ConnEstablished) { tcpCallback(sock, info, mDNStrue, mStatus_NoError); err = mStatus_NoError; }
-		else if (err == mStatus_ConnPending    ) { err = mStatus_NoError; }
-		else                                     { LogMsg("sendRecordRegistration: connection failed"); mDNSPlatformMemFree(info); goto exit; }
-		}
+		rr->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, mDNSNULL, rr, authInfo);
 	else
 		{
-		err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, authInfo);
+		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, authInfo);
 		if (err) debugf("ERROR: sendRecordRegistration - mDNSSendDNSMessage - %ld", err);
 		}
 
@@ -3306,38 +3243,6 @@ mDNSlocal mDNSBool uDNS_ReceiveTestQuestionResponse(mDNS *const m, DNSMessage *c
 	return(mDNStrue); // Return mDNStrue to tell uDNS_ReceiveMsg it doesn't need to process this packet further
 	}
 
-mDNSlocal void hndlTruncatedAnswer(mDNS *m, DNSQuestion *question, const mDNSAddr *src, const mDNSIPPort srcport)
-	{
-	TCPSocket *sock = mDNSNULL;
-	tcpInfo_t *context;
-	mDNSIPPort port = zeroIPPort;
-	mStatus err = mStatus_NoError;
-
-	if (!src) { LogMsg("hndlTruncatedAnswer: TCP DNS response had TC bit set: ignoring"); return; }
-
-	context = (tcpInfo_t *)mDNSPlatformMemAllocate(sizeof(tcpInfo_t));
-	if (!context) { LogMsg("ERROR: hndlTruncatedAnswer - memallocate failed"); err = mStatus_UnknownErr; goto exit; }
-
-	mDNSPlatformMemZero(context, sizeof(tcpInfo_t));
-	context->question = question;
-	context->m = m;
-	context->Addr = *src;
-	context->Port = srcport;
-
-	// This mDNSPlatformTCPSocket/mDNSPlatformTCPConnect pattern appears repeatedly -- should be folded into and single make-socket-and-connect routine
-	sock = mDNSPlatformTCPSocket(m, kTCPSocketFlags_Zero, &port);
-	if (!sock) { LogMsg("ERROR: unable to create TCP socket"); err = mStatus_UnknownErr; goto exit; }
-	err = mDNSPlatformTCPConnect(sock, &context->Addr, context->Port, question->InterfaceID, tcpCallback, context);
-
-	// This pattern appears repeatedly -- should be a subroutine, or folded into mDNSPlatformTCPConnect()
-	if      (err == mStatus_ConnEstablished) { tcpCallback(sock, context, mDNStrue, mStatus_NoError); err = mStatus_NoError; }
-	else if (err == mStatus_ConnPending    ) { err = mStatus_NoError; }
-	else                                     { LogMsg("hndlTruncatedAnswer: connection failed"); }
-
-exit:
-	if (err) mDNS_StopQuery_internal(m, question);
-	}
-
 // Called from mDNSCoreReceive with the lock held
 mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *const srcaddr, const mDNSIPPort srcport)
 	{
@@ -3366,7 +3271,10 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 		if (!mDNSOpaque16IsZero(msg->h.id))
 			for (qptr = m->Questions; qptr; qptr = qptr->next)
 				if (msg->h.flags.b[0] & kDNSFlag0_TC && mDNSSameOpaque16(qptr->TargetQID, msg->h.id) && m->timenow - qptr->LastQTime < RESPONSE_WINDOW)
-					{ hndlTruncatedAnswer(m, qptr, srcaddr, srcport); return; }
+					{
+					if (!srcaddr) LogMsg("hndlTruncatedAnswer: TCP DNS response had TC bit set: ignoring");
+					else qptr->tcp = MakeTCPConn(m, mDNSNULL, mDNSNULL, kTCPSocketFlags_Zero, srcaddr, srcport, qptr, mDNSNULL, mDNSNULL, qptr->AuthInfo);
+					}
 		}
 	if (QR_OP == UpdateR && !mDNSOpaque16IsZero(msg->h.id))
 		{
@@ -3423,7 +3331,6 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 
 mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 	{
-	DNSMessage msg;
 	mDNSu8 *end;
 	LLQOptData llq;
 	mStatus err;
@@ -3450,11 +3357,11 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 	llq.id    = q->id;
 	llq.llqlease = lease;
 
-	InitializeDNSMessage(&msg.h, q->TargetQID, uQueryFlags);
-	end = putLLQ(&msg, msg.data, q, &llq, mDNStrue);
+	InitializeDNSMessage(&m->omsg.h, q->TargetQID, uQueryFlags);
+	end = putLLQ(&m->omsg, m->omsg.data, q, &llq, mDNStrue);
 	if (!end) { LogMsg("ERROR: sendLLQRefresh - putLLQ"); return; }
 
-	err = mDNSSendDNSMessage(m, &msg, end, mDNSInterface_Any, &q->servAddr, q->servPort, q->tcpSock, q->AuthInfo);
+	err = mDNSSendDNSMessage(m, &m->omsg, end, mDNSInterface_Any, &q->servAddr, q->servPort, q->tcpSock, q->AuthInfo);
 	if (err) debugf("ERROR: sendLLQRefresh - mDNSSendDNSMessage returned %ld", err);
 
 	if (q->state == LLQ_Established) q->ntries = 1;
@@ -3530,9 +3437,6 @@ exit:
 mDNSlocal void startPrivateQueryCallback(mDNS *const m, mStatus err, const ZoneData *zoneInfo)
 	{
 	DNSQuestion *q = (DNSQuestion *) zoneInfo->ZoneDataContext;
-	tcpInfo_t *info;
-	TCPSocket *	sock = mDNSNULL;
-	mDNSIPPort		port = zeroIPPort;
 
 	LogOperation("startPrivateQueryCallback %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 
@@ -3572,32 +3476,8 @@ mDNSlocal void startPrivateQueryCallback(mDNS *const m, mStatus err, const ZoneD
 		goto exit;
 		}
 
-	info = (tcpInfo_t *)mDNSPlatformMemAllocate(sizeof(tcpInfo_t));
-	if (!info)
-		{
-		LogMsg("ERROR: startPrivateQueryCallback - memallocate failed");
-		err = mStatus_NoMemoryErr;
-		goto exit;
-		}
-
-	mDNSPlatformMemZero(info, sizeof(tcpInfo_t));
-	info->m        = m;
-	info->question = q;
-	info->authInfo = q->AuthInfo;
-	info->Addr = zoneInfo->Addr;
-	info->Port = zoneInfo->Port;
-	q->TargetQID   = mDNS_NewMessageID(m);
-
-	// This mDNSPlatformTCPSocket/mDNSPlatformTCPConnect pattern appears repeatedly -- should be folded into and single make-socket-and-connect routine
-	sock = mDNSPlatformTCPSocket(m, kTCPSocketFlags_UseTLS, &port);
-	if (!sock) { LogMsg("startPrivateQueryCallback: unable to create TCP socket"); err = mStatus_UnknownErr; goto exit; }
-	err = mDNSPlatformTCPConnect(sock, &info->Addr, info->Port, q->InterfaceID, tcpCallback, info);
-
-	// This pattern appears repeatedly -- should be a subroutine, or folded into mDNSPlatformTCPConnect()
-	if (err == mStatus_ConnEstablished) tcpCallback(sock, info, mDNStrue, mStatus_NoError);
-	else if (err != mStatus_ConnPending) { LogMsg("startPrivateQueryCallback: connection failed"); mDNSPlatformTCPCloseConnection(sock); goto exit; }
-
-	err = mStatus_NoError;
+	q->TargetQID = mDNS_NewMessageID(m);
+	q->tcp = MakeTCPConn(m, mDNSNULL, mDNSNULL, kTCPSocketFlags_UseTLS, &zoneInfo->Addr, zoneInfo->Port, q, mDNSNULL, mDNSNULL, q->AuthInfo);
 
 exit:
 
@@ -3718,49 +3598,25 @@ error:
 
 mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 	{
-	DNSMessage msg;
-	mDNSu8 *ptr = msg.data;
+	mDNSu8 *ptr = m->omsg.data;
 	DomainAuthInfo *authInfo;
-	mDNSu8 *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
+	mDNSu8 *end = (mDNSu8 *)&m->omsg + sizeof(DNSMessage);
 	mStatus err = mStatus_NoError;
 
-	InitializeDNSMessage(&msg.h, rr->id, UpdateReqFlags);
+	InitializeDNSMessage(&m->omsg.h, rr->id, UpdateReqFlags);
 
-	ptr = putZone(&msg, ptr, end, &rr->zone, mDNSOpaque16fromIntVal(rr->resrec.rrclass));
+	ptr = putZone(&m->omsg, ptr, end, &rr->zone, mDNSOpaque16fromIntVal(rr->resrec.rrclass));
 	if (!ptr) { err = mStatus_UnknownErr; goto exit; }
-	if (!(ptr = putDeletionRecord(&msg, ptr, &rr->resrec))) { err = mStatus_UnknownErr; goto exit; }
+	if (!(ptr = putDeletionRecord(&m->omsg, ptr, &rr->resrec))) { err = mStatus_UnknownErr; goto exit; }
 
 	rr->state = regState_DeregPending;
 	authInfo  = GetAuthInfoForName(m, rr->resrec.name);
 
 	if (rr->Private)
-		{
-		TCPSocket *	sock;
-		mDNSIPPort		port = zeroIPPort;
-		tcpInfo_t	*	info = (tcpInfo_t *)mDNSPlatformMemAllocate(sizeof(tcpInfo_t));
-		if (!info) { LogMsg("ERROR: SendRecordDeregistration - memallocate failed"); err = mStatus_UnknownErr; goto exit; }
-		mDNSPlatformMemZero(info, sizeof(tcpInfo_t));
-		info->request  = msg;
-		info->m        = m;
-		info->authInfo = authInfo;
-		info->rr       = rr;
-		info->requestLen = (int) (ptr - ((mDNSu8*) &msg));
-		info->Addr = rr->UpdateServer;
-		info->Port = rr->UpdatePort;
-
-		// This mDNSPlatformTCPSocket/mDNSPlatformTCPConnect pattern appears repeatedly -- should be folded into and single make-socket-and-connect routine
-		sock = mDNSPlatformTCPSocket(m, kTCPSocketFlags_UseTLS, &port);
-		if (!sock) { LogMsg("SendRecordDeregistration: unable to create TCP socket"); mDNSPlatformMemFree(info); goto exit; }
-		err = mDNSPlatformTCPConnect(sock, &info->Addr, info->Port, 0, tcpCallback, info);
-
-		// This pattern appears repeatedly -- should be a subroutine, or folded into mDNSPlatformTCPConnect()
-		if (err == mStatus_ConnEstablished) { tcpCallback(sock, info, mDNStrue, mStatus_NoError); err = mStatus_NoError; }
-		else if (err == mStatus_ConnPending) err = mStatus_NoError;
-		else { LogMsg("SendRecordDeregistration: connection failed"); mDNSPlatformMemFree(info); goto exit; }
-		}
+		rr->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, mDNSNULL, rr, authInfo);
 	else
 		{
-		err = mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, authInfo);
+		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, authInfo);
 		if (err) debugf("ERROR: SendRecordDeregistration - mDNSSendDNSMessage - %ld", err);
 		}
 
@@ -4007,14 +3863,13 @@ mDNSexport void uDNS_CheckQuery(mDNS *const m)
 		{
 		if (q->qDNSServer && q->qDNSServer->teststate != DNSServer_Disabled)
 			{
-			DNSMessage msg;
-			mDNSu8 *end = msg.data;
+			mDNSu8 *end = m->omsg.data;
 			mStatus err = mStatus_NoError;
 			DomainAuthInfo *private = mDNSNULL;
 
 			if (q->qDNSServer->teststate != DNSServer_Untested || NoTestQuery(q))
 				{
-				err = constructQueryMsg(&msg, &end, q);
+				err = constructQueryMsg(&m->omsg, &end, q);
 				private = q->AuthInfo;
 				}
 			else if (m->timenow - q->qDNSServer->lasttest >= INIT_UCAST_POLL_INTERVAL)	// Make sure at least three seconds has elapsed since last test query
@@ -4022,14 +3877,14 @@ mDNSexport void uDNS_CheckQuery(mDNS *const m)
 				LogOperation("Sending DNS test query to %#a:%d", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port));
 				q->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
 				q->qDNSServer->lasttest = m->timenow;
-				InitializeDNSMessage(&msg.h, mDNS_NewMessageID(m), uQueryFlags);
-				end = putQuestion(&msg, msg.data, msg.data + AbsoluteMaxDNSMessageData, DNSRelayTestQuestion, kDNSType_PTR, kDNSClass_IN);
+				InitializeDNSMessage(&m->omsg.h, mDNS_NewMessageID(m), uQueryFlags);
+				end = putQuestion(&m->omsg, m->omsg.data, m->omsg.data + AbsoluteMaxDNSMessageData, DNSRelayTestQuestion, kDNSType_PTR, kDNSClass_IN);
 				}
 
 			if (err) LogMsg("Error: uDNS_CheckQuery - constructQueryMsg. Skipping question %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 			else
 				{
-				if (end > msg.data && (q->qDNSServer->teststate != DNSServer_Failed || NoTestQuery(q)))
+				if (end > m->omsg.data && (q->qDNSServer->teststate != DNSServer_Failed || NoTestQuery(q)))
 					{
 					//LogMsg("uDNS_CheckQuery %d %p %##s (%s)", sendtime - m->timenow, private, q->qname.c, DNSTypeName(q->qtype));
 					if (private)
@@ -4040,7 +3895,7 @@ mDNSexport void uDNS_CheckQuery(mDNS *const m)
 						}
 					else
 						{
-						err = mDNSSendDNSMessage(m, &msg, end, q->qDNSServer->interface, &q->qDNSServer->addr, q->qDNSServer->port, mDNSNULL, mDNSNULL);
+						err = mDNSSendDNSMessage(m, &m->omsg, end, q->qDNSServer->interface, &q->qDNSServer->addr, q->qDNSServer->port, mDNSNULL, mDNSNULL);
 						m->SuppressStdPort53Queries = NonZeroTime(m->timenow + (mDNSPlatformOneSecond+99)/100);
 						}
 					}
@@ -4387,7 +4242,6 @@ mDNSexport void mDNS_UpdateLLQs(mDNS *m)
 
 mDNSlocal void SleepRecordRegistrations(mDNS *m)
 	{
-	DNSMessage msg;
 	AuthRecord *rr = m->ResourceRecords;
 
 	while (rr)
@@ -4395,16 +4249,16 @@ mDNSlocal void SleepRecordRegistrations(mDNS *m)
 		if (rr->state == regState_Registered ||
 			rr->state == regState_Refresh)
 			{
-			mDNSu8 *ptr = msg.data, *end = (mDNSu8 *)&msg + sizeof(DNSMessage);
-			InitializeDNSMessage(&msg.h, mDNS_NewMessageID(m), UpdateReqFlags);
+			mDNSu8 *ptr = m->omsg.data, *end = (mDNSu8 *)&m->omsg + sizeof(DNSMessage);
+			InitializeDNSMessage(&m->omsg.h, mDNS_NewMessageID(m), UpdateReqFlags);
 
 			// construct deletion update
-			ptr = putZone(&msg, ptr, end, &rr->zone, mDNSOpaque16fromIntVal(rr->resrec.rrclass));
+			ptr = putZone(&m->omsg, ptr, end, &rr->zone, mDNSOpaque16fromIntVal(rr->resrec.rrclass));
 			if (!ptr) { LogMsg("Error: SleepRecordRegistrations - could not put zone"); return; }
-			ptr = putDeletionRecord(&msg, ptr, &rr->resrec);
+			ptr = putDeletionRecord(&m->omsg, ptr, &rr->resrec);
 			if (!ptr) { LogMsg("Error: SleepRecordRegistrations - could not put deletion record"); return; }
 
-			mDNSSendDNSMessage(m, &msg, ptr, mDNSInterface_Any, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, GetAuthInfoForName(m, rr->resrec.name));
+			mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, GetAuthInfoForName(m, rr->resrec.name));
 			rr->state = regState_Refresh;
 			rr->LastAPTime = m->timenow;
 			rr->ThisAPInterval = 300 * mDNSPlatformOneSecond;
