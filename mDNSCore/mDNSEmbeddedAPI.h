@@ -54,6 +54,11 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.388  2007/07/10 01:53:18  cheshire
+<rdar://problem/5196524> uDNS: mDNSresponder is leaking TCP connections to DNS server
+AuthRecord, ServiceRecordSet, and DNSQuestion structures need tcpInfo_t pointers
+so they can keep track of what TCP connections they open
+
 Revision 1.387  2007/07/06 18:55:15  cheshire
 Add explicit NextScheduledNATOp scheduling variable
 
@@ -1139,6 +1144,7 @@ struct AuthRecord_struct
 								// SDC Perhaps should keep a reference to the relevant SRV record in the cache?
 	NATTraversalInfo NATinfo;	// NAT traversal context; may be NULL
 	ZoneData  *nta;
+	struct tcpInfo_t *tcp;
 
 	// uDNS_UpdateRecord support fields
 	// Do we really need all these in *addition* to NewRData and newrdlength above?
@@ -1327,6 +1333,7 @@ struct ServiceRecordSet_struct
 	mStatus      DeferredStatus;          // status to deliver when above flag is set
     mDNSBool     SRVUpdateDeferred;       // do we need to change target or port once current operation completes?
     mDNSBool     SRVChanged;              // temporarily deregistered service because its SRV target or port changed
+    struct tcpInfo_t *tcp;
 
 	// End uDNS info ****************
 
@@ -1476,6 +1483,7 @@ struct DNSQuestion_struct
 	ZoneData             *nta;				// Used for getting zone data for private or LLQ query
 	mDNSAddr              servAddr;			// Address and port learned from _dns-llq, _dns-llq-tls or _dns-query-tls SRV query
 	mDNSIPPort            servPort;
+	struct tcpInfo_t *tcp;
 
 	// LLQ-specific fields. These fields are only meaningful when LongLived flag is set
 	LLQ_State             state;
