@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.391  2007/07/11 23:16:31  cheshire
+<rdar://problem/5304766> Register IPSec tunnel with IPv4-only hostname and create NAT port mappings
+Need to prepend _autotunnel._udp to start of AutoTunnel SRV record name
+
 Revision 1.390  2007/07/11 22:47:55  cheshire
 <rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for services
 In mDNS_SetSecretForDomain(), don't register records until after we've validated the parameters
@@ -835,7 +839,9 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 
 		// 3. Set up IKE tunnel's SRV record: "AutoTunnelHostRecord SRV 0 0 port AutoTunnelTarget"
 		mDNS_SetupResourceRecord(&info->AutoTunnelService, mDNSNULL, mDNSInterface_Any, kDNSType_SRV, kHostNameTTL, kDNSRecordTypeUnique, mDNSNULL, mDNSNULL);
-		AssignDomainName(&info->AutoTunnelService.namestorage, &info->AutoTunnelHostRecord.namestorage);
+		info->AutoTunnelService.namestorage.c[0] = 0;
+		AppendDomainName(&info->AutoTunnelService.namestorage, (const domainname*) "\x0B" "_autotunnel" "\x04" "_udp");
+		AppendDomainName(&info->AutoTunnelService.namestorage, &info->AutoTunnelHostRecord.namestorage);
 		info->AutoTunnelService.resrec.rdata->u.srv.priority = 0;
 		info->AutoTunnelService.resrec.rdata->u.srv.weight   = 0;
 		info->AutoTunnelService.resrec.rdata->u.srv.port     = mDNSOpaque16fromIntVal(500); // TEMP FOR AUTOTUNNEL TESTING: assume port 500
