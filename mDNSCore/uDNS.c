@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.390  2007/07/11 22:47:55  cheshire
+<rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for services
+In mDNS_SetSecretForDomain(), don't register records until after we've validated the parameters
+
 Revision 1.389  2007/07/11 21:33:10  cheshire
 <rdar://problem/5304766> Register IPSec tunnel with IPv4-only hostname and create NAT port mappings
 Set up and register AutoTunnelTarget and AutoTunnelService DNS records
@@ -781,6 +785,21 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 	AssignDomainName(&info->domain,  domain);
 	AssignDomainName(&info->keyname, keyname);
 
+	if (DNSDigest_ConstructHMACKeyfromBase64(info, b64keydata) < 0)
+		{
+		LogMsg("ERROR: mDNS_SetSecretForDomain: Could not convert shared secret from base64: domain %##s key %##s %s",
+			domain->c, keyname->c, LogAllOperations ? b64keydata : "");
+		return(mStatus_BadParamErr);
+		}
+
+	while (*p && (*p) != info) p=&(*p)->next;
+	if (*p)
+		{
+		LogMsg("Error! Tried to mDNS_SetSecretForDomain: %##s %##s with DomainAuthInfo %p that's already in the list", domain->c, keyname->c, info);
+		return(mStatus_AlreadyRegistered);
+		}
+
+	*p = info;
 	if (info->AutoTunnel)
 		{
 		// 1. Set up our address record for the internal tunnel address
@@ -823,18 +842,6 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 		AssignDomainName(&info->AutoTunnelService.resrec.rdata->u.srv.target, &info->AutoTunnelTarget.namestorage);
 		mDNS_Register_internal(m, &info->AutoTunnelService);
 		}
-
-	if (DNSDigest_ConstructHMACKeyfromBase64(info, b64keydata) < 0)
-		{
-		LogMsg("ERROR: mDNS_SetSecretForDomain: Could not convert shared secret from base64: domain %##s key %##s %s",
-			domain->c, keyname->c, LogAllOperations ? b64keydata : "");
-		return(mStatus_BadParamErr);
-		}
-
-	while (*p && (*p) != info) p=&(*p)->next;
-	if (!*p) *p = info;
-	else LogMsg("Error! Tried to mDNS_SetSecretForDomain: %##s %##s with DomainAuthInfo %p that's already in the list",
-		domain->c, keyname->c, info);
 
 	return(mStatus_NoError);
 	}
