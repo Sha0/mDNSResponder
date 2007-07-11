@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.389  2007/07/11 02:44:03  cheshire
+<rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for AutoTunnel services
+Added AutoTunnel fields to structures
+
 Revision 1.388  2007/07/10 01:53:18  cheshire
 <rdar://problem/5196524> uDNS: mDNSresponder is leaking TCP connections to DNS server
 AuthRecord, ServiceRecordSet, and DNSQuestion structures need tcpInfo_t pointers
@@ -1072,7 +1076,7 @@ typedef enum
 	regState_NATMap            = 10,    // establishing NAT port mapping or learning public address
 	regState_UpdatePending     = 11,    // update in flight as result of mDNS_Update call
 	regState_NoTarget          = 12,    // service registration pending registration of hostname (ServiceRegistrations only)
-    regState_ExtraQueued       = 13,    // extra record to be registered upon completion of service registration (RecordRegistrations only)
+	regState_ExtraQueued       = 13,    // extra record to be registered upon completion of service registration (RecordRegistrations only)
 	regState_NATError          = 14     // unable to complete NAT traversal
 	} regState_t;
 
@@ -1217,8 +1221,8 @@ typedef struct
 typedef struct HostnameInfo
 	{
 	struct HostnameInfo *next;
-    domainname fqdn;
-    AuthRecord arv4;                          // registered IPv4 address record
+	domainname fqdn;
+	AuthRecord arv4;                          // registered IPv4 address record
 	AuthRecord arv6;                          // registered IPv6 address record
 	mDNSRecordCallback *StatusCallback;       // callback to deliver success or error code to client layer
 	const void *StatusContext;                // Client Context
@@ -1234,14 +1238,14 @@ enum
 
 typedef struct DNSServer
 	{
-    struct DNSServer *next;
-    mDNSInterfaceID interface;	// For specialized uses; we can have DNS servers reachable over specific interfaces
-    mDNSAddr        addr;
-    mDNSIPPort      port;
-    mDNSBool        del;		// Set when we're planning to delete this from the list
-    mDNSu32         teststate;	// Have we sent bug-detection query to this server?
-    mDNSs32         lasttest;	// Time we sent last bug-detection query to this server
-    domainname      domain;		// name->server matching for "split dns"
+	struct DNSServer *next;
+	mDNSInterfaceID interface;	// For specialized uses; we can have DNS servers reachable over specific interfaces
+	mDNSAddr        addr;
+	mDNSIPPort      port;
+	mDNSBool        del;		// Set when we're planning to delete this from the list
+	mDNSu32         teststate;	// Have we sent bug-detection query to this server?
+	mDNSs32         lasttest;	// Time we sent last bug-detection query to this server
+	domainname      domain;		// name->server matching for "split dns"
 	} DNSServer;
 
 typedef struct NetworkInterfaceInfo_struct NetworkInterfaceInfo;
@@ -1282,7 +1286,7 @@ typedef struct ExtraResourceRecord_struct ExtraResourceRecord;
 struct ExtraResourceRecord_struct
 	{
 	ExtraResourceRecord *next;
-    mDNSu32 ClientID;  // Opaque ID field to be used by client to map an AddRecord call to a set of Extra records
+	mDNSu32 ClientID;  // Opaque ID field to be used by client to map an AddRecord call to a set of Extra records
 	AuthRecord r;
 	// Note: Add any additional fields *before* the AuthRecord in this structure, not at the end.
 	// In some cases clients can allocate larger chunks of memory and set r->rdata->MaxRDLength to indicate
@@ -1317,23 +1321,24 @@ struct ServiceRecordSet_struct
 	// differently to how individual records are treated (this is probably a mistake). What this means is
 	// that ServiceRecordSets for uDNS are kept in a linked list, whereas ServiceRecordSets for mDNS exist
 	// just as a convenient placeholder to group the component records together and are not kept on any list.
-	ServiceRecordSet    *uDNS_next;
-	regState_t   state;
-	mDNSBool     srs_uselease;    // dynamic update contains (should contain) lease option
-	mDNSs32      expire;   // expiration of lease (-1 for static)
-	mDNSBool     TestForSelfConflict;  // on name conflict, check if we're just seeing our own orphaned records
-	mDNSBool     Private;  // If zone is private, DNS updates may have to be encrypted to prevent eavesdropping
-	ZoneData  *nta;
-	mDNSOpaque16 id;
-	domainname   zone;     // the zone that is updated
-	mDNSAddr     ns;       // primary name server for the record's zone  !!!KRS not technically correct to cache longer than TTL
-	mDNSIPPort   SRSUpdatePort;     // port on which server accepts dynamic updates
-	NATTraversalInfo NATinfo; // may be NULL
-    mDNSBool     ClientCallbackDeferred;  // invoke client callback on completion of pending operation(s)
-	mStatus      DeferredStatus;          // status to deliver when above flag is set
-    mDNSBool     SRVUpdateDeferred;       // do we need to change target or port once current operation completes?
-    mDNSBool     SRVChanged;              // temporarily deregistered service because its SRV target or port changed
-    struct tcpInfo_t *tcp;
+	ServiceRecordSet *uDNS_next;
+	regState_t        state;
+	mDNSBool          srs_uselease;    // dynamic update contains (should contain) lease option
+	struct DomainAuthInfo *AuthInfo;
+	mDNSs32           expire;   // expiration of lease (-1 for static)
+	mDNSBool          TestForSelfConflict;  // on name conflict, check if we're just seeing our own orphaned records
+	mDNSBool          Private;  // If zone is private, DNS updates may have to be encrypted to prevent eavesdropping
+	ZoneData         *nta;
+	mDNSOpaque16      id;
+	domainname        zone;     // the zone that is updated
+	mDNSAddr          ns;       // primary name server for the record's zone  !!!KRS not technically correct to cache longer than TTL
+	mDNSIPPort        SRSUpdatePort;     // port on which server accepts dynamic updates
+	NATTraversalInfo  NATinfo; // may be NULL
+	mDNSBool          ClientCallbackDeferred;  // invoke client callback on completion of pending operation(s)
+	mStatus           DeferredStatus;          // status to deliver when above flag is set
+	mDNSBool          SRVUpdateDeferred;       // do we need to change target or port once current operation completes?
+	mDNSBool          SRVChanged;              // temporarily deregistered service because its SRV target or port changed
+	struct tcpInfo_t *tcp;
 
 	// End uDNS info ****************
 
@@ -1440,6 +1445,8 @@ typedef struct DomainAuthInfo
 	{
 	struct DomainAuthInfo *next;
 	mDNSs32     deltime;
+	mDNSBool    AutoTunnel;
+	AuthRecord  AutoTunnelHostRecord;
 	domainname  domain;
 	domainname  keyname;
 	mDNSu8      keydata_ipad[HMAC_LEN];	// padded key for inner hash rounds
@@ -1496,7 +1503,7 @@ struct DNSQuestion_struct
 	UDPSocket            *udpSock;
 	mDNSu32               origLease;		// seconds (relative)
 	mDNSs32               expire;			// ticks (absolute)
-    mDNSs16               ntries;
+	mDNSs16               ntries;
 	mDNSOpaque64          id;
 
 	// Client API fields: The client must set up these fields *before* calling mDNS_StartQuery()
@@ -1576,8 +1583,8 @@ extern void CancelGetZoneData(mDNS *const m, ZoneData *nta);
 
 typedef struct DNameListElem
 	{
-	domainname name;
 	struct DNameListElem *next;
+	domainname name;
 	} DNameListElem;
 
 // ***************************************************************************
@@ -1670,12 +1677,12 @@ struct mDNS_struct
 
 	// unicast-specific data
 	mDNSs32           NextuDNSEvent;		// uDNS next event
-    mDNSs32           NextSRVUpdate;        // Time to perform delayed update
+	mDNSs32           NextSRVUpdate;        // Time to perform delayed update
 	mDNSs32 SuppressStdPort53Queries;       // Wait before allowing the next standard unicast query to the user's configured DNS server
 
 	ServiceRecordSet *ServiceRegistrations;
 	mDNSu16           NextMessageID;
-    DNSServer        *DNSServers;           // list of DNS servers
+	DNSServer        *DNSServers;           // list of DNS servers
 
 	mDNSAddr          Router;
 	mDNSAddr          AdvertisedV4;         // IPv4 address pointed to by hostname
@@ -1683,18 +1690,15 @@ struct mDNS_struct
 
 	DomainAuthInfo   *AuthInfoList;         // list of domains requiring authentication for updates
 
-    DNSQuestion       ReverseMap;           // Reverse-map query to find static hostname for service target
-
-    domainname        StaticHostname;       // Current answer to reverse-map query
-    domainname        FQDN;
+	DNSQuestion       ReverseMap;           // Reverse-map query to find static hostname for service target
+	domainname        StaticHostname;       // Current answer to reverse-map query
+	domainname        FQDN;
 	HostnameInfo     *Hostnames;            // List of registered hostnames + hostname metadata
+	domainlabel       AutoTunnelLabel;
+	mDNSv6Addr        AutoTunnelHostAddr;
 
-	DNameListElem    *BrowseDomains;        // Default wide-area zone for legacy ("empty string") browses
-	DNameListElem    *DefBrowseList;        // Where we search for empty string browse
-
-    mDNSBool          RegisterSearchDomains;
-	domainname		  RegDomain;            // Default wide-area zone for service registration
-	DNameListElem    *DefRegList;           // manually generated list of domains where we register for empty string registrations
+	mDNSBool          RegisterSearchDomains;
+	domainname        RegDomain;            // Really belongs in uds_daemon, not here
 
 	// NAT traversal fields
 	NATTraversalInfo *NATTraversals;
@@ -2119,7 +2123,7 @@ extern mDNSBool mDNSv4AddrIsRFC1918(mDNSv4Addr *addr);  // returns true for RFC1
 // to dissable authentication for the zone.
 
 extern mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
-	const domainname *domain, const domainname *keyname, const char *b64keydata);
+	const domainname *domain, const domainname *keyname, const char *b64keydata, mDNSBool AutoTunnel);
 
 // Hostname/Unicast Interface Configuration
 
@@ -2281,7 +2285,6 @@ extern void       mDNSPlatformTLSTearDownCerts(void);
 
 extern void       mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDNSBool setsearch, domainname *const fqdn, domainname *const regDomain, DNameListElem **browseDomains);
 extern mStatus    mDNSPlatformGetPrimaryInterface(mDNS *const m, mDNSAddr *v4, mDNSAddr *v6, mDNSAddr *router);
-extern void       mDNSPlatformDefaultRegDomainChanged(const domainname *d, mDNSBool add);
 extern void       mDNSPlatformDynDNSHostNameStatusChanged(const domainname *const dname, const mStatus status);
 
 #ifdef _LEGACY_NAT_TRAVERSAL_
