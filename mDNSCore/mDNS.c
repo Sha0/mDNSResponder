@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.650  2007/07/11 21:34:09  cheshire
+<rdar://problem/5304766> Register IPSec tunnel with IPv4-only hostname and create NAT port mappings
+Need to hold mDNS_Lock when calling mDNS_AddDynDNSHostName/mDNS_RemoveDynDNSHostName
+
 Revision 1.649  2007/07/11 02:52:52  cheshire
 <rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for AutoTunnel services
 In uDNS_RegisterService, set HostTarget for AutoTunnel services
@@ -6379,8 +6383,6 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 			p = &(*p)->next;
 		}
 
-	mDNS_Unlock(m);
-
 	// Did our FQDN change?
 	if (!SameDomainName(&fqdn, &m->FQDN))
 		{
@@ -6394,6 +6396,8 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 			mDNS_AddDynDNSHostName(m, &m->FQDN, DynDNSHostNameCallback, mDNSNULL);
 			}
 		}
+
+	mDNS_Unlock(m);
 
 	// handle router and primary interface changes
 	v4 = v6 = r = zeroAddr;
