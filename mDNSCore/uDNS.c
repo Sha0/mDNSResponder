@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.389  2007/07/11 21:33:10  cheshire
+<rdar://problem/5304766> Register IPSec tunnel with IPv4-only hostname and create NAT port mappings
+Set up and register AutoTunnelTarget and AutoTunnelService DNS records
+
 Revision 1.388  2007/07/11 19:27:10  cheshire
 <rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for services
 For temporary testing fake up an IPv4LL address instead of IPv6 ULA
@@ -730,15 +734,19 @@ mDNSexport DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const n
 		{
 		if ((*p)->deltime && m->timenow - (*p)->deltime >= 0)
 			{
-			DomainAuthInfo *ptr = *p;
-			LogOperation("Deleting expired key %##s %##s", ptr->domain.c, ptr->keyname.c);
-			*p = ptr->next;
-			if (ptr->AutoTunnel) mDNS_Deregister_internal(m, &ptr->AutoTunnelHostRecord, mDNS_Dereg_normal);
+			DomainAuthInfo *info = *p;
+			LogOperation("Deleting expired key %##s %##s", info->domain.c, info->keyname.c);
+			*p = info->next;
+			if (info->AutoTunnel)
+				{
+				mDNS_Deregister_internal(m, &info->AutoTunnelHostRecord, mDNS_Dereg_normal);
+				mDNS_RemoveDynDNSHostName(m, &info->AutoTunnelTarget.namestorage);
+				}
 			// Probably not essential, but just to be safe, zero out the secret key data
 			// so we don't leave it hanging around in memory
 			// (where it could potentially get exposed via some other bug)
-			mDNSPlatformMemZero(ptr, sizeof(*ptr));
-			mDNSPlatformMemFree(ptr);
+			mDNSPlatformMemZero(info, sizeof(*info));
+			mDNSPlatformMemFree(info);
 			}
 		else
 			p = &(*p)->next;
@@ -775,13 +783,18 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 
 	if (info->AutoTunnel)
 		{
+		// 1. Set up our address record for the internal tunnel address
+		// (User-visible user-friendly host name, used as target in AutoTunnel SRV records)
+
 		// TEMP FOR AUTOTUNNEL TESTING: FOR NOW, USE IPv4LL ADDRESS INSTEAD OF IPV6 ULA
 		//mDNS_SetupResourceRecord(&info->AutoTunnelHostRecord, mDNSNULL, mDNSInterface_Any, kDNSType_AAAA, kHostNameTTL, kDNSRecordTypeUnique, mDNSNULL, mDNSNULL);
 		mDNS_SetupResourceRecord(&info->AutoTunnelHostRecord, mDNSNULL, mDNSInterface_Any, kDNSType_A, kHostNameTTL, kDNSRecordTypeUnique, mDNSNULL, mDNSNULL);
 		// END TEMP FOR AUTOTUNNEL TESTING
+
 		info->AutoTunnelHostRecord.namestorage.c[0] = 0;
 		AppendDomainLabel(&info->AutoTunnelHostRecord.namestorage, &m->hostlabel);
 		AppendDomainName (&info->AutoTunnelHostRecord.namestorage, domain);
+
 		// TEMP FOR AUTOTUNNEL TESTING: FOR NOW, USE IPv4LL ADDRESS INSTEAD OF IPV6 ULA
 		//info->AutoTunnelHostRecord.resrec.rdata->u.ipv6 = m->AutoTunnelHostAddr;
 		info->AutoTunnelHostRecord.resrec.rdata->u.ipv4.b[0] = 169;
@@ -789,7 +802,26 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 		info->AutoTunnelHostRecord.resrec.rdata->u.ipv4.b[2] = m->AutoTunnelHostAddr.b[0xE];
 		info->AutoTunnelHostRecord.resrec.rdata->u.ipv4.b[3] = m->AutoTunnelHostAddr.b[0xF];
 		// END TEMP FOR AUTOTUNNEL TESTING
+
 		mDNS_Register_internal(m, &info->AutoTunnelHostRecord);
+
+		// 2. Set up our address record for the external tunnel address
+		// (Constructed name, not generally user-visible, used as target in IKE tunnel's SRV record)
+		mDNS_SetupResourceRecord(&info->AutoTunnelTarget, mDNSNULL, mDNSInterface_Any, kDNSType_A, kHostNameTTL, kDNSRecordTypeUnique, mDNSNULL, mDNSNULL);
+		info->AutoTunnelTarget.namestorage.c[0] = 0;
+		AppendDomainLabel(&info->AutoTunnelTarget.namestorage, &m->AutoTunnelLabel);
+		AppendDomainName (&info->AutoTunnelTarget.namestorage, domain);
+
+		mDNS_AddDynDNSHostName(m, &info->AutoTunnelTarget.namestorage, mDNSNULL, mDNSNULL);
+
+		// 3. Set up IKE tunnel's SRV record: "AutoTunnelHostRecord SRV 0 0 port AutoTunnelTarget"
+		mDNS_SetupResourceRecord(&info->AutoTunnelService, mDNSNULL, mDNSInterface_Any, kDNSType_SRV, kHostNameTTL, kDNSRecordTypeUnique, mDNSNULL, mDNSNULL);
+		AssignDomainName(&info->AutoTunnelService.namestorage, &info->AutoTunnelHostRecord.namestorage);
+		info->AutoTunnelService.resrec.rdata->u.srv.priority = 0;
+		info->AutoTunnelService.resrec.rdata->u.srv.weight   = 0;
+		info->AutoTunnelService.resrec.rdata->u.srv.port     = mDNSOpaque16fromIntVal(500); // TEMP FOR AUTOTUNNEL TESTING: assume port 500
+		AssignDomainName(&info->AutoTunnelService.resrec.rdata->u.srv.target, &info->AutoTunnelTarget.namestorage);
+		mDNS_Register_internal(m, &info->AutoTunnelService);
 		}
 
 	if (DNSDigest_ConstructHMACKeyfromBase64(info, b64keydata) < 0)
@@ -2383,7 +2415,8 @@ mDNSlocal void hostnameGetPublicAddressCallback(mDNS *const m, mDNSv4Addr Extern
 		{
 		mDNS_StopNATOperation_internal(m, n);
 		h->arv4.state = regState_Unregistered;	// note that rr is not yet in global list
-		h->arv4.RecordCallback(m, &h->arv4, mStatus_NATTraversal);
+		if (h->arv4.RecordCallback)
+			h->arv4.RecordCallback(m, &h->arv4, mStatus_NATTraversal);
 		// note - unsafe to touch rr after callback
 		}
 	}
@@ -2397,7 +2430,7 @@ mDNSlocal void AdvertiseHostname(mDNS *m, HostnameInfo *h)
 		AssignDomainName(&h->arv4.namestorage, &h->fqdn);
 		h->arv4.resrec.rdata->u.ipv4 = m->AdvertisedV4.ip.v4;
 		h->arv4.state = regState_Unregistered;
-		LogMsg("Advertising %##s IP %.4a", h->arv4.resrec.name->c, &m->AdvertisedV4.ip.v4);
+		LogMsg("AdvertiseHostname: Advertising hostname %##s IPv4 %.4a", h->arv4.resrec.name->c, &m->AdvertisedV4.ip.v4);
 		if (mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4)) 
 			{
 			h->arv4.NATinfo.clientCallback   = hostnameGetPublicAddressCallback;
@@ -2417,7 +2450,7 @@ mDNSlocal void AdvertiseHostname(mDNS *m, HostnameInfo *h)
 		AssignDomainName(&h->arv6.namestorage, &h->fqdn);
 		h->arv6.resrec.rdata->u.ipv6 = m->AdvertisedV6.ip.v6;
 		h->arv6.state = regState_Unregistered;
-		LogMsg("Advertising %##s IP %.16a", h->arv6.resrec.name->c, &m->AdvertisedV6.ip.v6);
+		LogMsg("Advertising hostname %##s IPv6 %.16a", h->arv6.resrec.name->c, &m->AdvertisedV6.ip.v6);
 		mDNS_Register_internal(m, &h->arv6);
 		}
 	}
@@ -2432,7 +2465,7 @@ mDNSlocal void HostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 			{
 			// If we're still in the Hostnames list, update to new address
 			HostnameInfo *i;
-			LogMsg("Got mStatus_MemFree for %s", ARDisplayString(m, rr));
+			LogOperation("Got mStatus_MemFree for %s", ARDisplayString(m, rr));
 			for (i = m->Hostnames; i; i = i->next)
 				{
 				if (rr == &i->arv4) { mDNS_Lock(m); AdvertiseHostname(m, i); mDNS_Unlock(m); return; }
@@ -2558,18 +2591,16 @@ mDNSexport void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSReco
    {
 	HostnameInfo *ptr, *new;
 
-	mDNS_Lock(m);
-
 	LogOperation("mDNS_AddDynDNSHostName %##s", fqdn);
 
 	// check if domain already registered
 	for (ptr = m->Hostnames; ptr; ptr = ptr->next)
 		if (SameDomainName(fqdn, &ptr->fqdn))
-			{ LogMsg("Host Domain %##s already in list", fqdn->c); goto exit; }
+			{ LogMsg("Host Domain %##s already in list", fqdn->c); return; }
 
 	// allocate and format new address record
 	new = mDNSPlatformMemAllocate(sizeof(*new));
-	if (!new) { LogMsg("ERROR: mDNS_AddDynDNSHostname - malloc"); goto exit; }
+	if (!new) { LogMsg("ERROR: mDNS_AddDynDNSHostname - malloc"); return; }
 	mDNSPlatformMemZero(new, sizeof(*new));
 	new->arv4.state = regState_Unregistered;
 	new->arv6.state = regState_Unregistered;
@@ -2582,16 +2613,11 @@ mDNSexport void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSReco
 	new->StatusContext = StatusContext;
 
 	AdvertiseHostname(m, new);
-
-exit:
-	mDNS_Unlock(m);
 	}
 
 mDNSexport void mDNS_RemoveDynDNSHostName(mDNS *m, const domainname *fqdn)
 	{
 	HostnameInfo **ptr = &m->Hostnames;
-
-	mDNS_Lock(m);
 
 	LogOperation("mDNS_RemoveDynDNSHostName %##s", fqdn);
 
@@ -2612,7 +2638,6 @@ mDNSexport void mDNS_RemoveDynDNSHostName(mDNS *m, const domainname *fqdn)
 		// When both deregistrations complete we'll free the memory in the mStatus_MemFree callback
 		}
 	UpdateSRVRecords(m);
-	mDNS_Unlock(m);
 	}
 
 // Currently called without holding the lock
