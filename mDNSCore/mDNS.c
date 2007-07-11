@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.652  2007/07/11 23:43:42  cheshire
+Rename PurgeCacheResourceRecord to mDNS_PurgeCacheResourceRecord
+
 Revision 1.651  2007/07/11 22:44:40  cheshire
 <rdar://problem/5328801> SIGHUP should purge the cache
 
@@ -2961,7 +2964,7 @@ mDNSlocal CacheGroup *GetCacheGroup(mDNS *const m, const mDNSu32 slot, const Res
 	return(cg);
 	}
 
-mDNSexport void PurgeCacheResourceRecord(mDNS *const m, CacheRecord *rr)
+mDNSexport void mDNS_PurgeCacheResourceRecord(mDNS *const m, CacheRecord *rr)
 	{
 	// Make sure we mark this record as thoroughly expired -- we don't ever want to give
 	// a positive answer using an expired record (e.g. from an interface that has gone away).
@@ -5687,7 +5690,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 					{
 					// If this interface is deemed flapping,
 					// postpone deleting the cache records in case the interface comes back again
-					if (!flapping) PurgeCacheResourceRecord(m, rr);
+					if (!flapping) mDNS_PurgeCacheResourceRecord(m, rr);
 					else
 						{
 						// We want these record to go away in 30 seconds

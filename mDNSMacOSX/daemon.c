@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.325  2007/07/11 23:43:43  cheshire
+Rename PurgeCacheResourceRecord to mDNS_PurgeCacheResourceRecord
+
 Revision 1.324  2007/07/11 22:44:40  cheshire
 <rdar://problem/5328801> SIGHUP should purge the cache
 
@@ -2160,7 +2163,7 @@ mDNSlocal void SignalCallback(CFMachPortRef port, void *msg, CFIndex size, void 
 						CacheGroup *cg;
 						CacheRecord *rr;
 						LogMsg("SIGHUP: Purge cache");
-						FORALL_CACHERECORDS(slot, cg, rr) PurgeCacheResourceRecord(m, rr);
+						FORALL_CACHERECORDS(slot, cg, rr) mDNS_PurgeCacheResourceRecord(m, rr);
 						} break;
 		case SIGINT:
 		case SIGTERM:	ExitCallback(msg_header->msgh_id); break;
