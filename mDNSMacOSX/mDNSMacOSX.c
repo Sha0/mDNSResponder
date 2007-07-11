@@ -17,6 +17,12 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.425  2007/07/11 19:24:19  cheshire
+<rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for services
+Configure internal AutoTunnel address
+(For temporary testing we're faking up an IPv4LL address instead of IPv6 ULA, and we're
+assigning it with "system(commandstring);" which probably isn't the most efficient way to do it)
+
 Revision 1.424  2007/07/11 19:00:27  cheshire
 Only need to set up m->AutoTunnelHostAddr first time through UpdateInterfaceList()
 
@@ -1893,6 +1899,12 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 			m->AutoTunnelHostAddr.b[0x8], m->AutoTunnelHostAddr.b[0x9], m->AutoTunnelHostAddr.b[0xA], m->AutoTunnelHostAddr.b[0xB],
 			m->AutoTunnelHostAddr.b[0xC], m->AutoTunnelHostAddr.b[0xD], m->AutoTunnelHostAddr.b[0xE], m->AutoTunnelHostAddr.b[0xF]);
 		LogOperation("m->AutoTunnelLabel %#s", m->AutoTunnelLabel.c);
+
+		// TEMP FOR AUTOTUNNEL TESTING: FOR NOW, USE IPv4LL ADDRESS INSTEAD OF IPV6 ULA
+		char commandstring[64];
+		mDNS_snprintf(commandstring, sizeof(commandstring), "ifconfig en0 alias 169.254.%d.%d", m->AutoTunnelHostAddr.b[0xE], m->AutoTunnelHostAddr.b[0xF]);
+		system(commandstring);
+		// END TEMP FOR AUTOTUNNEL TESTING
 		}
 
 #ifndef kDefaultLocalHostNamePrefix
