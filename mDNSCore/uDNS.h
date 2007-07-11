@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.64  2007/07/11 02:53:36  cheshire
+<rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for AutoTunnel services
+Add ServiceRecordSet parameter in GetServiceTarget
+
 Revision 1.63  2007/06/29 00:09:24  vazquez
 <rdar://problem/5301908> Clean up NAT state machine (necessary for 6 other fixes)
 
@@ -178,7 +182,7 @@ extern void RecordRegistrationCallback(mDNS *const m, mStatus err, const ZoneDat
 extern mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr);
 
 extern void serviceRegistrationCallback(mDNS *const m, mStatus err, const ZoneData *result);
-extern const domainname *GetServiceTarget(mDNS *m, AuthRecord *srv);
+extern const domainname *GetServiceTarget(mDNS *m, ServiceRecordSet *srs);
 extern mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs);
 
 extern void    uDNS_CheckQuery (mDNS *const m);
