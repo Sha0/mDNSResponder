@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.423  2007/07/11 03:00:59  cheshire
+<rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for AutoTunnel services
+Add AutoTunnel parameter to mDNS_SetSecretForDomain; Generate IPv6 ULA address for tunnel endpoint
+
 Revision 1.422  2007/07/10 01:21:20  cheshire
 Added (commented out) line for displaying key data for debugging
 
@@ -1870,6 +1874,24 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 	mDNS_snprintf(defaultname, sizeof(defaultname), kDefaultLocalHostNamePrefix "-%02X%02X%02X%02X%02X%02X",
 		PrimaryMAC.b[0], PrimaryMAC.b[1], PrimaryMAC.b[2], PrimaryMAC.b[3], PrimaryMAC.b[4], PrimaryMAC.b[5]);
 
+	MakeDomainLabelFromLiteralString(&m->AutoTunnelLabel, defaultname);
+	m->AutoTunnelHostAddr.b[0x0] = 0xFD;		// Required prefix for "locally assigned" ULA (See RFC 4193)
+	m->AutoTunnelHostAddr.b[0x1] = mDNSRandom(255);
+	m->AutoTunnelHostAddr.b[0x2] = mDNSRandom(255);
+	m->AutoTunnelHostAddr.b[0x3] = mDNSRandom(255);
+	m->AutoTunnelHostAddr.b[0x4] = mDNSRandom(255);
+	m->AutoTunnelHostAddr.b[0x5] = mDNSRandom(255);
+	m->AutoTunnelHostAddr.b[0x6] = mDNSRandom(255);
+	m->AutoTunnelHostAddr.b[0x7] = mDNSRandom(255);
+	m->AutoTunnelHostAddr.b[0x8] = PrimaryMAC.b[0] ^ 0x02;	// See RFC 3513, Appendix A for explanation
+	m->AutoTunnelHostAddr.b[0x9] = PrimaryMAC.b[1];
+	m->AutoTunnelHostAddr.b[0xA] = PrimaryMAC.b[2];
+	m->AutoTunnelHostAddr.b[0xB] = 0xFF;
+	m->AutoTunnelHostAddr.b[0xC] = 0xFE;
+	m->AutoTunnelHostAddr.b[0xD] = PrimaryMAC.b[3];
+	m->AutoTunnelHostAddr.b[0xE] = PrimaryMAC.b[4];
+	m->AutoTunnelHostAddr.b[0xF] = PrimaryMAC.b[5];
+
 	// Set up the nice label
 	domainlabel nicelabel;
 	nicelabel.c[0] = 0;
@@ -2551,6 +2573,16 @@ mDNSexport void mDNSPlatformDynDNSHostNameStatusChanged(const domainname *const 
 		}
 	}
 
+mDNSlocal mDNSBool IsTunnelModeDomain(const domainname *d)
+	{
+	static const domainname *mmc = (const domainname*) "\x7" "members" "\x3" "mac" "\x3" "com";
+	const domainname *d1 = mDNSNULL;	// TLD
+	const domainname *d2 = mDNSNULL;	// SLD
+	const domainname *d3 = mDNSNULL;
+	while (d->c[0]) { d3 = d2; d2 = d1; d1 = d; d = (const domainname*)(d->c + 1 + d->c[0]); }
+	return(d3 && SameDomainName(d3, mmc));
+	}
+
 mDNSlocal void SetDomainSecrets(mDNS *m)
 	{
 #ifdef NO_SECURITYFRAMEWORK
@@ -2659,7 +2691,7 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 					{
 					ptr = (DomainAuthInfo*)mallocL("DomainAuthInfo", sizeof(*ptr));
 					if (!ptr) { LogMsg("SetSecretForDomain: No memory"); goto nextitem; }
-					mDNS_SetSecretForDomain(m, ptr, &domain, &keyname, keystring);
+					mDNS_SetSecretForDomain(m, ptr, &domain, &keyname, keystring, IsTunnelModeDomain(&domain));
 					}
 
 				CFStringRef cfs = CFStringCreateWithCString(NULL, dstring, kCFStringEncodingUTF8);
