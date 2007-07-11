@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.323  2007/07/11 03:01:50  cheshire
+<rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for AutoTunnel services
+
 Revision 1.322  2007/07/06 18:58:16  cheshire
 Check m->NextScheduledNATOp in ShowTaskSchedulingError()
 
@@ -881,7 +884,6 @@ mDNSlocal mStatus AddDomainToBrowser(DNSServiceBrowser *browser, const domainnam
 	return err;
 	}
 
-extern     void machserver_automatic_browse_domain_changed(const domainname *d, mDNSBool add);
 mDNSexport void machserver_automatic_browse_domain_changed(const domainname *d, mDNSBool add)
 	{
 	DNSServiceBrowser *ptr;
@@ -964,8 +966,8 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 		DNameListElem *sdPtr;
 		// Start browser on all domains
 		x->DefaultDomain = mDNStrue;
-		if (!mDNSStorage.DefBrowseList) { AbortClient(client, x); errormsg = "GetSearchDomainList"; goto fail; }
-		for (sdPtr = mDNSStorage.DefBrowseList; sdPtr; sdPtr = sdPtr->next)
+		if (!AutoBrowseDomains) { AbortClient(client, x); errormsg = "GetSearchDomainList"; goto fail; }
+		for (sdPtr = AutoBrowseDomains; sdPtr; sdPtr = sdPtr->next)
 			{
 			err = AddDomainToBrowser(x, &sdPtr->name);
 			if (err)
@@ -1240,11 +1242,9 @@ mDNSlocal mStatus AddServiceInstance(DNSServiceRegistration *x, const domainname
 	return err;
 	}
 
-mDNSexport void mDNSPlatformDefaultRegDomainChanged(const domainname *d, mDNSBool add)
+mDNSexport void machserver_automatic_registration_domain_changed(const domainname *d, mDNSBool add)
 	{
 	DNSServiceRegistration *reg;
-
-	udsserver_default_reg_domain_changed(d, add);
 
 	for (reg = DNSServiceRegistrationList; reg; reg = reg->next)
 		{
@@ -1379,7 +1379,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	if (x->DefaultDomain)
 		{
 		DNameListElem *ptr;
-		for (ptr = mDNSStorage.DefRegList; ptr; ptr = ptr->next)
+		for (ptr = DefRegList; ptr; ptr = ptr->next)
 			AddServiceInstance(x, &ptr->name);
 		}
 

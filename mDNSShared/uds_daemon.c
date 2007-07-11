@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.312  2007/07/11 03:06:43  cheshire
+<rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for AutoTunnel services
+
 Revision 1.311  2007/07/06 21:19:18  cheshire
 Add list of NAT traversals to SIGINFO output
 
@@ -646,12 +649,24 @@ typedef struct default_browse_list_t
 static default_browse_list_t *default_browse_list = NULL;
 #endif // _HAVE_SETDOMAIN_SUPPORT_
 
+// ***************************************************************************
+#if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark -
+#pragma mark - Globals
+#endif
+
 // globals
 mDNSexport mDNS mDNSStorage;
 mDNSexport const char ProgramName[] = "mDNSResponder";
 
 static dnssd_sock_t listenfd = dnssd_InvalidSocket;
 static request_state *all_requests = NULL;
+
+static DNameListElem *SCPrefBrowseDomains1;		// List of automatic browsing domains read from SCPreferences for "empty string" browsing
+static ARListElem    *SCPrefBrowseDomains2;		// List of local-only PTR records created from list above
+mDNSexport DNameListElem *AutoBrowseDomains;	// List created from the results of browsing for those local-only PTR records
+
+mDNSexport DNameListElem *DefRegList;		// Domains where we register for empty-string registrations
 
 #define MSG_PAD_BYTES 5		// pad message buffer (read from client) with n zero'd bytes to guarantee
 							// n get_string() calls w/o buffer overrun
@@ -1095,26 +1110,6 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 		}
 	}
 
-mDNSlocal void AddDefaultRegDomain(mDNS *const m, domainname *d)
-	{
-	DNameListElem *newelem = mDNSNULL, *ptr;
-
-	// make sure name not already in list
-	for (ptr = m->DefRegList; ptr; ptr = ptr->next)
-		{
-		if (SameDomainName(&ptr->name, d))
-			{ debugf("duplicate addition of default reg domain %##s", d->c); return; }
-		}
-
-	newelem = mDNSPlatformMemAllocate(sizeof(*newelem));
-	if (!newelem) { LogMsg("Error - malloc"); return; }
-	AssignDomainName(&newelem->name, d);
-	newelem->next = m->DefRegList;
-	m->DefRegList = newelem;
-
-	mDNSPlatformDefaultRegDomainChanged(d, mDNStrue);
-	}
-
 mDNSlocal void regrecord_callback(mDNS *const m, AuthRecord *rr, mStatus result)
 	{
 	(void)m; // Unused
@@ -1428,25 +1423,6 @@ mDNSlocal mStatus handle_removerecord_request(request_state *request)
 	return(err);
 	}
 
-mDNSlocal void RemoveDefaultRegDomain(mDNS *const m, domainname *d)
-	{
-	DNameListElem **p = &m->DefRegList;
-
-	while ((*p))
-		{
-		if (SameDomainName(&(*p)->name, d))
-			{
-			DNameListElem *ptr = *p;
-			*p = ptr->next;
-			mDNSPlatformMemFree(ptr);
-			mDNSPlatformDefaultRegDomainChanged(d, mDNSfalse);
-			return;
-			}
-		p = &(*p)->next;
-		}
-	debugf("Requested removal of default registration domain %##s not in contained in list", d->c);
-	}
-
 // If there's a comma followed by another character,
 // FindFirstSubType overwrites the comma with a nul and returns the pointer to the next character.
 // Otherwise, it returns a pointer to the final nul at the end of the string
@@ -1588,9 +1564,13 @@ mDNSlocal void regservice_termination_callback(request_state *request)
 	if (request->u.servicereg.autoname) UpdateDeviceInfoRecord(&mDNSStorage);
 	}
 
-mDNSexport void udsserver_default_reg_domain_changed(const domainname *d, mDNSBool add)
+mDNSlocal void udsserver_default_reg_domain_changed(const domainname *d, mDNSBool add)
 	{
 	request_state *request;
+
+#if APPLE_OSX_mDNSResponder
+	machserver_automatic_registration_domain_changed(d, add);
+#endif // APPLE_OSX_mDNSResponder
 
 	LogMsg("%s registration domain %##s", add ? "Adding" : "Removing", d->c);
 	for (request = all_requests; request; request = request->next)
@@ -1734,9 +1714,9 @@ mDNSlocal mStatus handle_regservice_request(request_state *request)
 	if (!err && !*domain)
 		{
 		DNameListElem *ptr;
-		for (ptr = mDNSStorage.DefRegList; ptr; ptr = ptr->next)
+		// note that we don't report errors for non-local, non-explicit domains
+		for (ptr = DefRegList; ptr; ptr = ptr->next)
 			register_service_instance(request, &ptr->name);
-			// note that we don't report errors for non-local, non-explicit domains
 		}
 
 	if (!err)
@@ -1753,9 +1733,6 @@ mDNSlocal mStatus handle_regservice_request(request_state *request)
 #pragma mark -
 #pragma mark - DNSServiceBrowse
 #endif
-
-// Manually-generated local-only PTR records for browse domains we get from SCPreferences
-static ARListElem *SCPrefBrowseDomains = mDNSNULL;
 
 mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
@@ -1825,10 +1802,9 @@ mDNSlocal void browse_termination_callback(request_state *info)
 mDNSlocal void udsserver_automatic_browse_domain_changed(const domainname *d, mDNSBool add)
 	{
 	request_state *request;
-	debugf("DefaultBrowseDomainChanged: %s default browse domain %##s", add ? "Adding" : "Removing", d->c);
+	debugf("udsserver_automatic_browse_domain_changed: %s default browse domain %##s", add ? "Adding" : "Removing", d->c);
 
 #if APPLE_OSX_mDNSResponder
-	extern void machserver_automatic_browse_domain_changed(const domainname *d, mDNSBool add);
 	machserver_automatic_browse_domain_changed(d, add);
 #endif // APPLE_OSX_mDNSResponder
 
@@ -1879,14 +1855,14 @@ mDNSlocal void RegisterBrowseDomainPTR(mDNS *m, const domainname *d, int type)
 		}
 	else
 		{
-		browse->next = SCPrefBrowseDomains;
-		SCPrefBrowseDomains = browse;
+		browse->next = SCPrefBrowseDomains2;
+		SCPrefBrowseDomains2 = browse;
 		}
 	}
 
 mDNSlocal void DeregisterBrowseDomainPTR(mDNS *m, const domainname *d, int type)
 	{
-	ARListElem **ptr = &SCPrefBrowseDomains;
+	ARListElem **ptr = &SCPrefBrowseDomains2;
 	domainname lhs; // left-hand side of PTR, for comparison
 
 	MakeDomainNameFromDNSNameString(&lhs, mDNS_DomainTypeNames[type]);
@@ -1962,6 +1938,44 @@ mDNSlocal void UpdateDeviceInfoRecord(mDNS *const m)
 			}
 	}
 
+mDNSlocal void AddDefaultRegDomain(domainname *d)
+	{
+	DNameListElem **ptr;
+
+	// make sure name not already in list
+	for (ptr = &DefRegList; *ptr; ptr = &(*ptr)->next)
+		{
+		if (SameDomainName(&(*ptr)->name, d))
+			{ debugf("duplicate addition of default reg domain %##s", d->c); return; }
+		}
+
+	*ptr = mDNSPlatformMemAllocate(sizeof(**ptr));
+	if (!*ptr) { LogMsg("Error - malloc"); return; }
+	(*ptr)->next         = mDNSNULL;
+	AssignDomainName(&(*ptr)->name, d);
+
+	udsserver_default_reg_domain_changed(d, mDNStrue);
+	}
+
+mDNSlocal void RemoveDefaultRegDomain(domainname *d)
+	{
+	DNameListElem **p = &DefRegList;
+
+	while ((*p))
+		{
+		if (SameDomainName(&(*p)->name, d))
+			{
+			DNameListElem *ptr = *p;
+			*p = ptr->next;
+			mDNSPlatformMemFree(ptr);
+			udsserver_default_reg_domain_changed(d, mDNSfalse);
+			return;
+			}
+		p = &(*p)->next;
+		}
+	debugf("Requested removal of default registration domain %##s not in contained in list", d->c);
+	}
+
 mDNSexport void udsserver_handle_configchange(mDNS *const m)
 	{
 	request_state *req;
@@ -1995,7 +2009,7 @@ mDNSexport void udsserver_handle_configchange(mDNS *const m)
 		{
 		if (m->RegDomain.c[0])
 			{
-			RemoveDefaultRegDomain(m, &m->RegDomain);
+			RemoveDefaultRegDomain(&m->RegDomain);
 			// if we were automatically browsing in our registration domain, stop
 			SetPrefsBrowseDomain(m, &m->RegDomain, mDNSfalse);
 			}
@@ -2004,7 +2018,7 @@ mDNSexport void udsserver_handle_configchange(mDNS *const m)
 
 		if (m->RegDomain.c[0])
 			{
-			AddDefaultRegDomain(m, &m->RegDomain);
+			AddDefaultRegDomain(&m->RegDomain);
 			SetPrefsBrowseDomain(m, &m->RegDomain, mDNStrue);
 			}
 		}
@@ -2013,19 +2027,19 @@ mDNSexport void udsserver_handle_configchange(mDNS *const m)
 	if (browseDomains) SetPrefsBrowseDomains(m, browseDomains, mDNStrue);
 
 	// Remove old browse domains from internal list
-	if (m->BrowseDomains)
+	if (SCPrefBrowseDomains1)
 		{
-		SetPrefsBrowseDomains(m, m->BrowseDomains, mDNSfalse);
-		while (m->BrowseDomains)
+		SetPrefsBrowseDomains(m, SCPrefBrowseDomains1, mDNSfalse);
+		while (SCPrefBrowseDomains1)
 			{
-			DNameListElem *fptr = m->BrowseDomains;
-			m->BrowseDomains = m->BrowseDomains->next;
+			DNameListElem *fptr = SCPrefBrowseDomains1;
+			SCPrefBrowseDomains1 = SCPrefBrowseDomains1->next;
 			mDNSPlatformMemFree(fptr);
 			}
 		}
 
 	// Replace the old browse domains array with the new array
-	m->BrowseDomains = browseDomains;
+	SCPrefBrowseDomains1 = browseDomains;
 	}
 
 mDNSlocal void LegacyBrowseDomainChange(mDNS *const m, DNSQuestion *q, const ResourceRecord *const answer, mDNSBool AddRecord)
@@ -2041,14 +2055,14 @@ mDNSlocal void LegacyBrowseDomainChange(mDNS *const m, DNSQuestion *q, const Res
 		DNameListElem *new = mDNSPlatformMemAllocate(sizeof(DNameListElem));
 		if (!new) { LogMsg("ERROR: malloc"); return; }
 		AssignDomainName(&new->name, &answer->rdata->u.name);
-		new->next = m->DefBrowseList;
-		m->DefBrowseList = new;
+		new->next = AutoBrowseDomains;
+		AutoBrowseDomains = new;
 		udsserver_automatic_browse_domain_changed(&new->name, mDNStrue);
 		return;
 		}
 	else
 		{
-		DNameListElem **p = &m->DefBrowseList;
+		DNameListElem **p = &AutoBrowseDomains;
 		while (*p)
 			{
 			if (SameDomainName(&(*p)->name, &answer->rdata->u.name))
@@ -2129,7 +2143,7 @@ mDNSlocal mStatus handle_browse_request(request_state *request)
 	else
 		{
 		DNameListElem *sdom;
-		for (sdom = mDNSStorage.DefBrowseList; sdom; sdom = sdom->next)
+		for (sdom = AutoBrowseDomains; sdom; sdom = sdom->next)
 			{
 			err = add_domain_to_browser(request, &sdom->name);
 			if (err)
@@ -3465,7 +3479,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 	for (req = all_requests; req; req=req->next)
 		LogClientInfo(req);
 
-	LogMsgNoIdent("---- NAT Traversals ----");
+	LogMsgNoIdent("-------- NAT Traversals --------");
 	for (nat = m->NATTraversals; nat; nat=nat->next)
 		{
 		if (nat->protocol)

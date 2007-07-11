@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.h,v $
+Revision 1.22  2007/07/11 02:58:04  cheshire
+<rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for AutoTunnel services
+
 Revision 1.21  2007/04/21 21:47:47  cheshire
 <rdar://problem/4376383> Daemon: Add watchdog timer
 
@@ -96,28 +99,19 @@ Changes necessary to support mDNSResponder on Linux.
 #include "mDNSEmbeddedAPI.h"
 #include "dnssd_ipc.h"
 
-
 /* Client interface: */
 
 #define SRS_PORT(S) mDNSVal16((S)->RR_SRV.resrec.rdata->u.srv.port)
 
 extern int udsserver_init(dnssd_sock_t skt);
-
-// takes the next scheduled event time, does idle work, and returns the updated nextevent time
 extern mDNSs32 udsserver_idle(mDNSs32 nextevent);
-
 extern void udsserver_info(mDNS *const m);	// print out info about current state
-
 extern void udsserver_handle_configchange(mDNS *const m);
-
 extern int udsserver_exit(dnssd_sock_t skt);	// should be called prior to app exit
-
-extern void udsserver_default_reg_domain_changed(const domainname *d, mDNSBool add);
 
 /* Routines that uds_daemon expects to link against: */
 
 typedef	void (*udsEventCallback)(int fd, short filter, void *context);
-
 extern mStatus udsSupportAddFDToEventLoop(dnssd_sock_t fd, udsEventCallback callback, void *context);
 extern mStatus udsSupportRemoveFDFromEventLoop(dnssd_sock_t fd); // Note: This also CLOSES the file descriptor as well
 
@@ -126,12 +120,21 @@ extern mStatus udsSupportRemoveFDFromEventLoop(dnssd_sock_t fd); // Note: This a
 extern void RecordUpdatedNiceLabel(mDNS *const m, mDNSs32 delay);
 
 // Globals and functions defined in uds_daemon.c and also shared with the old "daemon.c" on OS X
+
 extern mDNS mDNSStorage;
+extern DNameListElem *DefRegList;
+extern DNameListElem *AutoBrowseDomains;
+
 extern mDNSs32 ChopSubTypes(char *regtype);
 extern AuthRecord *AllocateSubTypes(mDNSs32 NumSubTypes, char *p);
 extern int CountExistingRegistrations(domainname *srv, mDNSIPPort port);
 extern void FreeExtraRR(mDNS *const m, AuthRecord *const rr, mStatus result);
 extern int CountPeerRegistrations(mDNS *const m, ServiceRecordSet *const srs);
+
+#if APPLE_OSX_mDNSResponder
+extern void machserver_automatic_browse_domain_changed(const domainname *d, mDNSBool add);
+extern void machserver_automatic_registration_domain_changed(const domainname *d, mDNSBool add);
+#endif
 
 extern const char mDNSResponderVersionString_SCCS[];
 #define mDNSResponderVersionString (mDNSResponderVersionString_SCCS+5)
