@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.649  2007/07/11 02:52:52  cheshire
+<rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for AutoTunnel services
+In uDNS_RegisterService, set HostTarget for AutoTunnel services
+
 Revision 1.648  2007/07/09 23:48:12  cheshire
 Add parentheses around bitwise operation for clarity
 
@@ -5786,8 +5790,14 @@ mDNSlocal mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	for (i = 0; i < srs->NumSubTypes;i++) srs->SubTypes[i].resrec.rroriginalttl = kWideAreaTTL;
 
 	srs->srs_uselease = mDNStrue;
+	srs->AuthInfo = GetAuthInfoForName(m, srs->RR_SRV.resrec.name);
+	if (srs->RR_SRV.HostTarget && srs->AuthInfo && srs->AuthInfo->AutoTunnel)
+		{
+		srs->RR_SRV.HostTarget = mDNSfalse;
+		AssignDomainName(&srs->RR_SRV.resrec.rdata->u.srv.target, srs->AuthInfo->AutoTunnelHostRecord.resrec.name);
+		}
 
-	if (!GetServiceTarget(m, &srs->RR_SRV))
+	if (!GetServiceTarget(m, srs))
 		{
 		// defer registration until we've got a target
 		debugf("uDNS_RegisterService - no target for %##s", srs->RR_SRV.resrec.name->c);
@@ -6299,11 +6309,8 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->StaticHostname.c[0]      = 0;
 	m->NextSRVUpdate            = timenow + 0x78000000;
 	m->RegDomain.c[0]           = 0;
-	m->BrowseDomains            = mDNSNULL;
 	m->FQDN.c[0]                = 0;
 	m->RegisterSearchDomains    = mDNSfalse;
-	m->DefBrowseList            = mDNSNULL;
-	m->DefRegList               = mDNSNULL;
 	m->SuppressStdPort53Queries = 0;
 #endif
 
