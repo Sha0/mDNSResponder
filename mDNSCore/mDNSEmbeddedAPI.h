@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.391  2007/07/11 20:30:45  cheshire
+<rdar://problem/5304766> Register IPSec tunnel with IPv4-only hostname and create NAT port mappings
+Added AutoTunnelTarget and AutoTunnelService to DomainAuthInfo structure
+
 Revision 1.390  2007/07/11 18:56:55  cheshire
 Added comments about AutoTunnelHostAddr and AutoTunnelLabel
 
@@ -1449,7 +1453,9 @@ typedef struct DomainAuthInfo
 	struct DomainAuthInfo *next;
 	mDNSs32     deltime;
 	mDNSBool    AutoTunnel;
-	AuthRecord  AutoTunnelHostRecord;
+	AuthRecord  AutoTunnelHostRecord;	// User-visible hostname; used as SRV target for AutoTunnel services
+	AuthRecord  AutoTunnelTarget;		// Opaque hostname of tunnel endpoint; used as SRV target for AutoTunnelService record
+	AuthRecord  AutoTunnelService;		// Service record (possibly NAT-Mapped) of IKE daemon implementing tunnel endpoint
 	domainname  domain;
 	domainname  keyname;
 	mDNSu8      keydata_ipad[HMAC_LEN];	// padded key for inner hash rounds
