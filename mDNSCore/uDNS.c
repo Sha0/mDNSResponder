@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.387  2007/07/11 03:04:08  cheshire
+<rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for AutoTunnel services
+Add AutoTunnel parameter to mDNS_SetSecretForDomain; Set up AutoTunnel information for domains that require it
+
 Revision 1.386  2007/07/10 01:57:28  cheshire
 <rdar://problem/5196524> uDNS: mDNSresponder is leaking TCP connections to DNS server
 Turned vast chunks of replicated code into a subroutine MakeTCPConn(...);
@@ -716,16 +720,16 @@ mDNSexport DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const n
 	{
 	const domainname *n = name;
 	DomainAuthInfo **p = &m->AuthInfoList;
-	DomainAuthInfo *ptr;
 
 	// First purge any dead keys from the list
 	while (*p)
 		{
 		if ((*p)->deltime && m->timenow - (*p)->deltime >= 0)
 			{
-			ptr = *p;
+			DomainAuthInfo *ptr = *p;
 			LogOperation("Deleting expired key %##s %##s", ptr->domain.c, ptr->keyname.c);
 			*p = ptr->next;
+			if (ptr->AutoTunnel) mDNS_Deregister_internal(m, &ptr->AutoTunnelHostRecord, mDNS_Dereg_normal);
 			// Probably not essential, but just to be safe, zero out the secret key data
 			// so we don't leave it hanging around in memory
 			// (where it could potentially get exposed via some other bug)
@@ -738,6 +742,7 @@ mDNSexport DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const n
 
 	while (n->c[0])
 		{
+		DomainAuthInfo *ptr;
 		for (ptr = m->AuthInfoList; ptr; ptr = ptr->next)
 			if (SameDomainName(&ptr->domain, n))
 				{
@@ -751,23 +756,34 @@ mDNSexport DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const n
 	}
 
 mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
-	const domainname *domain, const domainname *keyname, const char *b64keydata)
+	const domainname *domain, const domainname *keyname, const char *b64keydata, mDNSBool AutoTunnel)
 	{
 	DomainAuthInfo **p = &m->AuthInfoList;
 	if (!info || !b64keydata) return(mStatus_BadParamErr);
 
-	info->next    = mDNSNULL;
-	info->deltime = 0;
+	LogOperation("mDNS_SetSecretForDomain: domain %##s key %##s %d", domain->c, keyname->c, AutoTunnel);
+
+	info->next       = mDNSNULL;
+	info->deltime    = 0;
+	info->AutoTunnel = AutoTunnel;
 	AssignDomainName(&info->domain,  domain);
 	AssignDomainName(&info->keyname, keyname);
 
+	if (info->AutoTunnel)
+		{
+		mDNS_SetupResourceRecord(&info->AutoTunnelHostRecord, mDNSNULL, mDNSInterface_Any, kDNSType_AAAA, kHostNameTTL, kDNSRecordTypeUnique, mDNSNULL, mDNSNULL);
+		info->AutoTunnelHostRecord.namestorage.c[0] = 0;
+		AppendDomainLabel(&info->AutoTunnelHostRecord.namestorage, &m->AutoTunnelLabel);
+		AppendDomainName (&info->AutoTunnelHostRecord.namestorage, domain);
+		info->AutoTunnelHostRecord.resrec.rrtype = kDNSType_AAAA;
+		info->AutoTunnelHostRecord.resrec.rdata->u.ipv6 = m->AutoTunnelHostAddr;
+		mDNS_Register_internal(m, &info->AutoTunnelHostRecord);
+		}
+
 	if (DNSDigest_ConstructHMACKeyfromBase64(info, b64keydata) < 0)
 		{
-		#if LogAllOperations
-			LogMsg("ERROR: mDNS_SetSecretForDomain: could not convert shared secret %s from base64", b64keydata);
-		#else
-			LogMsg("ERROR: mDNS_SetSecretForDomain: could not convert shared secret from base64");
-		#endif
+		LogMsg("ERROR: mDNS_SetSecretForDomain: Could not convert shared secret from base64: domain %##s key %##s %s",
+			domain->c, keyname->c, LogAllOperations ? b64keydata : "");
 		return(mStatus_BadParamErr);
 		}
 
@@ -1724,10 +1740,10 @@ mDNSlocal void LLQNatMapComplete(mDNS *const m, mDNSv4Addr ExternalAddress, NATT
 
 // if we ever want to refine support for multiple hostnames, we can add logic matching service names to a particular hostname
 // for now, we grab the first registered DynDNS name, if any, or a static name we learned via a reverse-map query
-mDNSexport const domainname *GetServiceTarget(mDNS *m, AuthRecord *srv)
+mDNSexport const domainname *GetServiceTarget(mDNS *m, ServiceRecordSet *srs)
 	{
-	if (!srv->HostTarget)		// If not automatically tracking this host's current name, just return the exising target
-		return(&srv->resrec.rdata->u.srv.target);
+	if (!srs->RR_SRV.HostTarget)		// If not automatically tracking this host's current name, just return the exising target
+		return(&srs->RR_SRV.resrec.rdata->u.srv.target);
 	else
 		{
 		HostnameInfo *hi = m->Hostnames;
@@ -1753,7 +1769,6 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	mDNSBool mapped = mDNSfalse;
 	const domainname *target;
 	DomainAuthInfo *authInfo;
-	AuthRecord *srv = &srs->RR_SRV;
 	mDNSu32 i;
 
 	if (m->mDNS_busy != m->mDNS_reentrancy+1)
@@ -1772,14 +1787,14 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
  //	if (!mDNSIPPortIsZero(srs->NATinfo.publicPort) && srs->NATinfo.retryIntervalPortMap != -1)
  	if (!mDNSIPPortIsZero(srs->NATinfo.publicPort))
 		{
-		privport = srv->resrec.rdata->u.srv.port;
-		srv->resrec.rdata->u.srv.port = srs->NATinfo.publicPort;
+		privport = srs->RR_SRV.resrec.rdata->u.srv.port;
+		srs->RR_SRV.resrec.rdata->u.srv.port = srs->NATinfo.publicPort;
 		mapped = mDNStrue;
 		}
 
 	// construct update packet
 	// set zone
-	ptr = putZone(&m->omsg, ptr, end, &srs->zone, mDNSOpaque16fromIntVal(srv->resrec.rrclass));
+	ptr = putZone(&m->omsg, ptr, end, &srs->zone, mDNSOpaque16fromIntVal(srs->RR_SRV.resrec.rrclass));
 	if (!ptr) { err = mStatus_UnknownErr; goto exit; }
 
 	if (srs->TestForSelfConflict)
@@ -1792,7 +1807,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	else if (srs->state != regState_Refresh && srs->state != regState_UpdatePending)
 		{
 		// use SRV name for prereq
-		ptr = putPrereqNameNotInUse(srv->resrec.name, &m->omsg, ptr, end);
+		ptr = putPrereqNameNotInUse(srs->RR_SRV.resrec.name, &m->omsg, ptr, end);
 		if (!ptr) { err = mStatus_UnknownErr; goto exit; }
 		}
 
@@ -1816,21 +1831,21 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	else
 		if (!(ptr = PutResourceRecordTTLJumbo(&m->omsg, ptr, &m->omsg.h.mDNS_numUpdates, &srs->RR_TXT.resrec, srs->RR_TXT.resrec.rroriginalttl))) { err = mStatus_UnknownErr; goto exit; }
 
-	target = GetServiceTarget(m, srv);
+	target = GetServiceTarget(m, srs);
 	if (!target)
 		{
-		debugf("Couldn't get target for service %##s", srv->resrec.name->c);
+		debugf("Couldn't get target for service %##s", srs->RR_SRV.resrec.name->c);
 		srs->state = regState_NoTarget;
 		return;
 		}
 
-	if (!SameDomainName(target, &srv->resrec.rdata->u.srv.target))
+	if (!SameDomainName(target, &srs->RR_SRV.resrec.rdata->u.srv.target))
 		{
-		AssignDomainName(&srv->resrec.rdata->u.srv.target, target);
-		SetNewRData(&srv->resrec, mDNSNULL, 0);
+		AssignDomainName(&srs->RR_SRV.resrec.rdata->u.srv.target, target);
+		SetNewRData(&srs->RR_SRV.resrec, mDNSNULL, 0);
 		}
 
-	ptr = PutResourceRecordTTLJumbo(&m->omsg, ptr, &m->omsg.h.mDNS_numUpdates, &srv->resrec, srv->resrec.rroriginalttl);
+	ptr = PutResourceRecordTTLJumbo(&m->omsg, ptr, &m->omsg.h.mDNS_numUpdates, &srs->RR_SRV.resrec, srs->RR_SRV.resrec.rroriginalttl);
 	if (!ptr) { err = mStatus_UnknownErr; goto exit; }
 
 	if (srs->srs_uselease)
@@ -1856,7 +1871,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 
 exit:
 
-	if (mapped) srv->resrec.rdata->u.srv.port = privport;
+	if (mapped) srs->RR_SRV.resrec.rdata->u.srv.port = privport;
 
 	if (err)
 		{
@@ -2154,8 +2169,12 @@ mDNSexport void serviceRegistrationCallback(mDNS *const m, mStatus err, const Zo
 	LogOperation("serviceRegistrationCallback %#a %d %#a %d", &m->AdvertisedV4, mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4), &srs->ns, mDNSAddrIsRFC1918(&srs->ns));
 
 	if (!mDNSIPPortIsZero(srs->RR_SRV.resrec.rdata->u.srv.port) &&
-		mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsRFC1918(&srs->ns))
-		{ srs->state = regState_NATMap; StartSRVNatMap(m, srs); }
+		mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsRFC1918(&srs->ns) &&
+		!srs->RR_SRV.HostTarget)
+		{
+		srs->state = regState_NATMap;
+		StartSRVNatMap(m, srs);
+		}
 	else
 		{
 		mDNS_Lock(m);
@@ -2171,7 +2190,7 @@ error:
 	// Don't need to do the mDNS_DropLockBeforeCallback stuff here, because this code is
 	// *already* being invoked in the right callback context, with mDNS_reentrancy correctly incremented.
 	srs->ServiceCallback(m, srs, err);
-	// CAUTION: MUST NOT do anything more with rr after calling rr->Callback(), because the client's callback function
+	// CAUTION: MUST NOT do anything more with rr after calling srs->ServiceCallback(), because the client's callback function
 	// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
 	}
 
@@ -2232,7 +2251,7 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 	// The target has changed
 
 	domainname *curtarget = &srs->RR_SRV.resrec.rdata->u.srv.target;
-	const domainname *const nt = GetServiceTarget(m, &srs->RR_SRV);
+	const domainname *const nt = GetServiceTarget(m, srs);
 	const domainname *const newtarget = nt ? nt : (domainname*)"";
 	mDNSBool TargetChanged = (newtarget->c[0] && srs->state == regState_NoTarget) || !SameDomainName(curtarget, newtarget);
 	mDNSBool HaveZoneData  = !mDNSIPv4AddressIsZero(srs->ns.ip.v4);
