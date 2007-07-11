@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.390  2007/07/11 18:56:55  cheshire
+Added comments about AutoTunnelHostAddr and AutoTunnelLabel
+
 Revision 1.389  2007/07/11 02:44:03  cheshire
 <rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for AutoTunnel services
 Added AutoTunnel fields to structures
@@ -1694,8 +1697,8 @@ struct mDNS_struct
 	domainname        StaticHostname;       // Current answer to reverse-map query
 	domainname        FQDN;
 	HostnameInfo     *Hostnames;            // List of registered hostnames + hostname metadata
-	domainlabel       AutoTunnelLabel;
-	mDNSv6Addr        AutoTunnelHostAddr;
+	mDNSv6Addr        AutoTunnelHostAddr;	// IPv6 address advertised for AutoTunnel services on this machine
+	domainlabel       AutoTunnelLabel;		// Used to construct hostname for *IPv4* address of tunnel endpoint
 
 	mDNSBool          RegisterSearchDomains;
 	domainname        RegDomain;            // Really belongs in uds_daemon, not here
