@@ -17,6 +17,10 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.126  2007/07/11 02:56:20  cheshire
+<rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for AutoTunnel services
+Remove unused mDNSPlatformDefaultRegDomainChanged
+
 Revision 1.125  2007/06/20 01:10:13  cheshire
 <rdar://problem/5280520> Sync iPhone changes into main mDNSResponder code
 
@@ -1510,7 +1514,7 @@ SetDomainSecrets( mDNS * const m, const domainname * inDomain )
 	// And finally, tell the core about this secret
 
 	debugf("Setting shared secret for zone %s with key %##s", domain.m_utf8, key.m_dname.c);
-	mDNS_SetSecretForDomain( m, &domain.m_dname, &key.m_dname, secret.m_utf8 );
+	mDNS_SetSecretForDomain( m, &domain.m_dname, &key.m_dname, secret.m_utf8, mDNSfalse );
 
 exit:
 
@@ -1882,20 +1886,6 @@ exit:
 	}
 
 	return err;
-}
-
-
-//===========================================================================================================================
-//	mDNSPlatformDefaultRegDomainChanged
-//===========================================================================================================================
-
-mDNSexport void
-mDNSPlatformDefaultRegDomainChanged( const domainname * d, mDNSBool add )
-{
-	DEBUG_UNUSED( d );
-	DEBUG_UNUSED( add );
-
-	// This is a no-op on Windows
 }
 
 

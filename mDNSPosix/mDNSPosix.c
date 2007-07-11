@@ -30,6 +30,10 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.99  2007/07/11 02:56:51  cheshire
+<rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for AutoTunnel services
+Remove unused mDNSPlatformDefaultRegDomainChanged
+
 Revision 1.98  2007/06/20 01:10:13  cheshire
 <rdar://problem/5280520> Sync iPhone changes into main mDNSResponder code
 
@@ -499,12 +503,6 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS * const m, mDNSAddr * v4
 	(void) router;
 
 	return mStatus_UnsupportedErr;
-	}
-
-mDNSexport void mDNSPlatformDefaultRegDomainChanged(const domainname *d, mDNSBool add)
-	{
-	(void) d;
-	(void) add;
 	}
 
 mDNSexport void mDNSPlatformDynDNSHostNameStatusChanged(const domainname *const dname, const mStatus status)
