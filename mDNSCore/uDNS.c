@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.388  2007/07/11 19:27:10  cheshire
+<rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for services
+For temporary testing fake up an IPv4LL address instead of IPv6 ULA
+
 Revision 1.387  2007/07/11 03:04:08  cheshire
 <rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for AutoTunnel services
 Add AutoTunnel parameter to mDNS_SetSecretForDomain; Set up AutoTunnel information for domains that require it
@@ -771,12 +775,20 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 
 	if (info->AutoTunnel)
 		{
-		mDNS_SetupResourceRecord(&info->AutoTunnelHostRecord, mDNSNULL, mDNSInterface_Any, kDNSType_AAAA, kHostNameTTL, kDNSRecordTypeUnique, mDNSNULL, mDNSNULL);
+		// TEMP FOR AUTOTUNNEL TESTING: FOR NOW, USE IPv4LL ADDRESS INSTEAD OF IPV6 ULA
+		//mDNS_SetupResourceRecord(&info->AutoTunnelHostRecord, mDNSNULL, mDNSInterface_Any, kDNSType_AAAA, kHostNameTTL, kDNSRecordTypeUnique, mDNSNULL, mDNSNULL);
+		mDNS_SetupResourceRecord(&info->AutoTunnelHostRecord, mDNSNULL, mDNSInterface_Any, kDNSType_A, kHostNameTTL, kDNSRecordTypeUnique, mDNSNULL, mDNSNULL);
+		// END TEMP FOR AUTOTUNNEL TESTING
 		info->AutoTunnelHostRecord.namestorage.c[0] = 0;
-		AppendDomainLabel(&info->AutoTunnelHostRecord.namestorage, &m->AutoTunnelLabel);
+		AppendDomainLabel(&info->AutoTunnelHostRecord.namestorage, &m->hostlabel);
 		AppendDomainName (&info->AutoTunnelHostRecord.namestorage, domain);
-		info->AutoTunnelHostRecord.resrec.rrtype = kDNSType_AAAA;
-		info->AutoTunnelHostRecord.resrec.rdata->u.ipv6 = m->AutoTunnelHostAddr;
+		// TEMP FOR AUTOTUNNEL TESTING: FOR NOW, USE IPv4LL ADDRESS INSTEAD OF IPV6 ULA
+		//info->AutoTunnelHostRecord.resrec.rdata->u.ipv6 = m->AutoTunnelHostAddr;
+		info->AutoTunnelHostRecord.resrec.rdata->u.ipv4.b[0] = 169;
+		info->AutoTunnelHostRecord.resrec.rdata->u.ipv4.b[1] = 254;
+		info->AutoTunnelHostRecord.resrec.rdata->u.ipv4.b[2] = m->AutoTunnelHostAddr.b[0xE];
+		info->AutoTunnelHostRecord.resrec.rdata->u.ipv4.b[3] = m->AutoTunnelHostAddr.b[0xF];
+		// END TEMP FOR AUTOTUNNEL TESTING
 		mDNS_Register_internal(m, &info->AutoTunnelHostRecord);
 		}
 
