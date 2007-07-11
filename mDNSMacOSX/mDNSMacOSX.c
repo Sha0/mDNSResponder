@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.424  2007/07/11 19:00:27  cheshire
+Only need to set up m->AutoTunnelHostAddr first time through UpdateInterfaceList()
+
 Revision 1.423  2007/07/11 03:00:59  cheshire
 <rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for AutoTunnel services
 Add AutoTunnel parameter to mDNS_SetSecretForDomain; Generate IPv6 ULA address for tunnel endpoint
@@ -1867,30 +1870,37 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 	if (InfoSocket >= 0) close(InfoSocket);
 #endif
 
+	// If we haven't set up AutoTunnelHostAddr yet, do it now
+	if (m->AutoTunnelHostAddr.b[0] == 0)
+		{
+		m->AutoTunnelHostAddr.b[0x0] = 0xFD;		// Required prefix for "locally assigned" ULA (See RFC 4193)
+		m->AutoTunnelHostAddr.b[0x1] = mDNSRandom(255);
+		m->AutoTunnelHostAddr.b[0x2] = mDNSRandom(255);
+		m->AutoTunnelHostAddr.b[0x3] = mDNSRandom(255);
+		m->AutoTunnelHostAddr.b[0x4] = mDNSRandom(255);
+		m->AutoTunnelHostAddr.b[0x5] = mDNSRandom(255);
+		m->AutoTunnelHostAddr.b[0x6] = mDNSRandom(255);
+		m->AutoTunnelHostAddr.b[0x7] = mDNSRandom(255);
+		m->AutoTunnelHostAddr.b[0x8] = PrimaryMAC.b[0] ^ 0x02;	// See RFC 3513, Appendix A for explanation
+		m->AutoTunnelHostAddr.b[0x9] = PrimaryMAC.b[1];
+		m->AutoTunnelHostAddr.b[0xA] = PrimaryMAC.b[2];
+		m->AutoTunnelHostAddr.b[0xB] = 0xFF;
+		m->AutoTunnelHostAddr.b[0xC] = 0xFE;
+		m->AutoTunnelHostAddr.b[0xD] = PrimaryMAC.b[3];
+		m->AutoTunnelHostAddr.b[0xE] = PrimaryMAC.b[4];
+		m->AutoTunnelHostAddr.b[0xF] = PrimaryMAC.b[5];
+		m->AutoTunnelLabel.c[0] = mDNS_snprintf((char*)m->AutoTunnelLabel.c+1, 254, "AutoTunnel-%02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X",
+			m->AutoTunnelHostAddr.b[0x8], m->AutoTunnelHostAddr.b[0x9], m->AutoTunnelHostAddr.b[0xA], m->AutoTunnelHostAddr.b[0xB],
+			m->AutoTunnelHostAddr.b[0xC], m->AutoTunnelHostAddr.b[0xD], m->AutoTunnelHostAddr.b[0xE], m->AutoTunnelHostAddr.b[0xF]);
+		LogOperation("m->AutoTunnelLabel %#s", m->AutoTunnelLabel.c);
+		}
+
 #ifndef kDefaultLocalHostNamePrefix
 #define kDefaultLocalHostNamePrefix "Macintosh"
 #endif
 
 	mDNS_snprintf(defaultname, sizeof(defaultname), kDefaultLocalHostNamePrefix "-%02X%02X%02X%02X%02X%02X",
 		PrimaryMAC.b[0], PrimaryMAC.b[1], PrimaryMAC.b[2], PrimaryMAC.b[3], PrimaryMAC.b[4], PrimaryMAC.b[5]);
-
-	MakeDomainLabelFromLiteralString(&m->AutoTunnelLabel, defaultname);
-	m->AutoTunnelHostAddr.b[0x0] = 0xFD;		// Required prefix for "locally assigned" ULA (See RFC 4193)
-	m->AutoTunnelHostAddr.b[0x1] = mDNSRandom(255);
-	m->AutoTunnelHostAddr.b[0x2] = mDNSRandom(255);
-	m->AutoTunnelHostAddr.b[0x3] = mDNSRandom(255);
-	m->AutoTunnelHostAddr.b[0x4] = mDNSRandom(255);
-	m->AutoTunnelHostAddr.b[0x5] = mDNSRandom(255);
-	m->AutoTunnelHostAddr.b[0x6] = mDNSRandom(255);
-	m->AutoTunnelHostAddr.b[0x7] = mDNSRandom(255);
-	m->AutoTunnelHostAddr.b[0x8] = PrimaryMAC.b[0] ^ 0x02;	// See RFC 3513, Appendix A for explanation
-	m->AutoTunnelHostAddr.b[0x9] = PrimaryMAC.b[1];
-	m->AutoTunnelHostAddr.b[0xA] = PrimaryMAC.b[2];
-	m->AutoTunnelHostAddr.b[0xB] = 0xFF;
-	m->AutoTunnelHostAddr.b[0xC] = 0xFE;
-	m->AutoTunnelHostAddr.b[0xD] = PrimaryMAC.b[3];
-	m->AutoTunnelHostAddr.b[0xE] = PrimaryMAC.b[4];
-	m->AutoTunnelHostAddr.b[0xF] = PrimaryMAC.b[5];
 
 	// Set up the nice label
 	domainlabel nicelabel;
@@ -3024,6 +3034,8 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	m->p->userhostlabel.c[0] = 0;
 	m->p->usernicelabel.c[0] = 0;
 	m->p->NotifyUser         = 0;
+
+	m->AutoTunnelHostAddr.b[0] = 0;		// Zero out AutoTunnelHostAddr so UpdateInterfaceList() know it has to set it up
 
 	mDNSs32 utc = mDNSPlatformUTC();
 	UpdateInterfaceList(m, utc);
