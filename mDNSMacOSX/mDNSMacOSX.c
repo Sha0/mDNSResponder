@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.427  2007/07/11 22:50:30  cheshire
+<rdar://problem/5304766> Register IPSec tunnel with IPv4-only hostname and create NAT port mappings
+Write /etc/racoon/remote/anonymous.conf configuration file and start up /usr/sbin/racoon
+
 Revision 1.426  2007/07/11 20:40:49  cheshire
 <rdar://problem/5304766> Register IPSec tunnel with IPv4-only hostname and create NAT port mappings
 In mDNSPlatformGetPrimaryInterface(), prefer routable IPv4 address to IPv4LL
@@ -1906,7 +1910,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 
 		// TEMP FOR AUTOTUNNEL TESTING: FOR NOW, USE IPv4LL ADDRESS INSTEAD OF IPV6 ULA
 		char commandstring[64];
-		mDNS_snprintf(commandstring, sizeof(commandstring), "ifconfig en0 alias 169.254.%d.%d", m->AutoTunnelHostAddr.b[0xE], m->AutoTunnelHostAddr.b[0xF]);
+		mDNS_snprintf(commandstring, sizeof(commandstring), "/sbin/ifconfig en0 alias 169.254.%d.%d", m->AutoTunnelHostAddr.b[0xE], m->AutoTunnelHostAddr.b[0xF]);
 		system(commandstring);
 		// END TEMP FOR AUTOTUNNEL TESTING
 		}
@@ -2721,6 +2725,26 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 					ptr = (DomainAuthInfo*)mallocL("DomainAuthInfo", sizeof(*ptr));
 					if (!ptr) { LogMsg("SetSecretForDomain: No memory"); goto nextitem; }
 					mDNS_SetSecretForDomain(m, ptr, &domain, &keyname, keystring, IsTunnelModeDomain(&domain));
+
+					// Create configuration file, and start (or SIGHUP) Racoon
+					static const char RacoonConfig1[] =
+						"remote anonymous "
+							"{ "
+							"exchange_mode aggressive; doi ipsec_doi; situation identity_only; verify_identifier off; generate_policy on; shared_secret use \"";
+					static const char RacoonConfig2[] =
+							"\"; nonce_size 16; lifetime time 5 min; initial_contact on; support_proxy on; proposal_check claim; "
+							"proposal { encryption_algorithm aes; hash_algorithm sha1; authentication_method pre_shared_key; dh_group 2; lifetime time 5 min; } "
+							"} "
+						"sainfo anonymous { pfs_group 2; lifetime time 60 min; encryption_algorithm aes; authentication_algorithm hmac_sha1; compression_algorithm deflate; }";
+
+					FILE *f = fopen("/etc/racoon/remote/anonymous.conf", "w");
+					fchmod(fileno(f), S_IRUSR | S_IWUSR);
+					fwrite(RacoonConfig1, sizeof(RacoonConfig1)-1, 1, f);
+					fwrite(keystring, strlen(keystring), 1, f);
+					fwrite(RacoonConfig2, sizeof(RacoonConfig2)-1, 1, f);
+					fclose(f);
+					if (system("/usr/bin/killall -HUP racoon") != 0) system("/usr/sbin/racoon");
+					LogMsg("racoon running and listening on port %d", 500);
 					}
 
 				CFStringRef cfs = CFStringCreateWithCString(NULL, dstring, kCFStringEncodingUTF8);
