@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.70  2007/07/11 02:55:50  cheshire
+<rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for AutoTunnel services
+Remove unused DefaultRegDomainChanged/DefaultBrowseDomainChanged
+
 Revision 1.69  2007/05/08 00:56:17  cheshire
 <rdar://problem/4118503> Share single socket instead of creating separate socket for each active interface
 
@@ -187,10 +191,6 @@ extern void KQueueUnlock(mDNS *const m, const char const *task);
 #define WatchDogReportingThreshold 250
 #endif
 
-// Allow platform layer to tell daemon when default registration/browse domains
-extern void DefaultRegDomainChanged(const domainname *d, mDNSBool add);
-extern void DefaultBrowseDomainChanged(const domainname *d, mDNSBool add);
-	
 #ifdef  __cplusplus
     }
 #endif
