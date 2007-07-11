@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.428  2007/07/11 23:17:31  cheshire
+<rdar://problem/5304766> Register IPSec tunnel with IPv4-only hostname and create NAT port mappings
+Improve log message to indicate if we're starting or restarting racoon
+
 Revision 1.427  2007/07/11 22:50:30  cheshire
 <rdar://problem/5304766> Register IPSec tunnel with IPv4-only hostname and create NAT port mappings
 Write /etc/racoon/remote/anonymous.conf configuration file and start up /usr/sbin/racoon
@@ -2743,8 +2747,13 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 					fwrite(keystring, strlen(keystring), 1, f);
 					fwrite(RacoonConfig2, sizeof(RacoonConfig2)-1, 1, f);
 					fclose(f);
-					if (system("/usr/bin/killall -HUP racoon") != 0) system("/usr/sbin/racoon");
-					LogMsg("racoon running and listening on port %d", 500);
+					if (system("/usr/bin/killall -HUP racoon") == 0)
+						LogMsg("Sent SIGHUP to racoon");
+					else
+						{
+						system("/usr/sbin/racoon");
+						LogMsg("Racoon started and listening on port %d", 500);
+						}
 					}
 
 				CFStringRef cfs = CFStringCreateWithCString(NULL, dstring, kCFStringEncodingUTF8);
