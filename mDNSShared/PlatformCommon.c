@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: PlatformCommon.c,v $
+Revision 1.10  2007/07/11 02:59:58  cheshire
+<rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for AutoTunnel services
+Add AutoTunnel parameter to mDNS_SetSecretForDomain
+
 Revision 1.9  2007/01/09 22:37:44  cheshire
 Remove unused ClearDomainSecrets() function
 
@@ -133,7 +137,7 @@ mDNSexport void ReadDDNSSettingsFromConfFile(mDNS *const m, const char *const fi
 		{
 		DomainAuthInfo *info = (DomainAuthInfo*)mDNSPlatformMemAllocate(sizeof(*info));
 		// for now we assume keyname = service reg domain and we use same key for service and hostname registration
-		err = mDNS_SetSecretForDomain(m, info, domain, domain, secret);
+		err = mDNS_SetSecretForDomain(m, info, domain, domain, secret, mDNSfalse);
 		if (err) LogMsg("ERROR: mDNS_SetSecretForDomain returned %d for domain %##s", err, domain->c);
 		}
 

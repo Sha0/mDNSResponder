@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.79  2007/07/11 02:59:58  cheshire
+<rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for AutoTunnel services
+Add AutoTunnel parameter to mDNS_SetSecretForDomain
+
 Revision 1.78  2007/06/20 01:10:13  cheshire
 <rdar://problem/5280520> Sync iPhone changes into main mDNSResponder code
 
@@ -3224,8 +3228,8 @@ void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr,  const mDNSAd
 	{ ( void ) m; ( void ) v4addr; ( void ) v6addr; ( void ) router; }
 mStatus uDNS_SetupDNSConfig( mDNS *const m ) { ( void ) m; return 0; }
 mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
-	const domainname *domain, const domainname *keyname, const char *b64keydata)
-	{ ( void ) m; ( void ) info; ( void ) domain; ( void ) keyname; ( void ) b64keydata; return 0; }
+	const domainname *domain, const domainname *keyname, const char *b64keydata, mDNSBool AutoTunnel)
+	{ ( void ) m; ( void ) info; ( void ) domain; ( void ) keyname; ( void ) b64keydata; ( void ) AutoTunnel; return 0; }
 mStatus mDNS_StopQuery(mDNS *const m, DNSQuestion *const question) { ( void ) m; ( void ) question; return 0; }
 void mDNS_UpdateLLQs(mDNS * const m) { ( void ) m; }
 const char mDNSResponderVersionString_SCCS[] = "";
