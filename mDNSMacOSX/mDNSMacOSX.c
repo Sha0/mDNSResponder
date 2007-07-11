@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.426  2007/07/11 20:40:49  cheshire
+<rdar://problem/5304766> Register IPSec tunnel with IPv4-only hostname and create NAT port mappings
+In mDNSPlatformGetPrimaryInterface(), prefer routable IPv4 address to IPv4LL
+
 Revision 1.425  2007/07/11 19:24:19  cheshire
 <rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for services
 Configure internal AutoTunnel address
@@ -2479,12 +2483,15 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS *const m, mDNSAddr *v4, 
 		if (!CFStringGetCString(string, buf, 256, kCFStringEncodingUTF8)) { LogMsg("Could not convert router to CString"); goto exit; }
 
 		// find primary interface in list
-		while (ifa && (mDNSIPv4AddressIsZero(v4->ip.v4) || !HavePrimaryGlobalv6))
+		while (ifa && (mDNSIPv4AddressIsZero(v4->ip.v4) || mDNSv4AddressIsLinkLocal(&v4->ip.v4) || !HavePrimaryGlobalv6))
 			{
 			mDNSAddr tmp6 = zeroAddr;
 			if (!strcmp(buf, ifa->ifa_name))
 				{
-				if      (ifa->ifa_addr->sa_family == AF_INET) SetupAddr(v4, ifa->ifa_addr);
+				if (ifa->ifa_addr->sa_family == AF_INET)
+					{
+					if (mDNSIPv4AddressIsZero(v4->ip.v4) || mDNSv4AddressIsLinkLocal(&v4->ip.v4)) SetupAddr(v4, ifa->ifa_addr);
+					}
 				else if (ifa->ifa_addr->sa_family == AF_INET6)
 					{
 					SetupAddr(&tmp6, ifa->ifa_addr);
