@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.324  2007/07/11 22:44:40  cheshire
+<rdar://problem/5328801> SIGHUP should purge the cache
+
 Revision 1.323  2007/07/11 03:01:50  cheshire
 <rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for AutoTunnel services
 
@@ -2031,10 +2034,11 @@ mDNSlocal kern_return_t destroyBootstrapService()
 
 mDNSlocal void ExitCallback(int signal)
 	{
+	(void)signal; // Unused
 	LogMsgIdent(mDNSResponderVersionString, "stopping");
 
 	debugf("ExitCallback");
-	if (!mDNS_DebugMode && !started_via_launchdaemon && signal != SIGHUP)
+	if (!mDNS_DebugMode && !started_via_launchdaemon)
 		destroyBootstrapService();
 
 	debugf("ExitCallback: Aborting MIG clients");
@@ -2067,7 +2071,7 @@ mDNSlocal void HandleSIG(int signal)
 	if (mach_msg_send(&header) != MACH_MSG_SUCCESS)
 		{
 		LogMsg("HandleSIG %d: mach_msg_send failed", signal);
-		if (signal == SIGHUP || signal == SIGTERM || signal == SIGINT) exit(-1);
+		if (signal == SIGTERM || signal == SIGINT) exit(-1);
 		}
 	}
 
@@ -2146,18 +2150,25 @@ mDNSlocal void SignalCallback(CFMachPortRef port, void *msg, CFIndex size, void 
 	(void)port;		// Unused
 	(void)size;		// Unused
 	(void)info;		// Unused
-	mach_msg_header_t *m = (mach_msg_header_t *)msg;
+	mach_msg_header_t *msg_header = (mach_msg_header_t *)msg;
 	KQueueLock(&mDNSStorage);
-	switch(m->msgh_id)
+	switch(msg_header->msgh_id)
 		{
-		case SIGHUP:  
-		case SIGINT:  
-		case SIGTERM:   ExitCallback(m->msgh_id); break;
-		case SIGINFO:   INFOCallback(); break;
-		case SIGUSR1:   LogMsg("SIGUSR1: Simulate Network Configuration Change Event");
-		                mDNSMacOSXNetworkChanged(&mDNSStorage); break;
-		case SIGUSR2:   SigLogLevel(); break;
-		default: LogMsg("SignalCallback: Unknown signal %d", m->msgh_id); break;
+		case SIGHUP:	{
+						mDNS *m = &mDNSStorage;
+						mDNSu32 slot;
+						CacheGroup *cg;
+						CacheRecord *rr;
+						LogMsg("SIGHUP: Purge cache");
+						FORALL_CACHERECORDS(slot, cg, rr) PurgeCacheResourceRecord(m, rr);
+						} break;
+		case SIGINT:
+		case SIGTERM:	ExitCallback(msg_header->msgh_id); break;
+		case SIGINFO:	INFOCallback(); break;
+		case SIGUSR1:	LogMsg("SIGUSR1: Simulate Network Configuration Change Event");
+						mDNSMacOSXNetworkChanged(&mDNSStorage); break;
+		case SIGUSR2:	SigLogLevel(); break;
+		default: LogMsg("SignalCallback: Unknown signal %d", msg_header->msgh_id); break;
 		}
 	KQueueUnlock(&mDNSStorage, "Unix Signal");
 	}
@@ -2558,7 +2569,7 @@ mDNSexport int main(int argc, char **argv)
 		if (!strcasecmp(argv[i], "-launchdaemon")) started_via_launchdaemon = mDNStrue;
 		}
 
-	signal(SIGHUP,  HandleSIG);		// (Debugging) Exit cleanly and let mach_init restart us (for debugging)
+	signal(SIGHUP,  HandleSIG);		// (Debugging) Purge the cache to check for cache handling bugs
 	signal(SIGINT,  HandleSIG);		// Ctrl-C: Detach from Mach BootstrapService and exit cleanly
 	signal(SIGPIPE, SIG_IGN  );		// Don't want SIGPIPE signals -- we'll handle EPIPE errors directly
 	signal(SIGTERM, HandleSIG);		// Machine shutting down: Detach from and exit cleanly like Ctrl-C

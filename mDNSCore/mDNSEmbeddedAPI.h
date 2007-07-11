@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.392  2007/07/11 22:44:40  cheshire
+<rdar://problem/5328801> SIGHUP should purge the cache
+
 Revision 1.391  2007/07/11 20:30:45  cheshire
 <rdar://problem/5304766> Register IPSec tunnel with IPv4-only hostname and create NAT port mappings
 Added AutoTunnelTarget and AutoTunnelService to DomainAuthInfo structure
@@ -1886,6 +1889,7 @@ extern mStatus mDNS_StopQuery (mDNS *const m, DNSQuestion *const question);
 extern mStatus mDNS_StopQueryWithRemoves(mDNS *const m, DNSQuestion *const question);
 extern mStatus mDNS_Reconfirm (mDNS *const m, CacheRecord *const cacherr);
 extern mStatus mDNS_ReconfirmByValue(mDNS *const m, ResourceRecord *const rr);
+extern void PurgeCacheResourceRecord(mDNS *const m, CacheRecord *rr);
 extern mDNSs32 mDNS_TimeNow(const mDNS *const m);
 
 extern mStatus mDNS_StartNATOperation(mDNS *const m, NATTraversalInfo *traversal);

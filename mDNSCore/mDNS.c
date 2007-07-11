@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.651  2007/07/11 22:44:40  cheshire
+<rdar://problem/5328801> SIGHUP should purge the cache
+
 Revision 1.650  2007/07/11 21:34:09  cheshire
 <rdar://problem/5304766> Register IPSec tunnel with IPv4-only hostname and create NAT port mappings
 Need to hold mDNS_Lock when calling mDNS_AddDynDNSHostName/mDNS_RemoveDynDNSHostName
@@ -2958,7 +2961,7 @@ mDNSlocal CacheGroup *GetCacheGroup(mDNS *const m, const mDNSu32 slot, const Res
 	return(cg);
 	}
 
-mDNSlocal void PurgeCacheResourceRecord(mDNS *const m, CacheRecord *rr)
+mDNSexport void PurgeCacheResourceRecord(mDNS *const m, CacheRecord *rr)
 	{
 	// Make sure we mark this record as thoroughly expired -- we don't ever want to give
 	// a positive answer using an expired record (e.g. from an interface that has gone away).
