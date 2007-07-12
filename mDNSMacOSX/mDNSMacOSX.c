@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.431  2007/07/12 23:34:48  cheshire
+Removed 'LogOperation' message to reduce verbosity in syslog
+
 Revision 1.430  2007/07/12 22:16:46  cheshire
 Improved "could not convert shared secret from base64" log message so it doesn't reveal key data in syslog
 
@@ -2858,7 +2861,6 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 				for (ptr = m->AuthInfoList; ptr; ptr = ptr->next)
 					if (SameDomainName(&ptr->domain, &domain)) break;
 
-				LogOperation("SetDomainSecrets: %##s %##s", &domain.c, &keyname.c);
 				// Uncomment the line below to view the keys as they're read out of the system keychain
 				// DO NOT SHIP CODE THIS WAY OR YOU'LL LEAK SECRET DATA INTO A PUBLICLY READABLE FILE!
 				//LogOperation("SetDomainSecrets: %##s %##s %s", &domain.c, &keyname.c, keystring);
