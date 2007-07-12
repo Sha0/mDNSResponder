@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.395  2007/07/12 23:56:23  cheshire
+Change "GetZoneData GOT SRV" message to debugf to reduce verbosity in syslog
+
 Revision 1.394  2007/07/12 23:36:08  cheshire
 Changed some 'LogOperation' calls to 'debugf' to reduce verbosity in syslog
 
@@ -2004,7 +2007,7 @@ mDNSlocal void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *question
 		}
 	else if (answer->rrtype == kDNSType_SRV)
 		{
-		LogMsg("GetZoneData GOT SRV %s", RRDisplayString(m, answer));
+		debugf("GetZoneData GOT SRV %s", RRDisplayString(m, answer));
 		mDNS_StopQuery(m, question);
 		if (!answer->rdlength && zd->ZonePrivate && zd->ZoneService != ZoneServiceQuery)
 			{
