@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.394  2007/07/12 23:36:08  cheshire
+Changed some 'LogOperation' calls to 'debugf' to reduce verbosity in syslog
+
 Revision 1.393  2007/07/12 22:15:10  cheshire
 Modified mDNS_SetSecretForDomain() so it can be called to update an existing entry
 
@@ -772,7 +775,7 @@ mDNSexport DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const n
 		for (ptr = m->AuthInfoList; ptr; ptr = ptr->next)
 			if (SameDomainName(&ptr->domain, n))
 				{
-				LogOperation("GetAuthInfoForName %##s Matched %##s Key name %##s", name->c, ptr->domain.c, ptr->keyname.c);
+				debugf("GetAuthInfoForName %##s Matched %##s Key name %##s", name->c, ptr->domain.c, ptr->keyname.c);
 				return(ptr);
 				}
 		n = (const domainname *)(n->c + 1 + n->c[0]);
@@ -1970,14 +1973,14 @@ mDNSlocal void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *question
 	{
 	ZoneData *zd = (ZoneData*)question->QuestionContext;
 
-	LogOperation("GetZoneData_QuestionCallback: %s %s", AddRecord ? "Add" : "Rmv", RRDisplayString(m, answer));
+	debugf("GetZoneData_QuestionCallback: %s %s", AddRecord ? "Add" : "Rmv", RRDisplayString(m, answer));
 
 	if (!AddRecord) return;
 	if (answer->rrtype != question->qtype) return; // Don't care about CNAMEs
 
 	if (answer->rrtype == kDNSType_SOA)
 		{
-		LogOperation("GOT lookupSOA %s", RRDisplayString(m, answer));
+		debugf("GetZoneData GOT SOA %s", RRDisplayString(m, answer));
 		mDNS_StopQuery(m, question);
 		if (answer->rdlength)
 			{
@@ -2001,7 +2004,7 @@ mDNSlocal void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *question
 		}
 	else if (answer->rrtype == kDNSType_SRV)
 		{
-		LogOperation("GOT lookupPort SRV %s", RRDisplayString(m, answer));
+		LogMsg("GetZoneData GOT SRV %s", RRDisplayString(m, answer));
 		mDNS_StopQuery(m, question);
 		if (!answer->rdlength && zd->ZonePrivate && zd->ZoneService != ZoneServiceQuery)
 			{
@@ -2030,7 +2033,7 @@ mDNSlocal void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *question
 		}
 	else if (answer->rrtype == kDNSType_A)
 		{
-		LogOperation("GOT lookupA %s", RRDisplayString(m, answer));
+		debugf("GetZoneData GOT A %s", RRDisplayString(m, answer));
 		mDNS_StopQuery(m, question);
 		zd->Addr.type  = mDNSAddrType_IPv4;
 		zd->Addr.ip.v4 = (answer->rdlength == 4) ? answer->rdata->u.ipv4 : zerov4Addr;
@@ -3607,7 +3610,7 @@ mDNSexport void RecordRegistrationCallback(mDNS *const m, mStatus err, const Zon
 
 	newRR->nta = mDNSNULL;
 
-	// make sure record is still in list
+	// make sure record is still in list (!!!)
 	for (ptr = m->ResourceRecords; ptr; ptr = ptr->next) if (ptr == newRR) break;
 	if (!ptr) { LogMsg("RecordRegistrationCallback - RR no longer in list.  Discarding."); return; }
 
@@ -3627,26 +3630,26 @@ mDNSexport void RecordRegistrationCallback(mDNS *const m, mStatus err, const Zon
 	// organizations use their own private pseudo-TLD, like ".home", etc, and we don't want to block that.
 	if (zoneData->ZoneName.c[0] == 0)
 		{
-		LogMsg("ERROR: Only name server claiming responsibility for \"%##s\" is \"%##s\"!",
-			newRR->resrec.name->c, zoneData->ZoneName.c);
+		LogMsg("RecordRegistrationCallback: Only name server claiming responsibility for \"%##s\" is \"%##s\"!", newRR->resrec.name->c, zoneData->ZoneName.c);
 		err = mStatus_NoSuchNameErr;
 		goto error;
 		}
 
-	// cache zone data
+	// Store discovered zone data
 	AssignDomainName(&newRR->zone, &zoneData->ZoneName);
 	newRR->UpdateServer = zoneData->Addr;
-	if (!mDNSIPPortIsZero(zoneData->Port))
+	newRR->UpdatePort   = zoneData->Port;
+	newRR->Private      = zoneData->ZonePrivate;
+	debugf("RecordRegistrationCallback: Set newRR->UpdateServer %##s %##s to %#a:%d",
+		newRR->resrec.name->c, zoneData->ZoneName.c, &newRR->UpdateServer, mDNSVal16(newRR->UpdatePort));
+
+	if (mDNSIPPortIsZero(zoneData->Port) || mDNSAddressIsZero(&zoneData->Addr))
 		{
-		newRR->UpdatePort = zoneData->Port;
-		newRR->Private = zoneData->ZonePrivate;
+		LogMsg("RecordRegistrationCallback: No _dns-update._udp service found for \"%##s\"!", newRR->resrec.name->c);
+		err = mStatus_NoSuchNameErr;
+		goto error;
 		}
-	else
-		{
-		debugf("Update port not advertised via SRV - guessing port 53, no lease option");
-		newRR->UpdatePort = UnicastDNSPort;
-		newRR->uselease = mDNSfalse;
-		}
+
 
 	mDNS_Lock(m);	// sendRecordRegistration expects to be called with the lock held
 	sendRecordRegistration(m, newRR);
