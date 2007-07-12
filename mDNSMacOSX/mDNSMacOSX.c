@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.429  2007/07/12 02:51:28  cheshire
+<rdar://problem/5303834> Automatically configure IPSec policy when resolving services
+
 Revision 1.428  2007/07/11 23:17:31  cheshire
 <rdar://problem/5304766> Register IPSec tunnel with IPv4-only hostname and create NAT port mappings
 Improve log message to indicate if we're starting or restarting racoon
@@ -2610,6 +2613,146 @@ mDNSexport void mDNSPlatformDynDNSHostNameStatusChanged(const domainname *const 
 		}
 	}
 
+#if APPLE_OSX_mDNSResponder
+
+mDNSlocal void RestartRacoon(void)
+	{
+	if (system("/usr/bin/killall -HUP racoon") == 0)
+		LogMsg("Sent SIGHUP to racoon");
+	else
+		{
+		system("/usr/sbin/racoon");
+		LogMsg("Racoon started and listening on port %d", 500);
+		}
+	}
+
+mDNSlocal const char RacoonConfig[] = "remote %s\n"
+	"{ exchange_mode aggressive; doi ipsec_doi; situation identity_only; verify_identifier off; shared_secret use \"%s\";\n"
+	"nonce_size 16; lifetime time 5 min; initial_contact on; support_proxy on; proposal_check claim;\n"
+	"proposal { encryption_algorithm aes; hash_algorithm sha1; authentication_method pre_shared_key; dh_group 2; lifetime time 5 min; }\n"
+	"}\n"
+	"sainfo address %s any address %s any\n"
+	"{ pfs_group 2; lifetime time 60 min; encryption_algorithm aes; authentication_algorithm hmac_sha1; compression_algorithm deflate; }\n"
+	"sainfo address %s any address %s any\n"
+	"{ pfs_group 2; lifetime time 60 min; encryption_algorithm aes; authentication_algorithm hmac_sha1; compression_algorithm deflate; }\n";
+
+typedef struct
+	{
+	DNSQuestion srv;
+	DNSQuestion add;
+	mDNSAddr loc_inner;
+	mDNSAddr rmt_inner;
+	char b64keydata[32];
+	} AutoTunnelQuery;
+
+mDNSlocal void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+	{
+	AutoTunnelQuery *atq = (AutoTunnelQuery *)question->QuestionContext;
+	if (!AddRecord) return;
+	if (question == &atq->srv)
+		{
+		LogOperation("AutoTunnelCallback: SRV target %##s", answer->rdata->u.srv.target.c);
+		mDNS_StopQuery(m, question);
+		AssignDomainName(&atq->add.qname, &answer->rdata->u.srv.target);
+		mDNS_StartQuery(m, &atq->add);
+		}
+	else if (question == &atq->add)
+		{
+		LogOperation("AutoTunnelCallback: SRV target %.4a", &answer->rdata->u.ipv4);
+		mDNS_StopQuery(m, question);
+		char loc_inner[40];		// Enough for IPv6 address plus nul on the end
+		char rmt_inner[40];
+		char loc_outer[40];
+		char rmt_outer[40];
+	
+		mDNS_snprintf(loc_inner, sizeof(loc_inner), "%#a", &atq->loc_inner);
+		mDNS_snprintf(rmt_inner, sizeof(rmt_inner), "%#a", &atq->rmt_inner);
+		mDNS_snprintf(loc_outer, sizeof(loc_outer), "%.4a", &m->AdvertisedV4.ip.v4);
+		mDNS_snprintf(rmt_outer, sizeof(rmt_outer), "%.4a", &answer->rdata->u.ipv4);
+	
+		FILE *fp = popen("/usr/sbin/setkey -c", "r+");
+		if (!fp)
+			LogMsg("popen(\"/usr/sbin/setkey -c\", \"r+\"); failed");
+		else
+			{
+			if (fprintf(fp, "spddelete %s/32 %s/32 any -P out;\n", loc_inner, rmt_inner) < 0) LogMsg("spddelete loc->rmt failed");
+			if (fprintf(fp, "spddelete %s/32 %s/32 any -P  in;\n", rmt_inner, loc_inner) < 0) LogMsg("spddelete rmt->loc failed");
+			if (fprintf(fp, "spdadd %s/32 %s/32 any -P out ipsec esp/tunnel/%s-%s/require;\n", loc_inner, rmt_inner, loc_outer, rmt_outer) < 0) LogMsg("spdadd loc->rmt failed");
+			if (fprintf(fp, "spdadd %s/32 %s/32 any -P in  ipsec esp/tunnel/%s-%s/require;\n", rmt_inner, loc_inner, rmt_outer, loc_outer) < 0) LogMsg("spdadd rmt->loc failed");
+			pclose(fp);
+
+			char filename[64];
+			mDNS_snprintf(filename, sizeof(filename), "/etc/racoon/remote/%s.conf", rmt_outer);
+			FILE *f = fopen(filename, "w");
+			fchmod(fileno(f), S_IRUSR | S_IWUSR);
+			char filedata[1024];
+			int len = mDNS_snprintf(filedata, sizeof(filedata), RacoonConfig, rmt_outer, atq->b64keydata, rmt_inner, loc_inner, loc_inner, rmt_inner);
+			fwrite(filedata, len, 1, f);
+			fclose(f);
+			RestartRacoon();
+
+			char route[128];
+			mDNS_snprintf(route, sizeof(route), "/sbin/route add %s %s", rmt_inner, loc_inner);
+			system(route);
+			}
+		
+		freeL("AutoTunnelQuery", atq);
+		}
+	else
+		LogMsg("AutoTunnelCallback: Unknown question %p", question);
+	}
+
+mDNSexport void ConfigureClientTunnel(mDNS *const m, DNSQuestion *const q, const ResourceRecord *const answer)
+	{
+	// If this is our own Tunnel address query, don't want to loop endlessly
+	if (q->QuestionCallback == AutoTunnelCallback) return;
+
+	LogMsg("ConfigureClientTunnel starting for %##s", q->qname.c);
+
+	AutoTunnelQuery *atq = mallocL("AutoTunnelQuery", sizeof(AutoTunnelQuery));
+	if (!atq) return;
+
+	atq->srv.ThisQInterval       = -1;		// So that we know whether to cancel this question
+	atq->srv.InterfaceID         = mDNSInterface_Any;
+	atq->srv.Target              = zeroAddr;
+	AssignDomainName(&atq->srv.qname, (const domainname*) "\x0B" "_autotunnel" "\x04" "_udp");
+	AppendDomainName(&atq->srv.qname, answer->name);
+	atq->srv.qtype               = kDNSType_SRV;
+	atq->srv.qclass              = kDNSClass_IN;
+	atq->srv.LongLived           = mDNSfalse;
+	atq->srv.ExpectUnique        = mDNStrue;
+	atq->srv.ForceMCast          = mDNSfalse;
+	atq->srv.ReturnIntermed      = mDNSfalse;
+	atq->srv.QuestionCallback    = AutoTunnelCallback;
+	atq->srv.QuestionContext     = atq;
+
+	atq->add.ThisQInterval       = -1;		// So that we know whether to cancel this question
+	atq->add.InterfaceID         = mDNSInterface_Any;
+	atq->add.Target              = zeroAddr;
+	atq->add.qname.c[0]          = 0;
+	atq->add.qtype               = kDNSType_A;
+	atq->add.qclass              = kDNSClass_IN;
+	atq->add.LongLived           = mDNSfalse;
+	atq->add.ExpectUnique        = mDNStrue;
+	atq->add.ForceMCast          = mDNSfalse;
+	atq->add.ReturnIntermed      = mDNSfalse;
+	atq->add.QuestionCallback    = AutoTunnelCallback;
+	atq->add.QuestionContext     = atq;
+
+	// TEMP FOR AUTOTUNNEL TESTING: FOR NOW, USE IPv4LL ADDRESS INSTEAD OF IPV6 ULA
+	//atq->loc_inner.type = mDNSAddrType_IPv6;
+	//atq->loc_inner.ip.v6 = q->AuthInfo->AutoTunnelHostRecord.resrec.rdata->u.ipv6;
+	atq->loc_inner.type = mDNSAddrType_IPv4;
+	atq->loc_inner.ip.v4 = q->AuthInfo->AutoTunnelHostRecord.resrec.rdata->u.ipv4;
+	atq->rmt_inner.type = (answer->rrtype == kDNSType_A) ? mDNSAddrType_IPv4 : mDNSAddrType_IPv6;
+	atq->rmt_inner.ip.v6 = answer->rdata->u.ipv6;		// Okay to copy all 16 bytes, even if only 4 are used
+	mDNS_snprintf(atq->b64keydata, sizeof(atq->b64keydata), "%s", q->AuthInfo->b64keydata);
+
+	mDNS_StartQuery_internal(m, &atq->srv);
+	}
+
+#endif // APPLE_OSX_mDNSResponder
+
 mDNSlocal mDNSBool IsTunnelModeDomain(const domainname *d)
 	{
 	static const domainname *mmc = (const domainname*) "\x7" "members" "\x3" "mac" "\x3" "com";
@@ -2730,16 +2873,17 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 					if (!ptr) { LogMsg("SetSecretForDomain: No memory"); goto nextitem; }
 					mDNS_SetSecretForDomain(m, ptr, &domain, &keyname, keystring, IsTunnelModeDomain(&domain));
 
+					#if APPLE_OSX_mDNSResponder
 					// Create configuration file, and start (or SIGHUP) Racoon
 					static const char RacoonConfig1[] =
-						"remote anonymous "
-							"{ "
+						"remote anonymous\n"
+							"{\n"
 							"exchange_mode aggressive; doi ipsec_doi; situation identity_only; verify_identifier off; generate_policy on; shared_secret use \"";
 					static const char RacoonConfig2[] =
-							"\"; nonce_size 16; lifetime time 5 min; initial_contact on; support_proxy on; proposal_check claim; "
-							"proposal { encryption_algorithm aes; hash_algorithm sha1; authentication_method pre_shared_key; dh_group 2; lifetime time 5 min; } "
-							"} "
-						"sainfo anonymous { pfs_group 2; lifetime time 60 min; encryption_algorithm aes; authentication_algorithm hmac_sha1; compression_algorithm deflate; }";
+							"\"; nonce_size 16; lifetime time 5 min; initial_contact on; support_proxy on; proposal_check claim;\n"
+							"proposal { encryption_algorithm aes; hash_algorithm sha1; authentication_method pre_shared_key; dh_group 2; lifetime time 5 min; }\n"
+							"}\n"
+						"sainfo anonymous { pfs_group 2; lifetime time 60 min; encryption_algorithm aes; authentication_algorithm hmac_sha1; compression_algorithm deflate; }\n";
 
 					FILE *f = fopen("/etc/racoon/remote/anonymous.conf", "w");
 					fchmod(fileno(f), S_IRUSR | S_IWUSR);
@@ -2747,13 +2891,8 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 					fwrite(keystring, strlen(keystring), 1, f);
 					fwrite(RacoonConfig2, sizeof(RacoonConfig2)-1, 1, f);
 					fclose(f);
-					if (system("/usr/bin/killall -HUP racoon") == 0)
-						LogMsg("Sent SIGHUP to racoon");
-					else
-						{
-						system("/usr/sbin/racoon");
-						LogMsg("Racoon started and listening on port %d", 500);
-						}
+					RestartRacoon();
+					#endif // APPLE_OSX_mDNSResponder
 					}
 
 				CFStringRef cfs = CFStringCreateWithCString(NULL, dstring, kCFStringEncodingUTF8);

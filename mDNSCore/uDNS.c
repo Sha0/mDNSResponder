@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.392  2007/07/12 02:51:27  cheshire
+<rdar://problem/5303834> Automatically configure IPSec policy when resolving services
+
 Revision 1.391  2007/07/11 23:16:31  cheshire
 <rdar://problem/5304766> Register IPSec tunnel with IPv4-only hostname and create NAT port mappings
 Need to prepend _autotunnel._udp to start of AutoTunnel SRV record name
@@ -788,6 +791,7 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 	info->AutoTunnel = AutoTunnel;
 	AssignDomainName(&info->domain,  domain);
 	AssignDomainName(&info->keyname, keyname);
+	mDNS_snprintf(info->b64keydata, sizeof(info->b64keydata), "%s", b64keydata);
 
 	if (DNSDigest_ConstructHMACKeyfromBase64(info, b64keydata) < 0)
 		{
@@ -816,6 +820,7 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 
 		info->AutoTunnelHostRecord.namestorage.c[0] = 0;
 		AppendDomainLabel(&info->AutoTunnelHostRecord.namestorage, &m->hostlabel);
+		AppendDomainLabel(&info->AutoTunnelHostRecord.namestorage, (const domainlabel *)"\x04" "btmm");
 		AppendDomainName (&info->AutoTunnelHostRecord.namestorage, domain);
 
 		// TEMP FOR AUTOTUNNEL TESTING: FOR NOW, USE IPv4LL ADDRESS INSTEAD OF IPV6 ULA
@@ -839,8 +844,7 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 
 		// 3. Set up IKE tunnel's SRV record: "AutoTunnelHostRecord SRV 0 0 port AutoTunnelTarget"
 		mDNS_SetupResourceRecord(&info->AutoTunnelService, mDNSNULL, mDNSInterface_Any, kDNSType_SRV, kHostNameTTL, kDNSRecordTypeUnique, mDNSNULL, mDNSNULL);
-		info->AutoTunnelService.namestorage.c[0] = 0;
-		AppendDomainName(&info->AutoTunnelService.namestorage, (const domainname*) "\x0B" "_autotunnel" "\x04" "_udp");
+		AssignDomainName(&info->AutoTunnelService.namestorage, (const domainname*) "\x0B" "_autotunnel" "\x04" "_udp");
 		AppendDomainName(&info->AutoTunnelService.namestorage, &info->AutoTunnelHostRecord.namestorage);
 		info->AutoTunnelService.resrec.rdata->u.srv.priority = 0;
 		info->AutoTunnelService.resrec.rdata->u.srv.weight   = 0;
@@ -2043,8 +2047,7 @@ mDNSlocal mStatus GetZoneData_StartQuery(mDNS *const m, ZoneData *zd, mDNSu16 qt
 	if (qtype == kDNSType_SRV)
 		{
 		LogOperation("lookupDNSPort %##s", ZoneDataSRV(zd));
-		zd->question.qname.c[0] = 0;
-		AppendDomainName(&zd->question.qname, ZoneDataSRV(zd));
+		AssignDomainName(&zd->question.qname, ZoneDataSRV(zd));
 		AppendDomainName(&zd->question.qname, &zd->ZoneName);
 		}
 

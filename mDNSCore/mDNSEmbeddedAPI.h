@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.394  2007/07/12 02:51:27  cheshire
+<rdar://problem/5303834> Automatically configure IPSec policy when resolving services
+
 Revision 1.393  2007/07/11 23:43:42  cheshire
 Rename PurgeCacheResourceRecord to mDNS_PurgeCacheResourceRecord
 
@@ -1464,6 +1467,7 @@ typedef struct DomainAuthInfo
 	AuthRecord  AutoTunnelService;		// Service record (possibly NAT-Mapped) of IKE daemon implementing tunnel endpoint
 	domainname  domain;
 	domainname  keyname;
+	char        b64keydata[32];
 	mDNSu8      keydata_ipad[HMAC_LEN];	// padded key for inner hash rounds
 	mDNSu8      keydata_opad[HMAC_LEN];	// padded key for outer hash rounds
 	} DomainAuthInfo;
@@ -2365,6 +2369,12 @@ extern mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip);
 
 extern void MakeNegativeCacheRecord(mDNS *const m, const domainname *const name, const mDNSu32 namehash, const mDNSu16 rrtype, const mDNSu16 rrclass);
 extern void AnswerQuestionWithResourceRecord(mDNS *const m, CacheRecord *const rr, const mDNSBool AddRecord);
+
+// For now this AutoTunnel stuff is specific to Mac OS X.
+// In the future, if there's demand, we may see if we can abstract it out cleanly into the platform layer
+#if APPLE_OSX_mDNSResponder
+extern void ConfigureClientTunnel(mDNS *const m, DNSQuestion *const q, const ResourceRecord *const answer);
+#endif
 
 // ***************************************************************************
 #if 0

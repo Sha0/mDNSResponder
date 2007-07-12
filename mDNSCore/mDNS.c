@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.653  2007/07/12 02:51:27  cheshire
+<rdar://problem/5303834> Automatically configure IPSec policy when resolving services
+
 Revision 1.652  2007/07/11 23:43:42  cheshire
 Rename PurgeCacheResourceRecord to mDNS_PurgeCacheResourceRecord
 
@@ -2429,6 +2432,13 @@ mDNSexport void AnswerQuestionWithResourceRecord(mDNS *const m, CacheRecord *con
 	// For CNAME results to non-CNAME questions, only inform the client if they explicitly requested that
 	if (!followcname || q->ReturnIntermed)
 		{
+		// For now this AutoTunnel stuff is specific to Mac OS X.
+		// In the future, if there's demand, we may see if we can abstract it out cleanly into the platform layer
+		#if APPLE_OSX_mDNSResponder
+		if (RRTypeIsAddressType(q->qtype) && q->AuthInfo && q->AuthInfo->AutoTunnel)
+			ConfigureClientTunnel(m, q, &rr->resrec);
+		#endif // APPLE_OSX_mDNSResponder
+
 		mDNS_DropLockBeforeCallback();		// Allow client (and us) to legally make mDNS API calls
 		if (q->QuestionCallback)
 			q->QuestionCallback(m, q, &rr->resrec, AddRecord);
