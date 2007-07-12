@@ -28,6 +28,10 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.78  2007/07/12 20:42:27  cheshire
+<rdar://problem/5280735> If daemon is killed, return kDNSServiceErr_ServiceNotRunning
+to clients instead of kDNSServiceErr_Unknown
+
 Revision 1.77  2007/07/02 23:07:13  cheshire
 <rdar://problem/5308280> Reduce DNS-SD client syslog error messages
 
@@ -428,7 +432,7 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 	if (!hdr)
 		{ syslog(LOG_WARNING, "dnssd_clientstub deliver_request: !hdr"                  ); return kDNSServiceErr_Unknown; }
 	if (!dnssd_SocketValid(sdr->sockfd))
-		{ syslog(LOG_WARNING, "dnssd_clientstub deliver_request: sockfd %d", sdr->sockfd); return kDNSServiceErr_Unknown; }
+		{ syslog(LOG_WARNING, "dnssd_clientstub deliver_request: sockfd %d", sdr->sockfd); return kDNSServiceErr_BadParam; }
 
 	if (MakeSeparateReturnSocket)
 		{
@@ -491,7 +495,7 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 	// At this point we may block in read_all for a few milliseconds waiting for the daemon to send us the error code,
 	// but that's okay -- the daemon is a trusted service and we know if won't take more than a few milliseconds to repond.
 	if (read_all(errsd, (char*)&err, (int)sizeof(err)) < 0)
-		err = kDNSServiceErr_Unknown;	// On failure read_all will have written a message to syslog for us
+		err = kDNSServiceErr_ServiceNotRunning;	// On failure read_all will have written a message to syslog for us
 	else
 		err = ntohl(err);
 
@@ -539,7 +543,10 @@ DNSServiceErrorType DNSSD_API DNSServiceProcessResult(DNSServiceRef sdRef)
 		if (read_all(sdRef->sockfd, (void *)&cbh.ipc_hdr, sizeof(cbh.ipc_hdr)) < 0)
 			{
 			if (dnssd_errno() != dnssd_EWOULDBLOCK)
-				{ sdRef->ProcessReply = NULL; return kDNSServiceErr_Unknown; }
+				{
+				sdRef->ProcessReply = NULL;
+				return kDNSServiceErr_ServiceNotRunning;
+				}
 			else
 				{
 				if (morebytes && sdRef->logcounter < 100)
@@ -563,7 +570,11 @@ DNSServiceErrorType DNSSD_API DNSServiceProcessResult(DNSServiceRef sdRef)
 		data = malloc(cbh.ipc_hdr.datalen);
 		if (!data) return kDNSServiceErr_NoMemory;
 		if (read_all(sdRef->sockfd, data, cbh.ipc_hdr.datalen) < 0) // On error, read_all will write a message to syslog for us
-			{ free(data); sdRef->ProcessReply = NULL; return kDNSServiceErr_Unknown; }
+			{
+			free(data);
+			sdRef->ProcessReply = NULL;
+			return kDNSServiceErr_ServiceNotRunning;
+			}
 		else
 			{
 			char *ptr = data;
@@ -660,7 +671,6 @@ static void handle_resolve_response(DNSServiceOp *sdr, CallbackHeader *cbh, char
 
 	if (!cbh->cb_err && str_error)
 		{ cbh->cb_err = kDNSServiceErr_Unknown; syslog(LOG_WARNING, "dnssd_clientstub handle_resolve_response: error reading result from daemon"); }
-
 	((DNSServiceResolveReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, fullname, target, port.s, txtlen, txtrecord, sdr->AppContext);
 	}
 
@@ -725,8 +735,7 @@ static void handle_query_response(DNSServiceOp *sdr, CallbackHeader *cbh, char *
 
 	if (!cbh->cb_err && str_error)
 		{ cbh->cb_err = kDNSServiceErr_Unknown; syslog(LOG_WARNING, "dnssd_clientstub handle_query_response: error reading result from daemon"); }
-	((DNSServiceQueryRecordReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, name, rrtype, rrclass,
-													rdlen, rdata, ttl, sdr->AppContext);
+	((DNSServiceQueryRecordReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, name, rrtype, rrclass, rdlen, rdata, ttl, sdr->AppContext);
 	}
 
 DNSServiceErrorType DNSSD_API DNSServiceQueryRecord
@@ -1061,7 +1070,6 @@ static void ConnectionResponse(DNSServiceOp *sdr, CallbackHeader *cbh, char *dat
 	//printf("ConnectionResponse got %d\n", cbh->ipc_hdr.op);
 	if (cbh->ipc_hdr.op != reg_record_reply_op)
 		{
-		//DNSServiceOp *x = cbh->ipc_hdr.client_context.context;
 		while (sdr && sdr != cbh->ipc_hdr.client_context.context) sdr = sdr->next;
 		if (sdr && sdr->ProcessReply) sdr->ProcessReply(sdr, cbh, data);
 		// WARNING: Don't touch sdr after this -- client may have called DNSServiceRefDeallocate
@@ -1075,7 +1083,6 @@ static void ConnectionResponse(DNSServiceOp *sdr, CallbackHeader *cbh, char *dat
 		syslog(LOG_WARNING, "dnssd_clientstub handle_regrecord_response: sdr->op != connection_request");
 		rref->AppCallback(rref->sdr, rref, 0, kDNSServiceErr_Unknown, rref->AppContext);
 		}
-
 	}
 
 DNSServiceErrorType DNSSD_API DNSServiceCreateConnection(DNSServiceRef *sdRef)
