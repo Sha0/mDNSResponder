@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.654  2007/07/12 23:30:23  cheshire
+Changed some 'LogOperation' calls to 'debugf' to reduce verbosity in syslog
+
 Revision 1.653  2007/07/12 02:51:27  cheshire
 <rdar://problem/5303834> Automatically configure IPSec policy when resolving services
 
@@ -2773,8 +2776,8 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 				mDNSu32 SecsSinceRcvd = ((mDNSu32)(m->timenow - rr->TimeRcvd)) / mDNSPlatformOneSecond;
 				if (rr->resrec.rroriginalttl <= SecsSinceRcvd)
 					{
-					LogMsg("AnswerNewQuestion: How is rr->resrec.rroriginalttl %lu <= SecsSinceRcvd %lu for %##s (%s)",
-						rr->resrec.rroriginalttl, SecsSinceRcvd, rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
+					LogMsg("AnswerNewQuestion: How is rr->resrec.rroriginalttl %lu <= SecsSinceRcvd %lu for %##s (%s) %d %d",
+						rr->resrec.rroriginalttl, SecsSinceRcvd, rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype), m->timenow, rr->TimeRcvd);
 					continue;	// Go to next one in loop
 					}
 	
@@ -4434,6 +4437,20 @@ mDNSexport void MakeNegativeCacheRecord(mDNS *const m, const domainname *const n
 	m->rec.r.resrec.rdatahash     = 0;
 	m->rec.r.resrec.rdata = (RData*)&m->rec.r.rdatastorage;
 	m->rec.r.resrec.rdata->MaxRDLength = m->rec.r.resrec.rdlength;
+
+	m->rec.r.NextInKAList       = mDNSNULL;
+	m->rec.r.TimeRcvd           = m->timenow;
+	m->rec.r.DelayDelivery      = 0;
+	m->rec.r.NextRequiredQuery  = m->timenow;
+	m->rec.r.LastUsed           = m->timenow;
+	m->rec.r.CRActiveQuestion   = mDNSNULL;
+	m->rec.r.UnansweredQueries  = 0;
+	m->rec.r.LastUnansweredTime = 0;
+	m->rec.r.MPUnansweredQ      = 0;
+	m->rec.r.MPLastUnansweredQT = 0;
+	m->rec.r.MPUnansweredKA     = 0;
+	m->rec.r.MPExpectingKA      = mDNSfalse;
+	m->rec.r.NextInCFList       = mDNSNULL;
 	}
 
 mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *const end,
@@ -4649,9 +4666,9 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 #else
     question->TargetQID = zeroID;
 #endif // UNICAST_DISABLED
-	
-	LogOperation("mDNS_StartQuery %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
-	
+
+	debugf("mDNS_StartQuery: %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
+
 	if (m->rrcache_size == 0)	// Can't do queries if we have no cache space allocated
 		return(mStatus_NoCache);
 	else
@@ -4737,11 +4754,11 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 			question->DupSuppress[i].InterfaceID = mDNSNULL;
 
 		if (!question->DuplicateOf)
-			LogOperation("mDNS_StartQuery: Question %##s (%s) %p %d (%p) started",
+			debugf("mDNS_StartQuery: Question %##s (%s) %p %d (%p) started",
 				question->qname.c, DNSTypeName(question->qtype), question->InterfaceID,
 				question->LastQTime + question->ThisQInterval - m->timenow, question);
 		else
-			LogOperation("mDNS_StartQuery: Question %##s (%s) %p %d (%p) duplicate of (%p)",
+			debugf("mDNS_StartQuery: Question %##s (%s) %p %d (%p) duplicate of (%p)",
 				question->qname.c, DNSTypeName(question->qtype), question->InterfaceID,
 				question->LastQTime + question->ThisQInterval - m->timenow, question, question->DuplicateOf);
 
