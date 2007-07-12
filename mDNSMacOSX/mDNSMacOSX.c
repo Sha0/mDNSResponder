@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.432  2007/07/12 23:55:11  cheshire
+<rdar://problem/5303834> Automatically configure IPSec policy when resolving services
+Don't need two separate DNSQuestion structures when looking up tunnel endpoint
+
 Revision 1.431  2007/07/12 23:34:48  cheshire
 Removed 'LogOperation' message to reduce verbosity in syslog
 
@@ -2644,8 +2648,7 @@ mDNSlocal const char RacoonConfig[] = "remote %s\n"
 
 typedef struct
 	{
-	DNSQuestion srv;
-	DNSQuestion add;
+	DNSQuestion q;
 	mDNSAddr loc_inner;
 	mDNSAddr rmt_inner;
 	char b64keydata[32];
@@ -2654,15 +2657,16 @@ typedef struct
 mDNSlocal void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
 	AutoTunnelQuery *atq = (AutoTunnelQuery *)question->QuestionContext;
-	if (!AddRecord) return;
-	if (question == &atq->srv)
+	if (!AddRecord || !answer->rdlength) return;
+	if (question->qtype == kDNSType_SRV)
 		{
 		LogOperation("AutoTunnelCallback: SRV target %##s", answer->rdata->u.srv.target.c);
 		mDNS_StopQuery(m, question);
-		AssignDomainName(&atq->add.qname, &answer->rdata->u.srv.target);
-		mDNS_StartQuery(m, &atq->add);
+		AssignDomainName(&atq->q.qname, &answer->rdata->u.srv.target);
+		question->qtype = kDNSType_A;
+		mDNS_StartQuery(m, &atq->q);
 		}
-	else if (question == &atq->add)
+	else if (question->qtype == kDNSType_A)
 		{
 		LogOperation("AutoTunnelCallback: SRV target %.4a", &answer->rdata->u.ipv4);
 		mDNS_StopQuery(m, question);
@@ -2718,32 +2722,19 @@ mDNSexport void ConfigureClientTunnel(mDNS *const m, DNSQuestion *const q, const
 	AutoTunnelQuery *atq = mallocL("AutoTunnelQuery", sizeof(AutoTunnelQuery));
 	if (!atq) return;
 
-	atq->srv.ThisQInterval       = -1;		// So that we know whether to cancel this question
-	atq->srv.InterfaceID         = mDNSInterface_Any;
-	atq->srv.Target              = zeroAddr;
-	AssignDomainName(&atq->srv.qname, (const domainname*) "\x0B" "_autotunnel" "\x04" "_udp");
-	AppendDomainName(&atq->srv.qname, answer->name);
-	atq->srv.qtype               = kDNSType_SRV;
-	atq->srv.qclass              = kDNSClass_IN;
-	atq->srv.LongLived           = mDNSfalse;
-	atq->srv.ExpectUnique        = mDNStrue;
-	atq->srv.ForceMCast          = mDNSfalse;
-	atq->srv.ReturnIntermed      = mDNSfalse;
-	atq->srv.QuestionCallback    = AutoTunnelCallback;
-	atq->srv.QuestionContext     = atq;
-
-	atq->add.ThisQInterval       = -1;		// So that we know whether to cancel this question
-	atq->add.InterfaceID         = mDNSInterface_Any;
-	atq->add.Target              = zeroAddr;
-	atq->add.qname.c[0]          = 0;
-	atq->add.qtype               = kDNSType_A;
-	atq->add.qclass              = kDNSClass_IN;
-	atq->add.LongLived           = mDNSfalse;
-	atq->add.ExpectUnique        = mDNStrue;
-	atq->add.ForceMCast          = mDNSfalse;
-	atq->add.ReturnIntermed      = mDNSfalse;
-	atq->add.QuestionCallback    = AutoTunnelCallback;
-	atq->add.QuestionContext     = atq;
+	atq->q.ThisQInterval       = -1;		// So that we know whether to cancel this question
+	atq->q.InterfaceID         = mDNSInterface_Any;
+	atq->q.Target              = zeroAddr;
+	AssignDomainName(&atq->q.qname, (const domainname*) "\x0B" "_autotunnel" "\x04" "_udp");
+	AppendDomainName(&atq->q.qname, answer->name);
+	atq->q.qtype               = kDNSType_SRV;
+	atq->q.qclass              = kDNSClass_IN;
+	atq->q.LongLived           = mDNSfalse;
+	atq->q.ExpectUnique        = mDNStrue;
+	atq->q.ForceMCast          = mDNSfalse;
+	atq->q.ReturnIntermed      = mDNSfalse;
+	atq->q.QuestionCallback    = AutoTunnelCallback;
+	atq->q.QuestionContext     = atq;
 
 	// TEMP FOR AUTOTUNNEL TESTING: FOR NOW, USE IPv4LL ADDRESS INSTEAD OF IPv6 ULA
 	//atq->loc_inner.type = mDNSAddrType_IPv6;
@@ -2754,7 +2745,7 @@ mDNSexport void ConfigureClientTunnel(mDNS *const m, DNSQuestion *const q, const
 	atq->rmt_inner.ip.v6 = answer->rdata->u.ipv6;		// Okay to copy all 16 bytes, even if only 4 are used
 	mDNS_snprintf(atq->b64keydata, sizeof(atq->b64keydata), "%s", q->AuthInfo->b64keydata);
 
-	mDNS_StartQuery_internal(m, &atq->srv);
+	mDNS_StartQuery_internal(m, &atq->q);
 	}
 
 #endif // APPLE_OSX_mDNSResponder
