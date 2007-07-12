@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.393  2007/07/12 22:15:10  cheshire
+Modified mDNS_SetSecretForDomain() so it can be called to update an existing entry
+
 Revision 1.392  2007/07/12 02:51:27  cheshire
 <rdar://problem/5303834> Automatically configure IPSec policy when resolving services
 
@@ -784,9 +787,8 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 	DomainAuthInfo **p = &m->AuthInfoList;
 	if (!info || !b64keydata) return(mStatus_BadParamErr);
 
-	LogOperation("mDNS_SetSecretForDomain: domain %##s key %##s %d", domain->c, keyname->c, AutoTunnel);
+	LogOperation("mDNS_SetSecretForDomain: domain %##s key %##s%s", domain->c, keyname->c, AutoTunnel ? " AutoTunnel" : "");
 
-	info->next       = mDNSNULL;
 	info->deltime    = 0;
 	info->AutoTunnel = AutoTunnel;
 	AssignDomainName(&info->domain,  domain);
@@ -801,19 +803,17 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 		}
 
 	while (*p && (*p) != info) p=&(*p)->next;
-	if (*p)
-		{
-		LogMsg("Error! Tried to mDNS_SetSecretForDomain: %##s %##s with DomainAuthInfo %p that's already in the list", domain->c, keyname->c, info);
-		return(mStatus_AlreadyRegistered);
-		}
+	if (*p) return(mStatus_AlreadyRegistered);
 
+	info->next       = mDNSNULL;
 	*p = info;
+
 	if (info->AutoTunnel)
 		{
 		// 1. Set up our address record for the internal tunnel address
 		// (User-visible user-friendly host name, used as target in AutoTunnel SRV records)
 
-		// TEMP FOR AUTOTUNNEL TESTING: FOR NOW, USE IPv4LL ADDRESS INSTEAD OF IPV6 ULA
+		// TEMP FOR AUTOTUNNEL TESTING: FOR NOW, USE IPv4LL ADDRESS INSTEAD OF IPv6 ULA
 		//mDNS_SetupResourceRecord(&info->AutoTunnelHostRecord, mDNSNULL, mDNSInterface_Any, kDNSType_AAAA, kHostNameTTL, kDNSRecordTypeUnique, mDNSNULL, mDNSNULL);
 		mDNS_SetupResourceRecord(&info->AutoTunnelHostRecord, mDNSNULL, mDNSInterface_Any, kDNSType_A, kHostNameTTL, kDNSRecordTypeUnique, mDNSNULL, mDNSNULL);
 		// END TEMP FOR AUTOTUNNEL TESTING
@@ -823,7 +823,7 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 		AppendDomainLabel(&info->AutoTunnelHostRecord.namestorage, (const domainlabel *)"\x04" "btmm");
 		AppendDomainName (&info->AutoTunnelHostRecord.namestorage, domain);
 
-		// TEMP FOR AUTOTUNNEL TESTING: FOR NOW, USE IPv4LL ADDRESS INSTEAD OF IPV6 ULA
+		// TEMP FOR AUTOTUNNEL TESTING: FOR NOW, USE IPv4LL ADDRESS INSTEAD OF IPv6 ULA
 		//info->AutoTunnelHostRecord.resrec.rdata->u.ipv6 = m->AutoTunnelHostAddr;
 		info->AutoTunnelHostRecord.resrec.rdata->u.ipv4.b[0] = 169;
 		info->AutoTunnelHostRecord.resrec.rdata->u.ipv4.b[1] = 254;
