@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.430  2007/07/12 22:16:46  cheshire
+Improved "could not convert shared secret from base64" log message so it doesn't reveal key data in syslog
+
 Revision 1.429  2007/07/12 02:51:28  cheshire
 <rdar://problem/5303834> Automatically configure IPSec policy when resolving services
 
@@ -1915,7 +1918,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 			m->AutoTunnelHostAddr.b[0xC], m->AutoTunnelHostAddr.b[0xD], m->AutoTunnelHostAddr.b[0xE], m->AutoTunnelHostAddr.b[0xF]);
 		LogOperation("m->AutoTunnelLabel %#s", m->AutoTunnelLabel.c);
 
-		// TEMP FOR AUTOTUNNEL TESTING: FOR NOW, USE IPv4LL ADDRESS INSTEAD OF IPV6 ULA
+		// TEMP FOR AUTOTUNNEL TESTING: FOR NOW, USE IPv4LL ADDRESS INSTEAD OF IPv6 ULA
 		char commandstring[64];
 		mDNS_snprintf(commandstring, sizeof(commandstring), "/sbin/ifconfig en0 alias 169.254.%d.%d", m->AutoTunnelHostAddr.b[0xE], m->AutoTunnelHostAddr.b[0xF]);
 		system(commandstring);
@@ -2739,7 +2742,7 @@ mDNSexport void ConfigureClientTunnel(mDNS *const m, DNSQuestion *const q, const
 	atq->add.QuestionCallback    = AutoTunnelCallback;
 	atq->add.QuestionContext     = atq;
 
-	// TEMP FOR AUTOTUNNEL TESTING: FOR NOW, USE IPv4LL ADDRESS INSTEAD OF IPV6 ULA
+	// TEMP FOR AUTOTUNNEL TESTING: FOR NOW, USE IPv4LL ADDRESS INSTEAD OF IPv6 ULA
 	//atq->loc_inner.type = mDNSAddrType_IPv6;
 	//atq->loc_inner.ip.v6 = q->AuthInfo->AutoTunnelHostRecord.resrec.rdata->u.ipv6;
 	atq->loc_inner.type = mDNSAddrType_IPv4;
@@ -2818,7 +2821,7 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 
 				// Validate that attributes are not too large
 				char dstring[4 + MAX_ESCAPED_DOMAIN_NAME];  // Extra 4 is for the "dns:" prefix
-				char keynamebuf[MAX_ESCAPED_DOMAIN_NAME];	// Max legal C-string name, including terminating NUL
+				char keynamebuf[MAX_ESCAPED_DOMAIN_NAME];   // Max legal C-string name, including terminating NUL
 				if (a->attr[1].length > sizeof(dstring   )-1) { LogMsg("SetSecretForDomain: Bad kSecServiceItemAttr length %d", a->attr[1].length); goto nextitem; }
 				if (a->attr[2].length > sizeof(keynamebuf)-1) { LogMsg("SetSecretForDomain: Bad kSecAccountItemAttr length %d", a->attr[2].length); goto nextitem; }
 
@@ -2860,40 +2863,36 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 				// DO NOT SHIP CODE THIS WAY OR YOU'LL LEAK SECRET DATA INTO A PUBLICLY READABLE FILE!
 				//LogOperation("SetDomainSecrets: %##s %##s %s", &domain.c, &keyname.c, keystring);
 
-				if (ptr)	// If we found an entry for this domain already in our list, just clear its deltime flag and update key data
-					{
-					ptr->deltime = 0;
-					AssignDomainName(&ptr->keyname, &keyname);
-					if (DNSDigest_ConstructHMACKeyfromBase64(ptr, keystring) < 0)
-						LogMsg("SetDomainSecrets: Could not convert shared secret %s from base64", keystring);
-					}
-				else		// else make a new DomainAuthInfo structure to hold this data
+				// If didn't find desired domain in the list, make a new entry
+				if (!ptr)
 					{
 					ptr = (DomainAuthInfo*)mallocL("DomainAuthInfo", sizeof(*ptr));
 					if (!ptr) { LogMsg("SetSecretForDomain: No memory"); goto nextitem; }
-					mDNS_SetSecretForDomain(m, ptr, &domain, &keyname, keystring, IsTunnelModeDomain(&domain));
-
-					#if APPLE_OSX_mDNSResponder
-					// Create configuration file, and start (or SIGHUP) Racoon
-					static const char RacoonConfig1[] =
-						"remote anonymous\n"
-							"{\n"
-							"exchange_mode aggressive; doi ipsec_doi; situation identity_only; verify_identifier off; generate_policy on; shared_secret use \"";
-					static const char RacoonConfig2[] =
-							"\"; nonce_size 16; lifetime time 5 min; initial_contact on; support_proxy on; proposal_check claim;\n"
-							"proposal { encryption_algorithm aes; hash_algorithm sha1; authentication_method pre_shared_key; dh_group 2; lifetime time 5 min; }\n"
-							"}\n"
-						"sainfo anonymous { pfs_group 2; lifetime time 60 min; encryption_algorithm aes; authentication_algorithm hmac_sha1; compression_algorithm deflate; }\n";
-
-					FILE *f = fopen("/etc/racoon/remote/anonymous.conf", "w");
-					fchmod(fileno(f), S_IRUSR | S_IWUSR);
-					fwrite(RacoonConfig1, sizeof(RacoonConfig1)-1, 1, f);
-					fwrite(keystring, strlen(keystring), 1, f);
-					fwrite(RacoonConfig2, sizeof(RacoonConfig2)-1, 1, f);
-					fclose(f);
-					RestartRacoon();
-					#endif // APPLE_OSX_mDNSResponder
 					}
+
+				if (mDNS_SetSecretForDomain(m, ptr, &domain, &keyname, keystring, IsTunnelModeDomain(&domain)) == mStatus_BadParamErr)
+					{ mDNSPlatformMemFree(ptr); goto nextitem; }
+
+				#if APPLE_OSX_mDNSResponder
+				// Create configuration file, and start (or SIGHUP) Racoon
+				static const char RacoonConfig1[] =
+					"remote anonymous\n"
+						"{\n"
+						"exchange_mode aggressive; doi ipsec_doi; situation identity_only; verify_identifier off; generate_policy on; shared_secret use \"";
+				static const char RacoonConfig2[] =
+						"\"; nonce_size 16; lifetime time 5 min; initial_contact on; support_proxy on; proposal_check claim;\n"
+						"proposal { encryption_algorithm aes; hash_algorithm sha1; authentication_method pre_shared_key; dh_group 2; lifetime time 5 min; }\n"
+						"}\n"
+					"sainfo anonymous { pfs_group 2; lifetime time 60 min; encryption_algorithm aes; authentication_algorithm hmac_sha1; compression_algorithm deflate; }\n";
+
+				FILE *f = fopen("/etc/racoon/remote/anonymous.conf", "w");
+				fchmod(fileno(f), S_IRUSR | S_IWUSR);
+				fwrite(RacoonConfig1, sizeof(RacoonConfig1)-1, 1, f);
+				fwrite(keystring, strlen(keystring), 1, f);
+				fwrite(RacoonConfig2, sizeof(RacoonConfig2)-1, 1, f);
+				fclose(f);
+				RestartRacoon();
+				#endif // APPLE_OSX_mDNSResponder
 
 				CFStringRef cfs = CFStringCreateWithCString(NULL, dstring, kCFStringEncodingUTF8);
 				if (cfs) { CFArrayAppendValue(sa, cfs); CFRelease(cfs); }
