@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.396  2007/07/14 00:33:04  cheshire
+Remove temporary IPv4LL tunneling mode now that IPv6-over-IPv4 is working
+
 Revision 1.395  2007/07/12 23:56:23  cheshire
 Change "GetZoneData GOT SRV" message to debugf to reduce verbosity in syslog
 
@@ -819,24 +822,12 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 		// 1. Set up our address record for the internal tunnel address
 		// (User-visible user-friendly host name, used as target in AutoTunnel SRV records)
 
-		// TEMP FOR AUTOTUNNEL TESTING: FOR NOW, USE IPv4LL ADDRESS INSTEAD OF IPv6 ULA
-		//mDNS_SetupResourceRecord(&info->AutoTunnelHostRecord, mDNSNULL, mDNSInterface_Any, kDNSType_AAAA, kHostNameTTL, kDNSRecordTypeUnique, mDNSNULL, mDNSNULL);
-		mDNS_SetupResourceRecord(&info->AutoTunnelHostRecord, mDNSNULL, mDNSInterface_Any, kDNSType_A, kHostNameTTL, kDNSRecordTypeUnique, mDNSNULL, mDNSNULL);
-		// END TEMP FOR AUTOTUNNEL TESTING
-
+		mDNS_SetupResourceRecord(&info->AutoTunnelHostRecord, mDNSNULL, mDNSInterface_Any, kDNSType_AAAA, kHostNameTTL, kDNSRecordTypeUnique, mDNSNULL, mDNSNULL);
 		info->AutoTunnelHostRecord.namestorage.c[0] = 0;
 		AppendDomainLabel(&info->AutoTunnelHostRecord.namestorage, &m->hostlabel);
 		AppendDomainLabel(&info->AutoTunnelHostRecord.namestorage, (const domainlabel *)"\x04" "btmm");
 		AppendDomainName (&info->AutoTunnelHostRecord.namestorage, domain);
-
-		// TEMP FOR AUTOTUNNEL TESTING: FOR NOW, USE IPv4LL ADDRESS INSTEAD OF IPv6 ULA
-		//info->AutoTunnelHostRecord.resrec.rdata->u.ipv6 = m->AutoTunnelHostAddr;
-		info->AutoTunnelHostRecord.resrec.rdata->u.ipv4.b[0] = 169;
-		info->AutoTunnelHostRecord.resrec.rdata->u.ipv4.b[1] = 254;
-		info->AutoTunnelHostRecord.resrec.rdata->u.ipv4.b[2] = m->AutoTunnelHostAddr.b[0xE];
-		info->AutoTunnelHostRecord.resrec.rdata->u.ipv4.b[3] = m->AutoTunnelHostAddr.b[0xF];
-		// END TEMP FOR AUTOTUNNEL TESTING
-
+		info->AutoTunnelHostRecord.resrec.rdata->u.ipv6 = m->AutoTunnelHostAddr;
 		mDNS_Register_internal(m, &info->AutoTunnelHostRecord);
 
 		// 2. Set up our address record for the external tunnel address
@@ -845,7 +836,6 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 		info->AutoTunnelTarget.namestorage.c[0] = 0;
 		AppendDomainLabel(&info->AutoTunnelTarget.namestorage, &m->AutoTunnelLabel);
 		AppendDomainName (&info->AutoTunnelTarget.namestorage, domain);
-
 		mDNS_AddDynDNSHostName(m, &info->AutoTunnelTarget.namestorage, mDNSNULL, mDNSNULL);
 
 		// 3. Set up IKE tunnel's SRV record: "AutoTunnelHostRecord SRV 0 0 port AutoTunnelTarget"

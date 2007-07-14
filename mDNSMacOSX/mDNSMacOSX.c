@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.433  2007/07/14 00:36:07  cheshire
+Remove temporary IPv4LL tunneling mode now that IPv6-over-IPv4 is working
+
 Revision 1.432  2007/07/12 23:55:11  cheshire
 <rdar://problem/5303834> Automatically configure IPSec policy when resolving services
 Don't need two separate DNSQuestion structures when looking up tunnel endpoint
@@ -1449,6 +1452,7 @@ mDNSlocal mStatus SetupSocket(KQSocketSet *cp, const mDNSIPPort port, u_short sa
 		}
 
 	fcntl(skt, F_SETFL, fcntl(skt, F_GETFL, 0) | O_NONBLOCK); // set non-blocking
+	fcntl(skt, F_SETFD, 1); // set close-on-exec
 	*s = skt;
 	k->KQcallback = myKQSocketCallBack;
 	k->KQcontext  = cp;
@@ -1902,7 +1906,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 #endif
 
 	// If we haven't set up AutoTunnelHostAddr yet, do it now
-	if (m->AutoTunnelHostAddr.b[0] == 0)
+	if (mDNSSameEthAddress(&PrimaryMAC, &zeroEthAddr) && m->AutoTunnelHostAddr.b[0] == 0)
 		{
 		m->AutoTunnelHostAddr.b[0x0] = 0xFD;		// Required prefix for "locally assigned" ULA (See RFC 4193)
 		m->AutoTunnelHostAddr.b[0x1] = mDNSRandom(255);
@@ -1925,11 +1929,9 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 			m->AutoTunnelHostAddr.b[0xC], m->AutoTunnelHostAddr.b[0xD], m->AutoTunnelHostAddr.b[0xE], m->AutoTunnelHostAddr.b[0xF]);
 		LogOperation("m->AutoTunnelLabel %#s", m->AutoTunnelLabel.c);
 
-		// TEMP FOR AUTOTUNNEL TESTING: FOR NOW, USE IPv4LL ADDRESS INSTEAD OF IPv6 ULA
-		char commandstring[64];
-		mDNS_snprintf(commandstring, sizeof(commandstring), "/sbin/ifconfig en0 alias 169.254.%d.%d", m->AutoTunnelHostAddr.b[0xE], m->AutoTunnelHostAddr.b[0xF]);
-		system(commandstring);
-		// END TEMP FOR AUTOTUNNEL TESTING
+		char commandstring[128];
+		mDNS_snprintf(commandstring, sizeof(commandstring), "/sbin/ifconfig lo0 inet6 alias %.16a/128", &m->AutoTunnelHostAddr);
+		if (system(commandstring) != 0) LogMsg("Command failed: %s", commandstring);
 		}
 
 #ifndef kDefaultLocalHostNamePrefix
@@ -2627,12 +2629,36 @@ mDNSexport void mDNSPlatformDynDNSHostNameStatusChanged(const domainname *const 
 
 mDNSlocal void RestartRacoon(void)
 	{
-	if (system("/usr/bin/killall -HUP racoon") == 0)
-		LogMsg("Sent SIGHUP to racoon");
-	else
+	mDNSBool startRacoon = true;
+	
+	FILE* fp = fopen("/var/run/racoon.pid", "r");
+	if (fp)
 		{
-		system("/usr/sbin/racoon");
-		LogMsg("Racoon started and listening on port %d", 500);
+		int pid=0;
+		if (fscanf(fp, "%d", &pid) && kill(pid,SIGHUP) == 0)
+			{
+			startRacoon = false;
+			LogMsg("Sent SIGHUP to racoon (%d)", pid);
+			}
+		fclose(fp);
+		}
+
+	if (startRacoon)
+		{
+		pid_t pid = fork();
+		if (!pid)
+			{
+			const char* racoon="/usr/sbin/racoon";
+			execl(racoon, racoon, (const char*) 0);
+			}
+		else
+			{
+			int stat=0;
+			if (waitpid(pid, &stat, 0) != pid) LogMsg("Failed to start racoon (waitpid)");
+			else if (!WIFEXITED(stat))         LogMsg("Failed to start racoon (!exited)");
+			else if (WEXITSTATUS(stat))        LogMsg("Failed to start racoon (exit: %d)", WEXITSTATUS(stat));
+			else                               LogMsg("Racoon started and listening on port %d", 500); // TEMP FOR AUTOTUNNEL TESTING: assume port 500
+			}
 		}
 	}
 
@@ -2685,10 +2711,10 @@ mDNSlocal void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const Re
 			LogMsg("popen(\"/usr/sbin/setkey -c\", \"r+\"); failed");
 		else
 			{
-			if (fprintf(fp, "spddelete %s/32 %s/32 any -P out;\n", loc_inner, rmt_inner) < 0) LogMsg("spddelete loc->rmt failed");
-			if (fprintf(fp, "spddelete %s/32 %s/32 any -P  in;\n", rmt_inner, loc_inner) < 0) LogMsg("spddelete rmt->loc failed");
-			if (fprintf(fp, "spdadd %s/32 %s/32 any -P out ipsec esp/tunnel/%s-%s/require;\n", loc_inner, rmt_inner, loc_outer, rmt_outer) < 0) LogMsg("spdadd loc->rmt failed");
-			if (fprintf(fp, "spdadd %s/32 %s/32 any -P in  ipsec esp/tunnel/%s-%s/require;\n", rmt_inner, loc_inner, rmt_outer, loc_outer) < 0) LogMsg("spdadd rmt->loc failed");
+			if (fprintf(fp, "spddelete %s/128 %s/128 any -P out;\n", loc_inner, rmt_inner) < 0) LogMsg("spddelete loc->rmt failed");
+			if (fprintf(fp, "spddelete %s/128 %s/128 any -P  in;\n", rmt_inner, loc_inner) < 0) LogMsg("spddelete rmt->loc failed");
+			if (fprintf(fp, "spdadd %s/128 %s/128 any -P out ipsec esp/tunnel/%s-%s/require;\n", loc_inner, rmt_inner, loc_outer, rmt_outer) < 0) LogMsg("spdadd loc->rmt failed");
+			if (fprintf(fp, "spdadd %s/128 %s/128 any -P in  ipsec esp/tunnel/%s-%s/require;\n", rmt_inner, loc_inner, rmt_outer, loc_outer) < 0) LogMsg("spdadd rmt->loc failed");
 			pclose(fp);
 
 			char filename[64];
@@ -2702,7 +2728,7 @@ mDNSlocal void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const Re
 			RestartRacoon();
 
 			char route[128];
-			mDNS_snprintf(route, sizeof(route), "/sbin/route add %s %s", rmt_inner, loc_inner);
+			mDNS_snprintf(route, sizeof(route), "/sbin/route add -inet6 -host %s %s", rmt_inner, loc_inner);
 			system(route);
 			}
 		
@@ -2736,11 +2762,8 @@ mDNSexport void ConfigureClientTunnel(mDNS *const m, DNSQuestion *const q, const
 	atq->q.QuestionCallback    = AutoTunnelCallback;
 	atq->q.QuestionContext     = atq;
 
-	// TEMP FOR AUTOTUNNEL TESTING: FOR NOW, USE IPv4LL ADDRESS INSTEAD OF IPv6 ULA
-	//atq->loc_inner.type = mDNSAddrType_IPv6;
-	//atq->loc_inner.ip.v6 = q->AuthInfo->AutoTunnelHostRecord.resrec.rdata->u.ipv6;
-	atq->loc_inner.type = mDNSAddrType_IPv4;
-	atq->loc_inner.ip.v4 = q->AuthInfo->AutoTunnelHostRecord.resrec.rdata->u.ipv4;
+	atq->loc_inner.type = mDNSAddrType_IPv6;
+	atq->loc_inner.ip.v6 = q->AuthInfo->AutoTunnelHostRecord.resrec.rdata->u.ipv6;
 	atq->rmt_inner.type = (answer->rrtype == kDNSType_A) ? mDNSAddrType_IPv4 : mDNSAddrType_IPv6;
 	atq->rmt_inner.ip.v6 = answer->rdata->u.ipv6;		// Okay to copy all 16 bytes, even if only 4 are used
 	mDNS_snprintf(atq->b64keydata, sizeof(atq->b64keydata), "%s", q->AuthInfo->b64keydata);
