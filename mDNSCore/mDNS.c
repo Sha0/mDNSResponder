@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.655  2007/07/16 20:11:37  vazquez
+<rdar://problem/3867231> LegacyNATTraversal: Need complete rewrite
+Init LNT stuff and handle SSDP packets
+
 Revision 1.654  2007/07/12 23:30:23  cheshire
 Changed some 'LogOperation' calls to 'debugf' to reduce verbosity in syslog
 
@@ -4473,6 +4477,13 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 		mDNS_Unlock(m);
 		return;
 		}
+	if (mDNSSameIPPort(srcport, SSDPPort))
+		{
+		mDNS_Lock(m);
+		uDNS_ReceiveSSDPPacket(m, pkt, (mDNSu16)(end - (mDNSu8 *)pkt));
+		mDNS_Unlock(m);
+		return;
+		}
 #endif
 	if ((unsigned)(end - (mDNSu8 *)pkt) < sizeof(DNSMessageHeader)) { LogMsg("DNS Message too short"); return; }
 	QR_OP = (mDNSu8)(msg->h.flags.b[0] & kDNSFlag0_QROP_Mask);
@@ -6334,6 +6345,13 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->retryGetAddr             = timenow + 0x78000000;	// absolute time when we retry
 	m->retryIntervalGetAddr     = 0;	// delta between time sent and retry
 	m->ExternalAddress          = zerov4Addr;
+	
+	m->uPNPRouterPort          = zeroIPPort;
+	m->uPNPSOAPPort            = zeroIPPort;
+	m->uPNPRouterURL           = mDNSNULL;
+	m->uPNPSOAPURL             = mDNSNULL;
+	m->uPNPRouterAddressString  = mDNSNULL;
+	m->uPNPSOAPAddressString    = mDNSNULL;
 
 	m->NextMessageID            = 0;
 	m->DNSServers               = mDNSNULL;
