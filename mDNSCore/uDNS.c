@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.398  2007/07/16 23:54:48  cheshire
+<rdar://problem/5338850> Crash when removing or changing DNS keys
+
 Revision 1.397  2007/07/16 20:13:31  vazquez
 <rdar://problem/3867231> LegacyNATTraversal: Need complete rewrite
 
@@ -609,7 +612,6 @@ typedef struct tcpInfo_t
 	TCPSocket        *sock;
 	DNSMessage        request;
 	int               requestLen;
-	DomainAuthInfo   *authInfo;
 	DNSQuestion      *question;   // For queries
 	ServiceRecordSet *srs;        // For service record updates
 	AuthRecord       *rr;         // For record updates
@@ -750,34 +752,9 @@ mDNSexport DNSServer *mDNS_AddDNSServer(mDNS *const m, const domainname *d, cons
 #pragma mark - authorization management
 #endif
 
-mDNSexport DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const name)
+mDNSlocal DomainAuthInfo *GetAuthInfoForName_internal(mDNS *m, const domainname *const name)
 	{
 	const domainname *n = name;
-	DomainAuthInfo **p = &m->AuthInfoList;
-
-	// First purge any dead keys from the list
-	while (*p)
-		{
-		if ((*p)->deltime && m->timenow - (*p)->deltime >= 0)
-			{
-			DomainAuthInfo *info = *p;
-			LogOperation("Deleting expired key %##s %##s", info->domain.c, info->keyname.c);
-			*p = info->next;
-			if (info->AutoTunnel)
-				{
-				mDNS_Deregister_internal(m, &info->AutoTunnelHostRecord, mDNS_Dereg_normal);
-				mDNS_RemoveDynDNSHostName(m, &info->AutoTunnelTarget.namestorage);
-				}
-			// Probably not essential, but just to be safe, zero out the secret key data
-			// so we don't leave it hanging around in memory
-			// (where it could potentially get exposed via some other bug)
-			mDNSPlatformMemZero(info, sizeof(*info));
-			mDNSPlatformMemFree(info);
-			}
-		else
-			p = &(*p)->next;
-		}
-
 	while (n->c[0])
 		{
 		DomainAuthInfo *ptr;
@@ -793,9 +770,47 @@ mDNSexport DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const n
 	return mDNSNULL;
 	}
 
+mDNSexport DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const name)
+	{
+	DomainAuthInfo **p = &m->AuthInfoList;
+
+	// First purge any dead keys from the list
+	while (*p)
+		{
+		if ((*p)->deltime && m->timenow - (*p)->deltime >= 0)
+			{
+			DNSQuestion *q;
+			DomainAuthInfo *info = *p;
+			LogOperation("GetAuthInfoForName deleting expired key %##s %##s", info->domain.c, info->keyname.c);
+			*p = info->next;	// Cut DomainAuthInfo from list *before* scanning our question list updating AuthInfo pointers
+			for (q = m->Questions; q; q=q->next)
+				if (q->AuthInfo == info)
+					{
+					q->AuthInfo = GetAuthInfoForName_internal(m, &q->qname);
+					debugf("GetAuthInfoForName updated q->AuthInfo from %##s to %##s for %##s (%s)",
+						info->domain.c, q->AuthInfo ? q->AuthInfo->domain.c : mDNSNULL, q->qname.c, DNSTypeName(q->qtype));
+					}
+			if (info->AutoTunnel)
+				{
+				mDNS_Deregister_internal(m, &info->AutoTunnelHostRecord, mDNS_Dereg_normal);
+				mDNS_RemoveDynDNSHostName(m, &info->AutoTunnelTarget.namestorage);
+				}
+			// Probably not essential, but just to be safe, zero out the secret key data
+			// so we don't leave it hanging around in memory
+			// (where it could potentially get exposed via some other bug)
+			mDNSPlatformMemZero(info, sizeof(*info));
+			mDNSPlatformMemFree(info);
+			}
+		else
+			p = &(*p)->next;
+		}
+	return(GetAuthInfoForName_internal(m, name));
+	}
+
 mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 	const domainname *domain, const domainname *keyname, const char *b64keydata, mDNSBool AutoTunnel)
 	{
+	DNSQuestion *q;
 	DomainAuthInfo **p = &m->AuthInfoList;
 	if (!info || !b64keydata) return(mStatus_BadParamErr);
 
@@ -817,8 +832,24 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 	while (*p && (*p) != info) p=&(*p)->next;
 	if (*p) return(mStatus_AlreadyRegistered);
 
-	info->next       = mDNSNULL;
+	info->next = mDNSNULL;
 	*p = info;
+
+	// Check to see if adding this new DomainAuthInfo has changed the credentials for any of our questions
+	for (q = m->Questions; q; q=q->next)
+		{
+		if (q->QuestionCallback != GetZoneData_QuestionCallback)
+			{
+			DomainAuthInfo *newinfo = GetAuthInfoForName(m, &q->qname);
+			if (q->AuthInfo != newinfo)
+				{
+				debugf("mDNS_SetSecretForDomain updating q->AuthInfo from %##s to %##s for %##s (%s)",
+					q->AuthInfo ? q->AuthInfo->domain.c : mDNSNULL,
+					newinfo     ? newinfo    ->domain.c : mDNSNULL, q->qname.c, DNSTypeName(q->qtype));
+				q->AuthInfo = newinfo;
+				}
+			}
+		}
 
 	if (info->AutoTunnel)
 		{
@@ -1443,6 +1474,10 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 	mDNSu8			*	end;
 	long				n;
 	mDNS			*	m = tcpInfo->m;
+	DomainAuthInfo *AuthInfo =
+		tcpInfo->question ? tcpInfo->question->AuthInfo :
+		tcpInfo->srs      ? GetAuthInfoForName(m, tcpInfo->srs->RR_SRV.resrec.name)  :
+		tcpInfo->rr       ? GetAuthInfoForName(m, tcpInfo->rr->resrec.name) : mDNSNULL;
 
 	if (err) goto exit;
 
@@ -1459,7 +1494,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			llqData.id    = zeroOpaque64;
 			llqData.llqlease = kLLQ_DefLease;
 			InitializeDNSMessage(&tcpInfo->request.h, tcpInfo->question->TargetQID, uQueryFlags);
-			//LogMsg("tcpCallback: putLLQ %p", tcpInfo->authInfo);
+			//LogMsg("tcpCallback: putLLQ %p", AuthInfo);
 			end = putLLQ(&tcpInfo->request, tcpInfo->request.data, tcpInfo->question, &llqData, mDNStrue);
 
 			if (!end) { LogMsg("ERROR: tcpCallback - putLLQ"); err = mStatus_UnknownErr; goto exit; }
@@ -1472,7 +1507,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 		else
 			end = ((mDNSu8*) &tcpInfo->request) + tcpInfo->requestLen;
 
-		err = mDNSSendDNSMessage(m, &tcpInfo->request, end, mDNSInterface_Any, &zeroAddr, zeroIPPort, sock, tcpInfo->authInfo);
+		err = mDNSSendDNSMessage(m, &tcpInfo->request, end, mDNSInterface_Any, &zeroAddr, zeroIPPort, sock, AuthInfo);
 
 		if (err) { debugf("ERROR: tcpCallback: mDNSSendDNSMessage - %ld", err); err = mStatus_UnknownErr; goto exit; }
 
@@ -1597,7 +1632,7 @@ exit:
 
 mDNSlocal tcpInfo_t *MakeTCPConn(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end,
 	TCPSocketFlags flags, const mDNSAddr *const Addr, const mDNSIPPort Port,
-	DNSQuestion *const question, ServiceRecordSet *const srs, AuthRecord *const rr, DomainAuthInfo *const authInfo)
+	DNSQuestion *const question, ServiceRecordSet *const srs, AuthRecord *const rr)
 	{
 	mStatus err;
 	mDNSIPPort srcport = zeroIPPort;
@@ -1611,7 +1646,6 @@ mDNSlocal tcpInfo_t *MakeTCPConn(mDNS *const m, const DNSMessage *const msg, con
 		info->request    = *msg;
 		info->requestLen = (int) (end - ((mDNSu8*)msg));
 		}
-	info->authInfo   = authInfo;
 	info->question   = question;
 	info->srs        = srs;
 	info->rr         = rr;
@@ -1690,7 +1724,6 @@ mDNSlocal void startLLQHandshake(mDNS *m, DNSQuestion *q, mDNSBool defer)
 		if (!context) { LogMsg("ERROR: startLLQHandshakePrivate - memallocate failed"); err = mStatus_NoMemoryErr; goto exit; }
 		mDNSPlatformMemZero(context, sizeof(tcpInfo_t));
 		context->m = m;
-		context->authInfo = q->AuthInfo;
 		context->question = q;
 		context->Addr     = q->servAddr;
 		context->Port     = q->servPort;
@@ -1832,7 +1865,6 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	mDNSIPPort privport = zeroIPPort;
 	mDNSBool mapped = mDNSfalse;
 	const domainname *target;
-	DomainAuthInfo *authInfo;
 	mDNSu32 i;
 
 	if (m->mDNS_busy != m->mDNS_reentrancy+1)
@@ -1919,13 +1951,12 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 		srs->state = regState_Pending;
 
 	srs->id = id;
-	authInfo = GetAuthInfoForName(m, srs->RR_SRV.resrec.name);
 
 	if (srs->Private)
-		srs->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &srs->ns, srs->SRSUpdatePort, mDNSNULL, srs, mDNSNULL, authInfo);
+		srs->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &srs->ns, srs->SRSUpdatePort, mDNSNULL, srs, mDNSNULL);
 	else
 		{
-		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &srs->ns, srs->SRSUpdatePort, mDNSNULL, authInfo);
+		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &srs->ns, srs->SRSUpdatePort, mDNSNULL, GetAuthInfoForName(m, srs->RR_SRV.resrec.name));
 		if (err) debugf("ERROR: SendServiceRegistration - mDNSSendDNSMessage - %ld", err);
 		}
 
@@ -1969,7 +2000,7 @@ mDNSlocal const domainname *PRIVATE_LLQ_SERVICE_TYPE    = (const domainname*)"\x
 mDNSlocal mStatus GetZoneData_StartQuery(mDNS *const m, ZoneData *zd, mDNSu16 qtype);
 
 // GetZoneData_QuestionCallback is called from normal client callback context (core API calls allowed)
-mDNSlocal void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+mDNSexport void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
 	ZoneData *zd = (ZoneData*)question->QuestionContext;
 
@@ -2045,8 +2076,6 @@ mDNSlocal void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *question
 // GetZoneData_StartQuery is called from normal client context (lock not held, or client callback)
 mDNSlocal mStatus GetZoneData_StartQuery(mDNS *const m, ZoneData *zd, mDNSu16 qtype)
 	{
-	mStatus status;
-
 	if (qtype == kDNSType_SRV)
 		{
 		LogOperation("lookupDNSPort %##s", ZoneDataSRV(zd));
@@ -2068,14 +2097,7 @@ mDNSlocal mStatus GetZoneData_StartQuery(mDNS *const m, ZoneData *zd, mDNSu16 qt
 	zd->question.QuestionContext     = zd;
 
 	//LogMsg("GetZoneData_StartQuery %##s (%s) %p", zd->question.qname.c, DNSTypeName(zd->question.qtype), zd->question.Private);
-	status = mDNS_StartQuery(m, &zd->question);
-	// GetZoneData queries are a special case -- even if we have a key for them, we don't do them
-	// privately, because that results in an infinite loop (i.e. to do a private query we first
-	// need to get the _dns-query-tls SRV record for the zone, and we can't do *that* privately
-	// because to do so we'd need to already know the _dns-query-tls SRV record
-	zd->question.AuthInfo = mDNSNULL;
-
-	return(status);
+	return(mDNS_StartQuery(m, &zd->question));
 	}
 
 // StartGetZoneData is an internal routine (i.e. must be called with the lock already held)
@@ -2262,7 +2284,6 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 	mDNSOpaque16 id;
 	mDNSu8 *ptr = m->omsg.data;
 	mDNSu8 *end = (mDNSu8 *)&m->omsg + sizeof(DNSMessage);
-	DomainAuthInfo *authInfo;
 	mStatus err = mStatus_UnknownErr;
 	mDNSu32 i;
 
@@ -2280,13 +2301,12 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 
 	srs->id    = id;
 	srs->state = regState_DeregPending;
-	authInfo     = GetAuthInfoForName(m, srs->RR_SRV.resrec.name);
 
 	if (srs->Private)
-		srs->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &srs->ns, srs->SRSUpdatePort, mDNSNULL, srs, mDNSNULL, authInfo);
+		srs->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &srs->ns, srs->SRSUpdatePort, mDNSNULL, srs, mDNSNULL);
 	else
 		{
-		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &srs->ns, srs->SRSUpdatePort, mDNSNULL, authInfo);
+		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &srs->ns, srs->SRSUpdatePort, mDNSNULL, GetAuthInfoForName(m, srs->RR_SRV.resrec.name));
 		if (err && err != mStatus_TransientErr) { debugf("ERROR: SendServiceDeregistration - mDNSSendDNSMessage - %ld", err); goto exit; }
 		}
 
@@ -2835,7 +2855,6 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 	{
 	mDNSu8 *ptr = m->omsg.data;
 	mDNSu8 *end = (mDNSu8 *)&m->omsg + sizeof(DNSMessage);
-	DomainAuthInfo *authInfo;
 	mStatus err = mStatus_UnknownErr;
 
 	if (m->mDNS_busy != m->mDNS_reentrancy+1)
@@ -2883,13 +2902,11 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 		ptr = putUpdateLease(&m->omsg, ptr, DEFAULT_UPDATE_LEASE); if (!ptr) { err = mStatus_UnknownErr; goto exit; }
 		}
 
-	authInfo = GetAuthInfoForName(m, rr->resrec.name);
-
 	if (rr->Private)
-		rr->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, mDNSNULL, rr, authInfo);
+		rr->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, mDNSNULL, rr);
 	else
 		{
-		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, authInfo);
+		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, GetAuthInfoForName(m, rr->resrec.name));
 		if (err) debugf("ERROR: sendRecordRegistration - mDNSSendDNSMessage - %ld", err);
 		}
 
@@ -3354,7 +3371,7 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 				if (msg->h.flags.b[0] & kDNSFlag0_TC && mDNSSameOpaque16(qptr->TargetQID, msg->h.id) && m->timenow - qptr->LastQTime < RESPONSE_WINDOW)
 					{
 					if (!srcaddr) LogMsg("hndlTruncatedAnswer: TCP DNS response had TC bit set: ignoring");
-					else qptr->tcp = MakeTCPConn(m, mDNSNULL, mDNSNULL, kTCPSocketFlags_Zero, srcaddr, srcport, qptr, mDNSNULL, mDNSNULL, qptr->AuthInfo);
+					else qptr->tcp = MakeTCPConn(m, mDNSNULL, mDNSNULL, kTCPSocketFlags_Zero, srcaddr, srcport, qptr, mDNSNULL, mDNSNULL);
 					}
 		}
 	if (QR_OP == UpdateR && !mDNSOpaque16IsZero(msg->h.id))
@@ -3558,7 +3575,7 @@ mDNSlocal void startPrivateQueryCallback(mDNS *const m, mStatus err, const ZoneD
 		}
 
 	q->TargetQID = mDNS_NewMessageID(m);
-	q->tcp = MakeTCPConn(m, mDNSNULL, mDNSNULL, kTCPSocketFlags_UseTLS, &zoneInfo->Addr, zoneInfo->Port, q, mDNSNULL, mDNSNULL, q->AuthInfo);
+	q->tcp = MakeTCPConn(m, mDNSNULL, mDNSNULL, kTCPSocketFlags_UseTLS, &zoneInfo->Addr, zoneInfo->Port, q, mDNSNULL, mDNSNULL);
 
 exit:
 
@@ -3680,7 +3697,6 @@ error:
 mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 	{
 	mDNSu8 *ptr = m->omsg.data;
-	DomainAuthInfo *authInfo;
 	mDNSu8 *end = (mDNSu8 *)&m->omsg + sizeof(DNSMessage);
 	mStatus err = mStatus_NoError;
 
@@ -3691,13 +3707,12 @@ mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 	if (!(ptr = putDeletionRecord(&m->omsg, ptr, &rr->resrec))) { err = mStatus_UnknownErr; goto exit; }
 
 	rr->state = regState_DeregPending;
-	authInfo  = GetAuthInfoForName(m, rr->resrec.name);
 
 	if (rr->Private)
-		rr->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, mDNSNULL, rr, authInfo);
+		rr->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, mDNSNULL, rr);
 	else
 		{
-		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, authInfo);
+		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, GetAuthInfoForName(m, rr->resrec.name));
 		if (err) debugf("ERROR: SendRecordDeregistration - mDNSSendDNSMessage - %ld", err);
 		}
 

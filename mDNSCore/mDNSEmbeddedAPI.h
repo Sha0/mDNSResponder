@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.396  2007/07/16 23:54:48  cheshire
+<rdar://problem/5338850> Crash when removing or changing DNS keys
+
 Revision 1.395  2007/07/16 20:12:33  vazquez
 <rdar://problem/3867231> LegacyNATTraversal: Need complete rewrite
 
@@ -1084,7 +1087,7 @@ struct NATTraversalInfo_struct
 	mDNSv4Addr       lastExternalAddress;	// last external address we got
 	mStatus          Error;					// set when there is a port mapping error
 	mStatus          lastError;				// Last error code we delivered to callback
-	tcpLNTInfo      *tcpInfo;                               // legacy NAT traversal TCP connection ref
+	tcpLNTInfo      *tcpInfo;				// legacy NAT traversal TCP connection ref
 	
 	// PortMapping fields
 	mDNSs32          retryPortMap;			// absolute time when we retry
@@ -1386,7 +1389,6 @@ struct ServiceRecordSet_struct
 	ServiceRecordSet *uDNS_next;
 	regState_t        state;
 	mDNSBool          srs_uselease;    // dynamic update contains (should contain) lease option
-	struct DomainAuthInfo *AuthInfo;
 	mDNSs32           expire;   // expiration of lease (-1 for static)
 	mDNSBool          TestForSelfConflict;  // on name conflict, check if we're just seeing our own orphaned records
 	mDNSBool          Private;  // If zone is private, DNS updates may have to be encrypted to prevent eavesdropping
@@ -1752,7 +1754,7 @@ struct mDNS_struct
 	domainname        FQDN;
 	HostnameInfo     *Hostnames;            // List of registered hostnames + hostname metadata
 	mDNSv6Addr        AutoTunnelHostAddr;	// IPv6 address advertised for AutoTunnel services on this machine
-	domainlabel       AutoTunnelLabel;		// Used to construct hostname for *IPv4* address of tunnel endpoint
+	domainlabel       AutoTunnelLabel;		// Used to construct hostname for *IPv4* address of tunnel endpoints
 
 	mDNSBool          RegisterSearchDomains;
 	domainname        RegDomain;            // Really belongs in uds_daemon, not here
@@ -1761,19 +1763,18 @@ struct mDNS_struct
 	NATTraversalInfo *NATTraversals;
 	NATTraversalInfo *CurrentNATTraversal;
 	NATAddrRequest    NATAddrReq;
-	mDNSs32		      retryGetAddr;			// absolute time when we retry
-	mDNSs32		      retryIntervalGetAddr;	// delta between time sent and retry
+	mDNSs32           retryGetAddr;				// absolute time when we retry
+	mDNSs32           retryIntervalGetAddr;		// delta between time sent and retry
 	mDNSv4Addr        ExternalAddress;
-	tcpLNTInfo           *tcpAddrInfo;                        // legacy NAT traversal TCP connection ref for external address
-	tcpLNTInfo           *tcpDeviceInfo;                      // legacy NAT traversal TCP connection ref for device info
+	tcpLNTInfo       *tcpAddrInfo;				// legacy NAT traversal TCP connection ref for external address
+	tcpLNTInfo       *tcpDeviceInfo;			// legacy NAT traversal TCP connection ref for device info
 
-	mDNSIPPort          uPNPRouterPort;			// port we send discovery messages to
-	mDNSIPPort          uPNPSOAPPort;			// port we send SOAP messages to
-	mDNSu8               *uPNPRouterURL;			// router's URL string
-	mDNSu8               *uPNPSOAPURL;			// router's SOAP control URL string
-	mDNSu8               *uPNPRouterAddressString;	// holds both the router's address and port
-	mDNSu8               *uPNPSOAPAddressString;	// holds both address and port for SOAP messages
-
+	mDNSIPPort        uPNPRouterPort;			// port we send discovery messages to
+	mDNSIPPort        uPNPSOAPPort;				// port we send SOAP messages to
+	mDNSu8           *uPNPRouterURL;			// router's URL string
+	mDNSu8           *uPNPSOAPURL;				// router's SOAP control URL string
+	mDNSu8           *uPNPRouterAddressString;	// holds both the router's address and port
+	mDNSu8           *uPNPSOAPAddressString;	// holds both address and port for SOAP messages
 
 	// Fixed storage, to avoid creating large objects on the stack
 	DNSMessage        imsg;                 // Incoming message received from wire

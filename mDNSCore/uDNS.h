@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.66  2007/07/16 23:54:48  cheshire
+<rdar://problem/5338850> Crash when removing or changing DNS keys
+
 Revision 1.65  2007/07/16 20:14:22  vazquez
 <rdar://problem/3867231> LegacyNATTraversal: Need complete rewrite
 
@@ -182,6 +185,7 @@ extern mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const questi
 extern mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const question);
 
 extern void RecordRegistrationCallback(mDNS *const m, mStatus err, const ZoneData *zoneData);
+extern void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord);
 extern mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr);
 
 extern void serviceRegistrationCallback(mDNS *const m, mStatus err, const ZoneData *result);

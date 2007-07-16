@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.656  2007/07/16 23:54:48  cheshire
+<rdar://problem/5338850> Crash when removing or changing DNS keys
+
 Revision 1.655  2007/07/16 20:11:37  vazquez
 <rdar://problem/3867231> LegacyNATTraversal: Need complete rewrite
 Init LNT stuff and handle SSDP packets
@@ -4742,7 +4745,12 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 		question->SendOnAll         = mDNSfalse;
 		question->RequestUnicast    = 0;
 		question->LastQTxTime       = m->timenow;
-		question->AuthInfo          = GetAuthInfoForName(m, &question->qname);
+		// GetZoneData queries are a special case -- even if we have a key for them, we don't do them privately,
+		// because that would result in an infinite loop (i.e. to do a private query we first need to get
+		// the _dns-query-tls SRV record for the zone, and we can't do *that* privately because to do so
+		// we'd need to already know the _dns-query-tls SRV record.
+		question->AuthInfo          = (question->QuestionCallback == GetZoneData_QuestionCallback) ? mDNSNULL
+		                            : GetAuthInfoForName(m, &question->qname);
 		question->CNAMEReferrals    = 0;
 
 		question->qDNSServer        = mDNSNULL;
@@ -5825,6 +5833,7 @@ mDNSlocal void NSSCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
 mDNSlocal mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	{
 	mDNSu32 i;
+	DomainAuthInfo *AuthInfo = GetAuthInfoForName(m, srs->RR_SRV.resrec.name);
 	ServiceRecordSet **p = &m->ServiceRegistrations;
 	while (*p && *p != srs) p=&(*p)->uDNS_next;
 	if (*p) { LogMsg("uDNS_RegisterService: %p %##s already in list", srs, srs->RR_SRV.resrec.name->c); return(mStatus_AlreadyRegistered); }
@@ -5838,11 +5847,10 @@ mDNSlocal mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	for (i = 0; i < srs->NumSubTypes;i++) srs->SubTypes[i].resrec.rroriginalttl = kWideAreaTTL;
 
 	srs->srs_uselease = mDNStrue;
-	srs->AuthInfo = GetAuthInfoForName(m, srs->RR_SRV.resrec.name);
-	if (srs->RR_SRV.HostTarget && srs->AuthInfo && srs->AuthInfo->AutoTunnel)
+	if (srs->RR_SRV.HostTarget && AuthInfo && AuthInfo->AutoTunnel)
 		{
 		srs->RR_SRV.HostTarget = mDNSfalse;
-		AssignDomainName(&srs->RR_SRV.resrec.rdata->u.srv.target, srs->AuthInfo->AutoTunnelHostRecord.resrec.name);
+		AssignDomainName(&srs->RR_SRV.resrec.rdata->u.srv.target, AuthInfo->AutoTunnelHostRecord.resrec.name);
 		}
 
 	if (!GetServiceTarget(m, srs))
