@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.397  2007/07/16 20:13:31  vazquez
+<rdar://problem/3867231> LegacyNATTraversal: Need complete rewrite
+
 Revision 1.396  2007/07/14 00:33:04  cheshire
 Remove temporary IPv4LL tunneling mode now that IPv6-over-IPv4 is working
 
@@ -901,13 +904,16 @@ mDNSlocal mStatus uDNS_SendNATMsg(mDNS *m, NATTraversalInfo *info, NATOptFlags_t
 			}
 		
 		err = mDNSPlatformSendUDP(m, msg, end, 0, &m->Router, NATPMPPort);
+		
+		// if there is no external address then assume we're starting from scratch and start upnp discovery as well
+		if (mDNSIPv4AddressIsZero(m->ExternalAddress)) LNT_SendDiscoveryMsg(m);
 		}
 		
 	return(err);
 	}
 
 // Pass NULL for pkt on error (including timeout)
-mDNSlocal void natTraversalHandleAddressReply(mDNS *const m, mDNSu8 *pkt)
+mDNSexport void natTraversalHandleAddressReply(mDNS *const m, mDNSu8 *pkt)
 	{
 	NATAddrReply      *addrReply = (NATAddrReply *)pkt;
 	mDNSv4Addr       addr = zerov4Addr;
@@ -916,7 +922,12 @@ mDNSlocal void natTraversalHandleAddressReply(mDNS *const m, mDNSu8 *pkt)
 	if (!pkt) // timeout
 		{
 #ifdef _LEGACY_NAT_TRAVERSAL_
-		err = LNT_GetPublicIP(&addr);
+		// reply from this operation will come later
+		if (!mDNSIPPortIsZero(m->uPNPRouterPort)) err = LNT_GetExternalAddress(m);
+		m->retryIntervalGetAddr = NATMAP_MAX_RETRY_INTERVAL;
+		m->retryGetAddr = m->timenow + m->retryIntervalGetAddr;
+		if (err) { LogMsg("NAT Port Mapping unsupported"); err = mStatus_NATPortMappingUnsupported; }
+		return;
 #else
 		debugf("natTraversalHandleAddressReply: timeout");
 		err = mStatus_NATTraversal;
@@ -945,8 +956,21 @@ mDNSlocal void natTraversalHandleAddressReply(mDNS *const m, mDNSu8 *pkt)
 	m->retryGetAddr = m->timenow + m->retryIntervalGetAddr;
 	}
 
+mDNSlocal mStatus TryLNTPortMapping(NATTraversalInfo *n, mDNS *const m)
+	{
+	mStatus	err = mStatus_NoError;
+
+	if (n->opFlags & (MapTCPFlag | MapUDPFlag) && n->NATPortReq.NATReq_lease != 0)
+		{
+		mDNSBool   doTCP = (n->opFlags & MapTCPFlag) ? 1 : 0;
+		if (mDNSIPPortIsZero(n->publicPortreq)) n->publicPortreq = n->privatePort;	// initially request priv == pub if publicPortreq is zero
+		err = LNT_MapPort(m, n, doTCP);
+		}
+	return (err);
+	}
+
 // Pass NULL for pkt on error (including timeout)
-mDNSlocal void natTraversalHandlePortMapReply(NATTraversalInfo *n, mDNS *const m, mDNSu8 *pkt)
+mDNSexport void natTraversalHandlePortMapReply(NATTraversalInfo *n, mDNS *const m, mDNSu8 *pkt)
 	{
 	NATPortMapReply *portMapReply = (NATPortMapReply *)pkt;
 	mDNSIPPort          port = zeroIPPort;
@@ -958,29 +982,12 @@ mDNSlocal void natTraversalHandlePortMapReply(NATTraversalInfo *n, mDNS *const m
 	if (!pkt) // timeout
 		{
 #ifdef _LEGACY_NAT_TRAVERSAL_
-		// This uPNP NAT traversal code is a self-contained mechanism separate from the rest of uDNS NAT traversal
-		if (n->opFlags & (MapTCPFlag | MapUDPFlag) && n->NATPortReq.NATReq_lease != 0)
-			{
-			int ntries = 0;
-			int doTCP = (n->opFlags & MapTCPFlag) ? 1 : 0;
-			mDNSIPPort pub = mDNSIPPortIsZero(n->publicPortreq) ? n->privatePort : n->publicPortreq; // initially request priv == pub if publicPortreq is zero
-			while (1)
-				{
-				err = LNT_MapPort(n->privatePort, pub, doTCP);
-				if (!err) 
-					{ 
-					port = pub; 
-					lease = n->portMappingLease;	// XXX no lease in legacy?
-					n->opFlags |= LegacyFlag; 
-					}
-				else if (err != mStatus_AlreadyRegistered || ++ntries > LEGACY_NATMAP_MAX_TRIES) 
-					{ 
-					LogMsg("NAT Port Mapping: timeout");
-					err = mStatus_NATPortMappingUnsupported;
-					}
-				else pub = mDNSOpaque16fromIntVal(DYN_PORT_MIN + mDNSRandom(DYN_PORT_MAX - DYN_PORT_MIN));	// Try again
-				}
-			}
+		// reply from this operation will come later
+		if (!mDNSIPPortIsZero(m->uPNPRouterPort)) err = TryLNTPortMapping(n, m);
+		n->retryIntervalPortMap = NATMAP_MAX_RETRY_INTERVAL;
+		n->retryPortMap = m->timenow + n->retryIntervalPortMap;
+		if (err) { LogMsg("NAT Port Mapping unsupported"); n->Error = mStatus_NATPortMappingUnsupported; }
+		return;
 #else
 		debugf("natTraversalHandlePortMapReply: timeout");
 		err = mStatus_NATTraversal;
@@ -1100,7 +1107,7 @@ mDNSlocal mStatus mDNS_StopNATOperation_internal(mDNS *m, NATTraversalInfo *trav
 			{
 			mStatus err = mStatus_NoError;
 			mDNSBool tcp = (traversal->opFlags & MapTCPFlag) ? 1 : 0;
-			err = LNT_UnmapPort(traversal->publicPort, tcp);
+			err = LNT_UnmapPort(m, traversal, tcp);
 			if (err) LogMsg("Legacy NAT Traversal - unmap request failed with error %ld", err);
 			}
 #endif // _LEGACY_NAT_TRAVERSAL_
@@ -3222,6 +3229,12 @@ mDNSexport void uDNS_ReceiveNATPMPPacket(mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 	else { LogMsg("Received NAT Traversal response with version unknown opcode 0x%X", AddrReply->opcode); return; }
 	}
 
+mDNSexport void uDNS_ReceiveSSDPPacket(mDNS *m, mDNSu8 *data, mDNSu16 len)
+	{
+	// Extract router's port and url from response if we don't already have it, otherwise ignore
+	if (mDNSIPPortIsZero(m->uPNPRouterPort)) LNT_ConfigureRouterInfo(m, data, len);	
+	}
+
 // <rdar://problem/3925163> Shorten DNS-SD queries to avoid NAT bugs
 // <rdar://problem/4288449> Add check to avoid crashing NAT gateways that have buggy DNS relay code
 //
@@ -4008,16 +4021,21 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 		{
 		if (m->timenow - m->retryGetAddr >= 0)	// we have exceeded the timer interval
 			{
-			err = uDNS_SendNATMsg(m, mDNSNULL, AddrRequestFlag);
-			if (!err)
+			if (mDNSIPv4AddressIsZero(m->ExternalAddress) && m->retryIntervalGetAddr >= NATMAP_INIT_RETRY_TIMEOUT)
+				natTraversalHandleAddressReply(m, mDNSNULL);
+			else
 				{
-				if      (m->retryIntervalGetAddr     < NATMAP_INIT_RETRY)         m->retryIntervalGetAddr = NATMAP_INIT_RETRY;
-				else if (m->retryIntervalGetAddr * 2 > NATMAP_MAX_RETRY_INTERVAL) m->retryIntervalGetAddr = NATMAP_MAX_RETRY_INTERVAL;
-				else m->retryIntervalGetAddr *= 2;
+				err = uDNS_SendNATMsg(m, mDNSNULL, AddrRequestFlag);
+				if (!err)
+					{
+					if      (m->retryIntervalGetAddr     < NATMAP_INIT_RETRY)         m->retryIntervalGetAddr = NATMAP_INIT_RETRY;
+					else if (m->retryIntervalGetAddr * 2 > NATMAP_MAX_RETRY_INTERVAL) m->retryIntervalGetAddr = NATMAP_MAX_RETRY_INTERVAL;
+					else m->retryIntervalGetAddr *= 2;
+					}
+				// Always update m->retryGetAddr, even if we fail to send the packet. Otherwise in cases where we can't send the packet
+				// (like when we have no active interfaces) we'll spin in an infinite loop repeatedly failing to send the packet
+				m->retryGetAddr = m->timenow + m->retryIntervalGetAddr;
 				}
-			// Always update m->retryGetAddr, even if we fail to send the packet. Otherwise in cases where we can't send the packet
-			// (like when we have no active interfaces) we'll spin in an infinite loop repeatedly failing to send the packet
-			m->retryGetAddr = m->timenow + m->retryIntervalGetAddr;
 			}
 	
 		if (m->NextScheduledNATOp - m->retryGetAddr > 0)
@@ -4055,7 +4073,7 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 					}
 				else										// no mapping yet; trying to get one
 					{
-					if (cur->retryIntervalPortMap >= NATMAP_MAX_RETRY_INTERVAL) natTraversalHandlePortMapReply(cur, m, mDNSNULL); // may invalidate "cur"
+					if (cur->retryIntervalPortMap >= NATMAP_INIT_RETRY_TIMEOUT) natTraversalHandlePortMapReply(cur, m, mDNSNULL); // may invalidate "cur"
 					else
 						{
 						err = uDNS_SendNATMsg(m, cur, (cur->opFlags & MapTCPFlag) ? MapTCPFlag : MapUDPFlag);

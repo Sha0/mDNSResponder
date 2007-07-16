@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.395  2007/07/16 20:12:33  vazquez
+<rdar://problem/3867231> LegacyNATTraversal: Need complete rewrite
+
 Revision 1.394  2007/07/12 02:51:27  cheshire
 <rdar://problem/5303834> Automatically configure IPSec policy when resolving services
 
@@ -951,11 +954,21 @@ typedef void mDNSRecordUpdateCallback(mDNS *const m, AuthRecord *const rr, RData
 #pragma mark - NAT Traversal structures and constants
 #endif
 
-#define NATMAP_MAX_RETRY_INTERVAL	((mDNSPlatformOneSecond * 60) * 15) // Max retry interval is 15 minutes
-#define NATMAP_MIN_RETRY_INTERVAL	(mDNSPlatformOneSecond * 2)             // Min retry interval is 2 seconds
-#define NATMAP_INIT_RETRY (mDNSPlatformOneSecond / 4)      // start at 250ms w/ exponential decay
+#define NATMAP_MAX_RETRY_INTERVAL    ((mDNSPlatformOneSecond * 60) * 15) // Max retry interval is 15 minutes
+#define NATMAP_MIN_RETRY_INTERVAL     (mDNSPlatformOneSecond * 2)             // Min retry interval is 2 seconds
+#define NATMAP_INIT_RETRY                     (mDNSPlatformOneSecond / 4)             // start at 250ms w/ exponential decay
+#define NATMAP_INIT_RETRY_TIMEOUT      (mDNSPlatformOneSecond)                   // timeout after three attempts
 #define NATMAP_DEFAULT_LEASE (60 * 60)                             // lease life in seconds
 #define NATMAP_VERS 0
+
+// A struct that abstracts away the differences in TCP/SSL sockets
+ 
+typedef struct TCPSocket_struct TCPSocket;
+
+// A struct that abstracts away the differences in UDP sockets
+
+typedef struct UDPSocket_struct UDPSocket;
+
 
 typedef enum
 	{
@@ -1024,6 +1037,38 @@ typedef packedstruct
 	mDNSu32    NATRep_lease;
 	} NATPortMapReply;
 
+typedef struct Property_struct 
+	{
+	char		*propName;
+	char		*propValue;
+	char		*propType;
+	} Property;
+
+typedef struct HTTPResponse_struct
+	{
+	mDNSs8	*Status;
+	mDNSs8	*Reason;
+	mDNSs32	numHeaders;
+	Property	Headers[30];	// assume at most this many headers
+	mDNSs8	*Body;
+	mDNSs8	*buf;			// for admin use
+	} HTTPResponse;
+
+typedef struct tcpLNTInfo_struct
+	{
+	mDNS		*m;
+	TCPSocket		*sock;
+	mDNSs8		*request;
+	int			requestLen;
+	mDNSAddr		Addr;
+	mDNSIPPort	Port;
+	mDNSs8		*reply;
+	int			replylen;
+	unsigned long	nread;
+	int			numReplies;
+	HTTPResponse	Response;
+	} tcpLNTInfo;
+
 typedef void (*NATTraversalClientCallback)(mDNS *m, mDNSv4Addr ExternalAddress, NATTraversalInfo *n, mStatus err);
 
 struct NATTraversalInfo_struct
@@ -1039,6 +1084,7 @@ struct NATTraversalInfo_struct
 	mDNSv4Addr       lastExternalAddress;	// last external address we got
 	mStatus          Error;					// set when there is a port mapping error
 	mStatus          lastError;				// Last error code we delivered to callback
+	tcpLNTInfo      *tcpInfo;                               // legacy NAT traversal TCP connection ref
 	
 	// PortMapping fields
 	mDNSs32          retryPortMap;			// absolute time when we retry
@@ -1391,14 +1437,6 @@ typedef struct
 	mDNSs32               Type;				// v4 or v6?
 	} DupSuppressInfo;
 
-// A struct that abstracts away the differences in TCP/SSL sockets
- 
-typedef struct TCPSocket_struct TCPSocket;
-
-// A struct that abstracts away the differences in UDP sockets
-
-typedef struct UDPSocket_struct UDPSocket;
-
 
 typedef enum
 	{
@@ -1726,6 +1764,16 @@ struct mDNS_struct
 	mDNSs32		      retryGetAddr;			// absolute time when we retry
 	mDNSs32		      retryIntervalGetAddr;	// delta between time sent and retry
 	mDNSv4Addr        ExternalAddress;
+	tcpLNTInfo           *tcpAddrInfo;                        // legacy NAT traversal TCP connection ref for external address
+	tcpLNTInfo           *tcpDeviceInfo;                      // legacy NAT traversal TCP connection ref for device info
+
+	mDNSIPPort          uPNPRouterPort;			// port we send discovery messages to
+	mDNSIPPort          uPNPSOAPPort;			// port we send SOAP messages to
+	mDNSu8               *uPNPRouterURL;			// router's URL string
+	mDNSu8               *uPNPSOAPURL;			// router's SOAP control URL string
+	mDNSu8               *uPNPRouterAddressString;	// holds both the router's address and port
+	mDNSu8               *uPNPSOAPAddressString;	// holds both address and port for SOAP messages
+
 
 	// Fixed storage, to avoid creating large objects on the stack
 	DNSMessage        imsg;                 // Incoming message received from wire
@@ -1757,6 +1805,7 @@ extern const mDNSInterfaceID mDNSInterface_Unicast;			// Special value
 
 extern const mDNSIPPort   UnicastDNSPort;
 extern const mDNSIPPort   NATPMPPort;
+extern const mDNSIPPort   SSDPPort;
 extern const mDNSIPPort   DNSEXTPort;
 extern const mDNSIPPort   MulticastDNSPort;
 extern const mDNSIPPort   LoopbackIPCPort;
@@ -2309,16 +2358,11 @@ extern void       mDNSPlatformDynDNSHostNameStatusChanged(const domainname *cons
 
 #ifdef _LEGACY_NAT_TRAVERSAL_
 // Support for legacy NAT traversal protocols, implemented by the platform layer and callable by the core.
-
-#define DYN_PORT_MIN 49152 // ephemeral port range
-#define DYN_PORT_MAX 65535
-#define LEGACY_NATMAP_MAX_TRIES 4 // if our desired mapping is taken, how many times we try mapping to a random port
-
-extern int     LNT_Init(void);
-extern int     LNT_Destroy(void);
-extern mStatus LNT_GetPublicIP(mDNSv4Addr *ip);
-extern mStatus LNT_MapPort(mDNSIPPort priv, mDNSIPPort pub, mDNSBool tcp);
-extern mStatus LNT_UnmapPort(mDNSIPPort PubPort, mDNSBool tcp);
+extern mStatus 	LNT_SendDiscoveryMsg(mDNS *m);
+extern void 	LNT_ConfigureRouterInfo(mDNS *m, mDNSu8 *data, mDNSu16 len);
+extern mStatus 	LNT_GetExternalAddress(mDNS *m);
+extern mStatus 	LNT_MapPort(mDNS *m, NATTraversalInfo *n, mDNSBool doTCP);
+extern mStatus 	LNT_UnmapPort(mDNS *m, NATTraversalInfo *n, mDNSBool doTCP);
 #endif // _LEGACY_NAT_TRAVERSAL_
 
 // The core mDNS code provides these functions, for the platform support code to call at appropriate times

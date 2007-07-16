@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.65  2007/07/16 20:14:22  vazquez
+<rdar://problem/3867231> LegacyNATTraversal: Need complete rewrite
+
 Revision 1.64  2007/07/11 02:53:36  cheshire
 <rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for AutoTunnel services
 Add ServiceRecordSet parameter in GetServiceTarget
@@ -201,6 +204,9 @@ extern DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const name)
 
 // NAT traversal
 extern void	uDNS_ReceiveNATPMPPacket(mDNS *m, mDNSu8 *pkt, mDNSu16 len);	// Called for each received NAT-PMP packet
+extern void	uDNS_ReceiveSSDPPacket(mDNS *m, mDNSu8 *data, mDNSu16 len);	// Called for each SSDP discovery packet
+extern void	natTraversalHandleAddressReply(mDNS *const m, mDNSu8 *pkt);
+extern void	natTraversalHandlePortMapReply(NATTraversalInfo *n, mDNS *const m, mDNSu8 *pkt);
 
 #ifdef	__cplusplus
 	}
