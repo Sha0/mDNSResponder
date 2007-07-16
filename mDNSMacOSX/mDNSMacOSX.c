@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.434  2007/07/16 20:16:00  vazquez
+<rdar://problem/3867231> LegacyNATTraversal: Need complete rewrite
+Remove unnecessary LNT init code
+
 Revision 1.433  2007/07/14 00:36:07  cheshire
 Remove temporary IPv4LL tunneling mode now that IPv6-over-IPv4 is working
 
@@ -2536,24 +2540,6 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS *const m, mDNSAddr *v4, 
 
 		// Note that while we advertise v6, we still require v4 (possibly NAT'd, but not link-local) because we must use
 		// V4 to communicate w/ our DNS server
-
-#ifdef _LEGACY_NAT_TRAVERSAL_
-		if (!mDNSv4AddressIsLinkLocal(&v4->ip.v4))
-			if (!mDNSSameIPv4Address(v4->ip.v4, m->AdvertisedV4.ip.v4) ||
-				!mDNSSameIPv6Address(v6->ip.v6, m->AdvertisedV6.ip.v6) ||
-				!mDNSSameIPv4Address(r->ip.v4, m->Router.ip.v4))
-				{
-				static mDNSBool LegacyNATInitialized = mDNSfalse;
-				if (LegacyNATInitialized) { LNT_Destroy(); LegacyNATInitialized = mDNSfalse; }
-				// We only do NAT traversal if we have an RFC 1918 address
-				if (mDNSv4AddrIsRFC1918(&v4->ip.v4))
-					{
-					mStatus err = LNT_Init();
-					if (err) LogMsg("ERROR: LNT_Init");
-					else LegacyNATInitialized = mDNStrue;
-					}
-				}
-#endif
 		}
 
 	exit:
