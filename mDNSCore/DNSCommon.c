@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.163  2007/07/16 20:10:11  vazquez
+<rdar://problem/3867231> LegacyNATTraversal: Need complete rewrite
+Added SSDP port number
+
 Revision 1.162  2007/07/10 01:59:33  cheshire
 <rdar://problem/3557903> Performance: Core code will not work on platforms with small stacks
 Fixed GetPktLease to use shared m->rec instead of putting LargeCacheRecord on the stack
@@ -297,6 +301,7 @@ mDNSexport const mDNSInterfaceID mDNSInterface_Unicast   = (mDNSInterfaceID)2;
 
 #define   UnicastDNSPortAsNumber   53
 #define   NATPMPPortAsNumber       5351
+#define   SSDPPortAsNumber           1900
 #define   DNSEXTPortAsNumber       5352		// Port used for end-to-end DNS operations like LLQ, Updates with Leases, etc.
 #define   MulticastDNSPortAsNumber 5353
 #define   LoopbackIPCPortAsNumber  5354
@@ -306,6 +311,7 @@ mDNSexport const mDNSInterfaceID mDNSInterface_Unicast   = (mDNSInterfaceID)2;
 
 mDNSexport const mDNSIPPort UnicastDNSPort     = { { UnicastDNSPortAsNumber   >> 8, UnicastDNSPortAsNumber   & 0xFF } };
 mDNSexport const mDNSIPPort NATPMPPort         = { { NATPMPPortAsNumber       >> 8, NATPMPPortAsNumber       & 0xFF } };
+mDNSexport const mDNSIPPort SSDPPort             = { { SSDPPortAsNumber            >> 8, SSDPPortAsNumber            & 0xFF } };
 mDNSexport const mDNSIPPort DNSEXTPort         = { { DNSEXTPortAsNumber       >> 8, DNSEXTPortAsNumber       & 0xFF } };
 mDNSexport const mDNSIPPort MulticastDNSPort   = { { MulticastDNSPortAsNumber >> 8, MulticastDNSPortAsNumber & 0xFF } };
 mDNSexport const mDNSIPPort LoopbackIPCPort    = { { LoopbackIPCPortAsNumber  >> 8, LoopbackIPCPortAsNumber  & 0xFF } };
