@@ -25,6 +25,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientshim.c,v $
+Revision 1.14  2007/07/17 19:15:26  cheshire
+<rdar://problem/5297410> Crash in DNSServiceRegister() in dnssd_clientshim.c
+
 Revision 1.13  2007/01/04 20:57:49  cheshire
 Rename ReturnCNAME to ReturnIntermed (for ReturnIntermediates)
 
@@ -282,6 +285,7 @@ DNSServiceErrorType DNSServiceRegister
 	(void)interfaceIndex;	// Unused
 
 	// Check parameters
+	if (!name) name = "";
 	if (!name[0]) n = mDNSStorage.nicelabel;
 	else if (!MakeDomainLabelFromLiteralString(&n, name))                              { errormsg = "Bad Instance Name"; goto badparam; }
 	if (!regtype || !*regtype || !MakeDomainNameFromDNSNameString(&t, regtype))        { errormsg = "Bad Service Type";  goto badparam; }
