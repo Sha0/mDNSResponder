@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.400  2007/07/18 02:30:25  cheshire
+Defer AutoTunnel server record advertising until we have at least one service to advertise
+Do AutoTunnel target host selection in GetServiceTarget (instead of uDNS_RegisterService)
+
 Revision 1.399  2007/07/18 01:02:28  cheshire
 <rdar://problem/5304766> Register IPSec tunnel with IPv4-only hostname and create NAT port mappings
 Declare records as kDNSRecordTypeKnownUnique so we don't get name conflicts with ourselves
@@ -794,11 +798,14 @@ mDNSexport DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const n
 					debugf("GetAuthInfoForName updated q->AuthInfo from %##s to %##s for %##s (%s)",
 						info->domain.c, q->AuthInfo ? q->AuthInfo->domain.c : mDNSNULL, q->qname.c, DNSTypeName(q->qtype));
 					}
-			if (info->AutoTunnel)
+			#if APPLE_OSX_mDNSResponder
+			if (info->AutoTunnel && info->AutoTunnelHostRecord.namestorage.c[0])
 				{
-				mDNS_Deregister_internal(m, &info->AutoTunnelHostRecord, mDNS_Dereg_normal);
+				mDNS_Deregister_internal (m, &info->AutoTunnelHostRecord, mDNS_Dereg_normal);
 				mDNS_RemoveDynDNSHostName(m, &info->AutoTunnelTarget.namestorage);
+				mDNS_Deregister_internal (m, &info->AutoTunnelService, mDNS_Dereg_normal);
 				}
+			#endif APPLE_OSX_mDNSResponder
 			// Probably not essential, but just to be safe, zero out the secret key data
 			// so we don't leave it hanging around in memory
 			// (where it could potentially get exposed via some other bug)
@@ -822,6 +829,7 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 
 	info->deltime    = 0;
 	info->AutoTunnel = AutoTunnel;
+	info->AutoTunnelHostRecord.namestorage.c[0] = 0;
 	AssignDomainName(&info->domain,  domain);
 	AssignDomainName(&info->keyname, keyname);
 	mDNS_snprintf(info->b64keydata, sizeof(info->b64keydata), "%s", b64keydata);
@@ -853,37 +861,6 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 				q->AuthInfo = newinfo;
 				}
 			}
-		}
-
-	if (info->AutoTunnel)
-		{
-		// 1. Set up our address record for the internal tunnel address
-		// (User-visible user-friendly host name, used as target in AutoTunnel SRV records)
-		mDNS_SetupResourceRecord(&info->AutoTunnelHostRecord, mDNSNULL, mDNSInterface_Any, kDNSType_AAAA, kHostNameTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
-		info->AutoTunnelHostRecord.namestorage.c[0] = 0;
-		AppendDomainLabel(&info->AutoTunnelHostRecord.namestorage, &m->hostlabel);
-		AppendDomainLabel(&info->AutoTunnelHostRecord.namestorage, (const domainlabel *)"\x04" "btmm");
-		AppendDomainName (&info->AutoTunnelHostRecord.namestorage, domain);
-		info->AutoTunnelHostRecord.resrec.rdata->u.ipv6 = m->AutoTunnelHostAddr;
-		mDNS_Register_internal(m, &info->AutoTunnelHostRecord);
-
-		// 2. Set up our address record for the external tunnel address
-		// (Constructed name, not generally user-visible, used as target in IKE tunnel's SRV record)
-		mDNS_SetupResourceRecord(&info->AutoTunnelTarget, mDNSNULL, mDNSInterface_Any, kDNSType_A, kHostNameTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
-		info->AutoTunnelTarget.namestorage.c[0] = 0;
-		AppendDomainLabel(&info->AutoTunnelTarget.namestorage, &m->AutoTunnelLabel);
-		AppendDomainName (&info->AutoTunnelTarget.namestorage, domain);
-		mDNS_AddDynDNSHostName(m, &info->AutoTunnelTarget.namestorage, mDNSNULL, mDNSNULL);
-
-		// 3. Set up IKE tunnel's SRV record: "AutoTunnelHostRecord SRV 0 0 port AutoTunnelTarget"
-		mDNS_SetupResourceRecord(&info->AutoTunnelService, mDNSNULL, mDNSInterface_Any, kDNSType_SRV, kHostNameTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
-		AssignDomainName(&info->AutoTunnelService.namestorage, (const domainname*) "\x0B" "_autotunnel" "\x04" "_udp");
-		AppendDomainName(&info->AutoTunnelService.namestorage, &info->AutoTunnelHostRecord.namestorage);
-		info->AutoTunnelService.resrec.rdata->u.srv.priority = 0;
-		info->AutoTunnelService.resrec.rdata->u.srv.weight   = 0;
-		info->AutoTunnelService.resrec.rdata->u.srv.port     = mDNSOpaque16fromIntVal(500); // TEMP FOR AUTOTUNNEL TESTING: assume port 500
-		AssignDomainName(&info->AutoTunnelService.resrec.rdata->u.srv.target, &info->AutoTunnelTarget.namestorage);
-		mDNS_Register_internal(m, &info->AutoTunnelService);
 		}
 
 	return(mStatus_NoError);
@@ -1846,6 +1823,13 @@ mDNSexport const domainname *GetServiceTarget(mDNS *m, ServiceRecordSet *srs)
 		return(&srs->RR_SRV.resrec.rdata->u.srv.target);
 	else
 		{
+		DomainAuthInfo *AuthInfo = GetAuthInfoForName(m, srs->RR_SRV.resrec.name);
+		if (AuthInfo && AuthInfo->AutoTunnel)
+			{
+			if (AuthInfo->AutoTunnelHostRecord.namestorage.c[0] == 0) return(mDNSNULL);
+			return(&AuthInfo->AutoTunnelHostRecord.namestorage);
+			}
+
 		HostnameInfo *hi = m->Hostnames;
 		while (hi)
 			{
@@ -2543,6 +2527,7 @@ mDNSlocal void HostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 			}
 		return;
 		}
+
 	// register any pending services that require a target
 	mDNS_Lock(m);
 	UpdateSRVRecords(m);
