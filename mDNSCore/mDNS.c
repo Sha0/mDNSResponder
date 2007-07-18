@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.657  2007/07/18 00:57:10  cheshire
+<rdar://problem/5303834> Automatically configure IPSec policy when resolving services
+Only need to call AddNewClientTunnel() for IPv6 addresses
+
 Revision 1.656  2007/07/16 23:54:48  cheshire
 <rdar://problem/5338850> Crash when removing or changing DNS keys
 
@@ -2445,8 +2449,7 @@ mDNSexport void AnswerQuestionWithResourceRecord(mDNS *const m, CacheRecord *con
 		// For now this AutoTunnel stuff is specific to Mac OS X.
 		// In the future, if there's demand, we may see if we can abstract it out cleanly into the platform layer
 		#if APPLE_OSX_mDNSResponder
-		if (RRTypeIsAddressType(q->qtype) && q->AuthInfo && q->AuthInfo->AutoTunnel)
-			ConfigureClientTunnel(m, q, &rr->resrec);
+		if (q->qtype == kDNSType_AAAA && q->AuthInfo && q->AuthInfo->AutoTunnel) AddNewClientTunnel(m, q, &rr->resrec);
 		#endif // APPLE_OSX_mDNSResponder
 
 		mDNS_DropLockBeforeCallback();		// Allow client (and us) to legally make mDNS API calls
