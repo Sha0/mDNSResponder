@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.401  2007/07/18 03:23:33  cheshire
+In GetServiceTarget, need to call SetupLocalAutoTunnelInterface_internal to bring up tunnel on demand, if necessary
+
 Revision 1.400  2007/07/18 02:30:25  cheshire
 Defer AutoTunnel server record advertising until we have at least one service to advertise
 Do AutoTunnel target host selection in GetServiceTarget (instead of uDNS_RegisterService)
@@ -1826,7 +1829,11 @@ mDNSexport const domainname *GetServiceTarget(mDNS *m, ServiceRecordSet *srs)
 		DomainAuthInfo *AuthInfo = GetAuthInfoForName(m, srs->RR_SRV.resrec.name);
 		if (AuthInfo && AuthInfo->AutoTunnel)
 			{
-			if (AuthInfo->AutoTunnelHostRecord.namestorage.c[0] == 0) return(mDNSNULL);
+			if (AuthInfo->AutoTunnelHostRecord.namestorage.c[0] == 0)
+				{
+				if (!m->AutoTunnelHostAddr.b[0]) return(mDNSNULL);
+				SetupLocalAutoTunnelInterface_internal(m);
+				}
 			return(&AuthInfo->AutoTunnelHostRecord.namestorage);
 			}
 
