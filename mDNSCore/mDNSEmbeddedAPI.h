@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.398  2007/07/18 02:26:56  cheshire
+Don't need to declare UpdateTunnels here
+
 Revision 1.397  2007/07/18 01:03:50  cheshire
 <rdar://problem/5303834> Automatically configure IPSec policy when resolving services
 Add list of client tunnels so we can automatically reconfigure when local address changes
@@ -1392,20 +1395,20 @@ struct ServiceRecordSet_struct
 	// just as a convenient placeholder to group the component records together and are not kept on any list.
 	ServiceRecordSet *uDNS_next;
 	regState_t        state;
-	mDNSBool          srs_uselease;    // dynamic update contains (should contain) lease option
-	mDNSs32           expire;   // expiration of lease (-1 for static)
-	mDNSBool          TestForSelfConflict;  // on name conflict, check if we're just seeing our own orphaned records
-	mDNSBool          Private;  // If zone is private, DNS updates may have to be encrypted to prevent eavesdropping
+	mDNSBool          srs_uselease;				// dynamic update contains (should contain) lease option
+	mDNSs32           expire;					// expiration of lease (-1 for static)
+	mDNSBool          TestForSelfConflict;		// on name conflict, check if we're just seeing our own orphaned records
+	mDNSBool          Private;					// If zone is private, DNS updates may have to be encrypted to prevent eavesdropping
 	ZoneData         *nta;
 	mDNSOpaque16      id;
-	domainname        zone;     // the zone that is updated
-	mDNSAddr          ns;       // primary name server for the record's zone  !!!KRS not technically correct to cache longer than TTL
-	mDNSIPPort        SRSUpdatePort;     // port on which server accepts dynamic updates
-	NATTraversalInfo  NATinfo; // may be NULL
-	mDNSBool          ClientCallbackDeferred;  // invoke client callback on completion of pending operation(s)
-	mStatus           DeferredStatus;          // status to deliver when above flag is set
-	mDNSBool          SRVUpdateDeferred;       // do we need to change target or port once current operation completes?
-	mDNSBool          SRVChanged;              // temporarily deregistered service because its SRV target or port changed
+	domainname        zone;						// the zone that is updated
+	mDNSAddr          ns;						// primary name server for the record's zone  !!!KRS not technically correct to cache longer than TTL
+	mDNSIPPort        SRSUpdatePort;			// port on which server accepts dynamic updates
+	NATTraversalInfo  NATinfo;					// may be NULL
+	mDNSBool          ClientCallbackDeferred;	// invoke client callback on completion of pending operation(s)
+	mStatus           DeferredStatus;			// status to deliver when above flag is set
+	mDNSBool          SRVUpdateDeferred;		// do we need to change target or port once current operation completes?
+	mDNSBool          SRVChanged;				// temporarily deregistered service because its SRV target or port changed
 	struct tcpInfo_t *tcp;
 
 	// End uDNS info ****************
@@ -2436,7 +2439,6 @@ extern void AnswerQuestionWithResourceRecord(mDNS *const m, CacheRecord *const r
 // In the future, if there's demand, we may see if we can abstract it out cleanly into the platform layer
 #if APPLE_OSX_mDNSResponder
 extern void AddNewClientTunnel(mDNS *const m, DNSQuestion *const q, const ResourceRecord *const answer);
-extern void UpdateTunnels(mDNS *const m);
 #endif
 
 // ***************************************************************************
