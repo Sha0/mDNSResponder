@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.399  2007/07/18 03:22:35  cheshire
+SetupLocalAutoTunnelInterface_internal needs to be callable from uDNS.c
+
 Revision 1.398  2007/07/18 02:26:56  cheshire
 Don't need to declare UpdateTunnels here
 
@@ -2439,6 +2442,7 @@ extern void AnswerQuestionWithResourceRecord(mDNS *const m, CacheRecord *const r
 // In the future, if there's demand, we may see if we can abstract it out cleanly into the platform layer
 #if APPLE_OSX_mDNSResponder
 extern void AddNewClientTunnel(mDNS *const m, DNSQuestion *const q, const ResourceRecord *const answer);
+extern void SetupLocalAutoTunnelInterface_internal(mDNS *const m);
 #endif
 
 // ***************************************************************************
