@@ -377,7 +377,7 @@
 		FFFF8F770C32F0FD00722979 /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 8;
-			dstPath = /etc;
+			dstPath = /private/etc;
 			dstSubfolderSpec = 0;
 			files = (
 				FFFF8F810C3307C400722979 /* dnsextd.conf in CopyFiles */,
