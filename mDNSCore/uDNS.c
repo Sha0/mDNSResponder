@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.399  2007/07/18 01:02:28  cheshire
+<rdar://problem/5304766> Register IPSec tunnel with IPv4-only hostname and create NAT port mappings
+Declare records as kDNSRecordTypeKnownUnique so we don't get name conflicts with ourselves
+
 Revision 1.398  2007/07/16 23:54:48  cheshire
 <rdar://problem/5338850> Crash when removing or changing DNS keys
 
@@ -855,8 +859,7 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 		{
 		// 1. Set up our address record for the internal tunnel address
 		// (User-visible user-friendly host name, used as target in AutoTunnel SRV records)
-
-		mDNS_SetupResourceRecord(&info->AutoTunnelHostRecord, mDNSNULL, mDNSInterface_Any, kDNSType_AAAA, kHostNameTTL, kDNSRecordTypeUnique, mDNSNULL, mDNSNULL);
+		mDNS_SetupResourceRecord(&info->AutoTunnelHostRecord, mDNSNULL, mDNSInterface_Any, kDNSType_AAAA, kHostNameTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
 		info->AutoTunnelHostRecord.namestorage.c[0] = 0;
 		AppendDomainLabel(&info->AutoTunnelHostRecord.namestorage, &m->hostlabel);
 		AppendDomainLabel(&info->AutoTunnelHostRecord.namestorage, (const domainlabel *)"\x04" "btmm");
@@ -866,14 +869,14 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 
 		// 2. Set up our address record for the external tunnel address
 		// (Constructed name, not generally user-visible, used as target in IKE tunnel's SRV record)
-		mDNS_SetupResourceRecord(&info->AutoTunnelTarget, mDNSNULL, mDNSInterface_Any, kDNSType_A, kHostNameTTL, kDNSRecordTypeUnique, mDNSNULL, mDNSNULL);
+		mDNS_SetupResourceRecord(&info->AutoTunnelTarget, mDNSNULL, mDNSInterface_Any, kDNSType_A, kHostNameTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
 		info->AutoTunnelTarget.namestorage.c[0] = 0;
 		AppendDomainLabel(&info->AutoTunnelTarget.namestorage, &m->AutoTunnelLabel);
 		AppendDomainName (&info->AutoTunnelTarget.namestorage, domain);
 		mDNS_AddDynDNSHostName(m, &info->AutoTunnelTarget.namestorage, mDNSNULL, mDNSNULL);
 
 		// 3. Set up IKE tunnel's SRV record: "AutoTunnelHostRecord SRV 0 0 port AutoTunnelTarget"
-		mDNS_SetupResourceRecord(&info->AutoTunnelService, mDNSNULL, mDNSInterface_Any, kDNSType_SRV, kHostNameTTL, kDNSRecordTypeUnique, mDNSNULL, mDNSNULL);
+		mDNS_SetupResourceRecord(&info->AutoTunnelService, mDNSNULL, mDNSInterface_Any, kDNSType_SRV, kHostNameTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
 		AssignDomainName(&info->AutoTunnelService.namestorage, (const domainname*) "\x0B" "_autotunnel" "\x04" "_udp");
 		AppendDomainName(&info->AutoTunnelService.namestorage, &info->AutoTunnelHostRecord.namestorage);
 		info->AutoTunnelService.resrec.rdata->u.srv.priority = 0;
@@ -2628,30 +2631,25 @@ mDNSlocal void GetStaticHostname(mDNS *m)
 
 mDNSexport void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSRecordCallback *StatusCallback, const void *StatusContext)
    {
-	HostnameInfo *ptr, *new;
+	HostnameInfo **ptr = &m->Hostnames;
 
 	LogOperation("mDNS_AddDynDNSHostName %##s", fqdn);
 
-	// check if domain already registered
-	for (ptr = m->Hostnames; ptr; ptr = ptr->next)
-		if (SameDomainName(fqdn, &ptr->fqdn))
-			{ LogMsg("Host Domain %##s already in list", fqdn->c); return; }
+	while (*ptr && !SameDomainName(fqdn, &(*ptr)->fqdn)) ptr = &(*ptr)->next;
+	if (*ptr) { LogMsg("DynDNSHostName %##s already in list", fqdn->c); return; }
 
 	// allocate and format new address record
-	new = mDNSPlatformMemAllocate(sizeof(*new));
-	if (!new) { LogMsg("ERROR: mDNS_AddDynDNSHostname - malloc"); return; }
-	mDNSPlatformMemZero(new, sizeof(*new));
-	new->arv4.state = regState_Unregistered;
-	new->arv6.state = regState_Unregistered;
+	*ptr = mDNSPlatformMemAllocate(sizeof(**ptr));
+	if (!*ptr) { LogMsg("ERROR: mDNS_AddDynDNSHostname - malloc"); return; }
 
-	new->next = m->Hostnames;
-	m->Hostnames = new;
+	mDNSPlatformMemZero(*ptr, sizeof(**ptr));
+	AssignDomainName(&(*ptr)->fqdn, fqdn);
+	(*ptr)->arv4.state     = regState_Unregistered;
+	(*ptr)->arv6.state     = regState_Unregistered;
+	(*ptr)->StatusCallback = StatusCallback;
+	(*ptr)->StatusContext  = StatusContext;
 
-	AssignDomainName(&new->fqdn, fqdn);
-	new->StatusCallback = StatusCallback;
-	new->StatusContext = StatusContext;
-
-	AdvertiseHostname(m, new);
+	AdvertiseHostname(m, *ptr);
 	}
 
 mDNSexport void mDNS_RemoveDynDNSHostName(mDNS *m, const domainname *fqdn)
