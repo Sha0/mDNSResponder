@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.435  2007/07/18 01:05:08  cheshire
+<rdar://problem/5303834> Automatically configure IPSec policy when resolving services
+Add list of client tunnels so we can automatically reconfigure when local address changes
+
 Revision 1.434  2007/07/16 20:16:00  vazquez
 <rdar://problem/3867231> LegacyNATTraversal: Need complete rewrite
 Remove unnecessary LNT init code
@@ -1784,6 +1788,13 @@ mDNSlocal NetworkInterfaceInfoOSX *FindRoutableIPv4(mDNS *const m, mDNSu32 scope
 	}
 #endif
 
+mDNSlocal void SetupLocalAutoTunnelInterface(mDNS *const m)
+	{
+	char commandstring[128];
+	mDNS_snprintf(commandstring, sizeof(commandstring), "/sbin/ifconfig lo0 inet6 alias %.16a/128", &m->AutoTunnelHostAddr);
+	if (system(commandstring) != 0) LogMsg("Command failed: %s", commandstring);
+	}
+
 mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 	{
 	mDNSBool foundav4           = mDNSfalse;
@@ -1910,7 +1921,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 #endif
 
 	// If we haven't set up AutoTunnelHostAddr yet, do it now
-	if (mDNSSameEthAddress(&PrimaryMAC, &zeroEthAddr) && m->AutoTunnelHostAddr.b[0] == 0)
+	if (!mDNSSameEthAddress(&PrimaryMAC, &zeroEthAddr) && m->AutoTunnelHostAddr.b[0] == 0)
 		{
 		m->AutoTunnelHostAddr.b[0x0] = 0xFD;		// Required prefix for "locally assigned" ULA (See RFC 4193)
 		m->AutoTunnelHostAddr.b[0x1] = mDNSRandom(255);
@@ -1932,16 +1943,12 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 			m->AutoTunnelHostAddr.b[0x8], m->AutoTunnelHostAddr.b[0x9], m->AutoTunnelHostAddr.b[0xA], m->AutoTunnelHostAddr.b[0xB],
 			m->AutoTunnelHostAddr.b[0xC], m->AutoTunnelHostAddr.b[0xD], m->AutoTunnelHostAddr.b[0xE], m->AutoTunnelHostAddr.b[0xF]);
 		LogOperation("m->AutoTunnelLabel %#s", m->AutoTunnelLabel.c);
-
-		char commandstring[128];
-		mDNS_snprintf(commandstring, sizeof(commandstring), "/sbin/ifconfig lo0 inet6 alias %.16a/128", &m->AutoTunnelHostAddr);
-		if (system(commandstring) != 0) LogMsg("Command failed: %s", commandstring);
+		if (m->TunnelClients) SetupLocalAutoTunnelInterface(m);
 		}
 
-#ifndef kDefaultLocalHostNamePrefix
-#define kDefaultLocalHostNamePrefix "Macintosh"
-#endif
-
+	#ifndef kDefaultLocalHostNamePrefix
+	#define kDefaultLocalHostNamePrefix "Macintosh"
+	#endif
 	mDNS_snprintf(defaultname, sizeof(defaultname), kDefaultLocalHostNamePrefix "-%02X%02X%02X%02X%02X%02X",
 		PrimaryMAC.b[0], PrimaryMAC.b[1], PrimaryMAC.b[2], PrimaryMAC.b[3], PrimaryMAC.b[4], PrimaryMAC.b[5]);
 
@@ -2658,21 +2665,58 @@ mDNSlocal const char RacoonConfig[] = "remote %s\n"
 	"sainfo address %s any address %s any\n"
 	"{ pfs_group 2; lifetime time 60 min; encryption_algorithm aes; authentication_algorithm hmac_sha1; compression_algorithm deflate; }\n";
 
-typedef struct
+mDNSlocal void AutoTunnelSetKeys(mDNS *const m, ClientTunnel *atq, mDNSBool AddNew)
 	{
-	DNSQuestion q;
-	mDNSAddr loc_inner;
-	mDNSAddr rmt_inner;
-	char b64keydata[32];
-	} AutoTunnelQuery;
+	char li[40], lo[40], ri[40], ro[40];		// Enough for IPv6 address plus nul on the end
+
+	mDNS_snprintf(li, sizeof(li), "%.16a", &m->AutoTunnelHostAddr);
+	mDNS_snprintf(lo, sizeof(lo), "%.4a",  &m->AdvertisedV4.ip.v4);
+	mDNS_snprintf(ri, sizeof(ri), "%.16a", &atq->rmt_inner);
+	mDNS_snprintf(ro, sizeof(ro), "%.4a",  &atq->rmt_outer);
+
+	atq->loc_inner = m->AutoTunnelHostAddr;
+	atq->loc_outer = m->AdvertisedV4.ip.v4;
+
+	FILE *fp = popen("/usr/sbin/setkey -c", "r+");
+	if (!fp)
+		LogMsg("popen(\"/usr/sbin/setkey -c\", \"r+\"); failed");
+	else
+		{
+		if (fprintf(fp, "spddelete %s/128 %s/128 any -P out;\n", li, ri) < 0) LogMsg("spddelete loc->rmt failed");
+		if (fprintf(fp, "spddelete %s/128 %s/128 any -P  in;\n", ri, li) < 0) LogMsg("spddelete rmt->loc failed");
+		if (AddNew)
+			{
+			if (fprintf(fp, "spdadd %s/128 %s/128 any -P out ipsec esp/tunnel/%s-%s/require;\n", li, ri, lo, ro) < 0) LogMsg("spdadd loc->rmt failed");
+			if (fprintf(fp, "spdadd %s/128 %s/128 any -P in  ipsec esp/tunnel/%s-%s/require;\n", ri, li, ro, lo) < 0) LogMsg("spdadd rmt->loc failed");
+			}
+		pclose(fp);
+
+		if (AddNew)
+			{
+			char filename[64];
+			mDNS_snprintf(filename, sizeof(filename), "/etc/racoon/remote/%s.conf", ro);
+			FILE *f = fopen(filename, "w");
+			fchmod(fileno(f), S_IRUSR | S_IWUSR);
+			char filedata[1024];
+			int len = mDNS_snprintf(filedata, sizeof(filedata), RacoonConfig, ro, atq->b64keydata, ri, li, li, ri);
+			fwrite(filedata, len, 1, f);
+			fclose(f);
+			RestartRacoon();
+
+			char route[128];
+			mDNS_snprintf(route, sizeof(route), "/sbin/route add -inet6 -host %s %s", ri, li);
+			system(route);
+			}
+		}
+	}
 
 mDNSlocal void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
-	AutoTunnelQuery *atq = (AutoTunnelQuery *)question->QuestionContext;
+	ClientTunnel *atq = (ClientTunnel *)question->QuestionContext;
 	if (!AddRecord || !answer->rdlength) return;
 	if (question->qtype == kDNSType_SRV)
 		{
-		LogOperation("AutoTunnelCallback: SRV target %##s", answer->rdata->u.srv.target.c);
+		LogOperation("AutoTunnelCallback: SRV target name %##s", answer->rdata->u.srv.target.c);
 		mDNS_StopQuery(m, question);
 		AssignDomainName(&atq->q.qname, &answer->rdata->u.srv.target);
 		question->qtype = kDNSType_A;
@@ -2680,81 +2724,77 @@ mDNSlocal void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const Re
 		}
 	else if (question->qtype == kDNSType_A)
 		{
-		LogOperation("AutoTunnelCallback: SRV target %.4a", &answer->rdata->u.ipv4);
+		LogOperation("AutoTunnelCallback: SRV target addr %.4a", &answer->rdata->u.ipv4);
 		mDNS_StopQuery(m, question);
-		char loc_inner[40];		// Enough for IPv6 address plus nul on the end
-		char rmt_inner[40];
-		char loc_outer[40];
-		char rmt_outer[40];
-	
-		mDNS_snprintf(loc_inner, sizeof(loc_inner), "%#a", &atq->loc_inner);
-		mDNS_snprintf(rmt_inner, sizeof(rmt_inner), "%#a", &atq->rmt_inner);
-		mDNS_snprintf(loc_outer, sizeof(loc_outer), "%.4a", &m->AdvertisedV4.ip.v4);
-		mDNS_snprintf(rmt_outer, sizeof(rmt_outer), "%.4a", &answer->rdata->u.ipv4);
-	
-		FILE *fp = popen("/usr/sbin/setkey -c", "r+");
-		if (!fp)
-			LogMsg("popen(\"/usr/sbin/setkey -c\", \"r+\"); failed");
-		else
-			{
-			if (fprintf(fp, "spddelete %s/128 %s/128 any -P out;\n", loc_inner, rmt_inner) < 0) LogMsg("spddelete loc->rmt failed");
-			if (fprintf(fp, "spddelete %s/128 %s/128 any -P  in;\n", rmt_inner, loc_inner) < 0) LogMsg("spddelete rmt->loc failed");
-			if (fprintf(fp, "spdadd %s/128 %s/128 any -P out ipsec esp/tunnel/%s-%s/require;\n", loc_inner, rmt_inner, loc_outer, rmt_outer) < 0) LogMsg("spdadd loc->rmt failed");
-			if (fprintf(fp, "spdadd %s/128 %s/128 any -P in  ipsec esp/tunnel/%s-%s/require;\n", rmt_inner, loc_inner, rmt_outer, loc_outer) < 0) LogMsg("spdadd rmt->loc failed");
-			pclose(fp);
-
-			char filename[64];
-			mDNS_snprintf(filename, sizeof(filename), "/etc/racoon/remote/%s.conf", rmt_outer);
-			FILE *f = fopen(filename, "w");
-			fchmod(fileno(f), S_IRUSR | S_IWUSR);
-			char filedata[1024];
-			int len = mDNS_snprintf(filedata, sizeof(filedata), RacoonConfig, rmt_outer, atq->b64keydata, rmt_inner, loc_inner, loc_inner, rmt_inner);
-			fwrite(filedata, len, 1, f);
-			fclose(f);
-			RestartRacoon();
-
-			char route[128];
-			mDNS_snprintf(route, sizeof(route), "/sbin/route add -inet6 -host %s %s", rmt_inner, loc_inner);
-			system(route);
-			}
-		
-		freeL("AutoTunnelQuery", atq);
+		question->ThisQInterval = -1;		// So we know we don't need to cancel this question
+		atq->rmt_outer = answer->rdata->u.ipv4;
+		AutoTunnelSetKeys(m, atq, mDNStrue);
 		}
 	else
 		LogMsg("AutoTunnelCallback: Unknown question %p", question);
 	}
 
-mDNSexport void ConfigureClientTunnel(mDNS *const m, DNSQuestion *const q, const ResourceRecord *const answer)
+// If the EUI-64 part of the IPv6 ULA matches, then that means the two addresses point to the same machine
+#define mDNSSameClientTunnel(A,B) ((A)->l[2] == (B)->l[2] && (A)->l[3] == (B)->l[3])
+
+mDNSexport void AddNewClientTunnel(mDNS *const m, DNSQuestion *const originalquestion, const ResourceRecord *const dsthost)
 	{
 	// If this is our own Tunnel address query, don't want to loop endlessly
-	if (q->QuestionCallback == AutoTunnelCallback) return;
+	// (Should never happen -- we only do AutoTunnel setups for IPv6 destinations, and at present
+	// our AutoTunnel endpoints are always IPv4 addresses, but it doesn't hurt to be cautious.)
+	if (originalquestion->QuestionCallback == AutoTunnelCallback) return;
+	if (originalquestion->AuthInfo == mDNSNULL) return;
 
-	LogMsg("ConfigureClientTunnel starting for %##s", q->qname.c);
+	ClientTunnel **p = &m->TunnelClients;
+	while (*p && !mDNSSameClientTunnel(&(*p)->rmt_inner, &dsthost->rdata->u.ipv6)) p = &(*p)->next;
 
-	AutoTunnelQuery *atq = mallocL("AutoTunnelQuery", sizeof(AutoTunnelQuery));
-	if (!atq) return;
+	if (*p)
+		{
+		LogOperation("AddNewClientTunnel: Already have AutoTunnel for %##s %.16a", dsthost->name->c, &dsthost->rdata->u.ipv6);
+		if ((*p)->q.ThisQInterval >= 0) mDNS_StopQuery_internal(m, &(*p)->q);
+		AutoTunnelSetKeys(m, (*p), mDNSfalse);		// Clear the old tunnel endpoint state before installing new state
+		}
+	else
+		{
+		LogOperation("AddNewClientTunnel: New AutoTunnel for %##s %.16a", dsthost->name->c, &dsthost->rdata->u.ipv6);
+		ClientTunnel *atq = mallocL("ClientTunnel", sizeof(ClientTunnel));
+		if (!atq) return;
+		// If this is our first tunnel client, bring interface up now
+		if (m->AutoTunnelHostAddr.b[0] && !m->TunnelClients) SetupLocalAutoTunnelInterface(m);
+		atq->next = mDNSNULL;
+		atq->rmt_inner = dsthost->rdata->u.ipv6;	// atq->rmt_outer unknown at this stage -- SRV query will discover that
+		*p = atq;
+		}
 
-	atq->q.ThisQInterval       = -1;		// So that we know whether to cancel this question
-	atq->q.InterfaceID         = mDNSInterface_Any;
-	atq->q.Target              = zeroAddr;
-	AssignDomainName(&atq->q.qname, (const domainname*) "\x0B" "_autotunnel" "\x04" "_udp");
-	AppendDomainName(&atq->q.qname, answer->name);
-	atq->q.qtype               = kDNSType_SRV;
-	atq->q.qclass              = kDNSClass_IN;
-	atq->q.LongLived           = mDNSfalse;
-	atq->q.ExpectUnique        = mDNStrue;
-	atq->q.ForceMCast          = mDNSfalse;
-	atq->q.ReturnIntermed      = mDNSfalse;
-	atq->q.QuestionCallback    = AutoTunnelCallback;
-	atq->q.QuestionContext     = atq;
+	(*p)->q.InterfaceID      = mDNSInterface_Any;
+	(*p)->q.Target           = zeroAddr;
+	AssignDomainName(&(*p)->q.qname, (const domainname*) "\x0B" "_autotunnel" "\x04" "_udp");
+	AppendDomainName(&(*p)->q.qname, dsthost->name);
+	(*p)->q.qtype            = kDNSType_SRV;
+	(*p)->q.qclass           = kDNSClass_IN;
+	(*p)->q.LongLived        = mDNSfalse;
+	(*p)->q.ExpectUnique     = mDNStrue;
+	(*p)->q.ForceMCast       = mDNSfalse;
+	(*p)->q.ReturnIntermed   = mDNSfalse;
+	(*p)->q.QuestionCallback = AutoTunnelCallback;
+	(*p)->q.QuestionContext  = (*p);
 
-	atq->loc_inner.type = mDNSAddrType_IPv6;
-	atq->loc_inner.ip.v6 = q->AuthInfo->AutoTunnelHostRecord.resrec.rdata->u.ipv6;
-	atq->rmt_inner.type = (answer->rrtype == kDNSType_A) ? mDNSAddrType_IPv4 : mDNSAddrType_IPv6;
-	atq->rmt_inner.ip.v6 = answer->rdata->u.ipv6;		// Okay to copy all 16 bytes, even if only 4 are used
-	mDNS_snprintf(atq->b64keydata, sizeof(atq->b64keydata), "%s", q->AuthInfo->b64keydata);
+	mDNS_snprintf((*p)->b64keydata, sizeof((*p)->b64keydata), "%s", originalquestion->AuthInfo->b64keydata);
 
-	mDNS_StartQuery_internal(m, &atq->q);
+	mDNS_StartQuery_internal(m, &(*p)->q);
+	}
+
+mDNSexport void UpdateTunnels(mDNS *const m)
+	{
+	if (m->AutoTunnelHostAddr.b[0] && m->TunnelClients) SetupLocalAutoTunnelInterface(m);
+	
+	// Scan to find client tunnels whose questions have completed,
+	// but whose local inner/outer addresses have changed since the tunnel was set up
+	ClientTunnel *p;
+	for (p = m->TunnelClients; p; p = p->next)
+		if (p->q.ThisQInterval < 0)
+			if (!mDNSSameIPv6Address(p->loc_inner, m->AutoTunnelHostAddr) ||
+				!mDNSSameIPv4Address(p->loc_outer, m->AdvertisedV4.ip.v4)) AutoTunnelSetKeys(m, p, mDNStrue);
 	}
 
 #endif // APPLE_OSX_mDNSResponder

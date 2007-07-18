@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.397  2007/07/18 01:03:50  cheshire
+<rdar://problem/5303834> Automatically configure IPSec policy when resolving services
+Add list of client tunnels so we can automatically reconfigure when local address changes
+
 Revision 1.396  2007/07/16 23:54:48  cheshire
 <rdar://problem/5338850> Crash when removing or changing DNS keys
 
@@ -1646,6 +1650,17 @@ typedef struct DNameListElem
 	domainname name;
 	} DNameListElem;
 
+typedef struct ClientTunnel
+	{
+	struct ClientTunnel *next;
+	DNSQuestion q;
+	mDNSv6Addr loc_inner;
+	mDNSv4Addr loc_outer;
+	mDNSv6Addr rmt_inner;
+	mDNSv4Addr rmt_outer;
+	char b64keydata[32];
+	} ClientTunnel;
+
 // ***************************************************************************
 #if 0
 #pragma mark - Main mDNS object, used to hold all the mDNS state
@@ -1775,6 +1790,8 @@ struct mDNS_struct
 	mDNSu8           *uPNPSOAPURL;				// router's SOAP control URL string
 	mDNSu8           *uPNPRouterAddressString;	// holds both the router's address and port
 	mDNSu8           *uPNPSOAPAddressString;	// holds both address and port for SOAP messages
+
+	ClientTunnel     *TunnelClients;
 
 	// Fixed storage, to avoid creating large objects on the stack
 	DNSMessage        imsg;                 // Incoming message received from wire
@@ -2418,7 +2435,8 @@ extern void AnswerQuestionWithResourceRecord(mDNS *const m, CacheRecord *const r
 // For now this AutoTunnel stuff is specific to Mac OS X.
 // In the future, if there's demand, we may see if we can abstract it out cleanly into the platform layer
 #if APPLE_OSX_mDNSResponder
-extern void ConfigureClientTunnel(mDNS *const m, DNSQuestion *const q, const ResourceRecord *const answer);
+extern void AddNewClientTunnel(mDNS *const m, DNSQuestion *const q, const ResourceRecord *const answer);
+extern void UpdateTunnels(mDNS *const m);
 #endif
 
 // ***************************************************************************
