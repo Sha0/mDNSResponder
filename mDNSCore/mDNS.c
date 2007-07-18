@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.658  2007/07/18 02:28:57  cheshire
+Don't set AutoTunnel settings in uDNS_RegisterService; should be done in GetServiceTarget
+
 Revision 1.657  2007/07/18 00:57:10  cheshire
 <rdar://problem/5303834> Automatically configure IPSec policy when resolving services
 Only need to call AddNewClientTunnel() for IPv6 addresses
@@ -5836,7 +5839,6 @@ mDNSlocal void NSSCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
 mDNSlocal mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	{
 	mDNSu32 i;
-	DomainAuthInfo *AuthInfo = GetAuthInfoForName(m, srs->RR_SRV.resrec.name);
 	ServiceRecordSet **p = &m->ServiceRegistrations;
 	while (*p && *p != srs) p=&(*p)->uDNS_next;
 	if (*p) { LogMsg("uDNS_RegisterService: %p %##s already in list", srs, srs->RR_SRV.resrec.name->c); return(mStatus_AlreadyRegistered); }
@@ -5850,12 +5852,6 @@ mDNSlocal mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	for (i = 0; i < srs->NumSubTypes;i++) srs->SubTypes[i].resrec.rroriginalttl = kWideAreaTTL;
 
 	srs->srs_uselease = mDNStrue;
-	if (srs->RR_SRV.HostTarget && AuthInfo && AuthInfo->AutoTunnel)
-		{
-		srs->RR_SRV.HostTarget = mDNSfalse;
-		AssignDomainName(&srs->RR_SRV.resrec.rdata->u.srv.target, AuthInfo->AutoTunnelHostRecord.resrec.name);
-		}
-
 	if (!GetServiceTarget(m, srs))
 		{
 		// defer registration until we've got a target
