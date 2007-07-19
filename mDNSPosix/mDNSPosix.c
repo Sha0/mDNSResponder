@@ -30,6 +30,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.100  2007/07/19 21:45:30  cheshire
+Fixed code spacing
+
 Revision 1.99  2007/07/11 02:56:51  cheshire
 <rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for AutoTunnel services
 Remove unused mDNSPlatformDefaultRegDomainChanged
@@ -167,8 +170,8 @@ typedef struct PosixEventSource	PosixEventSource;
 // Context record for interface change callback
 struct IfChangeRec
 	{
-	int			NotifySD;
-	mDNS*		mDNS;
+	int	NotifySD;
+	mDNS *mDNS;
 	};
 typedef struct IfChangeRec	IfChangeRec;
 
@@ -199,7 +202,7 @@ mDNSlocal void SockAddrTomDNSAddr(const struct sockaddr *const sa, mDNSAddr *ipA
 		{
 		case AF_INET:
 			{
-			struct sockaddr_in* sin          = (struct sockaddr_in*)sa;
+			struct sockaddr_in *sin          = (struct sockaddr_in*)sa;
 			ipAddr->type                     = mDNSAddrType_IPv4;
 			ipAddr->ip.v4.NotAnInteger       = sin->sin_addr.s_addr;
 			if (ipPort) ipPort->NotAnInteger = sin->sin_port;
@@ -209,7 +212,7 @@ mDNSlocal void SockAddrTomDNSAddr(const struct sockaddr *const sa, mDNSAddr *ipA
 #if HAVE_IPV6
 		case AF_INET6:
 			{
-			struct sockaddr_in6* sin6        = (struct sockaddr_in6*)sa;
+			struct sockaddr_in6 *sin6        = (struct sockaddr_in6*)sa;
 #ifndef NOT_HAVE_SA_LEN
 			assert(sin6->sin6_len == sizeof(*sin6));
 #endif
