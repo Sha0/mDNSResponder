@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.437  2007/07/19 22:01:27  cheshire
+Added "#pragma mark" sections headings to divide code into related function groups
+
 Revision 1.436  2007/07/18 03:25:25  cheshire
 <rdar://problem/5304766> Register IPSec tunnel with IPv4-only hostname and create NAT port mappings
 Bring up server-side tunnel on demand, when necessary
@@ -488,6 +491,10 @@ Add (commented out) trigger value for testing "mach_absolute_time went backwards
 // ***************************************************************************
 // Globals
 
+#if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark - Globals
+#endif
+
 static mDNSu32 clockdivisor = 0;
 
 mDNSexport int KQueueFD;
@@ -508,6 +515,11 @@ CFStringRef NetworkChangedKey_DynamicDNS = CFSTR("Setup:/Network/DynamicDNS");
 
 // ***************************************************************************
 // Functions
+
+#if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark -
+#pragma mark - Utility Functions
+#endif
 
 // We only attempt to send and receive multicast packets on interfaces that are
 // (a) flagged as multicast-capable
@@ -627,6 +639,11 @@ mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(mDNS *const m, mDNS
 
 	return(0);
 	}
+
+#if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark -
+#pragma mark - UDP & TCP send & receive
+#endif
 
 mDNSlocal mDNSBool AddrRequiresPPPConnection(const struct sockaddr *addr)
 	{
@@ -1529,6 +1546,11 @@ mDNSexport void mDNSPlatformUDPClose(UDPSocket *sock)
 	freeL("UDPSocket", sock);
 	}
 
+#if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark -
+#pragma mark - Key Management
+#endif
+
 #ifndef NO_SECURITYFRAMEWORK
 mDNSlocal CFArrayRef GetCertChain(SecIdentityRef identity)
 	{
@@ -1794,11 +1816,16 @@ mDNSlocal NetworkInterfaceInfoOSX *FindRoutableIPv4(mDNS *const m, mDNSu32 scope
 
 #if APPLE_OSX_mDNSResponder
 
+#if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark -
+#pragma mark - AutoTunnel
+#endif
+
 mDNSlocal void RestartRacoon(void)
 	{
 	mDNSBool startRacoon = true;
 	
-	FILE* fp = fopen("/var/run/racoon.pid", "r");
+	FILE *fp = fopen("/var/run/racoon.pid", "r");
 	if (fp)
 		{
 		int pid=0;
@@ -1815,7 +1842,7 @@ mDNSlocal void RestartRacoon(void)
 		pid_t pid = fork();
 		if (!pid)
 			{
-			const char* racoon="/usr/sbin/racoon";
+			const char *racoon = "/usr/sbin/racoon";
 			execl(racoon, racoon, (const char*) 0);
 			}
 		else
@@ -2049,6 +2076,11 @@ mDNSexport void AddNewClientTunnel(mDNS *const m, DNSQuestion *const originalque
 	}
 
 #endif // APPLE_OSX_mDNSResponder
+
+#if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark -
+#pragma mark - Power State & Configuration Change Management
+#endif
 
 mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 	{
@@ -2421,12 +2453,12 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 	if (regDomain)     regDomain->c[0] = 0;
 	if (browseDomains) *browseDomains  = NULL;
 
-	LogOperation("mDNSPlatformSetDNSConfig %s%s%s%s%s",
-		setservers    ? "setservers " : "",
-		setsearch     ? "setsearch " : "",
-		fqdn          ? "fqdn " : "",
-		regDomain     ? "regDomain " : "",
-		browseDomains ? "browseDomains " : "");
+	LogOperation("mDNSPlatformSetDNSConfig%s%s%s%s%s",
+		setservers    ? " setservers"    : "",
+		setsearch     ? " setsearch"     : "",
+		fqdn          ? " fqdn"          : "",
+		regDomain     ? " regDomain"     : "",
+		browseDomains ? " browseDomains" : "");
 
 	// Add the inferred address-based configuration discovery domains
 	// (should really be in core code I think, not platform-specific)
@@ -3216,6 +3248,11 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 	}
 #endif /* NO_IOPOWER */
 
+#if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark -
+#pragma mark - Initialization & Teardown
+#endif
+
 CF_EXPORT CFDictionaryRef _CFCopySystemVersionDictionary(void);
 CF_EXPORT const CFStringRef _kCFSystemVersionProductNameKey;
 CF_EXPORT const CFStringRef _kCFSystemVersionProductVersionKey;
@@ -3434,6 +3471,11 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 		}
 	#endif // APPLE_OSX_mDNSResponder
 	}
+
+#if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark -
+#pragma mark - General Platform Support Layer functions
+#endif
 
 mDNSexport mDNSu32 mDNSPlatformRandomSeed(void)
 	{
