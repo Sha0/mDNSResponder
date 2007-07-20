@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.441  2007/07/20 16:46:45  mcguire
+<rdar://problem/5345233> BTMM: Replace system() `route` calls to setup/teardown routes
+
 Revision 1.440  2007/07/20 16:22:07  mcguire
 <rdar://problem/5344584> BTMM: Replace system() `ifconfig` calls to setup/teardown IPv6 address
 
@@ -454,6 +457,7 @@ Add (commented out) trigger value for testing "mach_absolute_time went backwards
 #include <net/if.h>
 #include <net/if_types.h>			// For IFT_ETHER
 #include <net/if_dl.h>
+#include <net/route.h>              // For struct rt_msghdr etc.
 #include <sys/uio.h>
 #include <sys/param.h>
 #include <sys/socket.h>
@@ -2004,6 +2008,77 @@ mDNSlocal void SetupLocalAutoTunnelInterface(mDNS *const m)
 	mDNS_Unlock(m);
 	}
 
+static unsigned int routeSeq = 1;
+
+mDNSlocal void SetupTunnelRoute(mDNSv6Addr *const local, mDNSv6Addr *const remote)
+	{
+	int s = socket(PF_ROUTE, SOCK_RAW, AF_INET);
+	struct
+		{
+		struct rt_msghdr    hdr;
+		struct sockaddr_in6 dst;
+		struct sockaddr_in6 gtwy;
+		} msg;
+	
+	LogOperation("SetupTunnelRoute %.16a --> %.16a", local, remote);
+	
+	if (s < 0) { LogMsg("socket() failed trying to add route errno %d (%s)", errno, strerror(errno)); return; }
+	
+	memset(&msg, 0, sizeof(msg));
+	
+	msg.hdr.rtm_msglen = sizeof(msg);
+	msg.hdr.rtm_type = RTM_ADD;
+	// The following flags are set by `route add -inet6 -host ...`
+	msg.hdr.rtm_flags = RTF_UP | RTF_GATEWAY | RTF_HOST | RTF_STATIC;
+	msg.hdr.rtm_version = RTM_VERSION;
+	msg.hdr.rtm_seq = routeSeq++;
+	msg.hdr.rtm_addrs = RTA_DST | RTA_GATEWAY;
+	
+	msg.dst.sin6_len = sizeof(msg.dst);
+	msg.dst.sin6_family = AF_INET6;
+	memcpy(&msg.dst.sin6_addr, remote, sizeof(mDNSv6Addr));
+	
+	msg.gtwy.sin6_len = sizeof(msg.gtwy);
+	msg.gtwy.sin6_family = AF_INET6;
+	memcpy(&msg.gtwy.sin6_addr, local, sizeof(mDNSv6Addr));
+	
+	// send message, ignore error when route already exists
+	if (write(s, &msg, msg.hdr.rtm_msglen) == -1 && errno != EEXIST) LogMsg("write() failed trying to add route errno %d (%s)", errno, strerror(errno));
+	
+	close(s);
+	}
+
+mDNSlocal void TeardownTunnelRoute(mDNSv6Addr *const remote)
+	{
+	int s = socket(PF_ROUTE, SOCK_RAW, AF_INET);
+	struct
+		{
+		struct rt_msghdr    hdr;
+		struct sockaddr_in6 dst;
+		} msg;
+	
+	LogOperation("TeardownTunnelRoute %.16a", remote);
+	
+	if (s < 0) { LogMsg("socket() failed trying to delete route errno %d (%s)", errno, strerror(errno)); return; }
+	
+	memset(&msg, 0, sizeof(msg));
+	
+	msg.hdr.rtm_msglen = sizeof(msg);
+	msg.hdr.rtm_type = RTM_DELETE;
+	msg.hdr.rtm_version = RTM_VERSION;
+	msg.hdr.rtm_seq = routeSeq++;
+	msg.hdr.rtm_addrs = RTA_DST;
+	
+	msg.dst.sin6_len = sizeof(msg.dst);
+	msg.dst.sin6_family = AF_INET6;
+	memcpy(&msg.dst.sin6_addr, remote, sizeof(mDNSv6Addr));
+	
+	// send message, ignore error when route doesn't exist
+	if (write(s, &msg, msg.hdr.rtm_msglen) == -1 && errno != ESRCH) LogMsg("write() failed trying to delete route errno %d (%s)", errno, strerror(errno));
+	
+	close(s);
+	}
+
 mDNSlocal const char RacoonClientConfig[] = "remote %s\n"
 	"{ exchange_mode aggressive; doi ipsec_doi; situation identity_only; verify_identifier off; shared_secret use \"%s\";\n"
 	"nonce_size 16; lifetime time 5 min; initial_contact on; support_proxy on; proposal_check claim;\n"
@@ -2040,6 +2115,7 @@ mDNSlocal void AutoTunnelSetKeys(mDNS *const m, ClientTunnel *atq, mDNSBool AddN
 			}
 		pclose(fp);
 
+		TeardownTunnelRoute(&atq->rmt_inner);
 		if (AddNew)
 			{
 			char filename[64];
@@ -2052,9 +2128,7 @@ mDNSlocal void AutoTunnelSetKeys(mDNS *const m, ClientTunnel *atq, mDNSBool AddN
 			fclose(f);
 			RestartRacoon();
 
-			char route[128];
-			mDNS_snprintf(route, sizeof(route), "/sbin/route add -inet6 -host %s %s", ri, li);
-			system(route);
+			SetupTunnelRoute(&atq->loc_inner, &atq->rmt_inner);
 			}
 		}
 	}
