@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.442  2007/07/20 20:23:24  cheshire
+<rdar://problem/4641118> Need separate SCPreferences for per-user .Mac settings
+Fixed errors reading the Setup:/Network/BackToMyMac preferences
+
 Revision 1.441  2007/07/20 16:46:45  mcguire
 <rdar://problem/5345233> BTMM: Replace system() `route` calls to setup/teardown routes
 
@@ -2806,16 +2810,17 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 					for (i = 0; i < size; i++)
 						{
 						LogOperation("BackToMyMac %d", i);
-						if (!CFStringGetCString(key[i], buf, sizeof(buf), kCFStringEncodingUTF8)) LogMsg("Can't read BackToMyMac %d key %s", i, buf);
+						if (!CFStringGetCString(key[i], buf, sizeof(buf), kCFStringEncodingUTF8))
+							LogMsg("Can't read BackToMyMac %d key %s", i, buf);
 						else
 							{
 							mDNSu32 uid = atoi(buf);
-							if (!CFStringGetCString(val[i], buf, sizeof(buf), kCFStringEncodingUTF8)) LogMsg("Can't read BackToMyMac %d val %s", i, buf);
-							else
+							if (!CFStringGetCString(val[i], buf, sizeof(buf), kCFStringEncodingUTF8))
+								LogMsg("Can't read BackToMyMac %d val %s", i, buf);
+							else if (MakeDomainNameFromDNSNameString(&d, buf) && d.c[0])
 								{
-								LogOperation("BackToMyMac %d %d %s", i, uid, buf);
+								LogOperation("BackToMyMac %d %d %##s", i, uid, d.c);
 								AppendDNameListElem(&RegDomains, uid, &d);
-								AppendDNameListElem(&BrowseDomains, uid, &d);
 								}
 							}
 						}
