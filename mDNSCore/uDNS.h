@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.67  2007/07/20 23:11:12  cheshire
+Fix code layout
+
 Revision 1.66  2007/07/16 23:54:48  cheshire
 <rdar://problem/5338850> Crash when removing or changing DNS keys
 
@@ -154,7 +157,7 @@ Revision 1.33  2006/07/05 22:53:28  cheshire
 #define QuestionIntervalStep 3
 #define QuestionIntervalStep2 (QuestionIntervalStep*QuestionIntervalStep)
 #define QuestionIntervalStep3 (QuestionIntervalStep*QuestionIntervalStep*QuestionIntervalStep)
-#define InitialQuestionInterval ((mDNSPlatformOneSecond+QuestionIntervalStep-1) / QuestionIntervalStep)
+#define InitialQuestionInterval ((mDNSPlatformOneSecond + QuestionIntervalStep-1) / QuestionIntervalStep)
 
 // Entry points into unicast-specific routines
 

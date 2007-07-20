@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.404  2007/07/20 23:10:51  cheshire
+Fix code layout
+
 Revision 1.403  2007/07/20 20:12:37  cheshire
 Rename "mDNS_DomainTypeBrowseLegacy" as "mDNS_DomainTypeBrowseAutomatic"
 
@@ -3567,9 +3570,9 @@ mDNSlocal void startPrivateQueryCallback(mDNS *const m, mStatus err, const ZoneD
 	if (!zoneInfo->ZonePrivate)
 		{
 		debugf("Private port lookup failed -- retrying without TLS -- %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
-		q->AuthInfo = mDNSNULL;
+		q->AuthInfo      = mDNSNULL;		// Clear AuthInfo so we try again non-private
 		q->ThisQInterval = InitialQuestionInterval;
-		q->LastQTime = m->timenow - q->ThisQInterval;
+		q->LastQTime     = m->timenow - q->ThisQInterval;
 		SetNextQueryTime(m, q);
 		goto exit;
 		// Next call to uDNS_CheckQuery() will do this as a non-private query
