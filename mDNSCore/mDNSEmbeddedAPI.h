@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.401  2007/07/20 20:01:38  cheshire
+Rename "mDNS_DomainTypeBrowseLegacy" as "mDNS_DomainTypeBrowseAutomatic"
+
 Revision 1.400  2007/07/20 00:54:18  cheshire
 <rdar://problem/4641118> Need separate SCPreferences for per-user .Mac settings
 
@@ -2043,7 +2046,7 @@ typedef enum
 	{
 	mDNS_DomainTypeBrowse              = 0,
 	mDNS_DomainTypeBrowseDefault       = 1,
-	mDNS_DomainTypeBrowseLegacy        = 2,
+	mDNS_DomainTypeBrowseAutomatic     = 2,
 	mDNS_DomainTypeRegistration        = 3,
 	mDNS_DomainTypeRegistrationDefault = 4,
 
