@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.443  2007/07/20 23:23:11  cheshire
+Rename out-of-date name "atq" (was AutoTunnelQuery) to simpler "tun"
+
 Revision 1.442  2007/07/20 20:23:24  cheshire
 <rdar://problem/4641118> Need separate SCPreferences for per-user .Mac settings
 Fixed errors reading the Setup:/Network/BackToMyMac preferences
@@ -2093,17 +2096,17 @@ mDNSlocal const char RacoonClientConfig[] = "remote %s\n"
 	"sainfo address %s any address %s any\n"
 	"{ pfs_group 2; lifetime time 60 min; encryption_algorithm aes; authentication_algorithm hmac_sha1; compression_algorithm deflate; }\n";
 
-mDNSlocal void AutoTunnelSetKeys(mDNS *const m, ClientTunnel *atq, mDNSBool AddNew)
+mDNSlocal void AutoTunnelSetKeys(mDNS *const m, ClientTunnel *tun, mDNSBool AddNew)
 	{
 	char li[40], lo[40], ri[40], ro[40];		// Enough for IPv6 address plus nul on the end
 
-	mDNS_snprintf(li, sizeof(li), "%.16a", &m->AutoTunnelHostAddr);
-	mDNS_snprintf(lo, sizeof(lo), "%.4a",  &m->AdvertisedV4.ip.v4);
-	mDNS_snprintf(ri, sizeof(ri), "%.16a", &atq->rmt_inner);
-	mDNS_snprintf(ro, sizeof(ro), "%.4a",  &atq->rmt_outer);
+	tun->loc_inner = m->AutoTunnelHostAddr;
+	tun->loc_outer = m->AdvertisedV4.ip.v4;
 
-	atq->loc_inner = m->AutoTunnelHostAddr;
-	atq->loc_outer = m->AdvertisedV4.ip.v4;
+	mDNS_snprintf(li, sizeof(li), "%.16a", &tun->loc_inner);
+	mDNS_snprintf(lo, sizeof(lo), "%.4a",  &tun->loc_outer);
+	mDNS_snprintf(ri, sizeof(ri), "%.16a", &tun->rmt_inner);
+	mDNS_snprintf(ro, sizeof(ro), "%.4a",  &tun->rmt_outer);
 
 	FILE *fp = popen("/usr/sbin/setkey -c", "r+");
 	if (!fp)
@@ -2119,7 +2122,7 @@ mDNSlocal void AutoTunnelSetKeys(mDNS *const m, ClientTunnel *atq, mDNSBool AddN
 			}
 		pclose(fp);
 
-		TeardownTunnelRoute(&atq->rmt_inner);
+		TeardownTunnelRoute(&tun->rmt_inner);
 		if (AddNew)
 			{
 			char filename[64];
@@ -2127,42 +2130,42 @@ mDNSlocal void AutoTunnelSetKeys(mDNS *const m, ClientTunnel *atq, mDNSBool AddN
 			FILE *f = fopen(filename, "w");
 			fchmod(fileno(f), S_IRUSR | S_IWUSR);
 			char filedata[1024];
-			int len = mDNS_snprintf(filedata, sizeof(filedata), RacoonClientConfig, ro, atq->b64keydata, ri, li, li, ri);
+			int len = mDNS_snprintf(filedata, sizeof(filedata), RacoonClientConfig, ro, tun->b64keydata, ri, li, li, ri);
 			fwrite(filedata, len, 1, f);
 			fclose(f);
 			RestartRacoon();
 
-			SetupTunnelRoute(&atq->loc_inner, &atq->rmt_inner);
+			SetupTunnelRoute(&tun->loc_inner, &tun->rmt_inner);
 			}
 		}
 	}
 
+// If the EUI-64 part of the IPv6 ULA matches, then that means the two addresses point to the same machine
+#define mDNSSameClientTunnel(A,B) ((A)->l[2] == (B)->l[2] && (A)->l[3] == (B)->l[3])
+
 mDNSlocal void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
-	ClientTunnel *atq = (ClientTunnel *)question->QuestionContext;
+	ClientTunnel *tun = (ClientTunnel *)question->QuestionContext;
 	if (!AddRecord || !answer->rdlength) return;
 	if (question->qtype == kDNSType_SRV)
 		{
 		LogOperation("AutoTunnelCallback: SRV target name %##s", answer->rdata->u.srv.target.c);
 		mDNS_StopQuery(m, question);
-		AssignDomainName(&atq->q.qname, &answer->rdata->u.srv.target);
+		AssignDomainName(&tun->q.qname, &answer->rdata->u.srv.target);
 		question->qtype = kDNSType_A;
-		mDNS_StartQuery(m, &atq->q);
+		mDNS_StartQuery(m, &tun->q);
 		}
 	else if (question->qtype == kDNSType_A)
 		{
 		LogOperation("AutoTunnelCallback: SRV target addr %.4a", &answer->rdata->u.ipv4);
 		mDNS_StopQuery(m, question);
-		question->ThisQInterval = -1;		// So we know we don't need to cancel this question
-		atq->rmt_outer = answer->rdata->u.ipv4;
-		AutoTunnelSetKeys(m, atq, mDNStrue);
+		question->ThisQInterval = -1;		// So we know this tunnel setup has completed
+		tun->rmt_outer = answer->rdata->u.ipv4;
+		AutoTunnelSetKeys(m, tun, mDNStrue);
 		}
 	else
 		LogMsg("AutoTunnelCallback: Unknown question %p", question);
 	}
-
-// If the EUI-64 part of the IPv6 ULA matches, then that means the two addresses point to the same machine
-#define mDNSSameClientTunnel(A,B) ((A)->l[2] == (B)->l[2] && (A)->l[3] == (B)->l[3])
 
 // Must be called with the lock held
 mDNSexport void AddNewClientTunnel(mDNS *const m, DNSQuestion *const originalquestion, const ResourceRecord *const dsthost)
@@ -2185,13 +2188,13 @@ mDNSexport void AddNewClientTunnel(mDNS *const m, DNSQuestion *const originalque
 	else
 		{
 		LogOperation("AddNewClientTunnel: New AutoTunnel for %##s %.16a", dsthost->name->c, &dsthost->rdata->u.ipv6);
-		ClientTunnel *atq = mallocL("ClientTunnel", sizeof(ClientTunnel));
-		if (!atq) return;
+		ClientTunnel *tun = mallocL("ClientTunnel", sizeof(ClientTunnel));
+		if (!tun) return;
 		// If this is our first tunnel client, bring interface up now
 		if (m->AutoTunnelHostAddr.b[0] && !m->TunnelClients) SetupLocalAutoTunnelInterface_internal(m);
-		atq->next = mDNSNULL;
-		atq->rmt_inner = dsthost->rdata->u.ipv6;	// atq->rmt_outer unknown at this stage -- SRV query will discover that
-		*p = atq;
+		tun->next = mDNSNULL;
+		tun->rmt_inner = dsthost->rdata->u.ipv6;	// tun->rmt_outer unknown at this stage -- SRV query will discover that
+		*p = tun;
 		}
 
 	(*p)->q.InterfaceID      = mDNSInterface_Any;
