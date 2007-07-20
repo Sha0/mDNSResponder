@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.403  2007/07/20 20:12:37  cheshire
+Rename "mDNS_DomainTypeBrowseLegacy" as "mDNS_DomainTypeBrowseAutomatic"
+
 Revision 1.402  2007/07/20 00:54:20  cheshire
 <rdar://problem/4641118> Need separate SCPreferences for per-user .Mac settings
 
@@ -644,7 +647,7 @@ typedef struct SearchListElem
 	int flag;		// -1 means delete, 0 means unchanged, +1 means newly added
 	DNSQuestion BrowseQ;
 	DNSQuestion DefBrowseQ;
-	DNSQuestion LegacyBrowseQ;
+	DNSQuestion AutomaticBrowseQ;
 	DNSQuestion RegisterQ;
 	DNSQuestion DefRegisterQ;
 	ARListElem *AuthRecs;
@@ -4486,11 +4489,11 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 		ARListElem *arElem = mDNSPlatformMemAllocate(sizeof(ARListElem));
 		if (!arElem) { LogMsg("ERROR: malloc"); return; }
 		mDNS_SetupResourceRecord(&arElem->ar, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200, kDNSRecordTypeShared, FreeARElemCallback, arElem);
-		if      (question == &slElem->BrowseQ)       name = mDNS_DomainTypeNames[mDNS_DomainTypeBrowse];
-		else if (question == &slElem->DefBrowseQ)    name = mDNS_DomainTypeNames[mDNS_DomainTypeBrowseDefault];
-		else if (question == &slElem->LegacyBrowseQ) name = mDNS_DomainTypeNames[mDNS_DomainTypeBrowseLegacy];
-		else if (question == &slElem->RegisterQ)     name = mDNS_DomainTypeNames[mDNS_DomainTypeRegistration];
-		else if (question == &slElem->DefRegisterQ)  name = mDNS_DomainTypeNames[mDNS_DomainTypeRegistrationDefault];
+		if      (question == &slElem->BrowseQ)          name = mDNS_DomainTypeNames[mDNS_DomainTypeBrowse];
+		else if (question == &slElem->DefBrowseQ)       name = mDNS_DomainTypeNames[mDNS_DomainTypeBrowseDefault];
+		else if (question == &slElem->AutomaticBrowseQ) name = mDNS_DomainTypeNames[mDNS_DomainTypeBrowseAutomatic];
+		else if (question == &slElem->RegisterQ)        name = mDNS_DomainTypeNames[mDNS_DomainTypeRegistration];
+		else if (question == &slElem->DefRegisterQ)     name = mDNS_DomainTypeNames[mDNS_DomainTypeRegistrationDefault];
 		else { LogMsg("FoundDomain - unknown question"); mDNSPlatformMemFree(arElem); return; }
 
 		MakeDomainNameFromDNSNameString(&arElem->ar.namestorage, name);
@@ -4563,7 +4566,7 @@ mDNSexport mStatus uDNS_RegisterSearchDomains(mDNS *const m)
 			mDNS_StopGetDomains(m, &ptr->RegisterQ);
 			mDNS_StopGetDomains(m, &ptr->DefBrowseQ);
 			mDNS_StopGetDomains(m, &ptr->DefRegisterQ);
-			mDNS_StopGetDomains(m, &ptr->LegacyBrowseQ);
+			mDNS_StopGetDomains(m, &ptr->AutomaticBrowseQ);
 			mDNSPlatformMemFree(ptr);
 
 	        // deregister records generated from answers to the query
@@ -4582,18 +4585,18 @@ mDNSexport mStatus uDNS_RegisterSearchDomains(mDNS *const m)
 		if (ptr->flag == 1)	// add
 			{
 			mStatus err1, err2, err3, err4, err5;
-			err1 = mDNS_GetDomains(m, &ptr->BrowseQ,       mDNS_DomainTypeBrowse,              &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
-			err2 = mDNS_GetDomains(m, &ptr->DefBrowseQ,    mDNS_DomainTypeBrowseDefault,       &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
-			err3 = mDNS_GetDomains(m, &ptr->RegisterQ,     mDNS_DomainTypeRegistration,        &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
-			err4 = mDNS_GetDomains(m, &ptr->DefRegisterQ,  mDNS_DomainTypeRegistrationDefault, &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
-			err5 = mDNS_GetDomains(m, &ptr->LegacyBrowseQ, mDNS_DomainTypeBrowseLegacy,        &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
+			err1 = mDNS_GetDomains(m, &ptr->BrowseQ,          mDNS_DomainTypeBrowse,              &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
+			err2 = mDNS_GetDomains(m, &ptr->DefBrowseQ,       mDNS_DomainTypeBrowseDefault,       &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
+			err3 = mDNS_GetDomains(m, &ptr->RegisterQ,        mDNS_DomainTypeRegistration,        &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
+			err4 = mDNS_GetDomains(m, &ptr->DefRegisterQ,     mDNS_DomainTypeRegistrationDefault, &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
+			err5 = mDNS_GetDomains(m, &ptr->AutomaticBrowseQ, mDNS_DomainTypeBrowseAutomatic,     &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
 			if (err1 || err2 || err3 || err4 || err5)
 				LogMsg("GetDomains for domain %##s returned error(s):\n"
 					   "%d (mDNS_DomainTypeBrowse)\n"
 					   "%d (mDNS_DomainTypeBrowseDefault)\n"
 					   "%d (mDNS_DomainTypeRegistration)\n"
 					   "%d (mDNS_DomainTypeRegistrationDefault)"
-					   "%d (mDNS_DomainTypeBrowseLegacy)\n",
+					   "%d (mDNS_DomainTypeBrowseAutomatic)\n",
 					   ptr->domain.c, err1, err2, err3, err4, err5);
 			ptr->flag = 0;
 			}
