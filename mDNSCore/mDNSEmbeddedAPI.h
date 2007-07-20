@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.400  2007/07/20 00:54:18  cheshire
+<rdar://problem/4641118> Need separate SCPreferences for per-user .Mac settings
+
 Revision 1.399  2007/07/18 03:22:35  cheshire
 SetupLocalAutoTunnelInterface_internal needs to be callable from uDNS.c
 
@@ -1653,6 +1656,7 @@ extern void CancelGetZoneData(mDNS *const m, ZoneData *nta);
 typedef struct DNameListElem
 	{
 	struct DNameListElem *next;
+	mDNSu32 uid;
 	domainname name;
 	} DNameListElem;
 
@@ -1778,7 +1782,6 @@ struct mDNS_struct
 	domainlabel       AutoTunnelLabel;		// Used to construct hostname for *IPv4* address of tunnel endpoints
 
 	mDNSBool          RegisterSearchDomains;
-	domainname        RegDomain;            // Really belongs in uds_daemon, not here
 
 	// NAT traversal fields
 	NATTraversalInfo *NATTraversals;
@@ -2376,7 +2379,7 @@ extern void       mDNSPlatformTLSTearDownCerts(void);
 // Platforms that support unicast browsing and dynamic update registration for clients who do not specify a domain
 // in browse/registration calls must implement these routines to get the "default" browse/registration list.
 
-extern void       mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDNSBool setsearch, domainname *const fqdn, domainname *const regDomain, DNameListElem **browseDomains);
+extern void       mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDNSBool setsearch, domainname *const fqdn, DNameListElem **RegDomains, DNameListElem **BrowseDomains);
 extern mStatus    mDNSPlatformGetPrimaryInterface(mDNS *const m, mDNSAddr *v4, mDNSAddr *v6, mDNSAddr *router);
 extern void       mDNSPlatformDynDNSHostNameStatusChanged(const domainname *const dname, const mStatus status);
 

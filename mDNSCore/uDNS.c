@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.402  2007/07/20 00:54:20  cheshire
+<rdar://problem/4641118> Need separate SCPreferences for per-user .Mac settings
+
 Revision 1.401  2007/07/18 03:23:33  cheshire
 In GetServiceTarget, need to call SetupLocalAutoTunnelInterface_internal to bring up tunnel on demand, if necessary
 
@@ -647,8 +650,12 @@ typedef struct SearchListElem
 	ARListElem *AuthRecs;
 	} SearchListElem;
 
-// for domain enumeration and default browsing/registration
-static SearchListElem *SearchList = mDNSNULL;	// where we search for _browse domains
+// For domain enumeration and automatic browsing
+// This is the user's DNS search list.
+// In each of these domains we search for our special pointer records (lb._dns-sd._udp.<domain>, etc.)
+// to discover recommended domains for domain enumeration (browse, default browse, registration,
+// default registration) and possibly one or more recommended automatic browsing domains.
+static SearchListElem *SearchList = mDNSNULL;
 
 // Temporary workaround to make ServiceRecordSet list management safe.
 // Ideally a ServiceRecordSet shouldn't be a special entity that's given special treatment by the uDNS code
@@ -918,11 +925,12 @@ mDNSlocal mStatus uDNS_SendNATMsg(mDNS *m, NATTraversalInfo *info, NATOptFlags_t
 			}
 		
 		err = mDNSPlatformSendUDP(m, msg, end, 0, &m->Router, NATPMPPort);
-		
+
+#ifdef _LEGACY_NAT_TRAVERSAL_
 		// if there is no external address then assume we're starting from scratch and start upnp discovery as well
 		if (mDNSIPv4AddressIsZero(m->ExternalAddress)) LNT_SendDiscoveryMsg(m);
+#endif // _LEGACY_NAT_TRAVERSAL_
 		}
-		
 	return(err);
 	}
 
@@ -970,6 +978,7 @@ mDNSexport void natTraversalHandleAddressReply(mDNS *const m, mDNSu8 *pkt)
 	m->retryGetAddr = m->timenow + m->retryIntervalGetAddr;
 	}
 
+#ifdef _LEGACY_NAT_TRAVERSAL_
 mDNSlocal mStatus TryLNTPortMapping(NATTraversalInfo *n, mDNS *const m)
 	{
 	mStatus	err = mStatus_NoError;
@@ -982,6 +991,7 @@ mDNSlocal mStatus TryLNTPortMapping(NATTraversalInfo *n, mDNS *const m)
 		}
 	return (err);
 	}
+#endif // _LEGACY_NAT_TRAVERSAL_
 
 // Pass NULL for pkt on error (including timeout)
 mDNSexport void natTraversalHandlePortMapReply(NATTraversalInfo *n, mDNS *const m, mDNSu8 *pkt)
@@ -1826,6 +1836,9 @@ mDNSexport const domainname *GetServiceTarget(mDNS *m, ServiceRecordSet *srs)
 		return(&srs->RR_SRV.resrec.rdata->u.srv.target);
 	else
 		{
+		HostnameInfo *hi = m->Hostnames;
+
+#if APPLE_OSX_mDNSResponder
 		DomainAuthInfo *AuthInfo = GetAuthInfoForName(m, srs->RR_SRV.resrec.name);
 		if (AuthInfo && AuthInfo->AutoTunnel)
 			{
@@ -1836,8 +1849,8 @@ mDNSexport const domainname *GetServiceTarget(mDNS *m, ServiceRecordSet *srs)
 				}
 			return(&AuthInfo->AutoTunnelHostRecord.namestorage);
 			}
+#endif APPLE_OSX_mDNSResponder
 
-		HostnameInfo *hi = m->Hostnames;
 		while (hi)
 			{
 			if (hi->arv4.state == regState_Registered || hi->arv4.state == regState_Refresh) return(hi->arv4.resrec.name);
@@ -3236,11 +3249,13 @@ mDNSexport void uDNS_ReceiveNATPMPPacket(mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 	else { LogMsg("Received NAT Traversal response with version unknown opcode 0x%X", AddrReply->opcode); return; }
 	}
 
+#ifdef _LEGACY_NAT_TRAVERSAL_
 mDNSexport void uDNS_ReceiveSSDPPacket(mDNS *m, mDNSu8 *data, mDNSu16 len)
 	{
 	// Extract router's port and url from response if we don't already have it, otherwise ignore
 	if (mDNSIPPortIsZero(m->uPNPRouterPort)) LNT_ConfigureRouterInfo(m, data, len);	
 	}
+#endif // _LEGACY_NAT_TRAVERSAL_
 
 // <rdar://problem/3925163> Shorten DNS-SD queries to avoid NAT bugs
 // <rdar://problem/4288449> Add check to avoid crashing NAT gateways that have buggy DNS relay code
@@ -4532,8 +4547,6 @@ mDNSexport mStatus uDNS_RegisterSearchDomains(mDNS *const m)
 	m->RegisterSearchDomains = mDNStrue;
 	mDNSPlatformSetDNSConfig(m, mDNSfalse, m->RegisterSearchDomains, mDNSNULL, mDNSNULL, mDNSNULL);
 	mDNS_Unlock(m);
-
-	if (m->RegDomain.c[0]) mDNS_AddSearchDomain(&m->RegDomain);	// implicitly browse reg domain too (no-op if same as BrowseDomain)
 
 	// delete elems marked for removal, do queries for elems marked add
 	while (*p)

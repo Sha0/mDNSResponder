@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.313  2007/07/20 00:54:21  cheshire
+<rdar://problem/4641118> Need separate SCPreferences for per-user .Mac settings
+
 Revision 1.312  2007/07/11 03:06:43  cheshire
 <rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for AutoTunnel services
 
@@ -666,7 +669,7 @@ static DNameListElem *SCPrefBrowseDomains1;		// List of automatic browsing domai
 static ARListElem    *SCPrefBrowseDomains2;		// List of local-only PTR records created from list above
 mDNSexport DNameListElem *AutoBrowseDomains;	// List created from the results of browsing for those local-only PTR records
 
-mDNSexport DNameListElem *DefRegList;		// Domains where we register for empty-string registrations
+mDNSexport DNameListElem *DefRegList;		// Domains where we automatically register for empty-string registrations
 
 #define MSG_PAD_BYTES 5		// pad message buffer (read from client) with n zero'd bytes to guarantee
 							// n get_string() calls w/o buffer overrun
@@ -1843,6 +1846,9 @@ mDNSlocal void RegisterBrowseDomainPTR(mDNS *m, const domainname *d, int type)
 	// allocate/register legacy and non-legacy _browse PTR record
 	mStatus err;
 	ARListElem *browse = mDNSPlatformMemAllocate(sizeof(*browse));
+
+	LogOperation("RegisterBrowseDomainPTR: Incrementing default browse domain refcount for %##s", d->c);
+
 	mDNS_SetupResourceRecord(&browse->ar, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200, kDNSRecordTypeShared, FreeARElemCallback, browse);
 	MakeDomainNameFromDNSNameString(&browse->ar.namestorage, mDNS_DomainTypeNames[type]);
 	AppendDNSNameString            (&browse->ar.namestorage, "local");
@@ -1865,6 +1871,8 @@ mDNSlocal void DeregisterBrowseDomainPTR(mDNS *m, const domainname *d, int type)
 	ARListElem **ptr = &SCPrefBrowseDomains2;
 	domainname lhs; // left-hand side of PTR, for comparison
 
+	LogOperation("DeregisterBrowseDomainPTR: Decrementing default browse domain refcount for %##s", d->c);
+
 	MakeDomainNameFromDNSNameString(&lhs, mDNS_DomainTypeNames[type]);
 	AppendDNSNameString            (&lhs, "local");
 
@@ -1881,29 +1889,22 @@ mDNSlocal void DeregisterBrowseDomainPTR(mDNS *m, const domainname *d, int type)
 		}
 	}
 
-mDNSlocal void SetPrefsBrowseDomain(mDNS *m, const domainname *d, mDNSBool add)
-	{
-	LogOperation("SetPrefsBrowseDomain: %s default browse domain refcount for %##s",
-		add ? "Incrementing" : "Decrementing", d->c);
-
-	if (add)
-		{
-		RegisterBrowseDomainPTR(m, d, mDNS_DomainTypeBrowse);
-		RegisterBrowseDomainPTR(m, d, mDNS_DomainTypeBrowseLegacy);
-		}
-	else
-		{
-		DeregisterBrowseDomainPTR(m, d, mDNS_DomainTypeBrowse);
-		DeregisterBrowseDomainPTR(m, d, mDNS_DomainTypeBrowseLegacy);
-		}
-	}
-
 mDNSlocal void SetPrefsBrowseDomains(mDNS *m, DNameListElem *browseDomains, mDNSBool add)
 	{
-	DNameListElem *browseDomain;
-	for (browseDomain = browseDomains; browseDomain; browseDomain = browseDomain->next)
-		if (browseDomain->name.c[0]) SetPrefsBrowseDomain(m, &browseDomain->name, add);
-		else LogMsg("SetPrefsBrowseDomains bad browse domain: %p", browseDomain);
+	DNameListElem *d;
+	for (d = browseDomains; d; d = d->next)
+		{
+		if (add)
+			{
+			RegisterBrowseDomainPTR(m, &d->name, mDNS_DomainTypeBrowse);
+			RegisterBrowseDomainPTR(m, &d->name, mDNS_DomainTypeBrowseLegacy);
+			}
+		else
+			{
+			DeregisterBrowseDomainPTR(m, &d->name, mDNS_DomainTypeBrowse);
+			DeregisterBrowseDomainPTR(m, &d->name, mDNS_DomainTypeBrowseLegacy);
+			}
+		}
 	}
 
 mDNSlocal void UpdateDeviceInfoRecord(mDNS *const m)
@@ -1938,53 +1939,17 @@ mDNSlocal void UpdateDeviceInfoRecord(mDNS *const m)
 			}
 	}
 
-mDNSlocal void AddDefaultRegDomain(domainname *d)
-	{
-	DNameListElem **ptr;
-
-	// make sure name not already in list
-	for (ptr = &DefRegList; *ptr; ptr = &(*ptr)->next)
-		{
-		if (SameDomainName(&(*ptr)->name, d))
-			{ debugf("duplicate addition of default reg domain %##s", d->c); return; }
-		}
-
-	*ptr = mDNSPlatformMemAllocate(sizeof(**ptr));
-	if (!*ptr) { LogMsg("Error - malloc"); return; }
-	(*ptr)->next         = mDNSNULL;
-	AssignDomainName(&(*ptr)->name, d);
-
-	udsserver_default_reg_domain_changed(d, mDNStrue);
-	}
-
-mDNSlocal void RemoveDefaultRegDomain(domainname *d)
-	{
-	DNameListElem **p = &DefRegList;
-
-	while ((*p))
-		{
-		if (SameDomainName(&(*p)->name, d))
-			{
-			DNameListElem *ptr = *p;
-			*p = ptr->next;
-			mDNSPlatformMemFree(ptr);
-			udsserver_default_reg_domain_changed(d, mDNSfalse);
-			return;
-			}
-		p = &(*p)->next;
-		}
-	debugf("Requested removal of default registration domain %##s not in contained in list", d->c);
-	}
-
 mDNSexport void udsserver_handle_configchange(mDNS *const m)
 	{
 	request_state *req;
 	service_instance *ptr;
-	domainname      regDomain;
-	DNameListElem *browseDomains;
+	DNameListElem *RegDomains;
+	DNameListElem *BrowseDomains;
+	DNameListElem *p;
 
 	UpdateDeviceInfoRecord(m);
 
+	// For autoname services, see if the default service name has changed, necessitating an automatic update
 	for (req = all_requests; req; req = req->next)
 		if (req->terminate == regservice_termination_callback)
 			if (req->u.servicereg.autoname && !SameDomainLabelCS(req->u.servicereg.name.c, m->nicelabel.c))
@@ -2001,30 +1966,42 @@ mDNSexport void udsserver_handle_configchange(mDNS *const m)
 
 	// Let the platform layer get the current DNS information
 	mDNS_Lock(m);
-	mDNSPlatformSetDNSConfig(m, mDNSfalse, mDNSfalse, mDNSNULL, &regDomain, &browseDomains);
+	mDNSPlatformSetDNSConfig(m, mDNSfalse, mDNSfalse, mDNSNULL, &RegDomains, &BrowseDomains);
 	mDNS_Unlock(m);
 
-	// Did our registration domain change?
-	if (!SameDomainName(&regDomain, &m->RegDomain))
+	// Any automatic registration domains are also implicitly automatic browsing domains
+	if (RegDomains) SetPrefsBrowseDomains(m, RegDomains, mDNStrue);		// Add the new list first
+	if (DefRegList) SetPrefsBrowseDomains(m, DefRegList, mDNSfalse);	// Then clear the old list
+
+	// Add any new domains not already in our DefRegList
+	for (p=RegDomains; p; p=p->next)
 		{
-		if (m->RegDomain.c[0])
+		DNameListElem **pp = &DefRegList;
+		while (*pp && !SameDomainName(&(*pp)->name, &p->name)) pp = &(*pp)->next;
+		if (!*pp)		// If not found in our existing list, this is a new default registration domain
+			udsserver_default_reg_domain_changed(&p->name, mDNStrue);
+		else			// else found same domainname in both old and new lists, so no change, just delete old copy
 			{
-			RemoveDefaultRegDomain(&m->RegDomain);
-			// if we were automatically browsing in our registration domain, stop
-			SetPrefsBrowseDomain(m, &m->RegDomain, mDNSfalse);
-			}
-
-		AssignDomainName(&m->RegDomain, &regDomain);
-
-		if (m->RegDomain.c[0])
-			{
-			AddDefaultRegDomain(&m->RegDomain);
-			SetPrefsBrowseDomain(m, &m->RegDomain, mDNStrue);
+			DNameListElem *del = *pp;
+			*pp = (*pp)->next;
+			mDNSPlatformMemFree(del);
 			}
 		}
 
+	// Delete any domains in our old DefRegList that are now gone
+	while (DefRegList)
+		{
+		DNameListElem *del = DefRegList;
+		DefRegList = DefRegList->next;
+		udsserver_default_reg_domain_changed(&del->name, mDNSfalse);
+		mDNSPlatformMemFree(del);
+		}
+
+	// Now we have our new updated automatic registration domain list
+	DefRegList = RegDomains;
+
 	// Add new browse domains to internal list
-	if (browseDomains) SetPrefsBrowseDomains(m, browseDomains, mDNStrue);
+	if (BrowseDomains) SetPrefsBrowseDomains(m, BrowseDomains, mDNStrue);
 
 	// Remove old browse domains from internal list
 	if (SCPrefBrowseDomains1)
@@ -2039,7 +2016,7 @@ mDNSexport void udsserver_handle_configchange(mDNS *const m)
 		}
 
 	// Replace the old browse domains array with the new array
-	SCPrefBrowseDomains1 = browseDomains;
+	SCPrefBrowseDomains1 = BrowseDomains;
 	}
 
 mDNSlocal void LegacyBrowseDomainChange(mDNS *const m, DNSQuestion *q, const ResourceRecord *const answer, mDNSBool AddRecord)
@@ -2087,12 +2064,8 @@ mDNSlocal void TrackLegacyBrowseDomains(mDNS *const m)
 	mStatus err = mDNS_GetDomains(m, &LegacyBrowseDomainQ, mDNS_DomainTypeBrowseLegacy,
 		mDNSNULL, mDNSInterface_LocalOnly, LegacyBrowseDomainChange, mDNSNULL);
 
-	// provide .local automatically
-	SetPrefsBrowseDomain(m, &localdomain, mDNStrue);
-
-	// <rdar://problem/4055653> dns-sd -E does not return "local."
-	// register registration domain "local"
-	RegisterBrowseDomainPTR(m, &localdomain, mDNS_DomainTypeRegistration);
+	RegisterBrowseDomainPTR(m, &localdomain, mDNS_DomainTypeRegistration);	// Add "local" as recommended registration domain ("dns-sd -E")
+	RegisterBrowseDomainPTR(m, &localdomain, mDNS_DomainTypeBrowse);		// Add "local" as recommended browsing domain ("dns-sd -F")
 	if (err) LogMsg("ERROR: dDNS_InitDNSConfig - mDNS_Register returned error %d", err);
 	}
 

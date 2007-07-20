@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.127  2007/07/20 00:54:22  cheshire
+<rdar://problem/4641118> Need separate SCPreferences for per-user .Mac settings
+
 Revision 1.126  2007/07/11 02:56:20  cheshire
 <rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for AutoTunnel services
 Remove unused mDNSPlatformDefaultRegDomainChanged
@@ -1252,7 +1255,7 @@ mDNSlocal void SetDNSServers( mDNS *const m );
 mDNSlocal void SetSearchDomainList( void );
 
 void
-mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDNSBool setsearch, domainname *const fqdn, domainname *const regDomain, DNameListElem **browseDomains)
+mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDNSBool setsearch, domainname *const fqdn, DNameListElem **RegDomains, DNameListElem **browseDomains)
 {
 	LPSTR		name = NULL;
 	char		subKeyName[kRegistryMaxKeyLength + 1];
@@ -1272,7 +1275,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 
 	// Initialize
 
-	fqdn->c[0] = regDomain->c[0] = '\0';
+	fqdn->c[0] = '\0';
 
 	*browseDomains = NULL;
 	
@@ -1359,9 +1362,15 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 	err = RegQueryString( key, "", &name, &dwSize, &enabled );
 	if ( !err && ( name[0] != '\0' ) && enabled )
 	{
-		if ( !MakeDomainNameFromDNSNameString( regDomain, name ) || !regDomain->c[0] )
+		*RegDomains = (DNameListElem*) malloc( sizeof( DNameListElem ) );
+		if (!*RegDomains) dlog( kDebugLevelError, "No memory");
+		else
 		{
-			dlog( kDebugLevelError, "bad DDNS registration domain in registry: %s", name[0] ? name : "(unknown)");
+			(*RegDomains)->next = mDNSNULL;
+			if ( !MakeDomainNameFromDNSNameString( &(*RegDomains)->name, name ) || (*RegDomains)->name.c[0] )
+			{
+				dlog( kDebugLevelError, "bad DDNS registration domain in registry: %s", name[0] ? name : "(unknown)");
+			}
 		}
 	}
 

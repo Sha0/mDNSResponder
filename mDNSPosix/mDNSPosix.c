@@ -30,6 +30,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.101  2007/07/20 00:54:23  cheshire
+<rdar://problem/4641118> Need separate SCPreferences for per-user .Mac settings
+
 Revision 1.100  2007/07/19 21:45:30  cheshire
 Fixed code spacing
 
@@ -488,14 +491,14 @@ mDNSexport void mDNSPlatformTLSTearDownCerts(void)
 #pragma mark ***** DDNS Config Platform Functions
 #endif
 
-mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDNSBool setsearch, domainname *const fqdn, domainname *const regDomain, DNameListElem **browseDomains)
+mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDNSBool setsearch, domainname *const fqdn, DNameListElem **RegDomains, DNameListElem **BrowseDomains)
 	{
 	(void) m;
 	(void) setservers;
 	(void) fqdn;
 	(void) setsearch;
-	(void) regDomain;
-	(void) browseDomains;
+	(void) RegDomains;
+	(void) BrowseDomains;
 	}
 
 mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS * const m, mDNSAddr * v4, mDNSAddr * v6, mDNSAddr * router)

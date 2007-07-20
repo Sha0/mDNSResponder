@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.438  2007/07/20 00:54:21  cheshire
+<rdar://problem/4641118> Need separate SCPreferences for per-user .Mac settings
+
 Revision 1.437  2007/07/19 22:01:27  cheshire
 Added "#pragma mark" sections headings to divide code into related function groups
 
@@ -511,7 +514,8 @@ CFStringRef NetworkChangedKey_IPv6;
 CFStringRef NetworkChangedKey_Hostnames;
 CFStringRef NetworkChangedKey_Computername;
 CFStringRef NetworkChangedKey_DNS;
-CFStringRef NetworkChangedKey_DynamicDNS = CFSTR("Setup:/Network/DynamicDNS");
+CFStringRef NetworkChangedKey_DynamicDNS  = CFSTR("Setup:/Network/DynamicDNS");
+CFStringRef NetworkChangedKey_BackToMyMac = CFSTR("Setup:/Network/BackToMyMac");
 
 // ***************************************************************************
 // Functions
@@ -2442,7 +2446,21 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m, mDNSs32 utc)
 	return count;
 	}
 
-mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDNSBool setsearch, domainname *const fqdn, domainname *const regDomain, DNameListElem **browseDomains)
+mDNSlocal void AppendDNameListElem(DNameListElem ***List, mDNSu32 uid, domainname *name)
+	{
+	DNameListElem *dnle = (DNameListElem*) mallocL("DNameListElem/AppendDNameListElem", sizeof(DNameListElem));
+	if (!dnle) LogMsg("ERROR: AppendDNameListElem: memory exhausted");
+	else
+		{
+		dnle->next = mDNSNULL;
+		dnle->uid  = uid;
+		AssignDomainName(&dnle->name, name);
+		**List = dnle;
+		*List = &dnle->next;
+		}
+	}
+
+mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDNSBool setsearch, domainname *const fqdn, DNameListElem **RegDomains, DNameListElem **BrowseDomains)
 	{
 	int i;
 	char buf[MAX_ESCAPED_DOMAIN_NAME];	// Max legal C-string name, including terminating NUL
@@ -2450,15 +2468,15 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 
 	// Need to set these here because we need to do this even if SCDynamicStoreCreate() or SCDynamicStoreCopyValue() below don't succeed
 	if (fqdn)          fqdn->c[0]      = 0;
-	if (regDomain)     regDomain->c[0] = 0;
-	if (browseDomains) *browseDomains  = NULL;
+	if (RegDomains   ) *RegDomains     = NULL;
+	if (BrowseDomains) *BrowseDomains  = NULL;
 
 	LogOperation("mDNSPlatformSetDNSConfig%s%s%s%s%s",
 		setservers    ? " setservers"    : "",
 		setsearch     ? " setsearch"     : "",
 		fqdn          ? " fqdn"          : "",
-		regDomain     ? " regDomain"     : "",
-		browseDomains ? " browseDomains" : "");
+		RegDomains    ? " RegDomains"    : "",
+		BrowseDomains ? " BrowseDomains" : "");
 
 	// Add the inferred address-based configuration discovery domains
 	// (should really be in core code I think, not platform-specific)
@@ -2626,7 +2644,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 					}
 				}
 
-			if (regDomain)
+			if (RegDomains)
 				{
 				CFArrayRef regArray = CFDictionaryGetValue(dict, CFSTR("RegistrationDomains"));
 				if (regArray && CFArrayGetCount(regArray) > 0)
@@ -2638,15 +2656,39 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 						if (name)
 							{
 							if (!CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) ||
-								!MakeDomainNameFromDNSNameString(regDomain, buf) || !regDomain->c[0])
+								!MakeDomainNameFromDNSNameString(&d, buf) || !d.c[0])
 								LogMsg("GetUserSpecifiedDDNSConfig SCDynamicStore bad DDNS registration domain: %s", buf[0] ? buf : "(unknown)");
-							else debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS registration domain: %s", buf);
+							else
+								{
+								debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS registration domain: %s", buf);
+								AppendDNameListElem(&RegDomains, 0, &d);
+								}
 							}
 						}
 					}
+
+				CFDictionaryRef btmm = SCDynamicStoreCopyValue(store, NetworkChangedKey_BackToMyMac);
+				if (btmm)
+					{
+					CFIndex size = CFDictionaryGetCount(btmm);
+					const void *key[size];
+					const void *val[size];
+					CFDictionaryGetKeysAndValues(btmm, key, val);
+					for (i = 0; i < size; i++)
+						{
+						LogMsg("BackToMyMac %d", i);
+						if (!CFStringGetCString(key[i], buf, sizeof(buf), kCFStringEncodingUTF8)) LogMsg("Can't read BackToMyMac key %d", i);
+						mDNSu32 uid = atoi(buf);
+						if (!CFStringGetCString(val[i], buf, sizeof(buf), kCFStringEncodingUTF8)) LogMsg("Can't read BackToMyMac val %d", i);
+						LogMsg("BackToMyMac %d %d %s", i, uid, buf);
+						AppendDNameListElem(&RegDomains, uid, &d);
+						AppendDNameListElem(&BrowseDomains, uid, &d);
+						}
+					CFRelease(btmm);
+					}
 				}
 
-			if (browseDomains)
+			if (BrowseDomains)
 				{
 				CFArrayRef browseArray = CFDictionaryGetValue(dict, CFSTR("BrowseDomains"));
 				if (browseArray)
@@ -2665,13 +2707,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 								else
 									{
 									debugf("GetUserSpecifiedDDNSConfig SCDynamicStore DDNS browsing domain: %s", buf);
-									DNameListElem *browseDomain = (DNameListElem*) mallocL("DNameListElem/mDNSPlatformSetDNSConfig", sizeof(DNameListElem));
-									if (!browseDomain) { LogMsg("ERROR: mDNSPlatformSetDNSConfig: memory exhausted"); continue; }
-									memset(browseDomain, 0, sizeof(DNameListElem));
-									AssignDomainName(&browseDomain->name, &d);
-									browseDomain->next = mDNSNULL;
-									*browseDomains = browseDomain;
-									browseDomains = &browseDomain->next;
+									AppendDNameListElem(&BrowseDomains, 0, &d);
 									}
 								}
 							}
@@ -3164,6 +3200,7 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	CFArrayAppendValue(keys, NetworkChangedKey_Computername);
 	CFArrayAppendValue(keys, NetworkChangedKey_DNS);
 	CFArrayAppendValue(keys, NetworkChangedKey_DynamicDNS);
+	CFArrayAppendValue(keys, NetworkChangedKey_BackToMyMac);
 	CFArrayAppendValue(patterns, pattern1);
 	CFArrayAppendValue(patterns, pattern2);
 	CFArrayAppendValue(patterns, CFSTR("State:/Network/Interface/[^/]+/AirPort"));

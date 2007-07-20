@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.659  2007/07/20 00:54:18  cheshire
+<rdar://problem/4641118> Need separate SCPreferences for per-user .Mac settings
+
 Revision 1.658  2007/07/18 02:28:57  cheshire
 Don't set AutoTunnel settings in uDNS_RegisterService; should be done in GetServiceTarget
 
@@ -4486,6 +4489,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 		mDNS_Unlock(m);
 		return;
 		}
+#ifdef _LEGACY_NAT_TRAVERSAL_
 	if (mDNSSameIPPort(srcport, SSDPPort))
 		{
 		mDNS_Lock(m);
@@ -4493,6 +4497,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 		mDNS_Unlock(m);
 		return;
 		}
+#endif
 #endif
 	if ((unsigned)(end - (mDNSu8 *)pkt) < sizeof(DNSMessageHeader)) { LogMsg("DNS Message too short"); return; }
 	QR_OP = (mDNSu8)(msg->h.flags.b[0] & kDNSFlag0_QROP_Mask);
@@ -6370,7 +6375,6 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->ReverseMap.ThisQInterval = -1;
 	m->StaticHostname.c[0]      = 0;
 	m->NextSRVUpdate            = timenow + 0x78000000;
-	m->RegDomain.c[0]           = 0;
 	m->FQDN.c[0]                = 0;
 	m->RegisterSearchDomains    = mDNSfalse;
 	m->SuppressStdPort53Queries = 0;
