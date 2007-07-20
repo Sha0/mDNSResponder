@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.440  2007/07/20 16:22:07  mcguire
+<rdar://problem/5344584> BTMM: Replace system() `ifconfig` calls to setup/teardown IPv6 address
+
 Revision 1.439  2007/07/20 01:14:56  cheshire
 <rdar://problem/4641118> Need separate SCPreferences for per-user .Mac settings
 Cleaned up log messages
@@ -470,6 +473,7 @@ Add (commented out) trigger value for testing "mach_absolute_time went backwards
 #include <netinet/in_systm.h>       // For n_long, required by <netinet/ip.h> below
 #include <netinet/ip.h>             // For IPTOS_LOWDELAY etc.
 #include <netinet6/in6_var.h>       // For IN6_IFF_NOTREADY etc.
+#include <netinet6/nd6.h>           // For ND6_INFINITE_LIFETIME etc.
 
 #ifndef NO_SECURITYFRAMEWORK
 #include <Security/SecureTransport.h>
@@ -1875,6 +1879,55 @@ mDNSlocal mDNSBool TunnelServers(mDNS *const m)
 	return(mDNSfalse);
 	}
 
+#define kTunnelAddressInterface "lo0"
+
+mDNSlocal void AliasTunnelAddress(mDNSv6Addr *const addr)
+	{
+	struct in6_aliasreq ifra_in6;
+	int s = socket(AF_INET6, SOCK_DGRAM, 0);
+
+	LogOperation("AliasTunnelAddress %.16a", addr);
+
+	if (s < 0) { LogMsg("socket() failed trying to alias %.16a errno %d (%s)", addr, errno, strerror(errno)); return; }
+
+	bzero(&ifra_in6, sizeof(ifra_in6));
+	strncpy(ifra_in6.ifra_name, kTunnelAddressInterface, sizeof(ifra_in6.ifra_name));
+	ifra_in6.ifra_lifetime.ia6t_vltime = ND6_INFINITE_LIFETIME;
+	ifra_in6.ifra_lifetime.ia6t_pltime = ND6_INFINITE_LIFETIME;
+
+	ifra_in6.ifra_addr.sin6_family = AF_INET6;
+	ifra_in6.ifra_addr.sin6_len = sizeof(struct sockaddr_in6);
+	memcpy(&(ifra_in6.ifra_addr.sin6_addr), addr, sizeof(mDNSv6Addr));
+
+	ifra_in6.ifra_prefixmask.sin6_family = AF_INET6;
+	ifra_in6.ifra_prefixmask.sin6_len = sizeof(struct sockaddr_in6);
+	memset(&(ifra_in6.ifra_prefixmask.sin6_addr), 0xFF, sizeof(mDNSv6Addr));
+
+	if (ioctl(s, SIOCAIFADDR_IN6, &ifra_in6) == -1) LogMsg("ioctl() failed to alias %.16a errno %d (%s)", addr, errno, strerror(errno));
+
+	close(s);
+	}
+
+mDNSlocal void UnaliasTunnelAddress(mDNSv6Addr *const addr)
+	{
+	struct in6_ifreq ifr;
+	int s = socket(AF_INET6, SOCK_DGRAM, 0);
+
+	LogOperation("UnaliasTunnelAddress %.16a", addr);
+
+	if (s < 0) { LogMsg("socket() failed trying to unalias %.16a errno %d (%s)", addr, errno, strerror(errno)); return; }
+
+	bzero(&ifr, sizeof(ifr));
+	strncpy(ifr.ifr_name, kTunnelAddressInterface, sizeof(ifr.ifr_name));
+	ifr.ifr_ifru.ifru_addr.sin6_family = AF_INET6;
+	ifr.ifr_ifru.ifru_addr.sin6_len = sizeof(struct sockaddr_in6);
+	memcpy(&(ifr.ifr_ifru.ifru_addr.sin6_addr), addr, sizeof(mDNSv6Addr));
+
+	if (ioctl(s, SIOCDIFADDR_IN6, &ifr) == -1) LogMsg("ioctl() failed to unalias %.16a errno %d (%s)", addr, errno, strerror(errno));
+
+	close(s);
+	}
+
 // Before SetupLocalAutoTunnelInterface_internal is called,
 // m->AutoTunnelHostAddr.b[0] must be non-zero, and there must be at least one TunnelClient or TunnelServer
 // Must be called with the lock held
@@ -1883,9 +1936,7 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 	LogOperation("SetupLocalAutoTunnelInterface");
 
 	// 1. Configure the local IPv6 address
-	char commandstring[128];
-	mDNS_snprintf(commandstring, sizeof(commandstring), "/sbin/ifconfig lo0 inet6 alias %.16a/128", &m->AutoTunnelHostAddr);
-	if (system(commandstring) != 0) LogMsg("Command failed: %s", commandstring);
+	AliasTunnelAddress(&m->AutoTunnelHostAddr);
 
 	// 2. If we have at least one server listening, publish our records
 	if (TunnelServers(m))
@@ -3510,12 +3561,7 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 
 	#if APPLE_OSX_mDNSResponder
 	if (m->AutoTunnelHostAddr.b[0])
-		{
-		char commandstring[128];
-		mDNS_snprintf(commandstring, sizeof(commandstring), "/sbin/ifconfig lo0 inet6 -alias %.16a", &m->AutoTunnelHostAddr);
-		LogMsg("%s", commandstring);
-		if (system(commandstring) != 0) LogMsg("Command failed: %s", commandstring);
-		}
+		UnaliasTunnelAddress(&m->AutoTunnelHostAddr);
 	#endif // APPLE_OSX_mDNSResponder
 	}
 
