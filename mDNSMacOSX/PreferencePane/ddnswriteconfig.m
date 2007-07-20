@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: ddnswriteconfig.m,v $
+Revision 1.8  2007/07/20 23:41:03  mkrochma
+<rdar://problem/5348663> null deref in ddnswriteconfig
+
 Revision 1.7  2007/03/07 00:49:00  cheshire
 <rdar://problem/4618207> Security: ddnswriteconfig does not verify that authorization blob is of correct size
 
@@ -419,7 +422,7 @@ int	main( int argc, char **argv)
 	if ( argc == 3 && 0 == strcmp( argv[2], "V"))
 		return PRIV_OP_TOOL_VERS;
 
-	if ( argc >= 1)
+	if ( argc > 1)
 	{
 		commFD = strtol( argv[1], NULL, 0);
 		lseek( commFD, 0, SEEK_SET);
