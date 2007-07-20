@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.660  2007/07/20 20:00:45  cheshire
+"Legacy Browse" is better called "Automatic Browse"
+
 Revision 1.659  2007/07/20 00:54:18  cheshire
 <rdar://problem/4641118> Need separate SCPreferences for per-user .Mac settings
 
@@ -496,7 +499,7 @@ mDNSexport const char *const mDNS_DomainTypeNames[] =
 	{
 	 "b._dns-sd._udp.",		// Browse
 	"db._dns-sd._udp.",		// Default Browse
-	"lb._dns-sd._udp.",		// Legacy Browse
+	"lb._dns-sd._udp.",		// Automatic Browse
 	 "r._dns-sd._udp.",		// Registration
 	"dr._dns-sd._udp."		// Default Registration
 	};
