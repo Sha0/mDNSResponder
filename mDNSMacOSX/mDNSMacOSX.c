@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.439  2007/07/20 01:14:56  cheshire
+<rdar://problem/4641118> Need separate SCPreferences for per-user .Mac settings
+Cleaned up log messages
+
 Revision 1.438  2007/07/20 00:54:21  cheshire
 <rdar://problem/4641118> Need separate SCPreferences for per-user .Mac settings
 
@@ -2676,13 +2680,19 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 					CFDictionaryGetKeysAndValues(btmm, key, val);
 					for (i = 0; i < size; i++)
 						{
-						LogMsg("BackToMyMac %d", i);
-						if (!CFStringGetCString(key[i], buf, sizeof(buf), kCFStringEncodingUTF8)) LogMsg("Can't read BackToMyMac key %d", i);
-						mDNSu32 uid = atoi(buf);
-						if (!CFStringGetCString(val[i], buf, sizeof(buf), kCFStringEncodingUTF8)) LogMsg("Can't read BackToMyMac val %d", i);
-						LogMsg("BackToMyMac %d %d %s", i, uid, buf);
-						AppendDNameListElem(&RegDomains, uid, &d);
-						AppendDNameListElem(&BrowseDomains, uid, &d);
+						LogOperation("BackToMyMac %d", i);
+						if (!CFStringGetCString(key[i], buf, sizeof(buf), kCFStringEncodingUTF8)) LogMsg("Can't read BackToMyMac %d key %s", i, buf);
+						else
+							{
+							mDNSu32 uid = atoi(buf);
+							if (!CFStringGetCString(val[i], buf, sizeof(buf), kCFStringEncodingUTF8)) LogMsg("Can't read BackToMyMac %d val %s", i, buf);
+							else
+								{
+								LogOperation("BackToMyMac %d %d %s", i, uid, buf);
+								AppendDNameListElem(&RegDomains, uid, &d);
+								AppendDNameListElem(&BrowseDomains, uid, &d);
+								}
+							}
 						}
 					CFRelease(btmm);
 					}
