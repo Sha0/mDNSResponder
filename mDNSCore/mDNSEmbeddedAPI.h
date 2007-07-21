@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.402  2007/07/21 00:54:44  cheshire
+<rdar://problem/5344576> Delay IPv6 address callback until AutoTunnel route and policy is configured
+
 Revision 1.401  2007/07/20 20:01:38  cheshire
 Rename "mDNS_DomainTypeBrowseLegacy" as "mDNS_DomainTypeBrowseAutomatic"
 
@@ -1566,6 +1569,7 @@ struct DNSQuestion_struct
 	mDNSAddr              servAddr;			// Address and port learned from _dns-llq, _dns-llq-tls or _dns-query-tls SRV query
 	mDNSIPPort            servPort;
 	struct tcpInfo_t *tcp;
+	mDNSBool              NoAnswer;			// Set if we want to suppress answers until tunnel setup has completed
 
 	// LLQ-specific fields. These fields are only meaningful when LongLived flag is set
 	LLQ_State             state;
@@ -1666,12 +1670,13 @@ typedef struct DNameListElem
 typedef struct ClientTunnel
 	{
 	struct ClientTunnel *next;
-	DNSQuestion q;
+	domainname dstname;
 	mDNSv6Addr loc_inner;
 	mDNSv4Addr loc_outer;
 	mDNSv6Addr rmt_inner;
 	mDNSv4Addr rmt_outer;
 	char b64keydata[32];
+	DNSQuestion q;
 	} ClientTunnel;
 
 // ***************************************************************************
@@ -2447,7 +2452,8 @@ extern void AnswerQuestionWithResourceRecord(mDNS *const m, CacheRecord *const r
 // For now this AutoTunnel stuff is specific to Mac OS X.
 // In the future, if there's demand, we may see if we can abstract it out cleanly into the platform layer
 #if APPLE_OSX_mDNSResponder
-extern void AddNewClientTunnel(mDNS *const m, DNSQuestion *const q, const ResourceRecord *const answer);
+extern void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord);
+extern void AddNewClientTunnel(mDNS *const m, DNSQuestion *const q);
 extern void SetupLocalAutoTunnelInterface_internal(mDNS *const m);
 #endif
 

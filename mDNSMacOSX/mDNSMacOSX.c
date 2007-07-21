@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.444  2007/07/21 00:54:49  cheshire
+<rdar://problem/5344576> Delay IPv6 address callback until AutoTunnel route and policy is configured
+
 Revision 1.443  2007/07/20 23:23:11  cheshire
 Rename out-of-date name "atq" (was AutoTunnelQuery) to simpler "tun"
 
@@ -2143,14 +2146,61 @@ mDNSlocal void AutoTunnelSetKeys(mDNS *const m, ClientTunnel *tun, mDNSBool AddN
 // If the EUI-64 part of the IPv6 ULA matches, then that means the two addresses point to the same machine
 #define mDNSSameClientTunnel(A,B) ((A)->l[2] == (B)->l[2] && (A)->l[3] == (B)->l[3])
 
-mDNSlocal void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+mDNSlocal void ReissueBlockedQuestions(mDNS *const m, domainname *d)
+	{
+	DNSQuestion *question = m->Questions;
+	while (question)
+		{
+		DNSQuestion *q = question;
+		question = question->next;
+		if (q->NoAnswer && q->qtype == kDNSType_AAAA && q->AuthInfo && q->AuthInfo->AutoTunnel && SameDomainName(&q->qname, d))
+			{
+			LogOperation("Restart %##s", q->qname.c);
+			mDNSQuestionCallback *tmp = q->QuestionCallback;
+			q->QuestionCallback = AutoTunnelCallback;	// Set QuestionCallback to suppress another call back to AddNewClientTunnel
+			mDNS_StopQuery(m, q);
+			mDNS_StartQuery(m, q);
+			q->QuestionCallback = tmp;					// Restore QuestionCallback back to the real value
+			}
+		}
+	}
+
+mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
 	{
 	ClientTunnel *tun = (ClientTunnel *)question->QuestionContext;
-	if (!AddRecord || !answer->rdlength) return;
-	if (question->qtype == kDNSType_SRV)
+	if (!AddRecord) return;
+	mDNS_StopQuery(m, question);
+	if (!answer->rdlength)
+		{
+		LogOperation("AutoTunnelCallback NXDOMAIN %##s", question->qname.c);
+		ReissueBlockedQuestions(m, &tun->dstname);
+		return;
+		}
+	if (question->qtype == kDNSType_AAAA)
+		{
+		tun->rmt_inner = answer->rdata->u.ipv6;
+		LogOperation("AutoTunnelCallback: dst host %.16a", &tun->rmt_inner);
+
+		ClientTunnel **p = &tun->next;
+		while (*p && !mDNSSameClientTunnel(&(*p)->rmt_inner, &tun->rmt_inner)) p = &(*p)->next;
+		if (*p)
+			{
+			ClientTunnel *old = *p;
+			LogOperation("Updating existing AutoTunnel for %##s %.16a", tun->dstname.c, &tun->rmt_inner);
+			*p = old->next;
+			freeL("ClientTunnel", old);
+			}
+		else
+			LogOperation("New AutoTunnel for %##s %.16a", tun->dstname.c, &tun->rmt_inner);
+
+		AssignDomainName(&question->qname, (const domainname*) "\x0B" "_autotunnel" "\x04" "_udp");
+		AppendDomainName(&question->qname, &tun->dstname);
+		question->qtype = kDNSType_SRV;
+		mDNS_StartQuery(m, &tun->q);
+		}
+	else if (question->qtype == kDNSType_SRV)
 		{
 		LogOperation("AutoTunnelCallback: SRV target name %##s", answer->rdata->u.srv.target.c);
-		mDNS_StopQuery(m, question);
 		AssignDomainName(&tun->q.qname, &answer->rdata->u.srv.target);
 		question->qtype = kDNSType_A;
 		mDNS_StartQuery(m, &tun->q);
@@ -2158,61 +2208,47 @@ mDNSlocal void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const Re
 	else if (question->qtype == kDNSType_A)
 		{
 		LogOperation("AutoTunnelCallback: SRV target addr %.4a", &answer->rdata->u.ipv4);
-		mDNS_StopQuery(m, question);
 		question->ThisQInterval = -1;		// So we know this tunnel setup has completed
 		tun->rmt_outer = answer->rdata->u.ipv4;
 		AutoTunnelSetKeys(m, tun, mDNStrue);
+
+		// Kick off any questions that were held pending this tunnel setup
+		ReissueBlockedQuestions(m, &tun->dstname);
 		}
 	else
 		LogMsg("AutoTunnelCallback: Unknown question %p", question);
 	}
 
 // Must be called with the lock held
-mDNSexport void AddNewClientTunnel(mDNS *const m, DNSQuestion *const originalquestion, const ResourceRecord *const dsthost)
+mDNSexport void AddNewClientTunnel(mDNS *const m, DNSQuestion *const q)
 	{
-	// If this is our own Tunnel address query, don't want to loop endlessly
-	// (Should never happen -- we only do AutoTunnel setups for IPv6 destinations, and at present
-	// our AutoTunnel endpoints are always IPv4 addresses, but it doesn't hurt to be cautious.)
-	if (originalquestion->QuestionCallback == AutoTunnelCallback) return;
-	if (originalquestion->AuthInfo == mDNSNULL) return;
+	if (m->AutoTunnelHostAddr.b[0] && !m->TunnelClients) SetupLocalAutoTunnelInterface_internal(m);
 
-	ClientTunnel **p = &m->TunnelClients;
-	while (*p && !mDNSSameClientTunnel(&(*p)->rmt_inner, &dsthost->rdata->u.ipv6)) p = &(*p)->next;
+	ClientTunnel *p = mallocL("ClientTunnel", sizeof(ClientTunnel));
+	if (!p) return;
+	AssignDomainName(&p->dstname, &q->qname);
+	p->loc_inner = zerov6Addr;
+	p->loc_outer = zerov4Addr;
+	p->rmt_inner = zerov6Addr;
+	p->rmt_outer = zerov4Addr;
+	mDNS_snprintf(p->b64keydata, sizeof(p->b64keydata), "%s", q->AuthInfo->b64keydata);
+	p->next = m->TunnelClients;
+	m->TunnelClients = p;		// Intentionally build list in reverse order
 
-	if (*p)
-		{
-		LogOperation("AddNewClientTunnel: Already have AutoTunnel for %##s %.16a", dsthost->name->c, &dsthost->rdata->u.ipv6);
-		if ((*p)->q.ThisQInterval >= 0) mDNS_StopQuery_internal(m, &(*p)->q);
-		AutoTunnelSetKeys(m, (*p), mDNSfalse);		// Clear the old tunnel endpoint state before installing new state
-		}
-	else
-		{
-		LogOperation("AddNewClientTunnel: New AutoTunnel for %##s %.16a", dsthost->name->c, &dsthost->rdata->u.ipv6);
-		ClientTunnel *tun = mallocL("ClientTunnel", sizeof(ClientTunnel));
-		if (!tun) return;
-		// If this is our first tunnel client, bring interface up now
-		if (m->AutoTunnelHostAddr.b[0] && !m->TunnelClients) SetupLocalAutoTunnelInterface_internal(m);
-		tun->next = mDNSNULL;
-		tun->rmt_inner = dsthost->rdata->u.ipv6;	// tun->rmt_outer unknown at this stage -- SRV query will discover that
-		*p = tun;
-		}
+	p->q.InterfaceID      = mDNSInterface_Any;
+	p->q.Target           = zeroAddr;
+	AssignDomainName(&p->q.qname, &q->qname);
+	p->q.qtype            = kDNSType_AAAA;
+	p->q.qclass           = kDNSClass_IN;
+	p->q.LongLived        = mDNSfalse;
+	p->q.ExpectUnique     = mDNStrue;
+	p->q.ForceMCast       = mDNSfalse;
+	p->q.ReturnIntermed   = mDNStrue;
+	p->q.QuestionCallback = AutoTunnelCallback;
+	p->q.QuestionContext  = p;
 
-	(*p)->q.InterfaceID      = mDNSInterface_Any;
-	(*p)->q.Target           = zeroAddr;
-	AssignDomainName(&(*p)->q.qname, (const domainname*) "\x0B" "_autotunnel" "\x04" "_udp");
-	AppendDomainName(&(*p)->q.qname, dsthost->name);
-	(*p)->q.qtype            = kDNSType_SRV;
-	(*p)->q.qclass           = kDNSClass_IN;
-	(*p)->q.LongLived        = mDNSfalse;
-	(*p)->q.ExpectUnique     = mDNStrue;
-	(*p)->q.ForceMCast       = mDNSfalse;
-	(*p)->q.ReturnIntermed   = mDNSfalse;
-	(*p)->q.QuestionCallback = AutoTunnelCallback;
-	(*p)->q.QuestionContext  = (*p);
-
-	mDNS_snprintf((*p)->b64keydata, sizeof((*p)->b64keydata), "%s", originalquestion->AuthInfo->b64keydata);
-
-	mDNS_StartQuery_internal(m, &(*p)->q);
+	LogOperation("AddNewClientTunnel start %##s (%s)", &p->q.qname.c, DNSTypeName(p->q.qtype));
+	mDNS_StartQuery_internal(m, &p->q);
 	}
 
 #endif // APPLE_OSX_mDNSResponder

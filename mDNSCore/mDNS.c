@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.661  2007/07/21 00:54:45  cheshire
+<rdar://problem/5344576> Delay IPv6 address callback until AutoTunnel route and policy is configured
+
 Revision 1.660  2007/07/20 20:00:45  cheshire
 "Legacy Browse" is better called "Automatic Browse"
 
@@ -2453,17 +2456,10 @@ mDNSexport void AnswerQuestionWithResourceRecord(mDNS *const m, CacheRecord *con
 	if (rr->resrec.RecordType == kDNSRecordTypePacketNegative && (!AddRecord || !q->ReturnIntermed)) return;
 
 	// For CNAME results to non-CNAME questions, only inform the client if they explicitly requested that
-	if (!followcname || q->ReturnIntermed)
+	if (q->QuestionCallback && !q->NoAnswer && (!followcname || q->ReturnIntermed))
 		{
-		// For now this AutoTunnel stuff is specific to Mac OS X.
-		// In the future, if there's demand, we may see if we can abstract it out cleanly into the platform layer
-		#if APPLE_OSX_mDNSResponder
-		if (q->qtype == kDNSType_AAAA && q->AuthInfo && q->AuthInfo->AutoTunnel) AddNewClientTunnel(m, q, &rr->resrec);
-		#endif // APPLE_OSX_mDNSResponder
-
 		mDNS_DropLockBeforeCallback();		// Allow client (and us) to legally make mDNS API calls
-		if (q->QuestionCallback)
-			q->QuestionCallback(m, q, &rr->resrec, AddRecord);
+		q->QuestionCallback(m, q, &rr->resrec, AddRecord);
 		mDNS_ReclaimLockAfterCallback();	// Decrement mDNS_reentrancy to block mDNS API calls again
 		}
 	// NOTE: Proceed with caution here because client callback function is allowed to do anything,
@@ -4610,7 +4606,7 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const questi
 				q->id                = question->id;
 
 				question->nta        = mDNSNULL;	// If we've got a GetZoneData in progress, transfer it to the newly active question
-			//	question->NATInfoTCP = mDNSNULL;	
+			//	question->NATInfoTCP = mDNSNULL;
 			//	question->NATInfoUDP = mDNSNULL;
 			//	question->tcpSock    = mDNSNULL;
 			//	question->udpSock    = mDNSNULL;
@@ -4661,9 +4657,20 @@ mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question)
 			question->nta = StartGetZoneData(m, &question->qname, ZoneServiceLLQ, startLLQHandshakeCallback, question);
 			if (!question->nta) LogMsg("ERROR: startLLQ - StartGetZoneData failed");
 			}
+// For now this AutoTunnel stuff is specific to Mac OS X.
+// In the future, if there's demand, we may see if we can abstract it out cleanly into the platform layer
+#if APPLE_OSX_mDNSResponder
+		else if (question->qtype == kDNSType_AAAA && question->AuthInfo && question->AuthInfo->AutoTunnel && question->QuestionCallback != AutoTunnelCallback)
+			{
+			question->ThisQInterval = 0;	// Question is suspended, waiting for AddNewClientTunnel to complete
+			question->LastQTime     = m->timenow;
+			question->NoAnswer      = mDNStrue;
+			AddNewClientTunnel(m, question);
+			}
+#endif // APPLE_OSX_mDNSResponder
 		else
 			{
-			question->ThisQInterval = (INIT_UCAST_POLL_INTERVAL + 2) / 3;
+			question->ThisQInterval = InitialQuestionInterval;
 			question->LastQTime     = m->timenow - question->ThisQInterval;
 			}
 		}
@@ -4771,6 +4778,7 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 		question->nta               = mDNSNULL;
 		question->servAddr          = zeroAddr;
 		question->servPort          = zeroIPPort;
+		question->NoAnswer          = mDNSfalse;
 
 		question->state             = LLQ_GetZoneInfo;
 		mDNSPlatformMemZero(&question->NATInfoTCP, sizeof(question->NATInfoTCP));
@@ -5002,7 +5010,7 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
     if (question->InterfaceID != mDNSInterface_LocalOnly && !question->ForceMCast && !IsLocalDomain(&question->qname))
 		{
 		question->LongLived     = mDNStrue;
-		question->ThisQInterval = (INIT_UCAST_POLL_INTERVAL + 2) / 3;
+		question->ThisQInterval = InitialQuestionInterval;
 		question->LastQTime     = m->timenow - question->ThisQInterval;
 		}
 #endif // UNICAST_DISABLED
