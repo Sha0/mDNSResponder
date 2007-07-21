@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.315  2007/07/21 01:36:13  cheshire
+Need to also add ".local" as automatic browsing domain
+
 Revision 1.314  2007/07/20 20:12:37  cheshire
 Rename "mDNS_DomainTypeBrowseLegacy" as "mDNS_DomainTypeBrowseAutomatic"
 
@@ -2073,8 +2076,9 @@ mDNSlocal void TrackAutomaticBrowseDomains(mDNS *const m)
 	mStatus err = mDNS_GetDomains(m, &AutomaticBrowseDomainQ, mDNS_DomainTypeBrowseAutomatic,
 		mDNSNULL, mDNSInterface_LocalOnly, AutomaticBrowseDomainChange, mDNSNULL);
 
-	RegisterBrowseDomainPTR(m, &localdomain, mDNS_DomainTypeRegistration);	// Add "local" as recommended registration domain ("dns-sd -E")
-	RegisterBrowseDomainPTR(m, &localdomain, mDNS_DomainTypeBrowse);		// Add "local" as recommended browsing domain ("dns-sd -F")
+	RegisterBrowseDomainPTR(m, &localdomain, mDNS_DomainTypeRegistration);		// Add "local" as recommended registration domain ("dns-sd -E")
+	RegisterBrowseDomainPTR(m, &localdomain, mDNS_DomainTypeBrowse);			// Add "local" as recommended browsing domain ("dns-sd -F")
+	RegisterBrowseDomainPTR(m, &localdomain, mDNS_DomainTypeBrowseAutomatic);	// Add "local" as automatic browsing domain
 	if (err) LogMsg("ERROR: dDNS_InitDNSConfig - mDNS_Register returned error %d", err);
 	}
 
