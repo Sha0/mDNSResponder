@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.79  2007/07/23 19:58:24  cheshire
+<rdar://problem/5351640> Library: Leak in DNSServiceRefDeallocate
+
 Revision 1.78  2007/07/12 20:42:27  cheshire
 <rdar://problem/5280735> If daemon is killed, return kDNSServiceErr_ServiceNotRunning
 to clients instead of kDNSServiceErr_Unknown
@@ -605,6 +608,7 @@ void DNSSD_API DNSServiceRefDeallocate(DNSServiceRef sdRef)
 			ipc_msg_hdr *hdr = create_hdr(cancel_request, &len, &ptr, 0, sdRef);
 			ConvertHeaderBytes(hdr);
 			write_all(sdRef->sockfd, (char *)hdr, len);
+			free(hdr);
 			*p = sdRef->next;
 			free(sdRef);
 			}
