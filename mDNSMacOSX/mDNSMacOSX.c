@@ -17,6 +17,11 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.445  2007/07/23 20:26:26  cheshire
+<rdar://problem/4641118> Need separate SCPreferences for per-user .Mac settings
+Move code that reads "Setup:/Network/BackToMyMac" preferences outside the check
+for existence of "Setup:/Network/DynamicDNS" settings
+
 Revision 1.444  2007/07/21 00:54:49  cheshire
 <rdar://problem/5344576> Delay IPv6 address callback until AutoTunnel route and policy is configured
 
@@ -2838,33 +2843,6 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 							}
 						}
 					}
-
-				CFDictionaryRef btmm = SCDynamicStoreCopyValue(store, NetworkChangedKey_BackToMyMac);
-				if (btmm)
-					{
-					CFIndex size = CFDictionaryGetCount(btmm);
-					const void *key[size];
-					const void *val[size];
-					CFDictionaryGetKeysAndValues(btmm, key, val);
-					for (i = 0; i < size; i++)
-						{
-						LogOperation("BackToMyMac %d", i);
-						if (!CFStringGetCString(key[i], buf, sizeof(buf), kCFStringEncodingUTF8))
-							LogMsg("Can't read BackToMyMac %d key %s", i, buf);
-						else
-							{
-							mDNSu32 uid = atoi(buf);
-							if (!CFStringGetCString(val[i], buf, sizeof(buf), kCFStringEncodingUTF8))
-								LogMsg("Can't read BackToMyMac %d val %s", i, buf);
-							else if (MakeDomainNameFromDNSNameString(&d, buf) && d.c[0])
-								{
-								LogOperation("BackToMyMac %d %d %##s", i, uid, d.c);
-								AppendDNameListElem(&RegDomains, uid, &d);
-								}
-							}
-						}
-					CFRelease(btmm);
-					}
 				}
 
 			if (BrowseDomains)
@@ -2894,6 +2872,36 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 					}
 				}
 			CFRelease(dict);
+			}
+
+		if (RegDomains)
+			{
+			CFDictionaryRef btmm = SCDynamicStoreCopyValue(store, NetworkChangedKey_BackToMyMac);
+			if (btmm)
+				{
+				CFIndex size = CFDictionaryGetCount(btmm);
+				const void *key[size];
+				const void *val[size];
+				CFDictionaryGetKeysAndValues(btmm, key, val);
+				for (i = 0; i < size; i++)
+					{
+					LogOperation("BackToMyMac %d", i);
+					if (!CFStringGetCString(key[i], buf, sizeof(buf), kCFStringEncodingUTF8))
+						LogMsg("Can't read BackToMyMac %d key %s", i, buf);
+					else
+						{
+						mDNSu32 uid = atoi(buf);
+						if (!CFStringGetCString(val[i], buf, sizeof(buf), kCFStringEncodingUTF8))
+							LogMsg("Can't read BackToMyMac %d val %s", i, buf);
+						else if (MakeDomainNameFromDNSNameString(&d, buf) && d.c[0])
+							{
+							LogOperation("BackToMyMac %d %d %##s", i, uid, d.c);
+							AppendDNameListElem(&RegDomains, uid, &d);
+							}
+						}
+					}
+				CFRelease(btmm);
+				}
 			}
 
 		if (setservers || setsearch)
@@ -2950,7 +2958,6 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 				CFRelease(key);
 				}
 			}
-
 		CFRelease(store);
 		}
 	}
