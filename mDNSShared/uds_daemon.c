@@ -17,6 +17,10 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.317  2007/07/23 22:24:47  cheshire
+<rdar://problem/5352299> Make mDNSResponder more defensive against malicious local clients
+Additional refinements
+
 Revision 1.316  2007/07/23 22:12:53  cheshire
 <rdar://problem/5352299> Make mDNSResponder more defensive against malicious local clients
 
@@ -868,6 +872,7 @@ mDNSlocal AuthRecord *read_rr_from_ipc_msg(request_state *request, int GetTTL, i
 	mDNSu16 class = get_uint16(&request->msgptr, request->msgend);
 	mDNSu16 rdlen = get_uint16(&request->msgptr, request->msgend);
 	char *rdata   = get_rdata(&request->msgptr, request->msgend, rdlen);
+	mDNSu32 ttl   = GetTTL ? get_uint32(&request->msgptr, request->msgend) : 0;
 	int storage_size = rdlen > sizeof(RDataBody) ? rdlen : sizeof(RDataBody);
 	AuthRecord *rr;
 
@@ -900,7 +905,7 @@ mDNSlocal AuthRecord *read_rr_from_ipc_msg(request_state *request, int GetTTL, i
 	rr->resrec.rdlength = rdlen;
 	rr->resrec.rdata->MaxRDLength = rdlen;
 	mDNSPlatformMemCopy(rr->resrec.rdata->u.data, rdata, rdlen);
-	if (GetTTL) rr->resrec.rroriginalttl = get_uint32(&request->msgptr, request->msgend);
+	if (GetTTL) rr->resrec.rroriginalttl = ttl;
 	rr->resrec.namehash = DomainNameHashValue(rr->resrec.name);
 	SetNewRData(&rr->resrec, mDNSNULL, 0);	// Sets rr->rdatahash for us
 	return rr;
@@ -1640,15 +1645,13 @@ mDNSlocal mStatus handle_regservice_request(request_state *request)
 		get_string(&request->msgptr, request->msgend, host, MAX_ESCAPED_DOMAIN_NAME) < 0)
 		{ LogMsg("ERROR: handle_regservice_request - Couldn't read name/regtype/domain"); return(mStatus_BadParamErr); }
 
-	if (!request->msgptr) { LogMsg("%3d: DNSServiceRegister(unreadable parameters)", request->sd); return(mStatus_BadParamErr); }
-
 	request->u.servicereg.InterfaceID = InterfaceID;
 	request->u.servicereg.instances = NULL;
 	request->u.servicereg.txtlen  = 0;
 	request->u.servicereg.txtdata = NULL;
 	mDNSPlatformStrCopy(request->u.servicereg.type_as_string, type_as_string);
 
-	if (request->msgptr + 13 > request->msgend) request->msgptr = NULL;
+	if (request->msgptr + 2 > request->msgend) request->msgptr = NULL;
 	else
 		{
 		request->u.servicereg.port.b[0] = *request->msgptr++;
@@ -1663,6 +1666,8 @@ mDNSlocal mStatus handle_regservice_request(request_state *request)
 		mDNSPlatformMemCopy(request->u.servicereg.txtdata, get_rdata(&request->msgptr, request->msgend, request->u.servicereg.txtlen), request->u.servicereg.txtlen);
 		}
 	else request->u.servicereg.txtdata = NULL;
+
+	if (!request->msgptr) { LogMsg("%3d: DNSServiceRegister(unreadable parameters)", request->sd); return(mStatus_BadParamErr); }
 
 	// Check for sub-types after the service type
 	request->u.servicereg.num_subtypes = ChopSubTypes(request->u.servicereg.type_as_string);	// Note: Modifies regtype string to remove trailing subtypes
