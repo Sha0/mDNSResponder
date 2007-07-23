@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.80  2007/07/23 22:12:53  cheshire
+<rdar://problem/5352299> Make mDNSResponder more defensive against malicious local clients
+
 Revision 1.79  2007/07/23 19:58:24  cheshire
 <rdar://problem/5351640> Library: Leak in DNSServiceRefDeallocate
 
@@ -186,7 +189,7 @@ typedef struct _DNSServiceRef_t DNSServiceOp;
 typedef struct _DNSRecordRef_t DNSRecord;
 
 // client stub callback to process message from server and deliver results to client application
-typedef void (*ProcessReplyFn)(DNSServiceOp *sdr, CallbackHeader *cbh, char *msg);
+typedef void (*ProcessReplyFn)(DNSServiceOp *sdr, CallbackHeader *cbh, char *msg, char *end);
 
 // When using kDNSServiceFlagsShareConnection, there is one primary _DNSServiceOp_t, and zero or more subbordinates
 // For the primary, the 'next' field points to the first subbordinate, and its 'next' field points to the next, and so on.
@@ -581,12 +584,12 @@ DNSServiceErrorType DNSSD_API DNSServiceProcessResult(DNSServiceRef sdRef)
 		else
 			{
 			char *ptr = data;
-			cbh.cb_flags     = get_flags(&ptr);
-			cbh.cb_interface = get_uint32(&ptr);
-			cbh.cb_err       = get_error_code(&ptr);
+			cbh.cb_flags     = get_flags     (&ptr, data + cbh.ipc_hdr.datalen);
+			cbh.cb_interface = get_uint32    (&ptr, data + cbh.ipc_hdr.datalen);
+			cbh.cb_err       = get_error_code(&ptr, data + cbh.ipc_hdr.datalen);
 			morebytes = more_bytes(sdRef->sockfd);
 			if (morebytes) cbh.cb_flags |= kDNSServiceFlagsMoreComing;
-			sdRef->ProcessReply(sdRef, &cbh, ptr);
+			if (ptr) sdRef->ProcessReply(sdRef, &cbh, ptr, data + cbh.ipc_hdr.datalen);
 			}
 		free(data);
 		} while (morebytes);
@@ -657,25 +660,27 @@ DNSServiceErrorType DNSSD_API DNSServiceGetProperty(const char *property, void *
 	return kDNSServiceErr_NoError;
 	}
 
-static void handle_resolve_response(DNSServiceOp *sdr, CallbackHeader *cbh, char *data)
+static void handle_resolve_response(DNSServiceOp *sdr, CallbackHeader *cbh, char *data, char *end)
 	{
 	char fullname[kDNSServiceMaxDomainName];
 	char target[kDNSServiceMaxDomainName];
 	uint16_t txtlen;
 	union { uint16_t s; u_char b[2]; } port;
 	unsigned char *txtrecord;
-	int str_error = 0;
 
-	if (get_string(&data, fullname, kDNSServiceMaxDomainName) < 0) str_error = 1;
-	if (get_string(&data, target,   kDNSServiceMaxDomainName) < 0) str_error = 1;
-	port.b[0] = *data++;
-	port.b[1] = *data++;
-	txtlen = get_uint16(&data);
-	txtrecord = (unsigned char *)get_rdata(&data, txtlen);
+	get_string(&data, end, fullname, kDNSServiceMaxDomainName);
+	get_string(&data, end, target,   kDNSServiceMaxDomainName);
+	if (data + 2 > end) data = NULL;
+	else
+		{
+		port.b[0] = *data++;
+		port.b[1] = *data++;
+		}
+	txtlen = get_uint16(&data, end);
+	txtrecord = (unsigned char *)get_rdata(&data, end, txtlen);
 
-	if (!cbh->cb_err && str_error)
-		{ cbh->cb_err = kDNSServiceErr_Unknown; syslog(LOG_WARNING, "dnssd_clientstub handle_resolve_response: error reading result from daemon"); }
-	((DNSServiceResolveReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, fullname, target, port.s, txtlen, txtrecord, sdr->AppContext);
+	if (!data) syslog(LOG_WARNING, "dnssd_clientstub handle_resolve_response: error reading result from daemon");
+	else ((DNSServiceResolveReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, fullname, target, port.s, txtlen, txtrecord, sdr->AppContext);
 	}
 
 DNSServiceErrorType DNSSD_API DNSServiceResolve
@@ -722,24 +727,22 @@ DNSServiceErrorType DNSSD_API DNSServiceResolve
 	return err;
 	}
 
-static void handle_query_response(DNSServiceOp *sdr, CallbackHeader *cbh, char *data)
+static void handle_query_response(DNSServiceOp *sdr, CallbackHeader *cbh, char *data, char *end)
 	{
 	uint32_t ttl;
 	char name[kDNSServiceMaxDomainName];
 	uint16_t rrtype, rrclass, rdlen;
 	char *rdata;
-	int str_error = 0;
 
-	if (get_string(&data, name, kDNSServiceMaxDomainName) < 0) str_error = 1;
-	rrtype = get_uint16(&data);
-	rrclass = get_uint16(&data);
-	rdlen = get_uint16(&data);
-	rdata = get_rdata(&data, rdlen);
-	ttl = get_uint32(&data);
+	get_string(&data, end, name, kDNSServiceMaxDomainName);
+	rrtype  = get_uint16(&data, end);
+	rrclass = get_uint16(&data, end);
+	rdlen   = get_uint16(&data, end);
+	rdata   = get_rdata(&data, end, rdlen);
+	ttl     = get_uint32(&data, end);
 
-	if (!cbh->cb_err && str_error)
-		{ cbh->cb_err = kDNSServiceErr_Unknown; syslog(LOG_WARNING, "dnssd_clientstub handle_query_response: error reading result from daemon"); }
-	((DNSServiceQueryRecordReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, name, rrtype, rrclass, rdlen, rdata, ttl, sdr->AppContext);
+	if (!data) syslog(LOG_WARNING, "dnssd_clientstub handle_query_response: error reading result from daemon");
+	else ((DNSServiceQueryRecordReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, name, rrtype, rrclass, rdlen, rdata, ttl, sdr->AppContext);
 	}
 
 DNSServiceErrorType DNSSD_API DNSServiceQueryRecord
@@ -786,49 +789,48 @@ DNSServiceErrorType DNSSD_API DNSServiceQueryRecord
 	return err;
 	}
 
-static void handle_addrinfo_response(DNSServiceOp *sdr, CallbackHeader *cbh, char *data)
+static void handle_addrinfo_response(DNSServiceOp *sdr, CallbackHeader *cbh, char *data, char *end)
 	{
 	uint32_t ttl;
 	char hostname[kDNSServiceMaxDomainName];
-	int str_error = 0;
 	uint16_t rrtype, rrclass, rdlen;
 	char *rdata;
 	struct sockaddr_in  sa4;
 	struct sockaddr_in6 sa6;
 	struct sockaddr   * sa = NULL;
 
-	if (get_string(&data, hostname, kDNSServiceMaxDomainName) < 0) str_error = 1;
-	rrtype  = get_uint16(&data);
-	rrclass = get_uint16(&data);
-	rdlen   = get_uint16(&data);
-	rdata   = get_rdata(&data, rdlen);
-	ttl     = get_uint32(&data);
+	get_string(&data, end, hostname, kDNSServiceMaxDomainName);
+	rrtype  = get_uint16(&data, end);
+	rrclass = get_uint16(&data, end);
+	rdlen   = get_uint16(&data, end);
+	rdata   = get_rdata(&data, end, rdlen);
+	ttl     = get_uint32(&data, end);
 	
-	if (!cbh->cb_err && str_error)
-		{ cbh->cb_err = kDNSServiceErr_Unknown; syslog(LOG_WARNING, "dnssd_clientstub handle_addrinfo_response: error reading result from daemon"); }
-
-	if (rrtype == kDNSServiceType_A)
+	if (!data) syslog(LOG_WARNING, "dnssd_clientstub handle_addrinfo_response: error reading result from daemon");
+	else
 		{
-		sa = (struct sockaddr *)&sa4;
-		bzero(&sa4, sizeof(sa4));
-		#ifndef NOT_HAVE_SA_LEN
-		sa->sa_len = sizeof(struct sockaddr_in);
-		#endif
-		sa->sa_family = AF_INET;
-		if (!cbh->cb_err) memcpy(&sa4.sin_addr, rdata, rdlen);
+		if (rrtype == kDNSServiceType_A)
+			{
+			sa = (struct sockaddr *)&sa4;
+			bzero(&sa4, sizeof(sa4));
+			#ifndef NOT_HAVE_SA_LEN
+			sa->sa_len = sizeof(struct sockaddr_in);
+			#endif
+			sa->sa_family = AF_INET;
+			if (!cbh->cb_err) memcpy(&sa4.sin_addr, rdata, rdlen);
+			}
+		else if (rrtype == kDNSServiceType_AAAA)
+			{
+			sa = (struct sockaddr *)&sa6;
+			bzero(&sa6, sizeof(sa6));
+			#ifndef NOT_HAVE_SA_LEN
+			sa->sa_len = sizeof(struct sockaddr_in6);
+			#endif
+			sa->sa_family = AF_INET6;
+			if (!cbh->cb_err) memcpy(&sa6.sin6_addr, rdata, rdlen);
+			}
+		((DNSServiceGetAddrInfoReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, hostname, sa, ttl, sdr->AppContext);
 		}
-	else if (rrtype == kDNSServiceType_AAAA)
-		{
-		sa = (struct sockaddr *)&sa6;
-		bzero(&sa6, sizeof(sa6));
-		#ifndef NOT_HAVE_SA_LEN
-		sa->sa_len = sizeof(struct sockaddr_in6);
-		#endif
-		sa->sa_family = AF_INET6;
-		if (!cbh->cb_err) memcpy(&sa6.sin6_addr, rdata, rdlen);
-		}
-
-	((DNSServiceGetAddrInfoReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, hostname, sa, ttl, sdr->AppContext);
 	}
 
 DNSServiceErrorType DNSSD_API DNSServiceGetAddrInfo
@@ -872,18 +874,14 @@ DNSServiceErrorType DNSSD_API DNSServiceGetAddrInfo
 	return err;
 	}
 	
-static void handle_browse_response(DNSServiceOp *sdr, CallbackHeader *cbh, char *data)
+static void handle_browse_response(DNSServiceOp *sdr, CallbackHeader *cbh, char *data, char *end)
 	{
-	char replyName[256], replyType[kDNSServiceMaxDomainName],
-		replyDomain[kDNSServiceMaxDomainName];
-	int str_error = 0;
-
-	if (get_string(&data, replyName, 256) < 0) str_error = 1;
-	if (get_string(&data, replyType, kDNSServiceMaxDomainName) < 0) str_error = 1;
-	if (get_string(&data, replyDomain, kDNSServiceMaxDomainName) < 0) str_error = 1;
-	if (!cbh->cb_err && str_error)
-		{ cbh->cb_err = kDNSServiceErr_Unknown; syslog(LOG_WARNING, "dnssd_clientstub handle_browse_response: error reading result from daemon"); }
-	((DNSServiceBrowseReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, replyName, replyType, replyDomain, sdr->AppContext);
+	char replyName[256], replyType[kDNSServiceMaxDomainName], replyDomain[kDNSServiceMaxDomainName];
+	get_string(&data, end, replyName, 256);
+	get_string(&data, end, replyType, kDNSServiceMaxDomainName);
+	get_string(&data, end, replyDomain, kDNSServiceMaxDomainName);
+	if (!data) syslog(LOG_WARNING, "dnssd_clientstub handle_browse_response: error reading result from daemon");
+	else ((DNSServiceBrowseReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, replyName, replyType, replyDomain, sdr->AppContext);
 	}
 
 DNSServiceErrorType DNSSD_API DNSServiceBrowse
@@ -945,17 +943,14 @@ DNSServiceErrorType DNSSD_API DNSServiceSetDefaultDomainForUser(DNSServiceFlags 
 	return err;
 	}
 
-static void handle_regservice_response(DNSServiceOp *sdr, CallbackHeader *cbh, char *data)
+static void handle_regservice_response(DNSServiceOp *sdr, CallbackHeader *cbh, char *data, char *end)
 	{
 	char name[256], regtype[kDNSServiceMaxDomainName], domain[kDNSServiceMaxDomainName];
-	int str_error = 0;
-
-	if (get_string(&data, name, 256) < 0) str_error = 1;
-	if (get_string(&data, regtype, kDNSServiceMaxDomainName) < 0) str_error = 1;
-	if (get_string(&data, domain,  kDNSServiceMaxDomainName) < 0) str_error = 1;
-	if (!cbh->cb_err && str_error)
-		{ cbh->cb_err = kDNSServiceErr_Unknown; syslog(LOG_WARNING, "dnssd_clientstub handle_regservice_response: error reading result from daemon"); }
-	((DNSServiceRegisterReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_err, name, regtype, domain, sdr->AppContext);
+	get_string(&data, end, name, 256);
+	get_string(&data, end, regtype, kDNSServiceMaxDomainName);
+	get_string(&data, end, domain,  kDNSServiceMaxDomainName);
+	if (!data) syslog(LOG_WARNING, "dnssd_clientstub handle_regservice_response: error reading result from daemon");
+	else ((DNSServiceRegisterReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_err, name, regtype, domain, sdr->AppContext);
 	}
 
 DNSServiceErrorType DNSSD_API DNSServiceRegister
@@ -1019,15 +1014,12 @@ DNSServiceErrorType DNSSD_API DNSServiceRegister
 	return err;
 	}
 
-static void handle_enumeration_response(DNSServiceOp *sdr, CallbackHeader *cbh, char *data)
+static void handle_enumeration_response(DNSServiceOp *sdr, CallbackHeader *cbh, char *data, char *end)
 	{
 	char domain[kDNSServiceMaxDomainName];
-	int str_error = 0;
-
-	if (get_string(&data, domain, kDNSServiceMaxDomainName) < 0) str_error = 1;
-	if (!cbh->cb_err && str_error)
-		{ cbh->cb_err = kDNSServiceErr_Unknown; syslog(LOG_WARNING, "dnssd_clientstub handle_enumeration_response: error reading result from daemon"); }
-	((DNSServiceDomainEnumReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, domain, sdr->AppContext);
+	get_string(&data, end, domain, kDNSServiceMaxDomainName);
+	if (!data) syslog(LOG_WARNING, "dnssd_clientstub handle_enumeration_response: error reading result from daemon");
+	else ((DNSServiceDomainEnumReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, domain, sdr->AppContext);
 	}
 
 DNSServiceErrorType DNSSD_API DNSServiceEnumerateDomains
@@ -1066,7 +1058,7 @@ DNSServiceErrorType DNSSD_API DNSServiceEnumerateDomains
 	return err;
 	}
 
-static void ConnectionResponse(DNSServiceOp *sdr, CallbackHeader *cbh, char *data)
+static void ConnectionResponse(DNSServiceOp *sdr, CallbackHeader *cbh, char *data, char *end)
 	{
 	DNSRecordRef rref = cbh->ipc_hdr.client_context.context;
 	(void)data; // Unused
@@ -1075,7 +1067,7 @@ static void ConnectionResponse(DNSServiceOp *sdr, CallbackHeader *cbh, char *dat
 	if (cbh->ipc_hdr.op != reg_record_reply_op)
 		{
 		while (sdr && sdr != cbh->ipc_hdr.client_context.context) sdr = sdr->next;
-		if (sdr && sdr->ProcessReply) sdr->ProcessReply(sdr, cbh, data);
+		if (sdr && sdr->ProcessReply) sdr->ProcessReply(sdr, cbh, data, end);
 		// WARNING: Don't touch sdr after this -- client may have called DNSServiceRefDeallocate
 		return;
 		}
@@ -1309,7 +1301,7 @@ DNSServiceErrorType DNSSD_API DNSServiceReconfirmRecord
 	return err;
 	}
 
-static void handle_port_mapping_response(DNSServiceOp *sdr, CallbackHeader *cbh, char *data)
+static void handle_port_mapping_response(DNSServiceOp *sdr, CallbackHeader *cbh, char *data, char *end)
 	{
 	union { uint32_t l; u_char b[4]; } addr;
 	uint8_t protocol;
@@ -1317,18 +1309,23 @@ static void handle_port_mapping_response(DNSServiceOp *sdr, CallbackHeader *cbh,
 	union { uint16_t s; u_char b[2]; } publicPort;
 	uint32_t ttl;
 
-	addr       .b[0] = *data++;
-	addr       .b[1] = *data++;
-	addr       .b[2] = *data++;
-	addr       .b[3] = *data++;
-	protocol         = *data++;
-	privatePort.b[0] = *data++;
-	privatePort.b[1] = *data++;
-	publicPort .b[0] = *data++;
-	publicPort .b[1] = *data++;
-	ttl              = get_uint32(&data);
+	if (data + 13 > end) data = NULL;
+	else
+		{
+		addr       .b[0] = *data++;
+		addr       .b[1] = *data++;
+		addr       .b[2] = *data++;
+		addr       .b[3] = *data++;
+		protocol         = *data++;
+		privatePort.b[0] = *data++;
+		privatePort.b[1] = *data++;
+		publicPort .b[0] = *data++;
+		publicPort .b[1] = *data++;
+		ttl              = get_uint32(&data, end);
+		}
 
-	((DNSServiceNATPortMappingReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, addr.l, protocol, privatePort.s, publicPort.s, ttl, sdr->AppContext);
+	if (!data) syslog(LOG_WARNING, "dnssd_clientstub handle_port_mapping_response: error reading result from daemon");
+	else ((DNSServiceNATPortMappingReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, addr.l, protocol, privatePort.s, publicPort.s, ttl, sdr->AppContext);
 	}
 
 DNSServiceErrorType DNSSD_API DNSServiceNATPortMappingCreate

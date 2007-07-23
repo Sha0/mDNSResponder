@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.316  2007/07/23 22:12:53  cheshire
+<rdar://problem/5352299> Make mDNSResponder more defensive against malicious local clients
+
 Revision 1.315  2007/07/21 01:36:13  cheshire
 Need to also add ".local" as automatic browsing domain
 
@@ -852,21 +855,25 @@ mDNSlocal mStatus GenerateNTDResponse(const domainname *const servicename, const
 		}
 	}
 
-// returns a resource record (allocated w/ malloc) containing the data found in an IPC message
-// data must be in format flags, interfaceIndex, name, rrtype, rrclass, rdlen, rdata, (optional)ttl
+// Returns a resource record (allocated w/ malloc) containing the data found in an IPC message
+// Data must be in the following format: flags, interfaceIndex, name, rrtype, rrclass, rdlen, rdata, (optional)ttl
 // (ttl only extracted/set if ttl argument is non-zero). Returns NULL for a bad-parameter error
-mDNSlocal AuthRecord *read_rr_from_ipc_msg(char **ptr, int GetTTL, int validate_flags)
+mDNSlocal AuthRecord *read_rr_from_ipc_msg(request_state *request, int GetTTL, int validate_flags)
 	{
-	DNSServiceFlags flags = get_flags(ptr);
-	mDNSu32 interfaceIndex = get_uint32(ptr);
+	DNSServiceFlags flags  = get_flags(&request->msgptr, request->msgend);
+	mDNSu32 interfaceIndex = get_uint32(&request->msgptr, request->msgend);
 	char name[256];
-	int str_err = get_string(ptr, name, sizeof(name));
-	mDNSu16 type  = get_uint16(ptr);
-	mDNSu16 class = get_uint16(ptr);
-	mDNSu16 rdlen = get_uint16(ptr);
-	char *rdata = get_rdata(ptr, rdlen);
+	int str_err   = get_string(&request->msgptr, request->msgend, name, sizeof(name));
+	mDNSu16 type  = get_uint16(&request->msgptr, request->msgend);
+	mDNSu16 class = get_uint16(&request->msgptr, request->msgend);
+	mDNSu16 rdlen = get_uint16(&request->msgptr, request->msgend);
+	char *rdata   = get_rdata(&request->msgptr, request->msgend, rdlen);
 	int storage_size = rdlen > sizeof(RDataBody) ? rdlen : sizeof(RDataBody);
 	AuthRecord *rr;
+
+	if (str_err) { LogMsg("ERROR: read_rr_from_ipc_msg - get_string"); return NULL; }
+
+	if (!request->msgptr) { LogMsg("Error reading Resource Record from client"); return NULL; }
 
 	if (validate_flags &&
 		!((flags & kDNSServiceFlagsShared) == kDNSServiceFlagsShared) &&
@@ -875,8 +882,6 @@ mDNSlocal AuthRecord *read_rr_from_ipc_msg(char **ptr, int GetTTL, int validate_
 		LogMsg("ERROR: Bad resource record flags (must be kDNSServiceFlagsShared or kDNSServiceFlagsUnique)");
 		return NULL;
 		}
-
-	if (str_err) { LogMsg("ERROR: read_rr_from_ipc_msg - get_string"); return NULL; }
 
 	rr = mallocL("AuthRecord/read_rr_from_ipc_msg", sizeof(AuthRecord) - sizeof(RDataBody) + storage_size);
 	if (!rr) FatalError("ERROR: malloc");
@@ -895,7 +900,7 @@ mDNSlocal AuthRecord *read_rr_from_ipc_msg(char **ptr, int GetTTL, int validate_
 	rr->resrec.rdlength = rdlen;
 	rr->resrec.rdata->MaxRDLength = rdlen;
 	mDNSPlatformMemCopy(rr->resrec.rdata->u.data, rdata, rdlen);
-	if (GetTTL) rr->resrec.rroriginalttl = get_uint32(ptr);
+	if (GetTTL) rr->resrec.rroriginalttl = get_uint32(&request->msgptr, request->msgend);
 	rr->resrec.namehash = DomainNameHashValue(rr->resrec.name);
 	SetNewRData(&rr->resrec, mDNSNULL, 0);	// Sets rr->rdatahash for us
 	return rr;
@@ -1207,29 +1212,28 @@ mDNSlocal void handle_cancel_request(request_state *request)
 
 mDNSlocal mStatus handle_regrecord_request(request_state *request)
 	{
-	registered_record_entry *re;
-	mStatus err;
-
-	AuthRecord *rr = read_rr_from_ipc_msg(&request->msgptr, 1, 1);
-	if (!rr) return(mStatus_BadParamErr);
-
-	// allocate registration entry, link into list
-	re = mallocL("registered_record_entry", sizeof(registered_record_entry));
-	if (!re) FatalError("ERROR: malloc");
-	re->key = request->hdr.reg_index;
-	re->rr = rr;
-	re->request = request;
-	re->client_context = request->hdr.client_context;
-	rr->RecordContext = re;
-	rr->RecordCallback = regrecord_callback;
-	re->next = request->u.reg_recs;
-	request->u.reg_recs = re;
-
-	if (rr->resrec.rroriginalttl == 0)
-		rr->resrec.rroriginalttl = DefaultTTLforRRType(rr->resrec.rrtype);
-
-	LogOperation("%3d: DNSServiceRegisterRecord %s", request->sd, RRDisplayString(&mDNSStorage, &rr->resrec));
-	err = mDNS_Register(&mDNSStorage, rr);
+	mStatus err = mStatus_BadParamErr;
+	AuthRecord *rr = read_rr_from_ipc_msg(request, 1, 1);
+	if (rr)
+		{
+		// allocate registration entry, link into list
+		registered_record_entry *re = mallocL("registered_record_entry", sizeof(registered_record_entry));
+		if (!re) FatalError("ERROR: malloc");
+		re->key = request->hdr.reg_index;
+		re->rr = rr;
+		re->request = request;
+		re->client_context = request->hdr.client_context;
+		rr->RecordContext = re;
+		rr->RecordCallback = regrecord_callback;
+		re->next = request->u.reg_recs;
+		request->u.reg_recs = re;
+	
+		if (rr->resrec.rroriginalttl == 0)
+			rr->resrec.rroriginalttl = DefaultTTLforRRType(rr->resrec.rrtype);
+	
+		LogOperation("%3d: DNSServiceRegisterRecord %s", request->sd, RRDisplayString(&mDNSStorage, &rr->resrec));
+		err = mDNS_Register(&mDNSStorage, rr);
+		}
 	return(err);
 	}
 
@@ -1258,13 +1262,15 @@ mDNSlocal mStatus handle_add_request(request_state *request)
 	{
 	service_instance *i;
 	mStatus result = mStatus_UnknownErr;
-	DNSServiceFlags flags  = get_flags(&request->msgptr);
-	mDNSu16        rrtype = get_uint16(&request->msgptr);
-	mDNSu16        rdlen  = get_uint16(&request->msgptr);
-	char           *rdata  = get_rdata(&request->msgptr, rdlen);
-	mDNSu32        ttl    = get_uint32(&request->msgptr);
+	DNSServiceFlags flags = get_flags(&request->msgptr, request->msgend);
+	mDNSu16        rrtype = get_uint16(&request->msgptr, request->msgend);
+	mDNSu16        rdlen  = get_uint16(&request->msgptr, request->msgend);
+	char           *rdata = get_rdata(&request->msgptr, request->msgend, rdlen);
+	mDNSu32        ttl    = get_uint32(&request->msgptr, request->msgend);
 	if (!ttl) ttl = DefaultTTLforRRType(rrtype);
 	(void)flags; // Unused
+
+	if (!request->msgptr) { LogMsg("%3d: DNSServiceAddRecord(unreadable parameters)", request->sd); return(mStatus_BadParamErr); }
 
 	LogOperation("%3d: DNSServiceAddRecord(%##s, %s, %d)", request->sd,
 		(request->u.servicereg.instances) ? request->u.servicereg.instances->srs.RR_SRV.resrec.name->c : NULL, DNSTypeName(rrtype), rdlen);
@@ -1310,19 +1316,18 @@ mDNSlocal mStatus update_record(AuthRecord *rr, mDNSu16 rdlen, char *rdata, mDNS
 
 mDNSlocal mStatus handle_update_request(request_state *request)
 	{
-	mDNSu16 rdlen;
-	char *ptr, *rdata;
-	mDNSu32 ttl;
 	mStatus result = mStatus_BadReferenceErr;
 	service_instance *i;
 	AuthRecord *rr = NULL;
 
 	// get the message data
-	ptr = request->msgptr;
-	get_flags(&ptr);	// flags unused
-	rdlen = get_uint16(&ptr);
-	rdata = get_rdata(&ptr, rdlen);
-	ttl = get_uint32(&ptr);
+	DNSServiceFlags flags = get_flags(&request->msgptr, request->msgend);	// flags unused
+	mDNSu16 rdlen = get_uint16(&request->msgptr, request->msgend);
+	char *rdata = get_rdata(&request->msgptr, request->msgend, rdlen);
+	mDNSu32 ttl = get_uint32(&request->msgptr, request->msgend);
+	(void)flags; // Unused
+
+	if (!request->msgptr) { LogMsg("%3d: DNSServiceUpdateRecord(unreadable parameters)", request->sd); return(mStatus_BadParamErr); }
 
 	if (request->terminate == connection_termination)
 		{
@@ -1407,10 +1412,9 @@ mDNSlocal mStatus remove_extra(const request_state *const request, service_insta
 mDNSlocal mStatus handle_removerecord_request(request_state *request)
 	{
 	mStatus err = mStatus_BadReferenceErr;
-	char *ptr;
+	get_flags(&request->msgptr, request->msgend);	// flags unused
 
-	ptr = request->msgptr;
-	get_flags(&ptr);	// flags unused
+	if (!request->msgptr) { LogMsg("%3d: DNSServiceRemoveRecord(unreadable parameters)", request->sd); return(mStatus_BadParamErr); }
 
 	if (request->terminate == connection_termination)
 		err = remove_record(request);  // remove individually registered record
@@ -1618,24 +1622,25 @@ mDNSlocal void udsserver_default_reg_domain_changed(const domainname *d, mDNSBoo
 
 mDNSlocal mStatus handle_regservice_request(request_state *request)
 	{
-	char *ptr = request->msgptr;
 	char name[256];	// Lots of spare space for extra-long names that we'll auto-truncate down to 63 bytes
 	char domain[MAX_ESCAPED_DOMAIN_NAME], host[MAX_ESCAPED_DOMAIN_NAME];
 	char type_as_string[MAX_ESCAPED_DOMAIN_NAME];
 	domainname d, srv;
 	mStatus err;
 
-	DNSServiceFlags flags = get_flags(&ptr);
-	mDNSu32 interfaceIndex = get_uint32(&ptr);
+	DNSServiceFlags flags = get_flags(&request->msgptr, request->msgend);
+	mDNSu32 interfaceIndex = get_uint32(&request->msgptr, request->msgend);
 	mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
 	if (interfaceIndex && !InterfaceID)
 		{ LogMsg("ERROR: handle_regservice_request - Couldn't find interfaceIndex %d", interfaceIndex); return(mStatus_BadParamErr); }
 
-	if (get_string(&ptr, name, sizeof(name)) < 0 ||
-		get_string(&ptr, type_as_string, MAX_ESCAPED_DOMAIN_NAME) < 0 ||
-		get_string(&ptr, domain, MAX_ESCAPED_DOMAIN_NAME) < 0 ||
-		get_string(&ptr, host, MAX_ESCAPED_DOMAIN_NAME) < 0)
+	if (get_string(&request->msgptr, request->msgend, name, sizeof(name)) < 0 ||
+		get_string(&request->msgptr, request->msgend, type_as_string, MAX_ESCAPED_DOMAIN_NAME) < 0 ||
+		get_string(&request->msgptr, request->msgend, domain, MAX_ESCAPED_DOMAIN_NAME) < 0 ||
+		get_string(&request->msgptr, request->msgend, host, MAX_ESCAPED_DOMAIN_NAME) < 0)
 		{ LogMsg("ERROR: handle_regservice_request - Couldn't read name/regtype/domain"); return(mStatus_BadParamErr); }
+
+	if (!request->msgptr) { LogMsg("%3d: DNSServiceRegister(unreadable parameters)", request->sd); return(mStatus_BadParamErr); }
 
 	request->u.servicereg.InterfaceID = InterfaceID;
 	request->u.servicereg.instances = NULL;
@@ -1643,15 +1648,19 @@ mDNSlocal mStatus handle_regservice_request(request_state *request)
 	request->u.servicereg.txtdata = NULL;
 	mDNSPlatformStrCopy(request->u.servicereg.type_as_string, type_as_string);
 
-	request->u.servicereg.port.b[0] = *ptr++;
-	request->u.servicereg.port.b[1] = *ptr++;
+	if (request->msgptr + 13 > request->msgend) request->msgptr = NULL;
+	else
+		{
+		request->u.servicereg.port.b[0] = *request->msgptr++;
+		request->u.servicereg.port.b[1] = *request->msgptr++;
+		}
 
-	request->u.servicereg.txtlen = get_uint16(&ptr);
+	request->u.servicereg.txtlen = get_uint16(&request->msgptr, request->msgend);
 	if (request->u.servicereg.txtlen)
 		{
 		request->u.servicereg.txtdata = mallocL("service_info txtdata", request->u.servicereg.txtlen);
 		if (!request->u.servicereg.txtdata) FatalError("ERROR: handle_regservice_request - malloc");
-		mDNSPlatformMemCopy(request->u.servicereg.txtdata, get_rdata(&ptr, request->u.servicereg.txtlen), request->u.servicereg.txtlen);
+		mDNSPlatformMemCopy(request->u.servicereg.txtdata, get_rdata(&request->msgptr, request->msgend, request->u.servicereg.txtlen), request->u.servicereg.txtlen);
 		}
 	else request->u.servicereg.txtdata = NULL;
 
@@ -2084,20 +2093,20 @@ mDNSlocal void TrackAutomaticBrowseDomains(mDNS *const m)
 
 mDNSlocal mStatus handle_browse_request(request_state *request)
 	{
-	char *ptr = request->msgptr;
-
 	char regtype[MAX_ESCAPED_DOMAIN_NAME], domain[MAX_ESCAPED_DOMAIN_NAME];
 	domainname typedn, d, temp;
 	mDNSs32 NumSubTypes;
 	mStatus err = mStatus_NoError;
 
-	DNSServiceFlags flags = get_flags(&ptr);
-	mDNSu32 interfaceIndex = get_uint32(&ptr);
+	DNSServiceFlags flags = get_flags(&request->msgptr, request->msgend);
+	mDNSu32 interfaceIndex = get_uint32(&request->msgptr, request->msgend);
 	mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
 	if (interfaceIndex && !InterfaceID) return(mStatus_BadParamErr);
 
-	if (get_string(&ptr, regtype, MAX_ESCAPED_DOMAIN_NAME) < 0 ||
-		get_string(&ptr, domain, MAX_ESCAPED_DOMAIN_NAME) < 0) return(mStatus_BadParamErr);
+	if (get_string(&request->msgptr, request->msgend, regtype, MAX_ESCAPED_DOMAIN_NAME) < 0 ||
+		get_string(&request->msgptr, request->msgend, domain, MAX_ESCAPED_DOMAIN_NAME) < 0) return(mStatus_BadParamErr);
+
+	if (!request->msgptr) { LogMsg("%3d: DNSServiceBrowse(unreadable parameters)", request->sd); return(mStatus_BadParamErr); }
 
 	if (!domain || (domain[0] == '\0')) uDNS_RegisterSearchDomains(&mDNSStorage);
 
@@ -2219,22 +2228,23 @@ mDNSlocal void resolve_termination_callback(request_state *request)
 
 mDNSlocal mStatus handle_resolve_request(request_state *request)
 	{
-	char *ptr = request->msgptr;
 	char name[256], regtype[MAX_ESCAPED_DOMAIN_NAME], domain[MAX_ESCAPED_DOMAIN_NAME];
 	domainname fqdn;
 	mStatus err;
 
 	// extract the data from the message
-	DNSServiceFlags flags = get_flags(&ptr);
-	mDNSu32 interfaceIndex = get_uint32(&ptr);
+	DNSServiceFlags flags = get_flags(&request->msgptr, request->msgend);
+	mDNSu32 interfaceIndex = get_uint32(&request->msgptr, request->msgend);
 	mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
 	if (interfaceIndex && !InterfaceID)
 		{ LogMsg("ERROR: handle_resolve_request bad interfaceIndex %d", interfaceIndex); return(mStatus_BadParamErr); }
 
-	if (get_string(&ptr, name, 256) < 0 ||
-		get_string(&ptr, regtype, MAX_ESCAPED_DOMAIN_NAME) < 0 ||
-		get_string(&ptr, domain, MAX_ESCAPED_DOMAIN_NAME) < 0)
+	if (get_string(&request->msgptr, request->msgend, name, 256) < 0 ||
+		get_string(&request->msgptr, request->msgend, regtype, MAX_ESCAPED_DOMAIN_NAME) < 0 ||
+		get_string(&request->msgptr, request->msgend, domain, MAX_ESCAPED_DOMAIN_NAME) < 0)
 		{ LogMsg("ERROR: handle_resolve_request - Couldn't read name/regtype/domain"); return(mStatus_BadParamErr); }
+
+	if (!request->msgptr) { LogMsg("%3d: DNSServiceResolve(unreadable parameters)", request->sd); return(mStatus_BadParamErr); }
 
 	if (build_domainname_from_strings(&fqdn, name, regtype, domain) < 0)
 		{ LogMsg("ERROR: handle_resolve_request bad “%s” “%s” “%s”", name, regtype, domain); return(mStatus_BadParamErr); }
@@ -2369,19 +2379,20 @@ mDNSlocal void queryrecord_termination_callback(request_state *request)
 
 mDNSlocal mStatus handle_queryrecord_request(request_state *request)
 	{
-	char *ptr = request->msgptr;
 	char name[256];
 	mDNSu16 rrtype, rrclass;
 	mStatus err;
 
-	DNSServiceFlags flags = get_flags(&ptr);
-	mDNSu32 interfaceIndex = get_uint32(&ptr);
+	DNSServiceFlags flags = get_flags(&request->msgptr, request->msgend);
+	mDNSu32 interfaceIndex = get_uint32(&request->msgptr, request->msgend);
 	mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
 	if (interfaceIndex && !InterfaceID) return(mStatus_BadParamErr);
 
-	if (get_string(&ptr, name, 256) < 0) return(mStatus_BadParamErr);
-	rrtype  = get_uint16(&ptr);
-	rrclass = get_uint16(&ptr);
+	if (get_string(&request->msgptr, request->msgend, name, 256) < 0) return(mStatus_BadParamErr);
+	rrtype  = get_uint16(&request->msgptr, request->msgend);
+	rrclass = get_uint16(&request->msgptr, request->msgend);
+
+	if (!request->msgptr) { LogMsg("%3d: DNSServiceQueryRecord(unreadable parameters)", request->sd); return(mStatus_BadParamErr); }
 
 	mDNSPlatformMemZero(&request->u.queryrecord.q, sizeof(&request->u.queryrecord.q));
 
@@ -2472,16 +2483,16 @@ mDNSlocal void enum_result_callback(mDNS *const m,
 
 mDNSlocal mStatus handle_enum_request(request_state *request)
 	{
-	char *ptr = request->msgptr;
 	mStatus err;
-
-	DNSServiceFlags flags = get_flags(&ptr);
+	DNSServiceFlags flags = get_flags(&request->msgptr, request->msgend);
 	DNSServiceFlags reg = flags & kDNSServiceFlagsRegistrationDomains;
 	mDNS_DomainType t_all     = reg ? mDNS_DomainTypeRegistration        : mDNS_DomainTypeBrowse;
 	mDNS_DomainType t_default = reg ? mDNS_DomainTypeRegistrationDefault : mDNS_DomainTypeBrowseDefault;
-	mDNSu32 interfaceIndex = get_uint32(&ptr);
+	mDNSu32 interfaceIndex = get_uint32(&request->msgptr, request->msgend);
 	mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
 	if (interfaceIndex && !InterfaceID) return(mStatus_BadParamErr);
+
+	if (!request->msgptr) { LogMsg("%3d: DNSServiceEnumerateDomains(unreadable parameters)", request->sd); return(mStatus_BadParamErr); }
 
 	// allocate context structures
 	uDNS_RegisterSearchDomains(&mDNSStorage);
@@ -2518,7 +2529,7 @@ mDNSlocal mStatus handle_enum_request(request_state *request)
 mDNSlocal mStatus handle_reconfirm_request(request_state *request)
 	{
 	mStatus status = mStatus_BadParamErr;
-	AuthRecord *rr = read_rr_from_ipc_msg(&request->msgptr, 0, 0);
+	AuthRecord *rr = read_rr_from_ipc_msg(request, 0, 0);
 	if (rr)
 		{
 		status = mDNS_ReconfirmByValue(&mDNSStorage, &rr->resrec);
@@ -2528,9 +2539,8 @@ mDNSlocal mStatus handle_reconfirm_request(request_state *request)
 			"%3d: DNSServiceReconfirmRecord(%s) interface %d failed: %d",
 			request->sd, RRDisplayString(&mDNSStorage, &rr->resrec),
 			mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, rr->resrec.InterfaceID), status);
+		freeL("AuthRecord/handle_reconfirm_request", rr);
 		}
-	freeL("AuthRecord/handle_reconfirm_request", rr);
-	// We always want to abort a DNSServiceReconfirmRecord() immediately -- there are no asynchronous results to return
 	return(status);
 	}
 
@@ -2544,7 +2554,6 @@ mDNSlocal void free_defdomain(mDNS *const m, AuthRecord *const rr, mStatus resul
 
 mDNSlocal mStatus handle_setdomain_request(request_state *request)
 	{
-	char *ptr = request->msgptr;
 	mStatus err = mStatus_NoError;
 	char domainstr[MAX_ESCAPED_DOMAIN_NAME];
 	domainname domain;
@@ -2554,10 +2563,11 @@ mDNSlocal mStatus handle_setdomain_request(request_state *request)
 #endif
 
 	// extract flags/domain from message
-	DNSServiceFlags flags = get_flags(&ptr);
+	DNSServiceFlags flags = get_flags(&request->msgptr, request->msgend);
 	(void)flags; // Unused
-	if (get_string(&ptr, domainstr, MAX_ESCAPED_DOMAIN_NAME) < 0 ||
-		!MakeDomainNameFromDNSNameString(&domain, domainstr)) return(mStatus_BadParamErr);
+	if (get_string(&request->msgptr, request->msgend, domainstr, MAX_ESCAPED_DOMAIN_NAME) < 0 ||
+		!MakeDomainNameFromDNSNameString(&domain, domainstr))
+		{ LogMsg("%3d: DNSServiceSetDefaultDomainForUser(unreadable parameters)", request->sd); return(mStatus_BadParamErr); }
 
 	LogOperation("%3d: DNSServiceSetDefaultDomainForUser(%##s)", request->sd, domain.c);
 
@@ -2626,9 +2636,8 @@ typedef packedstruct
 mDNSlocal void handle_getproperty_request(request_state *request)
 	{
 	const mStatus BadParamErr = dnssd_htonl(mStatus_BadParamErr);
-	char *ptr = request->msgptr;
 	char prop[256];
-	if (get_string(&ptr, prop, sizeof(prop)) >= 0)
+	if (get_string(&request->msgptr, request->msgend, prop, sizeof(prop)) >= 0)
 		{
 		LogOperation("%3d: DNSServiceGetProperty(%s)", request->sd, prop);
 		if (!strcmp(prop, kDNSServiceProperty_DaemonVersion))
@@ -2699,25 +2708,30 @@ mDNSlocal void port_mapping_create_request_callback(mDNS *m, mDNSv4Addr External
 
 mDNSlocal mStatus handle_port_mapping_request(request_state *request)
 	{
-	char *ptr = request->msgptr;
 	mDNSu8 protocol;
 	mDNSIPPort privatePort;
 	mDNSIPPort publicPort;
 	mDNSu32 ttl;
 	mStatus err = mStatus_NoError;
 
-	DNSServiceFlags flags = get_flags(&ptr);
-	mDNSu32 interfaceIndex = get_uint32(&ptr);
+	DNSServiceFlags flags = get_flags(&request->msgptr, request->msgend);
+	mDNSu32 interfaceIndex = get_uint32(&request->msgptr, request->msgend);
 	mDNSInterfaceID InterfaceID = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
 	if (interfaceIndex && !InterfaceID) return(mStatus_BadParamErr);
 
 	(void)flags; // Unused
-	protocol         = get_uint32(&ptr);
-	privatePort.b[0] = *ptr++;
-	privatePort.b[1] = *ptr++;
-	publicPort .b[0] = *ptr++;
-	publicPort .b[1] = *ptr++;
-	ttl              = get_uint32(&ptr);
+	protocol = get_uint32(&request->msgptr, request->msgend);
+	if (request->msgptr + 4 > request->msgend) request->msgptr = NULL;
+	else
+		{
+		privatePort.b[0] = *request->msgptr++;
+		privatePort.b[1] = *request->msgptr++;
+		publicPort .b[0] = *request->msgptr++;
+		publicPort .b[1] = *request->msgptr++;
+		}
+	ttl = get_uint32(&request->msgptr, request->msgend);
+
+	if (!request->msgptr) { LogMsg("%3d: DNSServiceNATPortMappingCreate(unreadable parameters)", request->sd); return(mStatus_BadParamErr); }
 
 	if (protocol == 0)
 		{
@@ -2776,21 +2790,23 @@ mDNSlocal void addrinfo_termination_callback(request_state *request)
 
 mDNSlocal mStatus handle_addrinfo_request(request_state *request)
 	{
-	char *ptr = request->msgptr;
 	char hostname[256];
 	domainname d;
 	mStatus err = 0;
 
-	DNSServiceFlags flags = get_flags(&ptr);
-	mDNSu32 interfaceIndex = get_uint32(&ptr);
+	DNSServiceFlags flags = get_flags(&request->msgptr, request->msgend);
+	mDNSu32 interfaceIndex = get_uint32(&request->msgptr, request->msgend);
 	request->u.addrinfo.interface_id = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
 	if (interfaceIndex && !request->u.addrinfo.interface_id) return(mStatus_BadParamErr);
 	request->u.addrinfo.flags = flags;
-	request->u.addrinfo.protocol = get_uint32(&ptr);
+	request->u.addrinfo.protocol = get_uint32(&request->msgptr, request->msgend);
 	if (request->u.addrinfo.protocol > (kDNSServiceProtocol_IPv4|kDNSServiceProtocol_IPv6))
 		return(mStatus_BadParamErr);
 
-	if (get_string(&ptr, hostname, 256) < 0) return(mStatus_BadParamErr);
+	if (get_string(&request->msgptr, request->msgend, hostname, 256) < 0) return(mStatus_BadParamErr);
+
+	if (!request->msgptr) { LogMsg("%3d: DNSServiceGetAddrInfo(unreadable parameters)", request->sd); return(mStatus_BadParamErr); }
+
 	if (!MakeDomainNameFromDNSNameString(&d, hostname))
 		{ LogMsg("ERROR: handle_addrinfo_request: bad hostname: %s", hostname); return(mStatus_BadParamErr); }
 
@@ -3070,7 +3086,7 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 		#else
 			{
 			char ctrl_path[MAX_CTLPATH];
-			get_string(&req->msgptr, ctrl_path, 256);	// path is first element in message buffer
+			get_string(&req->msgptr, req->msgend, ctrl_path, 256);	// path is first element in message buffer
 			mDNSPlatformMemZero(&cliaddr, sizeof(cliaddr));
 			cliaddr.sun_family = AF_LOCAL;
 			mDNSPlatformStrCopy(cliaddr.sun_path, ctrl_path);

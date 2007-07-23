@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.36  2007/07/23 22:12:53  cheshire
+<rdar://problem/5352299> Make mDNSResponder more defensive against malicious local clients
+
 Revision 1.35  2007/05/23 18:59:22  cheshire
 Remove unnecessary IPC_FLAGS_REUSE_SOCKET
 
@@ -274,10 +277,10 @@ typedef packedstruct
 // it is advanced to point to the next field, or the end of the message
 
 void put_uint32(const uint32_t l, char **ptr);
-uint32_t get_uint32(char **ptr);
+uint32_t get_uint32(char **ptr, char *end);
 
 void put_uint16(uint16_t s, char **ptr);
-uint16_t get_uint16(char **ptr);
+uint16_t get_uint16(char **ptr, char *end);
 
 #define put_flags put_uint32
 #define get_flags get_uint32
@@ -286,10 +289,10 @@ uint16_t get_uint16(char **ptr);
 #define get_error_code get_uint32
 
 int put_string(const char *str, char **ptr);
-int get_string(char **ptr, char *buffer, int buflen);
+int get_string(char **ptr, char *end, char *buffer, int buflen);
 
 void put_rdata(const int rdlen, const unsigned char *rdata, char **ptr);
-char *get_rdata(char **ptr, int rdlen);  // return value is rdata pointed to by *ptr -
+char *get_rdata(char **ptr, char *end, int rdlen);  // return value is rdata pointed to by *ptr -
                                          // rdata is not copied from buffer.
 
 void ConvertHeaderBytes(ipc_msg_hdr *hdr);

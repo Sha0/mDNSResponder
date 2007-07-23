@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_ipc.c,v $
+Revision 1.20  2007/07/23 22:12:53  cheshire
+<rdar://problem/5352299> Make mDNSResponder more defensive against malicious local clients
+
 Revision 1.19  2007/05/16 01:06:52  cheshire
 <rdar://problem/4471320> Improve reliability of kDNSServiceFlagsMoreComing flag on multiprocessor machines
 
@@ -81,11 +84,19 @@ void put_uint32(const uint32_t l, char **ptr)
 	*ptr += sizeof(uint32_t);
 	}
 
-uint32_t get_uint32(char **ptr)
+uint32_t get_uint32(char **ptr, char *end)
 	{
-	uint8_t *p = (uint8_t*) *ptr;
-	*ptr += sizeof(uint32_t);
-	return((uint32_t) ((uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3]));
+	if (!*ptr || *ptr + sizeof(uint32_t) > end)
+		{
+		*ptr = NULL;
+		return(0);
+		}
+	else
+		{
+		uint8_t *p = (uint8_t*) *ptr;
+		*ptr += sizeof(uint32_t);
+		return((uint32_t) ((uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3]));
+		}
 	}
 
 void put_uint16(uint16_t s, char **ptr)
@@ -95,11 +106,19 @@ void put_uint16(uint16_t s, char **ptr)
 	*ptr += sizeof(uint16_t);
 	}
 
-uint16_t get_uint16(char **ptr)
+uint16_t get_uint16(char **ptr, char *end)
 	{
-	uint8_t *p = (uint8_t*) *ptr;
-	*ptr += sizeof(uint16_t);
-	return((uint16_t) ((uint16_t)p[0] << 8 | p[1]));
+	if (!*ptr || *ptr + sizeof(uint16_t) > end)
+		{
+		*ptr = NULL;
+		return(0);
+		}
+	else
+		{
+		uint8_t *p = (uint8_t*) *ptr;
+		*ptr += sizeof(uint16_t);
+		return((uint16_t) ((uint16_t)p[0] << 8 | p[1]));
+		}
 	}
 
 int put_string(const char *str, char **ptr)
@@ -110,13 +129,26 @@ int put_string(const char *str, char **ptr)
 	return 0;
 	}
 
-int get_string(char **ptr, char *buffer, int buflen)
+int get_string(char **ptr, char *end, char *buffer, int buflen)
 	{
-	int overrun = (int)strlen(*ptr) <  buflen ? 0 : -1;
-	strncpy(buffer, *ptr,  buflen - 1);
-	buffer[buflen - 1] = '\0';
-	*ptr += strlen(buffer) + 1;
-	return overrun;
+	if (!*ptr)
+		{
+		*buffer = 0;
+		return(-1);
+		}
+	else
+		{
+		char *lim = buffer + buflen;	// Calculate limit
+		while (*ptr < end && buffer < lim)
+			{
+			char c = *buffer++ = *(*ptr)++;
+			if (c == 0) return(0);		// Success
+			}
+		if (buffer == lim) buffer--;
+		*buffer = 0;					// Failed, so terminate string,
+		*ptr = NULL;					// clear pointer,
+		return(-1);						// and return failure indication
+		}
 	}
 
 void put_rdata(const int rdlen, const unsigned char *rdata, char **ptr)
@@ -125,11 +157,19 @@ void put_rdata(const int rdlen, const unsigned char *rdata, char **ptr)
 	*ptr += rdlen;
 	}
 
-char *get_rdata(char **ptr, int rdlen)
+char *get_rdata(char **ptr, char *end, int rdlen)
 	{
-	char *rd = *ptr;
-	*ptr += rdlen;
-	return rd;
+	if (!*ptr || *ptr + rdlen > end)
+		{
+		*ptr = NULL;
+		return(0);
+		}
+	else
+		{
+		char *rd = *ptr;
+		*ptr += rdlen;
+		return rd;
+		}
 	}
 
 void ConvertHeaderBytes(ipc_msg_hdr *hdr)
