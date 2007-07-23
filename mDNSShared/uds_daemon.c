@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.318  2007/07/23 23:09:51  cheshire
+<rdar://problem/5351997> Reject oversized client requests
+
 Revision 1.317  2007/07/23 22:24:47  cheshire
 <rdar://problem/5352299> Make mDNSResponder more defensive against malicious local clients
 Additional refinements
@@ -2969,6 +2972,16 @@ mDNSlocal int read_msg(request_state *req)
 			req->ts = t_complete;
 			req->msgbuf = NULL;
 			return t_complete;
+			}
+
+		// Largest conceivable single request is a DNSServiceRegisterRecord() or DNSServiceAddRecord()
+		// with 64kB of rdata. Adding 1005 byte for a maximal domain name, plus a safety margin
+		// for other overhead, this means any message above 70kB is definitely bogus.
+		if (req->hdr.datalen > 70000)
+			{
+			LogMsg("ERROR: read_msg - hdr.datalen %lu (%X) > 70000", req->hdr.datalen, req->hdr.datalen);
+			req->ts = t_error;
+			return t_error;
 			}
 
 		if (!req->msgbuf)  // allocate the buffer first time through
