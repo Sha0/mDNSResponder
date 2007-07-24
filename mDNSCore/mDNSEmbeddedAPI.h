@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.403  2007/07/24 04:14:29  cheshire
+<rdar://problem/5356281> LLQs not working in with NAT Traversal
+
 Revision 1.402  2007/07/21 00:54:44  cheshire
 <rdar://problem/5344576> Delay IPv6 address callback until AutoTunnel route and policy is configured
 
@@ -979,7 +982,6 @@ typedef void mDNSRecordUpdateCallback(mDNS *const m, AuthRecord *const rr, RData
 #define NATMAP_MAX_RETRY_INTERVAL    ((mDNSPlatformOneSecond * 60) * 15) // Max retry interval is 15 minutes
 #define NATMAP_MIN_RETRY_INTERVAL     (mDNSPlatformOneSecond * 2)             // Min retry interval is 2 seconds
 #define NATMAP_INIT_RETRY                     (mDNSPlatformOneSecond / 4)             // start at 250ms w/ exponential decay
-#define NATMAP_INIT_RETRY_TIMEOUT      (mDNSPlatformOneSecond)                   // timeout after three attempts
 #define NATMAP_DEFAULT_LEASE (60 * 60)                             // lease life in seconds
 #define NATMAP_VERS 0
 
