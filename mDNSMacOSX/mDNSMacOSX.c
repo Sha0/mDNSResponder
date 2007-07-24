@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.448  2007/07/24 21:30:09  cheshire
+Added "AutoTunnel server listening for connections..." diagnostic message
+
 Revision 1.447  2007/07/24 20:24:18  cheshire
 Only remove AutoTunnel address if we have created it.
 Otherwise, we get "errno 49 (Can't assign requested address)" errors on exit.
@@ -2004,6 +2007,10 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 				info->AutoTunnelService.resrec.rdata->u.srv.port     = mDNSOpaque16fromIntVal(500); // TEMP FOR AUTOTUNNEL TESTING: assume port 500
 				AssignDomainName(&info->AutoTunnelService.resrec.rdata->u.srv.target, &info->AutoTunnelTarget.namestorage);
 				mDNS_Register_internal(m, &info->AutoTunnelService);
+
+				LogMsg("AutoTunnel server listening for connections on %##s[%.4a]:%d:%##s[%.16a]",
+					info->AutoTunnelTarget.namestorage.c,     &m->AdvertisedV4.ip.v4, mDNSVal16(info->AutoTunnelService.resrec.rdata->u.srv.port),
+					info->AutoTunnelHostRecord.namestorage.c, &m->AutoTunnelHostAddr);
 
 				// 4. Create configuration file, and start (or SIGHUP) Racoon
 				static const char RacoonConfig1[] =
