@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.407  2007/07/24 17:23:33  cheshire
+<rdar://problem/5357133> Add list validation checks for debugging
+
 Revision 1.406  2007/07/24 04:14:30  cheshire
 <rdar://problem/5356281> LLQs not working in with NAT Traversal
 
@@ -4551,11 +4554,38 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 	}
 
 #if APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING
-mDNSexport void udns_validatelists(void)
+mDNSexport void udns_validatelists(void *const v)
 	{
+	mDNS *const m = v;
+
+	ServiceRecordSet *s;
+	for (s = m->ServiceRegistrations; s; s=s->uDNS_next)
+		if (s->uDNS_next == (ServiceRecordSet*)~0)
+			LogMemCorruption("m->ServiceRegistrations: %p is garbage (%lX)", s, s->uDNS_next);
+
+	NATTraversalInfo *n;
+	for (n = m->NATTraversals; n; n=n->next)
+		if (n->clientCallback == (NATTraversalClientCallback)~0)
+			LogMemCorruption("m->NATTraversals: %p is garbage", n);
+
+	DNSServer *d;
+	for (d = m->DNSServers; d; d=d->next)
+		if (d->teststate > DNSServer_Disabled)
+			LogMemCorruption("m->DNSServers: %p is garbage (%d)", d, d->teststate);
+
+	DomainAuthInfo *info;
+	for (info = m->AuthInfoList; info; info = info->next)
+		if (info->AutoTunnel == (mDNSBool)~0)
+			LogMemCorruption("m->AuthInfoList: %p is garbage (%X)", info, info->AutoTunnel);
+
+	HostnameInfo *hi;
+	for (hi = m->Hostnames; hi; hi = hi->next)
+		if (hi->StatusCallback == (mDNSRecordCallback*)~0)
+			LogMemCorruption("m->Hostnames: %p is garbage", n);
+
 	SearchListElem *ptr;
 	for (ptr = SearchList; ptr; ptr = ptr->next)
-		if (ptr->AuthRecs == (void*)0xFFFFFFFF)
+		if (ptr->AuthRecs == (void*)~0)
 			LogMemCorruption("SearchList: %p is garbage (%X)", ptr, ptr->AuthRecs);
 	}
 #endif

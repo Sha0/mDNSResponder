@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.326  2007/07/24 17:23:33  cheshire
+<rdar://problem/5357133> Add list validation checks for debugging
+
 Revision 1.325  2007/07/11 23:43:43  cheshire
 Rename PurgeCacheResourceRecord to mDNS_PurgeCacheResourceRecord
 
@@ -411,6 +414,16 @@ static DNSServiceBrowser           *DNSServiceBrowserList           = NULL;
 static DNSServiceResolver          *DNSServiceResolverList          = NULL;
 static DNSServiceRegistration      *DNSServiceRegistrationList      = NULL;
 
+// We keep a list of client-supplied event sources in KQSocketEventSource records
+typedef struct KQSocketEventSource
+	{
+	struct  KQSocketEventSource *next;
+	int                         fd;
+	KQueueEntry                 kqs;
+	} KQSocketEventSource;
+
+static KQSocketEventSource *gEventSources;
+
 //*************************************************************************************************************
 // General Utility Functions
 
@@ -434,8 +447,13 @@ mDNSexport void LogMemCorruption(const char *format, ...)
 
 mDNSlocal void validatelists(mDNS *const m)
 	{
+	// Check local lists
+	KQSocketEventSource *k;
+	for (k = gEventSources; k; k=k->next)
+		if (k->fd < 0)
+			LogMemCorruption("gEventSources: %p is garbage (%d)", k, k->fd);
+
 	// Check Mach client lists
-	
 	DNSServiceDomainEnumeration *e;
 	for (e = DNSServiceDomainEnumerationList; e; e=e->next)
 		if (e->ClientMachPort == 0 || e->ClientMachPort == (mach_port_t)~0)
@@ -456,9 +474,8 @@ mDNSlocal void validatelists(mDNS *const m)
 		if (r->ClientMachPort == 0 || r->ClientMachPort == (mach_port_t)~0)
 			LogMemCorruption("DNSServiceRegistrationList: %p is garbage (%X)", r, r->ClientMachPort);
 
-	// Check UDS client lists
+	// Check Unix Domain Socket client lists (uds_daemon.c)
 	uds_validatelists();
-	udns_validatelists();
 
 	// Check core mDNS lists
 	AuthRecord                  *rr;
@@ -486,7 +503,7 @@ mDNSlocal void validatelists(mDNS *const m)
 	FORALL_CACHERECORDS(slot, cg, cr)
 		{
 		if (cr->resrec.RecordType == 0 || cr->resrec.RecordType == 0xFF)
-			LogMemCorruption("Cache slot %lu: %p is garbage (%X)", slot, rr, cr->resrec.RecordType);
+			LogMemCorruption("Cache slot %lu: %p is garbage (%X)", slot, cr, cr->resrec.RecordType);
 		if (cr->CRActiveQuestion)
 			{
 			for (q = m->Questions; q; q=q->next) if (q == cr->CRActiveQuestion) break;
@@ -494,24 +511,19 @@ mDNSlocal void validatelists(mDNS *const m)
 			}
 		}
 
-	// Check platform-layer lists
+	// Check core uDNS lists
+	udns_validatelists(m);
 
+	// Check platform-layer lists
 	NetworkInterfaceInfoOSX     *i;
 	for (i = m->p->InterfaceList; i; i = i->next)
-		if (!i->ifa_name)
-			LogMemCorruption("InterfaceList: %p is garbage", i);
+		if (!i->ifa_name || i->ifa_name == (char *)~0)
+			LogMemCorruption("m->p->InterfaceList: %p is garbage (%p)", i, i->ifa_name);
 
-	// Check uDNS lists
-
-	ServiceRecordSet            *s;
-	for (s = m->ServiceRegistrations; s; s=s->uDNS_next)
-		if (s->uDNS_next == (ServiceRecordSet*)~0)
-			LogMemCorruption("ServiceRegistrations: %p is garbage (%lX)", s, s->uDNS_next);
-
-	NATTraversalInfo            *n;
-	for (n = m->NATTraversals; n; n=n->next)
-		if (n->clientCallback == (NATTraversalClientCallback)~0)
-			LogMemCorruption("NATTraversals: %p is garbage", n);
+	ClientTunnel *t;
+	for (t = m->TunnelClients; t; t=t->next)
+		if (t->dstname.c[0] > 63)
+			LogMemCorruption("m->TunnelClients: %p is garbage (%d)", t, t->dstname.c[0]);
 	}
 
 void *mallocL(char *msg, unsigned int size)
@@ -1385,7 +1397,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 	if (x->DefaultDomain)
 		{
 		DNameListElem *ptr;
-		for (ptr = DefRegList; ptr; ptr = ptr->next)
+		for (ptr = AutoRegistrationDomains; ptr; ptr = ptr->next)
 			AddServiceInstance(x, &ptr->name);
 		}
 
@@ -2669,16 +2681,6 @@ exit:
 	}
 
 // uds_daemon.c support routines /////////////////////////////////////////////
-
-// We keep a list of client-supplied event sources in PosixEventSource records
-typedef struct KQSocketEventSource
-	{
-	struct  KQSocketEventSource *next;
-	int                         fd;
-	KQueueEntry                 kqs;
-	} KQSocketEventSource;
-
-static KQSocketEventSource *gEventSources;
 
 // Arrange things so that callback is called with context when data appears on fd
 mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *context)

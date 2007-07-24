@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.319  2007/07/24 17:23:33  cheshire
+<rdar://problem/5357133> Add list validation checks for debugging
+
 Revision 1.318  2007/07/23 23:09:51  cheshire
 <rdar://problem/5351997> Reject oversized client requests
 
@@ -681,11 +684,11 @@ mDNSexport const char ProgramName[] = "mDNSResponder";
 static dnssd_sock_t listenfd = dnssd_InvalidSocket;
 static request_state *all_requests = NULL;
 
-static DNameListElem *SCPrefBrowseDomains1;		// List of automatic browsing domains read from SCPreferences for "empty string" browsing
-static ARListElem    *SCPrefBrowseDomains2;		// List of local-only PTR records created from list above
-mDNSexport DNameListElem *AutoBrowseDomains;	// List created from the results of browsing for those local-only PTR records
+static DNameListElem *SCPrefBrowseDomains1;			// List of automatic browsing domains read from SCPreferences for "empty string" browsing
+static ARListElem    *SCPrefBrowseDomains2;			// List of local-only PTR records created from list above
+mDNSexport DNameListElem *AutoBrowseDomains;		// List created from the results of browsing for those local-only PTR records
 
-mDNSexport DNameListElem *DefRegList;		// Domains where we automatically register for empty-string registrations
+mDNSexport DNameListElem *AutoRegistrationDomains;	// Domains where we automatically register for empty-string registrations
 
 #define MSG_PAD_BYTES 5		// pad message buffer (read from client) with n zero'd bytes to guarantee
 							// n get_string() calls w/o buffer overrun
@@ -758,8 +761,33 @@ mDNSexport void uds_validatelists(void)
 	{
 	request_state *req;
 	for (req = all_requests; req; req=req->next)
+		{
 		if (req->sd < 0 && req->sd != -2)
-			LogMemCorruption("UDS request list: %p is garbage (%X)", req, req->sd);
+			LogMemCorruption("UDS request list: %p is garbage (%d)", req, req->sd);
+
+		// Should also be checking sub-lists of the request_state objects as appropriate, e.g.:
+		// req->u.reg_recs
+		// req->u.servicereg.instances
+		// req->u.browser.browsers
+		}
+
+	DNameListElem *d;
+	for (d = SCPrefBrowseDomains1; d; d=d->next)
+		if (d->name.c[0] > 63)
+			LogMemCorruption("SCPrefBrowseDomains1: %p is garbage (%d)", d, d->name.c[0]);
+
+	ARListElem *b;
+	for (b = SCPrefBrowseDomains2; b; b=b->next)
+		if (b->ar.resrec.name->c[0] > 63)
+			LogMemCorruption("SCPrefBrowseDomains2: %p is garbage (%d)", b, b->ar.resrec.name->c[0]);
+
+	for (d = AutoBrowseDomains; d; d=d->next)
+		if (d->name.c[0] > 63)
+			LogMemCorruption("AutoBrowseDomains: %p is garbage (%d)", d, d->name.c[0]);
+
+	for (d = AutoRegistrationDomains; d; d=d->next)
+		if (d->name.c[0] > 63)
+			LogMemCorruption("AutoRegistrationDomains: %p is garbage (%d)", d, d->name.c[0]);
 	}
 #endif
 
@@ -1741,7 +1769,7 @@ mDNSlocal mStatus handle_regservice_request(request_state *request)
 		{
 		DNameListElem *ptr;
 		// note that we don't report errors for non-local, non-explicit domains
-		for (ptr = DefRegList; ptr; ptr = ptr->next)
+		for (ptr = AutoRegistrationDomains; ptr; ptr = ptr->next)
 			register_service_instance(request, &ptr->name);
 		}
 
@@ -1999,13 +2027,13 @@ mDNSexport void udsserver_handle_configchange(mDNS *const m)
 	mDNS_Unlock(m);
 
 	// Any automatic registration domains are also implicitly automatic browsing domains
-	if (RegDomains) SetPrefsBrowseDomains(m, RegDomains, mDNStrue);		// Add the new list first
-	if (DefRegList) SetPrefsBrowseDomains(m, DefRegList, mDNSfalse);	// Then clear the old list
+	if (RegDomains) SetPrefsBrowseDomains(m, RegDomains, mDNStrue);								// Add the new list first
+	if (AutoRegistrationDomains) SetPrefsBrowseDomains(m, AutoRegistrationDomains, mDNSfalse);	// Then clear the old list
 
-	// Add any new domains not already in our DefRegList
+	// Add any new domains not already in our AutoRegistrationDomains list
 	for (p=RegDomains; p; p=p->next)
 		{
-		DNameListElem **pp = &DefRegList;
+		DNameListElem **pp = &AutoRegistrationDomains;
 		while (*pp && !SameDomainName(&(*pp)->name, &p->name)) pp = &(*pp)->next;
 		if (!*pp)		// If not found in our existing list, this is a new default registration domain
 			udsserver_default_reg_domain_changed(&p->name, mDNStrue);
@@ -2017,17 +2045,17 @@ mDNSexport void udsserver_handle_configchange(mDNS *const m)
 			}
 		}
 
-	// Delete any domains in our old DefRegList that are now gone
-	while (DefRegList)
+	// Delete any domains in our old AutoRegistrationDomains list that are now gone
+	while (AutoRegistrationDomains)
 		{
-		DNameListElem *del = DefRegList;
-		DefRegList = DefRegList->next;
+		DNameListElem *del = AutoRegistrationDomains;
+		AutoRegistrationDomains = AutoRegistrationDomains->next;
 		udsserver_default_reg_domain_changed(&del->name, mDNSfalse);
 		mDNSPlatformMemFree(del);
 		}
 
 	// Now we have our new updated automatic registration domain list
-	DefRegList = RegDomains;
+	AutoRegistrationDomains = RegDomains;
 
 	// Add new browse domains to internal list
 	if (BrowseDomains) SetPrefsBrowseDomains(m, BrowseDomains, mDNStrue);

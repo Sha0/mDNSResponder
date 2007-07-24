@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.34  2007/07/24 17:23:33  cheshire
+<rdar://problem/5357133> Add list validation checks for debugging
+
 Revision 1.33  2007/06/15 21:54:50  cheshire
 <rdar://problem/4883206> Add packet logging to help debugging private browsing over TLS
 
@@ -189,7 +192,7 @@ extern void *mallocL(char *msg, unsigned int size);
 extern void freeL(char *msg, void *x);
 extern void LogMemCorruption(const char *format, ...);
 extern void uds_validatelists(void);
-extern void udns_validatelists(void);
+extern void udns_validatelists(void *const v);
 #else
 #define mallocL(X,Y) malloc(Y)
 #define freeL(X,Y) free(Y)
