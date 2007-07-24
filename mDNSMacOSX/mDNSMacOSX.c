@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.447  2007/07/24 20:24:18  cheshire
+Only remove AutoTunnel address if we have created it.
+Otherwise, we get "errno 49 (Can't assign requested address)" errors on exit.
+
 Revision 1.446  2007/07/24 03:00:09  cheshire
 SetDomainSecrets() should call SetupLocalAutoTunnelInterface_internal(), not SetupLocalAutoTunnelInterface()
 
@@ -1958,7 +1962,12 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 	LogOperation("SetupLocalAutoTunnelInterface");
 
 	// 1. Configure the local IPv6 address
-	AliasTunnelAddress(&m->AutoTunnelHostAddr);
+	if (!m->AutoTunnelHostAddrActive)
+		{
+		m->AutoTunnelHostAddrActive = mDNStrue;
+		LogMsg("Setting up AutoTunnel address %.16a", &m->AutoTunnelHostAddr);
+		AliasTunnelAddress(&m->AutoTunnelHostAddr);
+		}
 
 	// 2. If we have at least one server listening, publish our records
 	if (TunnelServers(m))
@@ -3689,8 +3698,12 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 	CloseSocketSet(&m->p->permanentsockets);
 
 	#if APPLE_OSX_mDNSResponder
-	if (m->AutoTunnelHostAddr.b[0])
+	if (m->AutoTunnelHostAddrActive && m->AutoTunnelHostAddr.b[0])
+		{
+		m->AutoTunnelHostAddrActive = mDNSfalse;
+		LogMsg("Removing AutoTunnel address %.16a", &m->AutoTunnelHostAddr);
 		UnaliasTunnelAddress(&m->AutoTunnelHostAddr);
+		}
 	#endif // APPLE_OSX_mDNSResponder
 	}
 
