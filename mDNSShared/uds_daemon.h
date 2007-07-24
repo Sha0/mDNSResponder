@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.h,v $
+Revision 1.23  2007/07/24 17:23:02  cheshire
+Rename DefRegList as AutoRegistrationDomains
+
 Revision 1.22  2007/07/11 02:58:04  cheshire
 <rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for AutoTunnel services
 
@@ -122,7 +125,7 @@ extern void RecordUpdatedNiceLabel(mDNS *const m, mDNSs32 delay);
 // Globals and functions defined in uds_daemon.c and also shared with the old "daemon.c" on OS X
 
 extern mDNS mDNSStorage;
-extern DNameListElem *DefRegList;
+extern DNameListElem *AutoRegistrationDomains;
 extern DNameListElem *AutoBrowseDomains;
 
 extern mDNSs32 ChopSubTypes(char *regtype);
