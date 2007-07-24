@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.408  2007/07/24 21:47:51  cheshire
+Don't do mDNS_StopNATOperation() for operations we never started
+
 Revision 1.407  2007/07/24 17:23:33  cheshire
 <rdar://problem/5357133> Add list validation checks for debugging
 
@@ -1351,7 +1354,7 @@ mDNSlocal void recvSetupResponse(mDNS *const m, mDNSu8 rcode, DNSQuestion *const
 			{
 			case LLQErr_NoError: break;
 			case LLQErr_ServFull:
-				LogMsg("hndlRequestChallenge - received ServFull from server for LLQ %##s Retry in %lu sec", q->qname.c, llq->llqlease);
+				LogMsg("recvSetupResponse - received ServFull from server for LLQ %##s Retry in %lu sec", q->qname.c, llq->llqlease);
 				q->LastQTime     = m->timenow;
 				q->ThisQInterval = ((mDNSs32)llq->llqlease * mDNSPlatformOneSecond);
 				q->state = LLQ_Retry;
@@ -1361,21 +1364,21 @@ mDNSlocal void recvSetupResponse(mDNS *const m, mDNSu8 rcode, DNSQuestion *const
 				LogMsg("LLQ %##s: static", q->qname.c);
 				goto exit;
 			case LLQErr_FormErr:
-				LogMsg("ERROR: hndlRequestChallenge - received FormErr from server for LLQ %##s", q->qname.c);
+				LogMsg("ERROR: recvSetupResponse - received FormErr from server for LLQ %##s", q->qname.c);
 				goto error;
 			case LLQErr_BadVers:
-				LogMsg("ERROR: hndlRequestChallenge - received BadVers from server");
+				LogMsg("ERROR: recvSetupResponse - received BadVers from server");
 				goto error;
 			case LLQErr_UnknownErr:
-				LogMsg("ERROR: hndlRequestChallenge - received UnknownErr from server for LLQ %##s", q->qname.c);
+				LogMsg("ERROR: recvSetupResponse - received UnknownErr from server for LLQ %##s", q->qname.c);
 				goto error;
 			default:
-				LogMsg("ERROR: hndlRequestChallenge - received invalid error %d for LLQ %##s", llq->err, q->qname.c);
+				LogMsg("ERROR: recvSetupResponse - received invalid error %d for LLQ %##s", llq->err, q->qname.c);
 				goto error;
 			}
 	
 		if (q->origLease != llq->llqlease)
-			debugf("hndlRequestChallenge: requested lease %lu, granted lease %lu", q->origLease, llq->llqlease);
+			debugf("recvSetupResponse: requested lease %lu, granted lease %lu", q->origLease, llq->llqlease);
 	
 		// cache expiration in case we go to sleep before finishing setup
 		q->origLease = llq->llqlease;
@@ -2050,8 +2053,9 @@ mDNSexport void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *questio
 
 	debugf("GetZoneData_QuestionCallback: %s %s", AddRecord ? "Add" : "Rmv", RRDisplayString(m, answer));
 
-	if (!AddRecord) return;
-	if (answer->rrtype != question->qtype) return; // Don't care about CNAMEs
+	if (!AddRecord) return;									// Don't care about REMOVE events
+	if (AddRecord == 2 && answer->rdlength == 0) return;	// Don't care about transient failure indications
+	if (answer->rrtype != question->qtype) return;			// Don't care about CNAMEs
 
 	if (answer->rrtype == kDNSType_SOA)
 		{
@@ -2072,7 +2076,7 @@ mDNSexport void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *questio
 			}
 		else
 			{
-			LogMsg("ERROR: hndlLookupSOA - recursed to root label of %##s without finding SOA", zd->ChildName.c);
+			LogMsg("ERROR: GetZoneData_QuestionCallback - recursed to root label of %##s without finding SOA", zd->ChildName.c);
 			zd->ZoneDataCallback(m, mStatus_NoSuchNameErr, zd);
 			mDNSPlatformMemFree(zd);
 			}
@@ -3416,7 +3420,7 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 			for (qptr = m->Questions; qptr; qptr = qptr->next)
 				if (msg->h.flags.b[0] & kDNSFlag0_TC && mDNSSameOpaque16(qptr->TargetQID, msg->h.id) && m->timenow - qptr->LastQTime < RESPONSE_WINDOW)
 					{
-					if (!srcaddr) LogMsg("hndlTruncatedAnswer: TCP DNS response had TC bit set: ignoring");
+					if (!srcaddr) LogMsg("uDNS_ReceiveMsg: TCP DNS response had TC bit set: ignoring");
 					else qptr->tcp = MakeTCPConn(m, mDNSNULL, mDNSNULL, kTCPSocketFlags_Zero, srcaddr, srcport, qptr, mDNSNULL, mDNSNULL);
 					}
 		}
@@ -3782,10 +3786,11 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 		{
 		case regState_NATMap:
 			// we're in the middle of a NAT traversal operation
-			mDNS_StopNATOperation_internal(m, &rr->NATinfo); // cause response to outstanding request to be ignored.
-				                         // Note: normally here we're trying to determine our public address,
-				                         // in which case there is not state to be torn down.
-				                         // For simplicity, we allow other operations to expire.
+			if (rr->NATinfo.clientContext)
+				{
+				mDNS_StopNATOperation_internal(m, &rr->NATinfo);
+				rr->NATinfo.clientContext = mDNSNULL;
+				}
 			rr->state = regState_Unregistered;
 			break;
 		case regState_ExtraQueued: rr->state = regState_Unregistered; break;
@@ -3807,7 +3812,11 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 
 	if (rr->state != regState_Unregistered)
 		{
-		mDNS_StopNATOperation_internal(m, &rr->NATinfo);
+		if (rr->NATinfo.clientContext)
+			{
+			mDNS_StopNATOperation_internal(m, &rr->NATinfo);
+			rr->NATinfo.clientContext = mDNSNULL;
+			}
 		SendRecordDeregistration(m, rr);
 		}
 	return mStatus_NoError;
@@ -4060,6 +4069,11 @@ mDNSexport void uDNS_CheckQuery(mDNS *const m)
 			}
 		else
 			{
+			// If we have no server for this query, or the only server is a disabled one, then we deliver a
+			// transient failure indication to the client. This is important for things like iPhone where we
+			// want to return timely feedback to the user when no network is available. Note that although we
+			// use MakeNegativeCacheRecord() here, we don't actually store it in the cache --
+			// we just deliver it to the client with a no-cache ADD, and then discard it.
 			if (!q->qDNSServer) LogMsg("uDNS_CheckQuery no DNS server for %##s", q->qname.c);
 			else LogMsg("uDNS_CheckQuery DNS server %#a:%d for %##s is disabled", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qname.c);
 			MakeNegativeCacheRecord(m, &q->qname, q->qnamehash, q->qtype, q->qclass);
