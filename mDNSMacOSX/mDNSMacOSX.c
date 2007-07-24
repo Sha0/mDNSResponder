@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.446  2007/07/24 03:00:09  cheshire
+SetDomainSecrets() should call SetupLocalAutoTunnelInterface_internal(), not SetupLocalAutoTunnelInterface()
+
 Revision 1.445  2007/07/23 20:26:26  cheshire
 <rdar://problem/4641118> Need separate SCPreferences for per-user .Mac settings
 Move code that reads "Setup:/Network/BackToMyMac" preferences outside the check
@@ -3136,6 +3139,7 @@ mDNSlocal mDNSBool IsTunnelModeDomain(const domainname *d)
 	return(d3 && SameDomainName(d3, mmc));
 	}
 
+// MUST be called holding the lock -- this routine calls SetupLocalAutoTunnelInterface_internal()
 mDNSlocal void SetDomainSecrets(mDNS *m)
 	{
 #ifdef NO_SECURITYFRAMEWORK
@@ -3262,7 +3266,7 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 		{
 		if (m->AutoTunnelHostAddr.b[0])
 			if (m->TunnelClients || TunnelServers(m))
-				SetupLocalAutoTunnelInterface(m);
+				SetupLocalAutoTunnelInterface_internal(m);
 		}
 	#endif APPLE_OSX_mDNSResponder
 
