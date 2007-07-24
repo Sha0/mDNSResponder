@@ -940,7 +940,7 @@ int main(int argc, char **argv)
 		case 'X':   {
 					if (argc == optind)	// If no arguments, just fetch IP address
 						err = DNSServiceNATPortMappingCreate(&client, 0, 0, 0, 0, 0, 0, port_mapping_create_reply, NULL);
-					else if (argc >= optind+2)
+					else if (argc >= optind+2 && atoi(argv[optind+0]) == 0)
 						{
 						DNSServiceProtocol prot  = GetProtocol(argv[optind+0]);						// Must specify TCP or UDP
 						uint16_t IntPortAsNumber = atoi(argv[optind+1]);							// Must specify internal port
