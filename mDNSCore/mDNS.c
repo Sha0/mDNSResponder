@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.662  2007/07/24 20:22:46  cheshire
+Make sure all fields of main mDNS object are initialized correctly
+
 Revision 1.661  2007/07/21 00:54:45  cheshire
 <rdar://problem/5344576> Delay IPv6 address callback until AutoTunnel route and policy is configured
 
@@ -6360,7 +6363,30 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 
 #ifndef UNICAST_DISABLED
 	m->NextuDNSEvent            = timenow + 0x78000000;
+	m->NextSRVUpdate            = timenow + 0x78000000;
+	m->SuppressStdPort53Queries = 0;
+
 	m->ServiceRegistrations     = mDNSNULL;
+	m->NextMessageID            = 0;
+	m->DNSServers               = mDNSNULL;
+
+	m->Router                   = zeroAddr;
+	m->AdvertisedV4             = zeroAddr;
+	m->AdvertisedV6             = zeroAddr;
+
+	m->AuthInfoList             = mDNSNULL;
+
+	m->ReverseMap.ThisQInterval = -1;
+	m->StaticHostname.c[0]      = 0;
+	m->FQDN.c[0]                = 0;
+	m->Hostnames                = mDNSNULL;
+	m->AutoTunnelHostAddr.b[0]  = 0;
+	m->AutoTunnelHostAddrActive = mDNSfalse;
+	m->AutoTunnelLabel.c[0]     = 0;
+
+	m->RegisterSearchDomains    = mDNSfalse;
+
+	// NAT traversal fields
 	m->NATTraversals            = mDNSNULL;
 	m->CurrentNATTraversal      = mDNSNULL;
 	m->NATAddrReq.vers          = 0;
@@ -6368,28 +6394,18 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->retryGetAddr             = timenow + 0x78000000;	// absolute time when we retry
 	m->retryIntervalGetAddr     = 0;	// delta between time sent and retry
 	m->ExternalAddress          = zerov4Addr;
-	
-	m->uPNPRouterPort          = zeroIPPort;
-	m->uPNPSOAPPort            = zeroIPPort;
-	m->uPNPRouterURL           = mDNSNULL;
-	m->uPNPSOAPURL             = mDNSNULL;
+
+	m->tcpAddrInfo              = mDNSNULL;
+	m->tcpDeviceInfo            = mDNSNULL;
+	m->uPNPRouterPort           = zeroIPPort;
+	m->uPNPSOAPPort             = zeroIPPort;
+	m->uPNPRouterURL            = mDNSNULL;
+	m->uPNPSOAPURL              = mDNSNULL;
 	m->uPNPRouterAddressString  = mDNSNULL;
 	m->uPNPSOAPAddressString    = mDNSNULL;
-
-	m->NextMessageID            = 0;
-	m->DNSServers               = mDNSNULL;
-	m->Router                   = zeroAddr;
-	m->AdvertisedV4             = zeroAddr;
-	m->AdvertisedV6             = zeroAddr;
-	m->AuthInfoList             = mDNSNULL;
-	m->Hostnames                = mDNSNULL;
-	m->ReverseMap.ThisQInterval = -1;
-	m->StaticHostname.c[0]      = 0;
-	m->NextSRVUpdate            = timenow + 0x78000000;
-	m->FQDN.c[0]                = 0;
-	m->RegisterSearchDomains    = mDNSfalse;
-	m->SuppressStdPort53Queries = 0;
 #endif
+
+	m->TunnelClients            = mDNSNULL;
 
 	result = mDNSPlatformInit(m);
 
