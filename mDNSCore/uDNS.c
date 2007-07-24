@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.405  2007/07/24 01:29:03  cheshire
+<rdar://problem/5356026> DNSServiceNATPortMappingCreate() returns stale external address information
+
 Revision 1.404  2007/07/20 23:10:51  cheshire
 Fix code layout
 
@@ -940,6 +943,25 @@ mDNSlocal mStatus uDNS_SendNATMsg(mDNS *m, NATTraversalInfo *info, NATOptFlags_t
 	return(err);
 	}
 
+mDNSlocal void SetExternalAddress(mDNS *const m, mDNSv4Addr newaddr)
+	{
+	NATTraversalInfo *n;
+	if (mDNSSameIPv4Address(m->ExternalAddress, newaddr)) return;
+
+	m->ExternalAddress = newaddr;
+	LogOperation("Received external IP address %.4a from NAT", &m->ExternalAddress);
+	if (mDNSv4AddrIsRFC1918(&m->ExternalAddress)) LogMsg("natTraversalHandleAddressReply: Double NAT");
+
+	// NAT gateway changed. Need to refresh or recreate port mappings ASAP
+	for (n = m->NATTraversals; n; n=n->next)
+		{
+		n->retryPortMap         = m->timenow;
+		n->retryIntervalPortMap = NATMAP_INIT_RETRY;
+		}
+
+	m->NextScheduledNATOp = m->timenow;
+	}
+
 // Pass NULL for pkt on error (including timeout)
 mDNSexport void natTraversalHandleAddressReply(mDNS *const m, mDNSu8 *pkt)
 	{
@@ -965,21 +987,15 @@ mDNSexport void natTraversalHandleAddressReply(mDNS *const m, mDNSu8 *pkt)
 		}
 	else { err = addrReply->err; addr = addrReply->PubAddr; }
 		
-	if (err) 
+	if (err)
 		{
-		LogMsg("natTraversalHandleAddressReply: received error getting external address %d", err); 
+		LogMsg("natTraversalHandleAddressReply: received error getting external address %d", err);
 		m->retryIntervalGetAddr = NATMAP_MAX_RETRY_INTERVAL;
 		m->retryGetAddr = m->timenow + m->retryIntervalGetAddr;
 		return;
 		}
-		
-	if (!mDNSSameIPv4Address(m->ExternalAddress, addr))
-		{ 
-		// only change if address is different
-		m->ExternalAddress = addr; 
-		LogOperation("Received external IP address %.4a from NAT", &m->ExternalAddress); 
-		if (mDNSv4AddrIsRFC1918(&m->ExternalAddress)) LogMsg("natTraversalHandleAddressReply: Double NAT");
-		}
+	
+	SetExternalAddress(m, addr);
 	m->retryIntervalGetAddr = NATMAP_MAX_RETRY_INTERVAL;
 	m->retryGetAddr = m->timenow + m->retryIntervalGetAddr;
 	}
@@ -1034,9 +1050,9 @@ mDNSexport void natTraversalHandlePortMapReply(NATTraversalInfo *n, mDNS *const 
 		lease = portMapReply->NATRep_lease;
 		}
 		
-	if (err) 
-		{ 
-		LogMsg("natTraversalHandlePortMapReply: received error making port mapping %d", err); 
+	if (err)
+		{
+		LogMsg("natTraversalHandlePortMapReply: received error making port mapping %d", err);
 		n->retryIntervalPortMap = NATMAP_MAX_RETRY_INTERVAL;
 		n->retryPortMap = m->timenow + n->retryIntervalPortMap;
 		n->Error = err;
@@ -1077,7 +1093,7 @@ mDNSlocal mStatus mDNS_StartNATOperation_internal(mDNS *const m, NATTraversalInf
 	traversal->opFlags              = 0;
 	traversal->publicPort           = zeroIPPort;
 	traversal->lastPublicPort       = zeroIPPort;
-	traversal->lastExternalAddress  = zerov4Addr;
+	traversal->lastExternalAddress  = onesIPv4Addr;
 	traversal->Error                = mStatus_NoError;
 	traversal->lastError            = mStatus_NoError;
 	traversal->retryPortMap         = 0;
@@ -1197,7 +1213,7 @@ mDNSlocal void StartLLQNatMap(mDNS *m, DNSQuestion *q)
 		{
 		mDNSPlatformMemZero(&q->NATInfoUDP, sizeof(NATTraversalInfo));
 		
-		if (q->AuthInfo) 
+		if (q->AuthInfo)
 			q->NATInfoUDP.privatePort = q->NATInfoUDP.publicPortreq = q->eventPort;
 		else
 			q->NATInfoUDP.privatePort = q->NATInfoUDP.publicPortreq = m->UnicastPort4;
@@ -2409,8 +2425,8 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 					}
 				else
 					{
-					if (NATChanged || !NowBehindNAT) 
-						{ 
+					if (NATChanged || !NowBehindNAT)
+						{
 						mDNS_StopNATOperation_internal(m, &srs->NATinfo);
 						srs->NATinfo.clientContext = mDNSNULL;
 						}
@@ -2483,7 +2499,7 @@ mDNSlocal void AdvertiseHostname(mDNS *m, HostnameInfo *h)
 		h->arv4.resrec.rdata->u.ipv4 = m->AdvertisedV4.ip.v4;
 		h->arv4.state = regState_Unregistered;
 		LogMsg("AdvertiseHostname: Advertising hostname %##s IPv4 %.4a", h->arv4.resrec.name->c, &m->AdvertisedV4.ip.v4);
-		if (mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4)) 
+		if (mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4))
 			{
 			h->arv4.NATinfo.clientCallback   = hostnameGetPublicAddressCallback;
 			h->arv4.NATinfo.clientContext    = h;
@@ -2748,8 +2764,12 @@ mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr, co
 			AdvertiseHostname(m, i);
 			}
 
-		m->retryGetAddr = m->timenow;
-		m->retryIntervalGetAddr = NATMAP_INIT_RETRY;
+		if (v4Changed || RouterChanged)
+			{
+			m->retryGetAddr = m->timenow;
+			m->retryIntervalGetAddr = NATMAP_INIT_RETRY;
+			SetExternalAddress(m, zerov4Addr);
+			}
 
 		UpdateSRVRecords(m);
 		GetStaticHostname(m);	// look up reverse map record to find any static hostnames for our IP address
@@ -3007,12 +3027,12 @@ mDNSlocal void hndlServiceUpdateReply(mDNS *const m, ServiceRecordSet *srs,  mSt
 				}
 			err = mStatus_MemFree;
 			InvokeCallback = mDNStrue;
-			if (srs->NATinfo.clientContext && !mDNSIPPortIsZero(srs->NATinfo.publicPort)) 
-				{ 
+			if (srs->NATinfo.clientContext && !mDNSIPPortIsZero(srs->NATinfo.publicPort))
+				{
 				// deletion completed
-				mDNS_StopNATOperation_internal(m, &srs->NATinfo); 
+				mDNS_StopNATOperation_internal(m, &srs->NATinfo);
 				srs->NATinfo.clientContext = mDNSNULL;
-				} 
+				}
 			srs->state = regState_Unregistered;
 			break;
 		case regState_DeregDeferred:
@@ -3250,7 +3270,7 @@ mDNSexport void uDNS_ReceiveNATPMPPacket(mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 		if (len < sizeof(NATPortMapReply)) { LogMsg("NAT Traversal PortMapReply message too short (%d bytes)", len); return; }
 		PortMapReply->NATRep_lease = (mDNSs32) ((mDNSs32)pkt[12] << 24 | (mDNSs32)pkt[13] << 16 | (mDNSs32)pkt[14] << 8 | pkt[15]);
 		
-		for (ptr = m->NATTraversals; ptr; ptr=ptr->next) natTraversalHandlePortMapReply(ptr, m, pkt); 
+		for (ptr = m->NATTraversals; ptr; ptr=ptr->next) natTraversalHandlePortMapReply(ptr, m, pkt);
 		}
 	else { LogMsg("Received NAT Traversal response with version unknown opcode 0x%X", AddrReply->opcode); return; }
 	}
@@ -3259,7 +3279,7 @@ mDNSexport void uDNS_ReceiveNATPMPPacket(mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 mDNSexport void uDNS_ReceiveSSDPPacket(mDNS *m, mDNSu8 *data, mDNSu16 len)
 	{
 	// Extract router's port and url from response if we don't already have it, otherwise ignore
-	if (mDNSIPPortIsZero(m->uPNPRouterPort)) LNT_ConfigureRouterInfo(m, data, len);	
+	if (mDNSIPPortIsZero(m->uPNPRouterPort)) LNT_ConfigureRouterInfo(m, data, len);
 	}
 #endif // _LEGACY_NAT_TRAVERSAL_
 
@@ -4125,15 +4145,16 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 			if (!(cur->opFlags & (MapUDPFlag | MapTCPFlag)) ||		// If client is only asking for address,
 				!mDNSIPPortIsZero(cur->publicPort)          ||		// or, client wants a mapping, and we have got one
 				cur->Error)											// or, an error occurred
-				if (!mDNSSameIPv4Address(m->ExternalAddress, cur->lastExternalAddress) ||
-					!mDNSSameIPPort     (cur->publicPort,    cur->lastPublicPort)      ||
-					cur->Error != cur->lastError)
-					{
-					cur->lastExternalAddress = m->ExternalAddress;
-					cur->lastPublicPort      = cur->publicPort;
-					cur->lastError           = cur->Error;
-					cur->clientCallback(m, m->ExternalAddress, cur, cur->Error);
-					}
+				if (!mDNSIPv4AddressIsZero(m->ExternalAddress) || m->retryIntervalGetAddr > NATMAP_INIT_RETRY*2)
+					if (!mDNSSameIPv4Address(m->ExternalAddress, cur->lastExternalAddress) ||
+						!mDNSSameIPPort     (cur->publicPort,    cur->lastPublicPort)      ||
+						cur->Error != cur->lastError)
+						{
+						cur->lastExternalAddress = m->ExternalAddress;
+						cur->lastPublicPort      = cur->publicPort;
+						cur->lastError           = cur->Error;
+						cur->clientCallback(m, m->ExternalAddress, cur, cur->Error);
+						}
 			}
 		}
 	}
