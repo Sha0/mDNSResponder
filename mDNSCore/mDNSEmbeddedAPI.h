@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.404  2007/07/24 20:22:07  cheshire
+Add AutoTunnelHostAddrActive flag
+
 Revision 1.403  2007/07/24 04:14:29  cheshire
 <rdar://problem/5356281> LLQs not working in with NAT Traversal
 
@@ -1789,6 +1792,7 @@ struct mDNS_struct
 	domainname        FQDN;
 	HostnameInfo     *Hostnames;            // List of registered hostnames + hostname metadata
 	mDNSv6Addr        AutoTunnelHostAddr;	// IPv6 address advertised for AutoTunnel services on this machine
+	mDNSBool          AutoTunnelHostAddrActive;
 	domainlabel       AutoTunnelLabel;		// Used to construct hostname for *IPv4* address of tunnel endpoints
 
 	mDNSBool          RegisterSearchDomains;
