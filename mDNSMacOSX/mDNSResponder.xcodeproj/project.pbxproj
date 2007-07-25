@@ -54,6 +54,9 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+		4A8202630C56C4C000DDFD48 /* pfkey.c in Sources */ = {isa = PBXBuildFile; fileRef = 4A8202530C56C36600DDFD48 /* pfkey.c */; };
+		4A8202640C56C4C100DDFD48 /* pfkey.c in Sources */ = {isa = PBXBuildFile; fileRef = 4A8202530C56C36600DDFD48 /* pfkey.c */; };
+		4A8202650C56C4C900DDFD48 /* pfkey.c in Sources */ = {isa = PBXBuildFile; fileRef = 4A8202530C56C36600DDFD48 /* pfkey.c */; };
 		D284BE530ADD80740027CCDF /* DNSServiceDiscoveryDefines.h in Headers */ = {isa = PBXBuildFile; fileRef = 6575FBFF022EAFBA00000109 /* DNSServiceDiscoveryDefines.h */; };
 		D284BE540ADD80740027CCDF /* dnssd_ipc.h in Headers */ = {isa = PBXBuildFile; fileRef = F5E11B5B04A28126019798ED /* dnssd_ipc.h */; };
 		D284BE560ADD80740027CCDF /* DNSServiceDiscoveryReply.defs in Sources */ = {isa = PBXBuildFile; fileRef = 6575FC00022EAFBA00000109 /* DNSServiceDiscoveryReply.defs */; settings = {ATTRIBUTES = (Client, ); }; };
@@ -390,6 +393,9 @@
 		000753D303367C1C0CCA2C71 /* mDNSMacOSX.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = mDNSMacOSX.h; sourceTree = "<group>"; };
 		00CA213D02786FC30CCA2C71 /* IOKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = IOKit.framework; path = /System/Library/Frameworks/IOKit.framework; sourceTree = "<absolute>"; };
 		09AB6884FE841BABC02AAC07 /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = /System/Library/Frameworks/CoreFoundation.framework; sourceTree = "<absolute>"; };
+		4A8202510C56C36500DDFD48 /* ipsec_strerror.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ipsec_strerror.h; sourceTree = "<group>"; };
+		4A8202520C56C36500DDFD48 /* libpfkey.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = libpfkey.h; sourceTree = "<group>"; };
+		4A8202530C56C36600DDFD48 /* pfkey.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = pfkey.c; sourceTree = "<group>"; };
 		654BE64F02B63B93000001D1 /* mDNSEmbeddedAPI.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = mDNSEmbeddedAPI.h; path = ../mDNSCore/mDNSEmbeddedAPI.h; sourceTree = "<group>"; };
 		654BE65002B63B93000001D1 /* mDNSDebug.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = mDNSDebug.h; path = ../mDNSCore/mDNSDebug.h; sourceTree = "<group>"; };
 		65713D46025A293200000109 /* SystemConfiguration.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SystemConfiguration.framework; path = /System/Library/Frameworks/SystemConfiguration.framework; sourceTree = "<absolute>"; };
@@ -405,7 +411,7 @@
 		7F461DB5062DBF2900672BF3 /* DNSDigest.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = DNSDigest.c; path = ../mDNSCore/DNSDigest.c; sourceTree = SOURCE_ROOT; };
 		7F869685066EE02400D2A2DC /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = /System/Library/Frameworks/Security.framework; sourceTree = "<absolute>"; };
 		7FC8F9D406D14E66007E879D /* LegacyNATTraversal.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = LegacyNATTraversal.c; sourceTree = SOURCE_ROOT; };
-		D284BE730ADD80740027CCDF /* mDNSResponder */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "compiled.mach-o.executable"; path = mDNSResponder; sourceTree = BUILT_PRODUCTS_DIR; };
+		D284BE730ADD80740027CCDF /* mDNSResponder */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = mDNSResponder; sourceTree = BUILT_PRODUCTS_DIR; };
 		D284BE950ADD80800027CCDF /* mDNSResponder.debug */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = mDNSResponder.debug; sourceTree = BUILT_PRODUCTS_DIR; };
 		D284BEA30ADD808B0027CCDF /* mDNS */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = mDNS; sourceTree = BUILT_PRODUCTS_DIR; };
 		D284BEB00ADD80920027CCDF /* dns-sd */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "dns-sd"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -608,6 +614,9 @@
 		08FB7795FE84155DC02AAC07 /* mDNS Server Sources */ = {
 			isa = PBXGroup;
 			children = (
+				4A8202510C56C36500DDFD48 /* ipsec_strerror.h */,
+				4A8202520C56C36500DDFD48 /* libpfkey.h */,
+				4A8202530C56C36600DDFD48 /* pfkey.c */,
 				7FC8F9D406D14E66007E879D /* LegacyNATTraversal.c */,
 				7F461DB5062DBF2900672BF3 /* DNSDigest.c */,
 				F525E72804AA167501F1CF4D /* uds_daemon.c */,
@@ -1098,6 +1107,7 @@
 		08FB7793FE84155DC02AAC07 /* Project object */ = {
 			isa = PBXProject;
 			buildConfigurationList = D284BE2B0ADD78180027CCDF /* Build configuration list for PBXProject "mDNSResponder" */;
+			compatibilityVersion = "Xcode 2.4";
 			hasScannedForEncodings = 1;
 			mainGroup = 08FB7794FE84155DC02AAC07 /* mDNSResponder */;
 			projectDirPath = "";
@@ -1280,6 +1290,7 @@
 				D284BE610ADD80740027CCDF /* mDNSMacOSX.c in Sources */,
 				D284BE620ADD80740027CCDF /* LegacyNATTraversal.c in Sources */,
 				D284BE630ADD80740027CCDF /* daemon.c in Sources */,
+				4A8202630C56C4C000DDFD48 /* pfkey.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1300,6 +1311,7 @@
 				D284BE890ADD80800027CCDF /* mDNSMacOSX.c in Sources */,
 				D284BE8A0ADD80800027CCDF /* LegacyNATTraversal.c in Sources */,
 				D284BE8B0ADD80800027CCDF /* daemon.c in Sources */,
+				4A8202640C56C4C100DDFD48 /* pfkey.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1340,6 +1352,7 @@
 				D284BECC0ADD80A20027CCDF /* dnsextd_parser.y in Sources */,
 				D284BECB0ADD80A20027CCDF /* dnsextd_lexer.l in Sources */,
 				D284BECD0ADD80A20027CCDF /* PlatformCommon.c in Sources */,
+				4A8202650C56C4C900DDFD48 /* pfkey.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1620,7 +1633,10 @@
 					"$(inherited)",
 					"-no-cpp-precomp",
 				);
-				OTHER_LDFLAGS = "-ldnsinfo";
+				OTHER_LDFLAGS = (
+					"-ldnsinfo",
+					"-lipsec",
+				);
 				OTHER_REZFLAGS = "";
 				PRODUCT_NAME = mDNSResponder;
 				REZ_EXECUTABLE = YES;
@@ -1663,7 +1679,10 @@
 					"$(inherited)",
 					"-no-cpp-precomp",
 				);
-				OTHER_LDFLAGS = "-ldnsinfo";
+				OTHER_LDFLAGS = (
+					"-ldnsinfo",
+					"-lipsec",
+				);
 				OTHER_REZFLAGS = "";
 				PRODUCT_NAME = mDNSResponder.debug;
 				REZ_EXECUTABLE = YES;
@@ -1781,7 +1800,10 @@
 				MACOSX_DEPLOYMENT_TARGET = 10.4;
 				MVERS = "\"mDNSResponder (Engineering Build)\"";
 				OTHER_CFLAGS = "-no-cpp-precomp";
-				OTHER_LDFLAGS = "-ldnsinfo";
+				OTHER_LDFLAGS = (
+					"-ldnsinfo",
+					"-lipsec",
+				);
 				OTHER_REZFLAGS = "";
 				PRODUCT_NAME = dnsextd;
 				REZ_EXECUTABLE = YES;
