@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.451  2007/07/25 22:25:45  cheshire
+<rdar://problem/5360853> BTMM: Code not cleaning up old racoon files
+
 Revision 1.450  2007/07/25 21:19:10  cheshire
 <rdar://problem/5359507> Fails to build with NO_SECURITYFRAMEWORK: 'IsTunnelModeDomain' defined but not used
 
@@ -2227,25 +2230,23 @@ mDNSlocal const char RacoonClientConfig[] = "remote %s\n"
 	"sainfo address %s any address %s any\n"
 	"{ pfs_group 2; lifetime time 60 min; encryption_algorithm aes; authentication_algorithm hmac_sha1; compression_algorithm deflate; }\n";
 
-mDNSlocal void AutoTunnelSetKeys(mDNS *const m, ClientTunnel *tun, mDNSBool AddNew)
+mDNSlocal void AutoTunnelSetKeys(ClientTunnel *tun, mDNSBool AddNew)
 	{
-
-	tun->loc_inner = m->AutoTunnelHostAddr;
-	tun->loc_outer = m->AdvertisedV4.ip.v4;
-
 	TeardownTunnelPolicy(&tun->loc_inner, &tun->rmt_inner);
-	if (AddNew)
-		SetupTunnelPolicy(&tun->loc_inner, &tun->loc_outer, &tun->rmt_inner, &tun->rmt_outer);
-	
+	if (AddNew) SetupTunnelPolicy(&tun->loc_inner, &tun->loc_outer, &tun->rmt_inner, &tun->rmt_outer);
+
 	TeardownTunnelRoute(&tun->rmt_inner);
+	if (AddNew) SetupTunnelRoute(&tun->loc_inner, &tun->rmt_inner);
+
+	char li[40], ri[40], ro[40]; // Enough for IPv6 address plus nul on the end
+	mDNS_snprintf(ro, sizeof(ro), "%.4a", &tun->rmt_outer);
+	mDNS_snprintf(li, sizeof(li), "%.16a", &tun->loc_inner);
+	mDNS_snprintf(ri, sizeof(ri), "%.16a", &tun->rmt_inner);
+	char filename[64];
+	mDNS_snprintf(filename, sizeof(filename), "/etc/racoon/remote/%s.conf", ro);
+
 	if (AddNew)
 		{
-		char li[40], ri[40], ro[40]; // Enough for IPv6 address plus nul on the end
-		mDNS_snprintf(ro, sizeof(ro), "%.4a", &tun->rmt_outer);
-		mDNS_snprintf(li, sizeof(li), "%.16a", &tun->loc_inner);
-		mDNS_snprintf(ri, sizeof(ri), "%.16a", &tun->rmt_inner);
-		char filename[64];
-		mDNS_snprintf(filename, sizeof(filename), "/etc/racoon/remote/%s.conf", ro);
 		FILE *f = fopen(filename, "w");
 		fchmod(fileno(f), S_IRUSR | S_IWUSR);
 		char filedata[1024];
@@ -2253,8 +2254,10 @@ mDNSlocal void AutoTunnelSetKeys(mDNS *const m, ClientTunnel *tun, mDNSBool AddN
 		fwrite(filedata, len, 1, f);
 		fclose(f);
 		RestartRacoon();
-		
-		SetupTunnelRoute(&tun->loc_inner, &tun->rmt_inner);
+		}
+	else
+		{
+		unlink(filename);
 		}
 	}
 
@@ -2285,29 +2288,18 @@ mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const R
 	ClientTunnel *tun = (ClientTunnel *)question->QuestionContext;
 	if (!AddRecord) return;
 	mDNS_StopQuery(m, question);
+
 	if (!answer->rdlength)
 		{
 		LogOperation("AutoTunnelCallback NXDOMAIN %##s", question->qname.c);
 		ReissueBlockedQuestions(m, &tun->dstname);
 		return;
 		}
+
 	if (question->qtype == kDNSType_AAAA)
 		{
 		tun->rmt_inner = answer->rdata->u.ipv6;
 		LogOperation("AutoTunnelCallback: dst host %.16a", &tun->rmt_inner);
-
-		ClientTunnel **p = &tun->next;
-		while (*p && !mDNSSameClientTunnel(&(*p)->rmt_inner, &tun->rmt_inner)) p = &(*p)->next;
-		if (*p)
-			{
-			ClientTunnel *old = *p;
-			LogOperation("Updating existing AutoTunnel for %##s %.16a", tun->dstname.c, &tun->rmt_inner);
-			*p = old->next;
-			freeL("ClientTunnel", old);
-			}
-		else
-			LogOperation("New AutoTunnel for %##s %.16a", tun->dstname.c, &tun->rmt_inner);
-
 		AssignDomainName(&question->qname, (const domainname*) "\x0B" "_autotunnel" "\x04" "_udp");
 		AppendDomainName(&question->qname, &tun->dstname);
 		question->qtype = kDNSType_SRV;
@@ -2317,15 +2309,36 @@ mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const R
 		{
 		LogOperation("AutoTunnelCallback: SRV target name %##s", answer->rdata->u.srv.target.c);
 		AssignDomainName(&tun->q.qname, &answer->rdata->u.srv.target);
+		tun->rmt_outer_port = answer->rdata->u.srv.port;
 		question->qtype = kDNSType_A;
 		mDNS_StartQuery(m, &tun->q);
 		}
 	else if (question->qtype == kDNSType_A)
 		{
+		ClientTunnel *old = mDNSNULL;
 		LogOperation("AutoTunnelCallback: SRV target addr %.4a", &answer->rdata->u.ipv4);
 		question->ThisQInterval = -1;		// So we know this tunnel setup has completed
 		tun->rmt_outer = answer->rdata->u.ipv4;
-		AutoTunnelSetKeys(m, tun, mDNStrue);
+		tun->loc_inner = m->AutoTunnelHostAddr;
+		tun->loc_outer = m->AdvertisedV4.ip.v4;
+
+		ClientTunnel **p = &tun->next;
+		while (*p)
+			{
+			if (!mDNSSameClientTunnel(&(*p)->rmt_inner, &tun->rmt_inner)) p = &(*p)->next;
+			else
+				{
+				LogOperation("Updating existing AutoTunnel for %##s %.16a", tun->dstname.c, &tun->rmt_inner);
+				old = *p;
+				*p = old->next;
+				if (old->q.ThisQInterval >= 0) mDNS_StopQuery(m, &old->q);
+				else AutoTunnelSetKeys(old, mDNSfalse);
+				freeL("ClientTunnel", old);
+				}
+			}
+		if (!old) LogOperation("New AutoTunnel for %##s %.16a", tun->dstname.c, &tun->rmt_inner);
+
+		AutoTunnelSetKeys(tun, mDNStrue);
 
 		// Kick off any questions that were held pending this tunnel setup
 		ReissueBlockedQuestions(m, &tun->dstname);
@@ -2342,10 +2355,11 @@ mDNSexport void AddNewClientTunnel(mDNS *const m, DNSQuestion *const q)
 	ClientTunnel *p = mallocL("ClientTunnel", sizeof(ClientTunnel));
 	if (!p) return;
 	AssignDomainName(&p->dstname, &q->qname);
-	p->loc_inner = zerov6Addr;
-	p->loc_outer = zerov4Addr;
-	p->rmt_inner = zerov6Addr;
-	p->rmt_outer = zerov4Addr;
+	p->loc_inner      = zerov6Addr;
+	p->loc_outer      = zerov4Addr;
+	p->rmt_inner      = zerov6Addr;
+	p->rmt_outer      = zerov4Addr;
+	p->rmt_outer_port = zeroIPPort;
 	mDNS_snprintf(p->b64keydata, sizeof(p->b64keydata), "%s", q->AuthInfo->b64keydata);
 	p->next = m->TunnelClients;
 	m->TunnelClients = p;		// Intentionally build list in reverse order
@@ -3412,7 +3426,13 @@ mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 		for (p = m->TunnelClients; p; p = p->next)
 			if (p->q.ThisQInterval < 0)
 				if (!mDNSSameIPv6Address(p->loc_inner, m->AutoTunnelHostAddr) ||
-					!mDNSSameIPv4Address(p->loc_outer, m->AdvertisedV4.ip.v4)) AutoTunnelSetKeys(m, p, mDNStrue);
+					!mDNSSameIPv4Address(p->loc_outer, m->AdvertisedV4.ip.v4))
+					{
+					AutoTunnelSetKeys(p, mDNSfalse);
+					p->loc_inner = m->AutoTunnelHostAddr;
+					p->loc_outer = m->AdvertisedV4.ip.v4;
+					AutoTunnelSetKeys(p, mDNStrue);
+					}
 		}
 	#endif APPLE_OSX_mDNSResponder
 
