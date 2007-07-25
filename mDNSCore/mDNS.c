@@ -38,6 +38,12 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.663  2007/07/25 03:05:02  vazquez
+Fixes for:
+<rdar://problem/5338913> LegacyNATTraversal: UPnP heap overflow
+<rdar://problem/5338933> LegacyNATTraversal: UPnP stack buffer overflow
+and a myriad of other security problems
+
 Revision 1.662  2007/07/24 20:22:46  cheshire
 Make sure all fields of main mDNS object are initialized correctly
 
@@ -6395,8 +6401,6 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->retryIntervalGetAddr     = 0;	// delta between time sent and retry
 	m->ExternalAddress          = zerov4Addr;
 
-	m->tcpAddrInfo              = mDNSNULL;
-	m->tcpDeviceInfo            = mDNSNULL;
 	m->uPNPRouterPort           = zeroIPPort;
 	m->uPNPSOAPPort             = zeroIPPort;
 	m->uPNPRouterURL            = mDNSNULL;

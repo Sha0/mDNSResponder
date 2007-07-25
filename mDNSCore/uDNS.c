@@ -22,6 +22,12 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.409  2007/07/25 03:05:02  vazquez
+Fixes for:
+<rdar://problem/5338913> LegacyNATTraversal: UPnP heap overflow
+<rdar://problem/5338933> LegacyNATTraversal: UPnP stack buffer overflow
+and a myriad of other security problems
+
 Revision 1.408  2007/07/24 21:47:51  cheshire
 Don't do mDNS_StopNATOperation() for operations we never started
 
@@ -946,11 +952,27 @@ mDNSlocal mStatus uDNS_SendNATMsg(mDNS *m, NATTraversalInfo *info, NATOptFlags_t
 			formatPortMapRequest(info, (op == MapUDPFlag) ? NATOp_MapUDP : NATOp_MapTCP);
 			}
 		
-		err = mDNSPlatformSendUDP(m, msg, end, 0, &m->Router, NATPMPPort);
-
 #ifdef _LEGACY_NAT_TRAVERSAL_
-		// if there is no external address then assume we're starting from scratch and start upnp discovery as well
-		if (mDNSIPv4AddressIsZero(m->ExternalAddress)) LNT_SendDiscoveryMsg(m);
+		// send nat-pmp packet if we know we're not behind a uPNP gateway
+		if (mDNSIPPortIsZero(m->uPNPSOAPPort))
+			{
+			err = mDNSPlatformSendUDP(m, msg, end, 0, &m->Router, NATPMPPort);
+			// if there is no external address then assume we're starting from scratch and start upnp discovery as well
+			if (mDNSIPv4AddressIsZero(m->ExternalAddress)) 	LNT_SendDiscoveryMsg(m); 
+			}
+		else
+			{
+			// we're behind a uPNP gateway
+			if (op == AddrRequestFlag)		err = LNT_GetExternalAddress(m);
+			else
+				{
+				mDNSBool   doTCP = (info->opFlags & MapTCPFlag) ? 1 : 0;
+				if (mDNSIPPortIsZero(info->publicPortreq)) info->publicPortreq = info->privatePort;	// initially request priv == pub if publicPortreq is zero
+				err = LNT_MapPort(m, info, doTCP);
+				}
+			}
+#else
+		err = mDNSPlatformSendUDP(m, msg, end, 0, &m->Router, NATPMPPort);
 #endif // _LEGACY_NAT_TRAVERSAL_
 		}
 	return(err);
@@ -964,6 +986,9 @@ mDNSlocal void SetExternalAddress(mDNS *const m, mDNSv4Addr newaddr)
 	m->ExternalAddress = newaddr;
 	LogOperation("Received external IP address %.4a from NAT", &m->ExternalAddress);
 	if (mDNSv4AddrIsRFC1918(&m->ExternalAddress)) LogMsg("natTraversalHandleAddressReply: Double NAT");
+#ifdef _LEGACY_NAT_TRAVERSAL_
+	if (mDNSIPv4AddressIsZero(m->ExternalAddress))   m->uPNPSOAPPort = m->uPNPRouterPort = zeroIPPort;	// reset uPNP ports
+#endif // _LEGACY_NAT_TRAVERSAL_
 
 	// NAT gateway changed. Need to refresh or recreate port mappings ASAP
 	for (n = m->NATTraversals; n; n=n->next)
@@ -984,19 +1009,10 @@ mDNSexport void natTraversalHandleAddressReply(mDNS *const m, mDNSu8 *pkt)
 	
 	if (!pkt) // timeout
 		{
-#ifdef _LEGACY_NAT_TRAVERSAL_
-		// reply from this operation will come later
-		if (!mDNSIPPortIsZero(m->uPNPRouterPort)) err = LNT_GetExternalAddress(m);
-		m->retryIntervalGetAddr = NATMAP_MAX_RETRY_INTERVAL;
-		m->retryGetAddr = m->timenow + m->retryIntervalGetAddr;
-		if (err) { LogMsg("NAT Port Mapping unsupported"); err = mStatus_NATPortMappingUnsupported; }
-		return;
-#else
 		debugf("natTraversalHandleAddressReply: timeout");
 		err = mStatus_NATTraversal;
 		m->retryIntervalGetAddr = NATMAP_MAX_RETRY_INTERVAL;
 		m->retryGetAddr = m->timenow + m->retryIntervalGetAddr;
-#endif // _LEGACY_NAT_TRAVERSAL_
 		}
 	else { err = addrReply->err; addr = addrReply->PubAddr; }
 		
@@ -1013,21 +1029,6 @@ mDNSexport void natTraversalHandleAddressReply(mDNS *const m, mDNSu8 *pkt)
 	m->retryGetAddr = m->timenow + m->retryIntervalGetAddr;
 	}
 
-#ifdef _LEGACY_NAT_TRAVERSAL_
-mDNSlocal mStatus TryLNTPortMapping(NATTraversalInfo *n, mDNS *const m)
-	{
-	mStatus	err = mStatus_NoError;
-
-	if (n->opFlags & (MapTCPFlag | MapUDPFlag) && n->NATPortReq.NATReq_lease != 0)
-		{
-		mDNSBool   doTCP = (n->opFlags & MapTCPFlag) ? 1 : 0;
-		if (mDNSIPPortIsZero(n->publicPortreq)) n->publicPortreq = n->privatePort;	// initially request priv == pub if publicPortreq is zero
-		err = LNT_MapPort(m, n, doTCP);
-		}
-	return (err);
-	}
-#endif // _LEGACY_NAT_TRAVERSAL_
-
 // Pass NULL for pkt on error (including timeout)
 mDNSexport void natTraversalHandlePortMapReply(NATTraversalInfo *n, mDNS *const m, mDNSu8 *pkt)
 	{
@@ -1040,23 +1041,14 @@ mDNSexport void natTraversalHandlePortMapReply(NATTraversalInfo *n, mDNS *const 
 	
 	if (!pkt) // timeout
 		{
-#ifdef _LEGACY_NAT_TRAVERSAL_
-		// reply from this operation will come later
-		if (!mDNSIPPortIsZero(m->uPNPRouterPort)) err = TryLNTPortMapping(n, m);
-		n->retryIntervalPortMap = NATMAP_MAX_RETRY_INTERVAL;
-		n->retryPortMap = m->timenow + n->retryIntervalPortMap;
-		if (err) { LogMsg("NAT Port Mapping unsupported"); n->Error = mStatus_NATPortMappingUnsupported; }
-		return;
-#else
 		debugf("natTraversalHandlePortMapReply: timeout");
 		err = mStatus_NATTraversal;
 		n->retryIntervalPortMap = NATMAP_MAX_RETRY_INTERVAL;
 		n->retryPortMap = m->timenow + n->retryIntervalPortMap;
-#endif // _LEGACY_NAT_TRAVERSAL_
 		}
 	else
 		{
-		NATOp_t op = (n->opFlags == MapUDPFlag) ? NATOp_MapUDP : NATOp_MapTCP;
+		NATOp_t op = (n->opFlags & MapUDPFlag) ? NATOp_MapUDP : NATOp_MapTCP;
 		if (!mDNSSameIPPort(n->privatePort, portMapReply->priv) || (op | 0x80) != portMapReply->opcode)
 			return;       // packet does not match this request
 		if (n->NATPortReq.NATReq_lease == 0) return;                                   // deletion

@@ -54,6 +54,12 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.405  2007/07/25 03:05:02  vazquez
+Fixes for:
+<rdar://problem/5338913> LegacyNATTraversal: UPnP heap overflow
+<rdar://problem/5338933> LegacyNATTraversal: UPnP stack buffer overflow
+and a myriad of other security problems
+
 Revision 1.404  2007/07/24 20:22:07  cheshire
 Add AutoTunnelHostAddrActive flag
 
@@ -1064,37 +1070,31 @@ typedef packedstruct
 	mDNSu32    NATRep_lease;
 	} NATPortMapReply;
 
-typedef struct Property_struct 
+typedef enum
 	{
-	char		*propName;
-	char		*propValue;
-	char		*propType;
-	} Property;
+	LNTDiscoveryOp		= 1,
+	LNTExternalAddrOp	= 2,
+	LNTPortMapOp		= 3,
+	LNTPortMapDeleteOp	= 4
+	} LNTOp_t;
 
-typedef struct HTTPResponse_struct
+#define LNT_MAXBUFSIZE	4096
+typedef struct tcpLNTInfo_struct tcpLNTInfo;
+struct tcpLNTInfo_struct
 	{
-	mDNSs8	*Status;
-	mDNSs8	*Reason;
-	mDNSs32	numHeaders;
-	Property	Headers[30];	// assume at most this many headers
-	mDNSs8	*Body;
-	mDNSs8	*buf;			// for admin use
-	} HTTPResponse;
-
-typedef struct tcpLNTInfo_struct
-	{
+	tcpLNTInfo	*next;
 	mDNS		*m;
+	NATTraversalInfo *parentNATInfo;	// pointer back to the parent NATTraversalInfo
 	TCPSocket		*sock;
-	mDNSs8		*request;
+	LNTOp_t		op;			// operation performed using this connection
+	mDNSAddr		Address;		// router address
+	mDNSIPPort	Port;			// router port
+	mDNSs8		Request[LNT_MAXBUFSIZE];	// xml request to router
 	int			requestLen;
-	mDNSAddr		Addr;
-	mDNSIPPort	Port;
-	mDNSs8		*reply;
-	int			replylen;
-	unsigned long	nread;
-	int			numReplies;
-	HTTPResponse	Response;
-	} tcpLNTInfo;
+	mDNSs8		Reply[LNT_MAXBUFSIZE];		// xml reply from router
+	int			replyLen;
+	unsigned long	nread;		// number of bytes read so far
+	};
 
 typedef void (*NATTraversalClientCallback)(mDNS *m, mDNSv4Addr ExternalAddress, NATTraversalInfo *n, mStatus err);
 
@@ -1111,7 +1111,7 @@ struct NATTraversalInfo_struct
 	mDNSv4Addr       lastExternalAddress;	// last external address we got
 	mStatus          Error;					// set when there is a port mapping error
 	mStatus          lastError;				// Last error code we delivered to callback
-	tcpLNTInfo      *tcpInfo;				// legacy NAT traversal TCP connection ref
+	tcpLNTInfo      tcpInfo;				// legacy NAT traversal TCP connection
 	
 	// PortMapping fields
 	mDNSs32          retryPortMap;			// absolute time when we retry
@@ -1804,15 +1804,17 @@ struct mDNS_struct
 	mDNSs32           retryGetAddr;				// absolute time when we retry
 	mDNSs32           retryIntervalGetAddr;		// delta between time sent and retry
 	mDNSv4Addr        ExternalAddress;
-	tcpLNTInfo       *tcpAddrInfo;				// legacy NAT traversal TCP connection ref for external address
-	tcpLNTInfo       *tcpDeviceInfo;			// legacy NAT traversal TCP connection ref for device info
 
+	tcpLNTInfo         tcpAddrInfo;				// legacy NAT traversal TCP connection info for external address
+	tcpLNTInfo         tcpDeviceInfo;				// legacy NAT traversal TCP connection info for device info
+	tcpLNTInfo         *tcpInfoUnmapList;			// list of pending unmap requests
 	mDNSIPPort        uPNPRouterPort;			// port we send discovery messages to
 	mDNSIPPort        uPNPSOAPPort;				// port we send SOAP messages to
 	mDNSu8           *uPNPRouterURL;			// router's URL string
 	mDNSu8           *uPNPSOAPURL;				// router's SOAP control URL string
 	mDNSu8           *uPNPRouterAddressString;	// holds both the router's address and port
 	mDNSu8           *uPNPSOAPAddressString;	// holds both address and port for SOAP messages
+	
 
 	ClientTunnel     *TunnelClients;
 
