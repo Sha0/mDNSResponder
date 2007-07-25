@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.406  2007/07/25 22:19:59  cheshire
+ClientTunnel structure also needs a rmt_outer_port field
+
 Revision 1.405  2007/07/25 03:05:02  vazquez
 Fixes for:
 <rdar://problem/5338913> LegacyNATTraversal: UPnP heap overflow
@@ -1680,6 +1683,7 @@ typedef struct ClientTunnel
 	mDNSv4Addr loc_outer;
 	mDNSv6Addr rmt_inner;
 	mDNSv4Addr rmt_outer;
+	mDNSIPPort rmt_outer_port;
 	char b64keydata[32];
 	DNSQuestion q;
 	} ClientTunnel;
