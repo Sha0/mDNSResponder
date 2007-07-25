@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.450  2007/07/25 21:19:10  cheshire
+<rdar://problem/5359507> Fails to build with NO_SECURITYFRAMEWORK: 'IsTunnelModeDomain' defined but not used
+
 Revision 1.449  2007/07/25 01:36:09  mcguire
 <rdar://problem/5345290> BTMM: Replace popen() `setkey` calls to setup/teardown ipsec policies
 
@@ -1084,6 +1087,17 @@ mDNSlocal OSStatus tlsSetupSock(TCPSocket *sock, mDNSBool server)
 
 	return(err);
 	}
+
+mDNSlocal mDNSBool IsTunnelModeDomain(const domainname *d)
+	{
+	static const domainname *mmc = (const domainname*) "\x7" "members" "\x3" "mac" "\x3" "com";
+	const domainname *d1 = mDNSNULL;	// TLD
+	const domainname *d2 = mDNSNULL;	// SLD
+	const domainname *d3 = mDNSNULL;
+	while (d->c[0]) { d3 = d2; d2 = d1; d1 = d; d = (const domainname*)(d->c + 1 + d->c[0]); }
+	return(d3 && SameDomainName(d3, mmc));
+	}
+
 #endif /* NO_SECURITYFRAMEWORK */
 
 mDNSlocal void tcpKQSocketCallback(__unused int fd, short filter, void *context)
@@ -3220,16 +3234,6 @@ mDNSexport void mDNSPlatformDynDNSHostNameStatusChanged(const domainname *const 
 			CFRelease(store);
 			}
 		}
-	}
-
-mDNSlocal mDNSBool IsTunnelModeDomain(const domainname *d)
-	{
-	static const domainname *mmc = (const domainname*) "\x7" "members" "\x3" "mac" "\x3" "com";
-	const domainname *d1 = mDNSNULL;	// TLD
-	const domainname *d2 = mDNSNULL;	// SLD
-	const domainname *d3 = mDNSNULL;
-	while (d->c[0]) { d3 = d2; d2 = d1; d1 = d; d = (const domainname*)(d->c + 1 + d->c[0]); }
-	return(d3 && SameDomainName(d3, mmc));
 	}
 
 // MUST be called holding the lock -- this routine calls SetupLocalAutoTunnelInterface_internal()
