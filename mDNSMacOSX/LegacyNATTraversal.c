@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.22  2007/07/25 21:41:00  vazquez
+Make sure we clean up opened sockets when there are network transitions and when changing
+port mappings
+
 Revision 1.21  2007/07/25 03:05:03  vazquez
 Fixes for:
 <rdar://problem/5338913> LegacyNATTraversal: UPnP heap overflow
@@ -434,7 +438,7 @@ mDNSlocal void tcpConnectionCallback(TCPSocket *sock, void *context, mDNSBool Co
 			}
 		}
 exit:	
-	if (err || status)	mDNSPlatformTCPCloseConnection(sock);
+	if (err || status)	{ mDNSPlatformTCPCloseConnection(tcpInfo->sock); tcpInfo->sock = mDNSNULL; }
 	if (tcpInfo)		mDNS_Unlock(tcpInfo->m);	
 	if (status == mStatus_ConfigChanged)
 		{
@@ -458,6 +462,7 @@ mDNSlocal mStatus MakeTCPConnection(mDNS *const m, tcpLNTInfo *info, const mDNSA
 	info->nread	= 0;
 	info->replyLen 	= LNT_MAXBUFSIZE;
 
+	if (info->sock) { mDNSPlatformTCPCloseConnection(info->sock); info->sock = mDNSNULL; }
 	info->sock = mDNSPlatformTCPSocket(m, kTCPSocketFlags_Zero, &srcport);
 	if (!info->sock) { LogMsg("LNT MakeTCPConnection: unable to create TCP socket"); return(mStatus_NoMemoryErr); }
 	LogOperation("MakeTCPConnection: connecting to %#a : %d", &info->Address, mDNSVal16(info->Port));

@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.410  2007/07/25 21:41:00  vazquez
+Make sure we clean up opened sockets when there are network transitions and when changing
+port mappings
+
 Revision 1.409  2007/07/25 03:05:02  vazquez
 Fixes for:
 <rdar://problem/5338913> LegacyNATTraversal: UPnP heap overflow
@@ -987,6 +991,8 @@ mDNSlocal void SetExternalAddress(mDNS *const m, mDNSv4Addr newaddr)
 	LogOperation("Received external IP address %.4a from NAT", &m->ExternalAddress);
 	if (mDNSv4AddrIsRFC1918(&m->ExternalAddress)) LogMsg("natTraversalHandleAddressReply: Double NAT");
 #ifdef _LEGACY_NAT_TRAVERSAL_
+	if (m->tcpAddrInfo.sock)	{ mDNSPlatformTCPCloseConnection(m->tcpAddrInfo.sock); m->tcpAddrInfo.sock = mDNSNULL; }
+	if (m->tcpDeviceInfo.sock)	{ mDNSPlatformTCPCloseConnection(m->tcpDeviceInfo.sock); m->tcpAddrInfo.sock = mDNSNULL; }
 	if (mDNSIPv4AddressIsZero(m->ExternalAddress))   m->uPNPSOAPPort = m->uPNPRouterPort = zeroIPPort;	// reset uPNP ports
 #endif // _LEGACY_NAT_TRAVERSAL_
 
@@ -995,6 +1001,13 @@ mDNSlocal void SetExternalAddress(mDNS *const m, mDNSv4Addr newaddr)
 		{
 		n->retryPortMap         = m->timenow;
 		n->retryIntervalPortMap = NATMAP_INIT_RETRY;
+#ifdef _LEGACY_NAT_TRAVERSAL_
+		if (n->tcpInfo.sock)
+			{
+			mDNSPlatformTCPCloseConnection(n->tcpInfo.sock);
+			n->tcpInfo.sock = mDNSNULL;
+			}
+#endif // _LEGACY_NAT_TRAVERSAL_
 		}
 
 	m->NextScheduledNATOp = m->timenow;
