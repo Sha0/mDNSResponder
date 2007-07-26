@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.407  2007/07/26 21:19:26  vazquez
+Retry port mapping with incremented port number (up to max) in order to handle
+port mapping conflicts on UPnP gateways
+
 Revision 1.406  2007/07/25 22:19:59  cheshire
 ClientTunnel structure also needs a rmt_outer_port field
 
@@ -1097,6 +1101,7 @@ struct tcpLNTInfo_struct
 	mDNSs8		Reply[LNT_MAXBUFSIZE];		// xml reply from router
 	int			replyLen;
 	unsigned long	nread;		// number of bytes read so far
+	int			retries;		// number of times we've tried to do this port mapping
 	};
 
 typedef void (*NATTraversalClientCallback)(mDNS *m, mDNSv4Addr ExternalAddress, NATTraversalInfo *n, mStatus err);

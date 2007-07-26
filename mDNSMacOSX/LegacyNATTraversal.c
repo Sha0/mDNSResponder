@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.23  2007/07/26 21:19:26  vazquez
+Retry port mapping with incremented port number (up to max) in order to handle
+port mapping conflicts on UPnP gateways
+
 Revision 1.22  2007/07/25 21:41:00  vazquez
 Make sure we clean up opened sockets when there are network transitions and when changing
 port mappings
@@ -350,6 +354,69 @@ mDNSlocal void handleLNTGetExternalAddressResponse(tcpLNTInfo *tcpInfo)
 	natTraversalHandleAddressReply(m, (mDNSu8 *)&addrReply);
 	}
 
+// forward declaration
+mDNSlocal mStatus SendSOAPMsgControlAction(mDNS *m, tcpLNTInfo *info, char *Action, int numArgs, Property *Arguments, LNTOp_t op);
+
+#define LNT_MAXPORTMAP_RETRIES 10
+// rebuild port mapping request with new port (up to max) and send it
+mDNSlocal mStatus RetryPortMap(tcpLNTInfo *tcpInfo)
+	{
+	char		externalPort[6];
+	char		internalPort[6];
+	char		localIPAddrString[30];
+	char		publicPortString[40];
+	Property	propArgs[8];
+	mDNS	*m 		= tcpInfo->m;
+	NATTraversalInfo	*n = tcpInfo->parentNATInfo;
+	mDNSs32	protocol	= (n->opFlags & MapTCPFlag) ? IPPROTO_TCP : IPPROTO_UDP;
+	short		newPort	= mDNSVal16(n->publicPortreq);
+	mStatus	error		= mStatus_NoError;
+
+	// increment port map values; for port, just increment by one until we reach the max number of retries
+	n->publicPortreq = mDNSOpaque16fromIntVal(++newPort);
+	if (tcpInfo->retries++ > LNT_MAXPORTMAP_RETRIES) return (mStatus_NATTraversal);
+
+	// create strings to use in the message
+	mDNS_snprintf(externalPort, 		sizeof(externalPort), 		"%u", mDNSVal16(n->publicPortreq));
+	mDNS_snprintf(internalPort, 		sizeof(internalPort), 		"%u", mDNSVal16(n->privatePort));
+	mDNS_snprintf(publicPortString, 	sizeof(publicPortString), 	"iC%u", mDNSVal16(n->publicPortreq));
+	mDNS_snprintf(localIPAddrString, 	sizeof(localIPAddrString), 	"%u.%u.%u.%u",
+		m->AdvertisedV4.ip.v4.b[0], m->AdvertisedV4.ip.v4.b[1], m->AdvertisedV4.ip.v4.b[2], m->AdvertisedV4.ip.v4.b[3]);
+
+	// build the message
+	mDNSPlatformMemZero(propArgs, sizeof(propArgs));
+	propArgs[0].propName = "NewRemoteHost";
+	propArgs[0].propValue = "";
+	propArgs[0].propType = "string";
+	propArgs[1].propName = "NewExternalPort";
+	propArgs[1].propValue = externalPort;
+	propArgs[1].propType = "ui2";
+	propArgs[2].propName = "NewProtocol";
+	if		(protocol == IPPROTO_TCP) propArgs[2].propValue = "TCP";
+	else if	(protocol == IPPROTO_UDP) propArgs[2].propValue = "UDP";
+	else 		return (mStatus_BadParamErr);
+	propArgs[2].propType = "string";
+	propArgs[3].propName = "NewInternalPort";
+	propArgs[3].propValue = internalPort;
+	propArgs[3].propType = "ui2";
+	propArgs[4].propName = "NewInternalClient";
+	propArgs[4].propValue = localIPAddrString;
+	propArgs[4].propType = "string";
+	propArgs[5].propName = "NewEnabled";
+	propArgs[5].propValue = "1";
+	propArgs[5].propType = "boolean";
+	propArgs[6].propName = "NewPortMappingDescription";
+	propArgs[6].propValue = publicPortString;
+	propArgs[6].propType = "string";
+	propArgs[7].propName = "NewLeaseDuration";
+	propArgs[7].propValue = "0";
+	propArgs[7].propType = "ui4";
+
+	LogOperation("RetryPortMap: priv %u pub %u", mDNSVal16(n->privatePort), mDNSVal16(n->publicPortreq));
+	error = SendSOAPMsgControlAction(m, &n->tcpInfo, "AddPortMapping", 8, propArgs, LNTPortMapOp);
+	return (error);
+	}
+
 // This will call natTraversalHandlePortMapReply() using a NATPortMapReply structure filled in with the necessary info
 // (keeps us from replicating code)
 mDNSlocal void handleLNTPortMappingResponse(tcpLNTInfo *tcpInfo)
@@ -363,9 +430,24 @@ mDNSlocal void handleLNTPortMappingResponse(tcpLNTInfo *tcpInfo)
 
 	// start from the beginning of the HTTP header; find "200 OK" status message; if the first characters after the 
 	// space are not "200" then this is an error message or invalid in some other way
+	// if the error is "500" this is an internal server error
 	while (ptr && ptr != endBuf) 
 		{ 
-		if (*ptr == ' ')	{ if (strncasecmp(++ptr, "200", 3) == 0) break; }
+		if (*ptr == ' ') 
+			{ 
+			if (strncasecmp(++ptr, "200", 3) == 0) break; 
+			else if (strncasecmp(ptr, "500", 3) == 0)
+				{
+				// now check to see if this was a port mapping conflict
+				while (ptr && ptr != endBuf)
+					{
+					if (*ptr == 'c' || *ptr == 'C')
+						if (strncasecmp(ptr, "Conflict", 8) == 0) { err = RetryPortMap(tcpInfo);	 return; }
+					ptr++;
+					}
+				break;	// out of HTTP status search
+				}
+			}
 		ptr++;
 		}
 	if (ptr == mDNSNULL || ptr == endBuf)	{ LogMsg("handleLNTPortMappingResponse: got error from router");  err = mStatus_NATTraversal; }
@@ -462,7 +544,7 @@ mDNSlocal mStatus MakeTCPConnection(mDNS *const m, tcpLNTInfo *info, const mDNSA
 	info->nread	= 0;
 	info->replyLen 	= LNT_MAXBUFSIZE;
 
-	if (info->sock) { mDNSPlatformTCPCloseConnection(info->sock); info->sock = mDNSNULL; }
+	if (info->sock) { LogOperation("MakeTCPConnection: closing previous open connection"); mDNSPlatformTCPCloseConnection(info->sock); info->sock = mDNSNULL; }
 	info->sock = mDNSPlatformTCPSocket(m, kTCPSocketFlags_Zero, &srcport);
 	if (!info->sock) { LogMsg("LNT MakeTCPConnection: unable to create TCP socket"); return(mStatus_NoMemoryErr); }
 	LogOperation("MakeTCPConnection: connecting to %#a : %d", &info->Address, mDNSVal16(info->Port));
@@ -622,6 +704,7 @@ mDNSexport mStatus LNT_MapPort(mDNS *m, NATTraversalInfo *n, mDNSBool doTCP)
 	LogOperation("Sending AddPortMapping priv %u pub %u", mDNSVal16(n->privatePort), mDNSVal16(n->publicPortreq));
 
 	n->tcpInfo.parentNATInfo = n;
+	n->tcpInfo.retries = 0;
 	error = SendSOAPMsgControlAction(m, &n->tcpInfo, "AddPortMapping", 8, propArgs, LNTPortMapOp);
 	return (error);
 	}
