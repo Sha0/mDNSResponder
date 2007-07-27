@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.411  2007/07/27 00:57:13  cheshire
+Create hostname address records using standard kHostNameTTL (2 minutes) instead of 1 second
+
 Revision 1.410  2007/07/25 21:41:00  vazquez
 Make sure we clean up opened sockets when there are network transitions and when changing
 port mappings
@@ -2518,7 +2521,7 @@ mDNSlocal void AdvertiseHostname(mDNS *m, HostnameInfo *h)
 	{
 	if (!mDNSIPv4AddressIsZero(m->AdvertisedV4.ip.v4) && h->arv4.resrec.RecordType == kDNSRecordTypeUnregistered)
 		{
-		mDNS_SetupResourceRecord(&h->arv4, mDNSNULL, 0, kDNSType_A, 1, kDNSRecordTypeKnownUnique, HostnameCallback, h);
+		mDNS_SetupResourceRecord(&h->arv4, mDNSNULL, mDNSInterface_Any, kDNSType_A, kHostNameTTL, kDNSRecordTypeKnownUnique, HostnameCallback, h);
 		AssignDomainName(&h->arv4.namestorage, &h->fqdn);
 		h->arv4.resrec.rdata->u.ipv4 = m->AdvertisedV4.ip.v4;
 		h->arv4.state = regState_Unregistered;
@@ -2538,7 +2541,7 @@ mDNSlocal void AdvertiseHostname(mDNS *m, HostnameInfo *h)
 
 	if (!mDNSIPv6AddressIsZero(m->AdvertisedV6.ip.v6) && h->arv6.resrec.RecordType == kDNSRecordTypeUnregistered)
 		{
-		mDNS_SetupResourceRecord(&h->arv6, mDNSNULL, 0, kDNSType_AAAA, 1, kDNSRecordTypeKnownUnique, HostnameCallback, h);
+		mDNS_SetupResourceRecord(&h->arv6, mDNSNULL, mDNSInterface_Any, kDNSType_AAAA, kHostNameTTL, kDNSRecordTypeKnownUnique, HostnameCallback, h);
 		AssignDomainName(&h->arv6.namestorage, &h->fqdn);
 		h->arv6.resrec.rdata->u.ipv6 = m->AdvertisedV6.ip.v6;
 		h->arv6.state = regState_Unregistered;
