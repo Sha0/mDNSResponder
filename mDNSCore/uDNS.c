@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.415  2007/07/27 19:51:01  cheshire
+Use symbol QC_addnocache instead of literal constant "2"
+
 Revision 1.414  2007/07/27 19:30:39  cheshire
 Changed mDNSQuestionCallback parameter from mDNSBool to QC_result,
 to properly reflect tri-state nature of the possible responses
@@ -2071,9 +2074,9 @@ mDNSexport void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *questio
 
 	debugf("GetZoneData_QuestionCallback: %s %s", AddRecord ? "Add" : "Rmv", RRDisplayString(m, answer));
 
-	if (!AddRecord) return;									// Don't care about REMOVE events
-	if (AddRecord == 2 && answer->rdlength == 0) return;	// Don't care about transient failure indications
-	if (answer->rrtype != question->qtype) return;			// Don't care about CNAMEs
+	if (!AddRecord) return;												// Don't care about REMOVE events
+	if (AddRecord == QC_addnocache && answer->rdlength == 0) return;	// Don't care about transient failure indications
+	if (answer->rrtype != question->qtype) return;						// Don't care about CNAMEs
 
 	if (answer->rrtype == kDNSType_SOA)
 		{
