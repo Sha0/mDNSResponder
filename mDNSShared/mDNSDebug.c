@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.c,v $
+Revision 1.11  2007/07/27 20:19:56  cheshire
+For now, comment out unused log levels MDNS_LOG_ERROR, MDNS_LOG_WARN, MDNS_LOG_INFO, MDNS_LOG_DEBUG
+
 Revision 1.10  2007/06/15 21:54:51  cheshire
 <rdar://problem/4883206> Add packet logging to help debugging private browsing over TLS
 
@@ -164,13 +167,13 @@ mDNSlocal const char *CStringForLogLevel(LogLevel_t level)
 	{
 	switch (level) 
 		{
-        case MDNS_LOG_NONE:          return "MDNS_LOG_NONE";
-        case MDNS_LOG_ERROR:         return "MDNS_LOG_ERROR";
-        case MDNS_LOG_WARN:          return "MDNS_LOG_WARN";
-        case MDNS_LOG_INFO:          return "MDNS_LOG_INFO";
-        case MDNS_LOG_DEBUG:         return "MDNS_LOG_DEBUG";
-        case MDNS_LOG_VERBOSE_DEBUG: return "MDNS_LOG_VERBOSE_DEBUG";
-        default:                     return "MDNS_LOG_UNKNOWN"; 
+		case MDNS_LOG_NONE:          return "MDNS_LOG_NONE";
+//		case MDNS_LOG_ERROR:         return "MDNS_LOG_ERROR";
+//		case MDNS_LOG_WARN:          return "MDNS_LOG_WARN";
+//		case MDNS_LOG_INFO:          return "MDNS_LOG_INFO";
+//		case MDNS_LOG_DEBUG:         return "MDNS_LOG_DEBUG";
+		case MDNS_LOG_VERBOSE_DEBUG: return "MDNS_LOG_VERBOSE_DEBUG";
+		default:                     return "MDNS_LOG_UNKNOWN"; 
 		}
 	}
 

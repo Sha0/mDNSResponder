@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.35  2007/07/27 20:19:56  cheshire
+For now, comment out unused log levels MDNS_LOG_ERROR, MDNS_LOG_WARN, MDNS_LOG_INFO, MDNS_LOG_DEBUG
+
 Revision 1.34  2007/07/24 17:23:33  cheshire
 <rdar://problem/5357133> Add list validation checks for debugging
 
@@ -164,10 +167,10 @@ extern void verbosedebugf_(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1
 typedef enum
 	{
 	MDNS_LOG_NONE,
-	MDNS_LOG_ERROR,
-	MDNS_LOG_WARN,
-	MDNS_LOG_INFO,
-	MDNS_LOG_DEBUG,
+//	MDNS_LOG_ERROR,
+//	MDNS_LOG_WARN,
+//	MDNS_LOG_INFO,
+//	MDNS_LOG_DEBUG,
 	MDNS_LOG_VERBOSE_DEBUG
 	} LogLevel_t;
 
