@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.323  2007/07/27 23:57:23  cheshire
+Added compile-time structure size checks
+
 Revision 1.322  2007/07/27 19:37:19  cheshire
 Moved AutomaticBrowseDomainQ into main mDNS object
 
@@ -3575,3 +3578,16 @@ mDNSexport mDNSs32 udsserver_idle(mDNSs32 nextevent)
 		}
 	return nextevent;
 	}
+
+struct CompileTimeAssertionChecks_uds_daemon
+	{
+	// Check our structures are reasonable sizes. Including overly-large buffers, or embedding
+	// other overly-large structures instead of having a pointer to them, can inadvertently
+	// cause structure sizes (and therefore memory usage) to balloon unreasonably.
+	char sizecheck_request_state          [(sizeof(request_state)           <= 1800) ? 1 : -1];
+	char sizecheck_registered_record_entry[(sizeof(registered_record_entry) <=   30) ? 1 : -1];
+	char sizecheck_service_instance       [(sizeof(service_instance)        <= 6500) ? 1 : -1];
+	char sizecheck_browser_t              [(sizeof(browser_t)               <= 1100) ? 1 : -1];
+	char sizecheck_reply_hdr              [(sizeof(reply_hdr)               <=   20) ? 1 : -1];
+	char sizecheck_reply_state            [(sizeof(reply_state)             <=   40) ? 1 : -1];
+	};

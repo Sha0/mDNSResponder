@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.71  2007/07/27 23:57:23  cheshire
+Added compile-time structure size checks
+
 Revision 1.70  2007/07/11 02:55:50  cheshire
 <rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for AutoTunnel services
 Remove unused DefaultRegDomainChanged/DefaultBrowseDomainChanged
@@ -190,6 +193,15 @@ extern void KQueueUnlock(mDNS *const m, const char const *task);
 #else
 #define WatchDogReportingThreshold 250
 #endif
+
+struct CompileTimeAssertionChecks_mDNSMacOSX
+	{
+	// Check our structures are reasonable sizes. Including overly-large buffers, or embedding
+	// other overly-large structures instead of having a pointer to them, can inadvertently
+	// cause structure sizes (and therefore memory usage) to balloon unreasonably.
+	char sizecheck_NetworkInterfaceInfoOSX[(sizeof(NetworkInterfaceInfoOSX) <=  4500) ? 1 : -1];
+	char sizecheck_mDNS_PlatformSupport   [(sizeof(mDNS_PlatformSupport)    <=   260) ? 1 : -1];
+	};
 
 #ifdef  __cplusplus
     }

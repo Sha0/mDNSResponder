@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.420  2007/07/27 23:59:18  cheshire
+Added compile-time structure size checks
+
 Revision 1.419  2007/07/27 20:52:29  cheshire
 Made uDNS_recvLLQResponse() return tri-state result: LLQ_Not, LLQ_First, or LLQ_Events
 
@@ -4740,3 +4743,12 @@ mDNSexport void uDNS_Wake(mDNS *const m)
 	WakeServiceRegistrations(m);
 	WakeRecordRegistrations(m);
 	}
+
+struct CompileTimeAssertionChecks_uDNS
+	{
+	// Check our structures are reasonable sizes. Including overly-large buffers, or embedding
+	// other overly-large structures instead of having a pointer to them, can inadvertently
+	// cause structure sizes (and therefore memory usage) to balloon unreasonably.
+	char sizecheck_tcpInfo_t     [(sizeof(tcpInfo_t)      <=  9100) ? 1 : -1];
+	char sizecheck_SearchListElem[(sizeof(SearchListElem) <=  4500) ? 1 : -1];
+	};

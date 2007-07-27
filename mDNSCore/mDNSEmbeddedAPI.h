@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.412  2007/07/27 23:57:23  cheshire
+Added compile-time structure size checks
+
 Revision 1.411  2007/07/27 22:50:08  vazquez
 Allocate memory for UPnP request and reply buffers instead of using arrays
 
@@ -469,10 +472,10 @@ Fixes to avoid code generation warning/error on FreeBSD 7
 #if defined(EFI32) || defined(EFI64)
 // EFI doesn't have stdarg.h
 #include "Tiano.h"
-#define va_list			VA_LIST
-#define va_start(a, b)	VA_START(a, b)
-#define va_end(a)		VA_END(a)
-#define va_arg(a, b)	VA_ARG(a, b)
+#define va_list         VA_LIST
+#define va_start(a, b)  VA_START(a, b)
+#define va_end(a)       VA_END(a)
+#define va_arg(a, b)    VA_ARG(a, b)
 #else
 #include <stdarg.h>		// stdarg.h is required for for va_list support for the mDNS_vsnprintf declaration
 #endif
@@ -1014,21 +1017,17 @@ typedef void mDNSRecordUpdateCallback(mDNS *const m, AuthRecord *const rr, RData
 #define NATMAP_DEFAULT_LEASE (60 * 60)                             // lease life in seconds
 #define NATMAP_VERS 0
 
-// A struct that abstracts away the differences in TCP/SSL sockets
- 
+// Structure to abstract away the differences between TCP/SSL sockets, and one for UDP sockets
+// The actual definition of these structures in the in the appropriate platform support code
 typedef struct TCPSocket_struct TCPSocket;
-
-// A struct that abstracts away the differences in UDP sockets
-
 typedef struct UDPSocket_struct UDPSocket;
-
 
 typedef enum
 	{
 	AddrRequestFlag = 0x1,
-	MapUDPFlag	= 0x2,
-	MapTCPFlag	= 0x4,
-	LegacyFlag	= 0x10
+	MapUDPFlag = 0x2,
+	MapTCPFlag = 0x4,
+	LegacyFlag = 0x10
 	} NATOptFlags_t;
 	
 typedef enum
@@ -1483,7 +1482,6 @@ typedef struct
 	mDNSInterfaceID       InterfaceID;
 	mDNSs32               Type;				// v4 or v6?
 	} DupSuppressInfo;
-
 
 typedef enum
 	{
@@ -2309,7 +2307,6 @@ extern mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 *num
 // of the DNS message header has already had one subtracted from it.
 extern mDNSBool DNSDigest_VerifyMessage(DNSMessage *msg, mDNSu8 *end, LargeCacheRecord *tsig, DomainAuthInfo *info, mDNSu16 *rcode, mDNSu16 *tcode);
 
-
 // ***************************************************************************
 #if 0
 #pragma mark - PlatformSupport interface
@@ -2415,7 +2412,6 @@ extern void       mDNSPlatformUDPClose(UDPSocket *sock);
 extern mStatus    mDNSPlatformTLSSetupCerts(void);
 extern void       mDNSPlatformTLSTearDownCerts(void);
 
-
 // Platforms that support unicast browsing and dynamic update registration for clients who do not specify a domain
 // in browse/registration calls must implement these routines to get the "default" browse/registration list.
 
@@ -2500,7 +2496,7 @@ extern void SetupLocalAutoTunnelInterface_internal(mDNS *const m);
 // what's wrong until you run the software. This way, if the assertion condition
 // is false, the array size is negative, and the complier complains immediately.
 
-struct mDNS_CompileTimeAssertionChecks
+struct CompileTimeAssertionChecks_mDNS
 	{
 	// Check that the compiler generated our on-the-wire packet format structure definitions
 	// properly packed, without adding padding bytes to align fields on 32-bit or 64-bit boundaries.
@@ -2519,6 +2515,24 @@ struct mDNS_CompileTimeAssertionChecks
 	char assertC[(sizeof(CacheRecord  )    >=  sizeof(CacheGroup)          ) ? 1 : -1];
 	char assertD[(sizeof(int)              >=  4                           ) ? 1 : -1];
 	char assertE[(StandardAuthRDSize       >=  256                         ) ? 1 : -1];
+
+	// Check our structures are reasonable sizes. Including overly-large buffers, or embedding
+	// other overly-large structures instead of having a pointer to them, can inadvertently
+	// cause structure sizes (and therefore memory usage) to balloon unreasonably.
+	char sizecheck_ResourceRecord      [(sizeof(ResourceRecord)       <=    50) ? 1 : -1];
+	char sizecheck_AuthRecord          [(sizeof(AuthRecord)           <=  1500) ? 1 : -1];
+	char sizecheck_CacheRecord         [(sizeof(CacheRecord)          <=   170) ? 1 : -1];
+	char sizecheck_CacheGroup          [(sizeof(CacheGroup)           <=   170) ? 1 : -1];
+	char sizecheck_DNSQuestion         [(sizeof(DNSQuestion)          <=   900) ? 1 : -1];
+	char sizecheck_ZoneData            [(sizeof(ZoneData)             <=  1700) ? 1 : -1];
+	char sizecheck_NATTraversalInfo    [(sizeof(NATTraversalInfo)     <=   140) ? 1 : -1];
+	char sizecheck_HostnameInfo        [(sizeof(HostnameInfo)         <=  3200) ? 1 : -1];
+	char sizecheck_DNSServer           [(sizeof(DNSServer)            <=   300) ? 1 : -1];
+	char sizecheck_NetworkInterfaceInfo[(sizeof(NetworkInterfaceInfo) <=  4400) ? 1 : -1];
+	char sizecheck_ServiceRecordSet    [(sizeof(ServiceRecordSet)     <=  6200) ? 1 : -1];
+	char sizecheck_DomainAuthInfo      [(sizeof(DomainAuthInfo)       <=  5000) ? 1 : -1];
+	char sizecheck_ServiceInfoQuery    [(sizeof(ServiceInfoQuery)     <=  3400) ? 1 : -1];
+	char sizecheck_ClientTunnel        [(sizeof(ClientTunnel)         <=  1200) ? 1 : -1];
 	};
 
 // ***************************************************************************
