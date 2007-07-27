@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.328  2007/07/27 22:43:37  cheshire
+Improved mallocL/freeL "suspiciously large" debugging messages
+
 Revision 1.327  2007/07/27 19:30:41  cheshire
 Changed mDNSQuestionCallback parameter from mDNSBool to QC_result,
 to properly reflect tri-state nature of the possible responses
@@ -540,7 +543,8 @@ void *mallocL(char *msg, unsigned int size)
 		}
 	else
 		{
-		if (MACOSX_MDNS_MALLOC_DEBUGGING >= 2 || size > 24000) LogMsg("malloc( %s : %lu ) = %p", msg, size, &mem[2]);
+		if      (size > 24000)                      LogMsg("malloc( %s : %lu ) = %p suspiciously large", msg, size, &mem[2]);
+		else if (MACOSX_MDNS_MALLOC_DEBUGGING >= 2) LogMsg("malloc( %s : %lu ) = %p",                    msg, size, &mem[2]);
 		mem[0] = 0xDEAD1234;
 		mem[1] = size;
 		//mDNSPlatformMemZero(&mem[2], size);
@@ -558,8 +562,8 @@ void freeL(char *msg, void *x)
 		{
 		unsigned long *mem = ((unsigned long *)x) - 2;
 		if (mem[0] != 0xDEAD1234) { LogMsg("free( %s @ %p ) !!!! NOT ALLOCATED !!!!", msg, &mem[2]); return; }
-		if (mem[1] > 24000)       { LogMsg("free( %s : %ld @ %p) suspiciously large", msg, mem[1], &mem[2]); return; }
-		if (MACOSX_MDNS_MALLOC_DEBUGGING >= 2) LogMsg("free( %s : %ld @ %p)", msg, mem[1], &mem[2]);
+		if      (mem[1] > 24000)                    LogMsg("free( %s : %ld @ %p) suspiciously large", msg, mem[1], &mem[2]);
+		else if (MACOSX_MDNS_MALLOC_DEBUGGING >= 2) LogMsg("free( %s : %ld @ %p)",                    msg, mem[1], &mem[2]);
 		//mDNSPlatformMemZero(mem, mem[1]+8);
 		memset(mem, 0xFF, mem[1]+8);
 		validatelists(&mDNSStorage);
