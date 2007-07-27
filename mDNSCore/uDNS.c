@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.417  2007/07/27 20:19:42  cheshire
+Use MDNS_LOG_VERBOSE_DEBUG for dumping out packets instead of MDNS_LOG_DEBUG
+
 Revision 1.416  2007/07/27 19:59:28  cheshire
 MUST NOT touch m->CurrentQuestion (or q) after calling AnswerCurrentQuestionWithResourceRecord()
 
@@ -1615,7 +1618,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			mDNSu8 *end = (mDNSu8 *)tcpInfo->reply + tcpInfo->replylen;
 			tcpInfo->numReplies++;
 			mDNSCoreReceive(m, tcpInfo->reply, end, &tcpInfo->Addr, tcpInfo->Port, mDNSNULL, zeroIPPort, 0);
-			if (mDNS_LogLevel >= MDNS_LOG_DEBUG) DumpPacket(m, tcpInfo->reply, end);
+			if (mDNS_LogLevel >= MDNS_LOG_VERBOSE_DEBUG) DumpPacket(m, tcpInfo->reply, end);
 			mDNSPlatformMemFree(tcpInfo->reply);
 			if (tcpInfo->question && tcpInfo->question->LongLived)
 				{
