@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.665  2007/07/27 18:44:01  cheshire
+Rename "AnswerQuestionWithResourceRecord" to more informative "AnswerCurrentQuestionWithResourceRecord"
+
 Revision 1.664  2007/07/27 18:38:56  cheshire
 Rename "uDNS_CheckQuery" to more informative "uDNS_CheckCurrentQuestion"
 
@@ -2422,18 +2425,18 @@ mDNSlocal void SendQueries(mDNS *const m)
 #pragma mark - RR List Management & Task Management
 #endif
 
-// NOTE: AnswerQuestionWithResourceRecord can call a user callback, which may change the record list and/or question list.
+// NOTE: AnswerCurrentQuestionWithResourceRecord can call a user callback, which may change the record list and/or question list.
 // Any code walking either list must use the m->CurrentQuestion (and possibly m->CurrentRecord) mechanism to protect against this.
 // In fact, to enforce this, the routine will *only* answer the question currently pointed to by m->CurrentQuestion,
 // which will be auto-advanced (possibly to NULL) if the client callback cancels the question.
-mDNSexport void AnswerQuestionWithResourceRecord(mDNS *const m, CacheRecord *const rr, const mDNSBool AddRecord)
+mDNSexport void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheRecord *const rr, const mDNSBool AddRecord)
 	{
 	DNSQuestion *const q = m->CurrentQuestion;
 	mDNSBool followcname = rr->resrec.RecordType != kDNSRecordTypePacketNegative && AddRecord &&
 							rr->resrec.rrtype == kDNSType_CNAME && q->qtype != kDNSType_CNAME;
-	verbosedebugf("AnswerQuestionWithResourceRecord:%4lu %s %s", q->CurrentAnswers, AddRecord ? "Add" : "Rmv", CRDisplayString(m, rr));
+	verbosedebugf("AnswerCurrentQuestionWithResourceRecord:%4lu %s %s", q->CurrentAnswers, AddRecord ? "Add" : "Rmv", CRDisplayString(m, rr));
 
-	// Note: Use caution here. In the case of records with rr->DelayDelivery set, AnswerQuestionWithResourceRecord(... mDNStrue)
+	// Note: Use caution here. In the case of records with rr->DelayDelivery set, AnswerCurrentQuestionWithResourceRecord(... mDNStrue)
 	// may be called twice, once when the record is received, and again when it's time to notify local clients.
 	// If any counters or similar are added here, care must be taken to ensure that they are not double-incremented by this.
 
@@ -2442,7 +2445,7 @@ mDNSexport void AnswerQuestionWithResourceRecord(mDNS *const m, CacheRecord *con
 		{
 		if (AddRecord==2) LogMsg("ERROR incrementing m->rrcache_active");
 		if (!rr->CRActiveQuestion) m->rrcache_active++;	// If not previously active, increment rrcache_active count
-		debugf("AnswerQuestionWithResourceRecord: Updating CRActiveQuestion to %p for cache record %s", q, CRDisplayString(m,rr));
+		debugf("AnswerCurrentQuestionWithResourceRecord: Updating CRActiveQuestion to %p for cache record %s", q, CRDisplayString(m,rr));
 		rr->CRActiveQuestion = q;						// We know q is non-null
 		SetNextCacheCheckTime(m, rr);
 		}
@@ -2485,7 +2488,7 @@ mDNSexport void AnswerQuestionWithResourceRecord(mDNS *const m, CacheRecord *con
 		// and track CNAMEs coming and going, we should really create a subbordinate query here,
 		// which we would subsequently cancel and retract if the CNAME referral record were removed.
 		// In reality this is such a corner case we'll ignore it until someone actually needs it.
-		LogOperation("AnswerQuestionWithResourceRecord: %s", CRDisplayString(m, rr));
+		LogOperation("AnswerCurrentQuestionWithResourceRecord: %s", CRDisplayString(m, rr));
 		mDNS_StopQuery_internal(m, q);								// Stop old query
 		AssignDomainName(&q->qname, &rr->resrec.rdata->u.name);		// Update qname
 		q->qnamehash = DomainNameHashValue(&q->qname);				// and namehash
@@ -2504,7 +2507,7 @@ mDNSlocal void CacheRecordDeferredAdd(mDNS *const m, CacheRecord *rr)
 		{
 		DNSQuestion *q = m->CurrentQuestion;
 		if (ResourceRecordAnswersQuestion(&rr->resrec, q))
-			AnswerQuestionWithResourceRecord(m, rr, mDNStrue);
+			AnswerCurrentQuestionWithResourceRecord(m, rr, mDNStrue);
 		if (m->CurrentQuestion == q)	// If m->CurrentQuestion was not auto-advanced, do it ourselves now
 			m->CurrentQuestion = q->next;
 		}
@@ -2531,7 +2534,7 @@ mDNSlocal mDNSs32 CheckForSoonToExpireRecords(mDNS *const m, const domainname *c
 // the end of the question list, and m->NewQuestions will be set to indicate the first new question.
 // rr is a new CacheRecord just received into our cache
 // (kDNSRecordTypePacketAns/PacketAnsUnique/PacketAdd/PacketAddUnique).
-// NOTE: CacheRecordAdd calls AnswerQuestionWithResourceRecord which can call a user callback,
+// NOTE: CacheRecordAdd calls AnswerCurrentQuestionWithResourceRecord which can call a user callback,
 // which may change the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
@@ -2577,7 +2580,7 @@ mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
 				rr->resrec.rroriginalttl = 0;
 				rr->UnansweredQueries = MaxUnansweredQueries;
 				}
-			AnswerQuestionWithResourceRecord(m, rr, mDNStrue);
+			AnswerCurrentQuestionWithResourceRecord(m, rr, mDNStrue);
 			}
 		if (m->CurrentQuestion == q)	// If m->CurrentQuestion was not auto-advanced, do it ourselves now
 			m->CurrentQuestion = q->next;
@@ -2593,7 +2596,7 @@ mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
 // but we don't have any place to cache it. We'll deliver question 'add' events now, but we won't have any
 // way to deliver 'remove' events in future, nor will we be able to include this in known-answer lists,
 // so we immediately bump ThisQInterval up to MaxQuestionInterval to avoid pounding the network.
-// NOTE: NoCacheAnswer calls AnswerQuestionWithResourceRecord which can call a user callback,
+// NOTE: NoCacheAnswer calls AnswerCurrentQuestionWithResourceRecord which can call a user callback,
 // which may change the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void NoCacheAnswer(mDNS *const m, CacheRecord *rr)
@@ -2606,7 +2609,7 @@ mDNSlocal void NoCacheAnswer(mDNS *const m, CacheRecord *rr)
 		{
 		DNSQuestion *q = m->CurrentQuestion;
 		if (ResourceRecordAnswersQuestion(&rr->resrec, q))
-			AnswerQuestionWithResourceRecord(m, rr, 2);	// Value '2' indicates "don't expect 'remove' events for this"
+			AnswerCurrentQuestionWithResourceRecord(m, rr, 2);	// Value '2' indicates "don't expect 'remove' events for this"
 		if (m->CurrentQuestion == q)	// If m->CurrentQuestion was not auto-advanced, do it ourselves now
 			m->CurrentQuestion = q->next;
 		}
@@ -2618,7 +2621,7 @@ mDNSlocal void NoCacheAnswer(mDNS *const m, CacheRecord *rr)
 // the end of the question list, and m->NewQuestions will be set to indicate the first new question.
 // rr is an existing cache CacheRecord that just expired and is being deleted
 // (kDNSRecordTypePacketAns/PacketAnsUnique/PacketAdd/PacketAddUnique).
-// NOTE: CacheRecordRmv calls AnswerQuestionWithResourceRecord which can call a user callback,
+// NOTE: CacheRecordRmv calls AnswerCurrentQuestionWithResourceRecord which can call a user callback,
 // which may change the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void CacheRecordRmv(mDNS *const m, CacheRecord *rr)
@@ -2651,7 +2654,7 @@ mDNSlocal void CacheRecordRmv(mDNS *const m, CacheRecord *rr)
 						q->qname.c, DNSTypeName(q->qtype));
 					ReconfirmAntecedents(m, &q->qname, q->qnamehash, 0);
 					}
-				AnswerQuestionWithResourceRecord(m, rr, mDNSfalse);
+				AnswerCurrentQuestionWithResourceRecord(m, rr, mDNSfalse);
 				}
 			}
 		if (m->CurrentQuestion == q)	// If m->CurrentQuestion was not auto-advanced, do it ourselves now
@@ -2816,7 +2819,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 				q->CurrentAnswers++;
 				if (rr->resrec.rdlength > SmallRecordLimit) q->LargeAnswers++;
 				if (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) q->UniqueAnswers++;
-				AnswerQuestionWithResourceRecord(m, rr, mDNStrue);
+				AnswerCurrentQuestionWithResourceRecord(m, rr, mDNStrue);
 				if (m->CurrentQuestion != q) break;		// If callback deleted q, then we're finished here
 				}
 			else if (RRTypeIsAddressType(rr->resrec.rrtype) && RRTypeIsAddressType(q->qtype))

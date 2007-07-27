@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.408  2007/07/27 18:44:01  cheshire
+Rename "AnswerQuestionWithResourceRecord" to more informative "AnswerCurrentQuestionWithResourceRecord"
+
 Revision 1.407  2007/07/26 21:19:26  vazquez
 Retry port mapping with incremented port number (up to max) in order to handle
 port mapping conflicts on UPnP gateways
@@ -2464,7 +2467,7 @@ extern void     mDNSCoreMachineSleep(mDNS *const m, mDNSBool wake);
 extern mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip);
 
 extern void MakeNegativeCacheRecord(mDNS *const m, const domainname *const name, const mDNSu32 namehash, const mDNSu16 rrtype, const mDNSu16 rrclass);
-extern void AnswerQuestionWithResourceRecord(mDNS *const m, CacheRecord *const rr, const mDNSBool AddRecord);
+extern void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheRecord *const rr, const mDNSBool AddRecord);
 
 // For now this AutoTunnel stuff is specific to Mac OS X.
 // In the future, if there's demand, we may see if we can abstract it out cleanly into the platform layer

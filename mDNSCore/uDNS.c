@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.413  2007/07/27 18:44:01  cheshire
+Rename "AnswerQuestionWithResourceRecord" to more informative "AnswerCurrentQuestionWithResourceRecord"
+
 Revision 1.412  2007/07/27 18:38:56  cheshire
 Rename "uDNS_CheckQuery" to more informative "uDNS_CheckCurrentQuestion"
 
@@ -4090,9 +4093,9 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 			if (!q->qDNSServer) LogMsg("uDNS_CheckCurrentQuestion no DNS server for %##s", q->qname.c);
 			else LogMsg("uDNS_CheckCurrentQuestion DNS server %#a:%d for %##s is disabled", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qname.c);
 			MakeNegativeCacheRecord(m, &q->qname, q->qnamehash, q->qtype, q->qclass);
-			// Inactivate this question until the next change of DNS servers (do this before AnswerQuestionWithResourceRecord)
+			// Inactivate this question until the next change of DNS servers (do this before AnswerCurrentQuestionWithResourceRecord)
 			q->ThisQInterval = 0;
-			AnswerQuestionWithResourceRecord(m, &m->rec.r, 2);	// 2 means non-cached result
+			AnswerCurrentQuestionWithResourceRecord(m, &m->rec.r, 2);	// 2 means non-cached result
 			m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 			}
 
