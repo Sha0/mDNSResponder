@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.25  2007/07/27 20:33:44  vazquez
+Make sure we clean up previous port mapping requests before starting an unmap
+
 Revision 1.24  2007/07/27 00:57:48  vazquez
 If a tcp connection is already established for doing a port mapping, don't start it again
 
@@ -461,7 +464,6 @@ mDNSlocal void handleLNTPortMappingResponse(tcpLNTInfo *tcpInfo)
 	
 	if (!err)
 		{
-		natInfo->opFlags 	|= LegacyFlag;
 		portMapReply.vers 	= 0;	// don't care about version
 		portMapReply.opcode	= (natInfo->opFlags & MapUDPFlag) ? NATOp_MapUDPResponse : NATOp_MapTCPResponse;
 		portMapReply.uptime	= 0; 	// don't care about uptime
@@ -644,9 +646,12 @@ mDNSexport mStatus LNT_UnmapPort(mDNS *m, NATTraversalInfo *n, mDNSBool doTCP)
 	propArgs[2].propType = "string";
 
 	n->tcpInfo.parentNATInfo = n;
+
+	// clean up any previous port mapping requests before making a copy of this one
+	if (n->tcpInfo.sock) { LogMsg("LNT_UnmapPort: closing previous open connection"); mDNSPlatformTCPCloseConnection(n->tcpInfo.sock); n->tcpInfo.sock = mDNSNULL; }
 	
-	// keep a copy of the tcpInfo so we can clean up later
-	if ((info = mDNSPlatformMemAllocate(sizeof(tcpLNTInfo))) == mDNSNULL) { LogOperation("can't mDNSPlatformMemAllocate for body buffer"); return(mStatus_NoMemoryErr); }
+	// make a copy of the tcpInfo that we can clean up later (the one passed in will be destroyed by the client as soon as this returns)
+	if ((info = mDNSPlatformMemAllocate(sizeof(tcpLNTInfo))) == mDNSNULL) { LogOperation("LNT_UnmapPort: can't mDNSPlatformMemAllocate for tcpInfo"); return(mStatus_NoMemoryErr); }
 	*info = n->tcpInfo;
 	
 	// find the end of the list
