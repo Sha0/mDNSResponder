@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.667  2007/07/27 19:52:10  cheshire
+Don't increment m->rrcache_active for no-cache add events
+
 Revision 1.666  2007/07/27 19:30:39  cheshire
 Changed mDNSQuestionCallback parameter from mDNSBool to QC_result,
 to properly reflect tri-state nature of the possible responses
@@ -2445,9 +2448,8 @@ mDNSexport void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheReco
 	// If any counters or similar are added here, care must be taken to ensure that they are not double-incremented by this.
 
 	rr->LastUsed = m->timenow;
-	if (!q->DuplicateOf && rr->CRActiveQuestion != q)
+	if (AddRecord == QC_add && !q->DuplicateOf && rr->CRActiveQuestion != q)
 		{
-		if (AddRecord==2) LogMsg("ERROR incrementing m->rrcache_active");
 		if (!rr->CRActiveQuestion) m->rrcache_active++;	// If not previously active, increment rrcache_active count
 		debugf("AnswerCurrentQuestionWithResourceRecord: Updating CRActiveQuestion to %p for cache record %s", q, CRDisplayString(m,rr));
 		rr->CRActiveQuestion = q;						// We know q is non-null
@@ -2459,8 +2461,8 @@ mDNSexport void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheReco
 	// (b) a normal add, where we have at least one unique-type answer,
 	// then there's no need to keep polling the network.
 	// (If we have an answer in the cache, then we'll automatically ask again in time to stop it expiring.)
-	if ((AddRecord == 2 && !q->RequestUnicast) ||
-		(AddRecord == 1 && (q->ExpectUnique || (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask))))
+	if ((AddRecord == QC_addnocache && !q->RequestUnicast) ||
+		(AddRecord == QC_add && (q->ExpectUnique || (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask))))
 		if (ActiveQuestion(q) && !q->LongLived)
 			{
 			q->LastQTime        = m->timenow;
@@ -2613,7 +2615,7 @@ mDNSlocal void NoCacheAnswer(mDNS *const m, CacheRecord *rr)
 		{
 		DNSQuestion *q = m->CurrentQuestion;
 		if (ResourceRecordAnswersQuestion(&rr->resrec, q))
-			AnswerCurrentQuestionWithResourceRecord(m, rr, 2);	// Value '2' indicates "don't expect 'remove' events for this"
+			AnswerCurrentQuestionWithResourceRecord(m, rr, QC_addnocache);	// QC_addnocache means "don't expect remove events for this"
 		if (m->CurrentQuestion == q)	// If m->CurrentQuestion was not auto-advanced, do it ourselves now
 			m->CurrentQuestion = q->next;
 		}
