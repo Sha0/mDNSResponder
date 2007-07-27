@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.322  2007/07/27 19:37:19  cheshire
+Moved AutomaticBrowseDomainQ into main mDNS object
+
 Revision 1.321  2007/07/27 19:30:41  cheshire
 Changed mDNSQuestionCallback parameter from mDNSBool to QC_result,
 to properly reflect tri-state nature of the possible responses
@@ -3328,8 +3331,7 @@ mDNSexport int udsserver_init(dnssd_sock_t skt)
 	// We start a "LocalOnly" query looking for Automatic Browse Domain records.
 	// When Domain Enumeration in uDNS.c finds an "lb" record from the network, it creates a
 	// "LocalOnly" record, which results in our AutomaticBrowseDomainChange callback being invoked
-	static DNSQuestion AutomaticBrowseDomainQ;
-	mDNS_GetDomains(&mDNSStorage, &AutomaticBrowseDomainQ, mDNS_DomainTypeBrowseAutomatic,
+	mDNS_GetDomains(&mDNSStorage, &mDNSStorage.AutomaticBrowseDomainQ, mDNS_DomainTypeBrowseAutomatic,
 		mDNSNULL, mDNSInterface_LocalOnly, AutomaticBrowseDomainChange, mDNSNULL);
 
 	RegisterLocalOnlyDomainEnumPTR(&mDNSStorage, &localdomain, mDNS_DomainTypeRegistration);		// Add "local" as recommended registration domain ("dns-sd -E")

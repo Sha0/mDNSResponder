@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.410  2007/07/27 19:37:19  cheshire
+Moved AutomaticBrowseDomainQ into main mDNS object
+
 Revision 1.409  2007/07/27 19:30:39  cheshire
 Changed mDNSQuestionCallback parameter from mDNSBool to QC_result,
 to properly reflect tri-state nature of the possible responses
@@ -1805,6 +1808,7 @@ struct mDNS_struct
 	DomainAuthInfo   *AuthInfoList;         // list of domains requiring authentication for updates
 
 	DNSQuestion       ReverseMap;           // Reverse-map query to find static hostname for service target
+	DNSQuestion       AutomaticBrowseDomainQ;
 	domainname        StaticHostname;       // Current answer to reverse-map query
 	domainname        FQDN;
 	HostnameInfo     *Hostnames;            // List of registered hostnames + hostname metadata
