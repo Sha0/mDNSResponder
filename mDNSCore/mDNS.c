@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.669  2007/07/27 20:09:32  cheshire
+Don't need to dump out all received mDNS packets; they're easily viewed using mDNSNetMonitor
+
 Revision 1.668  2007/07/27 19:58:47  cheshire
 Use symbolic names QC_add and QC_rmv instead of mDNStrue/mDNSfalse
 
@@ -4545,6 +4548,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 		{
 		if (!mDNSOpaque16IsZero(msg->h.id)) ifid = mDNSInterface_Any;
 		uDNS_ReceiveMsg(m, msg, end, srcaddr, srcport);
+		if (mDNS_LogLevel >= MDNS_LOG_VERBOSE_DEBUG) DumpPacket(m, msg, end);
 		// Note: mDNSCore also needs to get access to received unicast responses
 		}
 #endif
@@ -4555,7 +4559,6 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 		LogMsg("Unknown DNS packet type %02X%02X from %#-15a:%-5d to %#-15a:%-5d on %p (ignored)",
 			msg->h.flags.b[0], msg->h.flags.b[1], srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), InterfaceID);
 		}
-    if (mDNS_LogLevel >= MDNS_LOG_DEBUG) DumpPacket(m, msg, end);
 	// Packet reception often causes a change to the task list:
 	// 1. Inbound queries can cause us to need to send responses
 	// 2. Conflicing response packets received from other hosts can cause us to need to send defensive responses
