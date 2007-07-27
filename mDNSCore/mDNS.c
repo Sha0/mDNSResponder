@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.670  2007/07/27 20:54:43  cheshire
+Fixed code to respect real record TTL received in uDNS responses
+
 Revision 1.669  2007/07/27 20:09:32  cheshire
 Don't need to dump out all received mDNS packets; they're easily viewed using mDNSNetMonitor
 
@@ -4065,7 +4068,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	int i;
 	mDNSBool ResponseMCast    = dstaddr && mDNSAddrIsDNSMulticast(dstaddr);
 	mDNSBool ResponseSrcLocal = !srcaddr || AddressIsLocalSubnet(m, InterfaceID, srcaddr);
-	mDNSBool IsLLQEvent = uDNS_recvLLQResponse(m, response, end, srcaddr, srcport);
+	uDNS_LLQType LLQType      = uDNS_recvLLQResponse(m, response, end, srcaddr, srcport);
 
 	// "(CacheRecord*)1" is a special (non-zero) end-of-list marker
 	// We use this non-zero marker so that records in our CacheFlushRecords list will always have NextInCFList
@@ -4097,7 +4100,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	//    answer as being the authoritative complete RRSet, and respond by deleting all other
 	//    matching cache records that don't appear in this packet.
 	// Otherwise, this is a authoritative uDNS answer, so arrange for any stale records to be purged
-	if (ResponseMCast || IsLLQEvent || (response->h.flags.b[0] & kDNSFlag0_TC))
+	if (ResponseMCast || LLQType == uDNS_LLQ_Events || (response->h.flags.b[0] & kDNSFlag0_TC))
 		ptr = LocateAnswers(response, end);
 	// Otherwise, for one-shot queries, any answers in our cache that are not also contained
 	// in this response packet are immediately deemed to be invalid.
@@ -4145,12 +4148,10 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		if (m->rec.r.resrec.rrtype == kDNSType_OPT || m->rec.r.resrec.rrtype == kDNSType_TSIG)
 			{ m->rec.r.resrec.RecordType = 0; continue; }
 		
-		// Temporary:
-		// When we receive uDNS responses, we assume a long cache lifetime --
-		// In the case of LLQ queries we'll get remove events when the records actually do go away
+		// When we receive uDNS LLQ responses, we assume a long cache lifetime --
+		// In the case of active LLQs, we'll get remove events when the records actually do go away
 		// In the case of polling LLQs, we assume the record remains valid until the next poll
-		// In the case of one-shot queries, we should work out how to respect the real TTL
-		if (!mDNSOpaque16IsZero(response->h.id))
+		if (!mDNSOpaque16IsZero(response->h.id) && LLQType)
 			{
 			// If the TTL is -1 for uDNS LLQ, that means "remove"
 			if (m->rec.r.resrec.rroriginalttl == 0xFFFFFFFF) m->rec.r.resrec.rroriginalttl = 0;
@@ -4269,7 +4270,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					if (m->rec.r.resrec.RecordType & kDNSRecordTypePacketUniqueMask)
 						{
 						// If this packet record has the kDNSClass_UniqueRRSet flag set, then add it to our cache flushing list
-						if (rr->NextInCFList == mDNSNULL && cfp != &rr->NextInCFList && !IsLLQEvent)
+						if (rr->NextInCFList == mDNSNULL && cfp != &rr->NextInCFList && LLQType != uDNS_LLQ_Events)
 							{ *cfp = rr; cfp = &rr->NextInCFList; *cfp = (CacheRecord*)1; }
 
 						// If this packet record is marked unique, and our previous cached copy was not, then fix it
@@ -4322,7 +4323,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 			if (!rr && m->rec.r.resrec.rroriginalttl > 0)
 				{
 				rr = CreateNewCacheEntry(m, slot, cg);
-				if (rr && (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) && !IsLLQEvent)
+				if (rr && (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) && LLQType != uDNS_LLQ_Events)
 					{ *cfp = rr; cfp = &rr->NextInCFList; *cfp = (CacheRecord*)1; }
 				}
 			}
