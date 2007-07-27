@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.164  2007/07/27 20:48:43  cheshire
+In DumpRecords(), include record TTL in output
+
 Revision 1.163  2007/07/16 20:10:11  vazquez
 <rdar://problem/3867231> LegacyNATTraversal: Need complete rewrite
 Added SSDP port number
@@ -2300,7 +2303,7 @@ mDNSlocal const mDNSu8 *DumpRecords(mDNS *const m, const DNSMessage *const msg, 
 	for (i = 0; i < count && ptr; i++)
 		{
 		ptr = GetLargeResourceRecord(m, msg, ptr, end, mDNSInterface_Any, kDNSRecordTypePacketAns, &m->rec);
-		if (ptr) LogMsg("%2d %s", i, CRDisplayString(m, &m->rec.r));
+		if (ptr) LogMsg("%2d %5d %s", i, m->rec.r.resrec.rroriginalttl, CRDisplayString(m, &m->rec.r));
 		m->rec.r.resrec.RecordType = 0;
 		}
 	return(ptr);
