@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.81  2007/07/27 00:03:20  cheshire
+Fixed compiler warnings that showed up now we're building optimized ("-Os")
+
 Revision 1.80  2007/07/23 22:12:53  cheshire
 <rdar://problem/5352299> Make mDNSResponder more defensive against malicious local clients
 
@@ -1304,10 +1307,10 @@ DNSServiceErrorType DNSSD_API DNSServiceReconfirmRecord
 static void handle_port_mapping_response(DNSServiceOp *sdr, CallbackHeader *cbh, char *data, char *end)
 	{
 	union { uint32_t l; u_char b[4]; } addr;
-	uint8_t protocol;
+	uint8_t protocol = 0;
 	union { uint16_t s; u_char b[2]; } privatePort;
 	union { uint16_t s; u_char b[2]; } publicPort;
-	uint32_t ttl;
+	uint32_t ttl = 0;
 
 	if (data + 13 > end) data = NULL;
 	else
