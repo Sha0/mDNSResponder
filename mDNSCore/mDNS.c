@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.668  2007/07/27 19:58:47  cheshire
+Use symbolic names QC_add and QC_rmv instead of mDNStrue/mDNSfalse
+
 Revision 1.667  2007/07/27 19:52:10  cheshire
 Don't increment m->rrcache_active for no-cache add events
 
@@ -2513,7 +2516,7 @@ mDNSlocal void CacheRecordDeferredAdd(mDNS *const m, CacheRecord *rr)
 		{
 		DNSQuestion *q = m->CurrentQuestion;
 		if (ResourceRecordAnswersQuestion(&rr->resrec, q))
-			AnswerCurrentQuestionWithResourceRecord(m, rr, mDNStrue);
+			AnswerCurrentQuestionWithResourceRecord(m, rr, QC_add);
 		if (m->CurrentQuestion == q)	// If m->CurrentQuestion was not auto-advanced, do it ourselves now
 			m->CurrentQuestion = q->next;
 		}
@@ -2586,7 +2589,7 @@ mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
 				rr->resrec.rroriginalttl = 0;
 				rr->UnansweredQueries = MaxUnansweredQueries;
 				}
-			AnswerCurrentQuestionWithResourceRecord(m, rr, mDNStrue);
+			AnswerCurrentQuestionWithResourceRecord(m, rr, QC_add);
 			}
 		if (m->CurrentQuestion == q)	// If m->CurrentQuestion was not auto-advanced, do it ourselves now
 			m->CurrentQuestion = q->next;
@@ -2660,7 +2663,7 @@ mDNSlocal void CacheRecordRmv(mDNS *const m, CacheRecord *rr)
 						q->qname.c, DNSTypeName(q->qtype));
 					ReconfirmAntecedents(m, &q->qname, q->qnamehash, 0);
 					}
-				AnswerCurrentQuestionWithResourceRecord(m, rr, mDNSfalse);
+				AnswerCurrentQuestionWithResourceRecord(m, rr, QC_rmv);
 				}
 			}
 		if (m->CurrentQuestion == q)	// If m->CurrentQuestion was not auto-advanced, do it ourselves now
@@ -2825,7 +2828,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 				q->CurrentAnswers++;
 				if (rr->resrec.rdlength > SmallRecordLimit) q->LargeAnswers++;
 				if (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) q->UniqueAnswers++;
-				AnswerCurrentQuestionWithResourceRecord(m, rr, mDNStrue);
+				AnswerCurrentQuestionWithResourceRecord(m, rr, QC_add);
 				if (m->CurrentQuestion != q) break;		// If callback deleted q, then we're finished here
 				}
 			else if (RRTypeIsAddressType(rr->resrec.rrtype) && RRTypeIsAddressType(q->qtype))
