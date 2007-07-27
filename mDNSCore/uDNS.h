@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.70  2007/07/27 20:52:29  cheshire
+Made uDNS_recvLLQResponse() return tri-state result: LLQ_Not, LLQ_First, or LLQ_Events
+
 Revision 1.69  2007/07/27 19:30:40  cheshire
 Changed mDNSQuestionCallback parameter from mDNSBool to QC_result,
 to properly reflect tri-state nature of the possible responses
@@ -211,9 +214,10 @@ extern void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *
 // returns time of next scheduled event
 extern void uDNS_Execute(mDNS *const m);
 
-extern mStatus           uDNS_SetupDNSConfig(mDNS *const m);
-extern mStatus           uDNS_RegisterSearchDomains(mDNS *const m);
-extern mDNSBool          uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *const srcaddr, const mDNSIPPort srcport);
+extern mStatus         uDNS_SetupDNSConfig(mDNS *const m);
+extern mStatus         uDNS_RegisterSearchDomains(mDNS *const m);
+typedef enum { uDNS_LLQ_Not = 0, uDNS_LLQ_First, uDNS_LLQ_Events } uDNS_LLQType;
+extern uDNS_LLQType    uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *const srcaddr, const mDNSIPPort srcport);
 extern DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const name);
 
 // NAT traversal
