@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.671  2007/07/27 22:32:54  cheshire
+When processing TTLs in uDNS responses, we'll currently impose a minimum effective TTL
+of 2 seconds, or other stuff breaks (e.g. we end up making a negative cache entry).
+
 Revision 1.670  2007/07/27 20:54:43  cheshire
 Fixed code to respect real record TTL received in uDNS responses
 
@@ -4151,11 +4155,22 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		// When we receive uDNS LLQ responses, we assume a long cache lifetime --
 		// In the case of active LLQs, we'll get remove events when the records actually do go away
 		// In the case of polling LLQs, we assume the record remains valid until the next poll
-		if (!mDNSOpaque16IsZero(response->h.id) && LLQType)
+		if (!mDNSOpaque16IsZero(response->h.id))
 			{
-			// If the TTL is -1 for uDNS LLQ, that means "remove"
-			if (m->rec.r.resrec.rroriginalttl == 0xFFFFFFFF) m->rec.r.resrec.rroriginalttl = 0;
-			else                                             m->rec.r.resrec.rroriginalttl = (mDNSu32)(0x70000000 / mDNSPlatformOneSecond);
+			if (LLQType)
+				{
+				// If the TTL is -1 for uDNS LLQ, that means "remove"
+				if (m->rec.r.resrec.rroriginalttl == 0xFFFFFFFF) m->rec.r.resrec.rroriginalttl = 0;
+				else                                             m->rec.r.resrec.rroriginalttl = (mDNSu32)(0x70000000 / mDNSPlatformOneSecond);
+				}
+			else
+				{
+				// For mDNS, TTL zero means "delete this record"
+				// For uDNS, TTL zero means: this data is true at this moment, but don't cache it.
+				// For now we need to impose a minimum effective TTL of 2 seconds, or other stuff breaks (e.g. we end up making a negative cache entry).
+				// In the future we may want to revisit this and consider properly supporting non-cached uDNS answers.
+				if (m->rec.r.resrec.rroriginalttl < 2) m->rec.r.resrec.rroriginalttl = 2;
+				}
 			}
 
 		// If response was not sent via LL multicast,
