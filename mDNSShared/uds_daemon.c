@@ -17,6 +17,10 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.321  2007/07/27 19:30:41  cheshire
+Changed mDNSQuestionCallback parameter from mDNSBool to QC_result,
+to properly reflect tri-state nature of the possible responses
+
 Revision 1.320  2007/07/27 00:48:27  cheshire
 <rdar://problem/4700198> BTMM: Services should only get registered in .Mac domain of current user
 <rdar://problem/4731180> BTMM: Only browse in the current user's .Mac domain by default
@@ -1789,7 +1793,7 @@ mDNSlocal mStatus handle_regservice_request(request_state *request)
 #pragma mark - DNSServiceBrowse
 #endif
 
-mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
 	const DNSServiceFlags flags = AddRecord ? kDNSServiceFlagsAdd : 0;
 	request_state *req = question->QuestionContext;
@@ -2115,7 +2119,7 @@ mDNSexport void udsserver_handle_configchange(mDNS *const m)
 	SCPrefBrowseDomains = BrowseDomains;
 	}
 
-mDNSlocal void AutomaticBrowseDomainChange(mDNS *const m, DNSQuestion *q, const ResourceRecord *const answer, mDNSBool AddRecord)
+mDNSlocal void AutomaticBrowseDomainChange(mDNS *const m, DNSQuestion *q, const ResourceRecord *const answer, QC_result AddRecord)
 	{
 	(void)m; // unused;
 	(void)q; // unused
@@ -2197,7 +2201,7 @@ mDNSlocal mStatus handle_browse_request(request_state *request)
 #pragma mark - DNSServiceResolve
 #endif
 
-mDNSlocal void resolve_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+mDNSlocal void resolve_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
 	size_t len = 0;
 	char fullname[MAX_ESCAPED_DOMAIN_NAME], target[MAX_ESCAPED_DOMAIN_NAME];
@@ -2343,7 +2347,7 @@ mDNSlocal mStatus handle_resolve_request(request_state *request)
 // delivering the result to the client, and termination) are identical.
 
 // what gets called when a resolve is completed and we need to send the data back to the client
-mDNSlocal void queryrecord_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+mDNSlocal void queryrecord_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
 	char name[MAX_ESCAPED_DOMAIN_NAME];
 	request_state *req = question->QuestionContext;
@@ -2489,7 +2493,7 @@ mDNSlocal void enum_termination_callback(request_state *request)
 	}
 
 mDNSlocal void enum_result_callback(mDNS *const m,
-	DNSQuestion *const question, const ResourceRecord *const answer, mDNSBool AddRecord)
+	DNSQuestion *const question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
 	char domain[MAX_ESCAPED_DOMAIN_NAME];
 	request_state *request = question->QuestionContext;

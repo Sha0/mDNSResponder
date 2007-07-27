@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: Client.c,v $
+Revision 1.20  2007/07/27 19:30:41  cheshire
+Changed mDNSQuestionCallback parameter from mDNSBool to QC_result,
+to properly reflect tri-state nature of the possible responses
+
 Revision 1.19  2007/04/16 20:49:39  cheshire
 Fix compile errors for mDNSPosix build
 
@@ -105,7 +109,7 @@ mDNSexport const char ProgramName[] = "mDNSClientPosix";
 
 static const char *gProgramName = ProgramName;
 
-static void BrowseCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+static void BrowseCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
     // A callback from the core mDNS code that indicates that we've received a 
     // response to our query.  Note that this code runs on the main thread 
     // (in fact, there is only one thread!), so we can safely printf the results.

@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: Mac\040OS\040Test\040Searcher.c,v $
+Revision 1.23  2007/07/27 19:30:40  cheshire
+Changed mDNSQuestionCallback parameter from mDNSBool to QC_result,
+to properly reflect tri-state nature of the possible responses
+
 Revision 1.22  2006/08/14 23:24:29  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -150,7 +154,7 @@ static void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 // When a new named instance of a service is found, FoundInstance() is called.
 // In this sample code we turn around and immediately issue a query to resolve that service name to
 // find its address, port, and txtinfo, but a normal browing application would just display the name.
-static void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+static void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
 	#pragma unused (question)
 	SearcherServices *services = (SearcherServices *)question->QuestionContext;
@@ -182,7 +186,7 @@ static void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRe
 		}
 	}
 
-static void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+static void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
 	#pragma unused (m)
 	#pragma unused (question)

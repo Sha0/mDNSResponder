@@ -30,6 +30,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.327  2007/07/27 19:30:41  cheshire
+Changed mDNSQuestionCallback parameter from mDNSBool to QC_result,
+to properly reflect tri-state nature of the possible responses
+
 Revision 1.326  2007/07/24 17:23:33  cheshire
 <rdar://problem/5357133> Add list validation checks for debugging
 
@@ -769,7 +773,7 @@ mDNSlocal void EnableDeathNotificationForClient(mach_port_t ClientMachPort, void
 //*************************************************************************************************************
 // Domain Enumeration
 
-mDNSlocal void DomainEnumFound(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+mDNSlocal void DomainEnumFound(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
 	kern_return_t status;
 	char buffer[MAX_ESCAPED_DOMAIN_NAME];
@@ -845,7 +849,7 @@ fail:
 //*************************************************************************************************************
 // Browse for services
 
-mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
 	(void)m;		// Unused
 

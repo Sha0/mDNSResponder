@@ -30,6 +30,10 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.42  2007/07/27 19:30:41  cheshire
+Changed mDNSQuestionCallback parameter from mDNSBool to QC_result,
+to properly reflect tri-state nature of the possible responses
+
 Revision 1.41  2007/04/16 20:49:39  cheshire
 Fix compile errors for mDNSPosix build
 
@@ -130,7 +134,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, DNSMessage *const msg, const mDNS
 	__MDNS__mDNSCoreReceive(m, msg, end, srcaddr, srcport, &AllDNSLinkGroup_v4, dstport, InterfaceID);
 	}
 
-static void NameCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+static void NameCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
 	(void)m;		// Unused
 	(void)question;	// Unused
@@ -144,7 +148,7 @@ static void NameCallback(mDNS *const m, DNSQuestion *question, const ResourceRec
 		}
 	}
 
-static void InfoCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+static void InfoCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
 	(void)m;		// Unused
 	(void)question;	// Unused
@@ -186,7 +190,7 @@ static void InfoCallback(mDNS *const m, DNSQuestion *question, const ResourceRec
 	if (NumHINFO && (NumAddr || NumAAAA)) StopNow = 1;
 	}
 
-static void ServicesCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+static void ServicesCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
 	(void)m;		// Unused
 	(void)question;	// Unused

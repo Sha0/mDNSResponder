@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.452  2007/07/27 19:30:41  cheshire
+Changed mDNSQuestionCallback parameter from mDNSBool to QC_result,
+to properly reflect tri-state nature of the possible responses
+
 Revision 1.451  2007/07/25 22:25:45  cheshire
 <rdar://problem/5360853> BTMM: Code not cleaning up old racoon files
 
@@ -2283,7 +2287,7 @@ mDNSlocal void ReissueBlockedQuestions(mDNS *const m, domainname *d)
 		}
 	}
 
-mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
 	ClientTunnel *tun = (ClientTunnel *)question->QuestionContext;
 	if (!AddRecord) return;

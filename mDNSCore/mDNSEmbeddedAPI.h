@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.409  2007/07/27 19:30:39  cheshire
+Changed mDNSQuestionCallback parameter from mDNSBool to QC_result,
+to properly reflect tri-state nature of the possible responses
+
 Revision 1.408  2007/07/27 18:44:01  cheshire
 Rename "AnswerQuestionWithResourceRecord" to more informative "AnswerCurrentQuestionWithResourceRecord"
 
@@ -1548,7 +1552,8 @@ typedef struct DomainAuthInfo
 	} DomainAuthInfo;
 
 // Note: Within an mDNSQuestionCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute()
-typedef void mDNSQuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord);
+typedef enum { QC_rmv = 0, QC_add = 1, QC_addnocache = 2 } QC_result;
+typedef void mDNSQuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord);
 struct DNSQuestion_struct
 	{
 	// Internal state fields. These are used internally by mDNSCore; the client layer needn't be concerned with them.
@@ -2467,12 +2472,12 @@ extern void     mDNSCoreMachineSleep(mDNS *const m, mDNSBool wake);
 extern mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip);
 
 extern void MakeNegativeCacheRecord(mDNS *const m, const domainname *const name, const mDNSu32 namehash, const mDNSu16 rrtype, const mDNSu16 rrclass);
-extern void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheRecord *const rr, const mDNSBool AddRecord);
+extern void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheRecord *const rr, const QC_result AddRecord);
 
 // For now this AutoTunnel stuff is specific to Mac OS X.
 // In the future, if there's demand, we may see if we can abstract it out cleanly into the platform layer
 #if APPLE_OSX_mDNSResponder
-extern void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord);
+extern void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord);
 extern void AddNewClientTunnel(mDNS *const m, DNSQuestion *const q);
 extern void SetupLocalAutoTunnelInterface_internal(mDNS *const m);
 #endif

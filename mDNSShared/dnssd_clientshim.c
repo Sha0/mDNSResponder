@@ -25,6 +25,10 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientshim.c,v $
+Revision 1.15  2007/07/27 19:30:41  cheshire
+Changed mDNSQuestionCallback parameter from mDNSBool to QC_result,
+to properly reflect tri-state nature of the possible responses
+
 Revision 1.14  2007/07/17 19:15:26  cheshire
 <rdar://problem/5297410> Crash in DNSServiceRegister() in dnssd_clientshim.c
 
@@ -403,7 +407,7 @@ static void DNSServiceBrowseDispose(mDNS_DirectOP *op)
 	mDNSPlatformMemFree(x);
 	}
 
-mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
 	DNSServiceFlags flags = AddRecord ? kDNSServiceFlagsAdd : (DNSServiceFlags)0;
 	domainlabel name;
@@ -489,7 +493,7 @@ static void DNSServiceResolveDispose(mDNS_DirectOP *op)
 	mDNSPlatformMemFree(x);
 	}
 
-mDNSlocal void FoundServiceInfo(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+mDNSlocal void FoundServiceInfo(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
 	mDNS_DirectOP_Resolve *x = (mDNS_DirectOP_Resolve*)question->QuestionContext;
 	(void)m;	// Unused
@@ -649,7 +653,7 @@ static void DNSServiceQueryRecordDispose(mDNS_DirectOP *op)
 	mDNSPlatformMemFree(x);
 	}
 
-mDNSlocal void DNSServiceQueryRecordResponse(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+mDNSlocal void DNSServiceQueryRecordResponse(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
 	mDNS_DirectOP_QueryRecord *x = (mDNS_DirectOP_QueryRecord*)question->QuestionContext;
 	char fullname[MAX_ESCAPED_DOMAIN_NAME];

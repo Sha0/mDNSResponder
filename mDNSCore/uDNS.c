@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.414  2007/07/27 19:30:39  cheshire
+Changed mDNSQuestionCallback parameter from mDNSBool to QC_result,
+to properly reflect tri-state nature of the possible responses
+
 Revision 1.413  2007/07/27 18:44:01  cheshire
 Rename "AnswerQuestionWithResourceRecord" to more informative "AnswerCurrentQuestionWithResourceRecord"
 
@@ -2061,7 +2065,7 @@ mDNSlocal const domainname *PRIVATE_LLQ_SERVICE_TYPE    = (const domainname*)"\x
 mDNSlocal mStatus GetZoneData_StartQuery(mDNS *const m, ZoneData *zd, mDNSu16 qtype);
 
 // GetZoneData_QuestionCallback is called from normal client callback context (core API calls allowed)
-mDNSexport void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+mDNSexport void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
 	ZoneData *zd = (ZoneData*)question->QuestionContext;
 
@@ -2621,7 +2625,7 @@ mDNSlocal void HostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 	rr->RecordContext = (void *)hi;
 	}
 
-mDNSlocal void FoundStaticHostname(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+mDNSlocal void FoundStaticHostname(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
 	const domainname *pktname = &answer->rdata->u.name;
 	domainname *storedname = &m->StaticHostname;
@@ -4534,7 +4538,7 @@ mDNSlocal void FreeARElemCallback(mDNS *const m, AuthRecord *const rr, mStatus r
 	if (result == mStatus_MemFree) mDNSPlatformMemFree(rr->RecordContext);
 	}
 
-mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
 	SearchListElem *slElem = question->QuestionContext;
 	mStatus err;

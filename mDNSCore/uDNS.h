@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.69  2007/07/27 19:30:40  cheshire
+Changed mDNSQuestionCallback parameter from mDNSBool to QC_result,
+to properly reflect tri-state nature of the possible responses
+
 Revision 1.68  2007/07/27 18:38:56  cheshire
 Rename "uDNS_CheckQuery" to more informative "uDNS_CheckCurrentQuestion"
 
@@ -191,7 +195,7 @@ extern mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const questi
 extern mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const question);
 
 extern void RecordRegistrationCallback(mDNS *const m, mStatus err, const ZoneData *zoneData);
-extern void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord);
+extern void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord);
 extern mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr);
 
 extern void serviceRegistrationCallback(mDNS *const m, mStatus err, const ZoneData *result);

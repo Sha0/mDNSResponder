@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.666  2007/07/27 19:30:39  cheshire
+Changed mDNSQuestionCallback parameter from mDNSBool to QC_result,
+to properly reflect tri-state nature of the possible responses
+
 Revision 1.665  2007/07/27 18:44:01  cheshire
 Rename "AnswerQuestionWithResourceRecord" to more informative "AnswerCurrentQuestionWithResourceRecord"
 
@@ -595,7 +599,7 @@ mDNSlocal mDNSBool AddressIsLocalSubnet(mDNS *const m, const mDNSInterfaceID Int
 
 // For a single given DNSQuestion, deliver an add/remove result for the single given AuthRecord
 // Used by AnswerLocalQuestions() and AnswerNewLocalOnlyQuestion()
-mDNSlocal void AnswerLocalOnlyQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, AuthRecord *rr, mDNSBool AddRecord)
+mDNSlocal void AnswerLocalOnlyQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, AuthRecord *rr, QC_result AddRecord)
 	{
 	// Indicate that we've given at least one positive answer for this record, so we should be prepared to send a goodbye for it
 	if (AddRecord) rr->LocalAnswer = mDNStrue;
@@ -609,7 +613,7 @@ mDNSlocal void AnswerLocalOnlyQuestionWithResourceRecord(mDNS *const m, DNSQuest
 // to each, stopping if it reaches a NewLocalOnlyQuestion -- brand-new questions are handled by AnswerNewLocalOnlyQuestion().
 // If the AuthRecord is marked mDNSInterface_LocalOnly, then we also deliver it to any other questions we have using mDNSInterface_Any.
 // Used by AnswerForNewLocalRecords() and mDNS_Deregister_internal()
-mDNSlocal void AnswerLocalQuestions(mDNS *const m, AuthRecord *rr, mDNSBool AddRecord)
+mDNSlocal void AnswerLocalQuestions(mDNS *const m, AuthRecord *rr, QC_result AddRecord)
 	{
 	if (m->CurrentQuestion)
 		LogMsg("AnswerLocalQuestions ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
@@ -2429,7 +2433,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 // Any code walking either list must use the m->CurrentQuestion (and possibly m->CurrentRecord) mechanism to protect against this.
 // In fact, to enforce this, the routine will *only* answer the question currently pointed to by m->CurrentQuestion,
 // which will be auto-advanced (possibly to NULL) if the client callback cancels the question.
-mDNSexport void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheRecord *const rr, const mDNSBool AddRecord)
+mDNSexport void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheRecord *const rr, const QC_result AddRecord)
 	{
 	DNSQuestion *const q = m->CurrentQuestion;
 	mDNSBool followcname = rr->resrec.RecordType != kDNSRecordTypePacketNegative && AddRecord &&
@@ -5041,7 +5045,7 @@ mDNSlocal mDNSBool MachineHasActiveIPv6(mDNS *const m)
 	return(mDNSfalse);
 	}
 
-mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
 	ServiceInfoQuery *query = (ServiceInfoQuery *)question->QuestionContext;
 	mDNSBool PortChanged = !mDNSSameIPPort(query->info->port, answer->rdata->u.srv.port);
@@ -5102,7 +5106,7 @@ mDNSlocal void FoundServiceInfoSRV(mDNS *const m, DNSQuestion *question, const R
 	// callback function is allowed to do anything, including deleting this query and freeing its memory.
 	}
 
-mDNSlocal void FoundServiceInfoTXT(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+mDNSlocal void FoundServiceInfoTXT(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
 	ServiceInfoQuery *query = (ServiceInfoQuery *)question->QuestionContext;
 	if (!AddRecord) return;
@@ -5127,7 +5131,7 @@ mDNSlocal void FoundServiceInfoTXT(mDNS *const m, DNSQuestion *question, const R
 		}
 	}
 
-mDNSlocal void FoundServiceInfo(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, mDNSBool AddRecord)
+mDNSlocal void FoundServiceInfo(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
 	ServiceInfoQuery *query = (ServiceInfoQuery *)question->QuestionContext;
 	//LogOperation("FoundServiceInfo %d %s", AddRecord, RRDisplayString(m, answer));
