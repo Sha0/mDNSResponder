@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.411  2007/07/27 22:50:08  vazquez
+Allocate memory for UPnP request and reply buffers instead of using arrays
+
 Revision 1.410  2007/07/27 19:37:19  cheshire
 Moved AutomaticBrowseDomainQ into main mDNS object
 
@@ -1106,9 +1109,9 @@ struct tcpLNTInfo_struct
 	LNTOp_t		op;			// operation performed using this connection
 	mDNSAddr		Address;		// router address
 	mDNSIPPort	Port;			// router port
-	mDNSs8		Request[LNT_MAXBUFSIZE];	// xml request to router
+	mDNSs8		*Request;		// xml request to router
 	int			requestLen;
-	mDNSs8		Reply[LNT_MAXBUFSIZE];		// xml reply from router
+	mDNSs8		*Reply;		// xml reply from router
 	int			replyLen;
 	unsigned long	nread;		// number of bytes read so far
 	int			retries;		// number of times we've tried to do this port mapping

@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.26  2007/07/27 22:50:08  vazquez
+Allocate memory for UPnP request and reply buffers instead of using arrays
+
 Revision 1.25  2007/07/27 20:33:44  vazquez
 Make sure we clean up previous port mapping requests before starting an unmap
 
@@ -525,7 +528,13 @@ mDNSlocal void tcpConnectionCallback(TCPSocket *sock, void *context, mDNSBool Co
 			}
 		}
 exit:	
-	if (err || status)	{ mDNSPlatformTCPCloseConnection(tcpInfo->sock); tcpInfo->sock = mDNSNULL; }
+	if (err || status)	
+		{ 
+		mDNSPlatformTCPCloseConnection(tcpInfo->sock); 
+		tcpInfo->sock = mDNSNULL;
+		if (tcpInfo->Request != mDNSNULL)	{ mDNSPlatformMemFree(tcpInfo->Request); tcpInfo->Request = mDNSNULL; }
+		if (tcpInfo->Reply != mDNSNULL)		{ mDNSPlatformMemFree(tcpInfo->Reply); tcpInfo->Reply = mDNSNULL; }
+		}
 	if (tcpInfo)		mDNS_Unlock(tcpInfo->m);	
 	if (status == mStatus_ConfigChanged)
 		{
@@ -548,15 +557,17 @@ mDNSlocal mStatus MakeTCPConnection(mDNS *const m, tcpLNTInfo *info, const mDNSA
 	info->op		= op;
 	info->nread	= 0;
 	info->replyLen 	= LNT_MAXBUFSIZE;
+	if 		(info->Reply != mDNSNULL)	mDNSPlatformMemZero(info->Reply, LNT_MAXBUFSIZE);	// reuse previously allocated buffer
+	else if 	((info->Reply = (mDNSs8 *) 	mDNSPlatformMemAllocate(LNT_MAXBUFSIZE)) == mDNSNULL) { LogOperation("can't mDNSPlatformMemAllocate for reply buffer"); return (mStatus_NoMemoryErr); }
 
 	if (info->sock) { LogOperation("MakeTCPConnection: closing previous open connection"); mDNSPlatformTCPCloseConnection(info->sock); info->sock = mDNSNULL; }
 	info->sock = mDNSPlatformTCPSocket(m, kTCPSocketFlags_Zero, &srcport);
-	if (!info->sock) { LogMsg("LNT MakeTCPConnection: unable to create TCP socket"); return(mStatus_NoMemoryErr); }
+	if (!info->sock) { LogMsg("LNT MakeTCPConnection: unable to create TCP socket"); mDNSPlatformMemFree(info->Reply); info->Reply = mDNSNULL; return(mStatus_NoMemoryErr); }
 	LogOperation("MakeTCPConnection: connecting to %#a : %d", &info->Address, mDNSVal16(info->Port));
 	err = mDNSPlatformTCPConnect(info->sock, Addr, Port, 0, tcpConnectionCallback, info);
 
 	if        (err == mStatus_ConnEstablished)	{ mDNS_Unlock(m); tcpConnectionCallback(info->sock, info, mDNStrue, mStatus_NoError);  mDNS_Lock(m); }	// drop lock around this call
-	else if (err != mStatus_ConnPending    )	LogMsg("LNT MakeTCPConnection: connection failed");
+	else if (err != mStatus_ConnPending    )	{ LogMsg("LNT MakeTCPConnection: connection failed"); mDNSPlatformMemFree(info->Reply); info->Reply = mDNSNULL; }
 	if (err == mStatus_ConnEstablished || err == mStatus_ConnPending) err = mStatus_NoError;
 	return(err);
 	}
@@ -584,16 +595,18 @@ mDNSlocal mStatus SendSOAPMsgControlAction(mDNS *m, tcpLNTInfo *info, char *Acti
 	bodyLen 			= mDNS_snprintf(sendBufferBody, bodyLen, szSOAPMsgControlABodyFMT, Action, sendBufferArgs, Action);
 
 	// create message header (bodyLen is embedded in the message to the router)
-	mDNSPlatformMemZero(info->Request, LNT_MAXBUFSIZE);
-	headerLen 	= mDNS_snprintf((char *)info->Request, LNT_MAXBUFSIZE - bodyLen, szSOAPMsgControlAHeaderFMT, m->uPNPSOAPURL, Action, m->uPNPSOAPAddressString, bodyLen);
+	if 		(info->Request != mDNSNULL)	mDNSPlatformMemZero(info->Request, LNT_MAXBUFSIZE);	// reuse previously allocated buffer
+	else if 	((info->Request = (mDNSs8 *) 	mDNSPlatformMemAllocate(LNT_MAXBUFSIZE)) == mDNSNULL) { LogOperation("can't mDNSPlatformMemAllocate for send buffer"); err = mStatus_NoMemoryErr; goto end; }
+	headerLen = mDNS_snprintf((char *)info->Request, LNT_MAXBUFSIZE - bodyLen, szSOAPMsgControlAHeaderFMT, m->uPNPSOAPURL, Action, m->uPNPSOAPAddressString, bodyLen);
 	strlcpy((char *)(info->Request) + headerLen, sendBufferBody, headerLen+bodyLen);
 	info->requestLen = headerLen+bodyLen;
 
 	err = MakeTCPConnection(m, info, &m->Router, m->uPNPSOAPPort, op);
 
 end:
-	if (sendBufferBody 	!= mDNSNULL)	mDNSPlatformMemFree(sendBufferBody);
-	if (sendBufferArgs 	!= mDNSNULL)	mDNSPlatformMemFree(sendBufferArgs);
+	if (err && info->Request 	!= mDNSNULL)	{ mDNSPlatformMemFree(info->Request); info->Request = mDNSNULL; }
+	if (sendBufferBody 		!= mDNSNULL)	mDNSPlatformMemFree(sendBufferBody);
+	if (sendBufferArgs 		!= mDNSNULL)	mDNSPlatformMemFree(sendBufferArgs);
 	return (err);
 	}
 
@@ -605,7 +618,8 @@ mDNSlocal mStatus GetDeviceDescription(mDNS *m, tcpLNTInfo *info)
 	if (m->uPNPRouterURL == mDNSNULL || m->uPNPRouterAddressString == mDNSNULL)		{ LogOperation("GetDeviceDescription: no router URL or address string!"); return (mStatus_Invalid); }
 
 	// build message
-	mDNSPlatformMemZero(info->Request, LNT_MAXBUFSIZE);
+	if 		(info->Request != mDNSNULL)		mDNSPlatformMemZero(info->Request, LNT_MAXBUFSIZE);	// reuse previously allocated buffer
+	else if 	((info->Request = (mDNSs8 *) 		mDNSPlatformMemAllocate(LNT_MAXBUFSIZE)) == mDNSNULL) { LogOperation("can't mDNSPlatformMemAllocate for send buffer for discovery"); return (mStatus_NoMemoryErr); }
 	bufLen = mDNS_snprintf((char *)info->Request, LNT_MAXBUFSIZE, szSSDPMsgDescribeDeviceFMT, m->uPNPRouterURL, m->uPNPRouterAddressString);
 
 	LogOperation("Describe Device: [%s]", info->Request);
@@ -647,8 +661,10 @@ mDNSexport mStatus LNT_UnmapPort(mDNS *m, NATTraversalInfo *n, mDNSBool doTCP)
 
 	n->tcpInfo.parentNATInfo = n;
 
-	// clean up any previous port mapping requests before making a copy of this one
-	if (n->tcpInfo.sock) { LogMsg("LNT_UnmapPort: closing previous open connection"); mDNSPlatformTCPCloseConnection(n->tcpInfo.sock); n->tcpInfo.sock = mDNSNULL; }
+	// clean up previous port mapping requests and allocations
+	if (n->tcpInfo.sock) { LogOperation("LNT_UnmapPort: closing previous open connection"); mDNSPlatformTCPCloseConnection(n->tcpInfo.sock); n->tcpInfo.sock = mDNSNULL; }
+	if (n->tcpInfo.Request != mDNSNULL)	{ mDNSPlatformMemFree(n->tcpInfo.Request); n->tcpInfo.Request = mDNSNULL; }
+	if (n->tcpInfo.Reply != mDNSNULL)	{ mDNSPlatformMemFree(n->tcpInfo.Reply); n->tcpInfo.Reply = mDNSNULL; }
 	
 	// make a copy of the tcpInfo that we can clean up later (the one passed in will be destroyed by the client as soon as this returns)
 	if ((info = mDNSPlatformMemAllocate(sizeof(tcpLNTInfo))) == mDNSNULL) { LogOperation("LNT_UnmapPort: can't mDNSPlatformMemAllocate for tcpInfo"); return(mStatus_NoMemoryErr); }
