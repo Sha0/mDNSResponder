@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.24  2007/07/27 00:57:48  vazquez
+If a tcp connection is already established for doing a port mapping, don't start it again
+
 Revision 1.23  2007/07/26 21:19:26  vazquez
 Retry port mapping with incremented port number (up to max) in order to handle
 port mapping conflicts on UPnP gateways
@@ -664,6 +667,9 @@ mDNSexport mStatus LNT_MapPort(mDNS *m, NATTraversalInfo *n, mDNSBool doTCP)
 	Property		propArgs[8];
 	mDNSs32		protocol	= doTCP ? IPPROTO_TCP : IPPROTO_UDP;
 	mStatus		error		= mStatus_NoError;
+
+	// if we already have a connection up don't make another request for the same thing
+	if (n->tcpInfo.sock && mDNSPlatformTCPIsConnected(n->tcpInfo.sock) == mDNStrue) 	return (mStatus_NoError);
 
 	// create strings to use in the message
 	mDNS_snprintf(externalPort, 		sizeof(externalPort), 		"%u", mDNSVal16(n->publicPortreq));
