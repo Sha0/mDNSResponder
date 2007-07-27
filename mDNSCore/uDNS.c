@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.418  2007/07/27 20:32:05  vazquez
+Flag a UPnP NAT traversal before starting a UPnP port mapping, and make sure all
+calls to mDNS_StopNATOperation() go through the UPnP code
+
 Revision 1.417  2007/07/27 20:19:42  cheshire
 Use MDNS_LOG_VERBOSE_DEBUG for dumping out packets instead of MDNS_LOG_DEBUG
 
@@ -993,7 +997,9 @@ mDNSlocal mStatus uDNS_SendNATMsg(mDNS *m, NATTraversalInfo *info, NATOptFlags_t
 			else
 				{
 				mDNSBool   doTCP = (info->opFlags & MapTCPFlag) ? 1 : 0;
-				if (mDNSIPPortIsZero(info->publicPortreq)) info->publicPortreq = info->privatePort;	// initially request priv == pub if publicPortreq is zero
+				// initially request priv == pub if publicPortreq is zero
+				if (mDNSIPPortIsZero(info->publicPortreq)) info->publicPortreq = info->privatePort;
+				info->opFlags |= LegacyFlag;
 				err = LNT_MapPort(m, info, doTCP);
 				}
 			}
@@ -1181,10 +1187,10 @@ mDNSlocal mStatus mDNS_StopNATOperation_internal(mDNS *m, NATTraversalInfo *trav
 	if (m->CurrentNATTraversal == traversal)
 		m->CurrentNATTraversal = m->CurrentNATTraversal->next;
 
-	// let other edge-case states expire for simplicity
-	if (!mDNSIPPortIsZero(traversal->publicPort))
+	if (!(traversal->opFlags & LegacyFlag))
 		{
-		if (!(traversal->opFlags & LegacyFlag))
+		// let other edge-case states expire for simplicity
+		if (!mDNSIPPortIsZero(traversal->publicPort))
 			{
 			// zero lease
 			traversal->NATPortReq.NATReq_lease = 0;
@@ -1193,16 +1199,16 @@ mDNSlocal mStatus mDNS_StopNATOperation_internal(mDNS *m, NATTraversalInfo *trav
 			// send once only - if it fails the router will clean itself up eventually
 			uDNS_SendNATMsg(m, traversal, (traversal->opFlags & MapTCPFlag) ? MapTCPFlag : MapUDPFlag);
 			}
-#ifdef _LEGACY_NAT_TRAVERSAL_
-		else
-			{
-			mStatus err = mStatus_NoError;
-			mDNSBool tcp = (traversal->opFlags & MapTCPFlag) ? 1 : 0;
-			err = LNT_UnmapPort(m, traversal, tcp);
-			if (err) LogMsg("Legacy NAT Traversal - unmap request failed with error %ld", err);
-			}
-#endif // _LEGACY_NAT_TRAVERSAL_
 		}
+#ifdef _LEGACY_NAT_TRAVERSAL_
+	else
+		{
+		mStatus err = mStatus_NoError;
+		mDNSBool tcp = (traversal->opFlags & MapTCPFlag) ? 1 : 0;
+		err = LNT_UnmapPort(m, traversal, tcp);
+		if (err) LogMsg("Legacy NAT Traversal - unmap request failed with error %ld", err);
+		}
+#endif // _LEGACY_NAT_TRAVERSAL_
 	return(mStatus_NoError);
 	}
 
