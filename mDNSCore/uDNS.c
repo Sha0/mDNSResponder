@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.416  2007/07/27 19:59:28  cheshire
+MUST NOT touch m->CurrentQuestion (or q) after calling AnswerCurrentQuestionWithResourceRecord()
+
 Revision 1.415  2007/07/27 19:51:01  cheshire
 Use symbol QC_addnocache instead of literal constant "2"
 
@@ -4089,6 +4092,7 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 					q->ThisQInterval = LLQ_POLL_INTERVAL;
 					}
 				}
+			q->LastQTime = m->timenow;
 			}
 		else
 			{
@@ -4102,11 +4106,10 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 			MakeNegativeCacheRecord(m, &q->qname, q->qnamehash, q->qtype, q->qclass);
 			// Inactivate this question until the next change of DNS servers (do this before AnswerCurrentQuestionWithResourceRecord)
 			q->ThisQInterval = 0;
-			AnswerCurrentQuestionWithResourceRecord(m, &m->rec.r, 2);	// 2 means non-cached result
+			AnswerCurrentQuestionWithResourceRecord(m, &m->rec.r, QC_addnocache);
 			m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
+			// MUST NOT touch m->CurrentQuestion (or q) after this -- client callback could have deleted it
 			}
-
-		q->LastQTime = m->timenow;
 		}
 	}
 
