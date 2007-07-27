@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.664  2007/07/27 18:38:56  cheshire
+Rename "uDNS_CheckQuery" to more informative "uDNS_CheckCurrentQuestion"
+
 Revision 1.663  2007/07/25 03:05:02  vazquez
 Fixes for:
 <rdar://problem/5338913> LegacyNATTraversal: UPnP heap overflow
@@ -2104,7 +2107,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 		while (m->CurrentQuestion)
 			{
 			q = m->CurrentQuestion;
-			if (ActiveQuestion(q) && !mDNSOpaque16IsZero(q->TargetQID)) uDNS_CheckQuery(m);
+			if (ActiveQuestion(q) && !mDNSOpaque16IsZero(q->TargetQID)) uDNS_CheckCurrentQuestion(m);
 			else if (mDNSOpaque16IsZero(q->TargetQID) && q->Target.type && (q->SendQNow || TimeToSendThisQuestion(q, m->timenow)))
 				{
 				mDNSu8       *qptr        = m->omsg.data;
@@ -2129,7 +2132,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 					maxExistingQuestionInterval = q->ThisQInterval;
 				}
 			// If m->CurrentQuestion wasn't modified out from under us, advance it now
-			// We can't do this at the start of the loop because uDNS_CheckQuery() depends on having
+			// We can't do this at the start of the loop because uDNS_CheckCurrentQuestion() depends on having
 			// m->CurrentQuestion point to the right question
 			if (q == m->CurrentQuestion) m->CurrentQuestion = m->CurrentQuestion->next;
 			}
@@ -2137,7 +2140,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 		// Scan our list of questions
 		// (a) to see if there are any more that are worth accelerating, and
 		// (b) to update the state variables for *all* the questions we're going to send
-		// Note: Don't set NextScheduledQuery until here, because uDNS_CheckQuery in the loop above can add new questions to the list,
+		// Note: Don't set NextScheduledQuery until here, because uDNS_CheckCurrentQuestion in the loop above can add new questions to the list,
 		// which causes NextScheduledQuery to get (incorrectly) set to m->timenow. Setting it here is the right place, because the very
 		// next thing we do is scan the list and call SetNextQueryTime() for every question we find, so we know we end up with the right value.
 		m->NextScheduledQuery = m->timenow + 0x78000000;
@@ -2437,6 +2440,7 @@ mDNSexport void AnswerQuestionWithResourceRecord(mDNS *const m, CacheRecord *con
 	rr->LastUsed = m->timenow;
 	if (!q->DuplicateOf && rr->CRActiveQuestion != q)
 		{
+		if (AddRecord==2) LogMsg("ERROR incrementing m->rrcache_active");
 		if (!rr->CRActiveQuestion) m->rrcache_active++;	// If not previously active, increment rrcache_active count
 		debugf("AnswerQuestionWithResourceRecord: Updating CRActiveQuestion to %p for cache record %s", q, CRDisplayString(m,rr));
 		rr->CRActiveQuestion = q;						// We know q is non-null

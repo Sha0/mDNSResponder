@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.412  2007/07/27 18:38:56  cheshire
+Rename "uDNS_CheckQuery" to more informative "uDNS_CheckCurrentQuestion"
+
 Revision 1.411  2007/07/27 00:57:13  cheshire
 Create hostname address records using standard kHostNameTTL (2 minutes) instead of 1 second
 
@@ -3622,7 +3625,7 @@ mDNSlocal void startPrivateQueryCallback(mDNS *const m, mStatus err, const ZoneD
 		q->LastQTime     = m->timenow - q->ThisQInterval;
 		SetNextQueryTime(m, q);
 		goto exit;
-		// Next call to uDNS_CheckQuery() will do this as a non-private query
+		// Next call to uDNS_CheckCurrentQuestion() will do this as a non-private query
 		}
 
 	if (!q->AuthInfo)
@@ -3987,7 +3990,9 @@ mDNSlocal mDNSBool NoTestQuery(DNSQuestion *q)
 	return(SameDomainName((domainname*)p, (const domainname*)"\x7" "in-addr" "\x4" "arpa"));
 	}
 
-mDNSexport void uDNS_CheckQuery(mDNS *const m)
+// The question to be checked is not passed in as an explicit parameter;
+// instead it is implicit that the question to be checked is m->CurrentQuestion.
+mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 	{
 	DNSQuestion *q = m->CurrentQuestion;
 	mDNSs32 sendtime = q->LastQTime + q->ThisQInterval;
@@ -4009,8 +4014,8 @@ mDNSexport void uDNS_CheckQuery(mDNS *const m)
 		else
 			{
 			// This should never happen. Any LLQ not in states LLQ_InitialRequest to LLQ_Established should not have have ThisQInterval set.
-			// (uDNS_CheckQuery() is only called for DNSQuestions with non-zero ThisQInterval)
-			LogMsg("uDNS_CheckQuery: %##s (%s) state %d sendtime %d ThisQInterval %d",
+			// (uDNS_CheckCurrentQuestion() is only called for DNSQuestions with non-zero ThisQInterval)
+			LogMsg("uDNS_CheckCurrentQuestion: %##s (%s) state %d sendtime %d ThisQInterval %d",
 				q->qname.c, DNSTypeName(q->qtype), q->state, sendtime - m->timenow, q->ThisQInterval);
 			q->LastQTime = m->timenow;
 			q->ThisQInterval *= 2;
@@ -4040,15 +4045,15 @@ mDNSexport void uDNS_CheckQuery(mDNS *const m)
 				end = putQuestion(&m->omsg, m->omsg.data, m->omsg.data + AbsoluteMaxDNSMessageData, DNSRelayTestQuestion, kDNSType_PTR, kDNSClass_IN);
 				}
 
-			if (err) LogMsg("Error: uDNS_CheckQuery - constructQueryMsg. Skipping question %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+			if (err) LogMsg("Error: uDNS_CheckCurrentQuestion - constructQueryMsg. Skipping question %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 			else
 				{
 				if (end > m->omsg.data && (q->qDNSServer->teststate != DNSServer_Failed || NoTestQuery(q)))
 					{
-					//LogMsg("uDNS_CheckQuery %d %p %##s (%s)", sendtime - m->timenow, private, q->qname.c, DNSTypeName(q->qtype));
+					//LogMsg("uDNS_CheckCurrentQuestion %d %p %##s (%s)", sendtime - m->timenow, private, q->qname.c, DNSTypeName(q->qtype));
 					if (private)
 						{
-						if (q->nta) LogMsg("uDNS_CheckQuery Error: GetZoneData already started for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+						if (q->nta) LogMsg("uDNS_CheckCurrentQuestion Error: GetZoneData already started for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 						else q->nta = StartGetZoneData(m, &q->qname, q->LongLived ? ZoneServiceLLQ : ZoneServiceQuery, startPrivateQueryCallback, q);
 						q->ThisQInterval = 0;		// Suspend this question until GetZoneData completes
 						}
@@ -4082,8 +4087,8 @@ mDNSexport void uDNS_CheckQuery(mDNS *const m)
 			// want to return timely feedback to the user when no network is available. Note that although we
 			// use MakeNegativeCacheRecord() here, we don't actually store it in the cache --
 			// we just deliver it to the client with a no-cache ADD, and then discard it.
-			if (!q->qDNSServer) LogMsg("uDNS_CheckQuery no DNS server for %##s", q->qname.c);
-			else LogMsg("uDNS_CheckQuery DNS server %#a:%d for %##s is disabled", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qname.c);
+			if (!q->qDNSServer) LogMsg("uDNS_CheckCurrentQuestion no DNS server for %##s", q->qname.c);
+			else LogMsg("uDNS_CheckCurrentQuestion DNS server %#a:%d for %##s is disabled", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qname.c);
 			MakeNegativeCacheRecord(m, &q->qname, q->qnamehash, q->qtype, q->qclass);
 			// Inactivate this question until the next change of DNS servers (do this before AnswerQuestionWithResourceRecord)
 			q->ThisQInterval = 0;

@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.68  2007/07/27 18:38:56  cheshire
+Rename "uDNS_CheckQuery" to more informative "uDNS_CheckCurrentQuestion"
+
 Revision 1.67  2007/07/20 23:11:12  cheshire
 Fix code layout
 
@@ -195,7 +198,7 @@ extern void serviceRegistrationCallback(mDNS *const m, mStatus err, const ZoneDa
 extern const domainname *GetServiceTarget(mDNS *m, ServiceRecordSet *srs);
 extern mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs);
 
-extern void    uDNS_CheckQuery (mDNS *const m);
+extern void uDNS_CheckCurrentQuestion(mDNS *const m);
 
 // integer fields of msg header must be in HOST byte order before calling this routine
 extern void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
