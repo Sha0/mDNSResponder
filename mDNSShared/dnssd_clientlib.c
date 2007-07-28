@@ -28,6 +28,9 @@
    Change History (most recent first):
 
 $Log: dnssd_clientlib.c,v $
+Revision 1.15  2007/07/28 00:00:43  cheshire
+Renamed CompileTimeAssertionCheck structure for consistency with others
+
 Revision 1.14  2007/03/20 17:07:16  cheshire
 Rename "struct uDNS_TCPSocket_struct" to "TCPSocket", "struct uDNS_UDPSocket_struct" to "UDPSocket"
 
@@ -207,7 +210,7 @@ typedef struct _TXTRecordRefRealType
 
 // The opaque storage defined in the public dns_sd.h header is 16 bytes;
 // make sure we don't exceed that.
-struct dnssd_clientlib_CompileTimeAssertionCheck
+struct CompileTimeAssertionCheck_dnssd_clientlib
 	{
 	char assert0[(sizeof(TXTRecordRefRealType) <= 16) ? 1 : -1];
 	};

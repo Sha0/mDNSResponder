@@ -2273,7 +2273,7 @@ DNSServiceErrorType DNSSD_API DNSServiceSetDefaultDomainForUser
  * condition is false, the array size is negative, and the complier complains immediately.
  */
 
-struct DNS_SD_CompileTimeAssertionChecks
+struct CompileTimeAssertionChecks_DNS_SD
     {
     char assert0[(sizeof(union _TXTRecordRef_t) == 16) ? 1 : -1];
     };

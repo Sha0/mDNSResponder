@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.37  2007/07/28 00:00:43  cheshire
+Renamed CompileTimeAssertionCheck structure for consistency with others
+
 Revision 1.36  2007/07/23 22:12:53  cheshire
 <rdar://problem/5352299> Make mDNSResponder more defensive against malicious local clients
 
@@ -297,7 +300,7 @@ char *get_rdata(char **ptr, char *end, int rdlen);  // return value is rdata poi
 
 void ConvertHeaderBytes(ipc_msg_hdr *hdr);
 
-struct dnssd_ipc_CompileTimeAssertionChecks
+struct CompileTimeAssertionChecks_dnssd_ipc
 	{
 	// Check that the compiler generated our on-the-wire packet format structure definitions
 	// properly packed, without adding padding bytes to align fields on 32-bit or 64-bit boundaries.
