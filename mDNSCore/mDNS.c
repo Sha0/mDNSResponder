@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.672  2007/07/28 01:25:56  cheshire
+<rdar://problem/4780038> BTMM: Add explicit UDP event port to LLQ setup request, to fix LLQs not working behind NAT
+
 Revision 1.671  2007/07/27 22:32:54  cheshire
 When processing TTLs in uDNS responses, we'll currently impose a minimum effective TTL
 of 2 seconds, or other stuff breaks (e.g. we end up making a negative cache entry).
@@ -4639,7 +4642,6 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const questi
 				q->servPort          = question->servPort;
 
 				q->state             = question->state;
-			//	q->NATInfoTCP        = question->NATInfoTCP;
 			//	q->NATInfoUDP        = question->NATInfoUDP;
 				q->eventPort         = question->eventPort;
 			//	q->tcpSock           = question->tcpSock;
@@ -4650,7 +4652,6 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const questi
 				q->id                = question->id;
 
 				question->nta        = mDNSNULL;	// If we've got a GetZoneData in progress, transfer it to the newly active question
-			//	question->NATInfoTCP = mDNSNULL;
 			//	question->NATInfoUDP = mDNSNULL;
 			//	question->tcpSock    = mDNSNULL;
 			//	question->udpSock    = mDNSNULL;
@@ -4825,7 +4826,6 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 		question->NoAnswer          = mDNSfalse;
 
 		question->state             = LLQ_GetZoneInfo;
-		mDNSPlatformMemZero(&question->NATInfoTCP, sizeof(question->NATInfoTCP));
 		mDNSPlatformMemZero(&question->NATInfoUDP, sizeof(question->NATInfoUDP));
 		question->eventPort         = zeroIPPort;
 		question->tcpSock           = mDNSNULL;

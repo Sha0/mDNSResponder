@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.413  2007/07/28 01:25:56  cheshire
+<rdar://problem/4780038> BTMM: Add explicit UDP event port to LLQ setup request, to fix LLQs not working behind NAT
+
 Revision 1.412  2007/07/27 23:57:23  cheshire
 Added compile-time structure size checks
 
@@ -1496,8 +1499,7 @@ typedef enum
 	LLQ_Suspended         = 7,
 	LLQ_SuspendDeferred   = 8, // suspend once we get zone info
 	LLQ_SuspendedPoll     = 9, // suspended from polling state
-	LLQ_NatMapWaitTCP     = 10,
-	LLQ_NatMapWaitUDP     = 11,
+	LLQ_NatMapWaitUDP     = 10,
 
 	// Established/error states
 	LLQ_Static            = 16,
@@ -1598,11 +1600,8 @@ struct DNSQuestion_struct
 
 	// LLQ-specific fields. These fields are only meaningful when LongLived flag is set
 	LLQ_State             state;
-	NATTraversalInfo      NATInfoTCP;		// This is used if we're browsing behind a NAT
 	NATTraversalInfo      NATInfoUDP;
-	mDNSIPPort            eventPort;		// This is non-zero if this is a private LLQ.  It is the port number that both the TCP
-											// and the UDP socket are bound to.  This allows us to receive event notifications via
-											// TCP or UDP.
+	mDNSIPPort            eventPort;		// This is non-zero if this is a private LLQ. If we're behind NAT, it's the external UDP port.
 	TCPSocket            *tcpSock;
 	UDPSocket            *udpSock;
 	mDNSu32               origLease;		// seconds (relative)
