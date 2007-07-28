@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.421  2007/07/28 00:04:14  cheshire
+Various fixes for comments and debugging messages
+
 Revision 1.420  2007/07/27 23:59:18  cheshire
 Added compile-time structure size checks
 
@@ -1326,6 +1329,8 @@ mDNSlocal mStatus constructQueryMsg(DNSMessage *msg, mDNSu8 **endPtr, DNSQuestio
 	return mStatus_NoError;
 	}
 
+// Normally called with llq set.
+// May be called with llq NULL, when retransmitting a lost Challenge Response
 mDNSlocal void sendChallengeResponse(mDNS *const m, DNSQuestion *const q, const LLQOptData *llq)
 	{
 	mDNSu8 *responsePtr = m->omsg.data;
@@ -1343,7 +1348,7 @@ mDNSlocal void sendChallengeResponse(mDNS *const m, DNSQuestion *const q, const 
 		return;
 		}
 
-	if (!llq)
+	if (!llq)		// Retransmission: need to make a new LLQOptData
 		{
 		llqBuf.vers     = kLLQ_Vers;
 		llqBuf.llqOp    = kLLQOp_Setup;
@@ -1564,7 +1569,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			llqData.vers  = kLLQ_Vers;
 			llqData.llqOp = kLLQOp_Setup;
 			llqData.err   = LLQErr_NoError;
-//			llqData.err   = tcpInfo->question->eventPort;
+//			llqData.err   = mDNSVal16(tcpInfo->question->eventPort);
 			llqData.id    = zeroOpaque64;
 			llqData.llqlease = kLLQ_DefLease;
 			InitializeDNSMessage(&tcpInfo->request.h, tcpInfo->question->TargetQID, uQueryFlags);
@@ -3523,7 +3528,7 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 	mStatus err;
 
 	// If this is supposed to be a private question and the server dropped the TCP connection,
-	// we don't want to cancel it with a clear-text UDP packet, and andit's not worth the expense of
+	// we don't want to cancel it with a clear-text UDP packet, and and it's not worth the expense of
 	// setting up a new TLS session just to cancel the outstanding LLQ, so we just let it expire naturally
 	if (lease == 0 && q->AuthInfo && !q->tcpSock) return;
 
@@ -3540,7 +3545,7 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 	llq.vers  = kLLQ_Vers;
 	llq.llqOp = kLLQOp_Refresh;
 	llq.err   = LLQErr_NoError;
-//	llq.err   = q->eventPort;
+//	llq.err   = mDNSVal16(q->eventPort);
 	llq.id    = q->id;
 	llq.llqlease = lease;
 
@@ -3671,19 +3676,19 @@ exit:
 	if (err) mDNS_StopQuery(m, q);
 	}
 
-// stopLLQ happens IN ADDITION to stopQuery
+// uDNS_StopLongLivedQuery happens IN ADDITION to stopQuery
 mDNSexport void uDNS_StopLongLivedQuery(mDNS *const m, DNSQuestion *const question)
 	{
 	(void)m;	// unused
 
 	LogOperation("uDNS_StopLongLivedQuery %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
 
-	if (!question->LongLived) { LogMsg("ERROR: stopLLQ - LongLived flag not set"); return; }
+	if (!question->LongLived) { LogMsg("ERROR: uDNS_StopLongLivedQuery - LongLived flag not set"); return; }
 
 	switch (question->state)
 		{
 		case LLQ_UnInit:
-			LogMsg("ERROR: stopLLQ - state LLQ_UnInit");
+			LogMsg("ERROR: uDNS_StopLongLivedQuery - state LLQ_UnInit");
 			//!!!KRS should we unlink info<->question here?
 			return;
 		case LLQ_GetZoneInfo:
@@ -3696,7 +3701,7 @@ mDNSexport void uDNS_StopLongLivedQuery(mDNS *const m, DNSQuestion *const questi
 			sendLLQRefresh(m, question, 0);
 			goto end;
 		default:
-			debugf("stopLLQ - silently discarding LLQ in state %d", question->state);
+			debugf("uDNS_StopLongLivedQuery - silently discarding LLQ in state %d", question->state);
 			goto end;
 		}
 
