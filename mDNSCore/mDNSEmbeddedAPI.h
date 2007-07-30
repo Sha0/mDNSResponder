@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.414  2007/07/30 23:34:19  cheshire
+Remove unused "udpSock" from DNSQuestion
+
 Revision 1.413  2007/07/28 01:25:56  cheshire
 <rdar://problem/4780038> BTMM: Add explicit UDP event port to LLQ setup request, to fix LLQs not working behind NAT
 
@@ -1603,7 +1606,6 @@ struct DNSQuestion_struct
 	NATTraversalInfo      NATInfoUDP;
 	mDNSIPPort            eventPort;		// This is non-zero if this is a private LLQ. If we're behind NAT, it's the external UDP port.
 	TCPSocket            *tcpSock;
-	UDPSocket            *udpSock;
 	mDNSu32               origLease;		// seconds (relative)
 	mDNSs32               expire;			// ticks (absolute)
 	mDNSs16               ntries;
