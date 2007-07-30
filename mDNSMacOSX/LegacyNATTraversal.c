@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.27  2007/07/30 23:17:03  vazquez
+Since lease times are meaningless in UPnP, return NATMAP_DEFAULT_LEASE in UPnP port mapping reply
+
 Revision 1.26  2007/07/27 22:50:08  vazquez
 Allocate memory for UPnP request and reply buffers instead of using arrays
 
@@ -472,7 +475,7 @@ mDNSlocal void handleLNTPortMappingResponse(tcpLNTInfo *tcpInfo)
 		portMapReply.uptime	= 0; 	// don't care about uptime
 		portMapReply.priv	= natInfo->privatePort;
 		portMapReply.pub	= natInfo->publicPortreq;
-		portMapReply.NATRep_lease = natInfo->portMappingLease;
+		portMapReply.NATRep_lease = NATMAP_DEFAULT_LEASE;
 		}
 	
 	portMapReply.err = err;
