@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.71  2007/07/30 23:31:26  cheshire
+Code for respecting TTL received in uDNS responses should exclude LLQ-type responses
+
 Revision 1.70  2007/07/27 20:52:29  cheshire
 Made uDNS_recvLLQResponse() return tri-state result: LLQ_Not, LLQ_First, or LLQ_Events
 
@@ -216,7 +219,15 @@ extern void uDNS_Execute(mDNS *const m);
 
 extern mStatus         uDNS_SetupDNSConfig(mDNS *const m);
 extern mStatus         uDNS_RegisterSearchDomains(mDNS *const m);
-typedef enum { uDNS_LLQ_Not = 0, uDNS_LLQ_First, uDNS_LLQ_Events } uDNS_LLQType;
+
+typedef enum
+	{
+	uDNS_LLQ_Not = 0,	// Normal uDNS answer: Flush any stale records from cache, and respect record TTL
+	uDNS_LLQ_Poll,		// LLQ Poll: Flush any stale records from cache, but assume TTL is 2 x poll interval
+	uDNS_LLQ_Setup,		// LLQ Initial answer packet: Flush any stale records from cache; assume TTL is 2 x LLQ refresh interval
+	uDNS_LLQ_Events		// LLQ event packet: don't flush cache; assume TTL is 2 x LLQ refresh interval
+	} uDNS_LLQType;
+
 extern uDNS_LLQType    uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *const srcaddr, const mDNSIPPort srcport);
 extern DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const name);
 

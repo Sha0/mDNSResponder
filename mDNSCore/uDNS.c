@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.423  2007/07/30 23:31:26  cheshire
+Code for respecting TTL received in uDNS responses should exclude LLQ-type responses
+
 Revision 1.422  2007/07/28 01:25:57  cheshire
 <rdar://problem/4780038> BTMM: Add explicit UDP event port to LLQ setup request, to fix LLQs not working behind NAT
 
@@ -1476,7 +1479,9 @@ mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *co
 				{
 				if (q->LongLived && q->qtype == pktQ.qtype && q->qnamehash == pktQ.qnamehash && SameDomainName(&q->qname, &pktQ.qname))
 					{
-					if (q->state == LLQ_Established || (q->state == LLQ_Refresh && msg->h.numAnswers))
+					if (q->state == LLQ_Poll)
+						return uDNS_LLQ_Poll;
+					else if (q->state == LLQ_Established || (q->state == LLQ_Refresh && msg->h.numAnswers))
 						{
 						if (opt->OptData.llq.llqOp == kLLQOp_Event && mDNSSameOpaque64(&opt->OptData.llq.id, &q->id))
 							{
@@ -1516,7 +1521,7 @@ mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *co
 								// If this is our Ack+Answers packet resulting from a correct challenge response, then it's a full list
 								// of answers, and any cache answers we have that are not included in this packet need to be flushed
 								//LogMsg("uDNS_recvLLQResponse: recvSetupResponse state %d returning %d", oldstate, oldstate != LLQ_SecondaryRequest);
-								return (oldstate == LLQ_SecondaryRequest ? uDNS_LLQ_First : uDNS_LLQ_Events);
+								return (oldstate == LLQ_SecondaryRequest ? uDNS_LLQ_Setup : uDNS_LLQ_Events);
 								}
 							}
 						}
@@ -1742,6 +1747,8 @@ mDNSlocal void startLLQHandshake(mDNS *m, DNSQuestion *q, mDNSBool defer)
 	if (q->AuthInfo)
 		{
 		tcpInfo_t *context;
+		mDNSIPPort tcpport = zeroIPPort;
+		if (!q->tcpSock) q->tcpSock = mDNSPlatformTCPSocket(m, kTCPSocketFlags_UseTLS, &tcpport);
 		LogOperation("startLLQHandshakePrivate Addr %#a%s Server %#a%s %##s (%s) eventport %d",
 			&m->AdvertisedV4, mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) ? " (RFC 1918)" : "",
 			&q->servAddr,     mDNSAddrIsRFC1918(&q->servAddr)             ? " (RFC 1918)" : "",
@@ -4320,12 +4327,6 @@ mDNSlocal void SuspendLLQs(mDNS *m, mDNSBool DeregisterActive)
 					{
 					mDNSPlatformTCPCloseConnection(q->tcpSock);
 					q->tcpSock = mDNSNULL;
-					}
-
-				if (q->udpSock)
-					{
-					mDNSPlatformUDPClose(q->udpSock);
-					q->udpSock = mDNSNULL;
 					}
 
 				q->id = zeroOpaque64;

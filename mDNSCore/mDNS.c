@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.673  2007/07/30 23:31:26  cheshire
+Code for respecting TTL received in uDNS responses should exclude LLQ-type responses
+
 Revision 1.672  2007/07/28 01:25:56  cheshire
 <rdar://problem/4780038> BTMM: Add explicit UDP event port to LLQ setup request, to fix LLQs not working behind NAT
 
@@ -3983,7 +3986,6 @@ mDNSlocal mDNSBool ExpectingUnicastResponseForRecord(mDNS *const m, const mDNSAd
 				// if (mDNSSameOpaque16(q->TargetQID, id)
 					{
 					if (mDNSSameAddress(srcaddr, &q->Target))                   return(mDNStrue);
-					if (q->LongLived && mDNSSameAddress(srcaddr, &q->servAddr)) return(mDNStrue);
 					if (TrustedSource(m, srcaddr))                              return(mDNStrue);
 					LogMsg("WARNING: Ignoring suspect uDNS response from %#a for %s", srcaddr, CRDisplayString(m, rr));
 					return(mDNSfalse);
@@ -4094,12 +4096,12 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	(void)dstport;
 
 	debugf("Received Response from %#-15a addressed to %#-15a on %p with "
-		"%2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
+		"%2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s LLQType %d",
 		srcaddr, dstaddr, InterfaceID,
 		response->h.numQuestions,   response->h.numQuestions   == 1 ? ", " : "s,",
 		response->h.numAnswers,     response->h.numAnswers     == 1 ? ", " : "s,",
 		response->h.numAuthorities, response->h.numAuthorities == 1 ? "y,  " : "ies,",
-		response->h.numAdditionals, response->h.numAdditionals == 1 ? "" : "s");
+		response->h.numAdditionals, response->h.numAdditionals == 1 ? "" : "s", LLQType);
 
 	// 1. We ignore questions (if any) in mDNS response packets
 	// 2. If this is an LLQ response, we handle it much the same
@@ -4144,7 +4146,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		{
 		// All responses sent via LL multicast are acceptable for caching
 		// All responses received over our outbound TCP connections are acceptable for caching
-		mDNSBool AcceptableResponse = ResponseMCast || !dstaddr;
+		mDNSBool AcceptableResponse = ResponseMCast || !dstaddr || LLQType;
 		// (Note that just because we are willing to cache something, that doesn't necessarily make it a trustworthy answer
 		// to any specific question -- any code reading records from the cache needs to make that determination for itself.)
 
@@ -4160,13 +4162,15 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		// In the case of polling LLQs, we assume the record remains valid until the next poll
 		if (!mDNSOpaque16IsZero(response->h.id))
 			{
-			if (LLQType)
+			if      (LLQType == uDNS_LLQ_Poll)  m->rec.r.resrec.rroriginalttl = LLQ_POLL_INTERVAL * 2;
+			else if (LLQType == uDNS_LLQ_Setup) m->rec.r.resrec.rroriginalttl = kLLQ_DefLease * mDNSPlatformOneSecond * 2;
+			else if (LLQType == uDNS_LLQ_Events)
 				{
-				// If the TTL is -1 for uDNS LLQ, that means "remove"
+				// If the TTL is -1 for uDNS LLQ event packet, that means "remove"
 				if (m->rec.r.resrec.rroriginalttl == 0xFFFFFFFF) m->rec.r.resrec.rroriginalttl = 0;
-				else                                             m->rec.r.resrec.rroriginalttl = (mDNSu32)(0x70000000 / mDNSPlatformOneSecond);
+				else                                             m->rec.r.resrec.rroriginalttl = kLLQ_DefLease * mDNSPlatformOneSecond * 2;
 				}
-			else
+			else	// else not LLQ (standard uDNS response)
 				{
 				// For mDNS, TTL zero means "delete this record"
 				// For uDNS, TTL zero means: this data is true at this moment, but don't cache it.
@@ -4645,7 +4649,6 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const questi
 			//	q->NATInfoUDP        = question->NATInfoUDP;
 				q->eventPort         = question->eventPort;
 			//	q->tcpSock           = question->tcpSock;
-			//	q->udpSock           = question->udpSock;
 				q->origLease         = question->origLease;
 				q->expire            = question->expire;
 				q->ntries            = question->ntries;
@@ -4654,7 +4657,6 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const questi
 				question->nta        = mDNSNULL;	// If we've got a GetZoneData in progress, transfer it to the newly active question
 			//	question->NATInfoUDP = mDNSNULL;
 			//	question->tcpSock    = mDNSNULL;
-			//	question->udpSock    = mDNSNULL;
 				if (q->nta)
 					{
 					LogOperation("UpdateQuestionDuplicates transferred nta pointer for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
@@ -4663,7 +4665,6 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const questi
 
 				// Need to work out how to safely transfer this state too -- appropriate context pointers need to be updated or the code will crash
 				if (question->tcpSock   )   LogOperation("UpdateQuestionDuplicates did not transfer tcpSock pointer");
-				if (question->udpSock   )   LogOperation("UpdateQuestionDuplicates did not transfer udpSock pointer");
 	
 				SetNextQueryTime(m,q);
 				}
@@ -4829,7 +4830,6 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 		mDNSPlatformMemZero(&question->NATInfoUDP, sizeof(question->NATInfoUDP));
 		question->eventPort         = zeroIPPort;
 		question->tcpSock           = mDNSNULL;
-		question->udpSock           = mDNSNULL;
 		question->origLease         = 0;
 		question->expire            = 0;
 		question->ntries            = 0;
@@ -4955,7 +4955,6 @@ mDNSexport mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const que
 	// *first*, then they're all ready to be updated a second time if necessary when we cancel our GetZoneData query.
 	if (question->nta) CancelGetZoneData(m, question->nta);
 	if (question->tcpSock) mDNSPlatformTCPCloseConnection(question->tcpSock);
-	if (question->udpSock) mDNSPlatformUDPClose          (question->udpSock);
 	if (!mDNSOpaque16IsZero(question->TargetQID) && question->LongLived) uDNS_StopLongLivedQuery(m, question);
 
 	return(mStatus_NoError);
