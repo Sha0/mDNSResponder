@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.324  2007/07/31 01:56:21  cheshire
+Corrected function name in log message
+
 Revision 1.323  2007/07/27 23:57:23  cheshire
 Added compile-time structure size checks
 
@@ -1985,7 +1988,7 @@ mDNSlocal void RmvAutoBrowseDomain(const mDNSu32 uid, const domainname *const na
 	{
 	DNameListElem **p = &AutoBrowseDomains;
 	while (*p && (!SameDomainName(&(*p)->name, name) || (*p)->uid != uid)) p = &(*p)->next;
-	if (!*p) LogMsg("AutomaticBrowseDomainChange: Got remove event for domain %##s not in list", name->c);
+	if (!*p) LogMsg("RmvAutoBrowseDomain: Got remove event for domain %##s not in list", name->c);
 	else
 		{
 		DNameListElem *ptr = *p;
