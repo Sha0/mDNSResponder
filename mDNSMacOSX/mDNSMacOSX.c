@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.453  2007/07/31 19:13:58  mkrochma
+No longer need to include "btmm" in hostname to avoid name conflicts
+
 Revision 1.452  2007/07/27 19:30:41  cheshire
 Changed mDNSQuestionCallback parameter from mDNSBool to QC_result,
 to properly reflect tri-state nature of the possible responses
@@ -2011,7 +2014,6 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 				mDNS_SetupResourceRecord(&info->AutoTunnelHostRecord, mDNSNULL, mDNSInterface_Any, kDNSType_AAAA, kHostNameTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
 				info->AutoTunnelHostRecord.namestorage.c[0] = 0;
 				AppendDomainLabel(&info->AutoTunnelHostRecord.namestorage, &m->hostlabel);
-				AppendDomainLabel(&info->AutoTunnelHostRecord.namestorage, (const domainlabel *)"\x04" "btmm");
 				AppendDomainName (&info->AutoTunnelHostRecord.namestorage, &info->domain);
 				info->AutoTunnelHostRecord.resrec.rdata->u.ipv6 = m->AutoTunnelHostAddr;
 				mDNS_Register_internal(m, &info->AutoTunnelHostRecord);
