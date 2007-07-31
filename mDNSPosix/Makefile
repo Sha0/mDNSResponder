@@ -31,6 +31,9 @@
 # then try typing "gmake os=xxx" instead.
 #
 # $Log: Makefile,v $
+# Revision 1.76  2007/07/31 23:39:02  mcguire
+# Don't bail on errors in flex-generated .c files
+#
 # Revision 1.75  2006/08/24 22:41:23  herscher
 # <rdar://problem/4580067> POSIX: dnsextd_parser doesn't compile on Linux
 #
@@ -732,4 +735,4 @@ $(OBJDIR)/%.y.o: $(SHAREDDIR)/%.y
 
 $(OBJDIR)/%.l.o: $(SHAREDDIR)/%.l
 	$(FLEX) $(FLEXFLAGS_OS) -i             -o$(OBJDIR)/$*.l.c $<
-	$(CC) $(CFLAGS) -c -o $@ $(OBJDIR)/$*.l.c
+	$(CC) $(CFLAGS) -Wno-error -c -o $@ $(OBJDIR)/$*.l.c
