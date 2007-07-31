@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.675  2007/07/31 02:28:35  vazquez
+<rdar://problem/3734269> NAT-PMP: Detect public IP address changes and base station reboot
+
 Revision 1.674  2007/07/31 01:57:23  cheshire
 Adding code to respect TTL received in uDNS responses turned out to
 expose other problems; backing out change for now.
@@ -6443,6 +6446,10 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->retryGetAddr             = timenow + 0x78000000;	// absolute time when we retry
 	m->retryIntervalGetAddr     = 0;	// delta between time sent and retry
 	m->ExternalAddress          = zerov4Addr;
+
+	m->NATMcastRecvskt		= mDNSNULL;
+	m->LastNATUptime		= 0;
+	m->LastNATReplyLocalTime = 0;
 
 	m->uPNPRouterPort           = zeroIPPort;
 	m->uPNPSOAPPort             = zeroIPPort;

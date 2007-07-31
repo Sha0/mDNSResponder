@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.424  2007/07/31 02:28:35  vazquez
+<rdar://problem/3734269> NAT-PMP: Detect public IP address changes and base station reboot
+
 Revision 1.423  2007/07/30 23:31:26  cheshire
 Code for respecting TTL received in uDNS responses should exclude LLQ-type responses
 
@@ -1025,10 +1028,12 @@ mDNSlocal mStatus uDNS_SendNATMsg(mDNS *m, NATTraversalInfo *info, NATOptFlags_t
 	return(err);
 	}
 
-mDNSlocal void SetExternalAddress(mDNS *const m, mDNSv4Addr newaddr)
+mDNSlocal void SetExternalAddress(mDNS *const m, mDNSv4Addr newaddr, mDNSs32 routerTimeElapsed, mDNSs32 ourTimeElapsed)
 	{
 	NATTraversalInfo *n;
-	if (mDNSSameIPv4Address(m->ExternalAddress, newaddr)) return;
+	
+	// check for router reboots or if the external address changed
+	if (((routerTimeElapsed * (routerTimeElapsed/8)) - ourTimeElapsed >= 0) && mDNSSameIPv4Address(m->ExternalAddress, newaddr)) return;
 
 	m->ExternalAddress = newaddr;
 	LogOperation("Received external IP address %.4a from NAT", &m->ExternalAddress);
@@ -1061,6 +1066,8 @@ mDNSexport void natTraversalHandleAddressReply(mDNS *const m, mDNSu8 *pkt)
 	{
 	NATAddrReply      *addrReply = (NATAddrReply *)pkt;
 	mDNSv4Addr       addr = zerov4Addr;
+	mDNSs32            routerTimeElapsed = 0;
+	mDNSs32            ourTimeElapsed = 0;
 	mStatus               err = mStatus_NoError;
 	
 	if (!pkt) // timeout
@@ -1080,7 +1087,12 @@ mDNSexport void natTraversalHandleAddressReply(mDNS *const m, mDNSu8 *pkt)
 		return;
 		}
 	
-	SetExternalAddress(m, addr);
+	routerTimeElapsed = addrReply->uptime - m->LastNATUptime;
+	m->LastNATUptime = addrReply->uptime;
+	ourTimeElapsed = m->timenow - m->LastNATReplyLocalTime;
+	m->LastNATReplyLocalTime = m->timenow;
+
+	SetExternalAddress(m, addr, routerTimeElapsed, ourTimeElapsed);
 	m->retryIntervalGetAddr = NATMAP_MAX_RETRY_INTERVAL;
 	m->retryGetAddr = m->timenow + m->retryIntervalGetAddr;
 	}
@@ -2793,7 +2805,7 @@ mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr, co
 			{
 			m->retryGetAddr = m->timenow;
 			m->retryIntervalGetAddr = NATMAP_INIT_RETRY;
-			SetExternalAddress(m, zerov4Addr);
+			SetExternalAddress(m, zerov4Addr, m->LastNATUptime, m->timenow);
 			}
 
 		UpdateSRVRecords(m);
@@ -4101,6 +4113,20 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 
 	if (m->NATTraversals)
 		{
+		// open NAT-PMP socket to receive multicasts from router
+		if (mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4))
+			{
+			// if we are behind a NAT and the socket hasn't been opened yet, open it
+			if (m->NATMcastRecvskt == mDNSNULL)  
+				if((m->NATMcastRecvskt = mDNSPlatformUDPSocket(m, NATPMPPort)) == mDNSNULL) LogMsg("Can't allocate UDP multicast socket");  // log error and continue
+			}
+		else if (m->NATMcastRecvskt != mDNSNULL)	
+			{ 
+			// if we are NOT behind a NAT and this socket is open, close it
+			mDNSPlatformUDPClose(m->NATMcastRecvskt); 
+			m->NATMcastRecvskt = mDNSNULL; 
+			}
+
 		if (m->timenow - m->retryGetAddr >= 0)	// we have exceeded the timer interval
 			{
 			err = uDNS_SendNATMsg(m, mDNSNULL, AddrRequestFlag);

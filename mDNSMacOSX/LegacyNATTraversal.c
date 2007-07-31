@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.28  2007/07/31 02:28:36  vazquez
+<rdar://problem/3734269> NAT-PMP: Detect public IP address changes and base station reboot
+
 Revision 1.27  2007/07/30 23:17:03  vazquez
 Since lease times are meaningless in UPnP, return NATMAP_DEFAULT_LEASE in UPnP port mapping reply
 
@@ -359,7 +362,7 @@ mDNSlocal void handleLNTGetExternalAddressResponse(tcpLNTInfo *tcpInfo)
 		LogOperation("handleLNTGetExternalAddressResponse: Mapped remote host %.4a", &addrReply.PubAddr);
 		addrReply.vers 		= 0;	// don't care about version
 		addrReply.opcode	= NATOp_AddrResponse;
-		addrReply.uptime	= 0; 	// don't care about uptime
+		addrReply.uptime	= m->timenow; 	// don't care about uptime
 		}
 	
 	addrReply.err = err;

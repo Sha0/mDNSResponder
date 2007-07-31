@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.415  2007/07/31 02:28:35  vazquez
+<rdar://problem/3734269> NAT-PMP: Detect public IP address changes and base station reboot
+
 Revision 1.414  2007/07/30 23:34:19  cheshire
 Remove unused "udpSock" from DNSQuestion
 
@@ -1827,6 +1830,10 @@ struct mDNS_struct
 	mDNSs32           retryGetAddr;				// absolute time when we retry
 	mDNSs32           retryIntervalGetAddr;		// delta between time sent and retry
 	mDNSv4Addr        ExternalAddress;
+
+	UDPSocket		*NATMcastRecvskt;		// for receiving NAT-PMP AddrReply multicasts from router
+	mDNSs32		LastNATUptime;			// router uptime returned by last NAT-PMP AddrReply packet 
+	mDNSs32		LastNATReplyLocalTime;	// local time when last NAT-PMP AddrReply packet was received
 
 	tcpLNTInfo         tcpAddrInfo;				// legacy NAT traversal TCP connection info for external address
 	tcpLNTInfo         tcpDeviceInfo;				// legacy NAT traversal TCP connection info for device info
