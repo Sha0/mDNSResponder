@@ -21,6 +21,9 @@
 	Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.40  2007/07/31 23:08:34  mcguire
+<rdar://problem/5329542> BTMM: Make AutoTunnel mode work with multihoming
+
 Revision 1.39  2007/03/21 00:30:44  cheshire
 Remove obsolete mDNS_DeleteDNSServers() call
 
@@ -113,7 +116,7 @@ static void Reconfigure(mDNS *m)
 	if (ParseDNSServers(m, uDNS_SERVERS_FILE) < 0)
 		LogMsg("Unable to parse DNS server list. Unicast DNS-SD unavailable");
 	ReadDDNSSettingsFromConfFile(m, CONFIG_FILE, &DynDNSHostname, &DynDNSZone, NULL);
-	FindDefaultRouteIP(&DynDNSIP);
+	FindSourceAddrForIP(NULL, &DynDNSIP);
 	if (DynDNSHostname.c[0]) mDNS_AddDynDNSHostName(m, &DynDNSHostname, NULL, NULL);
 	if (DynDNSIP.type)       mDNS_SetPrimaryInterfaceInfo(m, &DynDNSIP, NULL, NULL);
 	m->MainCallback(m, mStatus_ConfigChanged);

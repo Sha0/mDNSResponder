@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.454  2007/07/31 23:08:34  mcguire
+<rdar://problem/5329542> BTMM: Make AutoTunnel mode work with multihoming
+
 Revision 1.453  2007/07/31 19:13:58  mkrochma
 No longer need to include "btmm" in hostname to avoid name conflicts
 
@@ -2326,7 +2329,12 @@ mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const R
 		question->ThisQInterval = -1;		// So we know this tunnel setup has completed
 		tun->rmt_outer = answer->rdata->u.ipv4;
 		tun->loc_inner = m->AutoTunnelHostAddr;
-		tun->loc_outer = m->AdvertisedV4.ip.v4;
+		mDNSAddr tmpDst = { mDNSAddrType_IPv4, {{{0}}} };
+		tmpDst.ip.v4 = tun->rmt_outer;
+		mDNSAddr tmpSrc = zeroAddr;
+		FindSourceAddrForIP(&tmpDst, &tmpSrc);
+		if (tmpSrc.type == mDNSAddrType_IPv4) tun->loc_outer = tmpSrc.ip.v4;
+		else tun->loc_outer = m->AdvertisedV4.ip.v4;
 
 		ClientTunnel **p = &tun->next;
 		while (*p)

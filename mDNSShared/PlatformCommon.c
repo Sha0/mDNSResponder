@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: PlatformCommon.c,v $
+Revision 1.11  2007/07/31 23:08:34  mcguire
+<rdar://problem/5329542> BTMM: Make AutoTunnel mode work with multihoming
+
 Revision 1.10  2007/07/11 02:59:58  cheshire
 <rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for AutoTunnel services
 Add AutoTunnel parameter to mDNS_SetSecretForDomain
@@ -67,22 +70,24 @@ Move ReadDDNSSettingsFromConfFile() from mDNSMacOSX.c to PlatformCommon.c
     typedef unsigned int socklen_t;
 #endif
 
-// Bind a UDP socket to a global destination to find the default route's interface address
-mDNSexport void FindDefaultRouteIP(mDNSAddr *a)
+// Bind a UDP socket to find the source address to a destination
+mDNSexport void FindSourceAddrForIP(mDNSAddr *const dst, mDNSAddr *src)
 	{
 	struct sockaddr_in addr;
 	socklen_t len = sizeof(addr);
 	int sock = socket(AF_INET,SOCK_DGRAM,0);
-	a->type = mDNSAddrType_None;
+	src->type = mDNSAddrType_None;
 	if (sock == -1) return;
+	if (dst->type != mDNSAddrType_IPv4) return; // Only support v4 for now
 	addr.sin_family = AF_INET;
-	addr.sin_port = 1;	// Not important, any port and public address will do
-	addr.sin_addr.s_addr = 0x11111111;
+	addr.sin_port = 1;	// Not important, any port will do
+	if (dst == NULL) addr.sin_addr.s_addr = 0x11111111;
+	else addr.sin_addr.s_addr = dst->ip.v4.NotAnInteger;
 	if ((connect(sock,(const struct sockaddr*)&addr,sizeof(addr))) == -1) { close(sock); return; }
 	if ((getsockname(sock,(struct sockaddr*)&addr, &len)) == -1) { close(sock); return; }
 	close(sock);
-	a->type = mDNSAddrType_IPv4;
-	a->ip.v4.NotAnInteger = addr.sin_addr.s_addr;
+	src->type = mDNSAddrType_IPv4;
+	src->ip.v4.NotAnInteger = addr.sin_addr.s_addr;
 	}
 
 // dst must be at least MAX_ESCAPED_DOMAIN_NAME bytes, and option must be less than 32 bytes in length

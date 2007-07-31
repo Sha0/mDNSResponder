@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: PlatformCommon.h,v $
+Revision 1.7  2007/07/31 23:08:34  mcguire
+<rdar://problem/5329542> BTMM: Make AutoTunnel mode work with multihoming
+
 Revision 1.6  2007/01/09 22:37:43  cheshire
 Remove unused ClearDomainSecrets() function
 
@@ -38,5 +41,5 @@ Move ReadDDNSSettingsFromConfFile() from mDNSMacOSX.c to PlatformCommon.c
 
  */
 
-extern void FindDefaultRouteIP(mDNSAddr *a);
+extern void FindSourceAddrForIP(mDNSAddr *const dst, mDNSAddr *src);
 extern void ReadDDNSSettingsFromConfFile(mDNS *const m, const char *const filename, domainname *const hostname, domainname *const domain, mDNSBool *DomainDiscoveryDisabled);
