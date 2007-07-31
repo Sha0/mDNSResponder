@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.674  2007/07/31 01:57:23  cheshire
+Adding code to respect TTL received in uDNS responses turned out to
+expose other problems; backing out change for now.
+
 Revision 1.673  2007/07/30 23:31:26  cheshire
 Code for respecting TTL received in uDNS responses should exclude LLQ-type responses
 
@@ -3927,7 +3931,7 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 			msg->h.numAdditionals, msg->h.numAdditionals == 1 ? "" : "s");
 		return;
 		}
-	
+
 	verbosedebugf("Received Query from %#-15a:%-5d to %#-15a:%-5d on 0x%p with "
 		"%2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
 		srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), InterfaceID,
@@ -3986,6 +3990,7 @@ mDNSlocal mDNSBool ExpectingUnicastResponseForRecord(mDNS *const m, const mDNSAd
 				// if (mDNSSameOpaque16(q->TargetQID, id)
 					{
 					if (mDNSSameAddress(srcaddr, &q->Target))                   return(mDNStrue);
+				//	if (q->LongLived && mDNSSameAddress(srcaddr, &q->servAddr)) return(mDNStrue); Shouldn't need this now that we have LLQType checking
 					if (TrustedSource(m, srcaddr))                              return(mDNStrue);
 					LogMsg("WARNING: Ignoring suspect uDNS response from %#a for %s", srcaddr, CRDisplayString(m, rr));
 					return(mDNSfalse);
@@ -4177,6 +4182,10 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 				// For now we need to impose a minimum effective TTL of 2 seconds, or other stuff breaks (e.g. we end up making a negative cache entry).
 				// In the future we may want to revisit this and consider properly supporting non-cached uDNS answers.
 				if (m->rec.r.resrec.rroriginalttl < 2) m->rec.r.resrec.rroriginalttl = 2;
+
+				// Faithfully respecting the true uDNS TTL turns out to cause too many problems right now,
+				// so for now we'll go back the old way of assuming large TTL for uDNS records
+				m->rec.r.resrec.rroriginalttl = (mDNSu32)(0x70000000 / mDNSPlatformOneSecond);
 				}
 			}
 
