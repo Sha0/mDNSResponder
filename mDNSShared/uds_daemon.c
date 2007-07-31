@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.325  2007/07/31 21:29:41  cheshire
+<rdar://problem/5372207> System Default registration domain(s) not listed in Domain Enumeration ("dns-sd -E")
+
 Revision 1.324  2007/07/31 01:56:21  cheshire
 Corrected function name in log message
 
@@ -2088,7 +2091,10 @@ mDNSexport void udsserver_handle_configchange(mDNS *const m)
 		DNameListElem **pp = &AutoRegistrationDomains;
 		while (*pp && ((*pp)->uid != p->uid || !SameDomainName(&(*pp)->name, &p->name))) pp = &(*pp)->next;
 		if (!*pp)		// If not found in our existing list, this is a new default registration domain
+			{
+			RegisterLocalOnlyDomainEnumPTR(m, &p->name, mDNS_DomainTypeRegistration);
 			udsserver_default_reg_domain_changed(p, mDNStrue);
+			}
 		else			// else found same domainname in both old and new lists, so no change, just delete old copy
 			{
 			DNameListElem *del = *pp;
@@ -2102,6 +2108,7 @@ mDNSexport void udsserver_handle_configchange(mDNS *const m)
 		{
 		DNameListElem *del = AutoRegistrationDomains;
 		AutoRegistrationDomains = AutoRegistrationDomains->next;		// Cut record from list FIRST,
+		DeregisterLocalOnlyDomainEnumPTR(m, &del->name, mDNS_DomainTypeRegistration);
 		udsserver_default_reg_domain_changed(del, mDNSfalse);			// before calling udsserver_default_reg_domain_changed()
 		mDNSPlatformMemFree(del);
 		}
