@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.676  2007/08/01 00:04:13  cheshire
+<rdar://problem/5261696> Crash in tcpKQSocketCallback
+Half-open TCP connections were not being cancelled properly
+
 Revision 1.675  2007/07/31 02:28:35  vazquez
 <rdar://problem/3734269> NAT-PMP: Detect public IP address changes and base station reboot
 
@@ -1028,6 +1032,7 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	rr->UpdatePort        = zeroIPPort;
 	mDNSPlatformMemZero(&rr->NATinfo, sizeof(rr->NATinfo));
 	rr->nta               = mDNSNULL;
+	rr->tcp               = mDNSNULL;
 	rr->OrigRData         = 0;
 	rr->OrigRDLen         = 0;
 	rr->InFlightRData     = 0;
@@ -1295,9 +1300,12 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 			rr->resrec.RecordType = RecordType;
 			err = uDNS_DeregisterRecord(m, rr);
 			rr->resrec.RecordType = kDNSRecordTypeUnregistered;
+			if (rr->tcp) { DisposeTCPConn(rr->tcp); rr->tcp = mDNSNULL; }
 			return err;
 			}
 #endif
+
+		if (rr->tcp) { DisposeTCPConn(rr->tcp); rr->tcp = mDNSNULL; }
 
 		// CAUTION: MUST NOT do anything more with rr after calling rr->Callback(), because the client's callback function
 		// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
@@ -4660,7 +4668,7 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const questi
 				q->state             = question->state;
 			//	q->NATInfoUDP        = question->NATInfoUDP;
 				q->eventPort         = question->eventPort;
-			//	q->tcpSock           = question->tcpSock;
+			//	q->tcp               = question->tcp;
 				q->origLease         = question->origLease;
 				q->expire            = question->expire;
 				q->ntries            = question->ntries;
@@ -4668,7 +4676,7 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const questi
 
 				question->nta        = mDNSNULL;	// If we've got a GetZoneData in progress, transfer it to the newly active question
 			//	question->NATInfoUDP = mDNSNULL;
-			//	question->tcpSock    = mDNSNULL;
+			//	question->tcp        = mDNSNULL;
 				if (q->nta)
 					{
 					LogOperation("UpdateQuestionDuplicates transferred nta pointer for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
@@ -4676,7 +4684,7 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const questi
 					}
 
 				// Need to work out how to safely transfer this state too -- appropriate context pointers need to be updated or the code will crash
-				if (question->tcpSock   )   LogOperation("UpdateQuestionDuplicates did not transfer tcpSock pointer");
+				if (question->tcp) LogOperation("UpdateQuestionDuplicates did not transfer tcp pointer");
 	
 				SetNextQueryTime(m,q);
 				}
@@ -4836,12 +4844,12 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 		question->nta               = mDNSNULL;
 		question->servAddr          = zeroAddr;
 		question->servPort          = zeroIPPort;
+		question->tcp               = mDNSNULL;
 		question->NoAnswer          = mDNSfalse;
 
 		question->state             = LLQ_GetZoneInfo;
 		mDNSPlatformMemZero(&question->NATInfoUDP, sizeof(question->NATInfoUDP));
 		question->eventPort         = zeroIPPort;
-		question->tcpSock           = mDNSNULL;
 		question->origLease         = 0;
 		question->expire            = 0;
 		question->ntries            = 0;
@@ -4966,7 +4974,7 @@ mDNSexport mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const que
 	// invalid before we even use it. By making sure that we update m->CurrentQuestion and m->NewQuestions if necessary
 	// *first*, then they're all ready to be updated a second time if necessary when we cancel our GetZoneData query.
 	if (question->nta) CancelGetZoneData(m, question->nta);
-	if (question->tcpSock) mDNSPlatformTCPCloseConnection(question->tcpSock);
+	if (question->tcp) { DisposeTCPConn(question->tcp); question->tcp = mDNSNULL; }
 	if (!mDNSOpaque16IsZero(question->TargetQID) && question->LongLived) uDNS_StopLongLivedQuery(m, question);
 
 	return(mStatus_NoError);
@@ -5969,6 +5977,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	sr->DeferredStatus         = 0;
 	sr->SRVUpdateDeferred      = 0;
 	sr->SRVChanged             = 0;
+	sr->tcp                    = mDNSNULL;
 
 	sr->ServiceCallback = Callback;
 	sr->ServiceContext  = Context;

@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.72  2007/08/01 00:04:13  cheshire
+<rdar://problem/5261696> Crash in tcpKQSocketCallback
+Half-open TCP connections were not being cancelled properly
+
 Revision 1.71  2007/07/30 23:31:26  cheshire
 Code for respecting TTL received in uDNS responses should exclude LLQ-type responses
 
@@ -230,6 +234,7 @@ typedef enum
 
 extern uDNS_LLQType    uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *const srcaddr, const mDNSIPPort srcport);
 extern DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const name);
+extern void DisposeTCPConn(struct tcpInfo_t *tcp);
 
 // NAT traversal
 extern void	uDNS_ReceiveNATPMPPacket(mDNS *m, mDNSu8 *pkt, mDNSu16 len);	// Called for each received NAT-PMP packet

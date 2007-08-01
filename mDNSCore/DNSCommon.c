@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.165  2007/08/01 00:04:13  cheshire
+<rdar://problem/5261696> Crash in tcpKQSocketCallback
+Half-open TCP connections were not being cancelled properly
+
 Revision 1.164  2007/07/27 20:48:43  cheshire
 In DumpRecords(), include record TTL in output
 
@@ -1163,6 +1167,7 @@ mDNSexport void mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mD
 	rr->UpdatePort        = zeroIPPort;
 	mDNSPlatformMemZero(&rr->NATinfo, sizeof(rr->NATinfo));
 	rr->nta               = mDNSNULL;
+	rr->tcp               = mDNSNULL;
 	rr->OrigRData         = 0;
 	rr->OrigRDLen         = 0;
 	rr->InFlightRData     = 0;

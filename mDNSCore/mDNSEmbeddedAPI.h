@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.416  2007/08/01 00:04:13  cheshire
+<rdar://problem/5261696> Crash in tcpKQSocketCallback
+Half-open TCP connections were not being cancelled properly
+
 Revision 1.415  2007/07/31 02:28:35  vazquez
 <rdar://problem/3734269> NAT-PMP: Detect public IP address changes and base station reboot
 
@@ -1608,7 +1612,6 @@ struct DNSQuestion_struct
 	LLQ_State             state;
 	NATTraversalInfo      NATInfoUDP;
 	mDNSIPPort            eventPort;		// This is non-zero if this is a private LLQ. If we're behind NAT, it's the external UDP port.
-	TCPSocket            *tcpSock;
 	mDNSu32               origLease;		// seconds (relative)
 	mDNSs32               expire;			// ticks (absolute)
 	mDNSs16               ntries;
@@ -2404,7 +2407,7 @@ typedef enum
 	} TCPSocketFlags;
 
 typedef void (*TCPConnectionCallback)(TCPSocket *sock, void *context, mDNSBool ConnectionEstablished, mStatus err);
-extern TCPSocket *mDNSPlatformTCPSocket(mDNS *const m, TCPSocketFlags flags, mDNSIPPort *port);	// creates a tcp socket
+extern TCPSocket *mDNSPlatformTCPSocket(mDNS *const m, TCPSocketFlags flags, mDNSIPPort *port);	// creates a TCP socket
 extern TCPSocket *mDNSPlatformTCPAccept(TCPSocketFlags flags, int sd);
 extern int        mDNSPlatformTCPGetFD(TCPSocket *sock);
 extern mStatus    mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,

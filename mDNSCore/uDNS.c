@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.425  2007/08/01 00:04:14  cheshire
+<rdar://problem/5261696> Crash in tcpKQSocketCallback
+Half-open TCP connections were not being cancelled properly
+
 Revision 1.424  2007/07/31 02:28:35  vazquez
 <rdar://problem/3734269> NAT-PMP: Detect public IP address changes and base station reboot
 
@@ -1359,14 +1363,14 @@ mDNSlocal void sendChallengeResponse(mDNS *const m, DNSQuestion *const q, const 
 		}
 
 	q->LastQTime     = m->timenow;
-	q->ThisQInterval = q->tcpSock ? 0 : (kLLQ_INIT_RESEND * q->ntries * mDNSPlatformOneSecond);		// If using TCP, don't need to retransmit
+	q->ThisQInterval = q->tcp ? 0 : (kLLQ_INIT_RESEND * q->ntries * mDNSPlatformOneSecond);		// If using TCP, don't need to retransmit
 
 	if (constructQueryMsg(&m->omsg, &responsePtr, q)) goto error;
 	responsePtr = putLLQ(&m->omsg, responsePtr, q, llq, mDNSfalse);
 	if (!responsePtr) { LogMsg("ERROR: sendChallengeResponse - putLLQ"); goto error; }
 
-	//LogOperation("sendChallengeResponse %#a:%d %d %p %d", &q->servAddr, mDNSVal16(q->servPort), q->tcpSock, q->AuthInfo, responsePtr - (mDNSu8 *)&m->omsg);
-	err = mDNSSendDNSMessage(m, &m->omsg, responsePtr, mDNSInterface_Any, &q->servAddr, q->servPort, q->tcpSock, q->AuthInfo);
+	//LogOperation("sendChallengeResponse %#a:%d %d %p %d", &q->servAddr, mDNSVal16(q->servPort), q->tcp, q->AuthInfo, responsePtr - (mDNSu8 *)&m->omsg);
+	err = mDNSSendDNSMessage(m, &m->omsg, responsePtr, mDNSInterface_Any, &q->servAddr, q->servPort, q->tcp ? q->tcp->sock : mDNSNULL, q->AuthInfo);
 	if (err) debugf("ERROR: sendChallengeResponse - mDNSSendDNSMessage returned %ld", err);
 	// on error, we procede as normal and retry after the appropriate interval
 
@@ -1560,6 +1564,13 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 		tcpInfo->srs      ? GetAuthInfoForName(m, tcpInfo->srs->RR_SRV.resrec.name)  :
 		tcpInfo->rr       ? GetAuthInfoForName(m, tcpInfo->rr->resrec.name) : mDNSNULL;
 
+	tcpInfo_t **backpointer =
+		tcpInfo->question ? &tcpInfo->question->tcp :
+		tcpInfo->srs      ? &tcpInfo->srs->tcp :
+		tcpInfo->rr       ? &tcpInfo->rr->tcp : mDNSNULL;
+	if (!backpointer) LogMsg("tcpCallback: Purpose of connection unidentified");
+	else if (*backpointer != tcpInfo) LogMsg("tcpCallback: backpointer incorrect %p %p", *backpointer, tcpInfo);
+
 	if (err) goto exit;
 
 	if (ConnectionEstablished)
@@ -1649,8 +1660,8 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 				}
 			else
 				{
-				mDNSPlatformTCPCloseConnection(sock);
-				mDNSPlatformMemFree(tcpInfo);
+				if (backpointer && *backpointer == tcpInfo) *backpointer = mDNSNULL;
+				DisposeTCPConn(tcpInfo);
 				}
 			}
 		}
@@ -1659,11 +1670,9 @@ exit:
 
 	if (err)
 		{
-		mDNSPlatformTCPCloseConnection(sock);
-
 		if (tcpInfo->question)
 			{
-			tcpInfo->question->tcpSock = mDNSNULL;
+			tcpInfo->question->tcp = mDNSNULL;
 			// ConnFailed is actually okay.  It just means that the server closed the connection but the LLQ
 			// is still okay.  If the error isn't ConnFailed, then the LLQ is in bad shape.
 			if (err != mStatus_ConnFailed) tcpInfo->question->state = LLQ_Error;
@@ -1709,7 +1718,8 @@ exit:
 			tcpInfo->reply = mDNSNULL;
 			}
 
-		mDNSPlatformMemFree(tcpInfo);
+		if (backpointer && *backpointer == tcpInfo) *backpointer = mDNSNULL;
+		DisposeTCPConn(tcpInfo);
 		}
 	}
 
@@ -1744,6 +1754,12 @@ mDNSlocal tcpInfo_t *MakeTCPConn(mDNS *const m, const DNSMessage *const msg, con
 	return(info);
 	}
 
+mDNSexport void DisposeTCPConn(struct tcpInfo_t *tcp)
+	{
+	mDNSPlatformTCPCloseConnection(tcp->sock);
+	mDNSPlatformMemFree(tcp);
+	}
+
 mDNSlocal void RemoveLLQNatMappings(mDNS *m, DNSQuestion *q)
 	{
 	if (q->NATInfoUDP.clientContext)
@@ -1753,14 +1769,11 @@ mDNSlocal void RemoveLLQNatMappings(mDNS *m, DNSQuestion *q)
 		}
 	}
 
-mDNSlocal void startLLQHandshake(mDNS *m, DNSQuestion *q, mDNSBool defer)
+mDNSlocal void startLLQHandshake(mDNS *m, DNSQuestion *q)
 	{
 	mStatus err = mStatus_NoError;
 	if (q->AuthInfo)
 		{
-		tcpInfo_t *context;
-		mDNSIPPort tcpport = zeroIPPort;
-		if (!q->tcpSock) q->tcpSock = mDNSPlatformTCPSocket(m, kTCPSocketFlags_UseTLS, &tcpport);
 		LogOperation("startLLQHandshakePrivate Addr %#a%s Server %#a%s %##s (%s) eventport %d",
 			&m->AdvertisedV4, mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) ? " (RFC 1918)" : "",
 			&q->servAddr,     mDNSAddrIsRFC1918(&q->servAddr)             ? " (RFC 1918)" : "",
@@ -1776,27 +1789,8 @@ mDNSlocal void startLLQHandshake(mDNS *m, DNSQuestion *q, mDNSBool defer)
 				else  { err = mStatus_UnknownErr;              goto exit; }
 				}
 
-		context = (tcpInfo_t *)mDNSPlatformMemAllocate(sizeof(tcpInfo_t));
-		if (!context) { LogMsg("ERROR: startLLQHandshakePrivate - memallocate failed"); err = mStatus_NoMemoryErr; goto exit; }
-		mDNSPlatformMemZero(context, sizeof(tcpInfo_t));
-		context->m = m;
-		context->question = q;
-		context->Addr     = q->servAddr;
-		context->Port     = q->servPort;
-
-		if (!defer)
-			{
-			if (!q->tcpSock)
-				{ LogMsg("ERROR: startLLQHandshakePrivate - tcpSock is NULL."); err = mStatus_UnknownErr; }
-			else if (!mDNSPlatformTCPIsConnected(q->tcpSock))
-				err = mDNSPlatformTCPConnect(q->tcpSock, &context->Addr, context->Port, 0, tcpCallback, context);
-			else err = mStatus_ConnEstablished;
-
-			if ((err != mStatus_ConnEstablished) && (err != mStatus_ConnPending)) { LogMsg("startLLQHandshakePrivate: connection failed"); goto exit; }
-			if (err == mStatus_ConnEstablished) tcpCallback(q->tcpSock, context, mDNStrue, mStatus_NoError);
-
-			err = mStatus_NoError;
-			}
+		if (q->tcp) LogMsg("startLLQHandshake: Already have TCP connection for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+		else q->tcp = MakeTCPConn(m, mDNSNULL, mDNSNULL, kTCPSocketFlags_UseTLS, &q->servAddr, q->servPort, q, mDNSNULL, mDNSNULL);
 
 		// update question state
 		//q->state         = LLQ_InitialRequest;
@@ -1804,6 +1798,8 @@ mDNSlocal void startLLQHandshake(mDNS *m, DNSQuestion *q, mDNSBool defer)
 		q->origLease     = kLLQ_DefLease;
 		q->ThisQInterval = 0;
 		q->LastQTime     = m->timenow;
+
+		err = mStatus_NoError;
 		}
 	else
 		{
@@ -1840,12 +1836,9 @@ mDNSlocal void startLLQHandshake(mDNS *m, DNSQuestion *q, mDNSBool defer)
 		end = putLLQ(&m->omsg, m->omsg.data, q, &llqData, mDNStrue);
 		if (!end) { LogMsg("ERROR: startLLQHandshake - putLLQ"); q->state = LLQ_Error; return; }
 
-		if (!defer) // if we are to defer, we simply set the retry timers so the request goes out in the future
-			{
-			err = mDNSSendDNSMessage(m, &m->omsg, end, mDNSInterface_Any, &q->servAddr, q->servPort, mDNSNULL, mDNSNULL);
-			// on error, we procede as normal and retry after the appropriate interval
-			if (err) { debugf("ERROR: startLLQHandshake - mDNSSendDNSMessage returned %ld", err); err = mStatus_NoError; }
-			}
+		err = mDNSSendDNSMessage(m, &m->omsg, end, mDNSInterface_Any, &q->servAddr, q->servPort, mDNSNULL, mDNSNULL);
+		// on error, we procede as normal and retry after the appropriate interval
+		if (err) { debugf("ERROR: startLLQHandshake - mDNSSendDNSMessage returned %ld", err); err = mStatus_NoError; }
 
 		// update question state
 		q->state         = LLQ_InitialRequest;
@@ -1878,7 +1871,7 @@ mDNSlocal void LLQNatMapComplete(mDNS *const m, mDNSv4Addr ExternalAddress, NATT
 			if (q->state == LLQ_NatMapWaitUDP)
 				{
 				if (!err && !mDNSIPPortIsZero(q->NATInfoUDP.publicPort))
-					{ q->state = LLQ_GetZoneInfo; q->eventPort = q->NATInfoUDP.publicPort; startLLQHandshake(m, q, mDNSfalse); }
+					{ q->state = LLQ_GetZoneInfo; q->eventPort = q->NATInfoUDP.publicPort; startLLQHandshake(m, q); }
 				else { RemoveLLQNatMappings(m, q); StartLLQPolling(m, q); }
 				}
 			}
@@ -2018,7 +2011,10 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	srs->id = id;
 
 	if (srs->Private)
-		srs->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &srs->ns, srs->SRSUpdatePort, mDNSNULL, srs, mDNSNULL);
+		{
+		if (srs->tcp) LogMsg("SendServiceRegistration: Already have TCP connection for %s", ARDisplayString(m, &srs->RR_SRV));
+		else srs->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &srs->ns, srs->SRSUpdatePort, mDNSNULL, srs, mDNSNULL);
+		}
 	else
 		{
 		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &srs->ns, srs->SRSUpdatePort, mDNSNULL, GetAuthInfoForName(m, srs->RR_SRV.resrec.name));
@@ -2369,7 +2365,11 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 	srs->state = regState_DeregPending;
 
 	if (srs->Private)
-		srs->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &srs->ns, srs->SRSUpdatePort, mDNSNULL, srs, mDNSNULL);
+		{
+		LogOperation("SendServiceDeregistration for %s", ARDisplayString(m, &srs->RR_SRV));
+		if (srs->tcp) LogMsg("SendServiceDeregistration: Already have TCP connection for %s", ARDisplayString(m, &srs->RR_SRV));
+		else srs->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &srs->ns, srs->SRSUpdatePort, mDNSNULL, srs, mDNSNULL);
+		}
 	else
 		{
 		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &srs->ns, srs->SRSUpdatePort, mDNSNULL, GetAuthInfoForName(m, srs->RR_SRV.resrec.name));
@@ -2969,7 +2969,10 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 		}
 
 	if (rr->Private)
-		rr->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, mDNSNULL, rr);
+		{
+		if (rr->tcp) LogMsg("sendRecordRegistration: Already have TCP connection for %s", ARDisplayString(m, rr));
+		else rr->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, mDNSNULL, rr);
+		}
 	else
 		{
 		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, GetAuthInfoForName(m, rr->resrec.name));
@@ -3439,9 +3442,11 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 				if (msg->h.flags.b[0] & kDNSFlag0_TC && mDNSSameOpaque16(qptr->TargetQID, msg->h.id) && m->timenow - qptr->LastQTime < RESPONSE_WINDOW)
 					{
 					if (!srcaddr) LogMsg("uDNS_ReceiveMsg: TCP DNS response had TC bit set: ignoring");
+					else if (qptr->tcp) LogMsg("uDNS_ReceiveMsg: Already have TCP connection for %##s (%s)", qptr->qname.c, DNSTypeName(qptr->qtype));
 					else qptr->tcp = MakeTCPConn(m, mDNSNULL, mDNSNULL, kTCPSocketFlags_Zero, srcaddr, srcport, qptr, mDNSNULL, mDNSNULL);
 					}
 		}
+
 	if (QR_OP == UpdateR && !mDNSOpaque16IsZero(msg->h.id))
 		{
 		mDNSu32 lease = GetPktLease(m, msg, end);
@@ -3504,7 +3509,7 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 	// If this is supposed to be a private question and the server dropped the TCP connection,
 	// we don't want to cancel it with a clear-text UDP packet, and and it's not worth the expense of
 	// setting up a new TLS session just to cancel the outstanding LLQ, so we just let it expire naturally
-	if (lease == 0 && q->AuthInfo && !q->tcpSock) return;
+	if (lease == 0 && q->AuthInfo && !q->tcp) return;
 
 	if ((q->state == LLQ_Refresh && q->ntries >= kLLQ_MAX_TRIES) || q->expire - m->timenow < 0)
 		{
@@ -3526,7 +3531,7 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 	end = putLLQ(&m->omsg, m->omsg.data, q, &llq, mDNStrue);
 	if (!end) { LogMsg("ERROR: sendLLQRefresh - putLLQ"); return; }
 
-	err = mDNSSendDNSMessage(m, &m->omsg, end, mDNSInterface_Any, &q->servAddr, q->servPort, q->tcpSock, q->AuthInfo);
+	err = mDNSSendDNSMessage(m, &m->omsg, end, mDNSInterface_Any, &q->servAddr, q->servPort, q->tcp ? q->tcp->sock : mDNSNULL, q->AuthInfo);
 	if (err) debugf("ERROR: sendLLQRefresh - mDNSSendDNSMessage returned %ld", err);
 
 	if (q->state == LLQ_Established) q->ntries = 1;
@@ -3591,7 +3596,7 @@ mDNSexport void startLLQHandshakeCallback(mDNS *const m, mStatus err, const Zone
 	q->ntries = 0;
 
 	if (q->state == LLQ_SuspendDeferred) q->state = LLQ_Suspended;
-	else startLLQHandshake(m, q, mDNSfalse);
+	else startLLQHandshake(m, q);
 
 exit:
 
@@ -3776,7 +3781,10 @@ mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 	rr->state = regState_DeregPending;
 
 	if (rr->Private)
-		rr->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, mDNSNULL, rr);
+		{
+		if (rr->tcp) LogMsg("sendRecordRegistration: Already have TCP connection for %s", ARDisplayString(m, rr));
+		else rr->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, mDNSNULL, rr);
+		}
 	else
 		{
 		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, GetAuthInfoForName(m, rr->resrec.name));
@@ -4013,9 +4021,9 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 			{
 			// sanity check to avoid packet flood bugs
 			if      (q->state == LLQ_Established || q->state == LLQ_Refresh) sendLLQRefresh(m, q, q->origLease);
-			else if (q->state == LLQ_InitialRequest                             ) startLLQHandshake(m, q, mDNSfalse);
+			else if (q->state == LLQ_InitialRequest                             ) startLLQHandshake(m, q);
 			else if (q->state == LLQ_SecondaryRequest                           ) sendChallengeResponse(m, q, mDNSNULL);
-			else if (q->state == LLQ_Retry                                      ) { q->ntries = 0; startLLQHandshake(m, q, mDNSfalse); }
+			else if (q->state == LLQ_Retry                                      ) { q->ntries = 0; startLLQHandshake(m, q); }
 			}
 		else
 			{
@@ -4349,11 +4357,7 @@ mDNSlocal void SuspendLLQs(mDNS *m, mDNSBool DeregisterActive)
 				debugf("Marking %##s suspended", q->qname.c);
 				q->state = LLQ_Suspended;
 
-				if (q->tcpSock)
-					{
-					mDNSPlatformTCPCloseConnection(q->tcpSock);
-					q->tcpSock = mDNSNULL;
-					}
+				if (q->tcp) { DisposeTCPConn(q->tcp); q->tcp = mDNSNULL; }
 
 				q->id = zeroOpaque64;
 				}
@@ -4386,7 +4390,7 @@ mDNSlocal void RestartQueries(mDNS *m)
 				if (q->state == LLQ_Suspended || q->state == LLQ_NatMapWaitUDP)
 					{
 					q->ntries = -1;
-					startLLQHandshake(m, q, mDNStrue);	// we set defer to true since several events that may generate restarts often arrive in rapid succession, and this cuts unnecessary packets
+					startLLQHandshake(m, q);
 					}
 				else if (q->state == LLQ_SuspendDeferred)
 					q->state = LLQ_GetZoneInfo; // we never finished getting zone data - proceed as usual
