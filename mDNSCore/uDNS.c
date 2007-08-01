@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.431  2007/08/01 16:11:06  cheshire
+Fixed "mixed declarations and code" compiler error in Posix build
+
 Revision 1.430  2007/08/01 16:09:13  cheshire
 Removed unused NATTraversalInfo substructure from AuthRecord; reduced structure sizecheck values accordingly
 
@@ -4129,8 +4132,8 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 mDNSlocal void CheckNATMappings(mDNS *m)
 	{
 	mStatus err = mStatus_NoError;
-	m->NextScheduledNATOp = m->timenow + 0x3FFFFFFF;
 	mDNSBool rfc1918 = mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4);
+	m->NextScheduledNATOp = m->timenow + 0x3FFFFFFF;
 
 	if (m->NATTraversals)
 		{
