@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.417  2007/08/01 03:04:59  cheshire
+Add NATTraversalInfo structures to HostnameInfo and DomainAuthInfo
+
 Revision 1.416  2007/08/01 00:04:13  cheshire
 <rdar://problem/5261696> Crash in tcpKQSocketCallback
 Half-open TCP connections were not being cancelled properly
@@ -1343,6 +1346,7 @@ typedef struct
 typedef struct HostnameInfo
 	{
 	struct HostnameInfo *next;
+	NATTraversalInfo natinfo;
 	domainname fqdn;
 	AuthRecord arv4;                          // registered IPv4 address record
 	AuthRecord arv6;                          // registered IPv6 address record
@@ -1555,16 +1559,17 @@ enum
 typedef struct DomainAuthInfo
 	{
 	struct DomainAuthInfo *next;
-	mDNSs32     deltime;
-	mDNSBool    AutoTunnel;
-	AuthRecord  AutoTunnelHostRecord;	// User-visible hostname; used as SRV target for AutoTunnel services
-	AuthRecord  AutoTunnelTarget;		// Opaque hostname of tunnel endpoint; used as SRV target for AutoTunnelService record
-	AuthRecord  AutoTunnelService;		// Service record (possibly NAT-Mapped) of IKE daemon implementing tunnel endpoint
-	domainname  domain;
-	domainname  keyname;
-	char        b64keydata[32];
-	mDNSu8      keydata_ipad[HMAC_LEN];	// padded key for inner hash rounds
-	mDNSu8      keydata_opad[HMAC_LEN];	// padded key for outer hash rounds
+	mDNSs32          deltime;
+	mDNSBool         AutoTunnel;
+	AuthRecord       AutoTunnelHostRecord;	// User-visible hostname; used as SRV target for AutoTunnel services
+	AuthRecord       AutoTunnelTarget;		// Opaque hostname of tunnel endpoint; used as SRV target for AutoTunnelService record
+	AuthRecord       AutoTunnelService;		// Service record (possibly NAT-Mapped) of IKE daemon implementing tunnel endpoint
+	NATTraversalInfo AutoTunnelNAT;
+	domainname       domain;
+	domainname       keyname;
+	char             b64keydata[32];
+	mDNSu8           keydata_ipad[HMAC_LEN];	// padded key for inner hash rounds
+	mDNSu8           keydata_opad[HMAC_LEN];	// padded key for outer hash rounds
 	} DomainAuthInfo;
 
 // Note: Within an mDNSQuestionCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute()
@@ -2537,11 +2542,11 @@ struct CompileTimeAssertionChecks_mDNS
 	char sizecheck_DNSQuestion         [(sizeof(DNSQuestion)          <=   900) ? 1 : -1];
 	char sizecheck_ZoneData            [(sizeof(ZoneData)             <=  1700) ? 1 : -1];
 	char sizecheck_NATTraversalInfo    [(sizeof(NATTraversalInfo)     <=   140) ? 1 : -1];
-	char sizecheck_HostnameInfo        [(sizeof(HostnameInfo)         <=  3200) ? 1 : -1];
+	char sizecheck_HostnameInfo        [(sizeof(HostnameInfo)         <=  3400) ? 1 : -1];
 	char sizecheck_DNSServer           [(sizeof(DNSServer)            <=   300) ? 1 : -1];
 	char sizecheck_NetworkInterfaceInfo[(sizeof(NetworkInterfaceInfo) <=  4400) ? 1 : -1];
 	char sizecheck_ServiceRecordSet    [(sizeof(ServiceRecordSet)     <=  6200) ? 1 : -1];
-	char sizecheck_DomainAuthInfo      [(sizeof(DomainAuthInfo)       <=  5000) ? 1 : -1];
+	char sizecheck_DomainAuthInfo      [(sizeof(DomainAuthInfo)       <=  5100) ? 1 : -1];
 	char sizecheck_ServiceInfoQuery    [(sizeof(ServiceInfoQuery)     <=  3400) ? 1 : -1];
 	char sizecheck_ClientTunnel        [(sizeof(ClientTunnel)         <=  1200) ? 1 : -1];
 	};
