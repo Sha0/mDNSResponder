@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.166  2007/08/01 16:09:13  cheshire
+Removed unused NATTraversalInfo substructure from AuthRecord; reduced structure sizecheck values accordingly
+
 Revision 1.165  2007/08/01 00:04:13  cheshire
 <rdar://problem/5261696> Crash in tcpKQSocketCallback
 Half-open TCP connections were not being cancelled properly
@@ -1165,7 +1168,6 @@ mDNSexport void mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mD
 	rr->zone.c[0]         = 0;
 	rr->UpdateServer      = zeroAddr;
 	rr->UpdatePort        = zeroIPPort;
-	mDNSPlatformMemZero(&rr->NATinfo, sizeof(rr->NATinfo));
 	rr->nta               = mDNSNULL;
 	rr->tcp               = mDNSNULL;
 	rr->OrigRData         = 0;

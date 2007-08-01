@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.430  2007/08/01 16:09:13  cheshire
+Removed unused NATTraversalInfo substructure from AuthRecord; reduced structure sizecheck values accordingly
+
 Revision 1.429  2007/08/01 03:09:22  cheshire
 <rdar://problem/5344587> BTMM: Create NAT port mapping for autotunnel port
 
@@ -3834,15 +3837,7 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 	{
 	switch (rr->state)
 		{
-		case regState_NATMap:
-			// we're in the middle of a NAT traversal operation
-			if (rr->NATinfo.clientContext)
-				{
-				mDNS_StopNATOperation_internal(m, &rr->NATinfo);
-				rr->NATinfo.clientContext = mDNSNULL;
-				}
-			rr->state = regState_Unregistered;
-			break;
+		case regState_NATMap:        LogMsg("regState_NATMap        %##s type %s", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype)); return mStatus_NoError;
 		case regState_ExtraQueued: rr->state = regState_Unregistered; break;
 		case regState_Refresh:
 		case regState_Pending:
@@ -3860,15 +3855,7 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 		default: LogMsg("uDNS_DeregisterRecord: State %d for %##s type %s", rr->state, rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype)); return mStatus_NoError;
 		}
 
-	if (rr->state != regState_Unregistered)
-		{
-		if (rr->NATinfo.clientContext)
-			{
-			mDNS_StopNATOperation_internal(m, &rr->NATinfo);
-			rr->NATinfo.clientContext = mDNSNULL;
-			}
-		SendRecordDeregistration(m, rr);
-		}
+	if (rr->state != regState_Unregistered) SendRecordDeregistration(m, rr);
 	return mStatus_NoError;
 	}
 
@@ -4775,5 +4762,5 @@ struct CompileTimeAssertionChecks_uDNS
 	// other overly-large structures instead of having a pointer to them, can inadvertently
 	// cause structure sizes (and therefore memory usage) to balloon unreasonably.
 	char sizecheck_tcpInfo_t     [(sizeof(tcpInfo_t)      <=  9100) ? 1 : -1];
-	char sizecheck_SearchListElem[(sizeof(SearchListElem) <=  4500) ? 1 : -1];
+	char sizecheck_SearchListElem[(sizeof(SearchListElem) <=  3800) ? 1 : -1];
 	};

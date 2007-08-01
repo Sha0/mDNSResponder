@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.326  2007/08/01 16:09:14  cheshire
+Removed unused NATTraversalInfo substructure from AuthRecord; reduced structure sizecheck values accordingly
+
 Revision 1.325  2007/07/31 21:29:41  cheshire
 <rdar://problem/5372207> System Default registration domain(s) not listed in Domain Enumeration ("dns-sd -E")
 
@@ -3596,8 +3599,8 @@ struct CompileTimeAssertionChecks_uds_daemon
 	// cause structure sizes (and therefore memory usage) to balloon unreasonably.
 	char sizecheck_request_state          [(sizeof(request_state)           <= 1800) ? 1 : -1];
 	char sizecheck_registered_record_entry[(sizeof(registered_record_entry) <=   30) ? 1 : -1];
-	char sizecheck_service_instance       [(sizeof(service_instance)        <= 6500) ? 1 : -1];
-	char sizecheck_browser_t              [(sizeof(browser_t)               <= 1100) ? 1 : -1];
+	char sizecheck_service_instance       [(sizeof(service_instance)        <= 6000) ? 1 : -1];
+	char sizecheck_browser_t              [(sizeof(browser_t)               <= 1000) ? 1 : -1];
 	char sizecheck_reply_hdr              [(sizeof(reply_hdr)               <=   20) ? 1 : -1];
 	char sizecheck_reply_state            [(sizeof(reply_state)             <=   40) ? 1 : -1];
 	};

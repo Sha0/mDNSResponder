@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.418  2007/08/01 16:09:13  cheshire
+Removed unused NATTraversalInfo substructure from AuthRecord; reduced structure sizecheck values accordingly
+
 Revision 1.417  2007/08/01 03:04:59  cheshire
 Add NATTraversalInfo structures to HostnameInfo and DomainAuthInfo
 
@@ -1198,7 +1201,7 @@ typedef enum
 	regState_DeregDeferred     = 5,     // dereg requested while in Pending state - send dereg AFTER registration is confirmed
 	regState_Unregistered      = 8,     // not in any list
 	regState_Refresh           = 9,     // outstanding refresh (or target change) message
-	regState_NATMap            = 10,    // establishing NAT port mapping or learning public address
+	regState_NATMap            = 10,    // establishing NAT port mapping (service registrations only)
 	regState_UpdatePending     = 11,    // update in flight as result of mDNS_Update call
 	regState_NoTarget          = 12,    // service registration pending registration of hostname (ServiceRegistrations only)
 	regState_ExtraQueued       = 13,    // extra record to be registered upon completion of service registration (RecordRegistrations only)
@@ -1271,7 +1274,6 @@ struct AuthRecord_struct
 	mDNSIPPort   UpdatePort;	// port on which server accepts dynamic updates
 								// !!!KRS not technically correct to cache longer than TTL
 								// SDC Perhaps should keep a reference to the relevant SRV record in the cache?
-	NATTraversalInfo NATinfo;	// NAT traversal context; may be NULL
 	ZoneData  *nta;
 	struct tcpInfo_t *tcp;
 
@@ -2535,20 +2537,20 @@ struct CompileTimeAssertionChecks_mDNS
 	// Check our structures are reasonable sizes. Including overly-large buffers, or embedding
 	// other overly-large structures instead of having a pointer to them, can inadvertently
 	// cause structure sizes (and therefore memory usage) to balloon unreasonably.
-	char sizecheck_ResourceRecord      [(sizeof(ResourceRecord)       <=    50) ? 1 : -1];
-	char sizecheck_AuthRecord          [(sizeof(AuthRecord)           <=  1500) ? 1 : -1];
+	char sizecheck_ResourceRecord      [(sizeof(ResourceRecord)       <=    40) ? 1 : -1];
+	char sizecheck_AuthRecord          [(sizeof(AuthRecord)           <=  1290) ? 1 : -1];
 	char sizecheck_CacheRecord         [(sizeof(CacheRecord)          <=   170) ? 1 : -1];
 	char sizecheck_CacheGroup          [(sizeof(CacheGroup)           <=   170) ? 1 : -1];
-	char sizecheck_DNSQuestion         [(sizeof(DNSQuestion)          <=   900) ? 1 : -1];
-	char sizecheck_ZoneData            [(sizeof(ZoneData)             <=  1700) ? 1 : -1];
+	char sizecheck_DNSQuestion         [(sizeof(DNSQuestion)          <=   700) ? 1 : -1];
+	char sizecheck_ZoneData            [(sizeof(ZoneData)             <=  1600) ? 1 : -1];
 	char sizecheck_NATTraversalInfo    [(sizeof(NATTraversalInfo)     <=   140) ? 1 : -1];
-	char sizecheck_HostnameInfo        [(sizeof(HostnameInfo)         <=  3400) ? 1 : -1];
+	char sizecheck_HostnameInfo        [(sizeof(HostnameInfo)         <=  3000) ? 1 : -1];
 	char sizecheck_DNSServer           [(sizeof(DNSServer)            <=   300) ? 1 : -1];
-	char sizecheck_NetworkInterfaceInfo[(sizeof(NetworkInterfaceInfo) <=  4400) ? 1 : -1];
-	char sizecheck_ServiceRecordSet    [(sizeof(ServiceRecordSet)     <=  6200) ? 1 : -1];
-	char sizecheck_DomainAuthInfo      [(sizeof(DomainAuthInfo)       <=  5100) ? 1 : -1];
-	char sizecheck_ServiceInfoQuery    [(sizeof(ServiceInfoQuery)     <=  3400) ? 1 : -1];
-	char sizecheck_ClientTunnel        [(sizeof(ClientTunnel)         <=  1200) ? 1 : -1];
+	char sizecheck_NetworkInterfaceInfo[(sizeof(NetworkInterfaceInfo) <=  4000) ? 1 : -1];
+	char sizecheck_ServiceRecordSet    [(sizeof(ServiceRecordSet)     <=  5700) ? 1 : -1];
+	char sizecheck_DomainAuthInfo      [(sizeof(DomainAuthInfo)       <=  4700) ? 1 : -1];
+	char sizecheck_ServiceInfoQuery    [(sizeof(ServiceInfoQuery)     <=  2900) ? 1 : -1];
+	char sizecheck_ClientTunnel        [(sizeof(ClientTunnel)         <=  1040) ? 1 : -1];
 	};
 
 // ***************************************************************************
