@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.426  2007/08/01 01:15:57  cheshire
+<rdar://problem/5375791> Need to invoke NAT client callback when not on RFC1918 private network
+
 Revision 1.425  2007/08/01 00:04:14  cheshire
 <rdar://problem/5261696> Crash in tcpKQSocketCallback
 Half-open TCP connections were not being cancelled properly
@@ -4118,11 +4121,12 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 	{
 	mStatus err = mStatus_NoError;
 	m->NextScheduledNATOp = m->timenow + 0x3FFFFFFF;
+	mDNSBool rfc1918 = mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4);
 
 	if (m->NATTraversals)
 		{
 		// open NAT-PMP socket to receive multicasts from router
-		if (mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4))
+		if (rfc1918)
 			{
 			// if we are behind a NAT and the socket hasn't been opened yet, open it
 			if (m->NATMcastRecvskt == mDNSNULL)  
@@ -4159,51 +4163,60 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 		{
 		NATTraversalInfo *cur = m->CurrentNATTraversal;
 		m->CurrentNATTraversal = m->CurrentNATTraversal->next;
-		
-		// check for any outstanding request or refresh
-		if (cur->opFlags & (MapTCPFlag | MapUDPFlag))
-			{
-			if (m->timenow - cur->retryPortMap >= 0)		// we have exceeded the timer interval
-				{
-				if (!mDNSIPPortIsZero(cur->publicPort) && cur->ExpiryTime - m->timenow < 0)	// Mapping has expired
-					{
-					cur->publicPort = zeroIPPort;
-					cur->retryIntervalPortMap = NATMAP_INIT_RETRY;
-					}
-				
-				if (!mDNSIPPortIsZero(cur->publicPort))		// We have a mapping; time to refresh it
-					{
-					err = uDNS_SendNATMsg(m, cur, (cur->opFlags & MapTCPFlag) ? MapTCPFlag : MapUDPFlag);
-					if (!err)	// only decrement if we are successful
-						{
-						// attempt to refresh with decreasing retry interval
-						cur->retryIntervalPortMap = (cur->ExpiryTime - m->timenow) / 2;
-						if (cur->retryIntervalPortMap < NATMAP_MIN_RETRY_INTERVAL)
-							cur->retryIntervalPortMap = NATMAP_MIN_RETRY_INTERVAL;
-						}
-					}
-				else										// no mapping yet; trying to get one
-					{
-					err = uDNS_SendNATMsg(m, cur, (cur->opFlags & MapTCPFlag) ? MapTCPFlag : MapUDPFlag);
-					if (!err)
-						{
-						if      (cur->retryIntervalPortMap     < NATMAP_INIT_RETRY        ) cur->retryIntervalPortMap = NATMAP_INIT_RETRY;
-						else if (cur->retryIntervalPortMap * 2 < NATMAP_MAX_RETRY_INTERVAL) cur->retryIntervalPortMap *= 2;
-						else                                                                cur->retryIntervalPortMap = NATMAP_MAX_RETRY_INTERVAL;
-						}
-					}
-				cur->retryPortMap = m->timenow + cur->retryIntervalPortMap;
-				}
 
-			if (m->NextScheduledNATOp - cur->retryPortMap > 0)
-				m->NextScheduledNATOp = cur->retryPortMap;
+		if (!rfc1918)
+			{
+			cur->Error      = mStatus_NoError;
+			cur->publicPort = cur->privatePort;
+			}
+		else
+			{
+			// check for any outstanding request or refresh
+			if (cur->opFlags & (MapTCPFlag | MapUDPFlag))
+				{
+				if (m->timenow - cur->retryPortMap >= 0)		// we have exceeded the timer interval
+					{
+					if (!mDNSIPPortIsZero(cur->publicPort) && cur->ExpiryTime - m->timenow < 0)	// Mapping has expired
+						{
+						cur->publicPort = zeroIPPort;
+						cur->retryIntervalPortMap = NATMAP_INIT_RETRY;
+						}
+					
+					if (!mDNSIPPortIsZero(cur->publicPort))		// We have a mapping; time to refresh it
+						{
+						err = uDNS_SendNATMsg(m, cur, (cur->opFlags & MapTCPFlag) ? MapTCPFlag : MapUDPFlag);
+						if (!err)	// only decrement if we are successful
+							{
+							// attempt to refresh with decreasing retry interval
+							cur->retryIntervalPortMap = (cur->ExpiryTime - m->timenow) / 2;
+							if (cur->retryIntervalPortMap < NATMAP_MIN_RETRY_INTERVAL)
+								cur->retryIntervalPortMap = NATMAP_MIN_RETRY_INTERVAL;
+							}
+						}
+					else										// no mapping yet; trying to get one
+						{
+						err = uDNS_SendNATMsg(m, cur, (cur->opFlags & MapTCPFlag) ? MapTCPFlag : MapUDPFlag);
+						if (!err)
+							{
+							if      (cur->retryIntervalPortMap     < NATMAP_INIT_RETRY        ) cur->retryIntervalPortMap = NATMAP_INIT_RETRY;
+							else if (cur->retryIntervalPortMap * 2 < NATMAP_MAX_RETRY_INTERVAL) cur->retryIntervalPortMap *= 2;
+							else                                                                cur->retryIntervalPortMap = NATMAP_MAX_RETRY_INTERVAL;
+							}
+						}
+					cur->retryPortMap = m->timenow + cur->retryIntervalPortMap;
+					}
+	
+				if (m->NextScheduledNATOp - cur->retryPortMap > 0)
+					m->NextScheduledNATOp = cur->retryPortMap;
+				}
 			}
 
 		// Notify the client if necessary
 		// XXX: this check for the callback should not be here, but it is because internal clients are not doing the start/stop nat operation correctly...
 		if (cur->clientCallback)
 			{
-			if (!(cur->opFlags & (MapUDPFlag | MapTCPFlag)) ||		// If client is only asking for address,
+			if (!rfc1918                                    ||		// If not on a private network
+				!(cur->opFlags & (MapUDPFlag | MapTCPFlag)) ||		// If client is only asking for address,
 				!mDNSIPPortIsZero(cur->publicPort)          ||		// or, client wants a mapping, and we have got one
 				cur->Error)											// or, an error occurred
 				if (!mDNSIPv4AddressIsZero(m->ExternalAddress) || m->retryIntervalGetAddr > NATMAP_INIT_RETRY*2)
