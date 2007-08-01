@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.428  2007/08/01 01:43:36  cheshire
+Need to do mDNS_DropLockBeforeCallback/ReclaimLock around invokation of NAT client callback
+
 Revision 1.427  2007/08/01 01:31:13  cheshire
 Need to initialize traversal->tcpInfo fields or code may crash
 
@@ -4219,23 +4222,24 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 
 		// Notify the client if necessary
 		// XXX: this check for the callback should not be here, but it is because internal clients are not doing the start/stop nat operation correctly...
-		if (cur->clientCallback)
-			{
-			if (!rfc1918                                    ||		// If not on a private network
-				!(cur->opFlags & (MapUDPFlag | MapTCPFlag)) ||		// If client is only asking for address,
-				!mDNSIPPortIsZero(cur->publicPort)          ||		// or, client wants a mapping, and we have got one
-				cur->Error)											// or, an error occurred
-				if (!mDNSIPv4AddressIsZero(m->ExternalAddress) || m->retryIntervalGetAddr > NATMAP_INIT_RETRY*2)
-					if (!mDNSSameIPv4Address(m->ExternalAddress, cur->lastExternalAddress) ||
-						!mDNSSameIPPort     (cur->publicPort,    cur->lastPublicPort)      ||
-						cur->Error != cur->lastError)
-						{
-						cur->lastExternalAddress = m->ExternalAddress;
-						cur->lastPublicPort      = cur->publicPort;
-						cur->lastError           = cur->Error;
+		if (!rfc1918                                    ||		// If not on a private network
+			!(cur->opFlags & (MapUDPFlag | MapTCPFlag)) ||		// If client is only asking for address,
+			!mDNSIPPortIsZero(cur->publicPort)          ||		// or, client wants a mapping, and we have got one
+			cur->Error)											// or, an error occurred
+			if (!mDNSIPv4AddressIsZero(m->ExternalAddress) || m->retryIntervalGetAddr > NATMAP_INIT_RETRY*2)
+				if (!mDNSSameIPv4Address(m->ExternalAddress, cur->lastExternalAddress) ||
+					!mDNSSameIPPort     (cur->publicPort,    cur->lastPublicPort)      ||
+					cur->Error != cur->lastError)
+					{
+					cur->lastExternalAddress = m->ExternalAddress;
+					cur->lastPublicPort      = cur->publicPort;
+					cur->lastError           = cur->Error;
+					mDNS_DropLockBeforeCallback();		// Allow client to legally make mDNS API calls from the callback
+					if (cur->clientCallback)
 						cur->clientCallback(m, m->ExternalAddress, cur, cur->Error);
-						}
-			}
+					mDNS_ReclaimLockAfterCallback();	// Decrement mDNS_reentrancy to block mDNS API calls again
+					// MUST NOT touch cur after invoking the callback
+					}
 		}
 	}
 
