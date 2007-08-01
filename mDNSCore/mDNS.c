@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.677  2007/08/01 01:58:24  cheshire
+Added RecordType sanity check in mDNS_Register_internal
+
 Revision 1.676  2007/08/01 00:04:13  cheshire
 <rdar://problem/5261696> Crash in tcpKQSocketCallback
 Half-open TCP connections were not being cancelled properly
@@ -934,7 +937,10 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 
 	if ((mDNSs32)rr->resrec.rroriginalttl <= 0)
 		{ LogMsg("mDNS_Register_internal: TTL must be 1 - 0x7FFFFFFF %s", ARDisplayString(m, rr)); return(mStatus_BadParamErr); }
-	
+
+	if (!rr->resrec.RecordType)
+		{ LogMsg("mDNS_Register_internal: RecordType must be non-zero %s", ARDisplayString(m, rr)); return(mStatus_BadParamErr); }
+
 	while (*p && *p != rr) p=&(*p)->next;
 	while (*d && *d != rr) d=&(*d)->next;
 	if (*d || *p)
