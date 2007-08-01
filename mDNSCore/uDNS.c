@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.429  2007/08/01 03:09:22  cheshire
+<rdar://problem/5344587> BTMM: Create NAT port mapping for autotunnel port
+
 Revision 1.428  2007/08/01 01:43:36  cheshire
 Need to do mDNS_DropLockBeforeCallback/ReclaimLock around invokation of NAT client callback
 
@@ -903,6 +906,7 @@ mDNSexport DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const n
 				mDNS_Deregister_internal (m, &info->AutoTunnelHostRecord, mDNS_Dereg_normal);
 				mDNS_RemoveDynDNSHostName(m, &info->AutoTunnelTarget.namestorage);
 				mDNS_Deregister_internal (m, &info->AutoTunnelService, mDNS_Dereg_normal);
+				mDNS_StopNATOperation    (m, &info->AutoTunnelNAT);
 				}
 			#endif APPLE_OSX_mDNSResponder
 			// Probably not essential, but just to be safe, zero out the secret key data
@@ -1170,10 +1174,13 @@ mDNSexport void natTraversalHandlePortMapReply(NATTraversalInfo *n, mDNS *const 
 	}
 
 // Must be called with the mDNS_Lock held
-mDNSlocal mStatus mDNS_StartNATOperation_internal(mDNS *const m, NATTraversalInfo *traversal)
+mDNSexport mStatus mDNS_StartNATOperation_internal(mDNS *const m, NATTraversalInfo *traversal)
 	{
 	NATTraversalInfo **n;
 	
+	LogOperation("mDNS_StartNATOperation_internal %d %d %d %d",
+		traversal->protocol, mDNSVal16(traversal->privatePort), mDNSVal16(traversal->publicPortreq), traversal->portMappingLease);
+
 	// Note: It important that new traversal requests are appended at the *end* of the list, not prepended at the start
 	n = &m->NATTraversals;
 	while (*n && *n != traversal) n=&(*n)->next;
@@ -1226,6 +1233,9 @@ mDNSlocal mStatus mDNS_StopNATOperation_internal(mDNS *m, NATTraversalInfo *trav
 		LogMsg("mDNS_StopNATOperation: NATTraversalInfo %p not found in list", traversal);
 		return(mStatus_BadReferenceErr);
 		}
+
+	LogOperation("mDNS_StopNATOperation_internal %d %d %d %d",
+		traversal->protocol, mDNSVal16(traversal->privatePort), mDNSVal16(traversal->publicPortreq), traversal->portMappingLease);
 
 	if (m->CurrentNATTraversal == traversal)
 		m->CurrentNATTraversal = m->CurrentNATTraversal->next;
@@ -1865,6 +1875,7 @@ exit:
 	if (err) StartLLQPolling(m, q);
 	}
 
+// Called in normal client context (lock not held)
 mDNSlocal void LLQNatMapComplete(mDNS *const m, mDNSv4Addr ExternalAddress, NATTraversalInfo *n, mStatus err)
 	{
 	(void)ExternalAddress;
@@ -2229,6 +2240,7 @@ mDNSlocal void CheckForUnreferencedLLQMapping(mDNS *m)
 #pragma mark - host name and interface management
 #endif
 
+// Called in normal client context (lock not held)
 mDNSlocal void CompleteSRVNatMap(mDNS *const m, mDNSv4Addr ExternalAddress, NATTraversalInfo *n, mStatus err)
 	{
 	mDNSBool deletion = !n->NATPortReq.NATReq_lease;
@@ -2251,13 +2263,14 @@ mDNSlocal void CompleteSRVNatMap(mDNS *const m, mDNSv4Addr ExternalAddress, NATT
 		if (hi)
 			{
 			debugf("Port map failed for service %##s - using IPv6 service target", srs->RR_SRV.resrec.name->c);
-			mDNS_StopNATOperation_internal(m, &srs->NATinfo);
+			mDNS_StopNATOperation(m, &srs->NATinfo);
 			goto register_service;
 			}
 		else srs->state = regState_NATError;
 		}
 			
 	register_service:
+	mDNS_Lock(m);
 	if (!mDNSIPv4AddressIsZero(srs->ns.ip.v4)) SendServiceRegistration(m, srs);	// non-zero server address means we already have necessary zone data to send update
 	else
 		{
@@ -2265,6 +2278,7 @@ mDNSlocal void CompleteSRVNatMap(mDNS *const m, mDNSv4Addr ExternalAddress, NATT
 		if (srs->nta) CancelGetZoneData(m, srs->nta); // Make sure we cancel old one before we start a new one
 		srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, serviceRegistrationCallback, srs);
 		}
+	mDNS_Unlock(m);
 	}
 	
 mDNSlocal void StartSRVNatMap(mDNS *m, ServiceRecordSet *srs)
@@ -2515,18 +2529,17 @@ mDNSlocal void UpdateSRVRecords(mDNS *m)
 // Forward reference: AdvertiseHostname references HostnameCallback, and HostnameCallback calls AdvertiseHostname
 mDNSlocal void HostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus result);
 
+// Called in normal client context (lock not held)
 mDNSlocal void hostnameGetPublicAddressCallback(mDNS *const m, mDNSv4Addr ExternalAddress, NATTraversalInfo *n, mStatus err)
 	{
 	HostnameInfo *h = (HostnameInfo *)n->clientContext;
-
-	(void)ExternalAddress; // Unused
 
 	if (!h) { LogMsg("RegisterHostnameRecord: registration cancelled"); return; }
 
 	if (!err)
 		{
-		h->arv4.resrec.rdata->u.ipv4 = m->ExternalAddress;
-		mDNS_Register_internal(m, &h->arv4);
+		h->arv4.resrec.rdata->u.ipv4 = ExternalAddress;
+		mDNS_Register(m, &h->arv4);
 		}
 	else
 		{
@@ -2550,13 +2563,13 @@ mDNSlocal void AdvertiseHostname(mDNS *m, HostnameInfo *h)
 		LogMsg("AdvertiseHostname: Advertising hostname %##s IPv4 %.4a", h->arv4.resrec.name->c, &m->AdvertisedV4.ip.v4);
 		if (mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4))
 			{
-			h->arv4.NATinfo.clientCallback   = hostnameGetPublicAddressCallback;
-			h->arv4.NATinfo.clientContext    = h;
-			h->arv4.NATinfo.protocol         = 0;
-			h->arv4.NATinfo.privatePort      = zeroIPPort;
-			h->arv4.NATinfo.publicPortreq    = zeroIPPort;
-			h->arv4.NATinfo.portMappingLease = 0;
-			mDNS_StartNATOperation_internal(m, &h->arv4.NATinfo);
+			h->natinfo.clientCallback   = hostnameGetPublicAddressCallback;
+			h->natinfo.clientContext    = h;
+			h->natinfo.protocol         = 0;
+			h->natinfo.privatePort      = zeroIPPort;
+			h->natinfo.publicPortreq    = zeroIPPort;
+			h->natinfo.portMappingLease = 0;
+			mDNS_StartNATOperation_internal(m, &h->natinfo);
 			}
 		else mDNS_Register_internal(m, &h->arv4);
 		}

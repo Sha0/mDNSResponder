@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.73  2007/08/01 03:09:22  cheshire
+<rdar://problem/5344587> BTMM: Create NAT port mapping for autotunnel port
+
 Revision 1.72  2007/08/01 00:04:13  cheshire
 <rdar://problem/5261696> Crash in tcpKQSocketCallback
 Half-open TCP connections were not being cancelled properly
@@ -203,6 +206,7 @@ typedef enum { mDNS_Dereg_normal, mDNS_Dereg_conflict, mDNS_Dereg_repeat } mDNS_
 extern mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, mDNS_Dereg_type drt);
 extern mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const question);
 extern mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const question);
+extern mStatus mDNS_StartNATOperation_internal(mDNS *const m, NATTraversalInfo *traversal);
 
 extern void RecordRegistrationCallback(mDNS *const m, mStatus err, const ZoneData *zoneData);
 extern void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord);

@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.455  2007/08/01 03:09:22  cheshire
+<rdar://problem/5344587> BTMM: Create NAT port mapping for autotunnel port
+
 Revision 1.454  2007/07/31 23:08:34  mcguire
 <rdar://problem/5329542> BTMM: Make AutoTunnel mode work with multihoming
 
@@ -1989,6 +1992,19 @@ mDNSlocal void UnaliasTunnelAddress(mDNSv6Addr *const addr)
 	close(s);
 	}
 
+mDNSlocal void AutoTunnelNATCallback(mDNS *m, mDNSv4Addr ExternalAddress, NATTraversalInfo *n, mStatus err)
+	{
+	DomainAuthInfo *info = (DomainAuthInfo *)n->clientContext;
+	LogOperation("AutoTunnelNATCallback %d %.4a, %d %d", err, &ExternalAddress, mDNSVal16(n->privatePort), mDNSVal16(n->publicPort));
+	info->AutoTunnelService.resrec.rdata->u.srv.port = n->publicPort;
+
+	if (info->AutoTunnelService.resrec.RecordType != kDNSRecordTypeUnregistered)
+		mDNS_Deregister(m, &info->AutoTunnelService);
+
+	info->AutoTunnelService.resrec.RecordType = kDNSRecordTypeKnownUnique;
+	mDNS_Register(m, &info->AutoTunnelService);
+	}
+
 // Before SetupLocalAutoTunnelInterface_internal is called,
 // m->AutoTunnelHostAddr.b[0] must be non-zero, and there must be at least one TunnelClient or TunnelServer
 // Must be called with the lock held
@@ -2020,7 +2036,7 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 				AppendDomainName (&info->AutoTunnelHostRecord.namestorage, &info->domain);
 				info->AutoTunnelHostRecord.resrec.rdata->u.ipv6 = m->AutoTunnelHostAddr;
 				mDNS_Register_internal(m, &info->AutoTunnelHostRecord);
-		
+
 				// 2. Set up our address record for the external tunnel address
 				// (Constructed name, not generally user-visible, used as target in IKE tunnel's SRV record)
 				mDNS_SetupResourceRecord(&info->AutoTunnelTarget, mDNSNULL, mDNSInterface_Any, kDNSType_A, kHostNameTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
@@ -2028,19 +2044,26 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 				AppendDomainLabel(&info->AutoTunnelTarget.namestorage, &m->AutoTunnelLabel);
 				AppendDomainName (&info->AutoTunnelTarget.namestorage, &info->domain);
 				mDNS_AddDynDNSHostName(m, &info->AutoTunnelTarget.namestorage, mDNSNULL, mDNSNULL);
-		
+
 				// 3. Set up IKE tunnel's SRV record: "AutoTunnelHostRecord SRV 0 0 port AutoTunnelTarget"
 				mDNS_SetupResourceRecord(&info->AutoTunnelService, mDNSNULL, mDNSInterface_Any, kDNSType_SRV, kHostNameTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
 				AssignDomainName(&info->AutoTunnelService.namestorage, (const domainname*) "\x0B" "_autotunnel" "\x04" "_udp");
 				AppendDomainName(&info->AutoTunnelService.namestorage, &info->AutoTunnelHostRecord.namestorage);
 				info->AutoTunnelService.resrec.rdata->u.srv.priority = 0;
 				info->AutoTunnelService.resrec.rdata->u.srv.weight   = 0;
-				info->AutoTunnelService.resrec.rdata->u.srv.port     = mDNSOpaque16fromIntVal(500); // TEMP FOR AUTOTUNNEL TESTING: assume port 500
 				AssignDomainName(&info->AutoTunnelService.resrec.rdata->u.srv.target, &info->AutoTunnelTarget.namestorage);
-				mDNS_Register_internal(m, &info->AutoTunnelService);
+				info->AutoTunnelService.resrec.RecordType = kDNSRecordTypeUnregistered;
+
+				info->AutoTunnelNAT.clientCallback   = AutoTunnelNATCallback;
+				info->AutoTunnelNAT.clientContext    = info;
+				info->AutoTunnelNAT.protocol         = kDNSServiceProtocol_UDP;
+				info->AutoTunnelNAT.privatePort      = mDNSOpaque16fromIntVal(500); // TEMP FOR AUTOTUNNEL TESTING: assume port 500
+				info->AutoTunnelNAT.publicPortreq    = mDNSOpaque16fromIntVal(501); // TEMP FOR AUTOTUNNEL TESTING
+				info->AutoTunnelNAT.portMappingLease = 0;
+				mDNS_StartNATOperation_internal(m, &info->AutoTunnelNAT);
 
 				LogMsg("AutoTunnel server listening for connections on %##s[%.4a]:%d:%##s[%.16a]",
-					info->AutoTunnelTarget.namestorage.c,     &m->AdvertisedV4.ip.v4, mDNSVal16(info->AutoTunnelService.resrec.rdata->u.srv.port),
+					info->AutoTunnelTarget.namestorage.c,     &m->AdvertisedV4.ip.v4, mDNSVal16(info->AutoTunnelNAT.privatePort),
 					info->AutoTunnelHostRecord.namestorage.c, &m->AutoTunnelHostAddr);
 
 				// 4. Create configuration file, and start (or SIGHUP) Racoon
