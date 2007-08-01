@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.427  2007/08/01 01:31:13  cheshire
+Need to initialize traversal->tcpInfo fields or code may crash
+
 Revision 1.426  2007/08/01 01:15:57  cheshire
 <rdar://problem/5375791> Need to invoke NAT client callback when not on RFC1918 private network
 
@@ -1181,6 +1184,9 @@ mDNSlocal mStatus mDNS_StartNATOperation_internal(mDNS *const m, NATTraversalInf
 	traversal->lastExternalAddress  = onesIPv4Addr;
 	traversal->Error                = mStatus_NoError;
 	traversal->lastError            = mStatus_NoError;
+
+	mDNSPlatformMemZero(&traversal->tcpInfo, sizeof(traversal->tcpInfo));
+
 	traversal->retryPortMap         = 0;
 	traversal->retryIntervalPortMap = NATMAP_INIT_RETRY;
 	traversal->ExpiryTime           = 0;
