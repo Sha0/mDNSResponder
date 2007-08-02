@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.457  2007/08/02 16:48:45  mcguire
+<rdar://problem/5329526> BTMM: Don't try to create tunnel back to same machine
+
 Revision 1.456  2007/08/02 03:28:30  vazquez
 Make ExternalAddress and err unused to fix build warnings
 
@@ -2335,6 +2338,18 @@ mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const R
 
 	if (question->qtype == kDNSType_AAAA)
 		{
+		if (mDNSSameIPv6Address(answer->rdata->u.ipv6, m->AutoTunnelHostAddr))
+			{
+			LogOperation("AutoTunnelCallback: supressing tunnel to self %.16a", &answer->rdata->u.ipv6);
+			question->ThisQInterval = -1;		// So we know this tunnel setup has completed
+			ClientTunnel** p = &m->TunnelClients;
+			while (*p != tun && *p) p = &(*p)->next;
+			if (*p) *p = tun->next;
+			ReissueBlockedQuestions(m, &tun->dstname);
+			freeL("ClientTunnel", tun);
+			return;
+			}
+
 		tun->rmt_inner = answer->rdata->u.ipv6;
 		LogOperation("AutoTunnelCallback: dst host %.16a", &tun->rmt_inner);
 		AssignDomainName(&question->qname, (const domainname*) "\x0B" "_autotunnel" "\x04" "_udp");
