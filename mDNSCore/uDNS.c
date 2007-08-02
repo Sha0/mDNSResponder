@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.433  2007/08/02 03:30:11  vazquez
+<rdar://problem/5371843> BTMM: Private LLQs never fall back to polling
+
 Revision 1.432  2007/08/01 18:15:19  cheshire
 Fixed crash in tcpCallback; fixed some problems with LLQ setup behind NAT
 
@@ -1061,7 +1064,9 @@ mDNSlocal void SetExternalAddress(mDNS *const m, mDNSv4Addr newaddr, mDNSs32 rou
 	// check for router reboots or if the external address changed
 	if (((routerTimeElapsed * (routerTimeElapsed/8)) - ourTimeElapsed >= 0) && mDNSSameIPv4Address(m->ExternalAddress, newaddr)) return;
 
-	m->ExternalAddress = newaddr;
+	// can't set ExternalAddress to onesIPv4Addr, so reset it to zero
+	if (mDNSSameIPv4Address(newaddr, onesIPv4Addr))	m->ExternalAddress = zerov4Addr;
+	else m->ExternalAddress = newaddr;
 	LogOperation("Received external IP address %.4a from NAT", &m->ExternalAddress);
 	if (mDNSv4AddrIsRFC1918(&m->ExternalAddress)) LogMsg("natTraversalHandleAddressReply: Double NAT");
 #ifdef _LEGACY_NAT_TRAVERSAL_
@@ -1075,6 +1080,15 @@ mDNSlocal void SetExternalAddress(mDNS *const m, mDNSv4Addr newaddr, mDNSs32 rou
 		{
 		n->retryPortMap         = m->timenow;
 		n->retryIntervalPortMap = NATMAP_INIT_RETRY;
+		
+		// since the public port can on some occassions be set to zero (ie. on a network where port mapping is not supported)
+		// we don't want to set lastPublicPort to zero also because then the right transitions don't happen later, so
+		// set it to a known invalid value (-1) instead.
+		if (mDNSIPPortIsZero(n->lastPublicPort) || mDNSSameIPPort(n->lastPublicPort, mDNSOpaque16fromIntVal(-1)))
+			 n->lastPublicPort = mDNSOpaque16fromIntVal(-1);
+		else n->lastPublicPort = n->publicPort;
+		
+		n->publicPort = zeroIPPort;
 #ifdef _LEGACY_NAT_TRAVERSAL_
 		if (n->tcpInfo.sock)
 			{
@@ -1199,7 +1213,7 @@ mDNSexport mStatus mDNS_StartNATOperation_internal(mDNS *const m, NATTraversalIn
 	traversal->next                 = mDNSNULL;
 	traversal->opFlags              = 0;
 	traversal->publicPort           = zeroIPPort;
-	traversal->lastPublicPort       = zeroIPPort;
+	traversal->lastPublicPort       = mDNSOpaque16fromIntVal(-1);	// see comment in SetExternalAddress() about why this is set to -1
 	traversal->lastExternalAddress  = onesIPv4Addr;
 	traversal->Error                = mStatus_NoError;
 	traversal->lastError            = mStatus_NoError;
@@ -2861,7 +2875,9 @@ mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr, co
 			{
 			m->retryGetAddr = m->timenow;
 			m->retryIntervalGetAddr = NATMAP_INIT_RETRY;
-			SetExternalAddress(m, zerov4Addr, m->LastNATUptime, m->timenow);
+			// if the last network did not support NATs the ExternalAddress will be set to zero, so here
+			// pass onesIPv4Addr instead of zero so the proper transitions happen later
+			SetExternalAddress(m, onesIPv4Addr, 0, m->timenow);
 			}
 
 		UpdateSRVRecords(m);
@@ -4201,10 +4217,11 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 		NATTraversalInfo *cur = m->CurrentNATTraversal;
 		m->CurrentNATTraversal = m->CurrentNATTraversal->next;
 
-		if (!rfc1918)
+		if (!(mDNSIPv4AddressIsZero(m->AdvertisedV4.ip.v4)) && !rfc1918)
 			{
 			cur->Error      = mStatus_NoError;
 			cur->publicPort = cur->privatePort;
+			m->ExternalAddress = m->AdvertisedV4.ip.v4;
 			}
 		else
 			{
@@ -4250,14 +4267,12 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 
 		// Notify the client if necessary
 		// XXX: this check for the callback should not be here, but it is because internal clients are not doing the start/stop nat operation correctly...
-		if (!rfc1918                                    ||		// If not on a private network
-			!(cur->opFlags & (MapUDPFlag | MapTCPFlag)) ||		// If client is only asking for address,
-			!mDNSIPPortIsZero(cur->publicPort)          ||		// or, client wants a mapping, and we have got one
-			cur->Error)											// or, an error occurred
-			if (!mDNSIPv4AddressIsZero(m->ExternalAddress) || m->retryIntervalGetAddr > NATMAP_INIT_RETRY*2)
-				if (!mDNSSameIPv4Address(m->ExternalAddress, cur->lastExternalAddress) ||
-					!mDNSSameIPPort     (cur->publicPort,    cur->lastPublicPort)      ||
-					cur->Error != cur->lastError)
+			if (!mDNSIPv4AddressIsZero(m->ExternalAddress) || m->retryIntervalGetAddr > NATMAP_INIT_RETRY*2 ||	// if the address is not zero or we have tried getting the address
+				!mDNSIPPortIsZero(cur->publicPort) || cur->retryIntervalPortMap > NATMAP_INIT_RETRY*2)			// if the port is not zero or we have tried getting a port mapping
+				if ((!(cur->opFlags & (MapUDPFlag | MapTCPFlag)) && !mDNSSameIPv4Address(m->ExternalAddress, cur->lastExternalAddress)) ||	// if all we want is an address and the address changed
+					(mDNSIPv4AddressIsZero(m->ExternalAddress) && mDNSIPPortIsZero(cur->publicPort) && !mDNSSameIPPort(cur->publicPort, cur->lastPublicPort)) || // if address and port are zero and the port changed
+					(!mDNSIPPortIsZero(cur->publicPort) && !mDNSSameIPPort(cur->publicPort, cur->lastPublicPort)) || 						// or the port is not zero and has changed
+					cur->Error != cur->lastError)																							// or a new error occurred
 					{
 					cur->lastExternalAddress = m->ExternalAddress;
 					cur->lastPublicPort      = cur->publicPort;
