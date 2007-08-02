@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.434  2007/08/02 21:03:05  vazquez
+Change NAT logic to fix case where base station with port mapping turned off
+returns an external address but does not make port mappings.
+
 Revision 1.433  2007/08/02 03:30:11  vazquez
 <rdar://problem/5371843> BTMM: Private LLQs never fall back to polling
 
@@ -4270,8 +4274,7 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 			if (!mDNSIPv4AddressIsZero(m->ExternalAddress) || m->retryIntervalGetAddr > NATMAP_INIT_RETRY*2 ||	// if the address is not zero or we have tried getting the address
 				!mDNSIPPortIsZero(cur->publicPort) || cur->retryIntervalPortMap > NATMAP_INIT_RETRY*2)			// if the port is not zero or we have tried getting a port mapping
 				if ((!(cur->opFlags & (MapUDPFlag | MapTCPFlag)) && !mDNSSameIPv4Address(m->ExternalAddress, cur->lastExternalAddress)) ||	// if all we want is an address and the address changed
-					(mDNSIPv4AddressIsZero(m->ExternalAddress) && mDNSIPPortIsZero(cur->publicPort) && !mDNSSameIPPort(cur->publicPort, cur->lastPublicPort)) || // if address and port are zero and the port changed
-					(!mDNSIPPortIsZero(cur->publicPort) && !mDNSSameIPPort(cur->publicPort, cur->lastPublicPort)) || 						// or the port is not zero and has changed
+					(!mDNSSameIPv4Address(m->ExternalAddress, cur->lastExternalAddress) || !mDNSSameIPPort(cur->publicPort, cur->lastPublicPort)) || // if address and port are zero and the port changed
 					cur->Error != cur->lastError)																							// or a new error occurred
 					{
 					cur->lastExternalAddress = m->ExternalAddress;
