@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.456  2007/08/02 03:28:30  vazquez
+Make ExternalAddress and err unused to fix build warnings
+
 Revision 1.455  2007/08/01 03:09:22  cheshire
 <rdar://problem/5344587> BTMM: Create NAT port mapping for autotunnel port
 
@@ -1994,6 +1997,8 @@ mDNSlocal void UnaliasTunnelAddress(mDNSv6Addr *const addr)
 
 mDNSlocal void AutoTunnelNATCallback(mDNS *m, mDNSv4Addr ExternalAddress, NATTraversalInfo *n, mStatus err)
 	{
+	(void)ExternalAddress;	// unused
+	(void)err;				// unused
 	DomainAuthInfo *info = (DomainAuthInfo *)n->clientContext;
 	LogOperation("AutoTunnelNATCallback %d %.4a, %d %d", err, &ExternalAddress, mDNSVal16(n->privatePort), mDNSVal16(n->publicPort));
 	info->AutoTunnelService.resrec.rdata->u.srv.port = n->publicPort;
