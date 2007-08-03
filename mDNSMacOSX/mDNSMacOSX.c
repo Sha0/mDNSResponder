@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.458  2007/08/03 02:18:41  mcguire
+<rdar://problem/5381687> BTMM: Use port numbers in IPsec policies & configuration files
+
 Revision 1.457  2007/08/02 16:48:45  mcguire
 <rdar://problem/5329526> BTMM: Don't try to create tunnel back to same machine
 
@@ -1903,6 +1906,8 @@ mDNSlocal NetworkInterfaceInfoOSX *FindRoutableIPv4(mDNS *const m, mDNSu32 scope
 #pragma mark - AutoTunnel
 #endif
 
+#define kRacoonPort 4500
+
 mDNSlocal void RestartRacoon(void)
 	{
 	mDNSBool startRacoon = true;
@@ -1933,7 +1938,7 @@ mDNSlocal void RestartRacoon(void)
 			if (waitpid(pid, &stat, 0) != pid) LogMsg("Failed to start racoon (waitpid)");
 			else if (!WIFEXITED(stat))         LogMsg("Failed to start racoon (!exited)");
 			else if (WEXITSTATUS(stat))        LogMsg("Failed to start racoon (exit: %d)", WEXITSTATUS(stat));
-			else                               LogMsg("Racoon started and listening on port %d", 500); // TEMP FOR AUTOTUNNEL TESTING: assume port 500
+			else                               LogMsg("Racoon started and listening on port %d", kRacoonPort);
 			}
 		}
 	}
@@ -2065,8 +2070,8 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 				info->AutoTunnelNAT.clientCallback   = AutoTunnelNATCallback;
 				info->AutoTunnelNAT.clientContext    = info;
 				info->AutoTunnelNAT.protocol         = kDNSServiceProtocol_UDP;
-				info->AutoTunnelNAT.privatePort      = mDNSOpaque16fromIntVal(500); // TEMP FOR AUTOTUNNEL TESTING: assume port 500
-				info->AutoTunnelNAT.publicPortreq    = mDNSOpaque16fromIntVal(501); // TEMP FOR AUTOTUNNEL TESTING
+				info->AutoTunnelNAT.privatePort      = mDNSOpaque16fromIntVal(kRacoonPort);
+				info->AutoTunnelNAT.publicPortreq    = mDNSOpaque16fromIntVal(kRacoonPort);
 				info->AutoTunnelNAT.portMappingLease = 0;
 				mDNS_StartNATOperation_internal(m, &info->AutoTunnelNAT);
 
@@ -2176,7 +2181,7 @@ mDNSlocal void TeardownTunnelRoute(mDNSv6Addr *const remote)
 	}
 
 // Allocates ptr returned in *pol
-mDNSlocal mDNSBool GenerateTunnelPolicy(mDNSBool forAdd, mDNSBool in, mDNSv4Addr *const src, mDNSv4Addr *const dst, char** pol, size_t* len)
+mDNSlocal mDNSBool GenerateTunnelPolicy(mDNSBool forAdd, mDNSBool in, mDNSv4Addr *const src, mDNSIPPort *const srcPort, mDNSv4Addr *const dst, mDNSIPPort *const dstPort, char** pol, size_t* len)
 	{
 	char str[128];
 	size_t lenTmp = 0;
@@ -2186,7 +2191,7 @@ mDNSlocal mDNSBool GenerateTunnelPolicy(mDNSBool forAdd, mDNSBool in, mDNSv4Addr
 	*len = 0;
 
 	if (forAdd)
-		lenTmp = mDNS_snprintf(str, sizeof(str), "%s ipsec esp/tunnel/%.4a-%.4a/require", inOut, src, dst);
+		lenTmp = mDNS_snprintf(str, sizeof(str), "%s ipsec esp/tunnel/%.4a[%d]-%.4a[%d]/require", inOut, src, mDNSVal16(*srcPort), dst, mDNSVal16(*dstPort));
 	else
 		lenTmp = mDNS_snprintf(str, sizeof(str), "%s", inOut);
 	if (lenTmp >= sizeof(str)) { LogMsg("failed to create policy string"); return mDNSfalse; }
@@ -2215,7 +2220,7 @@ mDNSlocal int SendPolicy(int so, mDNSBool forAdd, struct sockaddr* src, struct s
 	return (rv >= 0);
 	}
 
-mDNSlocal void DoTunnelPolicy(mDNSBool setup, mDNSv6Addr *const localInner, mDNSv4Addr *const localOuter, mDNSv6Addr *const remoteInner, mDNSv4Addr *const remoteOuter)
+mDNSlocal void DoTunnelPolicy(mDNSBool setup, mDNSv6Addr *const localInner, mDNSv4Addr *const localOuter, mDNSIPPort *const localPort, mDNSv6Addr *const remoteInner, mDNSv4Addr *const remoteOuter, mDNSIPPort *const remotePort)
 	{
 	int so = pfkey_open();
 	struct sockaddr_in6 sin_loc;
@@ -2237,12 +2242,12 @@ mDNSlocal void DoTunnelPolicy(mDNSBool setup, mDNSv6Addr *const localInner, mDNS
 	sin_rmt.sin6_port = htons(0);
 	memcpy(&sin_rmt.sin6_addr, remoteInner, sizeof(mDNSv6Addr));
 
-	if (!GenerateTunnelPolicy(setup, mDNStrue, remoteOuter, localOuter, &policy, &policyLen)) { LogMsg("DoTunnelPolicy failed to generate inbound policy"); goto exit; }
+	if (!GenerateTunnelPolicy(setup, mDNStrue, remoteOuter, remotePort, localOuter, localPort, &policy, &policyLen)) { LogMsg("DoTunnelPolicy failed to generate inbound policy"); goto exit; }
 	if (!SendPolicy(so, setup, (struct sockaddr*)&sin_rmt, (struct sockaddr*)&sin_loc, policy, policyLen)) { LogMsg("DoTunnelPolicy failed to add inbound policy"); goto exit; }
 	
 	if (policy) free(policy);
 	
-	if (!GenerateTunnelPolicy(setup, mDNSfalse, localOuter, remoteOuter, &policy, &policyLen))  { LogMsg("DoTunnelPolicy failed to generate outbound policy"); goto exit; }
+	if (!GenerateTunnelPolicy(setup, mDNSfalse, localOuter, localPort, remoteOuter, remotePort, &policy, &policyLen))  { LogMsg("DoTunnelPolicy failed to generate outbound policy"); goto exit; }
 	if (!SendPolicy(so, setup, (struct sockaddr*)&sin_loc, (struct sockaddr*)&sin_rmt, policy, policyLen)) { LogMsg("DoTunnelPolicy failed to add outbound policy"); goto exit; }
 
 	exit:
@@ -2250,17 +2255,18 @@ mDNSlocal void DoTunnelPolicy(mDNSBool setup, mDNSv6Addr *const localInner, mDNS
 	if (policy) free(policy);
 	}
 
-mDNSlocal void SetupTunnelPolicy(mDNSv6Addr *const localInner, mDNSv4Addr *const localOuter, mDNSv6Addr *const remoteInner, mDNSv4Addr *const remoteOuter)
+mDNSlocal void SetupTunnelPolicy(mDNSv6Addr *const localInner, mDNSv4Addr *const localOuter, mDNSv6Addr *const remoteInner, mDNSv4Addr *const remoteOuter, mDNSIPPort *const remotePort)
 	{
-	DoTunnelPolicy(mDNStrue, localInner, localOuter, remoteInner, remoteOuter);
+	mDNSIPPort localPort = mDNSOpaque16fromIntVal(kRacoonPort);
+	DoTunnelPolicy(mDNStrue, localInner, localOuter, &localPort, remoteInner, remoteOuter, remotePort);
 	}
 
 mDNSlocal void TeardownTunnelPolicy(mDNSv6Addr *const localInner, mDNSv6Addr *const remoteInner)
 	{
-	DoTunnelPolicy(mDNSfalse, localInner, 0, remoteInner, 0);
+	DoTunnelPolicy(mDNSfalse, localInner, 0, 0, remoteInner, 0, 0);
 	}
 
-mDNSlocal const char RacoonClientConfig[] = "remote %s\n"
+mDNSlocal const char RacoonClientConfig[] = "remote %s [%d]\n"
 	"{ exchange_mode aggressive; doi ipsec_doi; situation identity_only; verify_identifier off; shared_secret use \"%s\";\n"
 	"nonce_size 16; lifetime time 5 min; initial_contact on; support_proxy on; proposal_check claim;\n"
 	"proposal { encryption_algorithm aes; hash_algorithm sha1; authentication_method pre_shared_key; dh_group 2; lifetime time 5 min; }\n"
@@ -2273,7 +2279,7 @@ mDNSlocal const char RacoonClientConfig[] = "remote %s\n"
 mDNSlocal void AutoTunnelSetKeys(ClientTunnel *tun, mDNSBool AddNew)
 	{
 	TeardownTunnelPolicy(&tun->loc_inner, &tun->rmt_inner);
-	if (AddNew) SetupTunnelPolicy(&tun->loc_inner, &tun->loc_outer, &tun->rmt_inner, &tun->rmt_outer);
+	if (AddNew) SetupTunnelPolicy(&tun->loc_inner, &tun->loc_outer, &tun->rmt_inner, &tun->rmt_outer, &tun->rmt_outer_port);
 
 	TeardownTunnelRoute(&tun->rmt_inner);
 	if (AddNew) SetupTunnelRoute(&tun->loc_inner, &tun->rmt_inner);
@@ -2283,14 +2289,14 @@ mDNSlocal void AutoTunnelSetKeys(ClientTunnel *tun, mDNSBool AddNew)
 	mDNS_snprintf(li, sizeof(li), "%.16a", &tun->loc_inner);
 	mDNS_snprintf(ri, sizeof(ri), "%.16a", &tun->rmt_inner);
 	char filename[64];
-	mDNS_snprintf(filename, sizeof(filename), "/etc/racoon/remote/%s.conf", ro);
+	mDNS_snprintf(filename, sizeof(filename), "/etc/racoon/remote/%s.%d.conf", ro, mDNSVal16(tun->rmt_outer_port));
 
 	if (AddNew)
 		{
 		FILE *f = fopen(filename, "w");
 		fchmod(fileno(f), S_IRUSR | S_IWUSR);
 		char filedata[1024];
-		int len = mDNS_snprintf(filedata, sizeof(filedata), RacoonClientConfig, ro, tun->b64keydata, ri, li, li, ri);
+		int len = mDNS_snprintf(filedata, sizeof(filedata), RacoonClientConfig, ro, mDNSVal16(tun->rmt_outer_port), tun->b64keydata, ri, li, li, ri);
 		fwrite(filedata, len, 1, f);
 		fclose(f);
 		RestartRacoon();
