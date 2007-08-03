@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.29  2007/08/03 20:18:01  vazquez
+<rdar://problem/5382177> LegacyNATTraversal: reading out of bounds can lead to DoS
+
 Revision 1.28  2007/07/31 02:28:36  vazquez
 <rdar://problem/3734269> NAT-PMP: Detect public IP address changes and base station reboot
 
@@ -267,6 +270,7 @@ mDNSlocal void handleLNTDeviceDescriptionResponse(tcpLNTInfo *tcpInfo)
 		}
 	if (ptr == mDNSNULL || ptr == endBuf)	{ LogOperation("handleLNTDeviceDescriptionResponse: didn't find controlURL string"); return; }
 	ptr += 11;							// skip over "controlURL>"
+	if (ptr >= endBuf) { LogOperation("handleLNTDeviceDescriptionResponse: past end of buffer and no body!"); return; } // check ptr again in case we skipped over the end of the buffer
 
 	// is there an address string "http://"? starting from where we left off
 	if (strncasecmp(ptr, "http://", 7) == 0)
@@ -275,6 +279,7 @@ mDNSlocal void handleLNTDeviceDescriptionResponse(tcpLNTInfo *tcpInfo)
 		char	*addrPtr = mDNSNULL;
 		
 		ptr += 7;						//skip over "http://"
+		if (ptr >= endBuf) { LogOperation("handleLNTDeviceDescriptionResponse: past end of buffer and no URL!"); return; }
 		addrPtr = ptr;
 		for (i = 0; addrPtr && addrPtr != endBuf; i++, addrPtr++) if (*addrPtr == '/') break; // first find the beginning of the URL and count the chars
 		if (addrPtr == mDNSNULL || addrPtr == endBuf)	{ LogOperation("handleLNTDeviceDescriptionResponse: didn't find SOAP address string"); return; }
@@ -297,6 +302,7 @@ mDNSlocal void handleLNTDeviceDescriptionResponse(tcpLNTInfo *tcpInfo)
 			{
 			int	port;
 			ptr++;										// skip over ':'
+			if (ptr == endBuf) { LogOperation("handleLNTDeviceDescriptionResponse: reached end of buffer and no address!"); return; }
 			port = (int)strtol(ptr, (char **)mDNSNULL, 10);				// get the port
 			m->uPNPSOAPPort = mDNSOpaque16fromIntVal(port);		// store it properly converted
 			}
@@ -349,6 +355,7 @@ mDNSlocal void handleLNTGetExternalAddressResponse(tcpLNTInfo *tcpInfo)
 		}
 	if (ptr == mDNSNULL || ptr == endBuf)	return;	// bad or incomplete response
 	ptr+=21;									// skip over "NewExternalIPAddress>"
+	if (ptr >= endBuf) { LogOperation("handleLNTGetExternalAddressResponse: past end of buffer!"); return; }
 
 	// find the end of the address and terminate the string so inet_pton() can convert it
 	for (addrPtr = ptr; addrPtr && addrPtr != endBuf; addrPtr++) if (*addrPtr == '<') break;	// first find the next '<' and count the chars
@@ -450,7 +457,9 @@ mDNSlocal void handleLNTPortMappingResponse(tcpLNTInfo *tcpInfo)
 		{ 
 		if (*ptr == ' ') 
 			{ 
-			if (strncasecmp(++ptr, "200", 3) == 0) break; 
+			ptr++;
+			if (ptr == endBuf) { LogOperation("handleLNTPortMappingResponse: past end of buffer!"); return; }
+			if (strncasecmp(ptr, "200", 3) == 0) break; 
 			else if (strncasecmp(ptr, "500", 3) == 0)
 				{
 				// now check to see if this was a port mapping conflict
@@ -786,6 +795,7 @@ mDNSexport void LNT_ConfigureRouterInfo(mDNS *m, mDNSu8 *data, mDNSu16 len)
 			char	*addrPtr = mDNSNULL;
 			
 			ptr += 7;							//skip over "http://"
+			if (ptr >= endBuf) { LogOperation("LNT_ConfigureRouterInfo: past end of buffer and no URL!"); return; }
 			addrPtr = ptr;
 			for (i = 0; addrPtr && addrPtr != endBuf; i++, addrPtr++) if (*addrPtr == '/') break;	// first find the beginning of the URL and count the chars
 			if (addrPtr == mDNSNULL || addrPtr == endBuf) return; // not a valid message
@@ -809,6 +819,7 @@ mDNSexport void LNT_ConfigureRouterInfo(mDNS *m, mDNSu8 *data, mDNSu16 len)
 			{
 			int	port;
 			ptr++;										// skip over ':'
+			if (ptr == endBuf) { LogOperation("LNT_ConfigureRouterInfo: reached end of buffer and no address!"); return; }
 			port = (int)strtol(ptr, (char **)mDNSNULL, 10);			// get the port
 			m->uPNPRouterPort = mDNSOpaque16fromIntVal(port);	// store it properly converted
 			}
