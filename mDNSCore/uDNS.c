@@ -22,6 +22,12 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.435  2007/08/03 02:04:09  vazquez
+<rdar://problem/5371843> BTMM: Private LLQs never fall back to polling
+Fix case where NAT-PMP returns an external address but does not support
+port mappings. Undo previous change and now, if the router returns an
+error in the reply packet we respect it.
+
 Revision 1.434  2007/08/02 21:03:05  vazquez
 Change NAT logic to fix case where base station with port mapping turned off
 returns an external address but does not make port mappings.
@@ -1145,9 +1151,11 @@ mDNSexport void natTraversalHandleAddressReply(mDNS *const m, mDNSu8 *pkt)
 mDNSexport void natTraversalHandlePortMapReply(NATTraversalInfo *n, mDNS *const m, mDNSu8 *pkt)
 	{
 	NATPortMapReply *portMapReply = (NATPortMapReply *)pkt;
-	mDNSIPPort          port = zeroIPPort;
-	mDNSu32             lease = NATMAP_DEFAULT_LEASE;
-	mStatus               err = mStatus_NoError;
+	mDNSIPPort		port  = zeroIPPort;
+	mDNSu32			lease = NATMAP_DEFAULT_LEASE;
+	mStatus			err   = mStatus_NoError;
+	NATOp_t			op;
+	mDNSBool		ours = mDNStrue;
 
 	if (!n) { LogMsg("natTraversalHandlePortMapReply called with unknown NAT traversal object"); return; }
 	
@@ -1160,16 +1168,15 @@ mDNSexport void natTraversalHandlePortMapReply(NATTraversalInfo *n, mDNS *const 
 		}
 	else
 		{
-		NATOp_t op = (n->opFlags & MapUDPFlag) ? NATOp_MapUDP : NATOp_MapTCP;
+		op = (n->opFlags & MapUDPFlag) ? NATOp_MapUDP : NATOp_MapTCP;
 		if (!mDNSSameIPPort(n->privatePort, portMapReply->priv) || (op | 0x80) != portMapReply->opcode)
-			return;       // packet does not match this request
-		if (n->NATPortReq.NATReq_lease == 0) return;                                   // deletion
+			ours = mDNSfalse;       // packet does not match this request
 		err = portMapReply->err;
 		port = portMapReply->pub;
 		lease = portMapReply->NATRep_lease;
 		}
 		
-	if (err)
+	if (err && (ours || mDNSIPPortIsZero(portMapReply->priv)))
 		{
 		LogMsg("natTraversalHandlePortMapReply: received error making port mapping %d", err);
 		n->retryIntervalPortMap = NATMAP_MAX_RETRY_INTERVAL;
@@ -1177,6 +1184,8 @@ mDNSexport void natTraversalHandlePortMapReply(NATTraversalInfo *n, mDNS *const 
 		n->Error = err;
 		return;
 		}
+
+	if (!ours || n->NATPortReq.NATReq_lease == 0) return;                    // not ours or deletion
 
 	n->portMappingLease = lease;
 	if (n->portMappingLease > 0x70000000UL / mDNSPlatformOneSecond)
@@ -3369,7 +3378,7 @@ mDNSexport void uDNS_ReceiveNATPMPPacket(mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 	NATAddrReply    *AddrReply    = (NATAddrReply    *)pkt;
 	NATPortMapReply *PortMapReply = (NATPortMapReply *)pkt;
 
-	if (len < 8) { LogMsg("NAT Traversal message too short (%d bytes)", len); return; }
+	if (AddrReply->err != 2 && len < 8) { LogMsg("NAT Traversal message too short (%d bytes)", len); return; }
 	if (AddrReply->vers != NATMAP_VERS) { LogMsg("Received NAT Traversal response with version %d (expected %d)", pkt[0], NATMAP_VERS); return; }
 
 	// Byte-swap the multi-byte numerics
@@ -4274,7 +4283,8 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 			if (!mDNSIPv4AddressIsZero(m->ExternalAddress) || m->retryIntervalGetAddr > NATMAP_INIT_RETRY*2 ||	// if the address is not zero or we have tried getting the address
 				!mDNSIPPortIsZero(cur->publicPort) || cur->retryIntervalPortMap > NATMAP_INIT_RETRY*2)			// if the port is not zero or we have tried getting a port mapping
 				if ((!(cur->opFlags & (MapUDPFlag | MapTCPFlag)) && !mDNSSameIPv4Address(m->ExternalAddress, cur->lastExternalAddress)) ||	// if all we want is an address and the address changed
-					(!mDNSSameIPv4Address(m->ExternalAddress, cur->lastExternalAddress) || !mDNSSameIPPort(cur->publicPort, cur->lastPublicPort)) || // if address and port are zero and the port changed
+					(mDNSIPv4AddressIsZero(m->ExternalAddress) && mDNSIPPortIsZero(cur->publicPort) && !mDNSSameIPPort(cur->publicPort, cur->lastPublicPort)) || // if address and port are zero and the port changed
+					(!mDNSIPPortIsZero(cur->publicPort) && !mDNSSameIPPort(cur->publicPort, cur->lastPublicPort)) || 						// or the port is not zero and has changed
 					cur->Error != cur->lastError)																							// or a new error occurred
 					{
 					cur->lastExternalAddress = m->ExternalAddress;
