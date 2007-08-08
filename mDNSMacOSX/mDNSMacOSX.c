@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.460  2007/08/08 22:34:59  mcguire
+<rdar://problem/5197869> Security: Run mDNSResponder as user id mdnsresponder instead of root
+
 Revision 1.459  2007/08/08 21:07:48  vazquez
 <rdar://problem/5244687> BTMM: Need to advertise model information via wide-area bonjour
 
@@ -516,7 +519,6 @@ Add (commented out) trigger value for testing "mach_absolute_time went backwards
 #include <net/if.h>
 #include <net/if_types.h>			// For IFT_ETHER
 #include <net/if_dl.h>
-#include <net/route.h>              // For struct rt_msghdr etc.
 #include <sys/uio.h>
 #include <sys/param.h>
 #include <sys/socket.h>
@@ -537,8 +539,6 @@ Add (commented out) trigger value for testing "mach_absolute_time went backwards
 #include <netinet/ip.h>             // For IPTOS_LOWDELAY etc.
 #include <netinet6/in6_var.h>       // For IN6_IFF_NOTREADY etc.
 #include <netinet6/nd6.h>           // For ND6_INFINITE_LIFETIME etc.
-#include <netinet6/ipsec.h>
-#include "libpfkey.h"
 
 #ifndef NO_SECURITYFRAMEWORK
 #include <Security/SecureTransport.h>
@@ -560,7 +560,10 @@ Add (commented out) trigger value for testing "mach_absolute_time went backwards
 
 #include <IOKit/IOKitLib.h>
 #include <IOKit/IOMessage.h>
+#include <mach/mach_error.h>
+#include <mach/mach_port.h>
 #include <mach/mach_time.h>
+#include "helper.h"
 
 #define kInterfaceSpecificOption "interface="
 
@@ -577,7 +580,6 @@ mDNSexport int KQueueFD;
 
 #ifndef NO_SECURITYFRAMEWORK
 static CFArrayRef ServerCerts;
-static SecKeychainRef ServerKC;
 #endif /* NO_SECURITYFRAMEWORK */
 
 #define DYNDNS_KEYCHAIN_SERVICE "DynDNS Shared Secret"
@@ -1718,13 +1720,9 @@ mDNSexport mStatus mDNSPlatformTLSSetupCerts(void)
 	SecIdentitySearchRef	srchRef = nil;
 	OSStatus				err;
 
-	// Pick a keychain
-	err = SecKeychainCopyDefault(&ServerKC);
-	if (err) { LogMsg("ERROR: mDNSPlatformTLSSetupCerts: SecKeychainCopyDefault returned %d", (int) err); return err; }
-
 	// search for "any" identity matching specified key use
 	// In this app, we expect there to be exactly one
-	err = SecIdentitySearchCreate(ServerKC, CSSM_KEYUSE_DECRYPT, &srchRef);
+	err = SecIdentitySearchCreate(NULL, CSSM_KEYUSE_DECRYPT, &srchRef);
 	if (err) { LogMsg("ERROR: mDNSPlatformTLSSetupCerts: SecIdentitySearchCreate returned %d", (int) err); return err; }
 
 	err = SecIdentitySearchCopyNext(srchRef, &identity);
@@ -1745,7 +1743,6 @@ mDNSexport  void  mDNSPlatformTLSTearDownCerts(void)
 	{
 #ifndef NO_SECURITYFRAMEWORK
 	if (ServerCerts) { CFRelease(ServerCerts); ServerCerts = NULL; }
-	if (ServerKC)    { CFRelease(ServerKC);    ServerKC    = NULL; }
 #endif /* NO_SECURITYFRAMEWORK */
 	}
 
@@ -1911,41 +1908,6 @@ mDNSlocal NetworkInterfaceInfoOSX *FindRoutableIPv4(mDNS *const m, mDNSu32 scope
 
 #define kRacoonPort 4500
 
-mDNSlocal void RestartRacoon(void)
-	{
-	mDNSBool startRacoon = true;
-	
-	FILE *fp = fopen("/var/run/racoon.pid", "r");
-	if (fp)
-		{
-		int pid=0;
-		if (fscanf(fp, "%d", &pid) && kill(pid,SIGHUP) == 0)
-			{
-			startRacoon = false;
-			LogMsg("Sent SIGHUP to racoon (%d)", pid);
-			}
-		fclose(fp);
-		}
-
-	if (startRacoon)
-		{
-		pid_t pid = fork();
-		if (!pid)
-			{
-			const char *racoon = "/usr/sbin/racoon";
-			execl(racoon, racoon, (const char*) 0);
-			}
-		else
-			{
-			int stat=0;
-			if (waitpid(pid, &stat, 0) != pid) LogMsg("Failed to start racoon (waitpid)");
-			else if (!WIFEXITED(stat))         LogMsg("Failed to start racoon (!exited)");
-			else if (WEXITSTATUS(stat))        LogMsg("Failed to start racoon (exit: %d)", WEXITSTATUS(stat));
-			else                               LogMsg("Racoon started and listening on port %d", kRacoonPort);
-			}
-		}
-	}
-
 mDNSlocal mDNSBool TunnelServers(mDNS *const m)
 	{
 	ServiceRecordSet *p;
@@ -1955,55 +1917,6 @@ mDNSlocal mDNSBool TunnelServers(mDNS *const m)
 		if (AuthInfo && AuthInfo->AutoTunnel) return(mDNStrue);
 		}
 	return(mDNSfalse);
-	}
-
-#define kTunnelAddressInterface "lo0"
-
-mDNSlocal void AliasTunnelAddress(mDNSv6Addr *const addr)
-	{
-	struct in6_aliasreq ifra_in6;
-	int s = socket(AF_INET6, SOCK_DGRAM, 0);
-
-	LogOperation("AliasTunnelAddress %.16a", addr);
-
-	if (s < 0) { LogMsg("socket() failed trying to alias %.16a errno %d (%s)", addr, errno, strerror(errno)); return; }
-
-	bzero(&ifra_in6, sizeof(ifra_in6));
-	strncpy(ifra_in6.ifra_name, kTunnelAddressInterface, sizeof(ifra_in6.ifra_name));
-	ifra_in6.ifra_lifetime.ia6t_vltime = ND6_INFINITE_LIFETIME;
-	ifra_in6.ifra_lifetime.ia6t_pltime = ND6_INFINITE_LIFETIME;
-
-	ifra_in6.ifra_addr.sin6_family = AF_INET6;
-	ifra_in6.ifra_addr.sin6_len = sizeof(struct sockaddr_in6);
-	memcpy(&(ifra_in6.ifra_addr.sin6_addr), addr, sizeof(mDNSv6Addr));
-
-	ifra_in6.ifra_prefixmask.sin6_family = AF_INET6;
-	ifra_in6.ifra_prefixmask.sin6_len = sizeof(struct sockaddr_in6);
-	memset(&(ifra_in6.ifra_prefixmask.sin6_addr), 0xFF, sizeof(mDNSv6Addr));
-
-	if (ioctl(s, SIOCAIFADDR_IN6, &ifra_in6) == -1) LogMsg("ioctl() failed to alias %.16a errno %d (%s)", addr, errno, strerror(errno));
-
-	close(s);
-	}
-
-mDNSlocal void UnaliasTunnelAddress(mDNSv6Addr *const addr)
-	{
-	struct in6_ifreq ifr;
-	int s = socket(AF_INET6, SOCK_DGRAM, 0);
-
-	LogOperation("UnaliasTunnelAddress %.16a", addr);
-
-	if (s < 0) { LogMsg("socket() failed trying to unalias %.16a errno %d (%s)", addr, errno, strerror(errno)); return; }
-
-	bzero(&ifr, sizeof(ifr));
-	strncpy(ifr.ifr_name, kTunnelAddressInterface, sizeof(ifr.ifr_name));
-	ifr.ifr_ifru.ifru_addr.sin6_family = AF_INET6;
-	ifr.ifr_ifru.ifru_addr.sin6_len = sizeof(struct sockaddr_in6);
-	memcpy(&(ifr.ifr_ifru.ifru_addr.sin6_addr), addr, sizeof(mDNSv6Addr));
-
-	if (ioctl(s, SIOCDIFADDR_IN6, &ifr) == -1) LogMsg("ioctl() failed to unalias %.16a errno %d (%s)", addr, errno, strerror(errno));
-
-	close(s);
 	}
 
 mDNSlocal void AutoTunnelNATCallback(mDNS *m, mDNSv4Addr ExternalAddress, NATTraversalInfo *n, mStatus err)
@@ -2033,7 +1946,7 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 		{
 		m->AutoTunnelHostAddrActive = mDNStrue;
 		LogMsg("Setting up AutoTunnel address %.16a", &m->AutoTunnelHostAddr);
-		AliasTunnelAddress(&m->AutoTunnelHostAddr);
+		(void)mDNSAutoTunnelInterfaceUpDown(kmDNSAutoTunnelInterfaceUp, m->AutoTunnelHostAddr.b);
 		}
 
 	// 2. If we have at least one server listening, publish our records
@@ -2093,23 +2006,7 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 					info->AutoTunnelHostRecord.namestorage.c, &m->AutoTunnelHostAddr);
 
 				// 4. Create configuration file, and start (or SIGHUP) Racoon
-				static const char RacoonConfig1[] =
-					"remote anonymous\n"
-						"{\n"
-						"exchange_mode aggressive; doi ipsec_doi; situation identity_only; verify_identifier off; generate_policy on; shared_secret use \"";
-				static const char RacoonConfig2[] =
-						"\"; nonce_size 16; lifetime time 5 min; initial_contact on; support_proxy on; proposal_check claim;\n"
-						"proposal { encryption_algorithm aes; hash_algorithm sha1; authentication_method pre_shared_key; dh_group 2; lifetime time 5 min; }\n"
-						"}\n"
-					"sainfo anonymous { pfs_group 2; lifetime time 60 min; encryption_algorithm aes; authentication_algorithm hmac_sha1; compression_algorithm deflate; }\n";
-			
-				FILE *f = fopen("/etc/racoon/remote/anonymous.conf", "w");
-				fchmod(fileno(f), S_IRUSR | S_IWUSR);
-				fwrite(RacoonConfig1, sizeof(RacoonConfig1)-1, 1, f);
-				fwrite(info->b64keydata, strlen(info->b64keydata), 1, f);
-				fwrite(RacoonConfig2, sizeof(RacoonConfig2)-1, 1, f);
-				fclose(f);
-				RestartRacoon();
+				(void)mDNSRacoonNotify(info->b64keydata);
 				}
 			}
 		}
@@ -2122,202 +2019,9 @@ mDNSlocal void SetupLocalAutoTunnelInterface(mDNS *const m)
 	mDNS_Unlock(m);
 	}
 
-static unsigned int routeSeq = 1;
-
-mDNSlocal void SetupTunnelRoute(mDNSv6Addr *const local, mDNSv6Addr *const remote)
-	{
-	int s = socket(PF_ROUTE, SOCK_RAW, AF_INET);
-	struct
-		{
-		struct rt_msghdr    hdr;
-		struct sockaddr_in6 dst;
-		struct sockaddr_in6 gtwy;
-		} msg;
-	
-	LogOperation("SetupTunnelRoute %.16a --> %.16a", local, remote);
-	
-	if (s < 0) { LogMsg("socket() failed trying to add route errno %d (%s)", errno, strerror(errno)); return; }
-	
-	memset(&msg, 0, sizeof(msg));
-	
-	msg.hdr.rtm_msglen = sizeof(msg);
-	msg.hdr.rtm_type = RTM_ADD;
-	// The following flags are set by `route add -inet6 -host ...`
-	msg.hdr.rtm_flags = RTF_UP | RTF_GATEWAY | RTF_HOST | RTF_STATIC;
-	msg.hdr.rtm_version = RTM_VERSION;
-	msg.hdr.rtm_seq = routeSeq++;
-	msg.hdr.rtm_addrs = RTA_DST | RTA_GATEWAY;
-	
-	msg.dst.sin6_len = sizeof(msg.dst);
-	msg.dst.sin6_family = AF_INET6;
-	memcpy(&msg.dst.sin6_addr, remote, sizeof(mDNSv6Addr));
-	
-	msg.gtwy.sin6_len = sizeof(msg.gtwy);
-	msg.gtwy.sin6_family = AF_INET6;
-	memcpy(&msg.gtwy.sin6_addr, local, sizeof(mDNSv6Addr));
-	
-	// send message, ignore error when route already exists
-	if (write(s, &msg, msg.hdr.rtm_msglen) == -1 && errno != EEXIST) LogMsg("write() failed trying to add route errno %d (%s)", errno, strerror(errno));
-	
-	close(s);
-	}
-
-mDNSlocal void TeardownTunnelRoute(mDNSv6Addr *const remote)
-	{
-	int s = socket(PF_ROUTE, SOCK_RAW, AF_INET);
-	struct
-		{
-		struct rt_msghdr    hdr;
-		struct sockaddr_in6 dst;
-		} msg;
-	
-	LogOperation("TeardownTunnelRoute %.16a", remote);
-	
-	if (s < 0) { LogMsg("socket() failed trying to delete route errno %d (%s)", errno, strerror(errno)); return; }
-	
-	memset(&msg, 0, sizeof(msg));
-	
-	msg.hdr.rtm_msglen = sizeof(msg);
-	msg.hdr.rtm_type = RTM_DELETE;
-	msg.hdr.rtm_version = RTM_VERSION;
-	msg.hdr.rtm_seq = routeSeq++;
-	msg.hdr.rtm_addrs = RTA_DST;
-	
-	msg.dst.sin6_len = sizeof(msg.dst);
-	msg.dst.sin6_family = AF_INET6;
-	memcpy(&msg.dst.sin6_addr, remote, sizeof(mDNSv6Addr));
-	
-	// send message, ignore error when route doesn't exist
-	if (write(s, &msg, msg.hdr.rtm_msglen) == -1 && errno != ESRCH) LogMsg("write() failed trying to delete route errno %d (%s)", errno, strerror(errno));
-	
-	close(s);
-	}
-
-// Allocates ptr returned in *pol
-mDNSlocal mDNSBool GenerateTunnelPolicy(mDNSBool forAdd, mDNSBool in, mDNSv4Addr *const src, mDNSIPPort *const srcPort, mDNSv4Addr *const dst, mDNSIPPort *const dstPort, char** pol, size_t* len)
-	{
-	char str[128];
-	size_t lenTmp = 0;
-	char* inOut = in ? "in" : "out";
-
-	*pol = 0;
-	*len = 0;
-
-	if (forAdd)
-		lenTmp = mDNS_snprintf(str, sizeof(str), "%s ipsec esp/tunnel/%.4a[%d]-%.4a[%d]/require", inOut, src, mDNSVal16(*srcPort), dst, mDNSVal16(*dstPort));
-	else
-		lenTmp = mDNS_snprintf(str, sizeof(str), "%s", inOut);
-	if (lenTmp >= sizeof(str)) { LogMsg("failed to create policy string"); return mDNSfalse; }
-
-	*pol = ipsec_set_policy(str, lenTmp);
-	if (!pol) { LogMsg("failed to convert policy from string"); return mDNSfalse; }
-
-	*len = ((struct sadb_x_policy *)*pol)->sadb_x_policy_len * 8;
-
-	return mDNStrue;
-	}
-
-mDNSlocal int SendPolicy(int so, mDNSBool forAdd, struct sockaddr* src, struct sockaddr* dst, char* policy, size_t policyLen)
-	{
-	static unsigned int policySeq = 0;
-
-	int rv = 0;
-
-	if (forAdd)
-		rv = pfkey_send_spdadd(so, src, 128, dst, 128, -1, policy, policyLen, policySeq++);
-	else
-		rv = pfkey_send_spddelete(so, src, 128, dst, 128, -1, policy, policyLen, policySeq++);
-
-	if (rv < 0) LogMsg("failed to add policy (%d)", rv);
-
-	return (rv >= 0);
-	}
-
-mDNSlocal void DoTunnelPolicy(mDNSBool setup, mDNSv6Addr *const localInner, mDNSv4Addr *const localOuter, mDNSIPPort *const localPort, mDNSv6Addr *const remoteInner, mDNSv4Addr *const remoteOuter, mDNSIPPort *const remotePort)
-	{
-	int so = pfkey_open();
-	struct sockaddr_in6 sin_loc;
-	struct sockaddr_in6 sin_rmt;
-	char* policy = 0;
-	size_t policyLen = 0;
-
-	if (so < 0) { LogMsg("DoTunnelPolicy failed to open PF_KEY socket errno %d (%s)", errno, strerror(errno)); goto exit; }
-
-	memset(&sin_loc, 0, sizeof(struct sockaddr_in6));
-	sin_loc.sin6_len = sizeof(struct sockaddr_in6);
-	sin_loc.sin6_family = AF_INET6;
-	sin_loc.sin6_port = htons(0);
-	memcpy(&sin_loc.sin6_addr, localInner, sizeof(mDNSv6Addr));
-
-	memset(&sin_rmt, 0, sizeof(struct sockaddr_in6));
-	sin_rmt.sin6_len = sizeof(struct sockaddr_in6);
-	sin_rmt.sin6_family = AF_INET6;
-	sin_rmt.sin6_port = htons(0);
-	memcpy(&sin_rmt.sin6_addr, remoteInner, sizeof(mDNSv6Addr));
-
-	if (!GenerateTunnelPolicy(setup, mDNStrue, remoteOuter, remotePort, localOuter, localPort, &policy, &policyLen)) { LogMsg("DoTunnelPolicy failed to generate inbound policy"); goto exit; }
-	if (!SendPolicy(so, setup, (struct sockaddr*)&sin_rmt, (struct sockaddr*)&sin_loc, policy, policyLen)) { LogMsg("DoTunnelPolicy failed to add inbound policy"); goto exit; }
-	
-	if (policy) free(policy);
-	
-	if (!GenerateTunnelPolicy(setup, mDNSfalse, localOuter, localPort, remoteOuter, remotePort, &policy, &policyLen))  { LogMsg("DoTunnelPolicy failed to generate outbound policy"); goto exit; }
-	if (!SendPolicy(so, setup, (struct sockaddr*)&sin_loc, (struct sockaddr*)&sin_rmt, policy, policyLen)) { LogMsg("DoTunnelPolicy failed to add outbound policy"); goto exit; }
-
-	exit:
-	if (so != -1) close(so);
-	if (policy) free(policy);
-	}
-
-mDNSlocal void SetupTunnelPolicy(mDNSv6Addr *const localInner, mDNSv4Addr *const localOuter, mDNSv6Addr *const remoteInner, mDNSv4Addr *const remoteOuter, mDNSIPPort *const remotePort)
-	{
-	mDNSIPPort localPort = mDNSOpaque16fromIntVal(kRacoonPort);
-	DoTunnelPolicy(mDNStrue, localInner, localOuter, &localPort, remoteInner, remoteOuter, remotePort);
-	}
-
-mDNSlocal void TeardownTunnelPolicy(mDNSv6Addr *const localInner, mDNSv6Addr *const remoteInner)
-	{
-	DoTunnelPolicy(mDNSfalse, localInner, 0, 0, remoteInner, 0, 0);
-	}
-
-mDNSlocal const char RacoonClientConfig[] = "remote %s [%d]\n"
-	"{ exchange_mode aggressive; doi ipsec_doi; situation identity_only; verify_identifier off; shared_secret use \"%s\";\n"
-	"nonce_size 16; lifetime time 5 min; initial_contact on; support_proxy on; proposal_check claim;\n"
-	"proposal { encryption_algorithm aes; hash_algorithm sha1; authentication_method pre_shared_key; dh_group 2; lifetime time 5 min; }\n"
-	"}\n"
-	"sainfo address %s any address %s any\n"
-	"{ pfs_group 2; lifetime time 60 min; encryption_algorithm aes; authentication_algorithm hmac_sha1; compression_algorithm deflate; }\n"
-	"sainfo address %s any address %s any\n"
-	"{ pfs_group 2; lifetime time 60 min; encryption_algorithm aes; authentication_algorithm hmac_sha1; compression_algorithm deflate; }\n";
-
 mDNSlocal void AutoTunnelSetKeys(ClientTunnel *tun, mDNSBool AddNew)
 	{
-	TeardownTunnelPolicy(&tun->loc_inner, &tun->rmt_inner);
-	if (AddNew) SetupTunnelPolicy(&tun->loc_inner, &tun->loc_outer, &tun->rmt_inner, &tun->rmt_outer, &tun->rmt_outer_port);
-
-	TeardownTunnelRoute(&tun->rmt_inner);
-	if (AddNew) SetupTunnelRoute(&tun->loc_inner, &tun->rmt_inner);
-
-	char li[40], ri[40], ro[40]; // Enough for IPv6 address plus nul on the end
-	mDNS_snprintf(ro, sizeof(ro), "%.4a", &tun->rmt_outer);
-	mDNS_snprintf(li, sizeof(li), "%.16a", &tun->loc_inner);
-	mDNS_snprintf(ri, sizeof(ri), "%.16a", &tun->rmt_inner);
-	char filename[64];
-	mDNS_snprintf(filename, sizeof(filename), "/etc/racoon/remote/%s.%d.conf", ro, mDNSVal16(tun->rmt_outer_port));
-
-	if (AddNew)
-		{
-		FILE *f = fopen(filename, "w");
-		fchmod(fileno(f), S_IRUSR | S_IWUSR);
-		char filedata[1024];
-		int len = mDNS_snprintf(filedata, sizeof(filedata), RacoonClientConfig, ro, mDNSVal16(tun->rmt_outer_port), tun->b64keydata, ri, li, li, ri);
-		fwrite(filedata, len, 1, f);
-		fclose(f);
-		RestartRacoon();
-		}
-	else
-		{
-		unlink(filename);
-		}
+	(void)mDNSAutoTunnelSetKeys(AddNew ? kmDNSAutoTunnelSetKeysReplace : kmDNSAutoTunnelSetKeysDelete, tun->loc_inner.b, tun->loc_outer.b, kRacoonPort, tun->rmt_inner.b, tun->rmt_outer.b, mDNSVal16(tun->rmt_outer_port), tun->b64keydata);
 	}
 
 // If the EUI-64 part of the IPv6 ULA matches, then that means the two addresses point to the same machine
@@ -3266,9 +2970,6 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS *const m, mDNSAddr *v4, 
 
 mDNSexport void mDNSPlatformDynDNSHostNameStatusChanged(const domainname *const dname, const mStatus status)
 	{
-	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:mDNSPlatformDynDNSHostNameStatusChanged"), NULL, NULL);
-	if (store)
-		{
 		char uname[MAX_ESCAPED_DOMAIN_NAME];	// Max legal C-string name, including terminating NUL
 		char *p;
 
@@ -3310,7 +3011,7 @@ mDNSexport void mDNSPlatformDynDNSHostNameStatusChanged(const domainname *const 
 							CFDictionaryRef StateDict = CFDictionaryCreate(NULL, (void*)StateKeys, (void*)StateVals, 1, NULL, NULL);
 							if (StateDict)
 								{
-								SCDynamicStoreSetValue(store, CFSTR("State:/Network/DynamicDNS"), StateDict);
+								mDNSDynamicStoreSetConfig(kmDNSDynamicConfig, StateDict);
 								CFRelease(StateDict);
 								}
 							CFRelease(StateVals[0]);
@@ -3321,9 +3022,7 @@ mDNSexport void mDNSPlatformDynDNSHostNameStatusChanged(const domainname *const 
 					}
 				CFRelease(HostKeys[0]);
 				}
-			CFRelease(store);
 			}
-		}
 	}
 
 // MUST be called holding the lock -- this routine calls SetupLocalAutoTunnelInterface_internal()
@@ -3347,106 +3046,80 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 
 	CFMutableArrayRef sa = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 	if (!sa) { LogMsg("SetDomainSecrets: CFArrayCreateMutable failed"); return; }
-
-	SecKeychainRef skc;
-	OSStatus err = SecKeychainCopyDefault(&skc);
-	if (err) LogMsg("SetDomainSecrets: SecKeychainCopyDefault %d", err);
-	else
+	CFIndex i;
+	int j;
+	CFDataRef data = NULL;
+	const int itemsPerEntry = 3; // domain name, key name, key value
+	CFArrayRef secrets = NULL;
+	int err = mDNSKeychainGetSecrets(&secrets);
+	if (0 == err && NULL != secrets)
 		{
-		SecKeychainSearchRef searchRef;
-		err = SecKeychainSearchCreateFromAttributes(skc, kSecGenericPasswordItemClass, NULL, &searchRef);
-		if (err) LogMsg("SetDomainSecrets: SecKeychainSearchCreateFromAttributes %d", err);
-		else
+		// Iterate through the secrets
+		for (i = 0; i < CFArrayGetCount(secrets); ++i)
 			{
-			while (1)
+			CFArrayRef entry = CFArrayGetValueAtIndex(secrets, i);
+			if (CFArrayGetTypeID() != CFGetTypeID(entry) || itemsPerEntry != CFArrayGetCount(entry))
+				{ LogMsg("SetDomainSecrets: malformed entry"); continue; }
+			for (j = 0; j < CFArrayGetCount(entry); ++j)
+				if (CFDataGetTypeID() != CFGetTypeID(CFArrayGetValueAtIndex(entry, j)))
+					{ LogMsg("SetDomainSecrets: malformed entry item"); continue; }
+
+			// Validate that attributes are not too large
+			char dstring[MAX_ESCAPED_DOMAIN_NAME];
+			char keynamebuf[MAX_ESCAPED_DOMAIN_NAME];	// Max legal C-string name, including terminating NUL
+			// The names have already been vetted by the helper, but checking them again here helps humans and automated tools verify correctness
+			data = CFArrayGetValueAtIndex(entry, 0);
+			if (CFDataGetLength(data) >= (int)sizeof(dstring))
+				{ LogMsg("SetSecretForDomain: Bad kSecServiceItemAttr length %d", CFDataGetLength(data)); continue; }
+			CFDataGetBytes(data, CFRangeMake(0,CFDataGetLength(data)),
+				(UInt8 *)dstring);
+			dstring[CFDataGetLength(data)] = '\0';
+			data = CFArrayGetValueAtIndex(entry, 1);
+			if (CFDataGetLength(data) >= (int)sizeof(keynamebuf))
+				{ LogMsg("SetSecretForDomain: Bad kSecAccountItemAttr length %d", CFDataGetLength(data)); continue; }
+			CFDataGetBytes(data, CFRangeMake(0,CFDataGetLength(data)),
+				(UInt8 *)keynamebuf);
+			keynamebuf[CFDataGetLength(data)] = '\0';
+
+			domainname domain;
+			if (!MakeDomainNameFromDNSNameString(&domain, dstring)) { LogMsg("SetSecretForDomain: bad key domain %s", dstring); continue; }
+
+			// Get DNS key name
+			domainname keyname;
+			if (!MakeDomainNameFromDNSNameString(&keyname, keynamebuf)) { LogMsg("SetSecretForDomain: bad key name %s", keynamebuf); continue; }
+
+			// Get DNS key data
+			char keystring[1024];
+			data = CFArrayGetValueAtIndex(entry, 2);
+			if (CFDataGetLength(data) >= (int)sizeof(keystring))
+				{ LogMsg("SetSecretForDomain: Shared secret too long: %d", CFDataGetLength(data)); continue; }
+			CFDataGetBytes(data, CFRangeMake(0,CFDataGetLength(data)),
+				(UInt8 *)keystring);
+			keystring[CFDataGetLength(data)] = '\0';	// mDNS_SetSecretForDomain requires NULL-terminated C string for key
+
+			for (ptr = m->AuthInfoList; ptr; ptr = ptr->next)
+				if (SameDomainName(&ptr->domain, &domain)) break;
+
+			// Uncomment the line below to view the keys as they're read out of the system keychain
+			// DO NOT SHIP CODE THIS WAY OR YOU'LL LEAK SECRET DATA INTO A PUBLICLY READABLE FILE!
+			//LogOperation("SetDomainSecrets: %##s %##s %s", &domain.c, &keyname.c, keystring);
+
+			// If didn't find desired domain in the list, make a new entry
+			if (!ptr)
 				{
-				// Iterate through keychain items
-				SecKeychainItemRef itemRef = NULL;
-				err = SecKeychainSearchCopyNext(searchRef, &itemRef);
-				if (err) break;
-
-				// Get attributes and data out of itemRef
-				UInt32 tags[3] = { kSecTypeItemAttr, kSecServiceItemAttr, kSecAccountItemAttr };
-				SecKeychainAttributeInfo attrInfo = { 3, tags, NULL };	// Count, array of tags, array of formats
-				SecKeychainAttributeList *a = NULL;
-				void *secret = NULL;
-				err = SecKeychainItemCopyAttributesAndData(itemRef,  &attrInfo, NULL, &a, NULL, NULL);
-
-				// Validate that results look reasonable
-				// LogMsg("* %.*s", a->attr[1].length, a->attr[1].data);
-				if (err || !a)                 { LogMsg("SetSecretForDomain: SecKeychainItemCopyAttributesAndData error %d %p", err, a); goto nextitem; }
-				if (a->count != 3)             { LogMsg("SetSecretForDomain: SecKeychainItemCopyAttributesAndData got wrong count %d", a->count); goto nextitem; }
-				if (a->attr[0].tag != tags[0]) { LogMsg("SetSecretForDomain: SecKeychainItemCopyAttributesAndData got wrong attribute %d", 0); goto nextitem; }
-				if (a->attr[1].tag != tags[1]) { LogMsg("SetSecretForDomain: SecKeychainItemCopyAttributesAndData got wrong attribute %d", 1); goto nextitem; }
-				if (a->attr[2].tag != tags[2]) { LogMsg("SetSecretForDomain: SecKeychainItemCopyAttributesAndData got wrong attribute %d", 2); goto nextitem; }
-
-				// Validate that attributes are not too large
-				char dstring[4 + MAX_ESCAPED_DOMAIN_NAME];  // Extra 4 is for the "dns:" prefix
-				char keynamebuf[MAX_ESCAPED_DOMAIN_NAME];   // Max legal C-string name, including terminating NUL
-				if (a->attr[1].length > sizeof(dstring   )-1) { LogMsg("SetSecretForDomain: Bad kSecServiceItemAttr length %d", a->attr[1].length); goto nextitem; }
-				if (a->attr[2].length > sizeof(keynamebuf)-1) { LogMsg("SetSecretForDomain: Bad kSecAccountItemAttr length %d", a->attr[2].length); goto nextitem; }
-
-				// Get domain name for which this key applies
-				// On Mac OS X on Intel, the four-character string seems to be stored backwards, at least sometimes.
-				// I suspect some overenthusiastic inexperienced engineer said, "On Intel everything's backwards,
-				// therefore I need to add some byte swapping in this API to make this four-character string backwards too."
-				// To cope with this we allow *both* "ddns" and "sndd" as valid item types.
-				if (a->attr[0].length == 4 && (!strncasecmp(a->attr[0].data, "ddns", 4) || !strncasecmp(a->attr[0].data, "sndd", 4)))
-					{ memcpy(dstring, a->attr[1].data, a->attr[1].length); dstring[a->attr[1].length] = 0; }
-				else if (a->attr[1].length >= 4 && strncasecmp(a->attr[1].data, "dns:", 4) == 0)
-					{ memcpy(dstring, a->attr[1].data + 4, a->attr[1].length - 4); dstring[a->attr[1].length - 4] = 0; }
-				else goto nextitem;
-
-				domainname domain;
-				if (!MakeDomainNameFromDNSNameString(&domain, dstring)) { LogMsg("SetSecretForDomain: bad key domain %s", dstring); goto nextitem; }
-
-				// Get DNS key name
-				memcpy(keynamebuf, a->attr[2].data, a->attr[2].length);
-				keynamebuf[a->attr[2].length] = 0;
-				domainname keyname;
-				if (!MakeDomainNameFromDNSNameString(&keyname, keynamebuf)) { LogMsg("SetSecretForDomain: bad key name %s", keynamebuf); goto nextitem; }
-
-				// Get DNS key data
-				UInt32 secretlen;
-				char keystring[1024];
-				err = SecKeychainItemCopyAttributesAndData(itemRef,  NULL, NULL, NULL, &secretlen, &secret);
-				if (err)                               { LogMsg("SetSecretForDomain: SecKeychainItemCopyAttributesAndData error %d", err); goto nextitem; }
-				if (!secretlen || !secret)             { LogMsg("SetSecretForDomain: No shared secret"); goto nextitem; }
-				if (secretlen > sizeof(keystring) - 1) { LogMsg("SetSecretForDomain: Shared secret too long: %d", secretlen); goto nextitem; }
-				memcpy(keystring, secret, secretlen);
-				keystring[secretlen] = 0;	// mDNS_SetSecretForDomain requires NULL-terminated C string for key
-
-				for (ptr = m->AuthInfoList; ptr; ptr = ptr->next)
-					if (SameDomainName(&ptr->domain, &domain)) break;
-
-				// Uncomment the line below to view the keys as they're read out of the system keychain
-				// DO NOT SHIP CODE THIS WAY OR YOU'LL LEAK SECRET DATA INTO A PUBLICLY READABLE FILE!
-				//LogOperation("SetDomainSecrets: %##s %##s %s", &domain.c, &keyname.c, keystring);
-
-				// If didn't find desired domain in the list, make a new entry
-				if (!ptr)
-					{
-					ptr = (DomainAuthInfo*)mallocL("DomainAuthInfo", sizeof(*ptr));
-					if (!ptr) { LogMsg("SetSecretForDomain: No memory"); goto nextitem; }
-					}
-
-				if (mDNS_SetSecretForDomain(m, ptr, &domain, &keyname, keystring, IsTunnelModeDomain(&domain)) == mStatus_BadParamErr)
-					{ mDNSPlatformMemFree(ptr); goto nextitem; }
-
-				CFStringRef cfs = CFStringCreateWithCString(NULL, dstring, kCFStringEncodingUTF8);
-				if (cfs) { CFArrayAppendValue(sa, cfs); CFRelease(cfs); }
-
-				nextitem:
-				SecKeychainItemFreeAttributesAndData(a, secret);
-				CFRelease(itemRef);
+				ptr = (DomainAuthInfo*)mallocL("DomainAuthInfo", sizeof(*ptr));
+				if (!ptr) { LogMsg("SetSecretForDomain: No memory"); continue; }
 				}
-			CFRelease(searchRef);
+
+			if (mDNS_SetSecretForDomain(m, ptr, &domain, &keyname, keystring, IsTunnelModeDomain(&domain)) == mStatus_BadParamErr)
+				{ mDNSPlatformMemFree(ptr); continue; }
+
+			CFStringRef cfs = CFStringCreateWithCString(NULL, dstring, kCFStringEncodingUTF8);
+			if (cfs) { CFArrayAppendValue(sa, cfs); CFRelease(cfs); }
 			}
-		CFRelease(skc);
+		CFRelease(secrets);
 		}
-	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:SetDomainSecrets"), NULL, NULL);
-	if (!store) LogMsg("SetDomainSecrets: SCDynamicStoreCreate failed");
-	else { SCDynamicStoreSetValue(store, CFSTR("State:/Network/" kDNSServiceCompPrivateDNS), sa); CFRelease(store); }
+	mDNSDynamicStoreSetConfig(kmDNSPrivateConfig, sa);
 	CFRelease(sa);
 
 	#if APPLE_OSX_mDNSResponder
@@ -3472,9 +3145,7 @@ mDNSlocal void SetLocalDomains(void)
 	CFArrayAppendValue(sa, CFSTR("a.e.f.ip6.arpa"));
 	CFArrayAppendValue(sa, CFSTR("b.e.f.ip6.arpa"));
 
-	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:SetLocalDomains"), NULL, NULL);
-	if (!store) LogMsg("SetLocalDomains: SCDynamicStoreCreate failed");
-	else { SCDynamicStoreSetValue(store, CFSTR("State:/Network/" kDNSServiceCompMulticastDNS), sa); CFRelease(store); }
+	mDNSDynamicStoreSetConfig(kmDNSMulticastConfig, sa);
 	CFRelease(sa);
 	}
 
@@ -3614,22 +3285,14 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 mDNSlocal OSStatus KeychainChanged(SecKeychainEvent keychainEvent, SecKeychainCallbackInfo *info, void *context)
 	{
 	(void) keychainEvent;
+	(void) info;
 	mDNS *const m = (mDNS *const)context;
-	SecKeychainRef skc;
-	OSStatus err = SecKeychainCopyDefault(&skc);
-	if (!err)
-		{
-		if (info->keychain == skc)
-			{
-			LogOperation("***   Keychain Changed   ***");
-			KQueueLock(m);
-			mDNS_Lock(m);
-			SetDomainSecrets((mDNS*)context);
-			mDNS_Unlock(m);
-			KQueueUnlock(m, "KeychainChanged");
-			}
-		CFRelease(skc);
-		}
+	LogOperation("***   Keychain Changed   ***");
+	KQueueLock(m);
+	mDNS_Lock(m);
+	SetDomainSecrets((mDNS*)context);
+	mDNS_Unlock(m);
+	KQueueUnlock(m, "KeychainChanged");
 	return 0;
 	}
 #endif
@@ -3886,7 +3549,7 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 		{
 		m->AutoTunnelHostAddrActive = mDNSfalse;
 		LogMsg("Removing AutoTunnel address %.16a", &m->AutoTunnelHostAddr);
-		UnaliasTunnelAddress(&m->AutoTunnelHostAddr);
+		(void)mDNSAutoTunnelInterfaceUpDown(kmDNSAutoTunnelInterfaceDown, m->AutoTunnelHostAddr.b);
 		}
 	#endif // APPLE_OSX_mDNSResponder
 	}

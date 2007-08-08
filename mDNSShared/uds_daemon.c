@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.327  2007/08/08 22:34:59  mcguire
+<rdar://problem/5197869> Security: Run mDNSResponder as user id mdnsresponder instead of root
+
 Revision 1.326  2007/08/01 16:09:14  cheshire
 Removed unused NATTraversalInfo substructure from AuthRecord; reduced structure sizecheck values accordingly
 
@@ -512,6 +515,9 @@ mDNSlocal char *win32_strerror(int inErrorCode)
 // Apple-specific functionality, not required for other platforms
 #if APPLE_OSX_mDNSResponder
 #include <sys/ucred.h>
+#ifndef PID_FILE
+#define PID_FILE "/var/run/mdns/mDNSResponder.pid"
+#endif
 #endif
 
 // User IDs 0-500 are system-wide processes, not actual users in the usual sense

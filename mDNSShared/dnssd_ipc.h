@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.38  2007/08/08 22:34:59  mcguire
+<rdar://problem/5197869> Security: Run mDNSResponder as user id mdnsresponder instead of root
+
 Revision 1.37  2007/07/28 00:00:43  cheshire
 Renamed CompileTimeAssertionCheck structure for consistency with others
 
@@ -180,6 +183,9 @@ Update to APSL 2.0
 #	define dnssd_sockaddr_t		struct sockaddr_in
 #else
 #	define AF_DNSSD				AF_LOCAL
+#   if APPLE_OSX_mDNSResponder
+#       define MDNS_UDS_SERVERPATH "/var/run/mdns/mDNSResponder"
+#   endif
 #	ifndef MDNS_UDS_SERVERPATH
 #		define MDNS_UDS_SERVERPATH	"/var/run/mDNSResponder"
 #	endif

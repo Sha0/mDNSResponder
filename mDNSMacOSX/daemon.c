@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.329  2007/08/08 22:34:58  mcguire
+<rdar://problem/5197869> Security: Run mDNSResponder as user id mdnsresponder instead of root
+
 Revision 1.328  2007/07/27 22:43:37  cheshire
 Improved mallocL/freeL "suspiciously large" debugging messages
 
@@ -285,6 +288,7 @@ Revision 1.261  2006/01/06 01:22:28  cheshire
 #include "uds_daemon.h"				// Interface to the server side implementation of dns_sd.h
 
 #include <DNSServiceDiscovery/DNSServiceDiscovery.h>
+#include "helper.h"
 
 //*************************************************************************************************************
 // Macros
@@ -1520,12 +1524,12 @@ mDNSlocal void ShowNameConflictNotification(CFStringRef header, CFStringRef subt
 // We want to write the new Computer Name to System Preferences, without disturbing the user-selected
 // system-wide default character set used for things like AppleTalk NBP and NETBIOS service advertising.
 // Since both are set by the same call, we need to take care to set the name without changing the default character set.
-mDNSlocal Boolean SafeSCPreferencesSetComputerName(SCPreferencesRef prefs, CFStringRef name)
+mDNSlocal Boolean SafeSCPreferencesSetComputerName(CFStringRef name)
 	{
 	CFStringEncoding charset = kCFStringEncodingUTF8;					// Defensive coding -- assume UTF8
 	CFStringRef cfs = SCDynamicStoreCopyComputerName(NULL, &charset);	// Get Computer Name and system default character set
 	CFRelease(cfs);														// Discard the old name we don't care about
-	return(SCPreferencesSetComputerName(prefs, name, charset));			// Set new name, preserving current default character set
+	return (0 == mDNSPreferencesSetName(kmDNSComputerName, name, charset)); // Set new name, preserving current default character set
 	}
 
 static CFStringRef CFS_OQ;
@@ -1551,9 +1555,8 @@ mDNSlocal void RecordUpdatedName(const mDNS *const m, const domainlabel *const o
 	// We tag a zero-width non-breaking space at the end of the literal text to guarantee that, no matter what
 	// arbitrary computer name the user may choose, this exact text (with zero-width non-breaking space added)
 	// can never be one that occurs in the Localizable.strings translation file.
-	const SCPreferencesRef session = SCPreferencesCreate(NULL, CFSTR("mDNSResponder RecordUpdatedName"), NULL);
-	if (!cfoldname || !cfnewname || !session || !SCPreferencesLock(session, 0))	// If we can't get the lock don't wait
-		LogMsg("RecordUpdatedName: ERROR: Couldn't create SCPreferences session");
+	if (!cfoldname || !cfnewname)
+		LogMsg("RecordUpdatedName: ERROR: Couldn't construct name");
 	else
 		{
 		const CFStringRef s1 = CFStringCreateWithFormat(NULL, NULL, CFS_Format, cfoldname, suffix);
@@ -1565,10 +1568,10 @@ mDNSlocal void RecordUpdatedName(const mDNS *const m, const domainlabel *const o
 		const CFMutableStringRef alertHeader =
 			(OSXVers < 8) ? CFStringCreateMutable(NULL, 0) : (CFMutableStringRef)CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 		Boolean result;
-		if (newdl == &gNotificationPrefHostLabel) result = SCPreferencesSetLocalHostName(session, cfnewname);
-		else result = SafeSCPreferencesSetComputerName(session, cfnewname);
-		if (!result || !SCPreferencesCommitChanges(session) || !SCPreferencesApplyChanges(session) || !s1 || !s2 || !alertHeader)
-			LogMsg("RecordUpdatedName: ERROR: Couldn't update SCPreferences");
+		if (newdl == &gNotificationPrefHostLabel) result = (0 == mDNSPreferencesSetName(kmDNSLocalHostName, cfnewname, 0));
+		else result = SafeSCPreferencesSetComputerName(cfnewname);
+		if (!result || !s1 || !s2 || !alertHeader)
+				LogMsg("RecordUpdatedName: ERROR: Couldn't update SCPreferences");
 		else if (m->p->NotifyUser)
 			{
 #ifndef NO_CFUSERNOTIFICATION
@@ -1595,11 +1598,9 @@ mDNSlocal void RecordUpdatedName(const mDNS *const m, const domainlabel *const o
 		if (s1)          CFRelease(s1);
 		if (s2)          CFRelease(s2);
 		if (alertHeader) CFRelease(alertHeader);
-		SCPreferencesUnlock(session);
 		}
 	if (cfoldname) CFRelease(cfoldname);
 	if (cfnewname) CFRelease(cfnewname);
-	if (session)   CFRelease(session);
 	}
 
 mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
@@ -2577,6 +2578,28 @@ mDNSlocal void LaunchdCheckin(void)
 	launch_data_free(resp);
 	}
 
+mDNSlocal void DropPrivileges(void)
+	{
+	LogMsg("Started as root.  Dropping privileges.");
+	static const char login[] = "_mdnsresponder";
+	struct passwd *pwd = getpwnam(login);
+	if (NULL == pwd)
+		LogMsg("Could not find account name \"%s\".  Continuing as root after all.", login);
+	else
+		{
+		uid_t uid = pwd->pw_uid;
+		gid_t gid = pwd->pw_gid;
+
+		if (0 != initgroups(login, gid))
+			LogMsg("initgroups(\"%s\", %lu) failed.  Continuing.", login, (unsigned long)gid);
+		if (0 != setgid(gid))
+			LogMsg("setgid(%lu) failed.  Continuing with group %lu privileges.", (unsigned long)getegid());
+		if (0 != setuid(uid))
+			LogMsg("setuid(%lu) failed. Continuing as root after all.", (unsigned long)uid);
+		}
+	}
+
+
 extern int sandbox_init(const char *profile, uint64_t flags, char **errorbuf) __attribute__((weak_import));
 
 mDNSexport int main(int argc, char **argv)
@@ -2592,6 +2615,15 @@ mDNSexport int main(int argc, char **argv)
 		if (!strcasecmp(argv[i], "-launchdaemon")) started_via_launchdaemon = mDNStrue;
 		}
 
+	if (0 == geteuid())
+		DropPrivileges();
+
+	// Explicitly ensure that our Keychain operations utilize the system domain.
+	SecKeychainSetPreferenceDomain(kSecPreferencesDomainSystem);
+
+	// Ensure that our state directory exists.
+	(void)mDNSCreateStateDir();
+
 	signal(SIGHUP,  HandleSIG);		// (Debugging) Purge the cache to check for cache handling bugs
 	signal(SIGINT,  HandleSIG);		// Ctrl-C: Detach from Mach BootstrapService and exit cleanly
 	signal(SIGPIPE, SIG_IGN  );		// Don't want SIGPIPE signals -- we'll handle EPIPE errors directly
@@ -2600,7 +2632,6 @@ mDNSexport int main(int argc, char **argv)
 	signal(SIGUSR1, HandleSIG);		// (Debugging) Simulate network change notification from System Configuration Framework
 	signal(SIGUSR2, HandleSIG);		// (Debugging) Change log level
 
-	// First do the all the initialization we need root privilege for, before we change to user "nobody"
 	mDNSStorage.p = &PlatformStorage;	// Make sure mDNSStorage.p is set up, because validatelists uses it
 	LogMsgIdent(mDNSResponderVersionString, "starting");
 	LaunchdCheckin();
@@ -2640,15 +2671,6 @@ mDNSexport int main(int argc, char **argv)
 	PlatformStorage.WakeKQueueLoopFD = fdpair[0];
 	KQueueSet(fdpair[1], EV_ADD, EVFILT_READ, &wakeKQEntry);
 	
-#if CAN_UPDATE_DYNAMIC_STORE_WITHOUT_BEING_ROOT
-	// Now that we're finished with anything privileged, switch over to running as "nobody"
-	const struct passwd *pw = getpwnam("nobody");
-	if (pw != NULL)
-		setuid(pw->pw_uid);
-	else
-		setuid(-2);		// User "nobody" is -2; use that value if "nobody" does not appear in the password database
-#endif
-
 	// Invoke sandbox profile /usr/share/sandbox/mDNSResponder.sb
 #if MDNS_NO_SANDBOX
 	LogMsg("Note: Compiled without Apple Sandbox support");

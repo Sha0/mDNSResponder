@@ -1,4 +1,4 @@
-; -*- tab-width: 4 -*-
+; -*- Mode: Scheme; tab-width: 4 -*-
 ;
 ; Copyright (c) 2007 Apple Inc. All rights reserved.
 ;
@@ -26,6 +26,9 @@
 ; SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ;
 ; $Log: mDNSResponder.sb,v $
+; Revision 1.20  2007/08/08 22:34:59  mcguire
+; <rdar://problem/5197869> Security: Run mDNSResponder as user id mdnsresponder instead of root
+;
 ; Revision 1.19  2007/07/02 23:37:50  cheshire
 ; <rdar://problem/5267615> Need to list of allowed mach-lookup operations explicitly in mDNSResponder.sb
 ;
@@ -112,7 +115,7 @@
 ;(deny default)
 (deny default (with send-signal SIGFPE))
 
-; Special exception: "send-signal" command doesn't work with the mach-* operations,
+; Special exception: "send-signal" command does not apply to the mach-* operations,
 ; so for those we have to use a plain unadorned "deny" instead
 ; (which means we may not get any notification of unintentional mach-* denials)
 (deny mach-lookup)
@@ -121,7 +124,10 @@
 ; Mach communications
 ; These are needed for things like getpwnam, hostname changes, & keychain
 (allow mach-lookup (global-name
+					"com.apple.bsd.dirhelper"
+					"com.apple.distributed_notifications.2"
 					"com.apple.ocspd"
+					"com.apple.mDNSResponder.helper"
 					"com.apple.SecurityServer"
 					"com.apple.SystemConfiguration.configd"
 					"com.apple.system.DirectoryService.libinfo_v1"
@@ -138,25 +144,22 @@
 (allow file-read-data file-write-data (regex "^/dev/console\$"))		; Needed for syslog early in the boot process
 (allow file-read-data                 (regex "^/dev/autofs_nowait\$"))	; Used by CF to circumvent automount triggers
 
-; Allow us to create our PID file
-(allow file-read*     file-write*     (regex "^/private/var/run/mDNSResponder\.pid\$"))
+; Allow us to read and write our state directory
+(allow file-read*     file-write*     (regex "^/private/var/run/mdns(/|\$)"))
 
 ; Allow us to read system version, settings, and other miscellaneous necessary file system accesses
 (allow file-read-data                 (regex "^/usr/sbin(/mDNSResponder)?\$"))		; Needed for CFCopyVersionDictionary()
 (allow file-read-data                 (regex "^/usr/share/icu/.*\$"))
 (allow file-read-data                 (regex "^/usr/share/zoneinfo/.*\$"))
 (allow file-read-data                 (regex "^/System/Library/CoreServices/SystemVersion.*\$"))
-(allow file-read-data                 (regex "^/(private/var/root/)?Library/Preferences/(ByHost/)?\.GlobalPreferences.*\.plist\$"))
-(allow file-read-data                 (regex "^/(private/var/root/)?Library/Preferences/com\.apple\.security\.plist\$"))
+(allow file-read-data                 (regex "^/Library/Preferences/(ByHost/)?\.GlobalPreferences.*\.plist\$"))
+(allow file-read-data                 (regex "^/Library/Preferences/com\.apple\.security\.plist\$"))
 
 ; Allow access to System Keychain
-(allow file-read-data file-write-data (regex "^/private/var/tmp/mds/system/.*\$")) ; Module Directory Services cache
 (allow file-read-data                 (regex "^/System/Library/Security\$"))
 (allow file-read-data                 (regex "^/System/Library/Keychains/.*\$"))
 (allow file-read-data                 (regex "^/Library/Keychains/System\.keychain\$"))
+; Our Module Directory Services cache
+(allow file-read-data                 (regex "^/private/var/tmp/mds/"))
+(allow file-read* file-write*         (regex "^/private/var/tmp/mds/[0-9]+(/|\$)"))
 
-; After name conflict, allow mDNSResponder to persistently save new unique name for next time
-(allow file-read*     file-write*     (regex "^/Library/Preferences/SystemConfiguration/preferences\.plist\$"))
-(allow file-read*     file-write*     (regex "^/Library/Preferences/SystemConfiguration/preferences\.plist-new\$"))
-(allow file-read*     file-write*     (regex "^/Library/Preferences/SystemConfiguration/preferences\.plist-lock\$"))
-(allow file-read*     file-write*     (regex "^/Library/Preferences/SystemConfiguration/preferences\.plist/preferences\.plist\$"))
