@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.459  2007/08/08 21:07:48  vazquez
+<rdar://problem/5244687> BTMM: Need to advertise model information via wide-area bonjour
+
 Revision 1.458  2007/08/03 02:18:41  mcguire
 <rdar://problem/5381687> BTMM: Use port numbers in IPsec policies & configuration files
 
@@ -2050,15 +2053,25 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 				info->AutoTunnelHostRecord.resrec.rdata->u.ipv6 = m->AutoTunnelHostAddr;
 				mDNS_Register_internal(m, &info->AutoTunnelHostRecord);
 
-				// 2. Set up our address record for the external tunnel address
+				// 2. Set up device info record
+				mDNSu8 len = m->HIHardware.c[0] < 255 - 6 ? m->HIHardware.c[0] : 255 - 6;
+				mDNS_SetupResourceRecord(&info->AutoTunnelDeviceInfo, mDNSNULL, mDNSInterface_Any, kDNSType_TXT, kHostNameTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
+				ConstructServiceName(&info->AutoTunnelDeviceInfo.namestorage, &m->nicelabel, &DeviceInfoName, &info->domain);
+				mDNSPlatformMemCopy(info->AutoTunnelDeviceInfo.resrec.rdata->u.data + 1, "model=", 6);
+				mDNSPlatformMemCopy(info->AutoTunnelDeviceInfo.resrec.rdata->u.data + 7, m->HIHardware.c + 1, len);
+				info->AutoTunnelDeviceInfo.resrec.rdata->u.data[0] = 6 + len;	// "model=" plus the device string
+				info->AutoTunnelDeviceInfo.resrec.rdlength         = 7 + len;	// One extra for the length byte at the start of the string
+				mDNS_Register_internal(m, &info->AutoTunnelDeviceInfo);
+
+				// 3. Set up our address record for the external tunnel address
 				// (Constructed name, not generally user-visible, used as target in IKE tunnel's SRV record)
 				mDNS_SetupResourceRecord(&info->AutoTunnelTarget, mDNSNULL, mDNSInterface_Any, kDNSType_A, kHostNameTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
 				info->AutoTunnelTarget.namestorage.c[0] = 0;
 				AppendDomainLabel(&info->AutoTunnelTarget.namestorage, &m->AutoTunnelLabel);
 				AppendDomainName (&info->AutoTunnelTarget.namestorage, &info->domain);
 				mDNS_AddDynDNSHostName(m, &info->AutoTunnelTarget.namestorage, mDNSNULL, mDNSNULL);
-
-				// 3. Set up IKE tunnel's SRV record: "AutoTunnelHostRecord SRV 0 0 port AutoTunnelTarget"
+				
+				// 4. Set up IKE tunnel's SRV record: "AutoTunnelHostRecord SRV 0 0 port AutoTunnelTarget"
 				mDNS_SetupResourceRecord(&info->AutoTunnelService, mDNSNULL, mDNSInterface_Any, kDNSType_SRV, kHostNameTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
 				AssignDomainName(&info->AutoTunnelService.namestorage, (const domainname*) "\x0B" "_autotunnel" "\x04" "_udp");
 				AppendDomainName(&info->AutoTunnelService.namestorage, &info->AutoTunnelHostRecord.namestorage);

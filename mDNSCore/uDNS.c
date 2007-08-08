@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.436  2007/08/08 21:07:48  vazquez
+<rdar://problem/5244687> BTMM: Need to advertise model information via wide-area bonjour
+
 Revision 1.435  2007/08/03 02:04:09  vazquez
 <rdar://problem/5371843> BTMM: Private LLQs never fall back to polling
 Fix case where NAT-PMP returns an external address but does not support
@@ -926,6 +929,7 @@ mDNSexport DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const n
 			if (info->AutoTunnel && info->AutoTunnelHostRecord.namestorage.c[0])
 				{
 				mDNS_Deregister_internal (m, &info->AutoTunnelHostRecord, mDNS_Dereg_normal);
+				mDNS_Deregister_internal (m, &info->AutoTunnelDeviceInfo, mDNS_Dereg_normal);
 				mDNS_RemoveDynDNSHostName(m, &info->AutoTunnelTarget.namestorage);
 				mDNS_Deregister_internal (m, &info->AutoTunnelService, mDNS_Dereg_normal);
 				mDNS_StopNATOperation    (m, &info->AutoTunnelNAT);

@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.419  2007/08/08 21:07:47  vazquez
+<rdar://problem/5244687> BTMM: Need to advertise model information via wide-area bonjour
+
 Revision 1.418  2007/08/01 16:09:13  cheshire
 Removed unused NATTraversalInfo substructure from AuthRecord; reduced structure sizecheck values accordingly
 
@@ -1565,6 +1568,7 @@ typedef struct DomainAuthInfo
 	mDNSBool         AutoTunnel;
 	AuthRecord       AutoTunnelHostRecord;	// User-visible hostname; used as SRV target for AutoTunnel services
 	AuthRecord       AutoTunnelTarget;		// Opaque hostname of tunnel endpoint; used as SRV target for AutoTunnelService record
+	AuthRecord       AutoTunnelDeviceInfo;	// Device info of tunnel endpoint
 	AuthRecord       AutoTunnelService;		// Service record (possibly NAT-Mapped) of IKE daemon implementing tunnel endpoint
 	NATTraversalInfo AutoTunnelNAT;
 	domainname       domain;
@@ -2548,7 +2552,7 @@ struct CompileTimeAssertionChecks_mDNS
 	char sizecheck_DNSServer           [(sizeof(DNSServer)            <=   300) ? 1 : -1];
 	char sizecheck_NetworkInterfaceInfo[(sizeof(NetworkInterfaceInfo) <=  4000) ? 1 : -1];
 	char sizecheck_ServiceRecordSet    [(sizeof(ServiceRecordSet)     <=  5700) ? 1 : -1];
-	char sizecheck_DomainAuthInfo      [(sizeof(DomainAuthInfo)       <=  4700) ? 1 : -1];
+	char sizecheck_DomainAuthInfo      [(sizeof(DomainAuthInfo)       <=  6000) ? 1 : -1];
 	char sizecheck_ServiceInfoQuery    [(sizeof(ServiceInfoQuery)     <=  2900) ? 1 : -1];
 	char sizecheck_ClientTunnel        [(sizeof(ClientTunnel)         <=  1040) ? 1 : -1];
 	};
