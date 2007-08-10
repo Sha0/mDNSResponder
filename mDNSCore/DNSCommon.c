@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.167  2007/08/10 23:10:05  vazquez
+<rdar://problem/5389850> mDNS: Reverse lookups of IPv6 link-local addresses always fail
+
 Revision 1.166  2007/08/01 16:09:13  cheshire
 Removed unused NATTraversalInfo substructure from AuthRecord; reduced structure sizecheck values accordingly
 
@@ -567,20 +570,20 @@ mDNSexport mDNSBool IsLocalDomain(const domainname *d)
 	static const domainname *nA = (const domainname*)"\x1" "a"   "\x1" "e" "\x1" "f" "\x3" "ip6"     "\x4" "arpa";
 	static const domainname *nB = (const domainname*)"\x1" "b"   "\x1" "e" "\x1" "f" "\x3" "ip6"     "\x4" "arpa";
 
-	const domainname *d1, *d2, *d3, *d4, *d5, *d6;	// Top-level domain, second-level domain, etc.
-	d1 = d2 = d3 = d4 = d5 = d6 = mDNSNULL;
+	const domainname *d1, *d2, *d3, *d4, *d5;	// Top-level domain, second-level domain, etc.
+	d1 = d2 = d3 = d4 = d5 = mDNSNULL;
 	while (d->c[0])
 		{
-		d6 = d5; d5 = d4; d4 = d3; d3 = d2; d2 = d1; d1 = d;
+		d5 = d4; d4 = d3; d3 = d2; d2 = d1; d1 = d;
 		d = (const domainname*)(d->c + 1 + d->c[0]);
 		}
 
 	if (d1 && SameDomainName(d1, nL)) return(mDNStrue);
 	if (d4 && SameDomainName(d4, nR)) return(mDNStrue);
-	if (d6 && SameDomainName(d6, n8)) return(mDNStrue);
-	if (d6 && SameDomainName(d6, n9)) return(mDNStrue);
-	if (d6 && SameDomainName(d6, nA)) return(mDNStrue);
-	if (d6 && SameDomainName(d6, nB)) return(mDNStrue);
+	if (d5 && SameDomainName(d5, n8)) return(mDNStrue);
+	if (d5 && SameDomainName(d5, n9)) return(mDNStrue);
+	if (d5 && SameDomainName(d5, nA)) return(mDNStrue);
+	if (d5 && SameDomainName(d5, nB)) return(mDNStrue);
 	return(mDNSfalse);
 	}
 
