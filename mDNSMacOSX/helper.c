@@ -697,18 +697,26 @@ createAnonymousRacoonConfiguration(const char *keydata)
 	  "  authentication_algorithm hmac_sha1;\n"
 	  "  compression_algorithm deflate;\n"
 	  "}\n";
+	char tmp_config_path[] =
+	    "/etc/racoon/remote/tmp.XXXXXX";
 	static const char racoon_config_path[] =
 	    "/etc/racoon/remote/anonymous.conf";
-	int fd = open(racoon_config_path, O_CREAT|O_WRONLY, S_IRUSR|S_IWUSR);
+	int fd = mkstemp(tmp_config_path);
 	if (0 > fd) {
-		helplog(ASL_LEVEL_ERR, "open \"%s\" failed: %s",
-		    racoon_config_path, strerror(errno));
+		helplog(ASL_LEVEL_ERR, "mkstemp \"%s\" failed: %s",
+		    tmp_config_path, strerror(errno));
 		return -1;
 	}
 	write(fd, config1, sizeof(config1)-1);
 	write(fd, keydata, strlen(keydata));
 	write(fd, config2, sizeof(config2)-1);
 	close(fd);
+	if (0 > rename(tmp_config_path, racoon_config_path)) {
+		unlink(tmp_config_path);
+		helplog(ASL_LEVEL_ERR, "rename \"%s\" \"%s\" failed: %s",
+		    tmp_config_path, racoon_config_path, strerror(errno));
+		return -1;
+	}
 	return 0;
 }
 
@@ -1128,6 +1136,7 @@ do_mDNSAutoTunnelSetKeys(__unused mach_port_t port, int replacedelete,
 	    ri[INET6_ADDRSTRLEN], ro[INET_ADDRSTRLEN];
 	FILE *fp = NULL;
 	int fd = -1;
+	char tmp_path[PATH_MAX] = "";
 
 	debug("entry");
 	*err = 0;
@@ -1162,10 +1171,14 @@ do_mDNSAutoTunnelSetKeys(__unused mach_port_t port, int replacedelete,
 		goto fin;
 	}
 	if (kmDNSAutoTunnelSetKeysReplace == replacedelete) {
-		if (0 > (fd = open(path, O_WRONLY|O_CREAT,
-		    S_IRUSR|S_IWUSR))) {
-			helplog(ASL_LEVEL_ERR, "open \"%s\" failed: %s",
-			    path, strerror(errno));
+		if ((int)sizeof(tmp_path) <=
+		    snprintf(tmp_path, sizeof(tmp_path), "%s.XXXXXX", path)) {
+			*err = kmDNSHelperResultTooLarge;
+			goto fin;
+		}       
+		if (0 > (fd = mkstemp(tmp_path))) {
+			helplog(ASL_LEVEL_ERR, "mktemp \"%s\" failed: %s",
+			    tmp_path, strerror(errno));
 			*err = kmDNSHelperRacoonConfigCreationFailed;
 			goto fin;
 		}
@@ -1179,6 +1192,13 @@ do_mDNSAutoTunnelSetKeys(__unused mach_port_t port, int replacedelete,
 		fprintf(fp, config, ro, rmt_port, keydata, ri, li, li, ri);
 		fclose(fp);
 		fp = NULL;
+		if (0 > rename(tmp_path, path)) {
+			helplog(ASL_LEVEL_ERR,
+			    "rename \"%s\" \"%s\" failed: %s",
+			    tmp_path, path, strerror(errno));
+			*err = kmDNSHelperRacoonConfigCreationFailed;
+			goto fin;
+		}
 		if (0 != (*err = kickRacoon()))
 			goto fin;
 	} else {
@@ -1208,6 +1228,7 @@ fin:
 		fclose(fp);
 	if (0 <= fd)
 		close(fd);
+	unlink(tmp_path);
 	update_idle_timer();
 	return KERN_SUCCESS;
 }
