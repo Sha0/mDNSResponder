@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.461  2007/08/10 22:25:57  mkrochma
+<rdar://problem/5396302> mDNSResponder continually complains about slow UDP packet reception -- about 400 msecs
+
 Revision 1.460  2007/08/08 22:34:59  mcguire
 <rdar://problem/5197869> Security: Run mDNSResponder as user id mdnsresponder instead of root
 
@@ -1180,8 +1183,9 @@ mDNSexport void KQueueLock(mDNS *const m)
 mDNSexport void KQueueUnlock(mDNS *const m, const char const *task)
 	{
 	mDNSs32 end = mDNSPlatformRawTime();
+	(void)task;
 	if (end - m->p->BigMutexStartTime >= WatchDogReportingThreshold)
-		LogMsg("WARNING: %s took %dms to complete", task, end - m->p->BigMutexStartTime);
+		LogOperation("WARNING: %s took %dms to complete", task, end - m->p->BigMutexStartTime);
 
 	pthread_mutex_unlock(&m->p->BigMutex);
 

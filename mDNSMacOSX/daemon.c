@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.330  2007/08/10 22:25:57  mkrochma
+<rdar://problem/5396302> mDNSResponder continually complains about slow UDP packet reception -- about 400 msecs
+
 Revision 1.329  2007/08/08 22:34:58  mcguire
 <rdar://problem/5197869> Security: Run mDNSResponder as user id mdnsresponder instead of root
 
@@ -2444,7 +2447,7 @@ mDNSlocal void * KQueueLoop(void *m_param)
 		mDNSs32 nextTimerEvent = udsserver_idle(mDNSDaemonIdle(m));
 		mDNSs32 end            = mDNSPlatformRawTime();
 		if (end - start >= WatchDogReportingThreshold)
-			LogMsg("WARNING: Idle task took %dms to complete", end - start);
+			LogOperation("WARNING: Idle task took %dms to complete", end - start);
 		
 		// Convert absolute wakeup time to a relative time from now
 		mDNSs32 ticks = nextTimerEvent - mDNS_TimeNow(m);
@@ -2514,10 +2517,11 @@ mDNSlocal void * KQueueLoop(void *m_param)
 				const KQueueEntry *const kqentry = new_events[i].udata;
 				mDNSs32 start = mDNSPlatformRawTime();
 				const char *const KQtask = kqentry->KQtask;	// Grab a copy in case KQcallback deletes the task
+				(void)KQtask;
 				kqentry->KQcallback(new_events[i].ident, new_events[i].filter, kqentry->KQcontext);
 				mDNSs32 end   = mDNSPlatformRawTime();
 				if (end - start >= WatchDogReportingThreshold)
-					LogMsg("WARNING: %s took %dms to complete", KQtask, end - start);
+					LogOperation("WARNING: %s took %dms to complete", KQtask, end - start);
 				}
 			}
 		}
