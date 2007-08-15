@@ -17,6 +17,10 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.328  2007/08/15 20:18:28  vazquez
+<rdar://problem/5400521> update_record mDNSResponder leak
+Make sure we free all ExtraResourceRecords
+
 Revision 1.327  2007/08/08 22:34:59  mcguire
 <rdar://problem/5197869> Security: Run mDNSResponder as user id mdnsresponder instead of root
 
@@ -1452,14 +1456,26 @@ mDNSlocal mStatus remove_record(request_state *request)
 mDNSlocal mStatus remove_extra(const request_state *const request, service_instance *const serv, mDNSu16 *const rrtype)
 	{
 	mStatus err = mStatus_BadReferenceErr;
-	ExtraResourceRecord *ptr;
+	ExtraResourceRecord *ptr = serv->srs.Extras, *tmp;
 
-	for (ptr = serv->srs.Extras; ptr; ptr = ptr->next)
+	while (ptr)
 		{
-		if (ptr->ClientID == request->hdr.reg_index) // found match
+		tmp = ptr;
+		ptr = ptr->next;
+		if (tmp->ClientID == request->hdr.reg_index) // found match
 			{
-			*rrtype = ptr->r.resrec.rrtype;
-			return mDNS_RemoveRecordFromService(&mDNSStorage, &serv->srs, ptr, FreeExtraRR, ptr);
+			*rrtype = tmp->r.resrec.rrtype;
+			err = mDNS_RemoveRecordFromService(&mDNSStorage, &serv->srs, tmp, FreeExtraRR, tmp);
+			// mDNS_RemoveRecordFromService() calls mDNS_Deregister_internal(), which returns
+			// mStatus_BadReferenceErr if it doesn't find a resource record that matches tmp->r.
+			// We still have this extra record even if the registration doesn't exist (or more likely, 
+			// was never made) so we must free here to avoid a leak.
+			if (err == mStatus_BadReferenceErr)
+				{
+				tmp->r.RecordContext = tmp;
+				FreeExtraRR(&mDNSStorage, &tmp->r, mStatus_MemFree);
+				}
+			return (err);
 			}
 		}
 	return err;
