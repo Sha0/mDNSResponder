@@ -960,8 +960,8 @@ v6addr_to_string(v6addr_t addr, char *buf, size_t buflen)
 /* Caller owns object returned in `policy' */
 static int
 generateTunnelPolicy(int setup, int in,
-		     v4addr_t src, short src_port,
-		     v4addr_t dst, short dst_port,
+		     v4addr_t src, uint16_t src_port,
+		     v4addr_t dst, uint16_t dst_port,
 		     ipsec_policy_t *policy, size_t *len)
 {
 	char srcs[INET_ADDRSTRLEN], dsts[INET_ADDRSTRLEN];
@@ -979,7 +979,7 @@ generateTunnelPolicy(int setup, int in,
 		if (0 != (err = v4addr_to_string(dst, dsts, sizeof(dsts))))
 			goto fin;
 		n = snprintf(buf, sizeof(buf),
-		    "%s ipsec esp/tunnel/%s[%d]-%s[%d]/require",
+		    "%s ipsec esp/tunnel/%s[%u]-%s[%u]/require",
 		    inOut, srcs, src_port, dsts, dst_port);
 	} else
 		n = strlcpy(buf, inOut, sizeof(buf));
@@ -1030,8 +1030,8 @@ fin:
 
 static int
 doTunnelPolicy(int setup,
-	       v6addr_t loc_inner, v4addr_t loc_outer, short loc_port, 
-	       v6addr_t rmt_inner, v4addr_t rmt_outer, short rmt_port)
+	       v6addr_t loc_inner, v4addr_t loc_outer, uint16_t loc_port, 
+	       v6addr_t rmt_inner, v4addr_t rmt_outer, uint16_t rmt_port)
 {
 	struct sockaddr_in6 sin_loc;
 	struct sockaddr_in6 sin_rmt;
@@ -1092,12 +1092,12 @@ fin:
 
 int
 do_mDNSAutoTunnelSetKeys(__unused mach_port_t port, int replacedelete,
-    v6addr_t loc_inner, v4addr_t loc_outer, short loc_port, v6addr_t rmt_inner,
-    v4addr_t rmt_outer, short rmt_port, const char *keydata, int *err,
-    audit_token_t token)
+    v6addr_t loc_inner, v4addr_t loc_outer, uint16_t loc_port,
+    v6addr_t rmt_inner, v4addr_t rmt_outer, uint16_t rmt_port,
+    const char *keydata, int *err, audit_token_t token)
 {
 	static const char config[] =
-	  "remote %s [%d] {\n"
+	  "remote %s [%u] {\n"
 	  "  exchange_mode aggressive;\n"
 	  "  doi ipsec_doi;\n"
 	  "  situation identity_only;\n"
@@ -1161,11 +1161,11 @@ do_mDNSAutoTunnelSetKeys(__unused mach_port_t port, int replacedelete,
 	if (0 != (*err = v4addr_to_string(rmt_outer, ro, sizeof(ro))))
 		goto fin;
 	debug("loc_inner=%s rmt_inner=%s", li, ri);
-	debug("loc_outer=%s loc_port=%d rmt_outer=%s rmt_port=%d",
+	debug("loc_outer=%s loc_port=%u rmt_outer=%s rmt_port=%u",
 	    lo, loc_port, ro, rmt_port);
 
 	if ((int)sizeof(path) <= snprintf(path, sizeof(path),
-	    "/etc/racoon/remote/%s.%d.conf", ro,
+	    "/etc/racoon/remote/%s.%u.conf", ro,
 	    rmt_port)) {
 		*err = kmDNSHelperResultTooLarge;
 		goto fin;
