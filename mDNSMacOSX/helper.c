@@ -558,6 +558,22 @@ fin:
 	return KERN_SUCCESS;
 }
 
+typedef enum _mDNSTunnelPolicyWhich {
+	kmDNSTunnelPolicySetup,
+	kmDNSTunnelPolicyTeardown,
+	kmDNSTunnelPolicyGenerate
+} mDNSTunnelPolicyWhich;
+
+static const uint8_t kWholeV6Mask = 128;
+static const uint8_t kZeroV6Mask  = 0;
+
+static int
+doTunnelPolicy(mDNSTunnelPolicyWhich which,
+	       v6addr_t loc_inner, uint8_t loc_bits,
+	       v4addr_t loc_outer, uint16_t loc_port, 
+	       v6addr_t rmt_inner, uint8_t rmt_bits,
+	       v4addr_t rmt_outer, uint16_t rmt_port);
+
 static int
 aliasTunnelAddress(v6addr_t address)
 {
@@ -595,6 +611,11 @@ aliasTunnelAddress(v6addr_t address)
 		goto fin;
 	}
 
+	v6addr_t zero = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+	err = doTunnelPolicy(kmDNSTunnelPolicyGenerate,
+	    address, kWholeV6Mask, NULL, 0,
+	    zero, kZeroV6Mask, NULL, 0);
+
 fin:
 	if (0 <= s)
 		close(s);
@@ -628,6 +649,11 @@ unaliasTunnelAddress(v6addr_t address)
 		err = kmDNSHelperInterfaceDeletionFailed;
 		goto fin;
 	}
+
+	v6addr_t zero = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+	err = doTunnelPolicy(kmDNSTunnelPolicyTeardown,
+	    address, kWholeV6Mask, NULL, 0,
+	    zero, kZeroV6Mask, NULL, 0);
 
 fin:
 	if (0 <= s)
@@ -959,7 +985,7 @@ v6addr_to_string(v6addr_t addr, char *buf, size_t buflen)
 
 /* Caller owns object returned in `policy' */
 static int
-generateTunnelPolicy(int setup, int in,
+generateTunnelPolicy(mDNSTunnelPolicyWhich which, int in,
 		     v4addr_t src, uint16_t src_port,
 		     v4addr_t dst, uint16_t dst_port,
 		     ipsec_policy_t *policy, size_t *len)
@@ -973,7 +999,8 @@ generateTunnelPolicy(int setup, int in,
 	*policy = NULL;
 	*len = 0;
 
-	if (setup) {
+	switch (which) {
+	case kmDNSTunnelPolicySetup:
 		if (0 != (err = v4addr_to_string(src, srcs, sizeof(srcs))))
 			goto fin;
 		if (0 != (err = v4addr_to_string(dst, dsts, sizeof(dsts))))
@@ -981,12 +1008,23 @@ generateTunnelPolicy(int setup, int in,
 		n = snprintf(buf, sizeof(buf),
 		    "%s ipsec esp/tunnel/%s[%u]-%s[%u]/require",
 		    inOut, srcs, src_port, dsts, dst_port);
-	} else
+		break;
+	case kmDNSTunnelPolicyTeardown:
 		n = strlcpy(buf, inOut, sizeof(buf));
+		break;
+	case kmDNSTunnelPolicyGenerate:
+		n = snprintf(buf, sizeof(buf), "%s generate", inOut);
+		break;
+	default:
+		err = kmDNSHelperIPsecPolicyCreationFailed;
+		goto fin;
+	}
+
 	if (n >= (int)sizeof(buf)) {
 		err = kmDNSHelperResultTooLarge;
 		goto fin;
 	}
+
 	debug("policy=\"%s\"", buf);
 	if (NULL == (*policy = (ipsec_policy_t)ipsec_set_policy(buf, n))) {
 		helplog(ASL_LEVEL_ERR,
@@ -1001,19 +1039,20 @@ fin:
 }
 
 static int
-sendPolicy(int s, int setup, struct sockaddr *src, struct sockaddr *dst,
-    ipsec_policy_t policy, size_t len)
+sendPolicy(int s, int setup,
+	   struct sockaddr *src, uint8_t src_bits,
+	   struct sockaddr *dst, uint8_t dst_bits,
+	   ipsec_policy_t policy, size_t len)
 {
 	static unsigned int policySeq = 0;
 	int err = 0;
 
 	debug("entry, setup=%d", setup);
-	/* 128 below is bitmask (whole v6 addr) */
 	if (setup)
-		err = pfkey_send_spdadd(s, src, 128, dst, 128, -1,
+		err = pfkey_send_spdadd(s, src, src_bits, dst, dst_bits, -1,
 		    (char *)policy, len, policySeq++);
 	else
-		err = pfkey_send_spddelete(s, src, 128, dst, 128, -1,
+		err = pfkey_send_spddelete(s, src, src_bits, dst, dst_bits, -1,
 		    (char *)policy, len, policySeq++);
 	if (0 > err) {
 		helplog(ASL_LEVEL_ERR, "Could not set IPsec policy: %s",
@@ -1029,9 +1068,11 @@ fin:
 }
 
 static int
-doTunnelPolicy(int setup,
-	       v6addr_t loc_inner, v4addr_t loc_outer, uint16_t loc_port, 
-	       v6addr_t rmt_inner, v4addr_t rmt_outer, uint16_t rmt_port)
+doTunnelPolicy(mDNSTunnelPolicyWhich which,
+	       v6addr_t loc_inner, uint8_t loc_bits,
+	       v4addr_t loc_outer, uint16_t loc_port, 
+	       v6addr_t rmt_inner, uint8_t rmt_bits,
+	       v4addr_t rmt_outer, uint16_t rmt_port)
 {
 	struct sockaddr_in6 sin_loc;
 	struct sockaddr_in6 sin_rmt;
@@ -1061,25 +1102,31 @@ doTunnelPolicy(int setup,
 	sin_rmt.sin6_port = htons(0);
 	memcpy(&sin_rmt.sin6_addr, rmt_inner, sizeof(sin_rmt.sin6_addr));
 
-	if (0 != (err = generateTunnelPolicy(setup, 1,
+	int setup = which != kmDNSTunnelPolicyTeardown;
+
+	if (0 != (err = generateTunnelPolicy(which, 1,
 	    rmt_outer, rmt_port,
 	    loc_outer, loc_port,
 	    &policy, &len)))
 		goto fin;
-	if (0 != (err = sendPolicy(s, setup, (struct sockaddr *)&sin_rmt,
-	    (struct sockaddr *)&sin_loc, policy, len)))
+	if (0 != (err = sendPolicy(s, setup,
+	    (struct sockaddr *)&sin_rmt, rmt_bits,
+	    (struct sockaddr *)&sin_loc, loc_bits,
+	    policy, len)))
 		goto fin;
 	if (NULL != policy) {
 		free(policy);
 		policy = NULL;
 	}
-	if (0 != (err = generateTunnelPolicy(setup, 0,
+	if (0 != (err = generateTunnelPolicy(which, 0,
 	    loc_outer, loc_port,
 	    rmt_outer, rmt_port,
 	    &policy, &len)))
 		goto fin;
-	if (0 != (err = sendPolicy(s, setup, (struct sockaddr *)&sin_loc,
-	    (struct sockaddr *)&sin_rmt, policy, len)))
+	if (0 != (err = sendPolicy(s, setup,
+	    (struct sockaddr *)&sin_loc, loc_bits,
+	    (struct sockaddr *)&sin_rmt, rmt_bits,
+	    policy, len)))
 		goto fin;
 	debug("succeeded");
 fin:
@@ -1207,12 +1254,14 @@ do_mDNSAutoTunnelSetKeys(__unused mach_port_t port, int replacedelete,
 			    strerror(errno));
 	}
 
-	if (0 != (*err = doTunnelPolicy(0, loc_inner, NULL, loc_port,
-									rmt_inner, NULL, rmt_port)))
+	if (0 != (*err = doTunnelPolicy(kmDNSTunnelPolicyTeardown,
+	    loc_inner, kWholeV6Mask, NULL, loc_port,
+	    rmt_inner, kWholeV6Mask, NULL, rmt_port)))
 		goto fin;
 	if (kmDNSAutoTunnelSetKeysReplace == replacedelete &&
-	    0 != (*err = doTunnelPolicy(1, loc_inner, loc_outer, loc_port,
-									rmt_inner, rmt_outer, rmt_port)))
+	    0 != (*err = doTunnelPolicy(kmDNSTunnelPolicySetup,
+	        loc_inner, kWholeV6Mask, loc_outer, loc_port,
+		rmt_inner, kWholeV6Mask, rmt_outer, rmt_port)))
 		goto fin;
 
 	if (0 != (*err = teardownTunnelRoute(rmt_inner)))
