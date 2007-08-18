@@ -791,7 +791,7 @@ static int
 startRacoon(void)
 {
 	debug("entry");
-	char * const racoon_args[] = { "/usr/sbin/racoon", NULL };
+	char * const racoon_args[] = { "/usr/sbin/racoon", "-e", NULL };
 	ssize_t n = 0;
 	pid_t pid = 0;
 	int status = 0;
