@@ -52,7 +52,6 @@ extern int mDNSPreferencesSetName(int key, CFStringRef value,
     CFStringEncoding encoding);
 extern int mDNSDynamicStoreSetConfig(int key, CFPropertyListRef value);
 extern int mDNSKeychainGetSecrets(CFArrayRef *secrets);
-extern int mDNSCreateStateDir(void);
 extern int mDNSAutoTunnelInterfaceUpDown(int updown, v6addr_t addr);
 extern int mDNSRacoonNotify(const char *keydata);
 extern int mDNSAutoTunnelSetKeys(int replacedelete, v6addr_t local_inner,

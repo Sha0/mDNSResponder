@@ -517,47 +517,6 @@ fin:
 	return KERN_SUCCESS;
 }
 
-kern_return_t
-do_mDNSCreateStateDir(__unused mach_port_t port, int *err, audit_token_t token)
-{
-	static char oldsocketpath[] = "/var/run/mDNSResponder";
-	char path[] = MDNS_UDS_SERVERPATH;
-	char *p = NULL;
-
-	debug("entry");
-	*err = 0;
-	if (!authorized(&token)) {
-		*err = kmDNSHelperNotAuthorized;
-		goto fin;
-	}
-	p = strrchr(path, '/');
-	*p = '\0';
-	if (0 > mkdir(path, 0755) && EEXIST != errno) {
-		*err = kmDNSHelperDirectoryCreationFailed;
-		debug("mkdir(\"%s\", 0755) failed: %s", path, strerror(errno));
-		goto fin;
-	}
-	if (0 > chown(path, mDNSResponderUID, mDNSResponderGID)) {
-		*err = kmDNSHelperSetOwnershipFailed;
-		debug("chown(\"%s\", %lu, %lu) failed: %s", path,
-		    (unsigned long)mDNSResponderUID,
-		    (unsigned long)mDNSResponderGID, strerror(errno));
-		goto fin;
-	}
-	(void)unlink(oldsocketpath);
-	if (0 > symlink(MDNS_UDS_SERVERPATH, oldsocketpath)) {
-		*err = kmDNSHelperSymlinkFailed;
-		debug("symlink(\"%s\", \"%s\") failed: %s", MDNS_UDS_SERVERPATH,
-		    oldsocketpath, strerror(errno));
-		goto fin;
-	}
-	debug("succeeded");
-
-fin:
-	update_idle_timer();
-	return KERN_SUCCESS;
-}
-
 typedef enum _mDNSTunnelPolicyWhich {
 	kmDNSTunnelPolicySetup,
 	kmDNSTunnelPolicyTeardown,

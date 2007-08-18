@@ -17,17 +17,11 @@ needed and handles requests from mDNSResponder.
   created in /var/run.  The PID file and uDNS server socket has been
   moved to that subdirectory.
 
-* There are currently seven remote procedure calls handled by
-  mDNSResponderHelper: mDNSCreateStateDir, mDNSDynamicStoreSetConfig,
+* There are currently six remote procedure calls handled by
+  mDNSResponderHelper: mDNSDynamicStoreSetConfig,
   mDNSPreferencesSetName, mDNSKeychainGetSecrets,
   mDNSAutoTunnelInterfaceUpDown, mDNSRacoonNotify, and
   mDNSAutoTunnelSetKeys
-
-* mDNSCreateStateDir is invoked once during startup.  It creates
-  /var/run/mdns and sets appropriate ownership and permissions.  It
-  also creates a symlink from the previous uDNS server socket path
-  (/var/run/mDNSResponder) to the new one
-  (/var/run/mdns/mDNSResponder).
 
 * mDNSDynamicStoreSetConfig allows mDNSResponder to set the
   MulticastDNS, PrivateDNS, or DynamicDNS configurations.

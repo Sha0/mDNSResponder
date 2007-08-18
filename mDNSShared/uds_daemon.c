@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.329  2007/08/18 01:02:04  mcguire
+<rdar://problem/5415593> No Bonjour services are getting registered at boot
+
 Revision 1.328  2007/08/15 20:18:28  vazquez
 <rdar://problem/5400521> update_record mDNSResponder leak
 Make sure we free all ExtraResourceRecords
@@ -520,7 +523,7 @@ mDNSlocal char *win32_strerror(int inErrorCode)
 #if APPLE_OSX_mDNSResponder
 #include <sys/ucred.h>
 #ifndef PID_FILE
-#define PID_FILE "/var/run/mdns/mDNSResponder.pid"
+#define PID_FILE ""
 #endif
 #endif
 

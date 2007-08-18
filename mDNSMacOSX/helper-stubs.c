@@ -220,21 +220,6 @@ fin:
 }
 
 int
-mDNSCreateStateDir(void)
-{
-	kern_return_t kr = KERN_SUCCESS;
-	int retry = 0;
-	int err = 0;
-
-	MACHRETRYLOOP_BEGIN(kr, retry, err, fin);
-	kr = proxy_mDNSCreateStateDir(getHelperPort(retry), &err);
-	MACHRETRYLOOP_END(kr, retry, err, fin);
-
-fin:
-	return err;
-}
-
-int
 mDNSAutoTunnelInterfaceUpDown(int updown, v6addr_t address)
 {
 	kern_return_t kr = KERN_SUCCESS;

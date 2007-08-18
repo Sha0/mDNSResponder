@@ -26,6 +26,9 @@
 ; SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ;
 ; $Log: mDNSResponder.sb,v $
+; Revision 1.21  2007/08/18 01:02:03  mcguire
+; <rdar://problem/5415593> No Bonjour services are getting registered at boot
+;
 ; Revision 1.20  2007/08/08 22:34:59  mcguire
 ; <rdar://problem/5197869> Security: Run mDNSResponder as user id mdnsresponder instead of root
 ;
@@ -144,8 +147,8 @@
 (allow file-read-data file-write-data (regex "^/dev/console\$"))		; Needed for syslog early in the boot process
 (allow file-read-data                 (regex "^/dev/autofs_nowait\$"))	; Used by CF to circumvent automount triggers
 
-; Allow us to read and write our state directory
-(allow file-read*     file-write*     (regex "^/private/var/run/mdns(/|\$)"))
+; Allow us to read and write our socket
+(allow file-read*     file-write*     (regex "^/private/var/run/mDNSResponder\$"))
 
 ; Allow us to read system version, settings, and other miscellaneous necessary file system accesses
 (allow file-read-data                 (regex "^/usr/sbin(/mDNSResponder)?\$"))		; Needed for CFCopyVersionDictionary()

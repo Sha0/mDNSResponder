@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.462  2007/08/18 01:02:03  mcguire
+<rdar://problem/5415593> No Bonjour services are getting registered at boot
+
 Revision 1.461  2007/08/10 22:25:57  mkrochma
 <rdar://problem/5396302> mDNSResponder continually complains about slow UDP packet reception -- about 400 msecs
 
@@ -788,7 +791,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 					if (!displayed)
 						{
 						displayed = 1;
-						LogMsg("IP_FORCE_OUT_IFP Socket option not defined -- cannot specify interface for unicast packets");
+						LogOperation("IP_FORCE_OUT_IFP Socket option not defined -- cannot specify interface for unicast packets");
 						}
 					}
 				#endif

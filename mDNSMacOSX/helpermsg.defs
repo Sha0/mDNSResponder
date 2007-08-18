@@ -52,11 +52,6 @@ routine mDNSKeychainGetSecrets(
 	out			err		: int;
 	ServerAuditToken	token		: audit_token_t);
 
-routine mDNSCreateStateDir(
-				port		: mach_port_t;
-	out			err		: int;
-	ServerAuditToken	token		: audit_token_t);
-
 routine mDNSAutoTunnelInterfaceUpDown(
 				port		: mach_port_t;
 				updown		: int;

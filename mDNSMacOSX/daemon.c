@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.331  2007/08/18 01:02:03  mcguire
+<rdar://problem/5415593> No Bonjour services are getting registered at boot
+
 Revision 1.330  2007/08/10 22:25:57  mkrochma
 <rdar://problem/5396302> mDNSResponder continually complains about slow UDP packet reception -- about 400 msecs
 
@@ -2624,9 +2627,6 @@ mDNSexport int main(int argc, char **argv)
 
 	// Explicitly ensure that our Keychain operations utilize the system domain.
 	SecKeychainSetPreferenceDomain(kSecPreferencesDomainSystem);
-
-	// Ensure that our state directory exists.
-	(void)mDNSCreateStateDir();
 
 	signal(SIGHUP,  HandleSIG);		// (Debugging) Purge the cache to check for cache handling bugs
 	signal(SIGINT,  HandleSIG);		// Ctrl-C: Detach from Mach BootstrapService and exit cleanly

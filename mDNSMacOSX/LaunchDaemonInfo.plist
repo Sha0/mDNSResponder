@@ -27,7 +27,7 @@
 			<key>SockFamily</key>
 			<string>Unix</string>
 			<key>SockPathName</key>
-			<string>/var/run/mdns/mDNSResponder</string>
+			<string>/var/run/mDNSResponder</string>
 			<key>SockPathMode</key>
 			<integer>438</integer>
 		</dict>
