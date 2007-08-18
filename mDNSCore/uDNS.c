@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.437  2007/08/18 00:54:15  mcguire
+<rdar://problem/5413147> BTMM: Should not register private addresses or zeros
+
 Revision 1.436  2007/08/08 21:07:48  vazquez
 <rdar://problem/5244687> BTMM: Need to advertise model information via wide-area bonjour
 
@@ -2600,7 +2603,9 @@ mDNSlocal void hostnameGetPublicAddressCallback(mDNS *const m, mDNSv4Addr Extern
 
 	if (!err)
 		{
+		if (mDNSIPv4AddressIsZero(ExternalAddress) || mDNSv4AddrIsRFC1918(&ExternalAddress)) return;
 		h->arv4.resrec.rdata->u.ipv4 = ExternalAddress;
+		LogMsg("Advertising hostname %##s IPv4 %.4a", h->arv4.resrec.name->c, &ExternalAddress);
 		mDNS_Register(m, &h->arv4);
 		}
 	else
@@ -2622,7 +2627,6 @@ mDNSlocal void AdvertiseHostname(mDNS *m, HostnameInfo *h)
 		AssignDomainName(&h->arv4.namestorage, &h->fqdn);
 		h->arv4.resrec.rdata->u.ipv4 = m->AdvertisedV4.ip.v4;
 		h->arv4.state = regState_Unregistered;
-		LogMsg("AdvertiseHostname: Advertising hostname %##s IPv4 %.4a", h->arv4.resrec.name->c, &m->AdvertisedV4.ip.v4);
 		if (mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4))
 			{
 			h->natinfo.clientCallback   = hostnameGetPublicAddressCallback;
@@ -2633,7 +2637,11 @@ mDNSlocal void AdvertiseHostname(mDNS *m, HostnameInfo *h)
 			h->natinfo.portMappingLease = 0;
 			mDNS_StartNATOperation_internal(m, &h->natinfo);
 			}
-		else mDNS_Register_internal(m, &h->arv4);
+		else
+			{
+			LogMsg("Advertising hostname %##s IPv4 %.4a", h->arv4.resrec.name->c, &m->AdvertisedV4.ip.v4);
+			mDNS_Register_internal(m, &h->arv4);
+			}
 		}
 
 	if (!mDNSIPv6AddressIsZero(m->AdvertisedV6.ip.v6) && h->arv6.resrec.RecordType == kDNSRecordTypeUnregistered)
