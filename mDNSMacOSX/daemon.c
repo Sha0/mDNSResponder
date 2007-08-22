@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.332  2007/08/22 23:54:54  mcguire
+<rdar://problem/5422558> BTMM: mDNSResponder should be able to run from the cmdline
+
 Revision 1.331  2007/08/18 01:02:03  mcguire
 <rdar://problem/5415593> No Bonjour services are getting registered at boot
 
@@ -2596,6 +2599,23 @@ mDNSlocal void DropPrivileges(void)
 		{
 		uid_t uid = pwd->pw_uid;
 		gid_t gid = pwd->pw_gid;
+
+		if (unlink(MDNS_UDS_SERVERPATH) < 0 && errno != ENOENT) LogMsg("DropPrivileges: Could not unlink \"%s\": (%d) %s", MDNS_UDS_SERVERPATH, errno, strerror(errno));
+		else
+			{
+			static char path[] = "/var/run/mdns/mDNSResponder";
+			char *p = strrchr(path, '/');
+			*p = '\0';
+			if (mkdir(path, 0755) < 0 && errno != EEXIST) LogMsg("DropPrivileges: Could not create directory \"%s\": (%d) %s", path, errno, strerror(errno));
+			else if (chown(path, uid, gid) < 0) LogMsg("DropPrivileges: Could not chown directory \"%s\": (%d) %s", path, errno, strerror(errno));
+			else
+				{
+				*p = '/';
+				if (unlink(path) < 0 && errno != ENOENT) LogMsg("DropPrivileges: Could not unlink \"%s\": (%d) %s", path, errno, strerror(errno));
+				else if (symlink(path, MDNS_UDS_SERVERPATH) < 0) LogMsg("DropPrivileges: Could not symlink \"%s\" -> \"%s\": (%d) %s", MDNS_UDS_SERVERPATH, path, errno, strerror(errno));
+				else LogOperation("DropPrivileges: Created subdirectory and symlink");
+				}
+			}
 
 		if (0 != initgroups(login, gid))
 			LogMsg("initgroups(\"%s\", %lu) failed.  Continuing.", login, (unsigned long)gid);
