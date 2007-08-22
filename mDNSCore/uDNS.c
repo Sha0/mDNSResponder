@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.438  2007/08/22 17:50:08  vazquez
+<rdar://problem/5399276> Need to handle errors returned by NAT-PMP routers properly
+Propagate router errors to clients, and stop logging spurious "message too short" logs.
+
 Revision 1.437  2007/08/18 00:54:15  mcguire
 <rdar://problem/5413147> BTMM: Should not register private addresses or zeros
 
@@ -1185,10 +1189,12 @@ mDNSexport void natTraversalHandlePortMapReply(NATTraversalInfo *n, mDNS *const 
 		
 	if (err && (ours || mDNSIPPortIsZero(portMapReply->priv)))
 		{
-		LogMsg("natTraversalHandlePortMapReply: received error making port mapping %d", err);
+		LogOperation("natTraversalHandlePortMapReply: received error making port mapping %d", err);
 		n->retryIntervalPortMap = NATMAP_MAX_RETRY_INTERVAL;
 		n->retryPortMap = m->timenow + n->retryIntervalPortMap;
-		n->Error = err;
+		if 		(err == NATErr_Refused) 					n->Error = mStatus_NATPortMappingDisabled;
+		else if (err > NATErr_None && err <= NATErr_Opcode)	n->Error = mStatus_NATPortMappingUnsupported;
+		else 												n->Error = err;
 		return;
 		}
 
@@ -3390,7 +3396,7 @@ mDNSexport void uDNS_ReceiveNATPMPPacket(mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 	NATAddrReply    *AddrReply    = (NATAddrReply    *)pkt;
 	NATPortMapReply *PortMapReply = (NATPortMapReply *)pkt;
 
-	if (AddrReply->err != 2 && len < 8) { LogMsg("NAT Traversal message too short (%d bytes)", len); return; }
+	if (!AddrReply->err && len < 8) { LogMsg("NAT Traversal message too short (%d bytes)", len); return; }
 	if (AddrReply->vers != NATMAP_VERS) { LogMsg("Received NAT Traversal response with version %d (expected %d)", pkt[0], NATMAP_VERS); return; }
 
 	// Byte-swap the multi-byte numerics
@@ -3399,14 +3405,17 @@ mDNSexport void uDNS_ReceiveNATPMPPacket(mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 
 	if (AddrReply->opcode == NATOp_AddrResponse)
 		{
-		if (len < sizeof(NATAddrReply))    { LogMsg("NAT Traversal AddrResponse message too short (%d bytes)", len); return; }
+		if (!AddrReply->err && len < sizeof(NATAddrReply))    { LogMsg("NAT Traversal AddrResponse message too short (%d bytes)", len); return; }
 		natTraversalHandleAddressReply(m, pkt);
 		}
 	else if (AddrReply->opcode & (NATOp_MapUDPResponse | NATOp_MapTCPResponse))
 		{
-		if (len < sizeof(NATPortMapReply)) { LogMsg("NAT Traversal PortMapReply message too short (%d bytes)", len); return; }
-		PortMapReply->NATRep_lease = (mDNSs32) ((mDNSs32)pkt[12] << 24 | (mDNSs32)pkt[13] << 16 | (mDNSs32)pkt[14] << 8 | pkt[15]);
-		
+		if (!PortMapReply->err)
+			{
+			if (len < sizeof(NATPortMapReply)) { LogMsg("NAT Traversal PortMapReply message too short (%d bytes)", len); return; }
+			PortMapReply->NATRep_lease = (mDNSs32) ((mDNSs32)pkt[12] << 24 | (mDNSs32)pkt[13] << 16 | (mDNSs32)pkt[14] << 8 | pkt[15]);
+			}
+
 		for (ptr = m->NATTraversals; ptr; ptr=ptr->next) natTraversalHandlePortMapReply(ptr, m, pkt);
 		}
 	else { LogMsg("Received NAT Traversal response with version unknown opcode 0x%X", AddrReply->opcode); return; }
