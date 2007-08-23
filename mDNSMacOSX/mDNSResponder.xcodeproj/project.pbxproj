@@ -1761,7 +1761,10 @@
 		D284BE2C0ADD78180027CCDF /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				GCC_PREPROCESSOR_DEFINITIONS = "APPLE_OSX_mDNSResponder=1";
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"APPLE_OSX_mDNSResponder=1",
+					"__MigTypeCheck=1",
+				);
 				PREBINDING = NO;
 				WARNING_CFLAGS = (
 					"-W",
@@ -1787,7 +1790,6 @@
 					"$(inherited)",
 					"mDNSResponderVersion=${MVERS}",
 					_LEGACY_NAT_TRAVERSAL_,
-					"__MigTypeCheck=1",
 				);
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
 				HEADER_SEARCH_PATHS = (
