@@ -1,4 +1,5 @@
-/*
+/* -*- Mode: C; tab-width: 4 -*-
+ *
  * Copyright (c) 2007 Apple Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,7 +13,24 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+
+    Change History (most recent first):
+
+$Log: helper-error.h,v $
+Revision 1.4  2007/08/23 21:15:49  cheshire
+Added $Log header
+
+Revision 1.3  2007/08/23 21:04:44  cheshire
+Tidied up alignment of error message list
+
+Revision 1.2  2007/08/18 01:02:03  mcguire
+<rdar://problem/5415593> No Bonjour services are getting registered at boot
+
+Revision 1.1  2007/08/08 22:34:58  mcguire
+<rdar://problem/5197869> Security: Run mDNSResponder as user id mdnsresponder instead of root
+
  */
+
 ERROR(kmDNSHelperCommunicationFailed,             "Mach communication failed")
 ERROR(kmDNSHelperNotAuthorized,                   "Not authorized")
 ERROR(kmDNSHelperCreationFailed,                  "Object creation failed")
