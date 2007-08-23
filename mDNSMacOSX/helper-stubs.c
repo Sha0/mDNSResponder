@@ -12,7 +12,20 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+
+    Change History (most recent first):
+
+$Log: helper-stubs.c,v $
+Revision 1.3  2007/08/23 21:44:55  cheshire
+Made code layout style consistent with existing project style; added $Log header
+
+Revision 1.2  2007/08/18 01:02:03  mcguire
+<rdar://problem/5415593> No Bonjour services are getting registered at boot
+
+Revision 1.1  2007/08/08 22:34:58  mcguire
+<rdar://problem/5197869> Security: Run mDNSResponder as user id mdnsresponder instead of root
  */
+
 #include <mach/mach.h>
 #include <mach/mach_error.h>
 #include <mach/vm_map.h>
@@ -23,15 +36,16 @@
 #include "helpermsg.h"
 
 #define ERROR(x, y) y,
-static const char *errorstring[] = {
-#include "helper-error.h"
+static const char *errorstring[] =
+	{
+	#include "helper-error.h"
 	NULL
-};
+	};
 #undef ERROR
 
 static mach_port_t
 getHelperPort(int retry)
-{
+	{
 	static mach_port_t port = MACH_PORT_NULL;
 
 	if (retry)
@@ -41,42 +55,36 @@ getHelperPort(int retry)
 	    kmDNSHelperServiceName, &port))
 		LogMsg("%s: cannot contact helper", __func__);
 	return port;
-}
+	}
 
 const char *
 mDNSHelperError(int err)
-{
+	{
 	const char *p = "<unknown error>";
 	if (mDNSHelperErrorBase < err && mDNSHelperErrorEnd > err)
 		p = errorstring[err - mDNSHelperErrorBase - 1];
 	return p;
-}
+	}
 
 
 /* Ugly but handy. */
 #define MACHRETRYLOOP_BEGIN(kr, retry, err, fin) for (;;) {
+
 #define MACHRETRYLOOP_END(kr, retry, err, fin)				\
-	if (KERN_SUCCESS == (kr))					\
-		break;							\
-	else if (MACH_SEND_INVALID_DEST == (kr) && 0 == (retry)++)	\
-		continue;						\
-	else {								\
-		(err) = kmDNSHelperCommunicationFailed;			\
-		LogMsg("%s: Mach communication failed: %s", __func__,	\
-		    mach_error_string(kr));				\
-		goto fin;						\
-	}								\
-	}								\
-	if (0 != (err)) {						\
-		LogMsg("%s: %s", __func__, mDNSHelperError((err)));	\
-		goto fin;						\
-	}
-
-
+		if (KERN_SUCCESS == (kr)) break;					\
+		else if (MACH_SEND_INVALID_DEST == (kr) && 0 == (retry)++) continue;	\
+		else \
+			{								\
+			(err) = kmDNSHelperCommunicationFailed;			\
+			LogMsg("%s: Mach communication failed: %s", __func__, mach_error_string(kr));				\
+			goto fin;						\
+			}								\
+		}								\
+	if (0 != (err)) { LogMsg("%s: %s", __func__, mDNSHelperError((err))); goto fin; }
 
 int
 mDNSPreferencesSetName(int key, CFStringRef name, CFStringEncoding encoding)
-{
+	{
 	CFWriteStreamRef stream = NULL;
 	CFDataRef bytes = NULL;
 	kern_return_t kr = KERN_FAILURE;
@@ -84,25 +92,28 @@ mDNSPreferencesSetName(int key, CFStringRef name, CFStringEncoding encoding)
 	int err = 0;
 
 	if (NULL == (stream = CFWriteStreamCreateWithAllocatedBuffers(NULL,
-	    NULL))) {
+	    NULL)))
+		{
 		err = kmDNSHelperCreationFailed;
 		LogMsg("%s: CFWriteStreamCreateWithAllocatedBuffers failed",
 		    __func__);
 		goto fin;
-	}
+		}
 	CFWriteStreamOpen(stream);
 	if (0 == CFPropertyListWriteToStream(name, stream,
-	    kCFPropertyListBinaryFormat_v1_0, NULL)) {
+	    kCFPropertyListBinaryFormat_v1_0, NULL))
+		{
 		err = kmDNSHelperPListWriteFailed;
 		LogMsg("%s: CFPropertyListWriteToStream failed", __func__);
 		goto fin;
-	}
+		}
 	if (NULL == (bytes = CFWriteStreamCopyProperty(stream,
-	    kCFStreamPropertyDataWritten))) {
+	    kCFStreamPropertyDataWritten)))
+		{
 		err = kmDNSHelperCreationFailed;
 		LogMsg("%s: CFWriteStreamCopyProperty failed", __func__);
 		goto fin;
-	}
+		}
 	CFWriteStreamClose(stream);
 	CFRelease(stream);
 	stream = NULL;
@@ -113,18 +124,19 @@ mDNSPreferencesSetName(int key, CFStringRef name, CFStringEncoding encoding)
 	MACHRETRYLOOP_END(kr, retry, err, fin);
 
 fin:
-	if (NULL != stream) {
+	if (NULL != stream)
+		{
 		CFWriteStreamClose(stream);
 		CFRelease(stream);
-	}
+		}
 	if (NULL != bytes)
 		CFRelease(bytes);
 	return err;
-}
+	}
 
 int
 mDNSDynamicStoreSetConfig(int key, CFPropertyListRef value)
-{
+	{
 	CFWriteStreamRef stream = NULL;
 	CFDataRef bytes = NULL;
 	kern_return_t kr = KERN_FAILURE;
@@ -132,25 +144,28 @@ mDNSDynamicStoreSetConfig(int key, CFPropertyListRef value)
 	int err = 0;
 
 	if (NULL == (stream = CFWriteStreamCreateWithAllocatedBuffers(NULL,
-	    NULL))) {
+	    NULL)))
+		{
 		err = kmDNSHelperCreationFailed;
 		LogMsg("%s: CFWriteStreamCreateWithAllocatedBuffers failed",
 			__func__);
 		goto fin;
-	}
+		}
 	CFWriteStreamOpen(stream);
 	if (0 == CFPropertyListWriteToStream(value, stream,
-	    kCFPropertyListBinaryFormat_v1_0, NULL)) {
+	    kCFPropertyListBinaryFormat_v1_0, NULL))
+		{
 		err = kmDNSHelperPListWriteFailed;
 		LogMsg("%s: CFPropertyListWriteToStream failed", __func__);
 		goto fin;
-	}
+		}
 	if (NULL == (bytes = CFWriteStreamCopyProperty(stream,
-	    kCFStreamPropertyDataWritten))) {
+	    kCFStreamPropertyDataWritten)))
+		{
 		err = kmDNSHelperCreationFailed;
 		LogMsg("%s: CFWriteStreamCopyProperty failed", __func__);
 		goto fin;
-	}
+		}
 	CFWriteStreamClose(stream);
 	CFRelease(stream);
 	stream = NULL;
@@ -161,18 +176,19 @@ mDNSDynamicStoreSetConfig(int key, CFPropertyListRef value)
 	MACHRETRYLOOP_END(kr, retry, err, fin);
 
 fin:
-	if (NULL != stream) {
+	if (NULL != stream)
+		{
 		CFWriteStreamClose(stream);
 		CFRelease(stream);
-	}
+		}
 	if (NULL != bytes)
 		CFRelease(bytes);
 	return err;
-}
+	}
 
 int
 mDNSKeychainGetSecrets(CFArrayRef *result)
-{
+	{
 	CFPropertyListRef plist = NULL;
 	CFDataRef bytes = NULL;
 	kern_return_t kr = KERN_FAILURE;
@@ -190,24 +206,27 @@ mDNSKeychainGetSecrets(CFArrayRef *result)
 	if (0 == numsecrets)
 		goto fin;
 	if (NULL == (bytes = CFDataCreateWithBytesNoCopy(kCFAllocatorDefault,
-	    secrets, secretsCnt, kCFAllocatorNull))) {
+	    secrets, secretsCnt, kCFAllocatorNull)))
+		{
 		err = kmDNSHelperCreationFailed;
 		LogMsg("%s: CFDataCreateWithBytesNoCopy failed", __func__);
 		goto fin;
-	}
+		}
 	if (NULL == (plist = CFPropertyListCreateFromXMLData(
-	    kCFAllocatorDefault, bytes, kCFPropertyListImmutable, NULL))) {
+	    kCFAllocatorDefault, bytes, kCFPropertyListImmutable, NULL)))
+		{
 		err = kmDNSHelperInvalidPList;
 		LogMsg("%s: CFPropertyListCreateFromXMLData failed", __func__);
 		goto fin;
-	}
-	if (CFArrayGetTypeID() != CFGetTypeID(plist)) {
+		}
+	if (CFArrayGetTypeID() != CFGetTypeID(plist))
+		{
 		err = kmDNSHelperTypeError;
 		LogMsg("%s: Unexpected result type", __func__);
 		CFRelease(plist);
 		plist = NULL;
 		goto fin;
-	}
+		}
 	*result = (CFArrayRef)plist;
 
 fin:
@@ -217,11 +236,11 @@ fin:
 		vm_deallocate(mach_task_self(), (vm_offset_t)secrets,
 		    secretsCnt);
 	return err;
-}
+	}
 
 int
 mDNSAutoTunnelInterfaceUpDown(int updown, v6addr_t address)
-{
+	{
 	kern_return_t kr = KERN_SUCCESS;
 	int retry = 0;
 	int err = 0;
@@ -233,11 +252,11 @@ mDNSAutoTunnelInterfaceUpDown(int updown, v6addr_t address)
 
 fin:
 	return err;
-}
+	}
 
 int
 mDNSRacoonNotify(const char *keydata)
-{
+	{
 	kern_return_t kr = KERN_SUCCESS;
 	int retry = 0;
 	int err = 0;
@@ -248,13 +267,13 @@ mDNSRacoonNotify(const char *keydata)
 
 fin:
 	return err;
-}
+	}
 
 int
 mDNSAutoTunnelSetKeys(int replacedelete, v6addr_t local_inner,
     v4addr_t local_outer, short local_port, v6addr_t remote_inner,
     v4addr_t remote_outer, short remote_port, const char *keydata)
-{
+	{
 	kern_return_t kr = KERN_SUCCESS;
 	const char *p = NULL;
 	int retry = 0;
@@ -272,6 +291,4 @@ mDNSAutoTunnelSetKeys(int replacedelete, v6addr_t local_inner,
 
 fin:
 	return err;
-}
-
-
+	}

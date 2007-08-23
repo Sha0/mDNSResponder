@@ -1,4 +1,5 @@
-/*
+/* -*- Mode: C; tab-width: 4 -*-
+ *
  * Copyright (c) 2007 Apple Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,7 +13,35 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+
+    Change History (most recent first):
+
+$Log: helper.c,v $
+Revision 1.8  2007/08/23 21:49:51  cheshire
+Made code layout style consistent with existing project style; added $Log header
+
+Revision 1.7  2007/08/23 00:29:05  mcguire
+<rdar://problem/5425800> BTMM: IPSec policy not installed in some situations - connections fail
+
+Revision 1.6  2007/08/18 01:02:03  mcguire
+<rdar://problem/5415593> No Bonjour services are getting registered at boot
+
+Revision 1.5  2007/08/18 00:59:55  mcguire
+<rdar://problem/5392568> Blocked: BTMM: Start racoon with '-e' parameter
+
+Revision 1.4  2007/08/16 01:00:06  mcguire
+<rdar://problem/5392548> BTMM: Install generate IPsec policies to block non-BTMM traffic
+
+Revision 1.3  2007/08/15 23:20:28  mcguire
+<rdar://problem/5408105> BTMM: racoon files can get corrupted if autotunnel is listening on port > 32767
+
+Revision 1.2  2007/08/10 22:30:39  mcguire
+<rdar://problem/5400259> BTMM: racoon config files are not always the correct mode
+
+Revision 1.1  2007/08/08 22:34:58  mcguire
+<rdar://problem/5197869> Security: Run mDNSResponder as user id mdnsresponder instead of root
  */
+
 #include <sys/cdefs.h>
 #include <arpa/inet.h>
 #include <bsm/libbsm.h>
@@ -54,7 +83,7 @@ static const char kTunnelAddressInterface[] = "lo0";
 
 static void
 debug_(const char *func, const char *fmt, ...)
-{
+	{
 	char buf[2048];
 	va_list ap;
 	ssize_t n = snprintf(buf, sizeof(buf), "%s: ", func);
@@ -65,11 +94,11 @@ debug_(const char *func, const char *fmt, ...)
 	vsnprintf(&buf[n], sizeof(buf)-n, fmt, ap);
 	va_end(ap);
 	helplog(ASL_LEVEL_DEBUG, buf);
-}
+	}
 
 static int
 authorized(audit_token_t *token)
-{
+	{
 	int ok = 0;
 	pid_t pid = (pid_t)-1;
 	uid_t euid = (uid_t)-1;
@@ -82,32 +111,34 @@ authorized(audit_token_t *token)
 		    "Unauthorized access by euid=%lu pid=%lu",
 		    (unsigned long)euid, (unsigned long)pid);
 	return ok;
-}
+	}
 
 static void
 closefds(int from)
-{
+	{
 	int fd = 0;
 	struct dirent entry, *entryp = NULL;
 	DIR *dirp = opendir("/dev/fd");
 
-	if (dirp == NULL) {
+	if (dirp == NULL)
+		{
 		/* fall back to the erroneous getdtablesize method */
 		for (fd = from; fd < getdtablesize(); ++fd)
 			close(fd);
 		return;
-	}
-	while (0 == readdir_r(dirp, &entry, &entryp) && NULL != entryp) {
+		}
+	while (0 == readdir_r(dirp, &entry, &entryp) && NULL != entryp)
+		{
 		fd = atoi(entryp->d_name);
-		if (fd >= from && fd != dirp->__dd_fd)
+		if (fd >= from && fd != dirfd(dirp))
 			close(fd);
-	}
+		}
 	closedir(dirp);
-}
+	}
 
 kern_return_t
 do_mDNSIdleExit(__unused mach_port_t port, audit_token_t token)
-{
+	{
 	if (!authorized(&token))
 		goto fin;
 	helplog(ASL_LEVEL_NOTICE, "Idle exit");
@@ -115,13 +146,13 @@ do_mDNSIdleExit(__unused mach_port_t port, audit_token_t token)
 
 fin:
 	return KERN_SUCCESS;
-}
+	}
 
 kern_return_t
 do_mDNSDynamicStoreSetConfig(__unused mach_port_t port, int key,
     vm_offset_t value, mach_msg_type_number_t valueCnt, int *err,
     audit_token_t token)
-{
+	{
 	CFStringRef sckey = NULL;
 	CFDataRef bytes = NULL;
 	CFPropertyListRef plist = NULL;
@@ -129,11 +160,13 @@ do_mDNSDynamicStoreSetConfig(__unused mach_port_t port, int key,
 
 	debug("entry");
 	*err = 0;
-	if (!authorized(&token)) {
+	if (!authorized(&token))
+		{
 		*err = kmDNSHelperNotAuthorized;
 		goto fin;
-	}
-	switch ((enum mDNSDynamicStoreSetConfigKey)key) {
+		}
+	switch ((enum mDNSDynamicStoreSetConfigKey)key)
+	{
 	case kmDNSMulticastConfig:
 		sckey = CFSTR("State:/Network/" kDNSServiceCompMulticastDNS);
 		break;
@@ -150,27 +183,30 @@ do_mDNSDynamicStoreSetConfig(__unused mach_port_t port, int key,
 		debug("unrecognized key %d", key);
 		*err = kmDNSHelperInvalidConfigKey;
 		goto fin;
-	}
+		}
 	if (NULL == (bytes = CFDataCreateWithBytesNoCopy(NULL, (void *)value,
-	    valueCnt, kCFAllocatorNull))) {
+	    valueCnt, kCFAllocatorNull)))
+		{
 		debug("CFDataCreateWithBytesNoCopy of value failed");
 		*err = kmDNSHelperCreationFailed;
 		goto fin;
-	}
+		}
 	if (NULL == (plist = CFPropertyListCreateFromXMLData(NULL, bytes,
-	    kCFPropertyListImmutable, NULL))) {
+	    kCFPropertyListImmutable, NULL)))
+		{
 		debug("CFPropertyListCreateFromXMLData of bytes failed");
 		*err = kmDNSHelperInvalidPList;
 		goto fin;
-	}
+		}
 	CFRelease(bytes);
 	bytes = NULL;
 	if (NULL == (store = SCDynamicStoreCreate(NULL,
-	    CFSTR(kmDNSHelperServiceName), NULL, NULL))) {
+	    CFSTR(kmDNSHelperServiceName), NULL, NULL)))
+		{
 		debug("SCDynamicStoreCreate failed");
 		*err = kmDNSHelperDynamicStoreFailed;
 		goto fin;
-	}
+		}
 	SCDynamicStoreSetValue(store, sckey, plist);
 	*err = 0;
 	debug("succeeded");
@@ -187,13 +223,13 @@ fin:
 	vm_deallocate(mach_task_self(), value, valueCnt);
 	update_idle_timer();
 	return KERN_SUCCESS;
-}
+	}
 
 kern_return_t
 do_mDNSPreferencesSetName(__unused mach_port_t port, int key, vm_offset_t value,
     mach_msg_type_number_t valueCnt, unsigned int encoding, int *err,
     audit_token_t token)
-{
+	{
 	SCPreferencesRef session = NULL;
 	Boolean ok = FALSE;
 	Boolean locked = FALSE;
@@ -202,11 +238,13 @@ do_mDNSPreferencesSetName(__unused mach_port_t port, int key, vm_offset_t value,
 
 	debug("entry");
 	*err = 0;
-	if (!authorized(&token)) {
+	if (!authorized(&token))
+		{
 		*err = kmDNSHelperNotAuthorized;
 		goto fin;
-	}
-	switch ((enum mDNSPreferencesSetNameKey)key) {
+		}
+	switch ((enum mDNSPreferencesSetNameKey)key)
+	{
 	case kmDNSComputerName:
 	case kmDNSLocalHostName:
 		break;
@@ -214,39 +252,45 @@ do_mDNSPreferencesSetName(__unused mach_port_t port, int key, vm_offset_t value,
 		debug("unrecognized key: %d", key);
 		*err = kmDNSHelperInvalidNameKey;
 		goto fin;
-	}
+		}
 	if (NULL == (bytes = CFDataCreateWithBytesNoCopy(NULL, (void *)value,
-	    valueCnt, kCFAllocatorNull))) {
+	    valueCnt, kCFAllocatorNull)))
+		{
 		debug("CFDataCreateWithBytesNoCopy for value failed");
 		*err = kmDNSHelperCreationFailed;
 		goto fin;
-	}
+		}
 	if (NULL == (plist = CFPropertyListCreateFromXMLData(NULL, bytes,
-	    kCFPropertyListImmutable, NULL))) {
+	    kCFPropertyListImmutable, NULL)))
+		{
 		debug("CFPropertyListCreateFromXMLData for bytes failed");
 		*err = kmDNSHelperInvalidPList;
 		goto fin;
-	}
+		}
 	CFRelease(bytes);
 	bytes = NULL;
-	if (CFStringGetTypeID() != CFGetTypeID(plist)) {
+	if (CFStringGetTypeID() != CFGetTypeID(plist))
+		{
 		debug("expected CFString");
 		*err = kmDNSHelperTypeError;
 		goto fin;
-	}
+		}
 	if (NULL == (session = SCPreferencesCreate(NULL,
-	    CFSTR(kmDNSHelperServiceName), NULL))) {
+	    CFSTR(kmDNSHelperServiceName), NULL)))
+		{
 		debug("SCPreferencesCreate failed");
 		*err = kmDNSHelperPreferencesFailed;
 		goto fin;
-	}
-	if (!SCPreferencesLock(session, 0)) {
+		}
+	if (!SCPreferencesLock(session, 0))
+		{
 		debug("lock failed");
 		*err = kmDNSHelperPreferencesLockFailed;
 		goto fin;
-	}
+		}
 	locked = TRUE;
-	switch ((enum mDNSPreferencesSetNameKey)key) {
+	switch ((enum mDNSPreferencesSetNameKey)key)
+	{
 	case kmDNSComputerName:
 		ok = SCPreferencesSetComputerName(session, plist, encoding);
 		break;
@@ -255,13 +299,14 @@ do_mDNSPreferencesSetName(__unused mach_port_t port, int key, vm_offset_t value,
 		break;
 	default:
 		break;
-	}
+		}
 	if (!ok || !SCPreferencesCommitChanges(session) ||
-	    !SCPreferencesApplyChanges(session)) {
+	    !SCPreferencesApplyChanges(session))
+		{
 		debug("SCPreferences update failed");
 		*err = kmDNSHelperPreferencesSetFailed;
 		goto fin;
-	}
+		}
 	*err = 0;
 	debug("succeeded");
 
@@ -272,32 +317,36 @@ fin:
 		CFRelease(plist);
 	if (NULL != bytes)
 		CFRelease(bytes);
-	if (NULL != session) {
+	if (NULL != session)
+		{
 		if (locked)
 			SCPreferencesUnlock(session);
 		CFRelease(session);
-	}
+		}
 	vm_deallocate(mach_task_self(), value, valueCnt);
 	update_idle_timer();
 	return KERN_SUCCESS;
-}
+	}
 
-enum DNSKeyFormat {
+enum DNSKeyFormat
+	{
 	formatNotDNSKey, formatDdnsTypeItem, formatDnsPrefixedServiceItem
-};
+	};
 static const char dnsprefix[] = "dns:";
 static const char ddns[] = "ddns";
 static const char ddnsrev[] = "sndd";
 
 static enum DNSKeyFormat
 getDNSKeyFormat(SecKeychainItemRef item, SecKeychainAttributeList **attributesp)
-{
-	static UInt32 tags[3] = {
+	{
+	static UInt32 tags[3] =
+		{
 		kSecTypeItemAttr, kSecServiceItemAttr, kSecAccountItemAttr
-	};
-	static SecKeychainAttributeInfo attributeInfo = {
+		};
+	static SecKeychainAttributeInfo attributeInfo =
+		{
 		sizeof(tags)/sizeof(tags[0]), tags, NULL
-	};
+		};
 	SecKeychainAttributeList *attributes = NULL;
 	enum DNSKeyFormat format;
 	Boolean malformed = FALSE;
@@ -306,36 +355,40 @@ getDNSKeyFormat(SecKeychainItemRef item, SecKeychainAttributeList **attributesp)
 
 	*attributesp = NULL;
 	if (noErr != (status = SecKeychainItemCopyAttributesAndData(item,
-	    &attributeInfo, NULL, &attributes, NULL, NULL))) {
+	    &attributeInfo, NULL, &attributes, NULL, NULL)))
+		{
 		debug("SecKeychainItemCopyAttributesAndData %d - skipping",
 		    status);
 		goto skip;
-	}
+		}
 	if (attributeInfo.count != attributes->count)
 		malformed = TRUE;
 	for (i = 0; !malformed && i < (int)attributeInfo.count; ++i)
 		if (attributeInfo.tag[i] != attributes->attr[i].tag)
 			malformed = TRUE;
-	if (malformed) {
+	if (malformed)
+		{
 		debug(
        "malformed result from SecKeychainItemCopyAttributesAndData - skipping");
 		goto skip;
-	}
+		}
 	debug("entry (\"%.*s\", \"%.*s\", \"%.*s\")",
 	    (int)attributes->attr[0].length, attributes->attr[0].data,
 	    (int)attributes->attr[1].length, attributes->attr[1].data,
 	    (int)attributes->attr[2].length, attributes->attr[2].data);
 	if (attributes->attr[1].length >= MAX_ESCAPED_DOMAIN_NAME +
-	    sizeof(dnsprefix)-1) {
+	    sizeof(dnsprefix)-1)
+		{
 		debug("kSecServiceItemAttr too long (%u) - skipping",
 		    (unsigned int)attributes->attr[1].length);
 		goto skip;
-	}
-	if (attributes->attr[2].length >= MAX_ESCAPED_DOMAIN_NAME) {
+		}
+	if (attributes->attr[2].length >= MAX_ESCAPED_DOMAIN_NAME)
+		{
 		debug("kSecAccountItemAttr too long (%u) - skipping",
 		    (unsigned int)attributes->attr[2].length);
 		goto skip;
-	}
+		}
 	if (attributes->attr[1].length >= sizeof(dnsprefix)-1 &&
 	    0 == strncasecmp(attributes->attr[1].data, dnsprefix,
 	    sizeof(dnsprefix)-1))
@@ -346,10 +399,11 @@ getDNSKeyFormat(SecKeychainItemRef item, SecKeychainAttributeList **attributesp)
 	else if (attributes->attr[0].length == sizeof(ddnsrev)-1 &&
 	    0 == strncasecmp(attributes->attr[0].data, ddnsrev, sizeof(ddnsrev)-1))
 		format = formatDdnsTypeItem;
-	else {
+	else
+		{
 		debug("uninterested in this entry");
 		goto skip;
-	}
+		}
 	*attributesp = attributes;
 	debug("accepting this entry");
 	return format;
@@ -357,12 +411,12 @@ getDNSKeyFormat(SecKeychainItemRef item, SecKeychainAttributeList **attributesp)
 skip:
 	SecKeychainItemFreeAttributesAndData(attributes, NULL);
 	return formatNotDNSKey;
-}
+	}
 
 static CFPropertyListRef
 getKeychainItemInfo(SecKeychainItemRef item,
     SecKeychainAttributeList *attributes, enum DNSKeyFormat format)
-{
+	{
 	CFMutableArrayRef entry = NULL;
 	CFDataRef data = NULL;
 	OSStatus status = noErr;
@@ -370,11 +424,13 @@ getKeychainItemInfo(SecKeychainItemRef item,
 	void *keyp = 0;
 
 	if (NULL == (entry = CFArrayCreateMutable(NULL, 0,
-	    &kCFTypeArrayCallBacks))) {
+	    &kCFTypeArrayCallBacks)))
+		{
 		debug("CFArrayCreateMutable failed");
 		goto error;
-	}
-	switch ((enum DNSKeyFormat)format) {
+		}
+	switch ((enum DNSKeyFormat)format)
+	{
 	case formatDdnsTypeItem:
 		data = CFDataCreate(kCFAllocatorDefault,
 		    attributes->attr[1].data, attributes->attr[1].length);
@@ -386,33 +442,37 @@ getKeychainItemInfo(SecKeychainItemRef item,
 	default:
 		assert("unknown DNSKeyFormat value");
 		break;
-	}
-	if (NULL == data) {
+		}
+	if (NULL == data)
+		{
 		debug("CFDataCreate for attr[1] failed");
 		goto error;
-	}
+		}
 	CFArrayAppendValue(entry, data);
 	CFRelease(data);
 	if (NULL == (data = CFDataCreate(kCFAllocatorDefault,
-	    attributes->attr[2].data, attributes->attr[2].length))) {
+	    attributes->attr[2].data, attributes->attr[2].length)))
+		{
 		debug("CFDataCreate for attr[2] failed");
 		goto error;
-	}
+		}
 	CFArrayAppendValue(entry, data);
 	CFRelease(data);
 	if (noErr != (status = SecKeychainItemCopyAttributesAndData(item, NULL,
-	    NULL, NULL, &keylen, &keyp))) {
+	    NULL, NULL, &keylen, &keyp)))
+		{
 		debug("could not retrieve key for \"%.*s\": %d",
 		    (int)attributes->attr[1].length, attributes->attr[1].data,
 		    status);
 		goto error;
-	}
+		}
 	data = CFDataCreate(kCFAllocatorDefault, keyp, keylen);
 	SecKeychainItemFreeAttributesAndData(NULL, keyp);
-	if (NULL == data) {
+	if (NULL == data)
+		{
 		debug("CFDataCreate for keyp failed");
 		goto error;
-	}
+		}
 	CFArrayAppendValue(entry, data);
 	CFRelease(data);
 	return entry;
@@ -421,13 +481,13 @@ error:
 	if (NULL != entry)
 		CFRelease(entry);
 	return NULL;
-}
+	}
 
 kern_return_t
 do_mDNSKeychainGetSecrets(__unused mach_port_t port, unsigned int *numsecrets,
     vm_offset_t *secrets, mach_msg_type_number_t *secretsCnt, int *err,
     audit_token_t token)
-{
+	{
 	CFWriteStreamRef stream = NULL;
 	CFDataRef result = NULL;
 	CFPropertyListRef entry = NULL;
@@ -442,59 +502,67 @@ do_mDNSKeychainGetSecrets(__unused mach_port_t port, unsigned int *numsecrets,
 	*err = 0;
 	*numsecrets = 0;
 	*secrets = (vm_offset_t)NULL;
-	if (!authorized(&token)) {
+	if (!authorized(&token))
+		{
 		*err = kmDNSHelperNotAuthorized;
 		goto fin;
-	}
+		}
 	if (NULL == (keys = CFArrayCreateMutable(NULL, 0,
-	    &kCFTypeArrayCallBacks))) {
+	    &kCFTypeArrayCallBacks)))
+		{
 		debug("CFArrayCreateMutable failed");
 		*err = kmDNSHelperCreationFailed;
 		goto fin;
-	}
+		}
 	if (noErr != (status = SecKeychainSearchCreateFromAttributes(NULL,
-	    kSecGenericPasswordItemClass, NULL, &search))) {
+	    kSecGenericPasswordItemClass, NULL, &search)))
+		{
 		*err = kmDNSHelperKeychainSearchCreationFailed;
 		goto fin;
-	}
+		}
 	for (status = SecKeychainSearchCopyNext(search, &item);
 	     noErr == status;
-	     status = SecKeychainSearchCopyNext(search, &item)) {
+	     status = SecKeychainSearchCopyNext(search, &item))
+		{
 		if (formatNotDNSKey != (format = getDNSKeyFormat(item,
 		    &attributes)) &&
 		    NULL != (entry = getKeychainItemInfo(item, attributes,
-		    format))) {
+		    format)))
+			{
 			CFArrayAppendValue(keys, entry);
 			CFRelease(entry);
-		}
+			}
 		SecKeychainItemFreeAttributesAndData(attributes, NULL);
 		CFRelease(item);
-	}
+		}
 	if (errSecItemNotFound != status)
 		helplog(ASL_LEVEL_ERR, "%s: SecKeychainSearchCopyNext failed: %d",
 		    __func__, status);
 	if (NULL == (stream =
 	    CFWriteStreamCreateWithAllocatedBuffers(kCFAllocatorDefault,
-	    kCFAllocatorDefault))) {
+	    kCFAllocatorDefault)))
+		{
 		*err = kmDNSHelperCreationFailed;
 		debug("CFWriteStreamCreateWithAllocatedBuffers failed");
 		goto fin;
-	}
+		}
 	CFWriteStreamOpen(stream);
 	if (0 == CFPropertyListWriteToStream(keys, stream,
-	    kCFPropertyListBinaryFormat_v1_0, NULL)) {
+	    kCFPropertyListBinaryFormat_v1_0, NULL))
+		{
 		*err = kmDNSHelperPListWriteFailed;
 		debug("CFPropertyListWriteToStream failed");
 		goto fin;
-	}
+		}
 	result = CFWriteStreamCopyProperty(stream,
 	    kCFStreamPropertyDataWritten);
 	if (KERN_SUCCESS != vm_allocate(mach_task_self(), secrets,
-	    CFDataGetLength(result), VM_FLAGS_ANYWHERE)) {
+	    CFDataGetLength(result), VM_FLAGS_ANYWHERE))
+		{
 		*err = kmDNSHelperCreationFailed;
 		debug("vm_allocate failed");
 		goto fin;
-	}
+		}
 	CFDataGetBytes(result, CFRangeMake(0, CFDataGetLength(result)),
 	    (void *)*secrets);
 	*secretsCnt = CFDataGetLength(result);
@@ -503,10 +571,11 @@ do_mDNSKeychainGetSecrets(__unused mach_port_t port, unsigned int *numsecrets,
 
 fin:
 	debug("returning %u secrets", *numsecrets);
-	if (NULL != stream) {
+	if (NULL != stream)
+		{
 		CFWriteStreamClose(stream);
 		CFRelease(stream);
-	}
+		}
 	if (NULL != result)
 		CFRelease(result);
 	if (NULL != keys)
@@ -515,13 +584,14 @@ fin:
 		CFRelease(search);
 	update_idle_timer();
 	return KERN_SUCCESS;
-}
+	}
 
-typedef enum _mDNSTunnelPolicyWhich {
+typedef enum _mDNSTunnelPolicyWhich
+	{
 	kmDNSTunnelPolicySetup,
 	kmDNSTunnelPolicyTeardown,
 	kmDNSTunnelPolicyGenerate
-} mDNSTunnelPolicyWhich;
+	} mDNSTunnelPolicyWhich;
 
 static const uint8_t kWholeV6Mask = 128;
 static const uint8_t kZeroV6Mask  = 0;
@@ -535,17 +605,18 @@ doTunnelPolicy(mDNSTunnelPolicyWhich which,
 
 static int
 aliasTunnelAddress(v6addr_t address)
-{
+	{
 	struct in6_aliasreq ifra_in6;
 	int err = 0;
 	int s = -1;
 
-	if (0 > (s = socket(AF_INET6, SOCK_DGRAM, 0))) {
+	if (0 > (s = socket(AF_INET6, SOCK_DGRAM, 0)))
+		{
 		helplog(ASL_LEVEL_ERR, "socket(AF_INET6, ...) failed: %s",
 		    strerror(errno));
 		err = kmDNSHelperDatagramSocketCreationFailed;
 		goto fin;
-	}
+		}
 	bzero(&ifra_in6, sizeof(ifra_in6));
 	strlcpy(ifra_in6.ifra_name, kTunnelAddressInterface,
 	    sizeof(ifra_in6.ifra_name));
@@ -562,15 +633,16 @@ aliasTunnelAddress(v6addr_t address)
 	memset(&(ifra_in6.ifra_prefixmask.sin6_addr), 0xFF,
 	    sizeof(ifra_in6.ifra_prefixmask.sin6_addr));
 
-	if (0 > ioctl(s, SIOCAIFADDR_IN6, &ifra_in6)) {
+	if (0 > ioctl(s, SIOCAIFADDR_IN6, &ifra_in6))
+		{
 		helplog(ASL_LEVEL_ERR,
 		    "ioctl(..., SIOCAIFADDR_IN6, ...) failed: %s",
 		    strerror(errno));
 		err = kmDNSHelperInterfaceCreationFailed;
 		goto fin;
-	}
+		}
 
-	v6addr_t zero = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+	v6addr_t zero = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0	};
 	err = doTunnelPolicy(kmDNSTunnelPolicyGenerate,
 	    address, kWholeV6Mask, NULL, 0,
 	    zero, kZeroV6Mask, NULL, 0);
@@ -579,21 +651,22 @@ fin:
 	if (0 <= s)
 		close(s);
 	return err;
-}
+	}
 
 static int
 unaliasTunnelAddress(v6addr_t address)
-{
+	{
 	struct in6_ifreq ifr;
 	int err = 0;
 	int s = -1;
 
-	if (0 > (s = socket(AF_INET6, SOCK_DGRAM, 0))) {
+	if (0 > (s = socket(AF_INET6, SOCK_DGRAM, 0)))
+		{
 		helplog(ASL_LEVEL_ERR, "socket(AF_INET6, ...) failed: %s",
 		    strerror(errno));
 		err = kmDNSHelperDatagramSocketCreationFailed;
 		goto fin;
-	}
+		}
 	bzero(&ifr, sizeof(ifr));
 	strlcpy(ifr.ifr_name, kTunnelAddressInterface, sizeof(ifr.ifr_name));
 	ifr.ifr_ifru.ifru_addr.sin6_family = AF_INET6;
@@ -601,15 +674,16 @@ unaliasTunnelAddress(v6addr_t address)
 	memcpy(&(ifr.ifr_ifru.ifru_addr.sin6_addr), address,
 	    sizeof(ifr.ifr_ifru.ifru_addr.sin6_addr));
 
-	if (0 > ioctl(s, SIOCDIFADDR_IN6, &ifr)) {
+	if (0 > ioctl(s, SIOCDIFADDR_IN6, &ifr))
+		{
 		helplog(ASL_LEVEL_ERR,
 		    "ioctl(..., SIOCDIFADDR_IN6, ...) failed: %s",
 		    strerror(errno));
 		err = kmDNSHelperInterfaceDeletionFailed;
 		goto fin;
-	}
+		}
 
-	v6addr_t zero = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+	v6addr_t zero = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0	};
 	err = doTunnelPolicy(kmDNSTunnelPolicyTeardown,
 	    address, kWholeV6Mask, NULL, 0,
 	    zero, kZeroV6Mask, NULL, 0);
@@ -618,19 +692,21 @@ fin:
 	if (0 <= s)
 		close(s);
 	return err;
-}
+	}
 
 int
 do_mDNSAutoTunnelInterfaceUpDown(__unused mach_port_t port, int updown,
     v6addr_t address, int *err, audit_token_t token)
-{
+	{
 	debug("entry");
 	*err = 0;
-	if (!authorized(&token)) {
+	if (!authorized(&token))
+		{
 		*err = kmDNSHelperNotAuthorized;
 		goto fin;
-	}
-	switch ((enum mDNSAutoTunnelInterfaceUpDown)updown) {
+		}
+	switch ((enum mDNSAutoTunnelInterfaceUpDown)updown)
+	{
 	case kmDNSAutoTunnelInterfaceUp:
 		*err = aliasTunnelAddress(address);
 		break;
@@ -640,17 +716,17 @@ do_mDNSAutoTunnelInterfaceUpDown(__unused mach_port_t port, int updown,
 	default:
 		*err = kmDNSHelperInvalidInterfaceState;
 		goto fin;
-	}
+		}
 	debug("succeeded");
 
 fin:
 	update_idle_timer();
 	return KERN_SUCCESS;
-}
+	}
 
 static int
 createAnonymousRacoonConfiguration(const char *keydata)
-{
+	{
 	static const char config1[] =
 	  "remote anonymous {\n"
 	  "  exchange_mode aggressive;\n"
@@ -673,41 +749,43 @@ createAnonymousRacoonConfiguration(const char *keydata)
 	  "    authentication_method pre_shared_key;\n"
 	  "    dh_group 2;\n"
 	  "    lifetime time 5 min;\n"
-	  "  }\n"
-	  "}\n\n"
+	  "  	}\n"
+	  "	}\n\n"
 	  "sainfo anonymous { \n"
 	  "  pfs_group 2;\n"
 	  "  lifetime time 60 min;\n"
 	  "  encryption_algorithm aes;\n"
 	  "  authentication_algorithm hmac_sha1;\n"
 	  "  compression_algorithm deflate;\n"
-	  "}\n";
+	  "	}\n";
 	char tmp_config_path[] =
 	    "/etc/racoon/remote/tmp.XXXXXX";
 	static const char racoon_config_path[] =
 	    "/etc/racoon/remote/anonymous.conf";
 	int fd = mkstemp(tmp_config_path);
-	if (0 > fd) {
+	if (0 > fd)
+		{
 		helplog(ASL_LEVEL_ERR, "mkstemp \"%s\" failed: %s",
 		    tmp_config_path, strerror(errno));
 		return -1;
-	}
+		}
 	write(fd, config1, sizeof(config1)-1);
 	write(fd, keydata, strlen(keydata));
 	write(fd, config2, sizeof(config2)-1);
 	close(fd);
-	if (0 > rename(tmp_config_path, racoon_config_path)) {
+	if (0 > rename(tmp_config_path, racoon_config_path))
+		{
 		unlink(tmp_config_path);
 		helplog(ASL_LEVEL_ERR, "rename \"%s\" \"%s\" failed: %s",
 		    tmp_config_path, racoon_config_path, strerror(errno));
 		return -1;
-	}
+		}
 	return 0;
-}
+	}
 
 static int
 notifyRacoon(void)
-{
+	{
 	debug("entry");
 	static const char racoon_pid_path[] = "/var/run/racoon.pid";
 	char buf[] = "18446744073709551615"; /* largest 64-bit integer */
@@ -716,105 +794,122 @@ notifyRacoon(void)
 	unsigned long m = 0;
 	int fd = open(racoon_pid_path, O_RDONLY);
 
-	if (0 > fd) {
+	if (0 > fd)
+		{
 		debug("open \"%s\" failed, and that's OK: %s", racoon_pid_path,
 		    strerror(errno));
 		return kmDNSHelperRacoonNotificationFailed;
-	}
+		}
 	n = read(fd, buf, sizeof(buf)-1);
 	close(fd);
-	if (1 > n) {
+	if (1 > n)
+		{
 		debug("read of \"%s\" failed: %s", racoon_pid_path,
 		    n == 0 ? "empty file" : strerror(errno));
 		return kmDNSHelperRacoonNotificationFailed;
-	}
+		}
 	buf[n] = '\0';
 	m = strtoul(buf, &p, 10);
-	if (*p != '\0' && !isspace(*p)) {
+	if (*p != '\0' && !isspace(*p))
+		{
 		debug("invalid PID \"%s\" (around '%c')", buf, *p);
 		return kmDNSHelperRacoonNotificationFailed;
-	}
-	if (2 > m) {
+		}
+	if (2 > m)
+		{
 		debug("refusing to kill PID %lu", m);
 		return kmDNSHelperRacoonNotificationFailed;
-	}
-	if (0 != kill(m, SIGHUP)) {
+		}
+	if (0 != kill(m, SIGHUP))
+		{
 		debug("Could not signal racoon (%lu): %s", m, strerror(errno));
 		return kmDNSHelperRacoonNotificationFailed;
-	}
+		}
 	debug("Sent SIGHUP to racoon (%lu)", m);
 	return 0;
-}
+	}
 
 static int
 startRacoon(void)
-{
+	{
 	debug("entry");
-	char * const racoon_args[] = { "/usr/sbin/racoon", "-e", NULL };
+	char * const racoon_args[] = { "/usr/sbin/racoon", "-e", NULL 	};
 	ssize_t n = 0;
 	pid_t pid = 0;
 	int status = 0;
 
-	if (0 == (pid = fork())) {
+	if (0 == (pid = fork()))
+		{
 		closefds(0);
 		execve(racoon_args[0], racoon_args, NULL);
 		helplog(ASL_LEVEL_ERR, "execve of \"%s\" failed: %s",
 		    racoon_args[0], strerror(errno));
 		exit(2);
-	}
+		}
 	helplog(ASL_LEVEL_NOTICE, "racoon (pid=%lu) started",
 	    (unsigned long)pid);
 	n = waitpid(pid, &status, 0);
-	if (-1 == n) {
+	if (-1 == n)
+		{
 		helplog(ASL_LEVEL_ERR, "Unexpected waitpid failure: %s",
 		    strerror(errno));
 		return kmDNSHelperRacoonStartFailed;
-	} else if (pid != n) {
+		}
+	else if (pid != n)
+		{
 		helplog(ASL_LEVEL_ERR, "Unexpected waitpid return value %d",
 		    (int)n);
 		return kmDNSHelperRacoonStartFailed;
-	} else if (WIFSIGNALED(status)) {
+		}
+	else if (WIFSIGNALED(status))
+		{
 		helplog(ASL_LEVEL_ERR,
 		    "racoon (pid=%lu) terminated due to signal %d",
 		    (unsigned long)pid, WTERMSIG(status));
 		return kmDNSHelperRacoonStartFailed;
-	} else if (WIFSTOPPED(status)) {
+		}
+	else if (WIFSTOPPED(status))
+		{
 		helplog(ASL_LEVEL_ERR,
 		    "racoon (pid=%lu) has stopped due to signal %d",
 		    (unsigned long)pid, WSTOPSIG(status));
 		return kmDNSHelperRacoonStartFailed;
-	} else if (0 != WEXITSTATUS(status)) {
+		}
+	else if (0 != WEXITSTATUS(status))
+		{
 		helplog(ASL_LEVEL_ERR,
 		    "racoon (pid=%lu) exited with status %d",
 		    (unsigned long)pid, WEXITSTATUS(status));
 		return kmDNSHelperRacoonStartFailed;
-	}
+		}
 	debug("racoon (pid=%lu) daemonized normally", (unsigned long)pid);
 	return 0;
-}
+	}
 
 static int
 kickRacoon(void)
-{
+	{
 	if ( 0 == notifyRacoon() )
 		return 0;
 	return startRacoon();
-}
+	}
 
 int
 do_mDNSRacoonNotify(__unused mach_port_t port, const char *keydata, int *err,
     audit_token_t token)
-{
+	{
 	debug("entry");
 	*err = 0;
-	if (!authorized(&token)) {
+	if (!authorized(&token))
+		{
 		*err = kmDNSHelperNotAuthorized;
 		goto fin;
-	}
-	if (0 != createAnonymousRacoonConfiguration(keydata)) {
+		}
+	if (0 != createAnonymousRacoonConfiguration(keydata))
+		{
 		*err = kmDNSHelperRacoonConfigCreationFailed;
 		goto fin;
-	}
+		}
 	if (0 != (*err = kickRacoon()))
 		goto fin;
 	debug("succeeded");
@@ -822,27 +917,29 @@ do_mDNSRacoonNotify(__unused mach_port_t port, const char *keydata, int *err,
 fin:
 	update_idle_timer();
 	return KERN_SUCCESS;
-}
+	}
 
 static unsigned int routeSeq = 1;
 
 static int
 setupTunnelRoute(v6addr_t local, v6addr_t remote)
-{
-	struct {
+	{
+	struct
+		{
 		struct rt_msghdr    hdr;
 		struct sockaddr_in6 dst;
 		struct sockaddr_in6 gtwy;
-	} msg;
+		} msg;
 	int err = 0;
 	int s = -1;
 
-	if (0 > (s = socket(PF_ROUTE, SOCK_RAW, AF_INET))) {
+	if (0 > (s = socket(PF_ROUTE, SOCK_RAW, AF_INET)))
+		{
 		helplog(ASL_LEVEL_ERR, "socket(PF_ROUTE, ...) failed: %s",
 		    strerror(errno));
 		err = kmDNSHelperRoutingSocketCreationFailed;
 		goto fin;
-	}
+		}
 	memset(&msg, 0, sizeof(msg));
 	msg.hdr.rtm_msglen = sizeof(msg);
 	msg.hdr.rtm_type = RTM_ADD;
@@ -861,38 +958,42 @@ setupTunnelRoute(v6addr_t local, v6addr_t remote)
 	memcpy(&msg.gtwy.sin6_addr, local, sizeof(msg.gtwy.sin6_addr));
 
 	/* send message, ignore error when route already exists */
-	if (0 > write(s, &msg, msg.hdr.rtm_msglen)) {
+	if (0 > write(s, &msg, msg.hdr.rtm_msglen))
+		{
 		int errno_ = errno;
 
 		debug("write to routing socket failed: %s", strerror(errno_));
-		if (EEXIST != errno_) {
+		if (EEXIST != errno_)
+			{
 			err = kmDNSHelperRouteAdditionFailed;
 			goto fin;
+			}
 		}
-	}
 
 fin:
 	if (0 <= s)
 		close(s);
 	return err;
-}
+	}
 
 static int
 teardownTunnelRoute(v6addr_t remote)
-{
-	struct {
+	{
+	struct
+		{
 		struct rt_msghdr    hdr;
 		struct sockaddr_in6 dst;
-	} msg;
+		} msg;
 	int err = 0;
 	int s = -1;
 
-	if (0 > (s = socket(PF_ROUTE, SOCK_RAW, AF_INET))) {
+	if (0 > (s = socket(PF_ROUTE, SOCK_RAW, AF_INET)))
+		{
 		helplog(ASL_LEVEL_ERR, "socket(PF_ROUTE, ...) failed: %s",
 		    strerror(errno));
 		err = kmDNSHelperRoutingSocketCreationFailed;
 		goto fin;
-	}
+		}
 	memset(&msg, 0, sizeof(msg));
 
 	msg.hdr.rtm_msglen = sizeof(msg);
@@ -904,43 +1005,49 @@ teardownTunnelRoute(v6addr_t remote)
 	msg.dst.sin6_len = sizeof(msg.dst);
 	msg.dst.sin6_family = AF_INET6;
 	memcpy(&msg.dst.sin6_addr, remote, sizeof(msg.dst.sin6_addr));
-	if (0 > write(s, &msg, msg.hdr.rtm_msglen)) {
+	if (0 > write(s, &msg, msg.hdr.rtm_msglen))
+		{
 		int errno_ = errno;
 
 		debug("write to routing socket failed: %s", strerror(errno_));
-		if (ESRCH != errno_) {
+		if (ESRCH != errno_)
+			{
 			err = kmDNSHelperRouteDeletionFailed;
 			goto fin;
+			}
 		}
-	}
 
 fin:
 	if (0 <= s)
 		close(s);
 	return err;
-}
+	}
 
 static int
 v4addr_to_string(v4addr_t addr, char *buf, size_t buflen)
-{
-	if (NULL == inet_ntop(AF_INET, addr, buf, buflen)) {
+	{
+	if (NULL == inet_ntop(AF_INET, addr, buf, buflen))
+		{
 		helplog(ASL_LEVEL_ERR, "inet_ntop failed: %s",
 		    strerror(errno));
 		return kmDNSHelperInvalidNetworkAddress;
-	} else
+		}
+	else
 		return 0;
-}
+	}
 
 static int
 v6addr_to_string(v6addr_t addr, char *buf, size_t buflen)
-{
-	if (NULL == inet_ntop(AF_INET6, addr, buf, buflen)) {
+	{
+	if (NULL == inet_ntop(AF_INET6, addr, buf, buflen))
+		{
 		helplog(ASL_LEVEL_ERR, "inet_ntop failed: %s",
 		    strerror(errno));
 		return kmDNSHelperInvalidNetworkAddress;
-	} else
+		}
+	else
 		return 0;
-}
+	}
 
 /* Caller owns object returned in `policy' */
 static int
@@ -948,7 +1055,7 @@ generateTunnelPolicy(mDNSTunnelPolicyWhich which, int in,
 		     v4addr_t src, uint16_t src_port,
 		     v4addr_t dst, uint16_t dst_port,
 		     ipsec_policy_t *policy, size_t *len)
-{
+	{
 	char srcs[INET_ADDRSTRLEN], dsts[INET_ADDRSTRLEN];
 	char buf[128];
 	char *inOut = in ? "in" : "out";
@@ -958,7 +1065,8 @@ generateTunnelPolicy(mDNSTunnelPolicyWhich which, int in,
 	*policy = NULL;
 	*len = 0;
 
-	switch (which) {
+	switch (which)
+	{
 	case kmDNSTunnelPolicySetup:
 		if (0 != (err = v4addr_to_string(src, srcs, sizeof(srcs))))
 			goto fin;
@@ -977,32 +1085,34 @@ generateTunnelPolicy(mDNSTunnelPolicyWhich which, int in,
 	default:
 		err = kmDNSHelperIPsecPolicyCreationFailed;
 		goto fin;
-	}
+		}
 
-	if (n >= (int)sizeof(buf)) {
+	if (n >= (int)sizeof(buf))
+		{
 		err = kmDNSHelperResultTooLarge;
 		goto fin;
-	}
+		}
 
 	debug("policy=\"%s\"", buf);
-	if (NULL == (*policy = (ipsec_policy_t)ipsec_set_policy(buf, n))) {
+	if (NULL == (*policy = (ipsec_policy_t)ipsec_set_policy(buf, n)))
+		{
 		helplog(ASL_LEVEL_ERR,
 		    "Could not create IPsec policy from \"%s\"", buf);
 		err = kmDNSHelperIPsecPolicyCreationFailed;
 		goto fin;
-	}
+		}
 	*len = ((ipsec_policy_t)(*policy))->sadb_x_policy_len * 8;
 
 fin:
 	return err;
-}
+	}
 
 static int
 sendPolicy(int s, int setup,
 	   struct sockaddr *src, uint8_t src_bits,
 	   struct sockaddr *dst, uint8_t dst_bits,
 	   ipsec_policy_t policy, size_t len)
-{
+	{
 	static unsigned int policySeq = 0;
 	int err = 0;
 
@@ -1013,18 +1123,20 @@ sendPolicy(int s, int setup,
 	else
 		err = pfkey_send_spddelete(s, src, src_bits, dst, dst_bits, -1,
 		    (char *)policy, len, policySeq++);
-	if (0 > err) {
+	if (0 > err)
+		{
 		helplog(ASL_LEVEL_ERR, "Could not set IPsec policy: %s",
 		    ipsec_strerror());
 		err = kmDNSHelperIPsecPolicySetFailed;
 		goto fin;
-	} else
+		}
+	else
 		err = 0;
 	debug("succeeded");
 
 fin:
 	return err;
-}
+	}
 
 static int
 doTunnelPolicy(mDNSTunnelPolicyWhich which,
@@ -1032,7 +1144,7 @@ doTunnelPolicy(mDNSTunnelPolicyWhich which,
 	       v4addr_t loc_outer, uint16_t loc_port, 
 	       v6addr_t rmt_inner, uint8_t rmt_bits,
 	       v4addr_t rmt_outer, uint16_t rmt_port)
-{
+	{
 	struct sockaddr_in6 sin_loc;
 	struct sockaddr_in6 sin_rmt;
 	ipsec_policy_t policy = NULL;
@@ -1041,13 +1153,14 @@ doTunnelPolicy(mDNSTunnelPolicyWhich which,
 	int err = 0;
 
 	debug("entry");
-	if (0 > (s = pfkey_open())) {
+	if (0 > (s = pfkey_open()))
+		{
 		helplog(ASL_LEVEL_ERR,
 		    "Could not create IPsec policy socket: %s",
 		    ipsec_strerror());
 		err = kmDNSHelperIPsecPolicySocketCreationFailed;
 		goto fin;
-	}
+		}
 
 	memset(&sin_loc, 0, sizeof(sin_loc));
 	sin_loc.sin6_len = sizeof(sin_loc);
@@ -1073,10 +1186,11 @@ doTunnelPolicy(mDNSTunnelPolicyWhich which,
 	    (struct sockaddr *)&sin_loc, loc_bits,
 	    policy, len)))
 		goto fin;
-	if (NULL != policy) {
+	if (NULL != policy)
+		{
 		free(policy);
 		policy = NULL;
-	}
+		}
 	if (0 != (err = generateTunnelPolicy(which, 0,
 	    loc_outer, loc_port,
 	    rmt_outer, rmt_port,
@@ -1094,14 +1208,14 @@ fin:
 	if (NULL != policy)
 		free(policy);
 	return err;
-}
+	}
 
 int
 do_mDNSAutoTunnelSetKeys(__unused mach_port_t port, int replacedelete,
     v6addr_t loc_inner, v4addr_t loc_outer, uint16_t loc_port,
     v6addr_t rmt_inner, v4addr_t rmt_outer, uint16_t rmt_port,
     const char *keydata, int *err, audit_token_t token)
-{
+	{
 	static const char config[] =
 	  "remote %s [%u] {\n"
 	  "  exchange_mode aggressive;\n"
@@ -1122,22 +1236,22 @@ do_mDNSAutoTunnelSetKeys(__unused mach_port_t port, int replacedelete,
 	  "    authentication_method pre_shared_key;\n"
 	  "    dh_group 2;\n"
 	  "    lifetime time 5 min;\n"
-	  "  }\n"
-	  "}\n\n"
+	  "  	}\n"
+	  "	}\n\n"
 	  "sainfo address %s any address %s any {\n"
 	  "  pfs_group 2;\n"
 	  "  lifetime time 60 min;\n"
 	  "  encryption_algorithm aes;\n"
 	  "  authentication_algorithm hmac_sha1;\n"
 	  "  compression_algorithm deflate;\n"
-	  "}\n\n"
+	  "	}\n\n"
 	  "sainfo address %s any address %s any {\n"
 	  "  pfs_group 2;\n"
 	  "  lifetime time 60 min;\n"
 	  "  encryption_algorithm aes;\n"
 	  "  authentication_algorithm hmac_sha1;\n"
 	  "  compression_algorithm deflate;\n"
-	  "}\n";
+	  "	}\n";
 	char path[PATH_MAX] = "";
 	char li[INET6_ADDRSTRLEN], lo[INET_ADDRSTRLEN],
 	    ri[INET6_ADDRSTRLEN], ro[INET_ADDRSTRLEN];
@@ -1147,18 +1261,20 @@ do_mDNSAutoTunnelSetKeys(__unused mach_port_t port, int replacedelete,
 
 	debug("entry");
 	*err = 0;
-	if (!authorized(&token)) {
+	if (!authorized(&token))
+		{
 		*err = kmDNSHelperNotAuthorized;
 		goto fin;
-	}
-	switch ((enum mDNSAutoTunnelSetKeysReplaceDelete)replacedelete) {
+		}
+	switch ((enum mDNSAutoTunnelSetKeysReplaceDelete)replacedelete)
+	{
 	case kmDNSAutoTunnelSetKeysReplace:
 	case kmDNSAutoTunnelSetKeysDelete:
 		break;
 	default:
 		*err = kmDNSHelperInvalidTunnelSetKeysOperation;
 		goto fin;
-	}
+		}
 	if (0 != (*err = v6addr_to_string(loc_inner, li, sizeof(li))))
 		goto fin;
 	if (0 != (*err = v6addr_to_string(rmt_inner, ri, sizeof(ri))))
@@ -1173,46 +1289,54 @@ do_mDNSAutoTunnelSetKeys(__unused mach_port_t port, int replacedelete,
 
 	if ((int)sizeof(path) <= snprintf(path, sizeof(path),
 	    "/etc/racoon/remote/%s.%u.conf", ro,
-	    rmt_port)) {
+	    rmt_port))
+		{
 		*err = kmDNSHelperResultTooLarge;
 		goto fin;
-	}
-	if (kmDNSAutoTunnelSetKeysReplace == replacedelete) {
+		}
+	if (kmDNSAutoTunnelSetKeysReplace == replacedelete)
+		{
 		if ((int)sizeof(tmp_path) <=
-		    snprintf(tmp_path, sizeof(tmp_path), "%s.XXXXXX", path)) {
+		    snprintf(tmp_path, sizeof(tmp_path), "%s.XXXXXX", path))
+			{
 			*err = kmDNSHelperResultTooLarge;
 			goto fin;
-		}       
-		if (0 > (fd = mkstemp(tmp_path))) {
+			}       
+		if (0 > (fd = mkstemp(tmp_path)))
+			{
 			helplog(ASL_LEVEL_ERR, "mktemp \"%s\" failed: %s",
 			    tmp_path, strerror(errno));
 			*err = kmDNSHelperRacoonConfigCreationFailed;
 			goto fin;
-		}
-		if (NULL == (fp = fdopen(fd, "w"))) {
+			}
+		if (NULL == (fp = fdopen(fd, "w")))
+			{
 			helplog(ASL_LEVEL_ERR, "fdopen: %s",
 			    strerror(errno));
 			*err = kmDNSHelperRacoonConfigCreationFailed;
 			goto fin;
-		}
+			}
 		fd = -1;
 		fprintf(fp, config, ro, rmt_port, keydata, ri, li, li, ri);
 		fclose(fp);
 		fp = NULL;
-		if (0 > rename(tmp_path, path)) {
+		if (0 > rename(tmp_path, path))
+			{
 			helplog(ASL_LEVEL_ERR,
 			    "rename \"%s\" \"%s\" failed: %s",
 			    tmp_path, path, strerror(errno));
 			*err = kmDNSHelperRacoonConfigCreationFailed;
 			goto fin;
-		}
+			}
 		if (0 != (*err = kickRacoon()))
 			goto fin;
-	} else {
+		}
+	else
+		{
 		if (0 != unlink(path))
 			debug("unlink \"%s\" failed: %s", path,
 			    strerror(errno));
-	}
+		}
 
 	if (0 != (*err = doTunnelPolicy(kmDNSTunnelPolicyTeardown,
 	    loc_inner, kWholeV6Mask, NULL, loc_port,
@@ -1240,4 +1364,4 @@ fin:
 	unlink(tmp_path);
 	update_idle_timer();
 	return KERN_SUCCESS;
-}
+	}
