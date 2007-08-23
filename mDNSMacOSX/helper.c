@@ -1108,6 +1108,7 @@ do_mDNSAutoTunnelSetKeys(__unused mach_port_t port, int replacedelete,
 	  "  doi ipsec_doi;\n"
 	  "  situation identity_only;\n"
 	  "  verify_identifier off;\n"
+	  "  generate_policy on;\n"
 	  "  shared_secret use \"%s\";\n"
 	  "  nonce_size 16;\n"
 	  "  lifetime time 5 min;\n"
