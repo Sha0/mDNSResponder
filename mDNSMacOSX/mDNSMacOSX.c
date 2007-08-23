@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.463  2007/08/23 21:02:35  cheshire
+SecKeychainSetPreferenceDomain() call should be in platform-support layer, not daemon.c
+
 Revision 1.462  2007/08/18 01:02:03  mcguire
 <rdar://problem/5415593> No Bonjour services are getting registered at boot
 
@@ -3487,6 +3490,9 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 		return(mStatus_NoMemoryErr);
 	err = WatchForNetworkChanges(m);
 	if (err) return(err);
+
+	// Explicitly ensure that our Keychain operations utilize the system domain.
+	SecKeychainSetPreferenceDomain(kSecPreferencesDomainSystem);
 
 	mDNS_Lock(m);
 	SetDomainSecrets(m);

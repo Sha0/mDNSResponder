@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.333  2007/08/23 21:02:35  cheshire
+SecKeychainSetPreferenceDomain() call should be in platform-support layer, not daemon.c
+
 Revision 1.332  2007/08/22 23:54:54  mcguire
 <rdar://problem/5422558> BTMM: mDNSResponder should be able to run from the cmdline
 
@@ -603,7 +606,7 @@ mDNSlocal void FreeServiceInstance(ServiceInstance *x)
 		}
 	
 	if (s->RR_TXT.resrec.rdata != &s->RR_TXT.rdatastorage)
-			freeL("TXT RData", s->RR_TXT.resrec.rdata);
+		freeL("TXT RData", s->RR_TXT.resrec.rdata);
 
 	if (s->SubTypes) freeL("ServiceSubTypes", s->SubTypes);
 	freeL("ServiceInstance", x);
@@ -2617,15 +2620,11 @@ mDNSlocal void DropPrivileges(void)
 				}
 			}
 
-		if (0 != initgroups(login, gid))
-			LogMsg("initgroups(\"%s\", %lu) failed.  Continuing.", login, (unsigned long)gid);
-		if (0 != setgid(gid))
-			LogMsg("setgid(%lu) failed.  Continuing with group %lu privileges.", (unsigned long)getegid());
-		if (0 != setuid(uid))
-			LogMsg("setuid(%lu) failed. Continuing as root after all.", (unsigned long)uid);
+		if (0 != initgroups(login, gid)) LogMsg("initgroups(\"%s\", %lu) failed.  Continuing.", login,        (unsigned long)gid);
+		if (0 != setgid(gid))            LogMsg("setgid(%lu) failed.  Continuing with group %lu privileges.", (unsigned long)getegid());
+		if (0 != setuid(uid))            LogMsg("setuid(%lu) failed. Continuing as root after all.",          (unsigned long)uid);
 		}
 	}
-
 
 extern int sandbox_init(const char *profile, uint64_t flags, char **errorbuf) __attribute__((weak_import));
 
@@ -2642,11 +2641,7 @@ mDNSexport int main(int argc, char **argv)
 		if (!strcasecmp(argv[i], "-launchdaemon")) started_via_launchdaemon = mDNStrue;
 		}
 
-	if (0 == geteuid())
-		DropPrivileges();
-
-	// Explicitly ensure that our Keychain operations utilize the system domain.
-	SecKeychainSetPreferenceDomain(kSecPreferencesDomainSystem);
+	if (0 == geteuid()) DropPrivileges();
 
 	signal(SIGHUP,  HandleSIG);		// (Debugging) Purge the cache to check for cache handling bugs
 	signal(SIGINT,  HandleSIG);		// Ctrl-C: Detach from Mach BootstrapService and exit cleanly
