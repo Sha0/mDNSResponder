@@ -22,6 +22,12 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.439  2007/08/23 21:47:09  vazquez
+<rdar://problem/5427316> BTMM: mDNSResponder sends NAT-PMP packets on public network
+make sure we clean up port mappings on base stations by sending a lease value of 0,
+and only send NAT-PMP packets on private networks; also save some memory by
+not using packet structs in NATTraversals.
+
 Revision 1.438  2007/08/22 17:50:08  vazquez
 <rdar://problem/5399276> Need to handle errors returned by NAT-PMP routers properly
 Propagate router errors to clients, and stop logging spurious "message too short" logs.
@@ -1008,10 +1014,11 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 #pragma mark - NAT Traversal
 #endif
 
-mDNSlocal void formatPortMapRequest(NATTraversalInfo *info, NATOp_t op)
+mDNSlocal void formatPortMapRequest(NATTraversalInfo *info, NATPortMapRequest *NATPortReq, NATOp_t op)
 	{
-	mDNSu8 *p = (mDNSu8 *)&info->NATPortReq;	// NATPortMapRequest packet
-	mDNSu32 lease = info->portMappingLease ? info->portMappingLease : NATMAP_DEFAULT_LEASE;
+	mDNSu8 *p = (mDNSu8 *)NATPortReq;	// NATPortMapRequest packet
+	mDNSIPPort	pubPort = !mDNSIPPortIsZero(info->savedPublicPort) ? info->savedPublicPort : info->publicPortreq;
+	mDNSu32 	lease   = info->portMappingLease ? info->portMappingLease : 0;	// zero means deletion
 
 	p[ 0] = NATMAP_VERS;
 	p[ 1] = op;
@@ -1019,8 +1026,8 @@ mDNSlocal void formatPortMapRequest(NATTraversalInfo *info, NATOp_t op)
 	p[ 3] = 0;	// unused
 	p[ 4] = info->privatePort.b[0];
 	p[ 5] = info->privatePort.b[1];
-	p[ 6] = info->publicPortreq. b[0];
-	p[ 7] = info->publicPortreq. b[1];
+	p[ 6] = pubPort.b[0];
+	p[ 7] = pubPort.b[1];
 	p[ 8] = (mDNSu8)((lease >> 24) &  0xFF);
 	p[ 9] = (mDNSu8)((lease >> 16) &  0xFF);
 	p[10] = (mDNSu8)((lease >>  8) &  0xFF);
@@ -1032,22 +1039,24 @@ mDNSlocal mStatus uDNS_SendNATMsg(mDNS *m, NATTraversalInfo *info, NATOptFlags_t
 	mStatus	err = mStatus_NoError;
 	const mDNSu8 *msg = mDNSNULL;
 	const mDNSu8 *end = mDNSNULL;
+	NATAddrRequest		NATAddrReq;
+	NATPortMapRequest   NATPortReq;
 
-	// send msg if we have a router
-	if (!mDNSIPv4AddressIsZero(m->Router.ip.v4))
+	// send msg if we have a router and it is a private address
+	if (!mDNSIPv4AddressIsZero(m->Router.ip.v4) && mDNSv4AddrIsRFC1918(&m->Router.ip.v4))
 		{
 		if (op == AddrRequestFlag)
 			{
-			msg = (const mDNSu8 *)&m->NATAddrReq;
+			msg = (const mDNSu8 *)&NATAddrReq;
 			end  = msg + sizeof(NATAddrRequest);
-			m->NATAddrReq.vers   = NATMAP_VERS;
-			m->NATAddrReq.opcode = NATOp_AddrRequest;
+			NATAddrReq.vers   = NATMAP_VERS;
+			NATAddrReq.opcode = NATOp_AddrRequest;
 			}
 		else
 			{
-			msg = (const mDNSu8 *)&info->NATPortReq;
+			msg = (const mDNSu8 *)&NATPortReq;
 			end  = msg + sizeof(NATPortMapRequest);
-			formatPortMapRequest(info, (op == MapUDPFlag) ? NATOp_MapUDP : NATOp_MapTCP);
+			formatPortMapRequest(info, &NATPortReq, (op == MapUDPFlag) ? NATOp_MapUDP : NATOp_MapTCP);
 			}
 		
 #ifdef _LEGACY_NAT_TRAVERSAL_
@@ -1198,7 +1207,7 @@ mDNSexport void natTraversalHandlePortMapReply(NATTraversalInfo *n, mDNS *const 
 		return;
 		}
 
-	if (!ours || n->NATPortReq.NATReq_lease == 0) return;                    // not ours or deletion
+	if (!ours || n->portMappingLease == 0) return;           // not ours or deletion
 
 	n->portMappingLease = lease;
 	if (n->portMappingLease > 0x70000000UL / mDNSPlatformOneSecond)
@@ -1211,7 +1220,7 @@ mDNSexport void natTraversalHandlePortMapReply(NATTraversalInfo *n, mDNS *const 
 		n->publicPort = port;
 		}
 
-	n->NATPortReq.pub = port; // Remember allocated port for future refreshes
+	n->savedPublicPort = port; // Remember allocated port for future refreshes
 	LogOperation("natTraversalHandlePortMapReply %p %X (%s) Local Port %d External Port %d", n,
 				portMapReply->opcode,
 				portMapReply->opcode == 0x81 ? "UDP Response" :
@@ -1240,9 +1249,13 @@ mDNSexport mStatus mDNS_StartNATOperation_internal(mDNS *const m, NATTraversalIn
 	traversal->opFlags              = 0;
 	traversal->publicPort           = zeroIPPort;
 	traversal->lastPublicPort       = mDNSOpaque16fromIntVal(-1);	// see comment in SetExternalAddress() about why this is set to -1
+	traversal->savedPublicPort      = zeroIPPort;
 	traversal->lastExternalAddress  = onesIPv4Addr;
 	traversal->Error                = mStatus_NoError;
 	traversal->lastError            = mStatus_NoError;
+
+	// set default lease if necessary
+	traversal->portMappingLease = traversal->portMappingLease ? traversal->portMappingLease : NATMAP_DEFAULT_LEASE;
 
 	mDNSPlatformMemZero(&traversal->tcpInfo, sizeof(traversal->tcpInfo));
 
@@ -1295,8 +1308,7 @@ mDNSlocal mStatus mDNS_StopNATOperation_internal(mDNS *m, NATTraversalInfo *trav
 		if (!mDNSIPPortIsZero(traversal->publicPort))
 			{
 			// zero lease
-			traversal->NATPortReq.NATReq_lease = 0;
-			traversal->NATPortReq.pub = zeroIPPort;
+			traversal->portMappingLease = 0;
 			traversal->retryIntervalPortMap = 0;
 			// send once only - if it fails the router will clean itself up eventually
 			uDNS_SendNATMsg(m, traversal, (traversal->opFlags & MapTCPFlag) ? MapTCPFlag : MapUDPFlag);
@@ -2314,7 +2326,7 @@ mDNSlocal void CheckForUnreferencedLLQMapping(mDNS *m)
 // Called in normal client context (lock not held)
 mDNSlocal void CompleteSRVNatMap(mDNS *const m, mDNSv4Addr ExternalAddress, NATTraversalInfo *n, mStatus err)
 	{
-	mDNSBool deletion = !n->NATPortReq.NATReq_lease;
+	mDNSBool deletion = !n->portMappingLease;
 	ServiceRecordSet *srs = (ServiceRecordSet *)n->clientContext;
 	
 	(void)ExternalAddress; // Unused

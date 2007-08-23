@@ -54,6 +54,12 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.420  2007/08/23 21:47:09  vazquez
+<rdar://problem/5427316> BTMM: mDNSResponder sends NAT-PMP packets on public network
+make sure we clean up port mappings on base stations by sending a lease value of 0,
+and only send NAT-PMP packets on private networks; also save some memory by
+not using packet structs in NATTraversals.
+
 Revision 1.419  2007/08/08 21:07:47  vazquez
 <rdar://problem/5244687> BTMM: Need to advertise model information via wide-area bonjour
 
@@ -1145,11 +1151,13 @@ struct NATTraversalInfo_struct
 	// Internal state fields. These are used internally by mDNSCore; the client layer needn't be concerned with them.
 	NATTraversalInfo *next;
 
-	NATPortMapRequest NATPortReq;			// request packet
-	
 	NATOptFlags_t    opFlags;				// flags for everything that needs to be done
 	mDNSIPPort       publicPort;			// established public port mapping
 	mDNSIPPort       lastPublicPort;		// last public port mapping we got
+	mDNSIPPort       savedPublicPort;		// last actual public port mapping we got from the router 
+											// (saved so that we can request that same port on future refreshes;
+											// this is *only* reset with something the router sent us, not
+											// to be used internally for state transitions)
 	mDNSv4Addr       lastExternalAddress;	// last external address we got
 	mStatus          Error;					// set when there is a port mapping error
 	mStatus          lastError;				// Last error code we delivered to callback
@@ -1840,7 +1848,6 @@ struct mDNS_struct
 	// NAT traversal fields
 	NATTraversalInfo *NATTraversals;
 	NATTraversalInfo *CurrentNATTraversal;
-	NATAddrRequest    NATAddrReq;
 	mDNSs32           retryGetAddr;				// absolute time when we retry
 	mDNSs32           retryIntervalGetAddr;		// delta between time sent and retry
 	mDNSv4Addr        ExternalAddress;

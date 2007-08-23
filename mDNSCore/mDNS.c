@@ -38,6 +38,12 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.679  2007/08/23 21:47:09  vazquez
+<rdar://problem/5427316> BTMM: mDNSResponder sends NAT-PMP packets on public network
+make sure we clean up port mappings on base stations by sending a lease value of 0,
+and only send NAT-PMP packets on private networks; also save some memory by
+not using packet structs in NATTraversals.
+
 Revision 1.678  2007/08/01 16:09:13  cheshire
 Removed unused NATTraversalInfo substructure from AuthRecord; reduced structure sizecheck values accordingly
 
@@ -6458,8 +6464,6 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	// NAT traversal fields
 	m->NATTraversals            = mDNSNULL;
 	m->CurrentNATTraversal      = mDNSNULL;
-	m->NATAddrReq.vers          = 0;
-	m->NATAddrReq.opcode        = 0;
 	m->retryGetAddr             = timenow + 0x78000000;	// absolute time when we retry
 	m->retryIntervalGetAddr     = 0;	// delta between time sent and retry
 	m->ExternalAddress          = zerov4Addr;
