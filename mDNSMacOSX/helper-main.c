@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper-main.c,v $
+Revision 1.3  2007/08/23 23:21:24  cheshire
+Tiger compatibility: Use old bootstrap_register() instead of Leopard-only bootstrap_register2()
+
 Revision 1.2  2007/08/23 21:36:17  cheshire
 Made code layout style consistent with existing project style; added $Log header
 
@@ -30,7 +33,7 @@ Revision 1.1  2007/08/08 22:34:58  mcguire
 #include <sys/types.h>
 #include <mach/mach.h>
 #include <mach/mach_error.h>
-#include <bootstrap_priv.h>
+#include <servers/bootstrap.h>
 #include <asl.h>
 #include <launch.h>
 #include <pwd.h>
@@ -46,6 +49,12 @@ Revision 1.1  2007/08/08 22:34:58  mcguire
 #include "helper-server.h"
 #include "helpermsg.h"
 #include "helpermsgServer.h"
+
+#ifndef LAUNCH_JOBKEY_MACHSERVICES
+#define LAUNCH_JOBKEY_MACHSERVICES "MachServices"
+#define LAUNCH_DATA_MACHPORT 10
+#define launch_data_get_machport launch_data_get_fd
+#endif
 
 union max_msg_size
 	{
@@ -242,13 +251,13 @@ register_service(const char *service_name)
 		    mach_error_string(kr));
 		goto error;
 		}
-	/* XXX bootstrap_register2 does not modify its second argument,
+	/* XXX bootstrap_register does not modify its second argument,
 	 * but the prototype does not include const.
 	 */
-	if (KERN_SUCCESS != (kr = bootstrap_register2(bootstrap_port,
-	    (char *)service_name, port, 0)))
+	if (KERN_SUCCESS != (kr = bootstrap_register(bootstrap_port,
+	    (char *)service_name, port)))
 		{
-		helplog(ASL_LEVEL_ERR, "bootstrap_register2 failed: %s",
+		helplog(ASL_LEVEL_ERR, "bootstrap_register failed: %s",
 		    mach_error_string(kr));
 		goto error;
 		}
