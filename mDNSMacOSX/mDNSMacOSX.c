@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.465  2007/08/24 00:39:12  cheshire
+Added comment explaining why we set info->AutoTunnelService.resrec.RecordType to kDNSRecordTypeUnregistered
+
 Revision 1.464  2007/08/24 00:15:21  cheshire
 Renamed GetAuthInfoForName() to GetAuthInfoForName_internal() to make it clear that it may only be called with the lock held
 
@@ -2005,6 +2008,8 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 				info->AutoTunnelService.resrec.rdata->u.srv.priority = 0;
 				info->AutoTunnelService.resrec.rdata->u.srv.weight   = 0;
 				AssignDomainName(&info->AutoTunnelService.resrec.rdata->u.srv.target, &info->AutoTunnelTarget.namestorage);
+				// Indicate to ourselves that our AutoTunnelService is currently unregistered.
+				// We'll register it shortly, as soon as we get our port number in our AutoTunnelNATCallback routine
 				info->AutoTunnelService.resrec.RecordType = kDNSRecordTypeUnregistered;
 
 				info->AutoTunnelNAT.clientCallback   = AutoTunnelNATCallback;
