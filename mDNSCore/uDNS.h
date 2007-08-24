@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.74  2007/08/24 00:15:20  cheshire
+Renamed GetAuthInfoForName() to GetAuthInfoForName_internal() to make it clear that it may only be called with the lock held
+
 Revision 1.73  2007/08/01 03:09:22  cheshire
 <rdar://problem/5344587> BTMM: Create NAT port mapping for autotunnel port
 
@@ -237,7 +240,7 @@ typedef enum
 	} uDNS_LLQType;
 
 extern uDNS_LLQType    uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *const srcaddr, const mDNSIPPort srcport);
-extern DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const name);
+extern DomainAuthInfo *GetAuthInfoForName_internal(mDNS *m, const domainname *const name);
 extern void DisposeTCPConn(struct tcpInfo_t *tcp);
 
 // NAT traversal

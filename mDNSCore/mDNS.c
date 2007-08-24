@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.680  2007/08/24 00:15:19  cheshire
+Renamed GetAuthInfoForName() to GetAuthInfoForName_internal() to make it clear that it may only be called with the lock held
+
 Revision 1.679  2007/08/23 21:47:09  vazquez
 <rdar://problem/5427316> BTMM: mDNSResponder sends NAT-PMP packets on public network
 make sure we clean up port mappings on base stations by sending a lease value of 0,
@@ -4851,7 +4854,7 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 		// the _dns-query-tls SRV record for the zone, and we can't do *that* privately because to do so
 		// we'd need to already know the _dns-query-tls SRV record.
 		question->AuthInfo          = (question->QuestionCallback == GetZoneData_QuestionCallback) ? mDNSNULL
-		                            : GetAuthInfoForName(m, &question->qname);
+		                            : GetAuthInfoForName_internal(m, &question->qname);
 		question->CNAMEReferrals    = 0;
 
 		question->qDNSServer        = mDNSNULL;

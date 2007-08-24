@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.440  2007/08/24 00:15:20  cheshire
+Renamed GetAuthInfoForName() to GetAuthInfoForName_internal() to make it clear that it may only be called with the lock held
+
 Revision 1.439  2007/08/23 21:47:09  vazquez
 <rdar://problem/5427316> BTMM: mDNSResponder sends NAT-PMP packets on public network
 make sure we clean up port mappings on base stations by sending a lease value of 0,
@@ -900,7 +903,7 @@ mDNSexport DNSServer *mDNS_AddDNSServer(mDNS *const m, const domainname *d, cons
 #pragma mark - authorization management
 #endif
 
-mDNSlocal DomainAuthInfo *GetAuthInfoForName_internal(mDNS *m, const domainname *const name)
+mDNSlocal DomainAuthInfo *GetAuthInfoForName_direct(mDNS *m, const domainname *const name)
 	{
 	const domainname *n = name;
 	while (n->c[0])
@@ -918,9 +921,13 @@ mDNSlocal DomainAuthInfo *GetAuthInfoForName_internal(mDNS *m, const domainname 
 	return mDNSNULL;
 	}
 
-mDNSexport DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const name)
+// MUST be called with lock held
+mDNSexport DomainAuthInfo *GetAuthInfoForName_internal(mDNS *m, const domainname *const name)
 	{
 	DomainAuthInfo **p = &m->AuthInfoList;
+
+	if (m->mDNS_busy != m->mDNS_reentrancy+1)
+		LogMsg("GetAuthInfoForName_internal: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
 	// First purge any dead keys from the list
 	while (*p)
@@ -929,13 +936,13 @@ mDNSexport DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const n
 			{
 			DNSQuestion *q;
 			DomainAuthInfo *info = *p;
-			LogOperation("GetAuthInfoForName deleting expired key %##s %##s", info->domain.c, info->keyname.c);
+			LogOperation("GetAuthInfoForName_internal deleting expired key %##s %##s", info->domain.c, info->keyname.c);
 			*p = info->next;	// Cut DomainAuthInfo from list *before* scanning our question list updating AuthInfo pointers
 			for (q = m->Questions; q; q=q->next)
 				if (q->AuthInfo == info)
 					{
-					q->AuthInfo = GetAuthInfoForName_internal(m, &q->qname);
-					debugf("GetAuthInfoForName updated q->AuthInfo from %##s to %##s for %##s (%s)",
+					q->AuthInfo = GetAuthInfoForName_direct(m, &q->qname);
+					debugf("GetAuthInfoForName_internal updated q->AuthInfo from %##s to %##s for %##s (%s)",
 						info->domain.c, q->AuthInfo ? q->AuthInfo->domain.c : mDNSNULL, q->qname.c, DNSTypeName(q->qtype));
 					}
 			#if APPLE_OSX_mDNSResponder
@@ -957,7 +964,16 @@ mDNSexport DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const n
 		else
 			p = &(*p)->next;
 		}
-	return(GetAuthInfoForName_internal(m, name));
+	return(GetAuthInfoForName_direct(m, name));
+	}
+
+mDNSlocal DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const name)
+	{
+	DomainAuthInfo *d;
+	mDNS_Lock(m);
+	d = GetAuthInfoForName_internal(m, name);
+	mDNS_Unlock(m);
+	return(d);
 	}
 
 mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
@@ -1996,7 +2012,7 @@ mDNSexport const domainname *GetServiceTarget(mDNS *m, ServiceRecordSet *srs)
 		HostnameInfo *hi = m->Hostnames;
 
 #if APPLE_OSX_mDNSResponder
-		DomainAuthInfo *AuthInfo = GetAuthInfoForName(m, srs->RR_SRV.resrec.name);
+		DomainAuthInfo *AuthInfo = GetAuthInfoForName_internal(m, srs->RR_SRV.resrec.name);
 		if (AuthInfo && AuthInfo->AutoTunnel)
 			{
 			if (AuthInfo->AutoTunnelHostRecord.namestorage.c[0] == 0)
@@ -2123,7 +2139,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 		}
 	else
 		{
-		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &srs->ns, srs->SRSUpdatePort, mDNSNULL, GetAuthInfoForName(m, srs->RR_SRV.resrec.name));
+		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &srs->ns, srs->SRSUpdatePort, mDNSNULL, GetAuthInfoForName_internal(m, srs->RR_SRV.resrec.name));
 		if (err) debugf("ERROR: SendServiceRegistration - mDNSSendDNSMessage - %ld", err);
 		}
 
@@ -2286,7 +2302,7 @@ mDNSexport ZoneData *StartGetZoneData(mDNS *const m, const domainname *const nam
 	zd->Host.c[0]        = 0;
 	zd->Port             = zeroIPPort;
 	zd->Addr             = zeroAddr;
-	zd->ZonePrivate      = GetAuthInfoForName(m, name) ? mDNStrue : mDNSfalse;
+	zd->ZonePrivate      = GetAuthInfoForName_internal(m, name) ? mDNStrue : mDNSfalse;
 	zd->ZoneDataCallback = callback;
 	zd->ZoneDataContext  = ZoneDataContext;
 
@@ -2481,7 +2497,7 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 		}
 	else
 		{
-		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &srs->ns, srs->SRSUpdatePort, mDNSNULL, GetAuthInfoForName(m, srs->RR_SRV.resrec.name));
+		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &srs->ns, srs->SRSUpdatePort, mDNSNULL, GetAuthInfoForName_internal(m, srs->RR_SRV.resrec.name));
 		if (err && err != mStatus_TransientErr) { debugf("ERROR: SendServiceDeregistration - mDNSSendDNSMessage - %ld", err); goto exit; }
 		}
 
@@ -3090,7 +3106,7 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 		}
 	else
 		{
-		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, GetAuthInfoForName(m, rr->resrec.name));
+		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, GetAuthInfoForName_internal(m, rr->resrec.name));
 		if (err) debugf("ERROR: sendRecordRegistration - mDNSSendDNSMessage - %ld", err);
 		}
 
@@ -3905,7 +3921,7 @@ mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 		}
 	else
 		{
-		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, GetAuthInfoForName(m, rr->resrec.name));
+		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, GetAuthInfoForName_internal(m, rr->resrec.name));
 		if (err) debugf("ERROR: SendRecordDeregistration - mDNSSendDNSMessage - %ld", err);
 		}
 
@@ -4552,7 +4568,7 @@ mDNSlocal void SleepRecordRegistrations(mDNS *m)
 			ptr = putDeletionRecord(&m->omsg, ptr, &rr->resrec);
 			if (!ptr) { LogMsg("Error: SleepRecordRegistrations - could not put deletion record"); return; }
 
-			mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, GetAuthInfoForName(m, rr->resrec.name));
+			mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, GetAuthInfoForName_internal(m, rr->resrec.name));
 			rr->state = regState_Refresh;
 			rr->LastAPTime = m->timenow;
 			rr->ThisAPInterval = 300 * mDNSPlatformOneSecond;

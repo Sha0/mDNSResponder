@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.464  2007/08/24 00:15:21  cheshire
+Renamed GetAuthInfoForName() to GetAuthInfoForName_internal() to make it clear that it may only be called with the lock held
+
 Revision 1.463  2007/08/23 21:02:35  cheshire
 SecKeychainSetPreferenceDomain() call should be in platform-support layer, not daemon.c
 
@@ -1918,12 +1921,13 @@ mDNSlocal NetworkInterfaceInfoOSX *FindRoutableIPv4(mDNS *const m, mDNSu32 scope
 
 #define kRacoonPort 4500
 
+// MUST be called with lock held
 mDNSlocal mDNSBool TunnelServers(mDNS *const m)
 	{
 	ServiceRecordSet *p;
 	for (p = m->ServiceRegistrations; p; p = p->uDNS_next)
 		{
-		DomainAuthInfo *AuthInfo = GetAuthInfoForName(m, p->RR_SRV.resrec.name);
+		DomainAuthInfo *AuthInfo = GetAuthInfoForName_internal(m, p->RR_SRV.resrec.name);
 		if (AuthInfo && AuthInfo->AutoTunnel) return(mDNStrue);
 		}
 	return(mDNSfalse);
@@ -2020,13 +2024,6 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 				}
 			}
 		}
-	}
-
-mDNSlocal void SetupLocalAutoTunnelInterface(mDNS *const m)
-	{
-	mDNS_Lock(m);
-	SetupLocalAutoTunnelInterface_internal(m);
-	mDNS_Unlock(m);
 	}
 
 mDNSlocal void AutoTunnelSetKeys(ClientTunnel *tun, mDNSBool AddNew)
@@ -3174,8 +3171,12 @@ mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 	#if APPLE_OSX_mDNSResponder
 		{
 		if (m->AutoTunnelHostAddr.b[0])
+			{
+			mDNS_Lock(m);
 			if (m->TunnelClients || TunnelServers(m))
-				SetupLocalAutoTunnelInterface(m);
+				SetupLocalAutoTunnelInterface_internal(m);
+			mDNS_Unlock(m);
+			}
 		
 		// Scan to find client tunnels whose questions have completed,
 		// but whose local inner/outer addresses have changed since the tunnel was set up
