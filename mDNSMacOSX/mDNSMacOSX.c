@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.466  2007/08/24 23:25:55  cheshire
+Debugging messages to help track down duplicate items being read from system keychain
+
 Revision 1.465  2007/08/24 00:39:12  cheshire
 Added comment explaining why we set info->AutoTunnelService.resrec.RecordType to kDNSRecordTypeUnregistered
 
@@ -3052,23 +3055,24 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 	// for it, this gives mDNSResponder ten seconds to gracefully delete the name from the
 	// server before it loses access to the necessary key. Otherwise, we'd leave orphaned
 	// address records behind that we no longer have permission to delete.
-	DomainAuthInfo *ptr = m->AuthInfoList;
+	DomainAuthInfo *ptr;
 	for (ptr = m->AuthInfoList; ptr; ptr = ptr->next)
 		ptr->deltime = NonZeroTime(m->timenow + mDNSPlatformOneSecond*10);
 
 	CFMutableArrayRef sa = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 	if (!sa) { LogMsg("SetDomainSecrets: CFArrayCreateMutable failed"); return; }
 	CFIndex i;
-	int j;
 	CFDataRef data = NULL;
 	const int itemsPerEntry = 3; // domain name, key name, key value
 	CFArrayRef secrets = NULL;
 	int err = mDNSKeychainGetSecrets(&secrets);
-	if (0 == err && NULL != secrets)
+	if (!err && secrets)
 		{
+		CFIndex ArrayCount = CFArrayGetCount(secrets);
 		// Iterate through the secrets
-		for (i = 0; i < CFArrayGetCount(secrets); ++i)
+		for (i = 0; i < ArrayCount; ++i)
 			{
+			int j;
 			CFArrayRef entry = CFArrayGetValueAtIndex(secrets, i);
 			if (CFArrayGetTypeID() != CFGetTypeID(entry) || itemsPerEntry != CFArrayGetCount(entry))
 				{ LogMsg("SetDomainSecrets: malformed entry"); continue; }
@@ -3083,18 +3087,16 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 			data = CFArrayGetValueAtIndex(entry, 0);
 			if (CFDataGetLength(data) >= (int)sizeof(dstring))
 				{ LogMsg("SetSecretForDomain: Bad kSecServiceItemAttr length %d", CFDataGetLength(data)); continue; }
-			CFDataGetBytes(data, CFRangeMake(0,CFDataGetLength(data)),
-				(UInt8 *)dstring);
+			CFDataGetBytes(data, CFRangeMake(0, CFDataGetLength(data)), (UInt8 *)dstring);
 			dstring[CFDataGetLength(data)] = '\0';
 			data = CFArrayGetValueAtIndex(entry, 1);
 			if (CFDataGetLength(data) >= (int)sizeof(keynamebuf))
 				{ LogMsg("SetSecretForDomain: Bad kSecAccountItemAttr length %d", CFDataGetLength(data)); continue; }
-			CFDataGetBytes(data, CFRangeMake(0,CFDataGetLength(data)),
-				(UInt8 *)keynamebuf);
+			CFDataGetBytes(data, CFRangeMake(0,CFDataGetLength(data)), (UInt8 *)keynamebuf);
 			keynamebuf[CFDataGetLength(data)] = '\0';
 
 			domainname domain;
-			if (!MakeDomainNameFromDNSNameString(&domain, dstring)) { LogMsg("SetSecretForDomain: bad key domain %s", dstring); continue; }
+			if (!MakeDomainNameFromDNSNameString(&domain, dstring))     { LogMsg("SetSecretForDomain: bad key domain %s", dstring);  continue; }
 
 			// Get DNS key name
 			domainname keyname;
@@ -3105,26 +3107,31 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 			data = CFArrayGetValueAtIndex(entry, 2);
 			if (CFDataGetLength(data) >= (int)sizeof(keystring))
 				{ LogMsg("SetSecretForDomain: Shared secret too long: %d", CFDataGetLength(data)); continue; }
-			CFDataGetBytes(data, CFRangeMake(0,CFDataGetLength(data)),
-				(UInt8 *)keystring);
+			CFDataGetBytes(data, CFRangeMake(0, CFDataGetLength(data)), (UInt8 *)keystring);
 			keystring[CFDataGetLength(data)] = '\0';	// mDNS_SetSecretForDomain requires NULL-terminated C string for key
 
-			for (ptr = m->AuthInfoList; ptr; ptr = ptr->next)
-				if (SameDomainName(&ptr->domain, &domain)) break;
+			DomainAuthInfo *FoundInList;
+			for (FoundInList = m->AuthInfoList; FoundInList; FoundInList = FoundInList->next)
+				if (SameDomainName(&FoundInList->domain, &domain)) break;
 
 			// Uncomment the line below to view the keys as they're read out of the system keychain
 			// DO NOT SHIP CODE THIS WAY OR YOU'LL LEAK SECRET DATA INTO A PUBLICLY READABLE FILE!
 			//LogOperation("SetDomainSecrets: %##s %##s %s", &domain.c, &keyname.c, keystring);
 
 			// If didn't find desired domain in the list, make a new entry
-			if (!ptr)
+			ptr = FoundInList;
+			if (!FoundInList)
 				{
 				ptr = (DomainAuthInfo*)mallocL("DomainAuthInfo", sizeof(*ptr));
 				if (!ptr) { LogMsg("SetSecretForDomain: No memory"); continue; }
 				}
 
+			LogOperation("SetDomainSecrets: %d of %d %##s", i, ArrayCount, &domain);
 			if (mDNS_SetSecretForDomain(m, ptr, &domain, &keyname, keystring, IsTunnelModeDomain(&domain)) == mStatus_BadParamErr)
-				{ mDNSPlatformMemFree(ptr); continue; }
+				{
+				if (!FoundInList) mDNSPlatformMemFree(ptr);		// If we made a new DomainAuthInfo here, and it turned out bad, dispose it immediately
+				continue;
+				}
 
 			CFStringRef cfs = CFStringCreateWithCString(NULL, dstring, kCFStringEncodingUTF8);
 			if (cfs) { CFArrayAppendValue(sa, cfs); CFRelease(cfs); }
