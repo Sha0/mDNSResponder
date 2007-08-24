@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.442  2007/08/24 22:43:06  cheshire
+Tidied up coded layout
+
 Revision 1.441  2007/08/24 01:20:55  cheshire
 <rdar://problem/5434381> BTMM: Memory corruption in KeychainChanged event handling
 
@@ -1808,7 +1811,8 @@ exit:
 				{
 				// Right now tcpCallback does not run holding the lock, so no need to drop the lock
 				//mDNS_DropLockBeforeCallback();
-				if (tcpInfo->rr->RecordCallback) tcpInfo->rr->RecordCallback(m, tcpInfo->rr, err);
+				if (tcpInfo->rr->RecordCallback)
+					tcpInfo->rr->RecordCallback(m, tcpInfo->rr, err);
 				//mDNS_ReclaimLockAfterCallback();
 				// NOTE: not safe to touch any client structures here --
 				// once we issue the callback, client is free to reuse or deallocate the srs memory
@@ -3135,7 +3139,8 @@ exit:
 			}
 
 		mDNS_DropLockBeforeCallback();
-		if (rr->RecordCallback) rr->RecordCallback(m, rr, err);
+		if (rr->RecordCallback)
+			rr->RecordCallback(m, rr, err);
 		mDNS_ReclaimLockAfterCallback();
 		// CAUTION: MUST NOT do anything more with rr after calling rr->Callback(), because the client's callback function
 		// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
@@ -3180,7 +3185,8 @@ mDNSlocal void hndlServiceUpdateReply(mDNS *const m, ServiceRecordSet *srs,  mSt
 				}
 			else
 				{
-				if (err) { LogMsg("Error %ld for registration of service %##s", err, srs->RR_SRV.resrec.name->c); srs->state = regState_Unregistered; } //!!!KRS make sure all structs will still get cleaned up when client calls DeregisterService with this state
+				//!!!KRS make sure all structs will still get cleaned up when client calls DeregisterService with this state
+				if (err) { LogMsg("Error %ld for registration of service %##s", err, srs->RR_SRV.resrec.name->c); srs->state = regState_Unregistered; }
 				else srs->state = regState_Registered;
 				InvokeCallback = mDNStrue;
 				break;
