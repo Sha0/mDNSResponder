@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.441  2007/08/24 01:20:55  cheshire
+<rdar://problem/5434381> BTMM: Memory corruption in KeychainChanged event handling
+
 Revision 1.440  2007/08/24 00:15:20  cheshire
 Renamed GetAuthInfoForName() to GetAuthInfoForName_internal() to make it clear that it may only be called with the lock held
 
@@ -987,7 +990,6 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 
 	info->deltime    = 0;
 	info->AutoTunnel = AutoTunnel;
-	info->AutoTunnelHostRecord.namestorage.c[0] = 0;
 	AssignDomainName(&info->domain,  domain);
 	AssignDomainName(&info->keyname, keyname);
 	mDNS_snprintf(info->b64keydata, sizeof(info->b64keydata), "%s", b64keydata);
@@ -1002,6 +1004,9 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 	while (*p && (*p) != info) p=&(*p)->next;
 	if (*p) return(mStatus_AlreadyRegistered);
 
+	// Caution: Only zero AutoTunnelHostRecord.namestorage AFTER we've determined that this is a NEW DomainAuthInfo being added
+	// to the list. Otherwise we risk smashing our AutoTunnel host records and NATOperation that are already active and in use.
+	info->AutoTunnelHostRecord.namestorage.c[0] = 0;
 	info->next = mDNSNULL;
 	*p = info;
 
