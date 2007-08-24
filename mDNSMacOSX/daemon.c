@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.334  2007/08/24 23:40:24  cheshire
+Added comment about FreeServiceInstance
+
 Revision 1.333  2007/08/23 21:02:35  cheshire
 SecKeychainSetPreferenceDomain() call should be in platform-support layer, not daemon.c
 
@@ -592,6 +595,7 @@ void freeL(char *msg, void *x)
 //*************************************************************************************************************
 // Client Death Detection
 
+// This gets called after ALL constituent records of the Service Record Set have been deregistered
 mDNSlocal void FreeServiceInstance(ServiceInstance *x)
 	{
 	ServiceRecordSet *s = &x->srs;
