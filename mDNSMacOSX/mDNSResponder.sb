@@ -26,6 +26,9 @@
 ; SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ;
 ; $Log: mDNSResponder.sb,v $
+; Revision 1.22  2007/08/24 22:01:56  mcguire
+; <rdar://problem/5141606> BTMM: Task: Change mDNSResponder Seatbelt settings to "deny default" instead of "signal FPE" just prior to GM candidate
+;
 ; Revision 1.21  2007/08/18 01:02:03  mcguire
 ; <rdar://problem/5415593> No Bonjour services are getting registered at boot
 ;
@@ -115,8 +118,8 @@
 ; For the shipping version "deny" is probably better because it vetoes the operation
 ; without killing the process.
 
-;(deny default)
-(deny default (with send-signal SIGFPE))
+(deny default)
+;(deny default (with send-signal SIGFPE))
 
 ; Special exception: "send-signal" command does not apply to the mach-* operations,
 ; so for those we have to use a plain unadorned "deny" instead
