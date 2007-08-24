@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.443  2007/08/24 23:18:28  cheshire
+mDNS_SetSecretForDomain is called with lock held; needs to use
+GetAuthInfoForName_internal() instead of external version GetAuthInfoForName()
+
 Revision 1.442  2007/08/24 22:43:06  cheshire
 Tidied up coded layout
 
@@ -982,16 +986,16 @@ mDNSlocal DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const na
 	return(d);
 	}
 
+// MUST be called with the lock held
 mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 	const domainname *domain, const domainname *keyname, const char *b64keydata, mDNSBool AutoTunnel)
 	{
 	DNSQuestion *q;
 	DomainAuthInfo **p = &m->AuthInfoList;
-	if (!info || !b64keydata) return(mStatus_BadParamErr);
+	if (!info || !b64keydata) { LogMsg("mDNS_SetSecretForDomain: ERROR: info %p b64keydata %p", info, b64keydata); return(mStatus_BadParamErr); }
 
 	LogOperation("mDNS_SetSecretForDomain: domain %##s key %##s%s", domain->c, keyname->c, AutoTunnel ? " AutoTunnel" : "");
 
-	info->deltime    = 0;
 	info->AutoTunnel = AutoTunnel;
 	AssignDomainName(&info->domain,  domain);
 	AssignDomainName(&info->keyname, keyname);
@@ -999,10 +1003,13 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 
 	if (DNSDigest_ConstructHMACKeyfromBase64(info, b64keydata) < 0)
 		{
-		LogMsg("ERROR: mDNS_SetSecretForDomain: Could not convert shared secret from base64: domain %##s key %##s %s",
+		LogMsg("mDNS_SetSecretForDomain: ERROR: Could not convert shared secret from base64: domain %##s key %##s %s",
 			domain->c, keyname->c, LogAllOperations ? b64keydata : "");
 		return(mStatus_BadParamErr);
 		}
+
+	// Don't clear deltime until after we've ascertained that b64keydata is valid
+	info->deltime = 0;
 
 	while (*p && (*p) != info) p=&(*p)->next;
 	if (*p) return(mStatus_AlreadyRegistered);
@@ -1018,7 +1025,7 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 		{
 		if (q->QuestionCallback != GetZoneData_QuestionCallback)
 			{
-			DomainAuthInfo *newinfo = GetAuthInfoForName(m, &q->qname);
+			DomainAuthInfo *newinfo = GetAuthInfoForName_internal(m, &q->qname);
 			if (q->AuthInfo != newinfo)
 				{
 				debugf("mDNS_SetSecretForDomain updating q->AuthInfo from %##s to %##s for %##s (%s)",
