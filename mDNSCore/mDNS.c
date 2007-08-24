@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.681  2007/08/24 23:37:23  cheshire
+Added debugging message to show when ExtraResourceRecord callback gets invoked
+
 Revision 1.680  2007/08/24 00:15:19  cheshire
 Renamed GetAuthInfoForName() to GetAuthInfoForName_internal() to make it clear that it may only be called with the lock held
 
@@ -1337,7 +1340,8 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 		else
 			{
 			RecordProbeFailure(m, rr);
-			if (rr->RecordCallback) rr->RecordCallback(m, rr, mStatus_NameConflict);	// MUST NOT touch rr after this
+			if (rr->RecordCallback)
+				rr->RecordCallback(m, rr, mStatus_NameConflict);	// MUST NOT touch rr after this
 			// Now that we've finished deregistering rr, check our DuplicateRecords list for any that we marked previously.
 			// Note that with all the client callbacks going on, by the time we get here all the
 			// records we marked may have been explicitly deregistered by the client anyway.
@@ -6109,6 +6113,14 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	return(err);
 	}
 
+mDNSlocal void DummyCallback(mDNS *const m, AuthRecord *rr, mStatus result)
+	{
+	(void)m;		// Unused
+	(void)rr;		// Unused
+	(void)result;	// Unused
+	LogOperation("DummyCallback %d %s", result, ARDisplayString(m, rr));
+	}
+
 mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr,
 	ExtraResourceRecord *extra, RData *rdata, mDNSu32 ttl)
 	{
@@ -6139,7 +6151,7 @@ mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr,
 		if (sr->RR_SRV.resrec.InterfaceID != mDNSInterface_LocalOnly && !IsLocalDomain(sr->RR_SRV.resrec.name))
 			{
 			extra->r.resrec.RecordType = kDNSRecordTypeShared;	// don't want it to conflict with the service name (???)
-			extra->r.RecordCallback = mDNSNULL;	// don't generate callbacks for extra RRs
+			extra->r.RecordCallback = DummyCallback;	// don't generate callbacks for extra RRs for unicast services (WHY NOT????)
 			if (sr->state != regState_Registered && sr->state != regState_Refresh) extra->r.state = regState_ExtraQueued;
 			}
 #endif
