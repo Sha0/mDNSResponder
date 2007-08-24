@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.330  2007/08/24 23:46:50  cheshire
+Added debugging messages and SIGINFO listing of DomainAuthInfo records
+
 Revision 1.329  2007/08/18 01:02:04  mcguire
 <rdar://problem/5415593> No Bonjour services are getting registered at boot
 
@@ -1005,7 +1008,8 @@ mDNSexport void FreeExtraRR(mDNS *const m, AuthRecord *const rr, mStatus result)
 
 	if (result != mStatus_MemFree) { LogMsg("Error: FreeExtraRR invoked with unexpected error %d", result); return; }
 
-	debugf("%##s: MemFree", rr->resrec.name->c);
+	LogOperation("     FreeExtraRR %s", RRDisplayString(m, &rr->resrec));
+
 	if (rr->resrec.rdata != &rr->rdatastorage)
 		freeL("Extra RData", rr->resrec.rdata);
 	freeL("ExtraResourceRecord/FreeExtraRR", extra);
@@ -1176,7 +1180,8 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 		}
 	else
 		{
-		if (result != mStatus_NATTraversal) LogMsg("ERROR: unknown result in regservice_callback: %ld", result);
+		if (result != mStatus_NATTraversal)
+			LogMsg("regservice_callback: Error %d%s for %s", result, SuppressError ? " (suppressed)" : "", ARDisplayString(m, &srs->RR_SRV));
 		if (!SuppressError) 
 			{
 			if (GenerateNTDResponse(srs->RR_SRV.resrec.name, srs->RR_SRV.resrec.InterfaceID, instance->request, &rep, reg_service_reply_op, kDNSServiceFlagsAdd, result) != mStatus_NoError)
@@ -1444,7 +1449,7 @@ mDNSlocal mStatus remove_record(request_state *request)
 	e = *ptr;
 	*ptr = e->next; // unlink
 
-	LogOperation("%3d: DNSServiceRemoveRecord(%##s)", request->sd, e->rr->resrec.name->c);
+	LogOperation("%3d: DNSServiceRemoveRecord(%s)", request->sd, RRDisplayString(&mDNSStorage, &e->rr->resrec));
 	e->rr->RecordContext = NULL;
 	err = mDNS_Deregister(&mDNSStorage, e->rr);
 	if (err)
@@ -1469,6 +1474,7 @@ mDNSlocal mStatus remove_extra(const request_state *const request, service_insta
 			{
 			*rrtype = tmp->r.resrec.rrtype;
 			err = mDNS_RemoveRecordFromService(&mDNSStorage, &serv->srs, tmp, FreeExtraRR, tmp);
+			LogOperation("     mDNS_RemoveRecordFromService %d", err);
 			// mDNS_RemoveRecordFromService() calls mDNS_Deregister_internal(), which returns
 			// mStatus_BadReferenceErr if it doesn't find a resource record that matches tmp->r.
 			// We still have this extra record even if the registration doesn't exist (or more likely, 
@@ -1497,15 +1503,15 @@ mDNSlocal mStatus handle_removerecord_request(request_state *request)
 		{
 		service_instance *i;
 		mDNSu16 rrtype = 0;
+		LogOperation("%3d: DNSServiceRemoveRecord(%##s, %s)", request->sd,
+			(request->u.servicereg.instances) ? request->u.servicereg.instances->srs.RR_SRV.resrec.name->c : NULL,
+			rrtype ? DNSTypeName(rrtype) : "<NONE>");
 		for (i = request->u.servicereg.instances; i; i = i->next)
 			{
 			err = remove_extra(request, i, &rrtype);
 			if (err && i->default_local) break;
 			else err = mStatus_NoError;  // suppress non-local default errors
 			}
-		LogOperation("%3d: DNSServiceRemoveRecord(%##s, %s)", request->sd,
-			(request->u.servicereg.instances) ? request->u.servicereg.instances->srs.RR_SRV.resrec.name->c : NULL,
-			rrtype ? DNSTypeName(rrtype) : "<NONE>");
 		}
 
 	return(err);
@@ -3464,6 +3470,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 	AuthRecord *ar;
 	request_state *req;
 	NATTraversalInfo *nat;
+	DomainAuthInfo *a;
 
 	LogMsgNoIdent("Timenow 0x%08lX (%ld)", (mDNSu32)now, now);
 	LogMsgNoIdent("------------ Cache -------------");
@@ -3537,6 +3544,10 @@ mDNSexport void udsserver_info(mDNS *const m)
 		else
 			LogMsgNoIdent("%p Address Request Retry %d Interval %d", nat, m->retryGetAddr - now, m->retryIntervalGetAddr);
 		}
+
+	LogMsgNoIdent("--------- AuthInfoList ---------");
+	for (a = m->AuthInfoList; a; a = a->next)
+		LogMsgNoIdent("%##s %##s%s", a->domain.c, a->keyname.c, a->AutoTunnel ? " AutoTunnel" : "");
 	}
 
 mDNSlocal int send_msg(reply_state *rep)
