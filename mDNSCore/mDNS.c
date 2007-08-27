@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.682  2007/08/27 20:28:19  cheshire
+Improve "suspect uDNS response" log message
+
 Revision 1.681  2007/08/24 23:37:23  cheshire
 Added debugging message to show when ExtraResourceRecord callback gets invoked
 
@@ -4024,7 +4027,8 @@ mDNSlocal mDNSBool ExpectingUnicastResponseForRecord(mDNS *const m, const mDNSAd
 					if (mDNSSameAddress(srcaddr, &q->Target))                   return(mDNStrue);
 				//	if (q->LongLived && mDNSSameAddress(srcaddr, &q->servAddr)) return(mDNStrue); Shouldn't need this now that we have LLQType checking
 					if (TrustedSource(m, srcaddr))                              return(mDNStrue);
-					LogMsg("WARNING: Ignoring suspect uDNS response from %#a for %s", srcaddr, CRDisplayString(m, rr));
+					LogMsg("WARNING: Ignoring suspect uDNS response for %##s (%s) %#a from %#a: %s",
+						q->qname.c, DNSTypeName(q->qtype), &q->Target, srcaddr, CRDisplayString(m, rr));
 					return(mDNSfalse);
 					}
 				}
@@ -6495,7 +6499,9 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->uPNPSOAPAddressString    = mDNSNULL;
 #endif
 
+#if APPLE_OSX_mDNSResponder
 	m->TunnelClients            = mDNSNULL;
+#endif
 
 	result = mDNSPlatformInit(m);
 
