@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.331  2007/08/27 20:29:57  cheshire
+Added SIGINFO listing of TunnelClients
+
 Revision 1.330  2007/08/24 23:46:50  cheshire
 Added debugging messages and SIGINFO listing of DomainAuthInfo records
 
@@ -3548,6 +3551,15 @@ mDNSexport void udsserver_info(mDNS *const m)
 	LogMsgNoIdent("--------- AuthInfoList ---------");
 	for (a = m->AuthInfoList; a; a = a->next)
 		LogMsgNoIdent("%##s %##s%s", a->domain.c, a->keyname.c, a->AutoTunnel ? " AutoTunnel" : "");
+
+	#if APPLE_OSX_mDNSResponder
+		{
+		ClientTunnel *c;
+		LogMsgNoIdent("--------- TunnelClients ---------");
+		for (c = m->TunnelClients; c; c = c->next)
+			LogMsgNoIdent("%##s %.16a %.4a %.16a %.4a %5d", c->dstname.c, &c->loc_inner, &c->loc_outer, &c->rmt_inner, &c->rmt_outer, mDNSVal16(c->rmt_outer_port));
+		}
+	#endif
 	}
 
 mDNSlocal int send_msg(reply_state *rep)
