@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.444  2007/08/27 20:29:20  cheshire
+Additional debugging messages
+
 Revision 1.443  2007/08/24 23:18:28  cheshire
 mDNS_SetSecretForDomain is called with lock held; needs to use
 GetAuthInfoForName_internal() instead of external version GetAuthInfoForName()
@@ -1915,6 +1918,7 @@ mDNSlocal void startLLQHandshake(mDNS *m, DNSQuestion *q)
 				else                                                                                         { err = mStatus_UnknownErr;     goto exit; }
 				}
 
+		LogOperation("startLLQHandshake TCP %p", q->tcp);
 		if (q->tcp) LogMsg("startLLQHandshake: Already have TCP connection for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 		else q->tcp = MakeTCPConn(m, mDNSNULL, mDNSNULL, kTCPSocketFlags_UseTLS, &q->servAddr, q->servPort, q, mDNSNULL, mDNSNULL);
 
@@ -2150,6 +2154,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 
 	if (srs->Private)
 		{
+		LogOperation("SendServiceRegistration TCP %p", srs->tcp);
 		if (srs->tcp) LogMsg("SendServiceRegistration: Already have TCP connection for %s", ARDisplayString(m, &srs->RR_SRV));
 		else srs->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &srs->ns, srs->SRSUpdatePort, mDNSNULL, srs, mDNSNULL);
 		}
@@ -2508,6 +2513,7 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 	if (srs->Private)
 		{
 		LogOperation("SendServiceDeregistration for %s", ARDisplayString(m, &srs->RR_SRV));
+		LogOperation("SendServiceDeregistration TCP %p", srs->tcp);
 		if (srs->tcp) LogMsg("SendServiceDeregistration: Already have TCP connection for %s", ARDisplayString(m, &srs->RR_SRV));
 		else srs->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &srs->ns, srs->SRSUpdatePort, mDNSNULL, srs, mDNSNULL);
 		}
@@ -3117,6 +3123,7 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 
 	if (rr->Private)
 		{
+		LogOperation("sendRecordRegistration TCP %p", rr->tcp);
 		if (rr->tcp) LogMsg("sendRecordRegistration: Already have TCP connection for %s", ARDisplayString(m, rr));
 		else rr->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, mDNSNULL, rr);
 		}
@@ -3934,7 +3941,8 @@ mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 
 	if (rr->Private)
 		{
-		if (rr->tcp) LogMsg("sendRecordRegistration: Already have TCP connection for %s", ARDisplayString(m, rr));
+		LogOperation("SendRecordDeregistration TCP %p", rr->tcp);
+		if (rr->tcp) LogMsg("SendRecordDeregistration: Already have TCP connection for %s", ARDisplayString(m, rr));
 		else rr->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, mDNSNULL, rr);
 		}
 	else
