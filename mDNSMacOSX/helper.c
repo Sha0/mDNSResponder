@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.10  2007/08/27 22:16:38  mcguire
+<rdar://problem/5437362> BTMM: MTU should be set to 1280
+
 Revision 1.9  2007/08/27 22:13:59  mcguire
 <rdar://problem/5437373> BTMM: IPSec security associations should have a shorter timeout
 
@@ -951,6 +954,8 @@ setupTunnelRoute(v6addr_t local, v6addr_t remote)
 	msg.hdr.rtm_version = RTM_VERSION;
 	msg.hdr.rtm_seq = routeSeq++;
 	msg.hdr.rtm_addrs = RTA_DST | RTA_GATEWAY;
+	msg.hdr.rtm_inits = RTV_MTU;
+	msg.hdr.rtm_rmx.rmx_mtu = 1280;
 
 	msg.dst.sin6_len = sizeof(msg.dst);
 	msg.dst.sin6_family = AF_INET6;
