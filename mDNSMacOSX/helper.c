@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.9  2007/08/27 22:13:59  mcguire
+<rdar://problem/5437373> BTMM: IPSec security associations should have a shorter timeout
+
 Revision 1.8  2007/08/23 21:49:51  cheshire
 Made code layout style consistent with existing project style; added $Log header
 
@@ -753,7 +756,7 @@ createAnonymousRacoonConfiguration(const char *keydata)
 	  "	}\n\n"
 	  "sainfo anonymous { \n"
 	  "  pfs_group 2;\n"
-	  "  lifetime time 60 min;\n"
+	  "  lifetime time 10 min;\n"
 	  "  encryption_algorithm aes;\n"
 	  "  authentication_algorithm hmac_sha1;\n"
 	  "  compression_algorithm deflate;\n"
@@ -1240,14 +1243,14 @@ do_mDNSAutoTunnelSetKeys(__unused mach_port_t port, int replacedelete,
 	  "	}\n\n"
 	  "sainfo address %s any address %s any {\n"
 	  "  pfs_group 2;\n"
-	  "  lifetime time 60 min;\n"
+	  "  lifetime time 10 min;\n"
 	  "  encryption_algorithm aes;\n"
 	  "  authentication_algorithm hmac_sha1;\n"
 	  "  compression_algorithm deflate;\n"
 	  "	}\n\n"
 	  "sainfo address %s any address %s any {\n"
 	  "  pfs_group 2;\n"
-	  "  lifetime time 60 min;\n"
+	  "  lifetime time 10 min;\n"
 	  "  encryption_algorithm aes;\n"
 	  "  authentication_algorithm hmac_sha1;\n"
 	  "  compression_algorithm deflate;\n"
