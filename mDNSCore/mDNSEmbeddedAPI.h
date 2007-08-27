@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.421  2007/08/27 20:30:43  cheshire
+Only include TunnelClients list when building for OS X
+
 Revision 1.420  2007/08/23 21:47:09  vazquez
 <rdar://problem/5427316> BTMM: mDNSResponder sends NAT-PMP packets on public network
 make sure we clean up port mappings on base stations by sending a lease value of 0,
@@ -1718,6 +1721,7 @@ typedef struct DNameListElem
 	domainname name;
 	} DNameListElem;
 
+#if APPLE_OSX_mDNSResponder
 typedef struct ClientTunnel
 	{
 	struct ClientTunnel *next;
@@ -1730,6 +1734,7 @@ typedef struct ClientTunnel
 	char b64keydata[32];
 	DNSQuestion q;
 	} ClientTunnel;
+#endif
 
 // ***************************************************************************
 #if 0
@@ -1852,22 +1857,23 @@ struct mDNS_struct
 	mDNSs32           retryIntervalGetAddr;		// delta between time sent and retry
 	mDNSv4Addr        ExternalAddress;
 
-	UDPSocket		*NATMcastRecvskt;		// for receiving NAT-PMP AddrReply multicasts from router
-	mDNSs32		LastNATUptime;			// router uptime returned by last NAT-PMP AddrReply packet 
-	mDNSs32		LastNATReplyLocalTime;	// local time when last NAT-PMP AddrReply packet was received
+	UDPSocket        *NATMcastRecvskt;		// for receiving NAT-PMP AddrReply multicasts from router
+	mDNSs32           LastNATUptime;			// router uptime returned by last NAT-PMP AddrReply packet 
+	mDNSs32           LastNATReplyLocalTime;	// local time when last NAT-PMP AddrReply packet was received
 
-	tcpLNTInfo         tcpAddrInfo;				// legacy NAT traversal TCP connection info for external address
-	tcpLNTInfo         tcpDeviceInfo;				// legacy NAT traversal TCP connection info for device info
-	tcpLNTInfo         *tcpInfoUnmapList;			// list of pending unmap requests
+	tcpLNTInfo        tcpAddrInfo;				// legacy NAT traversal TCP connection info for external address
+	tcpLNTInfo        tcpDeviceInfo;				// legacy NAT traversal TCP connection info for device info
+	tcpLNTInfo       *tcpInfoUnmapList;			// list of pending unmap requests
 	mDNSIPPort        uPNPRouterPort;			// port we send discovery messages to
 	mDNSIPPort        uPNPSOAPPort;				// port we send SOAP messages to
 	mDNSu8           *uPNPRouterURL;			// router's URL string
 	mDNSu8           *uPNPSOAPURL;				// router's SOAP control URL string
 	mDNSu8           *uPNPRouterAddressString;	// holds both the router's address and port
 	mDNSu8           *uPNPSOAPAddressString;	// holds both address and port for SOAP messages
-	
 
+#if APPLE_OSX_mDNSResponder
 	ClientTunnel     *TunnelClients;
+#endif
 
 	// Fixed storage, to avoid creating large objects on the stack
 	DNSMessage        imsg;                 // Incoming message received from wire
@@ -2561,7 +2567,9 @@ struct CompileTimeAssertionChecks_mDNS
 	char sizecheck_ServiceRecordSet    [(sizeof(ServiceRecordSet)     <=  5700) ? 1 : -1];
 	char sizecheck_DomainAuthInfo      [(sizeof(DomainAuthInfo)       <=  6000) ? 1 : -1];
 	char sizecheck_ServiceInfoQuery    [(sizeof(ServiceInfoQuery)     <=  2900) ? 1 : -1];
+#if APPLE_OSX_mDNSResponder
 	char sizecheck_ClientTunnel        [(sizeof(ClientTunnel)         <=  1040) ? 1 : -1];
+#endif
 	};
 
 // ***************************************************************************
