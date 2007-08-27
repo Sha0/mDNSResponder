@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.332  2007/08/27 22:59:31  cheshire
+Show reg_index in DNSServiceRegisterRecord/DNSServiceRemoveRecord messages
+
 Revision 1.331  2007/08/27 20:29:57  cheshire
 Added SIGINFO listing of TunnelClients
 
@@ -1302,7 +1305,7 @@ mDNSlocal mStatus handle_regrecord_request(request_state *request)
 		if (rr->resrec.rroriginalttl == 0)
 			rr->resrec.rroriginalttl = DefaultTTLforRRType(rr->resrec.rrtype);
 	
-		LogOperation("%3d: DNSServiceRegisterRecord %s", request->sd, RRDisplayString(&mDNSStorage, &rr->resrec));
+		LogOperation("%3d: DNSServiceRegisterRecord(%u %s)", request->sd, request->hdr.reg_index, RRDisplayString(&mDNSStorage, &rr->resrec));
 		err = mDNS_Register(&mDNSStorage, rr);
 		}
 	return(err);
@@ -1448,11 +1451,11 @@ mDNSlocal mStatus remove_record(request_state *request)
 	registered_record_entry *e, **ptr = &request->u.reg_recs;
 
 	while (*ptr && (*ptr)->key != request->hdr.reg_index) ptr = &(*ptr)->next;
-	if (!*ptr) { LogMsg("DNSServiceRemoveRecord - bad reference"); return mStatus_BadReferenceErr; }
+	if (!*ptr) { LogMsg("%3d: DNSServiceRemoveRecord(%u) not found", request->sd, request->hdr.reg_index); return mStatus_BadReferenceErr; }
 	e = *ptr;
 	*ptr = e->next; // unlink
 
-	LogOperation("%3d: DNSServiceRemoveRecord(%s)", request->sd, RRDisplayString(&mDNSStorage, &e->rr->resrec));
+	LogOperation("%3d: DNSServiceRemoveRecord(%u %s)", request->sd, request->hdr.reg_index, RRDisplayString(&mDNSStorage, &e->rr->resrec));
 	e->rr->RecordContext = NULL;
 	err = mDNS_Deregister(&mDNSStorage, e->rr);
 	if (err)
