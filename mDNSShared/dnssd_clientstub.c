@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.82  2007/08/28 19:53:52  cheshire
+<rdar://problem/5437423> Bonjour failures when /tmp is not writable (e.g. when booted from installer disc)
+
 Revision 1.81  2007/07/27 00:03:20  cheshire
 Fixed compiler warnings that showed up now we're building optimized ("-Os")
 
@@ -176,9 +179,9 @@ Minor textual tidying
 
 #define DNSSD_CLIENT_MAXTRIES 4
 
-#define CTL_PATH_PREFIX "/tmp/dnssd_clippath."
-// Error socket (if needed) is named "dnssd_clipath.[pid].xxx:n" where xxx are the
-// last 3 digits of the time (in seconds) and n is the 6-digit microsecond time
+#ifndef CTL_PATH_PREFIX
+#define CTL_PATH_PREFIX "/var/tmp/dnssd_result_socket."
+#endif
 
 typedef struct
 	{
@@ -294,7 +297,7 @@ static ipc_msg_hdr *create_hdr(uint32_t op, size_t *len, char **data_start, int 
 	ipc_msg_hdr *hdr;
 	int datalen;
 #if !defined(USE_TCP_LOOPBACK)
-	char ctrl_path[256];
+	char ctrl_path[44];	// "dnssd_result_socket.xxxxxxxxxx-xxx-xxxxxx"
 #endif
 
 	if (SeparateReturnSocket)
@@ -1204,6 +1207,7 @@ DNSServiceErrorType DNSSD_API DNSServiceAddRecord
 	*RecordRef = rref;
 	hdr->client_context.context = rref;
 	hdr->reg_index = rref->record_index;
+
 	return deliver_request(hdr, sdRef);		// Will free hdr for us
 	}
 
