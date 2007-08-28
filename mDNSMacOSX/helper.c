@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.11  2007/08/28 00:33:04  jgraessley
+<rdar://problem/5423932> Selective compilation options
+
 Revision 1.10  2007/08/27 22:16:38  mcguire
 <rdar://problem/5437362> BTMM: MTU should be set to 1280
 
@@ -78,6 +81,10 @@ Revision 1.1  2007/08/08 22:34:58  mcguire
 #include "helper.h"
 #include "helpermsgServer.h"
 #include "helper-server.h"
+
+#if TARGET_OS_EMBEDDED
+#define NO_SECURITYFRAMEWORK 1
+#endif
 
 typedef struct sadb_x_policy *ipsec_policy_t;
 
@@ -342,6 +349,7 @@ static const char dnsprefix[] = "dns:";
 static const char ddns[] = "ddns";
 static const char ddnsrev[] = "sndd";
 
+#ifndef NO_SECURITYFRAMEWORK
 static enum DNSKeyFormat
 getDNSKeyFormat(SecKeychainItemRef item, SecKeychainAttributeList **attributesp)
 	{
@@ -488,12 +496,14 @@ error:
 		CFRelease(entry);
 	return NULL;
 	}
+#endif
 
 kern_return_t
-do_mDNSKeychainGetSecrets(__unused mach_port_t port, unsigned int *numsecrets,
-    vm_offset_t *secrets, mach_msg_type_number_t *secretsCnt, int *err,
-    audit_token_t token)
+do_mDNSKeychainGetSecrets(__unused mach_port_t port, __unused unsigned int *numsecrets,
+    __unused vm_offset_t *secrets, __unused mach_msg_type_number_t *secretsCnt, __unused int *err,
+    __unused audit_token_t token)
 	{
+#ifndef NO_SECURITYFRAMEWORK
 	CFWriteStreamRef stream = NULL;
 	CFDataRef result = NULL;
 	CFPropertyListRef entry = NULL;
@@ -590,6 +600,9 @@ fin:
 		CFRelease(search);
 	update_idle_timer();
 	return KERN_SUCCESS;
+#else
+	return KERN_FAILURE;
+#endif
 	}
 
 typedef enum _mDNSTunnelPolicyWhich

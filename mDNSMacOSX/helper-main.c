@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper-main.c,v $
+Revision 1.4  2007/08/28 00:33:04  jgraessley
+<rdar://problem/5423932> Selective compilation options
+
 Revision 1.3  2007/08/23 23:21:24  cheshire
 Tiger compatibility: Use old bootstrap_register() instead of Leopard-only bootstrap_register2()
 
@@ -28,6 +31,7 @@ Revision 1.1  2007/08/08 22:34:58  mcguire
  */
 
 #define _FORTIFY_SOURCE 2
+#include <CoreFoundation/CoreFoundation.h>
 #include <sys/cdefs.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -49,6 +53,10 @@ Revision 1.1  2007/08/08 22:34:58  mcguire
 #include "helper-server.h"
 #include "helpermsg.h"
 #include "helpermsgServer.h"
+
+#if TARGET_OS_EMBEDDED
+#define NO_SECURITYFRAMEWORK 1
+#endif
 
 #ifndef LAUNCH_JOBKEY_MACHSERVICES
 #define LAUNCH_JOBKEY_MACHSERVICES "MachServices"
@@ -310,7 +318,9 @@ main(int ac, char *av[])
 	 * (e.g. debugging).  Explicitly ensure that our Keychain
 	 * operations utilize the system domain.
 	 */
+#ifndef NO_SECURITYFRAMEWORK
 	SecKeychainSetPreferenceDomain(kSecPreferencesDomainSystem);
+#endif
 	if (opt_debug)
 		port = register_service(kmDNSHelperServiceName);
 	else

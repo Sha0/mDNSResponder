@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.467  2007/08/28 00:33:04  jgraessley
+<rdar://problem/5423932> Selective compilation options
+
 Revision 1.466  2007/08/24 23:25:55  cheshire
 Debugging messages to help track down duplicate items being read from system keychain
 
@@ -557,6 +560,10 @@ Add (commented out) trigger value for testing "mach_absolute_time went backwards
 #include <netinet/ip.h>             // For IPTOS_LOWDELAY etc.
 #include <netinet6/in6_var.h>       // For IN6_IFF_NOTREADY etc.
 #include <netinet6/nd6.h>           // For ND6_INFINITE_LIFETIME etc.
+
+#if TARGET_OS_EMBEDDED
+#define NO_SECURITYFRAMEWORK 1
+#endif
 
 #ifndef NO_SECURITYFRAMEWORK
 #include <Security/SecureTransport.h>
@@ -1501,7 +1508,7 @@ mDNSlocal mStatus SetupSocket(KQSocketSet *cp, const mDNSIPPort port, u_short sa
 	char *errstr = mDNSNULL;
 
 	int skt = socket(sa_family, SOCK_DGRAM, IPPROTO_UDP);
-	if (skt < 3) { LogMsg("SetupSocket: socket error %d errno %d (%s)", skt, errno, strerror(errno)); return(skt); }
+	if (skt < 3) { if (errno != EAFNOSUPPORT) LogMsg("SetupSocket: socket error %d errno %d (%s)", skt, errno, strerror(errno)); return(skt); }
 
 	// ... with a shared UDP port, if it's for multicast receiving
 	if (mDNSSameIPPort(port, MulticastDNSPort)) err = setsockopt(skt, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
@@ -2193,7 +2200,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 	char defaultname[32];
 #ifndef NO_IPV6
 	int InfoSocket              = socket(AF_INET6, SOCK_DGRAM, 0);
-	if (InfoSocket < 3) LogMsg("UpdateInterfaceList: InfoSocket error %d errno %d (%s)", InfoSocket, errno, strerror(errno));
+	if (InfoSocket < 3 && errno != EAFNOSUPPORT) LogMsg("UpdateInterfaceList: InfoSocket error %d errno %d (%s)", InfoSocket, errno, strerror(errno));
 #endif
 	if (m->SleepState) ifa = NULL;
 
@@ -3477,10 +3484,13 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	if (getsockname(m->p->permanentsockets.sktv4, (struct sockaddr *)&s4, &n4) < 0) LogMsg("getsockname v4 error %d (%s)", errno, strerror(errno));
 	else m->UnicastPort4.NotAnInteger = s4.sin_port;
 #ifndef NO_IPV6
-	struct sockaddr_in6 s6;
-	socklen_t n6 = sizeof(s6);
-	if (getsockname(m->p->permanentsockets.sktv6, (struct sockaddr *)&s6, &n6) < 0) LogMsg("getsockname v6 error %d (%s)", errno, strerror(errno));
-	else m->UnicastPort6.NotAnInteger = s6.sin6_port;
+	if (m->p->permanentsockets.sktv6 >= 0)
+		{
+		struct sockaddr_in6 s6;
+		socklen_t n6 = sizeof(s6);
+		if (getsockname(m->p->permanentsockets.sktv6, (struct sockaddr *)&s6, &n6) < 0) LogMsg("getsockname v6 error %d (%s)", errno, strerror(errno));
+		else m->UnicastPort6.NotAnInteger = s6.sin6_port;
+		}
 #endif
 
 	m->p->InterfaceList      = mDNSNULL;
@@ -3505,7 +3515,9 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	if (err) return(err);
 
 	// Explicitly ensure that our Keychain operations utilize the system domain.
+#ifndef NO_SECURITYFRAMEWORK
 	SecKeychainSetPreferenceDomain(kSecPreferencesDomainSystem);
+#endif
 
 	mDNS_Lock(m);
 	SetDomainSecrets(m);

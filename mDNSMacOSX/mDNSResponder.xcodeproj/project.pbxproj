@@ -7,25 +7,35 @@
 	objects = {
 
 /* Begin PBXAggregateTarget section */
-		00AD62BB032D7A0C0CCA2C71 /* Build Main */ = {
+		00AD62BB032D7A0C0CCA2C71 /* Build More */ = {
 			isa = PBXAggregateTarget;
-			buildConfigurationList = D284BE280ADD78180027CCDF /* Build configuration list for PBXAggregateTarget "Build Main" */;
+			buildConfigurationList = D284BE280ADD78180027CCDF /* Build configuration list for PBXAggregateTarget "Build More" */;
 			buildPhases = (
 			);
 			dependencies = (
-				D284BF220ADD814A0027CCDF /* PBXTargetDependency */,
 				D284BF2C0ADD815A0027CCDF /* PBXTargetDependency */,
 				D284BF2E0ADD81600027CCDF /* PBXTargetDependency */,
 				D284BF300ADD81630027CCDF /* PBXTargetDependency */,
-				D284BF240ADD814D0027CCDF /* PBXTargetDependency */,
 				D284BF260ADD814F0027CCDF /* PBXTargetDependency */,
-				D284BF280ADD81510027CCDF /* PBXTargetDependency */,
 				D284BF2A0ADD81530027CCDF /* PBXTargetDependency */,
 				FFD41DDB0664169900F0C438 /* PBXTargetDependency */,
-				2E0406530C31C41900F13B59 /* PBXTargetDependency */,
 			);
-			name = "Build Main";
+			name = "Build More";
 			productName = "Build All";
+		};
+		03067D640C83A3700022BE1F /* Build Some */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = 03067D730C83A3CB0022BE1F /* Build configuration list for PBXAggregateTarget "Build Some" */;
+			buildPhases = (
+			);
+			dependencies = (
+				03067D680C83A3830022BE1F /* PBXTargetDependency */,
+				03067D6A0C83A3890022BE1F /* PBXTargetDependency */,
+				03067D6C0C83A3920022BE1F /* PBXTargetDependency */,
+				03067D6E0C83A39C0022BE1F /* PBXTargetDependency */,
+			);
+			name = "Build Some";
+			productName = "Build Some";
 		};
 		FFA572650AF190F10055A0F1 /* SystemLibraries */ = {
 			isa = PBXAggregateTarget;
@@ -241,11 +251,32 @@
 /* End PBXBuildRule section */
 
 /* Begin PBXContainerItemProxy section */
-		2E0406520C31C41900F13B59 /* PBXContainerItemProxy */ = {
+		03067D670C83A3830022BE1F /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 08FB7793FE84155DC02AAC07 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = 2E0405EF0C31955500F13B59;
+			remoteGlobalIDString = D284BE500ADD80740027CCDF /* mDNSResponder */;
+			remoteInfo = mDNSResponder;
+		};
+		03067D690C83A3890022BE1F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 08FB7793FE84155DC02AAC07 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D284BE750ADD80800027CCDF /* mDNSResponder debug */;
+			remoteInfo = "mDNSResponder debug";
+		};
+		03067D6B0C83A3920022BE1F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 08FB7793FE84155DC02AAC07 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D284BEA50ADD80920027CCDF /* dns-sd tool */;
+			remoteInfo = "dns-sd tool";
+		};
+		03067D6D0C83A39C0022BE1F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 08FB7793FE84155DC02AAC07 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2E0405EF0C31955500F13B59 /* mDNSResponderHelper */;
 			remoteInfo = mDNSResponderHelper;
 		};
 		D284BDEA0ADD77F60027CCDF /* PBXContainerItemProxy */ = {
@@ -262,33 +293,12 @@
 			remoteGlobalIDString = DB2CC4530662DD6800335AB3;
 			remoteInfo = dns_sd.jar;
 		};
-		D284BF210ADD814A0027CCDF /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 08FB7793FE84155DC02AAC07 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = D284BE500ADD80740027CCDF;
-			remoteInfo = mDNSResponder;
-		};
-		D284BF230ADD814D0027CCDF /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 08FB7793FE84155DC02AAC07 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = D284BE750ADD80800027CCDF;
-			remoteInfo = "mDNSResponder debug (Upgraded)";
-		};
 		D284BF250ADD814F0027CCDF /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 08FB7793FE84155DC02AAC07 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = D284BE970ADD808B0027CCDF;
 			remoteInfo = "mDNS command-line tool";
-		};
-		D284BF270ADD81510027CCDF /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 08FB7793FE84155DC02AAC07 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = D284BEA50ADD80920027CCDF;
-			remoteInfo = "dns-sd command-line tool";
 		};
 		D284BF290ADD81530027CCDF /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -1235,16 +1245,17 @@
 		08FB7793FE84155DC02AAC07 /* Project object */ = {
 			isa = PBXProject;
 			buildConfigurationList = D284BE2B0ADD78180027CCDF /* Build configuration list for PBXProject "mDNSResponder" */;
-			compatibilityVersion = "Xcode 2.4";
 			hasScannedForEncodings = 1;
 			mainGroup = 08FB7794FE84155DC02AAC07 /* mDNSResponder */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				00AD62BB032D7A0C0CCA2C71 /* Build Main */,
+				00AD62BB032D7A0C0CCA2C71 /* Build More */,
+				03067D640C83A3700022BE1F /* Build Some */,
 				FFB7657B0AEED96B00583A2C /* Build All */,
 				D284BE500ADD80740027CCDF /* mDNSResponder */,
 				D284BE750ADD80800027CCDF /* mDNSResponder debug */,
+				2E0405EF0C31955500F13B59 /* mDNSResponderHelper */,
 				D284BE970ADD808B0027CCDF /* mDNS tool */,
 				D284BEA50ADD80920027CCDF /* dns-sd tool */,
 				DB2CC4530662DD6800335AB3 /* dns_sd.jar */,
@@ -1256,7 +1267,6 @@
 				FFA572300AF18F1C0055A0F1 /* libdns_sd debug */,
 				FFA5723C0AF18F450055A0F1 /* libdns_sd profile */,
 				FFA572650AF190F10055A0F1 /* SystemLibraries */,
-				2E0405EF0C31955500F13B59 /* mDNSResponderHelper */,
 			);
 		};
 /* End PBXProject section */
@@ -1594,35 +1604,35 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		2E0406530C31C41900F13B59 /* PBXTargetDependency */ = {
+		03067D680C83A3830022BE1F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D284BE500ADD80740027CCDF /* mDNSResponder */;
+			targetProxy = 03067D670C83A3830022BE1F /* PBXContainerItemProxy */;
+		};
+		03067D6A0C83A3890022BE1F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D284BE750ADD80800027CCDF /* mDNSResponder debug */;
+			targetProxy = 03067D690C83A3890022BE1F /* PBXContainerItemProxy */;
+		};
+		03067D6C0C83A3920022BE1F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D284BEA50ADD80920027CCDF /* dns-sd tool */;
+			targetProxy = 03067D6B0C83A3920022BE1F /* PBXContainerItemProxy */;
+		};
+		03067D6E0C83A39C0022BE1F /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 2E0405EF0C31955500F13B59 /* mDNSResponderHelper */;
-			targetProxy = 2E0406520C31C41900F13B59 /* PBXContainerItemProxy */;
+			targetProxy = 03067D6D0C83A39C0022BE1F /* PBXContainerItemProxy */;
 		};
 		D284BEB30ADD809A0027CCDF /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = DB2CC4530662DD6800335AB3 /* dns_sd.jar */;
 			targetProxy = D284BEB40ADD809A0027CCDF /* PBXContainerItemProxy */;
 		};
-		D284BF220ADD814A0027CCDF /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = D284BE500ADD80740027CCDF /* mDNSResponder */;
-			targetProxy = D284BF210ADD814A0027CCDF /* PBXContainerItemProxy */;
-		};
-		D284BF240ADD814D0027CCDF /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = D284BE750ADD80800027CCDF /* mDNSResponder debug */;
-			targetProxy = D284BF230ADD814D0027CCDF /* PBXContainerItemProxy */;
-		};
 		D284BF260ADD814F0027CCDF /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = D284BE970ADD808B0027CCDF /* mDNS tool */;
 			targetProxy = D284BF250ADD814F0027CCDF /* PBXContainerItemProxy */;
-		};
-		D284BF280ADD81510027CCDF /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = D284BEA50ADD80920027CCDF /* dns-sd tool */;
-			targetProxy = D284BF270ADD81510027CCDF /* PBXContainerItemProxy */;
 		};
 		D284BF2A0ADD81530027CCDF /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -1666,7 +1676,7 @@
 		};
 		FFB7657D0AEED97F00583A2C /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 00AD62BB032D7A0C0CCA2C71 /* Build Main */;
+			target = 00AD62BB032D7A0C0CCA2C71 /* Build More */;
 			targetProxy = FFB7657C0AEED97F00583A2C /* PBXContainerItemProxy */;
 		};
 		FFD41DDB0664169900F0C438 /* PBXTargetDependency */ = {
@@ -1698,6 +1708,17 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
+		03067D740C83A3CB0022BE1F /* Development */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COPY_PHASE_STRIP = NO;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				PRODUCT_NAME = "Build Some";
+			};
+			name = Development;
+		};
 		2E0405F20C31955500F13B59 /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -2108,6 +2129,14 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		03067D730C83A3CB0022BE1F /* Build configuration list for PBXAggregateTarget "Build Some" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				03067D740C83A3CB0022BE1F /* Development */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Development;
+		};
 		2E0405F30C31956600F13B59 /* Build configuration list for PBXNativeTarget "mDNSResponderHelper" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -2124,7 +2153,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Development;
 		};
-		D284BE280ADD78180027CCDF /* Build configuration list for PBXAggregateTarget "Build Main" */ = {
+		D284BE280ADD78180027CCDF /* Build configuration list for PBXAggregateTarget "Build More" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				D284BE290ADD78180027CCDF /* Development */,
