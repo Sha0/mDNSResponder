@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.83  2007/08/28 20:45:45  cheshire
+Typo: ctrl_path needs to be 64 bytes, not 44 bytes
+
 Revision 1.82  2007/08/28 19:53:52  cheshire
 <rdar://problem/5437423> Bonjour failures when /tmp is not writable (e.g. when booted from installer disc)
 
@@ -297,7 +300,7 @@ static ipc_msg_hdr *create_hdr(uint32_t op, size_t *len, char **data_start, int 
 	ipc_msg_hdr *hdr;
 	int datalen;
 #if !defined(USE_TCP_LOOPBACK)
-	char ctrl_path[44];	// "dnssd_result_socket.xxxxxxxxxx-xxx-xxxxxx"
+	char ctrl_path[64];	// "/var/tmp/dnssd_result_socket.xxxxxxxxxx-xxx-xxxxxx"
 #endif
 
 	if (SeparateReturnSocket)
