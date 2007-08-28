@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.333  2007/08/28 23:32:35  cheshire
+Added LogOperation messages for DNSServiceNATPortMappingCreate() operations
+
 Revision 1.332  2007/08/27 22:59:31  cheshire
 Show reg_index in DNSServiceRegisterRecord/DNSServiceRemoveRecord messages
 
@@ -2689,6 +2692,8 @@ mDNSlocal void handle_getproperty_request(request_state *request)
 
 mDNSlocal void port_mapping_termination_callback(request_state *request)
 	{
+	LogOperation("%3d: DNSServiceNATPortMappingCreate(%X, %u, %u, %d) STOP", request->sd,
+		request->u.pm.protocol, mDNSVal16(request->u.pm.privatePort), mDNSVal16(request->u.pm.requestedPub), request->u.pm.requestedTTL);
 	mDNS_StopNATOperation(&mDNSStorage, &request->u.pm.NATinfo);
 	}
 
@@ -2702,15 +2707,15 @@ mDNSlocal void port_mapping_create_request_callback(mDNS *m, mDNSv4Addr External
 
 	if (!request) { LogMsg("port_mapping_create_request_callback called with unknown request_state object"); return; }
 
-	request->u.pm.actualPub = n->publicPort;
+	request->u.pm.actualPub   = n->publicPort;
 	request->u.pm.receivedTTL = n->portMappingLease;
-	request->u.pm.addr = ExternalAddress;
+	request->u.pm.addr        = ExternalAddress;
 
 	// calculate reply data length
 	replyLen = sizeof(DNSServiceFlags);
 	replyLen += 3 * sizeof(mDNSu32);  // if index + addr + ttl
 	replyLen += sizeof(DNSServiceErrorType);
-	replyLen += 2 * sizeof(mDNSu16);  // publicAddress + privateAddress
+	replyLen += 2 * sizeof(mDNSu16);  // Internal Port + External Port
 	replyLen += sizeof(mDNSu8);       // protocol
 
 	rep = create_reply(port_mapping_reply_op, replyLen, request);
@@ -2731,6 +2736,10 @@ mDNSlocal void port_mapping_create_request_callback(mDNS *m, mDNSv4Addr External
 	*data++ = request->u.pm.actualPub.b[0];
 	*data++ = request->u.pm.actualPub.b[1];
 	put_uint32(request->u.pm.receivedTTL, &data);
+
+	LogOperation("%3d: DNSServiceNATPortMappingCreate(%X, %u, %u, %d) RESULT %.4a %u %u", request->sd,
+		request->u.pm.protocol, mDNSVal16(request->u.pm.privatePort), mDNSVal16(request->u.pm.requestedPub), request->u.pm.requestedTTL,
+		&request->u.pm.addr, mDNSVal16(request->u.pm.actualPub), request->u.pm.receivedTTL);
 
 	append_reply(request, rep);
 	}
@@ -2776,8 +2785,8 @@ mDNSlocal mStatus handle_port_mapping_request(request_state *request)
 	request->u.pm.interface_id = InterfaceID;
 	request->u.pm.protocol     = protocol;
 	request->u.pm.privatePort  = privatePort;
-	request->u.pm.requestedPub       = publicPort;
-	request->u.pm.actualPub       = zeroIPPort;
+	request->u.pm.requestedPub = publicPort;
+	request->u.pm.actualPub    = zeroIPPort;
 	request->u.pm.requestedTTL = ttl;
 	request->u.pm.receivedTTL  = 0;
 	
@@ -2789,7 +2798,8 @@ mDNSlocal mStatus handle_port_mapping_request(request_state *request)
 	request->u.pm.NATinfo.publicPortreq    = request->u.pm.requestedPub;
 	request->u.pm.NATinfo.portMappingLease = request->u.pm.requestedTTL;
 	
-	LogOperation("%3d: DNSServiceNATPortMappingCreate(%X, %u, %u, %d) START", request->sd, protocol, mDNSVal16(privatePort), mDNSVal16(publicPort), ttl);
+	LogOperation("%3d: DNSServiceNATPortMappingCreate(%X, %u, %u, %d) START", request->sd,
+		request->u.pm.protocol, mDNSVal16(request->u.pm.privatePort), mDNSVal16(request->u.pm.requestedPub), request->u.pm.requestedTTL);
 	err = mDNS_StartNATOperation(&mDNSStorage, &request->u.pm.NATinfo);
 	if (!err) request->terminate = port_mapping_termination_callback;
 
