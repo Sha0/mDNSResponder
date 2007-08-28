@@ -13,6 +13,7 @@
 			buildPhases = (
 			);
 			dependencies = (
+				03067D860C849CC30022BE1F /* PBXTargetDependency */,
 				D284BF2C0ADD815A0027CCDF /* PBXTargetDependency */,
 				D284BF2E0ADD81600027CCDF /* PBXTargetDependency */,
 				D284BF300ADD81630027CCDF /* PBXTargetDependency */,
@@ -278,6 +279,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 2E0405EF0C31955500F13B59 /* mDNSResponderHelper */;
 			remoteInfo = mDNSResponderHelper;
+		};
+		03067D850C849CC30022BE1F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 08FB7793FE84155DC02AAC07 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 03067D640C83A3700022BE1F /* Build Some */;
+			remoteInfo = "Build Some";
 		};
 		D284BDEA0ADD77F60027CCDF /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -1623,6 +1631,11 @@
 			isa = PBXTargetDependency;
 			target = 2E0405EF0C31955500F13B59 /* mDNSResponderHelper */;
 			targetProxy = 03067D6D0C83A39C0022BE1F /* PBXContainerItemProxy */;
+		};
+		03067D860C849CC30022BE1F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 03067D640C83A3700022BE1F /* Build Some */;
+			targetProxy = 03067D850C849CC30022BE1F /* PBXContainerItemProxy */;
 		};
 		D284BEB30ADD809A0027CCDF /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
