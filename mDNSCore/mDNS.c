@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.683  2007/08/28 23:53:21  cheshire
+Rename serviceRegistrationCallback -> ServiceRegistrationZoneDataComplete
+
 Revision 1.682  2007/08/27 20:28:19  cheshire
 Improve "suspect uDNS response" log message
 
@@ -5966,7 +5969,7 @@ mDNSlocal mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 		}
 
 	srs->state = regState_FetchingZoneData;
-	srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, serviceRegistrationCallback, srs);
+	srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationZoneDataComplete, srs);
 	return srs->nta ? mStatus_NoError : mStatus_NoMemoryErr;
 	}
 

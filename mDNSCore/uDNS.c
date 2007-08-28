@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.445  2007/08/28 23:53:21  cheshire
+Rename serviceRegistrationCallback -> ServiceRegistrationZoneDataComplete
+
 Revision 1.444  2007/08/27 20:29:20  cheshire
 Additional debugging messages
 
@@ -326,7 +329,7 @@ is iterating through the m->ServiceRegistrations list
 
 Revision 1.354  2007/04/30 01:30:04  cheshire
 GetZoneData_QuestionCallback needs to call client callback function on error, so client knows operation is finished
-RecordRegistrationCallback and serviceRegistrationCallback need to clean nta reference when they're invoked
+RecordRegistrationCallback and serviceRegistrationCallback need to clear nta reference when they're invoked
 
 Revision 1.353  2007/04/28 01:28:25  cheshire
 Fixed memory leak on error path in FoundDomain
@@ -2025,7 +2028,7 @@ mDNSlocal void LLQNatMapComplete(mDNS *const m, mDNSv4Addr ExternalAddress, NATT
 // for now, we grab the first registered DynDNS name, if any, or a static name we learned via a reverse-map query
 mDNSexport const domainname *GetServiceTarget(mDNS *m, ServiceRecordSet *srs)
 	{
-	if (!srs->RR_SRV.HostTarget)		// If not automatically tracking this host's current name, just return the exising target
+	if (!srs->RR_SRV.HostTarget)		// If not automatically tracking this host's current name, just return the existing target
 		return(&srs->RR_SRV.resrec.rdata->u.srv.target);
 	else
 		{
@@ -2367,10 +2370,12 @@ mDNSlocal void CompleteSRVNatMap(mDNS *const m, mDNSv4Addr ExternalAddress, NATT
 	ServiceRecordSet *srs = (ServiceRecordSet *)n->clientContext;
 	
 	(void)ExternalAddress; // Unused
-	
+
+	LogOperation("SRVNatMap complete %.4a %u %u TTL %u", &ExternalAddress, mDNSVal16(n->privatePort), mDNSVal16(n->publicPort), n->portMappingLease);
+
 	if (!srs) { LogMsg("CompleteSRVNatMap called with unknown ServiceRecordSet object"); return; }
 	if (deletion) return;
-	
+
 	if (err)
 		{
 		HostnameInfo *hi = m->Hostnames;
@@ -2388,19 +2393,22 @@ mDNSlocal void CompleteSRVNatMap(mDNS *const m, mDNSv4Addr ExternalAddress, NATT
 			}
 		else srs->state = regState_NATError;
 		}
-			
+
 	register_service:
 	mDNS_Lock(m);
-	if (!mDNSIPv4AddressIsZero(srs->ns.ip.v4)) SendServiceRegistration(m, srs);	// non-zero server address means we already have necessary zone data to send update
+	if (!mDNSIPv4AddressIsZero(srs->ns.ip.v4))
+		SendServiceRegistration(m, srs);	// non-zero server address means we already have necessary zone data to send update
 	else
 		{
+		// SHOULD NEVER HAPPEN!
+		LogOperation("ERROR: CompleteSRVNatMap called but srs->ns.ip.v4 is zero!");
 		srs->state = regState_FetchingZoneData;
 		if (srs->nta) CancelGetZoneData(m, srs->nta); // Make sure we cancel old one before we start a new one
-		srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, serviceRegistrationCallback, srs);
+		srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationZoneDataComplete, srs);
 		}
 	mDNS_Unlock(m);
 	}
-	
+
 mDNSlocal void StartSRVNatMap(mDNS *m, ServiceRecordSet *srs)
 	{
 	mDNSu8 protocol;
@@ -2421,27 +2429,24 @@ mDNSlocal void StartSRVNatMap(mDNS *m, ServiceRecordSet *srs)
 
 	error:
 	if (srs->nta) CancelGetZoneData(m, srs->nta); // Make sure we cancel old one before we start a new one
-	srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, serviceRegistrationCallback, srs);
+	srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationZoneDataComplete, srs);
 	}
 
 // Called in normal callback context (i.e. mDNS_busy and mDNS_reentrancy are both 1)
-mDNSexport void serviceRegistrationCallback(mDNS *const m, mStatus err, const ZoneData *zoneData)
+mDNSexport void ServiceRegistrationZoneDataComplete(mDNS *const m, mStatus err, const ZoneData *zoneData)
 	{
 	ServiceRecordSet *srs = (ServiceRecordSet *)zoneData->ZoneDataContext;
 	
 	if (m->mDNS_busy != m->mDNS_reentrancy)
-		LogMsg("serviceRegistrationCallback: mDNS_busy (%ld) != mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
+		LogMsg("ServiceRegistrationZoneDataComplete: mDNS_busy (%ld) != mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
 	srs->nta = mDNSNULL;
 
 	if (err) goto error;
-	if (!zoneData) { LogMsg("ERROR: serviceRegistrationCallback invoked with NULL result and no error"); goto error; }
+	if (!zoneData) { LogMsg("ERROR: ServiceRegistrationZoneDataComplete invoked with NULL result and no error"); goto error; }
 
 	if (srs->RR_SRV.resrec.rrclass != zoneData->ZoneClass)
-		{
-		LogMsg("Service %##s - class does not match zone", srs->RR_SRV.resrec.name->c);
-		goto error;
-		}
+		{ LogMsg("Service %##s - class does not match zone", srs->RR_SRV.resrec.name->c); goto error; }
 
 	// cache zone data
 	AssignDomainName(&srs->zone, &zoneData->ZoneName);
@@ -2459,13 +2464,14 @@ mDNSexport void serviceRegistrationCallback(mDNS *const m, mStatus err, const Zo
 		srs->srs_uselease = mDNSfalse;
 		}
 
-	LogOperation("serviceRegistrationCallback %#a %d %#a %d", &m->AdvertisedV4, mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4), &srs->ns, mDNSAddrIsRFC1918(&srs->ns));
+	LogOperation("ServiceRegistrationZoneDataComplete %#a %d %#a %d", &m->AdvertisedV4, mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4), &srs->ns, mDNSAddrIsRFC1918(&srs->ns));
 
 	if (!mDNSIPPortIsZero(srs->RR_SRV.resrec.rdata->u.srv.port) &&
 		mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsRFC1918(&srs->ns) &&
 		!srs->RR_SRV.HostTarget)
 		{
 		srs->state = regState_NATMap;
+		LogOperation("ServiceRegistrationZoneDataComplete StartSRVNatMap");
 		StartSRVNatMap(m, srs);
 		}
 	else
@@ -2557,11 +2563,11 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 	// We're not behind a NAT but our port was previously mapped to a different public port
 	// We were not behind a NAT and now we are
 
-	mDNSIPPort port = srs->RR_SRV.resrec.rdata->u.srv.port;
-	mDNSBool NATChanged       = mDNSfalse;
-	mDNSBool NowBehindNAT     = (!mDNSIPPortIsZero(port) && mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsRFC1918(&srs->ns));
-	mDNSBool WereBehindNAT    = (srs->NATinfo.clientContext != mDNSNULL);
-	mDNSBool PortWasMapped    = (srs->NATinfo.clientContext && !mDNSIPPortIsZero(srs->NATinfo.publicPort) && !mDNSSameIPPort(srs->NATinfo.publicPort, port));
+	mDNSIPPort port        = srs->RR_SRV.resrec.rdata->u.srv.port;
+	mDNSBool NATChanged    = mDNSfalse;
+	mDNSBool NowBehindNAT  = (!mDNSIPPortIsZero(port) && mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsRFC1918(&srs->ns));
+	mDNSBool WereBehindNAT = (srs->NATinfo.clientContext != mDNSNULL);
+	mDNSBool PortWasMapped = (srs->NATinfo.clientContext && !mDNSIPPortIsZero(srs->NATinfo.publicPort) && !mDNSSameIPPort(srs->NATinfo.publicPort, port));
 
 	if (m->mDNS_busy != m->mDNS_reentrancy+1)
 		LogMsg("UpdateSRV: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
@@ -2605,7 +2611,7 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 					{
 					srs->state = regState_FetchingZoneData;
 					if (srs->nta) CancelGetZoneData(m, srs->nta); // Make sure we cancel old one before we start a new one
-					srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, serviceRegistrationCallback, srs);
+					srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationZoneDataComplete, srs);
 					}
 				else
 					{

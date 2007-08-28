@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.75  2007/08/28 23:53:21  cheshire
+Rename serviceRegistrationCallback -> ServiceRegistrationZoneDataComplete
+
 Revision 1.74  2007/08/24 00:15:20  cheshire
 Renamed GetAuthInfoForName() to GetAuthInfoForName_internal() to make it clear that it may only be called with the lock held
 
@@ -215,7 +218,7 @@ extern void RecordRegistrationCallback(mDNS *const m, mStatus err, const ZoneDat
 extern void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord);
 extern mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr);
 
-extern void serviceRegistrationCallback(mDNS *const m, mStatus err, const ZoneData *result);
+extern void ServiceRegistrationZoneDataComplete(mDNS *const m, mStatus err, const ZoneData *result);
 extern const domainname *GetServiceTarget(mDNS *m, ServiceRecordSet *srs);
 extern mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs);
 
