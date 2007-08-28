@@ -449,7 +449,7 @@ static void myTimerCallBack(void)
 
 	if (err != kDNSServiceErr_NoError)
 		{
-		fprintf(stderr, "DNSService call failed %ld\n", (long int)err);
+		fprintf(stderr, "DNSService add/update/remove failed %ld\n", (long int)err);
 		stopNow = 1;
 		}
 	}
@@ -733,17 +733,14 @@ static unsigned long getip(const char *const name)
 	return(ip);
 	}
 
-static DNSServiceErrorType RegisterProxyAddressRecord(DNSServiceRef *sdRef, const char *host, const char *ip)
+static DNSServiceErrorType RegisterProxyAddressRecord(DNSServiceRef sdRef, const char *host, const char *ip)
 	{
 	// Call getip() after the call DNSServiceCreateConnection().
 	// On the Win32 platform, WinSock must be initialized for getip() to succeed.
 	// Any DNSService* call will initialize WinSock for us, so we make sure
 	// DNSServiceCreateConnection() is called before getip() is.
-	unsigned long addr = 0;
-	DNSServiceErrorType err = DNSServiceCreateConnection(sdRef);
-	if (err) { fprintf(stderr, "DNSServiceCreateConnection returned %d\n", err); return(err); }
-	addr = getip(ip);
-	return(DNSServiceRegisterRecord(*sdRef, &record, kDNSServiceFlagsUnique, opinterface, host,
+	unsigned long addr = getip(ip);
+	return(DNSServiceRegisterRecord(sdRef, &record, kDNSServiceFlagsUnique, opinterface, host,
 		kDNSServiceType_A, kDNSServiceClass_IN, sizeof(addr), &addr, 240, MyRegisterRecordCallback, (void*)host));
 	// Note, should probably add support for creating proxy AAAA records too, one day
 	}
@@ -877,9 +874,14 @@ int main(int argc, char **argv)
 					break;
 
 		case 'P':	if (argc < optind+6) goto Fail;
-					err = RegisterProxyAddressRecord(&client_pa, argv[optind+4], argv[optind+5]);
+					err = DNSServiceCreateConnection(&client_pa);
+					if (err) { fprintf(stderr, "DNSServiceCreateConnection returned %d\n", err); return(err); }
+					err = RegisterProxyAddressRecord(client_pa, argv[optind+4], argv[optind+5]);
+					//err = RegisterProxyAddressRecord(client_pa, "two", argv[optind+5]);
 					if (err) break;
 					err = RegisterService(&client, argv[optind+0], argv[optind+1], argv[optind+2], argv[optind+4], argv[optind+3], argc-(optind+6), argv+(optind+6));
+					//DNSServiceRemoveRecord(client_pa, record, 0);
+					//DNSServiceRemoveRecord(client_pa, record, 0);
 					break;
 
 		case 'Q':
