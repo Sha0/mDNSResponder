@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.446  2007/08/28 23:58:42  cheshire
+Rename HostTarget -> AutoTarget
+
 Revision 1.445  2007/08/28 23:53:21  cheshire
 Rename serviceRegistrationCallback -> ServiceRegistrationZoneDataComplete
 
@@ -2028,7 +2031,7 @@ mDNSlocal void LLQNatMapComplete(mDNS *const m, mDNSv4Addr ExternalAddress, NATT
 // for now, we grab the first registered DynDNS name, if any, or a static name we learned via a reverse-map query
 mDNSexport const domainname *GetServiceTarget(mDNS *m, ServiceRecordSet *srs)
 	{
-	if (!srs->RR_SRV.HostTarget)		// If not automatically tracking this host's current name, just return the existing target
+	if (!srs->RR_SRV.AutoTarget)		// If not automatically tracking this host's current name, just return the existing target
 		return(&srs->RR_SRV.resrec.rdata->u.srv.target);
 	else
 		{
@@ -2468,7 +2471,7 @@ mDNSexport void ServiceRegistrationZoneDataComplete(mDNS *const m, mStatus err, 
 
 	if (!mDNSIPPortIsZero(srs->RR_SRV.resrec.rdata->u.srv.port) &&
 		mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsRFC1918(&srs->ns) &&
-		!srs->RR_SRV.HostTarget)
+		!srs->RR_SRV.AutoTarget)
 		{
 		srs->state = regState_NATMap;
 		LogOperation("ServiceRegistrationZoneDataComplete StartSRVNatMap");

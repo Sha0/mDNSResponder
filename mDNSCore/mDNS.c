@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.684  2007/08/28 23:58:42  cheshire
+Rename HostTarget -> AutoTarget
+
 Revision 1.683  2007/08/28 23:53:21  cheshire
 Rename serviceRegistrationCallback -> ServiceRegistrationZoneDataComplete
 
@@ -1018,7 +1021,7 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 //	rr->HostTarget        = set to mDNSfalse in mDNS_SetupResourceRecord; may be overridden by client
 //	rr->AllowRemoteQuery  = set to mDNSfalse in mDNS_SetupResourceRecord; may be overridden by client
 	// Make sure target is not uninitialized data, or we may crash writing debugging log messages
-	if (rr->HostTarget && target) target->c[0] = 0;
+	if (rr->AutoTarget && target) target->c[0] = 0;
 
 	// Field Group 3: Transient state for Authoritative Records
 	rr->Acknowledged      = mDNSfalse;
@@ -1037,7 +1040,7 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	rr->NR_AnswerTo       = mDNSNULL;
 	rr->NR_AdditionalTo   = mDNSNULL;
 	rr->ThisAPInterval    = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
-	if (!rr->HostTarget) InitializeLastAPTime(m, rr);
+	if (!rr->AutoTarget) InitializeLastAPTime(m, rr);
 //	rr->LastAPTime        = Set for us in InitializeLastAPTime()
 //	rr->LastMCTime        = Set for us in InitializeLastAPTime()
 //	rr->LastMCInterface   = Set for us in InitializeLastAPTime()
@@ -1073,7 +1076,7 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 //	rr->resrec.rroriginalttl     = already set in mDNS_SetupResourceRecord
 //	rr->resrec.rdata             = MUST be set by client, unless record type is CNAME or PTR and rr->HostTarget is set
 
-	if (rr->HostTarget)
+	if (rr->AutoTarget)
 		SetTargetToHostName(m, rr);	// Also sets rdlength and rdestimate for us, and calls InitializeLastAPTime();
 	else
 		{
@@ -5514,10 +5517,10 @@ mDNSlocal void AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 		}
 
 	MakeDomainNameFromDNSNameString(&set->RR_PTR.namestorage, buffer);
-	set->RR_PTR.HostTarget = mDNStrue;	// Tell mDNS that the target of this PTR is to be kept in sync with our host name
-	set->RR_PTR.ForceMCast = mDNStrue;	// This PTR points to our dot-local name, so don't ever try to write it into a uDNS server
+	set->RR_PTR.AutoTarget = Target_AutoHost;	// Tell mDNS that the target of this PTR is to be kept in sync with our host name
+	set->RR_PTR.ForceMCast = mDNStrue;			// This PTR points to our dot-local name, so don't ever try to write it into a uDNS server
 
-	set->RR_A.RRSet = &primary->RR_A;	// May refer to self
+	set->RR_A.RRSet = &primary->RR_A;			// May refer to self
 
 	mDNS_Register_internal(m, &set->RR_A);
 	mDNS_Register_internal(m, &set->RR_PTR);
@@ -5584,8 +5587,8 @@ mDNSexport void mDNS_SetFQDN(mDNS *const m)
 
 	// 3. Make sure that any SRV records (and the like) that reference our
 	// host name in their rdata get updated to reference this new host name
-	for (rr = m->ResourceRecords;  rr; rr=rr->next) if (rr->HostTarget) SetTargetToHostName(m, rr);
-	for (rr = m->DuplicateRecords; rr; rr=rr->next) if (rr->HostTarget) SetTargetToHostName(m, rr);
+	for (rr = m->ResourceRecords;  rr; rr=rr->next) if (rr->AutoTarget) SetTargetToHostName(m, rr);
+	for (rr = m->DuplicateRecords; rr; rr=rr->next) if (rr->AutoTarget) SetTargetToHostName(m, rr);
 	
 	mDNS_Unlock(m);
 	}
@@ -6069,9 +6072,9 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	sr->RR_SRV.resrec.rdata->u.srv.weight   = 0;
 	sr->RR_SRV.resrec.rdata->u.srv.port     = port;
 
-	// Setting HostTarget tells DNS that the target of this SRV is to be automatically kept in sync with our host name
+	// Setting AutoTarget tells DNS that the target of this SRV is to be automatically kept in sync with our host name
 	if (host && host->c[0]) AssignDomainName(&sr->RR_SRV.resrec.rdata->u.srv.target, host);
-	else { sr->RR_SRV.HostTarget = mDNStrue; sr->RR_SRV.resrec.rdata->u.srv.target.c[0] = '\0'; }
+	else { sr->RR_SRV.AutoTarget = Target_AutoHost; sr->RR_SRV.resrec.rdata->u.srv.target.c[0] = '\0'; }
 
 	// 4. Set up the TXT record rdata,
 	// and set DependentOn because we're depending on the SRV record to find and resolve conflicts for us
@@ -6200,7 +6203,7 @@ mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordS
 	// mDNS_RegisterService() and mDNS_AddRecordToService(), which do the right locking internally.
 	domainlabel name1, name2;
 	domainname type, domain;
-	const domainname *host = sr->RR_SRV.HostTarget ? mDNSNULL : &sr->RR_SRV.resrec.rdata->u.srv.target;
+	const domainname *host = sr->RR_SRV.AutoTarget ? mDNSNULL : &sr->RR_SRV.resrec.rdata->u.srv.target;
 	ExtraResourceRecord *extras = sr->Extras;
 	mStatus err;
 
@@ -6328,7 +6331,7 @@ mDNSexport mStatus mDNS_RegisterNoSuchService(mDNS *const m, AuthRecord *const r
 	rr->resrec.rdata->u.srv.weight      = 0;
 	rr->resrec.rdata->u.srv.port        = zeroIPPort;
 	if (host && host->c[0]) AssignDomainName(&rr->resrec.rdata->u.srv.target, host);
-	else rr->HostTarget = mDNStrue;
+	else rr->AutoTarget = Target_AutoHost;
 	return(mDNS_Register(m, rr));
 	}
 

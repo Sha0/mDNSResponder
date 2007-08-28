@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.422  2007/08/28 23:58:42  cheshire
+Rename HostTarget -> AutoTarget
+
 Revision 1.421  2007/08/27 20:30:43  cheshire
 Only include TunnelClients list when building for OS X
 
@@ -1155,29 +1158,32 @@ struct NATTraversalInfo_struct
 	NATTraversalInfo *next;
 
 	NATOptFlags_t    opFlags;				// flags for everything that needs to be done
-	mDNSIPPort       publicPort;			// established public port mapping
 	mDNSIPPort       lastPublicPort;		// last public port mapping we got
 	mDNSIPPort       savedPublicPort;		// last actual public port mapping we got from the router 
 											// (saved so that we can request that same port on future refreshes;
 											// this is *only* reset with something the router sent us, not
 											// to be used internally for state transitions)
-	mDNSv4Addr       lastExternalAddress;	// last external address we got
-	mStatus          Error;					// set when there is a port mapping error
 	mStatus          lastError;				// Last error code we delivered to callback
-	tcpLNTInfo      tcpInfo;				// legacy NAT traversal TCP connection
-	
-	// PortMapping fields
+	tcpLNTInfo       tcpInfo;				// legacy NAT traversal TCP connection
+
 	mDNSs32          retryPortMap;			// absolute time when we retry
 	mDNSs32          retryIntervalPortMap;	// delta between time sent and retry
 	mDNSs32          ExpiryTime;
-	
+
+	// Result fields: When the callback is invoked these fields contain the answers the client is looking for
+	// Note that Error and lastExternalAddress are also passed to the callback as explicit parameters
+	mStatus          Error;
+	mDNSv4Addr       lastExternalAddress;
+	mDNSIPPort       publicPort;			// established public port mapping
+	// For granted lease see portMappingLease
+
 	// Client API fields: The client must set up these fields *before* making any NAT traversal API calls
 	NATTraversalClientCallback clientCallback; // returns response to whoever called the API
-	void             *clientContext;
+	void            *clientContext;
 	mDNSu8           protocol;
-	mDNSIPPort       privatePort;
-	mDNSIPPort       publicPortreq;			// requested public port mapping
-	mDNSu32          portMappingLease;		// ttl
+	mDNSIPPort       privatePort;			// Client's internal port number
+	mDNSIPPort       publicPortreq;			// Requested public port mapping; NOT overwritten with value returned from gateway
+	mDNSu32          portMappingLease;		// Requested lifetime; overwritten with value returned from gateway
 	};
 	
 typedef struct
@@ -1222,6 +1228,13 @@ typedef enum
 	regState_NATError          = 14     // unable to complete NAT traversal
 	} regState_t;
 
+enum
+	{
+	Target_Manual = 0,
+	Target_AutoHost = 1,
+	Target_AutoHostAndNATMAP = 2
+	};
+
 struct AuthRecord_struct
 	{
 	// For examples of how to set up this structure for use in mDNS_Register(),
@@ -1240,7 +1253,7 @@ struct AuthRecord_struct
 	AuthRecord     *RRSet;				// This unique record is part of an RRSet
 	mDNSRecordCallback *RecordCallback;	// Callback function to call for state changes, and to free memory asynchronously on deregistration
 	void           *RecordContext;		// Context parameter for the callback function
-	mDNSu8          HostTarget;			// Set if the target of this record (PTR, CNAME, SRV, etc.) is our host name
+	mDNSu8          AutoTarget;			// Set if the target of this record (PTR, CNAME, SRV, etc.) is our host name
 	mDNSu8          AllowRemoteQuery;	// Set if we allow hosts not on the local link to query this record
 	mDNSu8          ForceMCast;			// Set by client to advertise solely via multicast, even for apparently unicast names
 

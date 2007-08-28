@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.168  2007/08/28 23:58:42  cheshire
+Rename HostTarget -> AutoTarget
+
 Revision 1.167  2007/08/10 23:10:05  vazquez
 <rdar://problem/5389850> mDNS: Reverse lookups of IPv6 link-local addresses always fail
 
@@ -1153,7 +1156,7 @@ mDNSexport void mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mD
 	rr->RecordCallback    = Callback;
 	rr->RecordContext     = Context;
 
-	rr->HostTarget        = mDNSfalse;
+	rr->AutoTarget        = Target_Manual;
 	rr->AllowRemoteQuery  = mDNSfalse;
 	rr->ForceMCast        = mDNSfalse;
 
