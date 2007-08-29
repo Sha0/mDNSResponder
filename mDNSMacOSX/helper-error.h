@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper-error.h,v $
+Revision 1.5  2007/08/29 21:42:12  mcguire
+<rdar://problem/5431192> BTMM: Duplicate Private DNS names are being added to DynamicStore
+
 Revision 1.4  2007/08/23 21:15:49  cheshire
 Added $Log header
 
@@ -43,6 +46,7 @@ ERROR(kmDNSHelperTypeError,                       "Object was not of expected ty
 ERROR(kmDNSHelperPreferencesFailed,               "Could not create preferences session")
 ERROR(kmDNSHelperPreferencesLockFailed,           "Could not lock preferences")
 ERROR(kmDNSHelperPreferencesSetFailed,            "Could not update preferences")
+ERROR(kmDNSHelperKeychainCopyDefaultFailed,       "Could not copy keychain default")
 ERROR(kmDNSHelperKeychainSearchCreationFailed,    "Could not create keychain search")
 ERROR(kmDNSHelperPListWriteFailed,                "Could not write property list to stream")
 ERROR(kmDNSHelperResultTooLarge,                  "Result too large")

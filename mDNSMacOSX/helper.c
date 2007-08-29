@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.12  2007/08/29 21:42:12  mcguire
+<rdar://problem/5431192> BTMM: Duplicate Private DNS names are being added to DynamicStore
+
 Revision 1.11  2007/08/28 00:33:04  jgraessley
 <rdar://problem/5423932> Selective compilation options
 
@@ -508,6 +511,7 @@ do_mDNSKeychainGetSecrets(__unused mach_port_t port, __unused unsigned int *nums
 	CFDataRef result = NULL;
 	CFPropertyListRef entry = NULL;
 	CFMutableArrayRef keys = NULL;
+	SecKeychainRef skc = NULL;
 	SecKeychainItemRef item = NULL;
 	SecKeychainSearchRef search = NULL;
 	SecKeychainAttributeList *attributes = NULL;
@@ -530,8 +534,12 @@ do_mDNSKeychainGetSecrets(__unused mach_port_t port, __unused unsigned int *nums
 		*err = kmDNSHelperCreationFailed;
 		goto fin;
 		}
-	if (noErr != (status = SecKeychainSearchCreateFromAttributes(NULL,
-	    kSecGenericPasswordItemClass, NULL, &search)))
+	if (noErr != (status = SecKeychainCopyDefault(&skc)))
+		{
+		*err = kmDNSHelperKeychainCopyDefaultFailed;
+		goto fin;
+		}
+	if (noErr != (status = SecKeychainSearchCreateFromAttributes(skc, kSecGenericPasswordItemClass, NULL, &search)))
 		{
 		*err = kmDNSHelperKeychainSearchCreationFailed;
 		goto fin;
@@ -598,6 +606,8 @@ fin:
 		CFRelease(keys);
 	if (NULL != search)
 		CFRelease(search);
+	if (NULL != skc)
+		CFRelease(skc);
 	update_idle_timer();
 	return KERN_SUCCESS;
 #else
