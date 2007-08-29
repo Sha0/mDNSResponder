@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.685  2007/08/29 01:19:24  cheshire
+<rdar://problem/5400181> BTMM: Tunneled services do not need NAT port mappings
+Set AutoTarget to Target_AutoHostAndNATMAP for non-AutoTunnel wide-area services
+
 Revision 1.684  2007/08/28 23:58:42  cheshire
 Rename HostTarget -> AutoTarget
 
@@ -5962,6 +5966,16 @@ mDNSlocal mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	for (i = 0; i < srs->NumSubTypes;i++) srs->SubTypes[i].resrec.rroriginalttl = kWideAreaTTL;
 
 	srs->srs_uselease = mDNStrue;
+
+	if (srs->RR_SRV.AutoTarget)
+		{
+		// For autotunnel services pointing at our IPv6 ULA we don't need or want a NAT mapping, but for all other
+		// advertised services referencing our uDNS hostname, we want NAT mappings automatically created as appropriate,
+		// with the port number in our advertised SRV record automatically tracking the external mapped port.
+		DomainAuthInfo *AuthInfo = GetAuthInfoForName_internal(m, srs->RR_SRV.resrec.name);
+		if (!AuthInfo || !AuthInfo->AutoTunnel) srs->RR_SRV.AutoTarget = Target_AutoHostAndNATMAP;
+		}
+
 	if (!GetServiceTarget(m, srs))
 		{
 		// defer registration until we've got a target
