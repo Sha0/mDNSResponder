@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.447  2007/08/29 01:18:33  cheshire
+<rdar://problem/5400181> BTMM: Tunneled services do not need NAT port mappings
+Only create NAT mappings for SRV records with AutoTarget set to Target_AutoHostAndNATMAP
+
 Revision 1.446  2007/08/28 23:58:42  cheshire
 Rename HostTarget -> AutoTarget
 
@@ -2068,8 +2072,6 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	mDNSu8 *end = (mDNSu8 *)&m->omsg + sizeof(DNSMessage);
 	mDNSOpaque16 id;
 	mStatus err = mStatus_NoError;
-	mDNSIPPort privport = zeroIPPort;
-	mDNSBool mapped = mDNSfalse;
 	const domainname *target;
 	mDNSu32 i;
 
@@ -2086,13 +2088,8 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	SetNewRData(&srs->RR_TXT.resrec, mDNSNULL, 0);
 
 	// replace port w/ NAT mapping if necessary
- //	if (!mDNSIPPortIsZero(srs->NATinfo.publicPort) && srs->NATinfo.retryIntervalPortMap != -1)
- 	if (!mDNSIPPortIsZero(srs->NATinfo.publicPort))
-		{
-		privport = srs->RR_SRV.resrec.rdata->u.srv.port;
+ 	if (srs->RR_SRV.AutoTarget == Target_AutoHostAndNATMAP && !mDNSIPPortIsZero(srs->NATinfo.publicPort))
 		srs->RR_SRV.resrec.rdata->u.srv.port = srs->NATinfo.publicPort;
-		mapped = mDNStrue;
-		}
 
 	// construct update packet
 	// set zone
@@ -2175,8 +2172,6 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	err = mStatus_NoError;
 
 exit:
-
-	if (mapped) srs->RR_SRV.resrec.rdata->u.srv.port = privport;
 
 	if (err)
 		{
@@ -2471,7 +2466,7 @@ mDNSexport void ServiceRegistrationZoneDataComplete(mDNS *const m, mStatus err, 
 
 	if (!mDNSIPPortIsZero(srs->RR_SRV.resrec.rdata->u.srv.port) &&
 		mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsRFC1918(&srs->ns) &&
-		!srs->RR_SRV.AutoTarget)
+		srs->RR_SRV.AutoTarget == Target_AutoHostAndNATMAP)
 		{
 		srs->state = regState_NATMap;
 		LogOperation("ServiceRegistrationZoneDataComplete StartSRVNatMap");
@@ -2623,7 +2618,8 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 						mDNS_StopNATOperation_internal(m, &srs->NATinfo);
 						srs->NATinfo.clientContext = mDNSNULL;
 						}
-					if (NATChanged && NowBehindNAT) { srs->state = regState_NATMap; StartSRVNatMap(m, srs); }
+					if (NATChanged && NowBehindNAT && srs->RR_SRV.AutoTarget == Target_AutoHostAndNATMAP)
+						{ srs->state = regState_NATMap; StartSRVNatMap(m, srs); }
 					else SendServiceRegistration(m, srs);
 					}
 				}
