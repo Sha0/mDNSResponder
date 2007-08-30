@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.449  2007/08/30 00:43:17  cheshire
+Need to clear m->rec.r.resrec.RecordType before returning from uDNS_recvLLQResponse
+
 Revision 1.448  2007/08/30 00:18:46  cheshire
 <rdar://problem/5448804> Error messages: "SendServiceRegistration: Already have TCP connection..."
 
@@ -1636,7 +1639,10 @@ mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *co
 						q->qname.c, DNSTypeName(q->qtype), q->state, srcaddr, &q->servAddr,
 						opt->OptData.llq.id.l[0], opt->OptData.llq.id.l[1], q->id.l[0], q->id.l[1], opt->OptData.llq.llqOp);
 					if (q->state == LLQ_Poll)
+						{
+						m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 						return uDNS_LLQ_Poll;
+						}
 					else if (q->state == LLQ_Established || (q->state == LLQ_Refresh && msg->h.numAnswers))
 						{
 						if (opt->OptData.llq.llqOp == kLLQOp_Event && mDNSSameOpaque64(&opt->OptData.llq.id, &q->id))
