@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.469  2007/08/30 19:40:51  cheshire
+Added syslog messages to report various initialization failures
+
 Revision 1.468  2007/08/30 00:12:20  cheshire
 Check error codes and log failures during AutoTunnel setup
 
@@ -3081,7 +3084,9 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 	const int itemsPerEntry = 3; // domain name, key name, key value
 	CFArrayRef secrets = NULL;
 	int err = mDNSKeychainGetSecrets(&secrets);
-	if (!err && secrets)
+	if (err || !secrets)
+		LogMsg("SetDomainSecrets: mDNSKeychainGetSecrets failed %d %p", err, secrets);
+	else
 		{
 		CFIndex ArrayCount = CFArrayGetCount(secrets);
 		// Iterate through the secrets
@@ -3518,9 +3523,10 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	NetworkChangedKey_Computername = SCDynamicStoreKeyCreateComputerName(NULL);
 	NetworkChangedKey_DNS          = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
 	if (!NetworkChangedKey_IPv4 || !NetworkChangedKey_IPv6 || !NetworkChangedKey_Hostnames || !NetworkChangedKey_Computername || !NetworkChangedKey_DNS)
-		return(mStatus_NoMemoryErr);
+		{ LogMsg("SCDynamicStore string setup failed"); return(mStatus_NoMemoryErr); }
+
 	err = WatchForNetworkChanges(m);
-	if (err) return(err);
+	if (err) { LogMsg("mDNSPlatformInit_setup: WatchForNetworkChanges failed %d", err); return(err); }
 
 	// Explicitly ensure that our Keychain operations utilize the system domain.
 #ifndef NO_SECURITYFRAMEWORK
@@ -3534,12 +3540,12 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 
 #ifndef NO_SECURITYFRAMEWORK
 	err = SecKeychainAddCallback(KeychainChanged, kSecAddEventMask|kSecDeleteEventMask|kSecUpdateEventMask, m);
-	if (err) return(err);
+	if (err) { LogMsg("mDNSPlatformInit_setup: SecKeychainAddCallback failed %d", err); return(err); }
 #endif
 
 #ifndef NO_IOPOWER
 	m->p->PowerConnection = IORegisterForSystemPower(m, &m->p->PowerPortRef, PowerChanged, &m->p->PowerNotifier);
-	if (!m->p->PowerConnection) return(-1);
+	if (!m->p->PowerConnection) { LogMsg("mDNSPlatformInit_setup: IORegisterForSystemPower failed"); return(-1); }
 	else CFRunLoopAddSource(CFRunLoopGetCurrent(), IONotificationPortGetRunLoopSource(m->p->PowerPortRef), kCFRunLoopDefaultMode);
 #endif /* NO_IOPOWER */
 
