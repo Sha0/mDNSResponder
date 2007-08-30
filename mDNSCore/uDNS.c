@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.448  2007/08/30 00:18:46  cheshire
+<rdar://problem/5448804> Error messages: "SendServiceRegistration: Already have TCP connection..."
+
 Revision 1.447  2007/08/29 01:18:33  cheshire
 <rdar://problem/5400181> BTMM: Tunneled services do not need NAT port mappings
 Only create NAT mappings for SRV records with AutoTarget set to Target_AutoHostAndNATMAP
@@ -974,8 +977,9 @@ mDNSexport DomainAuthInfo *GetAuthInfoForName_internal(mDNS *m, const domainname
 				mDNS_Deregister_internal (m, &info->AutoTunnelHostRecord, mDNS_Dereg_normal);
 				mDNS_Deregister_internal (m, &info->AutoTunnelDeviceInfo, mDNS_Dereg_normal);
 				mDNS_RemoveDynDNSHostName(m, &info->AutoTunnelTarget.namestorage);
-				mDNS_Deregister_internal (m, &info->AutoTunnelService, mDNS_Dereg_normal);
 				mDNS_StopNATOperation    (m, &info->AutoTunnelNAT);
+				if (info->AutoTunnelService.resrec.RecordType)	// We may not have registered this if the NAT operation has not yet completed
+					mDNS_Deregister_internal(m, &info->AutoTunnelService, mDNS_Dereg_normal);
 				}
 			#endif APPLE_OSX_mDNSResponder
 			// Probably not essential, but just to be safe, zero out the secret key data
@@ -2084,8 +2088,8 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	InitializeDNSMessage(&m->omsg.h, id, UpdateReqFlags);
 
 	// setup resource records
-	SetNewRData(&srs->RR_PTR.resrec, mDNSNULL, 0);
-	SetNewRData(&srs->RR_TXT.resrec, mDNSNULL, 0);
+	SetNewRData(&srs->RR_PTR.resrec, mDNSNULL, 0);		// Update rdlength, rdestimate, rdatahash
+	SetNewRData(&srs->RR_TXT.resrec, mDNSNULL, 0);		// Update rdlength, rdestimate, rdatahash
 
 	// replace port w/ NAT mapping if necessary
  	if (srs->RR_SRV.AutoTarget == Target_AutoHostAndNATMAP && !mDNSIPPortIsZero(srs->NATinfo.publicPort))
@@ -2141,7 +2145,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	if (!SameDomainName(target, &srs->RR_SRV.resrec.rdata->u.srv.target))
 		{
 		AssignDomainName(&srs->RR_SRV.resrec.rdata->u.srv.target, target);
-		SetNewRData(&srs->RR_SRV.resrec, mDNSNULL, 0);
+		SetNewRData(&srs->RR_SRV.resrec, mDNSNULL, 0);		// Update rdlength, rdestimate, rdatahash
 		}
 
 	ptr = PutResourceRecordTTLJumbo(&m->omsg, ptr, &m->omsg.h.mDNS_numUpdates, &srs->RR_SRV.resrec, srs->RR_SRV.resrec.rroriginalttl);
@@ -2160,14 +2164,15 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 		LogOperation("SendServiceRegistration TCP %p", srs->tcp);
 		if (srs->tcp) LogMsg("SendServiceRegistration: Already have TCP connection for %s", ARDisplayString(m, &srs->RR_SRV));
 		else srs->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &srs->ns, srs->SRSUpdatePort, mDNSNULL, srs, mDNSNULL);
+		srs->RR_SRV.LastAPTime = m->timenow;
+		srs->RR_SRV.ThisAPInterval = 0x3FFFFFFF; // TCP will handle any necessary retransmissions for us
 		}
 	else
 		{
 		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &srs->ns, srs->SRSUpdatePort, mDNSNULL, GetAuthInfoForName_internal(m, srs->RR_SRV.resrec.name));
 		if (err) debugf("ERROR: SendServiceRegistration - mDNSSendDNSMessage - %ld", err);
+		SetRecordRetry(m, &srs->RR_SRV, err);
 		}
-
-	SetRecordRetry(m, &srs->RR_SRV, err);
 
 	err = mStatus_NoError;
 
@@ -2520,14 +2525,15 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 		LogOperation("SendServiceDeregistration TCP %p", srs->tcp);
 		if (srs->tcp) LogMsg("SendServiceDeregistration: Already have TCP connection for %s", ARDisplayString(m, &srs->RR_SRV));
 		else srs->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &srs->ns, srs->SRSUpdatePort, mDNSNULL, srs, mDNSNULL);
+		srs->RR_SRV.LastAPTime = m->timenow;
+		srs->RR_SRV.ThisAPInterval = 0x3FFFFFFF; // TCP will handle any necessary retransmissions for us
 		}
 	else
 		{
 		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &srs->ns, srs->SRSUpdatePort, mDNSNULL, GetAuthInfoForName_internal(m, srs->RR_SRV.resrec.name));
 		if (err && err != mStatus_TransientErr) { debugf("ERROR: SendServiceDeregistration - mDNSSendDNSMessage - %ld", err); goto exit; }
+		SetRecordRetry(m, &srs->RR_SRV, err);
 		}
-
-	SetRecordRetry(m, &srs->RR_SRV, err);
 
 	err = mStatus_NoError;
 
@@ -3131,14 +3137,15 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 		LogOperation("sendRecordRegistration TCP %p", rr->tcp);
 		if (rr->tcp) LogMsg("sendRecordRegistration: Already have TCP connection for %s", ARDisplayString(m, rr));
 		else rr->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, mDNSNULL, rr);
+		rr->LastAPTime = m->timenow;
+		rr->ThisAPInterval = 0x3FFFFFFF; // TCP will handle any necessary retransmissions for us
 		}
 	else
 		{
 		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, GetAuthInfoForName_internal(m, rr->resrec.name));
 		if (err) debugf("ERROR: sendRecordRegistration - mDNSSendDNSMessage - %ld", err);
+		SetRecordRetry(m, rr, err);
 		}
-
-	SetRecordRetry(m, rr, err);
 
 	if (rr->state != regState_Refresh && rr->state != regState_DeregDeferred && rr->state != regState_UpdatePending)
 		rr->state = regState_Pending;
@@ -3949,14 +3956,15 @@ mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 		LogOperation("SendRecordDeregistration TCP %p", rr->tcp);
 		if (rr->tcp) LogMsg("SendRecordDeregistration: Already have TCP connection for %s", ARDisplayString(m, rr));
 		else rr->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, mDNSNULL, rr);
+		rr->LastAPTime = m->timenow;
+		rr->ThisAPInterval = 0x3FFFFFFF; // TCP will handle any necessary retransmissions for us
 		}
 	else
 		{
 		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, GetAuthInfoForName_internal(m, rr->resrec.name));
 		if (err) debugf("ERROR: SendRecordDeregistration - mDNSSendDNSMessage - %ld", err);
+		SetRecordRetry(m, rr, err);
 		}
-
-	SetRecordRetry(m, rr, err);
 
 	err = mStatus_NoError;
 
@@ -4390,16 +4398,9 @@ mDNSlocal mDNSs32 CheckRecordRegistrations(mDNS *m)
 			{
 			if (rr->LastAPTime + rr->ThisAPInterval - m->timenow < 0)
 				{
-#if MDNS_DEBUGMSGS
-				char *op = "(unknown operation)";
-				if      (rr->state == regState_Pending     ) op = "registration";
-				else if (rr->state == regState_DeregPending) op = "deregistration";
-				else if (rr->state == regState_Refresh     ) op = "refresh";
-				debugf("Retransmit record %s %##s", op, rr->resrec.name->c);
-#endif
-				//LogMsg("Retransmit record %##s", rr->resrec.name->c);
-				if      (rr->state == regState_DeregPending)   SendRecordDeregistration(m, rr);
-				else                                              sendRecordRegistration(m, rr);
+				if (rr->tcp) { rr->LastAPTime = m->timenow; rr->ThisAPInterval = 0x3FFFFFFF; }
+				else if (rr->state == regState_DeregPending) SendRecordDeregistration(m, rr);
+				else sendRecordRegistration(m, rr);
 				}
 			if (rr->LastAPTime + rr->ThisAPInterval - nextevent < 0) nextevent = rr->LastAPTime + rr->ThisAPInterval;
 			}
@@ -4434,16 +4435,9 @@ mDNSlocal mDNSs32 CheckServiceRegistrations(mDNS *m)
 			{
 			if (srs->RR_SRV.LastAPTime + srs->RR_SRV.ThisAPInterval - m->timenow < 0)
 				{
-#if MDNS_DEBUGMSGS
-				char *op = "unknown";
-				if      (srs->state == regState_Pending      ) op = "registration";
-				else if (srs->state == regState_DeregPending ) op = "deregistration";
-				else if (srs->state == regState_Refresh      ) op = "refresh";
-				else if (srs->state == regState_UpdatePending) op = "txt record update";
-				debugf("Retransmit service %s %##s", op, srs->RR_SRV.resrec.name->c);
-#endif
-				if (srs->state == regState_DeregPending) { SendServiceDeregistration(m, srs); continue; }
-				else                                         SendServiceRegistration(m, srs);
+				if (srs->tcp) { srs->RR_SRV.LastAPTime = m->timenow; srs->RR_SRV.ThisAPInterval = 0x3FFFFFFF; }
+				else if (srs->state == regState_DeregPending) { SendServiceDeregistration(m, srs); continue; }
+				else SendServiceRegistration(m, srs);
 				}
 			if (nextevent - srs->RR_SRV.LastAPTime + srs->RR_SRV.ThisAPInterval > 0)
 				nextevent = srs->RR_SRV.LastAPTime + srs->RR_SRV.ThisAPInterval;
