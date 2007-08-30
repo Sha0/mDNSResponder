@@ -1747,7 +1747,6 @@
 				MACOSX_DEPLOYMENT_TARGET = 10.4;
 				PREBINDING = NO;
 				PRODUCT_NAME = mDNSResponderHelper;
-				ZERO_LINK = YES;
 			};
 			name = Development;
 		};
