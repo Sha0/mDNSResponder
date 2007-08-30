@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.686  2007/08/30 00:01:56  cheshire
+Added comment about SetTargetToHostName()
+
 Revision 1.685  2007/08/29 01:19:24  cheshire
 <rdar://problem/5400181> BTMM: Tunneled services do not need NAT port mappings
 Set AutoTarget to Target_AutoHostAndNATMAP for non-AutoTunnel wide-area services
@@ -903,6 +906,8 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr)
 
 #define HashSlot(X) (DomainNameHashValue(X) % CACHE_HASH_SLOTS)
 
+// Right now this only applies to mDNS (.local) services where the target host is always m->MulticastHostname
+// Eventually we should unify this with GetServiceTarget() in uDNS.c
 mDNSlocal void SetTargetToHostName(mDNS *const m, AuthRecord *const rr)
 	{
 	domainname *target = GetRRDomainNameTarget(&rr->resrec);
@@ -915,7 +920,7 @@ mDNSlocal void SetTargetToHostName(mDNS *const m, AuthRecord *const rr)
 	if (target && !SameDomainName(target, &m->MulticastHostname))
 		{
 		AssignDomainName(target, &m->MulticastHostname);
-		SetNewRData(&rr->resrec, mDNSNULL, 0);
+		SetNewRData(&rr->resrec, mDNSNULL, 0);		// Update rdlength, rdestimate, rdatahash
 		
 		// If we're in the middle of probing this record, we need to start again,
 		// because changing its rdata may change the outcome of the tie-breaker.
