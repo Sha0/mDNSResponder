@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.468  2007/08/30 00:12:20  cheshire
+Check error codes and log failures during AutoTunnel setup
+
 Revision 1.467  2007/08/28 00:33:04  jgraessley
 <rdar://problem/5423932> Selective compilation options
 
@@ -1984,6 +1987,8 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 			{
 			if (info->AutoTunnel && !info->AutoTunnelHostRecord.namestorage.c[0])
 				{
+				mStatus err;
+
 				// 1. Set up our address record for the internal tunnel address
 				// (User-visible user-friendly host name, used as target in AutoTunnel SRV records)
 				mDNS_SetupResourceRecord(&info->AutoTunnelHostRecord, mDNSNULL, mDNSInterface_Any, kDNSType_AAAA, kHostNameTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
@@ -1991,7 +1996,8 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 				AppendDomainLabel(&info->AutoTunnelHostRecord.namestorage, &m->hostlabel);
 				AppendDomainName (&info->AutoTunnelHostRecord.namestorage, &info->domain);
 				info->AutoTunnelHostRecord.resrec.rdata->u.ipv6 = m->AutoTunnelHostAddr;
-				mDNS_Register_internal(m, &info->AutoTunnelHostRecord);
+				err = mDNS_Register_internal(m, &info->AutoTunnelHostRecord);
+				if (err) LogMsg("SetupLocalAutoTunnelInterface_internal error %d registering AutoTunnelHostRecord %##s", err, info->AutoTunnelHostRecord.namestorage.c);
 
 				// 2. Set up device info record
 				mDNSu8 len = m->HIHardware.c[0] < 255 - 6 ? m->HIHardware.c[0] : 255 - 6;
@@ -2001,7 +2007,8 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 				mDNSPlatformMemCopy(info->AutoTunnelDeviceInfo.resrec.rdata->u.data + 7, m->HIHardware.c + 1, len);
 				info->AutoTunnelDeviceInfo.resrec.rdata->u.data[0] = 6 + len;	// "model=" plus the device string
 				info->AutoTunnelDeviceInfo.resrec.rdlength         = 7 + len;	// One extra for the length byte at the start of the string
-				mDNS_Register_internal(m, &info->AutoTunnelDeviceInfo);
+				err = mDNS_Register_internal(m, &info->AutoTunnelDeviceInfo);
+				if (err) LogMsg("SetupLocalAutoTunnelInterface_internal error %d registering AutoTunnelDeviceInfo %##s", err, info->AutoTunnelDeviceInfo.namestorage.c);
 
 				// 3. Set up our address record for the external tunnel address
 				// (Constructed name, not generally user-visible, used as target in IKE tunnel's SRV record)
@@ -2010,7 +2017,7 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 				AppendDomainLabel(&info->AutoTunnelTarget.namestorage, &m->AutoTunnelLabel);
 				AppendDomainName (&info->AutoTunnelTarget.namestorage, &info->domain);
 				mDNS_AddDynDNSHostName(m, &info->AutoTunnelTarget.namestorage, mDNSNULL, mDNSNULL);
-				
+
 				// 4. Set up IKE tunnel's SRV record: "AutoTunnelHostRecord SRV 0 0 port AutoTunnelTarget"
 				mDNS_SetupResourceRecord(&info->AutoTunnelService, mDNSNULL, mDNSInterface_Any, kDNSType_SRV, kHostNameTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
 				AssignDomainName(&info->AutoTunnelService.namestorage, (const domainname*) "\x0B" "_autotunnel" "\x04" "_udp");
@@ -2028,7 +2035,8 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 				info->AutoTunnelNAT.privatePort      = mDNSOpaque16fromIntVal(kRacoonPort);
 				info->AutoTunnelNAT.publicPortreq    = mDNSOpaque16fromIntVal(kRacoonPort);
 				info->AutoTunnelNAT.portMappingLease = 0;
-				mDNS_StartNATOperation_internal(m, &info->AutoTunnelNAT);
+				err = mDNS_StartNATOperation_internal(m, &info->AutoTunnelNAT);
+				if (err) LogMsg("SetupLocalAutoTunnelInterface_internal error %d starting NAT mapping", err);
 
 				LogMsg("AutoTunnel server listening for connections on %##s[%.4a]:%d:%##s[%.16a]",
 					info->AutoTunnelTarget.namestorage.c,     &m->AdvertisedV4.ip.v4, mDNSVal16(info->AutoTunnelNAT.privatePort),
