@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.470  2007/08/30 22:50:04  mcguire
+<rdar://problem/5430628> BTMM: Tunneled services are registered when autotunnel can't be setup
+
 Revision 1.469  2007/08/30 19:40:51  cheshire
 Added syslog messages to report various initialization failures
 
@@ -1952,19 +1955,67 @@ mDNSlocal mDNSBool TunnelServers(mDNS *const m)
 	return(mDNSfalse);
 	}
 
-mDNSlocal void AutoTunnelNATCallback(mDNS *m, mDNSv4Addr ExternalAddress, NATTraversalInfo *n, mStatus err)
+mDNSlocal void AutoTunnelNATCallback(mDNS *m, mDNSv4Addr ExternalAddress, NATTraversalInfo *n, mStatus errIn)
 	{
+	mStatus err = mStatus_NoError;
 	(void)ExternalAddress;	// unused
-	(void)err;				// unused
+
 	DomainAuthInfo *info = (DomainAuthInfo *)n->clientContext;
-	LogOperation("AutoTunnelNATCallback %d %.4a, %d %d", err, &ExternalAddress, mDNSVal16(n->privatePort), mDNSVal16(n->publicPort));
-	info->AutoTunnelService.resrec.rdata->u.srv.port = n->publicPort;
+	LogOperation("AutoTunnelNATCallback %d %.4a %d %d %##s", errIn, &ExternalAddress, mDNSVal16(n->privatePort), mDNSVal16(n->publicPort), info->AutoTunnelService.namestorage.c);
+
+	LogOperation("AutoTunnelNATCallback timenow %d NextSRVUpdate %d", m->timenow, m->NextSRVUpdate);
+	m->NextSRVUpdate = m->timenow;
+	LogOperation("AutoTunnelNATCallback timenow %d NextSRVUpdate %d", m->timenow, m->NextSRVUpdate);
 
 	if (info->AutoTunnelService.resrec.RecordType != kDNSRecordTypeUnregistered)
-		mDNS_Deregister(m, &info->AutoTunnelService);
+		{
+		err = mDNS_Deregister(m, &info->AutoTunnelService);
+		if (err) LogMsg("AutoTunnelNATCallback error %d deregistering AutoTunnelService %##s", err, info->AutoTunnelService.namestorage.c);
+		mDNS_RemoveDynDNSHostName(m, &info->AutoTunnelTarget.namestorage);
+		}
 
+	if (info->AutoTunnelHostRecord.resrec.RecordType != kDNSRecordTypeUnregistered)
+		{
+		err = mDNS_Deregister(m, &info->AutoTunnelHostRecord);
+		if (err) LogMsg("AutoTunnelNATCallback error %d deregistering AutoTunnelHostRecord %##s", err, info->AutoTunnelHostRecord.namestorage.c);
+		info->AutoTunnelHostRecord.namestorage.c[0] = 0;
+		}
+
+	if (info->AutoTunnelDeviceInfo.resrec.RecordType != kDNSRecordTypeUnregistered)
+		{
+		err = mDNS_Deregister(m, &info->AutoTunnelDeviceInfo);
+		if (err) LogMsg("AutoTunnelNATCallback error %d deregistering AutoTunnelDeviceInfo %##s", err, info->AutoTunnelDeviceInfo.namestorage.c);
+		}
+
+	if (errIn || mDNSIPPortIsZero(n->publicPort)) return;
+
+	info->AutoTunnelService.resrec.rdata->u.srv.port = n->publicPort;
 	info->AutoTunnelService.resrec.RecordType = kDNSRecordTypeKnownUnique;
-	mDNS_Register(m, &info->AutoTunnelService);
+	err = mDNS_Register(m, &info->AutoTunnelService);
+	if (err) LogMsg("AutoTunnelNATCallback error %d registering AutoTunnelService %##s", err, info->AutoTunnelService.namestorage.c);
+
+	info->AutoTunnelTarget.resrec.RecordType = kDNSRecordTypeKnownUnique;
+	mDNS_AddDynDNSHostName(m, &info->AutoTunnelTarget.namestorage, mDNSNULL, info);
+
+	if (info->AutoTunnelHostRecord.namestorage.c[0] == 0)
+		{
+		AppendDomainLabel(&info->AutoTunnelHostRecord.namestorage, &m->hostlabel);
+		AppendDomainName (&info->AutoTunnelHostRecord.namestorage, &info->domain);
+		}
+	info->AutoTunnelHostRecord.resrec.RecordType = kDNSRecordTypeKnownUnique;
+	err = mDNS_Register(m, &info->AutoTunnelHostRecord);
+	if (err) LogMsg("AutoTunnelNATCallback error %d registering AutoTunnelHostRecord %##s", err, info->AutoTunnelHostRecord.namestorage.c);	
+
+	info->AutoTunnelDeviceInfo.resrec.RecordType = kDNSRecordTypeKnownUnique;
+	err = mDNS_Register(m, &info->AutoTunnelDeviceInfo);
+	if (err) LogMsg("AutoTunnelNATCallback error %d registering AutoTunnelDeviceInfo %##s", err, info->AutoTunnelDeviceInfo.namestorage.c);
+
+	// Create configuration file, and start (or SIGHUP) Racoon
+	(void)mDNSRacoonNotify(info->b64keydata);
+
+	LogMsg("AutoTunnel server listening for connections on %##s[%.4a]:%d:%##s[%.16a]",
+		info->AutoTunnelTarget.namestorage.c,     &m->AdvertisedV4.ip.v4, mDNSVal16(info->AutoTunnelNAT.privatePort),
+		info->AutoTunnelHostRecord.namestorage.c, &m->AutoTunnelHostAddr);
 	}
 
 // Before SetupLocalAutoTunnelInterface_internal is called,
@@ -1982,71 +2033,54 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 		(void)mDNSAutoTunnelInterfaceUpDown(kmDNSAutoTunnelInterfaceUp, m->AutoTunnelHostAddr.b);
 		}
 
-	// 2. If we have at least one server listening, publish our records
+	// 2. If we have at least one server (pending) listening, publish our records
 	if (TunnelServers(m))
 		{
 		DomainAuthInfo *info;
 		for (info = m->AuthInfoList; info; info = info->next)
 			{
-			if (info->AutoTunnel && !info->AutoTunnelHostRecord.namestorage.c[0])
+			if (info->AutoTunnel && !info->AutoTunnelNAT.clientContext)
 				{
-				mStatus err;
-
 				// 1. Set up our address record for the internal tunnel address
 				// (User-visible user-friendly host name, used as target in AutoTunnel SRV records)
-				mDNS_SetupResourceRecord(&info->AutoTunnelHostRecord, mDNSNULL, mDNSInterface_Any, kDNSType_AAAA, kHostNameTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
+				mDNS_SetupResourceRecord(&info->AutoTunnelHostRecord, mDNSNULL, mDNSInterface_Any, kDNSType_AAAA, kHostNameTTL, kDNSRecordTypeUnregistered, mDNSNULL, mDNSNULL);
 				info->AutoTunnelHostRecord.namestorage.c[0] = 0;
-				AppendDomainLabel(&info->AutoTunnelHostRecord.namestorage, &m->hostlabel);
-				AppendDomainName (&info->AutoTunnelHostRecord.namestorage, &info->domain);
 				info->AutoTunnelHostRecord.resrec.rdata->u.ipv6 = m->AutoTunnelHostAddr;
-				err = mDNS_Register_internal(m, &info->AutoTunnelHostRecord);
-				if (err) LogMsg("SetupLocalAutoTunnelInterface_internal error %d registering AutoTunnelHostRecord %##s", err, info->AutoTunnelHostRecord.namestorage.c);
 
 				// 2. Set up device info record
 				mDNSu8 len = m->HIHardware.c[0] < 255 - 6 ? m->HIHardware.c[0] : 255 - 6;
-				mDNS_SetupResourceRecord(&info->AutoTunnelDeviceInfo, mDNSNULL, mDNSInterface_Any, kDNSType_TXT, kHostNameTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
+				mDNS_SetupResourceRecord(&info->AutoTunnelDeviceInfo, mDNSNULL, mDNSInterface_Any, kDNSType_TXT, kHostNameTTL, kDNSRecordTypeUnregistered, mDNSNULL, mDNSNULL);
 				ConstructServiceName(&info->AutoTunnelDeviceInfo.namestorage, &m->nicelabel, &DeviceInfoName, &info->domain);
 				mDNSPlatformMemCopy(info->AutoTunnelDeviceInfo.resrec.rdata->u.data + 1, "model=", 6);
 				mDNSPlatformMemCopy(info->AutoTunnelDeviceInfo.resrec.rdata->u.data + 7, m->HIHardware.c + 1, len);
 				info->AutoTunnelDeviceInfo.resrec.rdata->u.data[0] = 6 + len;	// "model=" plus the device string
 				info->AutoTunnelDeviceInfo.resrec.rdlength         = 7 + len;	// One extra for the length byte at the start of the string
-				err = mDNS_Register_internal(m, &info->AutoTunnelDeviceInfo);
-				if (err) LogMsg("SetupLocalAutoTunnelInterface_internal error %d registering AutoTunnelDeviceInfo %##s", err, info->AutoTunnelDeviceInfo.namestorage.c);
 
 				// 3. Set up our address record for the external tunnel address
 				// (Constructed name, not generally user-visible, used as target in IKE tunnel's SRV record)
-				mDNS_SetupResourceRecord(&info->AutoTunnelTarget, mDNSNULL, mDNSInterface_Any, kDNSType_A, kHostNameTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
+				mDNS_SetupResourceRecord(&info->AutoTunnelTarget, mDNSNULL, mDNSInterface_Any, kDNSType_A, kHostNameTTL, kDNSRecordTypeUnregistered, mDNSNULL, mDNSNULL);
 				info->AutoTunnelTarget.namestorage.c[0] = 0;
 				AppendDomainLabel(&info->AutoTunnelTarget.namestorage, &m->AutoTunnelLabel);
 				AppendDomainName (&info->AutoTunnelTarget.namestorage, &info->domain);
-				mDNS_AddDynDNSHostName(m, &info->AutoTunnelTarget.namestorage, mDNSNULL, mDNSNULL);
 
 				// 4. Set up IKE tunnel's SRV record: "AutoTunnelHostRecord SRV 0 0 port AutoTunnelTarget"
-				mDNS_SetupResourceRecord(&info->AutoTunnelService, mDNSNULL, mDNSInterface_Any, kDNSType_SRV, kHostNameTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
+				mDNS_SetupResourceRecord(&info->AutoTunnelService, mDNSNULL, mDNSInterface_Any, kDNSType_SRV, kHostNameTTL, kDNSRecordTypeUnregistered, mDNSNULL, mDNSNULL);
 				AssignDomainName(&info->AutoTunnelService.namestorage, (const domainname*) "\x0B" "_autotunnel" "\x04" "_udp");
-				AppendDomainName(&info->AutoTunnelService.namestorage, &info->AutoTunnelHostRecord.namestorage);
+				AppendDomainLabel(&info->AutoTunnelService.namestorage, &m->hostlabel);
+				AppendDomainName (&info->AutoTunnelService.namestorage, &info->domain);
 				info->AutoTunnelService.resrec.rdata->u.srv.priority = 0;
 				info->AutoTunnelService.resrec.rdata->u.srv.weight   = 0;
 				AssignDomainName(&info->AutoTunnelService.resrec.rdata->u.srv.target, &info->AutoTunnelTarget.namestorage);
-				// Indicate to ourselves that our AutoTunnelService is currently unregistered.
-				// We'll register it shortly, as soon as we get our port number in our AutoTunnelNATCallback routine
-				info->AutoTunnelService.resrec.RecordType = kDNSRecordTypeUnregistered;
 
+				// Try to get a NAT port mapping for the AutoTunnelService
 				info->AutoTunnelNAT.clientCallback   = AutoTunnelNATCallback;
 				info->AutoTunnelNAT.clientContext    = info;
 				info->AutoTunnelNAT.protocol         = kDNSServiceProtocol_UDP;
 				info->AutoTunnelNAT.privatePort      = mDNSOpaque16fromIntVal(kRacoonPort);
 				info->AutoTunnelNAT.publicPortreq    = mDNSOpaque16fromIntVal(kRacoonPort);
 				info->AutoTunnelNAT.portMappingLease = 0;
-				err = mDNS_StartNATOperation_internal(m, &info->AutoTunnelNAT);
+				mStatus err = mDNS_StartNATOperation_internal(m, &info->AutoTunnelNAT);
 				if (err) LogMsg("SetupLocalAutoTunnelInterface_internal error %d starting NAT mapping", err);
-
-				LogMsg("AutoTunnel server listening for connections on %##s[%.4a]:%d:%##s[%.16a]",
-					info->AutoTunnelTarget.namestorage.c,     &m->AdvertisedV4.ip.v4, mDNSVal16(info->AutoTunnelNAT.privatePort),
-					info->AutoTunnelHostRecord.namestorage.c, &m->AutoTunnelHostAddr);
-
-				// 4. Create configuration file, and start (or SIGHUP) Racoon
-				(void)mDNSRacoonNotify(info->b64keydata);
 				}
 			}
 		}

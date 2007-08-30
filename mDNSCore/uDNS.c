@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.450  2007/08/30 22:50:04  mcguire
+<rdar://problem/5430628> BTMM: Tunneled services are registered when autotunnel can't be setup
+
 Revision 1.449  2007/08/30 00:43:17  cheshire
 Need to clear m->rec.r.resrec.RecordType before returning from uDNS_recvLLQResponse
 
@@ -1034,9 +1037,10 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 	while (*p && (*p) != info) p=&(*p)->next;
 	if (*p) return(mStatus_AlreadyRegistered);
 
-	// Caution: Only zero AutoTunnelHostRecord.namestorage AFTER we've determined that this is a NEW DomainAuthInfo being added
-	// to the list. Otherwise we risk smashing our AutoTunnel host records and NATOperation that are already active and in use.
+	// Caution: Only zero AutoTunnelHostRecord.namestorage and AutoTunnelNAT.clientContext AFTER we've determined that this is a NEW DomainAuthInfo
+	// being added to the list. Otherwise we risk smashing our AutoTunnel host records and NATOperation that are already active and in use.
 	info->AutoTunnelHostRecord.namestorage.c[0] = 0;
+	info->AutoTunnelNAT.clientContext = mDNSNULL;
 	info->next = mDNSNULL;
 	*p = info;
 
@@ -2045,6 +2049,8 @@ mDNSlocal void LLQNatMapComplete(mDNS *const m, mDNSv4Addr ExternalAddress, NATT
 // for now, we grab the first registered DynDNS name, if any, or a static name we learned via a reverse-map query
 mDNSexport const domainname *GetServiceTarget(mDNS *m, ServiceRecordSet *srs)
 	{
+	LogOperation("GetServiceTarget %##s", srs->RR_SRV.resrec.name->c);
+
 	if (!srs->RR_SRV.AutoTarget)		// If not automatically tracking this host's current name, just return the existing target
 		return(&srs->RR_SRV.resrec.rdata->u.srv.target);
 	else
@@ -2057,8 +2063,8 @@ mDNSexport const domainname *GetServiceTarget(mDNS *m, ServiceRecordSet *srs)
 			{
 			if (AuthInfo->AutoTunnelHostRecord.namestorage.c[0] == 0)
 				{
-				if (!m->AutoTunnelHostAddr.b[0]) return(mDNSNULL);
-				SetupLocalAutoTunnelInterface_internal(m);
+				if (m->AutoTunnelHostAddr.b[0]) SetupLocalAutoTunnelInterface_internal(m);
+				return(mDNSNULL);
 				}
 			return(&AuthInfo->AutoTunnelHostRecord.namestorage);
 			}
@@ -2143,7 +2149,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	target = GetServiceTarget(m, srs);
 	if (!target)
 		{
-		debugf("Couldn't get target for service %##s", srs->RR_SRV.resrec.name->c);
+		debugf("SendServiceRegistration - no target for %##s", srs->RR_SRV.resrec.name->c);
 		srs->state = regState_NoTarget;
 		return;
 		}
@@ -2555,6 +2561,7 @@ exit:
 // Called with lock held
 mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 	{
+	LogOperation("UpdateSRV %##s", srs->RR_SRV.resrec.name->c);
 	ExtraResourceRecord *e;
 
 	// Target change if:
@@ -2872,7 +2879,7 @@ mDNSexport void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSReco
 
 	// allocate and format new address record
 	*ptr = mDNSPlatformMemAllocate(sizeof(**ptr));
-	if (!*ptr) { LogMsg("ERROR: mDNS_AddDynDNSHostname - malloc"); return; }
+	if (!*ptr) { LogMsg("ERROR: mDNS_AddDynDNSHostName - malloc"); return; }
 
 	mDNSPlatformMemZero(*ptr, sizeof(**ptr));
 	AssignDomainName(&(*ptr)->fqdn, fqdn);
