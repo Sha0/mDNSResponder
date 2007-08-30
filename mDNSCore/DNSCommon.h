@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.49  2007/08/30 00:31:20  cheshire
+Improve "locking failure" debugging messages to show function name using __func__ macro
+
 Revision 1.48  2007/05/25 00:25:44  cheshire
 <rdar://problem/5227737> Need to enhance putRData to output all current known types
 
@@ -258,17 +261,23 @@ extern mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg, mD
 #pragma mark - RR List Management & Task Management
 #endif
 
-extern void mDNS_Lock(mDNS *const m);
-extern void mDNS_Unlock(mDNS *const m);
+extern void mDNS_Lock_(mDNS *const m);
+extern void mDNS_Unlock_(mDNS *const m);
+
+#define mDNS_Lock(X) do { \
+	if ((X)->mDNS_busy != (X)->mDNS_reentrancy) LogMsg("%s: mDNS_Lock locking failure! mDNS_busy (%ld) != mDNS_reentrancy (%ld)", __func__, (X)->mDNS_busy, (X)->mDNS_reentrancy); \
+	mDNS_Lock_(X); } while (0)
+
+#define mDNS_Unlock(X) do { mDNS_Unlock_(X); \
+	if ((X)->mDNS_busy != (X)->mDNS_reentrancy) LogMsg("%s: mDNS_Unlock locking failure! mDNS_busy (%ld) != mDNS_reentrancy (%ld)", __func__, (X)->mDNS_busy, (X)->mDNS_reentrancy); \
+	} while (0)
 
 #define mDNS_DropLockBeforeCallback() do { m->mDNS_reentrancy++; \
-	if (m->mDNS_busy != m->mDNS_reentrancy) \
-		LogMsg("%s: Locking Failure! mDNS_busy (%ld) != mDNS_reentrancy (%ld)", __func__, m->mDNS_busy, m->mDNS_reentrancy); \
+	if (m->mDNS_busy != m->mDNS_reentrancy) LogMsg("%s: Locking Failure! mDNS_busy (%ld) != mDNS_reentrancy (%ld)", __func__, m->mDNS_busy, m->mDNS_reentrancy); \
 	} while (0)
 
 #define mDNS_ReclaimLockAfterCallback() do { \
-	if (m->mDNS_busy != m->mDNS_reentrancy) \
-		LogMsg("%s: Unlocking Failure! mDNS_busy (%ld) != mDNS_reentrancy (%ld)", __func__, m->mDNS_busy, m->mDNS_reentrancy); \
+	if (m->mDNS_busy != m->mDNS_reentrancy) LogMsg("%s: Unlocking Failure! mDNS_busy (%ld) != mDNS_reentrancy (%ld)", __func__, m->mDNS_busy, m->mDNS_reentrancy); \
 	m->mDNS_reentrancy--; } while (0)
 
 #ifdef	__cplusplus

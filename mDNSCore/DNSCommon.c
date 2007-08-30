@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.169  2007/08/30 00:31:20  cheshire
+Improve "locking failure" debugging messages to show function name using __func__ macro
+
 Revision 1.168  2007/08/28 23:58:42  cheshire
 Rename HostTarget -> AutoTarget
 
@@ -2419,7 +2422,7 @@ mDNSexport mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg
 #pragma mark - RR List Management & Task Management
 #endif
 
-mDNSexport void mDNS_Lock(mDNS *const m)
+mDNSexport void mDNS_Lock_(mDNS *const m)
 	{
 	// MUST grab the platform lock FIRST!
 	mDNSPlatformLock(m);
@@ -2428,13 +2431,13 @@ mDNSexport void mDNS_Lock(mDNS *const m)
 	// However, when we call a client callback mDNS_busy is one, and we increment mDNS_reentrancy too
 	// If that client callback does mDNS API calls, mDNS_reentrancy and mDNS_busy will both be one
 	// If mDNS_busy != mDNS_reentrancy that's a bad sign
+#if ForceAlerts
 	if (m->mDNS_busy != m->mDNS_reentrancy)
 		{
 		LogMsg("mDNS_Lock: Locking failure! mDNS_busy (%ld) != mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
-#if ForceAlerts
 		*(long*)0 = 0;
-#endif
 		}
+#endif
 
 	// If this is an initial entry into the mDNSCore code, set m->timenow
 	// else, if this is a re-entrant entry into the mDNSCore code, m->timenow should already be set
@@ -2487,19 +2490,19 @@ mDNSlocal mDNSs32 GetNextScheduledEvent(const mDNS *const m)
 	return(e);
 	}
 
-mDNSexport void mDNS_Unlock(mDNS *const m)
+mDNSexport void mDNS_Unlock_(mDNS *const m)
 	{
 	// Decrement mDNS_busy
 	m->mDNS_busy--;
 	
 	// Check for locking failures
+#if ForceAlerts
 	if (m->mDNS_busy != m->mDNS_reentrancy)
 		{
 		LogMsg("mDNS_Unlock: Locking failure! mDNS_busy (%ld) != mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
-#if ForceAlerts
 		*(long*)0 = 0;
-#endif
 		}
+#endif
 
 	// If this is a final exit from the mDNSCore code, set m->NextScheduledEvent and clear m->timenow
 	if (m->mDNS_busy == 0)
