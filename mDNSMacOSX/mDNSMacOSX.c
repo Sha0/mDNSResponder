@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.471  2007/08/31 02:05:46  cheshire
+Need to hold mDNS_Lock when calling mDNS_AddDynDNSHostName
+
 Revision 1.470  2007/08/30 22:50:04  mcguire
 <rdar://problem/5430628> BTMM: Tunneled services are registered when autotunnel can't be setup
 
@@ -1995,7 +1998,10 @@ mDNSlocal void AutoTunnelNATCallback(mDNS *m, mDNSv4Addr ExternalAddress, NATTra
 	if (err) LogMsg("AutoTunnelNATCallback error %d registering AutoTunnelService %##s", err, info->AutoTunnelService.namestorage.c);
 
 	info->AutoTunnelTarget.resrec.RecordType = kDNSRecordTypeKnownUnique;
+
+	mDNS_Lock(m);
 	mDNS_AddDynDNSHostName(m, &info->AutoTunnelTarget.namestorage, mDNSNULL, info);
+	mDNS_Unlock(m);
 
 	if (info->AutoTunnelHostRecord.namestorage.c[0] == 0)
 		{
