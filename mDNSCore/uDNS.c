@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.451  2007/08/31 18:49:49  vazquez
+<rdar://problem/5393719> BTMM: Need to properly deregister when stopping BTMM
+
 Revision 1.450  2007/08/30 22:50:04  mcguire
 <rdar://problem/5430628> BTMM: Tunneled services are registered when autotunnel can't be setup
 
@@ -847,8 +850,6 @@ mDNSlocal mStatus UnlinkAuthRecord(mDNS *const m, AuthRecord *const rr)
 	return(mStatus_NoSuchRecord);
 	}
 
-mDNSlocal mStatus mDNS_StopNATOperation_internal(mDNS *m, NATTraversalInfo *traversal);
-
 // unlinkSRS is an internal routine (i.e. must be called with the lock already held)
 mDNSlocal void unlinkSRS(mDNS *const m, ServiceRecordSet *srs)
 	{
@@ -977,17 +978,7 @@ mDNSexport DomainAuthInfo *GetAuthInfoForName_internal(mDNS *m, const domainname
 					debugf("GetAuthInfoForName_internal updated q->AuthInfo from %##s to %##s for %##s (%s)",
 						info->domain.c, q->AuthInfo ? q->AuthInfo->domain.c : mDNSNULL, q->qname.c, DNSTypeName(q->qtype));
 					}
-			#if APPLE_OSX_mDNSResponder
-			if (info->AutoTunnel && info->AutoTunnelHostRecord.namestorage.c[0])
-				{
-				mDNS_Deregister_internal (m, &info->AutoTunnelHostRecord, mDNS_Dereg_normal);
-				mDNS_Deregister_internal (m, &info->AutoTunnelDeviceInfo, mDNS_Dereg_normal);
-				mDNS_RemoveDynDNSHostName(m, &info->AutoTunnelTarget.namestorage);
-				mDNS_StopNATOperation    (m, &info->AutoTunnelNAT);
-				if (info->AutoTunnelService.resrec.RecordType)	// We may not have registered this if the NAT operation has not yet completed
-					mDNS_Deregister_internal(m, &info->AutoTunnelService, mDNS_Dereg_normal);
-				}
-			#endif APPLE_OSX_mDNSResponder
+
 			// Probably not essential, but just to be safe, zero out the secret key data
 			// so we don't leave it hanging around in memory
 			// (where it could potentially get exposed via some other bug)
@@ -997,6 +988,7 @@ mDNSexport DomainAuthInfo *GetAuthInfoForName_internal(mDNS *m, const domainname
 		else
 			p = &(*p)->next;
 		}
+
 	return(GetAuthInfoForName_direct(m, name));
 	}
 
@@ -1339,7 +1331,7 @@ mDNSexport mStatus mDNS_StartNATOperation_internal(mDNS *const m, NATTraversalIn
 	}
 
 // Must be called with the mDNS_Lock held
-mDNSlocal mStatus mDNS_StopNATOperation_internal(mDNS *m, NATTraversalInfo *traversal)
+mDNSexport mStatus mDNS_StopNATOperation_internal(mDNS *m, NATTraversalInfo *traversal)
 	{
 	NATTraversalInfo **ptr = &m->NATTraversals;
 	

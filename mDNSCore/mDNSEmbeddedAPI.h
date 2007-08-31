@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.424  2007/08/31 18:49:49  vazquez
+<rdar://problem/5393719> BTMM: Need to properly deregister when stopping BTMM
+
 Revision 1.423  2007/08/31 00:04:28  cheshire
 Added comment explaining deltime in DomainAuthInfo structure
 
@@ -1742,6 +1745,7 @@ typedef struct ClientTunnel
 	{
 	struct ClientTunnel *next;
 	domainname dstname;
+	mDNSBool   markedForDeletion;
 	mDNSv6Addr loc_inner;
 	mDNSv4Addr loc_outer;
 	mDNSv6Addr rmt_inner;
@@ -2066,6 +2070,7 @@ extern mDNSs32 mDNS_TimeNow(const mDNS *const m);
 
 extern mStatus mDNS_StartNATOperation(mDNS *const m, NATTraversalInfo *traversal);
 extern mStatus mDNS_StopNATOperation(mDNS *const m, NATTraversalInfo *traversal);
+extern mStatus mDNS_StopNATOperation_internal(mDNS *m, NATTraversalInfo *traversal);
 
 // ***************************************************************************
 #if 0

@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.472  2007/08/31 18:49:49  vazquez
+<rdar://problem/5393719> BTMM: Need to properly deregister when stopping BTMM
+
 Revision 1.471  2007/08/31 02:05:46  cheshire
 Need to hold mDNS_Lock when calling mDNS_AddDynDNSHostName
 
@@ -1953,7 +1956,7 @@ mDNSlocal mDNSBool TunnelServers(mDNS *const m)
 	for (p = m->ServiceRegistrations; p; p = p->uDNS_next)
 		{
 		DomainAuthInfo *AuthInfo = GetAuthInfoForName_internal(m, p->RR_SRV.resrec.name);
-		if (AuthInfo && AuthInfo->AutoTunnel) return(mDNStrue);
+		if (AuthInfo && AuthInfo->AutoTunnel && !AuthInfo->deltime) return(mDNStrue);
 		}
 	return(mDNSfalse);
 	}
@@ -1974,7 +1977,9 @@ mDNSlocal void AutoTunnelNATCallback(mDNS *m, mDNSv4Addr ExternalAddress, NATTra
 		{
 		err = mDNS_Deregister(m, &info->AutoTunnelService);
 		if (err) LogMsg("AutoTunnelNATCallback error %d deregistering AutoTunnelService %##s", err, info->AutoTunnelService.namestorage.c);
+		mDNS_Lock(m);
 		mDNS_RemoveDynDNSHostName(m, &info->AutoTunnelTarget.namestorage);
+		mDNS_Unlock(m);
 		}
 
 	if (info->AutoTunnelHostRecord.resrec.RecordType != kDNSRecordTypeUnregistered)
@@ -2208,6 +2213,7 @@ mDNSexport void AddNewClientTunnel(mDNS *const m, DNSQuestion *const q)
 	ClientTunnel *p = mallocL("ClientTunnel", sizeof(ClientTunnel));
 	if (!p) return;
 	AssignDomainName(&p->dstname, &q->qname);
+	p->markedForDeletion = mDNSfalse;
 	p->loc_inner      = zerov6Addr;
 	p->loc_outer      = zerov4Addr;
 	p->rmt_inner      = zerov6Addr;
@@ -3105,6 +3111,7 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 	(void)m;
 	LogMsg("Note: SetDomainSecrets: no keychain support");
 #else
+	mDNSBool	haveAutoTunnels = mDNSfalse;
 
 	LogOperation("SetDomainSecrets");
 
@@ -3116,6 +3123,18 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 	DomainAuthInfo *ptr;
 	for (ptr = m->AuthInfoList; ptr; ptr = ptr->next)
 		ptr->deltime = NonZeroTime(m->timenow + mDNSPlatformOneSecond*10);
+
+#if APPLE_OSX_mDNSResponder
+	{
+	// Mark all TunnelClients for deletion
+	ClientTunnel *client;
+	for (client = m->TunnelClients; client; client = client->next)
+		{
+		LogOperation("SetDomainSecrets: client %p marked for deletion", client);
+		client->markedForDeletion = mDNStrue;
+		}
+	}
+#endif APPLE_OSX_mDNSResponder
 
 	CFMutableArrayRef sa = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 	if (!sa) { LogMsg("SetDomainSecrets: CFArrayCreateMutable failed"); return; }
@@ -3174,12 +3193,26 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 			for (FoundInList = m->AuthInfoList; FoundInList; FoundInList = FoundInList->next)
 				if (SameDomainName(&FoundInList->domain, &domain)) break;
 
+#if APPLE_OSX_mDNSResponder
+			{
+			ClientTunnel *client;
+			// If any client tunnel domain matches this domain, set deletion flag to false
+			for (client = m->TunnelClients; client; client = client->next)
+				if (SameDomainName(&client->dstname, &domain)) 
+					{
+					LogOperation("SetDomainSecrets: client %p no longer marked for deletion", client);
+					client->markedForDeletion = mDNSfalse;
+					}
+			}
+#endif APPLE_OSX_mDNSResponder
+
 			// Uncomment the line below to view the keys as they're read out of the system keychain
 			// DO NOT SHIP CODE THIS WAY OR YOU'LL LEAK SECRET DATA INTO A PUBLICLY READABLE FILE!
 			//LogOperation("SetDomainSecrets: %##s %##s %s", &domain.c, &keyname.c, keystring);
 
 			// If didn't find desired domain in the list, make a new entry
 			ptr = FoundInList;
+			if (FoundInList && FoundInList->AutoTunnel && haveAutoTunnels == mDNSfalse) haveAutoTunnels = mDNStrue;
 			if (!FoundInList)
 				{
 				ptr = (DomainAuthInfo*)mallocL("DomainAuthInfo", sizeof(*ptr));
@@ -3203,6 +3236,52 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 
 	#if APPLE_OSX_mDNSResponder
 		{
+		// clean up ClientTunnels
+		ClientTunnel **ptr = &m->TunnelClients;
+		while (*ptr)
+			{
+			if ((*ptr)->markedForDeletion)
+				{
+				ClientTunnel *cur = *ptr;
+				LogOperation("SetDomainSecrets: removing client %p from list", cur);
+				if (cur->q.ThisQInterval >= 0)	mDNS_StopQuery(m, &cur->q);
+				AutoTunnelSetKeys(cur, mDNSfalse);
+				*ptr = cur->next;
+				freeL("ClientTunnel", cur);
+				}
+			else 
+				ptr = &(*ptr)->next;
+			}
+
+		DomainAuthInfo *info = m->AuthInfoList;
+		while (info)
+			{
+			if (info->AutoTunnel && info->deltime && info->AutoTunnelNAT.clientContext)
+				{
+				// stop the NAT operation
+				mDNS_StopNATOperation_internal(m, &info->AutoTunnelNAT);
+				if (info->AutoTunnelHostRecord.namestorage.c[0] && info->AutoTunnelNAT.clientCallback)
+					{
+					// reset port and let the AutoTunnelNATCallback handle cleanup
+					mDNS_DropLockBeforeCallback(); // Allow client to legally make mDNS API calls from the callback
+					info->AutoTunnelNAT.publicPort = zeroIPPort;
+					info->AutoTunnelNAT.clientCallback(m, m->ExternalAddress, &info->AutoTunnelNAT, mStatus_NoError);
+					mDNS_ReclaimLockAfterCallback(); // Decrement mDNS_reentrancy to block mDNS API calls again
+					}
+				info->AutoTunnelNAT.clientContext = mDNSNULL;
+				}
+			info = info->next;
+			}
+
+		if (!haveAutoTunnels && !m->TunnelClients && m->AutoTunnelHostAddrActive)
+			{
+			// remove interface if no autotunnel servers and no more client tunnels
+			LogOperation("SetDomainSecrets: Bringing tunnel interface DOWN");
+			m->AutoTunnelHostAddrActive = mDNSfalse;
+			(void)mDNSAutoTunnelInterfaceUpDown(kmDNSAutoTunnelInterfaceDown, m->AutoTunnelHostAddr.b);
+			memset(m->AutoTunnelHostAddr.b, 0, sizeof(m->AutoTunnelHostAddr.b));
+			}
+
 		if (m->AutoTunnelHostAddr.b[0])
 			if (m->TunnelClients || TunnelServers(m))
 				SetupLocalAutoTunnelInterface_internal(m);
