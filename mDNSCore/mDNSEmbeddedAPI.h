@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.423  2007/08/31 00:04:28  cheshire
+Added comment explaining deltime in DomainAuthInfo structure
+
 Revision 1.422  2007/08/28 23:58:42  cheshire
 Rename HostTarget -> AutoTarget
 
@@ -1588,7 +1591,7 @@ enum
 typedef struct DomainAuthInfo
 	{
 	struct DomainAuthInfo *next;
-	mDNSs32          deltime;
+	mDNSs32          deltime;				// If we're planning to delete this DomainAuthInfo, the time we want it deleted
 	mDNSBool         AutoTunnel;
 	AuthRecord       AutoTunnelHostRecord;	// User-visible hostname; used as SRV target for AutoTunnel services
 	AuthRecord       AutoTunnelTarget;		// Opaque hostname of tunnel endpoint; used as SRV target for AutoTunnelService record
