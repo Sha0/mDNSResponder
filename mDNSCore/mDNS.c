@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.688  2007/08/31 22:56:39  cheshire
+<rdar://problem/5407080> BTMM: TTLs incorrect on cached BTMM records
+
 Revision 1.687  2007/08/31 19:53:14  cheshire
 <rdar://problem/5431151> BTMM: IPv6 address lookup should not succeed if autotunnel cannot be setup
 If AutoTunnel setup fails, the code now generates a fake NXDomain error saying that the requested AAAA record does not exist
@@ -2176,7 +2179,8 @@ mDNSlocal void SendQueries(mDNS *const m)
 					{
 					q = rr->CRActiveQuestion;
 					ExpireDupSuppressInfoOnInterface(q->DupSuppress, m->timenow - TicksTTL(rr)/20, rr->resrec.InterfaceID);
-					if (q->Target.type) q->SendQNow = mDNSInterfaceMark;	// If unicast query, mark it
+					if      (q->Target.type) q->SendQNow = mDNSInterfaceMark;	// If targeted query, mark it
+					else if (!mDNSOpaque16IsZero(q->TargetQID))     q->LastQTime = m->timenow - q->ThisQInterval;	// For uDNS, adjust LastQTime
 					else if (q->SendQNow == mDNSNULL)               q->SendQNow = rr->resrec.InterfaceID;
 					else if (q->SendQNow != rr->resrec.InterfaceID) q->SendQNow = mDNSInterfaceMark;
 					}
@@ -4253,7 +4257,17 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 
 				// Faithfully respecting the true uDNS TTL turns out to cause too many problems right now,
 				// so for now we'll go back the old way of assuming large TTL for uDNS records
-				m->rec.r.resrec.rroriginalttl = (mDNSu32)(0x70000000 / mDNSPlatformOneSecond);
+				//m->rec.r.resrec.rroriginalttl = (mDNSu32)(0x70000000 / mDNSPlatformOneSecond);
+
+				// Adjustment factor to avoid race condition:
+				// Suppose real record as TTL of 3600, and our local caching server has held it for 3500 seconds, so it returns an aged TTL of 100.
+				// If we do our normal refresh at 80% of the TTL, our local caching server will return 20 seconds, so we'll do another
+				// 80% refresh after 16 seconds, and then the server will return 4 seconds, and so on, in the fashion of Zeno's paradox.
+				// To avoid this, we extend the record's effective TTL to give it a little extra grace period.
+				// We adjust the 100 second TTL to 126. This means that when we do our 80% query at 101 seconds,
+				// the cached copy at our local caching server will already have expired, so the server will be forced
+				// to fetch a fresh copy from the authoritative server, and then return a fresh record with the full TTL of 3600 seconds.
+				m->rec.r.resrec.rroriginalttl += m->rec.r.resrec.rroriginalttl/4 + 2;
 				}
 			}
 
