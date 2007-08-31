@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper-main.c,v $
+Revision 1.6  2007/08/31 17:45:13  cheshire
+Allow maxidle time of zero, meaning "run indefinitely"
+
 Revision 1.5  2007/08/31 00:09:54  cheshire
 Deleted extraneous whitespace (shortened code from 260 lines to 160)
 
@@ -207,7 +210,7 @@ int main(int ac, char *av[])
 		case 'd': opt_debug = 1; break;
 		case 't':
 			n = strtol(optarg, &p, 0);
-			if ('\0' == optarg[0] || '\0' != *p || n > LONG_MAX || n < 1)
+			if ('\0' == optarg[0] || '\0' != *p || n > LONG_MAX || n < 0)
 				{ fprintf(stderr, "Invalid idle timeout: %s\n", optarg); exit(EXIT_FAILURE); }
 			maxidle = n;
 			break;
@@ -231,7 +234,7 @@ int main(int ac, char *av[])
 	if (opt_debug) port = register_service(kmDNSHelperServiceName);
 	else           port = checkin(kmDNSHelperServiceName);
 
-	initialize_timer(port);
+	if (maxidle) initialize_timer(port);
 	kr = mach_msg_server(helper_server, MAX_MSG_SIZE, port,
 		MACH_RCV_TRAILER_ELEMENTS(MACH_RCV_TRAILER_AUDIT) | MACH_RCV_TRAILER_TYPE(MACH_MSG_TRAILER_FORMAT_0));
 	if (KERN_SUCCESS != kr)
