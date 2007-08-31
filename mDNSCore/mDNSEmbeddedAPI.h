@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.425  2007/08/31 19:53:14  cheshire
+<rdar://problem/5431151> BTMM: IPv6 address lookup should not succeed if autotunnel cannot be setup
+If AutoTunnel setup fails, the code now generates a fake NXDomain error saying that the requested AAAA record does not exist
+
 Revision 1.424  2007/08/31 18:49:49  vazquez
 <rdar://problem/5393719> BTMM: Need to properly deregister when stopping BTMM
 
@@ -1585,6 +1589,8 @@ enum
 	LLQErr_UnknownErr = 6
 	};
 
+enum { NoAnswer_Normal = 0, NoAnswer_Suspended = 1, NoAnswer_Fail = 2 };
+
 #define HMAC_LEN    64
 #define HMAC_IPAD   0x36
 #define HMAC_OPAD   0x5c
@@ -1647,7 +1653,7 @@ struct DNSQuestion_struct
 	mDNSAddr              servAddr;			// Address and port learned from _dns-llq, _dns-llq-tls or _dns-query-tls SRV query
 	mDNSIPPort            servPort;
 	struct tcpInfo_t *tcp;
-	mDNSBool              NoAnswer;			// Set if we want to suppress answers until tunnel setup has completed
+	mDNSu8                NoAnswer;			// Set if we want to suppress answers until tunnel setup has completed
 
 	// LLQ-specific fields. These fields are only meaningful when LongLived flag is set
 	LLQ_State             state;

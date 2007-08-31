@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.687  2007/08/31 19:53:14  cheshire
+<rdar://problem/5431151> BTMM: IPv6 address lookup should not succeed if autotunnel cannot be setup
+If AutoTunnel setup fails, the code now generates a fake NXDomain error saying that the requested AAAA record does not exist
+
 Revision 1.686  2007/08/30 00:01:56  cheshire
 Added comment about SetTargetToHostName()
 
@@ -2551,7 +2555,7 @@ mDNSexport void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheReco
 	if (rr->resrec.RecordType == kDNSRecordTypePacketNegative && (!AddRecord || !q->ReturnIntermed)) return;
 
 	// For CNAME results to non-CNAME questions, only inform the client if they explicitly requested that
-	if (q->QuestionCallback && !q->NoAnswer && (!followcname || q->ReturnIntermed))
+	if (q->QuestionCallback && q->NoAnswer != NoAnswer_Suspended && (!followcname || q->ReturnIntermed))
 		{
 		mDNS_DropLockBeforeCallback();		// Allow client (and us) to legally make mDNS API calls
 		q->QuestionCallback(m, q, &rr->resrec, AddRecord);
@@ -2858,7 +2862,20 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 		LogMsg("AnswerNewQuestion ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
 	m->CurrentQuestion = q;		// Indicate which question we're answering, so we'll know if it gets deleted
 
-	if (q->InterfaceID == mDNSInterface_Any)	// If 'mDNSInterface_Any' question, see if we want to tell it about LocalOnly records
+	if (q->NoAnswer)
+		{
+		if (q->NoAnswer == NoAnswer_Fail)
+			{
+			LogMsg("AnswerNewQuestion: NoAnswer_Fail %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+			MakeNegativeCacheRecord(m, &q->qname, q->qnamehash, q->qtype, q->qclass);
+			AnswerCurrentQuestionWithResourceRecord(m, &m->rec.r, QC_addnocache);
+			m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
+			}
+		m->CurrentQuestion = mDNSNULL;
+		}
+
+	// If 'mDNSInterface_Any' question, see if we want to tell it about LocalOnly records
+	if (m->CurrentQuestion == q && q->InterfaceID == mDNSInterface_Any)
 		{
 		if (m->CurrentRecord)
 			LogMsg("AnswerNewQuestion ERROR m->CurrentRecord already set %s", ARDisplayString(m, m->CurrentRecord));
@@ -4770,7 +4787,7 @@ mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question)
 			{
 			question->ThisQInterval = 0;	// Question is suspended, waiting for AddNewClientTunnel to complete
 			question->LastQTime     = m->timenow;
-			question->NoAnswer      = mDNStrue;
+			question->NoAnswer      = NoAnswer_Suspended;
 			AddNewClientTunnel(m, question);
 			}
 #endif // APPLE_OSX_mDNSResponder
@@ -4885,7 +4902,7 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 		question->servAddr          = zeroAddr;
 		question->servPort          = zeroIPPort;
 		question->tcp               = mDNSNULL;
-		question->NoAnswer          = mDNSfalse;
+		question->NoAnswer          = 0;
 
 		question->state             = LLQ_GetZoneInfo;
 		mDNSPlatformMemZero(&question->NATInfoUDP, sizeof(question->NATInfoUDP));

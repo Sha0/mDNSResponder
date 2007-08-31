@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.473  2007/08/31 19:53:15  cheshire
+<rdar://problem/5431151> BTMM: IPv6 address lookup should not succeed if autotunnel cannot be setup
+If AutoTunnel setup fails, the code now generates a fake NXDomain error saying that the requested AAAA record does not exist
+
 Revision 1.472  2007/08/31 18:49:49  vazquez
 <rdar://problem/5393719> BTMM: Need to properly deregister when stopping BTMM
 
@@ -2097,15 +2101,15 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 		}
 	}
 
-mDNSlocal void AutoTunnelSetKeys(ClientTunnel *tun, mDNSBool AddNew)
+mDNSlocal mStatus AutoTunnelSetKeys(ClientTunnel *tun, mDNSBool AddNew)
 	{
-	(void)mDNSAutoTunnelSetKeys(AddNew ? kmDNSAutoTunnelSetKeysReplace : kmDNSAutoTunnelSetKeysDelete, tun->loc_inner.b, tun->loc_outer.b, kRacoonPort, tun->rmt_inner.b, tun->rmt_outer.b, mDNSVal16(tun->rmt_outer_port), tun->b64keydata);
+	return(mDNSAutoTunnelSetKeys(AddNew ? kmDNSAutoTunnelSetKeysReplace : kmDNSAutoTunnelSetKeysDelete, tun->loc_inner.b, tun->loc_outer.b, kRacoonPort, tun->rmt_inner.b, tun->rmt_outer.b, mDNSVal16(tun->rmt_outer_port), tun->b64keydata));
 	}
 
 // If the EUI-64 part of the IPv6 ULA matches, then that means the two addresses point to the same machine
 #define mDNSSameClientTunnel(A,B) ((A)->l[2] == (B)->l[2] && (A)->l[3] == (B)->l[3])
 
-mDNSlocal void ReissueBlockedQuestions(mDNS *const m, domainname *d)
+mDNSlocal void ReissueBlockedQuestions(mDNS *const m, domainname *d, mDNSBool success)
 	{
 	DNSQuestion *question = m->Questions;
 	while (question)
@@ -2120,6 +2124,7 @@ mDNSlocal void ReissueBlockedQuestions(mDNS *const m, domainname *d)
 			mDNS_StopQuery(m, q);
 			mDNS_StartQuery(m, q);
 			q->QuestionCallback = tmp;					// Restore QuestionCallback back to the real value
+			if (!success) q->NoAnswer = NoAnswer_Fail;
 			}
 		}
 	}
@@ -2133,7 +2138,7 @@ mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const R
 	if (!answer->rdlength)
 		{
 		LogOperation("AutoTunnelCallback NXDOMAIN %##s", question->qname.c);
-		ReissueBlockedQuestions(m, &tun->dstname);
+		ReissueBlockedQuestions(m, &tun->dstname, mDNSfalse);
 		return;
 		}
 
@@ -2143,10 +2148,10 @@ mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const R
 			{
 			LogOperation("AutoTunnelCallback: supressing tunnel to self %.16a", &answer->rdata->u.ipv6);
 			question->ThisQInterval = -1;		// So we know this tunnel setup has completed
-			ClientTunnel** p = &m->TunnelClients;
+			ClientTunnel **p = &m->TunnelClients;
 			while (*p != tun && *p) p = &(*p)->next;
 			if (*p) *p = tun->next;
-			ReissueBlockedQuestions(m, &tun->dstname);
+			ReissueBlockedQuestions(m, &tun->dstname, mDNStrue);
 			freeL("ClientTunnel", tun);
 			return;
 			}
@@ -2196,10 +2201,9 @@ mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const R
 			}
 		if (!old) LogOperation("New AutoTunnel for %##s %.16a", tun->dstname.c, &tun->rmt_inner);
 
-		AutoTunnelSetKeys(tun, mDNStrue);
-
+		mStatus result = AutoTunnelSetKeys(tun, mDNStrue);
 		// Kick off any questions that were held pending this tunnel setup
-		ReissueBlockedQuestions(m, &tun->dstname);
+		ReissueBlockedQuestions(m, &tun->dstname, (result == mStatus_NoError) ? mDNStrue : mDNSfalse);
 		}
 	else
 		LogMsg("AutoTunnelCallback: Unknown question %p", question);
