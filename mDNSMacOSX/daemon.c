@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.336  2007/08/31 17:15:37  cheshire
+Reordered startup log messages so that "mDNSResponder ... starting" is the first message
+
 Revision 1.335  2007/08/31 02:00:16  cheshire
 Added comment explaining use of zero-width non-breaking space character to tag literal strings
 
@@ -2603,15 +2606,16 @@ mDNSlocal void LaunchdCheckin(void)
 
 mDNSlocal void DropPrivileges(void)
 	{
-	LogMsg("Started as root.  Dropping privileges.");
 	static const char login[] = "_mdnsresponder";
 	struct passwd *pwd = getpwnam(login);
 	if (NULL == pwd)
-		LogMsg("Could not find account name \"%s\".  Continuing as root after all.", login);
+		LogMsg("Could not find account name \"%s\". Running as root.", login);
 	else
 		{
 		uid_t uid = pwd->pw_uid;
 		gid_t gid = pwd->pw_gid;
+
+		LogMsg("Started as root. Switching to userid \"%s\".", login);
 
 		if (unlink(MDNS_UDS_SERVERPATH) < 0 && errno != ENOENT) LogMsg("DropPrivileges: Could not unlink \"%s\": (%d) %s", MDNS_UDS_SERVERPATH, errno, strerror(errno));
 		else
@@ -2644,14 +2648,16 @@ mDNSexport int main(int argc, char **argv)
 	kern_return_t status;
 	pthread_t KQueueThread;
 
+	LogMsgIdent(mDNSResponderVersionString, "starting");
+
+	if (0 == geteuid()) DropPrivileges();
+
 	for (i=1; i<argc; i++)
 		{
 		if (!strcasecmp(argv[i], "-d"           )) mDNS_DebugMode = mDNStrue;
 		if (!strcasecmp(argv[i], "-launchd"     )) started_via_launchdaemon = mDNStrue;
 		if (!strcasecmp(argv[i], "-launchdaemon")) started_via_launchdaemon = mDNStrue;
 		}
-
-	if (0 == geteuid()) DropPrivileges();
 
 	signal(SIGHUP,  HandleSIG);		// (Debugging) Purge the cache to check for cache handling bugs
 	signal(SIGINT,  HandleSIG);		// Ctrl-C: Detach from Mach BootstrapService and exit cleanly
@@ -2662,7 +2668,6 @@ mDNSexport int main(int argc, char **argv)
 	signal(SIGUSR2, HandleSIG);		// (Debugging) Change log level
 
 	mDNSStorage.p = &PlatformStorage;	// Make sure mDNSStorage.p is set up, because validatelists uses it
-	LogMsgIdent(mDNSResponderVersionString, "starting");
 	LaunchdCheckin();
 
 	// Register the server with mach_init for automatic restart only during normal (non-debug) mode
