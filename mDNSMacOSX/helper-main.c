@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper-main.c,v $
+Revision 1.7  2007/08/31 18:09:32  cheshire
+<rdar://problem/5434050> Restore ability to run mDNSResponder on Tiger
+
 Revision 1.6  2007/08/31 17:45:13  cheshire
 Allow maxidle time of zero, meaning "run indefinitely"
 
@@ -161,7 +164,10 @@ static mach_port_t checkin(char *service_name)
 	if (NULL == (reply = launch_msg(msg)))
 		{ helplog(ASL_LEVEL_ERR, "Could not message launchd."); goto fin; }
 	if (LAUNCH_DATA_ERRNO == launch_data_get_type(reply))
-		{ helplog(ASL_LEVEL_ERR, "Launchd checkin failed: %s.", strerror(launch_data_get_errno(reply))); goto fin; }
+		{
+		if (launch_data_get_errno(reply) == EACCES) { launch_data_free(msg); launch_data_free(reply); return(MACH_PORT_NULL); }
+		helplog(ASL_LEVEL_ERR, "Launchd checkin failed: %s.", strerror(launch_data_get_errno(reply))); goto fin;
+		}
 	if (NULL == (datum = launch_data_dict_lookup(reply, LAUNCH_JOBKEY_MACHSERVICES)) || LAUNCH_DATA_DICTIONARY != launch_data_get_type(datum))
 		{ helplog(ASL_LEVEL_ERR, "Launchd reply does not contain %s dictionary.", LAUNCH_JOBKEY_MACHSERVICES); goto fin; }
 	if (NULL == (datum = launch_data_dict_lookup(datum, service_name)) || LAUNCH_DATA_MACHPORT != launch_data_get_type(datum))
@@ -231,8 +237,12 @@ int main(int ac, char *av[])
 	// Explicitly ensure that our Keychain operations utilize the system domain.
 	SecKeychainSetPreferenceDomain(kSecPreferencesDomainSystem);
 #endif
-	if (opt_debug) port = register_service(kmDNSHelperServiceName);
-	else           port = checkin(kmDNSHelperServiceName);
+	if (!opt_debug)
+		{
+		port = checkin(kmDNSHelperServiceName);
+		if (!port) helplog(ASL_LEVEL_ERR, "Launchd provided no launchdata; will open Mach port explicitly", port);
+		}
+	if (!port) port = register_service(kmDNSHelperServiceName);
 
 	if (maxidle) initialize_timer(port);
 	kr = mach_msg_server(helper_server, MAX_MSG_SIZE, port,
