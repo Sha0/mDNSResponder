@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.335  2007/08/31 02:00:16  cheshire
+Added comment explaining use of zero-width non-breaking space character to tag literal strings
+
 Revision 1.334  2007/08/24 23:40:24  cheshire
 Added comment about FreeServiceInstance
 
@@ -2221,6 +2224,9 @@ mDNSlocal kern_return_t mDNSDaemonInitialize(void)
 	mStatus            err;
 	CFMachPortRef      s_port;
 
+	// Note: the "\xEF\xBB\xBF" byte sequence in the CFS_Format string is the UTF-8 encoding of the zero-width non-breaking space character.
+	// By appending this invisible character on the end of literal names, we ensure the these strings cannot inadvertently match any string
+	// in the localization file -- since we know for sure that none of our strings in the localization file contain the ZWNBS character.
 	CFS_OQ               = CFStringCreateWithCString(NULL, "“",  kCFStringEncodingUTF8);
 	CFS_CQ               = CFStringCreateWithCString(NULL, "”",  kCFStringEncodingUTF8);
 	CFS_Format           = CFStringCreateWithCString(NULL, "%@%s\xEF\xBB\xBF", kCFStringEncodingUTF8);
