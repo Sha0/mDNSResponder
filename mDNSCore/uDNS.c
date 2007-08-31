@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.452  2007/08/31 22:58:22  cheshire
+If we have an existing TCP connection we should re-use it instead of just bailing out
+After receiving dnsbugtest response, need to set m->NextScheduledQuery to cause queries to be re-issued
+
 Revision 1.451  2007/08/31 18:49:49  vazquez
 <rdar://problem/5393719> BTMM: Need to properly deregister when stopping BTMM
 
@@ -1747,10 +1751,13 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 
 		if (err) { debugf("ERROR: tcpCallback: mDNSSendDNSMessage - %ld", err); err = mStatus_UnknownErr; goto exit; }
 
-		// Record time we sent this questions
-		// (Not sure why we care)
+		// Record time we sent this question
 		if (tcpInfo->question)
-			tcpInfo->question->LastQTime = mDNS_TimeNow(m);
+			{
+			mDNS_Lock(m);
+			tcpInfo->question->LastQTime = m->timenow;
+			mDNS_Unlock(m);
+			}
 		}
 	else
 		{
@@ -1764,6 +1771,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 				// It's perfectly fine for this socket to close after the first reply. The server might
 				// be sending gratuitous replies using UDP and doesn't have a need to leave the TCP socket open.
 				// We'll only log this event if we've never received a reply before.
+				// BIND 9 appears to close an idle connection after 30 seconds
 				if (tcpInfo->numReplies == 0) LogMsg("ERROR: socket closed prematurely %d", tcpInfo->nread);
 				err = mStatus_ConnFailed;
 				goto exit;
@@ -3582,7 +3590,7 @@ mDNSlocal mDNSBool uDNS_ReceiveTestQuestionResponse(mDNS *const m, DNSMessage *c
 			if (result == DNSServer_Passed)		// Unblock any questions that were waiting for this result
 				for (q = m->Questions; q; q=q->next)
 					if (q->qDNSServer == s)
-						q->LastQTime = m->timenow - q->ThisQInterval;
+						{ q->LastQTime = m->timenow - q->ThisQInterval; m->NextScheduledQuery = m->timenow; }
 			}
 
 	return(mDNStrue); // Return mDNStrue to tell uDNS_ReceiveMsg it doesn't need to process this packet further
@@ -3618,7 +3626,16 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 				if (msg->h.flags.b[0] & kDNSFlag0_TC && mDNSSameOpaque16(qptr->TargetQID, msg->h.id) && m->timenow - qptr->LastQTime < RESPONSE_WINDOW)
 					{
 					if (!srcaddr) LogMsg("uDNS_ReceiveMsg: TCP DNS response had TC bit set: ignoring");
-					else if (qptr->tcp) LogMsg("uDNS_ReceiveMsg: Already have TCP connection for %##s (%s)", qptr->qname.c, DNSTypeName(qptr->qtype));
+					else if (qptr->tcp)
+						{
+						// There may be a race condition here, if the server decides to drop the connection just as we decide to reuse it
+						// For now it should not be serious because our normal retry logic (as used to handle UDP packet loss)
+						// should take care of it but later we may want to look at handling this case explicitly
+						LogOperation("uDNS_ReceiveMsg: Using existing TCP connection for %##s (%s)", qptr->qname.c, DNSTypeName(qptr->qtype));
+						mDNS_DropLockBeforeCallback();
+						tcpCallback(qptr->tcp->sock, qptr->tcp, mDNStrue, mStatus_NoError);
+						mDNS_ReclaimLockAfterCallback();
+						}
 					else qptr->tcp = MakeTCPConn(m, mDNSNULL, mDNSNULL, kTCPSocketFlags_Zero, srcaddr, srcport, qptr, mDNSNULL, mDNSNULL);
 					}
 		}
@@ -4183,9 +4200,9 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 			{
 			// sanity check to avoid packet flood bugs
 			if      (q->state == LLQ_Established || q->state == LLQ_Refresh) sendLLQRefresh(m, q, q->origLease);
-			else if (q->state == LLQ_InitialRequest                             ) startLLQHandshake(m, q);
-			else if (q->state == LLQ_SecondaryRequest                           ) sendChallengeResponse(m, q, mDNSNULL);
-			else if (q->state == LLQ_Retry                                      ) { q->ntries = 0; startLLQHandshake(m, q); }
+			else if (q->state == LLQ_InitialRequest                        ) startLLQHandshake(m, q);
+			else if (q->state == LLQ_SecondaryRequest                      ) sendChallengeResponse(m, q, mDNSNULL);
+			else if (q->state == LLQ_Retry                                 ) { q->ntries = 0; startLLQHandshake(m, q); }
 			}
 		else
 			{
