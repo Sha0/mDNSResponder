@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper-error.h,v $
+Revision 1.6  2007/09/04 22:32:58  mcguire
+<rdar://problem/5453633> BTMM: BTMM overwrites /etc/racoon/remote/anonymous.conf
+
 Revision 1.5  2007/08/29 21:42:12  mcguire
 <rdar://problem/5431192> BTMM: Duplicate Private DNS names are being added to DynamicStore
 
@@ -53,6 +56,7 @@ ERROR(kmDNSHelperResultTooLarge,                  "Result too large")
 ERROR(kmDNSHelperInterfaceCreationFailed,         "Could not create auto-tunnel interface")
 ERROR(kmDNSHelperInterfaceDeletionFailed,         "Could not delete auto-tunnel interface")
 ERROR(kmDNSHelperInvalidInterfaceState,           "Invalid interface state requested")
+ERROR(kmDNSHelperInvalidServerState,              "Invalid server state requested")
 ERROR(kmDNSHelperRacoonConfigCreationFailed,      "Could not create racoon configuration file")
 ERROR(kmDNSHelperRacoonStartFailed,               "Could not start racoon")
 ERROR(kmDNSHelperRacoonNotificationFailed,        "Could not notify racoon")

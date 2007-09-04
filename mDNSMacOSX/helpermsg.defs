@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helpermsg.defs,v $
+Revision 1.5  2007/09/04 22:32:58  mcguire
+<rdar://problem/5453633> BTMM: BTMM overwrites /etc/racoon/remote/anonymous.conf
+
 Revision 1.4  2007/08/23 21:53:13  cheshire
 Added $Log header
 
@@ -76,8 +79,9 @@ routine mDNSAutoTunnelInterfaceUpDown(
 	out			err		: int;
 	ServerAuditToken	token		: audit_token_t);
 
-routine mDNSRacoonNotify(
+routine mDNSConfigureServer(
 				port		: mach_port_t;
+				updown		: int;
 				keydata		: string_t;
 	out			err		: int;
 	ServerAuditToken	token		: audit_token_t);

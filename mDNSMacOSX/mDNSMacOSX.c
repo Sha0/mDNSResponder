@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.474  2007/09/04 22:32:58  mcguire
+<rdar://problem/5453633> BTMM: BTMM overwrites /etc/racoon/remote/anonymous.conf
+
 Revision 1.473  2007/08/31 19:53:15  cheshire
 <rdar://problem/5431151> BTMM: IPv6 address lookup should not succeed if autotunnel cannot be setup
 If AutoTunnel setup fails, the code now generates a fake NXDomain error saying that the requested AAAA record does not exist
@@ -1953,6 +1956,8 @@ mDNSlocal NetworkInterfaceInfoOSX *FindRoutableIPv4(mDNS *const m, mDNSu32 scope
 
 #define kRacoonPort 4500
 
+static int AnonymousRacoonConfigRefCount = 0;
+
 // MUST be called with lock held
 mDNSlocal mDNSBool TunnelServers(mDNS *const m)
 	{
@@ -1976,11 +1981,18 @@ mDNSlocal void AutoTunnelNATCallback(mDNS *m, mDNSv4Addr ExternalAddress, NATTra
 	LogOperation("AutoTunnelNATCallback timenow %d NextSRVUpdate %d", m->timenow, m->NextSRVUpdate);
 	m->NextSRVUpdate = m->timenow;
 	LogOperation("AutoTunnelNATCallback timenow %d NextSRVUpdate %d", m->timenow, m->NextSRVUpdate);
-
+	
 	if (info->AutoTunnelService.resrec.RecordType != kDNSRecordTypeUnregistered)
 		{
 		err = mDNS_Deregister(m, &info->AutoTunnelService);
 		if (err) LogMsg("AutoTunnelNATCallback error %d deregistering AutoTunnelService %##s", err, info->AutoTunnelService.namestorage.c);
+		else AnonymousRacoonConfigRefCount--;
+		// sanity check
+		if (AnonymousRacoonConfigRefCount < 0)
+			{
+			LogMsg("AutoTunnelNATCallback %##s AnonymousRacoonConfigRefCount=%d resetting to 0", info->AutoTunnelService.namestorage.c, AnonymousRacoonConfigRefCount);
+			AnonymousRacoonConfigRefCount = 0;
+			}
 		mDNS_Lock(m);
 		mDNS_RemoveDynDNSHostName(m, &info->AutoTunnelTarget.namestorage);
 		mDNS_Unlock(m);
@@ -1999,38 +2011,39 @@ mDNSlocal void AutoTunnelNATCallback(mDNS *m, mDNSv4Addr ExternalAddress, NATTra
 		if (err) LogMsg("AutoTunnelNATCallback error %d deregistering AutoTunnelDeviceInfo %##s", err, info->AutoTunnelDeviceInfo.namestorage.c);
 		}
 
-	if (errIn || mDNSIPPortIsZero(n->publicPort)) return;
-
-	info->AutoTunnelService.resrec.rdata->u.srv.port = n->publicPort;
-	info->AutoTunnelService.resrec.RecordType = kDNSRecordTypeKnownUnique;
-	err = mDNS_Register(m, &info->AutoTunnelService);
-	if (err) LogMsg("AutoTunnelNATCallback error %d registering AutoTunnelService %##s", err, info->AutoTunnelService.namestorage.c);
-
-	info->AutoTunnelTarget.resrec.RecordType = kDNSRecordTypeKnownUnique;
-
-	mDNS_Lock(m);
-	mDNS_AddDynDNSHostName(m, &info->AutoTunnelTarget.namestorage, mDNSNULL, info);
-	mDNS_Unlock(m);
-
-	if (info->AutoTunnelHostRecord.namestorage.c[0] == 0)
+	if (! errIn && ! mDNSIPPortIsZero(n->publicPort))
 		{
-		AppendDomainLabel(&info->AutoTunnelHostRecord.namestorage, &m->hostlabel);
-		AppendDomainName (&info->AutoTunnelHostRecord.namestorage, &info->domain);
+		info->AutoTunnelService.resrec.rdata->u.srv.port = n->publicPort;
+		info->AutoTunnelService.resrec.RecordType = kDNSRecordTypeKnownUnique;
+		err = mDNS_Register(m, &info->AutoTunnelService);
+		if (err) LogMsg("AutoTunnelNATCallback error %d registering AutoTunnelService %##s", err, info->AutoTunnelService.namestorage.c);
+		else AnonymousRacoonConfigRefCount++;
+
+		info->AutoTunnelTarget.resrec.RecordType = kDNSRecordTypeKnownUnique;
+		mDNS_Lock(m);
+		mDNS_AddDynDNSHostName(m, &info->AutoTunnelTarget.namestorage, mDNSNULL, info);
+		mDNS_Unlock(m);
+
+		if (info->AutoTunnelHostRecord.namestorage.c[0] == 0)
+			{
+			AppendDomainLabel(&info->AutoTunnelHostRecord.namestorage, &m->hostlabel);
+			AppendDomainName (&info->AutoTunnelHostRecord.namestorage, &info->domain);
+			}
+		info->AutoTunnelHostRecord.resrec.RecordType = kDNSRecordTypeKnownUnique;
+		err = mDNS_Register(m, &info->AutoTunnelHostRecord);
+		if (err) LogMsg("AutoTunnelNATCallback error %d registering AutoTunnelHostRecord %##s", err, info->AutoTunnelHostRecord.namestorage.c);	
+
+		info->AutoTunnelDeviceInfo.resrec.RecordType = kDNSRecordTypeKnownUnique;
+		err = mDNS_Register(m, &info->AutoTunnelDeviceInfo);
+		if (err) LogMsg("AutoTunnelNATCallback error %d registering AutoTunnelDeviceInfo %##s", err, info->AutoTunnelDeviceInfo.namestorage.c);
+
+		LogMsg("AutoTunnel server listening for connections on %##s[%.4a]:%d:%##s[%.16a]",
+			info->AutoTunnelTarget.namestorage.c,     &m->AdvertisedV4.ip.v4, mDNSVal16(info->AutoTunnelNAT.privatePort),
+			info->AutoTunnelHostRecord.namestorage.c, &m->AutoTunnelHostAddr);
 		}
-	info->AutoTunnelHostRecord.resrec.RecordType = kDNSRecordTypeKnownUnique;
-	err = mDNS_Register(m, &info->AutoTunnelHostRecord);
-	if (err) LogMsg("AutoTunnelNATCallback error %d registering AutoTunnelHostRecord %##s", err, info->AutoTunnelHostRecord.namestorage.c);	
 
-	info->AutoTunnelDeviceInfo.resrec.RecordType = kDNSRecordTypeKnownUnique;
-	err = mDNS_Register(m, &info->AutoTunnelDeviceInfo);
-	if (err) LogMsg("AutoTunnelNATCallback error %d registering AutoTunnelDeviceInfo %##s", err, info->AutoTunnelDeviceInfo.namestorage.c);
-
-	// Create configuration file, and start (or SIGHUP) Racoon
-	(void)mDNSRacoonNotify(info->b64keydata);
-
-	LogMsg("AutoTunnel server listening for connections on %##s[%.4a]:%d:%##s[%.16a]",
-		info->AutoTunnelTarget.namestorage.c,     &m->AdvertisedV4.ip.v4, mDNSVal16(info->AutoTunnelNAT.privatePort),
-		info->AutoTunnelHostRecord.namestorage.c, &m->AutoTunnelHostAddr);
+	// Create or revert configuration file, and start (or SIGHUP) Racoon
+	(void)mDNSConfigureServer(AnonymousRacoonConfigRefCount ? kmDNSUp : kmDNSDown, info->b64keydata);
 	}
 
 // Before SetupLocalAutoTunnelInterface_internal is called,
@@ -2045,7 +2058,7 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 		{
 		m->AutoTunnelHostAddrActive = mDNStrue;
 		LogMsg("Setting up AutoTunnel address %.16a", &m->AutoTunnelHostAddr);
-		(void)mDNSAutoTunnelInterfaceUpDown(kmDNSAutoTunnelInterfaceUp, m->AutoTunnelHostAddr.b);
+		(void)mDNSAutoTunnelInterfaceUpDown(kmDNSUp, m->AutoTunnelHostAddr.b);
 		}
 
 	// 2. If we have at least one server (pending) listening, publish our records
@@ -3282,8 +3295,14 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 			// remove interface if no autotunnel servers and no more client tunnels
 			LogOperation("SetDomainSecrets: Bringing tunnel interface DOWN");
 			m->AutoTunnelHostAddrActive = mDNSfalse;
-			(void)mDNSAutoTunnelInterfaceUpDown(kmDNSAutoTunnelInterfaceDown, m->AutoTunnelHostAddr.b);
+			(void)mDNSAutoTunnelInterfaceUpDown(kmDNSDown, m->AutoTunnelHostAddr.b);
 			memset(m->AutoTunnelHostAddr.b, 0, sizeof(m->AutoTunnelHostAddr.b));
+			}
+
+		if (!haveAutoTunnels && AnonymousRacoonConfigRefCount != 0)
+			{
+			LogMsg("SetDomainSecrets: AnonymousRacoonConfigRefCount=%d resetting to 0", AnonymousRacoonConfigRefCount);
+			AnonymousRacoonConfigRefCount = 0;
 			}
 
 		if (m->AutoTunnelHostAddr.b[0])
@@ -3724,7 +3743,7 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 		{
 		m->AutoTunnelHostAddrActive = mDNSfalse;
 		LogMsg("Removing AutoTunnel address %.16a", &m->AutoTunnelHostAddr);
-		(void)mDNSAutoTunnelInterfaceUpDown(kmDNSAutoTunnelInterfaceDown, m->AutoTunnelHostAddr.b);
+		(void)mDNSAutoTunnelInterfaceUpDown(kmDNSDown, m->AutoTunnelHostAddr.b);
 		}
 	#endif // APPLE_OSX_mDNSResponder
 	}

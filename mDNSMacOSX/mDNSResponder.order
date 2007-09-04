@@ -227,8 +227,8 @@ proxy_mDNSAutoTunnelInterfaceUpDown
 mDNS_AddDynDNSHostName
 AdvertiseHostname
 mDNS_StartNATOperation_internal
-mDNSRacoonNotify
-proxy_mDNSRacoonNotify
+mDNSConfigureServer
+proxy_mDNSConfigureServer
 mDNSPlatformUDPSocket
 uDNS_SendNATMsg
 LNT_SendDiscoveryMsg

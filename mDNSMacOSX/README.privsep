@@ -20,7 +20,7 @@ needed and handles requests from mDNSResponder.
 * There are currently six remote procedure calls handled by
   mDNSResponderHelper: mDNSDynamicStoreSetConfig,
   mDNSPreferencesSetName, mDNSKeychainGetSecrets,
-  mDNSAutoTunnelInterfaceUpDown, mDNSRacoonNotify, and
+  mDNSAutoTunnelInterfaceUpDown, mDNSConfigureServer, and
   mDNSAutoTunnelSetKeys
 
 * mDNSDynamicStoreSetConfig allows mDNSResponder to set the
@@ -42,5 +42,5 @@ needed and handles requests from mDNSResponder.
   references whenever a NULL SecKeychainRef is used.  Wherever a
   SecKeychainRef is needed, NULL is now specified.
 
-* mDNSAutoTunnelInterfaceUpDown, mDNSRacoonNotify, and
+* mDNSAutoTunnelInterfaceUpDown, mDNSConfigureServer, and
   mDNSAutoTunnelSetKeys do various setup and teardown for BTMM.

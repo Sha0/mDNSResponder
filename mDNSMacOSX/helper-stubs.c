@@ -16,6 +16,9 @@
     Change History (most recent first):
 
 $Log: helper-stubs.c,v $
+Revision 1.4  2007/09/04 22:32:58  mcguire
+<rdar://problem/5453633> BTMM: BTMM overwrites /etc/racoon/remote/anonymous.conf
+
 Revision 1.3  2007/08/23 21:44:55  cheshire
 Made code layout style consistent with existing project style; added $Log header
 
@@ -255,14 +258,14 @@ fin:
 	}
 
 int
-mDNSRacoonNotify(const char *keydata)
+mDNSConfigureServer(int updown, const char *keydata)
 	{
 	kern_return_t kr = KERN_SUCCESS;
 	int retry = 0;
 	int err = 0;
 
 	MACHRETRYLOOP_BEGIN(kr, retry, err, fin);
-	kr = proxy_mDNSRacoonNotify(getHelperPort(retry), keydata, &err);
+	kr = proxy_mDNSConfigureServer(getHelperPort(retry), updown, keydata, &err);
 	MACHRETRYLOOP_END(kr, retry, err, fin);
 
 fin:

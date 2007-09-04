@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.h,v $
+Revision 1.4  2007/09/04 22:32:58  mcguire
+<rdar://problem/5453633> BTMM: BTMM overwrites /etc/racoon/remote/anonymous.conf
+
 Revision 1.3  2007/08/23 21:51:44  cheshire
 Made code layout style consistent with existing project style; added $Log header
 
@@ -43,10 +46,10 @@ enum mDNSPreferencesSetNameKey
 	kmDNSLocalHostName
 	};
 
-enum mDNSAutoTunnelInterfaceUpDown
+enum mDNSUpDown
 	{
-	kmDNSAutoTunnelInterfaceUp = 1,
-	kmDNSAutoTunnelInterfaceDown
+	kmDNSUp = 1,
+	kmDNSDown
 	};
 
 enum mDNSAutoTunnelSetKeysReplaceDelete
@@ -71,7 +74,7 @@ extern int mDNSPreferencesSetName(int key, CFStringRef value, CFStringEncoding e
 extern int mDNSDynamicStoreSetConfig(int key, CFPropertyListRef value);
 extern int mDNSKeychainGetSecrets(CFArrayRef *secrets);
 extern int mDNSAutoTunnelInterfaceUpDown(int updown, v6addr_t addr);
-extern int mDNSRacoonNotify(const char *keydata);
+extern int mDNSConfigureServer(int updown, const char *keydata);
 extern int mDNSAutoTunnelSetKeys(int replacedelete, v6addr_t local_inner,
     v4addr_t local_outer, short local_port, v6addr_t remote_inner,
     v4addr_t remote_outer, short remote_port, const char *keydata);

@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.13  2007/09/04 22:32:58  mcguire
+<rdar://problem/5453633> BTMM: BTMM overwrites /etc/racoon/remote/anonymous.conf
+
 Revision 1.12  2007/08/29 21:42:12  mcguire
 <rdar://problem/5431192> BTMM: Duplicate Private DNS names are being added to DynamicStore
 
@@ -734,12 +737,12 @@ do_mDNSAutoTunnelInterfaceUpDown(__unused mach_port_t port, int updown,
 		*err = kmDNSHelperNotAuthorized;
 		goto fin;
 		}
-	switch ((enum mDNSAutoTunnelInterfaceUpDown)updown)
+	switch ((enum mDNSUpDown)updown)
 	{
-	case kmDNSAutoTunnelInterfaceUp:
+	case kmDNSUp:
 		*err = aliasTunnelAddress(address);
 		break;
-	case kmDNSAutoTunnelInterfaceDown:
+	case kmDNSDown:
 		*err = unaliasTunnelAddress(address);
 		break;
 	default:
@@ -751,6 +754,48 @@ do_mDNSAutoTunnelInterfaceUpDown(__unused mach_port_t port, int updown,
 fin:
 	update_idle_timer();
 	return KERN_SUCCESS;
+	}
+
+static const char racoon_config_path[] = "/etc/racoon/remote/anonymous.conf";
+static const char racoon_config_path_orig[] = "/etc/racoon/remote/anonymous.conf.orig";
+
+static const char configHeader[] = "# BackToMyMac\n";
+
+static int IsFamiliarRacoonConfiguration()
+	{
+	int fd = open(racoon_config_path, O_RDONLY);
+	debug("entry");
+	if (0 > fd)
+		{
+		helplog(ASL_LEVEL_NOTICE, "open \"%s\" failed: %s", racoon_config_path, strerror(errno));
+		return 0;
+		}
+	else
+		{
+		char header[sizeof(configHeader)] = {0};
+		ssize_t bytesRead = read(fd, header, sizeof(header)-1);
+		close(fd);
+		if (bytesRead != sizeof(header)-1) return 0;
+		return (0 == memcmp(header, configHeader, sizeof(header)-1));
+		}
+	}
+
+static void
+revertAnonymousRacoonConfiguration()
+	{
+	debug("entry");
+	if (!IsFamiliarRacoonConfiguration())
+		{
+		helplog(ASL_LEVEL_NOTICE, "\"%s\" does not look familiar, leaving in place", racoon_config_path);
+		return;
+		}
+
+	if (0 > rename(racoon_config_path_orig, racoon_config_path))
+		{
+		helplog(ASL_LEVEL_NOTICE, "rename \"%s\" \"%s\" failed: %s", racoon_config_path_orig, racoon_config_path, strerror(errno));
+		helplog(ASL_LEVEL_NOTICE, "\"%s\" looks familiar, unlinking", racoon_config_path);
+		unlink(racoon_config_path);
+		}
 	}
 
 static int
@@ -778,37 +823,50 @@ createAnonymousRacoonConfiguration(const char *keydata)
 	  "    authentication_method pre_shared_key;\n"
 	  "    dh_group 2;\n"
 	  "    lifetime time 5 min;\n"
-	  "  	}\n"
-	  "	}\n\n"
+	  "  }\n"
+	  "}\n\n"
 	  "sainfo anonymous { \n"
 	  "  pfs_group 2;\n"
 	  "  lifetime time 10 min;\n"
 	  "  encryption_algorithm aes;\n"
 	  "  authentication_algorithm hmac_sha1;\n"
 	  "  compression_algorithm deflate;\n"
-	  "	}\n";
+	  "}\n";
 	char tmp_config_path[] =
 	    "/etc/racoon/remote/tmp.XXXXXX";
-	static const char racoon_config_path[] =
-	    "/etc/racoon/remote/anonymous.conf";
 	int fd = mkstemp(tmp_config_path);
+
+	debug("entry");
+
 	if (0 > fd)
 		{
 		helplog(ASL_LEVEL_ERR, "mkstemp \"%s\" failed: %s",
 		    tmp_config_path, strerror(errno));
 		return -1;
 		}
+	write(fd, configHeader, sizeof(configHeader)-1);
 	write(fd, config1, sizeof(config1)-1);
 	write(fd, keydata, strlen(keydata));
 	write(fd, config2, sizeof(config2)-1);
 	close(fd);
+
+	if (IsFamiliarRacoonConfiguration())
+		helplog(ASL_LEVEL_NOTICE, "\"%s\" looks familiar, will overwrite", racoon_config_path);
+	else if (0 > rename(racoon_config_path, racoon_config_path_orig)) // If we didn't write it, move it to the side so it can be reverted later
+		helplog(ASL_LEVEL_NOTICE, "rename \"%s\" \"%s\" failed: %s", racoon_config_path, racoon_config_path_orig, strerror(errno));
+	else
+		debug("successfully renamed \"%s\" \"%s\"", racoon_config_path, racoon_config_path_orig);
+
 	if (0 > rename(tmp_config_path, racoon_config_path))
 		{
 		unlink(tmp_config_path);
 		helplog(ASL_LEVEL_ERR, "rename \"%s\" \"%s\" failed: %s",
 		    tmp_config_path, racoon_config_path, strerror(errno));
+		revertAnonymousRacoonConfiguration();
 		return -1;
 		}
+
+	debug("successfully renamed \"%s\" \"%s\"", tmp_config_path, racoon_config_path);
 	return 0;
 	}
 
@@ -924,21 +982,34 @@ kickRacoon(void)
 	}
 
 int
-do_mDNSRacoonNotify(__unused mach_port_t port, const char *keydata, int *err,
-    audit_token_t token)
+do_mDNSConfigureServer(__unused mach_port_t port, int updown, const char *keydata, int *err, audit_token_t token)
 	{
 	debug("entry");
 	*err = 0;
+
 	if (!authorized(&token))
 		{
 		*err = kmDNSHelperNotAuthorized;
 		goto fin;
 		}
-	if (0 != createAnonymousRacoonConfiguration(keydata))
+
+	switch ((enum mDNSUpDown)updown)
 		{
-		*err = kmDNSHelperRacoonConfigCreationFailed;
-		goto fin;
+		case kmDNSUp:
+			if (0 != createAnonymousRacoonConfiguration(keydata))
+				{
+				*err = kmDNSHelperRacoonConfigCreationFailed;
+				goto fin;
+				}
+			break;
+		case kmDNSDown:
+			revertAnonymousRacoonConfiguration();
+			break;
+		default:
+			*err = kmDNSHelperInvalidServerState;
+			goto fin;
 		}
+
 	if (0 != (*err = kickRacoon()))
 		goto fin;
 	debug("succeeded");
@@ -1248,6 +1319,7 @@ do_mDNSAutoTunnelSetKeys(__unused mach_port_t port, int replacedelete,
     const char *keydata, int *err, audit_token_t token)
 	{
 	static const char config[] =
+	  "%s"
 	  "remote %s [%u] {\n"
 	  "  exchange_mode aggressive;\n"
 	  "  doi ipsec_doi;\n"
@@ -1267,22 +1339,22 @@ do_mDNSAutoTunnelSetKeys(__unused mach_port_t port, int replacedelete,
 	  "    authentication_method pre_shared_key;\n"
 	  "    dh_group 2;\n"
 	  "    lifetime time 5 min;\n"
-	  "  	}\n"
-	  "	}\n\n"
+	  "  }\n"
+	  "}\n\n"
 	  "sainfo address %s any address %s any {\n"
 	  "  pfs_group 2;\n"
 	  "  lifetime time 10 min;\n"
 	  "  encryption_algorithm aes;\n"
 	  "  authentication_algorithm hmac_sha1;\n"
 	  "  compression_algorithm deflate;\n"
-	  "	}\n\n"
+	  "}\n\n"
 	  "sainfo address %s any address %s any {\n"
 	  "  pfs_group 2;\n"
 	  "  lifetime time 10 min;\n"
 	  "  encryption_algorithm aes;\n"
 	  "  authentication_algorithm hmac_sha1;\n"
 	  "  compression_algorithm deflate;\n"
-	  "	}\n";
+	  "}\n";
 	char path[PATH_MAX] = "";
 	char li[INET6_ADDRSTRLEN], lo[INET_ADDRSTRLEN],
 	    ri[INET6_ADDRSTRLEN], ro[INET_ADDRSTRLEN];
@@ -1348,7 +1420,7 @@ do_mDNSAutoTunnelSetKeys(__unused mach_port_t port, int replacedelete,
 			goto fin;
 			}
 		fd = -1;
-		fprintf(fp, config, ro, rmt_port, keydata, ri, li, li, ri);
+		fprintf(fp, config, configHeader, ro, rmt_port, keydata, ri, li, li, ri);
 		fclose(fp);
 		fp = NULL;
 		if (0 > rename(tmp_path, path))
