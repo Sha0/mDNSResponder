@@ -21,6 +21,10 @@
 	Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.41  2007/09/04 17:02:25  cheshire
+<rdar://problem/5458929> False positives in changed files list in nightly builds
+Added MDNS_VERSIONSTR_NODTS option at the reqest of Rishi Srivatsavai (Sun)
+
 Revision 1.40  2007/07/31 23:08:34  mcguire
 <rdar://problem/5329542> BTMM: Make AutoTunnel mode work with multihoming
 
@@ -260,7 +264,9 @@ mDNSexport void RecordUpdatedNiceLabel(mDNS *const m, mDNSs32 delay)
 
 // For convenience when using the "strings" command, this is the last thing in the file
 #if mDNSResponderVersion > 1
-mDNSexport const char mDNSResponderVersionString_SCCS[] = "@(#) mDNSResponder-" STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ") ";
+mDNSexport const char mDNSResponderVersionString_SCCS[] = "@(#) mDNSResponder-" STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ")";
+#elif MDNS_VERSIONSTR_NODTS
+mDNSexport const char mDNSResponderVersionString_SCCS[] = "@(#) mDNSResponder (Engineering Build)";
 #else
-mDNSexport const char mDNSResponderVersionString_SCCS[] = "@(#) mDNSResponder (Engineering Build) (" __DATE__ " " __TIME__ ") ";
+mDNSexport const char mDNSResponderVersionString_SCCS[] = "@(#) mDNSResponder (Engineering Build) (" __DATE__ " " __TIME__ ")";
 #endif
