@@ -26,6 +26,9 @@
 ; SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ;
 ; $Log: mDNSResponder.sb,v $
+; Revision 1.23  2007/09/04 22:26:18  mcguire
+; <rdar://problem/5442826> Seatbelt: mDNSResponder needs to be allowed to access "/Library/Security/Trust Settings/" etc.
+;
 ; Revision 1.22  2007/08/24 22:01:56  mcguire
 ; <rdar://problem/5141606> BTMM: Task: Change mDNSResponder Seatbelt settings to "deny default" instead of "signal FPE" just prior to GM candidate
 ;
@@ -159,7 +162,11 @@
 (allow file-read-data                 (regex "^/usr/share/zoneinfo/.*\$"))
 (allow file-read-data                 (regex "^/System/Library/CoreServices/SystemVersion.*\$"))
 (allow file-read-data                 (regex "^/Library/Preferences/(ByHost/)?\.GlobalPreferences.*\.plist\$"))
-(allow file-read-data                 (regex "^/Library/Preferences/com\.apple\.security\.plist\$"))
+(allow file-read-data                 (regex "^/Library/Preferences/com\.apple\.security.*\.plist\$"))
+(allow file-read-data                 (regex "^/Library/Preferences/com\.apple\.crypto\.plist\$"))
+(allow file-read-data                 (regex "^/Library/Security/Trust Settings/Admin\.plist\$"))
+(allow file-read-data                 (regex "^/System/Library/Preferences/com\.apple\.security.*\.plist\$"))
+(allow file-read-data                 (regex "^/System/Library/Preferences/com\.apple\.crypto\.plist\$"))
 
 ; Allow access to System Keychain
 (allow file-read-data                 (regex "^/System/Library/Security\$"))
