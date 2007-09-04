@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.426  2007/09/04 20:37:06  cheshire
+<rdar://problem/5457287> mDNSResponder taking up 100% CPU in ReissueBlockedQuestions
+Reorder fields into more logical order, with AuthInfo before DuplicateOf
+
 Revision 1.425  2007/08/31 19:53:14  cheshire
 <rdar://problem/5431151> BTMM: IPv6 address lookup should not succeed if autotunnel cannot be setup
 If AutoTunnel setup fails, the code now generates a fake NXDomain error saying that the requested AAAA record does not exist
@@ -1636,6 +1640,7 @@ struct DNSQuestion_struct
 	mDNSu32               UniqueAnswers;	// Number of answers received with kDNSClass_UniqueRRSet bit set
 	mDNSInterfaceID       FlappingInterface1;// Set when an interface goes away, to flag if remove events are delivered for this Q
 	mDNSInterfaceID       FlappingInterface2;// Set when an interface goes away, to flag if remove events are delivered for this Q
+	DomainAuthInfo       *AuthInfo;			// Non-NULL if query is currently being done using Private DNS
 	DNSQuestion          *DuplicateOf;
 	DNSQuestion          *NextInDQList;
 	DupSuppressInfo       DupSuppress[DupSuppressInfoSize];
@@ -1643,7 +1648,6 @@ struct DNSQuestion_struct
 	mDNSBool              SendOnAll;		// Set if we're sending this question on all active interfaces
 	mDNSu32               RequestUnicast;	// Non-zero if we want to send query with kDNSQClass_UnicastResponse bit set
 	mDNSs32               LastQTxTime;		// Last time this Q was sent on one (but not necessarily all) interfaces
-	DomainAuthInfo       *AuthInfo;			// Non-NULL if query is currently being done using Private DNS
 	mDNSu32               CNAMEReferrals;	// Count of how many CNAME redirections we've done
 
 	// Wide Area fields. These are used internally by the uDNS core
