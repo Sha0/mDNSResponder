@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.454  2007/09/05 02:32:55  cheshire
+Fixed posix build error (mixed declarations and code)
+
 Revision 1.453  2007/09/05 02:26:57  cheshire
 <rdar://problem/5457287> mDNSResponder taking up 100% CPU in ReissueBlockedQuestions
 In startPrivateQueryCallback, restore q->ThisQInterval to non-zero value after GetZoneData completes
@@ -2565,7 +2568,6 @@ exit:
 // Called with lock held
 mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 	{
-	LogOperation("UpdateSRV %##s", srs->RR_SRV.resrec.name->c);
 	ExtraResourceRecord *e;
 
 	// Target change if:
@@ -2589,6 +2591,8 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 	mDNSBool NowBehindNAT  = (!mDNSIPPortIsZero(port) && mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsRFC1918(&srs->ns));
 	mDNSBool WereBehindNAT = (srs->NATinfo.clientContext != mDNSNULL);
 	mDNSBool PortWasMapped = (srs->NATinfo.clientContext && !mDNSIPPortIsZero(srs->NATinfo.publicPort) && !mDNSSameIPPort(srs->NATinfo.publicPort, port));
+
+	LogOperation("UpdateSRV %##s", srs->RR_SRV.resrec.name->c);
 
 	if (m->mDNS_busy != m->mDNS_reentrancy+1)
 		LogMsg("UpdateSRV: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
