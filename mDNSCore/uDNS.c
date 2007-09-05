@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.456  2007/09/05 21:00:17  cheshire
+<rdar://problem/5457287> mDNSResponder taking up 100% CPU in ReissueBlockedQuestions
+Additional refinement: ThisQInterval needs to be restored in tcpCallback, not in startPrivateQueryCallback
+
 Revision 1.455  2007/09/05 20:53:06  cheshire
 Tidied up alignment of code layout; code was clearing m->tcpAddrInfo.sock instead of m->tcpDeviceInfo.sock
 
@@ -1763,6 +1767,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			{
 			mDNS_Lock(m);
 			tcpInfo->question->LastQTime = m->timenow;
+			tcpInfo->question->ThisQInterval = MAX_UCAST_POLL_INTERVAL;
 			mDNS_Unlock(m);
 			}
 		}
@@ -1836,9 +1841,10 @@ exit:
 
 		if (tcpInfo->question)
 			{
-			tcpInfo->question->tcp = mDNSNULL;
-			// ConnFailed is actually okay.  It just means that the server closed the connection but the LLQ
-			// is still okay.  If the error isn't ConnFailed, then the LLQ is in bad shape.
+			tcpInfo->question->LastQTime = m->timenow;
+			tcpInfo->question->ThisQInterval = MAX_UCAST_POLL_INTERVAL;
+			// ConnFailed is actually okay.  It just means that the server closed the connection but the LLQ is still okay.
+			// If the error isn't ConnFailed, then the LLQ is in bad shape.
 			if (err != mStatus_ConnFailed) tcpInfo->question->state = LLQ_Error;
 			}
 
@@ -3849,8 +3855,12 @@ mDNSlocal void startPrivateQueryCallback(mDNS *const m, mStatus err, const ZoneD
 		}
 
 	q->TargetQID = mDNS_NewMessageID(m);
-	q->ThisQInterval = MAX_UCAST_POLL_INTERVAL;
-	q->tcp = MakeTCPConn(m, mDNSNULL, mDNSNULL, kTCPSocketFlags_UseTLS, &zoneInfo->Addr, zoneInfo->Port, q, mDNSNULL, mDNSNULL);
+	if (q->tcp)
+		{
+		LogOperation("startPrivateQueryCallback: Already have TCP connection for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+		tcpCallback(q->tcp->sock, q->tcp, mDNStrue, mStatus_NoError);
+		}
+	else q->tcp = MakeTCPConn(m, mDNSNULL, mDNSNULL, kTCPSocketFlags_UseTLS, &zoneInfo->Addr, zoneInfo->Port, q, mDNSNULL, mDNSNULL);
 
 exit:
 
