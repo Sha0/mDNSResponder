@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.30  2007/09/05 20:46:17  cheshire
+Tidied up alignment of code layout
+
 Revision 1.29  2007/08/03 20:18:01  vazquez
 <rdar://problem/5382177> LegacyNATTraversal: reading out of bounds can lead to DoS
 
@@ -677,9 +680,10 @@ mDNSexport mStatus LNT_UnmapPort(mDNS *m, NATTraversalInfo *n, mDNSBool doTCP)
 	n->tcpInfo.parentNATInfo = n;
 
 	// clean up previous port mapping requests and allocations
-	if (n->tcpInfo.sock) { LogOperation("LNT_UnmapPort: closing previous open connection"); mDNSPlatformTCPCloseConnection(n->tcpInfo.sock); n->tcpInfo.sock = mDNSNULL; }
-	if (n->tcpInfo.Request != mDNSNULL)	{ mDNSPlatformMemFree(n->tcpInfo.Request); n->tcpInfo.Request = mDNSNULL; }
-	if (n->tcpInfo.Reply != mDNSNULL)	{ mDNSPlatformMemFree(n->tcpInfo.Reply); n->tcpInfo.Reply = mDNSNULL; }
+	if (n->tcpInfo.sock) LogOperation("LNT_UnmapPort: closing previous open connection");
+	if (n->tcpInfo.sock   ) { mDNSPlatformTCPCloseConnection(n->tcpInfo.sock); n->tcpInfo.sock    = mDNSNULL; }
+	if (n->tcpInfo.Request)	{ mDNSPlatformMemFree(n->tcpInfo.Request);         n->tcpInfo.Request = mDNSNULL; }
+	if (n->tcpInfo.Reply  )	{ mDNSPlatformMemFree(n->tcpInfo.Reply);           n->tcpInfo.Reply   = mDNSNULL; }
 	
 	// make a copy of the tcpInfo that we can clean up later (the one passed in will be destroyed by the client as soon as this returns)
 	if ((info = mDNSPlatformMemAllocate(sizeof(tcpLNTInfo))) == mDNSNULL) { LogOperation("LNT_UnmapPort: can't mDNSPlatformMemAllocate for tcpInfo"); return(mStatus_NoMemoryErr); }

@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.427  2007/09/05 20:47:12  cheshire
+Tidied up alignment of code layout
+
 Revision 1.426  2007/09/04 20:37:06  cheshire
 <rdar://problem/5457287> mDNSResponder taking up 100% CPU in ReissueBlockedQuestions
 Reorder fields into more logical order, with AuthInfo before DuplicateOf
@@ -1887,12 +1890,12 @@ struct mDNS_struct
 	mDNSs32           retryIntervalGetAddr;		// delta between time sent and retry
 	mDNSv4Addr        ExternalAddress;
 
-	UDPSocket        *NATMcastRecvskt;		// for receiving NAT-PMP AddrReply multicasts from router
+	UDPSocket        *NATMcastRecvskt;			// for receiving NAT-PMP AddrReply multicasts from router
 	mDNSs32           LastNATUptime;			// router uptime returned by last NAT-PMP AddrReply packet 
 	mDNSs32           LastNATReplyLocalTime;	// local time when last NAT-PMP AddrReply packet was received
 
 	tcpLNTInfo        tcpAddrInfo;				// legacy NAT traversal TCP connection info for external address
-	tcpLNTInfo        tcpDeviceInfo;				// legacy NAT traversal TCP connection info for device info
+	tcpLNTInfo        tcpDeviceInfo;			// legacy NAT traversal TCP connection info for device info
 	tcpLNTInfo       *tcpInfoUnmapList;			// list of pending unmap requests
 	mDNSIPPort        uPNPRouterPort;			// port we send discovery messages to
 	mDNSIPPort        uPNPSOAPPort;				// port we send SOAP messages to
