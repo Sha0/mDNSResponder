@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.689  2007/09/05 02:29:06  cheshire
+<rdar://problem/5457287> mDNSResponder taking up 100% CPU in ReissueBlockedQuestions
+Additional fixes to code implementing "NoAnswer" logic
+
 Revision 1.688  2007/08/31 22:56:39  cheshire
 <rdar://problem/5407080> BTMM: TTLs incorrect on cached BTMM records
 
@@ -678,7 +682,7 @@ mDNSlocal void AnswerLocalOnlyQuestionWithResourceRecord(mDNS *const m, DNSQuest
 	// Indicate that we've given at least one positive answer for this record, so we should be prepared to send a goodbye for it
 	if (AddRecord) rr->LocalAnswer = mDNStrue;
 	mDNS_DropLockBeforeCallback();		// Allow client to legally make mDNS API calls from the callback
-	if (q->QuestionCallback)
+	if (q->QuestionCallback && !q->NoAnswer)
 		q->QuestionCallback(m, q, &rr->resrec, AddRecord);
 	mDNS_ReclaimLockAfterCallback();	// Decrement mDNS_reentrancy to block mDNS API calls again
 	}
@@ -2522,7 +2526,7 @@ mDNSexport void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheReco
 	DNSQuestion *const q = m->CurrentQuestion;
 	mDNSBool followcname = rr->resrec.RecordType != kDNSRecordTypePacketNegative && AddRecord &&
 							rr->resrec.rrtype == kDNSType_CNAME && q->qtype != kDNSType_CNAME;
-	verbosedebugf("AnswerCurrentQuestionWithResourceRecord:%4lu %s %s", q->CurrentAnswers, AddRecord ? "Add" : "Rmv", CRDisplayString(m, rr));
+	verbosedebugf("AnswerCurrentQuestionWithResourceRecord:%4lu %s TTL %d %s", q->CurrentAnswers, AddRecord ? "Add" : "Rmv", rr->resrec.rroriginalttl, CRDisplayString(m, rr));
 
 	// Note: Use caution here. In the case of records with rr->DelayDelivery set, AnswerCurrentQuestionWithResourceRecord(... mDNStrue)
 	// may be called twice, once when the record is received, and again when it's time to notify local clients.
@@ -2559,7 +2563,7 @@ mDNSexport void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheReco
 	if (rr->resrec.RecordType == kDNSRecordTypePacketNegative && (!AddRecord || !q->ReturnIntermed)) return;
 
 	// For CNAME results to non-CNAME questions, only inform the client if they explicitly requested that
-	if (q->QuestionCallback && q->NoAnswer != NoAnswer_Suspended && (!followcname || q->ReturnIntermed))
+	if (q->QuestionCallback && !q->NoAnswer && (!followcname || q->ReturnIntermed))
 		{
 		mDNS_DropLockBeforeCallback();		// Allow client (and us) to legally make mDNS API calls
 		q->QuestionCallback(m, q, &rr->resrec, AddRecord);
@@ -2575,7 +2579,7 @@ mDNSexport void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheReco
 		// and track CNAMEs coming and going, we should really create a subbordinate query here,
 		// which we would subsequently cancel and retract if the CNAME referral record were removed.
 		// In reality this is such a corner case we'll ignore it until someone actually needs it.
-		LogOperation("AnswerCurrentQuestionWithResourceRecord: %s", CRDisplayString(m, rr));
+		LogOperation("AnswerCurrentQuestionWithResourceRecord: following CNAME referral for %s", CRDisplayString(m, rr));
 		mDNS_StopQuery_internal(m, q);								// Stop old query
 		AssignDomainName(&q->qname, &rr->resrec.rdata->u.name);		// Update qname
 		q->qnamehash = DomainNameHashValue(&q->qname);				// and namehash
@@ -2800,8 +2804,8 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m, CacheGroup *const cg)
 		if (m->timenow - event >= 0)	// If expired, delete it
 			{
 			*rp = rr->next;				// Cut it from the list
-			verbosedebugf("CheckCacheExpiration: Deleting%7d %4d %s",
-				m->timenow - rr->TimeRcvd, rr->resrec.rroriginalttl, CRDisplayString(m, rr));
+			verbosedebugf("CheckCacheExpiration: Deleting%7d %4d %p %s",
+				m->timenow - rr->TimeRcvd, rr->resrec.rroriginalttl, rr->CRActiveQuestion, CRDisplayString(m, rr));
 			if (rr->CRActiveQuestion)	// If this record has one or more active questions, tell them it's going away
 				{
 				CacheRecordRmv(m, rr);
@@ -2866,16 +2870,14 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 		LogMsg("AnswerNewQuestion ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
 	m->CurrentQuestion = q;		// Indicate which question we're answering, so we'll know if it gets deleted
 
-	if (q->NoAnswer)
+	if (q->NoAnswer == NoAnswer_Fail)
 		{
-		if (q->NoAnswer == NoAnswer_Fail)
-			{
-			LogMsg("AnswerNewQuestion: NoAnswer_Fail %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
-			MakeNegativeCacheRecord(m, &q->qname, q->qnamehash, q->qtype, q->qclass);
-			AnswerCurrentQuestionWithResourceRecord(m, &m->rec.r, QC_addnocache);
-			m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
-			}
-		m->CurrentQuestion = mDNSNULL;
+		LogMsg("AnswerNewQuestion: NoAnswer_Fail %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+		MakeNegativeCacheRecord(m, &q->qname, q->qnamehash, q->qtype, q->qclass);
+		q->NoAnswer = NoAnswer_Normal;		// Temporarily turn off answer suppression
+		AnswerCurrentQuestionWithResourceRecord(m, &m->rec.r, QC_addnocache);
+		q->NoAnswer = NoAnswer_Fail;		// Restore NoAnswer state
+		m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 		}
 
 	// If 'mDNSInterface_Any' question, see if we want to tell it about LocalOnly records
@@ -4249,12 +4251,6 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 				}
 			else	// else not LLQ (standard uDNS response)
 				{
-				// For mDNS, TTL zero means "delete this record"
-				// For uDNS, TTL zero means: this data is true at this moment, but don't cache it.
-				// For now we need to impose a minimum effective TTL of 2 seconds, or other stuff breaks (e.g. we end up making a negative cache entry).
-				// In the future we may want to revisit this and consider properly supporting non-cached uDNS answers.
-				if (m->rec.r.resrec.rroriginalttl < 2) m->rec.r.resrec.rroriginalttl = 2;
-
 				// Faithfully respecting the true uDNS TTL turns out to cause too many problems right now,
 				// so for now we'll go back the old way of assuming large TTL for uDNS records
 				//m->rec.r.resrec.rroriginalttl = (mDNSu32)(0x70000000 / mDNSPlatformOneSecond);
@@ -4268,6 +4264,13 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 				// the cached copy at our local caching server will already have expired, so the server will be forced
 				// to fetch a fresh copy from the authoritative server, and then return a fresh record with the full TTL of 3600 seconds.
 				m->rec.r.resrec.rroriginalttl += m->rec.r.resrec.rroriginalttl/4 + 2;
+
+				// For mDNS, TTL zero means "delete this record"
+				// For uDNS, TTL zero means: this data is true at this moment, but don't cache it.
+				// For the sake of network efficiency, we impose a minimum effective TTL of 15 seconds.
+				// If we allow a TTL of less than 2 seconds things really break (e.g. we end up making a negative cache entry).
+				// In the future we may want to revisit this and consider properly supporting non-cached (TTL=0) uDNS answers.
+				if (m->rec.r.resrec.rroriginalttl < 15) m->rec.r.resrec.rroriginalttl = 15;
 				}
 			}
 
@@ -4700,8 +4703,8 @@ mDNSlocal DNSQuestion *FindDuplicateQuestion(const mDNS *const m, const DNSQuest
 	// This prevents circular references, where two questions are each marked as a duplicate of the other.
 	// Accordingly, we break out of the loop when we get to 'question', because there's no point searching
 	// further in the list.
-	for (q = m->Questions; q && q != question; q=q->next)		// Scan our list of questions
-		if (q->InterfaceID == question->InterfaceID &&			// for another question with the same InterfaceID,
+	for (q = m->Questions; q && q != question; q=q->next)		// Scan our list for another question
+		if (q->InterfaceID == question->InterfaceID &&			// with the same InterfaceID,
 			SameQTarget(q, question)                &&			// and same unicast/multicast target settings
 			q->qtype       == question->qtype       &&			// type,
 			q->qclass      == question->qclass      &&			// class,
@@ -4794,23 +4797,22 @@ mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question)
 			question->nta = StartGetZoneData(m, &question->qname, ZoneServiceLLQ, startLLQHandshakeCallback, question);
 			if (!question->nta) LogMsg("ERROR: startLLQ - StartGetZoneData failed");
 			}
-// For now this AutoTunnel stuff is specific to Mac OS X.
-// In the future, if there's demand, we may see if we can abstract it out cleanly into the platform layer
-#if APPLE_OSX_mDNSResponder
-		else if (question->qtype == kDNSType_AAAA && question->AuthInfo && question->AuthInfo->AutoTunnel && question->QuestionCallback != AutoTunnelCallback)
-			{
-			question->ThisQInterval = 0;	// Question is suspended, waiting for AddNewClientTunnel to complete
-			question->LastQTime     = m->timenow;
-			question->NoAnswer      = NoAnswer_Suspended;
-			AddNewClientTunnel(m, question);
-			}
-#endif // APPLE_OSX_mDNSResponder
 		else
 			{
 			question->ThisQInterval = InitialQuestionInterval;
 			question->LastQTime     = m->timenow - question->ThisQInterval;
 			}
 		}
+
+	// For now this AutoTunnel stuff is specific to Mac OS X.
+	// In the future, if there's demand, we may see if we can abstract it out cleanly into the platform layer
+	#if APPLE_OSX_mDNSResponder
+		if (question->qtype == kDNSType_AAAA && question->AuthInfo && question->AuthInfo->AutoTunnel && question->QuestionCallback != AutoTunnelCallback)
+			{
+			question->NoAnswer = NoAnswer_Suspended;
+			AddNewClientTunnel(m, question);
+			}
+	#endif // APPLE_OSX_mDNSResponder
 	}
 
 mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const question)
@@ -4897,18 +4899,19 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 		question->UniqueAnswers     = 0;
 		question->FlappingInterface1 = mDNSNULL;
 		question->FlappingInterface2 = mDNSNULL;
+		// GetZoneData queries are a special case -- even if we have a key for them, we don't do them privately,
+		// because that would result in an infinite loop (i.e. to do a private query we first need to get
+		// the _dns-query-tls SRV record for the zone, and we can't do *that* privately because to do so
+		// we'd need to already know the _dns-query-tls SRV record.
+		// Also: Make sure we set AuthInfo before calling FindDuplicateQuestion()
+		question->AuthInfo          = (question->QuestionCallback == GetZoneData_QuestionCallback) ? mDNSNULL
+		                            : GetAuthInfoForName_internal(m, &question->qname);
 		question->DuplicateOf       = FindDuplicateQuestion(m, question);
 		question->NextInDQList      = mDNSNULL;
 		question->SendQNow          = mDNSNULL;
 		question->SendOnAll         = mDNSfalse;
 		question->RequestUnicast    = 0;
 		question->LastQTxTime       = m->timenow;
-		// GetZoneData queries are a special case -- even if we have a key for them, we don't do them privately,
-		// because that would result in an infinite loop (i.e. to do a private query we first need to get
-		// the _dns-query-tls SRV record for the zone, and we can't do *that* privately because to do so
-		// we'd need to already know the _dns-query-tls SRV record.
-		question->AuthInfo          = (question->QuestionCallback == GetZoneData_QuestionCallback) ? mDNSNULL
-		                            : GetAuthInfoForName_internal(m, &question->qname);
 		question->CNAMEReferrals    = 0;
 
 		question->qDNSServer        = mDNSNULL;
