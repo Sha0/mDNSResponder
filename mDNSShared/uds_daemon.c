@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.334  2007/09/05 20:43:57  cheshire
+Added LogOperation message showing fd of socket listening for incoming Unix Domain Socket client requests
+
 Revision 1.333  2007/08/28 23:32:35  cheshire
 Added LogOperation messages for DNSServiceNATPortMappingCreate() operations
 
@@ -3367,6 +3370,7 @@ mDNSexport int udsserver_init(dnssd_sock_t skt)
 		my_perror("ERROR: could not add listen socket to event loop");
 		goto error;
 		}
+	else LogOperation("%3d: Listening for incoming Unix Domain Socket client requests", listenfd);
 
 #if !defined(PLATFORM_NO_RLIMIT)
 	{
