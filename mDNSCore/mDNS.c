@@ -38,9 +38,12 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.691  2007/09/05 22:25:01  vazquez
+<rdar://problem/5400521> update_record mDNSResponder leak
+
 Revision 1.690  2007/09/05 21:48:01  cheshire
 <rdar://problem/5385864> BTMM: mDNSResponder flushes wide-area Bonjour records after an hour for a zone.
-Now that we're respecting the TTL of uDNS records in the cache, the LLQ maintenance code needs
+Now that we're respecting the TTL of uDNS records in the cache, the LLQ maintenance cod needs
 to update the cache lifetimes of all relevant records every time it successfully renews an LLQ,
 otherwise those records will expire and vanish from the cache.
 
@@ -1355,8 +1358,6 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 			rr->resrec.RecordType = RecordType;
 			err = uDNS_DeregisterRecord(m, rr);
 			rr->resrec.RecordType = kDNSRecordTypeUnregistered;
-			if (rr->tcp) { DisposeTCPConn(rr->tcp); rr->tcp = mDNSNULL; }
-			return err;
 			}
 #endif
 

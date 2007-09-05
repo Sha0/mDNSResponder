@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.335  2007/09/05 22:25:01  vazquez
+<rdar://problem/5400521> update_record mDNSResponder leak
+
 Revision 1.334  2007/09/05 20:43:57  cheshire
 Added LogOperation message showing fd of socket listening for incoming Unix Domain Socket client requests
 
@@ -1055,6 +1058,9 @@ mDNSlocal void free_service_instance(service_instance *srv)
 		FreeExtraRR(&mDNSStorage, &tmp->r, mStatus_MemFree);
 		}
 
+	if (srv->srs.RR_TXT.resrec.rdata != &srv->srs.RR_TXT.rdatastorage)
+		freeL("TXT RData", srv->srs.RR_TXT.resrec.rdata);
+
 	if (srv->subtypes) { freeL("ServiceSubTypes", srv->subtypes); srv->subtypes = NULL; }
 	freeL("service_instance", srv);
 	}
@@ -1476,27 +1482,14 @@ mDNSlocal mStatus remove_record(request_state *request)
 mDNSlocal mStatus remove_extra(const request_state *const request, service_instance *const serv, mDNSu16 *const rrtype)
 	{
 	mStatus err = mStatus_BadReferenceErr;
-	ExtraResourceRecord *ptr = serv->srs.Extras, *tmp;
+	ExtraResourceRecord *ptr;
 
-	while (ptr)
+	for (ptr = serv->srs.Extras; ptr; ptr = ptr->next)		
 		{
-		tmp = ptr;
-		ptr = ptr->next;
-		if (tmp->ClientID == request->hdr.reg_index) // found match
+		if (ptr->ClientID == request->hdr.reg_index) // found match
 			{
-			*rrtype = tmp->r.resrec.rrtype;
-			err = mDNS_RemoveRecordFromService(&mDNSStorage, &serv->srs, tmp, FreeExtraRR, tmp);
-			LogOperation("     mDNS_RemoveRecordFromService %d", err);
-			// mDNS_RemoveRecordFromService() calls mDNS_Deregister_internal(), which returns
-			// mStatus_BadReferenceErr if it doesn't find a resource record that matches tmp->r.
-			// We still have this extra record even if the registration doesn't exist (or more likely, 
-			// was never made) so we must free here to avoid a leak.
-			if (err == mStatus_BadReferenceErr)
-				{
-				tmp->r.RecordContext = tmp;
-				FreeExtraRR(&mDNSStorage, &tmp->r, mStatus_MemFree);
-				}
-			return (err);
+			*rrtype = ptr->r.resrec.rrtype;
+			return mDNS_RemoveRecordFromService(&mDNSStorage, &serv->srs, ptr, FreeExtraRR, ptr);
 			}
 		}
 	return err;
