@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.455  2007/09/05 20:53:06  cheshire
+Tidied up alignment of code layout; code was clearing m->tcpAddrInfo.sock instead of m->tcpDeviceInfo.sock
+
 Revision 1.454  2007/09/05 02:32:55  cheshire
 Fixed posix build error (mixed declarations and code)
 
@@ -1158,9 +1161,9 @@ mDNSlocal void SetExternalAddress(mDNS *const m, mDNSv4Addr newaddr, mDNSs32 rou
 	LogOperation("Received external IP address %.4a from NAT", &m->ExternalAddress);
 	if (mDNSv4AddrIsRFC1918(&m->ExternalAddress)) LogMsg("natTraversalHandleAddressReply: Double NAT");
 #ifdef _LEGACY_NAT_TRAVERSAL_
-	if (m->tcpAddrInfo.sock)	{ mDNSPlatformTCPCloseConnection(m->tcpAddrInfo.sock); m->tcpAddrInfo.sock = mDNSNULL; }
-	if (m->tcpDeviceInfo.sock)	{ mDNSPlatformTCPCloseConnection(m->tcpDeviceInfo.sock); m->tcpAddrInfo.sock = mDNSNULL; }
-	if (mDNSIPv4AddressIsZero(m->ExternalAddress))   m->uPNPSOAPPort = m->uPNPRouterPort = zeroIPPort;	// reset uPNP ports
+	if (m->tcpAddrInfo.sock)   { mDNSPlatformTCPCloseConnection(m->tcpAddrInfo.sock);   m->tcpAddrInfo.sock   = mDNSNULL; }
+	if (m->tcpDeviceInfo.sock) { mDNSPlatformTCPCloseConnection(m->tcpDeviceInfo.sock); m->tcpDeviceInfo.sock = mDNSNULL; }
+	if (mDNSIPv4AddressIsZero(m->ExternalAddress)) m->uPNPSOAPPort = m->uPNPRouterPort = zeroIPPort;	// reset uPNP ports
 #endif // _LEGACY_NAT_TRAVERSAL_
 
 	// NAT gateway changed. Need to refresh or recreate port mappings ASAP
@@ -1178,11 +1181,7 @@ mDNSlocal void SetExternalAddress(mDNS *const m, mDNSv4Addr newaddr, mDNSs32 rou
 		
 		n->publicPort = zeroIPPort;
 #ifdef _LEGACY_NAT_TRAVERSAL_
-		if (n->tcpInfo.sock)
-			{
-			mDNSPlatformTCPCloseConnection(n->tcpInfo.sock);
-			n->tcpInfo.sock = mDNSNULL;
-			}
+		if (n->tcpInfo.sock) { mDNSPlatformTCPCloseConnection(n->tcpInfo.sock); n->tcpInfo.sock = mDNSNULL; }
 #endif // _LEGACY_NAT_TRAVERSAL_
 		}
 
@@ -1710,7 +1709,6 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 	tcpInfo_t		*	tcpInfo = (tcpInfo_t *)context;
 	mDNSBool			closed = mDNSfalse;
 	mDNSu8			*	end;
-	long				n;
 	mDNS			*	m = tcpInfo->m;
 	DomainAuthInfo *AuthInfo =
 		tcpInfo->question ? tcpInfo->question->AuthInfo :
@@ -1722,7 +1720,9 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 		tcpInfo->srs      ? &tcpInfo->srs->tcp :
 		tcpInfo->rr       ? &tcpInfo->rr->tcp : mDNSNULL;
 	if (!backpointer) LogMsg("tcpCallback: Purpose of connection unidentified");
-	else if (*backpointer != tcpInfo) LogMsg("tcpCallback: backpointer incorrect %p %p", *backpointer, tcpInfo);
+	else if (*backpointer != tcpInfo)
+		LogMsg("tcpCallback: %d backpointer %p incorrect tcpInfo %p question %p srs %p rr %p",
+			mDNSPlatformTCPGetFD(tcpInfo->sock), *backpointer, tcpInfo, tcpInfo->question, tcpInfo->srs, tcpInfo->rr);
 
 	if (err) goto exit;
 
@@ -1768,6 +1768,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 		}
 	else
 		{
+		long n;
 		if (tcpInfo->nread < 2)			// First read the two-byte length preceeding the DNS message
 			{
 			mDNSu8 *lenptr = (mDNSu8 *)&tcpInfo->replylen;
