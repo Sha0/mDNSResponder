@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.453  2007/09/05 02:26:57  cheshire
+<rdar://problem/5457287> mDNSResponder taking up 100% CPU in ReissueBlockedQuestions
+In startPrivateQueryCallback, restore q->ThisQInterval to non-zero value after GetZoneData completes
+
 Revision 1.452  2007/08/31 22:58:22  cheshire
 If we have an existing TCP connection we should re-use it instead of just bailing out
 After receiving dnsbugtest response, need to set m->NextScheduledQuery to cause queries to be re-issued
@@ -3840,6 +3844,7 @@ mDNSlocal void startPrivateQueryCallback(mDNS *const m, mStatus err, const ZoneD
 		}
 
 	q->TargetQID = mDNS_NewMessageID(m);
+	q->ThisQInterval = MAX_UCAST_POLL_INTERVAL;
 	q->tcp = MakeTCPConn(m, mDNSNULL, mDNSNULL, kTCPSocketFlags_UseTLS, &zoneInfo->Addr, zoneInfo->Port, q, mDNSNULL, mDNSNULL);
 
 exit:
