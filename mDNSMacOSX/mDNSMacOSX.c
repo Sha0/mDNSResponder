@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.475  2007/09/05 02:24:28  cheshire
+<rdar://problem/5457287> mDNSResponder taking up 100% CPU in ReissueBlockedQuestions
+In ReissueBlockedQuestions, only restart questions marked NoAnswer_Suspended, not those marked NoAnswer_Fail
+
 Revision 1.474  2007/09/04 22:32:58  mcguire
 <rdar://problem/5453633> BTMM: BTMM overwrites /etc/racoon/remote/anonymous.conf
 
@@ -2129,7 +2133,7 @@ mDNSlocal void ReissueBlockedQuestions(mDNS *const m, domainname *d, mDNSBool su
 		{
 		DNSQuestion *q = question;
 		question = question->next;
-		if (q->NoAnswer && q->qtype == kDNSType_AAAA && q->AuthInfo && q->AuthInfo->AutoTunnel && SameDomainName(&q->qname, d))
+		if (q->NoAnswer == NoAnswer_Suspended && q->qtype == kDNSType_AAAA && q->AuthInfo && q->AuthInfo->AutoTunnel && SameDomainName(&q->qname, d))
 			{
 			LogOperation("Restart %##s", q->qname.c);
 			mDNSQuestionCallback *tmp = q->QuestionCallback;
@@ -2252,7 +2256,7 @@ mDNSexport void AddNewClientTunnel(mDNS *const m, DNSQuestion *const q)
 	p->q.QuestionCallback = AutoTunnelCallback;
 	p->q.QuestionContext  = p;
 
-	LogOperation("AddNewClientTunnel start %##s (%s)", &p->q.qname.c, DNSTypeName(p->q.qtype));
+	LogOperation("AddNewClientTunnel start  %##s (%s)", &p->q.qname.c, DNSTypeName(p->q.qtype));
 	mDNS_StartQuery_internal(m, &p->q);
 	}
 
