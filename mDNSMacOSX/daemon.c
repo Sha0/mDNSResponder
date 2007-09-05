@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.337  2007/09/05 20:45:50  cheshire
+Added list of KQSocketEventSources in SIGINFO output
+
 Revision 1.336  2007/08/31 17:15:37  cheshire
 Reordered startup log messages so that "mDNSResponder ... starting" is the first message
 
@@ -2154,6 +2157,11 @@ mDNSlocal void INFOCallback(void)
 			LogMsgNoIdent("%5d: Mach ServiceInstance     %##s %u", si->ClientMachPort, si->srs.RR_SRV.resrec.name->c, mDNSVal16(si->srs.RR_SRV.resrec.rdata->u.srv.port));
 		}
 
+	LogMsgNoIdent("----- KQSocketEventSources -----");
+	KQSocketEventSource *k;
+	for (k = gEventSources; k; k=k->next)
+		LogMsgNoIdent("%3d %s", k->fd, k->kqs.KQtask);
+
 	LogMsgNoIdent("------ Network Interfaces ------");
 	for (i = mDNSStorage.p->InterfaceList; i; i = i->next)
 		{
@@ -2538,8 +2546,9 @@ mDNSlocal void * KQueueLoop(void *m_param)
 				{
 				const KQueueEntry *const kqentry = new_events[i].udata;
 				mDNSs32 start = mDNSPlatformRawTime();
+#if LogAllOperations
 				const char *const KQtask = kqentry->KQtask;	// Grab a copy in case KQcallback deletes the task
-				(void)KQtask;
+#endif
 				kqentry->KQcallback(new_events[i].ident, new_events[i].filter, kqentry->KQcontext);
 				mDNSs32 end   = mDNSPlatformRawTime();
 				if (end - start >= WatchDogReportingThreshold)
@@ -2781,6 +2790,8 @@ mStatus udsSupportRemoveFDFromEventLoop(int fd)		// Note: This also CLOSES the f
 		{
 		KQSocketEventSource *s = *p;
 		*p = (*p)->next;
+		// We don't have to explicitly do a kqueue EV_DELETE here because closing the fd
+		// causes the kernel to automatically remove any associated kevents
 		close(s->fd);
 		freeL("KQSocketEventSource", s);
 		return mStatus_NoError;
