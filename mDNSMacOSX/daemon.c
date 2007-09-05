@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.338  2007/09/05 23:34:27  mcguire
+Revert logging change
+
 Revision 1.337  2007/09/05 20:45:50  cheshire
 Added list of KQSocketEventSources in SIGINFO output
 
@@ -2546,9 +2549,8 @@ mDNSlocal void * KQueueLoop(void *m_param)
 				{
 				const KQueueEntry *const kqentry = new_events[i].udata;
 				mDNSs32 start = mDNSPlatformRawTime();
-#if LogAllOperations
 				const char *const KQtask = kqentry->KQtask;	// Grab a copy in case KQcallback deletes the task
-#endif
+				(void)KQtask;
 				kqentry->KQcallback(new_events[i].ident, new_events[i].filter, kqentry->KQcontext);
 				mDNSs32 end   = mDNSPlatformRawTime();
 				if (end - start >= WatchDogReportingThreshold)
