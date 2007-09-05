@@ -22,6 +22,12 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.457  2007/09/05 21:48:01  cheshire
+<rdar://problem/5385864> BTMM: mDNSResponder flushes wide-area Bonjour records after an hour for a zone.
+Now that we're respecting the TTL of uDNS records in the cache, the LLQ maintenance code needs
+to update the cache lifetimes of all relevant records every time it successfully renews an LLQ,
+otherwise those records will expire and vanish from the cache.
+
 Revision 1.456  2007/09/05 21:00:17  cheshire
 <rdar://problem/5457287> mDNSResponder taking up 100% CPU in ReissueBlockedQuestions
 Additional refinement: ThisQInterval needs to be restored in tcpCallback, not in startPrivateQueryCallback
@@ -1660,6 +1666,7 @@ mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *co
 							mDNSu8 *ackEnd;
 							if (q->LongLived && q->state == LLQ_Poll && !mDNSIPPortIsZero(q->servPort)) q->ThisQInterval = LLQ_POLL_INTERVAL;
 							else if (q->ThisQInterval < MAX_UCAST_POLL_INTERVAL)                        q->ThisQInterval = MAX_UCAST_POLL_INTERVAL;
+							//debugf("Sending LLQ ack for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 							InitializeDNSMessage(&m->omsg.h, msg->h.id, ResponseFlags);
 							ackEnd = putLLQ(&m->omsg, m->omsg.data, mDNSNULL, &opt->OptData.llq, mDNSfalse);
 							if (ackEnd) mDNSSendDNSMessage(m, &m->omsg, ackEnd, mDNSInterface_Any, srcaddr, srcport, mDNSNULL, mDNSNULL);
@@ -1674,6 +1681,8 @@ mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *co
 							if (opt->OptData.llq.err != LLQErr_NoError) LogMsg("recvRefreshReply: received error %d from server", opt->OptData.llq.err);
 							else
 								{
+								//debugf("Received refresh confirmation for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+								GrantCacheExtensions(m, q, opt->OptData.llq.llqlease);
 								q->expire   = q->LastQTime + ((mDNSs32)opt->OptData.llq.llqlease *  mDNSPlatformOneSecond   );
 								q->ThisQInterval =           ((mDNSs32)opt->OptData.llq.llqlease * (mDNSPlatformOneSecond/2));
 								q->origLease = opt->OptData.llq.llqlease;
@@ -3721,7 +3730,7 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 
 	if ((q->state == LLQ_Refresh && q->ntries >= kLLQ_MAX_TRIES) || q->expire - m->timenow < 0)
 		{
-		LogMsg("Unable to refresh LLQ %##s - will retry in %d minutes", q->qname.c, kLLQ_DEF_RETRY/60);
+		LogMsg("Unable to refresh LLQ %##s (%s) - will retry in %d minutes", q->qname.c, DNSTypeName(q->qtype), kLLQ_DEF_RETRY/60);
 		q->state         = LLQ_Retry;
 		q->LastQTime     = m->timenow;
 		q->ThisQInterval = kLLQ_DEF_RETRY * mDNSPlatformOneSecond;
@@ -3744,6 +3753,9 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 
 	if (q->state == LLQ_Established) q->ntries = 1;
 	else q->ntries++;
+
+	//debugf("sendLLQRefresh %d %##s (%s)", q->ntries, q->qname.c, DNSTypeName(q->qtype));
+
 	q->state = LLQ_Refresh;
 	q->LastQTime = m->timenow;
 	}

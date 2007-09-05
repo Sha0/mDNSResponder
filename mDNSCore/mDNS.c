@@ -38,6 +38,12 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.690  2007/09/05 21:48:01  cheshire
+<rdar://problem/5385864> BTMM: mDNSResponder flushes wide-area Bonjour records after an hour for a zone.
+Now that we're respecting the TTL of uDNS records in the cache, the LLQ maintenance code needs
+to update the cache lifetimes of all relevant records every time it successfully renews an LLQ,
+otherwise those records will expire and vanish from the cache.
+
 Revision 1.689  2007/09/05 02:29:06  cheshire
 <rdar://problem/5457287> mDNSResponder taking up 100% CPU in ReissueBlockedQuestions
 Additional fixes to code implementing "NoAnswer" logic
@@ -4143,6 +4149,25 @@ mDNSlocal const domainname *SkipLeadingLabels(const domainname *d, int skip)
 	{
 	while (skip > 0 && d->c[0]) { d = (const domainname *)(d->c + 1 + d->c[0]); skip--; }
 	return(d);
+	}
+
+mDNSexport void GrantCacheExtensions(mDNS *const m, DNSQuestion *q, mDNSu32 lease)
+	{
+	CacheRecord *rr;
+	const mDNSu32 slot = HashSlot(&q->qname);
+	CacheGroup *cg = CacheGroupForName(m, slot, q->qnamehash, &q->qname);
+	for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
+		if (rr->CRActiveQuestion == q)
+			{
+			//debugf("GrantCacheExtensions: %s", CRDisplayString(m, rr));
+			rr->TimeRcvd = m->timenow;
+			rr->resrec.rroriginalttl = lease;
+			rr->UnansweredQueries = 0;
+			rr->MPUnansweredQ     = 0;
+			rr->MPUnansweredKA    = 0;
+			rr->MPExpectingKA     = mDNSfalse;
+			SetNextCacheCheckTime(m, rr);
+			}
 	}
 
 // NOTE: mDNSCoreReceiveResponse calls mDNS_Deregister_internal which can call a user callback, which may change
