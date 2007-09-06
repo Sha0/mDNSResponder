@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.476  2007/09/06 20:38:08  cheshire
+<rdar://problem/5439021> Only call SetDomainSecrets() for Keychain changes that are relevant to mDNSResponder
+
 Revision 1.475  2007/09/05 02:24:28  cheshire
 <rdar://problem/5457287> mDNSResponder taking up 100% CPU in ReissueBlockedQuestions
 In ReissueBlockedQuestions, only restart questions marked NoAnswer_Suspended, not those marked NoAnswer_Fail
@@ -3473,15 +3476,46 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 #ifndef NO_SECURITYFRAMEWORK
 mDNSlocal OSStatus KeychainChanged(SecKeychainEvent keychainEvent, SecKeychainCallbackInfo *info, void *context)
 	{
-	(void) keychainEvent;
-	(void) info;
-	mDNS *const m = (mDNS *const)context;
 	LogOperation("***   Keychain Changed   ***");
-	KQueueLock(m);
-	mDNS_Lock(m);
-	SetDomainSecrets((mDNS*)context);
-	mDNS_Unlock(m);
-	KQueueUnlock(m, "KeychainChanged");
+	mDNS *const m = (mDNS *const)context;
+	SecKeychainRef skc;
+	OSStatus err = SecKeychainCopyDefault(&skc);
+	if (!err)
+		{
+		if (info->keychain == skc)
+			{
+			// For delete events, attempt to verify what item was deleted fail because the item is already gone, so we just assume they may be relevant
+			mDNSBool relevant = (keychainEvent == kSecDeleteEvent);
+			if (!relevant)
+				{
+				UInt32 tags[3] = { kSecTypeItemAttr, kSecServiceItemAttr, kSecAccountItemAttr };
+				SecKeychainAttributeInfo attrInfo = { 3, tags, NULL };	// Count, array of tags, array of formats
+				SecKeychainAttributeList *a = NULL;
+				err = SecKeychainItemCopyAttributesAndData(info->item, &attrInfo, NULL, &a, NULL, NULL);
+				if (!err)
+					{
+					relevant = ((a->attr[0].length == 4 && (!strncasecmp(a->attr[0].data, "ddns", 4) || !strncasecmp(a->attr[0].data, "sndd", 4))) ||
+								(a->attr[1].length >= 4 && (!strncasecmp(a->attr[1].data, "dns:", 4))));
+					SecKeychainItemFreeAttributesAndData(a, NULL);
+					}
+				}
+			if (relevant)
+				{
+				LogMsg("***   Keychain Changed   *** KeychainEvent=%d %s",
+					keychainEvent,
+					keychainEvent == kSecAddEvent    ? "kSecAddEvent" : 
+					keychainEvent == kSecDeleteEvent ? "kSecDeleteEvent" : 
+					keychainEvent == kSecUpdateEvent ? "kSecUpdateEvent" :  "<Unknown>");
+				KQueueLock(m);
+				mDNS_Lock(m);
+				SetDomainSecrets(m);
+				mDNS_Unlock(m);
+				KQueueUnlock(m, "KeychainChanged");
+				}
+			}
+		CFRelease(skc);
+		}
+
 	return 0;
 	}
 #endif
