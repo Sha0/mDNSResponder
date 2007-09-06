@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.339  2007/09/06 19:08:29  cheshire
+LogAllOperations check needs to be "#if LogAllOperations || MDNS_DEBUGMSGS"
+
 Revision 1.338  2007/09/05 23:34:27  mcguire
 Revert logging change
 
@@ -2549,8 +2552,9 @@ mDNSlocal void * KQueueLoop(void *m_param)
 				{
 				const KQueueEntry *const kqentry = new_events[i].udata;
 				mDNSs32 start = mDNSPlatformRawTime();
+#if LogAllOperations || MDNS_DEBUGMSGS
 				const char *const KQtask = kqentry->KQtask;	// Grab a copy in case KQcallback deletes the task
-				(void)KQtask;
+#endif
 				kqentry->KQcallback(new_events[i].ident, new_events[i].filter, kqentry->KQcontext);
 				mDNSs32 end   = mDNSPlatformRawTime();
 				if (end - start >= WatchDogReportingThreshold)
