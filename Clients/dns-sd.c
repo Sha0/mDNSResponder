@@ -264,7 +264,7 @@ static const char *GetNextLabel(const char *cstr, char label[64])
 	return(cstr);
 	}
 
-static void DNSSD_API enum_reply(DNSServiceRef client, const DNSServiceFlags flags, uint32_t ifIndex,
+static void DNSSD_API enum_reply(DNSServiceRef sdref, const DNSServiceFlags flags, uint32_t ifIndex,
 	DNSServiceErrorType errorCode, const char *replyDomain, void *context)
 	{
 	DNSServiceFlags partialflags = flags & ~(kDNSServiceFlagsMoreComing | kDNSServiceFlagsAdd | kDNSServiceFlagsDefault);
@@ -272,7 +272,7 @@ static void DNSSD_API enum_reply(DNSServiceRef client, const DNSServiceFlags fla
 	char text[64];
 	const char *label[128];
 	
-	(void)client;       // Unused
+	(void)sdref;        // Unused
 	(void)ifIndex;      // Unused
 	(void)context;      // Unused
 
@@ -325,11 +325,11 @@ static void DNSSD_API enum_reply(DNSServiceRef client, const DNSServiceFlags fla
 	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
 	}
 
-static void DNSSD_API browse_reply(DNSServiceRef client, const DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
+static void DNSSD_API browse_reply(DNSServiceRef sdref, const DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
 	const char *replyName, const char *replyType, const char *replyDomain, void *context)
 	{
 	char *op = (flags & kDNSServiceFlagsAdd) ? "Add" : "Rmv";
-	(void)client;       // Unused
+	(void)sdref;        // Unused
 	(void)context;      // Unused
 	if (num_printed++ == 0) printf("Timestamp     A/R Flags if %-25s %-25s %s\n", "Domain", "Service Type", "Instance Name");
 	printtimestamp();
@@ -339,7 +339,7 @@ static void DNSSD_API browse_reply(DNSServiceRef client, const DNSServiceFlags f
 
 	// To test selective cancellation of operations of shared sockets,
 	// cancel the current operation when we've got a multiple of five results
-	//if (operation == 'S' && num_printed % 5 == 0) DNSServiceRefDeallocate(client);
+	//if (operation == 'S' && num_printed % 5 == 0) DNSServiceRefDeallocate(sdref);
 	}
 
 static void ShowTXTRecord(uint16_t txtLen, const unsigned char *txtRecord)
@@ -376,13 +376,13 @@ static void ShowTXTRecord(uint16_t txtLen, const unsigned char *txtRecord)
 		}
 	}
 
-static void DNSSD_API resolve_reply(DNSServiceRef client, const DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
+static void DNSSD_API resolve_reply(DNSServiceRef sdref, const DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
 	const char *fullname, const char *hosttarget, uint16_t opaqueport, uint16_t txtLen, const unsigned char *txtRecord, void *context)
 	{
 	union { uint16_t s; u_char b[2]; } port = { opaqueport };
 	uint16_t PortAsNumber = ((uint16_t)port.b[0]) << 8 | port.b[1];
 
-	(void)client;       // Unused
+	(void)sdref;        // Unused
 	(void)ifIndex;      // Unused
 	(void)context;      // Unused
 
@@ -454,10 +454,10 @@ static void myTimerCallBack(void)
 		}
 	}
 
-static void DNSSD_API reg_reply(DNSServiceRef client, const DNSServiceFlags flags, DNSServiceErrorType errorCode,
+static void DNSSD_API reg_reply(DNSServiceRef sdref, const DNSServiceFlags flags, DNSServiceErrorType errorCode,
 	const char *name, const char *regtype, const char *domain, void *context)
 	{
-	(void)client;   // Unused
+	(void)sdref;    // Unused
 	(void)flags;    // Unused
 	(void)context;  // Unused
 
@@ -491,7 +491,7 @@ static int snprintd(char *p, int max, const unsigned char **rd)
 	return(p-buf);
 	}
 
-static void DNSSD_API qr_reply(DNSServiceRef sdRef, const DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
+static void DNSSD_API qr_reply(DNSServiceRef sdref, const DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
 	const char *fullname, uint16_t rrtype, uint16_t rrclass, uint16_t rdlen, const void *rdata, uint32_t ttl, void *context)
 	{
 	char *op = (flags & kDNSServiceFlagsAdd) ? "Add" : "Rmv";
@@ -500,7 +500,7 @@ static void DNSSD_API qr_reply(DNSServiceRef sdRef, const DNSServiceFlags flags,
 	char rdb[1000], *p = rdb;
 	int unknowntype = 0;
 
-	(void)sdRef;    // Unused
+	(void)sdref;    // Unused
 	(void)flags;    // Unused
 	(void)ifIndex;  // Unused
 	(void)ttl;      // Unused
@@ -563,9 +563,9 @@ static void DNSSD_API qr_reply(DNSServiceRef sdRef, const DNSServiceFlags flags,
 	}
 
 #if HAS_NAT_PMP_API
-static void DNSSD_API port_mapping_create_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode, uint32_t publicAddress, uint32_t protocol, uint16_t privatePort, uint16_t publicPort, uint32_t ttl, void *context)
+static void DNSSD_API port_mapping_create_reply(DNSServiceRef sdref, DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode, uint32_t publicAddress, uint32_t protocol, uint16_t privatePort, uint16_t publicPort, uint32_t ttl, void *context)
 	{
-	(void)sdRef;       // Unused
+	(void)sdref;       // Unused
 	(void)context;     // Unused
 	(void)flags;       // Unused
 	
@@ -585,11 +585,11 @@ static void DNSSD_API port_mapping_create_reply(DNSServiceRef sdRef, DNSServiceF
 #endif
 
 #if HAS_ADDRINFO_API
-static void DNSSD_API addrinfo_reply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex, DNSServiceErrorType errorCode, const char *hostname, const struct sockaddr *address, uint32_t ttl, void *context)
+static void DNSSD_API addrinfo_reply(DNSServiceRef sdref, DNSServiceFlags flags, uint32_t interfaceIndex, DNSServiceErrorType errorCode, const char *hostname, const struct sockaddr *address, uint32_t ttl, void *context)
 	{
 	char *op = (flags & kDNSServiceFlagsAdd) ? "Add" : "Rmv";
 	char addr[256] = "";
-	(void) sdRef;
+	(void) sdref;
 	(void) context;
 	
 	if (num_printed++ == 0) printf("Timestamp     A/R Flags if %-25s %-40s %s\n", "Hostname", "Address", "TTL");
@@ -733,14 +733,14 @@ static unsigned long getip(const char *const name)
 	return(ip);
 	}
 
-static DNSServiceErrorType RegisterProxyAddressRecord(DNSServiceRef sdRef, const char *host, const char *ip)
+static DNSServiceErrorType RegisterProxyAddressRecord(DNSServiceRef sdref, const char *host, const char *ip)
 	{
 	// Call getip() after the call DNSServiceCreateConnection().
 	// On the Win32 platform, WinSock must be initialized for getip() to succeed.
 	// Any DNSService* call will initialize WinSock for us, so we make sure
 	// DNSServiceCreateConnection() is called before getip() is.
 	unsigned long addr = getip(ip);
-	return(DNSServiceRegisterRecord(sdRef, &record, kDNSServiceFlagsUnique, opinterface, host,
+	return(DNSServiceRegisterRecord(sdref, &record, kDNSServiceFlagsUnique, opinterface, host,
 		kDNSServiceType_A, kDNSServiceClass_IN, sizeof(addr), &addr, 240, MyRegisterRecordCallback, (void*)host));
 	// Note, should probably add support for creating proxy AAAA records too, one day
 	}
@@ -751,7 +751,7 @@ static DNSServiceErrorType RegisterProxyAddressRecord(DNSServiceRef sdRef, const
 
 #define HexPair(P) ((HexVal((P)[0]) << 4) | HexVal((P)[1]))
 
-static DNSServiceErrorType RegisterService(DNSServiceRef *sdRef,
+static DNSServiceErrorType RegisterService(DNSServiceRef *sdref,
 	const char *nam, const char *typ, const char *dom, const char *host, const char *port, int argc, char **argv)
 	{
 	DNSServiceFlags flags = 0;
@@ -790,7 +790,7 @@ static DNSServiceErrorType RegisterService(DNSServiceRef *sdRef,
 	//flags |= kDNSServiceFlagsAllowRemoteQuery;
 	//flags |= kDNSServiceFlagsNoAutoRename;
 	
-	return(DNSServiceRegister(sdRef, flags, opinterface, nam, typ, dom, host, registerPort.NotAnInteger, (uint16_t) (ptr-txt), txt, reg_reply, NULL));
+	return(DNSServiceRegister(sdref, flags, opinterface, nam, typ, dom, host, registerPort.NotAnInteger, (uint16_t) (ptr-txt), txt, reg_reply, NULL));
 	}
 
 int main(int argc, char **argv)
