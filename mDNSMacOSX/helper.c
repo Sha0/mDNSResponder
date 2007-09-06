@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.14  2007/09/06 20:39:05  cheshire
+Added comment explaining why we allow both "ddns" and "sndd" as valid item types
+The Keychain APIs on Intel appear to store the four-character item type backwards (at least some of the time)
+
 Revision 1.13  2007/09/04 22:32:58  mcguire
 <rdar://problem/5453633> BTMM: BTMM overwrites /etc/racoon/remote/anonymous.conf
 
@@ -351,6 +355,12 @@ enum DNSKeyFormat
 	{
 	formatNotDNSKey, formatDdnsTypeItem, formatDnsPrefixedServiceItem
 	};
+
+// On Mac OS X on Intel, the four-character string seems to be stored backwards, at least sometimes.
+// I suspect some overenthusiastic inexperienced engineer said, "On Intel everything's backwards,
+// therefore I need to add some byte swapping in this API to make this four-character string backwards too."
+// To cope with this we allow *both* "ddns" and "sndd" as valid item types.
+
 static const char dnsprefix[] = "dns:";
 static const char ddns[] = "ddns";
 static const char ddnsrev[] = "sndd";
