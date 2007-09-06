@@ -22,9 +22,12 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.458  2007/09/06 19:14:33  cheshire
+Fixed minor error introduced in 1.379 (an "if" statement was deleted but the "else" following it was left there)
+
 Revision 1.457  2007/09/05 21:48:01  cheshire
 <rdar://problem/5385864> BTMM: mDNSResponder flushes wide-area Bonjour records after an hour for a zone.
-Now that we're respecting the TTL of uDNS records in the cache, the LLQ maintenance code needs
+Now that we're respecting the TTL of uDNS records in the cache, the LLQ maintenance cod needs
 to update the cache lifetimes of all relevant records every time it successfully renews an LLQ,
 otherwise those records will expire and vanish from the cache.
 
@@ -2603,18 +2606,15 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 	// We were not behind a NAT and now we are
 
 	mDNSIPPort port        = srs->RR_SRV.resrec.rdata->u.srv.port;
-	mDNSBool NATChanged    = mDNSfalse;
 	mDNSBool NowBehindNAT  = (!mDNSIPPortIsZero(port) && mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsRFC1918(&srs->ns));
 	mDNSBool WereBehindNAT = (srs->NATinfo.clientContext != mDNSNULL);
 	mDNSBool PortWasMapped = (srs->NATinfo.clientContext && !mDNSIPPortIsZero(srs->NATinfo.publicPort) && !mDNSSameIPPort(srs->NATinfo.publicPort, port));
+	mDNSBool NATChanged    = (!WereBehindNAT && NowBehindNAT) || (!NowBehindNAT && PortWasMapped);
 
 	LogOperation("UpdateSRV %##s", srs->RR_SRV.resrec.name->c);
 
 	if (m->mDNS_busy != m->mDNS_reentrancy+1)
 		LogMsg("UpdateSRV: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
-
-	else if (!NowBehindNAT && PortWasMapped)               NATChanged = mDNStrue;
-	else if (!WereBehindNAT && NowBehindNAT)               NATChanged = mDNStrue;
 
 	if (!TargetChanged && !NATChanged) return;
 
