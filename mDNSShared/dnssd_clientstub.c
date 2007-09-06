@@ -28,6 +28,10 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.85  2007/09/06 21:43:23  cheshire
+<rdar://problem/5462371> Make DNSSD library more resilient
+Allow DNSServiceRefDeallocate from within DNSServiceProcessResult callback
+
 Revision 1.84  2007/09/06 18:31:47  cheshire
 <rdar://problem/5462371> Make DNSSD library more resilient against client programming errors
 
@@ -218,6 +222,7 @@ struct _DNSServiceRef_t
 	uint32_t        op;					// request_op_t or reply_op_t
 	uint32_t        max_index;			// Largest assigned record index - 0 if no additional records registered
 	uint32_t        logcounter;			// Counter used to control number of syslog messages we write
+	int            *moreptr;
 	ProcessReplyFn  ProcessReply;		// Function pointer to the code to handle received messages
 	void           *AppCallback;		// Client callback function and context
 	void           *AppContext;
@@ -357,8 +362,17 @@ static void FreeDNSServiceOp(DNSServiceOp *x)
 		syslog(LOG_WARNING, "dnssd_clientstub attempt to dispose invalid DNSServiceRef %p %08X %08X", x, x->sockfd, x->validator);
 	else
 		{
-		x->sockfd    = dnssd_InvalidSocket;
-		x->validator = 0xDDDDDDDD;
+		x->next         = NULL;
+		x->primary      = NULL;
+		x->sockfd       = dnssd_InvalidSocket;
+		x->validator    = 0xDDDDDDDD;
+		x->op           = request_op_none;
+		x->max_index    = 0;
+		x->logcounter   = 0;
+		x->moreptr      = NULL;
+		x->ProcessReply = NULL;
+		x->AppCallback  = NULL;
+		x->AppContext   = NULL;
 		free(x);
 		}
 	}
@@ -413,6 +427,7 @@ static DNSServiceErrorType ConnectToServer(DNSServiceRef *ref, DNSServiceFlags f
 	sdr->op            = op;
 	sdr->max_index     = 0;
 	sdr->logcounter    = 0;
+	sdr->moreptr       = NULL;
 	sdr->ProcessReply  = ProcessReply;
 	sdr->AppCallback   = AppCallback;
 	sdr->AppContext    = AppContext;
@@ -658,9 +673,21 @@ DNSServiceErrorType DNSSD_API DNSServiceProcessResult(DNSServiceRef sdRef)
 			cbh.cb_flags     = get_flags     (&ptr, data + cbh.ipc_hdr.datalen);
 			cbh.cb_interface = get_uint32    (&ptr, data + cbh.ipc_hdr.datalen);
 			cbh.cb_err       = get_error_code(&ptr, data + cbh.ipc_hdr.datalen);
+
+			// CAUTION: We have to handle the case where the client calls DNSServiceRefDeallocate from within the callback function.
+			// To do this we set moreptr to point to morebytes. If the client does call DNSServiceRefDeallocate(),
+			// then that routine will clear morebytes for us, and cause us to exit our loop.
 			morebytes = more_bytes(sdRef->sockfd);
-			if (morebytes) cbh.cb_flags |= kDNSServiceFlagsMoreComing;
+			if (morebytes)
+				{
+				cbh.cb_flags |= kDNSServiceFlagsMoreComing;
+				sdRef->moreptr = &morebytes;
+				}
 			if (ptr) sdRef->ProcessReply(sdRef, &cbh, ptr, data + cbh.ipc_hdr.datalen);
+			// If morebytes is non-zero, clear the moreptr field.
+			// CAUTION: If morebytes is zero, that might be because DNSServiceRefDeallocate() was called,
+			// in which case we MUST NOT try to dereference our stale sdRef pointer.
+			if (morebytes) sdRef->moreptr = NULL;
 			}
 		free(data);
 		} while (morebytes);
@@ -677,6 +704,9 @@ void DNSSD_API DNSServiceRefDeallocate(DNSServiceRef sdRef)
 		syslog(LOG_WARNING, "dnssd_clientstub DNSServiceRefDeallocate called with invalid DNSServiceRef %p %08X %08X", sdRef, sdRef->sockfd, sdRef->validator);
 		return;
 		}
+
+	// If we're in the middle of a DNSServiceProcessResult() invocation for this DNSServiceRef, clear its morebytes flag to break it out of its while loop
+	if (sdRef->moreptr) *(sdRef->moreptr) = 0;
 
 	if (sdRef->primary)		// If this is a subordinate DNSServiceOp, just send a 'stop' command
 		{
@@ -759,6 +789,7 @@ static void handle_resolve_response(DNSServiceOp *sdr, CallbackHeader *cbh, char
 
 	if (!data) syslog(LOG_WARNING, "dnssd_clientstub handle_resolve_response: error reading result from daemon");
 	else ((DNSServiceResolveReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, fullname, target, port.s, txtlen, txtrecord, sdr->AppContext);
+	// MUST NOT touch sdr after invoking AppCallback -- client is allowed to dispose it from within callback function
 	}
 
 DNSServiceErrorType DNSSD_API DNSServiceResolve
@@ -820,6 +851,7 @@ static void handle_query_response(DNSServiceOp *sdr, CallbackHeader *cbh, char *
 
 	if (!data) syslog(LOG_WARNING, "dnssd_clientstub handle_query_response: error reading result from daemon");
 	else ((DNSServiceQueryRecordReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, name, rrtype, rrclass, rdlen, rdata, ttl, sdr->AppContext);
+	// MUST NOT touch sdr after invoking AppCallback -- client is allowed to dispose it from within callback function
 	}
 
 DNSServiceErrorType DNSSD_API DNSServiceQueryRecord
@@ -903,6 +935,7 @@ static void handle_addrinfo_response(DNSServiceOp *sdr, CallbackHeader *cbh, cha
 			if (!cbh->cb_err) memcpy(&sa6.sin6_addr, rdata, rdlen);
 			}
 		((DNSServiceGetAddrInfoReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, hostname, sa, ttl, sdr->AppContext);
+		// MUST NOT touch sdr after invoking AppCallback -- client is allowed to dispose it from within callback function
 		}
 	}
 
@@ -954,6 +987,7 @@ static void handle_browse_response(DNSServiceOp *sdr, CallbackHeader *cbh, char 
 	get_string(&data, end, replyDomain, kDNSServiceMaxDomainName);
 	if (!data) syslog(LOG_WARNING, "dnssd_clientstub handle_browse_response: error reading result from daemon");
 	else ((DNSServiceBrowseReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, replyName, replyType, replyDomain, sdr->AppContext);
+	// MUST NOT touch sdr after invoking AppCallback -- client is allowed to dispose it from within callback function
 	}
 
 DNSServiceErrorType DNSSD_API DNSServiceBrowse
@@ -1019,6 +1053,7 @@ static void handle_regservice_response(DNSServiceOp *sdr, CallbackHeader *cbh, c
 	get_string(&data, end, domain,  kDNSServiceMaxDomainName);
 	if (!data) syslog(LOG_WARNING, "dnssd_clientstub handle_regservice_response: error reading result from daemon");
 	else ((DNSServiceRegisterReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_err, name, regtype, domain, sdr->AppContext);
+	// MUST NOT touch sdr after invoking AppCallback -- client is allowed to dispose it from within callback function
 	}
 
 DNSServiceErrorType DNSSD_API DNSServiceRegister
@@ -1087,6 +1122,7 @@ static void handle_enumeration_response(DNSServiceOp *sdr, CallbackHeader *cbh, 
 	get_string(&data, end, domain, kDNSServiceMaxDomainName);
 	if (!data) syslog(LOG_WARNING, "dnssd_clientstub handle_enumeration_response: error reading result from daemon");
 	else ((DNSServiceDomainEnumReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, domain, sdr->AppContext);
+	// MUST NOT touch sdr after invoking AppCallback -- client is allowed to dispose it from within callback function
 	}
 
 DNSServiceErrorType DNSSD_API DNSServiceEnumerateDomains
@@ -1145,6 +1181,7 @@ static void ConnectionResponse(DNSServiceOp *sdr, CallbackHeader *cbh, char *dat
 		syslog(LOG_WARNING, "dnssd_clientstub handle_regrecord_response: sdr->op != connection_request");
 		rref->AppCallback(rref->sdr, rref, 0, kDNSServiceErr_Unknown, rref->AppContext);
 		}
+	// MUST NOT touch sdr after invoking AppCallback -- client is allowed to dispose it from within callback function
 	}
 
 DNSServiceErrorType DNSSD_API DNSServiceCreateConnection(DNSServiceRef *sdRef)
@@ -1430,6 +1467,7 @@ static void handle_port_mapping_response(DNSServiceOp *sdr, CallbackHeader *cbh,
 
 	if (!data) syslog(LOG_WARNING, "dnssd_clientstub handle_port_mapping_response: error reading result from daemon");
 	else ((DNSServiceNATPortMappingReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, addr.l, protocol, privatePort.s, publicPort.s, ttl, sdr->AppContext);
+	// MUST NOT touch sdr after invoking AppCallback -- client is allowed to dispose it from within callback function
 	}
 
 DNSServiceErrorType DNSSD_API DNSServiceNATPortMappingCreate
