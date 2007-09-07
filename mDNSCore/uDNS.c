@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.459  2007/09/07 01:01:05  cheshire
+<rdar://problem/5464844> BTMM: Services being registered and deregistered in a loop
+In hndlServiceUpdateReply, need to clear SRVUpdateDeferred
+
 Revision 1.458  2007/09/06 19:14:33  cheshire
 Fixed minor error introduced in 1.379 (an "if" statement was deleted but the "else" following it was left there)
 
@@ -1968,7 +1972,7 @@ mDNSlocal void startLLQHandshake(mDNS *m, DNSQuestion *q)
 				else                                                                                         { err = mStatus_UnknownErr;     goto exit; }
 				}
 
-		LogOperation("startLLQHandshake TCP %p", q->tcp);
+		LogOperation("startLLQHandshake TCP %p %##s (%s)", q->tcp, q->qname.c, DNSTypeName(q->qtype));
 		if (q->tcp) LogMsg("startLLQHandshake: Already have TCP connection for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 		else q->tcp = MakeTCPConn(m, mDNSNULL, mDNSNULL, kTCPSocketFlags_UseTLS, &q->servAddr, q->servPort, q, mDNSNULL, mDNSNULL);
 
@@ -2199,7 +2203,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 
 	if (srs->Private)
 		{
-		LogOperation("SendServiceRegistration TCP %p", srs->tcp);
+		LogOperation("SendServiceRegistration TCP %p %s", srs->tcp, ARDisplayString(m, &srs->RR_SRV));
 		if (srs->tcp) LogMsg("SendServiceRegistration: Already have TCP connection for %s", ARDisplayString(m, &srs->RR_SRV));
 		else srs->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &srs->ns, srs->SRSUpdatePort, mDNSNULL, srs, mDNSNULL);
 		srs->RR_SRV.LastAPTime = m->timenow;
@@ -2559,8 +2563,7 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 
 	if (srs->Private)
 		{
-		LogOperation("SendServiceDeregistration for %s", ARDisplayString(m, &srs->RR_SRV));
-		LogOperation("SendServiceDeregistration TCP %p", srs->tcp);
+		LogOperation("SendServiceDeregistration TCP %p %s", srs->tcp, ARDisplayString(m, &srs->RR_SRV));
 		if (srs->tcp) LogMsg("SendServiceDeregistration: Already have TCP connection for %s", ARDisplayString(m, &srs->RR_SRV));
 		else srs->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &srs->ns, srs->SRSUpdatePort, mDNSNULL, srs, mDNSNULL);
 		srs->RR_SRV.LastAPTime = m->timenow;
@@ -2611,15 +2614,14 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 	mDNSBool PortWasMapped = (srs->NATinfo.clientContext && !mDNSIPPortIsZero(srs->NATinfo.publicPort) && !mDNSSameIPPort(srs->NATinfo.publicPort, port));
 	mDNSBool NATChanged    = (!WereBehindNAT && NowBehindNAT) || (!NowBehindNAT && PortWasMapped);
 
-	LogOperation("UpdateSRV %##s", srs->RR_SRV.resrec.name->c);
+	LogOperation("UpdateSRV %##s newtarget %##s TargetChanged %d HaveZoneData %d port %d NowBehindNAT %d WereBehindNAT %d PortWasMapped %d NATChanged %d",
+		srs->RR_SRV.resrec.name->c, newtarget,
+		TargetChanged, HaveZoneData, mDNSVal16(port), NowBehindNAT, WereBehindNAT, PortWasMapped, NATChanged);
 
 	if (m->mDNS_busy != m->mDNS_reentrancy+1)
 		LogMsg("UpdateSRV: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
 	if (!TargetChanged && !NATChanged) return;
-
-	debugf("UpdateSRV (%##s) HadZoneData=%d, TargetChanged=%d, newtarget=%##s, NowBehindNAT=%d, WereBehindNAT=%d, PortWasMapped=%d",
-		   srs->RR_SRV.resrec.name->c,  HaveZoneData, TargetChanged, newtarget, NowBehindNAT, WereBehindNAT, PortWasMapped);
 
 	switch(srs->state)
 		{
@@ -3171,7 +3173,7 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 
 	if (rr->Private)
 		{
-		LogOperation("sendRecordRegistration TCP %p", rr->tcp);
+		LogOperation("sendRecordRegistration TCP %p %s", rr->tcp, ARDisplayString(m, rr));
 		if (rr->tcp) LogMsg("sendRecordRegistration: Already have TCP connection for %s", ARDisplayString(m, rr));
 		else rr->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, mDNSNULL, rr);
 		rr->LastAPTime = m->timenow;
@@ -3328,12 +3330,13 @@ mDNSlocal void hndlServiceUpdateReply(mDNS *const m, ServiceRecordSet *srs,  mSt
 
 	if ((srs->SRVChanged || srs->SRVUpdateDeferred) && (srs->state == regState_NoTarget || srs->state == regState_Registered))
 		{
+		LogOperation("hndlServiceUpdateReply: SRVChanged %d SRVUpdateDeferred %d state %d", srs->SRVChanged, srs->SRVUpdateDeferred, srs->state);
 		if (InvokeCallback)
 			{
 			srs->ClientCallbackDeferred = mDNStrue;
 			srs->DeferredStatus = err;
 			}
-		srs->SRVChanged = mDNSfalse;
+		srs->SRVChanged = srs->SRVUpdateDeferred = mDNSfalse;
 		UpdateSRV(m, srs);
 		return;
 		}
@@ -4007,7 +4010,7 @@ mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 
 	if (rr->Private)
 		{
-		LogOperation("SendRecordDeregistration TCP %p", rr->tcp);
+		LogOperation("SendRecordDeregistration TCP %p %s", rr->tcp, ARDisplayString(m, rr));
 		if (rr->tcp) LogMsg("SendRecordDeregistration: Already have TCP connection for %s", ARDisplayString(m, rr));
 		else rr->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, mDNSNULL, rr);
 		rr->LastAPTime = m->timenow;
