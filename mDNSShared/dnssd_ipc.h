@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.40  2007/09/07 20:56:03  cheshire
+Renamed uint32_t field in client_context_t from "ptr64" to more accurate name "u32"
+
 Revision 1.39  2007/08/18 01:02:04  mcguire
 <rdar://problem/5415593> No Bonjour services are getting registered at boot
 
@@ -265,7 +268,7 @@ typedef enum
 typedef packedunion
     {
     void *context;
-    uint32_t ptr64[2];
+    uint32_t u32[2];
     } client_context_t;
 
 typedef packedstruct

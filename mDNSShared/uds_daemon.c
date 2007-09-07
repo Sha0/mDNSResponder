@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.336  2007/09/07 20:56:03  cheshire
+Renamed uint32_t field in client_context_t from "ptr64" to more accurate name "u32"
+
 Revision 1.335  2007/09/05 22:25:01  vazquez
 <rdar://problem/5400521> update_record mDNSResponder leak
 
@@ -1282,8 +1285,8 @@ mDNSlocal void handle_cancel_request(request_state *request)
 	while (*req)
 		{
 		if ((*req)->primary == request &&
-			(*req)->hdr.client_context.ptr64[0] == request->hdr.client_context.ptr64[0] &&
-			(*req)->hdr.client_context.ptr64[1] == request->hdr.client_context.ptr64[2])
+			(*req)->hdr.client_context.u32[0] == request->hdr.client_context.u32[0] &&
+			(*req)->hdr.client_context.u32[1] == request->hdr.client_context.u32[2])
 			{
 			// Since we're already doing a list traversal, we unlink the request directly instead of using AbortUnlinkAndFree()
 			request_state *tmp = *req;
