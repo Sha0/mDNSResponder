@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.478  2007/09/07 22:21:45  vazquez
+<rdar://problem/5460830> BTMM: Connection stops working after connecting VPN
+
 Revision 1.477  2007/09/07 21:22:30  cheshire
 <rdar://problem/5460210> BTMM: SetupSocket 5351 failed; Can't allocate UDP multicast socket spew on wake from sleep with internet sharing on
 Don't log failures binding to port 5351
@@ -3377,14 +3380,20 @@ mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 		ClientTunnel *p;
 		for (p = m->TunnelClients; p; p = p->next)
 			if (p->q.ThisQInterval < 0)
+				{
+				mDNSAddr tmpSrc = zeroAddr;
+				mDNSAddr tmpDst = { mDNSAddrType_IPv4, {{{0}}} };
+				tmpDst.ip.v4 = p->rmt_outer;
+				FindSourceAddrForIP(&tmpDst, &tmpSrc);
 				if (!mDNSSameIPv6Address(p->loc_inner, m->AutoTunnelHostAddr) ||
-					!mDNSSameIPv4Address(p->loc_outer, m->AdvertisedV4.ip.v4))
+					!mDNSSameIPv4Address(p->loc_outer, tmpSrc.ip.v4))
 					{
 					AutoTunnelSetKeys(p, mDNSfalse);
 					p->loc_inner = m->AutoTunnelHostAddr;
-					p->loc_outer = m->AdvertisedV4.ip.v4;
+					p->loc_outer = tmpSrc.ip.v4;
 					AutoTunnelSetKeys(p, mDNStrue);
 					}
+				}
 		}
 	#endif APPLE_OSX_mDNSResponder
 
