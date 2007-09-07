@@ -28,6 +28,11 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.86  2007/09/07 20:21:22  cheshire
+<rdar://problem/5462371> Make DNSSD library more resilient
+Add more comments explaining the moreptr/morebytes logic; don't allow DNSServiceRefSockFD or
+DNSServiceProcessResult for subordinate DNSServiceRefs created using kDNSServiceFlagsShareConnection
+
 Revision 1.85  2007/09/06 21:43:23  cheshire
 <rdar://problem/5462371> Make DNSSD library more resilient
 Allow DNSServiceRefDeallocate from within DNSServiceProcessResult callback
@@ -210,9 +215,9 @@ typedef void (*ProcessReplyFn)(DNSServiceOp *sdr, CallbackHeader *cbh, char *msg
 #define ValidatorBits 0x12345678
 #define DNSServiceRefValid(X) (dnssd_SocketValid((X)->sockfd) && (((X)->sockfd ^ (X)->validator) == ValidatorBits))
 
-// When using kDNSServiceFlagsShareConnection, there is one primary _DNSServiceOp_t, and zero or more subbordinates
-// For the primary, the 'next' field points to the first subbordinate, and its 'next' field points to the next, and so on.
-// For the primary, the 'primary' field is NULL; for subbordinates the 'primary' field points back to the associated primary
+// When using kDNSServiceFlagsShareConnection, there is one primary _DNSServiceOp_t, and zero or more subordinates
+// For the primary, the 'next' field points to the first subordinate, and its 'next' field points to the next, and so on.
+// For the primary, the 'primary' field is NULL; for subordinates the 'primary' field points back to the associated primary
 struct _DNSServiceRef_t
 	{
 	DNSServiceOp   *next;				// For shared connection
@@ -286,7 +291,7 @@ static int read_all(dnssd_sock_t sd, char *buf, int len)
 	return 0;
 	}
 
-// Returns 1 if more bytes remain to be read on socket descriptor sd
+// Returns 1 if more bytes remain to be read on socket descriptor sd, 0 otherwise
 static int more_bytes(dnssd_sock_t sd)
 	{
 	struct timeval tv = { 0, 0 };
@@ -357,7 +362,8 @@ static ipc_msg_hdr *create_hdr(uint32_t op, size_t *len, char **data_start, int 
 
 static void FreeDNSServiceOp(DNSServiceOp *x)
 	{
-	// We don't use our DNSServiceRefValid macro here because sockfd could contain a failing value if we're cleaning up after a socket() call failed
+	// We don't use our DNSServiceRefValid macro here because if we're cleaning up after a socket() call failed 
+	// then sockfd could legitimately contain a failing value (e.g. dnssd_InvalidSocket)
 	if ((x->sockfd ^ x->validator) != ValidatorBits)
 		syslog(LOG_WARNING, "dnssd_clientstub attempt to dispose invalid DNSServiceRef %p %08X %08X", x, x->sockfd, x->validator);
 	else
@@ -602,6 +608,12 @@ int DNSSD_API DNSServiceRefSockFD(DNSServiceRef sdRef)
 		return dnssd_InvalidSocket;
 		}
 
+	if (sdRef->primary)
+		{
+		syslog(LOG_WARNING, "dnssd_clientstub DNSServiceRefSockFD undefined for kDNSServiceFlagsShareConnection subordinate DNSServiceRef %p", sdRef);
+		return dnssd_InvalidSocket;
+		}
+
 	return (int) sdRef->sockfd;
 	}
 
@@ -616,6 +628,12 @@ DNSServiceErrorType DNSSD_API DNSServiceProcessResult(DNSServiceRef sdRef)
 	if (!DNSServiceRefValid(sdRef))
 		{
 		syslog(LOG_WARNING, "dnssd_clientstub DNSServiceProcessResult called with invalid DNSServiceRef %p %08X %08X", sdRef, sdRef->sockfd, sdRef->validator);
+		return kDNSServiceErr_BadReference;
+		}
+
+	if (sdRef->primary)
+		{
+		syslog(LOG_WARNING, "dnssd_clientstub DNSServiceProcessResult undefined for kDNSServiceFlagsShareConnection subordinate DNSServiceRef %p", sdRef);
 		return kDNSServiceErr_BadReference;
 		}
 
@@ -684,9 +702,14 @@ DNSServiceErrorType DNSSD_API DNSServiceProcessResult(DNSServiceRef sdRef)
 				sdRef->moreptr = &morebytes;
 				}
 			if (ptr) sdRef->ProcessReply(sdRef, &cbh, ptr, data + cbh.ipc_hdr.datalen);
-			// If morebytes is non-zero, clear the moreptr field.
-			// CAUTION: If morebytes is zero, that might be because DNSServiceRefDeallocate() was called,
-			// in which case we MUST NOT try to dereference our stale sdRef pointer.
+			// Careful code here:
+			// If morebytes is non-zero, that means we set sdRef->moreptr above, and the operation was not
+			// cancelled out from under us, so now we need to clear sdRef->moreptr so we don't leave a stray
+			// dangling pointer pointing to a long-gone stack variable.
+			// If morebytes is zero, then one of two thing happened:
+			// (a) morebytes was 0 above, so we didn't set sdRef->moreptr, so we don't need to clear it
+			// (b) morebytes was 1 above, and we set sdRef->moreptr, but the operation was cancelled (with DNSServiceRefDeallocate()),
+			//     so we MUST NOT try to dereference our stale sdRef pointer.
 			if (morebytes) sdRef->moreptr = NULL;
 			}
 		free(data);
@@ -1168,7 +1191,11 @@ static void ConnectionResponse(DNSServiceOp *sdr, CallbackHeader *cbh, char *dat
 	//printf("ConnectionResponse got %d\n", cbh->ipc_hdr.op);
 	if (cbh->ipc_hdr.op != reg_record_reply_op)
 		{
+		// When using kDNSServiceFlagsShareConnection, need to search the list of associated DNSServiceOps
+		// to find the one this response is intended for, and then call through to its ProcessReply handler
 		while (sdr && sdr != cbh->ipc_hdr.client_context.context) sdr = sdr->next;
+		// NOTE: We may sometimes not find a matching DNSServiceOp, in the case where the client has
+		// cancelled the subordinate DNSServiceOp, but there are still messages in the pipeline from the daemon
 		if (sdr && sdr->ProcessReply) sdr->ProcessReply(sdr, cbh, data, end);
 		// WARNING: Don't touch sdr after this -- client may have called DNSServiceRefDeallocate
 		return;
