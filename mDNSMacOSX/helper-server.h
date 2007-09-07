@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper-server.h,v $
+Revision 1.3  2007/09/07 22:44:03  mcguire
+<rdar://problem/5448420> Move CFUserNotification code to mDNSResponderHelper
+
 Revision 1.2  2007/08/23 21:39:01  cheshire
 Made code layout style consistent with existing project style; added $Log header
 
@@ -28,8 +31,13 @@ Revision 1.1  2007/08/08 22:34:58  mcguire
 #define H_HELPER_SERVER_H
 
 extern void helplog(int, const char *, ...);
+extern void pause_idle_timer(void);
+extern void unpause_idle_timer(void);
 extern void update_idle_timer(void);
 extern uid_t mDNSResponderUID;
 extern uid_t mDNSResponderGID;
+extern CFRunLoopRef gRunLoop;
+#define debug(...) debug_(__func__, __VA_ARGS__)
+extern void debug_(const char *func, const char *fmt, ...);
 
 #endif /* H_HELPER_SERVER_H */

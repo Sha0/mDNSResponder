@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper-main.c,v $
+Revision 1.9  2007/09/07 22:44:03  mcguire
+<rdar://problem/5448420> Move CFUserNotification code to mDNSResponderHelper
+
 Revision 1.8  2007/09/07 22:24:36  vazquez
 <rdar://problem/5466301> Need to stop spewing mDNSResponderHelper logs
 
@@ -85,10 +88,13 @@ union max_msg_size
 static const mach_msg_size_t MAX_MSG_SIZE = sizeof(union max_msg_size) + MAX_TRAILER_SIZE;
 static aslclient logclient = NULL;
 static int opt_debug;
-static struct timeval last_message;
 static pthread_t idletimer_thread;
 
 unsigned long maxidle = 10;
+unsigned long actualidle = 3600;
+
+CFRunLoopRef gRunLoop = NULL;
+CFRunLoopTimerRef gTimer = NULL;
 
 static void helplogv(int level, const char *fmt, va_list ap)
 	{
@@ -121,37 +127,61 @@ static void initialize_id(void)
 	mDNSResponderGID = pwd->pw_gid;
 	}
 
+static void diediedie(CFRunLoopTimerRef timer, void *context)
+	{
+	debug("entry");
+	assert(gTimer == timer);
+	if (maxidle)
+	  (void)proxy_mDNSIdleExit((mach_port_t)context);
+	}
+
+void pause_idle_timer(void)
+	{
+	debug("entry");
+	assert(gTimer);
+	assert(gRunLoop);
+	CFRunLoopRemoveTimer(gRunLoop, gTimer, kCFRunLoopDefaultMode);
+	}
+
+void unpause_idle_timer(void)
+	{
+	debug("entry");
+	assert(gRunLoop);
+	assert(gTimer);
+	CFRunLoopAddTimer(gRunLoop, gTimer, kCFRunLoopDefaultMode);
+	}
+
 void update_idle_timer(void)
 	{
-	assert(0 == gettimeofday(&last_message, NULL));
+	debug("entry");
+	assert(gTimer);
+	CFRunLoopTimerSetNextFireDate(gTimer, CFAbsoluteTimeGetCurrent() + actualidle);
 	}
 
 static void *idletimer(void *context)
 	{
-	static struct timeval now;
+	debug("entry context=%p", context);
+	gRunLoop = CFRunLoopGetCurrent();
+	CFRunLoopTimerContext cxt = {0, context, NULL, NULL, NULL};
+	gTimer = CFRunLoopTimerCreate(kCFAllocatorDefault, CFAbsoluteTimeGetCurrent() + actualidle, actualidle, 0, 0, diediedie, &cxt);
+	
+	unpause_idle_timer();
 
 	for (;;)
 		{
-		assert(0 == gettimeofday(&now, NULL));
-		if (now.tv_sec - last_message.tv_sec > (long)maxidle)
-			{
-			(void)proxy_mDNSIdleExit((mach_port_t)context);
-			sleep(1);
-			}
-		else
-			{
-			int t = maxidle - (now.tv_sec - last_message.tv_sec);
-			if (t < 1) t = 1;
-			sleep(t);
-			}
+		debug("Running CFRunLoop");
+		CFRunLoopRun();
+		sleep(1);
 		}
+
+	return NULL;
 	}
 
 static void initialize_timer(mach_port_t port)
 	{
 	int err = 0;
 
-	update_idle_timer();
+	debug("entry port=%p", port);
 	if (0 != (err = pthread_create(&idletimer_thread, NULL, idletimer, (void *)port)))
 		helplog(ASL_LEVEL_ERR, "Could not start idletimer thread: %s", strerror(err));
 	}
@@ -247,7 +277,9 @@ int main(int ac, char *av[])
 		}
 	if (!port) port = register_service(kmDNSHelperServiceName);
 
-	if (maxidle) initialize_timer(port);
+	if (maxidle) actualidle = maxidle;
+	initialize_timer(port);
+
 	kr = mach_msg_server(helper_server, MAX_MSG_SIZE, port,
 		MACH_RCV_TRAILER_ELEMENTS(MACH_RCV_TRAILER_AUDIT) | MACH_RCV_TRAILER_TYPE(MACH_MSG_TRAILER_FORMAT_0));
 	if (KERN_SUCCESS != kr)

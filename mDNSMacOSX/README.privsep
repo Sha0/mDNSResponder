@@ -27,7 +27,8 @@ needed and handles requests from mDNSResponder.
   MulticastDNS, PrivateDNS, or DynamicDNS configurations.
 
 * mDNSPreferencesSetName allows mDNSResponder to set the computer name
-  or local host name.
+  or local host name, and displays a notification if there was a
+  conflict.
 
 * mDNSKeychainGetSecrets causes mDNSResponderHelper to collect DNS
   keys from the system keychain.  SetDomainSecrets uses the result to

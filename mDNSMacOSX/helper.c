@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.16  2007/09/07 22:44:03  mcguire
+<rdar://problem/5448420> Move CFUserNotification code to mDNSResponderHelper
+
 Revision 1.15  2007/09/07 22:24:36  vazquez
 <rdar://problem/5466301> Need to stop spewing mDNSResponderHelper logs
 
@@ -87,6 +90,7 @@ Revision 1.1  2007/08/08 22:34:58  mcguire
 #include <Security/Security.h>
 #include <SystemConfiguration/SCDynamicStore.h>
 #include <SystemConfiguration/SCPreferencesSetSpecific.h>
+#include <SystemConfiguration/SCDynamicStoreCopySpecific.h>
 #include "mDNSEmbeddedAPI.h"
 #include "dns_sd.h"
 #include "dnssd_ipc.h"
@@ -105,9 +109,7 @@ uid_t mDNSResponderUID;
 gid_t mDNSResponderGID;
 static const char kTunnelAddressInterface[] = "lo0";
 
-#define debug(...) debug_(__func__, __VA_ARGS__)
-
-static void
+void
 debug_(const char *func, const char *fmt, ...)
 	{
 	char buf[2048];
@@ -165,12 +167,14 @@ closefds(int from)
 kern_return_t
 do_mDNSIdleExit(__unused mach_port_t port, audit_token_t token)
 	{
+	debug("entry");
 	if (!authorized(&token))
 		goto fin;
 	helplog(ASL_LEVEL_INFO, "Idle exit");
 	exit(0);
 
 fin:
+	debug("fin");
 	return KERN_SUCCESS;
 	}
 
@@ -251,18 +255,207 @@ fin:
 	return KERN_SUCCESS;
 	}
 
+char usercompname[MAX_DOMAIN_LABEL+1] = {0}; // the last computer name the user saw
+char userhostname[MAX_DOMAIN_LABEL+1] = {0}; // the last local host name the user saw
+char lastcompname[MAX_DOMAIN_LABEL+1] = {0}; // the last computer name saved to preferences
+char lasthostname[MAX_DOMAIN_LABEL+1] = {0}; // the last local host name saved to preferences
+
+static CFStringRef CFS_OQ = NULL;
+static CFStringRef CFS_CQ = NULL;
+static CFStringRef CFS_Format = NULL;
+static CFStringRef CFS_ComputerName = NULL;
+static CFStringRef CFS_ComputerNameMsg = NULL;
+static CFStringRef CFS_LocalHostName = NULL;
+static CFStringRef CFS_LocalHostNameMsg = NULL;
+static CFStringRef CFS_Problem = NULL;
+
+static CFUserNotificationRef gNotification    = NULL;
+static CFRunLoopSourceRef    gNotificationRLS = NULL;
+
+static void NotificationCallBackDismissed(CFUserNotificationRef userNotification, CFOptionFlags responseFlags)
+	{
+	debug("entry");
+	(void)responseFlags;	// Unused
+	if (userNotification != gNotification) helplog(ASL_LEVEL_ERR, "NotificationCallBackDismissed: Wrong CFUserNotificationRef");
+	if (gNotificationRLS)
+		{
+		// Caution: don't use CFRunLoopGetCurrent() here, because the currently executing thread may not be our "CFRunLoopRun" thread.
+		// We need to explicitly specify the desired CFRunLoop from which we want to remove this event source.
+		CFRunLoopRemoveSource(gRunLoop, gNotificationRLS, kCFRunLoopDefaultMode);
+		CFRelease(gNotificationRLS);
+		gNotificationRLS = NULL;
+		CFRelease(gNotification);
+		gNotification = NULL;
+		}
+	// By dismissing the alert, the user has conceptually acknowleged the rename.
+	// (e.g. the machine's name is now officially "computer-2.local", not "computer.local".)
+	// If we get *another* conflict, the new alert should refer to the 'old' name
+	// as now being "computer-2.local", not "computer.local"
+	usercompname[0] = 0;
+	userhostname[0] = 0;
+	lastcompname[0] = 0;
+	lasthostname[0] = 0;
+	update_idle_timer();
+	unpause_idle_timer();
+	}
+
+static void ShowNameConflictNotification(CFMutableArrayRef header, CFStringRef subtext)
+	{
+	CFMutableDictionaryRef dictionary = CFDictionaryCreateMutable(NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+	if (!dictionary) return;
+
+	debug("entry");
+
+	CFDictionarySetValue(dictionary, kCFUserNotificationAlertHeaderKey, header);
+	CFDictionarySetValue(dictionary, kCFUserNotificationAlertMessageKey, subtext);
+
+	CFURLRef urlRef = CFURLCreateWithFileSystemPath(NULL, CFSTR("/System/Library/CoreServices/mDNSResponder.bundle"), kCFURLPOSIXPathStyle, true);
+	if (urlRef) { CFDictionarySetValue(dictionary, kCFUserNotificationLocalizationURLKey, urlRef); CFRelease(urlRef); }
+
+	if (gNotification)	// If notification already on-screen, update it in place
+		CFUserNotificationUpdate(gNotification, 0, kCFUserNotificationCautionAlertLevel, dictionary);
+	else				// else, we need to create it
+		{
+		SInt32 error;
+		gNotification = CFUserNotificationCreate(NULL, 0, kCFUserNotificationCautionAlertLevel, &error, dictionary);
+		if (!gNotification || error) { helplog(ASL_LEVEL_ERR, "ShowNameConflictNotification: CFUserNotificationRef: Error %d", error); return; }
+		gNotificationRLS = CFUserNotificationCreateRunLoopSource(NULL, gNotification, NotificationCallBackDismissed, 0);
+		if (!gNotificationRLS) { helplog(ASL_LEVEL_ERR,"ShowNameConflictNotification: RLS"); CFRelease(gNotification); gNotification = NULL; return; }
+		// Caution: don't use CFRunLoopGetCurrent() here, because the currently executing thread may not be our "CFRunLoopRun" thread.
+		// We need to explicitly specify the desired CFRunLoop to which we want to add this event source.
+		CFRunLoopAddSource(gRunLoop, gNotificationRLS, kCFRunLoopDefaultMode);
+		debug("gRunLoop=%p gNotification=%p gNotificationRLS=%p", gRunLoop, gNotification, gNotificationRLS);
+		pause_idle_timer();
+		}
+
+	CFRelease(dictionary);
+	}
+
+static CFMutableArrayRef GetHeader(const char* oldname, const char* newname, const CFStringRef msg, const char* suffix)
+	{
+	CFMutableArrayRef alertHeader = NULL;
+
+	const CFStringRef cfoldname = CFStringCreateWithCString(NULL, oldname,  kCFStringEncodingUTF8);
+	// NULL newname means we've given up trying to construct a name that doesn't conflict
+	const CFStringRef cfnewname = newname ? CFStringCreateWithCString(NULL, newname,  kCFStringEncodingUTF8) : NULL;
+	// We tag a zero-width non-breaking space at the end of the literal text to guarantee that, no matter what
+	// arbitrary computer name the user may choose, this exact text (with zero-width non-breaking space added)
+	// can never be one that occurs in the Localizable.strings translation file.
+	if (!cfoldname)
+		helplog(ASL_LEVEL_ERR,"Could not construct CFStrings for old=%s", newname);
+	else if (newname && !cfnewname)
+		helplog(ASL_LEVEL_ERR,"Could not construct CFStrings for new=%s", newname);
+	else
+		{
+		const CFStringRef s1 = CFStringCreateWithFormat(NULL, NULL, CFS_Format, cfoldname, suffix);
+		const CFStringRef s2 = cfnewname ? CFStringCreateWithFormat(NULL, NULL, CFS_Format, cfnewname, suffix) : NULL;
+
+		alertHeader = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
+
+		if (!s1)
+			helplog(ASL_LEVEL_ERR, "Could not construct secondary CFString for old=%s", oldname);
+		else if (cfnewname && !s2)
+			helplog(ASL_LEVEL_ERR, "Could not construct secondary CFString for new=%s", newname);
+		else if (!alertHeader)
+			helplog(ASL_LEVEL_ERR, "Could not construct CFArray for notification");
+		else
+			{
+			// Make sure someone is logged in.  We don't want this popping up over the login window
+			uid_t uid;
+			gid_t gid;
+			CFStringRef userName = SCDynamicStoreCopyConsoleUser(NULL, &uid, &gid);
+			if (userName)
+				{
+				CFRelease(userName);
+				CFArrayAppendValue(alertHeader, msg); // Opening phrase of message, provided by caller
+				CFArrayAppendValue(alertHeader, CFS_OQ); CFArrayAppendValue(alertHeader, s1); CFArrayAppendValue(alertHeader, CFS_CQ);
+				CFArrayAppendValue(alertHeader, CFSTR(" is already in use on this network. "));
+				if (s2)
+					{
+					CFArrayAppendValue(alertHeader, CFSTR("The name has been changed to "));
+					CFArrayAppendValue(alertHeader, CFS_OQ); CFArrayAppendValue(alertHeader, s2); CFArrayAppendValue(alertHeader, CFS_CQ);
+					CFArrayAppendValue(alertHeader, CFSTR("."));
+					}
+				else
+					CFArrayAppendValue(alertHeader, CFSTR("All attempts to find an available name by adding a number to the name were also unsuccessful."));
+				}
+			}
+		if (s1)          CFRelease(s1);
+		if (s2)          CFRelease(s2);
+		}
+	if (cfoldname) CFRelease(cfoldname);
+	if (cfnewname) CFRelease(cfnewname);
+
+	return alertHeader;
+	}
+
+static void update_notification(void)
+	{
+	debug("entry ucn=%s, uhn=%s, lcn=%s, lhn=%s", usercompname, userhostname, lastcompname, lasthostname);
+	if (!CFS_OQ)
+		{
+		// Note: the "\xEF\xBB\xBF" byte sequence in the CFS_Format string is the UTF-8 encoding of the zero-width non-breaking space character.
+		// By appending this invisible character on the end of literal names, we ensure the these strings cannot inadvertently match any string
+		// in the localization file -- since we know for sure that none of our strings in the localization file contain the ZWNBS character.
+		CFS_OQ               = CFStringCreateWithCString(NULL, "“",  kCFStringEncodingUTF8);
+		CFS_CQ               = CFStringCreateWithCString(NULL, "”",  kCFStringEncodingUTF8);
+		CFS_Format           = CFStringCreateWithCString(NULL, "%@%s\xEF\xBB\xBF", kCFStringEncodingUTF8);
+		CFS_ComputerName     = CFStringCreateWithCString(NULL, "The name of your computer ",  kCFStringEncodingUTF8);
+		CFS_ComputerNameMsg  = CFStringCreateWithCString(NULL, "To change the name of your computer, "
+			"open System Preferences and click Sharing, then type the name in the Computer Name field.",  kCFStringEncodingUTF8);
+		CFS_LocalHostName    = CFStringCreateWithCString(NULL, "This computer’s local hostname ",  kCFStringEncodingUTF8);
+		CFS_LocalHostNameMsg = CFStringCreateWithCString(NULL, "To change the local hostname, "
+			"open System Preferences and click Sharing, then click “Edit” and type the name in the Local Hostname field.",  kCFStringEncodingUTF8);
+		CFS_Problem          = CFStringCreateWithCString(NULL, "This may indicate a problem with the local network. "
+			"Please inform your network administrator.",  kCFStringEncodingUTF8);
+		}
+
+	if (!usercompname[0] && !userhostname[0])
+		{
+		if (gNotificationRLS)
+			{
+			debug("canceling notification %p", gNotification);
+			CFUserNotificationCancel(gNotification);
+			unpause_idle_timer();
+			}
+		}
+	else
+		{
+		CFMutableArrayRef header = NULL;
+		CFStringRef* subtext = NULL;
+		if (userhostname[0] && !lasthostname[0]) // we've given up trying to construct a name that doesn't conflict
+			{
+			header = GetHeader(userhostname, NULL, CFS_LocalHostName, ".local");
+			subtext = &CFS_Problem;
+			}
+		else if (usercompname[0])
+			{
+			header = GetHeader(usercompname, lastcompname, CFS_ComputerName, "");
+			subtext = &CFS_ComputerNameMsg;
+			}
+		else
+			{
+			header = GetHeader(userhostname, lasthostname, CFS_LocalHostName, ".local");
+			subtext = &CFS_LocalHostNameMsg;
+			}	
+		ShowNameConflictNotification(header, *subtext);
+		CFRelease(header);
+		}
+	}
+
 kern_return_t
-do_mDNSPreferencesSetName(__unused mach_port_t port, int key, vm_offset_t value,
-    mach_msg_type_number_t valueCnt, unsigned int encoding, int *err,
-    audit_token_t token)
+do_mDNSPreferencesSetName(__unused mach_port_t port, int key, const char* old, const char* new, int *err, audit_token_t token)
 	{
 	SCPreferencesRef session = NULL;
 	Boolean ok = FALSE;
 	Boolean locked = FALSE;
-	CFDataRef bytes = NULL;
-	CFPropertyListRef plist = NULL;
+	CFStringRef cfstr = NULL;
+	CFStringEncoding encoding = kCFStringEncodingUTF8;
+	char* user = NULL;
+	char* last = NULL;
+	Boolean needUpdate = FALSE;
 
-	debug("entry");
+	debug("entry %s old=%s new=%s", key==kmDNSComputerName ? "ComputerName" : (key==kmDNSLocalHostName ? "LocalHostName" : "UNKNOWN"), old, new);
 	*err = 0;
 	if (!authorized(&token))
 		{
@@ -270,39 +463,73 @@ do_mDNSPreferencesSetName(__unused mach_port_t port, int key, vm_offset_t value,
 		goto fin;
 		}
 	switch ((enum mDNSPreferencesSetNameKey)key)
-	{
-	case kmDNSComputerName:
-	case kmDNSLocalHostName:
-		break;
-	default:
-		debug("unrecognized key: %d", key);
-		*err = kmDNSHelperInvalidNameKey;
-		goto fin;
-		}
-	if (NULL == (bytes = CFDataCreateWithBytesNoCopy(NULL, (void *)value,
-	    valueCnt, kCFAllocatorNull)))
 		{
-		debug("CFDataCreateWithBytesNoCopy for value failed");
-		*err = kmDNSHelperCreationFailed;
-		goto fin;
+		case kmDNSComputerName:
+			user = usercompname;
+			last = lastcompname;
+			// We want to write the new Computer Name to System Preferences, without disturbing the user-selected
+			// system-wide default character set used for things like AppleTalk NBP and NETBIOS service advertising.
+			// Since both are set by the same call, we need to take care to set the name without changing the character set.
+			cfstr = SCDynamicStoreCopyComputerName(NULL, &encoding); // Get Computer Name and character set
+			CFRelease(cfstr);                                        // Discard the old name we don't care about
+			cfstr = NULL;
+			break;
+		case kmDNSLocalHostName:
+			user = userhostname;
+			last = lasthostname;
+			break;
+		default:
+			debug("unrecognized key: %d", key);
+			*err = kmDNSHelperInvalidNameKey;
+			goto fin;
 		}
-	if (NULL == (plist = CFPropertyListCreateFromXMLData(NULL, bytes,
-	    kCFPropertyListImmutable, NULL)))
+
+	if (!last)
 		{
-		debug("CFPropertyListCreateFromXMLData for bytes failed");
-		*err = kmDNSHelperInvalidPList;
+		helplog(ASL_LEVEL_ERR, "%s: no last ptr", __func__);
 		goto fin;
 		}
-	CFRelease(bytes);
-	bytes = NULL;
-	if (CFStringGetTypeID() != CFGetTypeID(plist))
+
+	if (!user)
 		{
-		debug("expected CFString");
-		*err = kmDNSHelperTypeError;
+		helplog(ASL_LEVEL_ERR, "%s: no user ptr", __func__);
 		goto fin;
 		}
-	if (NULL == (session = SCPreferencesCreate(NULL,
-	    CFSTR(kmDNSHelperServiceName), NULL)))
+
+	if (0 == strncmp(old, new, MAX_DOMAIN_LABEL+1))
+		{
+		// if we've changed the name, but now someone else has set it to something different, we no longer need the notification
+		if (last[0] && 0 != strncmp(last, new, MAX_DOMAIN_LABEL+1))
+			{
+			last[0] = 0;
+			user[0] = 0;
+			needUpdate = TRUE;
+			}
+		goto fin;
+		}
+	else
+		{
+		if (strncmp(last, new, MAX_DOMAIN_LABEL+1))
+			{
+			strncpy(last, new, MAX_DOMAIN_LABEL);
+			needUpdate = TRUE;
+			}
+		}
+
+	if (!user[0])
+		{
+		strncpy(user, old, MAX_DOMAIN_LABEL);
+		needUpdate = TRUE;
+		}
+
+	if (!new[0]) // we've given up trying to construct a name that doesn't conflict
+		goto fin;
+
+	cfstr = CFStringCreateWithCString(NULL, new, encoding);
+
+	session = SCPreferencesCreate(NULL, CFSTR(kmDNSHelperServiceName), NULL);
+
+	if (cfstr == NULL || session == NULL)
 		{
 		debug("SCPreferencesCreate failed");
 		*err = kmDNSHelperPreferencesFailed;
@@ -318,10 +545,10 @@ do_mDNSPreferencesSetName(__unused mach_port_t port, int key, vm_offset_t value,
 	switch ((enum mDNSPreferencesSetNameKey)key)
 	{
 	case kmDNSComputerName:
-		ok = SCPreferencesSetComputerName(session, plist, encoding);
+		ok = SCPreferencesSetComputerName(session, cfstr, encoding);
 		break;
 	case kmDNSLocalHostName:
-		ok = SCPreferencesSetLocalHostName(session, plist);
+		ok = SCPreferencesSetLocalHostName(session, cfstr);
 		break;
 	default:
 		break;
@@ -339,18 +566,16 @@ do_mDNSPreferencesSetName(__unused mach_port_t port, int key, vm_offset_t value,
 fin:
 	if (0 != *err)
 		debug("failed err=%d", *err);
-	if (NULL != plist)
-		CFRelease(plist);
-	if (NULL != bytes)
-		CFRelease(bytes);
+	if (NULL != cfstr)
+		CFRelease(cfstr);
 	if (NULL != session)
 		{
 		if (locked)
 			SCPreferencesUnlock(session);
 		CFRelease(session);
 		}
-	vm_deallocate(mach_task_self(), value, valueCnt);
 	update_idle_timer();
+	if (needUpdate) update_notification();
 	return KERN_SUCCESS;
 	}
 

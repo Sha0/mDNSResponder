@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.340  2007/09/07 22:44:03  mcguire
+<rdar://problem/5448420> Move CFUserNotification code to mDNSResponderHelper
+
 Revision 1.339  2007/09/06 19:08:29  cheshire
 LogAllOperations check needs to be "#if LogAllOperations || MDNS_DEBUGMSGS"
 
@@ -1458,182 +1461,6 @@ fail:
 	return(err);
 	}
 
-mDNSlocal domainlabel gNotificationPrefHostLabel;	// The prefs as they were the last time we saw them
-mDNSlocal domainlabel gNotificationPrefNiceLabel;
-mDNSlocal domainlabel gNotificationUserHostLabel;	// The prefs as they were the last time the user saw them
-mDNSlocal domainlabel gNotificationUserNiceLabel;
-
-// We have four copies each of the HostLabel and the NiceLabel.
-// The logic works like this (for HostLabel; NiceLabel is analogous):
-// m->hostlabel        is the name currently in use by the mDNS core code.
-// m->p->userhostlabel is the name most recently read from the user preferences by the platform support layer.
-// Any time the user changes the preferences, both m->hostlabel and m->p->userhostlabel
-// are updated simultaneously. This means that if we see that the names do not match, we
-// must have had a name conflict which caused the mDNS core code to update m->hostlabel.
-// We respond to this mismatch by displaying an alert to tell the user about the name change,
-// and by writing the new name back to persistent preferences. When we do this:
-// gNotificationPrefHostLabel is set to the new name (which is written immediately to the preferences) and
-// gNotificationUserHostLabel holds the name as it was the last time the user was deemed to be "aware" of it.
-// These two variables allow us to display both the "old" and "new" names to the user.
-// Two events cause gNotificationUserHostLabel to be updated:
-//  * An mStatus_ConfigChanged message where m->p->userhostlabel != gNotificationPrefHostLabel.
-//    The means the user changed userhostlabel themself, hence they must be "aware" of the name.
-//  * The user dismisses the name change alert, thereby acknowledging that they are "aware" of the new name.
-//
-// Summary:
-//
-// If the user updates the preferences, m->hostlabel and m->p->userhostlabel are set to the new value,
-// and then a mStatus_ConfigChanged message is delivered immediately,
-// and the code notices that m->p->userhostlabel and gNotificationPrefHostLabel don't match,
-// so it updates gNotificationUserHostLabel and gNotificationPrefHostLabel too.
-//
-// If the mDNS core code updates the name, only m->hostlabel changes.
-// The code notices that m->p->userhostlabel and m->hostlabel don't match,
-// immediately updates m->p->userhostlabel, gNotificationPrefHostLabel
-// and the preferences on disk to match the new m->hostlabel,
-// displays an alert showing both the old name (gNotificationUserHostLabel) and the new name,
-// and then when the user dismisses the alert, it updates gNotificationUserHostLabel to match the other three
-
-#ifndef NO_CFUSERNOTIFICATION
-mDNSlocal CFUserNotificationRef gNotification    = NULL;
-mDNSlocal CFRunLoopSourceRef    gNotificationRLS = NULL;
-
-mDNSlocal void NotificationCallBackDismissed(CFUserNotificationRef userNotification, CFOptionFlags responseFlags)
-	{
-	LogOperation("NotificationCallBackDismissed");
-	KQueueLock(&mDNSStorage);
-	(void)responseFlags;	// Unused
-	if (userNotification != gNotification) LogMsg("NotificationCallBackDismissed: Wrong CFUserNotificationRef");
-	if (gNotificationRLS)
-		{
-		// Caution: don't use CFRunLoopGetCurrent() here, because the currently executing thread may not be our "CFRunLoopRun" thread.
-		// We need to explicitly specify the desired CFRunLoop from which we want to remove this event source.
-		CFRunLoopRemoveSource(CFRunLoop, gNotificationRLS, kCFRunLoopDefaultMode);
-		CFRelease(gNotificationRLS);
-		gNotificationRLS = NULL;
-		CFRelease(gNotification);
-		gNotification = NULL;
-		}
-	// By dismissing the alert, the user has conceptually acknowleged the rename.
-	// (e.g. the machine's name is now officially "computer-2.local", not "computer.local".)
-	// If we get *another* conflict, the new alert should refer to the 'old' name
-	// as now being "computer-2.local", not "computer.local"
-	gNotificationUserHostLabel = gNotificationPrefHostLabel;
-	gNotificationUserNiceLabel = gNotificationPrefNiceLabel;
-	PlatformStorage.HostNameConflict = 0;	// Clear our indicator, now user has acknowledged seeing dialog
-	KQueueUnlock(&mDNSStorage, "NotificationCallBackDismissed");
-	}
-
-mDNSlocal void ShowNameConflictNotification(CFStringRef header, CFStringRef subtext)
-	{
-	CFMutableDictionaryRef dictionary = CFDictionaryCreateMutable(NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-	if (!dictionary) return;
-	CFDictionarySetValue(dictionary, kCFUserNotificationAlertHeaderKey, header);
-	CFDictionarySetValue(dictionary, kCFUserNotificationAlertMessageKey, subtext);
-
-	CFURLRef urlRef = CFURLCreateWithFileSystemPath(NULL, CFSTR("/System/Library/CoreServices/mDNSResponder.bundle"), kCFURLPOSIXPathStyle, true);
-	if (urlRef) { CFDictionarySetValue(dictionary, kCFUserNotificationLocalizationURLKey, urlRef); CFRelease(urlRef); }
-
-	if (gNotification)	// If notification already on-screen, update it in place
-		CFUserNotificationUpdate(gNotification, 0, kCFUserNotificationCautionAlertLevel, dictionary);
-	else				// else, we need to create it
-		{
-		SInt32 error;
-		gNotification = CFUserNotificationCreate(NULL, 0, kCFUserNotificationCautionAlertLevel, &error, dictionary);
-		if (!gNotification || error) { LogMsg("ShowNameConflictNotification: CFUserNotificationRef: Error %d", error); return; }
-		gNotificationRLS = CFUserNotificationCreateRunLoopSource(NULL, gNotification, NotificationCallBackDismissed, 0);
-		if (!gNotificationRLS) { LogMsg("ShowNameConflictNotification: RLS"); CFRelease(gNotification); gNotification = NULL; return; }
-		// Caution: don't use CFRunLoopGetCurrent() here, because the currently executing thread may not be our "CFRunLoopRun" thread.
-		// We need to explicitly specify the desired CFRunLoop to which we want to add this event source.
-		CFRunLoopAddSource(CFRunLoop, gNotificationRLS, kCFRunLoopDefaultMode);
-		}
-
-	CFRelease(dictionary);
-	}
-#endif /* NO_CFUSERNOTIFICATION */
-
-// We want to write the new Computer Name to System Preferences, without disturbing the user-selected
-// system-wide default character set used for things like AppleTalk NBP and NETBIOS service advertising.
-// Since both are set by the same call, we need to take care to set the name without changing the default character set.
-mDNSlocal Boolean SafeSCPreferencesSetComputerName(CFStringRef name)
-	{
-	CFStringEncoding charset = kCFStringEncodingUTF8;					// Defensive coding -- assume UTF8
-	CFStringRef cfs = SCDynamicStoreCopyComputerName(NULL, &charset);	// Get Computer Name and system default character set
-	CFRelease(cfs);														// Discard the old name we don't care about
-	return (0 == mDNSPreferencesSetName(kmDNSComputerName, name, charset)); // Set new name, preserving current default character set
-	}
-
-static CFStringRef CFS_OQ;
-static CFStringRef CFS_CQ;
-static CFStringRef CFS_Format;
-static CFStringRef CFS_ComputerName;
-static CFStringRef CFS_ComputerNameMsg;
-static CFStringRef CFS_LocalHostName;
-static CFStringRef CFS_LocalHostNameMsg;
-
-// This updates either the text of the field currently labelled "Local Hostname",
-// or the text of the field currently labelled "Computer Name"
-// in the Sharing Prefs Control Panel
-mDNSlocal void RecordUpdatedName(const mDNS *const m, const domainlabel *const olddl, const domainlabel *const newdl,
-	const CFStringRef msg, const char *const suffix, const CFStringRef subtext)
-	{
-	char oldname[MAX_DOMAIN_LABEL+1];
-	char newname[MAX_DOMAIN_LABEL+1];
-	ConvertDomainLabelToCString_unescaped(olddl, oldname);
-	ConvertDomainLabelToCString_unescaped(newdl, newname);
-	const CFStringRef cfoldname = CFStringCreateWithCString(NULL, oldname,  kCFStringEncodingUTF8);
-	const CFStringRef cfnewname = CFStringCreateWithCString(NULL, newname,  kCFStringEncodingUTF8);
-	// We tag a zero-width non-breaking space at the end of the literal text to guarantee that, no matter what
-	// arbitrary computer name the user may choose, this exact text (with zero-width non-breaking space added)
-	// can never be one that occurs in the Localizable.strings translation file.
-	if (!cfoldname || !cfnewname)
-		LogMsg("RecordUpdatedName: ERROR: Couldn't construct name");
-	else
-		{
-		const CFStringRef s1 = CFStringCreateWithFormat(NULL, NULL, CFS_Format, cfoldname, suffix);
-		const CFStringRef s2 = CFStringCreateWithFormat(NULL, NULL, CFS_Format, cfnewname, suffix);
-		// On Tiger and later, if we pass an array instead of a string, CFUserNotification will translate each
-		// element of the array individually for us, and then concatenate the results to make the final message.
-		// This lets us have the relevant bits localized, but not the literal names, which should not be translated.
-		// On Panther this does not work, so we just build the string directly, and it will not be translated.
-		const CFMutableStringRef alertHeader =
-			(OSXVers < 8) ? CFStringCreateMutable(NULL, 0) : (CFMutableStringRef)CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
-		Boolean result;
-		if (newdl == &gNotificationPrefHostLabel) result = (0 == mDNSPreferencesSetName(kmDNSLocalHostName, cfnewname, 0));
-		else result = SafeSCPreferencesSetComputerName(cfnewname);
-		if (!result || !s1 || !s2 || !alertHeader)
-				LogMsg("RecordUpdatedName: ERROR: Couldn't update SCPreferences");
-		else if (m->p->NotifyUser)
-			{
-#ifndef NO_CFUSERNOTIFICATION
-			uid_t uid;
-			gid_t gid;
-			CFStringRef userName = SCDynamicStoreCopyConsoleUser(NULL, &uid, &gid);
-			if (userName)
-				{
-				CFRelease(userName);
-				typedef void CFStringAppendFN(CFMutableStringRef theString, CFStringRef appendedString);
-				CFStringAppendFN *const append = (OSXVers < 8) ? &CFStringAppend : (CFStringAppendFN*)&CFArrayAppendValue;
-				append(alertHeader, msg);	// Opening phrase of message, provided by caller
-				append(alertHeader, CFS_OQ); append(alertHeader, s1); append(alertHeader, CFS_CQ);
-				append(alertHeader, CFSTR(" is already in use on this network. "));
-				append(alertHeader, CFSTR("The name has been changed to "));
-				append(alertHeader, CFS_OQ); append(alertHeader, s2); append(alertHeader, CFS_CQ);
-				append(alertHeader, CFSTR("."));
-				ShowNameConflictNotification(alertHeader, subtext);
-				}
-#else
-			(void)subtext;
-#endif /*  NO_CFUSERNOTIFICATION */
-			}
-		if (s1)          CFRelease(s1);
-		if (s2)          CFRelease(s2);
-		if (alertHeader) CFRelease(alertHeader);
-		}
-	if (cfoldname) CFRelease(cfoldname);
-	if (cfnewname) CFRelease(cfnewname);
-	}
-
 mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 	{
 	(void)m; // Unused
@@ -1650,31 +1477,8 @@ mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 		if (!m->p->HostNameConflict) m->p->HostNameConflict = NonZeroTime(m->timenow);
 		else if (m->timenow - m->p->HostNameConflict > 60 * mDNSPlatformOneSecond)
 			{
-			char oldname[MAX_DOMAIN_LABEL+1];
-			ConvertDomainLabelToCString_unescaped(&gNotificationUserHostLabel, oldname);
-			const CFStringRef cfoldname = CFStringCreateWithCString(NULL, oldname,  kCFStringEncodingUTF8);
-			if (cfoldname)
-				{
-				const CFStringRef s1 = CFStringCreateWithFormat(NULL, NULL, CFS_Format, cfoldname, ".local");
-				if (s1)
-					{
-					typedef void CFStringAppendFN(CFMutableStringRef theString, CFStringRef appendedString);
-					CFStringAppendFN *const append = (OSXVers < 8) ? &CFStringAppend : (CFStringAppendFN*)&CFArrayAppendValue;
-					const CFMutableStringRef alertHeader =
-						(OSXVers < 8) ? CFStringCreateMutable(NULL, 0) : (CFMutableStringRef)CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
-					if (alertHeader)
-						{
-						append(alertHeader, CFS_LocalHostName);
-						append(alertHeader, CFS_OQ); append(alertHeader, s1); append(alertHeader, CFS_CQ);
-						append(alertHeader, CFSTR(" is already in use on this network. "));
-						append(alertHeader, CFSTR("All attempts to find an available name by adding a number to the name were also unsuccessful."));
-						ShowNameConflictNotification(alertHeader, CFSTR("This may indicate a problem with the local network. Please inform your network administrator."));
-						CFRelease(alertHeader);
-						}
-					CFRelease(s1);
-					}
-				CFRelease(cfoldname);
-				}
+			// Tell the helper we've given up
+			mDNSPreferencesSetName(kmDNSLocalHostName, &m->p->userhostlabel, NULL);
 			}
 		}
 	else if (result == mStatus_GrowCache)
@@ -1686,23 +1490,9 @@ mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 		}
 	else if (result == mStatus_ConfigChanged)
 		{
-		// If the user-specified hostlabel from System Configuration has changed since the last time
-		// we saw it, and *we* didn't change it, then that implies that the user has changed it,
-		// so we auto-dismiss the name conflict alert.
-		// We use a case-sensitive comparison here because even though changing the capitalization
-		// of the name is not significant to DNS, it does confirm that the user has seen the new name
-		// and acted on that information.
-		if (!SameDomainLabelCS(m->p->userhostlabel.c, gNotificationPrefHostLabel.c) ||
-			!SameDomainLabelCS(m->p->usernicelabel.c, gNotificationPrefNiceLabel.c))
-			{
-			gNotificationUserHostLabel = gNotificationPrefHostLabel = m->p->userhostlabel;
-			gNotificationUserNiceLabel = gNotificationPrefNiceLabel = m->p->usernicelabel;
-#ifndef NO_CFUSERNOTIFICATION
-			// If we're showing a name conflict notification, and the user has manually edited
-			// the name to remedy the conflict, we should now remove the notification window.
-			if (gNotificationRLS) CFUserNotificationCancel(gNotification);
-#endif /* NO_CFUSERNOTIFICATION */
-			}
+		// Tell the helper we've seen a change in the labels.  It will dismiss the name conflict alert if needed.
+		mDNSPreferencesSetName(kmDNSComputerName, &m->p->usernicelabel, &m->nicelabel);
+		mDNSPreferencesSetName(kmDNSLocalHostName, &m->p->userhostlabel, &m->hostlabel);
 
 		// First we check our list of old Mach-based registered services, to see if any need to be updated to a new name
 		DNSServiceRegistration *r;
@@ -2241,19 +2031,6 @@ mDNSlocal kern_return_t mDNSDaemonInitialize(void)
 	mStatus            err;
 	CFMachPortRef      s_port;
 
-	// Note: the "\xEF\xBB\xBF" byte sequence in the CFS_Format string is the UTF-8 encoding of the zero-width non-breaking space character.
-	// By appending this invisible character on the end of literal names, we ensure the these strings cannot inadvertently match any string
-	// in the localization file -- since we know for sure that none of our strings in the localization file contain the ZWNBS character.
-	CFS_OQ               = CFStringCreateWithCString(NULL, "“",  kCFStringEncodingUTF8);
-	CFS_CQ               = CFStringCreateWithCString(NULL, "”",  kCFStringEncodingUTF8);
-	CFS_Format           = CFStringCreateWithCString(NULL, "%@%s\xEF\xBB\xBF", kCFStringEncodingUTF8);
-	CFS_ComputerName     = CFStringCreateWithCString(NULL, "The name of your computer ",  kCFStringEncodingUTF8);
-	CFS_ComputerNameMsg  = CFStringCreateWithCString(NULL, "To change the name of your computer, "
-		"open System Preferences and click Sharing, then type the name in the Computer Name field.",  kCFStringEncodingUTF8);
-	CFS_LocalHostName    = CFStringCreateWithCString(NULL, "This computer’s local hostname ",  kCFStringEncodingUTF8);
-	CFS_LocalHostNameMsg = CFStringCreateWithCString(NULL, "To change the local hostname, "
-		"open System Preferences and click Sharing, then click “Edit” and type the name in the Local Hostname field.",  kCFStringEncodingUTF8);
-
 	// If launchd already created our Mach port for us, then use that, else we create a new one of our own
 	if (m_port != MACH_PORT_NULL)
 		s_port = CFMachPortCreateWithPort(NULL, m_port, DNSserverCallback, NULL, NULL);
@@ -2286,9 +2063,6 @@ mDNSlocal kern_return_t mDNSDaemonInitialize(void)
 		mDNS_StatusCallback, mDNS_Init_NoInitCallbackContext);
 
 	if (err) { LogMsg("Daemon start: mDNS_Init failed %ld", err); return(err); }
-
-	gNotificationUserHostLabel = gNotificationPrefHostLabel = PlatformStorage.userhostlabel;
-	gNotificationUserNiceLabel = gNotificationPrefNiceLabel = PlatformStorage.usernicelabel;
 
 	client_death_port = CFMachPortGetPort(d_port);
 	signal_port       = CFMachPortGetPort(i_port);
@@ -2385,17 +2159,15 @@ mDNSlocal mDNSs32 mDNSDaemonIdle(mDNS *const m)
 			if (!SameDomainLabelCS(m->p->usernicelabel.c, m->nicelabel.c))
 				{
 				LogMsg("Name Conflict: Updated Computer Name from \"%#s\" to \"%#s\"", m->p->usernicelabel.c, m->nicelabel.c);
-				gNotificationPrefNiceLabel = m->p->usernicelabel = m->nicelabel;
-				RecordUpdatedName(m, &gNotificationUserNiceLabel, &gNotificationPrefNiceLabel, CFS_ComputerName, "", CFS_ComputerNameMsg);
-				// Clear m->p->NotifyUser here -- even if the hostlabel has changed too, we don't want to bug the user with *two* alerts
-				m->p->NotifyUser = 0;
+				mDNSPreferencesSetName(kmDNSComputerName, &m->p->usernicelabel, &m->nicelabel);
+				m->p->usernicelabel = m->nicelabel;
 				}
 			if (!SameDomainLabelCS(m->p->userhostlabel.c, m->hostlabel.c))
 				{
 				LogMsg("Name Conflict: Updated Local Hostname from \"%#s.local\" to \"%#s.local\"", m->p->userhostlabel.c, m->hostlabel.c);
+				mDNSPreferencesSetName(kmDNSLocalHostName, &m->p->userhostlabel, &m->hostlabel);
 				m->p->HostNameConflict = 0;	// Clear our indicator, now name change has been successful
-				gNotificationPrefHostLabel = m->p->userhostlabel = m->hostlabel;
-				RecordUpdatedName(m, &gNotificationUserHostLabel, &gNotificationPrefHostLabel, CFS_LocalHostName, ".local", CFS_LocalHostNameMsg);
+				m->p->userhostlabel = m->hostlabel;
 				}
 			m->p->NotifyUser = 0;
 			}

@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.h,v $
+Revision 1.5  2007/09/07 22:44:03  mcguire
+<rdar://problem/5448420> Move CFUserNotification code to mDNSResponderHelper
+
 Revision 1.4  2007/09/04 22:32:58  mcguire
 <rdar://problem/5453633> BTMM: BTMM overwrites /etc/racoon/remote/anonymous.conf
 
@@ -67,10 +70,11 @@ enum mDNSHelperErrors
 	};
 #undef ERROR
 
+#include "mDNSEmbeddedAPI.h"
 #include "helpermsg-types.h"
 
 extern const char *mDNSHelperError(int errornum);
-extern int mDNSPreferencesSetName(int key, CFStringRef value, CFStringEncoding encoding);
+extern int mDNSPreferencesSetName(int key, domainlabel* old, domainlabel* new);
 extern int mDNSDynamicStoreSetConfig(int key, CFPropertyListRef value);
 extern int mDNSKeychainGetSecrets(CFArrayRef *secrets);
 extern int mDNSAutoTunnelInterfaceUpDown(int updown, v6addr_t addr);

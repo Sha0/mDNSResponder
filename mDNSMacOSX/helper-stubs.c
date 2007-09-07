@@ -16,6 +16,9 @@
     Change History (most recent first):
 
 $Log: helper-stubs.c,v $
+Revision 1.5  2007/09/07 22:44:03  mcguire
+<rdar://problem/5448420> Move CFUserNotification code to mDNSResponderHelper
+
 Revision 1.4  2007/09/04 22:32:58  mcguire
 <rdar://problem/5453633> BTMM: BTMM overwrites /etc/racoon/remote/anonymous.conf
 
@@ -86,54 +89,21 @@ mDNSHelperError(int err)
 	if (0 != (err)) { LogMsg("%s: %s", __func__, mDNSHelperError((err))); goto fin; }
 
 int
-mDNSPreferencesSetName(int key, CFStringRef name, CFStringEncoding encoding)
+mDNSPreferencesSetName(int key, domainlabel* old, domainlabel* new)
 	{
-	CFWriteStreamRef stream = NULL;
-	CFDataRef bytes = NULL;
 	kern_return_t kr = KERN_FAILURE;
 	int retry = 0;
 	int err = 0;
+	char oldname[MAX_DOMAIN_LABEL+1] = {0};
+	char newname[MAX_DOMAIN_LABEL+1] = {0};
+	ConvertDomainLabelToCString_unescaped(old, oldname);
+	if (new) ConvertDomainLabelToCString_unescaped(new, newname);
 
-	if (NULL == (stream = CFWriteStreamCreateWithAllocatedBuffers(NULL,
-	    NULL)))
-		{
-		err = kmDNSHelperCreationFailed;
-		LogMsg("%s: CFWriteStreamCreateWithAllocatedBuffers failed",
-		    __func__);
-		goto fin;
-		}
-	CFWriteStreamOpen(stream);
-	if (0 == CFPropertyListWriteToStream(name, stream,
-	    kCFPropertyListBinaryFormat_v1_0, NULL))
-		{
-		err = kmDNSHelperPListWriteFailed;
-		LogMsg("%s: CFPropertyListWriteToStream failed", __func__);
-		goto fin;
-		}
-	if (NULL == (bytes = CFWriteStreamCopyProperty(stream,
-	    kCFStreamPropertyDataWritten)))
-		{
-		err = kmDNSHelperCreationFailed;
-		LogMsg("%s: CFWriteStreamCopyProperty failed", __func__);
-		goto fin;
-		}
-	CFWriteStreamClose(stream);
-	CFRelease(stream);
-	stream = NULL;
 	MACHRETRYLOOP_BEGIN(kr, retry, err, fin);
-	kr = proxy_mDNSPreferencesSetName(getHelperPort(retry), key,
-	    (vm_offset_t)CFDataGetBytePtr(bytes),
-	    CFDataGetLength(bytes), encoding, &err);
+	kr = proxy_mDNSPreferencesSetName(getHelperPort(retry), key, oldname, newname, &err);
 	MACHRETRYLOOP_END(kr, retry, err, fin);
 
 fin:
-	if (NULL != stream)
-		{
-		CFWriteStreamClose(stream);
-		CFRelease(stream);
-		}
-	if (NULL != bytes)
-		CFRelease(bytes);
 	return err;
 	}
 

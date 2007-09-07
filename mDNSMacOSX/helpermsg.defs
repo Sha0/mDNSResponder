@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helpermsg.defs,v $
+Revision 1.6  2007/09/07 22:44:03  mcguire
+<rdar://problem/5448420> Move CFUserNotification code to mDNSResponderHelper
+
 Revision 1.5  2007/09/04 22:32:58  mcguire
 <rdar://problem/5453633> BTMM: BTMM overwrites /etc/racoon/remote/anonymous.conf
 
@@ -58,12 +61,12 @@ routine mDNSDynamicStoreSetConfig(
 	ServerAuditToken	token		: audit_token_t);
 
 routine mDNSPreferencesSetName(
-				port		: mach_port_t;
-				key		: int;
-				value		: pointer_t;
-				encoding	: unsigned;
-	out			err		: int;
-	ServerAuditToken	token		: audit_token_t);
+						port	: mach_port_t;
+ 						key		: int;
+ 						old		: string_t;
+ 						new		: string_t;
+	out					err		: int;
+	ServerAuditToken	token	: audit_token_t);
 
 routine mDNSKeychainGetSecrets(
 				port		: mach_port_t;
