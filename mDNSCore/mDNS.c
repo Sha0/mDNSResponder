@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.692  2007/09/07 00:12:09  cheshire
+<rdar://problem/5466010> Unicast DNS changes broke efficiency fix 3928456
+
 Revision 1.691  2007/09/05 22:25:01  vazquez
 <rdar://problem/5400521> update_record mDNSResponder leak
 
@@ -2553,9 +2556,11 @@ mDNSexport void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheReco
 	// (b) a normal add, where we have at least one unique-type answer,
 	// then there's no need to keep polling the network.
 	// (If we have an answer in the cache, then we'll automatically ask again in time to stop it expiring.)
+	// We do this for mDNS questions and uDNS one-shot questions, but not for
+	// uDNS LongLived questions, because that would mess up our LLQ lease renewal timing.
 	if ((AddRecord == QC_addnocache && !q->RequestUnicast) ||
 		(AddRecord == QC_add && (q->ExpectUnique || (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask))))
-		if (ActiveQuestion(q) && !q->LongLived)
+		if (ActiveQuestion(q) && (mDNSOpaque16IsZero(q->TargetQID) || !q->LongLived))
 			{
 			q->LastQTime        = m->timenow;
 			q->LastQTxTime      = m->timenow;
@@ -6572,9 +6577,9 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->retryIntervalGetAddr     = 0;	// delta between time sent and retry
 	m->ExternalAddress          = zerov4Addr;
 
-	m->NATMcastRecvskt		= mDNSNULL;
-	m->LastNATUptime		= 0;
-	m->LastNATReplyLocalTime = 0;
+	m->NATMcastRecvskt          = mDNSNULL;
+	m->LastNATUptime            = 0;
+	m->LastNATReplyLocalTime    = 0;
 
 	m->uPNPRouterPort           = zeroIPPort;
 	m->uPNPSOAPPort             = zeroIPPort;
