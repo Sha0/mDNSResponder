@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper-main.c,v $
+Revision 1.8  2007/09/07 22:24:36  vazquez
+<rdar://problem/5466301> Need to stop spewing mDNSResponderHelper logs
+
 Revision 1.7  2007/08/31 18:09:32  cheshire
 <rdar://problem/5434050> Restore ability to run mDNSResponder on Tiger
 
@@ -229,7 +232,7 @@ int main(int ac, char *av[])
 	av += optind;
 
 	initialize_logging();
-	helplog(ASL_LEVEL_NOTICE, "Starting");
+	helplog(ASL_LEVEL_INFO, "Starting");
 	initialize_id();
 
 #ifndef NO_SECURITYFRAMEWORK

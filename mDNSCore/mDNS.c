@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.693  2007/09/07 22:24:36  vazquez
+<rdar://problem/5466301> Need to stop spewing mDNSResponderHelper logs
+
 Revision 1.692  2007/09/07 00:12:09  cheshire
 <rdar://problem/5466010> Unicast DNS changes broke efficiency fix 3928456
 
@@ -4077,7 +4080,7 @@ mDNSlocal mDNSBool ExpectingUnicastResponseForRecord(mDNS *const m, const mDNSAd
 					if (mDNSSameAddress(srcaddr, &q->Target))                   return(mDNStrue);
 				//	if (q->LongLived && mDNSSameAddress(srcaddr, &q->servAddr)) return(mDNStrue); Shouldn't need this now that we have LLQType checking
 					if (TrustedSource(m, srcaddr))                              return(mDNStrue);
-					LogMsg("WARNING: Ignoring suspect uDNS response for %##s (%s) %#a from %#a: %s",
+					LogOperation("WARNING: Ignoring suspect uDNS response for %##s (%s) %#a from %#a: %s",
 						q->qname.c, DNSTypeName(q->qtype), &q->Target, srcaddr, CRDisplayString(m, rr));
 					return(mDNSfalse);
 					}

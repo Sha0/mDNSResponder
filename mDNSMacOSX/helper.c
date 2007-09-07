@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.15  2007/09/07 22:24:36  vazquez
+<rdar://problem/5466301> Need to stop spewing mDNSResponderHelper logs
+
 Revision 1.14  2007/09/06 20:39:05  cheshire
 Added comment explaining why we allow both "ddns" and "sndd" as valid item types
 The Keychain APIs on Intel appear to store the four-character item type backwards (at least some of the time)
@@ -164,7 +167,7 @@ do_mDNSIdleExit(__unused mach_port_t port, audit_token_t token)
 	{
 	if (!authorized(&token))
 		goto fin;
-	helplog(ASL_LEVEL_NOTICE, "Idle exit");
+	helplog(ASL_LEVEL_INFO, "Idle exit");
 	exit(0);
 
 fin:
