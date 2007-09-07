@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.460  2007/09/07 21:47:43  vazquez
+<rdar://problem/5460210> BTMM: SetupSocket 5351 failed; Can't allocate UDP multicast socket spew on wake from sleep with internet sharing on
+Try to allocate using port 5350 if we get a failure, and only log message if that fails too.
+
 Revision 1.459  2007/09/07 01:01:05  cheshire
 <rdar://problem/5464844> BTMM: Services being registered and deregistered in a loop
 In hndlServiceUpdateReply, need to clear SRVUpdateDeferred
@@ -4341,7 +4345,12 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 			{
 			// if we are behind a NAT and the socket hasn't been opened yet, open it
 			if (m->NATMcastRecvskt == mDNSNULL)  
-				if((m->NATMcastRecvskt = mDNSPlatformUDPSocket(m, NATPMPPort)) == mDNSNULL) LogMsg("Can't allocate UDP multicast socket");  // log error and continue
+				if ((m->NATMcastRecvskt = mDNSPlatformUDPSocket(m, NATPMPPort)) == mDNSNULL) 
+					{
+					LogOperation("CheckNATMappings: Failed to allocate UDP multicast socket for NAT-PMP announcements, trying port 5350");
+					if ((m->NATMcastRecvskt = mDNSPlatformUDPSocket(m, NATPMPAnnouncementPort)) == mDNSNULL) 
+						LogMsg("CheckNATMappings: Failed to allocate UDP multicast socket for NAT-PMP announcements");
+					}
 			}
 		else if (m->NATMcastRecvskt != mDNSNULL)	
 			{ 
