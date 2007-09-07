@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.170  2007/09/07 21:16:58  cheshire
+Add new symbol "NATPMPAnnouncementPort" (5350)
+
 Revision 1.169  2007/08/30 00:31:20  cheshire
 Improve "locking failure" debugging messages to show function name using __func__ macro
 
@@ -318,24 +321,30 @@ mDNSexport const mDNSInterfaceID mDNSInterface_Unicast   = (mDNSInterfaceID)2;
 // Uncomment the appropriate lines below to build a special Multicast DNS responder for testing interoperability
 // with Microsoft's LLMNR client code.
 
-#define   UnicastDNSPortAsNumber   53
-#define   NATPMPPortAsNumber       5351
-#define   SSDPPortAsNumber           1900
-#define   DNSEXTPortAsNumber       5352		// Port used for end-to-end DNS operations like LLQ, Updates with Leases, etc.
-#define   MulticastDNSPortAsNumber 5353
-#define   LoopbackIPCPortAsNumber  5354
-#define   PrivateDNSPortAsNumber   5533
-#define   NSIPCPortAsNumber        5030     // Port used for dnsextd to talk to local nameserver bound to loopback
-//#define MulticastDNSPortAsNumber 5355		// LLMNR
+#define   SSDPPortAsNumber               1900
 
-mDNSexport const mDNSIPPort UnicastDNSPort     = { { UnicastDNSPortAsNumber   >> 8, UnicastDNSPortAsNumber   & 0xFF } };
-mDNSexport const mDNSIPPort NATPMPPort         = { { NATPMPPortAsNumber       >> 8, NATPMPPortAsNumber       & 0xFF } };
-mDNSexport const mDNSIPPort SSDPPort             = { { SSDPPortAsNumber            >> 8, SSDPPortAsNumber            & 0xFF } };
-mDNSexport const mDNSIPPort DNSEXTPort         = { { DNSEXTPortAsNumber       >> 8, DNSEXTPortAsNumber       & 0xFF } };
-mDNSexport const mDNSIPPort MulticastDNSPort   = { { MulticastDNSPortAsNumber >> 8, MulticastDNSPortAsNumber & 0xFF } };
-mDNSexport const mDNSIPPort LoopbackIPCPort    = { { LoopbackIPCPortAsNumber  >> 8, LoopbackIPCPortAsNumber  & 0xFF } };
-mDNSexport const mDNSIPPort PrivateDNSPort     = { { PrivateDNSPortAsNumber   >> 8, PrivateDNSPortAsNumber   & 0xFF } };
-mDNSexport const mDNSIPPort NSIPCPort          = { { NSIPCPortAsNumber        >> 8, NSIPCPortAsNumber        & 0xFF } };
+#define   UnicastDNSPortAsNumber         53
+#define   NATPMPAnnouncementPortAsNumber 5350
+#define   NATPMPPortAsNumber             5351
+#define   DNSEXTPortAsNumber             5352		// Port used for end-to-end DNS operations like LLQ, Updates with Leases, etc.
+#define   MulticastDNSPortAsNumber       5353
+#define   LoopbackIPCPortAsNumber        5354
+//#define MulticastDNSPortAsNumber       5355		// LLMNR
+
+#define   NSIPCPortAsNumber              5030     // Port used for dnsextd to talk to local nameserver bound to loopback
+#define   PrivateDNSPortAsNumber         5533
+
+mDNSexport const mDNSIPPort SSDPPort               = { { SSDPPortAsNumber               >> 8, SSDPPortAsNumber               & 0xFF } };
+
+mDNSexport const mDNSIPPort UnicastDNSPort         = { { UnicastDNSPortAsNumber         >> 8, UnicastDNSPortAsNumber         & 0xFF } };
+mDNSexport const mDNSIPPort NATPMPAnnouncementPort = { { NATPMPAnnouncementPortAsNumber >> 8, NATPMPAnnouncementPortAsNumber & 0xFF } };
+mDNSexport const mDNSIPPort NATPMPPort             = { { NATPMPPortAsNumber             >> 8, NATPMPPortAsNumber             & 0xFF } };
+mDNSexport const mDNSIPPort DNSEXTPort             = { { DNSEXTPortAsNumber             >> 8, DNSEXTPortAsNumber             & 0xFF } };
+mDNSexport const mDNSIPPort MulticastDNSPort       = { { MulticastDNSPortAsNumber       >> 8, MulticastDNSPortAsNumber       & 0xFF } };
+mDNSexport const mDNSIPPort LoopbackIPCPort        = { { LoopbackIPCPortAsNumber        >> 8, LoopbackIPCPortAsNumber        & 0xFF } };
+
+mDNSexport const mDNSIPPort NSIPCPort              = { { NSIPCPortAsNumber              >> 8, NSIPCPortAsNumber              & 0xFF } };
+mDNSexport const mDNSIPPort PrivateDNSPort         = { { PrivateDNSPortAsNumber         >> 8, PrivateDNSPortAsNumber         & 0xFF } };
 
 mDNSexport const mDNSv4Addr AllDNSAdminGroup   = { { 239, 255, 255, 251 } };
 mDNSexport const mDNSAddr   AllDNSLinkGroup_v4 = { mDNSAddrType_IPv4, { { { 224,   0,   0, 251 } } } };

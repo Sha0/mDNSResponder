@@ -54,9 +54,12 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.429  2007/09/07 21:16:58  cheshire
+Add new symbol "NATPMPAnnouncementPort" (5350)
+
 Revision 1.428  2007/09/05 21:48:01  cheshire
 <rdar://problem/5385864> BTMM: mDNSResponder flushes wide-area Bonjour records after an hour for a zone.
-Now that we're respecting the TTL of uDNS records in the cache, the LLQ maintenance code needs
+Now that we're respecting the TTL of uDNS records in the cache, the LLQ maintenance cod needs
 to update the cache lifetimes of all relevant records every time it successfully renews an LLQ,
 otherwise those records will expire and vanish from the cache.
 
@@ -1942,14 +1945,17 @@ extern const mDNSInterfaceID mDNSInterface_Any;				// Zero
 extern const mDNSInterfaceID mDNSInterface_LocalOnly;		// Special value
 extern const mDNSInterfaceID mDNSInterface_Unicast;			// Special value
 
-extern const mDNSIPPort   UnicastDNSPort;
-extern const mDNSIPPort   NATPMPPort;
 extern const mDNSIPPort   SSDPPort;
+
+extern const mDNSIPPort   UnicastDNSPort;
+extern const mDNSIPPort   NATPMPAnnouncementPort;
+extern const mDNSIPPort   NATPMPPort;
 extern const mDNSIPPort   DNSEXTPort;
 extern const mDNSIPPort   MulticastDNSPort;
 extern const mDNSIPPort   LoopbackIPCPort;
-extern const mDNSIPPort   PrivateDNSPort;
+
 extern const mDNSIPPort   NSIPCPort;
+extern const mDNSIPPort   PrivateDNSPort;
 
 extern const mDNSv4Addr   AllDNSAdminGroup;
 extern const mDNSAddr     AllDNSLinkGroup_v4;
