@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.88  2007/09/07 23:18:27  cheshire
+<rdar://problem/5467542> Change "client_context" to be an incrementing 64-bit counter
+
 Revision 1.87  2007/09/07 22:50:09  cheshire
 Added comment explaining moreptr field in DNSServiceOp structure
 
@@ -227,6 +230,8 @@ struct _DNSServiceRef_t
 	DNSServiceOp    *primary;			// For shared connection
 	dnssd_sock_t     sockfd;			// Connected socket between client and daemon
 	dnssd_sock_t     validator;			// Used to detect memory corruption, double disposals, etc.
+	client_context_t uid;				// For shared connection requests, each subordinate DNSServiceRef has its own ID,
+										// unique within the scope of the same shared parent DNSServiceRef
 	uint32_t         op;				// request_op_t or reply_op_t
 	uint32_t         max_index;			// Largest assigned record index - 0 if no additional records registered
 	uint32_t         logcounter;		// Counter used to control number of syslog messages we write
@@ -312,7 +317,7 @@ static int more_bytes(dnssd_sock_t sd)
  * if zero, the path to a control socket is appended at the beginning of the message buffer.
  * data_start is set past this string.
  */
-static ipc_msg_hdr *create_hdr(uint32_t op, size_t *len, char **data_start, int SeparateReturnSocket, void *cookie)
+static ipc_msg_hdr *create_hdr(uint32_t op, size_t *len, char **data_start, int SeparateReturnSocket, DNSServiceOp *ref)
 	{
 	char *msg = NULL;
 	ipc_msg_hdr *hdr;
@@ -348,7 +353,7 @@ static ipc_msg_hdr *create_hdr(uint32_t op, size_t *len, char **data_start, int 
 	hdr->datalen                = datalen;
 	hdr->ipc_flags              = 0;
 	hdr->op                     = op;
-	hdr->client_context.context = cookie;
+	hdr->client_context         = ref->uid;
 	hdr->reg_index              = 0;
 	*data_start = msg + sizeof(ipc_msg_hdr);
 #if defined(USE_TCP_LOOPBACK)
@@ -435,6 +440,8 @@ static DNSServiceErrorType ConnectToServer(DNSServiceRef *ref, DNSServiceFlags f
 	sdr->max_index     = 0;
 	sdr->logcounter    = 0;
 	sdr->moreptr       = NULL;
+	sdr->uid.u32[0]    = 0;
+	sdr->uid.u32[1]    = 0;
 	sdr->ProcessReply  = ProcessReply;
 	sdr->AppCallback   = AppCallback;
 	sdr->AppContext    = AppContext;
@@ -447,6 +454,8 @@ static DNSServiceErrorType ConnectToServer(DNSServiceRef *ref, DNSServiceFlags f
 		sdr->primary    = *ref;					// Set our primary pointer
 		sdr->sockfd     = (*ref)->sockfd;		// Inherit primary's socket
 		sdr->validator  = (*ref)->validator;
+		sdr->uid        = (*ref)->uid;
+		if (++(*ref)->uid.u32[0] == 0) ++(*ref)->uid.u32[1];	// In parent DNSServiceOp increment UID counter
 		//printf("ConnectToServer sharing socket %d\n", sdr->sockfd);
 		}
 	else
@@ -771,7 +780,7 @@ DNSServiceErrorType DNSSD_API DNSServiceGetProperty(const char *property, void *
 	DNSServiceErrorType err = ConnectToServer(&tmp, 0, getproperty_request, NULL, NULL, NULL);
 	if (err) return err;
 
-	hdr = create_hdr(getproperty_request, &len, &ptr, 0, NULL);
+	hdr = create_hdr(getproperty_request, &len, &ptr, 0, tmp);
 	if (!hdr) { DNSServiceRefDeallocate(tmp); return kDNSServiceErr_NoMemory; }
 
 	put_string(property, &ptr);
@@ -1059,7 +1068,7 @@ DNSServiceErrorType DNSSD_API DNSServiceSetDefaultDomainForUser(DNSServiceFlags 
 	DNSServiceErrorType err = ConnectToServer(&tmp, 0, setdomain_request, NULL, NULL, NULL);
 	if (err) return err;
 
-	hdr = create_hdr(setdomain_request, &len, &ptr, 0, NULL);
+	hdr = create_hdr(setdomain_request, &len, &ptr, 0, tmp);
 	if (!hdr) { DNSServiceRefDeallocate(tmp); return kDNSServiceErr_NoMemory; }
 
 	put_flags(flags, &ptr);
@@ -1194,7 +1203,8 @@ static void ConnectionResponse(DNSServiceOp *sdr, CallbackHeader *cbh, char *dat
 		{
 		// When using kDNSServiceFlagsShareConnection, need to search the list of associated DNSServiceOps
 		// to find the one this response is intended for, and then call through to its ProcessReply handler
-		while (sdr && sdr != cbh->ipc_hdr.client_context.context) sdr = sdr->next;
+		while (sdr && (sdr->uid.u32[0] != cbh->ipc_hdr.client_context.u32[0] || sdr->uid.u32[1] != cbh->ipc_hdr.client_context.u32[1]))
+			sdr = sdr->next;
 		// NOTE: We may sometimes not find a matching DNSServiceOp, in the case where the client has
 		// cancelled the subordinate DNSServiceOp, but there are still messages in the pipeline from the daemon
 		if (sdr && sdr->ProcessReply) sdr->ProcessReply(sdr, cbh, data, end);
@@ -1274,7 +1284,7 @@ DNSServiceErrorType DNSSD_API DNSServiceRegisterRecord
 	len += strlen(fullname) + 1;
 	len += rdlen;
 
-	hdr = create_hdr(reg_record_request, &len, &ptr, 1, NULL);
+	hdr = create_hdr(reg_record_request, &len, &ptr, 1, sdRef);
 	if (!hdr) return kDNSServiceErr_NoMemory;
 
 	put_flags(flags, &ptr);
@@ -1337,7 +1347,7 @@ DNSServiceErrorType DNSSD_API DNSServiceAddRecord
 	len += sizeof(uint32_t);
 	len += sizeof(DNSServiceFlags);
 
-	hdr = create_hdr(add_record_request, &len, &ptr, 1, NULL);
+	hdr = create_hdr(add_record_request, &len, &ptr, 1, sdRef);
 	if (!hdr) return kDNSServiceErr_NoMemory;
 	put_flags(flags, &ptr);
 	put_uint16(rrtype, &ptr);
@@ -1388,7 +1398,7 @@ DNSServiceErrorType DNSSD_API DNSServiceUpdateRecord
 	len += sizeof(uint32_t);
 	len += sizeof(DNSServiceFlags);
 
-	hdr = create_hdr(update_record_request, &len, &ptr, 1, NULL);
+	hdr = create_hdr(update_record_request, &len, &ptr, 1, sdRef);
 	if (!hdr) return kDNSServiceErr_NoMemory;
 	hdr->reg_index = RecordRef ? RecordRef->record_index : TXT_RECORD_INDEX;
 	put_flags(flags, &ptr);
@@ -1421,7 +1431,7 @@ DNSServiceErrorType DNSSD_API DNSServiceRemoveRecord
 		}
 
 	len += sizeof(flags);
-	hdr = create_hdr(remove_record_request, &len, &ptr, 1, NULL);
+	hdr = create_hdr(remove_record_request, &len, &ptr, 1, sdRef);
 	if (!hdr) return kDNSServiceErr_NoMemory;
 	hdr->reg_index = RecordRef->record_index;
 	put_flags(flags, &ptr);
@@ -1454,7 +1464,7 @@ DNSServiceErrorType DNSSD_API DNSServiceReconfirmRecord
 	len += strlen(fullname) + 1;
 	len += 3 * sizeof(uint16_t);
 	len += rdlen;
-	hdr = create_hdr(reconfirm_record_request, &len, &ptr, 0, NULL);
+	hdr = create_hdr(reconfirm_record_request, &len, &ptr, 0, tmp);
 	if (!hdr) { DNSServiceRefDeallocate(tmp); return kDNSServiceErr_NoMemory; }
 
 	put_flags(flags, &ptr);
