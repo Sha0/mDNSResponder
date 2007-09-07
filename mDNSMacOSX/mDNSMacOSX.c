@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.477  2007/09/07 21:22:30  cheshire
+<rdar://problem/5460210> BTMM: SetupSocket 5351 failed; Can't allocate UDP multicast socket spew on wake from sleep with internet sharing on
+Don't log failures binding to port 5351
+
 Revision 1.476  2007/09/06 20:38:08  cheshire
 <rdar://problem/5439021> Only call SetDomainSecrets() for Keychain changes that are relevant to mDNSResponder
 
@@ -1667,7 +1671,16 @@ mDNSexport UDPSocket *mDNSPlatformUDPSocket(mDNS *const m, const mDNSIPPort port
 	p->ss.sktv4 = -1;
 	p->ss.sktv6 = -1;
 	err = SetupSocket(&p->ss, port, AF_INET);
-	if (err) { LogMsg("mDNSPlatformUDPSocket: SetupSocket %d failed", mDNSVal16(port)); freeL("UDPSocket", p); return(mDNSNULL); }
+	if (err)
+		{
+		// In customer builds we don't want to log failures with port 5351, because this is a known issue
+		// of failing to bind to this port when Internet Sharing has already bound to it
+		if (mDNSSameIPPort(port, NATPMPPort))
+			LogOperation("mDNSPlatformUDPSocket: SetupSocket %d failed", mDNSVal16(port));
+		else LogMsg     ("mDNSPlatformUDPSocket: SetupSocket %d failed", mDNSVal16(port));
+		freeL("UDPSocket", p);
+		return(mDNSNULL);
+		}
 	return(p);
 	}
 
