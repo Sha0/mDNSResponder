@@ -17,6 +17,10 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.337  2007/09/07 23:05:04  cheshire
+Add display of client_context field in handle_cancel_request() LogOperation message
+While loop was checking client_context.u32[2] instead of client_context.u32[1]
+
 Revision 1.336  2007/09/07 20:56:03  cheshire
 Renamed uint32_t field in client_context_t from "ptr64" to more accurate name "u32"
 
@@ -1281,12 +1285,12 @@ mDNSlocal void connection_termination(request_state *request)
 mDNSlocal void handle_cancel_request(request_state *request)
 	{
 	request_state **req = &all_requests;
-	LogOperation("%3d: Cancel", request->sd);
+	LogOperation("%3d: Cancel %X%08X", request->sd, request->hdr.client_context.u32[1], request->hdr.client_context.u32[0]);
 	while (*req)
 		{
 		if ((*req)->primary == request &&
 			(*req)->hdr.client_context.u32[0] == request->hdr.client_context.u32[0] &&
-			(*req)->hdr.client_context.u32[1] == request->hdr.client_context.u32[2])
+			(*req)->hdr.client_context.u32[1] == request->hdr.client_context.u32[1])
 			{
 			// Since we're already doing a list traversal, we unlink the request directly instead of using AbortUnlinkAndFree()
 			request_state *tmp = *req;
