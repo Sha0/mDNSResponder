@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.87  2007/09/07 22:50:09  cheshire
+Added comment explaining moreptr field in DNSServiceOp structure
+
 Revision 1.86  2007/09/07 20:21:22  cheshire
 <rdar://problem/5462371> Make DNSSD library more resilient
 Add more comments explaining the moreptr/morebytes logic; don't allow DNSServiceRefSockFD or
@@ -220,17 +223,17 @@ typedef void (*ProcessReplyFn)(DNSServiceOp *sdr, CallbackHeader *cbh, char *msg
 // For the primary, the 'primary' field is NULL; for subordinates the 'primary' field points back to the associated primary
 struct _DNSServiceRef_t
 	{
-	DNSServiceOp   *next;				// For shared connection
-	DNSServiceOp   *primary;			// For shared connection
-	dnssd_sock_t    sockfd;				// Connected socket between client and daemon
-	dnssd_sock_t    validator;			// Used to detect memory corruption, double disposals, etc.
-	uint32_t        op;					// request_op_t or reply_op_t
-	uint32_t        max_index;			// Largest assigned record index - 0 if no additional records registered
-	uint32_t        logcounter;			// Counter used to control number of syslog messages we write
-	int            *moreptr;
-	ProcessReplyFn  ProcessReply;		// Function pointer to the code to handle received messages
-	void           *AppCallback;		// Client callback function and context
-	void           *AppContext;
+	DNSServiceOp    *next;				// For shared connection
+	DNSServiceOp    *primary;			// For shared connection
+	dnssd_sock_t     sockfd;			// Connected socket between client and daemon
+	dnssd_sock_t     validator;			// Used to detect memory corruption, double disposals, etc.
+	uint32_t         op;				// request_op_t or reply_op_t
+	uint32_t         max_index;			// Largest assigned record index - 0 if no additional records registered
+	uint32_t         logcounter;		// Counter used to control number of syslog messages we write
+	int             *moreptr;			// Set while DNSServiceProcessResult working on this particular DNSServiceRef
+	ProcessReplyFn   ProcessReply;		// Function pointer to the code to handle received messages
+	void            *AppCallback;		// Client callback function and context
+	void            *AppContext;
 	};
 
 struct _DNSRecordRef_t
@@ -241,8 +244,6 @@ struct _DNSRecordRef_t
 	uint32_t record_index;  // index is unique to the ServiceDiscoveryRef
 	DNSServiceOp *sdr;
 	};
-
-// Exported functions
 
 // Write len bytes. Return 0 on success, -1 on error
 static int write_all(dnssd_sock_t sd, char *buf, int len)
@@ -443,9 +444,9 @@ static DNSServiceErrorType ConnectToServer(DNSServiceRef *ref, DNSServiceFlags f
 		DNSServiceOp **p = &(*ref)->next;		// Append ourselves to end of primary's list
 		while (*p) p = &(*p)->next;
 		*p = sdr;
-		sdr->primary   = *ref;					// Set our primary pointer
-		sdr->sockfd    = (*ref)->sockfd;		// Inherit primary's socket
-		sdr->validator = (*ref)->validator;
+		sdr->primary    = *ref;					// Set our primary pointer
+		sdr->sockfd     = (*ref)->sockfd;		// Inherit primary's socket
+		sdr->validator  = (*ref)->validator;
 		//printf("ConnectToServer sharing socket %d\n", sdr->sockfd);
 		}
 	else
