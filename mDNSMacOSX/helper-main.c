@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper-main.c,v $
+Revision 1.10  2007/09/09 02:21:17  mcguire
+<rdar://problem/5469345> Leopard Server9A547(Insatll):mDNSResponderHelper crashing
+
 Revision 1.9  2007/09/07 22:44:03  mcguire
 <rdar://problem/5448420> Move CFUserNotification code to mDNSResponderHelper
 
@@ -162,8 +165,6 @@ static void *idletimer(void *context)
 	{
 	debug("entry context=%p", context);
 	gRunLoop = CFRunLoopGetCurrent();
-	CFRunLoopTimerContext cxt = {0, context, NULL, NULL, NULL};
-	gTimer = CFRunLoopTimerCreate(kCFAllocatorDefault, CFAbsoluteTimeGetCurrent() + actualidle, actualidle, 0, 0, diediedie, &cxt);
 	
 	unpause_idle_timer();
 
@@ -179,6 +180,8 @@ static void *idletimer(void *context)
 
 static void initialize_timer(mach_port_t port)
 	{
+	CFRunLoopTimerContext cxt = {0, (void *)port, NULL, NULL, NULL};
+	gTimer = CFRunLoopTimerCreate(kCFAllocatorDefault, CFAbsoluteTimeGetCurrent() + actualidle, actualidle, 0, 0, diediedie, &cxt);
 	int err = 0;
 
 	debug("entry port=%p", port);

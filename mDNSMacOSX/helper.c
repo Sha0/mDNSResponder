@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.17  2007/09/09 02:21:17  mcguire
+<rdar://problem/5469345> Leopard Server9A547(Insatll):mDNSResponderHelper crashing
+
 Revision 1.16  2007/09/07 22:44:03  mcguire
 <rdar://problem/5448420> Move CFUserNotification code to mDNSResponderHelper
 
@@ -467,12 +470,6 @@ do_mDNSPreferencesSetName(__unused mach_port_t port, int key, const char* old, c
 		case kmDNSComputerName:
 			user = usercompname;
 			last = lastcompname;
-			// We want to write the new Computer Name to System Preferences, without disturbing the user-selected
-			// system-wide default character set used for things like AppleTalk NBP and NETBIOS service advertising.
-			// Since both are set by the same call, we need to take care to set the name without changing the character set.
-			cfstr = SCDynamicStoreCopyComputerName(NULL, &encoding); // Get Computer Name and character set
-			CFRelease(cfstr);                                        // Discard the old name we don't care about
-			cfstr = NULL;
 			break;
 		case kmDNSLocalHostName:
 			user = userhostname;
@@ -524,6 +521,21 @@ do_mDNSPreferencesSetName(__unused mach_port_t port, int key, const char* old, c
 
 	if (!new[0]) // we've given up trying to construct a name that doesn't conflict
 		goto fin;
+
+	if (key == kmDNSComputerName)
+		{
+		// We want to write the new Computer Name to System Preferences, without disturbing the user-selected
+		// system-wide default character set used for things like AppleTalk NBP and NETBIOS service advertising.
+		// Since both are set by the same call, we need to take care to set the name without changing the character set.
+		cfstr = SCDynamicStoreCopyComputerName(NULL, &encoding); // Get Computer Name and character set
+		if (cfstr)
+			{
+			CFRelease(cfstr); // Discard the old name we don't care about
+			cfstr = NULL;
+			}
+		else
+			encoding = kCFStringEncodingUTF8;
+		}
 
 	cfstr = CFStringCreateWithCString(NULL, new, encoding);
 
