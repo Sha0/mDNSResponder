@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.694  2007/09/10 22:06:51  cheshire
+Rename uptime => upseconds and LastNATUptime => LastNATupseconds to make it clear these time values are in seconds
+
 Revision 1.693  2007/09/07 22:24:36  vazquez
 <rdar://problem/5466301> Need to stop spewing mDNSResponderHelper logs
 
@@ -6581,7 +6584,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->ExternalAddress          = zerov4Addr;
 
 	m->NATMcastRecvskt          = mDNSNULL;
-	m->LastNATUptime            = 0;
+	m->LastNATupseconds         = 0;
 	m->LastNATReplyLocalTime    = 0;
 
 	m->uPNPRouterPort           = zeroIPPort;

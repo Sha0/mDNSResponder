@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.461  2007/09/10 22:08:17  cheshire
+Rename uptime => upseconds and LastNATUptime => LastNATupseconds to make it clear these time values are in seconds
+
 Revision 1.460  2007/09/07 21:47:43  vazquez
 <rdar://problem/5460210> BTMM: SetupSocket 5351 failed; Can't allocate UDP multicast socket spew on wake from sleep with internet sharing on
 Try to allocate using port 5350 if we get a failure, and only log message if that fails too.
@@ -1235,8 +1238,8 @@ mDNSexport void natTraversalHandleAddressReply(mDNS *const m, mDNSu8 *pkt)
 		return;
 		}
 	
-	routerTimeElapsed = addrReply->uptime - m->LastNATUptime;
-	m->LastNATUptime = addrReply->uptime;
+	routerTimeElapsed   = addrReply->upseconds - m->LastNATupseconds;
+	m->LastNATupseconds = addrReply->upseconds;
 	ourTimeElapsed = m->timenow - m->LastNATReplyLocalTime;
 	m->LastNATReplyLocalTime = m->timenow;
 
@@ -3508,9 +3511,9 @@ mDNSexport void uDNS_ReceiveNATPMPPacket(mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 	if (!AddrReply->err && len < 8) { LogMsg("NAT Traversal message too short (%d bytes)", len); return; }
 	if (AddrReply->vers != NATMAP_VERS) { LogMsg("Received NAT Traversal response with version %d (expected %d)", pkt[0], NATMAP_VERS); return; }
 
-	// Byte-swap the multi-byte numerics
-	AddrReply->err    = (mDNSu16) (                                                (mDNSu16)pkt[2] << 8 | pkt[3]);
-	AddrReply->uptime = (mDNSs32) ((mDNSs32)pkt[4] << 24 | (mDNSs32)pkt[5] << 16 | (mDNSs32)pkt[6] << 8 | pkt[7]);
+	// Read multi-byte numeric values
+	AddrReply->err       = (mDNSu16) (                                                (mDNSu16)pkt[2] << 8 | pkt[3]);
+	AddrReply->upseconds = (mDNSs32) ((mDNSs32)pkt[4] << 24 | (mDNSs32)pkt[5] << 16 | (mDNSs32)pkt[6] << 8 | pkt[7]);
 
 	if (AddrReply->opcode == NATOp_AddrResponse)
 		{

@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.430  2007/09/10 22:06:50  cheshire
+Rename uptime => upseconds and LastNATUptime => LastNATupseconds to make it clear these time values are in seconds
+
 Revision 1.429  2007/09/07 21:16:58  cheshire
 Add new symbol "NATPMPAnnouncementPort" (5350)
 
@@ -1124,7 +1127,7 @@ typedef packedstruct
 	mDNSu8     vers;
 	mDNSu8     opcode;
 	mDNSu16    err;
-	mDNSu32    uptime;
+	mDNSu32    upseconds;		// Time since last NAT engine reboot, in seconds
 	mDNSv4Addr PubAddr;
 	} NATAddrReply;
 
@@ -1143,7 +1146,7 @@ typedef packedstruct
 	mDNSu8     vers;
 	mDNSu8     opcode;
 	mDNSu16    err;
-	mDNSu32    uptime;
+	mDNSu32    upseconds;		// Time since last NAT engine reboot, in seconds
 	mDNSIPPort priv;
 	mDNSIPPort pub;
 	mDNSu32    NATRep_lease;
@@ -1900,8 +1903,8 @@ struct mDNS_struct
 	mDNSv4Addr        ExternalAddress;
 
 	UDPSocket        *NATMcastRecvskt;			// for receiving NAT-PMP AddrReply multicasts from router
-	mDNSs32           LastNATUptime;			// router uptime returned by last NAT-PMP AddrReply packet 
-	mDNSs32           LastNATReplyLocalTime;	// local time when last NAT-PMP AddrReply packet was received
+	mDNSu32           LastNATupseconds;			// NAT engine uptime in seconds, from most recent NAT packet
+	mDNSs32           LastNATReplyLocalTime;	// Local time in ticks when most recent NAT packet was received
 
 	tcpLNTInfo        tcpAddrInfo;				// legacy NAT traversal TCP connection info for external address
 	tcpLNTInfo        tcpDeviceInfo;			// legacy NAT traversal TCP connection info for device info
