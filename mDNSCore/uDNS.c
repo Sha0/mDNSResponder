@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.463  2007/09/11 20:23:28  vazquez
+<rdar://problem/5466719> CrashTracer: 3 crashes in mDNSResponder at mDNSResponder: natTraversalHandlePortMapReply + 107
+Make sure we clean up NATTraversals before free'ing HostnameInfo
+
 Revision 1.462  2007/09/11 19:19:16  cheshire
 Correct capitalization of "uPNP" to "UPnP"
 
@@ -2791,7 +2795,11 @@ mDNSlocal void HostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 			// Else, we're not still in the Hostnames list, so free the memory
 			if (hi->arv4.resrec.RecordType == kDNSRecordTypeUnregistered &&
 				hi->arv6.resrec.RecordType == kDNSRecordTypeUnregistered)
+				{
+				if (hi->natinfo.clientContext) mDNS_StopNATOperation_internal(m, &hi->natinfo);
+				hi->natinfo.clientContext = mDNSNULL;
 				mDNSPlatformMemFree(hi);	// free hi when both v4 and v6 AuthRecs deallocated
+				}
 			}
 		return;
 		}
