@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.695  2007/09/11 19:19:16  cheshire
+Correct capitalization of "uPNP" to "UPnP"
+
 Revision 1.694  2007/09/10 22:06:51  cheshire
 Rename uptime => upseconds and LastNATUptime => LastNATupseconds to make it clear these time values are in seconds
 
@@ -6587,12 +6590,12 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->LastNATupseconds         = 0;
 	m->LastNATReplyLocalTime    = 0;
 
-	m->uPNPRouterPort           = zeroIPPort;
-	m->uPNPSOAPPort             = zeroIPPort;
-	m->uPNPRouterURL            = mDNSNULL;
-	m->uPNPSOAPURL              = mDNSNULL;
-	m->uPNPRouterAddressString  = mDNSNULL;
-	m->uPNPSOAPAddressString    = mDNSNULL;
+	m->UPnPRouterPort           = zeroIPPort;
+	m->UPnPSOAPPort             = zeroIPPort;
+	m->UPnPRouterURL            = mDNSNULL;
+	m->UPnPSOAPURL              = mDNSNULL;
+	m->UPnPRouterAddressString  = mDNSNULL;
+	m->UPnPSOAPAddressString    = mDNSNULL;
 #endif
 
 #if APPLE_OSX_mDNSResponder

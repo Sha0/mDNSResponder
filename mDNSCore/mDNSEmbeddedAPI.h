@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.431  2007/09/11 19:19:16  cheshire
+Correct capitalization of "uPNP" to "UPnP"
+
 Revision 1.430  2007/09/10 22:06:50  cheshire
 Rename uptime => upseconds and LastNATUptime => LastNATupseconds to make it clear these time values are in seconds
 
@@ -1909,12 +1912,12 @@ struct mDNS_struct
 	tcpLNTInfo        tcpAddrInfo;				// legacy NAT traversal TCP connection info for external address
 	tcpLNTInfo        tcpDeviceInfo;			// legacy NAT traversal TCP connection info for device info
 	tcpLNTInfo       *tcpInfoUnmapList;			// list of pending unmap requests
-	mDNSIPPort        uPNPRouterPort;			// port we send discovery messages to
-	mDNSIPPort        uPNPSOAPPort;				// port we send SOAP messages to
-	mDNSu8           *uPNPRouterURL;			// router's URL string
-	mDNSu8           *uPNPSOAPURL;				// router's SOAP control URL string
-	mDNSu8           *uPNPRouterAddressString;	// holds both the router's address and port
-	mDNSu8           *uPNPSOAPAddressString;	// holds both address and port for SOAP messages
+	mDNSIPPort        UPnPRouterPort;			// port we send discovery messages to
+	mDNSIPPort        UPnPSOAPPort;				// port we send SOAP messages to
+	mDNSu8           *UPnPRouterURL;			// router's URL string
+	mDNSu8           *UPnPSOAPURL;				// router's SOAP control URL string
+	mDNSu8           *UPnPRouterAddressString;	// holds both the router's address and port
+	mDNSu8           *UPnPSOAPAddressString;	// holds both address and port for SOAP messages
 
 #if APPLE_OSX_mDNSResponder
 	ClientTunnel     *TunnelClients;

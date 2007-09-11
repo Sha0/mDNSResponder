@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.462  2007/09/11 19:19:16  cheshire
+Correct capitalization of "uPNP" to "UPnP"
+
 Revision 1.461  2007/09/10 22:08:17  cheshire
 Rename uptime => upseconds and LastNATUptime => LastNATupseconds to make it clear these time values are in seconds
 
@@ -1145,16 +1148,16 @@ mDNSlocal mStatus uDNS_SendNATMsg(mDNS *m, NATTraversalInfo *info, NATOptFlags_t
 			}
 		
 #ifdef _LEGACY_NAT_TRAVERSAL_
-		// send nat-pmp packet if we know we're not behind a uPNP gateway
-		if (mDNSIPPortIsZero(m->uPNPSOAPPort))
+		// send nat-pmp packet if we know we're not behind a UPnP gateway
+		if (mDNSIPPortIsZero(m->UPnPSOAPPort))
 			{
 			err = mDNSPlatformSendUDP(m, msg, end, 0, &m->Router, NATPMPPort);
-			// if there is no external address then assume we're starting from scratch and start upnp discovery as well
+			// if there is no external address then assume we're starting from scratch and start UPnP discovery as well
 			if (mDNSIPv4AddressIsZero(m->ExternalAddress)) 	LNT_SendDiscoveryMsg(m); 
 			}
 		else
 			{
-			// we're behind a uPNP gateway
+			// we're behind a UPnP gateway
 			if (op == AddrRequestFlag)		err = LNT_GetExternalAddress(m);
 			else
 				{
@@ -1187,7 +1190,7 @@ mDNSlocal void SetExternalAddress(mDNS *const m, mDNSv4Addr newaddr, mDNSs32 rou
 #ifdef _LEGACY_NAT_TRAVERSAL_
 	if (m->tcpAddrInfo.sock)   { mDNSPlatformTCPCloseConnection(m->tcpAddrInfo.sock);   m->tcpAddrInfo.sock   = mDNSNULL; }
 	if (m->tcpDeviceInfo.sock) { mDNSPlatformTCPCloseConnection(m->tcpDeviceInfo.sock); m->tcpDeviceInfo.sock = mDNSNULL; }
-	if (mDNSIPv4AddressIsZero(m->ExternalAddress)) m->uPNPSOAPPort = m->uPNPRouterPort = zeroIPPort;	// reset uPNP ports
+	if (mDNSIPv4AddressIsZero(m->ExternalAddress)) m->UPnPSOAPPort = m->UPnPRouterPort = zeroIPPort;	// reset UPnP ports
 #endif // _LEGACY_NAT_TRAVERSAL_
 
 	// NAT gateway changed. Need to refresh or recreate port mappings ASAP
@@ -3537,7 +3540,7 @@ mDNSexport void uDNS_ReceiveNATPMPPacket(mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 mDNSexport void uDNS_ReceiveSSDPPacket(mDNS *m, mDNSu8 *data, mDNSu16 len)
 	{
 	// Extract router's port and url from response if we don't already have it, otherwise ignore
-	if (mDNSIPPortIsZero(m->uPNPRouterPort)) LNT_ConfigureRouterInfo(m, data, len);
+	if (mDNSIPPortIsZero(m->UPnPRouterPort)) LNT_ConfigureRouterInfo(m, data, len);
 	}
 #endif // _LEGACY_NAT_TRAVERSAL_
 
