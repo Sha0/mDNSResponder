@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.701  2007/09/12 23:22:32  cheshire
+<rdar://problem/5476979> Only accept NAT Port Mapping packets from our default gateway
+
 Revision 1.700  2007/09/12 23:03:08  cheshire
 <rdar://problem/5476978> DNSServiceNATPortMappingCreate callback not giving correct interface index
 
@@ -4685,20 +4688,23 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 	mDNSu8 *ptr = mDNSNULL;
 
 #ifndef UNICAST_DISABLED
-	if (mDNSSameIPPort(srcport, NATPMPPort))
+	if (mDNSSameAddress(srcaddr, &m->Router))
 		{
-		mDNS_Lock(m);
-		uDNS_ReceiveNATPMPPacket(m, InterfaceID, pkt, (mDNSu16)(end - (mDNSu8 *)pkt));
-		mDNS_Unlock(m);
-		return;
-		}
+		if (mDNSSameIPPort(srcport, NATPMPPort))
+			{
+			mDNS_Lock(m);
+			uDNS_ReceiveNATPMPPacket(m, InterfaceID, pkt, (mDNSu16)(end - (mDNSu8 *)pkt));
+			mDNS_Unlock(m);
+			return;
+			}
 #ifdef _LEGACY_NAT_TRAVERSAL_
-	if (mDNSSameIPPort(srcport, SSDPPort))
-		{
-		mDNS_Lock(m);
-		LNT_ConfigureRouterInfo(m, InterfaceID, pkt, (mDNSu16)(end - (mDNSu8 *)pkt));
-		mDNS_Unlock(m);
-		return;
+		if (mDNSSameIPPort(srcport, SSDPPort))
+			{
+			mDNS_Lock(m);
+			LNT_ConfigureRouterInfo(m, InterfaceID, pkt, (mDNSu16)(end - (mDNSu8 *)pkt));
+			mDNS_Unlock(m);
+			return;
+			}
 		}
 #endif
 #endif
