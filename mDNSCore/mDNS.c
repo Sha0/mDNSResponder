@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.697  2007/09/12 01:44:47  cheshire
+<rdar://problem/5475938> Eliminate "Correcting TTL" syslog messages for unicast DNS records
+
 Revision 1.696  2007/09/12 01:26:08  cheshire
 Initialize LastNATReplyLocalTime to timenow, so that gateway uptime checks work more reliably
 
@@ -4534,9 +4537,13 @@ exit:
 						// We suppress the message for the specific case of correcting from 240 to 60 for type TXT,
 						// because certain early Bonjour devices are known to have this specific mismatch, and
 						// there's no point filling syslog with messages about something we already know about.
+						// We also don't log this for uDNS responses, since a caching name server is obliged
+						// to give us an aged TTL to correct for how long it has held the record,
+						// so our received TTLs are expected to vary in that case
 						if (r2->resrec.rroriginalttl != r1->resrec.rroriginalttl && r1->resrec.rroriginalttl > 1)
 							{
-							if (r2->resrec.rroriginalttl != 240 && r1->resrec.rroriginalttl != 60 && r2->resrec.rrtype != kDNSType_TXT)
+							if (r2->resrec.rroriginalttl != 240 && r1->resrec.rroriginalttl != 60 && r2->resrec.rrtype != kDNSType_TXT &&
+								mDNSOpaque16IsZero(response->h.id))
 								LogMsg("Correcting TTL from %4d to %4d for %s",
 									r2->resrec.rroriginalttl, r1->resrec.rroriginalttl, CRDisplayString(m, r2));
 							r2->resrec.rroriginalttl = r1->resrec.rroriginalttl;
