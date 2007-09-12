@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.466  2007/09/12 22:19:29  cheshire
+<rdar://problem/5476977> Need to listen for port 5350 NAT-PMP announcements
+
 Revision 1.465  2007/09/12 19:22:19  cheshire
 Variable renaming in preparation for upcoming fixes e.g. priv/pub renamed to intport/extport
 Made NAT Traversal packet handlers take typed data instead of anonymous "mDNSu8 *" byte pointers
@@ -4356,27 +4359,24 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 	mDNSBool rfc1918 = mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4);
 	m->NextScheduledNATOp = m->timenow + 0x3FFFFFFF;
 
+	if (m->NATTraversals && rfc1918)			// Do we need to open NAT-PMP socket to receive multicast announcements from router?
+		{
+		if (m->NATMcastRecvskt == mDNSNULL)		// If we are behind a NAT and the socket hasn't been opened yet, open it
+			{
+			m->NATMcastRecvskt = mDNSPlatformUDPSocket(m, NATPMPAnnouncementPort);
+			m->NATMcastRecvsk2 = mDNSPlatformUDPSocket(m, NATPMPPort);	// For backwards compatibility with older base stations that announce on 5351
+			if (!m->NATMcastRecvskt) LogMsg("CheckNATMappings: Failed to allocate port 5350 UDP multicast socket for NAT-PMP announcements");
+			if (!m->NATMcastRecvsk2) LogOperation("CheckNATMappings: Failed to allocate port 5351 UDP multicast socket for NAT-PMP announcements");
+			}
+		}
+	else										// else, we don't want to listen for announcements, so close them if they're open
+		{
+		if (m->NATMcastRecvskt) { mDNSPlatformUDPClose(m->NATMcastRecvskt); m->NATMcastRecvskt = mDNSNULL; }
+		if (m->NATMcastRecvsk2) { mDNSPlatformUDPClose(m->NATMcastRecvsk2); m->NATMcastRecvsk2 = mDNSNULL; }
+		}
+
 	if (m->NATTraversals)
 		{
-		// open NAT-PMP socket to receive multicasts from router
-		if (rfc1918)
-			{
-			// if we are behind a NAT and the socket hasn't been opened yet, open it
-			if (m->NATMcastRecvskt == mDNSNULL)  
-				if ((m->NATMcastRecvskt = mDNSPlatformUDPSocket(m, NATPMPPort)) == mDNSNULL) 
-					{
-					LogOperation("CheckNATMappings: Failed to allocate UDP multicast socket for NAT-PMP announcements, trying port 5350");
-					if ((m->NATMcastRecvskt = mDNSPlatformUDPSocket(m, NATPMPAnnouncementPort)) == mDNSNULL) 
-						LogMsg("CheckNATMappings: Failed to allocate UDP multicast socket for NAT-PMP announcements");
-					}
-			}
-		else if (m->NATMcastRecvskt != mDNSNULL)	
-			{ 
-			// if we are NOT behind a NAT and this socket is open, close it
-			mDNSPlatformUDPClose(m->NATMcastRecvskt); 
-			m->NATMcastRecvskt = mDNSNULL; 
-			}
-
 		if (m->timenow - m->retryGetAddr >= 0)	// we have exceeded the timer interval
 			{
 			err = uDNS_SendNATMsg(m, mDNSNULL, AddrRequestFlag);

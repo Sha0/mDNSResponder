@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.433  2007/09/12 22:19:28  cheshire
+<rdar://problem/5476977> Need to listen for port 5350 NAT-PMP announcements
+
 Revision 1.432  2007/09/12 19:22:19  cheshire
 Variable renaming in preparation for upcoming fixes e.g. priv/pub renamed to intport/extport
 Made NAT Traversal packet handlers take typed data instead of anonymous "mDNSu8 *" byte pointers
@@ -1912,7 +1915,8 @@ struct mDNS_struct
 	mDNSs32           retryGetAddr;				// absolute time when we retry
 	mDNSv4Addr        ExternalAddress;
 
-	UDPSocket        *NATMcastRecvskt;			// for receiving NAT-PMP AddrReply multicasts from router
+	UDPSocket        *NATMcastRecvskt;			// For receiving NAT-PMP AddrReply multicasts from router on port 5350
+	UDPSocket        *NATMcastRecvsk2;			// For backwards compatibility, same as above but listening on port 5351
 	mDNSu32           LastNATupseconds;			// NAT engine uptime in seconds, from most recent NAT packet
 	mDNSs32           LastNATReplyLocalTime;	// Local time in ticks when most recent NAT packet was received
 

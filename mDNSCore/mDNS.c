@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.699  2007/09/12 22:19:28  cheshire
+<rdar://problem/5476977> Need to listen for port 5350 NAT-PMP announcements
+
 Revision 1.698  2007/09/12 22:13:27  cheshire
 Remove DynDNSHostNames cleanly on shutdown
 
@@ -6600,6 +6603,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->ExternalAddress          = zerov4Addr;
 
 	m->NATMcastRecvskt          = mDNSNULL;
+	m->NATMcastRecvsk2          = mDNSNULL;
 	m->LastNATupseconds         = 0;
 	m->LastNATReplyLocalTime    = timenow;
 
