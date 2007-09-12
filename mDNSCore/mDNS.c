@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.696  2007/09/12 01:26:08  cheshire
+Initialize LastNATReplyLocalTime to timenow, so that gateway uptime checks work more reliably
+
 Revision 1.695  2007/09/11 19:19:16  cheshire
 Correct capitalization of "uPNP" to "UPnP"
 
@@ -6582,13 +6585,13 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	// NAT traversal fields
 	m->NATTraversals            = mDNSNULL;
 	m->CurrentNATTraversal      = mDNSNULL;
-	m->retryGetAddr             = timenow + 0x78000000;	// absolute time when we retry
 	m->retryIntervalGetAddr     = 0;	// delta between time sent and retry
+	m->retryGetAddr             = timenow + 0x78000000;	// absolute time when we retry
 	m->ExternalAddress          = zerov4Addr;
 
 	m->NATMcastRecvskt          = mDNSNULL;
 	m->LastNATupseconds         = 0;
-	m->LastNATReplyLocalTime    = 0;
+	m->LastNATReplyLocalTime    = timenow;
 
 	m->UPnPRouterPort           = zeroIPPort;
 	m->UPnPSOAPPort             = zeroIPPort;
