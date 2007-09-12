@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.19  2007/09/12 00:42:47  mcguire
+<rdar://problem/5468236> BTMM: Need to clean up security associations
+
 Revision 1.18  2007/09/12 00:40:16  mcguire
 <rdar://problem/5469660> 9A547: Computer Name had incorrectly encoded unicode
 
@@ -965,7 +968,7 @@ unaliasTunnelAddress(v6addr_t address)
 		goto fin;
 		}
 
-	v6addr_t zero = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0	};
+	v6addr_t zero = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
 	err = doTunnelPolicy(kmDNSTunnelPolicyTeardown,
 	    address, kWholeV6Mask, NULL, 0,
 	    zero, kZeroV6Mask, NULL, 0);
@@ -1491,6 +1494,35 @@ fin:
 	}
 
 static int
+removeSA(int s, struct sockaddr *src, struct sockaddr *dst)
+	{
+	int err = 0;
+
+	debug("entry");
+	err = pfkey_send_delete_all(s, SADB_SATYPE_ESP, IPSEC_MODE_ANY, src, dst);
+	if (0 > err)
+		{
+		helplog(ASL_LEVEL_ERR, "Could not remove IPsec SA: %s", ipsec_strerror());
+		err = kmDNSHelperIPsecRemoveSAFailed;
+		goto fin;
+		}
+	err = pfkey_send_delete_all(s, SADB_SATYPE_ESP, IPSEC_MODE_ANY, dst, src);
+	if (0 > err)
+		{
+		helplog(ASL_LEVEL_ERR, "Could not remove IPsec SA: %s", ipsec_strerror());
+		err = kmDNSHelperIPsecRemoveSAFailed;
+		goto fin;
+		}
+	else
+	  err = 0;
+
+	debug("succeeded");
+
+fin:
+	return err;
+	}
+
+static int
 doTunnelPolicy(mDNSTunnelPolicyWhich which,
 	       v6addr_t loc_inner, uint8_t loc_bits,
 	       v4addr_t loc_outer, uint16_t loc_port, 
@@ -1553,7 +1585,30 @@ doTunnelPolicy(mDNSTunnelPolicyWhich which,
 	    (struct sockaddr *)&sin_rmt, rmt_bits,
 	    policy, len)))
 		goto fin;
+
+	if (which == kmDNSTunnelPolicyTeardown && loc_outer && rmt_outer)
+		{
+		struct sockaddr_in sin_loc;
+		struct sockaddr_in sin_rmt;
+		
+		memset(&sin_loc, 0, sizeof(sin_loc));
+		sin_loc.sin_len = sizeof(sin_loc);
+		sin_loc.sin_family = AF_INET;
+		sin_loc.sin_port = htons(0);
+		memcpy(&sin_loc.sin_addr, loc_outer, sizeof(sin_loc.sin_addr));
+
+		memset(&sin_rmt, 0, sizeof(sin_rmt));
+		sin_rmt.sin_len = sizeof(sin_rmt);
+		sin_rmt.sin_family = AF_INET;
+		sin_rmt.sin_port = htons(0);
+		memcpy(&sin_rmt.sin_addr, rmt_outer, sizeof(sin_rmt.sin_addr));
+
+		if (0 != (err = removeSA(s, &sin_loc, &sin_rmt)))
+			goto fin;
+		}
+
 	debug("succeeded");
+
 fin:
 	if (0 >= s)
 		close(s);
@@ -1692,8 +1747,8 @@ do_mDNSAutoTunnelSetKeys(__unused mach_port_t port, int replacedelete,
 		}
 
 	if (0 != (*err = doTunnelPolicy(kmDNSTunnelPolicyTeardown,
-	    loc_inner, kWholeV6Mask, NULL, loc_port,
-	    rmt_inner, kWholeV6Mask, NULL, rmt_port)))
+	    loc_inner, kWholeV6Mask, loc_outer, loc_port,
+	    rmt_inner, kWholeV6Mask, rmt_outer, rmt_port)))
 		goto fin;
 	if (kmDNSAutoTunnelSetKeysReplace == replacedelete &&
 	    0 != (*err = doTunnelPolicy(kmDNSTunnelPolicySetup,

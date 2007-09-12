@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper-error.h,v $
+Revision 1.7  2007/09/12 00:42:47  mcguire
+<rdar://problem/5468236> BTMM: Need to clean up security associations
+
 Revision 1.6  2007/09/04 22:32:58  mcguire
 <rdar://problem/5453633> BTMM: BTMM overwrites /etc/racoon/remote/anonymous.conf
 
@@ -68,4 +71,5 @@ ERROR(kmDNSHelperRoutingSocketCreationFailed,     "Could not create routing sock
 ERROR(kmDNSHelperDatagramSocketCreationFailed,    "Could not create datagram socket")
 ERROR(kmDNSHelperIPsecPolicyCreationFailed,       "Could not create IPsec policy")
 ERROR(kmDNSHelperIPsecPolicySetFailed,            "Could not set IPsec policy")
+ERROR(kmDNSHelperIPsecRemoveSAFailed,             "Could not remove IPsec SA")
 ERROR(kmDNSHelperIPsecPolicySocketCreationFailed, "Could not create IPsec policy socket")
