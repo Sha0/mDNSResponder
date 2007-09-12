@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.698  2007/09/12 22:13:27  cheshire
+Remove DynDNSHostNames cleanly on shutdown
+
 Revision 1.697  2007/09/12 01:44:47  cheshire
 <rdar://problem/5475938> Eliminate "Correcting TTL" syslog messages for unicast DNS records
 
@@ -6738,7 +6741,9 @@ mDNSexport void mDNS_Close(mDNS *const m)
 
 #ifndef UNICAST_DISABLED
 	uDNS_Sleep(m);
+	while (m->Hostnames) mDNS_RemoveDynDNSHostName(m, &m->Hostnames->fqdn);
 #endif
+
 	rrcache_totalused = m->rrcache_totalused;
 	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 		{
