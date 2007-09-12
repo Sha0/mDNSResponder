@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.128  2007/09/12 19:23:17  cheshire
+Get rid of unnecessary mDNSPlatformTCPIsConnected() routine
+
 Revision 1.127  2007/07/20 00:54:22  cheshire
 <rdar://problem/4641118> Need separate SCPreferences for per-user .Mac settings
 
@@ -1063,15 +1066,6 @@ exit:
 
 	return err;
 }
-
-//===========================================================================================================================
-//	mDNSPlatformTCPIsConnected
-//===========================================================================================================================
-
-mDNSexport mDNSBool mDNSPlatformTCPIsConnected( TCPSocket *sock )
-    {
-    return sock->connected;
-    }
 
 //===========================================================================================================================
 //	mDNSPlatformTCPAccept

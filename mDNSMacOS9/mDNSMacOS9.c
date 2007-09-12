@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOS9.c,v $
+Revision 1.51  2007/09/12 19:23:17  cheshire
+Get rid of unnecessary mDNSPlatformTCPIsConnected() routine
+
 Revision 1.50  2007/04/05 20:40:37  cheshire
 Remove unused mDNSPlatformTCPGetFlags()
 
@@ -345,12 +348,6 @@ mDNSexport mStatus mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr * dst,
 	(void)callback;		// Unused
 	(void)context;		// Unused
 	return(mStatus_UnsupportedErr);
-	}
-
-mDNSexport mDNSBool mDNSPlatformTCPIsConnected(TCPSocket *sock)
-	{
-	(void)sock;			// Unused
-	return mDNSfalse;
 	}
 
 mDNSexport void mDNSPlatformTCPCloseConnection(TCPSocket *sd)
