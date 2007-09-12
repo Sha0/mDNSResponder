@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.341  2007/09/12 01:22:13  cheshire
+Improve validatelists() checking to detect when 'next' pointer gets smashed to ~0
+
 Revision 1.340  2007/09/07 22:44:03  mcguire
 <rdar://problem/5448420> Move CFUserNotification code to mDNSResponderHelper
 
@@ -494,28 +497,28 @@ mDNSlocal void validatelists(mDNS *const m)
 	// Check local lists
 	KQSocketEventSource *k;
 	for (k = gEventSources; k; k=k->next)
-		if (k->fd < 0)
+		if (k->next == (KQSocketEventSource *)~0 || k->fd < 0)
 			LogMemCorruption("gEventSources: %p is garbage (%d)", k, k->fd);
 
 	// Check Mach client lists
 	DNSServiceDomainEnumeration *e;
 	for (e = DNSServiceDomainEnumerationList; e; e=e->next)
-		if (e->ClientMachPort == 0 || e->ClientMachPort == (mach_port_t)~0)
+		if (e->next == (DNSServiceDomainEnumeration *)~0 || e->ClientMachPort == 0 || e->ClientMachPort == (mach_port_t)~0)
 			LogMemCorruption("DNSServiceDomainEnumerationList: %p is garbage (%X)", e, e->ClientMachPort);
 
 	DNSServiceBrowser           *b;
 	for (b = DNSServiceBrowserList; b; b=b->next)
-		if (b->ClientMachPort == 0 || b->ClientMachPort == (mach_port_t)~0)
+		if (b->next == (DNSServiceBrowser *)~0 || b->ClientMachPort == 0 || b->ClientMachPort == (mach_port_t)~0)
 			LogMemCorruption("DNSServiceBrowserList: %p is garbage (%X)", b, b->ClientMachPort);
 
 	DNSServiceResolver          *l;
 	for (l = DNSServiceResolverList; l; l=l->next)
-		if (l->ClientMachPort == 0 || l->ClientMachPort == (mach_port_t)~0)
+		if (l->next == (DNSServiceResolver *)~0 || l->ClientMachPort == 0 || l->ClientMachPort == (mach_port_t)~0)
 			LogMemCorruption("DNSServiceResolverList: %p is garbage (%X)", l, l->ClientMachPort);
 
 	DNSServiceRegistration      *r;
 	for (r = DNSServiceRegistrationList; r; r=r->next)
-		if (r->ClientMachPort == 0 || r->ClientMachPort == (mach_port_t)~0)
+		if (r->next == (DNSServiceRegistration *)~0 || r->ClientMachPort == 0 || r->ClientMachPort == (mach_port_t)~0)
 			LogMemCorruption("DNSServiceRegistrationList: %p is garbage (%X)", r, r->ClientMachPort);
 
 	// Check Unix Domain Socket client lists (uds_daemon.c)
@@ -525,7 +528,7 @@ mDNSlocal void validatelists(mDNS *const m)
 	AuthRecord                  *rr;
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		{
-		if (rr->resrec.RecordType == 0 || rr->resrec.RecordType == 0xFF)
+		if (rr->next == (AuthRecord *)~0 || rr->resrec.RecordType == 0 || rr->resrec.RecordType == 0xFF)
 			LogMemCorruption("ResourceRecords list: %p is garbage (%X)", rr, rr->resrec.RecordType);
 		if (rr->resrec.name != &rr->namestorage)
 			LogMemCorruption("ResourceRecords list: %p name %p does not point to namestorage %p %##s",
@@ -533,12 +536,12 @@ mDNSlocal void validatelists(mDNS *const m)
 		}
 
 	for (rr = m->DuplicateRecords; rr; rr=rr->next)
-		if (rr->resrec.RecordType == 0 || rr->resrec.RecordType == 0xFF)
+		if (rr->next == (AuthRecord *)~0 || rr->resrec.RecordType == 0 || rr->resrec.RecordType == 0xFF)
 			LogMemCorruption("DuplicateRecords list: %p is garbage (%X)", rr, rr->resrec.RecordType);
 
 	DNSQuestion                 *q;
 	for (q = m->Questions; q; q=q->next)
-		if (q->ThisQInterval == (mDNSs32)~0 || q->next == (DNSQuestion*)~0)
+		if (q->next == (DNSQuestion*)~0 || q->ThisQInterval == (mDNSs32)~0)
 			LogMemCorruption("Questions list: %p is garbage (%lX %p)", q, q->ThisQInterval, q->next);
 
 	CacheGroup                  *cg;
@@ -561,12 +564,12 @@ mDNSlocal void validatelists(mDNS *const m)
 	// Check platform-layer lists
 	NetworkInterfaceInfoOSX     *i;
 	for (i = m->p->InterfaceList; i; i = i->next)
-		if (!i->ifa_name || i->ifa_name == (char *)~0)
+		if (i->next == (NetworkInterfaceInfoOSX *)~0 || !i->ifa_name || i->ifa_name == (char *)~0)
 			LogMemCorruption("m->p->InterfaceList: %p is garbage (%p)", i, i->ifa_name);
 
 	ClientTunnel *t;
 	for (t = m->TunnelClients; t; t=t->next)
-		if (t->dstname.c[0] > 63)
+		if (t->next == (ClientTunnel *)~0 || t->dstname.c[0] > 63)
 			LogMemCorruption("m->TunnelClients: %p is garbage (%d)", t, t->dstname.c[0]);
 	}
 

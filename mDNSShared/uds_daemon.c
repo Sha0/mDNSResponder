@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.338  2007/09/12 01:22:13  cheshire
+Improve validatelists() checking to detect when 'next' pointer gets smashed to ~0
+
 Revision 1.337  2007/09/07 23:05:04  cheshire
 Add display of client_context field in handle_cancel_request() LogOperation message
 While loop was checking client_context.u32[2] instead of client_context.u32[1]
@@ -814,7 +817,7 @@ mDNSexport void uds_validatelists(void)
 	request_state *req;
 	for (req = all_requests; req; req=req->next)
 		{
-		if (req->sd < 0 && req->sd != -2)
+		if (req->next == (request_state *)~0 || (req->sd < 0 && req->sd != -2))
 			LogMemCorruption("UDS request list: %p is garbage (%d)", req, req->sd);
 
 		// Should also be checking sub-lists of the request_state objects as appropriate, e.g.:
@@ -825,20 +828,20 @@ mDNSexport void uds_validatelists(void)
 
 	DNameListElem *d;
 	for (d = SCPrefBrowseDomains; d; d=d->next)
-		if (d->name.c[0] > 63)
+		if (d->next == (DNameListElem *)~0 || d->name.c[0] > 63)
 			LogMemCorruption("SCPrefBrowseDomains: %p is garbage (%d)", d, d->name.c[0]);
 
 	ARListElem *b;
 	for (b = LocalDomainEnumRecords; b; b=b->next)
-		if (b->ar.resrec.name->c[0] > 63)
+		if (b->next == (ARListElem *)~0 || b->ar.resrec.name->c[0] > 63)
 			LogMemCorruption("LocalDomainEnumRecords: %p is garbage (%d)", b, b->ar.resrec.name->c[0]);
 
 	for (d = AutoBrowseDomains; d; d=d->next)
-		if (d->name.c[0] > 63)
+		if (d->next == (DNameListElem *)~0 || d->name.c[0] > 63)
 			LogMemCorruption("AutoBrowseDomains: %p is garbage (%d)", d, d->name.c[0]);
 
 	for (d = AutoRegistrationDomains; d; d=d->next)
-		if (d->name.c[0] > 63)
+		if (d->next == (DNameListElem *)~0 || d->name.c[0] > 63)
 			LogMemCorruption("AutoRegistrationDomains: %p is garbage (%d)", d, d->name.c[0]);
 	}
 #endif

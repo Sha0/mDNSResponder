@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.464  2007/09/12 01:22:13  cheshire
+Improve validatelists() checking to detect when 'next' pointer gets smashed to ~0
+
 Revision 1.463  2007/09/11 20:23:28  vazquez
 <rdar://problem/5466719> CrashTracer: 3 crashes in mDNSResponder at mDNSResponder: natTraversalHandlePortMapReply + 107
 Make sure we clean up NATTraversals before free'ing HostnameInfo
@@ -348,7 +351,7 @@ Revision 1.368  2007/05/17 19:12:16  cheshire
 Updated comment about finding matching pair of sockets
 
 Revision 1.367  2007/05/15 23:38:00  cheshire
-Need to grab lock before calling sendRecordRegistration();
+Need to grab lock before calling SendRecordRegistration();
 
 Revision 1.366  2007/05/15 00:43:05  cheshire
 <rdar://problem/4983538> uDNS serviceRegistrationCallback locking failures
@@ -1345,7 +1348,9 @@ mDNSexport mStatus mDNS_StartNATOperation_internal(mDNS *const m, NATTraversalIn
 	// set default lease if necessary
 	traversal->portMappingLease = traversal->portMappingLease ? traversal->portMappingLease : NATMAP_DEFAULT_LEASE;
 
+#ifdef _LEGACY_NAT_TRAVERSAL_
 	mDNSPlatformMemZero(&traversal->tcpInfo, sizeof(traversal->tcpInfo));
+#endif _LEGACY_NAT_TRAVERSAL_
 
 	traversal->retryPortMap         = 0;
 	traversal->retryIntervalPortMap = NATMAP_INIT_RETRY;
@@ -1353,7 +1358,7 @@ mDNSexport mStatus mDNS_StartNATOperation_internal(mDNS *const m, NATTraversalIn
 
 	if (!m->NATTraversals)
 		{
-		m->retryGetAddr = m->timenow;
+		m->retryGetAddr         = m->timenow;
 		m->retryIntervalGetAddr = NATMAP_INIT_RETRY;
 		}
 
@@ -1740,10 +1745,10 @@ mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *co
 // Private DNS operations -- private queries, private LLQs, private record updates and private service updates
 mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEstablished, mStatus err)
 	{
-	tcpInfo_t		*	tcpInfo = (tcpInfo_t *)context;
-	mDNSBool			closed = mDNSfalse;
-	mDNSu8			*	end;
-	mDNS			*	m = tcpInfo->m;
+	tcpInfo_t *tcpInfo = (tcpInfo_t *)context;
+	mDNSBool   closed  = mDNSfalse;
+	mDNSu8    *end;
+	mDNS      *m       = tcpInfo->m;
 	DomainAuthInfo *AuthInfo =
 		tcpInfo->question ? tcpInfo->question->AuthInfo :
 		tcpInfo->srs      ? GetAuthInfoForName(m, tcpInfo->srs->RR_SRV.resrec.name)  :
@@ -1765,7 +1770,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 		// connection is established - send the message
 		if (tcpInfo->question && tcpInfo->question->LongLived)
 			{
-			LLQOptData	llqData;			// set llq rdata
+			LLQOptData llqData;			// set llq rdata
 			llqData.vers  = kLLQ_Vers;
 			llqData.llqOp = kLLQOp_Setup;
 			llqData.err   = LLQErr_NoError;
@@ -3138,14 +3143,14 @@ mDNSlocal mStatus checkUpdateResult(mDNS *const m, const domainname *const displ
 	}
 
 // Called with lock held
-mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
+mDNSlocal void SendRecordRegistration(mDNS *const m, AuthRecord *rr)
 	{
 	mDNSu8 *ptr = m->omsg.data;
 	mDNSu8 *end = (mDNSu8 *)&m->omsg + sizeof(DNSMessage);
 	mStatus err = mStatus_UnknownErr;
 
 	if (m->mDNS_busy != m->mDNS_reentrancy+1)
-		LogMsg("sendRecordRegistration: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
+		LogMsg("SendRecordRegistration: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
 	rr->id = mDNS_NewMessageID(m);
 	InitializeDNSMessage(&m->omsg.h, rr->id, UpdateReqFlags);
@@ -3191,8 +3196,8 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 
 	if (rr->Private)
 		{
-		LogOperation("sendRecordRegistration TCP %p %s", rr->tcp, ARDisplayString(m, rr));
-		if (rr->tcp) LogMsg("sendRecordRegistration: Already have TCP connection for %s", ARDisplayString(m, rr));
+		LogOperation("SendRecordRegistration TCP %p %s", rr->tcp, ARDisplayString(m, rr));
+		if (rr->tcp) LogMsg("SendRecordRegistration: Already have TCP connection for %s", ARDisplayString(m, rr));
 		else rr->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, mDNSNULL, rr);
 		rr->LastAPTime = m->timenow;
 		rr->ThisAPInterval = 0x3FFFFFFF; // TCP will handle any necessary retransmissions for us
@@ -3200,7 +3205,7 @@ mDNSlocal void sendRecordRegistration(mDNS *const m, AuthRecord *rr)
 	else
 		{
 		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, GetAuthInfoForName_internal(m, rr->resrec.name));
-		if (err) debugf("ERROR: sendRecordRegistration - mDNSSendDNSMessage - %ld", err);
+		if (err) debugf("ERROR: SendRecordRegistration - mDNSSendDNSMessage - %ld", err);
 		SetRecordRetry(m, rr, err);
 		}
 
@@ -3213,7 +3218,7 @@ exit:
 
 	if (err)
 		{
-		LogMsg("sendRecordRegistration: Error formatting message %d", err);
+		LogMsg("SendRecordRegistration: Error formatting message %d", err);
 
 		if (rr->state != regState_Unregistered)
 			{
@@ -3370,7 +3375,7 @@ mDNSlocal void hndlServiceUpdateReply(mDNS *const m, ServiceRecordSet *srs,  mSt
 				(*e)->r.UpdateServer    = srs->ns;
 				(*e)->r.UpdatePort  = srs->SRSUpdatePort;
 				(*e)->r.uselease = srs->srs_uselease;
-				sendRecordRegistration(m, &(*e)->r);
+				SendRecordRegistration(m, &(*e)->r);
 				e = &(*e)->next;
 				}
 			else if (err && (*e)->r.state != regState_Unregistered)
@@ -3480,7 +3485,7 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 				{
 				LogMsg("Re-trying update of record %##s without lease option", rr->resrec.name->c);
 				rr->uselease = mDNSfalse;
-				sendRecordRegistration(m, rr);
+				SendRecordRegistration(m, rr);
 				return;
 				}
 			LogMsg("Registration of record %##s type %d failed with error %ld", rr->resrec.name->c, rr->resrec.rrtype, err);
@@ -3499,7 +3504,7 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 		rr->OrigRData = rr->resrec.rdata;
 		rr->OrigRDLen = rr->resrec.rdlength;
 		rr->QueuedRData = mDNSNULL;
-		sendRecordRegistration(m, rr);
+		SendRecordRegistration(m, rr);
 		return;
 		}
 
@@ -3522,7 +3527,7 @@ mDNSexport void uDNS_ReceiveNATPMPPacket(mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 	if (!AddrReply->err && len < 8) { LogMsg("NAT Traversal message too short (%d bytes)", len); return; }
 	if (AddrReply->vers != NATMAP_VERS) { LogMsg("Received NAT Traversal response with version %d (expected %d)", pkt[0], NATMAP_VERS); return; }
 
-	// Read multi-byte numeric values
+	// Read multi-byte numeric values (fields are identical in a NATPortMapReply)
 	AddrReply->err       = (mDNSu16) (                                                (mDNSu16)pkt[2] << 8 | pkt[3]);
 	AddrReply->upseconds = (mDNSs32) ((mDNSs32)pkt[4] << 24 | (mDNSs32)pkt[5] << 16 | (mDNSs32)pkt[6] << 8 | pkt[7]);
 
@@ -3992,8 +3997,8 @@ mDNSexport void RecordRegistrationCallback(mDNS *const m, mStatus err, const Zon
 		}
 
 
-	mDNS_Lock(m);	// sendRecordRegistration expects to be called with the lock held
-	sendRecordRegistration(m, newRR);
+	mDNS_Lock(m);	// SendRecordRegistration expects to be called with the lock held
+	SendRecordRegistration(m, newRR);
 	mDNS_Unlock(m);
 	return;
 
@@ -4194,7 +4199,7 @@ mDNSexport mStatus uDNS_UpdateRecord(mDNS *m, AuthRecord *rr)
 			rr->NewRData = mDNSNULL;
 			*stateptr = regState_UpdatePending;
 			if (parent) SendServiceRegistration(m, parent);
-			else sendRecordRegistration(m, rr);
+			else SendRecordRegistration(m, rr);
 			return mStatus_NoError;
 
 		case regState_NATError:
@@ -4386,13 +4391,14 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 			// (like when we have no active interfaces) we'll spin in an infinite loop repeatedly failing to send the packet
 			m->retryGetAddr = m->timenow + m->retryIntervalGetAddr;
 			}
-	
+		// Even when we didn't send the GetAddr packet, still need to make sure NextScheduledNATOp is set correctly
 		if (m->NextScheduledNATOp - m->retryGetAddr > 0)
 			m->NextScheduledNATOp = m->retryGetAddr;
 		}
 
 	if (m->CurrentNATTraversal) LogMsg("WARNING m->CurrentNATTraversal already in use");
 	m->CurrentNATTraversal = m->NATTraversals;
+
 	while (m->CurrentNATTraversal)
 		{
 		NATTraversalInfo *cur = m->CurrentNATTraversal;
@@ -4480,7 +4486,7 @@ mDNSlocal mDNSs32 CheckRecordRegistrations(mDNS *m)
 				{
 				if (rr->tcp) { rr->LastAPTime = m->timenow; rr->ThisAPInterval = 0x3FFFFFFF; }
 				else if (rr->state == regState_DeregPending) SendRecordDeregistration(m, rr);
-				else sendRecordRegistration(m, rr);
+				else SendRecordRegistration(m, rr);
 				}
 			if (rr->LastAPTime + rr->ThisAPInterval - nextevent < 0) nextevent = rr->LastAPTime + rr->ThisAPInterval;
 			}
@@ -4490,7 +4496,7 @@ mDNSlocal mDNSs32 CheckRecordRegistrations(mDNS *m)
 				{
 				debugf("refreshing record %##s", rr->resrec.name->c);
 				rr->state = regState_Refresh;
-				sendRecordRegistration(m, rr);
+				SendRecordRegistration(m, rr);
 				}
 			if (rr->expire - nextevent < 0) nextevent = rr->expire;
 			}
@@ -4842,27 +4848,27 @@ mDNSexport void udns_validatelists(void *const v)
 
 	NATTraversalInfo *n;
 	for (n = m->NATTraversals; n; n=n->next)
-		if (n->clientCallback == (NATTraversalClientCallback)~0)
+		if (n->next == (NATTraversalInfo *)~0 || n->clientCallback == (NATTraversalClientCallback)~0)
 			LogMemCorruption("m->NATTraversals: %p is garbage", n);
 
 	DNSServer *d;
 	for (d = m->DNSServers; d; d=d->next)
-		if (d->teststate > DNSServer_Disabled)
+		if (d->next == (DNSServer *)~0 || d->teststate > DNSServer_Disabled)
 			LogMemCorruption("m->DNSServers: %p is garbage (%d)", d, d->teststate);
 
 	DomainAuthInfo *info;
 	for (info = m->AuthInfoList; info; info = info->next)
-		if (info->AutoTunnel == (mDNSBool)~0)
+		if (info->next == (DomainAuthInfo *)~0 || info->AutoTunnel == (mDNSBool)~0)
 			LogMemCorruption("m->AuthInfoList: %p is garbage (%X)", info, info->AutoTunnel);
 
 	HostnameInfo *hi;
 	for (hi = m->Hostnames; hi; hi = hi->next)
-		if (hi->StatusCallback == (mDNSRecordCallback*)~0)
+		if (hi->next == (HostnameInfo *)~0 || hi->StatusCallback == (mDNSRecordCallback*)~0)
 			LogMemCorruption("m->Hostnames: %p is garbage", n);
 
 	SearchListElem *ptr;
 	for (ptr = SearchList; ptr; ptr = ptr->next)
-		if (ptr->AuthRecs == (void*)~0)
+		if (ptr->next == (SearchListElem *)~0 || ptr->AuthRecs == (void*)~0)
 			LogMemCorruption("SearchList: %p is garbage (%X)", ptr, ptr->AuthRecs);
 	}
 #endif
