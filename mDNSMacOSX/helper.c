@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.20  2007/09/12 18:07:44  cheshire
+Fix compile errors ("passing argument from incompatible pointer type")
+
 Revision 1.19  2007/09/12 00:42:47  mcguire
 <rdar://problem/5468236> BTMM: Need to clean up security associations
 
@@ -1603,7 +1606,7 @@ doTunnelPolicy(mDNSTunnelPolicyWhich which,
 		sin_rmt.sin_port = htons(0);
 		memcpy(&sin_rmt.sin_addr, rmt_outer, sizeof(sin_rmt.sin_addr));
 
-		if (0 != (err = removeSA(s, &sin_loc, &sin_rmt)))
+		if (0 != (err = removeSA(s, (struct sockaddr *)&sin_loc, (struct sockaddr *)&sin_rmt)))
 			goto fin;
 		}
 
