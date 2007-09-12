@@ -17,6 +17,10 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.339  2007/09/12 19:22:21  cheshire
+Variable renaming in preparation for upcoming fixes e.g. priv/pub renamed to intport/extport
+Made NAT Traversal packet handlers take typed data instead of anonymous "mDNSu8 *" byte pointers
+
 Revision 1.338  2007/09/12 01:22:13  cheshire
 Improve validatelists() checking to detect when 'next' pointer gets smashed to ~0
 
@@ -676,7 +680,7 @@ struct request_state
 			{
 			mDNSInterfaceID      interface_id;
 			mDNSu8               protocol;
-			mDNSIPPort           privatePort;
+			mDNSIPPort           IntPort;
 			mDNSIPPort           requestedPub;	// Requested public port
 			mDNSIPPort           actualPub;		// Actual public port assigned by NAT gateway
 			mDNSu32              requestedTTL;
@@ -2699,7 +2703,7 @@ mDNSlocal void handle_getproperty_request(request_state *request)
 mDNSlocal void port_mapping_termination_callback(request_state *request)
 	{
 	LogOperation("%3d: DNSServiceNATPortMappingCreate(%X, %u, %u, %d) STOP", request->sd,
-		request->u.pm.protocol, mDNSVal16(request->u.pm.privatePort), mDNSVal16(request->u.pm.requestedPub), request->u.pm.requestedTTL);
+		request->u.pm.protocol, mDNSVal16(request->u.pm.IntPort), mDNSVal16(request->u.pm.requestedPub), request->u.pm.requestedTTL);
 	mDNS_StopNATOperation(&mDNSStorage, &request->u.pm.NATinfo);
 	}
 
@@ -2714,7 +2718,7 @@ mDNSlocal void port_mapping_create_request_callback(mDNS *m, mDNSv4Addr External
 	if (!request) { LogMsg("port_mapping_create_request_callback called with unknown request_state object"); return; }
 
 	request->u.pm.actualPub   = n->publicPort;
-	request->u.pm.receivedTTL = n->portMappingLease;
+	request->u.pm.receivedTTL = n->NATLease;
 	request->u.pm.addr        = ExternalAddress;
 
 	// calculate reply data length
@@ -2737,14 +2741,14 @@ mDNSlocal void port_mapping_create_request_callback(mDNS *m, mDNSv4Addr External
 	*data++ = request->u.pm.addr.b[2];
 	*data++ = request->u.pm.addr.b[3];
 	*data++ = request->u.pm.protocol;
-	*data++ = request->u.pm.privatePort.b[0];
-	*data++ = request->u.pm.privatePort.b[1];
+	*data++ = request->u.pm.IntPort.b[0];
+	*data++ = request->u.pm.IntPort.b[1];
 	*data++ = request->u.pm.actualPub.b[0];
 	*data++ = request->u.pm.actualPub.b[1];
 	put_uint32(request->u.pm.receivedTTL, &data);
 
 	LogOperation("%3d: DNSServiceNATPortMappingCreate(%X, %u, %u, %d) RESULT %.4a %u %u", request->sd,
-		request->u.pm.protocol, mDNSVal16(request->u.pm.privatePort), mDNSVal16(request->u.pm.requestedPub), request->u.pm.requestedTTL,
+		request->u.pm.protocol, mDNSVal16(request->u.pm.IntPort), mDNSVal16(request->u.pm.requestedPub), request->u.pm.requestedTTL,
 		&request->u.pm.addr, mDNSVal16(request->u.pm.actualPub), request->u.pm.receivedTTL);
 
 	append_reply(request, rep);
@@ -2753,7 +2757,7 @@ mDNSlocal void port_mapping_create_request_callback(mDNS *m, mDNSv4Addr External
 mDNSlocal mStatus handle_port_mapping_request(request_state *request)
 	{
 	mDNSu8 protocol;
-	mDNSIPPort privatePort;
+	mDNSIPPort IntPort;
 	mDNSIPPort publicPort;
 	mDNSu32 ttl;
 	mStatus err = mStatus_NoError;
@@ -2768,8 +2772,8 @@ mDNSlocal mStatus handle_port_mapping_request(request_state *request)
 	if (request->msgptr + 4 > request->msgend) request->msgptr = NULL;
 	else
 		{
-		privatePort.b[0] = *request->msgptr++;
-		privatePort.b[1] = *request->msgptr++;
+		IntPort.b[0] = *request->msgptr++;
+		IntPort.b[1] = *request->msgptr++;
 		publicPort .b[0] = *request->msgptr++;
 		publicPort .b[1] = *request->msgptr++;
 		}
@@ -2779,18 +2783,18 @@ mDNSlocal mStatus handle_port_mapping_request(request_state *request)
 
 	if (protocol == 0)
 		{
-		// If protocol == 0 (i.e. just request public address) then privatePort, publicPort, ttl must be zero too
-		if (!mDNSIPPortIsZero(privatePort) || !mDNSIPPortIsZero(publicPort) || ttl) return(mStatus_BadParamErr);
+		// If protocol == 0 (i.e. just request public address) then IntPort, publicPort, ttl must be zero too
+		if (!mDNSIPPortIsZero(IntPort) || !mDNSIPPortIsZero(publicPort) || ttl) return(mStatus_BadParamErr);
 		}
 	else
 		{
-		if (mDNSIPPortIsZero(privatePort)) return(mStatus_BadParamErr);
+		if (mDNSIPPortIsZero(IntPort)) return(mStatus_BadParamErr);
 		if (!(protocol & (kDNSServiceProtocol_UDP | kDNSServiceProtocol_TCP))) return(mStatus_BadParamErr);
 		}
 
 	request->u.pm.interface_id = InterfaceID;
 	request->u.pm.protocol     = protocol;
-	request->u.pm.privatePort  = privatePort;
+	request->u.pm.IntPort  = IntPort;
 	request->u.pm.requestedPub = publicPort;
 	request->u.pm.actualPub    = zeroIPPort;
 	request->u.pm.requestedTTL = ttl;
@@ -2799,13 +2803,13 @@ mDNSlocal mStatus handle_port_mapping_request(request_state *request)
 	mDNSPlatformMemZero(&request->u.pm.NATinfo, sizeof(NATTraversalInfo));
 	request->u.pm.NATinfo.clientCallback   = port_mapping_create_request_callback;
 	request->u.pm.NATinfo.clientContext    = request;
-	request->u.pm.NATinfo.protocol         = protocol;
-	request->u.pm.NATinfo.privatePort      = request->u.pm.privatePort;
-	request->u.pm.NATinfo.publicPortreq    = request->u.pm.requestedPub;
-	request->u.pm.NATinfo.portMappingLease = request->u.pm.requestedTTL;
+	request->u.pm.NATinfo.Protocol         = protocol;
+	request->u.pm.NATinfo.IntPort      = request->u.pm.IntPort;
+	request->u.pm.NATinfo.ExtPort    = request->u.pm.requestedPub;
+	request->u.pm.NATinfo.NATLease = request->u.pm.requestedTTL;
 	
 	LogOperation("%3d: DNSServiceNATPortMappingCreate(%X, %u, %u, %d) START", request->sd,
-		request->u.pm.protocol, mDNSVal16(request->u.pm.privatePort), mDNSVal16(request->u.pm.requestedPub), request->u.pm.requestedTTL);
+		request->u.pm.protocol, mDNSVal16(request->u.pm.IntPort), mDNSVal16(request->u.pm.requestedPub), request->u.pm.requestedTTL);
 	err = mDNS_StartNATOperation(&mDNSStorage, &request->u.pm.NATinfo);
 	if (!err) request->terminate = port_mapping_termination_callback;
 
@@ -3467,7 +3471,7 @@ mDNSlocal void LogClientInfo(request_state *req)
 			req->sd,
 			req->u.pm.protocol & kDNSServiceProtocol_TCP ? "tcp" : "   ",
 			req->u.pm.protocol & kDNSServiceProtocol_UDP ? "udp" : "   ",
-			mDNSVal16(req->u.pm.privatePort),
+			mDNSVal16(req->u.pm.IntPort),
 			mDNSVal16(req->u.pm.requestedPub),
 			mDNSVal16(req->u.pm.actualPub),
 			req->u.pm.requestedTTL,
@@ -3558,11 +3562,11 @@ mDNSexport void udsserver_info(mDNS *const m)
 	LogMsgNoIdent("-------- NAT Traversals --------");
 	for (nat = m->NATTraversals; nat; nat=nat->next)
 		{
-		if (nat->protocol)
+		if (nat->Protocol)
 			LogMsgNoIdent("%p %2X Int %5d Ext %5d Err %d Retry %d Interval %d Expire %d", nat,
-				nat->opFlags, mDNSVal16(nat->privatePort), mDNSVal16(nat->publicPort), nat->Error,
+				nat->opFlags, mDNSVal16(nat->IntPort), mDNSVal16(nat->publicPort), nat->Error,
 				nat->retryPortMap - now,
-				nat->retryIntervalPortMap,
+				nat->retryInterval,
 				nat->ExpiryTime - now);
 		else
 			LogMsgNoIdent("%p Address Request Retry %d Interval %d", nat, m->retryGetAddr - now, m->retryIntervalGetAddr);

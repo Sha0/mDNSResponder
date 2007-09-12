@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.432  2007/09/12 19:22:19  cheshire
+Variable renaming in preparation for upcoming fixes e.g. priv/pub renamed to intport/extport
+Made NAT Traversal packet handlers take typed data instead of anonymous "mDNSu8 *" byte pointers
+
 Revision 1.431  2007/09/11 19:19:16  cheshire
 Correct capitalization of "uPNP" to "UPnP"
 
@@ -1139,8 +1143,8 @@ typedef packedstruct
 	mDNSu8 vers;
 	mDNSu8 opcode;
 	mDNSOpaque16 unused;
-	mDNSIPPort priv;
-	mDNSIPPort pub;
+	mDNSIPPort intport;
+	mDNSIPPort extport;
 	mDNSu32    NATReq_lease;
 	} NATPortMapRequest;
 
@@ -1150,36 +1154,36 @@ typedef packedstruct
 	mDNSu8     opcode;
 	mDNSu16    err;
 	mDNSu32    upseconds;		// Time since last NAT engine reboot, in seconds
-	mDNSIPPort priv;
-	mDNSIPPort pub;
+	mDNSIPPort intport;
+	mDNSIPPort extport;
 	mDNSu32    NATRep_lease;
 	} NATPortMapReply;
 
 typedef enum
 	{
-	LNTDiscoveryOp		= 1,
-	LNTExternalAddrOp	= 2,
-	LNTPortMapOp		= 3,
-	LNTPortMapDeleteOp	= 4
+	LNTDiscoveryOp      = 1,
+	LNTExternalAddrOp   = 2,
+	LNTPortMapOp        = 3,
+	LNTPortMapDeleteOp  = 4
 	} LNTOp_t;
 
-#define LNT_MAXBUFSIZE	4096
+#define LNT_MAXBUFSIZE 4096
 typedef struct tcpLNTInfo_struct tcpLNTInfo;
 struct tcpLNTInfo_struct
 	{
-	tcpLNTInfo	*next;
-	mDNS		*m;
+	tcpLNTInfo       *next;
+	mDNS             *m;
 	NATTraversalInfo *parentNATInfo;	// pointer back to the parent NATTraversalInfo
-	TCPSocket		*sock;
-	LNTOp_t		op;			// operation performed using this connection
-	mDNSAddr		Address;		// router address
-	mDNSIPPort	Port;			// router port
-	mDNSs8		*Request;		// xml request to router
-	int			requestLen;
-	mDNSs8		*Reply;		// xml reply from router
-	int			replyLen;
-	unsigned long	nread;		// number of bytes read so far
-	int			retries;		// number of times we've tried to do this port mapping
+	TCPSocket        *sock;
+	LNTOp_t           op;				// operation performed using this connection
+	mDNSAddr          Address;			// router address
+	mDNSIPPort        Port;				// router port
+	mDNSs8           *Request;			// xml request to router
+	int               requestLen;
+	mDNSs8           *Reply;			// xml reply from router
+	int               replyLen;
+	unsigned long     nread;			// number of bytes read so far
+	int               retries;			// number of times we've tried to do this port mapping
 	};
 
 typedef void (*NATTraversalClientCallback)(mDNS *m, mDNSv4Addr ExternalAddress, NATTraversalInfo *n, mStatus err);
@@ -1187,7 +1191,12 @@ typedef void (*NATTraversalClientCallback)(mDNS *m, mDNSv4Addr ExternalAddress, 
 struct NATTraversalInfo_struct
 	{
 	// Internal state fields. These are used internally by mDNSCore; the client layer needn't be concerned with them.
-	NATTraversalInfo *next;
+	NATTraversalInfo           *next;
+
+	mDNSs32                     ExpiryTime;			// Time this mapping expires, or zero if no mapping
+	mDNSs32                     retryInterval;		// Current interval, between last packet we sent and the next one
+	mDNSs32                     retryPortMap;		// If Protocol is nonzero, time to send our next mapping packet
+	mStatus                     NewResult;			// New error code; will be copied to Result just prior to invoking callback
 
 	NATOptFlags_t    opFlags;				// flags for everything that needs to be done
 	mDNSIPPort       lastPublicPort;		// last public port mapping we got
@@ -1196,28 +1205,26 @@ struct NATTraversalInfo_struct
 											// this is *only* reset with something the router sent us, not
 											// to be used internally for state transitions)
 	mStatus          lastError;				// Last error code we delivered to callback
-	tcpLNTInfo       tcpInfo;				// legacy NAT traversal TCP connection
 
-	mDNSs32          retryPortMap;			// absolute time when we retry
-	mDNSs32          retryIntervalPortMap;	// delta between time sent and retry
-	mDNSs32          ExpiryTime;
+#ifdef _LEGACY_NAT_TRAVERSAL_
+	tcpLNTInfo                  tcpInfo;			// Legacy NAT traversal (UPnP) TCP connection
+#endif
 
 	// Result fields: When the callback is invoked these fields contain the answers the client is looking for
-	// Note that Error and lastExternalAddress are also passed to the callback as explicit parameters
 	mStatus          Error;
 	mDNSv4Addr       lastExternalAddress;
 	mDNSIPPort       publicPort;			// established public port mapping
-	// For granted lease see portMappingLease
+	// For granted lease see NATLease
 
 	// Client API fields: The client must set up these fields *before* making any NAT traversal API calls
-	NATTraversalClientCallback clientCallback; // returns response to whoever called the API
-	void            *clientContext;
-	mDNSu8           protocol;
-	mDNSIPPort       privatePort;			// Client's internal port number
-	mDNSIPPort       publicPortreq;			// Requested public port mapping; NOT overwritten with value returned from gateway
-	mDNSu32          portMappingLease;		// Requested lifetime; overwritten with value returned from gateway
+	mDNSu8                      Protocol;			// NATOp_MapUDP or NATOp_MapTCP, or zero if just requesting the external IP address
+	mDNSIPPort                  IntPort;			// Client's internal port number (doesn't change)
+	mDNSIPPort                  ExtPort;			// Requested public port mapping; may be updated with actual value assigned by gateway
+	mDNSu32                     NATLease;			// Requested lifetime in seconds (doesn't change)
+	NATTraversalClientCallback  clientCallback;
+	void                       *clientContext;
 	};
-	
+
 typedef struct
 	{
 	mDNSu8           RecordType;		// See enum above
@@ -1901,8 +1908,8 @@ struct mDNS_struct
 	// NAT traversal fields
 	NATTraversalInfo *NATTraversals;
 	NATTraversalInfo *CurrentNATTraversal;
-	mDNSs32           retryGetAddr;				// absolute time when we retry
 	mDNSs32           retryIntervalGetAddr;		// delta between time sent and retry
+	mDNSs32           retryGetAddr;				// absolute time when we retry
 	mDNSv4Addr        ExternalAddress;
 
 	UDPSocket        *NATMcastRecvskt;			// for receiving NAT-PMP AddrReply multicasts from router
@@ -2488,7 +2495,6 @@ extern TCPSocket *mDNSPlatformTCPAccept(TCPSocketFlags flags, int sd);
 extern int        mDNSPlatformTCPGetFD(TCPSocket *sock);
 extern mStatus    mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr *dst, mDNSOpaque16 dstport, mDNSInterfaceID InterfaceID,
                                          TCPConnectionCallback callback, void *context);
-extern mDNSBool   mDNSPlatformTCPIsConnected(TCPSocket *sock);
 extern void       mDNSPlatformTCPCloseConnection(TCPSocket *sock);
 extern long       mDNSPlatformReadTCP(TCPSocket *sock, void *buf, unsigned long buflen, mDNSBool *closed);
 extern long       mDNSPlatformWriteTCP(TCPSocket *sock, const char *msg, unsigned long len);
@@ -2508,11 +2514,11 @@ extern void       mDNSPlatformDynDNSHostNameStatusChanged(const domainname *cons
 
 #ifdef _LEGACY_NAT_TRAVERSAL_
 // Support for legacy NAT traversal protocols, implemented by the platform layer and callable by the core.
-extern mStatus 	LNT_SendDiscoveryMsg(mDNS *m);
-extern void 	LNT_ConfigureRouterInfo(mDNS *m, mDNSu8 *data, mDNSu16 len);
-extern mStatus 	LNT_GetExternalAddress(mDNS *m);
-extern mStatus 	LNT_MapPort(mDNS *m, NATTraversalInfo *n, mDNSBool doTCP);
-extern mStatus 	LNT_UnmapPort(mDNS *m, NATTraversalInfo *n, mDNSBool doTCP);
+extern mStatus  LNT_SendDiscoveryMsg(mDNS *m);
+extern void     LNT_ConfigureRouterInfo(mDNS *m, mDNSu8 *data, mDNSu16 len);
+extern mStatus  LNT_GetExternalAddress(mDNS *m);
+extern mStatus  LNT_MapPort(mDNS *m, NATTraversalInfo *n, mDNSBool doTCP);
+extern mStatus  LNT_UnmapPort(mDNS *m, NATTraversalInfo *n, mDNSBool doTCP);
 #endif // _LEGACY_NAT_TRAVERSAL_
 
 // The core mDNS code provides these functions, for the platform support code to call at appropriate times

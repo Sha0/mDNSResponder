@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.479  2007/09/12 19:22:20  cheshire
+Variable renaming in preparation for upcoming fixes e.g. priv/pub renamed to intport/extport
+Made NAT Traversal packet handlers take typed data instead of anonymous "mDNSu8 *" byte pointers
+
 Revision 1.478  2007/09/07 22:21:45  vazquez
 <rdar://problem/5460830> BTMM: Connection stops working after connecting VPN
 
@@ -1380,11 +1384,6 @@ mDNSexport mStatus mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr *dst, 
 	return err;
 	}
 
-mDNSexport mDNSBool mDNSPlatformTCPIsConnected(TCPSocket *sock)
-	{
-	return sock->connected;
-	}
-
 // Why doesn't mDNSPlatformTCPAccept actually call accept() ?
 mDNSexport TCPSocket *mDNSPlatformTCPAccept(TCPSocketFlags flags, int fd)
 	{
@@ -1999,7 +1998,7 @@ mDNSlocal void AutoTunnelNATCallback(mDNS *m, mDNSv4Addr ExternalAddress, NATTra
 	(void)ExternalAddress;	// unused
 
 	DomainAuthInfo *info = (DomainAuthInfo *)n->clientContext;
-	LogOperation("AutoTunnelNATCallback %d %.4a %d %d %##s", errIn, &ExternalAddress, mDNSVal16(n->privatePort), mDNSVal16(n->publicPort), info->AutoTunnelService.namestorage.c);
+	LogOperation("AutoTunnelNATCallback %d %.4a %d %d %##s", errIn, &ExternalAddress, mDNSVal16(n->IntPort), mDNSVal16(n->publicPort), info->AutoTunnelService.namestorage.c);
 
 	LogOperation("AutoTunnelNATCallback timenow %d NextSRVUpdate %d", m->timenow, m->NextSRVUpdate);
 	m->NextSRVUpdate = m->timenow;
@@ -2061,7 +2060,7 @@ mDNSlocal void AutoTunnelNATCallback(mDNS *m, mDNSv4Addr ExternalAddress, NATTra
 		if (err) LogMsg("AutoTunnelNATCallback error %d registering AutoTunnelDeviceInfo %##s", err, info->AutoTunnelDeviceInfo.namestorage.c);
 
 		LogMsg("AutoTunnel server listening for connections on %##s[%.4a]:%d:%##s[%.16a]",
-			info->AutoTunnelTarget.namestorage.c,     &m->AdvertisedV4.ip.v4, mDNSVal16(info->AutoTunnelNAT.privatePort),
+			info->AutoTunnelTarget.namestorage.c,     &m->AdvertisedV4.ip.v4, mDNSVal16(info->AutoTunnelNAT.IntPort),
 			info->AutoTunnelHostRecord.namestorage.c, &m->AutoTunnelHostAddr);
 		}
 
@@ -2126,10 +2125,10 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 				// Try to get a NAT port mapping for the AutoTunnelService
 				info->AutoTunnelNAT.clientCallback   = AutoTunnelNATCallback;
 				info->AutoTunnelNAT.clientContext    = info;
-				info->AutoTunnelNAT.protocol         = kDNSServiceProtocol_UDP;
-				info->AutoTunnelNAT.privatePort      = mDNSOpaque16fromIntVal(kRacoonPort);
-				info->AutoTunnelNAT.publicPortreq    = mDNSOpaque16fromIntVal(kRacoonPort);
-				info->AutoTunnelNAT.portMappingLease = 0;
+				info->AutoTunnelNAT.Protocol         = kDNSServiceProtocol_UDP;
+				info->AutoTunnelNAT.IntPort      = mDNSOpaque16fromIntVal(kRacoonPort);
+				info->AutoTunnelNAT.ExtPort    = mDNSOpaque16fromIntVal(kRacoonPort);
+				info->AutoTunnelNAT.NATLease = 0;
 				mStatus err = mDNS_StartNATOperation_internal(m, &info->AutoTunnelNAT);
 				if (err) LogMsg("SetupLocalAutoTunnelInterface_internal error %d starting NAT mapping", err);
 				}

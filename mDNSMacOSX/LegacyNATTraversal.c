@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.33  2007/09/12 19:22:20  cheshire
+Variable renaming in preparation for upcoming fixes e.g. priv/pub renamed to intport/extport
+Made NAT Traversal packet handlers take typed data instead of anonymous "mDNSu8 *" byte pointers
+
 Revision 1.32  2007/09/11 19:19:16  cheshire
 Correct capitalization of "uPNP" to "UPnP"
 
@@ -383,7 +387,7 @@ mDNSlocal void handleLNTGetExternalAddressResponse(tcpLNTInfo *tcpInfo)
 		}
 	
 	addrReply.err = err;
-	natTraversalHandleAddressReply(m, (mDNSu8 *)&addrReply);
+	natTraversalHandleAddressReply(m, &addrReply);
 	}
 
 // forward declaration
@@ -401,17 +405,17 @@ mDNSlocal mStatus RetryPortMap(tcpLNTInfo *tcpInfo)
 	mDNS	*m 		= tcpInfo->m;
 	NATTraversalInfo	*n = tcpInfo->parentNATInfo;
 	mDNSs32	protocol	= (n->opFlags & MapTCPFlag) ? IPPROTO_TCP : IPPROTO_UDP;
-	short		newPort	= mDNSVal16(n->publicPortreq);
+	short		newPort	= mDNSVal16(n->ExtPort);
 	mStatus	error		= mStatus_NoError;
 
 	// increment port map values; for port, just increment by one until we reach the max number of retries
-	n->publicPortreq = mDNSOpaque16fromIntVal(++newPort);
+	n->ExtPort = mDNSOpaque16fromIntVal(++newPort);
 	if (tcpInfo->retries++ > LNT_MAXPORTMAP_RETRIES) return (mStatus_NATTraversal);
 
 	// create strings to use in the message
-	mDNS_snprintf(externalPort, 		sizeof(externalPort), 		"%u", mDNSVal16(n->publicPortreq));
-	mDNS_snprintf(internalPort, 		sizeof(internalPort), 		"%u", mDNSVal16(n->privatePort));
-	mDNS_snprintf(publicPortString, 	sizeof(publicPortString), 	"iC%u", mDNSVal16(n->publicPortreq));
+	mDNS_snprintf(externalPort, 		sizeof(externalPort), 		"%u", mDNSVal16(n->ExtPort));
+	mDNS_snprintf(internalPort, 		sizeof(internalPort), 		"%u", mDNSVal16(n->IntPort));
+	mDNS_snprintf(publicPortString, 	sizeof(publicPortString), 	"iC%u", mDNSVal16(n->ExtPort));
 	mDNS_snprintf(localIPAddrString, 	sizeof(localIPAddrString), 	"%u.%u.%u.%u",
 		m->AdvertisedV4.ip.v4.b[0], m->AdvertisedV4.ip.v4.b[1], m->AdvertisedV4.ip.v4.b[2], m->AdvertisedV4.ip.v4.b[3]);
 
@@ -444,7 +448,7 @@ mDNSlocal mStatus RetryPortMap(tcpLNTInfo *tcpInfo)
 	propArgs[7].propValue = "0";
 	propArgs[7].propType = "ui4";
 
-	LogOperation("RetryPortMap: priv %u pub %u", mDNSVal16(n->privatePort), mDNSVal16(n->publicPortreq));
+	LogOperation("RetryPortMap: priv %u pub %u", mDNSVal16(n->IntPort), mDNSVal16(n->ExtPort));
 	error = SendSOAPMsgControlAction(m, &n->tcpInfo, "AddPortMapping", 8, propArgs, LNTPortMapOp);
 	return (error);
 	}
@@ -495,14 +499,14 @@ mDNSlocal void handleLNTPortMappingResponse(tcpLNTInfo *tcpInfo)
 		portMapReply.vers         = 0;	// don't care about version
 		portMapReply.opcode       = (natInfo->opFlags & MapUDPFlag) ? NATOp_MapUDPResponse : NATOp_MapTCPResponse;
 		portMapReply.upseconds    = m->LastNATupseconds + (m->timenow - m->LastNATReplyLocalTime) / mDNSPlatformOneSecond;	// UPnP has no uptime counter, so simulate it
-		portMapReply.priv         = natInfo->privatePort;
-		portMapReply.pub          = natInfo->publicPortreq;
+		portMapReply.intport         = natInfo->IntPort;
+		portMapReply.extport          = natInfo->ExtPort;
 		portMapReply.NATRep_lease = NATMAP_DEFAULT_LEASE;
 		}
 	
 	portMapReply.err = err;
-	LogOperation("handleLNTPortMappingResponse: got a valid response, sending reply to natTraversalHandlePortMapReply(priv %d pub %d)", mDNSVal16(portMapReply.priv), mDNSVal16(portMapReply.pub));
-	natTraversalHandlePortMapReply(natInfo, m, (mDNSu8 *)&portMapReply);
+	LogOperation("handleLNTPortMappingResponse: got a valid response, sending reply to natTraversalHandlePortMapReply(intport %d extport %d)", mDNSVal16(portMapReply.intport), mDNSVal16(portMapReply.extport));
+	natTraversalHandlePortMapReply(natInfo, m, &portMapReply);
 	}
 
 mDNSlocal void tcpConnectionCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEstablished, mStatus err)
@@ -716,12 +720,12 @@ mDNSexport mStatus LNT_MapPort(mDNS *m, NATTraversalInfo *n, mDNSBool doTCP)
 	mStatus		error		= mStatus_NoError;
 
 	// if we already have a connection up don't make another request for the same thing
-	if (n->tcpInfo.sock && mDNSPlatformTCPIsConnected(n->tcpInfo.sock) == mDNStrue) 	return (mStatus_NoError);
+	if (n->tcpInfo.sock) return (mStatus_NoError);
 
 	// create strings to use in the message
-	mDNS_snprintf(externalPort, 		sizeof(externalPort), 		"%u", mDNSVal16(n->publicPortreq));
-	mDNS_snprintf(internalPort, 		sizeof(internalPort), 		"%u", mDNSVal16(n->privatePort));
-	mDNS_snprintf(publicPortString, 	sizeof(publicPortString), 	"iC%u", mDNSVal16(n->publicPortreq));
+	mDNS_snprintf(externalPort, 		sizeof(externalPort), 		"%u", mDNSVal16(n->ExtPort));
+	mDNS_snprintf(internalPort, 		sizeof(internalPort), 		"%u", mDNSVal16(n->IntPort));
+	mDNS_snprintf(publicPortString, 	sizeof(publicPortString), 	"iC%u", mDNSVal16(n->ExtPort));
 	mDNS_snprintf(localIPAddrString, 	sizeof(localIPAddrString), 	"%u.%u.%u.%u",
 		m->AdvertisedV4.ip.v4.b[0], m->AdvertisedV4.ip.v4.b[1], m->AdvertisedV4.ip.v4.b[2], m->AdvertisedV4.ip.v4.b[3]);
 
@@ -754,7 +758,7 @@ mDNSexport mStatus LNT_MapPort(mDNS *m, NATTraversalInfo *n, mDNSBool doTCP)
 	propArgs[7].propValue = "0";
 	propArgs[7].propType = "ui4";
 
-	LogOperation("Sending AddPortMapping priv %u pub %u", mDNSVal16(n->privatePort), mDNSVal16(n->publicPortreq));
+	LogOperation("Sending AddPortMapping intport %u extport %u", mDNSVal16(n->IntPort), mDNSVal16(n->ExtPort));
 
 	n->tcpInfo.parentNATInfo = n;
 	n->tcpInfo.retries = 0;

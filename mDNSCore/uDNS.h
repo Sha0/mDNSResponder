@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.76  2007/09/12 19:22:19  cheshire
+Variable renaming in preparation for upcoming fixes e.g. priv/pub renamed to intport/extport
+Made NAT Traversal packet handlers take typed data instead of anonymous "mDNSu8 *" byte pointers
+
 Revision 1.75  2007/08/28 23:53:21  cheshire
 Rename serviceRegistrationCallback -> ServiceRegistrationZoneDataComplete
 
@@ -249,8 +253,8 @@ extern void DisposeTCPConn(struct tcpInfo_t *tcp);
 // NAT traversal
 extern void	uDNS_ReceiveNATPMPPacket(mDNS *m, mDNSu8 *pkt, mDNSu16 len);	// Called for each received NAT-PMP packet
 extern void	uDNS_ReceiveSSDPPacket(mDNS *m, mDNSu8 *data, mDNSu16 len);	// Called for each SSDP discovery packet
-extern void	natTraversalHandleAddressReply(mDNS *const m, mDNSu8 *pkt);
-extern void	natTraversalHandlePortMapReply(NATTraversalInfo *n, mDNS *const m, mDNSu8 *pkt);
+extern void	natTraversalHandleAddressReply(mDNS *const m, NATAddrReply *addrReply);
+extern void	natTraversalHandlePortMapReply(NATTraversalInfo *n, mDNS *const m, NATPortMapReply *portMapReply);
 
 #ifdef	__cplusplus
 	}
