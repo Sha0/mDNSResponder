@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.340  2007/09/12 23:03:08  cheshire
+<rdar://problem/5476978> DNSServiceNATPortMappingCreate callback not giving correct interface index
+
 Revision 1.339  2007/09/12 19:22:21  cheshire
 Variable renaming in preparation for upcoming fixes e.g. priv/pub renamed to intport/extport
 Made NAT Traversal packet handlers take typed data instead of anonymous "mDNSu8 *" byte pointers
@@ -2731,7 +2734,7 @@ mDNSlocal void port_mapping_create_request_callback(mDNS *m, mDNSv4Addr External
 	rep = create_reply(port_mapping_reply_op, replyLen, request);
 
 	rep->rhdr->flags = dnssd_htonl(0);
-	rep->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(m, request->u.pm.interface_id));
+	rep->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(m, n->InterfaceID));
 	rep->rhdr->error = dnssd_htonl(err);
 
 	data = rep->sdata;

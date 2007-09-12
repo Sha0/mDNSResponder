@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.700  2007/09/12 23:03:08  cheshire
+<rdar://problem/5476978> DNSServiceNATPortMappingCreate callback not giving correct interface index
+
 Revision 1.699  2007/09/12 22:19:28  cheshire
 <rdar://problem/5476977> Need to listen for port 5350 NAT-PMP announcements
 
@@ -4685,7 +4688,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 	if (mDNSSameIPPort(srcport, NATPMPPort))
 		{
 		mDNS_Lock(m);
-		uDNS_ReceiveNATPMPPacket(m, pkt, (mDNSu16)(end - (mDNSu8 *)pkt));
+		uDNS_ReceiveNATPMPPacket(m, InterfaceID, pkt, (mDNSu16)(end - (mDNSu8 *)pkt));
 		mDNS_Unlock(m);
 		return;
 		}
@@ -4693,7 +4696,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 	if (mDNSSameIPPort(srcport, SSDPPort))
 		{
 		mDNS_Lock(m);
-		uDNS_ReceiveSSDPPacket(m, pkt, (mDNSu16)(end - (mDNSu8 *)pkt));
+		LNT_ConfigureRouterInfo(m, InterfaceID, pkt, (mDNSu16)(end - (mDNSu8 *)pkt));
 		mDNS_Unlock(m);
 		return;
 		}
@@ -6607,6 +6610,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->LastNATupseconds         = 0;
 	m->LastNATReplyLocalTime    = timenow;
 
+	m->UPnPInterfaceID          = 0;
 	m->UPnPRouterPort           = zeroIPPort;
 	m->UPnPSOAPPort             = zeroIPPort;
 	m->UPnPRouterURL            = mDNSNULL;

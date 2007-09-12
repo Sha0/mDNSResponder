@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.434  2007/09/12 23:03:07  cheshire
+<rdar://problem/5476978> DNSServiceNATPortMappingCreate callback not giving correct interface index
+
 Revision 1.433  2007/09/12 22:19:28  cheshire
 <rdar://problem/5476977> Need to listen for port 5350 NAT-PMP announcements
 
@@ -1214,6 +1217,7 @@ struct NATTraversalInfo_struct
 #endif
 
 	// Result fields: When the callback is invoked these fields contain the answers the client is looking for
+	mDNSInterfaceID             InterfaceID;
 	mStatus          Error;
 	mDNSv4Addr       lastExternalAddress;
 	mDNSIPPort       publicPort;			// established public port mapping
@@ -1923,6 +1927,7 @@ struct mDNS_struct
 	tcpLNTInfo        tcpAddrInfo;				// legacy NAT traversal TCP connection info for external address
 	tcpLNTInfo        tcpDeviceInfo;			// legacy NAT traversal TCP connection info for device info
 	tcpLNTInfo       *tcpInfoUnmapList;			// list of pending unmap requests
+	mDNSInterfaceID   UPnPInterfaceID;
 	mDNSIPPort        UPnPRouterPort;			// port we send discovery messages to
 	mDNSIPPort        UPnPSOAPPort;				// port we send SOAP messages to
 	mDNSu8           *UPnPRouterURL;			// router's URL string
@@ -2518,8 +2523,8 @@ extern void       mDNSPlatformDynDNSHostNameStatusChanged(const domainname *cons
 
 #ifdef _LEGACY_NAT_TRAVERSAL_
 // Support for legacy NAT traversal protocols, implemented by the platform layer and callable by the core.
-extern mStatus  LNT_SendDiscoveryMsg(mDNS *m);
-extern void     LNT_ConfigureRouterInfo(mDNS *m, mDNSu8 *data, mDNSu16 len);
+extern void     LNT_SendDiscoveryMsg(mDNS *m);
+extern void     LNT_ConfigureRouterInfo(mDNS *m, const mDNSInterfaceID InterfaceID, mDNSu8 *data, mDNSu16 len);
 extern mStatus  LNT_GetExternalAddress(mDNS *m);
 extern mStatus  LNT_MapPort(mDNS *m, NATTraversalInfo *n, mDNSBool doTCP);
 extern mStatus  LNT_UnmapPort(mDNS *m, NATTraversalInfo *n, mDNSBool doTCP);

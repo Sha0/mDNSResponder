@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.467  2007/09/12 23:03:08  cheshire
+<rdar://problem/5476978> DNSServiceNATPortMappingCreate callback not giving correct interface index
+
 Revision 1.466  2007/09/12 22:19:29  cheshire
 <rdar://problem/5476977> Need to listen for port 5350 NAT-PMP announcements
 
@@ -1265,7 +1268,7 @@ mDNSexport void natTraversalHandleAddressReply(mDNS *const m, NATAddrReply *addr
 	}
 
 // Pass NULL for pkt on error (including timeout)
-mDNSexport void natTraversalHandlePortMapReply(NATTraversalInfo *n, mDNS *const m, NATPortMapReply *portMapReply)
+mDNSexport void natTraversalHandlePortMapReply(mDNS *const m, NATTraversalInfo *n, const mDNSInterfaceID InterfaceID, NATPortMapReply *portMapReply)
 	{
 	mDNSIPPort		port  = zeroIPPort;
 	mDNSu32			lease = NATMAP_DEFAULT_LEASE;
@@ -1316,6 +1319,7 @@ mDNSexport void natTraversalHandlePortMapReply(NATTraversalInfo *n, mDNS *const 
 		n->publicPort = port;
 		}
 
+	n->InterfaceID = InterfaceID;
 	n->savedPublicPort = port; // Remember allocated port for future refreshes
 	LogOperation("natTraversalHandlePortMapReply %p %X (%s) Local Port %d External Port %d", n,
 				portMapReply->opcode,
@@ -2998,10 +3002,10 @@ mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr, co
 	if (v4Changed || RouterChanged || v6Changed)
 		{
 		HostnameInfo *i;
-		LogOperation("mDNS_SetPrimaryInterfaceInfo: %s%s%s%#a",
+		LogOperation("mDNS_SetPrimaryInterfaceInfo: %s%s%s%#a %#a %#a",
 			v4Changed     ? "v4Changed "     : "",
 			RouterChanged ? "RouterChanged " : "",
-			v6Changed     ? "v6Changed "     : "", v4addr);
+			v6Changed     ? "v6Changed "     : "", v4addr, v6addr, router);
 
 		for (i = m->Hostnames; i; i = i->next)
 			{
@@ -3519,7 +3523,7 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 	// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
 	}
 
-mDNSexport void uDNS_ReceiveNATPMPPacket(mDNS *m, mDNSu8 *pkt, mDNSu16 len)
+mDNSexport void uDNS_ReceiveNATPMPPacket(mDNS *m, const mDNSInterfaceID InterfaceID, mDNSu8 *pkt, mDNSu16 len)
 	{
 	NATTraversalInfo *ptr;
 	NATAddrReply     *AddrReply    = (NATAddrReply    *)pkt;
@@ -3546,18 +3550,10 @@ mDNSexport void uDNS_ReceiveNATPMPPacket(mDNS *m, mDNSu8 *pkt, mDNSu16 len)
 			PortMapReply->NATRep_lease = (mDNSu32) ((mDNSu32)pkt[12] << 24 | (mDNSu32)pkt[13] << 16 | (mDNSu32)pkt[14] << 8 | pkt[15]);
 			}
 
-		for (ptr = m->NATTraversals; ptr; ptr=ptr->next) natTraversalHandlePortMapReply(ptr, m, PortMapReply);
+		for (ptr = m->NATTraversals; ptr; ptr=ptr->next) natTraversalHandlePortMapReply(m, ptr, InterfaceID, PortMapReply);
 		}
 	else { LogMsg("Received NAT Traversal response with version unknown opcode 0x%X", AddrReply->opcode); return; }
 	}
-
-#ifdef _LEGACY_NAT_TRAVERSAL_
-mDNSexport void uDNS_ReceiveSSDPPacket(mDNS *m, mDNSu8 *data, mDNSu16 len)
-	{
-	// Extract router's port and url from response if we don't already have it, otherwise ignore
-	if (mDNSIPPortIsZero(m->UPnPRouterPort)) LNT_ConfigureRouterInfo(m, data, len);
-	}
-#endif // _LEGACY_NAT_TRAVERSAL_
 
 // <rdar://problem/3925163> Shorten DNS-SD queries to avoid NAT bugs
 // <rdar://problem/4288449> Add check to avoid crashing NAT gateways that have buggy DNS relay code

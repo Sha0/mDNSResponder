@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.77  2007/09/12 23:03:08  cheshire
+<rdar://problem/5476978> DNSServiceNATPortMappingCreate callback not giving correct interface index
+
 Revision 1.76  2007/09/12 19:22:19  cheshire
 Variable renaming in preparation for upcoming fixes e.g. priv/pub renamed to intport/extport
 Made NAT Traversal packet handlers take typed data instead of anonymous "mDNSu8 *" byte pointers
@@ -251,10 +254,9 @@ extern DomainAuthInfo *GetAuthInfoForName_internal(mDNS *m, const domainname *co
 extern void DisposeTCPConn(struct tcpInfo_t *tcp);
 
 // NAT traversal
-extern void	uDNS_ReceiveNATPMPPacket(mDNS *m, mDNSu8 *pkt, mDNSu16 len);	// Called for each received NAT-PMP packet
-extern void	uDNS_ReceiveSSDPPacket(mDNS *m, mDNSu8 *data, mDNSu16 len);	// Called for each SSDP discovery packet
+extern void	uDNS_ReceiveNATPMPPacket(mDNS *m, const mDNSInterfaceID InterfaceID, mDNSu8 *pkt, mDNSu16 len);	// Called for each received NAT-PMP packet
 extern void	natTraversalHandleAddressReply(mDNS *const m, NATAddrReply *addrReply);
-extern void	natTraversalHandlePortMapReply(NATTraversalInfo *n, mDNS *const m, NATPortMapReply *portMapReply);
+extern void	natTraversalHandlePortMapReply(mDNS *const m, NATTraversalInfo *n, const mDNSInterfaceID InterfaceID, NATPortMapReply *portMapReply);
 
 #ifdef	__cplusplus
 	}
