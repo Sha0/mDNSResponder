@@ -569,7 +569,7 @@ static void DNSSD_API port_mapping_create_reply(DNSServiceRef sdref, DNSServiceF
 	(void)context;     // Unused
 	(void)flags;       // Unused
 	
-	if (num_printed++ == 0) printf("Timestamp     if   %-20s %-15s %-15s %-15s %s\n", "Public Address", "Protocol", "Private Port", "Public Port", "TTL");
+	if (num_printed++ == 0) printf("Timestamp     if   %-20s %-15s %-15s %-15s %s\n", "External Address", "Protocol", "Internal Port", "External Port", "TTL");
 	printtimestamp();
 	if (errorCode) printf("Error code %d\n", errorCode);
 	else
