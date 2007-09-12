@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.18  2007/09/12 00:40:16  mcguire
+<rdar://problem/5469660> 9A547: Computer Name had incorrectly encoded unicode
+
 Revision 1.17  2007/09/09 02:21:17  mcguire
 <rdar://problem/5469345> Leopard Server9A547(Insatll):mDNSResponderHelper crashing
 
@@ -453,7 +456,6 @@ do_mDNSPreferencesSetName(__unused mach_port_t port, int key, const char* old, c
 	Boolean ok = FALSE;
 	Boolean locked = FALSE;
 	CFStringRef cfstr = NULL;
-	CFStringEncoding encoding = kCFStringEncodingUTF8;
 	char* user = NULL;
 	char* last = NULL;
 	Boolean needUpdate = FALSE;
@@ -522,22 +524,7 @@ do_mDNSPreferencesSetName(__unused mach_port_t port, int key, const char* old, c
 	if (!new[0]) // we've given up trying to construct a name that doesn't conflict
 		goto fin;
 
-	if (key == kmDNSComputerName)
-		{
-		// We want to write the new Computer Name to System Preferences, without disturbing the user-selected
-		// system-wide default character set used for things like AppleTalk NBP and NETBIOS service advertising.
-		// Since both are set by the same call, we need to take care to set the name without changing the character set.
-		cfstr = SCDynamicStoreCopyComputerName(NULL, &encoding); // Get Computer Name and character set
-		if (cfstr)
-			{
-			CFRelease(cfstr); // Discard the old name we don't care about
-			cfstr = NULL;
-			}
-		else
-			encoding = kCFStringEncodingUTF8;
-		}
-
-	cfstr = CFStringCreateWithCString(NULL, new, encoding);
+	cfstr = CFStringCreateWithCString(NULL, new, kCFStringEncodingUTF8);
 
 	session = SCPreferencesCreate(NULL, CFSTR(kmDNSHelperServiceName), NULL);
 
@@ -554,17 +541,30 @@ do_mDNSPreferencesSetName(__unused mach_port_t port, int key, const char* old, c
 		goto fin;
 		}
 	locked = TRUE;
+
 	switch ((enum mDNSPreferencesSetNameKey)key)
 	{
 	case kmDNSComputerName:
+		{
+		// We want to write the new Computer Name to System Preferences, without disturbing the user-selected
+		// system-wide default character set used for things like AppleTalk NBP and NETBIOS service advertising.
+		// Note that this encoding is not used for the computer name, but since both are set by the same call,
+		// we need to take care to set the name without changing the character set.
+		CFStringEncoding encoding = kCFStringEncodingUTF8;
+		CFStringRef unused = SCDynamicStoreCopyComputerName(NULL, &encoding);
+		if (unused) { CFRelease(unused); unused = NULL; }
+		else encoding = kCFStringEncodingUTF8;
+		
 		ok = SCPreferencesSetComputerName(session, cfstr, encoding);
+		}
 		break;
 	case kmDNSLocalHostName:
 		ok = SCPreferencesSetLocalHostName(session, cfstr);
 		break;
 	default:
 		break;
-		}
+	}
+
 	if (!ok || !SCPreferencesCommitChanges(session) ||
 	    !SCPreferencesApplyChanges(session))
 		{
