@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.480  2007/09/13 00:16:42  cheshire
+<rdar://problem/5468706> Miscellaneous NAT Traversal improvements
+
 Revision 1.479  2007/09/12 19:22:20  cheshire
 Variable renaming in preparation for upcoming fixes e.g. priv/pub renamed to intport/extport
 Made NAT Traversal packet handlers take typed data instead of anonymous "mDNSu8 *" byte pointers
@@ -1992,13 +1995,12 @@ mDNSlocal mDNSBool TunnelServers(mDNS *const m)
 	return(mDNSfalse);
 	}
 
-mDNSlocal void AutoTunnelNATCallback(mDNS *m, mDNSv4Addr ExternalAddress, NATTraversalInfo *n, mStatus errIn)
+mDNSlocal void AutoTunnelNATCallback(mDNS *m, NATTraversalInfo *n)
 	{
 	mStatus err = mStatus_NoError;
-	(void)ExternalAddress;	// unused
 
 	DomainAuthInfo *info = (DomainAuthInfo *)n->clientContext;
-	LogOperation("AutoTunnelNATCallback %d %.4a %d %d %##s", errIn, &ExternalAddress, mDNSVal16(n->IntPort), mDNSVal16(n->publicPort), info->AutoTunnelService.namestorage.c);
+	LogOperation("AutoTunnelNATCallback %d %.4a %d %d %##s", n->Result, &n->ExternalAddress, mDNSVal16(n->IntPort), mDNSVal16(n->ExtPort), info->AutoTunnelService.namestorage.c);
 
 	LogOperation("AutoTunnelNATCallback timenow %d NextSRVUpdate %d", m->timenow, m->NextSRVUpdate);
 	m->NextSRVUpdate = m->timenow;
@@ -2033,9 +2035,9 @@ mDNSlocal void AutoTunnelNATCallback(mDNS *m, mDNSv4Addr ExternalAddress, NATTra
 		if (err) LogMsg("AutoTunnelNATCallback error %d deregistering AutoTunnelDeviceInfo %##s", err, info->AutoTunnelDeviceInfo.namestorage.c);
 		}
 
-	if (! errIn && ! mDNSIPPortIsZero(n->publicPort))
+	if (!n->Result && ! mDNSIPPortIsZero(n->ExtPort))
 		{
-		info->AutoTunnelService.resrec.rdata->u.srv.port = n->publicPort;
+		info->AutoTunnelService.resrec.rdata->u.srv.port = n->ExtPort;
 		info->AutoTunnelService.resrec.RecordType = kDNSRecordTypeKnownUnique;
 		err = mDNS_Register(m, &info->AutoTunnelService);
 		if (err) LogMsg("AutoTunnelNATCallback error %d registering AutoTunnelService %##s", err, info->AutoTunnelService.namestorage.c);
@@ -2125,10 +2127,10 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 				// Try to get a NAT port mapping for the AutoTunnelService
 				info->AutoTunnelNAT.clientCallback   = AutoTunnelNATCallback;
 				info->AutoTunnelNAT.clientContext    = info;
-				info->AutoTunnelNAT.Protocol         = kDNSServiceProtocol_UDP;
-				info->AutoTunnelNAT.IntPort      = mDNSOpaque16fromIntVal(kRacoonPort);
-				info->AutoTunnelNAT.ExtPort    = mDNSOpaque16fromIntVal(kRacoonPort);
-				info->AutoTunnelNAT.NATLease = 0;
+				info->AutoTunnelNAT.Protocol         = NATOp_MapUDP;
+				info->AutoTunnelNAT.IntPort          = mDNSOpaque16fromIntVal(kRacoonPort);
+				info->AutoTunnelNAT.ExtPort          = mDNSOpaque16fromIntVal(kRacoonPort);
+				info->AutoTunnelNAT.NATLease         = 0;
 				mStatus err = mDNS_StartNATOperation_internal(m, &info->AutoTunnelNAT);
 				if (err) LogMsg("SetupLocalAutoTunnelInterface_internal error %d starting NAT mapping", err);
 				}
@@ -3302,9 +3304,12 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 				if (info->AutoTunnelHostRecord.namestorage.c[0] && info->AutoTunnelNAT.clientCallback)
 					{
 					// reset port and let the AutoTunnelNATCallback handle cleanup
+					info->AutoTunnelNAT.ExternalAddress = m->ExternalAddress;
+					info->AutoTunnelNAT.ExternalPort    = zeroIPPort;
+					info->AutoTunnelNAT.Lifetime        = 0;
+					info->AutoTunnelNAT.Result          = mStatus_NoError;
 					mDNS_DropLockBeforeCallback(); // Allow client to legally make mDNS API calls from the callback
-					info->AutoTunnelNAT.publicPort = zeroIPPort;
-					info->AutoTunnelNAT.clientCallback(m, m->ExternalAddress, &info->AutoTunnelNAT, mStatus_NoError);
+					info->AutoTunnelNAT.clientCallback(m, &info->AutoTunnelNAT);
 					mDNS_ReclaimLockAfterCallback(); // Decrement mDNS_reentrancy to block mDNS API calls again
 					}
 				info->AutoTunnelNAT.clientContext = mDNSNULL;

@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.435  2007/09/13 00:16:41  cheshire
+<rdar://problem/5468706> Miscellaneous NAT Traversal improvements
+
 Revision 1.434  2007/09/12 23:03:07  cheshire
 <rdar://problem/5476978> DNSServiceNATPortMappingCreate callback not giving correct interface index
 
@@ -1100,14 +1103,6 @@ typedef struct UDPSocket_struct UDPSocket;
 
 typedef enum
 	{
-	AddrRequestFlag = 0x1,
-	MapUDPFlag = 0x2,
-	MapTCPFlag = 0x4,
-	LegacyFlag = 0x10
-	} NATOptFlags_t;
-	
-typedef enum
-	{
 	NATOp_AddrRequest    = 0,
 	NATOp_MapUDP         = 1,
 	NATOp_MapTCP         = 2,
@@ -1192,7 +1187,10 @@ struct tcpLNTInfo_struct
 	int               retries;			// number of times we've tried to do this port mapping
 	};
 
-typedef void (*NATTraversalClientCallback)(mDNS *m, mDNSv4Addr ExternalAddress, NATTraversalInfo *n, mStatus err);
+typedef void (*NATTraversalClientCallback)(mDNS *m, NATTraversalInfo *n);
+
+// if m->timenow <  ExpiryTime then we have an active mapping, and we'll renew halfway to expiry
+// if m->timenow >= ExpiryTime then our mapping has expired, and we're trying to create one
 
 struct NATTraversalInfo_struct
 	{
@@ -1204,24 +1202,16 @@ struct NATTraversalInfo_struct
 	mDNSs32                     retryPortMap;		// If Protocol is nonzero, time to send our next mapping packet
 	mStatus                     NewResult;			// New error code; will be copied to Result just prior to invoking callback
 
-	NATOptFlags_t    opFlags;				// flags for everything that needs to be done
-	mDNSIPPort       lastPublicPort;		// last public port mapping we got
-	mDNSIPPort       savedPublicPort;		// last actual public port mapping we got from the router 
-											// (saved so that we can request that same port on future refreshes;
-											// this is *only* reset with something the router sent us, not
-											// to be used internally for state transitions)
-	mStatus          lastError;				// Last error code we delivered to callback
-
 #ifdef _LEGACY_NAT_TRAVERSAL_
 	tcpLNTInfo                  tcpInfo;			// Legacy NAT traversal (UPnP) TCP connection
 #endif
 
 	// Result fields: When the callback is invoked these fields contain the answers the client is looking for
 	mDNSInterfaceID             InterfaceID;
-	mStatus          Error;
-	mDNSv4Addr       lastExternalAddress;
-	mDNSIPPort       publicPort;			// established public port mapping
-	// For granted lease see NATLease
+	mDNSv4Addr                  ExternalAddress;
+	mDNSIPPort                  ExternalPort;
+	mDNSu32                     Lifetime;
+	mStatus                     Result;
 
 	// Client API fields: The client must set up these fields *before* making any NAT traversal API calls
 	mDNSu8                      Protocol;			// NATOp_MapUDP or NATOp_MapTCP, or zero if just requesting the external IP address
@@ -2526,8 +2516,8 @@ extern void       mDNSPlatformDynDNSHostNameStatusChanged(const domainname *cons
 extern void     LNT_SendDiscoveryMsg(mDNS *m);
 extern void     LNT_ConfigureRouterInfo(mDNS *m, const mDNSInterfaceID InterfaceID, mDNSu8 *data, mDNSu16 len);
 extern mStatus  LNT_GetExternalAddress(mDNS *m);
-extern mStatus  LNT_MapPort(mDNS *m, NATTraversalInfo *n, mDNSBool doTCP);
-extern mStatus  LNT_UnmapPort(mDNS *m, NATTraversalInfo *n, mDNSBool doTCP);
+extern mStatus  LNT_MapPort(mDNS *m, NATTraversalInfo *n);
+extern mStatus  LNT_UnmapPort(mDNS *m, NATTraversalInfo *n);
 #endif // _LEGACY_NAT_TRAVERSAL_
 
 // The core mDNS code provides these functions, for the platform support code to call at appropriate times

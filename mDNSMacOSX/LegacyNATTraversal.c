@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.35  2007/09/13 00:16:42  cheshire
+<rdar://problem/5468706> Miscellaneous NAT Traversal improvements
+
 Revision 1.34  2007/09/12 23:03:08  cheshire
 <rdar://problem/5476978> DNSServiceNATPortMappingCreate callback not giving correct interface index
 
@@ -150,9 +153,9 @@ Revision 1.1  2004/08/18 17:35:41  ksekar
 // used to format SOAP port mapping arguments
 typedef struct Property_struct
 	{
-	char		*propName;
-	char		*propValue;
-	char		*propType;
+	char *name;
+	char *type;
+	char *value;
 	} Property;
 
 /*
@@ -212,42 +215,22 @@ static const char szSOAPMsgControlABodyFMT[] =
     "</SOAP-ENV:Body>"
     "</SOAP-ENV:Envelope>\r\n";
 
-//SOAP message argument formats -
-// 	- argument name
-// 	- argument value
-// 	- argument name
-static const char szSOAPMsgControlAArgumentFMT[] =
-	"<%s>%s</%s>" ;
-
-// 	- argument name
-// 	- argument type
-// 	- argument value
-// 	- argument name
-static const char szSOAPMsgControlAArgumentFMT_t[] =
-	"<%s"
-	" xmlns:dt=\"urn:schemas-microsoft-com:datatypes\""
-	" dt:dt=\"%s\">%s</%s>" ;
-
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
 #pragma mark - Internal Functions
 #endif
 
-mDNSlocal void AddSOAPArguments(char *argsBuffer, int numArgs, Property *Arguments, int *argsLen)
+// Buffer size must be at least LNT_MAXBUFSIZE
+mDNSlocal void AddSOAPArguments(char *buf, int numArgs, Property *a, int *len)
 	{
-	int	i;
-	int	n;
+	static const char f1[] = "<%s>%s</%s>";
+	static const char f2[] = "<%s xmlns:dt=\"urn:schemas-microsoft-com:datatypes\" dt:dt=\"%s\">%s</%s>";
+	int i;
 	for (i = 0; i < numArgs; i++)
 		{
-		n = 0;
-		if (Arguments[i].propType == mDNSNULL)
-			n = mDNS_snprintf(argsBuffer + *argsLen, LNT_MAXBUFSIZE - *argsLen, szSOAPMsgControlAArgumentFMT,
-							Arguments[i].propName, Arguments[i].propValue, Arguments[i].propName);
-		else
-			n = mDNS_snprintf(argsBuffer + *argsLen, LNT_MAXBUFSIZE - *argsLen, szSOAPMsgControlAArgumentFMT_t,
-							Arguments[i].propName, Arguments[i].propType, Arguments[i].propValue, Arguments[i].propName);
-		*argsLen += n;
+		if (a[i].type) *len += mDNS_snprintf(buf + *len, LNT_MAXBUFSIZE - *len, f2, a[i].name, a[i].type, a[i].value, a[i].name);
+		else           *len += mDNS_snprintf(buf + *len, LNT_MAXBUFSIZE - *len, f1, a[i].name,            a[i].value, a[i].name);
 		}
 	}
 
@@ -368,78 +351,63 @@ mDNSlocal void handleLNTGetExternalAddressResponse(tcpLNTInfo *tcpInfo)
 	*addrPtr = '\0';
 
 	if (inet_pton(AF_INET, ptr, &addrReply.PubAddr) <= 0) { LogMsg("handleLNTGetExternalAddressResponse: Router returned bad address"); addrReply.err = NATErr_NetFail; }
-	if (!addrReply.err)
-		{
-		LogOperation("handleLNTGetExternalAddressResponse: Mapped remote host %.4a", &addrReply.PubAddr);
-		addrReply.vers 		= 0;	// don't care about version
-		addrReply.opcode	= NATOp_AddrResponse;
-		addrReply.upseconds	= m->LastNATupseconds + (m->timenow - m->LastNATReplyLocalTime) / mDNSPlatformOneSecond;	// UPnP has no uptime counter, so simulate it
-		}
-	
-	natTraversalHandleAddressReply(m, &addrReply);
+	if (!addrReply.err) LogOperation("handleLNTGetExternalAddressResponse: External IP address is %.4a", &addrReply.PubAddr);
+
+	natTraversalHandleAddressReply(m, &addrReply);		// This routine only cares about addrReply.err and addrReply.PubAddr fields
 	}
 
-// forward declaration
+// Forward declaration: SendSOAPMsgControlAction calls MakeTCPConnection,
+// which references tcpConnectionCallback, which calls handleLNTPortMappingResponse, which calls RetryPortMap, which calls SendSOAPMsgControlAction
 mDNSlocal mStatus SendSOAPMsgControlAction(mDNS *m, tcpLNTInfo *info, char *Action, int numArgs, Property *Arguments, LNTOp_t op);
 
-#define LNT_MAXPORTMAP_RETRIES 10
-// rebuild port mapping request with new port (up to max) and send it
-mDNSlocal mStatus RetryPortMap(tcpLNTInfo *tcpInfo)
-	{
-	char		externalPort[6];
-	char		internalPort[6];
-	char		localIPAddrString[30];
-	char		publicPortString[40];
-	Property	propArgs[8];
-	mDNS	*m 		= tcpInfo->m;
-	NATTraversalInfo	*n = tcpInfo->parentNATInfo;
-	mDNSs32	protocol	= (n->opFlags & MapTCPFlag) ? IPPROTO_TCP : IPPROTO_UDP;
-	short		newPort	= mDNSVal16(n->ExtPort);
-	mStatus	error		= mStatus_NoError;
+#define ReqestedPortNum(n) (mDNSVal16(mDNSIPPortIsZero((n)->ExtPort) ? (n)->IntPort : (n)->ExtPort) + (n)->tcpInfo.retries)
 
-	// increment port map values; for port, just increment by one until we reach the max number of retries
-	n->ExtPort = mDNSOpaque16fromIntVal(++newPort);
-	if (tcpInfo->retries++ > LNT_MAXPORTMAP_RETRIES) return (mStatus_NATTraversal);
+// rebuild port mapping request with new port (up to max) and send it
+mDNSlocal mStatus SendPortMapRequest(mDNS *m, NATTraversalInfo *n)
+	{
+	char       externalPort[6];
+	char       internalPort[6];
+	char       localIPAddrString[30];
+	char       publicPortString[40];
+	Property   propArgs[8];
+	mDNSu16    ReqPortNum = ReqestedPortNum(n);
 
 	// create strings to use in the message
-	mDNS_snprintf(externalPort, 		sizeof(externalPort), 		"%u", mDNSVal16(n->ExtPort));
-	mDNS_snprintf(internalPort, 		sizeof(internalPort), 		"%u", mDNSVal16(n->IntPort));
-	mDNS_snprintf(publicPortString, 	sizeof(publicPortString), 	"iC%u", mDNSVal16(n->ExtPort));
-	mDNS_snprintf(localIPAddrString, 	sizeof(localIPAddrString), 	"%u.%u.%u.%u",
-		m->AdvertisedV4.ip.v4.b[0], m->AdvertisedV4.ip.v4.b[1], m->AdvertisedV4.ip.v4.b[2], m->AdvertisedV4.ip.v4.b[3]);
+	mDNS_snprintf(externalPort,         sizeof(externalPort),       "%u",   ReqPortNum);
+	mDNS_snprintf(internalPort,         sizeof(internalPort),       "%u",   mDNSVal16(n->IntPort));
+	mDNS_snprintf(publicPortString,     sizeof(publicPortString),   "iC%u", ReqPortNum);
+	mDNS_snprintf(localIPAddrString,    sizeof(localIPAddrString),  "%u.%u.%u.%u",
+	    m->AdvertisedV4.ip.v4.b[0], m->AdvertisedV4.ip.v4.b[1], m->AdvertisedV4.ip.v4.b[2], m->AdvertisedV4.ip.v4.b[3]);
 
 	// build the message
 	mDNSPlatformMemZero(propArgs, sizeof(propArgs));
-	propArgs[0].propName = "NewRemoteHost";
-	propArgs[0].propValue = "";
-	propArgs[0].propType = "string";
-	propArgs[1].propName = "NewExternalPort";
-	propArgs[1].propValue = externalPort;
-	propArgs[1].propType = "ui2";
-	propArgs[2].propName = "NewProtocol";
-	if		(protocol == IPPROTO_TCP) propArgs[2].propValue = "TCP";
-	else if	(protocol == IPPROTO_UDP) propArgs[2].propValue = "UDP";
-	else 		return (mStatus_BadParamErr);
-	propArgs[2].propType = "string";
-	propArgs[3].propName = "NewInternalPort";
-	propArgs[3].propValue = internalPort;
-	propArgs[3].propType = "ui2";
-	propArgs[4].propName = "NewInternalClient";
-	propArgs[4].propValue = localIPAddrString;
-	propArgs[4].propType = "string";
-	propArgs[5].propName = "NewEnabled";
-	propArgs[5].propValue = "1";
-	propArgs[5].propType = "boolean";
-	propArgs[6].propName = "NewPortMappingDescription";
-	propArgs[6].propValue = publicPortString;
-	propArgs[6].propType = "string";
-	propArgs[7].propName = "NewLeaseDuration";
-	propArgs[7].propValue = "0";
-	propArgs[7].propType = "ui4";
+	propArgs[0].name  = "NewRemoteHost";
+	propArgs[0].type  = "string";
+	propArgs[0].value = "";
+	propArgs[1].name  = "NewExternalPort";
+	propArgs[1].type  = "ui2";
+	propArgs[1].value = externalPort;
+	propArgs[2].name  = "NewProtocol";
+	propArgs[2].type  = "string";
+	propArgs[2].value = (n->Protocol == NATOp_MapUDP) ? "UDP" : "TCP";
+	propArgs[3].name  = "NewInternalPort";
+	propArgs[3].type  = "ui2";
+	propArgs[3].value = internalPort;
+	propArgs[4].name  = "NewInternalClient";
+	propArgs[4].type  = "string";
+	propArgs[4].value = localIPAddrString;
+	propArgs[5].name  = "NewEnabled";
+	propArgs[5].type  = "boolean";
+	propArgs[5].value = "1";
+	propArgs[6].name  = "NewPortMappingDescription";
+	propArgs[6].type  = "string";
+	propArgs[6].value = publicPortString;
+	propArgs[7].name  = "NewLeaseDuration";
+	propArgs[7].type  = "ui4";
+	propArgs[7].value = "0";
 
-	LogOperation("RetryPortMap: priv %u pub %u", mDNSVal16(n->IntPort), mDNSVal16(n->ExtPort));
-	error = SendSOAPMsgControlAction(m, &n->tcpInfo, "AddPortMapping", 8, propArgs, LNTPortMapOp);
-	return (error);
+	LogOperation("SendPortMapRequest: internal %u external %u", mDNSVal16(n->IntPort), ReqPortNum);
+	return SendSOAPMsgControlAction(m, &n->tcpInfo, "AddPortMapping", 8, propArgs, LNTPortMapOp);
 	}
 
 // This will call natTraversalHandlePortMapReply() using a NATPortMapReply structure filled in with the necessary info
@@ -468,8 +436,12 @@ mDNSlocal void handleLNTPortMappingResponse(tcpLNTInfo *tcpInfo)
 				// now check to see if this was a port mapping conflict
 				while (ptr && ptr != end)
 					{
-					if (*ptr == 'c' || *ptr == 'C')
-						if (strncasecmp(ptr, "Conflict", 8) == 0) { err = RetryPortMap(tcpInfo);	 return; }
+					if ((*ptr == 'c' || *ptr == 'C') && strncasecmp(ptr, "Conflict", 8) == 0)
+						{
+						if (tcpInfo->retries < 100)
+							{ tcpInfo->retries++; SendPortMapRequest(tcpInfo->m, tcpInfo->parentNATInfo); }
+						return;
+						}
 					ptr++;
 					}
 				break;	// out of HTTP status search
@@ -481,20 +453,14 @@ mDNSlocal void handleLNTPortMappingResponse(tcpLNTInfo *tcpInfo)
 	
 	for (natInfo = m->NATTraversals; natInfo; natInfo=natInfo->next) { if (natInfo == tcpInfo->parentNATInfo) break; }
 	
-	if (!natInfo)	{ LogOperation("handleLNTPortMappingResponse: can't find matching tcpInfo in NATTraversals!"); return; }
+	if (!natInfo) { LogOperation("handleLNTPortMappingResponse: can't find matching tcpInfo in NATTraversals!"); return; }
 	
-	if (!err)
-		{
-		portMapReply.vers         = 0;	// don't care about version
-		portMapReply.opcode       = (natInfo->opFlags & MapUDPFlag) ? NATOp_MapUDPResponse : NATOp_MapTCPResponse;
-		portMapReply.upseconds    = m->LastNATupseconds + (m->timenow - m->LastNATReplyLocalTime) / mDNSPlatformOneSecond;	// UPnP has no uptime counter, so simulate it
-		portMapReply.intport         = natInfo->IntPort;
-		portMapReply.extport          = natInfo->ExtPort;
-		portMapReply.NATRep_lease = NATMAP_DEFAULT_LEASE;
-		}
-	
-	portMapReply.err = err;
-	LogOperation("handleLNTPortMappingResponse: got a valid response, sending reply to natTraversalHandlePortMapReply(intport %d extport %d)", mDNSVal16(portMapReply.intport), mDNSVal16(portMapReply.extport));
+	portMapReply.err          = err;
+	portMapReply.extport      = mDNSOpaque16fromIntVal(ReqestedPortNum(natInfo));
+	portMapReply.NATRep_lease = 0xFFFFFFFF;
+
+	LogOperation("handleLNTPortMappingResponse: got a valid response, sending reply to natTraversalHandlePortMapReply(internal %d external %d)",
+		mDNSVal16(portMapReply.intport), mDNSVal16(portMapReply.extport));
 	natTraversalHandlePortMapReply(m, natInfo, m->UPnPInterfaceID, &portMapReply);
 	}
 
@@ -653,29 +619,26 @@ mDNSlocal mStatus GetDeviceDescription(mDNS *m, tcpLNTInfo *info)
 #pragma mark - Entry Points
 #endif
 
-mDNSexport mStatus LNT_UnmapPort(mDNS *m, NATTraversalInfo *n, mDNSBool doTCP)
+mDNSexport mStatus LNT_UnmapPort(mDNS *m, NATTraversalInfo *n)
 	{
-	char		externalPort[10];
-	Property	propArgs[3];
-	mDNSs32	protocol	= doTCP ? IPPROTO_TCP : IPPROTO_UDP;
-	mStatus	error		= mStatus_NoError;
-	tcpLNTInfo	*info;
-	tcpLNTInfo 	**infoPtr;
+	char        externalPort[10];
+	Property    propArgs[3];
+	tcpLNTInfo  *info;
+	tcpLNTInfo  **infoPtr = &m->tcpInfoUnmapList;
+	mDNSIPPort  ExtPort = mDNSIPPortIsZero(n->ExtPort) ? n->IntPort : n->ExtPort;	// If requested port is zero, request ExtPort = IntPort
 	
-	mDNS_snprintf(externalPort, sizeof(externalPort), "%u", mDNSVal16(n->publicPort));
+	mDNS_snprintf(externalPort, sizeof(externalPort), "%u", mDNSVal16(ExtPort));
 	
 	mDNSPlatformMemZero(propArgs, sizeof(propArgs));
-	propArgs[0].propName = "NewRemoteHost";
-	propArgs[0].propValue = "";
-	propArgs[0].propType = "string";
-	propArgs[1].propName = "NewExternalPort";
-	propArgs[1].propValue = externalPort;
-	propArgs[1].propType = "ui2";
-	propArgs[2].propName = "NewProtocol";
-	if 		(protocol == IPPROTO_TCP) propArgs[2].propValue = "TCP";
-	else if 	(protocol == IPPROTO_UDP) propArgs[2].propValue = "UDP";
-	else 		return (mStatus_BadParamErr);
-	propArgs[2].propType = "string";
+	propArgs[0].name  = "NewRemoteHost";
+	propArgs[0].type  = "string";
+	propArgs[0].value = "";
+	propArgs[1].name  = "NewExternalPort";
+	propArgs[1].type  = "ui2";
+	propArgs[1].value = externalPort;
+	propArgs[2].name  = "NewProtocol";
+	propArgs[2].type  = "string";
+	propArgs[2].value = (n->Protocol == NATOp_MapUDP) ? "UDP" : "TCP";
 
 	n->tcpInfo.parentNATInfo = n;
 
@@ -690,70 +653,19 @@ mDNSexport mStatus LNT_UnmapPort(mDNS *m, NATTraversalInfo *n, mDNSBool doTCP)
 		{ LogOperation("LNT_UnmapPort: can't mDNSPlatformMemAllocate for tcpInfo"); return(mStatus_NoMemoryErr); }
 	*info = n->tcpInfo;
 	
-	// find the end of the list
-	infoPtr = &m->tcpInfoUnmapList;
-	while (*infoPtr) infoPtr=&(*infoPtr)->next;
-	*infoPtr = info;	// append
+	while (*infoPtr) infoPtr = &(*infoPtr)->next;	// find the end of the list
+	*infoPtr = info;    // append
 
-	error = SendSOAPMsgControlAction(m, info, "DeletePortMapping", 3, propArgs, LNTPortMapDeleteOp);
-	return (error);
+	return SendSOAPMsgControlAction(m, info, "DeletePortMapping", 3, propArgs, LNTPortMapDeleteOp);
 	}
 
-mDNSexport mStatus LNT_MapPort(mDNS *m, NATTraversalInfo *n, mDNSBool doTCP)
+mDNSexport mStatus LNT_MapPort(mDNS *m, NATTraversalInfo *n)
 	{
-	char		externalPort[6];
-	char		internalPort[6];
-	char		localIPAddrString[30];
-	char		publicPortString[40];
-	Property		propArgs[8];
-	mDNSs32		protocol	= doTCP ? IPPROTO_TCP : IPPROTO_UDP;
-	mStatus		error		= mStatus_NoError;
-
-	// if we already have a connection up don't make another request for the same thing
-	if (n->tcpInfo.sock) return (mStatus_NoError);
-
-	// create strings to use in the message
-	mDNS_snprintf(externalPort, 		sizeof(externalPort), 		"%u", mDNSVal16(n->ExtPort));
-	mDNS_snprintf(internalPort, 		sizeof(internalPort), 		"%u", mDNSVal16(n->IntPort));
-	mDNS_snprintf(publicPortString, 	sizeof(publicPortString), 	"iC%u", mDNSVal16(n->ExtPort));
-	mDNS_snprintf(localIPAddrString, 	sizeof(localIPAddrString), 	"%u.%u.%u.%u",
-		m->AdvertisedV4.ip.v4.b[0], m->AdvertisedV4.ip.v4.b[1], m->AdvertisedV4.ip.v4.b[2], m->AdvertisedV4.ip.v4.b[3]);
-
-	// build the message
-	mDNSPlatformMemZero(propArgs, sizeof(propArgs));
-	propArgs[0].propName = "NewRemoteHost";
-	propArgs[0].propValue = "";
-	propArgs[0].propType = "string";
-	propArgs[1].propName = "NewExternalPort";
-	propArgs[1].propValue = externalPort;
-	propArgs[1].propType = "ui2";
-	propArgs[2].propName = "NewProtocol";
-	if		(protocol == IPPROTO_TCP) propArgs[2].propValue = "TCP";
-	else if	(protocol == IPPROTO_UDP) propArgs[2].propValue = "UDP";
-	else 		return (mStatus_BadParamErr);
-	propArgs[2].propType = "string";
-	propArgs[3].propName = "NewInternalPort";
-	propArgs[3].propValue = internalPort;
-	propArgs[3].propType = "ui2";
-	propArgs[4].propName = "NewInternalClient";
-	propArgs[4].propValue = localIPAddrString;
-	propArgs[4].propType = "string";
-	propArgs[5].propName = "NewEnabled";
-	propArgs[5].propValue = "1";
-	propArgs[5].propType = "boolean";
-	propArgs[6].propName = "NewPortMappingDescription";
-	propArgs[6].propValue = publicPortString;
-	propArgs[6].propType = "string";
-	propArgs[7].propName = "NewLeaseDuration";
-	propArgs[7].propValue = "0";
-	propArgs[7].propType = "ui4";
-
-	LogOperation("Sending AddPortMapping intport %u extport %u", mDNSVal16(n->IntPort), mDNSVal16(n->ExtPort));
-
+	LogOperation("LNT_MapPort");
+	if (n->tcpInfo.sock) return(mStatus_NoError);	// If we already have a connection up don't make another request for the same thing
 	n->tcpInfo.parentNATInfo = n;
-	n->tcpInfo.retries = 0;
-	error = SendSOAPMsgControlAction(m, &n->tcpInfo, "AddPortMapping", 8, propArgs, LNTPortMapOp);
-	return (error);
+	n->tcpInfo.retries       = 0;
+	return SendPortMapRequest(m, n);
 	}
 
 mDNSexport mStatus LNT_GetExternalAddress(mDNS *m)
