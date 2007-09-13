@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.702  2007/09/13 22:06:46  cheshire
+<rdar://problem/5480643> Tully's Free WiFi: DNS fails
+Need to accept DNS responses where the query ID field matches, even if the source address does not
+
 Revision 1.701  2007/09/12 23:22:32  cheshire
 <rdar://problem/5476979> Only accept NAT Port Mapping packets from our default gateway
 
@@ -4102,6 +4106,7 @@ mDNSlocal mDNSBool ExpectingUnicastResponseForRecord(mDNS *const m, const mDNSAd
 				// if (mDNSSameOpaque16(q->TargetQID, id)
 					{
 					if (mDNSSameAddress(srcaddr, &q->Target))                   return(mDNStrue);
+					if (mDNSSameOpaque16(q->TargetQID, id))                     return(mDNStrue);
 				//	if (q->LongLived && mDNSSameAddress(srcaddr, &q->servAddr)) return(mDNStrue); Shouldn't need this now that we have LLQType checking
 					if (TrustedSource(m, srcaddr))                              return(mDNStrue);
 					LogOperation("WARNING: Ignoring suspect uDNS response for %##s (%s) %#a from %#a: %s",
