@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.470  2007/09/13 00:36:26  cheshire
+<rdar://problem/5477360> NAT Reboot detection logic incorrect
+
 Revision 1.469  2007/09/13 00:28:50  cheshire
 <rdar://problem/5477354> Host records not updated on NAT address change
 
@@ -1159,42 +1162,36 @@ mDNSlocal mStatus uDNS_SendNATMsg(mDNS *m, NATTraversalInfo *info)
 	return(err);
 	}
 
-mDNSlocal void SetExternalAddress(mDNS *const m, mDNSv4Addr newaddr, mDNSs32 routerTimeElapsed, mDNSs32 ourTimeElapsed)
+mDNSlocal void RecreateNATMappings(mDNS *const m)
 	{
 	NATTraversalInfo *n;
-	
-	// check for router reboots or if the external address changed
-	if (((routerTimeElapsed * (routerTimeElapsed/8)) - ourTimeElapsed >= 0) && mDNSSameIPv4Address(m->ExternalAddress, newaddr)) return;
-
-	// can't set ExternalAddress to onesIPv4Addr, so reset it to zero
-	if (mDNSSameIPv4Address(newaddr, onesIPv4Addr))	m->ExternalAddress = zerov4Addr;
-	else m->ExternalAddress = newaddr;
-	LogOperation("Received external IP address %.4a from NAT", &m->ExternalAddress);
-	if (mDNSv4AddrIsRFC1918(&m->ExternalAddress)) LogMsg("natTraversalHandleAddressReply: Double NAT");
-#ifdef _LEGACY_NAT_TRAVERSAL_
-	if (m->tcpAddrInfo.sock)   { mDNSPlatformTCPCloseConnection(m->tcpAddrInfo.sock);   m->tcpAddrInfo.sock   = mDNSNULL; }
-	if (m->tcpDeviceInfo.sock) { mDNSPlatformTCPCloseConnection(m->tcpDeviceInfo.sock); m->tcpDeviceInfo.sock = mDNSNULL; }
-	if (mDNSIPv4AddressIsZero(m->ExternalAddress)) m->UPnPSOAPPort = m->UPnPRouterPort = zeroIPPort;	// reset UPnP ports
-#endif // _LEGACY_NAT_TRAVERSAL_
-
-	// NAT gateway changed. Need to refresh or recreate port mappings ASAP
 	for (n = m->NATTraversals; n; n=n->next)
 		{
-		n->retryPortMap         = m->timenow;
+		n->ExpiryTime    = 0;		// Mark this mapping as expired
 		n->retryInterval = NATMAP_INIT_RETRY;
+		n->retryPortMap  = m->timenow;
 #ifdef _LEGACY_NAT_TRAVERSAL_
 		if (n->tcpInfo.sock) { mDNSPlatformTCPCloseConnection(n->tcpInfo.sock); n->tcpInfo.sock = mDNSNULL; }
 #endif // _LEGACY_NAT_TRAVERSAL_
 		}
 
-	m->NextScheduledNATOp = m->timenow;
+	m->NextScheduledNATOp = m->timenow;		// Need to send packets immediately
 	}
+
+#ifdef _LEGACY_NAT_TRAVERSAL_
+mDNSlocal void ClearUPnPState(mDNS *const m)
+	{
+	if (m->tcpAddrInfo.sock)   { mDNSPlatformTCPCloseConnection(m->tcpAddrInfo.sock);   m->tcpAddrInfo.sock   = mDNSNULL; }
+	if (m->tcpDeviceInfo.sock) { mDNSPlatformTCPCloseConnection(m->tcpDeviceInfo.sock); m->tcpDeviceInfo.sock = mDNSNULL; }
+	m->UPnPSOAPPort = m->UPnPRouterPort = zeroIPPort;	// Reset UPnP ports
+	}
+#else
+#define ClearUPnPState(X)
+#endif // _LEGACY_NAT_TRAVERSAL_
 
 // Note: When called from handleLNTGetExternalAddressResponse() only pkt->err and pkt->PubAddr fields are filled in
 mDNSexport void natTraversalHandleAddressReply(mDNS *const m, NATAddrReply *pkt)
 	{
-	mDNSs32            routerTimeElapsed = 0;
-	mDNSs32            ourTimeElapsed = 0;
 	if (pkt->err) LogMsg("Error getting external address %d", pkt->err);
 	else if (!mDNSSameIPv4Address(m->ExternalAddress, pkt->PubAddr))
 		{
@@ -1202,14 +1199,9 @@ mDNSexport void natTraversalHandleAddressReply(mDNS *const m, NATAddrReply *pkt)
 		if (mDNSv4AddrIsRFC1918(&pkt->PubAddr))
 			LogMsg("Double NAT (external NAT gateway address %.4a is also a private RFC 1918 address)", &pkt->PubAddr);
 		m->ExternalAddress = pkt->PubAddr;
+		RecreateNATMappings(m);		// Also sets NextScheduledNATOp for us
 		}
 
-	routerTimeElapsed   = pkt->upseconds - m->LastNATupseconds;
-	m->LastNATupseconds = pkt->upseconds;
-	ourTimeElapsed = m->timenow - m->LastNATReplyLocalTime;
-	m->LastNATReplyLocalTime = m->timenow;
-
-	SetExternalAddress(m, pkt->PubAddr, routerTimeElapsed, ourTimeElapsed);
 	m->retryIntervalGetAddr = NATMAP_MAX_RETRY_INTERVAL;
 	m->retryGetAddr = m->timenow + NATMAP_MAX_RETRY_INTERVAL;
 	// No need to set m->NextScheduledNATOp here, since we're only ever extending the m->retryGetAddr time
@@ -2938,11 +2930,11 @@ mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr, co
 
 		if (v4Changed || RouterChanged)
 			{
-			m->retryGetAddr         = m->timenow;
+			m->ExternalAddress      = zerov4Addr;
 			m->retryIntervalGetAddr = NATMAP_INIT_RETRY;
-			// if the last network did not support NATs the ExternalAddress will be set to zero, so here
-			// pass onesIPv4Addr instead of zero so the proper transitions happen later
-			SetExternalAddress(m, onesIPv4Addr, 0, m->timenow);
+			m->retryGetAddr         = m->timenow;
+			m->NextScheduledNATOp   = m->timenow;
+			ClearUPnPState(m);
 			}
 
 		UpdateSRVRecords(m);
@@ -3434,6 +3426,7 @@ mDNSexport void uDNS_ReceiveNATPMPPacket(mDNS *m, const mDNSInterfaceID Interfac
 	NATTraversalInfo *ptr;
 	NATAddrReply     *AddrReply    = (NATAddrReply    *)pkt;
 	NATPortMapReply  *PortMapReply = (NATPortMapReply *)pkt;
+	mDNSu32 nat_elapsed, our_elapsed;
 
 	// Minimum packet is vers (1) opcode (1) err (2) upseconds (4) = 8 bytes
 	if (!AddrReply->err && len < 8) { LogMsg("NAT Traversal message too short (%d bytes)", len); return; }
@@ -3442,6 +3435,24 @@ mDNSexport void uDNS_ReceiveNATPMPPacket(mDNS *m, const mDNSInterfaceID Interfac
 	// Read multi-byte numeric values (fields are identical in a NATPortMapReply)
 	AddrReply->err       = (mDNSu16) (                                                (mDNSu16)pkt[2] << 8 | pkt[3]);
 	AddrReply->upseconds = (mDNSs32) ((mDNSs32)pkt[4] << 24 | (mDNSs32)pkt[5] << 16 | (mDNSs32)pkt[6] << 8 | pkt[7]);
+
+	nat_elapsed = AddrReply->upseconds - m->LastNATupseconds;
+	our_elapsed = (m->timenow - m->LastNATReplyLocalTime) / mDNSPlatformOneSecond;
+	LogOperation("uDNS_ReceiveNATPMPPacket %X upseconds %u nat_elapsed %d our_elapsed %d", AddrReply->opcode, AddrReply->upseconds, nat_elapsed, our_elapsed);
+
+	// We compute a conservative estimate of how much the NAT gateways's clock should have advanced
+	// 1. We subtract 12.5% from our own measured elapsed time, to allow for NAT gateways that have an inacurate clock that runs slowly
+	// 2. We add a two-second safety margin to allow for rounding errors:
+	//    -- e.g. if NAT gateway sends a packet at t=2.00 seconds, then one at t=7.99, that's virtually 6 seconds,
+	//       but based on the values in the packet (2,7) the apparent difference is only 5 seconds
+	//    -- similarly, if we're slow handling packets and/or we have coarse clock granularity, we could over-estimate the true interval
+	//       (e.g. t=1.99 seconds rounded to 1, and t=8.01 rounded to 8, gives an apparent difference of 7 seconds)
+	if (AddrReply->upseconds < m->LastNATupseconds || nat_elapsed + 2 < our_elapsed - our_elapsed/8)
+		{ LogMsg("NAT gateway %#.4a rebooted", &m->Router); RecreateNATMappings(m); }
+
+	m->LastNATupseconds      = AddrReply->upseconds;
+	m->LastNATReplyLocalTime = m->timenow;
+	ClearUPnPState(m);		// We know this is a NAT-PMP base station, so discard any prior UPnP state
 
 	if (AddrReply->opcode == NATOp_AddrResponse)
 		{
