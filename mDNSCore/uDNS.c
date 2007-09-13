@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.469  2007/09/13 00:28:50  cheshire
+<rdar://problem/5477354> Host records not updated on NAT address change
+
 Revision 1.468  2007/09/13 00:16:41  cheshire
 <rdar://problem/5468706> Miscellaneous NAT Traversal improvements
 
@@ -2633,17 +2636,20 @@ mDNSlocal void hostnameGetPublicAddressCallback(mDNS *m, NATTraversalInfo *n)
 	if (!n->Result)
 		{
 		if (mDNSIPv4AddressIsZero(n->ExternalAddress) || mDNSv4AddrIsRFC1918(&n->ExternalAddress)) return;
-		h->arv4.resrec.rdata->u.ipv4 = n->ExternalAddress;
-		LogMsg("Advertising hostname %##s IPv4 %.4a (NAT gateway's external address)", h->arv4.resrec.name->c, &n->ExternalAddress);
-		mDNS_Register(m, &h->arv4);
-		}
-	else
-		{
-		mDNS_StopNATOperation_internal(m, n);
-		h->arv4.state = regState_Unregistered;	// note that rr is not yet in global list
-		if (h->arv4.RecordCallback)
-			h->arv4.RecordCallback(m, &h->arv4, mStatus_NATTraversal);
-		// note - unsafe to touch rr after callback
+		
+		if (h->arv4.resrec.RecordType)
+			{
+			if (mDNSSameIPv4Address(h->arv4.resrec.rdata->u.ipv4, n->ExternalAddress)) return;	// If address unchanged, do nothing
+			LogMsg("Updating hostname %##s IPv4 from %.4a to %.4a (NAT gateway's external address)", h->arv4.resrec.name->c, &h->arv4.resrec.rdata->u.ipv4, &n->ExternalAddress);
+			mDNS_Deregister(m, &h->arv4);	// mStatus_MemFree callback will re-register with new address
+			}
+		else
+			{
+			LogMsg("Advertising hostname %##s IPv4 %.4a (NAT gateway's external address)", h->arv4.resrec.name->c, &n->ExternalAddress);
+			h->arv4.resrec.RecordType = kDNSRecordTypeKnownUnique;
+			h->arv4.resrec.rdata->u.ipv4 = n->ExternalAddress;
+			mDNS_Register(m, &h->arv4);
+			}
 		}
 	}
 
@@ -2652,12 +2658,14 @@ mDNSlocal void AdvertiseHostname(mDNS *m, HostnameInfo *h)
 	{
 	if (!mDNSIPv4AddressIsZero(m->AdvertisedV4.ip.v4) && h->arv4.resrec.RecordType == kDNSRecordTypeUnregistered)
 		{
-		mDNS_SetupResourceRecord(&h->arv4, mDNSNULL, mDNSInterface_Any, kDNSType_A, kHostNameTTL, kDNSRecordTypeKnownUnique, HostnameCallback, h);
+		mDNS_SetupResourceRecord(&h->arv4, mDNSNULL, mDNSInterface_Any, kDNSType_A, kHostNameTTL, kDNSRecordTypeUnregistered, HostnameCallback, h);
 		AssignDomainName(&h->arv4.namestorage, &h->fqdn);
 		h->arv4.resrec.rdata->u.ipv4 = m->AdvertisedV4.ip.v4;
 		h->arv4.state = regState_Unregistered;
 		if (mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4))
 			{
+			// If we already have a NAT query active, stop it and restart it to make sure we get another callback
+			if (h->natinfo.clientContext) mDNS_StopNATOperation_internal(m, &h->natinfo);
 			h->natinfo.Protocol         = 0;
 			h->natinfo.IntPort          = zeroIPPort;
 			h->natinfo.ExtPort          = zeroIPPort;
@@ -2669,6 +2677,7 @@ mDNSlocal void AdvertiseHostname(mDNS *m, HostnameInfo *h)
 		else
 			{
 			LogMsg("Advertising hostname %##s IPv4 %.4a", h->arv4.resrec.name->c, &m->AdvertisedV4.ip.v4);
+			h->arv4.resrec.RecordType = kDNSRecordTypeKnownUnique;
 			mDNS_Register_internal(m, &h->arv4);
 			}
 		}
@@ -2696,10 +2705,8 @@ mDNSlocal void HostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 			HostnameInfo *i;
 			LogOperation("Got mStatus_MemFree for %s", ARDisplayString(m, rr));
 			for (i = m->Hostnames; i; i = i->next)
-				{
-				if (rr == &i->arv4) { mDNS_Lock(m); AdvertiseHostname(m, i); mDNS_Unlock(m); return; }
-				if (rr == &i->arv6) { mDNS_Lock(m); AdvertiseHostname(m, i); mDNS_Unlock(m); return; }
-				}
+				if (rr == &i->arv4 || rr == &i->arv6)
+					{ mDNS_Lock(m); AdvertiseHostname(m, i); mDNS_Unlock(m); return; }
 
 			// Else, we're not still in the Hostnames list, so free the memory
 			if (hi->arv4.resrec.RecordType == kDNSRecordTypeUnregistered &&
