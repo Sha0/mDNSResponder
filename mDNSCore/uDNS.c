@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.471  2007/09/14 01:07:10  cheshire
+If UPnP NAT gateway returns 0.0.0.0 as external address (e.g. because it hasn't
+got a DHCP address yet) then retry periodically until it gives us a real address.
+
 Revision 1.470  2007/09/13 00:36:26  cheshire
 <rdar://problem/5477360> NAT Reboot detection logic incorrect
 
@@ -1202,9 +1206,12 @@ mDNSexport void natTraversalHandleAddressReply(mDNS *const m, NATAddrReply *pkt)
 		RecreateNATMappings(m);		// Also sets NextScheduledNATOp for us
 		}
 
-	m->retryIntervalGetAddr = NATMAP_MAX_RETRY_INTERVAL;
-	m->retryGetAddr = m->timenow + NATMAP_MAX_RETRY_INTERVAL;
-	// No need to set m->NextScheduledNATOp here, since we're only ever extending the m->retryGetAddr time
+	if (pkt->err || mDNSIPv4AddressIsZero(pkt->PubAddr)) m->retryIntervalGetAddr = NATMAP_INIT_RETRY * 32;		// 8 seconds
+	else                                                 m->retryIntervalGetAddr = NATMAP_MAX_RETRY_INTERVAL;
+
+	m->retryGetAddr = m->timenow + m->retryIntervalGetAddr;
+	if (m->NextScheduledNATOp - m->retryIntervalGetAddr > 0)
+		m->NextScheduledNATOp = m->retryIntervalGetAddr;
 	}
 
 // Both places that call NATSetNextRenewalTime() update m->NextScheduledNATOp correctly afterwards
