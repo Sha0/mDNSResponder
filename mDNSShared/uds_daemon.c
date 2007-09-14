@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.342  2007/09/14 22:38:20  cheshire
+Additional list checking in uds_validatelists()
+
 Revision 1.341  2007/09/13 00:16:43  cheshire
 <rdar://problem/5468706> Miscellaneous NAT Traversal improvements
 
@@ -813,41 +816,6 @@ mDNSlocal void abort_request(request_state *req)
 		req->sd = dnssd_InvalidSocket;
 	#endif
 	}
-
-#if APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING
-mDNSexport void uds_validatelists(void)
-	{
-	request_state *req;
-	for (req = all_requests; req; req=req->next)
-		{
-		if (req->next == (request_state *)~0 || (req->sd < 0 && req->sd != -2))
-			LogMemCorruption("UDS request list: %p is garbage (%d)", req, req->sd);
-
-		// Should also be checking sub-lists of the request_state objects as appropriate, e.g.:
-		// req->u.reg_recs
-		// req->u.servicereg.instances
-		// req->u.browser.browsers
-		}
-
-	DNameListElem *d;
-	for (d = SCPrefBrowseDomains; d; d=d->next)
-		if (d->next == (DNameListElem *)~0 || d->name.c[0] > 63)
-			LogMemCorruption("SCPrefBrowseDomains: %p is garbage (%d)", d, d->name.c[0]);
-
-	ARListElem *b;
-	for (b = LocalDomainEnumRecords; b; b=b->next)
-		if (b->next == (ARListElem *)~0 || b->ar.resrec.name->c[0] > 63)
-			LogMemCorruption("LocalDomainEnumRecords: %p is garbage (%d)", b, b->ar.resrec.name->c[0]);
-
-	for (d = AutoBrowseDomains; d; d=d->next)
-		if (d->next == (DNameListElem *)~0 || d->name.c[0] > 63)
-			LogMemCorruption("AutoBrowseDomains: %p is garbage (%d)", d, d->name.c[0]);
-
-	for (d = AutoRegistrationDomains; d; d=d->next)
-		if (d->next == (DNameListElem *)~0 || d->name.c[0] > 63)
-			LogMemCorruption("AutoRegistrationDomains: %p is garbage (%d)", d, d->name.c[0]);
-	}
-#endif
 
 mDNSlocal void AbortUnlinkAndFree(request_state *req)
 	{
@@ -3570,6 +3538,58 @@ mDNSexport void udsserver_info(mDNS *const m)
 		}
 	#endif
 	}
+
+#if APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING
+mDNSexport void uds_validatelists(void)
+	{
+	request_state *req;
+	for (req = all_requests; req; req=req->next)
+		{
+		if (req->next == (request_state *)~0 || (req->sd < 0 && req->sd != -2))
+			LogMemCorruption("UDS request list: %p is garbage (%d)", req, req->sd);
+
+		if (req->terminate == connection_termination)
+			{
+			registered_record_entry *p;
+			for (p = req->u.reg_recs; p; p=p->next)
+				if (p->next == (registered_record_entry *)~0)
+					LogMemCorruption("UDS req->u.reg_recs: %p is garbage", p);
+			}
+		else if (req->terminate == regservice_termination_callback)
+			{
+			service_instance *p;
+			for (p = req->u.servicereg.instances; p; p=p->next)
+				if (p->next == (service_instance *)~0)
+					LogMemCorruption("UDS req->u.servicereg.instances: %p is garbage", p);
+			}
+		else if (req->terminate == browse_termination_callback)
+			{
+			browser_t *p;
+			for (p = req->u.browser.browsers; p; p=p->next)
+				if (p->next == (browser_t *)~0)
+					LogMemCorruption("UDS req->u.browser.browsers: %p is garbage", p);
+			}
+		}
+
+	DNameListElem *d;
+	for (d = SCPrefBrowseDomains; d; d=d->next)
+		if (d->next == (DNameListElem *)~0 || d->name.c[0] > 63)
+			LogMemCorruption("SCPrefBrowseDomains: %p is garbage (%d)", d, d->name.c[0]);
+
+	ARListElem *b;
+	for (b = LocalDomainEnumRecords; b; b=b->next)
+		if (b->next == (ARListElem *)~0 || b->ar.resrec.name->c[0] > 63)
+			LogMemCorruption("LocalDomainEnumRecords: %p is garbage (%d)", b, b->ar.resrec.name->c[0]);
+
+	for (d = AutoBrowseDomains; d; d=d->next)
+		if (d->next == (DNameListElem *)~0 || d->name.c[0] > 63)
+			LogMemCorruption("AutoBrowseDomains: %p is garbage (%d)", d, d->name.c[0]);
+
+	for (d = AutoRegistrationDomains; d; d=d->next)
+		if (d->next == (DNameListElem *)~0 || d->name.c[0] > 63)
+			LogMemCorruption("AutoRegistrationDomains: %p is garbage (%d)", d, d->name.c[0]);
+	}
+#endif
 
 mDNSlocal int send_msg(reply_state *rep)
 	{
