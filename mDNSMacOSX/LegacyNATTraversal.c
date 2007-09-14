@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.36  2007/09/14 01:15:50  cheshire
+Minor fixes for problems discovered in pre-submission testing
+
 Revision 1.35  2007/09/13 00:16:42  cheshire
 <rdar://problem/5468706> Miscellaneous NAT Traversal improvements
 
@@ -342,7 +345,7 @@ mDNSlocal void handleLNTGetExternalAddressResponse(tcpLNTInfo *tcpInfo)
 		ptr++;
 		}
 	if (ptr == mDNSNULL || ptr >= end) return;	// bad or incomplete response
-	ptr+=21;										// skip over "NewExternalIPAddress>"
+	ptr+=21;									// skip over "NewExternalIPAddress>"
 	if (ptr >= end) { LogOperation("handleLNTGetExternalAddressResponse: past end of buffer!"); return; }
 
 	// find the end of the address and terminate the string so inet_pton() can convert it
@@ -350,7 +353,8 @@ mDNSlocal void handleLNTGetExternalAddressResponse(tcpLNTInfo *tcpInfo)
 	if (addrPtr == mDNSNULL || addrPtr >= end) { LogOperation("handleLNTGetExternalAddressResponse: didn't find SOAP URL string"); return; }
 	*addrPtr = '\0';
 
-	if (inet_pton(AF_INET, ptr, &addrReply.PubAddr) <= 0) { LogMsg("handleLNTGetExternalAddressResponse: Router returned bad address"); addrReply.err = NATErr_NetFail; }
+	if (inet_pton(AF_INET, ptr, &addrReply.PubAddr) <= 0)
+		{ LogMsg("handleLNTGetExternalAddressResponse: Router returned bad address"); addrReply.err = htons(NATErr_NetFail); }
 	if (!addrReply.err) LogOperation("handleLNTGetExternalAddressResponse: External IP address is %.4a", &addrReply.PubAddr);
 
 	natTraversalHandleAddressReply(m, &addrReply);		// This routine only cares about addrReply.err and addrReply.PubAddr fields
@@ -360,7 +364,7 @@ mDNSlocal void handleLNTGetExternalAddressResponse(tcpLNTInfo *tcpInfo)
 // which references tcpConnectionCallback, which calls handleLNTPortMappingResponse, which calls RetryPortMap, which calls SendSOAPMsgControlAction
 mDNSlocal mStatus SendSOAPMsgControlAction(mDNS *m, tcpLNTInfo *info, char *Action, int numArgs, Property *Arguments, LNTOp_t op);
 
-#define ReqestedPortNum(n) (mDNSVal16(mDNSIPPortIsZero((n)->ExtPort) ? (n)->IntPort : (n)->ExtPort) + (n)->tcpInfo.retries)
+#define RequestedPortNum(n) (mDNSVal16(mDNSIPPortIsZero((n)->ExtPort) ? (n)->IntPort : (n)->ExtPort) + (n)->tcpInfo.retries)
 
 // rebuild port mapping request with new port (up to max) and send it
 mDNSlocal mStatus SendPortMapRequest(mDNS *m, NATTraversalInfo *n)
@@ -370,7 +374,7 @@ mDNSlocal mStatus SendPortMapRequest(mDNS *m, NATTraversalInfo *n)
 	char       localIPAddrString[30];
 	char       publicPortString[40];
 	Property   propArgs[8];
-	mDNSu16    ReqPortNum = ReqestedPortNum(n);
+	mDNSu16    ReqPortNum = RequestedPortNum(n);
 
 	// create strings to use in the message
 	mDNS_snprintf(externalPort,         sizeof(externalPort),       "%u",   ReqPortNum);
@@ -440,6 +444,11 @@ mDNSlocal void handleLNTPortMappingResponse(tcpLNTInfo *tcpInfo)
 						{
 						if (tcpInfo->retries < 100)
 							{ tcpInfo->retries++; SendPortMapRequest(tcpInfo->m, tcpInfo->parentNATInfo); }
+						else
+							{
+							LogMsg("handleLNTPortMappingResponse too many conflict retries %d %d", mDNSVal16(tcpInfo->parentNATInfo->IntPort), mDNSVal16(tcpInfo->parentNATInfo->ExtPort));
+							err = htons(mStatus_NATTraversal);
+							}
 						return;
 						}
 					ptr++;
@@ -449,18 +458,20 @@ mDNSlocal void handleLNTPortMappingResponse(tcpLNTInfo *tcpInfo)
 			}
 		ptr++;
 		}
-	if (ptr == mDNSNULL || ptr == end) { LogMsg("handleLNTPortMappingResponse: got error from router"); err = mStatus_NATTraversal; }
+	if (ptr == mDNSNULL || ptr == end) return;
 	
 	for (natInfo = m->NATTraversals; natInfo; natInfo=natInfo->next) { if (natInfo == tcpInfo->parentNATInfo) break; }
 	
 	if (!natInfo) { LogOperation("handleLNTPortMappingResponse: can't find matching tcpInfo in NATTraversals!"); return; }
 	
 	portMapReply.err          = err;
-	portMapReply.extport      = mDNSOpaque16fromIntVal(ReqestedPortNum(natInfo));
-	portMapReply.NATRep_lease = 0xFFFFFFFF;
+	portMapReply.extport      = mDNSOpaque16fromIntVal(RequestedPortNum(natInfo));
+	portMapReply.NATRep_lease = NATMAP_DEFAULT_LEASE;
 
-	LogOperation("handleLNTPortMappingResponse: got a valid response, sending reply to natTraversalHandlePortMapReply(internal %d external %d)",
-		mDNSVal16(portMapReply.intport), mDNSVal16(portMapReply.extport));
+	LogOperation("handleLNTPortMappingResponse: got a valid response, sending reply to natTraversalHandlePortMapReply(internal %d external %d error %d retries %d)",
+		mDNSVal16(tcpInfo->parentNATInfo->IntPort), mDNSVal16(portMapReply.extport), portMapReply.err, tcpInfo->retries);
+
+	if (!err) tcpInfo->retries = 0;
 	natTraversalHandlePortMapReply(m, natInfo, m->UPnPInterfaceID, &portMapReply);
 	}
 
