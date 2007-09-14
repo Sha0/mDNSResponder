@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.78  2007/09/14 21:26:09  cheshire
+<rdar://problem/5482627> BTMM: Need to manually avoid port conflicts when using UPnP gateways
+
 Revision 1.77  2007/09/12 23:03:08  cheshire
 <rdar://problem/5476978> DNSServiceNATPortMappingCreate callback not giving correct interface index
 
@@ -255,8 +258,8 @@ extern void DisposeTCPConn(struct tcpInfo_t *tcp);
 
 // NAT traversal
 extern void	uDNS_ReceiveNATPMPPacket(mDNS *m, const mDNSInterfaceID InterfaceID, mDNSu8 *pkt, mDNSu16 len);	// Called for each received NAT-PMP packet
-extern void	natTraversalHandleAddressReply(mDNS *const m, NATAddrReply *addrReply);
-extern void	natTraversalHandlePortMapReply(mDNS *const m, NATTraversalInfo *n, const mDNSInterfaceID InterfaceID, NATPortMapReply *portMapReply);
+extern void	natTraversalHandleAddressReply(mDNS *const m, mDNSu16 err, mDNSv4Addr ExtAddr);
+extern void	natTraversalHandlePortMapReply(mDNS *const m, NATTraversalInfo *n, const mDNSInterfaceID InterfaceID, mDNSu16 err, mDNSIPPort extport, mDNSu32 lease);
 
 #ifdef	__cplusplus
 	}

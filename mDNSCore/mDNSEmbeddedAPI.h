@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.436  2007/09/14 21:26:08  cheshire
+<rdar://problem/5482627> BTMM: Need to manually avoid port conflicts when using UPnP gateways
+
 Revision 1.435  2007/09/13 00:16:41  cheshire
 <rdar://problem/5468706> Miscellaneous NAT Traversal improvements
 
@@ -1136,7 +1139,7 @@ typedef packedstruct
 	mDNSu8     opcode;
 	mDNSu16    err;
 	mDNSu32    upseconds;		// Time since last NAT engine reboot, in seconds
-	mDNSv4Addr PubAddr;
+	mDNSv4Addr ExtAddr;
 	} NATAddrReply;
 
 typedef packedstruct

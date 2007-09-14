@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.37  2007/09/14 21:26:09  cheshire
+<rdar://problem/5482627> BTMM: Need to manually avoid port conflicts when using UPnP gateways
+
 Revision 1.36  2007/09/14 01:15:50  cheshire
 Minor fixes for problems discovered in pre-submission testing
 
@@ -331,11 +334,12 @@ mDNSlocal void handleLNTDeviceDescriptionResponse(tcpLNTInfo *tcpInfo)
 
 mDNSlocal void handleLNTGetExternalAddressResponse(tcpLNTInfo *tcpInfo)
 	{
-	mDNS        *m = tcpInfo->m;
-	NATAddrReply    addrReply;
-	char            *addrPtr;
-	char            *ptr = (char *)tcpInfo->Reply;
-	char            *end = (char *)tcpInfo->Reply + tcpInfo->nread;
+	mDNS       *m = tcpInfo->m;
+	mDNSu16     err = NATErr_None;
+	mDNSv4Addr  ExtAddr;
+	char       *addrPtr;
+	char       *ptr = (char *)tcpInfo->Reply;
+	char       *end = (char *)tcpInfo->Reply + tcpInfo->nread;
 
 //	LogOperation("handleLNTGetExternalAddressResponse: %s", ptr);
 
@@ -353,11 +357,11 @@ mDNSlocal void handleLNTGetExternalAddressResponse(tcpLNTInfo *tcpInfo)
 	if (addrPtr == mDNSNULL || addrPtr >= end) { LogOperation("handleLNTGetExternalAddressResponse: didn't find SOAP URL string"); return; }
 	*addrPtr = '\0';
 
-	if (inet_pton(AF_INET, ptr, &addrReply.PubAddr) <= 0)
-		{ LogMsg("handleLNTGetExternalAddressResponse: Router returned bad address"); addrReply.err = htons(NATErr_NetFail); }
-	if (!addrReply.err) LogOperation("handleLNTGetExternalAddressResponse: External IP address is %.4a", &addrReply.PubAddr);
+	if (inet_pton(AF_INET, ptr, &ExtAddr) <= 0)
+		{ LogMsg("handleLNTGetExternalAddressResponse: Router returned bad address"); err = NATErr_NetFail; }
+	if (!err) LogOperation("handleLNTGetExternalAddressResponse: External IP address is %.4a", &ExtAddr);
 
-	natTraversalHandleAddressReply(m, &addrReply);		// This routine only cares about addrReply.err and addrReply.PubAddr fields
+	natTraversalHandleAddressReply(m, err, ExtAddr);		// This routine only cares about addrReply.err and addrReply.ExtAddr fields
 	}
 
 // Forward declaration: SendSOAPMsgControlAction calls MakeTCPConnection,
@@ -369,18 +373,51 @@ mDNSlocal mStatus SendSOAPMsgControlAction(mDNS *m, tcpLNTInfo *info, char *Acti
 // rebuild port mapping request with new port (up to max) and send it
 mDNSlocal mStatus SendPortMapRequest(mDNS *m, NATTraversalInfo *n)
 	{
-	char       externalPort[6];
-	char       internalPort[6];
-	char       localIPAddrString[30];
-	char       publicPortString[40];
-	Property   propArgs[8];
-	mDNSu16    ReqPortNum = RequestedPortNum(n);
+	char              externalPort[6];
+	char              internalPort[6];
+	char              localIPAddrString[30];
+	char              publicPortString[40];
+	Property          propArgs[8];
+	mDNSu16           ReqPortNum = RequestedPortNum(n);
+	NATTraversalInfo *n2 = m->NATTraversals;
+
+	// Scan our m->NATTraversals list to make sure the external port we're requesting is locally unique.
+	// UPnP gateways will report conflicts if different devices request the same external port, but if two
+	// clients on the same device request the same external port the second one just stomps over the first.
+	// One way this can happen is like this:
+	// 1. Client A binds local port 80
+	// 2. Client A requests external port 80 -> internal port 80
+	// 3. UPnP NAT gateway refuses external port 80 (some other client already has it)
+	// 4. Client A tries again, and successfully gets external port 80 -> internal port 81
+	// 5. Client B on same machine tries to bind local port 80, and fails
+	// 6. Client B tries again, and successfully binds local port 81
+	// 7. Client B now requests external port 81 -> internal port 81
+	// 8. UPnP NAT gateway allows this, stomping over Client A's existing mapping
+
+	while (n2)
+		{
+		if (n2 == n || RequestedPortNum(n2) != ReqPortNum) n2=n2->next;
+		else
+			{
+			if (n->tcpInfo.retries < 100)
+				{
+				n->tcpInfo.retries++;
+				ReqPortNum = RequestedPortNum(n);	// Pick a new port number
+				n2 = m->NATTraversals;				// And re-scan the list looking for conflicts
+				}
+			else
+				{
+				natTraversalHandlePortMapReply(m, n, m->UPnPInterfaceID, NATErr_Refused, zeroIPPort, 0);
+				return mStatus_NoError;
+				}
+			}
+		}
 
 	// create strings to use in the message
-	mDNS_snprintf(externalPort,         sizeof(externalPort),       "%u",   ReqPortNum);
-	mDNS_snprintf(internalPort,         sizeof(internalPort),       "%u",   mDNSVal16(n->IntPort));
-	mDNS_snprintf(publicPortString,     sizeof(publicPortString),   "iC%u", ReqPortNum);
-	mDNS_snprintf(localIPAddrString,    sizeof(localIPAddrString),  "%u.%u.%u.%u",
+	mDNS_snprintf(externalPort,      sizeof(externalPort),      "%u",   ReqPortNum);
+	mDNS_snprintf(internalPort,      sizeof(internalPort),      "%u",   mDNSVal16(n->IntPort));
+	mDNS_snprintf(publicPortString,  sizeof(publicPortString),  "iC%u", ReqPortNum);
+	mDNS_snprintf(localIPAddrString, sizeof(localIPAddrString), "%u.%u.%u.%u",
 	    m->AdvertisedV4.ip.v4.b[0], m->AdvertisedV4.ip.v4.b[1], m->AdvertisedV4.ip.v4.b[2], m->AdvertisedV4.ip.v4.b[3]);
 
 	// build the message
@@ -414,16 +451,17 @@ mDNSlocal mStatus SendPortMapRequest(mDNS *m, NATTraversalInfo *n)
 	return SendSOAPMsgControlAction(m, &n->tcpInfo, "AddPortMapping", 8, propArgs, LNTPortMapOp);
 	}
 
-// This will call natTraversalHandlePortMapReply() using a NATPortMapReply structure filled in with the necessary info
-// (keeps us from replicating code)
 mDNSlocal void handleLNTPortMappingResponse(tcpLNTInfo *tcpInfo)
 	{
-	mDNS    *m = tcpInfo->m;
-	mStatus err = mStatus_NoError;
-	char        *ptr = (char *)tcpInfo->Reply;
-	char        *end = (char *)tcpInfo->Reply + tcpInfo->nread;
-	NATPortMapReply portMapReply;
-	NATTraversalInfo    *natInfo;
+	mDNS             *m       = tcpInfo->m;
+	mDNSIPPort        extport = zeroIPPort;
+	char             *ptr     = (char *)tcpInfo->Reply;
+	char             *end     = (char *)tcpInfo->Reply + tcpInfo->nread;
+	NATTraversalInfo *natInfo;
+
+	for (natInfo = m->NATTraversals; natInfo; natInfo=natInfo->next) { if (natInfo == tcpInfo->parentNATInfo) break; }
+	
+	if (!natInfo) { LogOperation("handleLNTPortMappingResponse: can't find matching tcpInfo in NATTraversals!"); return; }
 
 	// start from the beginning of the HTTP header; find "200 OK" status message; if the first characters after the
 	// space are not "200" then this is an error message or invalid in some other way
@@ -443,11 +481,11 @@ mDNSlocal void handleLNTPortMappingResponse(tcpLNTInfo *tcpInfo)
 					if ((*ptr == 'c' || *ptr == 'C') && strncasecmp(ptr, "Conflict", 8) == 0)
 						{
 						if (tcpInfo->retries < 100)
-							{ tcpInfo->retries++; SendPortMapRequest(tcpInfo->m, tcpInfo->parentNATInfo); }
+							{ tcpInfo->retries++; SendPortMapRequest(tcpInfo->m, natInfo); }
 						else
 							{
-							LogMsg("handleLNTPortMappingResponse too many conflict retries %d %d", mDNSVal16(tcpInfo->parentNATInfo->IntPort), mDNSVal16(tcpInfo->parentNATInfo->ExtPort));
-							err = htons(mStatus_NATTraversal);
+							LogMsg("handleLNTPortMappingResponse too many conflict retries %d %d", mDNSVal16(natInfo->IntPort), mDNSVal16(natInfo->ExtPort));
+							natTraversalHandlePortMapReply(m, natInfo, m->UPnPInterfaceID, NATErr_Refused, zeroIPPort, 0);
 							}
 						return;
 						}
@@ -460,19 +498,13 @@ mDNSlocal void handleLNTPortMappingResponse(tcpLNTInfo *tcpInfo)
 		}
 	if (ptr == mDNSNULL || ptr == end) return;
 	
-	for (natInfo = m->NATTraversals; natInfo; natInfo=natInfo->next) { if (natInfo == tcpInfo->parentNATInfo) break; }
-	
-	if (!natInfo) { LogOperation("handleLNTPortMappingResponse: can't find matching tcpInfo in NATTraversals!"); return; }
-	
-	portMapReply.err          = err;
-	portMapReply.extport      = mDNSOpaque16fromIntVal(RequestedPortNum(natInfo));
-	portMapReply.NATRep_lease = NATMAP_DEFAULT_LEASE;
+	LogOperation("handleLNTPortMappingResponse: got a valid response, sending reply to natTraversalHandlePortMapReply(internal %d external %d retries %d)",
+		mDNSVal16(natInfo->IntPort), RequestedPortNum(natInfo), tcpInfo->retries);
 
-	LogOperation("handleLNTPortMappingResponse: got a valid response, sending reply to natTraversalHandlePortMapReply(internal %d external %d error %d retries %d)",
-		mDNSVal16(tcpInfo->parentNATInfo->IntPort), mDNSVal16(portMapReply.extport), portMapReply.err, tcpInfo->retries);
-
-	if (!err) tcpInfo->retries = 0;
-	natTraversalHandlePortMapReply(m, natInfo, m->UPnPInterfaceID, &portMapReply);
+	// Make sure to compute extport *before* we zero tcpInfo->retries
+	extport = mDNSOpaque16fromIntVal(RequestedPortNum(natInfo));
+	tcpInfo->retries = 0;
+	natTraversalHandlePortMapReply(m, natInfo, m->UPnPInterfaceID, mStatus_NoError, extport, NATMAP_DEFAULT_LEASE);
 	}
 
 mDNSlocal void tcpConnectionCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEstablished, mStatus err)
@@ -569,12 +601,12 @@ mDNSlocal mStatus MakeTCPConnection(mDNS *const m, tcpLNTInfo *info, const mDNSA
 
 mDNSlocal mStatus SendSOAPMsgControlAction(mDNS *m, tcpLNTInfo *info, char *Action, int numArgs, Property *Arguments, LNTOp_t op)
 	{
-	mStatus err         = mStatus_NoError;
+	mStatus err             = mStatus_NoError;
 	char    *sendBufferBody = mDNSNULL;
 	char    *sendBufferArgs = mDNSNULL;
-	int headerLen   = 0;
-	int bodyLen     = 0;
-	int argsLen     = 0;
+	int      headerLen      = 0;
+	int      bodyLen        = 0;
+	int      argsLen        = 0;
 
 	// if no SOAP URL or address exists get out here
 	if (m->UPnPSOAPURL == mDNSNULL || m->UPnPSOAPAddressString == mDNSNULL) { LogOperation("GetDeviceDescription: no SOAP URL or address string!"); return (mStatus_Invalid); }
