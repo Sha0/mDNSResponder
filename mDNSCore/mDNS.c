@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.703  2007/09/14 01:46:59  cheshire
+Fix Posix build (#ifdef _LEGACY_NAT_TRAVERSAL_ section included a closing curly brace it should not have)
+
 Revision 1.702  2007/09/13 22:06:46  cheshire
 <rdar://problem/5480643> Tully's Free WiFi: DNS fails
 Need to accept DNS responses where the query ID field matches, even if the source address does not
@@ -4710,8 +4713,8 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 			mDNS_Unlock(m);
 			return;
 			}
-		}
 #endif
+		}
 #endif
 	if ((unsigned)(end - (mDNSu8 *)pkt) < sizeof(DNSMessageHeader)) { LogMsg("DNS Message too short"); return; }
 	QR_OP = (mDNSu8)(msg->h.flags.b[0] & kDNSFlag0_QROP_Mask);
