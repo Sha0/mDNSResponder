@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.482  2007/09/14 21:16:03  cheshire
+<rdar://problem/5413170> mDNSResponder using 100% CPU spinning in tlsReadSock
+
 Revision 1.481  2007/09/14 21:14:56  mcguire
 <rdar://problem/5481318> BTMM: Need to modify IPSec tunnel setup files when shared secret changes
 
@@ -1148,14 +1151,12 @@ struct TCPSocket_struct
 mDNSlocal OSStatus tlsWriteSock(SSLConnectionRef connection, const void *data, size_t *dataLength)
 	{
 	int ret = send(((TCPSocket *)connection)->fd, data, *dataLength, 0);
-	//if (ret >= 0) LogMsg("tlsWriteSock: %d\n", ret);
-	//else          LogMsg("tlsWriteSock: %d %d %s\n", ret, errno, strerror(errno));
 	if (ret >= 0 && (size_t)ret < *dataLength) { *dataLength = ret; return(errSSLWouldBlock); }
 	if (ret >= 0)                              { *dataLength = ret; return(noErr); }
 	*dataLength = 0;
-	if (errno == EAGAIN    ) return(errSSLWouldBlock);
-	if (errno == ENOENT    ) return(errSSLClosedGraceful);
-	if (errno == ECONNRESET) return(errSSLClosedAbort);
+	if (errno == EAGAIN                      ) return(errSSLWouldBlock);
+	if (errno == ENOENT                      ) return(errSSLClosedGraceful);
+	if (errno == EPIPE || errno == ECONNRESET) return(errSSLClosedAbort);
 	LogMsg("ERROR: tlsWriteSock: error %d %s\n", errno, strerror(errno));
 	return(errSSLClosedAbort);
 	}
@@ -1163,14 +1164,12 @@ mDNSlocal OSStatus tlsWriteSock(SSLConnectionRef connection, const void *data, s
 mDNSlocal OSStatus tlsReadSock(SSLConnectionRef connection, void *data, size_t *dataLength)
 	{
 	int ret = recv(((TCPSocket *)connection)->fd, data, *dataLength, 0);
-	//if (ret >= 0) LogMsg("tlsSockRead: %d\n", ret);
-	//else          LogMsg("tlsSockRead: %d %d %s\n", ret, errno, strerror(errno));
-	if (ret >= 0 && (size_t)ret < *dataLength) { *dataLength = ret; return(errSSLWouldBlock); }
-	if (ret >= 0)                              { *dataLength = ret; return(noErr); }
+	if (ret > 0 && (size_t)ret < *dataLength) { *dataLength = ret; return(errSSLWouldBlock); }
+	if (ret > 0)                              { *dataLength = ret; return(noErr); }
 	*dataLength = 0;
-	if (errno == EAGAIN    ) return(errSSLWouldBlock);
-	if (errno == ENOENT    ) return(errSSLClosedGraceful);
-	if (errno == ECONNRESET) return(errSSLClosedAbort);
+	if (ret == 0 || errno == ENOENT    ) return(errSSLClosedGraceful);
+	if (            errno == EAGAIN    ) return(errSSLWouldBlock);
+	if (            errno == ECONNRESET) return(errSSLClosedAbort);
 	LogMsg("ERROR: tlsSockRead: error %d %s\n", errno, strerror(errno));
 	return(errSSLClosedAbort);
 	}
