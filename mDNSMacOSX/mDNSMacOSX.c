@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.481  2007/09/14 21:14:56  mcguire
+<rdar://problem/5481318> BTMM: Need to modify IPSec tunnel setup files when shared secret changes
+
 Revision 1.480  2007/09/13 00:16:42  cheshire
 <rdar://problem/5468706> Miscellaneous NAT Traversal improvements
 
@@ -3171,7 +3174,7 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 	ClientTunnel *client;
 	for (client = m->TunnelClients; client; client = client->next)
 		{
-		LogOperation("SetDomainSecrets: client %p marked for deletion", client);
+		LogOperation("SetDomainSecrets: tunnel to %##s marked for deletion", client->dstname.c);
 		client->markedForDeletion = mDNStrue;
 		}
 	}
@@ -3206,27 +3209,27 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 			// The names have already been vetted by the helper, but checking them again here helps humans and automated tools verify correctness
 			data = CFArrayGetValueAtIndex(entry, 0);
 			if (CFDataGetLength(data) >= (int)sizeof(dstring))
-				{ LogMsg("SetSecretForDomain: Bad kSecServiceItemAttr length %d", CFDataGetLength(data)); continue; }
+				{ LogMsg("SetDomainSecrets: Bad kSecServiceItemAttr length %d", CFDataGetLength(data)); continue; }
 			CFDataGetBytes(data, CFRangeMake(0, CFDataGetLength(data)), (UInt8 *)dstring);
 			dstring[CFDataGetLength(data)] = '\0';
 			data = CFArrayGetValueAtIndex(entry, 1);
 			if (CFDataGetLength(data) >= (int)sizeof(keynamebuf))
-				{ LogMsg("SetSecretForDomain: Bad kSecAccountItemAttr length %d", CFDataGetLength(data)); continue; }
+				{ LogMsg("SetDomainSecrets: Bad kSecAccountItemAttr length %d", CFDataGetLength(data)); continue; }
 			CFDataGetBytes(data, CFRangeMake(0,CFDataGetLength(data)), (UInt8 *)keynamebuf);
 			keynamebuf[CFDataGetLength(data)] = '\0';
 
 			domainname domain;
-			if (!MakeDomainNameFromDNSNameString(&domain, dstring))     { LogMsg("SetSecretForDomain: bad key domain %s", dstring);  continue; }
+			if (!MakeDomainNameFromDNSNameString(&domain, dstring))     { LogMsg("SetDomainSecrets: bad key domain %s", dstring);  continue; }
 
 			// Get DNS key name
 			domainname keyname;
-			if (!MakeDomainNameFromDNSNameString(&keyname, keynamebuf)) { LogMsg("SetSecretForDomain: bad key name %s", keynamebuf); continue; }
+			if (!MakeDomainNameFromDNSNameString(&keyname, keynamebuf)) { LogMsg("SetDomainSecrets: bad key name %s", keynamebuf); continue; }
 
 			// Get DNS key data
 			char keystring[1024];
 			data = CFArrayGetValueAtIndex(entry, 2);
 			if (CFDataGetLength(data) >= (int)sizeof(keystring))
-				{ LogMsg("SetSecretForDomain: Shared secret too long: %d", CFDataGetLength(data)); continue; }
+				{ LogMsg("SetDomainSecrets: Shared secret too long: %d", CFDataGetLength(data)); continue; }
 			CFDataGetBytes(data, CFRangeMake(0, CFDataGetLength(data)), (UInt8 *)keystring);
 			keystring[CFDataGetLength(data)] = '\0';	// mDNS_SetSecretForDomain requires NULL-terminated C string for key
 
@@ -3235,16 +3238,26 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 				if (SameDomainName(&FoundInList->domain, &domain)) break;
 
 #if APPLE_OSX_mDNSResponder
-			{
-			ClientTunnel *client;
-			// If any client tunnel domain matches this domain, set deletion flag to false
-			for (client = m->TunnelClients; client; client = client->next)
-				if (SameDomainName(&client->dstname, &domain)) 
+			if (FoundInList)
+				{
+				// If any client tunnel destination is in this domain, set deletion flag to false
+				ClientTunnel *client;
+				for (client = m->TunnelClients; client; client = client->next)
+					if (FoundInList == GetAuthInfoForName_internal(m, &client->dstname))
 					{
-					LogOperation("SetDomainSecrets: client %p no longer marked for deletion", client);
+					LogOperation("SetDomainSecrets: tunnel to %##s no longer marked for deletion", client->dstname.c);
 					client->markedForDeletion = mDNSfalse;
+					// If the key has changed, reconfigure the tunnel
+					if (strncmp(keystring, client->b64keydata, sizeof(client->b64keydata)))
+						{
+						mDNSBool queryNotInProgress = client->q.ThisQInterval < 0;
+						LogOperation("SetDomainSecrets: secret changed for tunnel %##s %s", client->dstname.c, queryNotInProgress ? "reconfiguring" : "query in progress");
+						if (queryNotInProgress) AutoTunnelSetKeys(client, mDNSfalse);
+						mDNS_snprintf(client->b64keydata, sizeof(client->b64keydata), "%s", keystring);
+						if (queryNotInProgress) AutoTunnelSetKeys(client, mDNStrue);
+						}
 					}
-			}
+				}
 #endif APPLE_OSX_mDNSResponder
 
 			// Uncomment the line below to view the keys as they're read out of the system keychain
@@ -3257,7 +3270,7 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 			if (!FoundInList)
 				{
 				ptr = (DomainAuthInfo*)mallocL("DomainAuthInfo", sizeof(*ptr));
-				if (!ptr) { LogMsg("SetSecretForDomain: No memory"); continue; }
+				if (!ptr) { LogMsg("SetDomainSecrets: No memory"); continue; }
 				}
 
 			LogOperation("SetDomainSecrets: %d of %d %##s", i, ArrayCount, &domain);
@@ -3284,7 +3297,7 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 			if ((*ptr)->markedForDeletion)
 				{
 				ClientTunnel *cur = *ptr;
-				LogOperation("SetDomainSecrets: removing client %p from list", cur);
+				LogOperation("SetDomainSecrets: removing client %##s from list", cur->dstname.c);
 				if (cur->q.ThisQInterval >= 0)	mDNS_StopQuery(m, &cur->q);
 				AutoTunnelSetKeys(cur, mDNSfalse);
 				*ptr = cur->next;
