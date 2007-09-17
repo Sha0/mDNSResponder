@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.483  2007/09/17 22:19:39  mcguire
+<rdar://problem/5482519> BTMM: Tunnel is getting configured too much which causes long delays
+No need to configure a tunnel again if all the parameters are the same -- just remove the older duplicate tunnel from the list.
+
 Revision 1.482  2007/09/14 21:16:03  cheshire
 <rdar://problem/5413170> mDNSResponder using 100% CPU spinning in tlsReadSock
 
@@ -2225,22 +2229,34 @@ mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const R
 		else tun->loc_outer = m->AdvertisedV4.ip.v4;
 
 		ClientTunnel **p = &tun->next;
+		mDNSBool needSetKeys = mDNStrue;
 		while (*p)
 			{
 			if (!mDNSSameClientTunnel(&(*p)->rmt_inner, &tun->rmt_inner)) p = &(*p)->next;
 			else
 				{
-				LogOperation("Updating existing AutoTunnel for %##s %.16a", tun->dstname.c, &tun->rmt_inner);
+				LogOperation("Found existing AutoTunnel for %##s %.16a", tun->dstname.c, &tun->rmt_inner);
 				old = *p;
 				*p = old->next;
 				if (old->q.ThisQInterval >= 0) mDNS_StopQuery(m, &old->q);
-				else AutoTunnelSetKeys(old, mDNSfalse);
+				else if (!mDNSSameIPv6Address(old->loc_inner, tun->loc_inner) ||
+						 !mDNSSameIPv4Address(old->loc_outer, tun->loc_outer) ||
+						 !mDNSSameIPv6Address(old->rmt_inner, tun->rmt_inner) ||
+						 !mDNSSameIPv4Address(old->rmt_outer, tun->rmt_outer) ||
+						 !mDNSSameIPPort(old->rmt_outer_port, tun->rmt_outer_port))
+					{
+					LogOperation("Deleting existing AutoTunnel for %##s %.16a", tun->dstname.c, &tun->rmt_inner);
+					AutoTunnelSetKeys(old, mDNSfalse);
+					}
+				else needSetKeys = mDNSfalse;
+
 				freeL("ClientTunnel", old);
 				}
 			}
-		if (!old) LogOperation("New AutoTunnel for %##s %.16a", tun->dstname.c, &tun->rmt_inner);
 
-		mStatus result = AutoTunnelSetKeys(tun, mDNStrue);
+		if (needSetKeys) LogOperation("New AutoTunnel for %##s %.16a", tun->dstname.c, &tun->rmt_inner);
+
+		mStatus result = needSetKeys ? AutoTunnelSetKeys(tun, mDNStrue) : mStatus_NoError;
 		// Kick off any questions that were held pending this tunnel setup
 		ReissueBlockedQuestions(m, &tun->dstname, (result == mStatus_NoError) ? mDNStrue : mDNSfalse);
 		}
