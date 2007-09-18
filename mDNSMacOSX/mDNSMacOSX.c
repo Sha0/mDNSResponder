@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.484  2007/09/18 21:44:55  cheshire
+<rdar://problem/5469006> Crash in GetAuthInfoForName_internal
+Code was using n->ExtPort (now n->RequestedPort) when it should have been using n->ExternalPort
+
 Revision 1.483  2007/09/17 22:19:39  mcguire
 <rdar://problem/5482519> BTMM: Tunnel is getting configured too much which causes long delays
 No need to configure a tunnel again if all the parameters are the same -- just remove the older duplicate tunnel from the list.
@@ -2006,7 +2010,7 @@ mDNSlocal void AutoTunnelNATCallback(mDNS *m, NATTraversalInfo *n)
 	mStatus err = mStatus_NoError;
 
 	DomainAuthInfo *info = (DomainAuthInfo *)n->clientContext;
-	LogOperation("AutoTunnelNATCallback %d %.4a %d %d %##s", n->Result, &n->ExternalAddress, mDNSVal16(n->IntPort), mDNSVal16(n->ExtPort), info->AutoTunnelService.namestorage.c);
+	LogOperation("AutoTunnelNATCallback Result %d %.4a Internal %d External %d %##s", n->Result, &n->ExternalAddress, mDNSVal16(n->IntPort), mDNSVal16(n->ExternalPort), info->AutoTunnelService.namestorage.c);
 
 	LogOperation("AutoTunnelNATCallback timenow %d NextSRVUpdate %d", m->timenow, m->NextSRVUpdate);
 	m->NextSRVUpdate = m->timenow;
@@ -2041,9 +2045,9 @@ mDNSlocal void AutoTunnelNATCallback(mDNS *m, NATTraversalInfo *n)
 		if (err) LogMsg("AutoTunnelNATCallback error %d deregistering AutoTunnelDeviceInfo %##s", err, info->AutoTunnelDeviceInfo.namestorage.c);
 		}
 
-	if (!n->Result && ! mDNSIPPortIsZero(n->ExtPort))
+	if (!n->Result && !mDNSIPPortIsZero(n->ExternalPort))
 		{
-		info->AutoTunnelService.resrec.rdata->u.srv.port = n->ExtPort;
+		info->AutoTunnelService.resrec.rdata->u.srv.port = n->ExternalPort;
 		info->AutoTunnelService.resrec.RecordType = kDNSRecordTypeKnownUnique;
 		err = mDNS_Register(m, &info->AutoTunnelService);
 		if (err) LogMsg("AutoTunnelNATCallback error %d registering AutoTunnelService %##s", err, info->AutoTunnelService.namestorage.c);
@@ -2135,7 +2139,7 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 				info->AutoTunnelNAT.clientContext    = info;
 				info->AutoTunnelNAT.Protocol         = NATOp_MapUDP;
 				info->AutoTunnelNAT.IntPort          = mDNSOpaque16fromIntVal(kRacoonPort);
-				info->AutoTunnelNAT.ExtPort          = mDNSOpaque16fromIntVal(kRacoonPort);
+				info->AutoTunnelNAT.RequestedPort    = mDNSOpaque16fromIntVal(kRacoonPort);
 				info->AutoTunnelNAT.NATLease         = 0;
 				mStatus err = mDNS_StartNATOperation_internal(m, &info->AutoTunnelNAT);
 				if (err) LogMsg("SetupLocalAutoTunnelInterface_internal error %d starting NAT mapping", err);
