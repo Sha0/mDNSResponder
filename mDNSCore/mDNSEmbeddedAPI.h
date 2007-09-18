@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.437  2007/09/18 21:42:29  cheshire
+To reduce programming mistakes, renamed ExtPort to RequestedPort
+
 Revision 1.436  2007/09/14 21:26:08  cheshire
 <rdar://problem/5482627> BTMM: Need to manually avoid port conflicts when using UPnP gateways
 
@@ -1210,6 +1213,16 @@ struct NATTraversalInfo_struct
 #endif
 
 	// Result fields: When the callback is invoked these fields contain the answers the client is looking for
+	// When the callback is invoked ExternalPort is *usually* set to be the same the same as RequestedPort, except:
+	// (a) When we're behind a NAT gateway with port mapping disabled, ExternalPort is reported as zero to
+	//     indicate that we don't currently have a working mapping (but RequestedPort retains the external port
+	//     we'd like to get, the next time we meet an accomodating NAT gateway willing to give us one).
+	// (b) When we have a routable non-RFC1918 address, we don't *need* a port mapping, so ExternalPort
+	//     is reported as the same as our InternalPort, since that is effectively our externally-visible port too.
+	//     Again, RequestedPort retains the external port we'd like to get the next time we find ourself behind a NAT gateway.
+	// To improve stability of port mappings, RequestedPort is updated any time we get a successful
+	// mapping response from the NAT-PMP or UPnP gateway. For example, if we ask for port 80, and
+	// get assigned port 81, then thereafter we'll contine asking for port 81.
 	mDNSInterfaceID             InterfaceID;
 	mDNSv4Addr                  ExternalAddress;
 	mDNSIPPort                  ExternalPort;
@@ -1219,7 +1232,7 @@ struct NATTraversalInfo_struct
 	// Client API fields: The client must set up these fields *before* making any NAT traversal API calls
 	mDNSu8                      Protocol;			// NATOp_MapUDP or NATOp_MapTCP, or zero if just requesting the external IP address
 	mDNSIPPort                  IntPort;			// Client's internal port number (doesn't change)
-	mDNSIPPort                  ExtPort;			// Requested public port mapping; may be updated with actual value assigned by gateway
+	mDNSIPPort                  RequestedPort;		// Requested public port mapping; may be updated with actual value assigned by gateway
 	mDNSu32                     NATLease;			// Requested lifetime in seconds (doesn't change)
 	NATTraversalClientCallback  clientCallback;
 	void                       *clientContext;

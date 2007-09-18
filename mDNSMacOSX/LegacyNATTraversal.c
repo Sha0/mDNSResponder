@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.38  2007/09/18 21:42:30  cheshire
+To reduce programming mistakes, renamed ExtPort to RequestedPort
+
 Revision 1.37  2007/09/14 21:26:09  cheshire
 <rdar://problem/5482627> BTMM: Need to manually avoid port conflicts when using UPnP gateways
 
@@ -368,7 +371,7 @@ mDNSlocal void handleLNTGetExternalAddressResponse(tcpLNTInfo *tcpInfo)
 // which references tcpConnectionCallback, which calls handleLNTPortMappingResponse, which calls RetryPortMap, which calls SendSOAPMsgControlAction
 mDNSlocal mStatus SendSOAPMsgControlAction(mDNS *m, tcpLNTInfo *info, char *Action, int numArgs, Property *Arguments, LNTOp_t op);
 
-#define RequestedPortNum(n) (mDNSVal16(mDNSIPPortIsZero((n)->ExtPort) ? (n)->IntPort : (n)->ExtPort) + (n)->tcpInfo.retries)
+#define RequestedPortNum(n) (mDNSVal16(mDNSIPPortIsZero((n)->RequestedPort) ? (n)->IntPort : (n)->RequestedPort) + (n)->tcpInfo.retries)
 
 // rebuild port mapping request with new port (up to max) and send it
 mDNSlocal mStatus SendPortMapRequest(mDNS *m, NATTraversalInfo *n)
@@ -484,7 +487,7 @@ mDNSlocal void handleLNTPortMappingResponse(tcpLNTInfo *tcpInfo)
 							{ tcpInfo->retries++; SendPortMapRequest(tcpInfo->m, natInfo); }
 						else
 							{
-							LogMsg("handleLNTPortMappingResponse too many conflict retries %d %d", mDNSVal16(natInfo->IntPort), mDNSVal16(natInfo->ExtPort));
+							LogMsg("handleLNTPortMappingResponse too many conflict retries %d %d", mDNSVal16(natInfo->IntPort), mDNSVal16(natInfo->RequestedPort));
 							natTraversalHandlePortMapReply(m, natInfo, m->UPnPInterfaceID, NATErr_Refused, zeroIPPort, 0);
 							}
 						return;
@@ -668,10 +671,9 @@ mDNSexport mStatus LNT_UnmapPort(mDNS *m, NATTraversalInfo *n)
 	Property    propArgs[3];
 	tcpLNTInfo  *info;
 	tcpLNTInfo  **infoPtr = &m->tcpInfoUnmapList;
-	mDNSIPPort  ExtPort = mDNSIPPortIsZero(n->ExtPort) ? n->IntPort : n->ExtPort;	// If requested port is zero, request ExtPort = IntPort
-	
-	mDNS_snprintf(externalPort, sizeof(externalPort), "%u", mDNSVal16(ExtPort));
-	
+
+	mDNS_snprintf(externalPort, sizeof(externalPort), "%u", mDNSVal16(mDNSIPPortIsZero(n->RequestedPort) ? n->IntPort : n->RequestedPort));
+
 	mDNSPlatformMemZero(propArgs, sizeof(propArgs));
 	propArgs[0].name  = "NewRemoteHost";
 	propArgs[0].type  = "string";

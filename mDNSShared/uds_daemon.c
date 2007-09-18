@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.343  2007/09/18 21:42:30  cheshire
+To reduce programming mistakes, renamed ExtPort to RequestedPort
+
 Revision 1.342  2007/09/14 22:38:20  cheshire
 Additional list checking in uds_validatelists()
 
@@ -2755,7 +2758,8 @@ mDNSlocal mStatus handle_port_mapping_request(request_state *request)
 		}
 
 	request->u.pm.NATinfo.Protocol       = !protocol ? NATOp_AddrRequest : (protocol == kDNSServiceProtocol_UDP) ? NATOp_MapUDP : NATOp_MapTCP;
-	request->u.pm.NATinfo.ExtPort        = request->u.pm.ReqExt;
+	//       u.pm.NATinfo.IntPort        = already set above
+	request->u.pm.NATinfo.RequestedPort  = request->u.pm.ReqExt;
 	request->u.pm.NATinfo.NATLease       = ttl;
 	request->u.pm.NATinfo.clientCallback = port_mapping_create_request_callback;
 	request->u.pm.NATinfo.clientContext  = request;
