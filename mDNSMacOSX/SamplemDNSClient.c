@@ -30,6 +30,9 @@
 	Change History (most recent first):
 
 $Log: SamplemDNSClient.c,v $
+Revision 1.53  2007/09/18 19:09:02  cheshire
+<rdar://problem/5489549> mDNSResponderHelper (and other binaries) missing SCCS version strings
+
 Revision 1.52  2007/03/06 22:45:52  cheshire
 
 <rdar://problem/4138615> argv buffer overflow issues
@@ -358,7 +361,7 @@ int main(int argc, char **argv)
 					if (nam[0] == '.' && nam[1] == 0) nam[0] = 0;	// We allow '.' on the command line as a synonym for empty string
 					if (dom[0] == '.' && dom[1] == 0) dom[0] = 0;	// We allow '.' on the command line as a synonym for empty string
 
-					// Copy all the TXT strings into one C string separated by ASCII-1 delimiters                    
+					// Copy all the TXT strings into one C string separated by ASCII-1 delimiters
 					for (i = optind+4; i < argc; i++)
 						{
 						int len = strlen(argv[i]);
@@ -449,3 +452,17 @@ Fail:
 	fprintf(stderr, "%s -I   (Test registering and then immediately updating TXT record)\n", progname);
 	return 0;
 	}
+
+// Note: The C preprocessor stringify operator ('#') makes a string from its argument, without macro expansion
+// e.g. If "version" is #define'd to be "4", then STRINGIFY_AWE(version) will return the string "version", not "4"
+// To expand "version" to its value before making the string, use STRINGIFY(version) instead
+#define STRINGIFY_ARGUMENT_WITHOUT_EXPANSION(s) #s
+#define STRINGIFY(s) STRINGIFY_ARGUMENT_WITHOUT_EXPANSION(s)
+
+// NOT static -- otherwise the compiler may optimize it out
+// The "@(#) " pattern is a special prefix the "what" command looks for
+const char VersionString_SCCS[] = "@(#) mDNS " STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ")";
+
+// If the process crashes, then this string will be magically included in the automatically-generated crash log
+const char *__crashreporter_info__ = VersionString_SCCS + 5;
+asm(".desc ___crashreporter_info__, 0x10");

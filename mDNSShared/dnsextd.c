@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.80  2007/09/18 19:09:02  cheshire
+<rdar://problem/5489549> mDNSResponderHelper (and other binaries) missing SCCS version strings
+
 Revision 1.79  2007/07/11 02:59:58  cheshire
 <rdar://problem/5303807> Register IPv6-only hostname and don't create port mappings for AutoTunnel services
 Add AutoTunnel parameter to mDNS_SetSecretForDomain
@@ -3232,5 +3235,19 @@ mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 	{ ( void ) m; ( void ) info; ( void ) domain; ( void ) keyname; ( void ) b64keydata; ( void ) AutoTunnel; return 0; }
 mStatus mDNS_StopQuery(mDNS *const m, DNSQuestion *const question) { ( void ) m; ( void ) question; return 0; }
 void mDNS_UpdateLLQs(mDNS * const m) { ( void ) m; }
-const char mDNSResponderVersionString_SCCS[] = "";
 mDNS mDNSStorage;
+
+
+// Note: The C preprocessor stringify operator ('#') makes a string from its argument, without macro expansion
+// e.g. If "version" is #define'd to be "4", then STRINGIFY_AWE(version) will return the string "version", not "4"
+// To expand "version" to its value before making the string, use STRINGIFY(version) instead
+#define STRINGIFY_ARGUMENT_WITHOUT_EXPANSION(s) #s
+#define STRINGIFY(s) STRINGIFY_ARGUMENT_WITHOUT_EXPANSION(s)
+
+// For convenience when using the "strings" command, this is the last thing in the file
+// The "@(#) " pattern is a special prefix the "what" command looks for
+const char mDNSResponderVersionString_SCCS[] = "@(#) dnsextd " STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ")";
+
+// If the process crashes, then this string will be magically included in the automatically-generated crash log
+const char *__crashreporter_info__ = mDNSResponderVersionString_SCCS + 5;
+asm(".desc ___crashreporter_info__, 0x10");

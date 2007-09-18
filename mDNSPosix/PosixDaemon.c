@@ -21,6 +21,9 @@
 	Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.42  2007/09/18 19:09:02  cheshire
+<rdar://problem/5489549> mDNSResponderHelper (and other binaries) missing SCCS version strings
+
 Revision 1.41  2007/09/04 17:02:25  cheshire
 <rdar://problem/5458929> False positives in changed files list in nightly builds
 Added MDNS_VERSIONSTR_NODTS option at the reqest of Rishi Srivatsavai (Sun)
@@ -261,6 +264,10 @@ mDNSexport void RecordUpdatedNiceLabel(mDNS *const m, mDNSs32 delay)
 	(void)delay;
 	// No-op, for now
 	}
+
+// If the process crashes, then this string will be magically included in the automatically-generated crash log
+const char *__crashreporter_info__ = mDNSResponderVersionString_SCCS + 5;
+asm(".desc ___crashreporter_info__, 0x10");
 
 // For convenience when using the "strings" command, this is the last thing in the file
 #if mDNSResponderVersion > 1

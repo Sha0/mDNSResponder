@@ -28,6 +28,9 @@
    Change History (most recent first):
 
 $Log: dnssd_clientlib.c,v $
+Revision 1.16  2007/09/18 19:09:02  cheshire
+<rdar://problem/5489549> mDNSResponderHelper (and other binaries) missing SCCS version strings
+
 Revision 1.15  2007/07/28 00:00:43  cheshire
 Renamed CompileTimeAssertionCheck structure for consistency with others
 
@@ -396,9 +399,6 @@ DNSServiceErrorType DNSSD_API TXTRecordGetItemAtIndex
 #define STRINGIFY_ARGUMENT_WITHOUT_EXPANSION(s) #s
 #define STRINGIFY(s) STRINGIFY_ARGUMENT_WITHOUT_EXPANSION(s)
 
-#ifndef mDNSResponderVersion
-#define mDNSResponderVersion mDNSResponder (Engineering Build)
-#endif
-
 // NOT static -- otherwise the compiler may optimize it out
-const char mDNSResponderVersionString_SCCS[] = "@(#) " STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ")";
+// The "@(#) " pattern is a special prefix the "what" command looks for
+const char VersionString_SCCS[] = "@(#) libdns_sd " STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ")";

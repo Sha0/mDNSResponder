@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.342  2007/09/18 19:09:02  cheshire
+<rdar://problem/5489549> mDNSResponderHelper (and other binaries) missing SCCS version strings
+
 Revision 1.341  2007/09/12 01:22:13  cheshire
 Improve validatelists() checking to detect when 'next' pointer gets smashed to ~0
 
@@ -2585,4 +2588,5 @@ const char *__crashreporter_info__ = mDNSResponderVersionString;
 asm(".desc ___crashreporter_info__, 0x10");
 
 // For convenience when using the "strings" command, this is the last thing in the file
-mDNSexport const char mDNSResponderVersionString_SCCS[] = "@(#) " STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ")";
+// The "@(#) " pattern is a special prefix the "what" command looks for
+mDNSexport const char mDNSResponderVersionString_SCCS[] = "@(#) mDNSResponder " STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ")";
