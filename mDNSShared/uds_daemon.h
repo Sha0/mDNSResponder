@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.h,v $
+Revision 1.24  2007/09/19 20:25:17  cheshire
+Deleted outdated comment
+
 Revision 1.23  2007/07/24 17:23:02  cheshire
 Rename DefRegList as AutoRegistrationDomains
 
@@ -118,8 +121,6 @@ typedef	void (*udsEventCallback)(int fd, short filter, void *context);
 extern mStatus udsSupportAddFDToEventLoop(dnssd_sock_t fd, udsEventCallback callback, void *context);
 extern mStatus udsSupportRemoveFDFromEventLoop(dnssd_sock_t fd); // Note: This also CLOSES the file descriptor as well
 
-// RecordUpdatedNiceLabel() can be a no-op on platforms that don't care about updating the machine's
-// global default service name (was OS X calls the "Computer Name") in response to name conflicts.
 extern void RecordUpdatedNiceLabel(mDNS *const m, mDNSs32 delay);
 
 // Globals and functions defined in uds_daemon.c and also shared with the old "daemon.c" on OS X
