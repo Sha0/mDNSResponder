@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.474  2007/09/19 20:32:09  cheshire
+Export GetAuthInfoForName so it's callable from other files
+
 Revision 1.473  2007/09/18 21:42:29  cheshire
 To reduce programming mistakes, renamed ExtPort to RequestedPort
 
@@ -1068,7 +1071,7 @@ mDNSexport DomainAuthInfo *GetAuthInfoForName_internal(mDNS *m, const domainname
 	return(GetAuthInfoForName_direct(m, name));
 	}
 
-mDNSlocal DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const name)
+mDNSexport DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const name)
 	{
 	DomainAuthInfo *d;
 	mDNS_Lock(m);

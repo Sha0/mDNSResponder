@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.438  2007/09/19 20:32:09  cheshire
+Export GetAuthInfoForName so it's callable from other files
+
 Revision 1.437  2007/09/18 21:42:29  cheshire
 To reduce programming mistakes, renamed ExtPort to RequestedPort
 
@@ -2124,6 +2127,8 @@ extern mDNSs32 mDNS_TimeNow(const mDNS *const m);
 extern mStatus mDNS_StartNATOperation(mDNS *const m, NATTraversalInfo *traversal);
 extern mStatus mDNS_StopNATOperation(mDNS *const m, NATTraversalInfo *traversal);
 extern mStatus mDNS_StopNATOperation_internal(mDNS *m, NATTraversalInfo *traversal);
+
+extern DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const name);
 
 // ***************************************************************************
 #if 0
