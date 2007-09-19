@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.344  2007/09/19 19:27:50  cheshire
+<rdar://problem/5492182> Improved diagnostics when daemon can't connect to error return path socket
+
 Revision 1.343  2007/09/18 21:42:30  cheshire
 To reduce programming mistakes, renamed ExtPort to RequestedPort
 
@@ -3101,7 +3104,7 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 		#else
 			{
 			char ctrl_path[MAX_CTLPATH];
-			get_string(&req->msgptr, req->msgend, ctrl_path, 256);	// path is first element in message buffer
+			get_string(&req->msgptr, req->msgend, ctrl_path, MAX_CTLPATH);	// path is first element in message buffer
 			mDNSPlatformMemZero(&cliaddr, sizeof(cliaddr));
 			cliaddr.sun_family = AF_LOCAL;
 			mDNSPlatformStrCopy(cliaddr.sun_path, ctrl_path);
@@ -3110,8 +3113,16 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 		//LogOperation("request_callback: Connecting to “%s”", cliaddr.sun_path);
 		if (connect(errfd, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) < 0)
 			{
-			//LogOperation("request_callback: Couldn't connect to “%s”", cliaddr.sun_path);
-			my_perror("ERROR: connect");
+			struct stat sb;
+
+			LogMsg("request_callback: Couldn't connect to error return path socket “%s” errno %d %s",
+				cliaddr.sun_path, dnssd_errno(), dnssd_strerror(dnssd_errno()));
+
+			if (stat(cliaddr.sun_path, &sb) < 0)
+				LogMsg("request_callback: stat failed “%s” errno %d %s", cliaddr.sun_path, dnssd_errno(), dnssd_strerror(dnssd_errno()));
+			else
+				LogMsg("request_callback: file “%s” mode %o (octal) uid %d gid %d", cliaddr.sun_path, sb.st_mode, sb.st_uid, sb.st_gid);
+
 			AbortUnlinkAndFree(req);
 			return;
 			}
