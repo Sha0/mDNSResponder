@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.485  2007/09/19 21:44:29  cheshire
+Improved "mDNSKeychainGetSecrets failed" error message
+
 Revision 1.484  2007/09/18 21:44:55  cheshire
 <rdar://problem/5469006> Crash in GetAuthInfoForName_internal
 Code was using n->ExtPort (now n->RequestedPort) when it should have been using n->ExternalPort
@@ -3207,7 +3210,7 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 	CFArrayRef secrets = NULL;
 	int err = mDNSKeychainGetSecrets(&secrets);
 	if (err || !secrets)
-		LogMsg("SetDomainSecrets: mDNSKeychainGetSecrets failed %d %p", err, secrets);
+		LogMsg("SetDomainSecrets: mDNSKeychainGetSecrets failed error %d CFArrayRef %p", err, secrets);
 	else
 		{
 		CFIndex ArrayCount = CFArrayGetCount(secrets);
