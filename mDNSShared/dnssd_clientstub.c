@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.89  2007/09/19 23:53:12  cheshire
+Fixed spelling mistake in comment
+
 Revision 1.88  2007/09/07 23:18:27  cheshire
 <rdar://problem/5467542> Change "client_context" to be an incrementing 64-bit counter
 
@@ -575,7 +578,7 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 		{
 		//syslog(LOG_WARNING, "dnssd_clientstub deliver_request: accept");
 		// At this point we may block in accept for a few milliseconds waiting for the daemon to connect back to us,
-		// but that's okay -- the daemon is a trusted service and we know if won't take more than a few milliseconds to repond.
+		// but that's okay -- the daemon is a trusted service and we know if won't take more than a few milliseconds to respond.
 		len = sizeof(daddr);
 		errsd = accept(listenfd, (struct sockaddr *)&daddr, &len);
 		//syslog(LOG_WARNING, "dnssd_clientstub deliver_request: accept returned %d", errsd);
@@ -583,7 +586,7 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 		}
 
 	// At this point we may block in read_all for a few milliseconds waiting for the daemon to send us the error code,
-	// but that's okay -- the daemon is a trusted service and we know if won't take more than a few milliseconds to repond.
+	// but that's okay -- the daemon is a trusted service and we know if won't take more than a few milliseconds to respond.
 	if (read_all(errsd, (char*)&err, (int)sizeof(err)) < 0)
 		err = kDNSServiceErr_ServiceNotRunning;	// On failure read_all will have written a message to syslog for us
 	else
