@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.704  2007/09/19 22:47:25  cheshire
+<rdar://problem/5490182> Memory corruption freeing a "no such service" service record
+
 Revision 1.703  2007/09/14 01:46:59  cheshire
 Fix Posix build (#ifdef _LEGACY_NAT_TRAVERSAL_ section included a closing curly brace it should not have)
 
@@ -6144,15 +6147,16 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	sr->NumSubTypes     = NumSubTypes;
 	sr->SubTypes        = SubTypes;
 	
-	// If port number is zero, that means the client is really trying to do a RegisterNoSuchService
-	if (mDNSIPPortIsZero(port))
-		return(mDNS_RegisterNoSuchService(m, &sr->RR_SRV, name, type, domain, mDNSNULL, mDNSInterface_Any, NSSCallback, sr));
-
 	// Initialize the AuthRecord objects to sane values
+	// Need to initialize everything correctly *before* making the decision whether to do a RegisterNoSuchService and bail out
 	mDNS_SetupResourceRecord(&sr->RR_ADV, mDNSNULL, InterfaceID, kDNSType_PTR, kStandardTTL, kDNSRecordTypeAdvisory, ServiceCallback, sr);
 	mDNS_SetupResourceRecord(&sr->RR_PTR, mDNSNULL, InterfaceID, kDNSType_PTR, kStandardTTL, kDNSRecordTypeShared,   ServiceCallback, sr);
 	mDNS_SetupResourceRecord(&sr->RR_SRV, mDNSNULL, InterfaceID, kDNSType_SRV, kHostNameTTL, kDNSRecordTypeUnique,   ServiceCallback, sr);
 	mDNS_SetupResourceRecord(&sr->RR_TXT, mDNSNULL, InterfaceID, kDNSType_TXT, kStandardTTL, kDNSRecordTypeUnique,   ServiceCallback, sr);
+
+	// If port number is zero, that means the client is really trying to do a RegisterNoSuchService
+	if (mDNSIPPortIsZero(port))
+		return(mDNS_RegisterNoSuchService(m, &sr->RR_SRV, name, type, domain, mDNSNULL, mDNSInterface_Any, NSSCallback, sr));
 
 	// If the client is registering an oversized TXT record,
 	// it is the client's responsibility to alloate a ServiceRecordSet structure that is large enough for it

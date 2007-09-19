@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.346  2007/09/19 22:47:25  cheshire
+<rdar://problem/5490182> Memory corruption freeing a "no such service" service record
+
 Revision 1.345  2007/09/19 20:32:29  cheshire
 <rdar://problem/5482322> BTMM: Don't advertise SMB with BTMM because it doesn't support IPv6
 
@@ -1648,11 +1651,11 @@ mDNSlocal void regservice_termination_callback(request_state *request)
 		{
 		p = i;
 		i = i->next;
-		p->request = NULL;  // clear back pointer
 		// only safe to free memory if registration is not valid, i.e. deregister fails (which invalidates p)
 		LogOperation("%3d: DNSServiceRegister(%##s, %u) STOP",
 			request->sd, p->srs.RR_SRV.resrec.name->c, mDNSVal16(p->srs.RR_SRV.resrec.rdata->u.srv.port));
 		if (mDNS_DeregisterService(&mDNSStorage, &p->srs)) free_service_instance(p);
+		p->request = NULL;  // clear backpointer, because the next thing we're about to do is dispose our request_state
 		}
 	if (request->u.servicereg.txtdata)
 		{ freeL("service_info txtdata", request->u.servicereg.txtdata); request->u.servicereg.txtdata = NULL; }
