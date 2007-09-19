@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.475  2007/09/19 23:51:26  cheshire
+<rdar://problem/5480517> BTMM: Need to log a message when NAT port mapping fails
+
 Revision 1.474  2007/09/19 20:32:09  cheshire
 Export GetAuthInfoForName so it's callable from other files
 
@@ -3462,7 +3465,7 @@ mDNSexport void uDNS_ReceiveNATPMPPacket(mDNS *m, const mDNSInterfaceID Interfac
 	//    -- similarly, if we're slow handling packets and/or we have coarse clock granularity, we could over-estimate the true interval
 	//       (e.g. t=1.99 seconds rounded to 1, and t=8.01 rounded to 8, gives an apparent difference of 7 seconds)
 	if (AddrReply->upseconds < m->LastNATupseconds || nat_elapsed + 2 < our_elapsed - our_elapsed/8)
-		{ LogMsg("NAT gateway %#.4a rebooted", &m->Router); RecreateNATMappings(m); }
+		{ LogMsg("NAT gateway %#a rebooted", &m->Router); RecreateNATMappings(m); }
 
 	m->LastNATupseconds      = AddrReply->upseconds;
 	m->LastNATReplyLocalTime = m->timenow;
@@ -4383,9 +4386,13 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 					cur->Result != cur->NewResult)
 					{
 					//LogMsg("NAT callback %d %d %d", cur->Protocol, cur->ExpiryTime, cur->retryInterval);
+					if (cur->Protocol && mDNSIPPortIsZero(ExternalPort))
+						LogMsg("Failed to obtain NAT port mapping from router %#a external address %.4a internal port %d",
+							&m->Router, &m->ExternalAddress, mDNSVal16(cur->IntPort));
 					cur->ExternalAddress = m->ExternalAddress;
 					cur->ExternalPort    = ExternalPort;
-					cur->Lifetime        = cur->ExpiryTime ? (cur->ExpiryTime - m->timenow + mDNSPlatformOneSecond/2) / mDNSPlatformOneSecond : 0;
+					cur->Lifetime        = cur->ExpiryTime && !mDNSIPPortIsZero(ExternalPort) ?
+						(cur->ExpiryTime - m->timenow + mDNSPlatformOneSecond/2) / mDNSPlatformOneSecond : 0;
 					cur->Result          = cur->NewResult;
 					mDNS_DropLockBeforeCallback();		// Allow client to legally make mDNS API calls from the callback
 					if (cur->clientCallback)
