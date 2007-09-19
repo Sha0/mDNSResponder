@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.486  2007/09/19 23:17:38  cheshire
+<rdar://problem/5482131> BTMM: Crash when switching .Mac accounts
+
 Revision 1.485  2007/09/19 21:44:29  cheshire
 Improved "mDNSKeychainGetSecrets failed" error message
 
@@ -2104,7 +2107,7 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 		DomainAuthInfo *info;
 		for (info = m->AuthInfoList; info; info = info->next)
 			{
-			if (info->AutoTunnel && !info->AutoTunnelNAT.clientContext)
+			if (info->AutoTunnel && !info->deltime && !info->AutoTunnelNAT.clientContext)
 				{
 				// 1. Set up our address record for the internal tunnel address
 				// (User-visible user-friendly host name, used as target in AutoTunnel SRV records)
