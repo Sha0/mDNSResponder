@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.345  2007/09/19 20:32:29  cheshire
+<rdar://problem/5482322> BTMM: Don't advertise SMB with BTMM because it doesn't support IPv6
+
 Revision 1.344  2007/09/19 19:27:50  cheshire
 <rdar://problem/5492182> Improved diagnostics when daemon can't connect to error return path socket
 
@@ -563,8 +566,6 @@ mDNSlocal char *win32_strerror(int inErrorCode)
 #include "DNSCommon.h"
 #include "uDNS.h"
 #include "uds_daemon.h"
-#include "dns_sd.h"
-#include "dnssd_ipc.h"
 
 // Apple-specific functionality, not required for other platforms
 #if APPLE_OSX_mDNSResponder
@@ -1590,6 +1591,14 @@ mDNSlocal mStatus register_service_instance(request_state *request, const domain
 		{
 		if (SameDomainName(&ptr->domain, domain))
 			{ LogMsg("register_service_instance: domain %##s already registered", domain->c); return mStatus_AlreadyRegistered; }
+		}
+
+	// Special-case hack: We don't advertise SMB service in AutoTunnel domains, because AutoTunnel services have to support IPv6, and our SMB server does not
+	// <rdar://problem/5482322> BTMM: Don't advertise SMB with BTMM because it doesn't support IPv6
+	if (SameDomainName(&request->u.servicereg.type, (const domainname *) "\x4" "_smb" "\x4" "_tcp"))
+		{
+		DomainAuthInfo *AuthInfo = GetAuthInfoForName(&mDNSStorage, domain);
+		if (AuthInfo && AuthInfo->AutoTunnel) return(kDNSServiceErr_Unsupported);
 		}
 
 	instance_size = sizeof(*instance);
