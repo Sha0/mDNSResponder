@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.708  2007/09/20 23:13:37  cheshire
+<rdar://problem/4038277> BTMM: Not getting LLQ remove events when logging out of VPN or disconnecting from network
+Additional fix: If we have no DNS servers at all, then immediately purge all unicast cache records (including for LLQs)
+
 Revision 1.707  2007/09/20 02:29:37  cheshire
 <rdar://problem/4038277> BTMM: Not getting LLQ remove events when logging out of VPN or disconnecting from network
 
@@ -6669,10 +6673,14 @@ mDNSlocal void DynDNSHostNameCallback(mDNS *const m, AuthRecord *const rr, mStat
 
 mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 	{
+	mDNSu32 slot;
+	CacheGroup *cg;
+	CacheRecord *cr;
+
 	mDNSAddr     v4, v6, r;
-    domainname   fqdn;
-    DNSServer   *ptr, **p = &m->DNSServers;
-    DNSQuestion *q;
+	domainname   fqdn;
+	DNSServer   *ptr, **p = &m->DNSServers;
+	DNSQuestion *q;
 
 	if (m->RegisterSearchDomains) uDNS_RegisterSearchDomains(m);
 
@@ -6709,9 +6717,6 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 			// Scan our cache, looking for uDNS records that we would have queried this server for.
 			// We reconfirm any records that match, because in this world of split DNS, firewalls, etc.
 			// different DNS servers can give different answers to the same question.
-			mDNSu32 slot;
-			CacheGroup *cg;
-			CacheRecord *cr;
 			ptr = *p;
 			ptr->del = mDNSfalse;	// Clear del so GetServerForName will (temporarily) find this server again before it's finally deleted
 			FORALL_CACHERECORDS(slot, cg, cr)
@@ -6723,6 +6728,11 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 		else
 			p = &(*p)->next;
 		}
+
+	// If we have no DNS servers at all, then immediately purge all unicast cache records (including for LLQs)
+	// This is important for giving prompt remove events when the user disconnects the Ethernet cable or turns off wireless
+	// Otherwise, stale data lingers for 5-10 seconds, which is not the user-experience people expect from Bonjour
+	if (!m->DNSServers) FORALL_CACHERECORDS(slot, cg, cr) if (!cr->resrec.InterfaceID) mDNS_PurgeCacheResourceRecord(m, cr);
 
 	// Did our FQDN change?
 	if (!SameDomainName(&fqdn, &m->FQDN))
