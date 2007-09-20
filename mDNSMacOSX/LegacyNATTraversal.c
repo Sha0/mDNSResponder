@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.40  2007/09/20 21:41:49  cheshire
+<rdar://problem/5495568> Legacy NAT Traversal - unmap request failed with error -65549
+
 Revision 1.39  2007/09/20 20:41:40  cheshire
 Reordered functions in file, in preparation for following fix
 
@@ -363,6 +366,13 @@ mDNSlocal void handleLNTPortMappingResponse(tcpLNTInfo *tcpInfo)
 	natTraversalHandlePortMapReply(m, natInfo, m->UPnPInterfaceID, mStatus_NoError, extport, NATMAP_DEFAULT_LEASE);
 	}
 
+mDNSlocal void DisposeInfoFromUnmapList(mDNS *m, tcpLNTInfo *tcpInfo)
+	{
+	tcpLNTInfo **ptr = &m->tcpInfoUnmapList;
+	while (*ptr && *ptr != tcpInfo) ptr = &(*ptr)->next;
+	if (*ptr) { *ptr = (*ptr)->next; mDNSPlatformMemFree(tcpInfo); }	// If we found it, cut it from our list and free the memory
+	}
+
 mDNSlocal void tcpConnectionCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEstablished, mStatus err)
 	{
 	mStatus     status  = mStatus_NoError;
@@ -420,12 +430,7 @@ exit:
 
 	if (tcpInfo) mDNS_Unlock(tcpInfo->m);
 
-	if (status == mStatus_ConfigChanged)
-		{
-		tcpLNTInfo **ptr = &tcpInfo->m->tcpInfoUnmapList;
-		while (*ptr && *ptr != tcpInfo) ptr=&(*ptr)->next;
-		if (*ptr) { *ptr = (*ptr)->next; mDNSPlatformMemFree(tcpInfo); }	// If we found it, cut it from our list and free the memory
-		}
+	if (status == mStatus_ConfigChanged) DisposeInfoFromUnmapList(tcpInfo->m, tcpInfo);
 	}
 
 mDNSlocal mStatus MakeTCPConnection(mDNS *const m, tcpLNTInfo *info, const mDNSAddr *const Addr, const mDNSIPPort Port, LNTOp_t op)
@@ -450,23 +455,37 @@ mDNSlocal mStatus MakeTCPConnection(mDNS *const m, tcpLNTInfo *info, const mDNSA
 	LogOperation("MakeTCPConnection: connecting to %#a:%d", &info->Address, mDNSVal16(info->Port));
 	err = mDNSPlatformTCPConnect(info->sock, Addr, Port, 0, tcpConnectionCallback, info);
 
-	if      (err == mStatus_ConnEstablished) { mDNS_Unlock(m); tcpConnectionCallback(info->sock, info, mDNStrue, mStatus_NoError);  mDNS_Lock(m); }	// drop lock around this call
-	else if (err != mStatus_ConnPending    ) { LogMsg("LNT MakeTCPConnection: connection failed"); mDNSPlatformMemFree(info->Reply); info->Reply = mDNSNULL; }
-	if (err == mStatus_ConnEstablished || err == mStatus_ConnPending) err = mStatus_NoError;
+	if      (err == mStatus_ConnPending) err = mStatus_NoError;
+	else if (err == mStatus_ConnEstablished)
+		{
+		mDNS_DropLockBeforeCallback();
+		tcpConnectionCallback(info->sock, info, mDNStrue, mStatus_NoError);
+		mDNS_ReclaimLockAfterCallback();
+		err = mStatus_NoError;
+		}
+	else
+		{
+		LogMsg("LNT MakeTCPConnection: connection failed");
+		mDNSPlatformTCPCloseConnection(info->sock);	// Dispose the socket we created with mDNSPlatformTCPSocket() above
+		info->sock = mDNSNULL;
+		mDNSPlatformMemFree(info->Reply);
+		info->Reply = mDNSNULL;
+		}
 	return(err);
 	}
 
-// Buffer size must be at least LNT_MAXBUFSIZE
-mDNSlocal void AddSOAPArguments(char *buf, int numArgs, Property *a, int *len)
+mDNSlocal unsigned int AddSOAPArguments(char *buf, unsigned int maxlen, int numArgs, Property *a)
 	{
 	static const char f1[] = "<%s>%s</%s>";
 	static const char f2[] = "<%s xmlns:dt=\"urn:schemas-microsoft-com:datatypes\" dt:dt=\"%s\">%s</%s>";
-	int i;
+	int i, len = 0;
+	*buf = 0;
 	for (i = 0; i < numArgs; i++)
 		{
-		if (a[i].type) *len += mDNS_snprintf(buf + *len, LNT_MAXBUFSIZE - *len, f2, a[i].name, a[i].type, a[i].value, a[i].name);
-		else           *len += mDNS_snprintf(buf + *len, LNT_MAXBUFSIZE - *len, f1, a[i].name,            a[i].value, a[i].name);
+		if (a[i].type) len += mDNS_snprintf(buf + len, maxlen - len, f2, a[i].name, a[i].type, a[i].value, a[i].name);
+		else           len += mDNS_snprintf(buf + len, maxlen - len, f1, a[i].name,            a[i].value, a[i].name);
 		}
+	return(len);
 	}
 
 mDNSlocal mStatus SendSOAPMsgControlAction(mDNS *m, tcpLNTInfo *info, char *Action, int numArgs, Property *Arguments, LNTOp_t op)
@@ -485,55 +504,42 @@ mDNSlocal mStatus SendSOAPMsgControlAction(mDNS *m, tcpLNTInfo *info, char *Acti
 		"Content-Length: %d\r\n"
 		"Connection: close\r\n"
 		"Pragma: no-cache\r\n"
-		"\r\n";
-	
-	static const char body[] =
+		"\r\n"
+		"%s\r\n";
+
+	static const char body1[] =
 		"<?xml version=\"1.0\"?>\r\n"
 		"<SOAP-ENV:Envelope"
 		" xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\""
 		" SOAP-ENV:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\">"
 		"<SOAP-ENV:Body>"
-		"<m:%s"
-		" xmlns:m=\"urn:schemas-upnp-org:service:WANIPConnection:1\">"
-		"%s"
+		"<m:%s xmlns:m=\"urn:schemas-upnp-org:service:WANIPConnection:1\">";
+
+	static const char body2[] =
 		"</m:%s>"
 		"</SOAP-ENV:Body>"
 		"</SOAP-ENV:Envelope>\r\n";
 
-	mStatus err             = mStatus_NoError;
-	char    *sendBufferBody = mDNSNULL;
-	char    *sendBufferArgs = mDNSNULL;
-	int      headerLen      = 0;
-	int      bodyLen        = 0;
-	int      argsLen        = 0;
+	mStatus err;
+	char    body[2048];		// Typically requires 1110-1122 bytes, so 2048 allows a generous safety margin
+	int     bodyLen;
 
-	// if no SOAP URL or address exists get out here
-	if (m->UPnPSOAPURL == mDNSNULL || m->UPnPSOAPAddressString == mDNSNULL) { LogOperation("GetDeviceDescription: no SOAP URL or address string!"); return (mStatus_Invalid); }
+	if (m->UPnPSOAPURL == mDNSNULL || m->UPnPSOAPAddressString == mDNSNULL)	// if no SOAP URL or address exists get out here
+		{ LogOperation("SendSOAPMsgControlAction: no SOAP URL or address string"); return mStatus_Invalid; }
 
-	// handle arguments if any
-	if ((sendBufferArgs = (char *) mDNSPlatformMemAllocate(LNT_MAXBUFSIZE)) == mDNSNULL) { LogOperation("can't mDNSPlatformMemAllocate for args buffer"); err = mStatus_NoMemoryErr; goto end; }
-	if (Arguments != mDNSNULL) AddSOAPArguments(sendBufferArgs, numArgs, Arguments, &argsLen);
-	sendBufferArgs[argsLen] = '\0';
+	// Create body
+	bodyLen  = mDNS_snprintf   (body,           sizeof(body),           body1,   Action);
+	bodyLen += AddSOAPArguments(body + bodyLen, sizeof(body) - bodyLen, numArgs, Arguments);
+	bodyLen += mDNS_snprintf   (body + bodyLen, sizeof(body) - bodyLen, body2,   Action);
 
-	// create message body
-	bodyLen             = LNT_MAXBUFSIZE - argsLen;
-	if ((sendBufferBody = (char *) mDNSPlatformMemAllocate(bodyLen)) == mDNSNULL) { LogOperation("can't mDNSPlatformMemAllocate for body buffer"); err = mStatus_NoMemoryErr; goto end; }
-	bodyLen             = mDNS_snprintf(sendBufferBody, bodyLen, body, Action, sendBufferArgs, Action);
-
-	// create message header (bodyLen is embedded in the message to the router)
-	if      (info->Request != mDNSNULL) mDNSPlatformMemZero(info->Request, LNT_MAXBUFSIZE); // reuse previously allocated buffer
-	else if     ((info->Request = (mDNSs8 *)mDNSPlatformMemAllocate(LNT_MAXBUFSIZE)) == mDNSNULL) { LogOperation("can't mDNSPlatformMemAllocate for send buffer"); err = mStatus_NoMemoryErr; goto end; }
-	headerLen = mDNS_snprintf((char *)info->Request, LNT_MAXBUFSIZE - bodyLen, header, m->UPnPSOAPURL, Action, m->UPnPSOAPAddressString, bodyLen);
-	strlcpy((char *)(info->Request) + headerLen, sendBufferBody, headerLen+bodyLen);
-	info->requestLen = headerLen+bodyLen;
+	// Create info->Request; the header needs to contain the bodyLen in the "Content-Length" field
+	if (!info->Request) info->Request = mDNSPlatformMemAllocate(LNT_MAXBUFSIZE);
+	if (!info->Request) { LogMsg("SendSOAPMsgControlAction: Can't allocate info->Request"); return mStatus_NoMemoryErr; }
+	info->requestLen = mDNS_snprintf((char *)info->Request, LNT_MAXBUFSIZE, header, m->UPnPSOAPURL, Action, m->UPnPSOAPAddressString, bodyLen, body);
 
 	err = MakeTCPConnection(m, info, &m->Router, m->UPnPSOAPPort, op);
-
-end:
-	if (err && info->Request != mDNSNULL) { mDNSPlatformMemFree(info->Request); info->Request = mDNSNULL; }
-	if (sendBufferBody       != mDNSNULL) mDNSPlatformMemFree(sendBufferBody);
-	if (sendBufferArgs       != mDNSNULL) mDNSPlatformMemFree(sendBufferArgs);
-	return (err);
+	if (err) { mDNSPlatformMemFree(info->Request); info->Request = mDNSNULL; }
+	return err;
 	}
 
 // Build port mapping request with new port (up to max) and send it
@@ -632,6 +638,10 @@ mDNSexport mStatus LNT_UnmapPort(mDNS *m, NATTraversalInfo *n)
 	Property    propArgs[3];
 	tcpLNTInfo  *info;
 	tcpLNTInfo  **infoPtr = &m->tcpInfoUnmapList;
+	mStatus     err;
+
+	// If no NAT gateway to talk to, no need to do all this work for nothing
+	if (!m->UPnPSOAPURL || !m->UPnPSOAPAddressString) return mStatus_NoError;
 
 	mDNS_snprintf(externalPort, sizeof(externalPort), "%u", mDNSVal16(mDNSIPPortIsZero(n->RequestedPort) ? n->IntPort : n->RequestedPort));
 
@@ -662,7 +672,9 @@ mDNSexport mStatus LNT_UnmapPort(mDNS *m, NATTraversalInfo *n)
 	while (*infoPtr) infoPtr = &(*infoPtr)->next;	// find the end of the list
 	*infoPtr = info;    // append
 
-	return SendSOAPMsgControlAction(m, info, "DeletePortMapping", 3, propArgs, LNTPortMapDeleteOp);
+	err = SendSOAPMsgControlAction(m, info, "DeletePortMapping", 3, propArgs, LNTPortMapDeleteOp);
+	if (err) DisposeInfoFromUnmapList(m, info);
+	return err;
 	}
 
 mDNSexport mStatus LNT_GetExternalAddress(mDNS *m)
