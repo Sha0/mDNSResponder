@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.476  2007/09/20 01:19:49  cheshire
+Improve debugging messages: report startLLQHandshake errors; show state in uDNS_StopLongLivedQuery message
+
 Revision 1.475  2007/09/19 23:51:26  cheshire
 <rdar://problem/5480517> BTMM: Need to log a message when NAT port mapping fails
 
@@ -1914,7 +1917,13 @@ mDNSlocal void startLLQHandshake(mDNS *m, DNSQuestion *q)
 				{
 				// start
 				if (!q->NATInfoUDP.clientContext) { q->state = LLQ_NatMapWaitUDP; StartLLQNatMap(m, q); goto exit; }
-				else { err = mStatus_UnknownErr; goto exit; }
+				else
+					{
+					LogMsg("startLLQHandshake state == LLQ_InitialRequest but already have NATInfoUDP.clientContext %##s (%s)",
+						q->qname.c, DNSTypeName(q->qtype));
+					err = mStatus_UnknownErr;
+					goto exit;
+					}
 				}
 
 		LogOperation("startLLQHandshake TCP %p %##s (%s)", q->tcp, q->qname.c, DNSTypeName(q->qtype));
@@ -3843,33 +3852,20 @@ exit:
 // uDNS_StopLongLivedQuery happens IN ADDITION to stopQuery
 mDNSexport void uDNS_StopLongLivedQuery(mDNS *const m, DNSQuestion *const question)
 	{
-	(void)m;	// unused
-
-	LogOperation("uDNS_StopLongLivedQuery %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
-
-	if (!question->LongLived) { LogMsg("ERROR: uDNS_StopLongLivedQuery - LongLived flag not set"); return; }
+	LogOperation("uDNS_StopLongLivedQuery %##s (%s) state %d", question->qname.c, DNSTypeName(question->qtype), question->state);
 
 	switch (question->state)
 		{
-		case LLQ_UnInit:
-			LogMsg("ERROR: uDNS_StopLongLivedQuery - state LLQ_UnInit");
-			//!!!KRS should we unlink info<->question here?
-			return;
-		case LLQ_GetZoneInfo:
-		case LLQ_SuspendDeferred:
-			question->state = LLQ_Cancelled;
-			return;
-		case LLQ_Established:
-		case LLQ_Refresh:
-			// refresh w/ lease 0
-			sendLLQRefresh(m, question, 0);
-			goto end;
-		default:
-			debugf("uDNS_StopLongLivedQuery - silently discarding LLQ in state %d", question->state);
-			goto end;
-		}
+		case LLQ_UnInit: LogMsg("ERROR: uDNS_StopLongLivedQuery - state LLQ_UnInit"); return; //!!!KRS should we unlink info<->question here?
 
-	end:
+		case LLQ_GetZoneInfo:
+		case LLQ_SuspendDeferred: question->state = LLQ_Cancelled; return;
+
+		case LLQ_Established:
+		case LLQ_Refresh: sendLLQRefresh(m, question, 0); break;
+
+		default: debugf("uDNS_StopLongLivedQuery - silently discarding LLQ in state %d", question->state); break;
+		}
 
 	RemoveLLQNatMappings(m, question);
 	CheckForUnreferencedLLQMapping(m);
@@ -4276,6 +4272,7 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 			// we just deliver it to the client with a no-cache ADD, and then discard it.
 			if (!q->qDNSServer) LogMsg("uDNS_CheckCurrentQuestion no DNS server for %##s", q->qname.c);
 			else LogMsg("uDNS_CheckCurrentQuestion DNS server %#a:%d for %##s is disabled", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qname.c);
+
 			MakeNegativeCacheRecord(m, &q->qname, q->qnamehash, q->qtype, q->qclass);
 			// Inactivate this question until the next change of DNS servers (do this before AnswerCurrentQuestionWithResourceRecord)
 			q->ThisQInterval = 0;
