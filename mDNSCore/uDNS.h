@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.79  2007/09/20 01:13:19  cheshire
+Export CacheGroupForName so it's callable from other files
+
 Revision 1.78  2007/09/14 21:26:09  cheshire
 <rdar://problem/5482627> BTMM: Need to manually avoid port conflicts when using UPnP gateways
 
@@ -214,6 +217,7 @@ extern mStatus uDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr, Extr
 extern mStatus uDNS_UpdateRecord(mDNS *m, AuthRecord *rr);
 
 extern void SetNextQueryTime(mDNS *const m, const DNSQuestion *const q);
+extern CacheGroup *CacheGroupForName(const mDNS *const m, const mDNSu32 slot, const mDNSu32 namehash, const domainname *const name);
 extern mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr);
 // mDNS_Dereg_normal is used for most calls to mDNS_Deregister_internal
 // mDNS_Dereg_conflict is used to indicate that this record is being forcibly deregistered because of a conflict

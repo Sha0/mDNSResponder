@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.706  2007/09/20 01:13:19  cheshire
+Export CacheGroupForName so it's callable from other files
+
 Revision 1.705  2007/09/20 01:12:06  cheshire
 Moved HashSlot(X) from mDNS.c to DNSCommon.h so it's usable in other files
 
@@ -684,7 +687,7 @@ mDNSexport void SetNextQueryTime(mDNS *const m, const DNSQuestion *const q)
 		}
 	}
 
-mDNSlocal CacheGroup *CacheGroupForName(const mDNS *const m, const mDNSu32 slot, const mDNSu32 namehash, const domainname *const name)
+mDNSexport CacheGroup *CacheGroupForName(const mDNS *const m, const mDNSu32 slot, const mDNSu32 namehash, const domainname *const name)
 	{
 	CacheGroup *cg;
 	for (cg = m->rrcache_hash[slot]; cg; cg=cg->next)
