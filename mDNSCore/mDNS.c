@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.707  2007/09/20 02:29:37  cheshire
+<rdar://problem/4038277> BTMM: Not getting LLQ remove events when logging out of VPN or disconnecting from network
+
 Revision 1.706  2007/09/20 01:13:19  cheshire
 Export CacheGroupForName so it's callable from other files
 
@@ -4874,6 +4877,7 @@ mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question)
 			LogOperation("uDNS_InitLongLivedQuery: %##s %s %s %d",
 				question->qname.c, DNSTypeName(question->qtype), question->AuthInfo ? "(Private)" : "", question->ThisQInterval);
 			if (question->nta) CancelGetZoneData(m, question->nta);
+			question->state = LLQ_GetZoneInfo;		// Necessary to stop "bad state" error in startLLQHandshakeCallback
 			question->nta = StartGetZoneData(m, &question->qname, ZoneServiceLLQ, startLLQHandshakeCallback, question);
 			if (!question->nta) LogMsg("ERROR: startLLQ - StartGetZoneData failed");
 			}
@@ -6665,9 +6669,9 @@ mDNSlocal void DynDNSHostNameCallback(mDNS *const m, AuthRecord *const rr, mStat
 
 mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 	{
-	mDNSAddr        v4, v6, r;
-    domainname      fqdn;
-    DNSServer       *ptr, **p = &m->DNSServers;
+	mDNSAddr     v4, v6, r;
+    domainname   fqdn;
+    DNSServer   *ptr, **p = &m->DNSServers;
     DNSQuestion *q;
 
 	if (m->RegisterSearchDomains) uDNS_RegisterSearchDomains(m);
@@ -6702,7 +6706,17 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 		{
 		if ((*p)->del)
 			{
+			// Scan our cache, looking for uDNS records that we would have queried this server for.
+			// We reconfirm any records that match, because in this world of split DNS, firewalls, etc.
+			// different DNS servers can give different answers to the same question.
+			mDNSu32 slot;
+			CacheGroup *cg;
+			CacheRecord *cr;
 			ptr = *p;
+			ptr->del = mDNSfalse;	// Clear del so GetServerForName will (temporarily) find this server again before it's finally deleted
+			FORALL_CACHERECORDS(slot, cg, cr)
+				if (!cr->resrec.InterfaceID && GetServerForName(m, cr->resrec.name) == ptr)
+					mDNS_Reconfirm_internal(m, cr, kDefaultReconfirmTimeForNoAnswer);
 			*p = (*p)->next;
 			mDNSPlatformMemFree(ptr);
 			}

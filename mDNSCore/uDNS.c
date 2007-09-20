@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.477  2007/09/20 02:29:37  cheshire
+<rdar://problem/4038277> BTMM: Not getting LLQ remove events when logging out of VPN or disconnecting from network
+
 Revision 1.476  2007/09/20 01:19:49  cheshire
 Improve debugging messages: report startLLQHandshake errors; show state in uDNS_StopLongLivedQuery message
 
@@ -4270,6 +4273,14 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 			// want to return timely feedback to the user when no network is available. Note that although we
 			// use MakeNegativeCacheRecord() here, we don't actually store it in the cache --
 			// we just deliver it to the client with a no-cache ADD, and then discard it.
+
+			CacheRecord *rr;
+			const mDNSu32 slot = HashSlot(&q->qname);
+			CacheGroup *const cg = CacheGroupForName(m, slot, q->qnamehash, &q->qname);
+			if (cg)
+				for (rr = cg->members; rr; rr=rr->next)
+					if (SameNameRecordAnswersQuestion(&rr->resrec, q)) mDNS_PurgeCacheResourceRecord(m, rr);
+
 			if (!q->qDNSServer) LogMsg("uDNS_CheckCurrentQuestion no DNS server for %##s", q->qname.c);
 			else LogMsg("uDNS_CheckCurrentQuestion DNS server %#a:%d for %##s is disabled", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qname.c);
 
