@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: helper.h,v $
+Revision 1.6  2007/09/20 22:33:17  cheshire
+Tidied up inconsistent and error-prone naming -- used to be mDNSResponderHelper in
+some places and mDNSResponder.helper in others; now mDNSResponderHelper everywhere
+
 Revision 1.5  2007/09/07 22:44:03  mcguire
 <rdar://problem/5448420> Move CFUserNotification code to mDNSResponderHelper
 
@@ -33,7 +37,7 @@ Revision 1.1  2007/08/08 22:34:58  mcguire
 #ifndef H_HELPER_H
 #define H_HELPER_H
 
-#define kmDNSHelperServiceName "com.apple.mDNSResponder.helper"
+#define kmDNSHelperServiceName "com.apple.mDNSResponderHelper"
 
 enum mDNSDynamicStoreSetConfigKey
 	{

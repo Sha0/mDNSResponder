@@ -4,7 +4,7 @@ helper (unimagintively called mDNSResponderHelper) runs as root when
 needed and handles requests from mDNSResponder.
 
 
-* A new LaunchD job com.apple.mDNSResponder.helper starts
+* A new LaunchD job com.apple.mDNSResponderHelper starts
   mDNSResponderHelper on demand.  The helper exits after approximately
   10 seconds of idle time.
 

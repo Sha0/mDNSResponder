@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.apple.mDNSResponder.helper</string>
+  <string>com.apple.mDNSResponderHelper</string>
   <key>OnDemand</key>
   <true/>
   <key>ProgramArguments</key>
@@ -12,7 +12,7 @@
   </array>
   <key>MachServices</key>
   <dict>
-    <key>com.apple.mDNSResponder.helper</key>
+    <key>com.apple.mDNSResponderHelper</key>
     <true/>
   </dict>
   <key>ServiceIPC</key>

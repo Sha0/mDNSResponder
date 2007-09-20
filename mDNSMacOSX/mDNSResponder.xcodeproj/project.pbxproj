@@ -1410,7 +1410,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 1;
 			shellPath = /bin/tcsh;
-			shellScript = "# Install plist to tell launchd how to start mDNSResponderHelper\nmkdir -p ${DSTROOT}${SYSTEM_LIBRARY_DIR}/LaunchDaemons\ncp ${SRCROOT}/LaunchDaemonInfo.helper.plist ${DSTROOT}${SYSTEM_LIBRARY_DIR}/LaunchDaemons/com.apple.mDNSResponder.helper.plist\n";
+			shellScript = "# Install plist to tell launchd how to start mDNSResponderHelper\nmkdir -p ${DSTROOT}${SYSTEM_LIBRARY_DIR}/LaunchDaemons\ncp ${SRCROOT}/LaunchDaemonInfo.helper.plist ${DSTROOT}${SYSTEM_LIBRARY_DIR}/LaunchDaemons/com.apple.mDNSResponderHelper.plist\n";
 		};
 		FF37FAAD0BC581780044A5CF /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;

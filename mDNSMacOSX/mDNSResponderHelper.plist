@@ -4,10 +4,10 @@
 <plist version="1.0">
 <dict>
         <key>ServiceName</key>
-        <string>com.apple.mDNSResponder.helper</string>
+        <string>com.apple.mDNSResponderHelper</string>
         <key>Command</key>
-        <string>/usr/sbin/mDNSResponderHelper -t 0</string>
+        <string>/usr/sbin/mDNSResponderHelper</string>
 	<key>OnDemand</key>
-	<false/>
+	<true/>
 </dict>
 </plist>

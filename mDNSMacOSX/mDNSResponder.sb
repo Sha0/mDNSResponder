@@ -26,6 +26,10 @@
 ; SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ;
 ; $Log: mDNSResponder.sb,v $
+; Revision 1.24  2007/09/20 22:33:17  cheshire
+; Tidied up inconsistent and error-prone naming -- used to be mDNSResponderHelper in
+; some places and mDNSResponder.helper in others; now mDNSResponderHelper everywhere
+;
 ; Revision 1.23  2007/09/04 22:26:18  mcguire
 ; <rdar://problem/5442826> Seatbelt: mDNSResponder needs to be allowed to access "/Library/Security/Trust Settings/" etc.
 ;
@@ -136,7 +140,7 @@
 					"com.apple.bsd.dirhelper"
 					"com.apple.distributed_notifications.2"
 					"com.apple.ocspd"
-					"com.apple.mDNSResponder.helper"
+					"com.apple.mDNSResponderHelper"
 					"com.apple.SecurityServer"
 					"com.apple.SystemConfiguration.configd"
 					"com.apple.system.DirectoryService.libinfo_v1"
