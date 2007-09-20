@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.50  2007/09/20 01:12:06  cheshire
+Moved HashSlot(X) from mDNS.c to DNSCommon.h so it's usable in other files
+
 Revision 1.49  2007/08/30 00:31:20  cheshire
 Improve "locking failure" debugging messages to show function name using __func__ macro
 
@@ -226,6 +229,7 @@ extern mDNSu8 *putUpdateLease(DNSMessage *msg, mDNSu8 *end, mDNSu32 lease);
 #pragma mark - DNS Message Parsing Functions
 #endif
 
+#define HashSlot(X) (DomainNameHashValue(X) % CACHE_HASH_SLOTS)
 extern mDNSu32 DomainNameHashValue(const domainname *const name);
 extern void SetNewRData(ResourceRecord *const rr, RData *NewRData, mDNSu16 rdlength);
 extern const mDNSu8 *skipDomainName(const DNSMessage *const msg, const mDNSu8 *ptr, const mDNSu8 *const end);

@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.705  2007/09/20 01:12:06  cheshire
+Moved HashSlot(X) from mDNS.c to DNSCommon.h so it's usable in other files
+
 Revision 1.704  2007/09/19 22:47:25  cheshire
 <rdar://problem/5490182> Memory corruption freeing a "no such service" service record
 
@@ -963,8 +966,6 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr)
 	
 	SetNextAnnounceProbeTime(m, rr);
 	}
-
-#define HashSlot(X) (DomainNameHashValue(X) % CACHE_HASH_SLOTS)
 
 // Right now this only applies to mDNS (.local) services where the target host is always m->MulticastHostname
 // Eventually we should unify this with GetServiceTarget() in uDNS.c
