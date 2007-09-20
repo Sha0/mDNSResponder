@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper-main.c,v $
+Revision 1.12  2007/09/20 22:26:20  cheshire
+Add necessary bootstrap_check_in() in Tiger compatibility code (not used on Leopard)
+
 Revision 1.11  2007/09/18 19:09:02  cheshire
 <rdar://problem/5489549> mDNSResponderHelper (and other binaries) missing SCCS version strings
 
@@ -228,6 +231,8 @@ static mach_port_t register_service(const char *service_name)
 	mach_port_t port = MACH_PORT_NULL;
 	kern_return_t kr;
 
+	if (KERN_SUCCESS == (kr = bootstrap_check_in(bootstrap_port, (char *)service_name, &port)))
+		{ return port; }
 	if (KERN_SUCCESS != (kr = mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &port)))
 		{ helplog(ASL_LEVEL_ERR, "mach_port_allocate: %s", mach_error_string(kr)); goto error; }
 	if (KERN_SUCCESS != (kr = mach_port_insert_right(mach_task_self(), port, port, MACH_MSG_TYPE_MAKE_SEND)))
@@ -279,7 +284,7 @@ int main(int ac, char *av[])
 	if (!opt_debug)
 		{
 		port = checkin(kmDNSHelperServiceName);
-		if (!port) helplog(ASL_LEVEL_ERR, "Launchd provided no launchdata; will open Mach port explicitly", port);
+		if (!port) helplog(ASL_LEVEL_ERR, "Launchd provided no launchdata; will open Mach port explicitly");
 		}
 	if (!port) port = register_service(kmDNSHelperServiceName);
 
