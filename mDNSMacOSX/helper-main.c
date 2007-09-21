@@ -17,6 +17,11 @@
     Change History (most recent first):
 
 $Log: helper-main.c,v $
+Revision 1.13  2007/09/21 16:13:14  cheshire
+Additional Tiger compatibility fix: After bootstrap_check_in, we need to give
+ourselves a Mach "send" right to the port, otherwise our ten-second idle timeout
+mechanism is not able to send the "mDNSIdleExit" message to itself
+
 Revision 1.12  2007/09/20 22:26:20  cheshire
 Add necessary bootstrap_check_in() in Tiger compatibility code (not used on Leopard)
 
@@ -232,7 +237,12 @@ static mach_port_t register_service(const char *service_name)
 	kern_return_t kr;
 
 	if (KERN_SUCCESS == (kr = bootstrap_check_in(bootstrap_port, (char *)service_name, &port)))
-		{ return port; }
+		{
+		if (KERN_SUCCESS != (kr = mach_port_insert_right(mach_task_self(), port, port, MACH_MSG_TYPE_MAKE_SEND)))
+			helplog(ASL_LEVEL_ERR, "mach_port_insert_right: %s", mach_error_string(kr));
+		else
+			return port;
+		}
 	if (KERN_SUCCESS != (kr = mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &port)))
 		{ helplog(ASL_LEVEL_ERR, "mach_port_allocate: %s", mach_error_string(kr)); goto error; }
 	if (KERN_SUCCESS != (kr = mach_port_insert_right(mach_task_self(), port, port, MACH_MSG_TYPE_MAKE_SEND)))
