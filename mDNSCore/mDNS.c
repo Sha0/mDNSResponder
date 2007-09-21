@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.709  2007/09/21 21:12:36  cheshire
+<rdar://problem/5498009> BTMM: Need to log updates and query packet contents
+
 Revision 1.708  2007/09/20 23:13:37  cheshire
 <rdar://problem/4038277> BTMM: Not getting LLQ remove events when logging out of VPN or disconnecting from network
 Additional fix: If we have no DNS servers at all, then immediately purge all unicast cache records (including for LLQs)
@@ -4752,7 +4755,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 		{
 		if (!mDNSOpaque16IsZero(msg->h.id)) ifid = mDNSInterface_Any;
 		uDNS_ReceiveMsg(m, msg, end, srcaddr, srcport);
-		if (mDNS_LogLevel >= MDNS_LOG_VERBOSE_DEBUG) DumpPacket(m, msg, end);
+		if (mDNS_LogLevel >= MDNS_LOG_VERBOSE_DEBUG) DumpPacket(m, "Received", msg, end);
 		// Note: mDNSCore also needs to get access to received unicast responses
 		}
 #endif

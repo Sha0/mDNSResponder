@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.51  2007/09/21 21:12:36  cheshire
+<rdar://problem/5498009> BTMM: Need to log updates and query packet contents
+
 Revision 1.50  2007/09/20 01:12:06  cheshire
 Moved HashSlot(X) from mDNS.c to DNSCommon.h so it's usable in other files
 
@@ -248,7 +251,7 @@ extern const mDNSu8 *LocateLLQOptData(const DNSMessage *const msg, const mDNSu8 
 extern const rdataOPT *GetLLQOptData(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end);
 extern const mDNSu8 *LocateLeaseOptData(const DNSMessage *const msg, const mDNSu8 *const end);
 extern mDNSu32 GetPktLease(mDNS *m, DNSMessage *msg, const mDNSu8 *end);
-extern void DumpPacket(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end);
+extern void DumpPacket(mDNS *const m, char *prefix, const DNSMessage *const msg, const mDNSu8 *const end);
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -256,7 +259,7 @@ extern void DumpPacket(mDNS *const m, const DNSMessage *const msg, const mDNSu8 
 #pragma mark - Packet Sending Functions
 #endif
 
-extern mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg, mDNSu8 *end,
+extern mStatus mDNSSendDNSMessage(mDNS *const m, DNSMessage *const msg, mDNSu8 *end,
 	mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, TCPSocket *sock, DomainAuthInfo *authInfo);
 
 // ***************************************************************************

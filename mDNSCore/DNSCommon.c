@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.171  2007/09/21 21:12:36  cheshire
+<rdar://problem/5498009> BTMM: Need to log updates and query packet contents
+
 Revision 1.170  2007/09/07 21:16:58  cheshire
 Add new symbol "NATPMPAnnouncementPort" (5350)
 
@@ -2334,13 +2337,23 @@ mDNSlocal const mDNSu8 *DumpRecords(mDNS *const m, const DNSMessage *const msg, 
 	return(ptr);
 	}
 
-mDNSexport void DumpPacket(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end)
+#define DNS_OP_Name(X) (                                \
+	(X) == kDNSFlag0_OP_StdQuery ? "" :                 \
+	(X) == kDNSFlag0_OP_Iquery   ? "Iquery "    :       \
+	(X) == kDNSFlag0_OP_Status   ? "Status "    :       \
+	(X) == kDNSFlag0_OP_Unused3  ? "Unused3 "   :       \
+	(X) == kDNSFlag0_OP_Notify   ? "Notify "    :       \
+	(X) == kDNSFlag0_OP_Update   ? "Update "    : "?? " )
+
+// Note: DumpPacket expects the packet header fields in host byte order, not network byter order
+mDNSexport void DumpPacket(mDNS *const m, char *prefix, const DNSMessage *const msg, const mDNSu8 *const end)
 	{
 	const mDNSu8 *ptr = msg->data;
 	int i;
 	DNSQuestion q;
 
-	LogMsg("DNS %s %02X%02X %d bytes",
+	LogMsg("%s DNS %s%s %02X%02X %d bytes", prefix,
+		DNS_OP_Name(msg->h.flags.b[0] & kDNSFlag0_OP_Mask),
 		msg->h.flags.b[0] & kDNSFlag0_QR_Response ? "Response" : "Query",
 		msg->h.flags.b[0], msg->h.flags.b[1],
 		end - msg->data);
@@ -2363,7 +2376,7 @@ mDNSexport void DumpPacket(mDNS *const m, const DNSMessage *const msg, const mDN
 #pragma mark - Packet Sending Functions
 #endif
 
-mDNSexport mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg, mDNSu8 *end,
+mDNSexport mStatus mDNSSendDNSMessage(mDNS *const m, DNSMessage *const msg, mDNSu8 *end,
     mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, TCPSocket *sock, DomainAuthInfo *authInfo)
 	{
 	mStatus status;
@@ -2388,7 +2401,7 @@ mDNSexport mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg
 
 	if (authInfo)
 		{
-		end = DNSDigest_SignMessage(msg, &end, &numAdditionals, authInfo, 0);
+		end = DNSDigest_SignMessage(msg, &end, authInfo, 0);
 		if (!end) return mStatus_UnknownErr;
 		}
 
@@ -2416,7 +2429,14 @@ mDNSexport mStatus mDNSSendDNSMessage(const mDNS *const m, DNSMessage *const msg
 	msg->h.numQuestions   = numQuestions;
 	msg->h.numAnswers     = numAnswers;
 	msg->h.numAuthorities = numAuthorities;
-	msg->h.numAdditionals = (mDNSu16)(authInfo ? numAdditionals - 1 : numAdditionals);
+	msg->h.numAdditionals = numAdditionals;
+
+	if (mDNS_LogLevel >= MDNS_LOG_VERBOSE_DEBUG && !mDNSOpaque16IsZero(msg->h.id))
+		{
+		if (authInfo) msg->h.numAdditionals++;	// Want to include TSIG in DumpPacket output
+		DumpPacket(m, "Sent", msg, end);
+		if (authInfo) msg->h.numAdditionals--;
+		}
 
 	return(status);
 
