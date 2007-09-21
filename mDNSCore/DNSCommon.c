@@ -17,6 +17,11 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.172  2007/09/21 23:14:39  cheshire
+<rdar://problem/5498009> BTMM: Need to log updates and query packet contents in verbose debug mode
+Changed DumpRecords to use LargeCacheRecord on the stack instead of the shared m->rec storage,
+to eliminate "GetLargeResourceRecord: m->rec appears to be already in use" warnings
+
 Revision 1.171  2007/09/21 21:12:36  cheshire
 <rdar://problem/5498009> BTMM: Need to log updates and query packet contents
 
@@ -2330,9 +2335,12 @@ mDNSlocal const mDNSu8 *DumpRecords(mDNS *const m, const DNSMessage *const msg, 
 	LogMsg("%2d %s", count, label);
 	for (i = 0; i < count && ptr; i++)
 		{
-		ptr = GetLargeResourceRecord(m, msg, ptr, end, mDNSInterface_Any, kDNSRecordTypePacketAns, &m->rec);
-		if (ptr) LogMsg("%2d %5d %s", i, m->rec.r.resrec.rroriginalttl, CRDisplayString(m, &m->rec.r));
-		m->rec.r.resrec.RecordType = 0;
+		// This puts a LargeCacheRecord on the stack instead of using the shared m->rec storage,
+		// but since it's only used for debugging (and probably only on OS X, not on
+		// embedded systems) putting a 9kB object on the stack isn't a big problem.
+		LargeCacheRecord largecr;
+		ptr = GetLargeResourceRecord(m, msg, ptr, end, mDNSInterface_Any, kDNSRecordTypePacketAns, &largecr);
+		if (ptr) LogMsg("%2d %5d %s", i, largecr.r.resrec.rroriginalttl, CRDisplayString(m, &largecr.r));
 		}
 	return(ptr);
 	}
