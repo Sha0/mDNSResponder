@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.487  2007/09/21 17:07:41  mcguire
+<rdar://problem/5487354> BTMM: Need to modify IPSec tunnel setup files when shared secret changes (server-role)
+
 Revision 1.486  2007/09/19 23:17:38  cheshire
 <rdar://problem/5482131> BTMM: Crash when switching .Mac accounts
 
@@ -3283,6 +3286,9 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 						}
 					}
 				}
+
+			mDNSBool keyChanged = FoundInList && FoundInList->AutoTunnel ? strncmp(keystring, FoundInList->b64keydata, sizeof(FoundInList->b64keydata)) : mDNSfalse;
+
 #endif APPLE_OSX_mDNSResponder
 
 			// Uncomment the line below to view the keys as they're read out of the system keychain
@@ -3304,6 +3310,14 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 				if (!FoundInList) mDNSPlatformMemFree(ptr);		// If we made a new DomainAuthInfo here, and it turned out bad, dispose it immediately
 				continue;
 				}
+
+#if APPLE_OSX_mDNSResponder
+			if (keyChanged && AnonymousRacoonConfigRefCount)
+				{
+				LogOperation("SetDomainSecrets: secret changed for %##s", &domain);
+				(void)mDNSConfigureServer(kmDNSUp, keystring);
+				}
+#endif APPLE_OSX_mDNSResponder
 
 			CFStringRef cfs = CFStringCreateWithCString(NULL, dstring, kCFStringEncodingUTF8);
 			if (cfs) { CFArrayAppendValue(sa, cfs); CFRelease(cfs); }
