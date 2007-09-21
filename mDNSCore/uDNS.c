@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.480  2007/09/21 21:08:52  cheshire
+Get rid of unnecessary DumpPacket() calls -- it makes more sense
+to do this in mDNSSendDNSMessage and mDNSCoreReceive instead
+
 Revision 1.479  2007/09/21 20:01:17  cheshire
 <rdar://problem/5496750> BTMM: Skip directly to member name in SOA queries to avoid sending names in the clear
 
@@ -1800,7 +1804,6 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			mDNSCoreReceive(m, reply, end, &Addr, Port, mDNSNULL, zeroIPPort, 0);
 			// USE CAUTION HERE: Invoking mDNSCoreReceive may have caused the environment to change, including canceling this operation itself
 			
-			if (mDNS_LogLevel >= MDNS_LOG_VERBOSE_DEBUG) DumpPacket(m, reply, end);
 			mDNSPlatformMemFree(reply);
 			return;
 			}
@@ -4240,7 +4243,6 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 				if (end > m->omsg.data && (q->qDNSServer->teststate != DNSServer_Failed || NoTestQuery(q)))
 					{
 					//LogMsg("uDNS_CheckCurrentQuestion %d %p %##s (%s)", sendtime - m->timenow, private, q->qname.c, DNSTypeName(q->qtype));
-					if (mDNS_LogLevel >= MDNS_LOG_VERBOSE_DEBUG) DumpPacket(m, &m->omsg, end);
 					if (private)
 						{
 						if (q->nta) LogMsg("uDNS_CheckCurrentQuestion Error: GetZoneData already started for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
