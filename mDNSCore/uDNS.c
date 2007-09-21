@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.478  2007/09/21 19:29:14  cheshire
+Added dump of uDNS questions when in MDNS_LOG_VERBOSE_DEBUG mode
+
 Revision 1.477  2007/09/20 02:29:37  cheshire
 <rdar://problem/4038277> BTMM: Not getting LLQ remove events when logging out of VPN or disconnecting from network
 
@@ -4236,6 +4239,7 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 				if (end > m->omsg.data && (q->qDNSServer->teststate != DNSServer_Failed || NoTestQuery(q)))
 					{
 					//LogMsg("uDNS_CheckCurrentQuestion %d %p %##s (%s)", sendtime - m->timenow, private, q->qname.c, DNSTypeName(q->qtype));
+					if (mDNS_LogLevel >= MDNS_LOG_VERBOSE_DEBUG) DumpPacket(m, &m->omsg, end);
 					if (private)
 						{
 						if (q->nta) LogMsg("uDNS_CheckCurrentQuestion Error: GetZoneData already started for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
