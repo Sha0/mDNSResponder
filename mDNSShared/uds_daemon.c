@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.347  2007/09/21 02:04:33  cheshire
+<rdar://problem/5440831> BTMM: mDNSResponder crashes in free_service_instance enabling/disabling BTMM
+
 Revision 1.346  2007/09/19 22:47:25  cheshire
 <rdar://problem/5490182> Memory corruption freeing a "no such service" service record
 
@@ -1023,20 +1026,15 @@ mDNSexport void FreeExtraRR(mDNS *const m, AuthRecord *const rr, mStatus result)
 
 mDNSlocal void free_service_instance(service_instance *srv)
 	{
-	request_state *request = srv->request;
 	ExtraResourceRecord *e = srv->srs.Extras, *tmp;
 
 	// clear pointers from parent struct
-	if (request)
+	if (srv->request)
 		{
-		service_instance **p = &request->u.servicereg.instances;
+		service_instance **p = &srv->request->u.servicereg.instances;
 		while (*p)
 			{
-			if (*p == srv)
-				{
-				*p = (*p)->next;
-				break;
-				}
+			if (*p == srv) { *p = (*p)->next; break; }
 			p = &(*p)->next;
 			}
 		}
@@ -1095,7 +1093,7 @@ mDNSlocal void SendServiceRemovalNotification(ServiceRecordSet *const srs)
 	reply_state *rep;
 	service_instance *instance = srs->ServiceContext;
 	if (GenerateNTDResponse(srs->RR_SRV.resrec.name, srs->RR_SRV.resrec.InterfaceID, instance->request, &rep, reg_service_reply_op, 0, mStatus_NoError) != mStatus_NoError)
-		LogMsg("%3d: regservice_callback: %##s is not valid DNS-SD SRV name", instance->sd, srs->RR_SRV.resrec.name->c);
+		LogMsg("%3d: SendServiceRemovalNotification: %##s is not valid DNS-SD SRV name", instance->sd, srs->RR_SRV.resrec.name->c);
 	else { append_reply(instance->request, rep); instance->clientnotified = mDNSfalse; }
 	}
 
@@ -1119,7 +1117,7 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 		SuppressError = mDNStrue;
 
 	if (result == mStatus_NoError)
-		LogOperation("%3d: DNSServiceRegister(%##s, %u) REGISTERED  ",  instance->sd, srs->RR_SRV.resrec.name->c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port));
+		LogOperation("%3d: DNSServiceRegister(%##s, %u) REGISTERED",    instance->sd, srs->RR_SRV.resrec.name->c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port));
 	else if (result == mStatus_MemFree)
 		LogOperation("%3d: DNSServiceRegister(%##s, %u) DEREGISTERED",  instance->sd, srs->RR_SRV.resrec.name->c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port));
 	else if (result == mStatus_NameConflict)
@@ -1586,13 +1584,13 @@ mDNSexport AuthRecord *AllocateSubTypes(mDNSs32 NumSubTypes, char *p)
 
 mDNSlocal mStatus register_service_instance(request_state *request, const domainname *domain)
 	{
-	service_instance *ptr, *instance;
+	service_instance **ptr, *instance;
 	int instance_size;
 	mStatus result;
 
-	for (ptr = request->u.servicereg.instances; ptr; ptr = ptr->next)
+	for (ptr = &request->u.servicereg.instances; *ptr; ptr = &(*ptr)->next)
 		{
-		if (SameDomainName(&ptr->domain, domain))
+		if (SameDomainName(&(*ptr)->domain, domain))
 			{ LogMsg("register_service_instance: domain %##s already registered", domain->c); return mStatus_AlreadyRegistered; }
 		}
 
@@ -1612,12 +1610,17 @@ mDNSlocal mStatus register_service_instance(request_state *request, const domain
 	instance->subtypes = AllocateSubTypes(request->u.servicereg.num_subtypes, request->u.servicereg.type_as_string);
 	if (request->u.servicereg.num_subtypes && !instance->subtypes)
 		{ free_service_instance(instance); instance = NULL; FatalError("ERROR: malloc"); }
+	instance->next              = mDNSNULL;
 	instance->request           = request;
 	instance->sd                = request->sd;
 	instance->renameonmemfree   = 0;
 	instance->clientnotified    = mDNSfalse;
 	AssignDomainName(&instance->domain, domain);
 	instance->default_local = (request->u.servicereg.default_domain && SameDomainName(domain, &localdomain));
+
+	LogOperation("%3d: DNSServiceRegister(%#s.%##s%##s, %u) ADDING",
+		instance->sd, &request->u.servicereg.name, &request->u.servicereg.type, domain->c, mDNSVal16(request->u.servicereg.port));
+
 	result = mDNS_RegisterService(&mDNSStorage, &instance->srs,
 		&request->u.servicereg.name, &request->u.servicereg.type, domain,
 		request->u.servicereg.host.c[0] ? &request->u.servicereg.host : NULL,
@@ -1626,17 +1629,14 @@ mDNSlocal mStatus register_service_instance(request_state *request, const domain
 		instance->subtypes, request->u.servicereg.num_subtypes,
 		request->u.servicereg.InterfaceID, regservice_callback, instance);
 
-	if (result)
+	if (!result) *ptr = instance;		// Append this to the end of our request->u.servicereg.instances list
+	else
 		{
 		LogMsg("register_service_instance %#s.%##s%##s error %d",
 			&request->u.servicereg.name, &request->u.servicereg.type, domain->c, result);
 		free_service_instance(instance);
 		}
-	else
-		{
-		instance->next = request->u.servicereg.instances;
-		request->u.servicereg.instances = instance;
-		}
+
 	return result;
 	}
 
@@ -1644,18 +1644,23 @@ mDNSlocal void UpdateDeviceInfoRecord(mDNS *const m);
 
 mDNSlocal void regservice_termination_callback(request_state *request)
 	{
-	service_instance *i, *p;
 	if (!request) { LogMsg("regservice_termination_callback context is NULL"); return; }
-	i = request->u.servicereg.instances;
-	while (i)
+	while (request->u.servicereg.instances)
 		{
-		p = i;
-		i = i->next;
+		service_instance *p = request->u.servicereg.instances;
+		request->u.servicereg.instances = request->u.servicereg.instances->next;
 		// only safe to free memory if registration is not valid, i.e. deregister fails (which invalidates p)
 		LogOperation("%3d: DNSServiceRegister(%##s, %u) STOP",
 			request->sd, p->srs.RR_SRV.resrec.name->c, mDNSVal16(p->srs.RR_SRV.resrec.rdata->u.srv.port));
+
+		// Clear backpointer *before* calling mDNS_DeregisterService/free_service_instance
+		// We don't need free_service_instance to cut its element from the list, because we're already advancing
+		// request->u.servicereg.instances as we work our way through the list, implicitly cutting one element at a time
+		// We can't clear p->request *after* the calling mDNS_DeregisterService/free_service_instance
+		// because by then we might have already freed p
+		p->request = NULL;
 		if (mDNS_DeregisterService(&mDNSStorage, &p->srs)) free_service_instance(p);
-		p->request = NULL;  // clear backpointer, because the next thing we're about to do is dispose our request_state
+		// Don't touch service_instance *p after this -- it's likely to have been freed already
 		}
 	if (request->u.servicereg.txtdata)
 		{ freeL("service_info txtdata", request->u.servicereg.txtdata); request->u.servicereg.txtdata = NULL; }
@@ -1687,7 +1692,12 @@ mDNSlocal void udsserver_default_reg_domain_changed(const DNameListElem *const d
 				}
 			else
 				{
-				if (!*ptr) LogMsg("udsserver_default_reg_domain_changed ERROR %##s not found", &d->name);
+				// Normally we should not fail to find the specified instance
+				// One case where this can happen is if a uDNS update fails for some reason,
+				// and regservice_callback then calls free_service_instance and disposes of that instance.
+				if (!*ptr)
+					LogMsg("udsserver_default_reg_domain_changed domain %##s not found for service %#s type %s",
+						&d->name, request->u.servicereg.name.c, request->u.servicereg.type_as_string);
 				else
 					{
 					DNameListElem *p;
@@ -1819,6 +1829,15 @@ mDNSlocal mStatus handle_regservice_request(request_state *request)
 		request->sd, name, request->u.servicereg.type_as_string, domain, host, mDNSVal16(request->u.servicereg.port));
 	err = register_service_instance(request, &d);
 
+	// Set request->terminate first, before adding additional service instances, because the
+	// uds_validatelists uses the request->terminate function pointer to determine what kind
+	// of request this is, and therefore what kind of list validation is required.
+	if (!err)
+		{
+		request->terminate = regservice_termination_callback;
+		if (request->u.servicereg.autoname) UpdateDeviceInfoRecord(&mDNSStorage);
+		}
+
 	if (!err && !*domain)
 		{
 		DNameListElem *ptr;
@@ -1826,12 +1845,6 @@ mDNSlocal mStatus handle_regservice_request(request_state *request)
 		for (ptr = AutoRegistrationDomains; ptr; ptr = ptr->next)
 			if (!ptr->uid || SystemUID(request->uid) || request->uid == ptr->uid)
 				register_service_instance(request, &ptr->name);
-		}
-
-	if (!err)
-		{
-		request->terminate = regservice_termination_callback;
-		if (request->u.servicereg.autoname) UpdateDeviceInfoRecord(&mDNSStorage);
 		}
 
 	return(err);
