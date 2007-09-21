@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.479  2007/09/21 20:01:17  cheshire
+<rdar://problem/5496750> BTMM: Skip directly to member name in SOA queries to avoid sending names in the clear
+
 Revision 1.478  2007/09/21 19:29:14  cheshire
 Added dump of uDNS questions when in MDNS_LOG_VERBOSE_DEBUG mode
 
@@ -2312,22 +2315,20 @@ mDNSlocal mStatus GetZoneData_StartQuery(mDNS *const m, ZoneData *zd, mDNSu16 qt
 // StartGetZoneData is an internal routine (i.e. must be called with the lock already held)
 mDNSexport ZoneData *StartGetZoneData(mDNS *const m, const domainname *const name, const ZoneService target, ZoneDataCallback callback, void *ZoneDataContext)
 	{
+	DomainAuthInfo *AuthInfo = GetAuthInfoForName_internal(m, name);
+	int initialskip = (AuthInfo && AuthInfo->AutoTunnel) ? DomainNameLength(name) - DomainNameLength(&AuthInfo->domain) : 0;
 	ZoneData *zd = (ZoneData*)mDNSPlatformMemAllocate(sizeof(ZoneData));
 	if (!zd) { LogMsg("ERROR: StartGetZoneData - mDNSPlatformMemAllocate failed"); return mDNSNULL; }
-
-	if (m->mDNS_busy != m->mDNS_reentrancy+1)
-		LogMsg("StartGetZoneData: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
-
 	mDNSPlatformMemZero(zd, sizeof(ZoneData));
 	AssignDomainName(&zd->ChildName, name);
 	zd->ZoneService      = target;
-	zd->CurrentSOA       = &zd->ChildName;
+	zd->CurrentSOA       = (domainname *)(&zd->ChildName.c[initialskip]);
 	zd->ZoneName.c[0]    = 0;
 	zd->ZoneClass        = 0;
 	zd->Host.c[0]        = 0;
 	zd->Port             = zeroIPPort;
 	zd->Addr             = zeroAddr;
-	zd->ZonePrivate      = GetAuthInfoForName_internal(m, name) ? mDNStrue : mDNSfalse;
+	zd->ZonePrivate      = AuthInfo ? mDNStrue : mDNSfalse;
 	zd->ZoneDataCallback = callback;
 	zd->ZoneDataContext  = ZoneDataContext;
 
