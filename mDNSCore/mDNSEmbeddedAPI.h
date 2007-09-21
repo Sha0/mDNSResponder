@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.439  2007/09/21 21:12:36  cheshire
+DNSDigest_SignMessage does not need separate "mDNSu16 *numAdditionals" parameter
+
 Revision 1.438  2007/09/19 20:32:09  cheshire
 Export GetAuthInfoForName so it's callable from other files
 
@@ -2413,7 +2416,7 @@ extern mDNSs32 DNSDigest_ConstructHMACKeyfromBase64(DomainAuthInfo *info, const 
 // of the message, and is modified by this routine.  numAdditionals is a pointer to the number of additional
 // records in HOST byte order, which is incremented upon successful completion of this routine.  The function returns
 // the new end pointer on success, and NULL on failure.
-extern mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 *numAdditionals, DomainAuthInfo *info, mDNSu16 tcode);
+extern mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, DomainAuthInfo *info, mDNSu16 tcode);
 
 // verify a DNS message.  The message must be complete, with all values in network byte order.  end points to the
 // end of the record.  tsig is a pointer to the resource record that contains the TSIG OPT record.  info is

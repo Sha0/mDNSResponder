@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSDigest.c,v $
+Revision 1.23  2007/09/21 21:12:36  cheshire
+DNSDigest_SignMessage does not need separate "mDNSu16 *numAdditionals" parameter
+
 Revision 1.22  2007/04/22 06:02:02  cheshire
 <rdar://problem/4615977> Query should immediately return failure when no server
 
@@ -1401,10 +1404,10 @@ mDNSexport mDNSs32 DNSDigest_ConstructHMACKeyfromBase64(DomainAuthInfo *info, co
 	return(keylen);
 	}
 
-mDNSexport mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 *numAdditionals, DomainAuthInfo *info, mDNSu16 tcode)
+mDNSexport mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, DomainAuthInfo *info, mDNSu16 tcode)
 	{
 	AuthRecord tsig;
-	mDNSu8 *countPtr, *rdata;
+	mDNSu8  *rdata, *const countPtr = (mDNSu8 *)&msg->h.numAdditionals;	// Get existing numAdditionals value
 	mDNSu32 utc32;
 	mDNSu8 utc48[6];
 	mDNSu8 digest[MD5_LEN];
@@ -1412,6 +1415,7 @@ mDNSexport mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 
 	mDNSu32 len;
 	mDNSOpaque16 buf;
 	MD5_CTX c;
+	mDNSu16 numAdditionals = (mDNSu16)((mDNSu16)countPtr[0] << 8 | countPtr[1]);
 	
 	// Init MD5 context, digest inner key pad and message
     MD5_Init(&c);
@@ -1492,13 +1496,12 @@ mDNSexport mDNSu8 *DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, mDNSu16 
 	rdata += 6;
 	
 	tsig.resrec.rdlength = (mDNSu16)(rdata - tsig.resrec.rdata->u.data);
-	*end = PutResourceRecordTTLJumbo(msg, ptr, numAdditionals, &tsig.resrec, 0);
+	*end = PutResourceRecordTTLJumbo(msg, ptr, &numAdditionals, &tsig.resrec, 0);
 	if (!*end) { LogMsg("ERROR: DNSDigest_SignMessage - could not put TSIG"); return mDNSNULL; }
 
-	// update num additionals
-	countPtr = (mDNSu8 *)&msg->h.numAdditionals;  // increment (network-byte ordered) header value
-	*countPtr++ = (mDNSu8)(*numAdditionals >> 8);
-	*countPtr++ = (mDNSu8)(*numAdditionals &  0xFF);
+	// Write back updated numAdditionals value
+	countPtr[0] = (mDNSu8)(numAdditionals >> 8);
+	countPtr[1] = (mDNSu8)(numAdditionals &  0xFF);
 
 	return *end;
 	}

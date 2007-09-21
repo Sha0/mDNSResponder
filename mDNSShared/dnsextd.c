@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.81  2007/09/21 21:12:37  cheshire
+DNSDigest_SignMessage does not need separate "mDNSu16 *numAdditionals" parameter
+
 Revision 1.80  2007/09/18 19:09:02  cheshire
 <rdar://problem/5489549> mDNSResponderHelper (and other binaries) missing SCCS version strings
 
@@ -1030,7 +1033,6 @@ mDNSlocal int UpdateSRV(DaemonInfo *d, mDNSBool registration)
 		PktMsg pkt;
 		mDNSu8 *ptr = pkt.msg.data;
 		mDNSu8 *end = (mDNSu8 *)&pkt.msg + sizeof(DNSMessage);
-		mDNSu16 nAdditHBO;  // num additionas, in host byte order, required by message digest routine
 		PktMsg *reply = NULL;
 		mDNSBool closed;
 		mDNSBool ok;
@@ -1079,12 +1081,11 @@ mDNSlocal int UpdateSRV(DaemonInfo *d, mDNSBool registration)
             require_action( ptr, exit, err = mStatus_UnknownErr; Log("UpdateSRV: Error constructing lease expiration update" ) );
 			}
 
-		nAdditHBO = pkt.msg.h.numAdditionals;
 		HdrHToN(&pkt);
 
 		if ( zone->updateKeys )
 			{
-			ptr = DNSDigest_SignMessage( &pkt.msg, &ptr, &nAdditHBO, zone->updateKeys, 0 );
+			ptr = DNSDigest_SignMessage( &pkt.msg, &ptr, zone->updateKeys, 0 );
 			require_action( ptr, exit, Log("UpdateSRV: Error constructing lease expiration update" ) );
 			}
 
@@ -1400,7 +1401,6 @@ mDNSlocal void DeleteOneRecord(DaemonInfo *d, CacheRecord *rr, domainname *zname
 	PktMsg pkt;
 	mDNSu8 *ptr = pkt.msg.data;
 	mDNSu8 *end = (mDNSu8 *)&pkt.msg + sizeof(DNSMessage);
-	mDNSu16 nAdditHBO;  // num additionas, in host byte order, required by message digest routine
 	char buf[MaxMsg];
 	mDNSBool closed;
 	PktMsg *reply = NULL;
@@ -1414,14 +1414,13 @@ mDNSlocal void DeleteOneRecord(DaemonInfo *d, CacheRecord *rr, domainname *zname
 	ptr = putDeletionRecord(&pkt.msg, ptr, &rr->resrec);
 	if (!ptr) goto end;
 
-	nAdditHBO = pkt.msg.h.numAdditionals;
 	HdrHToN(&pkt);
 
 	zone = FindZone( d, zname );
 
 	if ( zone && zone->updateKeys)
 		{
-		ptr = DNSDigest_SignMessage(&pkt.msg, &ptr, &nAdditHBO, zone->updateKeys, 0 );
+		ptr = DNSDigest_SignMessage(&pkt.msg, &ptr, zone->updateKeys, 0 );
 		if (!ptr) goto end;
 		}
 
