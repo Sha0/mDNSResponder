@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.349  2007/09/24 06:01:00  cheshire
+Debugging: In SIGINFO output, show NAT Traversal time values in seconds rather than platform ticks
+
 Revision 1.348  2007/09/24 05:02:41  cheshire
 Debugging: In SIGINFO output, indicate explicitly when a given section is empty
 
@@ -3575,11 +3578,13 @@ mDNSexport void udsserver_info(mDNS *const m)
 				LogMsgNoIdent("%p %s Int %5d Ext %5d Err %d Retry %d Interval %d Expire %d",
 					nat, nat->Protocol == NATOp_MapTCP ? "TCP" : "UDP",
 					mDNSVal16(nat->IntPort), mDNSVal16(nat->ExternalPort), nat->Result,
-					nat->retryPortMap ? nat->retryPortMap - now : 0,
-					nat->retryInterval,
-					nat->ExpiryTime ? nat->ExpiryTime - now : 0);
+					nat->retryPortMap ? (nat->retryPortMap - now) / mDNSPlatformOneSecond : 0,
+					nat->retryInterval / mDNSPlatformOneSecond,
+					nat->ExpiryTime ? (nat->ExpiryTime - now) / mDNSPlatformOneSecond : 0);
 			else
-				LogMsgNoIdent("%p Address Request Retry %d Interval %d", nat, m->retryGetAddr - now, m->retryIntervalGetAddr);
+				LogMsgNoIdent("%p Address Request Retry %d Interval %d", nat,
+					(m->retryGetAddr - now) / mDNSPlatformOneSecond,
+					m->retryIntervalGetAddr / mDNSPlatformOneSecond);
 			}
 		}
 
