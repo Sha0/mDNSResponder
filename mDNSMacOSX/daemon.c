@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.343  2007/09/24 05:02:41  cheshire
+Debugging: In SIGINFO output, indicate explicitly when a given section is empty
+
 Revision 1.342  2007/09/18 19:09:02  cheshire
 <rdar://problem/5489549> mDNSResponderHelper (and other binaries) missing SCCS version strings
 
@@ -1940,59 +1943,78 @@ mDNSlocal void INFOCallback(void)
 	
 	udsserver_info(&mDNSStorage);
 
-	for (e = DNSServiceDomainEnumerationList; e; e=e->next)
-		LogMsgNoIdent("%5d: Mach DomainEnumeration   %##s", e->ClientMachPort, e->dom.qname.c);
-
-	for (b = DNSServiceBrowserList; b; b=b->next)
+	LogMsgNoIdent("--------- Mach Clients ---------");
+	if (!DNSServiceDomainEnumerationList && !DNSServiceBrowserList && !DNSServiceResolverList && !DNSServiceRegistrationList)
+		LogMsgNoIdent("<None>");
+	else
 		{
-		DNSServiceBrowserQuestion *qptr;
-		for (qptr = b->qlist; qptr; qptr = qptr->next)
-			LogMsgNoIdent("%5d: Mach ServiceBrowse       %##s", b->ClientMachPort, qptr->q.qname.c);
-		}
-	for (l = DNSServiceResolverList; l; l=l->next)
-		LogMsgNoIdent("%5d: Mach ServiceResolve      %##s", l->ClientMachPort, l->i.name.c);
-
-	for (r = DNSServiceRegistrationList; r; r=r->next)
-		{
-		ServiceInstance *si;
-		for (si = r->regs; si; si = si->next)
-			LogMsgNoIdent("%5d: Mach ServiceInstance     %##s %u", si->ClientMachPort, si->srs.RR_SRV.resrec.name->c, mDNSVal16(si->srs.RR_SRV.resrec.rdata->u.srv.port));
+		for (e = DNSServiceDomainEnumerationList; e; e=e->next)
+			LogMsgNoIdent("%5d: Mach DomainEnumeration   %##s", e->ClientMachPort, e->dom.qname.c);
+	
+		for (b = DNSServiceBrowserList; b; b=b->next)
+			{
+			DNSServiceBrowserQuestion *qptr;
+			for (qptr = b->qlist; qptr; qptr = qptr->next)
+				LogMsgNoIdent("%5d: Mach ServiceBrowse       %##s", b->ClientMachPort, qptr->q.qname.c);
+			}
+		for (l = DNSServiceResolverList; l; l=l->next)
+			LogMsgNoIdent("%5d: Mach ServiceResolve      %##s", l->ClientMachPort, l->i.name.c);
+	
+		for (r = DNSServiceRegistrationList; r; r=r->next)
+			{
+			ServiceInstance *si;
+			for (si = r->regs; si; si = si->next)
+				LogMsgNoIdent("%5d: Mach ServiceInstance     %##s %u", si->ClientMachPort, si->srs.RR_SRV.resrec.name->c, mDNSVal16(si->srs.RR_SRV.resrec.rdata->u.srv.port));
+			}
 		}
 
 	LogMsgNoIdent("----- KQSocketEventSources -----");
-	KQSocketEventSource *k;
-	for (k = gEventSources; k; k=k->next)
-		LogMsgNoIdent("%3d %s", k->fd, k->kqs.KQtask);
-
-	LogMsgNoIdent("------ Network Interfaces ------");
-	for (i = mDNSStorage.p->InterfaceList; i; i = i->next)
+	if (!gEventSources) LogMsgNoIdent("<None>");
+	else
 		{
-		if (!i->Exists)
-			LogMsgNoIdent("Interface: %s %5s(%lu) %.6a %#a dormant for %d seconds",
-				i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id, &i->BSSID,
-				&i->ifinfo.ip, utc - i->LastSeen);
-		else
-			LogMsgNoIdent("Interface: %s %5s(%lu) %.6a %s %s %-15.4a %s InterfaceID %p %s %s %#a",
-				i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id, &i->BSSID,
-				i->ifinfo.InterfaceActive ? "Active" : "      ",
-				i->ifinfo.IPv4Available ? "v4" : "  ",
-				i->ifinfo.IPv4Available ? (mDNSv4Addr*)&i->ifa_v4addr : &zerov4Addr,
-				i->ifinfo.IPv6Available ? "v6" : "  ",
-				i->ifinfo.InterfaceID,
-				i->ifinfo.Advertise ? "Adv"  : "   ",
-				i->ifinfo.McastTxRx ? "TxRx" : "    ",
-				&i->ifinfo.ip);
+		KQSocketEventSource *k;
+		for (k = gEventSources; k; k=k->next)
+			LogMsgNoIdent("%3d %s", k->fd, k->kqs.KQtask);
 		}
 
-	for (s = mDNSStorage.DNSServers; s; s = s->next)
+	LogMsgNoIdent("------ Network Interfaces ------");
+	if (!mDNSStorage.p->InterfaceList) LogMsgNoIdent("<None>");
+	else
 		{
-		NetworkInterfaceInfoOSX *ifx = (NetworkInterfaceInfoOSX *)s->interface;
-		LogMsgNoIdent("DNS Server %##s %s%s%#a:%d %s",
-			s->domain.c, ifx ? ifx->ifa_name : "", ifx ? " " : "", &s->addr, mDNSVal16(s->port),
-			s->teststate == DNSServer_Untested ? "(Untested)" :
-			s->teststate == DNSServer_Passed   ? ""           :
-			s->teststate == DNSServer_Failed   ? "(Failed)"   :
-			s->teststate == DNSServer_Disabled ? "(Disabled)" : "(Unknown state)");
+		for (i = mDNSStorage.p->InterfaceList; i; i = i->next)
+			{
+			if (!i->Exists)
+				LogMsgNoIdent("Interface: %s %5s(%lu) %.6a %#a dormant for %d seconds",
+					i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id, &i->BSSID,
+					&i->ifinfo.ip, utc - i->LastSeen);
+			else
+				LogMsgNoIdent("Interface: %s %5s(%lu) %.6a %s %s %-15.4a %s InterfaceID %p %s %s %#a",
+					i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id, &i->BSSID,
+					i->ifinfo.InterfaceActive ? "Active" : "      ",
+					i->ifinfo.IPv4Available ? "v4" : "  ",
+					i->ifinfo.IPv4Available ? (mDNSv4Addr*)&i->ifa_v4addr : &zerov4Addr,
+					i->ifinfo.IPv6Available ? "v6" : "  ",
+					i->ifinfo.InterfaceID,
+					i->ifinfo.Advertise ? "Adv"  : "   ",
+					i->ifinfo.McastTxRx ? "TxRx" : "    ",
+					&i->ifinfo.ip);
+			}
+		}
+
+	LogMsgNoIdent("--------- DNS Servers ----------");
+	if (!mDNSStorage.DNSServers) LogMsgNoIdent("<None>");
+	else
+		{
+		for (s = mDNSStorage.DNSServers; s; s = s->next)
+			{
+			NetworkInterfaceInfoOSX *ifx = (NetworkInterfaceInfoOSX *)s->interface;
+			LogMsgNoIdent("DNS Server %##s %s%s%#a:%d %s",
+				s->domain.c, ifx ? ifx->ifa_name : "", ifx ? " " : "", &s->addr, mDNSVal16(s->port),
+				s->teststate == DNSServer_Untested ? "(Untested)" :
+				s->teststate == DNSServer_Passed   ? ""           :
+				s->teststate == DNSServer_Failed   ? "(Failed)"   :
+				s->teststate == DNSServer_Disabled ? "(Disabled)" : "(Unknown state)");
+			}
 		}
 
 	mDNSs32 now = mDNS_TimeNow(&mDNSStorage);

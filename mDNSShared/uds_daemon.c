@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.348  2007/09/24 05:02:41  cheshire
+Debugging: In SIGINFO output, indicate explicitly when a given section is empty
+
 Revision 1.347  2007/09/21 02:04:33  cheshire
 <rdar://problem/5440831> BTMM: mDNSResponder crashes in free_service_instance enabling/disabling BTMM
 
@@ -3484,12 +3487,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 	mDNSu32 CacheUsed = 0, CacheActive = 0;
 	mDNSu32 slot;
 	CacheGroup *cg;
-	DNSQuestion *q;
 	CacheRecord *cr;
-	AuthRecord *ar;
-	request_state *req;
-	NATTraversalInfo *nat;
-	DomainAuthInfo *a;
 
 	LogMsgNoIdent("Timenow 0x%08lX (%ld)", (mDNSu32)now, now);
 	LogMsgNoIdent("------------ Cache -------------");
@@ -3525,54 +3523,81 @@ mDNSexport void udsserver_info(mDNS *const m)
 	LogMsgNoIdent("Cache currently contains %lu records; %lu referenced by active questions", CacheUsed, CacheActive);
 
 	LogMsgNoIdent("--------- Auth Records ---------");
-	for (ar = m->ResourceRecords; ar; ar=ar->next)
-		LogMsgNoIdent("%s", ARDisplayString(m, ar));
+	if (!m->ResourceRecords) LogMsgNoIdent("<None>");
+	else
+		{
+		AuthRecord *ar;
+		for (ar = m->ResourceRecords; ar; ar=ar->next)
+			LogMsgNoIdent("%s", ARDisplayString(m, ar));
+		}
 
 	LogMsgNoIdent("---------- Questions -----------");
-	LogMsgNoIdent("   Int  Next if      Type");
-	CacheUsed = 0;
-	CacheActive = 0;
-	for (q = m->Questions; q; q=q->next)
+	if (!m->Questions) LogMsgNoIdent("<None>");
+	else
 		{
-		mDNSs32 i = q->ThisQInterval / mDNSPlatformOneSecond;
-		mDNSs32 n = (q->LastQTime + q->ThisQInterval - now) / mDNSPlatformOneSecond;
-		NetworkInterfaceInfo *info = (NetworkInterfaceInfo *)q->InterfaceID;
-		CacheUsed++;
-		if (q->ThisQInterval) CacheActive++;
-		LogMsgNoIdent("%6d%6d %-6s%s %-6s%##s",
-			i, n, info ? info->ifname : "",
-			mDNSOpaque16IsZero(q->TargetQID) ? " " : q->LongLived ? "L" : "O", // mDNS, long-lived, or one-shot query?
-			DNSTypeName(q->qtype), q->qname.c);
-		usleep(1000);	// Limit rate a little so we don't flood syslog too fast
+		DNSQuestion *q;
+		CacheUsed = 0;
+		CacheActive = 0;
+		LogMsgNoIdent("   Int  Next if      Type");
+		for (q = m->Questions; q; q=q->next)
+			{
+			mDNSs32 i = q->ThisQInterval / mDNSPlatformOneSecond;
+			mDNSs32 n = (q->LastQTime + q->ThisQInterval - now) / mDNSPlatformOneSecond;
+			NetworkInterfaceInfo *info = (NetworkInterfaceInfo *)q->InterfaceID;
+			CacheUsed++;
+			if (q->ThisQInterval) CacheActive++;
+			LogMsgNoIdent("%6d%6d %-6s%s %-6s%##s",
+				i, n, info ? info->ifname : "",
+				mDNSOpaque16IsZero(q->TargetQID) ? " " : q->LongLived ? "L" : "O", // mDNS, long-lived, or one-shot query?
+				DNSTypeName(q->qtype), q->qname.c);
+			usleep(1000);	// Limit rate a little so we don't flood syslog too fast
+			}
+		LogMsgNoIdent("%lu question%s; %lu active", CacheUsed, CacheUsed > 1 ? "s" : "", CacheActive);
 		}
-	LogMsgNoIdent("%lu question%s; %lu active", CacheUsed, CacheUsed > 1 ? "s" : "", CacheActive);
 
 	LogMsgNoIdent("---- Active Client Requests ----");
-	for (req = all_requests; req; req=req->next)
-		LogClientInfo(req);
+	if (!all_requests) LogMsgNoIdent("<None>");
+	else
+		{
+		request_state *req;
+		for (req = all_requests; req; req=req->next)
+			LogClientInfo(req);
+		}
 
 	LogMsgNoIdent("-------- NAT Traversals --------");
-	for (nat = m->NATTraversals; nat; nat=nat->next)
+	if (!m->NATTraversals) LogMsgNoIdent("<None>");
+	else
 		{
-		if (nat->Protocol)
-			LogMsgNoIdent("%p %s Int %5d Ext %5d Err %d Retry %d Interval %d Expire %d",
-				nat, nat->Protocol == NATOp_MapTCP ? "TCP" : "UDP",
-				mDNSVal16(nat->IntPort), mDNSVal16(nat->ExternalPort), nat->Result,
-				nat->retryPortMap ? nat->retryPortMap - now : 0,
-				nat->retryInterval,
-				nat->ExpiryTime ? nat->ExpiryTime - now : 0);
-		else
-			LogMsgNoIdent("%p Address Request Retry %d Interval %d", nat, m->retryGetAddr - now, m->retryIntervalGetAddr);
+		NATTraversalInfo *nat;
+		for (nat = m->NATTraversals; nat; nat=nat->next)
+			{
+			if (nat->Protocol)
+				LogMsgNoIdent("%p %s Int %5d Ext %5d Err %d Retry %d Interval %d Expire %d",
+					nat, nat->Protocol == NATOp_MapTCP ? "TCP" : "UDP",
+					mDNSVal16(nat->IntPort), mDNSVal16(nat->ExternalPort), nat->Result,
+					nat->retryPortMap ? nat->retryPortMap - now : 0,
+					nat->retryInterval,
+					nat->ExpiryTime ? nat->ExpiryTime - now : 0);
+			else
+				LogMsgNoIdent("%p Address Request Retry %d Interval %d", nat, m->retryGetAddr - now, m->retryIntervalGetAddr);
+			}
 		}
 
 	LogMsgNoIdent("--------- AuthInfoList ---------");
-	for (a = m->AuthInfoList; a; a = a->next)
-		LogMsgNoIdent("%##s %##s%s", a->domain.c, a->keyname.c, a->AutoTunnel ? " AutoTunnel" : "");
+	if (!m->AuthInfoList) LogMsgNoIdent("<None>");
+	else
+		{
+		DomainAuthInfo *a;
+		for (a = m->AuthInfoList; a; a = a->next)
+			LogMsgNoIdent("%##s %##s%s", a->domain.c, a->keyname.c, a->AutoTunnel ? " AutoTunnel" : "");
+		}
 
 	#if APPLE_OSX_mDNSResponder
+	LogMsgNoIdent("--------- TunnelClients ---------");
+	if (!m->TunnelClients) LogMsgNoIdent("<None>");
+	else
 		{
 		ClientTunnel *c;
-		LogMsgNoIdent("--------- TunnelClients ---------");
 		for (c = m->TunnelClients; c; c = c->next)
 			LogMsgNoIdent("%##s %.16a %.4a %.16a %.4a %5d", c->dstname.c, &c->loc_inner, &c->loc_outer, &c->rmt_inner, &c->rmt_outer, mDNSVal16(c->rmt_outer_port));
 		}
