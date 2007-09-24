@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.350  2007/09/24 23:54:52  mcguire
+Additional list checking in uds_validatelists()
+
 Revision 1.349  2007/09/24 06:01:00  cheshire
 Debugging: In SIGINFO output, show NAT Traversal time values in seconds rather than platform ticks
 
@@ -3617,6 +3620,11 @@ mDNSexport void uds_validatelists(void)
 		{
 		if (req->next == (request_state *)~0 || (req->sd < 0 && req->sd != -2))
 			LogMemCorruption("UDS request list: %p is garbage (%d)", req, req->sd);
+
+		reply_state *rep;
+		for (rep = req->replies; rep; rep=rep->next)
+		  if (rep->next == (reply_state *)~0)
+			LogMemCorruption("UDS req->replies: %p is garbage", rep);
 
 		if (req->terminate == connection_termination)
 			{
