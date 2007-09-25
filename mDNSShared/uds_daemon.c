@@ -17,6 +17,10 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.352  2007/09/25 20:23:40  cheshire
+<rdar://problem/5501567> BTMM: mDNSResponder crashes in free_service_instance enabling/disabling BTMM
+Need to clear si->request backpointer before calling mDNS_DeregisterService(&mDNSStorage, &si->srs);
+
 Revision 1.351  2007/09/25 18:20:34  cheshire
 Changed name of "free_service_instance" to more accurate "unlink_and_free_service_instance"
 
@@ -1619,16 +1623,17 @@ mDNSlocal mStatus register_service_instance(request_state *request, const domain
 	instance = mallocL("service_instance", instance_size);
 	if (!instance) { my_perror("ERROR: malloc"); return mStatus_NoMemoryErr; }
 
-	instance->subtypes = AllocateSubTypes(request->u.servicereg.num_subtypes, request->u.servicereg.type_as_string);
+	instance->next            = mDNSNULL;
+	instance->request         = request;
+	instance->sd              = request->sd;
+	instance->subtypes        = AllocateSubTypes(request->u.servicereg.num_subtypes, request->u.servicereg.type_as_string);
+	instance->renameonmemfree = 0;
+	instance->clientnotified  = mDNSfalse;
+	instance->default_local   = (request->u.servicereg.default_domain && SameDomainName(domain, &localdomain));
+	AssignDomainName(&instance->domain, domain);
+
 	if (request->u.servicereg.num_subtypes && !instance->subtypes)
 		{ unlink_and_free_service_instance(instance); instance = NULL; FatalError("ERROR: malloc"); }
-	instance->next              = mDNSNULL;
-	instance->request           = request;
-	instance->sd                = request->sd;
-	instance->renameonmemfree   = 0;
-	instance->clientnotified    = mDNSfalse;
-	AssignDomainName(&instance->domain, domain);
-	instance->default_local = (request->u.servicereg.default_domain && SameDomainName(domain, &localdomain));
 
 	LogOperation("%3d: DNSServiceRegister(%#s.%##s%##s, %u) ADDING",
 		instance->sd, &request->u.servicereg.name, &request->u.servicereg.type, domain->c, mDNSVal16(request->u.servicereg.port));
@@ -1722,6 +1727,16 @@ mDNSlocal void udsserver_default_reg_domain_changed(const DNameListElem *const d
 						mStatus err;
 						service_instance *si = *ptr;
 						*ptr = si->next;
+						// Now that we've cut this service_instance from the list, we MUST clear the si->request backpointer.
+						// Otherwise what can happen is this: While our mDNS_DeregisterService is in the
+						// process of completing asynchronously, the client cancels the entire operation, so
+						// regservice_termination_callback then runs through the whole list deregistering each
+						// instance, clearing the backpointers, and then disposing the parent request_state object.
+						// However, because this service_instance isn't in the list any more, regservice_termination_callback
+						// has no way to find it and clear its backpointer, and then when our mDNS_DeregisterService finally
+						// completes later with a mStatus_MemFree message, it calls unlink_and_free_service_instance() with
+						// a service_instance with a stale si->request backpointer pointing to memory that's already been freed.
+						si->request = NULL;
 						if (si->clientnotified) SendServiceRemovalNotification(&si->srs);
 						err = mDNS_DeregisterService(&mDNSStorage, &si->srs);
 						if (err) { LogMsg("udsserver_default_reg_domain_changed err %d", err); unlink_and_free_service_instance(si); }
