@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.351  2007/09/25 18:20:34  cheshire
+Changed name of "free_service_instance" to more accurate "unlink_and_free_service_instance"
+
 Revision 1.350  2007/09/24 23:54:52  mcguire
 Additional list checking in uds_validatelists()
 
@@ -1033,7 +1036,7 @@ mDNSexport void FreeExtraRR(mDNS *const m, AuthRecord *const rr, mStatus result)
 	freeL("ExtraResourceRecord/FreeExtraRR", extra);
 	}
 
-mDNSlocal void free_service_instance(service_instance *srv)
+mDNSlocal void unlink_and_free_service_instance(service_instance *srv)
 	{
 	ExtraResourceRecord *e = srv->srs.Extras, *tmp;
 
@@ -1165,7 +1168,7 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 			// error should never happen - safest to log and continue
 			}
 		else
-			free_service_instance(instance);
+			unlink_and_free_service_instance(instance);
 		}
 	else if (result == mStatus_NameConflict)
 		{
@@ -1191,7 +1194,7 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 					LogMsg("%3d: regservice_callback: %##s is not valid DNS-SD SRV name", instance->sd, srs->RR_SRV.resrec.name->c);
 				else { append_reply(instance->request, rep); instance->clientnotified = mDNStrue; }
 				}
-			free_service_instance(instance);
+			unlink_and_free_service_instance(instance);
 			}
 		}
 	else
@@ -1204,7 +1207,7 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 				LogMsg("%3d: regservice_callback: %##s is not valid DNS-SD SRV name", instance->sd, srs->RR_SRV.resrec.name->c);
 			else { append_reply(instance->request, rep); instance->clientnotified = mDNStrue; }
 			}
-		free_service_instance(instance);
+		unlink_and_free_service_instance(instance);
 		}
 	}
 
@@ -1618,7 +1621,7 @@ mDNSlocal mStatus register_service_instance(request_state *request, const domain
 
 	instance->subtypes = AllocateSubTypes(request->u.servicereg.num_subtypes, request->u.servicereg.type_as_string);
 	if (request->u.servicereg.num_subtypes && !instance->subtypes)
-		{ free_service_instance(instance); instance = NULL; FatalError("ERROR: malloc"); }
+		{ unlink_and_free_service_instance(instance); instance = NULL; FatalError("ERROR: malloc"); }
 	instance->next              = mDNSNULL;
 	instance->request           = request;
 	instance->sd                = request->sd;
@@ -1643,7 +1646,7 @@ mDNSlocal mStatus register_service_instance(request_state *request, const domain
 		{
 		LogMsg("register_service_instance %#s.%##s%##s error %d",
 			&request->u.servicereg.name, &request->u.servicereg.type, domain->c, result);
-		free_service_instance(instance);
+		unlink_and_free_service_instance(instance);
 		}
 
 	return result;
@@ -1662,13 +1665,13 @@ mDNSlocal void regservice_termination_callback(request_state *request)
 		LogOperation("%3d: DNSServiceRegister(%##s, %u) STOP",
 			request->sd, p->srs.RR_SRV.resrec.name->c, mDNSVal16(p->srs.RR_SRV.resrec.rdata->u.srv.port));
 
-		// Clear backpointer *before* calling mDNS_DeregisterService/free_service_instance
-		// We don't need free_service_instance to cut its element from the list, because we're already advancing
+		// Clear backpointer *before* calling mDNS_DeregisterService/unlink_and_free_service_instance
+		// We don't need unlink_and_free_service_instance to cut its element from the list, because we're already advancing
 		// request->u.servicereg.instances as we work our way through the list, implicitly cutting one element at a time
-		// We can't clear p->request *after* the calling mDNS_DeregisterService/free_service_instance
+		// We can't clear p->request *after* the calling mDNS_DeregisterService/unlink_and_free_service_instance
 		// because by then we might have already freed p
 		p->request = NULL;
-		if (mDNS_DeregisterService(&mDNSStorage, &p->srs)) free_service_instance(p);
+		if (mDNS_DeregisterService(&mDNSStorage, &p->srs)) unlink_and_free_service_instance(p);
 		// Don't touch service_instance *p after this -- it's likely to have been freed already
 		}
 	if (request->u.servicereg.txtdata)
@@ -1703,7 +1706,7 @@ mDNSlocal void udsserver_default_reg_domain_changed(const DNameListElem *const d
 				{
 				// Normally we should not fail to find the specified instance
 				// One case where this can happen is if a uDNS update fails for some reason,
-				// and regservice_callback then calls free_service_instance and disposes of that instance.
+				// and regservice_callback then calls unlink_and_free_service_instance and disposes of that instance.
 				if (!*ptr)
 					LogMsg("udsserver_default_reg_domain_changed domain %##s not found for service %#s type %s",
 						&d->name, request->u.servicereg.name.c, request->u.servicereg.type_as_string);
@@ -1721,7 +1724,7 @@ mDNSlocal void udsserver_default_reg_domain_changed(const DNameListElem *const d
 						*ptr = si->next;
 						if (si->clientnotified) SendServiceRemovalNotification(&si->srs);
 						err = mDNS_DeregisterService(&mDNSStorage, &si->srs);
-						if (err) { LogMsg("udsserver_default_reg_domain_changed err %d", err); free_service_instance(si); }
+						if (err) { LogMsg("udsserver_default_reg_domain_changed err %d", err); unlink_and_free_service_instance(si); }
 						}
 					}
 				}
