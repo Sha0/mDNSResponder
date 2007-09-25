@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.353  2007/09/25 20:46:33  cheshire
+Include DNSServiceRegisterRecord operations in SIGINFO output
+
 Revision 1.352  2007/09/25 20:23:40  cheshire
 <rdar://problem/5501567> BTMM: mDNSResponder crashes in free_service_instance enabling/disabling BTMM
 Need to clear si->request backpointer before calling mDNS_DeregisterService(&mDNSStorage, &si->srs);
@@ -3461,12 +3464,17 @@ mDNSexport int udsserver_exit(dnssd_sock_t skt)
 	return 0;
 	}
 
-mDNSlocal void LogClientInfo(request_state *req)
+mDNSlocal void LogClientInfo(mDNS *const m, request_state *req)
 	{
 	if (!req->terminate)
 		LogMsgNoIdent("%3d: No operation yet on this socket", req->sd);
 	else if (req->terminate == connection_termination)
+		{
+		registered_record_entry *p;
 		LogMsgNoIdent("%3d: DNSServiceCreateConnection", req->sd);
+		for (p = req->u.reg_recs; p; p=p->next)
+			LogMsgNoIdent(" ->  DNSServiceRegisterRecord %3d %s", p->key, ARDisplayString(m, p->rr));
+		}
 	else if (req->terminate == regservice_termination_callback)
 		{
 		service_instance *ptr;
@@ -3482,7 +3490,7 @@ mDNSlocal void LogClientInfo(request_state *req)
 	else if (req->terminate == resolve_termination_callback)
 		LogMsgNoIdent("%3d: DNSServiceResolve          %##s", req->sd, req->u.resolve.qsrv.qname.c);
 	else if (req->terminate == queryrecord_termination_callback)
-		LogMsgNoIdent("%3d: DNSServiceQueryRecord      %##s", req->sd, req->u.queryrecord.q.qname.c);
+		LogMsgNoIdent("%3d: DNSServiceQueryRecord      %##s (%s)", req->sd, req->u.queryrecord.q.qname.c, DNSTypeName(req->u.queryrecord.q.qtype));
 	else if (req->terminate == enum_termination_callback)
 		LogMsgNoIdent("%3d: DNSServiceEnumerateDomains %##s", req->sd, req->u.enumeration.q_all.qname.c);
 	else if (req->terminate == port_mapping_termination_callback)
@@ -3585,7 +3593,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 		{
 		request_state *req;
 		for (req = all_requests; req; req=req->next)
-			LogClientInfo(req);
+			LogClientInfo(m, req);
 		}
 
 	LogMsgNoIdent("-------- NAT Traversals --------");
@@ -3746,7 +3754,7 @@ mDNSexport mDNSs32 udsserver_idle(mDNSs32 nextevent)
 				{
 				LogMsg("Could not write data to client %d after %ld seconds - aborting connection",
 					(*req)->sd, (now - (*req)->time_blocked) / mDNSPlatformOneSecond);
-				LogClientInfo(*req);
+				LogClientInfo(&mDNSStorage, *req);
 				abort_request(*req);
 				}
 			else if (nextevent - now > mDNSPlatformOneSecond) nextevent = now + mDNSPlatformOneSecond;
