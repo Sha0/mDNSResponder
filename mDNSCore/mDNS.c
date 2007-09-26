@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.712  2007/09/26 23:16:58  cheshire
+<rdar://problem/5496399> BTMM: Leopard sending excessive LLQ registration requests to .Mac
+
 Revision 1.711  2007/09/26 22:06:02  cheshire
 <rdar://problem/5507399> BTMM: No immediate failure notifications for BTMM names
 
@@ -6112,10 +6115,10 @@ mDNSlocal mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	srs->uDNS_next = mDNSNULL;
 	*p = srs;
 
-	srs->RR_SRV.resrec.rroriginalttl = kWideAreaTTL;
-	srs->RR_TXT.resrec.rroriginalttl = kWideAreaTTL;
-	srs->RR_PTR.resrec.rroriginalttl = kWideAreaTTL;
-	for (i = 0; i < srs->NumSubTypes;i++) srs->SubTypes[i].resrec.rroriginalttl = kWideAreaTTL;
+	srs->RR_SRV.resrec.rroriginalttl = kHostNameTTL;
+	srs->RR_TXT.resrec.rroriginalttl = kStandardTTL;
+	srs->RR_PTR.resrec.rroriginalttl = kStandardTTL;
+	for (i = 0; i < srs->NumSubTypes;i++) srs->SubTypes[i].resrec.rroriginalttl = kStandardTTL;
 
 	srs->srs_uselease = mDNStrue;
 

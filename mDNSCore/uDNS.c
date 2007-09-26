@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.483  2007/09/26 23:16:58  cheshire
+<rdar://problem/5496399> BTMM: Leopard sending excessive LLQ registration requests to .Mac
+
 Revision 1.482  2007/09/26 22:06:02  cheshire
 <rdar://problem/5507399> BTMM: No immediate failure notifications for BTMM names
 
@@ -1722,7 +1725,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 	if (ConnectionEstablished)
 		{
 		// connection is established - send the message
-		if (tcpInfo->question && tcpInfo->question->LongLived)
+		if (tcpInfo->question && tcpInfo->question->LongLived && tcpInfo->question->state != LLQ_Poll)
 			{
 			LLQOptData llqData;			// set llq rdata
 			llqData.vers  = kLLQ_Vers;
@@ -2118,7 +2121,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 		{
 		// update w/ prereq that SRV already exist to make sure previous registration was ours, and delete any stale TXT records
 		if (!(ptr = PutResourceRecordTTLJumbo(&m->omsg, ptr, &m->omsg.h.mDNS_numPrereqs, &srs->RR_SRV.resrec, 0))) { err = mStatus_UnknownErr; goto exit; }
-		if (!(ptr = putDeleteRRSet(&m->omsg, ptr, srs->RR_TXT.resrec.name, srs->RR_TXT.resrec.rrtype)))       { err = mStatus_UnknownErr; goto exit; }
+		if (!(ptr = putDeleteRRSet(&m->omsg, ptr, srs->RR_TXT.resrec.name, srs->RR_TXT.resrec.rrtype)))            { err = mStatus_UnknownErr; goto exit; }
 		}
 
 	else if (srs->state != regState_Refresh && srs->state != regState_UpdatePending)
