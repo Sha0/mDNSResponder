@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.490  2007/09/26 23:01:21  mcguire
+<rdar://problem/5505280> BTMM: v6 address and security policies being setup too soon
+
 Revision 1.489  2007/09/26 22:58:16  mcguire
 <rdar://problem/5505092> BTMM: Client tunnels being created to ::0 via 0.0.0.0
 
@@ -2020,6 +2023,16 @@ mDNSlocal mDNSBool TunnelServers(mDNS *const m)
 	return(mDNSfalse);
 	}
 
+// MUST be called with lock held
+mDNSlocal mDNSBool TunnelClients(mDNS *const m)
+	{
+	ClientTunnel *p;
+	for (p = m->TunnelClients; p; p = p->next)
+		if (p->q.ThisQInterval < 0)
+			return(mDNStrue);
+	return(mDNSfalse);
+	}
+
 mDNSlocal void AutoTunnelNATCallback(mDNS *m, NATTraversalInfo *n)
 	{
 	mStatus err = mStatus_NoError;
@@ -2281,6 +2294,8 @@ mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const R
 
 		if (needSetKeys) LogOperation("New AutoTunnel for %##s %.16a", tun->dstname.c, &tun->rmt_inner);
 
+		if (m->AutoTunnelHostAddr.b[0]) SetupLocalAutoTunnelInterface_internal(m);
+
 		mStatus result = needSetKeys ? AutoTunnelSetKeys(tun, mDNStrue) : mStatus_NoError;
 		// Kick off any questions that were held pending this tunnel setup
 		ReissueBlockedQuestions(m, &tun->dstname, (result == mStatus_NoError) ? mDNStrue : mDNSfalse);
@@ -2292,8 +2307,6 @@ mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const R
 // Must be called with the lock held
 mDNSexport void AddNewClientTunnel(mDNS *const m, DNSQuestion *const q)
 	{
-	if (m->AutoTunnelHostAddr.b[0] && !m->TunnelClients) SetupLocalAutoTunnelInterface_internal(m);
-
 	ClientTunnel *p = mallocL("ClientTunnel", sizeof(ClientTunnel));
 	if (!p) return;
 	AssignDomainName(&p->dstname, &q->qname);
@@ -3397,7 +3410,7 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 			}
 
 		if (m->AutoTunnelHostAddr.b[0])
-			if (m->TunnelClients || TunnelServers(m))
+			if (TunnelClients(m) || TunnelServers(m))
 				SetupLocalAutoTunnelInterface_internal(m);
 		}
 	#endif APPLE_OSX_mDNSResponder
@@ -3438,7 +3451,7 @@ mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 		if (m->AutoTunnelHostAddr.b[0])
 			{
 			mDNS_Lock(m);
-			if (m->TunnelClients || TunnelServers(m))
+			if (TunnelClients(m) || TunnelServers(m))
 				SetupLocalAutoTunnelInterface_internal(m);
 			mDNS_Unlock(m);
 			}
