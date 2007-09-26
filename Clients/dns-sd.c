@@ -497,7 +497,7 @@ static void DNSSD_API qr_reply(DNSServiceRef sdref, const DNSServiceFlags flags,
 	char *op = (flags & kDNSServiceFlagsAdd) ? "Add" : "Rmv";
 	const unsigned char *rd  = rdata;
 	const unsigned char *end = (const unsigned char *) rdata + rdlen;
-	char rdb[1000], *p = rdb;
+	char rdb[1000] = "", *p = rdb;
 	int unknowntype = 0;
 
 	(void)sdref;    // Unused
@@ -509,49 +509,52 @@ static void DNSSD_API qr_reply(DNSServiceRef sdref, const DNSServiceFlags flags,
 	if (num_printed++ == 0) printf("Timestamp     A/R Flags if %-30s%4s%4s Rdata\n", "Name", "T", "C");
 	printtimestamp();
 
-	switch (rrtype)
+	if (!errorCode)
 		{
-		case kDNSServiceType_A:
-			snprintf(rdb, sizeof(rdb), "%d.%d.%d.%d", rd[0], rd[1], rd[2], rd[3]);
-			break;
-
-		case kDNSServiceType_NS:
-		case kDNSServiceType_CNAME:
-		case kDNSServiceType_PTR:
-		case kDNSServiceType_DNAME:
-			p += snprintd(p, sizeof(rdb), &rd);
-			break;
-
-		case kDNSServiceType_SOA:
-			p += snprintd(p, rdb + sizeof(rdb) - p, &rd);		// mname
-			p += snprintf(p, rdb + sizeof(rdb) - p, " ");
-			p += snprintd(p, rdb + sizeof(rdb) - p, &rd);		// rname
-			p += snprintf(p, rdb + sizeof(rdb) - p, " Ser %d Ref %d Ret %d Exp %d Min %d",
-				ntohl(((uint32_t*)rd)[0]), ntohl(((uint32_t*)rd)[1]), ntohl(((uint32_t*)rd)[2]), ntohl(((uint32_t*)rd)[3]), ntohl(((uint32_t*)rd)[4]));
-			break;
-
-		case kDNSServiceType_AAAA:
-			snprintf(rdb, sizeof(rdb), "%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X",
-				rd[0x0], rd[0x1], rd[0x2], rd[0x3], rd[0x4], rd[0x5], rd[0x6], rd[0x7],
-				rd[0x8], rd[0x9], rd[0xA], rd[0xB], rd[0xC], rd[0xD], rd[0xE], rd[0xF]);
-			break;
-
-		case kDNSServiceType_SRV:
-			p += snprintf(p, rdb + sizeof(rdb) - p, "%d %d %d ",	// priority, weight, port
-				ntohs(*(unsigned short*)rd), ntohs(*(unsigned short*)(rd+2)), ntohs(*(unsigned short*)(rd+4)));
-			rd += 6;
-			p += snprintd(p, rdb + sizeof(rdb) - p, &rd);			// target host
-			break;
-
-		default : snprintf(rdb, sizeof(rdb), "%d bytes%s", rdlen, rdlen ? ":" : ""); unknowntype = 1; break;
+		switch (rrtype)
+			{
+			case kDNSServiceType_A:
+				snprintf(rdb, sizeof(rdb), "%d.%d.%d.%d", rd[0], rd[1], rd[2], rd[3]);
+				break;
+	
+			case kDNSServiceType_NS:
+			case kDNSServiceType_CNAME:
+			case kDNSServiceType_PTR:
+			case kDNSServiceType_DNAME:
+				p += snprintd(p, sizeof(rdb), &rd);
+				break;
+	
+			case kDNSServiceType_SOA:
+				p += snprintd(p, rdb + sizeof(rdb) - p, &rd);		// mname
+				p += snprintf(p, rdb + sizeof(rdb) - p, " ");
+				p += snprintd(p, rdb + sizeof(rdb) - p, &rd);		// rname
+				p += snprintf(p, rdb + sizeof(rdb) - p, " Ser %d Ref %d Ret %d Exp %d Min %d",
+					ntohl(((uint32_t*)rd)[0]), ntohl(((uint32_t*)rd)[1]), ntohl(((uint32_t*)rd)[2]), ntohl(((uint32_t*)rd)[3]), ntohl(((uint32_t*)rd)[4]));
+				break;
+	
+			case kDNSServiceType_AAAA:
+				snprintf(rdb, sizeof(rdb), "%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X",
+					rd[0x0], rd[0x1], rd[0x2], rd[0x3], rd[0x4], rd[0x5], rd[0x6], rd[0x7],
+					rd[0x8], rd[0x9], rd[0xA], rd[0xB], rd[0xC], rd[0xD], rd[0xE], rd[0xF]);
+				break;
+	
+			case kDNSServiceType_SRV:
+				p += snprintf(p, rdb + sizeof(rdb) - p, "%d %d %d ",	// priority, weight, port
+					ntohs(*(unsigned short*)rd), ntohs(*(unsigned short*)(rd+2)), ntohs(*(unsigned short*)(rd+4)));
+				rd += 6;
+				p += snprintd(p, rdb + sizeof(rdb) - p, &rd);			// target host
+				break;
+	
+			default : snprintf(rdb, sizeof(rdb), "%d bytes%s", rdlen, rdlen ? ":" : ""); unknowntype = 1; break;
+			}
 		}
 
 	printf("%s%6X%3d %-30s%4d%4d %s", op, flags, ifIndex, fullname, rrtype, rrclass, rdb);
 	if (unknowntype) while (rd < end) printf(" %02X", *rd++);
 	if (errorCode)
 		{
-		if (errorCode == kDNSServiceErr_NoSuchRecord) printf("   No Such Record");
-		else                                          printf("   Error code %d", errorCode);
+		if (errorCode == kDNSServiceErr_NoSuchRecord) printf("No Such Record");
+		else                                          printf("Error code %d", errorCode);
 		}
 	printf("\n");
 
