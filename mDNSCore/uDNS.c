@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.482  2007/09/26 22:06:02  cheshire
+<rdar://problem/5507399> BTMM: No immediate failure notifications for BTMM names
+
 Revision 1.481  2007/09/26 00:49:46  cheshire
 Improve packet logging to show sent and received packets,
 transport protocol (UDP/TCP/TLS) and source/destination address:port
@@ -4295,13 +4298,13 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 				for (rr = cg->members; rr; rr=rr->next)
 					if (SameNameRecordAnswersQuestion(&rr->resrec, q)) mDNS_PurgeCacheResourceRecord(m, rr);
 
-			if (!q->qDNSServer) LogMsg("uDNS_CheckCurrentQuestion no DNS server for %##s", q->qname.c);
+			if (!q->qDNSServer) LogMsg("uDNS_CheckCurrentQuestion no DNS server for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 			else LogMsg("uDNS_CheckCurrentQuestion DNS server %#a:%d for %##s is disabled", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qname.c);
 
 			MakeNegativeCacheRecord(m, &q->qname, q->qnamehash, q->qtype, q->qclass);
 			// Inactivate this question until the next change of DNS servers (do this before AnswerCurrentQuestionWithResourceRecord)
 			q->ThisQInterval = 0;
-			AnswerCurrentQuestionWithResourceRecord(m, &m->rec.r, QC_addnocache);
+			CreateNewCacheEntry(m, slot, cg);
 			m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 			// MUST NOT touch m->CurrentQuestion (or q) after this -- client callback could have deleted it
 			}

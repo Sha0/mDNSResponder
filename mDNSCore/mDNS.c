@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.711  2007/09/26 22:06:02  cheshire
+<rdar://problem/5507399> BTMM: No immediate failure notifications for BTMM names
+
 Revision 1.710  2007/09/26 00:49:46  cheshire
 Improve packet logging to show sent and received packets,
 transport protocol (UDP/TCP/TLS) and source/destination address:port
@@ -2697,12 +2700,9 @@ mDNSlocal mDNSs32 CheckForSoonToExpireRecords(mDNS *const m, const domainname *c
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
 	{
-	if (m->CurrentQuestion)
-		LogMsg("CacheRecordAdd ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
-	m->CurrentQuestion = m->Questions;
-	while (m->CurrentQuestion && m->CurrentQuestion != m->NewQuestions)
+	DNSQuestion *q;
+	for (q = m->Questions; q; q=q->next)
 		{
-		DNSQuestion *q = m->CurrentQuestion;
 		if (ResourceRecordAnswersQuestion(&rr->resrec, q))
 			{
 			// If this question is one that's actively sending queries, and it's received ten answers within one
@@ -2738,12 +2738,25 @@ mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
 				rr->resrec.rroriginalttl = 0;
 				rr->UnansweredQueries = MaxUnansweredQueries;
 				}
-			AnswerCurrentQuestionWithResourceRecord(m, rr, QC_add);
 			}
-		if (m->CurrentQuestion == q)	// If m->CurrentQuestion was not auto-advanced, do it ourselves now
-			m->CurrentQuestion = q->next;
 		}
-	m->CurrentQuestion = mDNSNULL;
+
+	if (!rr->DelayDelivery)
+		{
+		if (m->CurrentQuestion)
+			LogMsg("CacheRecordAdd ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
+		m->CurrentQuestion = m->Questions;
+		while (m->CurrentQuestion && m->CurrentQuestion != m->NewQuestions)
+			{
+			DNSQuestion *q = m->CurrentQuestion;
+			if (ResourceRecordAnswersQuestion(&rr->resrec, q))
+				AnswerCurrentQuestionWithResourceRecord(m, rr, QC_add);
+			if (m->CurrentQuestion == q)	// If m->CurrentQuestion was not auto-advanced, do it ourselves now
+				m->CurrentQuestion = q->next;
+			}
+		m->CurrentQuestion = mDNSNULL;
+		}
+
 	SetNextCacheCheckTime(m, rr);
 	}
 
@@ -4147,7 +4160,7 @@ mDNSlocal mDNSBool ExpectingUnicastResponseForRecord(mDNS *const m, const mDNSAd
 	return(mDNSfalse);
 	}
 
-mDNSlocal CacheRecord *CreateNewCacheEntry(mDNS *const m, const mDNSu32 slot, CacheGroup *cg)
+mDNSexport CacheRecord *CreateNewCacheEntry(mDNS *const m, const mDNSu32 slot, CacheGroup *cg)
 	{
 	CacheRecord *rr = mDNSNULL;
 
@@ -4163,7 +4176,7 @@ mDNSlocal CacheRecord *CreateNewCacheEntry(mDNS *const m, const mDNSu32 slot, Ca
 		default:           RDLength = m->rec.r.resrec.rdlength; break;
 		}
 
-	if (!cg) cg = GetCacheGroup(m, slot, &m->rec.r.resrec);			// If we don't have a CacheGroup for this name, make one now
+	if (!cg) cg = GetCacheGroup(m, slot, &m->rec.r.resrec);	// If we don't have a CacheGroup for this name, make one now
 	if (cg)  rr = GetCacheRecord(m, cg, RDLength);	// Make a cache record, being careful not to recycle cg
 	if (!rr) NoCacheAnswer(m, &m->rec.r);
 	else
@@ -4184,9 +4197,11 @@ mDNSlocal CacheRecord *CreateNewCacheEntry(mDNS *const m, const mDNSu32 slot, Ca
 		rr->next = mDNSNULL;					// Clear 'next' pointer
 		*(cg->rrcache_tail) = rr;				// Append this record to tail of cache slot list
 		cg->rrcache_tail = &(rr->next);			// Advance tail pointer
-		if (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask &&	// If marked unique,
-			rr->resrec.rdata->MaxRDLength != 0)							// and non-negative, assume we may have
-			rr->DelayDelivery = m->timenow + mDNSPlatformOneSecond;		// to delay delivery of this 'add' event
+		if (rr->resrec.RecordType == kDNSRecordTypePacketNegative)
+			rr->DelayDelivery = NonZeroTime(m->timenow);
+		else if (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask &&			// If marked unique,
+			rr->resrec.rdata->MaxRDLength != 0)										// and non-negative, assume we may have
+			rr->DelayDelivery = NonZeroTime(m->timenow + mDNSPlatformOneSecond);	// to delay delivery of this 'add' event
 		else
 			rr->DelayDelivery = CheckForSoonToExpireRecords(m, rr->resrec.name, rr->resrec.namehash, slot);
 

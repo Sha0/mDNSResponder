@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.440  2007/09/26 22:06:02  cheshire
+<rdar://problem/5507399> BTMM: No immediate failure notifications for BTMM names
+
 Revision 1.439  2007/09/21 21:12:36  cheshire
 DNSDigest_SignMessage does not need separate "mDNSu16 *numAdditionals" parameter
 
@@ -2590,6 +2593,7 @@ extern void     mDNSCoreMachineSleep(mDNS *const m, mDNSBool wake);
 
 extern mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip);
 
+extern CacheRecord *CreateNewCacheEntry(mDNS *const m, const mDNSu32 slot, CacheGroup *cg);
 extern void GrantCacheExtensions(mDNS *const m, DNSQuestion *q, mDNSu32 lease);
 extern void MakeNegativeCacheRecord(mDNS *const m, const domainname *const name, const mDNSu32 namehash, const mDNSu16 rrtype, const mDNSu16 rrclass);
 extern void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheRecord *const rr, const QC_result AddRecord);
