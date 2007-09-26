@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.173  2007/09/26 00:49:46  cheshire
+Improve packet logging to show sent and received packets,
+transport protocol (UDP/TCP/TLS) and source/destination address:port
+
 Revision 1.172  2007/09/21 23:14:39  cheshire
 <rdar://problem/5498009> BTMM: Need to log updates and query packet contents in verbose debug mode
 Changed DumpRecords to use LargeCacheRecord on the stack instead of the shared m->rec storage,
@@ -1747,6 +1751,7 @@ mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNS
 
 mDNSexport mDNSu8 *PutResourceRecordTTLWithLimit(DNSMessage *const msg, mDNSu8 *ptr, mDNSu16 *count, ResourceRecord *rr, mDNSu32 ttl, const mDNSu8 *limit)
 	{
+	mDNSu16 rrclass = (rr->rrtype == kDNSType_OPT) ? NormalMaxDNSMessageData : rr->rrclass;
 	mDNSu8 *endofrdata;
 	mDNSu16 actualLength;
 
@@ -1762,8 +1767,8 @@ mDNSexport mDNSu8 *PutResourceRecordTTLWithLimit(DNSMessage *const msg, mDNSu8 *
 	if (!ptr || ptr + 10 >= limit) return(mDNSNULL);	// If we're out-of-space, return mDNSNULL
 	ptr[0] = (mDNSu8)(rr->rrtype  >> 8);
 	ptr[1] = (mDNSu8)(rr->rrtype  &  0xFF);
-	ptr[2] = (mDNSu8)(rr->rrclass >> 8);
-	ptr[3] = (mDNSu8)(rr->rrclass &  0xFF);
+	ptr[2] = (mDNSu8)(rrclass     >> 8);
+	ptr[3] = (mDNSu8)(rrclass     &  0xFF);
 	ptr[4] = (mDNSu8)((ttl >> 24) &  0xFF);
 	ptr[5] = (mDNSu8)((ttl >> 16) &  0xFF);
 	ptr[6] = (mDNSu8)((ttl >>  8) &  0xFF);
@@ -2345,26 +2350,30 @@ mDNSlocal const mDNSu8 *DumpRecords(mDNS *const m, const DNSMessage *const msg, 
 	return(ptr);
 	}
 
-#define DNS_OP_Name(X) (                                \
-	(X) == kDNSFlag0_OP_StdQuery ? "" :                 \
-	(X) == kDNSFlag0_OP_Iquery   ? "Iquery "    :       \
-	(X) == kDNSFlag0_OP_Status   ? "Status "    :       \
-	(X) == kDNSFlag0_OP_Unused3  ? "Unused3 "   :       \
-	(X) == kDNSFlag0_OP_Notify   ? "Notify "    :       \
-	(X) == kDNSFlag0_OP_Update   ? "Update "    : "?? " )
+#define DNS_OP_Name(X) (                              \
+	(X) == kDNSFlag0_OP_StdQuery ? "" :               \
+	(X) == kDNSFlag0_OP_Iquery   ? "Iquery "  :       \
+	(X) == kDNSFlag0_OP_Status   ? "Status "  :       \
+	(X) == kDNSFlag0_OP_Unused3  ? "Unused3 " :       \
+	(X) == kDNSFlag0_OP_Notify   ? "Notify "  :       \
+	(X) == kDNSFlag0_OP_Update   ? "Update "  : "?? " )
 
 // Note: DumpPacket expects the packet header fields in host byte order, not network byter order
-mDNSexport void DumpPacket(mDNS *const m, char *prefix, const DNSMessage *const msg, const mDNSu8 *const end)
+mDNSexport void DumpPacket(mDNS *const m, mDNSBool sent, char *transport, const mDNSAddr *addr, mDNSIPPort port, const DNSMessage *const msg, const mDNSu8 *const end)
 	{
 	const mDNSu8 *ptr = msg->data;
 	int i;
 	DNSQuestion q;
 
-	LogMsg("%s DNS %s%s %02X%02X %d bytes", prefix,
+	LogMsg("%s %s DNS %s%s (op %02X%02X) %d bytes %s %#a:%d%s",
+		sent ? "Sent" : "Received", transport,
 		DNS_OP_Name(msg->h.flags.b[0] & kDNSFlag0_OP_Mask),
 		msg->h.flags.b[0] & kDNSFlag0_QR_Response ? "Response" : "Query",
 		msg->h.flags.b[0], msg->h.flags.b[1],
-		end - msg->data);
+		end - msg->data,
+		sent ? "to" : "from", addr, mDNSVal16(port),
+		(msg->h.flags.b[0] & kDNSFlag0_TC) ? " (truncated)" : ""
+		);
 
 	LogMsg("%2d Questions", msg->h.numQuestions);
 	for (i = 0; i < msg->h.numQuestions && ptr; i++)
@@ -2383,6 +2392,9 @@ mDNSexport void DumpPacket(mDNS *const m, char *prefix, const DNSMessage *const 
 #pragma mark -
 #pragma mark - Packet Sending Functions
 #endif
+
+// Stub definition of TCPSocket_struct so we can access flags field. (Rest of TCPSocket_struct is platform-dependent.)
+struct TCPSocket_struct { TCPSocketFlags flags; /* ... */ };
 
 mDNSexport mStatus mDNSSendDNSMessage(mDNS *const m, DNSMessage *const msg, mDNSu8 *end,
     mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, TCPSocket *sock, DomainAuthInfo *authInfo)
@@ -2442,7 +2454,7 @@ mDNSexport mStatus mDNSSendDNSMessage(mDNS *const m, DNSMessage *const msg, mDNS
 	if (mDNS_LogLevel >= MDNS_LOG_VERBOSE_DEBUG && !mDNSOpaque16IsZero(msg->h.id))
 		{
 		if (authInfo) msg->h.numAdditionals++;	// Want to include TSIG in DumpPacket output
-		DumpPacket(m, "Sent", msg, end);
+		DumpPacket(m, mDNStrue, sock && (sock->flags & kTCPSocketFlags_UseTLS) ? "TLS" : sock ? "TCP" : "UDP", dst, dstport, msg, end);
 		if (authInfo) msg->h.numAdditionals--;
 		}
 

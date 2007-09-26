@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.52  2007/09/26 00:49:46  cheshire
+Improve packet logging to show sent and received packets,
+transport protocol (UDP/TCP/TLS) and source/destination address:port
+
 Revision 1.51  2007/09/21 21:12:36  cheshire
 <rdar://problem/5498009> BTMM: Need to log updates and query packet contents
 
@@ -251,7 +255,7 @@ extern const mDNSu8 *LocateLLQOptData(const DNSMessage *const msg, const mDNSu8 
 extern const rdataOPT *GetLLQOptData(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end);
 extern const mDNSu8 *LocateLeaseOptData(const DNSMessage *const msg, const mDNSu8 *const end);
 extern mDNSu32 GetPktLease(mDNS *m, DNSMessage *msg, const mDNSu8 *end);
-extern void DumpPacket(mDNS *const m, char *prefix, const DNSMessage *const msg, const mDNSu8 *const end);
+extern void DumpPacket(mDNS *const m, mDNSBool sent, char *type, const mDNSAddr *addr, mDNSIPPort port, const DNSMessage *const msg, const mDNSu8 *const end);
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK

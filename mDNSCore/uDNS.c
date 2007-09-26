@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.481  2007/09/26 00:49:46  cheshire
+Improve packet logging to show sent and received packets,
+transport protocol (UDP/TCP/TLS) and source/destination address:port
+
 Revision 1.480  2007/09/21 21:08:52  cheshire
 Get rid of unnecessary DumpPacket() calls -- it makes more sense
 to do this in mDNSSendDNSMessage and mDNSCoreReceive instead
@@ -1685,6 +1689,9 @@ mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *co
 	return uDNS_LLQ_Not;
 	}
 
+// Stub definition of TCPSocket_struct so we can access flags field. (Rest of TCPSocket_struct is platform-dependent.)
+struct TCPSocket_struct { TCPSocketFlags flags; /* ... */ };
+
 // tcpCallback is called to handle events (e.g. connection opening and data reception) on TCP connections for
 // Private DNS operations -- private queries, private LLQs, private record updates and private service updates
 mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEstablished, mStatus err)
@@ -1737,7 +1744,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 		else
 			end = ((mDNSu8*) &tcpInfo->request) + tcpInfo->requestLen;
 
-		err = mDNSSendDNSMessage(m, &tcpInfo->request, end, mDNSInterface_Any, &zeroAddr, zeroIPPort, sock, AuthInfo);
+		err = mDNSSendDNSMessage(m, &tcpInfo->request, end, mDNSInterface_Any, &tcpInfo->Addr, tcpInfo->Port, sock, AuthInfo);
 
 		if (err) { debugf("ERROR: tcpCallback: mDNSSendDNSMessage - %ld", err); err = mStatus_UnknownErr; goto exit; }
 
@@ -1763,7 +1770,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 				// It's perfectly fine for this socket to close after the first reply. The server might
 				// be sending gratuitous replies using UDP and doesn't have a need to leave the TCP socket open.
 				// We'll only log this event if we've never received a reply before.
-				// BIND 9 appears to close an idle connection after 30 seconds
+				// BIND 9 appears to close an idle connection after 30 seconds.
 				if (tcpInfo->numReplies == 0) LogMsg("ERROR: socket closed prematurely %d", tcpInfo->nread);
 				err = mStatus_ConnFailed;
 				goto exit;
@@ -1801,7 +1808,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			// If we're going to dispose this connection, do it FIRST, before calling client callback
 			if (!tcpInfo->question || !tcpInfo->question->LongLived) { *backpointer = mDNSNULL; DisposeTCPConn(tcpInfo); }
 			
-			mDNSCoreReceive(m, reply, end, &Addr, Port, mDNSNULL, zeroIPPort, 0);
+			mDNSCoreReceive(m, reply, end, &Addr, Port, (sock->flags & kTCPSocketFlags_UseTLS) ? (mDNSAddr *)1 : mDNSNULL, zeroIPPort, 0);
 			// USE CAUTION HERE: Invoking mDNSCoreReceive may have caused the environment to change, including canceling this operation itself
 			
 			mDNSPlatformMemFree(reply);
