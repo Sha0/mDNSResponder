@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.441  2007/09/26 23:17:49  cheshire
+Get rid of unused kWideAreaTTL constant
+
 Revision 1.440  2007/09/26 22:06:02  cheshire
 <rdar://problem/5507399> BTMM: No immediate failure notifications for BTMM names
 
@@ -873,13 +876,9 @@ typedef struct { mDNSu8 c[256]; } UTF8str255;		// Null-terminated C string
 // For records containing a hostname (in the name on the left, or in the rdata on the right),
 // like A, AAAA, reverse-mapping PTR, and SRV, we use a two-minute TTL by default, because we don't want
 // them to hang around for too long in the cache if the host in question crashes or otherwise goes away.
-// Wide-area service discovery records have a very short TTL to avoid poluting intermediate caches with
-// dynamic records.  When discovered via Long Lived Queries (with change notifications), resource record
-// TTLs can be safely ignored.
 
 #define kStandardTTL (3600UL * 100 / 80)
 #define kHostNameTTL 120UL
-#define kWideAreaTTL 3
 
 #define DefaultTTLforRRType(X) (((X) == kDNSType_A || (X) == kDNSType_AAAA || (X) == kDNSType_SRV) ? kHostNameTTL : kStandardTTL)
 
