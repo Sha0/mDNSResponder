@@ -17,6 +17,10 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.354  2007/09/26 01:26:31  cheshire
+<rdar://problem/5501567> BTMM: mDNSResponder crashes in free_service_instance enabling/disabling BTMM
+Need to call SendServiceRemovalNotification *before* backpointer is cleared
+
 Revision 1.353  2007/09/25 20:46:33  cheshire
 Include DNSServiceRegisterRecord operations in SIGINFO output
 
@@ -1730,6 +1734,7 @@ mDNSlocal void udsserver_default_reg_domain_changed(const DNameListElem *const d
 						mStatus err;
 						service_instance *si = *ptr;
 						*ptr = si->next;
+						if (si->clientnotified) SendServiceRemovalNotification(&si->srs); // Do this *before* clearing si->request backpointer
 						// Now that we've cut this service_instance from the list, we MUST clear the si->request backpointer.
 						// Otherwise what can happen is this: While our mDNS_DeregisterService is in the
 						// process of completing asynchronously, the client cancels the entire operation, so
@@ -1740,7 +1745,6 @@ mDNSlocal void udsserver_default_reg_domain_changed(const DNameListElem *const d
 						// completes later with a mStatus_MemFree message, it calls unlink_and_free_service_instance() with
 						// a service_instance with a stale si->request backpointer pointing to memory that's already been freed.
 						si->request = NULL;
-						if (si->clientnotified) SendServiceRemovalNotification(&si->srs);
 						err = mDNS_DeregisterService(&mDNSStorage, &si->srs);
 						if (err) { LogMsg("udsserver_default_reg_domain_changed err %d", err); unlink_and_free_service_instance(si); }
 						}
