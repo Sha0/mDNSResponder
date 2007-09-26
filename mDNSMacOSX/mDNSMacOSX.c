@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.488  2007/09/26 00:32:45  cheshire
+Rearrange struct TCPSocket_struct so "TCPSocketFlags flags" comes first (needed for debug logging)
+
 Revision 1.487  2007/09/21 17:07:41  mcguire
 <rdar://problem/5487354> BTMM: Need to modify IPSec tunnel setup files when shared secret changes (server-role)
 
@@ -1150,10 +1153,10 @@ mDNSlocal void myKQSocketCallBack(int s1, short filter, void *context)
 
 struct TCPSocket_struct
 	{
+	TCPSocketFlags flags;		// MUST BE FIRST FIELD -- mDNSCore expects every TCPSocket_struct to begin with TCPSocketFlags flags
 	TCPConnectionCallback callback;
 	int fd;
 	KQueueEntry kqEntry;
-	TCPSocketFlags flags;
 #ifndef NO_SECURITYFRAMEWORK
 	SSLContextRef tlsContext;
 #endif /* NO_SECURITYFRAMEWORK */
