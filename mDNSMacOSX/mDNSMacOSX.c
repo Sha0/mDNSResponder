@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.489  2007/09/26 22:58:16  mcguire
+<rdar://problem/5505092> BTMM: Client tunnels being created to ::0 via 0.0.0.0
+
 Revision 1.488  2007/09/26 00:32:45  cheshire
 Rearrange struct TCPSocket_struct so "TCPSocketFlags flags" comes first (needed for debug logging)
 
@@ -2188,16 +2191,27 @@ mDNSlocal void ReissueBlockedQuestions(mDNS *const m, domainname *d, mDNSBool su
 		}
 	}
 
+mDNSlocal void UnlinkAndReissueBlockedQuestions(mDNS *const m, ClientTunnel *tun, mDNSBool success)
+	{
+	ClientTunnel **p = &m->TunnelClients;
+	while (*p != tun && *p) p = &(*p)->next;
+	if (*p) *p = tun->next;
+	ReissueBlockedQuestions(m, &tun->dstname, success);
+	freeL("ClientTunnel", tun);
+	}
+
 mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
 	ClientTunnel *tun = (ClientTunnel *)question->QuestionContext;
+	LogOperation("AutoTunnelCallback tun %p AddRecord %d rdlength %d qtype %d", tun, AddRecord, answer->rdlength, question->qtype);
+
 	if (!AddRecord) return;
 	mDNS_StopQuery(m, question);
 
 	if (!answer->rdlength)
 		{
 		LogOperation("AutoTunnelCallback NXDOMAIN %##s", question->qname.c);
-		ReissueBlockedQuestions(m, &tun->dstname, mDNSfalse);
+		UnlinkAndReissueBlockedQuestions(m, tun, mDNSfalse);
 		return;
 		}
 
@@ -2206,12 +2220,7 @@ mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const R
 		if (mDNSSameIPv6Address(answer->rdata->u.ipv6, m->AutoTunnelHostAddr))
 			{
 			LogOperation("AutoTunnelCallback: supressing tunnel to self %.16a", &answer->rdata->u.ipv6);
-			question->ThisQInterval = -1;		// So we know this tunnel setup has completed
-			ClientTunnel **p = &m->TunnelClients;
-			while (*p != tun && *p) p = &(*p)->next;
-			if (*p) *p = tun->next;
-			ReissueBlockedQuestions(m, &tun->dstname, mDNStrue);
-			freeL("ClientTunnel", tun);
+			UnlinkAndReissueBlockedQuestions(m, tun, mDNStrue);
 			return;
 			}
 
