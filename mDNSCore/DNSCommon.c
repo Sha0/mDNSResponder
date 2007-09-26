@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.174  2007/09/26 16:36:02  cheshire
+In DumpPacket output, begin header line with "-- " to make it visually stand out better
+
 Revision 1.173  2007/09/26 00:49:46  cheshire
 Improve packet logging to show sent and received packets,
 transport protocol (UDP/TCP/TLS) and source/destination address:port
@@ -2365,7 +2368,7 @@ mDNSexport void DumpPacket(mDNS *const m, mDNSBool sent, char *transport, const 
 	int i;
 	DNSQuestion q;
 
-	LogMsg("%s %s DNS %s%s (op %02X%02X) %d bytes %s %#a:%d%s",
+	LogMsg("-- %s %s DNS %s%s (op %02X%02X) %d bytes %s %#a:%d%s --",
 		sent ? "Sent" : "Received", transport,
 		DNS_OP_Name(msg->h.flags.b[0] & kDNSFlag0_OP_Mask),
 		msg->h.flags.b[0] & kDNSFlag0_QR_Response ? "Response" : "Query",
@@ -2384,7 +2387,7 @@ mDNSexport void DumpPacket(mDNS *const m, mDNSBool sent, char *transport, const 
 	ptr = DumpRecords(m, msg, ptr, end, msg->h.numAnswers,     "Answers");
 	ptr = DumpRecords(m, msg, ptr, end, msg->h.numAuthorities, "Authorities");
 	ptr = DumpRecords(m, msg, ptr, end, msg->h.numAdditionals, "Additionals");
-	LogMsg("--------");
+	LogMsg("--------------");
 	}
 
 // ***************************************************************************
