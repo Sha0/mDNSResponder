@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.355  2007/09/26 01:54:34  mcguire
+Debugging: In SIGINFO output, show ClientTunnel query interval, which is how we determine whether a query is still active
+
 Revision 1.354  2007/09/26 01:26:31  cheshire
 <rdar://problem/5501567> BTMM: mDNSResponder crashes in free_service_instance enabling/disabling BTMM
 Need to call SendServiceRemovalNotification *before* backpointer is cleared
@@ -3637,7 +3640,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 		{
 		ClientTunnel *c;
 		for (c = m->TunnelClients; c; c = c->next)
-			LogMsgNoIdent("%##s %.16a %.4a %.16a %.4a %5d", c->dstname.c, &c->loc_inner, &c->loc_outer, &c->rmt_inner, &c->rmt_outer, mDNSVal16(c->rmt_outer_port));
+			LogMsgNoIdent("%##s local %.16a %.4a remote %.16a %.4a %5d interval %d", c->dstname.c, &c->loc_inner, &c->loc_outer, &c->rmt_inner, &c->rmt_outer, mDNSVal16(c->rmt_outer_port), c->q.ThisQInterval);
 		}
 	#endif
 	}
