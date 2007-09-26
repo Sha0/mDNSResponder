@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.175  2007/09/26 22:26:40  cheshire
+Also show DNS query/response ID in DumpPacket output
+
 Revision 1.174  2007/09/26 16:36:02  cheshire
 In DumpPacket output, begin header line with "-- " to make it visually stand out better
 
@@ -2354,7 +2357,7 @@ mDNSlocal const mDNSu8 *DumpRecords(mDNS *const m, const DNSMessage *const msg, 
 	}
 
 #define DNS_OP_Name(X) (                              \
-	(X) == kDNSFlag0_OP_StdQuery ? "" :               \
+	(X) == kDNSFlag0_OP_StdQuery ? ""         :       \
 	(X) == kDNSFlag0_OP_Iquery   ? "Iquery "  :       \
 	(X) == kDNSFlag0_OP_Status   ? "Status "  :       \
 	(X) == kDNSFlag0_OP_Unused3  ? "Unused3 " :       \
@@ -2368,11 +2371,12 @@ mDNSexport void DumpPacket(mDNS *const m, mDNSBool sent, char *transport, const 
 	int i;
 	DNSQuestion q;
 
-	LogMsg("-- %s %s DNS %s%s (op %02X%02X) %d bytes %s %#a:%d%s --",
+	LogMsg("-- %s %s DNS %s%s (op %02X%02X) ID:%d %d bytes %s %#a:%d%s --",
 		sent ? "Sent" : "Received", transport,
 		DNS_OP_Name(msg->h.flags.b[0] & kDNSFlag0_OP_Mask),
 		msg->h.flags.b[0] & kDNSFlag0_QR_Response ? "Response" : "Query",
 		msg->h.flags.b[0], msg->h.flags.b[1],
+		mDNSVal16(msg->h.id),
 		end - msg->data,
 		sent ? "to" : "from", addr, mDNSVal16(port),
 		(msg->h.flags.b[0] & kDNSFlag0_TC) ? " (truncated)" : ""
