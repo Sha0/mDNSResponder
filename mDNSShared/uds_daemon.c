@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.356  2007/09/26 21:29:30  cheshire
+Improved question list SIGINFO output
+
 Revision 1.355  2007/09/26 01:54:34  mcguire
 Debugging: In SIGINFO output, show ClientTunnel query interval, which is how we determine whether a query is still active
 
@@ -3577,7 +3580,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 		DNSQuestion *q;
 		CacheUsed = 0;
 		CacheActive = 0;
-		LogMsgNoIdent("   Int  Next if      Type");
+		LogMsgNoIdent("   Int  Next if    T NumAns Type  Name");
 		for (q = m->Questions; q; q=q->next)
 			{
 			mDNSs32 i = q->ThisQInterval / mDNSPlatformOneSecond;
@@ -3585,10 +3588,11 @@ mDNSexport void udsserver_info(mDNS *const m)
 			NetworkInterfaceInfo *info = (NetworkInterfaceInfo *)q->InterfaceID;
 			CacheUsed++;
 			if (q->ThisQInterval) CacheActive++;
-			LogMsgNoIdent("%6d%6d %-6s%s %-6s%##s",
-				i, n, info ? info->ifname : "",
+			LogMsgNoIdent("%6d%6d %-6s%s %6d %-6s%##s%s",
+				i, n, info ? info->ifname : "-U-",
 				mDNSOpaque16IsZero(q->TargetQID) ? " " : q->LongLived ? "L" : "O", // mDNS, long-lived, or one-shot query?
-				DNSTypeName(q->qtype), q->qname.c);
+				q->CurrentAnswers,
+				DNSTypeName(q->qtype), q->qname.c, q->DuplicateOf ? " (dup)" : "");
 			usleep(1000);	// Limit rate a little so we don't flood syslog too fast
 			}
 		LogMsgNoIdent("%lu question%s; %lu active", CacheUsed, CacheUsed > 1 ? "s" : "", CacheActive);
