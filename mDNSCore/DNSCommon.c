@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.177  2007/09/27 18:51:26  cheshire
+Improved DumpPacket to use "Zone/Prerequisites/Updates" nomenclature when displaying a DNS Update packet
+
 Revision 1.176  2007/09/27 17:53:37  cheshire
 Add display of RCODE and flags in DumpPacket output
 
@@ -2383,11 +2386,12 @@ mDNSlocal const mDNSu8 *DumpRecords(mDNS *const m, const DNSMessage *const msg, 
 // Note: DumpPacket expects the packet header fields in host byte order, not network byter order
 mDNSexport void DumpPacket(mDNS *const m, mDNSBool sent, char *transport, const mDNSAddr *addr, mDNSIPPort port, const DNSMessage *const msg, const mDNSu8 *const end)
 	{
+	mDNSBool IsUpdate = ((msg->h.flags.b[0] & kDNSFlag0_OP_Mask) == kDNSFlag0_OP_Update);
 	const mDNSu8 *ptr = msg->data;
 	int i;
 	DNSQuestion q;
 
-	LogMsg("-- %s %s DNS %s%s (flags field %02X%02X) ROCDE: %s (%d) %s%s%s%s%s%sID: %d %d bytes %s %#a:%d%s --",
+	LogMsg("-- %s %s DNS %s%s (flags %02X%02X) ROCDE: %s (%d) %s%s%s%s%s%sID: %d %d bytes %s %#a:%d%s --",
 		sent ? "Sent" : "Received", transport,
 		DNS_OP_Name(msg->h.flags.b[0] & kDNSFlag0_OP_Mask),
 		msg->h.flags.b[0] & kDNSFlag0_QR_Response ? "Response" : "Query",
@@ -2406,14 +2410,14 @@ mDNSexport void DumpPacket(mDNS *const m, mDNSBool sent, char *transport, const 
 		(msg->h.flags.b[0] & kDNSFlag0_TC) ? " (truncated)" : ""
 		);
 
-	LogMsg("%2d Questions", msg->h.numQuestions);
+	LogMsg("%2d %s", msg->h.numQuestions, IsUpdate ? "Zone" : "Questions");
 	for (i = 0; i < msg->h.numQuestions && ptr; i++)
 		{
 		ptr = getQuestion(msg, ptr, end, mDNSInterface_Any, &q);
 		if (ptr) LogMsg("%2d %##s %s", i, q.qname.c, DNSTypeName(q.qtype));
 		}
-	ptr = DumpRecords(m, msg, ptr, end, msg->h.numAnswers,     "Answers");
-	ptr = DumpRecords(m, msg, ptr, end, msg->h.numAuthorities, "Authorities");
+	ptr = DumpRecords(m, msg, ptr, end, msg->h.numAnswers,     IsUpdate ? "Prerequisites" : "Answers");
+	ptr = DumpRecords(m, msg, ptr, end, msg->h.numAuthorities, IsUpdate ? "Updates"       : "Authorities");
 	ptr = DumpRecords(m, msg, ptr, end, msg->h.numAdditionals, "Additionals");
 	LogMsg("--------------");
 	}
