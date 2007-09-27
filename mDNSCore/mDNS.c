@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.715  2007/09/27 01:20:06  cheshire
+<rdar://problem/5500077> BTMM: Need to refresh LLQs based on lease life and not TTL of response
+
 Revision 1.714  2007/09/27 00:37:01  cheshire
 <rdar://problem/4947392> BTMM: Use SOA to determine TTL for negative answers
 
@@ -4257,6 +4260,40 @@ mDNSexport void GrantCacheExtensions(mDNS *const m, DNSQuestion *q, mDNSu32 leas
 			}
 	}
 
+mDNSlocal mDNSu32 GetEffectiveTTL(const uDNS_LLQType LLQType, const mDNSu32 ttl_seconds)
+	{
+	mDNSu32 ttl = ttl_seconds;
+	if      (LLQType == uDNS_LLQ_Poll)  ttl = LLQ_POLL_INTERVAL * 2 / mDNSPlatformOneSecond;
+	else if (LLQType == uDNS_LLQ_Setup) ttl = kLLQ_DefLease;
+	else if (LLQType == uDNS_LLQ_Events)
+		{
+		// If the TTL is -1 for uDNS LLQ event packet, that means "remove"
+		if (ttl == 0xFFFFFFFF) ttl = 0;
+		else                   ttl = kLLQ_DefLease;
+		}
+	else	// else not LLQ (standard uDNS response)
+		{
+		// Adjustment factor to avoid race condition:
+		// Suppose real record as TTL of 3600, and our local caching server has held it for 3500 seconds, so it returns an aged TTL of 100.
+		// If we do our normal refresh at 80% of the TTL, our local caching server will return 20 seconds, so we'll do another
+		// 80% refresh after 16 seconds, and then the server will return 4 seconds, and so on, in the fashion of Zeno's paradox.
+		// To avoid this, we extend the record's effective TTL to give it a little extra grace period.
+		// We adjust the 100 second TTL to 126. This means that when we do our 80% query at 101 seconds,
+		// the cached copy at our local caching server will already have expired, so the server will be forced
+		// to fetch a fresh copy from the authoritative server, and then return a fresh record with the full TTL of 3600 seconds.
+		ttl += ttl/4 + 2;
+
+		// For mDNS, TTL zero means "delete this record"
+		// For uDNS, TTL zero means: this data is true at this moment, but don't cache it.
+		// For the sake of network efficiency, we impose a minimum effective TTL of 15 seconds.
+		// If we allow a TTL of less than 2 seconds things really break (e.g. we end up making a negative cache entry).
+		// In the future we may want to revisit this and consider properly supporting non-cached (TTL=0) uDNS answers.
+		if (ttl < 15) ttl = 15;
+		}
+	
+	return ttl > ttl_seconds ? ttl : ttl_seconds;	// Return the larger of the packet TTL and our calculated effective TTL
+	}
+
 // NOTE: mDNSCoreReceiveResponse calls mDNS_Deregister_internal which can call a user callback, which may change
 // the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
@@ -4352,39 +4389,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		// In the case of active LLQs, we'll get remove events when the records actually do go away
 		// In the case of polling LLQs, we assume the record remains valid until the next poll
 		if (!mDNSOpaque16IsZero(response->h.id))
-			{
-			if      (LLQType == uDNS_LLQ_Poll)  m->rec.r.resrec.rroriginalttl = LLQ_POLL_INTERVAL * 2;
-			else if (LLQType == uDNS_LLQ_Setup) m->rec.r.resrec.rroriginalttl = kLLQ_DefLease * mDNSPlatformOneSecond * 2;
-			else if (LLQType == uDNS_LLQ_Events)
-				{
-				// If the TTL is -1 for uDNS LLQ event packet, that means "remove"
-				if (m->rec.r.resrec.rroriginalttl == 0xFFFFFFFF) m->rec.r.resrec.rroriginalttl = 0;
-				else                                             m->rec.r.resrec.rroriginalttl = kLLQ_DefLease * mDNSPlatformOneSecond * 2;
-				}
-			else	// else not LLQ (standard uDNS response)
-				{
-				// Faithfully respecting the true uDNS TTL turns out to cause too many problems right now,
-				// so for now we'll go back the old way of assuming large TTL for uDNS records
-				//m->rec.r.resrec.rroriginalttl = (mDNSu32)(0x70000000 / mDNSPlatformOneSecond);
-
-				// Adjustment factor to avoid race condition:
-				// Suppose real record as TTL of 3600, and our local caching server has held it for 3500 seconds, so it returns an aged TTL of 100.
-				// If we do our normal refresh at 80% of the TTL, our local caching server will return 20 seconds, so we'll do another
-				// 80% refresh after 16 seconds, and then the server will return 4 seconds, and so on, in the fashion of Zeno's paradox.
-				// To avoid this, we extend the record's effective TTL to give it a little extra grace period.
-				// We adjust the 100 second TTL to 126. This means that when we do our 80% query at 101 seconds,
-				// the cached copy at our local caching server will already have expired, so the server will be forced
-				// to fetch a fresh copy from the authoritative server, and then return a fresh record with the full TTL of 3600 seconds.
-				m->rec.r.resrec.rroriginalttl += m->rec.r.resrec.rroriginalttl/4 + 2;
-
-				// For mDNS, TTL zero means "delete this record"
-				// For uDNS, TTL zero means: this data is true at this moment, but don't cache it.
-				// For the sake of network efficiency, we impose a minimum effective TTL of 15 seconds.
-				// If we allow a TTL of less than 2 seconds things really break (e.g. we end up making a negative cache entry).
-				// In the future we may want to revisit this and consider properly supporting non-cached (TTL=0) uDNS answers.
-				if (m->rec.r.resrec.rroriginalttl < 15) m->rec.r.resrec.rroriginalttl = 15;
-				}
-			}
+			m->rec.r.resrec.rroriginalttl = GetEffectiveTTL(LLQType, m->rec.r.resrec.rroriginalttl);
 
 		// If response was not sent via LL multicast,
 		// then see if it answers a recent query of ours, which would also make it acceptable for caching.
@@ -4662,9 +4667,12 @@ exit:
 					if (rr->resrec.rroriginalttl) break;
 					if (rr->resrec.RecordType == kDNSRecordTypePacketNegative) break;
 					}
+
 			if (!rr || rr->resrec.RecordType == kDNSRecordTypePacketNegative)
 				{
-				mDNSu32 negttl = 60;		// If we don't find an SOA to tell us the negative caching TTL to use, assume 60 seconds
+				// We start off assuming a negative caching TTL of 60 seconds
+				// but then look to see if we can find an SOA authority record to tell us a better value we should be using
+				mDNSu32 negttl = GetEffectiveTTL(LLQType, 60);
 				int repeat = 0;
 				const domainname *name = &q.qname;
 				mDNSu32           hash = q.qnamehash;
