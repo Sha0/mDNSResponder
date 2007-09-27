@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.178  2007/09/27 21:11:44  cheshire
+Fixed spelling mistake: ROCDE -> RCODE
+
 Revision 1.177  2007/09/27 18:51:26  cheshire
 Improved DumpPacket to use "Zone/Prerequisites/Updates" nomenclature when displaying a DNS Update packet
 
@@ -2391,7 +2394,7 @@ mDNSexport void DumpPacket(mDNS *const m, mDNSBool sent, char *transport, const 
 	int i;
 	DNSQuestion q;
 
-	LogMsg("-- %s %s DNS %s%s (flags %02X%02X) ROCDE: %s (%d) %s%s%s%s%s%sID: %d %d bytes %s %#a:%d%s --",
+	LogMsg("-- %s %s DNS %s%s (flags %02X%02X) RCODE: %s (%d) %s%s%s%s%s%sID: %d %d bytes %s %#a:%d%s --",
 		sent ? "Sent" : "Received", transport,
 		DNS_OP_Name(msg->h.flags.b[0] & kDNSFlag0_OP_Mask),
 		msg->h.flags.b[0] & kDNSFlag0_QR_Response ? "Response" : "Query",
