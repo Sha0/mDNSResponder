@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.176  2007/09/27 17:53:37  cheshire
+Add display of RCODE and flags in DumpPacket output
+
 Revision 1.175  2007/09/26 22:26:40  cheshire
 Also show DNS query/response ID in DumpPacket output
 
@@ -474,11 +477,11 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd,
 							length += mDNS_snprintf(buffer+length, Max-length, "Max UDP %d ", rr->rrclass);
 							if (rd->opt.opt == kDNSOpt_LLQ)
 								{
-								length += mDNS_snprintf(buffer+length, Max-length, "Vers %d ", rd->opt.OptData.llq.vers);
-								length += mDNS_snprintf(buffer+length, Max-length, "Op %d ", rd->opt.OptData.llq.llqOp);
-								length += mDNS_snprintf(buffer+length, Max-length, "Err %d ", rd->opt.OptData.llq.err);
+								length += mDNS_snprintf(buffer+length, Max-length, "Vers %d ",     rd->opt.OptData.llq.vers);
+								length += mDNS_snprintf(buffer+length, Max-length, "Op %d ",       rd->opt.OptData.llq.llqOp);
+								length += mDNS_snprintf(buffer+length, Max-length, "Err/Port %d ", rd->opt.OptData.llq.err);
 								length += mDNS_snprintf(buffer+length, Max-length, "ID %08X%08X ", rd->opt.OptData.llq.id.l[0], rd->opt.OptData.llq.id.l[1]);
-								length += mDNS_snprintf(buffer+length, Max-length, "Lease %d", rd->opt.OptData.llq.llqlease);
+								length += mDNS_snprintf(buffer+length, Max-length, "Lease %d",     rd->opt.OptData.llq.llqlease);
 								}
 							else if (rd->opt.opt == kDNSOpt_Lease)
 								length += mDNS_snprintf(buffer+length, Max-length, "kDNSOpt_Lease Lease %d", rd->opt.OptData.updatelease);
@@ -2364,6 +2367,19 @@ mDNSlocal const mDNSu8 *DumpRecords(mDNS *const m, const DNSMessage *const msg, 
 	(X) == kDNSFlag0_OP_Notify   ? "Notify "  :       \
 	(X) == kDNSFlag0_OP_Update   ? "Update "  : "?? " )
 
+#define DNS_RC_Name(X) (                             \
+	(X) == kDNSFlag1_RC_NoErr    ? "NoErr"    :      \
+	(X) == kDNSFlag1_RC_FmtErr   ? "FmtErr"   :      \
+	(X) == kDNSFlag1_RC_SrvErr   ? "SrvErr"   :      \
+	(X) == kDNSFlag1_RC_NXDomain ? "NXDomain" :      \
+	(X) == kDNSFlag1_RC_NotImpl  ? "NotImpl"  :      \
+	(X) == kDNSFlag1_RC_Refused  ? "Refused"  :      \
+	(X) == kDNSFlag1_RC_YXDomain ? "YXDomain" :      \
+	(X) == kDNSFlag1_RC_YXRRSet  ? "YXRRSet"  :      \
+	(X) == kDNSFlag1_RC_NXRRSet  ? "NXRRSet"  :      \
+	(X) == kDNSFlag1_RC_NotAuth  ? "NotAuth"  :      \
+	(X) == kDNSFlag1_RC_NotZone  ? "NotZone"  : "??" )
+
 // Note: DumpPacket expects the packet header fields in host byte order, not network byter order
 mDNSexport void DumpPacket(mDNS *const m, mDNSBool sent, char *transport, const mDNSAddr *addr, mDNSIPPort port, const DNSMessage *const msg, const mDNSu8 *const end)
 	{
@@ -2371,11 +2387,19 @@ mDNSexport void DumpPacket(mDNS *const m, mDNSBool sent, char *transport, const 
 	int i;
 	DNSQuestion q;
 
-	LogMsg("-- %s %s DNS %s%s (op %02X%02X) ID:%d %d bytes %s %#a:%d%s --",
+	LogMsg("-- %s %s DNS %s%s (flags field %02X%02X) ROCDE: %s (%d) %s%s%s%s%s%sID: %d %d bytes %s %#a:%d%s --",
 		sent ? "Sent" : "Received", transport,
 		DNS_OP_Name(msg->h.flags.b[0] & kDNSFlag0_OP_Mask),
 		msg->h.flags.b[0] & kDNSFlag0_QR_Response ? "Response" : "Query",
 		msg->h.flags.b[0], msg->h.flags.b[1],
+		DNS_RC_Name(msg->h.flags.b[1] & kDNSFlag0_OP_Mask),
+		msg->h.flags.b[1] & kDNSFlag0_OP_Mask,
+		msg->h.flags.b[0] & kDNSFlag0_AA ? "AA " : "",
+		msg->h.flags.b[0] & kDNSFlag0_TC ? "TC " : "",
+		msg->h.flags.b[0] & kDNSFlag0_RD ? "RD " : "",
+		msg->h.flags.b[1] & kDNSFlag1_RA ? "RA " : "",
+		msg->h.flags.b[1] & kDNSFlag1_AD ? "AD " : "",
+		msg->h.flags.b[1] & kDNSFlag1_CD ? "CD " : "",
 		mDNSVal16(msg->h.id),
 		end - msg->data,
 		sent ? "to" : "from", addr, mDNSVal16(port),
