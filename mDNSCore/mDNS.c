@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.714  2007/09/27 00:37:01  cheshire
+<rdar://problem/4947392> BTMM: Use SOA to determine TTL for negative answers
+
 Revision 1.713  2007/09/27 00:25:39  cheshire
 Added ttl_seconds parameter to MakeNegativeCacheRecord in preparation for:
 <rdar://problem/4947392> uDNS: Use SOA to determine TTL for negative answers
@@ -4657,32 +4660,49 @@ exit:
 					// 1. If we got a fresh answer to this query, then don't need to generate a negative entry
 					// 2. If we already had a negative entry which we were about to discard, then we should resurrect it
 					if (rr->resrec.rroriginalttl) break;
-					if (rr->resrec.RecordType == kDNSRecordTypePacketNegative)
-						{ rr->TimeRcvd = m->timenow; rr->resrec.rroriginalttl = 60; break; }
+					if (rr->resrec.RecordType == kDNSRecordTypePacketNegative) break;
 					}
-			if (!rr)
+			if (!rr || rr->resrec.RecordType == kDNSRecordTypePacketNegative)
 				{
 				mDNSu32 negttl = 60;		// If we don't find an SOA to tell us the negative caching TTL to use, assume 60 seconds
 				int repeat = 0;
 				const domainname *name = &q.qname;
 				mDNSu32           hash = q.qnamehash;
-				// Special check for SOA queries: If we queried for a.b.c.d.com, and got no answer,
-				// with an Authority Section SOA record for d.com, then this is a hint that the authority
-				// is d.com, and consequently SOA records b.c.d.com and c.d.com don't exist either.
-				if (q.qtype == kDNSType_SOA && response->h.numAuthorities == 1 &&
+
+				// If we're going to make (or update) a negative entry, then look for the appropriate TTL from the SOA record
+				if (response->h.numAuthorities &&
 					(ptr = LocateAuthorities(response, end)) != mDNSNULL &&
-					(ptr = GetLargeResourceRecord(m, response, ptr, end, InterfaceID, kDNSRecordTypePacketAuth, &m->rec)) != mDNSNULL)
+					(ptr = GetLargeResourceRecord(m, response, ptr, end, InterfaceID, kDNSRecordTypePacketAuth, &m->rec)) != mDNSNULL &&
+					m->rec.r.resrec.rrtype == kDNSType_SOA)
 					{
-					int qcount = CountLabels(&q.qname);
-					int scount = CountLabels(m->rec.r.resrec.name);
-					if (qcount - 1 > scount)
-						if (SameDomainName(SkipLeadingLabels(&q.qname, qcount - scount), m->rec.r.resrec.name))
-							repeat = qcount - 1 - scount;
-					m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
+					mDNSu32 ttl_s = m->rec.r.resrec.rroriginalttl < m->rec.r.resrec.rdata->u.soa.min ?
+									m->rec.r.resrec.rroriginalttl : m->rec.r.resrec.rdata->u.soa.min;
+					if (negttl < ttl_s) negttl = ttl_s;
+
+					// Special check for SOA queries: If we queried for a.b.c.d.com, and got no answer,
+					// with an Authority Section SOA record for d.com, then this is a hint that the authority
+					// is d.com, and consequently SOA records b.c.d.com and c.d.com don't exist either.
+					// To do this we set the repeat count so the while loop below will make a series of negative cache entries for us
+					if (q.qtype == kDNSType_SOA)
+						{
+						int qcount = CountLabels(&q.qname);
+						int scount = CountLabels(m->rec.r.resrec.name);
+						if (qcount - 1 > scount)
+							if (SameDomainName(SkipLeadingLabels(&q.qname, qcount - scount), m->rec.r.resrec.name))
+								repeat = qcount - 1 - scount;
+						m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
+						}
 					}
-				while (1)
+
+				// If we already had a negative cache entry just update it, else make one or more new negative cache entries
+				if (rr)
 					{
-					LogOperation("Making negative cache entry for %##s (%s)", name->c, DNSTypeName(q.qtype));
+					rr->TimeRcvd = m->timenow;
+					rr->resrec.rroriginalttl = negttl;
+					}
+				else while (1)
+					{
+					LogOperation("Making negative cache entry TTL %d for %##s (%s)", negttl, name->c, DNSTypeName(q.qtype));
 					MakeNegativeCacheRecord(m, name, hash, q.qtype, q.qclass, negttl);
 					CreateNewCacheEntry(m, slot, cg);
 					m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
