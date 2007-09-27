@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.716  2007/09/27 02:12:21  cheshire
+Updated GrantCacheExtensions degugging message to show new record lifetime
+
 Revision 1.715  2007/09/27 01:20:06  cheshire
 <rdar://problem/5500077> BTMM: Need to refresh LLQs based on lease life and not TTL of response
 
@@ -4249,7 +4252,7 @@ mDNSexport void GrantCacheExtensions(mDNS *const m, DNSQuestion *q, mDNSu32 leas
 	for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
 		if (rr->CRActiveQuestion == q)
 			{
-			//debugf("GrantCacheExtensions: %s", CRDisplayString(m, rr));
+			//LogOperation("GrantCacheExtensions: new lease %d / %s", lease, CRDisplayString(m, rr));
 			rr->TimeRcvd = m->timenow;
 			rr->resrec.rroriginalttl = lease;
 			rr->UnansweredQueries = 0;
