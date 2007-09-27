@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.486  2007/09/27 17:42:49  cheshire
+Fix naming: for consistency, "kDNSFlag1_RC" should be "kDNSFlag1_RC_Mask"
+
 Revision 1.485  2007/09/27 02:16:30  cheshire
 <rdar://problem/5500111> BTMM: LLQ refreshes being sent in the clear to the wrong port
 
@@ -1683,7 +1686,7 @@ mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *co
 							if (mDNSSameAddress(srcaddr, &q->servAddr))
 								{
 								LLQ_State oldstate = q->state;
-								recvSetupResponse(m, msg->h.flags.b[1] & kDNSFlag1_RC, q, opt);
+								recvSetupResponse(m, msg->h.flags.b[1] & kDNSFlag1_RC_Mask, q, opt);
 								m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 								//DumpPacket(m, msg, end);
 								// If this is our Ack+Answers packet resulting from a correct challenge response, then it's a full list
@@ -3604,7 +3607,7 @@ mDNSlocal mDNSBool uDNS_ReceiveTestQuestionResponse(mDNS *const m, DNSMessage *c
 
 	// 2. If the DNS relay gave us a positive response, then it's got buggy firmware
 	// else, if the DNS relay gave us an error or no-answer response, it passed our test
-	if ((msg->h.flags.b[1] & kDNSFlag1_RC) == kDNSFlag1_RC_NoErr && msg->h.numAnswers > 0)
+	if ((msg->h.flags.b[1] & kDNSFlag1_RC_Mask) == kDNSFlag1_RC_NoErr && msg->h.numAnswers > 0)
 		result = DNSServer_Failed;
 	else
 		result = DNSServer_Passed;
@@ -3638,7 +3641,7 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 	mDNSu8 StdR    = kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery;
 	mDNSu8 UpdateR = kDNSFlag0_QR_Response | kDNSFlag0_OP_Update;
 	mDNSu8 QR_OP   = (mDNSu8)(msg->h.flags.b[0] & kDNSFlag0_QROP_Mask);
-	mDNSu8 rcode   = (mDNSu8)(msg->h.flags.b[1] & kDNSFlag1_RC);
+	mDNSu8 rcode   = (mDNSu8)(msg->h.flags.b[1] & kDNSFlag1_RC_Mask);
 
 	(void)srcport; // Unused
 

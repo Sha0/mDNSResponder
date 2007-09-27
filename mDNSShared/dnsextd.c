@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.82  2007/09/27 17:42:49  cheshire
+Fix naming: for consistency, "kDNSFlag1_RC" should be "kDNSFlag1_RC_Mask"
+
 Revision 1.81  2007/09/21 21:12:37  cheshire
 DNSDigest_SignMessage does not need separate "mDNSu16 *numAdditionals" parameter
 
@@ -881,7 +884,7 @@ mDNSlocal mDNSBool SuccessfulUpdateTransaction(PktMsg *request, PktMsg *reply)
 		{ vlogmsg = "Request opcode not an update"; goto failure; }
 
 	// check result
-	if ((reply->msg.h.flags.b[1] & kDNSFlag1_RC)) { vlogmsg = "Reply contains non-zero rcode";  goto failure; }
+	if ((reply->msg.h.flags.b[1] & kDNSFlag1_RC_Mask)) { vlogmsg = "Reply contains non-zero rcode";  goto failure; }
 	if ((reply->msg.h.flags.b[0] & kDNSFlag0_QROP_Mask) != (kDNSFlag0_OP_Update | kDNSFlag0_QR_Response))
 		{ vlogmsg = "Reply opcode not an update response"; goto failure; }
 
@@ -1103,7 +1106,7 @@ mDNSlocal int UpdateSRV(DaemonInfo *d, mDNSBool registration)
 
 		if ( !ok )
 			{
-			Log("SRV record registration failed with rcode %d", reply->msg.h.flags.b[1] & kDNSFlag1_RC);
+			Log("SRV record registration failed with rcode %d", reply->msg.h.flags.b[1] & kDNSFlag1_RC_Mask);
 			}
 
 		free( reply );
@@ -1433,7 +1436,7 @@ mDNSlocal void DeleteOneRecord(DaemonInfo *d, CacheRecord *rr, domainname *zname
 	require_action( reply, end, Log( "DeleteOneRecord: RecvPacket returned NULL" ) );
 
 	if (!SuccessfulUpdateTransaction(&pkt, reply))
-		Log("Expiration update failed with rcode %d", reply ? reply->msg.h.flags.b[1] & kDNSFlag1_RC : -1);
+		Log("Expiration update failed with rcode %d", reply ? reply->msg.h.flags.b[1] & kDNSFlag1_RC_Mask : -1);
 					  
 	end:
 	if (!ptr) { Log("DeleteOneRecord: Error constructing lease expiration update"); }
@@ -1891,7 +1894,7 @@ mDNSlocal CacheRecord *AnswerQuestion(DaemonInfo *d, AnswerListElem *e)
 
 	if ((reply->msg.h.flags.b[0] & kDNSFlag0_QROP_Mask) != (kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery))
 		{ Log("AnswerQuestion: %##s type %d - Invalid response flags from server"); goto end; }
-	rcode = (mDNSu8)(reply->msg.h.flags.b[1] & kDNSFlag1_RC);
+	rcode = (mDNSu8)(reply->msg.h.flags.b[1] & kDNSFlag1_RC_Mask);
 	if (rcode && rcode != kDNSFlag1_RC_NXDomain) { Log("AnswerQuestion: %##s type %d - non-zero rcode %d from server", e->name.c, e->type, rcode); goto end; }
 
 	end = (mDNSu8 *)&reply->msg + reply->len;

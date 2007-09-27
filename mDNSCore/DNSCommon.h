@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.53  2007/09/27 17:42:49  cheshire
+Fix naming: for consistency, "kDNSFlag1_RC" should be "kDNSFlag1_RC_Mask"
+
 Revision 1.52  2007/09/26 00:49:46  cheshire
 Improve packet logging to show sent and received packets,
 transport protocol (UDP/TCP/TLS) and source/destination address:port
@@ -124,7 +127,7 @@ typedef enum
 	kDNSFlag1_AD          = 0x20,		// Authentic Data [RFC 2535]
 	kDNSFlag1_CD          = 0x10,		// Checking Disabled [RFC 2535]
 
-	kDNSFlag1_RC          = 0x0F,		// Response code
+	kDNSFlag1_RC_Mask     = 0x0F,		// Response code
 	kDNSFlag1_RC_NoErr    = 0x00,
 	kDNSFlag1_RC_FmtErr   = 0x01,
 	kDNSFlag1_RC_SrvErr   = 0x02,
