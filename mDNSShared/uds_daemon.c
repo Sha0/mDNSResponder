@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.357  2007/09/27 22:10:04  cheshire
+Add LogOperation line for DNSServiceRegisterRecord callbacks
+
 Revision 1.356  2007/09/26 21:29:30  cheshire
 Improved question list SIGINFO output
 
@@ -1251,7 +1254,8 @@ mDNSlocal void regrecord_callback(mDNS *const m, AuthRecord *rr, mStatus result)
 		reply->rhdr->flags = dnssd_htonl(0);
 		reply->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(m, rr->resrec.InterfaceID));
 		reply->rhdr->error = dnssd_htonl(result);
-	
+
+		LogOperation("%3d: DNSServiceRegisterRecord(%u) result %d", request->sd, request->hdr.reg_index, result);
 		if (result)
 			{
 			// unlink from list, free memory
