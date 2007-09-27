@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.487  2007/09/27 18:55:11  cheshire
+<rdar://problem/5477165> BTMM: Multiple SRV records get registered after changing Computer Name
+
 Revision 1.486  2007/09/27 17:42:49  cheshire
 Fix naming: for consistency, "kDNSFlag1_RC" should be "kDNSFlag1_RC_Mask"
 
@@ -2146,7 +2149,11 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	else if (srs->state != regState_Refresh && srs->state != regState_UpdatePending)
 		{
 		// use SRV name for prereq
-		ptr = putPrereqNameNotInUse(srs->RR_SRV.resrec.name, &m->omsg, ptr, end);
+		//ptr = putPrereqNameNotInUse(srs->RR_SRV.resrec.name, &m->omsg, ptr, end);
+
+		// For now, until we implement RFC 4701 (DHCID RR) to detect whether an existing record is someone else using the name, or just a
+		// stale echo of our own previous registration before we changed our host name, we just overwrite whatever may have already been there
+		ptr = putDeleteRRSet(&m->omsg, ptr, srs->RR_SRV.resrec.name, kDNSQType_ANY);
 		if (!ptr) { err = mStatus_UnknownErr; goto exit; }
 		}
 
