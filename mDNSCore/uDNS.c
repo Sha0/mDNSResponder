@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.488  2007/09/27 21:20:17  cheshire
+Improved debugging syslog messages
+
 Revision 1.487  2007/09/27 18:55:11  cheshire
 <rdar://problem/5477165> BTMM: Multiple SRV records get registered after changing Computer Name
 
@@ -3466,7 +3469,7 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 				SendRecordRegistration(m, rr);
 				return;
 				}
-			LogMsg("Registration of record %##s type %d failed with error %ld", rr->resrec.name->c, rr->resrec.rrtype, err);
+			LogMsg("hndlRecordUpdateReply: Registration of record %##s type %d failed with error %ld", rr->resrec.name->c, rr->resrec.rrtype, err);
 			rr->state = regState_Unregistered;
 			}
 		}
@@ -4023,7 +4026,7 @@ mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 	if (rr->Private)
 		{
 		LogOperation("SendRecordDeregistration TCP %p %s", rr->tcp, ARDisplayString(m, rr));
-		if (rr->tcp) LogMsg("SendRecordDeregistration: Already have TCP connection for %s", ARDisplayString(m, rr));
+		if (rr->tcp) LogMsg("SendRecordDeregistration: ERROR: Already have TCP connection for %s", ARDisplayString(m, rr));
 		else rr->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, mDNSNULL, rr);
 		rr->LastAPTime = m->timenow;
 		rr->ThisAPInterval = 0x3FFFFFFF; // TCP will handle any necessary retransmissions for us
