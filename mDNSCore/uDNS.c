@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.489  2007/09/27 22:02:33  cheshire
+<rdar://problem/5464941> BTMM: Registered records in BTMM don't get removed from server after calling RemoveRecord
+
 Revision 1.488  2007/09/27 21:20:17  cheshire
 Improved debugging syslog messages
 
@@ -1827,6 +1830,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 
 		if ((tcpInfo->nread - 2) == tcpInfo->replylen)
 			{
+			AuthRecord *rr    = tcpInfo->rr;
 			DNSMessage *reply = tcpInfo->reply;
 			mDNSu8     *end   = (mDNSu8 *)tcpInfo->reply + tcpInfo->replylen;
 			mDNSAddr    Addr  = tcpInfo->Addr;
@@ -1839,7 +1843,15 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			// If we're going to dispose this connection, do it FIRST, before calling client callback
 			if (!tcpInfo->question || !tcpInfo->question->LongLived) { *backpointer = mDNSNULL; DisposeTCPConn(tcpInfo); }
 			
-			mDNSCoreReceive(m, reply, end, &Addr, Port, (sock->flags & kTCPSocketFlags_UseTLS) ? (mDNSAddr *)1 : mDNSNULL, zeroIPPort, 0);
+			if (rr && rr->resrec.RecordType == kDNSRecordTypeDeregistering)
+				{
+				mDNS_Lock(m);
+				LogOperation("tcpCallback: CompleteDeregistration %s", ARDisplayString(m, rr));
+				CompleteDeregistration(m, rr);		// Don't touch rr after this
+				mDNS_Unlock(m);
+				}
+			else
+				mDNSCoreReceive(m, reply, end, &Addr, Port, (sock->flags & kTCPSocketFlags_UseTLS) ? (mDNSAddr *)1 : mDNSNULL, zeroIPPort, 0);
 			// USE CAUTION HERE: Invoking mDNSCoreReceive may have caused the environment to change, including canceling this operation itself
 			
 			mDNSPlatformMemFree(reply);
@@ -3133,6 +3145,7 @@ mDNSlocal void SendRecordRegistration(mDNS *const m, AuthRecord *rr)
 	if (m->mDNS_busy != m->mDNS_reentrancy+1)
 		LogMsg("SendRecordRegistration: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
+	rr->RequireGoodbye = mDNStrue;
 	rr->id = mDNS_NewMessageID(m);
 	InitializeDNSMessage(&m->omsg.h, rr->id, UpdateReqFlags);
 
@@ -4036,6 +4049,8 @@ mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, GetAuthInfoForName_internal(m, rr->resrec.name));
 		if (err) debugf("ERROR: SendRecordDeregistration - mDNSSendDNSMessage - %ld", err);
 		SetRecordRetry(m, rr, err);
+		CompleteDeregistration(m, rr);		// Don't touch rr after this
+		return;
 		}
 
 	err = mStatus_NoError;

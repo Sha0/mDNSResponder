@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.718  2007/09/27 22:02:33  cheshire
+<rdar://problem/5464941> BTMM: Registered records in BTMM don't get removed from server after calling RemoveRecord
+
 Revision 1.717  2007/09/27 21:21:39  cheshire
 Export CompleteDeregistration so it's callable from other files
 
@@ -1387,6 +1390,17 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 	// The solution is to defer delivering the "Remove" events until mDNS_Execute time, just like we do for sending
 	// actual goodbye packets.
 	
+#ifndef UNICAST_DISABLED
+	if (rr->resrec.InterfaceID != mDNSInterface_LocalOnly && !rr->ForceMCast && !IsLocalDomain(rr->resrec.name))
+		if (rr->RequireGoodbye)
+			{
+			if (rr->tcp) { DisposeTCPConn(rr->tcp); rr->tcp = mDNSNULL; }
+			rr->resrec.RecordType    = kDNSRecordTypeDeregistering;
+			uDNS_DeregisterRecord(m, rr);
+			if (rr->tcp) return(mStatus_NoError);
+			}
+#endif UNICAST_DISABLED
+
 	if (RecordType == kDNSRecordTypeShared && (rr->RequireGoodbye || rr->LocalAnswer))
 		{
 		verbosedebugf("mDNS_Deregister_internal: Sending deregister for %s", ARDisplayString(m, rr));
@@ -1420,28 +1434,9 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 
 		// If we have an update queued up which never executed, give the client a chance to free that memory
 		if (rr->NewRData) CompleteRDataUpdate(m, rr);	// Update our rdata, clear the NewRData pointer, and return memory to the client
-		
-#ifndef UNICAST_DISABLED
-		// This is bad. This code seems to assume that uDNS_DeregisterRecord() is an atomic synchronous operation.
-		// In the case of UDP, this is almost true -- we just fire off the DNS update request and forget about it
-		// (although that still ignores the case of needing retransmissions).
-		// In the case of Private DNS over TCP, it's *never* an atomic synchronous operation because we have to
-		// wait for the TCP connection to complete, so by the time the connection is set up and 'tcpCallback'
-		// gets invoked, there's a good chance the client will already have free'd or reused this record.
-		// We need to make uDNS_DeregisterRecord fully asynchronous like the kDNSRecordTypeShared deregistration
-		// above, with an mStatus_MemFree callback to the client when it's finished.
-		if (rr->resrec.InterfaceID != mDNSInterface_LocalOnly && !rr->ForceMCast && !IsLocalDomain(rr->resrec.name))
-			{
-			mStatus err;
-			if (rr->nta) { CancelGetZoneData(m, rr->nta); rr->nta = mDNSNULL; }
-			// Temporary hack: Restore RecordType so uDNS_DeregisterRecord can send its immediate packet (which it shouldn't be doing)
-			rr->resrec.RecordType = RecordType;
-			err = uDNS_DeregisterRecord(m, rr);
-			rr->resrec.RecordType = kDNSRecordTypeUnregistered;
-			}
-#endif
 
-		if (rr->tcp) { DisposeTCPConn(rr->tcp); rr->tcp = mDNSNULL; }
+		if (rr->nta) { CancelGetZoneData(m, rr->nta); rr->nta = mDNSNULL; }
+		if (rr->tcp) { DisposeTCPConn(rr->tcp);       rr->tcp = mDNSNULL; }
 
 		// CAUTION: MUST NOT do anything more with rr after calling rr->Callback(), because the client's callback function
 		// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
