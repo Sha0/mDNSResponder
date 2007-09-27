@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.719  2007/09/27 22:23:56  cheshire
+<rdar://problem/4947392> uDNS: Use SOA to determine TTL for negative answers
+Need to clear m->rec.r.resrec.RecordType after we've finished using m->rec
+
 Revision 1.718  2007/09/27 22:02:33  cheshire
 <rdar://problem/5464941> BTMM: Registered records in BTMM don't get removed from server after calling RemoveRecord
 
@@ -4679,28 +4683,29 @@ exit:
 				mDNSu32           hash = q.qnamehash;
 
 				// If we're going to make (or update) a negative entry, then look for the appropriate TTL from the SOA record
-				if (response->h.numAuthorities &&
-					(ptr = LocateAuthorities(response, end)) != mDNSNULL &&
-					(ptr = GetLargeResourceRecord(m, response, ptr, end, InterfaceID, kDNSRecordTypePacketAuth, &m->rec)) != mDNSNULL &&
-					m->rec.r.resrec.rrtype == kDNSType_SOA)
+				if (response->h.numAuthorities && (ptr = LocateAuthorities(response, end)) != mDNSNULL)
 					{
-					mDNSu32 ttl_s = m->rec.r.resrec.rroriginalttl < m->rec.r.resrec.rdata->u.soa.min ?
-									m->rec.r.resrec.rroriginalttl : m->rec.r.resrec.rdata->u.soa.min;
-					if (negttl < ttl_s) negttl = ttl_s;
-
-					// Special check for SOA queries: If we queried for a.b.c.d.com, and got no answer,
-					// with an Authority Section SOA record for d.com, then this is a hint that the authority
-					// is d.com, and consequently SOA records b.c.d.com and c.d.com don't exist either.
-					// To do this we set the repeat count so the while loop below will make a series of negative cache entries for us
-					if (q.qtype == kDNSType_SOA)
+					ptr = GetLargeResourceRecord(m, response, ptr, end, InterfaceID, kDNSRecordTypePacketAuth, &m->rec);
+					if (ptr && m->rec.r.resrec.rrtype == kDNSType_SOA)
 						{
-						int qcount = CountLabels(&q.qname);
-						int scount = CountLabels(m->rec.r.resrec.name);
-						if (qcount - 1 > scount)
-							if (SameDomainName(SkipLeadingLabels(&q.qname, qcount - scount), m->rec.r.resrec.name))
-								repeat = qcount - 1 - scount;
-						m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
+						mDNSu32 ttl_s = m->rec.r.resrec.rroriginalttl < m->rec.r.resrec.rdata->u.soa.min ?
+										m->rec.r.resrec.rroriginalttl : m->rec.r.resrec.rdata->u.soa.min;
+						if (negttl < ttl_s) negttl = ttl_s;
+	
+						// Special check for SOA queries: If we queried for a.b.c.d.com, and got no answer,
+						// with an Authority Section SOA record for d.com, then this is a hint that the authority
+						// is d.com, and consequently SOA records b.c.d.com and c.d.com don't exist either.
+						// To do this we set the repeat count so the while loop below will make a series of negative cache entries for us
+						if (q.qtype == kDNSType_SOA)
+							{
+							int qcount = CountLabels(&q.qname);
+							int scount = CountLabels(m->rec.r.resrec.name);
+							if (qcount - 1 > scount)
+								if (SameDomainName(SkipLeadingLabels(&q.qname, qcount - scount), m->rec.r.resrec.name))
+									repeat = qcount - 1 - scount;
+							}
 						}
+					m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 					}
 
 				// If we already had a negative cache entry just update it, else make one or more new negative cache entries
