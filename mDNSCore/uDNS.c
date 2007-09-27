@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.485  2007/09/27 02:16:30  cheshire
+<rdar://problem/5500111> BTMM: LLQ refreshes being sent in the clear to the wrong port
+
 Revision 1.484  2007/09/27 00:25:39  cheshire
 Added ttl_seconds parameter to MakeNegativeCacheRecord in preparation for:
 <rdar://problem/4947392> uDNS: Use SOA to determine TTL for negative answers
@@ -1665,7 +1668,7 @@ mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *co
 							if (opt->OptData.llq.err != LLQErr_NoError) LogMsg("recvRefreshReply: received error %d from server", opt->OptData.llq.err);
 							else
 								{
-								//debugf("Received refresh confirmation for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+								//LogOperation("Received refresh confirmation for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 								GrantCacheExtensions(m, q, opt->OptData.llq.llqlease);
 								q->expire   = q->LastQTime + ((mDNSs32)opt->OptData.llq.llqlease *  mDNSPlatformOneSecond   );
 								q->ThisQInterval =           ((mDNSs32)opt->OptData.llq.llqlease * (mDNSPlatformOneSecond/2));
@@ -1699,6 +1702,9 @@ mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *co
 	return uDNS_LLQ_Not;
 	}
 
+// Forward declaration
+mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease);
+
 // Stub definition of TCPSocket_struct so we can access flags field. (Rest of TCPSocket_struct is platform-dependent.)
 struct TCPSocket_struct { TCPSocketFlags flags; /* ... */ };
 
@@ -1729,7 +1735,13 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 	if (ConnectionEstablished)
 		{
 		// connection is established - send the message
-		if (tcpInfo->question && tcpInfo->question->LongLived && tcpInfo->question->state != LLQ_Poll)
+		if (tcpInfo->question && tcpInfo->question->LongLived && (tcpInfo->question->state == LLQ_Established || tcpInfo->question->state == LLQ_Refresh))
+			{
+			//LogMsg("tcpCallback calling sendLLQRefresh %##s (%s)", tcpInfo->question->qname.c, DNSTypeName(tcpInfo->question->qtype));
+			sendLLQRefresh(m, tcpInfo->question, tcpInfo->question->origLease);
+			return;
+			}
+		else if (tcpInfo->question && tcpInfo->question->LongLived && tcpInfo->question->state != LLQ_Poll)
 			{
 			LLQOptData llqData;			// set llq rdata
 			llqData.vers  = kLLQ_Vers;
@@ -3724,6 +3736,15 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 	// we don't want to cancel it with a clear-text UDP packet, and and it's not worth the expense of
 	// setting up a new TLS session just to cancel the outstanding LLQ, so we just let it expire naturally
 	if (lease == 0 && q->AuthInfo && !q->tcp) return;
+
+	if (q->AuthInfo && !q->tcp)
+		{
+		//LogOperation("sendLLQRefresh setting up new TLS session %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+		q->tcp = MakeTCPConn(m, mDNSNULL, mDNSNULL, kTCPSocketFlags_UseTLS, &q->servAddr, q->servPort, q, mDNSNULL, mDNSNULL);
+		q->state = LLQ_Refresh;
+		q->LastQTime = m->timenow;
+		return;
+		}
 
 	if ((q->state == LLQ_Refresh && q->ntries >= kLLQ_MAX_TRIES) || q->expire - m->timenow < 0)
 		{
