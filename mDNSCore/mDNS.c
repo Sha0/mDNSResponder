@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.713  2007/09/27 00:25:39  cheshire
+Added ttl_seconds parameter to MakeNegativeCacheRecord in preparation for:
+<rdar://problem/4947392> uDNS: Use SOA to determine TTL for negative answers
+
 Revision 1.712  2007/09/26 23:16:58  cheshire
 <rdar://problem/5496399> BTMM: Leopard sending excessive LLQ registration requests to .Mac
 
@@ -2956,7 +2960,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 	if (q->NoAnswer == NoAnswer_Fail)
 		{
 		LogMsg("AnswerNewQuestion: NoAnswer_Fail %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
-		MakeNegativeCacheRecord(m, &q->qname, q->qnamehash, q->qtype, q->qclass);
+		MakeNegativeCacheRecord(m, &q->qname, q->qnamehash, q->qtype, q->qclass, 60);
 		q->NoAnswer = NoAnswer_Normal;		// Temporarily turn off answer suppression
 		AnswerCurrentQuestionWithResourceRecord(m, &m->rec.r, QC_addnocache);
 		q->NoAnswer = NoAnswer_Fail;		// Restore NoAnswer state
@@ -4650,12 +4654,15 @@ exit:
 			for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
 				if (SameNameRecordAnswersQuestion(&rr->resrec, &q))
 					{
+					// 1. If we got a fresh answer to this query, then don't need to generate a negative entry
+					// 2. If we already had a negative entry which we were about to discard, then we should resurrect it
 					if (rr->resrec.rroriginalttl) break;
 					if (rr->resrec.RecordType == kDNSRecordTypePacketNegative)
 						{ rr->TimeRcvd = m->timenow; rr->resrec.rroriginalttl = 60; break; }
 					}
 			if (!rr)
 				{
+				mDNSu32 negttl = 60;		// If we don't find an SOA to tell us the negative caching TTL to use, assume 60 seconds
 				int repeat = 0;
 				const domainname *name = &q.qname;
 				mDNSu32           hash = q.qnamehash;
@@ -4676,7 +4683,7 @@ exit:
 				while (1)
 					{
 					LogOperation("Making negative cache entry for %##s (%s)", name->c, DNSTypeName(q.qtype));
-					MakeNegativeCacheRecord(m, name, hash, q.qtype, q.qclass);
+					MakeNegativeCacheRecord(m, name, hash, q.qtype, q.qclass, negttl);
 					CreateNewCacheEntry(m, slot, cg);
 					m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 					if (!repeat) break;
@@ -4691,7 +4698,7 @@ exit:
 		}
 	}
 
-mDNSexport void MakeNegativeCacheRecord(mDNS *const m, const domainname *const name, const mDNSu32 namehash, const mDNSu16 rrtype, const mDNSu16 rrclass)
+mDNSexport void MakeNegativeCacheRecord(mDNS *const m, const domainname *const name, const mDNSu32 namehash, const mDNSu16 rrtype, const mDNSu16 rrclass, mDNSu32 ttl_seconds)
 	{
 	// Create empty resource record
 	m->rec.r.resrec.RecordType    = kDNSRecordTypePacketNegative;
@@ -4699,7 +4706,7 @@ mDNSexport void MakeNegativeCacheRecord(mDNS *const m, const domainname *const n
 	m->rec.r.resrec.name          = name;	// Will be updated to point to cg->name when we call CreateNewCacheEntry
 	m->rec.r.resrec.rrtype        = rrtype;
 	m->rec.r.resrec.rrclass       = rrclass;
-	m->rec.r.resrec.rroriginalttl = 60; // What should we use for the TTL? TTL from SOA for domain?
+	m->rec.r.resrec.rroriginalttl = ttl_seconds;
 	m->rec.r.resrec.rdlength      = 0;
 	m->rec.r.resrec.rdestimate    = 0;
 	m->rec.r.resrec.namehash      = namehash;

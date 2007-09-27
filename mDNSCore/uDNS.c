@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.484  2007/09/27 00:25:39  cheshire
+Added ttl_seconds parameter to MakeNegativeCacheRecord in preparation for:
+<rdar://problem/4947392> uDNS: Use SOA to determine TTL for negative answers
+
 Revision 1.483  2007/09/26 23:16:58  cheshire
 <rdar://problem/5496399> BTMM: Leopard sending excessive LLQ registration requests to .Mac
 
@@ -4288,11 +4292,11 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 			}
 		else
 			{
-			// If we have no server for this query, or the only server is a disabled one, then we deliver a
-			// transient failure indication to the client. This is important for things like iPhone where we
-			// want to return timely feedback to the user when no network is available. Note that although we
-			// use MakeNegativeCacheRecord() here, we don't actually store it in the cache --
-			// we just deliver it to the client with a no-cache ADD, and then discard it.
+			// If we have no server for this query, or the only server is a disabled one, then we deliver
+			// a transient failure indication to the client. This is important for things like iPhone
+			// where we want to return timely feedback to the user when no network is available.
+			// After calling MakeNegativeCacheRecord() we store the resulting record in the
+			// cache so that it will be visible to other clients asking the same question
 
 			CacheRecord *rr;
 			const mDNSu32 slot = HashSlot(&q->qname);
@@ -4304,7 +4308,7 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 			if (!q->qDNSServer) LogMsg("uDNS_CheckCurrentQuestion no DNS server for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 			else LogMsg("uDNS_CheckCurrentQuestion DNS server %#a:%d for %##s is disabled", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qname.c);
 
-			MakeNegativeCacheRecord(m, &q->qname, q->qnamehash, q->qtype, q->qclass);
+			MakeNegativeCacheRecord(m, &q->qname, q->qnamehash, q->qtype, q->qclass, 60);
 			// Inactivate this question until the next change of DNS servers (do this before AnswerCurrentQuestionWithResourceRecord)
 			q->ThisQInterval = 0;
 			CreateNewCacheEntry(m, slot, cg);
