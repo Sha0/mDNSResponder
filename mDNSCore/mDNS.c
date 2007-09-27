@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.717  2007/09/27 21:21:39  cheshire
+Export CompleteDeregistration so it's callable from other files
+
 Revision 1.716  2007/09/27 02:12:21  cheshire
 Updated GrantCacheExtensions degugging message to show new record lifetime
 
@@ -1607,10 +1610,10 @@ mDNSlocal void SendDelayedUnicastResponse(mDNS *const m, const mDNSAddr *const d
 		}
 	}
 
-mDNSlocal void CompleteDeregistration(mDNS *const m, AuthRecord *rr)
+mDNSexport void CompleteDeregistration(mDNS *const m, AuthRecord *rr)
 	{
-	// Clearing rr->RequireGoodbye signals mDNS_Deregister_internal()
-	// that it should go ahead and immediately dispose of this registration
+	// Clearing rr->RequireGoodbye signals mDNS_Deregister_internal() that
+	// it should go ahead and immediately dispose of this registration
 	rr->resrec.RecordType = kDNSRecordTypeShared;
 	rr->RequireGoodbye    = mDNSfalse;
 	if (rr->LocalAnswer) { AnswerLocalQuestions(m, rr, mDNSfalse); rr->LocalAnswer = mDNSfalse; }
