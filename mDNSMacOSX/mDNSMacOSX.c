@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.491  2007/09/27 23:28:53  mcguire
+<rdar://problem/5508042> BTMM: Anonymous racoon configuration not always cleaned up correctly
+
 Revision 1.490  2007/09/26 23:01:21  mcguire
 <rdar://problem/5505280> BTMM: v6 address and security policies being setup too soon
 
@@ -2048,13 +2051,15 @@ mDNSlocal void AutoTunnelNATCallback(mDNS *m, NATTraversalInfo *n)
 		{
 		err = mDNS_Deregister(m, &info->AutoTunnelService);
 		if (err) LogMsg("AutoTunnelNATCallback error %d deregistering AutoTunnelService %##s", err, info->AutoTunnelService.namestorage.c);
-		else AnonymousRacoonConfigRefCount--;
+
+		AnonymousRacoonConfigRefCount--;
 		// sanity check
 		if (AnonymousRacoonConfigRefCount < 0)
 			{
 			LogMsg("AutoTunnelNATCallback %##s AnonymousRacoonConfigRefCount=%d resetting to 0", info->AutoTunnelService.namestorage.c, AnonymousRacoonConfigRefCount);
 			AnonymousRacoonConfigRefCount = 0;
 			}
+
 		mDNS_Lock(m);
 		mDNS_RemoveDynDNSHostName(m, &info->AutoTunnelTarget.namestorage);
 		mDNS_Unlock(m);
@@ -2079,7 +2084,8 @@ mDNSlocal void AutoTunnelNATCallback(mDNS *m, NATTraversalInfo *n)
 		info->AutoTunnelService.resrec.RecordType = kDNSRecordTypeKnownUnique;
 		err = mDNS_Register(m, &info->AutoTunnelService);
 		if (err) LogMsg("AutoTunnelNATCallback error %d registering AutoTunnelService %##s", err, info->AutoTunnelService.namestorage.c);
-		else AnonymousRacoonConfigRefCount++;
+		
+		AnonymousRacoonConfigRefCount++;
 
 		info->AutoTunnelTarget.resrec.RecordType = kDNSRecordTypeKnownUnique;
 		mDNS_Lock(m);
@@ -3407,6 +3413,7 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 			{
 			LogMsg("SetDomainSecrets: AnonymousRacoonConfigRefCount=%d resetting to 0", AnonymousRacoonConfigRefCount);
 			AnonymousRacoonConfigRefCount = 0;
+			(void)mDNSConfigureServer(kmDNSDown, mDNSNULL);
 			}
 
 		if (m->AutoTunnelHostAddr.b[0])
