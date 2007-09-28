@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.492  2007/09/28 23:58:35  mcguire
+<rdar://problem/5505280> BTMM: v6 address and security policies being setup too soon
+Fix locking issue.
+
 Revision 1.491  2007/09/27 23:28:53  mcguire
 <rdar://problem/5508042> BTMM: Anonymous racoon configuration not always cleaned up correctly
 
@@ -2300,7 +2304,7 @@ mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const R
 
 		if (needSetKeys) LogOperation("New AutoTunnel for %##s %.16a", tun->dstname.c, &tun->rmt_inner);
 
-		if (m->AutoTunnelHostAddr.b[0]) SetupLocalAutoTunnelInterface_internal(m);
+		if (m->AutoTunnelHostAddr.b[0]) { mDNS_Lock(m); SetupLocalAutoTunnelInterface_internal(m); mDNS_Unlock(m); };
 
 		mStatus result = needSetKeys ? AutoTunnelSetKeys(tun, mDNStrue) : mStatus_NoError;
 		// Kick off any questions that were held pending this tunnel setup
