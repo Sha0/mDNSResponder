@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.180  2007/09/29 21:30:38  cheshire
+In DumpPacket/DumpRecords, show an error line if we run out of packet data
+
 Revision 1.179  2007/09/29 20:44:56  cheshire
 Fix error in DumpPacket where it was not displaying the RCODE field properly
 
@@ -2363,7 +2366,8 @@ mDNSlocal const mDNSu8 *DumpRecords(mDNS *const m, const DNSMessage *const msg, 
 		// embedded systems) putting a 9kB object on the stack isn't a big problem.
 		LargeCacheRecord largecr;
 		ptr = GetLargeResourceRecord(m, msg, ptr, end, mDNSInterface_Any, kDNSRecordTypePacketAns, &largecr);
-		if (ptr) LogMsg("%2d %5d %s", i, largecr.r.resrec.rroriginalttl, CRDisplayString(m, &largecr.r));
+		if (ptr) LogMsg("%2d TTL%6d %s", i, largecr.r.resrec.rroriginalttl, CRDisplayString(m, &largecr.r));
+		else LogMsg("ERROR: Premature end of packet data");
 		}
 	return(ptr);
 	}
@@ -2389,7 +2393,7 @@ mDNSlocal const mDNSu8 *DumpRecords(mDNS *const m, const DNSMessage *const msg, 
 	(X) == kDNSFlag1_RC_NotAuth  ? "NotAuth"  :      \
 	(X) == kDNSFlag1_RC_NotZone  ? "NotZone"  : "??" )
 
-// Note: DumpPacket expects the packet header fields in host byte order, not network byter order
+// Note: DumpPacket expects the packet header fields in host byte order, not network byte order
 mDNSexport void DumpPacket(mDNS *const m, mDNSBool sent, char *transport, const mDNSAddr *addr, mDNSIPPort port, const DNSMessage *const msg, const mDNSu8 *const end)
 	{
 	mDNSBool IsUpdate = ((msg->h.flags.b[0] & kDNSFlag0_OP_Mask) == kDNSFlag0_OP_Update);
