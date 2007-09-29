@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.344  2007/09/29 01:06:17  mcguire
+<rdar://problem/5507862> 9A564: mDNSResponder crash in mDNS_Execute
+
 Revision 1.343  2007/09/24 05:02:41  cheshire
 Debugging: In SIGINFO output, indicate explicitly when a given section is empty
 
@@ -544,6 +547,16 @@ mDNSlocal void validatelists(mDNS *const m)
 	for (rr = m->DuplicateRecords; rr; rr=rr->next)
 		if (rr->next == (AuthRecord *)~0 || rr->resrec.RecordType == 0 || rr->resrec.RecordType == 0xFF)
 			LogMemCorruption("DuplicateRecords list: %p is garbage (%X)", rr, rr->resrec.RecordType);
+
+	rr = m->NewLocalRecords;
+	if (rr)
+		if (rr->next == (AuthRecord *)~0 || rr->resrec.RecordType == 0 || rr->resrec.RecordType == 0xFF)
+			LogMemCorruption("NewLocalRecords: %p is garbage (%X)", rr, rr->resrec.RecordType);
+
+	rr = m->CurrentRecord;
+	if (rr)
+		if (rr->next == (AuthRecord *)~0 || rr->resrec.RecordType == 0 || rr->resrec.RecordType == 0xFF)
+			LogMemCorruption("CurrentRecord: %p is garbage (%X)", rr, rr->resrec.RecordType);
 
 	DNSQuestion                 *q;
 	for (q = m->Questions; q; q=q->next)

@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.490  2007/09/29 01:06:17  mcguire
+<rdar://problem/5507862> 9A564: mDNSResponder crash in mDNS_Execute
+
 Revision 1.489  2007/09/27 22:02:33  cheshire
 <rdar://problem/5464941> BTMM: Registered records in BTMM don't get removed from server after calling RemoveRecord
 
@@ -966,6 +969,8 @@ static ServiceRecordSet *CurrentServiceRecordSet = mDNSNULL;
 mDNSlocal mStatus UnlinkAuthRecord(mDNS *const m, AuthRecord *const rr)
 	{
 	AuthRecord **list = &m->ResourceRecords;
+	if (m->NewLocalRecords == rr) m->NewLocalRecords = rr->next;
+	if (m->CurrentRecord == rr) m->CurrentRecord = rr->next;
 	while (*list && *list != rr) list = &(*list)->next;
 	if (!*list)
 		{
@@ -4010,8 +4015,10 @@ mDNSexport void RecordRegistrationCallback(mDNS *const m, mStatus err, const Zon
 error:
 	if (newRR->state != regState_Unregistered)
 		{
+		mDNS_Lock(m);
 		UnlinkAuthRecord(m, newRR);
 		newRR->state = regState_Unregistered;
+		mDNS_Unlock(m);
 		}
 
 	// Don't need to do the mDNS_DropLockBeforeCallback stuff here, because this code is
