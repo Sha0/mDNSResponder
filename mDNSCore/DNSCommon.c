@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.179  2007/09/29 20:44:56  cheshire
+Fix error in DumpPacket where it was not displaying the RCODE field properly
+
 Revision 1.178  2007/09/27 21:11:44  cheshire
 Fixed spelling mistake: ROCDE -> RCODE
 
@@ -2399,8 +2402,8 @@ mDNSexport void DumpPacket(mDNS *const m, mDNSBool sent, char *transport, const 
 		DNS_OP_Name(msg->h.flags.b[0] & kDNSFlag0_OP_Mask),
 		msg->h.flags.b[0] & kDNSFlag0_QR_Response ? "Response" : "Query",
 		msg->h.flags.b[0], msg->h.flags.b[1],
-		DNS_RC_Name(msg->h.flags.b[1] & kDNSFlag0_OP_Mask),
-		msg->h.flags.b[1] & kDNSFlag0_OP_Mask,
+		DNS_RC_Name(msg->h.flags.b[0] & kDNSFlag0_OP_Mask),
+		msg->h.flags.b[0] & kDNSFlag0_OP_Mask,
 		msg->h.flags.b[0] & kDNSFlag0_AA ? "AA " : "",
 		msg->h.flags.b[0] & kDNSFlag0_TC ? "TC " : "",
 		msg->h.flags.b[0] & kDNSFlag0_RD ? "RD " : "",
