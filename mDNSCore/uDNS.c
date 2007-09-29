@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.491  2007/09/29 01:33:45  cheshire
+<rdar://problem/5513168> BTMM: mDNSResponder memory corruption in GetAuthInfoForName_internal
+
 Revision 1.490  2007/09/29 01:06:17  mcguire
 <rdar://problem/5507862> 9A564: mDNSResponder crash in mDNS_Execute
 
@@ -1097,7 +1100,10 @@ mDNSexport DomainAuthInfo *GetAuthInfoForName_internal(mDNS *m, const domainname
 	// First purge any dead keys from the list
 	while (*p)
 		{
-		if ((*p)->deltime && m->timenow - (*p)->deltime >= 0)
+		if ((*p)->deltime && m->timenow - (*p)->deltime >= 0 &&
+			(*p)->AutoTunnelHostRecord.resrec.RecordType == kDNSRecordTypeUnregistered &&
+			(*p)->AutoTunnelDeviceInfo.resrec.RecordType == kDNSRecordTypeUnregistered &&
+			(*p)->AutoTunnelService.   resrec.RecordType == kDNSRecordTypeUnregistered)
 			{
 			DNSQuestion *q;
 			DomainAuthInfo *info = *p;
@@ -1163,7 +1169,11 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 
 	// Caution: Only zero AutoTunnelHostRecord.namestorage and AutoTunnelNAT.clientContext AFTER we've determined that this is a NEW DomainAuthInfo
 	// being added to the list. Otherwise we risk smashing our AutoTunnel host records and NATOperation that are already active and in use.
+	info->AutoTunnelHostRecord.resrec.RecordType = kDNSRecordTypeUnregistered;
 	info->AutoTunnelHostRecord.namestorage.c[0] = 0;
+	info->AutoTunnelTarget    .resrec.RecordType = kDNSRecordTypeUnregistered;
+	info->AutoTunnelDeviceInfo.resrec.RecordType = kDNSRecordTypeUnregistered;
+	info->AutoTunnelService   .resrec.RecordType = kDNSRecordTypeUnregistered;
 	info->AutoTunnelNAT.clientContext = mDNSNULL;
 	info->next = mDNSNULL;
 	*p = info;
