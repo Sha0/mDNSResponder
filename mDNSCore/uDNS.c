@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.492  2007/09/29 03:15:43  cheshire
+<rdar://problem/5513168> BTMM: mDNSResponder memory corruption in GetAuthInfoForName_internal
+Use AutoTunnelUnregistered macro instead of checking record state directly
+
 Revision 1.491  2007/09/29 01:33:45  cheshire
 <rdar://problem/5513168> BTMM: mDNSResponder memory corruption in GetAuthInfoForName_internal
 
@@ -1100,10 +1104,7 @@ mDNSexport DomainAuthInfo *GetAuthInfoForName_internal(mDNS *m, const domainname
 	// First purge any dead keys from the list
 	while (*p)
 		{
-		if ((*p)->deltime && m->timenow - (*p)->deltime >= 0 &&
-			(*p)->AutoTunnelHostRecord.resrec.RecordType == kDNSRecordTypeUnregistered &&
-			(*p)->AutoTunnelDeviceInfo.resrec.RecordType == kDNSRecordTypeUnregistered &&
-			(*p)->AutoTunnelService.   resrec.RecordType == kDNSRecordTypeUnregistered)
+		if ((*p)->deltime && m->timenow - (*p)->deltime >= 0 && AutoTunnelUnregistered(*p))
 			{
 			DNSQuestion *q;
 			DomainAuthInfo *info = *p;
