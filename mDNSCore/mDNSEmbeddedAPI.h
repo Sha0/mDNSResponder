@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.444  2007/09/29 03:14:52  cheshire
+<rdar://problem/5513168> BTMM: mDNSResponder memory corruption in GetAuthInfoForName_internal
+Added AutoTunnelUnregistered macro to check state of DomainAuthInfo AuthRecords
+
 Revision 1.443  2007/09/27 21:21:39  cheshire
 Export CompleteDeregistration so it's callable from other files
 
@@ -1652,6 +1656,11 @@ enum { NoAnswer_Normal = 0, NoAnswer_Suspended = 1, NoAnswer_Fail = 2 };
 #define HMAC_IPAD   0x36
 #define HMAC_OPAD   0x5c
 #define MD5_LEN     16
+
+#define AutoTunnelUnregistered(X) (                                              \
+	(X)->AutoTunnelHostRecord.resrec.RecordType == kDNSRecordTypeUnregistered && \
+	(X)->AutoTunnelDeviceInfo.resrec.RecordType == kDNSRecordTypeUnregistered && \
+	(X)->AutoTunnelService.   resrec.RecordType == kDNSRecordTypeUnregistered    )
 
 // Internal data structure to maintain authentication information
 typedef struct DomainAuthInfo
