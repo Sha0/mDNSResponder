@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.358  2007/09/29 20:08:06  cheshire
+Fixed typo in comment
+
 Revision 1.357  2007/09/27 22:10:04  cheshire
 Add LogOperation line for DNSServiceRegisterRecord callbacks
 
@@ -962,7 +965,7 @@ mDNSlocal mStatus GenerateNTDResponse(const domainname *const servicename, const
 	}
 
 // Returns a resource record (allocated w/ malloc) containing the data found in an IPC message
-// Data must be in the following format: flags, interfaceIndex, name, rrtype, rrclass, rdlen, rdata, (optional)ttl
+// Data must be in the following format: flags, interfaceIndex, name, rrtype, rrclass, rdlen, rdata, (optional) ttl
 // (ttl only extracted/set if ttl argument is non-zero). Returns NULL for a bad-parameter error
 mDNSlocal AuthRecord *read_rr_from_ipc_msg(request_state *request, int GetTTL, int validate_flags)
 	{
