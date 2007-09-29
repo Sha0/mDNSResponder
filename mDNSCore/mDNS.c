@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.720  2007/09/29 20:40:19  cheshire
+<rdar://problem/5513378> Crash in ReissueBlockedQuestions
+
 Revision 1.719  2007/09/27 22:23:56  cheshire
 <rdar://problem/4947392> uDNS: Use SOA to determine TTL for negative answers
 Need to clear m->rec.r.resrec.RecordType after we've finished using m->rec
@@ -4941,6 +4944,17 @@ mDNSlocal DNSServer *GetServerForName(mDNS *m, const domainname *name)
 
 mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question)
 	{
+	// For now this AutoTunnel stuff is specific to Mac OS X.
+	// In the future, if there's demand, we may see if we can abstract it out cleanly into the platform layer
+#if APPLE_OSX_mDNSResponder
+	if (question->qtype == kDNSType_AAAA && question->AuthInfo && question->AuthInfo->AutoTunnel && question->QuestionCallback != AutoTunnelCallback)
+		{
+		question->NoAnswer = NoAnswer_Suspended;
+		AddNewClientTunnel(m, question);
+		return;
+		}
+#endif // APPLE_OSX_mDNSResponder
+
 	if (!question->DuplicateOf)
 		{
 		if (question->LongLived)
@@ -4960,16 +4974,6 @@ mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question)
 			question->LastQTime     = m->timenow - question->ThisQInterval;
 			}
 		}
-
-	// For now this AutoTunnel stuff is specific to Mac OS X.
-	// In the future, if there's demand, we may see if we can abstract it out cleanly into the platform layer
-	#if APPLE_OSX_mDNSResponder
-		if (question->qtype == kDNSType_AAAA && question->AuthInfo && question->AuthInfo->AutoTunnel && question->QuestionCallback != AutoTunnelCallback)
-			{
-			question->NoAnswer = NoAnswer_Suspended;
-			AddNewClientTunnel(m, question);
-			}
-	#endif // APPLE_OSX_mDNSResponder
 	}
 
 mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const question)
@@ -5076,7 +5080,7 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 		question->servAddr          = zeroAddr;
 		question->servPort          = zeroIPPort;
 		question->tcp               = mDNSNULL;
-		question->NoAnswer          = 0;
+		question->NoAnswer          = NoAnswer_Normal;
 
 		question->state             = LLQ_GetZoneInfo;
 		mDNSPlatformMemZero(&question->NATInfoUDP, sizeof(question->NATInfoUDP));
@@ -5176,7 +5180,7 @@ mDNSexport mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const que
 			}
 		}
 
-	// If we just deleted the question that CacheRecordAdd() or CacheRecordRmv()is about to look at,
+	// If we just deleted the question that CacheRecordAdd() or CacheRecordRmv() is about to look at,
 	// bump its pointer forward one question.
 	if (m->CurrentQuestion == question)
 		{

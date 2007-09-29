@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.494  2007/09/29 20:40:19  cheshire
+<rdar://problem/5513378> Crash in ReissueBlockedQuestions
+
 Revision 1.493  2007/09/29 03:16:45  cheshire
 <rdar://problem/5513168> BTMM: mDNSResponder memory corruption in GetAuthInfoForName_internal
 When AutoTunnel information changes, wait for record deregistrations to complete before registering new data
@@ -2180,7 +2183,7 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 
 				// 2. Set up device info record
 				mDNSu8 len = m->HIHardware.c[0] < 255 - 6 ? m->HIHardware.c[0] : 255 - 6;
-				mDNS_SetupResourceRecord(&info->AutoTunnelDeviceInfo, mDNSNULL, mDNSInterface_Any, kDNSType_TXT, kHostNameTTL, kDNSRecordTypeUnregistered, AutoTunnelRecordCallback, info);
+				mDNS_SetupResourceRecord(&info->AutoTunnelDeviceInfo, mDNSNULL, mDNSInterface_Any, kDNSType_TXT, kStandardTTL, kDNSRecordTypeUnregistered, AutoTunnelRecordCallback, info);
 				ConstructServiceName(&info->AutoTunnelDeviceInfo.namestorage, &m->nicelabel, &DeviceInfoName, &info->domain);
 				mDNSPlatformMemCopy(info->AutoTunnelDeviceInfo.resrec.rdata->u.data + 1, "model=", 6);
 				mDNSPlatformMemCopy(info->AutoTunnelDeviceInfo.resrec.rdata->u.data + 7, m->HIHardware.c + 1, len);
@@ -2227,11 +2230,9 @@ mDNSlocal mStatus AutoTunnelSetKeys(ClientTunnel *tun, mDNSBool AddNew)
 
 mDNSlocal void ReissueBlockedQuestions(mDNS *const m, domainname *d, mDNSBool success)
 	{
-	DNSQuestion *question = m->Questions;
-	while (question)
+	DNSQuestion *q = m->Questions;
+	while (q)
 		{
-		DNSQuestion *q = question;
-		question = question->next;
 		if (q->NoAnswer == NoAnswer_Suspended && q->qtype == kDNSType_AAAA && q->AuthInfo && q->AuthInfo->AutoTunnel && SameDomainName(&q->qname, d))
 			{
 			LogOperation("Restart %##s", q->qname.c);
@@ -2241,7 +2242,16 @@ mDNSlocal void ReissueBlockedQuestions(mDNS *const m, domainname *d, mDNSBool su
 			mDNS_StartQuery(m, q);
 			q->QuestionCallback = tmp;					// Restore QuestionCallback back to the real value
 			if (!success) q->NoAnswer = NoAnswer_Fail;
+			// When we call mDNS_StopQuery, it's possible for other subbordinate questions like the GetZoneData query to be cancelled too.
+			// In general we have to assume that the question list might have changed in arbitrary ways.
+			// This code is itself called from a question callback, so the m->CurrentQuestion mechanism is
+			// already in use. The safest solution is just to go back to the start of the list and start again.
+			// In principle this sounds like an n^2 algorithm, but in practice we almost always activate
+			// just one suspended question, so it's really a 2n algorithm.
+			q = m->Questions;
 			}
+		else
+			q = q->next;
 		}
 	}
 
@@ -2373,7 +2383,7 @@ mDNSexport void AddNewClientTunnel(mDNS *const m, DNSQuestion *const q)
 	p->q.QuestionCallback = AutoTunnelCallback;
 	p->q.QuestionContext  = p;
 
-	LogOperation("AddNewClientTunnel start  %##s (%s)", &p->q.qname.c, DNSTypeName(p->q.qtype));
+	LogOperation("AddNewClientTunnel start  %##s (%s)%s", &p->q.qname.c, DNSTypeName(p->q.qtype), q->LongLived ? " LongLived" : "");
 	mDNS_StartQuery_internal(m, &p->q);
 	}
 
