@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.90  2007/09/30 00:09:27  cheshire
+<rdar://problem/5492315> Pass socket fd via SCM_RIGHTS sendmsg instead of using named UDS in the filesystem
+
 Revision 1.89  2007/09/19 23:53:12  cheshire
 Fixed spelling mistake in comment
 
@@ -203,6 +206,9 @@ Minor textual tidying
 
 #define DNSSD_CLIENT_MAXTRIES 4
 
+// Uncomment the line below to use the old error return mechanism of creating a temporary named socket (e.g. in /var/tmp)
+//#define USE_NAMED_ERROR_RETURN_SOCKET 1
+
 #ifndef CTL_PATH_PREFIX
 #define CTL_PATH_PREFIX "/var/tmp/dnssd_result_socket."
 #endif
@@ -326,20 +332,22 @@ static ipc_msg_hdr *create_hdr(uint32_t op, size_t *len, char **data_start, int 
 	ipc_msg_hdr *hdr;
 	int datalen;
 #if !defined(USE_TCP_LOOPBACK)
-	char ctrl_path[64];	// "/var/tmp/dnssd_result_socket.xxxxxxxxxx-xxx-xxxxxx"
+	char ctrl_path[64] = "";	// "/var/tmp/dnssd_result_socket.xxxxxxxxxx-xxx-xxxxxx"
 #endif
 
 	if (SeparateReturnSocket)
 		{
 #if defined(USE_TCP_LOOPBACK)
 		*len += 2;  // Allocate space for two-byte port number
-#else
+#elif defined(USE_NAMED_ERROR_RETURN_SOCKET)
 		struct timeval time;
 		if (gettimeofday(&time, NULL) < 0)
 			{ syslog(LOG_WARNING, "dnssd_clientstub create_hdr: gettimeofday failed %d %s", errno, strerror(errno)); return NULL; }
 		sprintf(ctrl_path, "%s%d-%.3lx-%.6lu", CTL_PATH_PREFIX, (int)getpid(),
 			(unsigned long)(time.tv_sec & 0xFFF), (unsigned long)(time.tv_usec));
 		*len += strlen(ctrl_path) + 1;
+#else
+		*len += 1;		// Allocate space for single zero byte (empty C string)
 #endif
 		}
 
@@ -503,11 +511,10 @@ static DNSServiceErrorType ConnectToServer(DNSServiceRef *ref, DNSServiceFlags f
 static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 	{
 	uint32_t datalen = hdr->datalen;
-	dnssd_sockaddr_t caddr, daddr;  // (client and daemon address structs)
+	#if defined(USE_TCP_LOOPBACK) || defined(USE_NAMED_ERROR_RETURN_SOCKET)
 	char *const data = (char *)hdr + sizeof(ipc_msg_hdr);
+	#endif
 	dnssd_sock_t listenfd = dnssd_InvalidSocket, errsd = dnssd_InvalidSocket;
-	int ret;
-	dnssd_socklen_t len = (dnssd_socklen_t) sizeof(caddr);
 	DNSServiceErrorType err;
 	int MakeSeparateReturnSocket = 0;
 
@@ -529,40 +536,54 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 
 	if (MakeSeparateReturnSocket)
 		{
-		// Setup temporary error socket
-		listenfd = socket(AF_DNSSD, SOCK_STREAM, 0);
-		if (!dnssd_SocketValid(listenfd)) goto cleanup;
-		bzero(&caddr, sizeof(caddr));
-
 		#if defined(USE_TCP_LOOPBACK)
 			{
 			union { uint16_t s; u_char b[2]; } port;
+			dnssd_sockaddr_t caddr;
+			dnssd_socklen_t len = (dnssd_socklen_t) sizeof(caddr);
+			listenfd = socket(AF_DNSSD, SOCK_STREAM, 0);
+			if (!dnssd_SocketValid(listenfd)) goto cleanup;
+
 			caddr.sin_family      = AF_INET;
 			caddr.sin_port        = 0;
 			caddr.sin_addr.s_addr = inet_addr(MDNS_TCP_SERVERADDR);
-			ret = bind(listenfd, (struct sockaddr*) &caddr, sizeof(caddr));
-			if (ret < 0) goto cleanup;
+			if (bind(listenfd, (struct sockaddr*) &caddr, sizeof(caddr)) < 0) goto cleanup;
 			if (getsockname(listenfd, (struct sockaddr*) &caddr, &len) < 0) goto cleanup;
 			listen(listenfd, 1);
 			port.s = caddr.sin_port;
 			data[0] = port.b[0];  // don't switch the byte order, as the
 			data[1] = port.b[1];  // daemon expects it in network byte order
 			}
-		#else
+		#elif defined(USE_NAMED_ERROR_RETURN_SOCKET)
 			{
+			dnssd_sockaddr_t caddr;
 			mode_t mask = umask(0);
+			listenfd = socket(AF_DNSSD, SOCK_STREAM, 0);
+			if (!dnssd_SocketValid(listenfd)) goto cleanup;
+
 			caddr.sun_family = AF_LOCAL;
 			// According to Stevens (section 3.2), there is no portable way to
 			// determine whether sa_len is defined on a particular platform.
 			#ifndef NOT_HAVE_SA_LEN
 			caddr.sun_len = sizeof(struct sockaddr_un);
 			#endif
-			//syslog(LOG_WARNING, "dnssd_clientstub deliver_request: creating UDS: %s", data);
 			strcpy(caddr.sun_path, data);
-			ret = bind(listenfd, (struct sockaddr *)&caddr, sizeof(caddr));
 			umask(mask);
-			if (ret < 0) goto cleanup;
+			if (bind(listenfd, (struct sockaddr *)&caddr, sizeof(caddr)) < 0) goto cleanup;
 			listen(listenfd, 1);
+			}
+		#else
+			{
+			dnssd_sock_t sp[2];
+			//if (pipe(sp) < 0)
+			//	syslog(LOG_WARNING, "dnssd_clientstub ERROR: pipe() failed errno %d (%s)", errno, strerror(errno));
+			if (socketpair(AF_DNSSD, SOCK_STREAM, 0, sp) < 0)
+				syslog(LOG_WARNING, "dnssd_clientstub ERROR: socketpair() failed errno %d (%s)", errno, strerror(errno));
+			else
+				{
+				errsd    = sp[0];	// We'll read our four-byte error code from sp[0]
+				listenfd = sp[1];	// We'll send sp[1] to the daemon
+				}
 			}
 		#endif
 		}
@@ -576,13 +597,33 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 	if (!MakeSeparateReturnSocket) errsd = sdr->sockfd;
 	else
 		{
-		//syslog(LOG_WARNING, "dnssd_clientstub deliver_request: accept");
+#if defined(USE_TCP_LOOPBACK) || defined(USE_NAMED_ERROR_RETURN_SOCKET)
 		// At this point we may block in accept for a few milliseconds waiting for the daemon to connect back to us,
 		// but that's okay -- the daemon is a trusted service and we know if won't take more than a few milliseconds to respond.
-		len = sizeof(daddr);
+		dnssd_sockaddr_t daddr;
+		dnssd_socklen_t len = sizeof(daddr);
 		errsd = accept(listenfd, (struct sockaddr *)&daddr, &len);
-		//syslog(LOG_WARNING, "dnssd_clientstub deliver_request: accept returned %d", errsd);
 		if (!dnssd_SocketValid(errsd)) goto cleanup;
+#else
+		struct iovec vec = { 0, 0 };
+		struct msghdr msg;
+		struct cmsghdr *cmsg;
+		char cbuf[sizeof(struct cmsghdr) + sizeof(dnssd_sock_t)];
+		msg.msg_name       = 0;
+		msg.msg_namelen    = 0;
+		msg.msg_iov        = &vec;
+		msg.msg_iovlen     = 1;
+		msg.msg_control    = cbuf;
+		msg.msg_controllen = sizeof(cbuf);
+		msg.msg_flags      = 0;
+		cmsg = CMSG_FIRSTHDR(&msg);
+		cmsg->cmsg_len     = sizeof(cbuf);
+		cmsg->cmsg_level   = SOL_SOCKET;
+		cmsg->cmsg_type    = SCM_RIGHTS;
+		*((dnssd_sock_t *)CMSG_DATA(cmsg)) = listenfd;
+		if (sendmsg(sdr->sockfd, &msg, 0) < 0)
+			syslog(LOG_WARNING, "dnssd_clientstub ERROR: sendmsg failed errno %d (%s)", errno, strerror(errno));
+#endif
 		}
 
 	// At this point we may block in read_all for a few milliseconds waiting for the daemon to send us the error code,
@@ -599,7 +640,7 @@ cleanup:
 		{
 		if (dnssd_SocketValid(listenfd)) dnssd_close(listenfd);
 		if (dnssd_SocketValid(errsd))    dnssd_close(errsd);
-#if !defined(USE_TCP_LOOPBACK)
+#if defined(USE_NAMED_ERROR_RETURN_SOCKET)
 		// syslog(LOG_WARNING, "dnssd_clientstub deliver_request: removing UDS: %s", data);
 		if (unlink(data) != 0)
 			syslog(LOG_WARNING, "dnssd_clientstub WARNING: unlink(\"%s\") failed errno %d (%s)", data, errno, strerror(errno));

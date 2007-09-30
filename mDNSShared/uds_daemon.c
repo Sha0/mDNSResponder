@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.359  2007/09/30 00:09:27  cheshire
+<rdar://problem/5492315> Pass socket fd via SCM_RIGHTS sendmsg instead of using named UDS in the filesystem
+
 Revision 1.358  2007/09/29 20:08:06  cheshire
 Fixed typo in comment
 
@@ -3158,11 +3161,6 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 	// check if primary socket is to be used for synchronous errors, else open new socket
 	if (dedicated_error_socket)
 		{
-		errfd = socket(AF_DNSSD, SOCK_STREAM, 0);
-		if (!dnssd_SocketValid(errfd)) { my_perror("ERROR: socket"); AbortUnlinkAndFree(req); return; }
-
-		//LogOperation("request_callback: Opened dedicated errfd %d", errfd);
-
 		#if defined(USE_TCP_LOOPBACK)
 			{
 			mDNSOpaque16 port;
@@ -3180,8 +3178,37 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 			mDNSPlatformMemZero(&cliaddr, sizeof(cliaddr));
 			cliaddr.sun_family = AF_LOCAL;
 			mDNSPlatformStrCopy(cliaddr.sun_path, ctrl_path);
+			// If the error return path UDS name is empty string, that tells us
+			// that this is a new version of the library that's going to pass us
+			// the error return path socket via sendmsg/recvmsg
+			if (ctrl_path[0] == 0)
+				{
+				struct iovec vec = { 0, 0 };
+				struct msghdr msg;
+				struct cmsghdr *cmsg;
+				char cbuf[sizeof(struct cmsghdr) + sizeof(dnssd_sock_t)];
+				msg.msg_name       = 0;
+				msg.msg_namelen    = 0;
+				msg.msg_iov        = &vec;
+				msg.msg_iovlen     = 1;
+				msg.msg_control    = cbuf;
+				msg.msg_controllen = sizeof(cbuf);
+				msg.msg_flags      = 0;
+				cmsg = CMSG_FIRSTHDR(&msg);
+				cmsg->cmsg_len     = sizeof(cbuf);
+				cmsg->cmsg_level   = SOL_SOCKET;
+				cmsg->cmsg_type    = SCM_RIGHTS;
+				if (recvmsg(req->sd, &msg, 0) < 0)
+					LogMsg("request_callback: recvmsg failed errno %d %s", dnssd_errno(), dnssd_strerror(dnssd_errno()));
+				errfd = *(dnssd_sock_t *)CMSG_DATA(cmsg);
+				goto got_errfd;
+				}
 			}
 		#endif
+
+		errfd = socket(AF_DNSSD, SOCK_STREAM, 0);
+		if (!dnssd_SocketValid(errfd)) { my_perror("ERROR: socket"); AbortUnlinkAndFree(req); return; }
+
 		//LogOperation("request_callback: Connecting to “%s”", cliaddr.sun_path);
 		if (connect(errfd, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) < 0)
 			{
@@ -3198,6 +3225,9 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 			AbortUnlinkAndFree(req);
 			return;
 			}
+
+got_errfd:
+
 #if defined(_WIN32)
 		if (ioctlsocket(errfd, FIONBIO, &opt) != 0)
 #else
