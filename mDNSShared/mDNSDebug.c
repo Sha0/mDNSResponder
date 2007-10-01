@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.c,v $
+Revision 1.12  2007/10/01 19:06:19  cheshire
+Defined symbolic constant MDNS_LOG_INITIAL_LEVEL to set the logging level we start out at
+
 Revision 1.11  2007/07/27 20:19:56  cheshire
 For now, comment out unused log levels MDNS_LOG_ERROR, MDNS_LOG_WARN, MDNS_LOG_INFO, MDNS_LOG_DEBUG
 
@@ -79,7 +82,7 @@ Changes necessary to support mDNSResponder on Linux.
 
 #include "mDNSEmbeddedAPI.h"
 
-mDNSexport LogLevel_t mDNS_LogLevel = MDNS_LOG_NONE;
+mDNSexport LogLevel_t mDNS_LogLevel = MDNS_LOG_INITIAL_LEVEL;
 
 #if MDNS_DEBUGMSGS
 mDNSexport int mDNS_DebugMode = mDNStrue;

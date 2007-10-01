@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.36  2007/10/01 19:06:19  cheshire
+Defined symbolic constant MDNS_LOG_INITIAL_LEVEL to set the logging level we start out at
+
 Revision 1.35  2007/07/27 20:19:56  cheshire
 For now, comment out unused log levels MDNS_LOG_ERROR, MDNS_LOG_WARN, MDNS_LOG_INFO, MDNS_LOG_DEBUG
 
@@ -173,6 +176,8 @@ typedef enum
 //	MDNS_LOG_DEBUG,
 	MDNS_LOG_VERBOSE_DEBUG
 	} LogLevel_t;
+
+#define MDNS_LOG_INITIAL_LEVEL MDNS_LOG_NONE
 
 extern LogLevel_t mDNS_LogLevel;
 extern int        mDNS_DebugMode;	// If non-zero, LogMsg() writes to stderr instead of syslog
