@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.721  2007/10/01 18:42:07  cheshire
+To make packet logs appear in a more intuitive order, dump received packets *before* handling them, not after
+
 Revision 1.720  2007/09/29 20:40:19  cheshire
 <rdar://problem/5513378> Crash in ReissueBlockedQuestions
 
@@ -4822,9 +4825,9 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 	if (!dstaddr || (!mDNSAddressIsAllDNSLinkGroup(dstaddr) && (QR_OP == StdR || QR_OP == UpdR)))
 		{
 		if (!mDNSOpaque16IsZero(msg->h.id)) ifid = mDNSInterface_Any;
-		uDNS_ReceiveMsg(m, msg, end, srcaddr, srcport);
 		if (mDNS_LogLevel >= MDNS_LOG_VERBOSE_DEBUG)
 			DumpPacket(m, mDNSfalse, TLS ? "TLS" : !dstaddr ? "TCP" : "UDP", srcaddr, srcport, msg, end);
+		uDNS_ReceiveMsg(m, msg, end, srcaddr, srcport);
 		// Note: mDNSCore also needs to get access to received unicast responses
 		}
 #endif
