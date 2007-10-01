@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.360  2007/10/01 23:24:46  cheshire
+SIGINFO output was mislabeling mDNSInterface_Any queries as unicast queries
+
 Revision 1.359  2007/09/30 00:09:27  cheshire
 <rdar://problem/5492315> Pass socket fd via SCM_RIGHTS sendmsg instead of using named UDS in the filesystem
 
@@ -3626,7 +3629,8 @@ mDNSexport void udsserver_info(mDNS *const m)
 			CacheUsed++;
 			if (q->ThisQInterval) CacheActive++;
 			LogMsgNoIdent("%6d%6d %-6s%s %6d %-6s%##s%s",
-				i, n, info ? info->ifname : "-U-",
+				i, n,
+				info ? info->ifname : mDNSOpaque16IsZero(q->TargetQID) ? "" : "-U-",
 				mDNSOpaque16IsZero(q->TargetQID) ? " " : q->LongLived ? "L" : "O", // mDNS, long-lived, or one-shot query?
 				q->CurrentAnswers,
 				DNSTypeName(q->qtype), q->qname.c, q->DuplicateOf ? " (dup)" : "");
