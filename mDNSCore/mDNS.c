@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.722  2007/10/01 22:59:46  cheshire
+<rdar://problem/5516303> mDNSResponder did not shut down after 20 seconds
+Need to shut down NATTraversals on exit
+
 Revision 1.721  2007/10/01 18:42:07  cheshire
 To make packet logs appear in a more intuitive order, dump received packets *before* handling them, not after
 
@@ -6898,6 +6902,23 @@ mDNSexport void mDNS_Close(mDNS *const m)
 	for (intf = m->HostInterfaces; intf; intf = intf->next)
 		if (intf->Advertise)
 			DeadvertiseInterface(m, intf);
+
+	// Shut down all our active NAT Traversals
+	while (m->NATTraversals)
+		{
+		NATTraversalInfo *t = m->NATTraversals;
+		mDNS_StopNATOperation_internal(m, t);		// This will cut 't' from the list, thereby advancing m->NATTraversals in the process
+
+		// After stopping the NAT Traversal, we zero out the fields.
+		// This has particularly important implications for our AutoTunnel records --
+		// when we deregister our AutoTunnel records below, we don't want their mStatus_MemFree
+		// handlers to just turn around and attempt to re-register those same records.
+		// Clearing t->ExternalPort will cause the mStatus_MemFree callback handlers to not do this.
+		t->ExternalAddress = zerov4Addr;
+		t->ExternalPort    = zeroIPPort;
+		t->Lifetime        = 0;
+		t->Result          = mStatus_NoError;
+		}
 
 	// Make sure there are nothing but deregistering records remaining in the list
 	if (m->CurrentRecord)
