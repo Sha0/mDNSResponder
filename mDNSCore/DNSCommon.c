@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.181  2007/10/01 18:36:53  cheshire
+Yet another fix to finally get the DumpPacket RCODE display right
+
 Revision 1.180  2007/09/29 21:30:38  cheshire
 In DumpPacket/DumpRecords, show an error line if we run out of packet data
 
@@ -2406,8 +2409,8 @@ mDNSexport void DumpPacket(mDNS *const m, mDNSBool sent, char *transport, const 
 		DNS_OP_Name(msg->h.flags.b[0] & kDNSFlag0_OP_Mask),
 		msg->h.flags.b[0] & kDNSFlag0_QR_Response ? "Response" : "Query",
 		msg->h.flags.b[0], msg->h.flags.b[1],
-		DNS_RC_Name(msg->h.flags.b[0] & kDNSFlag0_OP_Mask),
-		msg->h.flags.b[0] & kDNSFlag0_OP_Mask,
+		DNS_RC_Name(msg->h.flags.b[1] & kDNSFlag1_RC_Mask),
+		msg->h.flags.b[1] & kDNSFlag1_RC_Mask,
 		msg->h.flags.b[0] & kDNSFlag0_AA ? "AA " : "",
 		msg->h.flags.b[0] & kDNSFlag0_TC ? "TC " : "",
 		msg->h.flags.b[0] & kDNSFlag0_RD ? "RD " : "",
