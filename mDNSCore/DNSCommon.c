@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.182  2007/10/01 19:45:01  cheshire
+<rdar://problem/5514859> BTMM: Sometimes Back to My Mac autotunnel registrations are malformed
+
 Revision 1.181  2007/10/01 18:36:53  cheshire
 Yet another fix to finally get the DumpPacket RCODE display right
 
@@ -1359,7 +1362,8 @@ mDNSexport mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate
 	{
 	const RDataBody *rd = &rr->rdata->u;
 	const domainname *const name = estimate ? rr->name : mDNSNULL;
-	switch (rr->rrtype)
+	if (rr->rrclass == kDNSQClass_ANY) return(rr->rdlength);	// Used in update packets to mean "Delete An RRset" (RFC 2136)
+	else switch (rr->rrtype)
 		{
 		case kDNSType_A:	return(sizeof(rd->ipv4));
 
@@ -2064,7 +2068,7 @@ mDNSexport const mDNSu8 *skipResourceRecord(const DNSMessage *msg, const mDNSu8 
 	return(ptr + pktrdlength);
 	}
 
-mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage * const msg, const mDNSu8 *ptr,
+mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *ptr,
     const mDNSu8 *end, const mDNSInterfaceID InterfaceID, mDNSu8 RecordType, LargeCacheRecord *largecr)
 	{
 	CacheRecord *rr = &largecr->r;
@@ -2124,7 +2128,9 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 	// bitwise memory compare. This is because a domainname is a fixed size structure holding variable-length data.
 	// Any bytes past the logical end of the name are undefined, and a blind bitwise memory compare may indicate that
 	// two domainnames are different when semantically they are the same name and it's only the unused bytes that differ.
-	switch (rr->resrec.rrtype)
+	if (rr->resrec.rrclass == kDNSQClass_ANY && pktrdlength == 0)	// Used in update packets to mean "Delete An RRset" (RFC 2136)
+		rr->resrec.rdlength = 0;
+	else switch (rr->resrec.rrtype)
 		{
 		case kDNSType_A:	if (pktrdlength != sizeof(mDNSv4Addr)) return(mDNSNULL);
 							rr->resrec.rdata->u.ipv4.b[0] = ptr[0];
@@ -2369,9 +2375,9 @@ mDNSlocal const mDNSu8 *DumpRecords(mDNS *const m, const DNSMessage *const msg, 
 		// embedded systems) putting a 9kB object on the stack isn't a big problem.
 		LargeCacheRecord largecr;
 		ptr = GetLargeResourceRecord(m, msg, ptr, end, mDNSInterface_Any, kDNSRecordTypePacketAns, &largecr);
-		if (ptr) LogMsg("%2d TTL%6d %s", i, largecr.r.resrec.rroriginalttl, CRDisplayString(m, &largecr.r));
-		else LogMsg("ERROR: Premature end of packet data");
+		if (ptr) LogMsg("%2d TTL%7d %s", i, largecr.r.resrec.rroriginalttl, CRDisplayString(m, &largecr.r));
 		}
+	if (!ptr) LogMsg("ERROR: Premature end of packet data");
 	return(ptr);
 	}
 
