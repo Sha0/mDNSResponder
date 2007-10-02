@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.725  2007/10/02 21:11:08  cheshire
+<rdar://problem/5518270> LLQ refreshes don't work, which breaks BTMM browsing
+
 Revision 1.724  2007/10/02 20:10:23  cheshire
 Additional debugging checks on shutdown -- list all records we didn't send a goodbye for, not just the first one
 
@@ -4291,9 +4294,8 @@ mDNSexport void GrantCacheExtensions(mDNS *const m, DNSQuestion *q, mDNSu32 leas
 			}
 	}
 
-mDNSlocal mDNSu32 GetEffectiveTTL(const uDNS_LLQType LLQType, const mDNSu32 ttl_seconds)
+mDNSlocal mDNSu32 GetEffectiveTTL(const uDNS_LLQType LLQType, mDNSu32 ttl)		// TTL in seconds
 	{
-	mDNSu32 ttl = ttl_seconds;
 	if      (LLQType == uDNS_LLQ_Poll)  ttl = LLQ_POLL_INTERVAL * 2 / mDNSPlatformOneSecond;
 	else if (LLQType == uDNS_LLQ_Setup) ttl = kLLQ_DefLease;
 	else if (LLQType == uDNS_LLQ_Events)
@@ -4304,6 +4306,10 @@ mDNSlocal mDNSu32 GetEffectiveTTL(const uDNS_LLQType LLQType, const mDNSu32 ttl_
 		}
 	else	// else not LLQ (standard uDNS response)
 		{
+		// The TTL is already capped to a maximum value in GetLargeResourceRecord, but just to be extra safe we
+		// also do this check here to make sure we can't get integer overflow below
+		if (ttl > 0x8000000UL) ttl = 0x8000000UL;
+
 		// Adjustment factor to avoid race condition:
 		// Suppose real record as TTL of 3600, and our local caching server has held it for 3500 seconds, so it returns an aged TTL of 100.
 		// If we do our normal refresh at 80% of the TTL, our local caching server will return 20 seconds, so we'll do another
@@ -4322,7 +4328,7 @@ mDNSlocal mDNSu32 GetEffectiveTTL(const uDNS_LLQType LLQType, const mDNSu32 ttl_
 		if (ttl < 15) ttl = 15;
 		}
 	
-	return ttl > ttl_seconds ? ttl : ttl_seconds;	// Return the larger of the packet TTL and our calculated effective TTL
+	return ttl;
 	}
 
 // NOTE: mDNSCoreReceiveResponse calls mDNS_Deregister_internal which can call a user callback, which may change
