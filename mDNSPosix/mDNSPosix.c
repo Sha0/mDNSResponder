@@ -30,6 +30,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.103  2007/10/02 19:31:17  cheshire
+In ParseDNSServers, should use strncasecmp for case-insensitive compare
+
 Revision 1.102  2007/09/12 19:23:17  cheshire
 Get rid of unnecessary mDNSPlatformTCPIsConnected() routine
 
@@ -549,7 +552,7 @@ mDNSexport int ParseDNSServers(mDNS *m, const char *filePath)
 		struct in_addr ina;
 		line[255]='\0';		// just to be safe
 		if (sscanf(line,"%10s %15s", keyword, nameserver) != 2) continue;	// it will skip whitespaces
-		if (strncmp(keyword,"nameserver",10)) continue;
+		if (strncasecmp(keyword,"nameserver",10)) continue;
 		if (inet_aton(nameserver, (struct in_addr *)&ina) != 0)
 			{
 			mDNSAddr DNSAddr;
