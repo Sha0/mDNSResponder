@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.183  2007/10/02 18:33:46  cheshire
+Improved GetRRDisplayString to show all constituent strings within a text record
+(up to the usual MaxMsg 120-character limit)
+
 Revision 1.182  2007/10/01 19:45:01  cheshire
 <rdar://problem/5514859> BTMM: Sometimes Back to My Mac autotunnel registrations are malformed
 
@@ -485,8 +489,15 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd,
 								rd->soa.serial, rd->soa.refresh, rd->soa.retry, rd->soa.expire, rd->soa.min);
 							break;
 
-		case kDNSType_HINFO:// Display this the same as TXT (just show first string)
-		case kDNSType_TXT:  mDNS_snprintf(buffer+length, Max-length, "%#s", rd->txt.c);         break;
+		case kDNSType_HINFO:// Display this the same as TXT (show all constituent string)
+		case kDNSType_TXT:  {
+							mDNSu8 *t = rd->txt.c;
+							while (t < rd->txt.c + rr->rdlength)
+								{
+								length += mDNS_snprintf(buffer+length, Max-length, "%s%#s", t > rd->txt.c ? "¦" : "", t);
+								t += 1 + t[0];
+								}
+							} break;
 
 		case kDNSType_AAAA:	mDNS_snprintf(buffer+length, Max-length, "%.16a", &rd->ipv6);       break;
 		case kDNSType_SRV:	mDNS_snprintf(buffer+length, Max-length, "%u %u %u %##s",
