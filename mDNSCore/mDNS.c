@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.724  2007/10/02 20:10:23  cheshire
+Additional debugging checks on shutdown -- list all records we didn't send a goodbye for, not just the first one
+
 Revision 1.723  2007/10/02 19:56:54  cheshire
 <rdar://problem/5518310> Double-dispose causes crash changing Dynamic DNS hostname
 
@@ -730,6 +733,9 @@ mDNSexport const char *const mDNS_DomainTypeNames[] =
 
 mDNSexport void SetNextQueryTime(mDNS *const m, const DNSQuestion *const q)
 	{
+	if (m->mDNS_busy != m->mDNS_reentrancy+1)
+		{ LogMsg("SetNextQueryTime: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy); *(long*)0=0; }
+
 	if (ActiveQuestion(q))
 		{
 		mDNSs32 sendtime = q->LastQTime + q->ThisQInterval;
@@ -6879,6 +6885,7 @@ mDNSexport void mDNS_Close(mDNS *const m)
 	mDNSu32 rrcache_totalused = 0;
 	mDNSu32 slot;
 	NetworkInterfaceInfo *intf;
+	AuthRecord *rr;
 	mDNS_Lock(m);
 	
 	m->mDNS_shutdown = mDNStrue;
@@ -6896,10 +6903,10 @@ mDNSexport void mDNS_Close(mDNS *const m)
 			CacheGroup *cg = m->rrcache_hash[slot];
 			while (cg->members)
 				{
-				CacheRecord *rr = cg->members;
+				CacheRecord *cr = cg->members;
 				cg->members = cg->members->next;
-				if (rr->CRActiveQuestion) rrcache_active++;
-				ReleaseCacheRecord(m, rr);
+				if (cr->CRActiveQuestion) rrcache_active++;
+				ReleaseCacheRecord(m, cr);
 				}
 			cg->rrcache_tail = &cg->members;
 			ReleaseCacheGroup(m, &m->rrcache_hash[slot]);
@@ -6939,7 +6946,7 @@ mDNSexport void mDNS_Close(mDNS *const m)
 	m->CurrentRecord = m->ResourceRecords;
 	while (m->CurrentRecord)
 		{
-		AuthRecord *rr = m->CurrentRecord;
+		rr = m->CurrentRecord;
 		if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
 			mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
 		else
@@ -6949,7 +6956,7 @@ mDNSexport void mDNS_Close(mDNS *const m)
 	// Now deregister any remaining records we didn't get the first time through
 	while (m->CurrentRecord)
 		{
-		AuthRecord *rr = m->CurrentRecord;
+		rr = m->CurrentRecord;
 		if (rr->resrec.RecordType != kDNSRecordTypeDeregistering)
 			mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
 		else
@@ -6962,7 +6969,8 @@ mDNSexport void mDNS_Close(mDNS *const m)
 	// If any deregistering records remain, send their deregistration announcements before we exit
 	if (m->mDNSPlatformStatus != mStatus_NoError) DiscardDeregistrations(m);
 	else if (m->ResourceRecords) SendResponses(m);
-	if (m->ResourceRecords) LogMsg("mDNS_Close failed to send goodbye for: %s", ARDisplayString(m, m->ResourceRecords));
+	for (rr = m->ResourceRecords; rr; rr = rr->next)
+		LogMsg("mDNS_Close failed to send goodbye for: %s", ARDisplayString(m, rr));
 	
 	mDNS_Unlock(m);
 	debugf("mDNS_Close: mDNSPlatformClose");
