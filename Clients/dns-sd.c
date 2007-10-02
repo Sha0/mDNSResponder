@@ -106,6 +106,7 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT ws2_32.lib ..\mDNSWindows\DLL\Rele
 
 #if TEST_NEW_CLIENTSTUB
 #include "../mDNSShared/dnssd_ipc.c"
+#include "../mDNSShared/dnssd_clientlib.c"
 #include "../mDNSShared/dnssd_clientstub.c"
 #endif
 
@@ -809,6 +810,12 @@ int main(int argc, char **argv)
 	if (a0 == (const char *)1) a0 = argv[0];
 
 	if (sizeof(argv) == 8) printf("Running in 64-bit mode\n");
+
+	// Test code for TXTRecord functions
+	//TXTRecordRef txtRecord;
+	//TXTRecordCreate(&txtRecord, 0, NULL);
+	//TXTRecordSetValue(&txtRecord, "aaa", 1, "b");
+	//printf("%d\n", TXTRecordContainsKey(TXTRecordGetLength(&txtRecord), TXTRecordGetBytesPtr(&txtRecord), "Aaa"));
 
 	if (argc > 1 && !strcmp(argv[1], "-lo"))
 		{
