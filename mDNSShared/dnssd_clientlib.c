@@ -28,6 +28,9 @@
    Change History (most recent first):
 
 $Log: dnssd_clientlib.c,v $
+Revision 1.17  2007/10/02 19:36:04  cheshire
+<rdar://problem/5516444> TXTRecordGetValuePtr should be case-insenstive
+
 Revision 1.16  2007/09/18 19:09:02  cheshire
 <rdar://problem/5489549> mDNSResponderHelper (and other binaries) missing SCCS version strings
 
@@ -135,7 +138,7 @@ static uint8_t *InternalTXTRecordSearch
 		{
 		uint8_t *x = p;
 		p += 1 + p[0];
-		if (p <= e && *keylen <= x[0] && !strncmp(key, (char*)x+1, *keylen))
+		if (p <= e && *keylen <= x[0] && !strncasecmp(key, (char*)x+1, *keylen))
 			if (*keylen == x[0] || x[1+*keylen] == '=') return(x);
 		}
 	return(NULL);
@@ -184,7 +187,7 @@ int DNSSD_API DNSServiceConstructFullName
 	len = (unsigned long) strlen(regtype);
 	if (DomainEndsInDot(regtype)) len--;
 	if (len < 6) return -1; // regtype must be at least "x._udp" or "x._tcp"
-	if (strncmp((regtype + len - 4), "_tcp", 4) && strncmp((regtype + len - 4), "_udp", 4)) return -1;
+	if (strncasecmp((regtype + len - 4), "_tcp", 4) && strncasecmp((regtype + len - 4), "_udp", 4)) return -1;
 	while (*r) *fn++ = *r++;
 	if (!DomainEndsInDot(regtype)) *fn++ = '.';
 
@@ -401,4 +404,4 @@ DNSServiceErrorType DNSSD_API TXTRecordGetItemAtIndex
 
 // NOT static -- otherwise the compiler may optimize it out
 // The "@(#) " pattern is a special prefix the "what" command looks for
-const char VersionString_SCCS[] = "@(#) libdns_sd " STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ")";
+const char VersionString_SCCS_libdnssd[] = "@(#) libdns_sd " STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ")";
