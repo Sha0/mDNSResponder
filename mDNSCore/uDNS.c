@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.493  2007/10/02 19:50:23  cheshire
+Improved debugging message
+
 Revision 1.492  2007/09/29 03:15:43  cheshire
 <rdar://problem/5513168> BTMM: mDNSResponder memory corruption in GetAuthInfoForName_internal
 Use AutoTunnelUnregistered macro instead of checking record state directly
@@ -2801,7 +2804,7 @@ mDNSlocal void HostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 			{
 			// If we're still in the Hostnames list, update to new address
 			HostnameInfo *i;
-			LogOperation("Got mStatus_MemFree for %s", ARDisplayString(m, rr));
+			LogOperation("HostnameCallback: Got mStatus_MemFree for %p %p %s", hi, rr, ARDisplayString(m, rr));
 			for (i = m->Hostnames; i; i = i->next)
 				if (rr == &i->arv4 || rr == &i->arv6)
 					{ mDNS_Lock(m); AdvertiseHostname(m, i); mDNS_Unlock(m); return; }
