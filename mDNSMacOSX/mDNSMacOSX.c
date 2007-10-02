@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.495  2007/10/02 05:03:38  cheshire
+Fix bogus indentation in mDNSPlatformDynDNSHostNameStatusChanged
+
 Revision 1.494  2007/09/29 20:40:19  cheshire
 <rdar://problem/5513378> Crash in ReissueBlockedQuestions
 
@@ -3197,59 +3200,56 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS *const m, mDNSAddr *v4, 
 
 mDNSexport void mDNSPlatformDynDNSHostNameStatusChanged(const domainname *const dname, const mStatus status)
 	{
-		char uname[MAX_ESCAPED_DOMAIN_NAME];	// Max legal C-string name, including terminating NUL
-		char *p;
+	LogOperation("mDNSPlatformDynDNSHostNameStatusChanged %d %##s", status, dname->c);
+	char uname[MAX_ESCAPED_DOMAIN_NAME];	// Max legal C-string name, including terminating NUL
+	ConvertDomainNameToCString(dname, uname);
 
-		ConvertDomainNameToCString(dname, uname);
-		p = uname;
+	char *p = uname;
+	while (*p)
+		{
+		*p = tolower(*p);
+		if (!(*(p+1)) && *p == '.') *p = 0; // if last character, strip trailing dot
+		p++;
+		}
 
-		while (*p)
+	// We need to make a CFDictionary called "State:/Network/DynamicDNS" containing (at present) a single entity.
+	// That single entity is a CFDictionary with name "HostNames".
+	// The "HostNames" CFDictionary contains a set of name/value pairs, where the each name is the FQDN
+	// in question, and the corresponding value is a CFDictionary giving the state for that FQDN.
+	// (At present we only support a single FQDN, so this dictionary holds just a single name/value pair.)
+	// The CFDictionary for each FQDN holds (at present) a single name/value pair,
+	// where the name is "Status" and the value is a CFNumber giving an errror code (with zero meaning success).
+
+	const CFStringRef StateKeys [1] = { CFSTR("HostNames") };
+	const CFStringRef HostKeys  [1] = { CFStringCreateWithCString(NULL, uname, kCFStringEncodingUTF8) };
+	const CFStringRef StatusKeys[1] = { CFSTR("Status") };
+	if (!HostKeys[0]) LogMsg("SetDDNSNameStatus: CFStringCreateWithCString(%s) failed", uname);
+	else
+		{
+		const CFNumberRef StatusVals[1] = { CFNumberCreate(NULL, kCFNumberSInt32Type, &status) };
+		if (!StatusVals[0]) LogMsg("SetDDNSNameStatus: CFNumberCreate(%ld) failed", status);
+		else
 			{
-			*p = tolower(*p);
-			if (!(*(p+1)) && *p == '.') *p = 0; // if last character, strip trailing dot
-			p++;
-			}
-
-		// We need to make a CFDictionary called "State:/Network/DynamicDNS" containing (at present) a single entity.
-		// That single entity is a CFDictionary with name "HostNames".
-		// The "HostNames" CFDictionary contains a set of name/value pairs, where the each name is the FQDN
-		// in question, and the corresponding value is a CFDictionary giving the state for that FQDN.
-		// (At present we only support a single FQDN, so this dictionary holds just a single name/value pair.)
-		// The CFDictionary for each FQDN holds (at present) a single name/value pair,
-		// where the name is "Status" and the value is a CFNumber giving an errror code (with zero meaning success).
-
-			{
-			const CFStringRef StateKeys [1] = { CFSTR("HostNames") };
-			const CFStringRef HostKeys  [1] = { CFStringCreateWithCString(NULL, uname, kCFStringEncodingUTF8) };
-			const CFStringRef StatusKeys[1] = { CFSTR("Status") };
-			if (!HostKeys[0]) LogMsg("SetDDNSNameStatus: CFStringCreateWithCString(%s) failed", uname);
-			else
+			const CFDictionaryRef HostVals[1] = { CFDictionaryCreate(NULL, (void*)StatusKeys, (void*)StatusVals, 1, NULL, NULL) };
+			if (HostVals[0])
 				{
-				const CFNumberRef StatusVals[1] = { CFNumberCreate(NULL, kCFNumberSInt32Type, &status) };
-				if (!StatusVals[0]) LogMsg("SetDDNSNameStatus: CFNumberCreate(%ld) failed", status);
-				else
+				const CFDictionaryRef StateVals[1] = { CFDictionaryCreate(NULL, (void*)HostKeys, (void*)HostVals, 1, NULL, NULL) };
+				if (StateVals[0])
 					{
-					const CFDictionaryRef HostVals[1] = { CFDictionaryCreate(NULL, (void*)StatusKeys, (void*)StatusVals, 1, NULL, NULL) };
-					if (HostVals[0])
+					CFDictionaryRef StateDict = CFDictionaryCreate(NULL, (void*)StateKeys, (void*)StateVals, 1, NULL, NULL);
+					if (StateDict)
 						{
-						const CFDictionaryRef StateVals[1] = { CFDictionaryCreate(NULL, (void*)HostKeys, (void*)HostVals, 1, NULL, NULL) };
-						if (StateVals[0])
-							{
-							CFDictionaryRef StateDict = CFDictionaryCreate(NULL, (void*)StateKeys, (void*)StateVals, 1, NULL, NULL);
-							if (StateDict)
-								{
-								mDNSDynamicStoreSetConfig(kmDNSDynamicConfig, StateDict);
-								CFRelease(StateDict);
-								}
-							CFRelease(StateVals[0]);
-							}
-						CFRelease(HostVals[0]);
+						mDNSDynamicStoreSetConfig(kmDNSDynamicConfig, StateDict);
+						CFRelease(StateDict);
 						}
-					CFRelease(StatusVals[0]);
+					CFRelease(StateVals[0]);
 					}
-				CFRelease(HostKeys[0]);
+				CFRelease(HostVals[0]);
 				}
+			CFRelease(StatusVals[0]);
 			}
+		CFRelease(HostKeys[0]);
+		}
 	}
 
 // MUST be called holding the lock -- this routine calls SetupLocalAutoTunnelInterface_internal()
