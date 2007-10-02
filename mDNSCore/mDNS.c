@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.723  2007/10/02 19:56:54  cheshire
+<rdar://problem/5518310> Double-dispose causes crash changing Dynamic DNS hostname
+
 Revision 1.722  2007/10/01 22:59:46  cheshire
 <rdar://problem/5516303> mDNSResponder did not shut down after 20 seconds
 Need to shut down NATTraversals on exit
@@ -1411,7 +1414,11 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 			if (rr->tcp) { DisposeTCPConn(rr->tcp); rr->tcp = mDNSNULL; }
 			rr->resrec.RecordType    = kDNSRecordTypeDeregistering;
 			uDNS_DeregisterRecord(m, rr);
-			if (rr->tcp) return(mStatus_NoError);
+			// At this point unconditionally we bail out
+			// Either uDNS_DeregisterRecord will have completed synchronously, and called CompleteDeregistration,
+			// which calls us back here with RequireGoodbye set to false, or it will have initiated the deregistration
+			// process and will complete asynchronously. Either way we don't need to do anything more here.
+			return(mStatus_NoError);
 			}
 #endif UNICAST_DISABLED
 
@@ -4203,6 +4210,9 @@ mDNSexport CacheRecord *CreateNewCacheEntry(mDNS *const m, const mDNSu32 slot, C
 		case kDNSType_PX:  RDLength = sizeof(rdataPX);          break;
 		default:           RDLength = m->rec.r.resrec.rdlength; break;
 		}
+
+	//if (RDLength > InlineCacheRDSize)
+	//	LogOperation("Rdata len %4d > InlineCacheRDSize %d %s", RDLength, InlineCacheRDSize, CRDisplayString(m, &m->rec.r));
 
 	if (!cg) cg = GetCacheGroup(m, slot, &m->rec.r.resrec);	// If we don't have a CacheGroup for this name, make one now
 	if (cg)  rr = GetCacheRecord(m, cg, RDLength);	// Make a cache record, being careful not to recycle cg
