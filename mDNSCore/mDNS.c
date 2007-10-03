@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.726  2007/10/03 00:14:24  cheshire
+Removed write to null to generate stack trace for SetNextQueryTime locking failure
+
 Revision 1.725  2007/10/02 21:11:08  cheshire
 <rdar://problem/5518270> LLQ refreshes don't work, which breaks BTMM browsing
 
@@ -737,7 +740,7 @@ mDNSexport const char *const mDNS_DomainTypeNames[] =
 mDNSexport void SetNextQueryTime(mDNS *const m, const DNSQuestion *const q)
 	{
 	if (m->mDNS_busy != m->mDNS_reentrancy+1)
-		{ LogMsg("SetNextQueryTime: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy); *(long*)0=0; }
+		LogMsg("SetNextQueryTime: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
 	if (ActiveQuestion(q))
 		{
