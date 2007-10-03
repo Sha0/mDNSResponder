@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.495  2007/10/03 00:16:19  cheshire
+In startPrivateQueryCallback, need to grab lock before calling SetNextQueryTime
+
 Revision 1.494  2007/10/02 21:11:08  cheshire
 <rdar://problem/5518270> LLQ refreshes don't work, which breaks BTMM browsing
 
@@ -3942,7 +3945,9 @@ mDNSlocal void startPrivateQueryCallback(mDNS *const m, mStatus err, const ZoneD
 		q->AuthInfo      = mDNSNULL;		// Clear AuthInfo so we try again non-private
 		q->ThisQInterval = InitialQuestionInterval;
 		q->LastQTime     = m->timenow - q->ThisQInterval;
+		mDNS_Lock(m);
 		SetNextQueryTime(m, q);
+		mDNS_Unlock(m);
 		goto exit;
 		// Next call to uDNS_CheckCurrentQuestion() will do this as a non-private query
 		}
