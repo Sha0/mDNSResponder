@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.361  2007/10/04 20:45:18  cheshire
+<rdar://problem/5518381> Race condition in kDNSServiceFlagsShareConnection-mode call handling
+
 Revision 1.360  2007/10/01 23:24:46  cheshire
 SIGINFO output was mislabeling mDNSInterface_Any queries as unicast queries
 
@@ -684,6 +687,7 @@ struct request_state
 	request_state *primary;			// If this operation is on a shared socket, pointer to
 									// primary request_state for the original DNSServiceConnect() operation
 	dnssd_sock_t sd;
+	dnssd_sock_t errsd;
 	mDNSu32 uid;
 
 	// NOTE: On a shared connection these fields in the primary structure, including hdr, are re-used
@@ -851,6 +855,7 @@ mDNSlocal void abort_request(request_state *req)
 		{
 		LogOperation("%3d: Removing FD", req->sd);
 		udsSupportRemoveFDFromEventLoop(req->sd);		// Note: This also closes file descriptor req->sd for us
+		if (req->errsd != req->sd) { dnssd_close(req->errsd); req->errsd = req->sd; }
 
 		while (req->replies)	// free pending replies
 			{
@@ -861,14 +866,14 @@ mDNSlocal void abort_request(request_state *req)
 			}
 		}
 
-	// Set req->sd to something invalid, so that udsserver_idle knows to unlink and free this structure
-	#if APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING
-		// Don't use dnssd_InvalidSocket (-1) because that's the sentinel value MACOSX_MDNS_MALLOC_DEBUGGING uses
-		// for detecting when the memory for an object is inadvertently freed while the object is still on some list
-		req->sd = -2;
-	#else
-		req->sd = dnssd_InvalidSocket;
-	#endif
+// Set req->sd to something invalid, so that udsserver_idle knows to unlink and free this structure
+#if APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING
+	// Don't use dnssd_InvalidSocket (-1) because that's the sentinel value MACOSX_MDNS_MALLOC_DEBUGGING uses
+	// for detecting when the memory for an object is inadvertently freed while the object is still on some list
+	req->sd = -2;
+#else
+	req->sd = dnssd_InvalidSocket;
+#endif
 	}
 
 mDNSlocal void AbortUnlinkAndFree(request_state *req)
@@ -1041,8 +1046,8 @@ mDNSlocal void send_all(dnssd_sock_t s, const char *ptr, int len)
 	// (four bytes for a typical error code return, 12 bytes for DNSServiceGetProperty(DaemonVersion)).
 	// If it does fail, we don't attempt to handle this failure, but we do log it so we know something is wrong.
 	if (n < len)
-		LogMsg("ERROR: failed to write error response back to caller: %d/%d %d %s",
-			n, len, dnssd_errno(), dnssd_strerror(dnssd_errno()));
+		LogMsg("ERROR: send_all(%d) wrote %d of %d errno %d %s",
+			s, n, len, dnssd_errno(), dnssd_strerror(dnssd_errno()));
 	}
 
 // ***************************************************************************
@@ -2987,6 +2992,7 @@ mDNSlocal request_state *NewRequest(void)
 // read_msg may be called any time when the transfer state (req->ts) is t_morecoming.
 // returns the current state of the request (morecoming, error, complete, terminated.)
 // if there is no data on the socket, the socket will be closed and t_terminated will be returned
+// *** NOTE return value is actually ignored -- should change return type to void ***
 mDNSlocal int read_msg(request_state *req)
 	{
 	mDNSu32 nleft;
@@ -3024,52 +3030,41 @@ mDNSlocal int read_msg(request_state *req)
 		if (nread == 0) { req->ts = t_terminated; return t_terminated; }
 		if (nread < 0) goto rerror;
 		req->hdr_bytes += nread;
-		if (req->hdr_bytes == sizeof(ipc_msg_hdr))
-			{
-			ConvertHeaderBytes(&req->hdr);
-			if (req->hdr.version != VERSION)
-				{
-				LogMsg("ERROR: client version 0x%08X daemon version 0x%08X", req->hdr.version, VERSION);
-				req->ts = t_error;
-				return t_error;
-				}
-			}
 		if (req->hdr_bytes > sizeof(ipc_msg_hdr))
 			{
 			LogMsg("ERROR: read_msg - read too many header bytes");
 			req->ts = t_error;
 			return t_error;
 			}
-		}
 
-	// only read data if header is complete
-	if (req->hdr_bytes == sizeof(ipc_msg_hdr))
-		{
-		if (req->hdr.datalen == 0)  // ok in removerecord requests
+		// only read data if header is complete
+		if (req->hdr_bytes == sizeof(ipc_msg_hdr))
 			{
-			req->ts = t_complete;
-			req->msgbuf = NULL;
-			return t_complete;
-			}
+			ConvertHeaderBytes(&req->hdr);
+			if (req->hdr.version != VERSION)
+				{ LogMsg("ERROR: client version 0x%08X daemon version 0x%08X", req->hdr.version, VERSION); req->ts = t_error; return t_error; }
 
-		// Largest conceivable single request is a DNSServiceRegisterRecord() or DNSServiceAddRecord()
-		// with 64kB of rdata. Adding 1005 byte for a maximal domain name, plus a safety margin
-		// for other overhead, this means any message above 70kB is definitely bogus.
-		if (req->hdr.datalen > 70000)
-			{
-			LogMsg("ERROR: read_msg - hdr.datalen %lu (%X) > 70000", req->hdr.datalen, req->hdr.datalen);
-			req->ts = t_error;
-			return t_error;
-			}
-
-		if (!req->msgbuf)  // allocate the buffer first time through
-			{
+			// Largest conceivable single request is a DNSServiceRegisterRecord() or DNSServiceAddRecord()
+			// with 64kB of rdata. Adding 1005 byte for a maximal domain name, plus a safety margin
+			// for other overhead, this means any message above 70kB is definitely bogus.
+			if (req->hdr.datalen > 70000)
+				{
+				LogMsg("ERROR: read_msg - hdr.datalen %lu (%X) > 70000", req->hdr.datalen, req->hdr.datalen);
+				req->ts = t_error;
+				return t_error;
+				}
 			req->msgbuf = mallocL("request_state msgbuf", req->hdr.datalen + MSG_PAD_BYTES);
 			if (!req->msgbuf) { my_perror("ERROR: malloc"); req->ts = t_error; return t_error; }
 			req->msgptr = req->msgbuf;
 			req->msgend = req->msgbuf + req->hdr.datalen;
 			mDNSPlatformMemZero(req->msgbuf, req->hdr.datalen + MSG_PAD_BYTES);
 			}
+		}
+
+	// If our header is complete, but we're still needing more body data, then try to read it now
+	// Note: In removerecord requests, req->hdr.datalen == 0
+	if (req->hdr_bytes == sizeof(ipc_msg_hdr) && req->data_bytes < req->hdr.datalen)
+		{
 		nleft = req->hdr.datalen - req->data_bytes;
 		nread = recv(req->sd, req->msgbuf + req->data_bytes, nleft, 0);
 		if (nread == 0) { req->ts = t_terminated; return t_terminated; }
@@ -3083,9 +3078,93 @@ mDNSlocal int read_msg(request_state *req)
 			}
 		}
 
+	// If our header and data are both complete, see if we need to make our separate error return socket
 	if (req->hdr_bytes == sizeof(ipc_msg_hdr) && req->data_bytes == req->hdr.datalen)
+		{
+		if (req->terminate && req->hdr.op != cancel_request)
+			{
+			dnssd_sockaddr_t cliaddr;
+#if defined(USE_TCP_LOOPBACK)
+			mDNSOpaque16 port;
+			port.b[0] = req->msgptr[0];
+			port.b[1] = req->msgptr[1];
+			req->msgptr += 2;
+			cliaddr.sin_family      = AF_INET;
+			cliaddr.sin_port        = port.NotAnInteger;
+			cliaddr.sin_addr.s_addr = inet_addr(MDNS_TCP_SERVERADDR);
+#else
+			char ctrl_path[MAX_CTLPATH];
+			get_string(&req->msgptr, req->msgend, ctrl_path, MAX_CTLPATH);	// path is first element in message buffer
+			mDNSPlatformMemZero(&cliaddr, sizeof(cliaddr));
+			cliaddr.sun_family = AF_LOCAL;
+			mDNSPlatformStrCopy(cliaddr.sun_path, ctrl_path);
+			// If the error return path UDS name is empty string, that tells us
+			// that this is a new version of the library that's going to pass us
+			// the error return path socket via sendmsg/recvmsg
+			if (ctrl_path[0] == 0)
+				{
+				struct iovec vec = { 0, 0 };
+				struct msghdr msg;
+				struct cmsghdr *cmsg;
+				char cbuf[sizeof(struct cmsghdr) + sizeof(dnssd_sock_t)];
+				msg.msg_name       = 0;
+				msg.msg_namelen    = 0;
+				msg.msg_iov        = &vec;
+				msg.msg_iovlen     = 1;
+				msg.msg_control    = cbuf;
+				msg.msg_controllen = sizeof(cbuf);
+				msg.msg_flags      = 0;
+				if (recvmsg(req->sd, &msg, 0) < 0)
+					LogMsg("request_callback: recvmsg failed errno %d %s", dnssd_errno(), dnssd_strerror(dnssd_errno()));
+				cmsg = CMSG_FIRSTHDR(&msg);
+				if (msg.msg_controllen == sizeof(cbuf) &&
+					cmsg->cmsg_len     == sizeof(cbuf) &&
+					cmsg->cmsg_level   == SOL_SOCKET   &&
+					cmsg->cmsg_type    == SCM_RIGHTS)
+					{
+					req->errsd = *(dnssd_sock_t *)CMSG_DATA(cmsg);
+					LogOperation("request_callback sending error code to %d", req->errsd);
+					}
+				else
+					{
+					req->msgptr = req->msgbuf;		// Reset req->msgptr so we read the same (empty) string again when we retry next time
+					LogOperation("request_callback No data %d", req->ts);
+					return req->ts;
+					}
+				goto got_errfd;
+				}
+#endif
+	
+			req->errsd = socket(AF_DNSSD, SOCK_STREAM, 0);
+			if (!dnssd_SocketValid(req->errsd)) { my_perror("ERROR: socket"); req->ts = t_error; return t_error; }
+	
+			if (connect(req->errsd, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) < 0)
+				{
+#if !defined(USE_TCP_LOOPBACK)
+				struct stat sb;
+				LogMsg("request_callback: Couldn't connect to error return path socket “%s” errno %d %s",
+					cliaddr.sun_path, dnssd_errno(), dnssd_strerror(dnssd_errno()));
+				if (stat(cliaddr.sun_path, &sb) < 0)
+					LogMsg("request_callback: stat failed “%s” errno %d %s", cliaddr.sun_path, dnssd_errno(), dnssd_strerror(dnssd_errno()));
+				else
+					LogMsg("request_callback: file “%s” mode %o (octal) uid %d gid %d", cliaddr.sun_path, sb.st_mode, sb.st_uid, sb.st_gid);
+#endif
+				req->ts = t_error;
+				return t_error;
+				}
+	
+got_errfd:
+	
+#if defined(_WIN32)
+			if (ioctlsocket(req->errsd, FIONBIO, &opt) != 0)
+#else
+			if (fcntl(req->errsd, F_SETFL, fcntl(req->errsd, F_GETFL, 0) | O_NONBLOCK) != 0)
+#endif
+				{ my_perror("ERROR: could not set control socket to non-blocking mode"); req->ts = t_error; return t_error; }
+			}
+		
 		req->ts = t_complete;
-	else req->ts = t_morecoming;
+		}
 
 	return req->ts;
 
@@ -3106,10 +3185,6 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 	{
 	mStatus err = 0;
 	request_state *req = info;
-	transfer_state result;
-	dnssd_sockaddr_t cliaddr;
-	int dedicated_error_socket;
-	dnssd_sock_t errfd = req->sd;
 #if defined(_WIN32)
 	u_long opt = 1;
 #endif
@@ -3117,9 +3192,9 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 	(void)fd; // Unused
 	(void)filter; // Unused
 
-	result = read_msg(req);
-	if (result == t_morecoming) return;
-	if (result == t_terminated || result == t_error) { AbortUnlinkAndFree(req); return; }
+	read_msg(req);
+	if (req->ts == t_morecoming) return;
+	if (req->ts == t_terminated || req->ts == t_error) { AbortUnlinkAndFree(req); return; }
 
 	if (req->hdr.version != VERSION)
 		{
@@ -3159,96 +3234,13 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 	// check if client wants silent operation
 	if (req->hdr.ipc_flags & IPC_FLAGS_NOREPLY) req->no_reply = 1;
 
-	dedicated_error_socket = (req->terminate && req->hdr.op != cancel_request);
-
-	// check if primary socket is to be used for synchronous errors, else open new socket
-	if (dedicated_error_socket)
-		{
-		#if defined(USE_TCP_LOOPBACK)
-			{
-			mDNSOpaque16 port;
-			port.b[0] = req->msgptr[0];
-			port.b[1] = req->msgptr[1];
-			req->msgptr += 2;
-			cliaddr.sin_family      = AF_INET;
-			cliaddr.sin_port        = port.NotAnInteger;
-			cliaddr.sin_addr.s_addr = inet_addr(MDNS_TCP_SERVERADDR);
-			}
-		#else
-			{
-			char ctrl_path[MAX_CTLPATH];
-			get_string(&req->msgptr, req->msgend, ctrl_path, MAX_CTLPATH);	// path is first element in message buffer
-			mDNSPlatformMemZero(&cliaddr, sizeof(cliaddr));
-			cliaddr.sun_family = AF_LOCAL;
-			mDNSPlatformStrCopy(cliaddr.sun_path, ctrl_path);
-			// If the error return path UDS name is empty string, that tells us
-			// that this is a new version of the library that's going to pass us
-			// the error return path socket via sendmsg/recvmsg
-			if (ctrl_path[0] == 0)
-				{
-				struct iovec vec = { 0, 0 };
-				struct msghdr msg;
-				struct cmsghdr *cmsg;
-				char cbuf[sizeof(struct cmsghdr) + sizeof(dnssd_sock_t)];
-				msg.msg_name       = 0;
-				msg.msg_namelen    = 0;
-				msg.msg_iov        = &vec;
-				msg.msg_iovlen     = 1;
-				msg.msg_control    = cbuf;
-				msg.msg_controllen = sizeof(cbuf);
-				msg.msg_flags      = 0;
-				cmsg = CMSG_FIRSTHDR(&msg);
-				cmsg->cmsg_len     = sizeof(cbuf);
-				cmsg->cmsg_level   = SOL_SOCKET;
-				cmsg->cmsg_type    = SCM_RIGHTS;
-				if (recvmsg(req->sd, &msg, 0) < 0)
-					LogMsg("request_callback: recvmsg failed errno %d %s", dnssd_errno(), dnssd_strerror(dnssd_errno()));
-				errfd = *(dnssd_sock_t *)CMSG_DATA(cmsg);
-				goto got_errfd;
-				}
-			}
-		#endif
-
-		errfd = socket(AF_DNSSD, SOCK_STREAM, 0);
-		if (!dnssd_SocketValid(errfd)) { my_perror("ERROR: socket"); AbortUnlinkAndFree(req); return; }
-
-		//LogOperation("request_callback: Connecting to “%s”", cliaddr.sun_path);
-		if (connect(errfd, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) < 0)
-			{
-			struct stat sb;
-
-			LogMsg("request_callback: Couldn't connect to error return path socket “%s” errno %d %s",
-				cliaddr.sun_path, dnssd_errno(), dnssd_strerror(dnssd_errno()));
-
-			if (stat(cliaddr.sun_path, &sb) < 0)
-				LogMsg("request_callback: stat failed “%s” errno %d %s", cliaddr.sun_path, dnssd_errno(), dnssd_strerror(dnssd_errno()));
-			else
-				LogMsg("request_callback: file “%s” mode %o (octal) uid %d gid %d", cliaddr.sun_path, sb.st_mode, sb.st_uid, sb.st_gid);
-
-			AbortUnlinkAndFree(req);
-			return;
-			}
-
-got_errfd:
-
-#if defined(_WIN32)
-		if (ioctlsocket(errfd, FIONBIO, &opt) != 0)
-#else
-		if (fcntl(errfd, F_SETFL, fcntl(errfd, F_GETFL, 0) | O_NONBLOCK) != 0)
-#endif
-			{
-			my_perror("ERROR: could not set control socket to non-blocking mode");
-			AbortUnlinkAndFree(req);
-			return;
-			}
-		}
-
 	// If req->terminate is already set, this means this operation is sharing an existing connection
 	if (req->terminate && !LightweightOp(req->hdr.op))
 		{
 		request_state *newreq = NewRequest();
 		newreq->primary = req;
 		newreq->sd      = req->sd;
+		newreq->errsd   = req->errsd;
 		newreq->uid     = req->uid;
 		newreq->hdr     = req->hdr;
 		newreq->msgbuf  = req->msgbuf;
@@ -3290,8 +3282,8 @@ got_errfd:
 	if (req->hdr.op != cancel_request && req->hdr.op != getproperty_request)
 		{
 		err = dnssd_htonl(err);
-		send_all(errfd, (const char *)&err, sizeof(err));
-		if (errfd != req->sd) dnssd_close(errfd);
+		send_all(req->errsd, (const char *)&err, sizeof(err));
+		if (req->errsd != req->sd) { dnssd_close(req->errsd); req->errsd = req->sd; }
 		}
 
 	// Reset ready to accept the next req on this pipe
@@ -3344,8 +3336,9 @@ mDNSlocal void connect_callback(int fd, short filter, void *info)
 	else
 		{
 		request_state *request = NewRequest();
-		request->ts = t_morecoming;
-		request->sd = sd;
+		request->ts    = t_morecoming;
+		request->sd    = sd;
+		request->errsd = sd;
 #if APPLE_OSX_mDNSResponder
 	struct xucred x;
 	socklen_t len = sizeof(x);
