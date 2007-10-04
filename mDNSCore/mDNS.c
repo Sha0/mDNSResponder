@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.727  2007/10/04 22:51:57  cheshire
+Added debugging LogOperation message to show when we're sending cache expiration queries
+
 Revision 1.726  2007/10/03 00:14:24  cheshire
 Removed write to null to generate stack trace for SetNextQueryTime locking failure
 
@@ -2296,6 +2299,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 			if (rr->CRActiveQuestion && rr->UnansweredQueries < MaxUnansweredQueries)
 				if (m->timenow + TicksTTL(rr)/50 - rr->NextRequiredQuery >= 0)
 					{
+					LogOperation("Sending %d%% cache expiration query for %s", 80 + 5 * rr->UnansweredQueries, CRDisplayString(m, rr));
 					q = rr->CRActiveQuestion;
 					ExpireDupSuppressInfoOnInterface(q->DupSuppress, m->timenow - TicksTTL(rr)/20, rr->resrec.InterfaceID);
 					if      (q->Target.type) q->SendQNow = mDNSInterfaceMark;	// If targeted query, mark it
@@ -6978,6 +6982,7 @@ mDNSexport void mDNS_Close(mDNS *const m)
 	// If any deregistering records remain, send their deregistration announcements before we exit
 	if (m->mDNSPlatformStatus != mStatus_NoError) DiscardDeregistrations(m);
 	else if (m->ResourceRecords) SendResponses(m);
+
 	for (rr = m->ResourceRecords; rr; rr = rr->next)
 		LogMsg("mDNS_Close failed to send goodbye for: %s", ARDisplayString(m, rr));
 	
