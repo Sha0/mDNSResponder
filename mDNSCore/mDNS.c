@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.728  2007/10/04 23:18:14  cheshire
+<rdar://problem/5523706> mDNSResponder flooding DNS servers with unreasonable query level
+
 Revision 1.727  2007/10/04 22:51:57  cheshire
 Added debugging LogOperation message to show when we're sending cache expiration queries
 
@@ -4282,6 +4285,17 @@ mDNSlocal const domainname *SkipLeadingLabels(const domainname *d, int skip)
 	return(d);
 	}
 
+mDNSlocal void RefreshCacheRecord(mDNS *const m, CacheRecord *rr, mDNSu32 ttl)
+	{
+	rr->TimeRcvd             = m->timenow;
+	rr->resrec.rroriginalttl = ttl;
+	rr->UnansweredQueries = 0;
+	rr->MPUnansweredQ     = 0;
+	rr->MPUnansweredKA    = 0;
+	rr->MPExpectingKA     = mDNSfalse;
+	SetNextCacheCheckTime(m, rr);
+	}
+
 mDNSexport void GrantCacheExtensions(mDNS *const m, DNSQuestion *q, mDNSu32 lease)
 	{
 	CacheRecord *rr;
@@ -4291,13 +4305,7 @@ mDNSexport void GrantCacheExtensions(mDNS *const m, DNSQuestion *q, mDNSu32 leas
 		if (rr->CRActiveQuestion == q)
 			{
 			//LogOperation("GrantCacheExtensions: new lease %d / %s", lease, CRDisplayString(m, rr));
-			rr->TimeRcvd = m->timenow;
-			rr->resrec.rroriginalttl = lease;
-			rr->UnansweredQueries = 0;
-			rr->MPUnansweredQ     = 0;
-			rr->MPUnansweredKA    = 0;
-			rr->MPExpectingKA     = mDNSfalse;
-			SetNextCacheCheckTime(m, rr);
+			RefreshCacheRecord(m, rr, lease);
 			}
 	}
 
@@ -4406,8 +4414,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					if (SameNameRecordAnswersQuestion(&rr->resrec, &q))
 						{
 						//LogMsg("uDNS Q for %s", CRDisplayString(m, rr));
-						rr->resrec.rroriginalttl = 0;
-						rr->TimeRcvd          = m->timenow;
+						// Don't want to disturb rroriginalttl here, because code below might need it for the exponential backoff doubling algorithm
+						rr->TimeRcvd          = m->timenow - rr->resrec.rroriginalttl * mDNSPlatformOneSecond;
 						rr->UnansweredQueries = MaxUnansweredQueries;
 						}
 				}
@@ -4572,12 +4580,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					else if (m->rec.r.resrec.rroriginalttl > 0)
 						{
 						//if (rr->resrec.rroriginalttl == 0) LogMsg("uDNS rescuing %s", CRDisplayString(m, rr));
-						rr->resrec.rroriginalttl = m->rec.r.resrec.rroriginalttl;
-						rr->UnansweredQueries = 0;
-						rr->MPUnansweredQ     = 0;
-						rr->MPUnansweredKA    = 0;
-						rr->MPExpectingKA     = mDNSfalse;
-						SetNextCacheCheckTime(m, rr);
+						RefreshCacheRecord(m, rr, m->rec.r.resrec.rroriginalttl);
 						break;
 						}
 					else
@@ -4716,7 +4719,7 @@ exit:
 				{
 				// We start off assuming a negative caching TTL of 60 seconds
 				// but then look to see if we can find an SOA authority record to tell us a better value we should be using
-				mDNSu32 negttl = GetEffectiveTTL(LLQType, 60);
+				mDNSu32 negttl = 60;
 				int repeat = 0;
 				const domainname *name = &q.qname;
 				mDNSu32           hash = q.qnamehash;
@@ -4747,12 +4750,27 @@ exit:
 					m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 					}
 
-				// If we already had a negative cache entry just update it, else make one or more new negative cache entries
+				// If we already had a negative entry in the cache, then we double our existing negative TTL. This is to avoid
+				// the case where the record doesn't exist (e.g. particularly for things like our lb._dns-sd._udp.<domain> query),
+				// and the server returns no SOA record (or an SOA record with a small MIN TTL) so we assume a TTL
+				// of 60 seconds, and we end up polling the server every minute for a record that doesn't exist.
+				// With this fix in place, when this happens, we double the effective TTL each time (up to one hour),
+				// so that we back off our polling rate and don't keep hitting the server continually.
 				if (rr)
 					{
-					rr->TimeRcvd = m->timenow;
-					rr->resrec.rroriginalttl = negttl;
+					if (negttl < rr->resrec.rroriginalttl * 2)
+						negttl = rr->resrec.rroriginalttl * 2;
+					if (negttl > 3600)
+						negttl = 3600;
 					}
+
+				negttl = GetEffectiveTTL(LLQType, negttl);	// Add 25% grace period if necessary
+
+				if (rr) LogOperation("Renewing negative TTL from %d to %d %s", rr->resrec.rroriginalttl, negttl, CRDisplayString(m, rr));
+
+				// If we already had a negative cache entry just update it, else make one or more new negative cache entries
+				if (rr)
+					RefreshCacheRecord(m, rr, negttl);
 				else while (1)
 					{
 					LogOperation("Making negative cache entry TTL %d for %##s (%s)", negttl, name->c, DNSTypeName(q.qtype));
