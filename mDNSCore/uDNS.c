@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.496  2007/10/04 22:38:59  cheshire
+Added LogOperation message showing new q->ThisQInterval after sending uDNS query packet
+
 Revision 1.495  2007/10/03 00:16:19  cheshire
 In startPrivateQueryCallback, need to grab lock before calling SetNextQueryTime
 
@@ -4378,7 +4381,7 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 				else if (!q->LongLived && q->ThisQInterval < MAX_UCAST_POLL_INTERVAL)
 					{
 					q->ThisQInterval = q->ThisQInterval * QuestionIntervalStep;	// Only increase interval if send succeeded
-					//LogMsg("Adjusted ThisQInterval to %d for %##s (%s)", q->ThisQInterval, q->qname.c, DNSTypeName(q->qtype));
+					LogOperation("Adjusted ThisQInterval to %d for %##s (%s)", q->ThisQInterval, q->qname.c, DNSTypeName(q->qtype));
 					}
 				else if (q->LongLived && q->state == LLQ_Poll)
 					{
