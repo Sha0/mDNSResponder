@@ -17,8 +17,11 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.496  2007/10/04 20:33:05  mcguire
+<rdar://problem/5518845> BTMM: Racoon configuration removed when network changes
+
 Revision 1.495  2007/10/02 05:03:38  cheshire
-Fix bogus indentation in mDNSPlatformDynDNSHostNameStatusChanged
+Fix bugus indentation in mDNSPlatformDynDNSHostNameStatusChanged
 
 Revision 1.494  2007/09/29 20:40:19  cheshire
 <rdar://problem/5513378> Crash in ReissueBlockedQuestions
@@ -2026,7 +2029,7 @@ mDNSlocal NetworkInterfaceInfoOSX *FindRoutableIPv4(mDNS *const m, mDNSu32 scope
 
 #define kRacoonPort 4500
 
-static int AnonymousRacoonConfigRefCount = 0;
+static mDNSBool AnonymousRacoonConfig = mDNSfalse;
 
 // MUST be called with lock held
 mDNSlocal mDNSBool TunnelServers(mDNS *const m)
@@ -2054,14 +2057,13 @@ mDNSlocal void RegisterAutoTunnelRecords(mDNS *m, DomainAuthInfo *info)
 	{
 	if (!info->AutoTunnelNAT.Result && !mDNSIPPortIsZero(info->AutoTunnelNAT.ExternalPort) && AutoTunnelUnregistered(info))
 		{
+		LogOperation("RegisterAutoTunnelRecords %##s", info->AutoTunnelService.namestorage.c);
 		mStatus err;
 		info->AutoTunnelService.resrec.rdata->u.srv.port = info->AutoTunnelNAT.ExternalPort;
 		info->AutoTunnelService.resrec.RecordType = kDNSRecordTypeKnownUnique;
 		err = mDNS_Register(m, &info->AutoTunnelService);
 		if (err) LogMsg("RegisterAutoTunnelRecords error %d registering AutoTunnelService %##s", err, info->AutoTunnelService.namestorage.c);
 		
-		AnonymousRacoonConfigRefCount++;
-
 		info->AutoTunnelTarget.resrec.RecordType = kDNSRecordTypeKnownUnique;
 		mDNS_Lock(m);
 		mDNS_AddDynDNSHostName(m, &info->AutoTunnelTarget.namestorage, mDNSNULL, info);
@@ -2088,6 +2090,7 @@ mDNSlocal void RegisterAutoTunnelRecords(mDNS *m, DomainAuthInfo *info)
 
 mDNSlocal void DeregisterAutoTunnelRecords(mDNS *m, DomainAuthInfo *info)
 	{
+	LogOperation("DeregisterAutoTunnelRecords %##s", info->AutoTunnelService.namestorage.c);
 	if (info->AutoTunnelService.resrec.RecordType > kDNSRecordTypeDeregistering)
 		{
 		mStatus err = mDNS_Deregister(m, &info->AutoTunnelService);
@@ -2095,14 +2098,6 @@ mDNSlocal void DeregisterAutoTunnelRecords(mDNS *m, DomainAuthInfo *info)
 			{
 			info->AutoTunnelService.resrec.RecordType = kDNSRecordTypeUnregistered;
 			LogMsg("DeregisterAutoTunnelRecords error %d deregistering AutoTunnelService %##s", err, info->AutoTunnelService.namestorage.c);
-			}
-
-		AnonymousRacoonConfigRefCount--;
-		// sanity check
-		if (AnonymousRacoonConfigRefCount < 0)
-			{
-			LogMsg("DeregisterAutoTunnelRecords %##s AnonymousRacoonConfigRefCount=%d resetting to 0", info->AutoTunnelService.namestorage.c, AnonymousRacoonConfigRefCount);
-			AnonymousRacoonConfigRefCount = 0;
 			}
 
 		mDNS_Lock(m);
@@ -2151,8 +2146,17 @@ mDNSlocal void AutoTunnelNATCallback(mDNS *m, NATTraversalInfo *n)
 	DeregisterAutoTunnelRecords(m,info);
 	RegisterAutoTunnelRecords(m,info);
 
-	// Create or revert configuration file, and start (or SIGHUP) Racoon
-	(void)mDNSConfigureServer(AnonymousRacoonConfigRefCount ? kmDNSUp : kmDNSDown, info->b64keydata);
+	// Determine whether we need racoon to accept incoming connections
+	for (info = m->AuthInfoList; info; info = info->next)
+		if (info->AutoTunnel && !info->deltime && !mDNSIPPortIsZero(info->AutoTunnelNAT.ExternalPort))
+			break;
+	mDNSBool needRacoonConfig = info != mDNSNULL;
+	if (needRacoonConfig != AnonymousRacoonConfig)
+		{
+		AnonymousRacoonConfig = needRacoonConfig;
+		// Create or revert configuration file, and start (or SIGHUP) Racoon
+		(void)mDNSConfigureServer(AnonymousRacoonConfig ? kmDNSUp : kmDNSDown, info ? info->b64keydata : "");
+		}
 	}
 
 // Before SetupLocalAutoTunnelInterface_internal is called,
@@ -3388,7 +3392,7 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 				}
 
 #if APPLE_OSX_mDNSResponder
-			if (keyChanged && AnonymousRacoonConfigRefCount)
+			if (keyChanged && AnonymousRacoonConfig)
 				{
 				LogOperation("SetDomainSecrets: secret changed for %##s", &domain);
 				(void)mDNSConfigureServer(kmDNSUp, keystring);
@@ -3454,11 +3458,11 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 			memset(m->AutoTunnelHostAddr.b, 0, sizeof(m->AutoTunnelHostAddr.b));
 			}
 
-		if (!haveAutoTunnels && AnonymousRacoonConfigRefCount != 0)
+		if (!haveAutoTunnels && AnonymousRacoonConfig)
 			{
-			LogMsg("SetDomainSecrets: AnonymousRacoonConfigRefCount=%d resetting to 0", AnonymousRacoonConfigRefCount);
-			AnonymousRacoonConfigRefCount = 0;
-			(void)mDNSConfigureServer(kmDNSDown, mDNSNULL);
+			LogMsg("SetDomainSecrets: Resetting AnonymousRacoonConfig to false");
+			AnonymousRacoonConfig = mDNSfalse;
+			(void)mDNSConfigureServer(kmDNSDown, "");
 			}
 
 		if (m->AutoTunnelHostAddr.b[0])
