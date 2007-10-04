@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.91  2007/10/04 20:53:59  cheshire
+Improved debugging message when sendmsg fails
+
 Revision 1.90  2007/09/30 00:09:27  cheshire
 <rdar://problem/5492315> Pass socket fd via SCM_RIGHTS sendmsg instead of using named UDS in the filesystem
 
@@ -622,7 +625,8 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 		cmsg->cmsg_type    = SCM_RIGHTS;
 		*((dnssd_sock_t *)CMSG_DATA(cmsg)) = listenfd;
 		if (sendmsg(sdr->sockfd, &msg, 0) < 0)
-			syslog(LOG_WARNING, "dnssd_clientstub ERROR: sendmsg failed errno %d (%s)", errno, strerror(errno));
+			syslog(LOG_WARNING, "dnssd_clientstub ERROR: sendmsg failed read sd=%d write sd=%d errno %d (%s)",
+				errsd, listenfd, errno, strerror(errno));
 #endif
 		}
 
