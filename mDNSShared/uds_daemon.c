@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.363  2007/10/05 23:24:52  cheshire
+Improved LogOperation messages about separate error return socket
+
 Revision 1.362  2007/10/05 22:11:58  cheshire
 Improved "send_msg ERROR" debugging message
 
@@ -856,7 +859,8 @@ mDNSlocal void abort_request(request_state *req)
 	// Now, if this request_state is not subbordinate to some other primary, close file descriptor and discard replies
 	if (!req->primary)
 		{
-		LogOperation("%3d: Removing FD", req->sd);
+		if (req->errsd != req->sd) LogOperation("%3d: Removing FD and closing errsd %d", req->sd, req->errsd);
+		else                       LogOperation("%3d: Removing FD", req->sd);
 		udsSupportRemoveFDFromEventLoop(req->sd);		// Note: This also closes file descriptor req->sd for us
 		if (req->errsd != req->sd) { dnssd_close(req->errsd); req->errsd = req->sd; }
 
@@ -3126,7 +3130,7 @@ mDNSlocal int read_msg(request_state *req)
 					cmsg->cmsg_type    == SCM_RIGHTS)
 					{
 					req->errsd = *(dnssd_sock_t *)CMSG_DATA(cmsg);
-					LogOperation("request_callback sending error code to %d", req->errsd);
+					LogOperation("%3d: Using separate error socket %d", req->sd, req->errsd);
 					}
 				else
 					{
@@ -3286,7 +3290,12 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 		{
 		err = dnssd_htonl(err);
 		send_all(req->errsd, (const char *)&err, sizeof(err));
-		if (req->errsd != req->sd) { dnssd_close(req->errsd); req->errsd = req->sd; }
+		if (req->errsd != req->sd)
+			{
+			LogOperation("%3d: Closing error socket %d", req->sd, req->errsd);
+			dnssd_close(req->errsd);
+			req->errsd = req->sd;
+			}
 		}
 
 	// Reset ready to accept the next req on this pipe
