@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.362  2007/10/05 22:11:58  cheshire
+Improved "send_msg ERROR" debugging message
+
 Revision 1.361  2007/10/04 20:45:18  cheshire
 <rdar://problem/5518381> Race condition in kDNSServiceFlagsShareConnection-mode call handling
 
@@ -3621,7 +3624,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 			NetworkInterfaceInfo *info = (NetworkInterfaceInfo *)q->InterfaceID;
 			CacheUsed++;
 			if (q->ThisQInterval) CacheActive++;
-			LogMsgNoIdent("%6d%6d %-6s%s %6d %-6s%##s%s",
+			LogMsgNoIdent("%6d%6d %-6s%s %5d  %-6s%##s%s",
 				i, n,
 				info ? info->ifname : mDNSOpaque16IsZero(q->TargetQID) ? "" : "-U-",
 				mDNSOpaque16IsZero(q->TargetQID) ? " " : q->LongLived ? "L" : "O", // mDNS, long-lived, or one-shot query?
@@ -3760,7 +3763,11 @@ mDNSlocal int send_msg(reply_state *rep)
 				return(rep->request->ts = rep->ts = t_terminated);
 			else
 #endif
-				{ my_perror("ERROR: send\n"); return(rep->ts = t_error); }
+				{
+				LogMsg("send_msg ERROR: failed to write %d bytes to fd %d errno %d %s",
+					rep->len - rep->nwriten, rep->sd, dnssd_errno(), dnssd_strerror(dnssd_errno()));
+				return(rep->ts = t_error);
+				}
 			}
 		}
 	rep->nwriten += nwriten;
