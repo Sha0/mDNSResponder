@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.497  2007/10/05 18:09:44  cheshire
+<rdar://problem/5524841> Services advertised with wrong target host
+
 Revision 1.496  2007/10/04 22:38:59  cheshire
 Added LogOperation message showing new q->ThisQInterval after sending uDNS query packet
 
@@ -2131,8 +2134,6 @@ mDNSlocal void LLQNatMapComplete(mDNS *m, NATTraversalInfo *n)
 	m->CurrentQuestion = mDNSNULL;
 	}
 
-// if we ever want to refine support for multiple hostnames, we can add logic matching service names to a particular hostname
-// for now, we grab the first registered DynDNS name, if any, or a static name we learned via a reverse-map query
 mDNSexport const domainname *GetServiceTarget(mDNS *m, ServiceRecordSet *srs)
 	{
 	LogOperation("GetServiceTarget %##s", srs->RR_SRV.resrec.name->c);
@@ -2141,8 +2142,6 @@ mDNSexport const domainname *GetServiceTarget(mDNS *m, ServiceRecordSet *srs)
 		return(&srs->RR_SRV.resrec.rdata->u.srv.target);
 	else
 		{
-		HostnameInfo *hi = m->Hostnames;
-
 #if APPLE_OSX_mDNSResponder
 		DomainAuthInfo *AuthInfo = GetAuthInfoForName_internal(m, srs->RR_SRV.resrec.name);
 		if (AuthInfo && AuthInfo->AutoTunnel)
@@ -2154,13 +2153,23 @@ mDNSexport const domainname *GetServiceTarget(mDNS *m, ServiceRecordSet *srs)
 				}
 			return(&AuthInfo->AutoTunnelHostRecord.namestorage);
 			}
+		else
 #endif APPLE_OSX_mDNSResponder
-
-		while (hi)
 			{
-			if (hi->arv4.state == regState_Registered || hi->arv4.state == regState_Refresh) return(hi->arv4.resrec.name);
-			if (hi->arv6.state == regState_Registered || hi->arv6.state == regState_Refresh) return(hi->arv6.resrec.name);
-			hi = hi->next;
+			const int srvcount = CountLabels(srs->RR_SRV.resrec.name);
+			HostnameInfo *besthi = mDNSNULL, *hi;
+			int best = 0;
+			for (hi = m->Hostnames; hi; hi = hi->next)
+				if (hi->arv4.state == regState_Registered || hi->arv4.state == regState_Refresh ||
+					hi->arv6.state == regState_Registered || hi->arv6.state == regState_Refresh)
+					{
+					int x, hostcount = CountLabels(&hi->fqdn);
+					for (x = hostcount < srvcount ? hostcount : srvcount; x > 0 && x > best; x--)
+						if (SameDomainName(SkipLeadingLabels(srs->RR_SRV.resrec.name, srvcount - x), SkipLeadingLabels(&hi->fqdn, hostcount - x)))
+							{ best = x; besthi = hi; }
+					}
+	
+			if (besthi) return(&besthi->fqdn);
 			}
 		if (m->StaticHostname.c[0]) return(&m->StaticHostname);
 		return(mDNSNULL);
