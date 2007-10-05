@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.54  2007/10/05 17:56:10  cheshire
+Move CountLabels and SkipLeadingLabels to DNSCommon.c so they're callable from other files
+
 Revision 1.53  2007/09/27 17:42:49  cheshire
 Fix naming: for consistency, "kDNSFlag1_RC" should be "kDNSFlag1_RC_Mask"
 
@@ -174,6 +177,8 @@ extern mDNSu32 mDNSRandomFromFixedSeed(mDNSu32 seed, mDNSu32 max);
 #define mdnsValidHostChar(X, notfirst, notlast) (mdnsIsLetter(X) || mdnsIsDigit(X) || ((notfirst) && (notlast) && (X) == '-') )
 
 extern mDNSu16 CompressedDomainNameLength(const domainname *const name, const domainname *parent);
+extern int CountLabels(const domainname *d);
+extern const domainname *SkipLeadingLabels(const domainname *d, int skip);
 
 extern mDNSu32 TruncateUTF8ToLength(mDNSu8 *string, mDNSu32 length, mDNSu32 max);
 extern mDNSBool LabelContainsSuffix(const domainlabel *const name, const mDNSBool RichText);

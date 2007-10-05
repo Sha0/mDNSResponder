@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.184  2007/10/05 17:56:07  cheshire
+Move CountLabels and SkipLeadingLabels to DNSCommon.c so they're callable from other files
+
 Revision 1.183  2007/10/02 18:33:46  cheshire
 Improved GetRRDisplayString to show all constituent strings within a text record
 (up to the usual MaxMsg 120-character limit)
@@ -689,6 +692,24 @@ mDNSexport mDNSu16 CompressedDomainNameLength(const domainname *const name, cons
 		if (src - name->c >= MAX_DOMAIN_NAME) return(MAX_DOMAIN_NAME+1);
 		}
 	return((mDNSu16)(src - name->c + 1));
+	}
+
+// CountLabels() returns number of labels in name, excluding final root label
+// (e.g. for "apple.com." CountLabels returns 2.)
+mDNSexport int CountLabels(const domainname *d)
+	{
+	int count = 0;
+	const mDNSu8 *ptr;
+	for (ptr = d->c; *ptr; ptr = ptr + ptr[0] + 1) count++;
+	return count;
+	}
+
+// SkipLeadingLabels skips over the first 'skip' labels in the domainname,
+// returning a pointer to the suffix with 'skip' labels removed.
+mDNSexport const domainname *SkipLeadingLabels(const domainname *d, int skip)
+	{
+	while (skip > 0 && d->c[0]) { d = (const domainname *)(d->c + 1 + d->c[0]); skip--; }
+	return(d);
 	}
 
 // AppendLiteralLabelString appends a single label to an existing (possibly empty) domainname.

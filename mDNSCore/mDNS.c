@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.729  2007/10/05 17:56:10  cheshire
+Move CountLabels and SkipLeadingLabels to DNSCommon.c so they're callable from other files
+
 Revision 1.728  2007/10/04 23:18:14  cheshire
 <rdar://problem/5523706> mDNSResponder flooding DNS servers with unreasonable query level
 
@@ -4265,24 +4268,6 @@ mDNSexport CacheRecord *CreateNewCacheEntry(mDNS *const m, const mDNSu32 slot, C
 		CacheRecordAdd(m, rr);  // CacheRecordAdd calls SetNextCacheCheckTime(m, rr); for us
 		}
 	return(rr);
-	}
-
-// CountLabels() returns number of labels in name, excluding final root label
-// (e.g. for "apple.com." CountLabels returns 2.)
-mDNSlocal int CountLabels(const domainname *d)
-	{
-	int count = 0;
-	const mDNSu8 *ptr;
-	for (ptr = d->c; *ptr; ptr = ptr + ptr[0] + 1) count++;
-	return count;
-	}
-
-// SkipLeadingLabels skips over the first 'skip' labels in the domainname,
-// returning a pointer to the suffix with 'skip' labels removed.
-mDNSlocal const domainname *SkipLeadingLabels(const domainname *d, int skip)
-	{
-	while (skip > 0 && d->c[0]) { d = (const domainname *)(d->c + 1 + d->c[0]); skip--; }
-	return(d);
 	}
 
 mDNSlocal void RefreshCacheRecord(mDNS *const m, CacheRecord *rr, mDNSu32 ttl)
