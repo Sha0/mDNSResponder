@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.364  2007/10/06 03:20:16  cheshire
+Improved LogOperation debugging messages
+
 Revision 1.363  2007/10/05 23:24:52  cheshire
 Improved LogOperation messages about separate error return socket
 
@@ -3135,7 +3138,7 @@ mDNSlocal int read_msg(request_state *req)
 				else
 					{
 					req->msgptr = req->msgbuf;		// Reset req->msgptr so we read the same (empty) string again when we retry next time
-					LogOperation("request_callback No data %d", req->ts);
+					LogOperation("%3d: request_callback No data transfer_state %d", req->sd, req->ts);
 					return req->ts;
 					}
 				goto got_errfd;
@@ -3259,7 +3262,10 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 	switch(req->hdr.op)
 		{
 		// These are all operations that have their own first-class request_state object
-		case connection_request:           req->terminate = connection_termination; break;
+		case connection_request:
+			LogOperation("%3d: DNSServiceCreateConnection START", req->sd);
+			req->terminate = connection_termination;
+			break;
 		case resolve_request:              err = handle_resolve_request     (req); break;
 		case query_request:                err = handle_queryrecord_request (req); break;
 		case browse_request:               err = handle_browse_request      (req); break;
