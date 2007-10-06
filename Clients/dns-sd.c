@@ -463,7 +463,7 @@ static void DNSSD_API reg_reply(DNSServiceRef sdref, const DNSServiceFlags flags
 	(void)context;  // Unused
 
 	printtimestamp();
-	printf("Got a reply for %s.%s%s: ", name, regtype, domain);
+	printf("Got a reply for service %s.%s%s: ", name, regtype, domain);
 
 	if (errorCode == kDNSServiceErr_NoError)
 		{
@@ -704,7 +704,9 @@ static void DNSSD_API MyRegisterRecordCallback(DNSServiceRef service, DNSRecordR
 	(void)record;	// Unused
 	(void)flags;	// Unused
 	
-	printf("Got a reply for %s: ", name);
+	printtimestamp();
+	printf("Got a reply for record %s: ", name);
+
 	switch (errorCode)
 		{
 		case kDNSServiceErr_NoError:      printf("Name now registered and active\n"); break;
