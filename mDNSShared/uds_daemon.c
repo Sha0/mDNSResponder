@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.365  2007/10/06 03:25:23  cheshire
+<rdar://problem/5525267> MacBuddy exits abnormally when clicking "Continue" in AppleConnect pane
+
 Revision 1.364  2007/10/06 03:20:16  cheshire
 Improved LogOperation debugging messages
 
@@ -3093,6 +3096,9 @@ mDNSlocal int read_msg(request_state *req)
 		{
 		if (req->terminate && req->hdr.op != cancel_request)
 			{
+#if APPLE_OSX_mDNSResponder
+			int LEOPARD_KQUEUE_BUG_RETRIES = 0;
+#endif
 			dnssd_sockaddr_t cliaddr;
 #if defined(USE_TCP_LOOPBACK)
 			mDNSOpaque16 port;
@@ -3111,6 +3117,9 @@ mDNSlocal int read_msg(request_state *req)
 			// If the error return path UDS name is empty string, that tells us
 			// that this is a new version of the library that's going to pass us
 			// the error return path socket via sendmsg/recvmsg
+#if APPLE_OSX_mDNSResponder
+LEOPARD_KQUEUE_BUG_TRY_AGAIN:
+#endif
 			if (ctrl_path[0] == 0)
 				{
 				struct iovec vec = { 0, 0 };
@@ -3137,6 +3146,9 @@ mDNSlocal int read_msg(request_state *req)
 					}
 				else
 					{
+#if APPLE_OSX_mDNSResponder
+					if (++LEOPARD_KQUEUE_BUG_RETRIES < 500) { usleep(1000); goto LEOPARD_KQUEUE_BUG_TRY_AGAIN; }
+#endif
 					req->msgptr = req->msgbuf;		// Reset req->msgptr so we read the same (empty) string again when we retry next time
 					LogOperation("%3d: request_callback No data transfer_state %d", req->sd, req->ts);
 					return req->ts;
@@ -3301,6 +3313,8 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 			LogOperation("%3d: Closing error socket %d", req->sd, req->errsd);
 			dnssd_close(req->errsd);
 			req->errsd = req->sd;
+			// Also need to reset the parent's errsd, if this is a subbordinate operation
+			if (req->primary) req->primary->errsd = req->primary->sd;
 			}
 		}
 
