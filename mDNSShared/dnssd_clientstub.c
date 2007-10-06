@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.92  2007/10/06 03:44:44  cheshire
+Testing code for <rdar://problem/5526374> kqueue does not get a kevent to wake it up when a control message arrives on a socket
+
 Revision 1.91  2007/10/04 20:53:59  cheshire
 Improved debugging message when sendmsg fails
 
@@ -595,7 +598,17 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 	ConvertHeaderBytes(hdr);
 	//syslog(LOG_WARNING, "dnssd_clientstub deliver_request writing %ld bytes", datalen + sizeof(ipc_msg_hdr));
 	//if (MakeSeparateReturnSocket) syslog(LOG_WARNING, "dnssd_clientstub deliver_request name is %s", data);
+#if TEST_SENDING_ONE_BYTE_AT_A_TIME
+	unsigned int i;
+	for (i=0; i<datalen + sizeof(ipc_msg_hdr); i++)
+		{
+		syslog(LOG_WARNING, "dnssd_clientstub writing %d", i);
+		if (write_all(sdr->sockfd, ((char *)hdr)+i, 1) < 0) goto cleanup;
+		usleep(10000);
+		}
+#else
 	if (write_all(sdr->sockfd, (char *)hdr, datalen + sizeof(ipc_msg_hdr)) < 0) goto cleanup;
+#endif
 
 	if (!MakeSeparateReturnSocket) errsd = sdr->sockfd;
 	else
@@ -624,6 +637,9 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 		cmsg->cmsg_level   = SOL_SOCKET;
 		cmsg->cmsg_type    = SCM_RIGHTS;
 		*((dnssd_sock_t *)CMSG_DATA(cmsg)) = listenfd;
+#if TEST_KQUEUE_CONTROL_MESSAGE_BUG
+		sleep(1);
+#endif
 		if (sendmsg(sdr->sockfd, &msg, 0) < 0)
 			syslog(LOG_WARNING, "dnssd_clientstub ERROR: sendmsg failed read sd=%d write sd=%d errno %d (%s)",
 				errsd, listenfd, errno, strerror(errno));
