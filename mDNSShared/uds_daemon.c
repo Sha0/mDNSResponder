@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.366  2007/10/10 00:48:54  cheshire
+<rdar://problem/5526379> Daemon spins in an infinite loop when it doesn't get the control message it's expecting
+
 Revision 1.365  2007/10/06 03:25:23  cheshire
 <rdar://problem/5525267> MacBuddy exits abnormally when clicking "Continue" in AppleConnect pane
 
@@ -3075,11 +3078,24 @@ mDNSlocal int read_msg(request_state *req)
 		}
 
 	// If our header is complete, but we're still needing more body data, then try to read it now
-	// Note: In removerecord requests, req->hdr.datalen == 0
+	// Note: For cancel_request req->hdr.datalen == 0, but there's no error return socket for cancel_request
+	// Any time we need to get the error return socket we know we'll have at least one data byte
+	// (even if only the one-byte empty C string placeholder for the old ctrl_path parameter)
 	if (req->hdr_bytes == sizeof(ipc_msg_hdr) && req->data_bytes < req->hdr.datalen)
 		{
 		nleft = req->hdr.datalen - req->data_bytes;
-		nread = recv(req->sd, req->msgbuf + req->data_bytes, nleft, 0);
+		struct iovec vec = { req->msgbuf + req->data_bytes, nleft };	// Tell recvmsg where we want the bytes put
+		struct msghdr msg;
+		struct cmsghdr *cmsg;
+		char cbuf[sizeof(struct cmsghdr) + sizeof(dnssd_sock_t)];
+		msg.msg_name       = 0;
+		msg.msg_namelen    = 0;
+		msg.msg_iov        = &vec;
+		msg.msg_iovlen     = 1;
+		msg.msg_control    = cbuf;
+		msg.msg_controllen = sizeof(cbuf);
+		msg.msg_flags      = 0;
+		nread = recvmsg(req->sd, &msg, 0);
 		if (nread == 0) { req->ts = t_terminated; return t_terminated; }
 		if (nread < 0) goto rerror;
 		req->data_bytes += nread;
@@ -3089,6 +3105,21 @@ mDNSlocal int read_msg(request_state *req)
 			req->ts = t_error;
 			return t_error;
 			}
+		cmsg = CMSG_FIRSTHDR(&msg);
+		if (msg.msg_controllen == sizeof(cbuf) &&
+			cmsg->cmsg_len     == sizeof(cbuf) &&
+			cmsg->cmsg_level   == SOL_SOCKET   &&
+			cmsg->cmsg_type    == SCM_RIGHTS)
+			{
+			req->errsd = *(dnssd_sock_t *)CMSG_DATA(cmsg);
+			if (req->data_bytes < req->hdr.datalen)
+				{
+				LogMsg("%3d: Client sent error socket %d via SCM_RIGHTS with req->data_bytes %d < req->hdr.datalen %d",
+					req->sd, req->errsd, req->data_bytes, req->hdr.datalen);
+				req->ts = t_error;
+				return t_error;
+				}
+			}
 		}
 
 	// If our header and data are both complete, see if we need to make our separate error return socket
@@ -3096,9 +3127,6 @@ mDNSlocal int read_msg(request_state *req)
 		{
 		if (req->terminate && req->hdr.op != cancel_request)
 			{
-#if APPLE_OSX_mDNSResponder
-			int LEOPARD_KQUEUE_BUG_RETRIES = 0;
-#endif
 			dnssd_sockaddr_t cliaddr;
 #if defined(USE_TCP_LOOPBACK)
 			mDNSOpaque16 port;
@@ -3117,42 +3145,10 @@ mDNSlocal int read_msg(request_state *req)
 			// If the error return path UDS name is empty string, that tells us
 			// that this is a new version of the library that's going to pass us
 			// the error return path socket via sendmsg/recvmsg
-#if APPLE_OSX_mDNSResponder
-LEOPARD_KQUEUE_BUG_TRY_AGAIN:
-#endif
 			if (ctrl_path[0] == 0)
 				{
-				struct iovec vec = { 0, 0 };
-				struct msghdr msg;
-				struct cmsghdr *cmsg;
-				char cbuf[sizeof(struct cmsghdr) + sizeof(dnssd_sock_t)];
-				msg.msg_name       = 0;
-				msg.msg_namelen    = 0;
-				msg.msg_iov        = &vec;
-				msg.msg_iovlen     = 1;
-				msg.msg_control    = cbuf;
-				msg.msg_controllen = sizeof(cbuf);
-				msg.msg_flags      = 0;
-				if (recvmsg(req->sd, &msg, 0) < 0)
-					LogMsg("request_callback: recvmsg failed errno %d %s", dnssd_errno(), dnssd_strerror(dnssd_errno()));
-				cmsg = CMSG_FIRSTHDR(&msg);
-				if (msg.msg_controllen == sizeof(cbuf) &&
-					cmsg->cmsg_len     == sizeof(cbuf) &&
-					cmsg->cmsg_level   == SOL_SOCKET   &&
-					cmsg->cmsg_type    == SCM_RIGHTS)
-					{
-					req->errsd = *(dnssd_sock_t *)CMSG_DATA(cmsg);
-					LogOperation("%3d: Using separate error socket %d", req->sd, req->errsd);
-					}
-				else
-					{
-#if APPLE_OSX_mDNSResponder
-					if (++LEOPARD_KQUEUE_BUG_RETRIES < 500) { usleep(1000); goto LEOPARD_KQUEUE_BUG_TRY_AGAIN; }
-#endif
-					req->msgptr = req->msgbuf;		// Reset req->msgptr so we read the same (empty) string again when we retry next time
-					LogOperation("%3d: request_callback No data transfer_state %d", req->sd, req->ts);
-					return req->ts;
-					}
+				if (req->errsd == req->sd)
+					{ LogMsg("%3d: request_callback: ERROR failed to get errsd via SCM_RIGHTS", req->sd); req->ts = t_error; return t_error; }
 				goto got_errfd;
 				}
 #endif
@@ -3176,7 +3172,7 @@ LEOPARD_KQUEUE_BUG_TRY_AGAIN:
 				}
 	
 got_errfd:
-	
+			LogOperation("%3d: Using separate error socket %d", req->sd, req->errsd);
 #if defined(_WIN32)
 			if (ioctlsocket(req->errsd, FIONBIO, &opt) != 0)
 #else
@@ -3627,7 +3623,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 		LogMsgNoIdent("Cache use mismatch: rrcache_totalused is %lu, true count %lu", m->rrcache_totalused, CacheUsed);
 	if (m->rrcache_active != CacheActive)
 		LogMsgNoIdent("Cache use mismatch: rrcache_active is %lu, true count %lu", m->rrcache_active, CacheActive);
-	LogMsgNoIdent("Cache currently contains %lu records; %lu referenced by active questions", CacheUsed, CacheActive);
+	LogMsgNoIdent("Cache currently contains %lu entities; %lu referenced by active questions", CacheUsed, CacheActive);
 
 	LogMsgNoIdent("--------- Auth Records ---------");
 	if (!m->ResourceRecords) LogMsgNoIdent("<None>");

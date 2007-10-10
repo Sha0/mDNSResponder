@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.93  2007/10/10 00:48:54  cheshire
+<rdar://problem/5526379> Daemon spins in an infinite loop when it doesn't get the control message it's expecting
+
 Revision 1.92  2007/10/06 03:44:44  cheshire
 Testing code for <rdar://problem/5526374> kqueue does not get a kevent to wake it up when a control message arrives on a socket
 
@@ -516,7 +519,7 @@ static DNSServiceErrorType ConnectToServer(DNSServiceRef *ref, DNSServiceFlags f
 
 static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 	{
-	uint32_t datalen = hdr->datalen;
+	uint32_t datalen = hdr->datalen;	// We take a copy here because we're going to convert hdr->datalen to network byte order
 	#if defined(USE_TCP_LOOPBACK) || defined(USE_NAMED_ERROR_RETURN_SOCKET)
 	char *const data = (char *)hdr + sizeof(ipc_msg_hdr);
 	#endif
@@ -594,6 +597,16 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 		#endif
 		}
 
+#if !defined(USE_TCP_LOOPBACK) && !defined(USE_NAMED_ERROR_RETURN_SOCKET)
+	// If we're going to make a separate error return socket, and pass it to the daemon
+	// using sendmsg, then we'll hold back one data byte to go with it.
+	// On some versions of Unix (including Leopard) sending a control message without
+	// any associated data does not work reliably -- e.g. one particular issue we ran
+	// into is that if the receiving program is in a kqueue loop waiting to be notified
+	// of the received message, it doesn't get woken up when the control message arrives.
+	if (MakeSeparateReturnSocket) datalen--;
+#endif
+
 	// At this point, our listening socket is set up and waiting, if necessary, for the daemon to connect back to
 	ConvertHeaderBytes(hdr);
 	//syslog(LOG_WARNING, "dnssd_clientstub deliver_request writing %ld bytes", datalen + sizeof(ipc_msg_hdr));
@@ -621,7 +634,7 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 		errsd = accept(listenfd, (struct sockaddr *)&daddr, &len);
 		if (!dnssd_SocketValid(errsd)) goto cleanup;
 #else
-		struct iovec vec = { 0, 0 };
+		struct iovec vec = { ((char *)hdr) + sizeof(ipc_msg_hdr) + datalen, 1 }; // Send the last byte along with the SCM_RIGHTS
 		struct msghdr msg;
 		struct cmsghdr *cmsg;
 		char cbuf[sizeof(struct cmsghdr) + sizeof(dnssd_sock_t)];
