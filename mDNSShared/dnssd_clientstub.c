@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.94  2007/10/15 22:34:27  cheshire
+<rdar://problem/5541498> Set SO_NOSIGPIPE on client socket
+
 Revision 1.93  2007/10/10 00:48:54  cheshire
 <rdar://problem/5526379> Daemon spins in an infinite loop when it doesn't get the control message it's expecting
 
@@ -480,6 +483,9 @@ static DNSServiceErrorType ConnectToServer(DNSServiceRef *ref, DNSServiceFlags f
 		}
 	else
 		{
+		#ifdef SO_NOSIGPIPE
+		const unsigned long optval = 1;
+		#endif
 		*ref = NULL;
 		sdr->sockfd    = socket(AF_DNSSD, SOCK_STREAM, 0);
 		sdr->validator = sdr->sockfd ^ ValidatorBits;
@@ -489,6 +495,11 @@ static DNSServiceErrorType ConnectToServer(DNSServiceRef *ref, DNSServiceFlags f
 			FreeDNSServiceOp(sdr);
 			return kDNSServiceErr_NoMemory;
 			}
+		#ifdef SO_NOSIGPIPE
+		// Some environments (e.g. OS X) support turning off SIGPIPE for a socket
+		if (setsockopt(sdr->sockfd, SOL_SOCKET, SO_NOSIGPIPE, &optval, sizeof(optval)) < 0)
+			syslog(LOG_WARNING, "dnssd_clientstub ConnectToServer: SO_NOSIGPIPE failed %d %s", errno, strerror(errno));
+		#endif
 		#if defined(USE_TCP_LOOPBACK)
 		saddr.sin_family      = AF_INET;
 		saddr.sin_addr.s_addr = inet_addr(MDNS_TCP_SERVERADDR);
@@ -657,6 +668,7 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 			syslog(LOG_WARNING, "dnssd_clientstub ERROR: sendmsg failed read sd=%d write sd=%d errno %d (%s)",
 				errsd, listenfd, errno, strerror(errno));
 #endif
+		if (dnssd_SocketValid(listenfd)) dnssd_close(listenfd);
 		}
 
 	// At this point we may block in read_all for a few milliseconds waiting for the daemon to send us the error code,
@@ -671,8 +683,7 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 cleanup:
 	if (MakeSeparateReturnSocket)
 		{
-		if (dnssd_SocketValid(listenfd)) dnssd_close(listenfd);
-		if (dnssd_SocketValid(errsd))    dnssd_close(errsd);
+		if (dnssd_SocketValid(errsd)) dnssd_close(errsd);
 #if defined(USE_NAMED_ERROR_RETURN_SOCKET)
 		// syslog(LOG_WARNING, "dnssd_clientstub deliver_request: removing UDS: %s", data);
 		if (unlink(data) != 0)
