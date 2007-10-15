@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.41  2007/10/15 23:02:00  cheshire
+Off-by-one error: Incorrect trailing zero byte on the end of the SSDP Discovery message
+
 Revision 1.40  2007/09/20 21:41:49  cheshire
 <rdar://problem/5495568> Legacy NAT Traversal - unmap request failed with error -65549
 
@@ -812,7 +815,7 @@ mDNSexport void LNT_SendDiscoveryMsg(mDNS *m)
 	LogOperation("LNT_SendDiscoveryMsg %.4a %.4a", &m->Router.ip.v4, &m->ExternalAddress);
 
 	if (!mDNSIPv4AddressIsZero(m->Router.ip.v4) && mDNSIPv4AddressIsZero(m->ExternalAddress))
-		mDNSPlatformSendUDP(m, msg, msg + sizeof(msg), 0, &m->Router, SSDPPort);
+		mDNSPlatformSendUDP(m, msg, msg + sizeof(msg) - 1, 0, &m->Router, SSDPPort);
 	}
 
 #endif /* _LEGACY_NAT_TRAVERSAL_ */
