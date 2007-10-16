@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.80  2007/10/16 20:59:41  cheshire
+Export SuspendLLQs/SleepServiceRegistrations/SleepRecordRegistrations so they're callable from other files
+
 Revision 1.79  2007/09/20 01:13:19  cheshire
 Export CacheGroupForName so it's callable from other files
 
@@ -202,10 +205,14 @@ Revision 1.33  2006/07/05 22:53:28  cheshire
 
 extern void startLLQHandshakeCallback(mDNS *const m, mStatus err, const ZoneData *zoneInfo);
 
-extern void    uDNS_StopLongLivedQuery(mDNS *const m, DNSQuestion *const question);
+extern void uDNS_StopLongLivedQuery(mDNS *const m, DNSQuestion *const question);
 
 extern void uDNS_Sleep(mDNS *const m);
 extern void uDNS_Wake(mDNS *const m);
+
+extern void SuspendLLQs(mDNS *m, mDNSBool DeregisterActive);
+extern void SleepServiceRegistrations(mDNS *m);
+extern void SleepRecordRegistrations(mDNS *m);
 
 // uDNS_UpdateRecord
 // following fields must be set, and the update validated, upon entry.

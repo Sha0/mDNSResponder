@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.498  2007/10/16 20:59:41  cheshire
+Export SuspendLLQs/SleepServiceRegistrations/SleepRecordRegistrations so they're callable from other files
+
 Revision 1.497  2007/10/05 18:09:44  cheshire
 <rdar://problem/5524841> Services advertised with wrong target host
 
@@ -4137,8 +4140,8 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 		case regState_Refresh:
 		case regState_Pending:
 		case regState_UpdatePending:
+			LogMsg("Deferring deregistration of record %##s state %d until registration completes", rr->resrec.name->c, rr->state);
 			rr->state = regState_DeregDeferred;
-			LogMsg("Deferring deregistration of record %##s until registration completes", rr->resrec.name->c);
 			return mStatus_NoError;
 		case regState_FetchingZoneData:
 		case regState_Registered: break;
@@ -4650,7 +4653,7 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 // following a location change, as the server will reject deletions from a source address different
 // from the address on which the LLQ was created.
 
-mDNSlocal void SuspendLLQs(mDNS *m, mDNSBool DeregisterActive)
+mDNSexport void SuspendLLQs(mDNS *m, mDNSBool DeregisterActive)
 	{
 	DNSQuestion *q;
 
@@ -4743,7 +4746,7 @@ mDNSexport void mDNS_UpdateLLQs(mDNS *m)
 // in the future that we'll sleep (or the sleep will be cancelled) before it is retransmitted. Then to wake,
 // we just move up the timers.
 
-mDNSlocal void SleepRecordRegistrations(mDNS *m)
+mDNSexport void SleepRecordRegistrations(mDNS *m)
 	{
 	AuthRecord *rr = m->ResourceRecords;
 
@@ -4786,7 +4789,7 @@ mDNSlocal void WakeRecordRegistrations(mDNS *m)
 		}
 	}
 
-mDNSlocal void SleepServiceRegistrations(mDNS *m)
+mDNSexport void SleepServiceRegistrations(mDNS *m)
 	{
 	ServiceRecordSet *srs = m->ServiceRegistrations;
 	while (srs)
