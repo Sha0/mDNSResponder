@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.497  2007/10/16 17:03:07  cheshire
+<rdar://problem/3557903> Performance: Core code will not work on platforms with small stacks
+Cut SetDomainSecrets stack from 3792 to 1760 bytes
+
 Revision 1.496  2007/10/04 20:33:05  mcguire
 <rdar://problem/5518845> BTMM: Racoon configuration removed when network changes
 
@@ -3288,6 +3292,7 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 	}
 #endif APPLE_OSX_mDNSResponder
 
+	// String Array used to write list of private domains to Dynamic Store
 	CFMutableArrayRef sa = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 	if (!sa) { LogMsg("SetDomainSecrets: CFArrayCreateMutable failed"); return; }
 	CFIndex i;
@@ -3311,35 +3316,35 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 				if (CFDataGetTypeID() != CFGetTypeID(CFArrayGetValueAtIndex(entry, j)))
 					{ LogMsg("SetDomainSecrets: malformed entry item"); continue; }
 
-			// Validate that attributes are not too large
-			char dstring[MAX_ESCAPED_DOMAIN_NAME];
-			char keynamebuf[MAX_ESCAPED_DOMAIN_NAME];	// Max legal C-string name, including terminating NUL
 			// The names have already been vetted by the helper, but checking them again here helps humans and automated tools verify correctness
+
+			// Get DNS domain this key is for
+			char stringbuf[MAX_ESCAPED_DOMAIN_NAME];	// Max legal domainname as C-string, including terminating NUL
 			data = CFArrayGetValueAtIndex(entry, 0);
-			if (CFDataGetLength(data) >= (int)sizeof(dstring))
+			if (CFDataGetLength(data) >= (int)sizeof(stringbuf))
 				{ LogMsg("SetDomainSecrets: Bad kSecServiceItemAttr length %d", CFDataGetLength(data)); continue; }
-			CFDataGetBytes(data, CFRangeMake(0, CFDataGetLength(data)), (UInt8 *)dstring);
-			dstring[CFDataGetLength(data)] = '\0';
-			data = CFArrayGetValueAtIndex(entry, 1);
-			if (CFDataGetLength(data) >= (int)sizeof(keynamebuf))
-				{ LogMsg("SetDomainSecrets: Bad kSecAccountItemAttr length %d", CFDataGetLength(data)); continue; }
-			CFDataGetBytes(data, CFRangeMake(0,CFDataGetLength(data)), (UInt8 *)keynamebuf);
-			keynamebuf[CFDataGetLength(data)] = '\0';
+			CFDataGetBytes(data, CFRangeMake(0, CFDataGetLength(data)), (UInt8 *)stringbuf);
+			stringbuf[CFDataGetLength(data)] = '\0';
 
 			domainname domain;
-			if (!MakeDomainNameFromDNSNameString(&domain, dstring))     { LogMsg("SetDomainSecrets: bad key domain %s", dstring);  continue; }
+			if (!MakeDomainNameFromDNSNameString(&domain, stringbuf)) { LogMsg("SetDomainSecrets: bad key domain %s", stringbuf); continue; }
 
-			// Get DNS key name
+			// Get key name
+			data = CFArrayGetValueAtIndex(entry, 1);
+			if (CFDataGetLength(data) >= (int)sizeof(stringbuf))
+				{ LogMsg("SetDomainSecrets: Bad kSecAccountItemAttr length %d", CFDataGetLength(data)); continue; }
+			CFDataGetBytes(data, CFRangeMake(0,CFDataGetLength(data)), (UInt8 *)stringbuf);
+			stringbuf[CFDataGetLength(data)] = '\0';
+
 			domainname keyname;
-			if (!MakeDomainNameFromDNSNameString(&keyname, keynamebuf)) { LogMsg("SetDomainSecrets: bad key name %s", keynamebuf); continue; }
+			if (!MakeDomainNameFromDNSNameString(&keyname, stringbuf)) { LogMsg("SetDomainSecrets: bad key name %s", stringbuf); continue; }
 
-			// Get DNS key data
-			char keystring[1024];
+			// Get key data
 			data = CFArrayGetValueAtIndex(entry, 2);
-			if (CFDataGetLength(data) >= (int)sizeof(keystring))
+			if (CFDataGetLength(data) >= (int)sizeof(stringbuf))
 				{ LogMsg("SetDomainSecrets: Shared secret too long: %d", CFDataGetLength(data)); continue; }
-			CFDataGetBytes(data, CFRangeMake(0, CFDataGetLength(data)), (UInt8 *)keystring);
-			keystring[CFDataGetLength(data)] = '\0';	// mDNS_SetSecretForDomain requires NULL-terminated C string for key
+			CFDataGetBytes(data, CFRangeMake(0, CFDataGetLength(data)), (UInt8 *)stringbuf);
+			stringbuf[CFDataGetLength(data)] = '\0';	// mDNS_SetSecretForDomain requires NULL-terminated C string for key
 
 			DomainAuthInfo *FoundInList;
 			for (FoundInList = m->AuthInfoList; FoundInList; FoundInList = FoundInList->next)
@@ -3356,24 +3361,24 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 					LogOperation("SetDomainSecrets: tunnel to %##s no longer marked for deletion", client->dstname.c);
 					client->markedForDeletion = mDNSfalse;
 					// If the key has changed, reconfigure the tunnel
-					if (strncmp(keystring, client->b64keydata, sizeof(client->b64keydata)))
+					if (strncmp(stringbuf, client->b64keydata, sizeof(client->b64keydata)))
 						{
 						mDNSBool queryNotInProgress = client->q.ThisQInterval < 0;
 						LogOperation("SetDomainSecrets: secret changed for tunnel %##s %s", client->dstname.c, queryNotInProgress ? "reconfiguring" : "query in progress");
 						if (queryNotInProgress) AutoTunnelSetKeys(client, mDNSfalse);
-						mDNS_snprintf(client->b64keydata, sizeof(client->b64keydata), "%s", keystring);
+						mDNS_snprintf(client->b64keydata, sizeof(client->b64keydata), "%s", stringbuf);
 						if (queryNotInProgress) AutoTunnelSetKeys(client, mDNStrue);
 						}
 					}
 				}
 
-			mDNSBool keyChanged = FoundInList && FoundInList->AutoTunnel ? strncmp(keystring, FoundInList->b64keydata, sizeof(FoundInList->b64keydata)) : mDNSfalse;
+			mDNSBool keyChanged = FoundInList && FoundInList->AutoTunnel ? strncmp(stringbuf, FoundInList->b64keydata, sizeof(FoundInList->b64keydata)) : mDNSfalse;
 
 #endif APPLE_OSX_mDNSResponder
 
 			// Uncomment the line below to view the keys as they're read out of the system keychain
 			// DO NOT SHIP CODE THIS WAY OR YOU'LL LEAK SECRET DATA INTO A PUBLICLY READABLE FILE!
-			//LogOperation("SetDomainSecrets: %##s %##s %s", &domain.c, &keyname.c, keystring);
+			//LogOperation("SetDomainSecrets: %##s %##s %s", &domain.c, &keyname.c, stringbuf);
 
 			// If didn't find desired domain in the list, make a new entry
 			ptr = FoundInList;
@@ -3385,7 +3390,7 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 				}
 
 			LogOperation("SetDomainSecrets: %d of %d %##s", i, ArrayCount, &domain);
-			if (mDNS_SetSecretForDomain(m, ptr, &domain, &keyname, keystring, IsTunnelModeDomain(&domain)) == mStatus_BadParamErr)
+			if (mDNS_SetSecretForDomain(m, ptr, &domain, &keyname, stringbuf, IsTunnelModeDomain(&domain)) == mStatus_BadParamErr)
 				{
 				if (!FoundInList) mDNSPlatformMemFree(ptr);		// If we made a new DomainAuthInfo here, and it turned out bad, dispose it immediately
 				continue;
@@ -3395,11 +3400,12 @@ mDNSlocal void SetDomainSecrets(mDNS *m)
 			if (keyChanged && AnonymousRacoonConfig)
 				{
 				LogOperation("SetDomainSecrets: secret changed for %##s", &domain);
-				(void)mDNSConfigureServer(kmDNSUp, keystring);
+				(void)mDNSConfigureServer(kmDNSUp, stringbuf);
 				}
 #endif APPLE_OSX_mDNSResponder
 
-			CFStringRef cfs = CFStringCreateWithCString(NULL, dstring, kCFStringEncodingUTF8);
+			ConvertDomainNameToCString(&domain, stringbuf);
+			CFStringRef cfs = CFStringCreateWithCString(NULL, stringbuf, kCFStringEncodingUTF8);
 			if (cfs) { CFArrayAppendValue(sa, cfs); CFRelease(cfs); }
 			}
 		CFRelease(secrets);
