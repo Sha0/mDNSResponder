@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: PlatformCommon.c,v $
+Revision 1.12  2007/10/16 17:19:53  cheshire
+<rdar://problem/3557903> Performance: Core code will not work on platforms with small stacks
+Cut ReadDDNSSettingsFromConfFile stack from 2112 to 1104 bytes
+
 Revision 1.11  2007/07/31 23:08:34  mcguire
 <rdar://problem/5329542> BTMM: Make AutoTunnel mode work with multihoming
 
@@ -114,8 +118,7 @@ mDNSlocal mDNSBool GetConfigOption(char *dst, const char *option, FILE *f)
 
 mDNSexport void ReadDDNSSettingsFromConfFile(mDNS *const m, const char *const filename, domainname *const hostname, domainname *const domain, mDNSBool *DomainDiscoveryDisabled)
 	{
-	char buf   [MAX_ESCAPED_DOMAIN_NAME];
-	char secret[MAX_ESCAPED_DOMAIN_NAME] = "";
+	char buf[MAX_ESCAPED_DOMAIN_NAME] = "";
 	mStatus err;
 	FILE *f = fopen(filename, "r");
 
@@ -128,7 +131,8 @@ mDNSexport void ReadDDNSSettingsFromConfFile(mDNS *const m, const char *const fi
 		if (DomainDiscoveryDisabled && GetConfigOption(buf, "DomainDiscoveryDisabled", f) && !strcasecmp(buf, "true")) *DomainDiscoveryDisabled = mDNStrue;
 		if (hostname && GetConfigOption(buf, "hostname", f) && !MakeDomainNameFromDNSNameString(hostname, buf)) goto badf;
 		if (domain && GetConfigOption(buf, "zone", f) && !MakeDomainNameFromDNSNameString(domain, buf)) goto badf;
-		GetConfigOption(secret, "secret-64", f);  // failure means no authentication	   		
+		buf[0] = 0;
+		GetConfigOption(buf, "secret-64", f);  // failure means no authentication	   		
 		fclose(f);
 		f = NULL;
 		}
@@ -138,11 +142,11 @@ mDNSexport void ReadDDNSSettingsFromConfFile(mDNS *const m, const char *const fi
 		return;
 		}
 
-	if (domain && domain->c[0] && secret[0])
+	if (domain && domain->c[0] && buf[0])
 		{
 		DomainAuthInfo *info = (DomainAuthInfo*)mDNSPlatformMemAllocate(sizeof(*info));
 		// for now we assume keyname = service reg domain and we use same key for service and hostname registration
-		err = mDNS_SetSecretForDomain(m, info, domain, domain, secret, mDNSfalse);
+		err = mDNS_SetSecretForDomain(m, info, domain, domain, buf, mDNSfalse);
 		if (err) LogMsg("ERROR: mDNS_SetSecretForDomain returned %d for domain %##s", err, domain->c);
 		}
 
