@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.81  2007/10/16 21:16:50  cheshire
+Get rid of unused uDNS_Sleep() routine
+
 Revision 1.80  2007/10/16 20:59:41  cheshire
 Export SuspendLLQs/SleepServiceRegistrations/SleepRecordRegistrations so they're callable from other files
 
@@ -207,7 +210,6 @@ extern void startLLQHandshakeCallback(mDNS *const m, mStatus err, const ZoneData
 
 extern void uDNS_StopLongLivedQuery(mDNS *const m, DNSQuestion *const question);
 
-extern void uDNS_Sleep(mDNS *const m);
 extern void uDNS_Wake(mDNS *const m);
 
 extern void SuspendLLQs(mDNS *m, mDNSBool DeregisterActive);

@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.499  2007/10/16 21:16:50  cheshire
+Get rid of unused uDNS_Sleep() routine
+
 Revision 1.498  2007/10/16 20:59:41  cheshire
 Export SuspendLLQs/SleepServiceRegistrations/SleepRecordRegistrations so they're callable from other files
 
@@ -5042,13 +5045,6 @@ mDNSexport mStatus uDNS_RegisterSearchDomains(mDNS *const m)
 // 5) global list delivered to client via GetSearchDomainList()
 // 6) client calls to enumerate domains now go over LocalOnly interface
 //    (!!!KRS may add outgoing interface in addition)
-
-mDNSexport void uDNS_Sleep(mDNS *const m)
-	{
-	SuspendLLQs(m, mDNStrue);
-	SleepServiceRegistrations(m);
-	SleepRecordRegistrations(m);
-	}
 
 mDNSexport void uDNS_Wake(mDNS *const m)
 	{
