@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.368  2007/10/16 16:58:58  cheshire
+Improved debugging error messages in read_msg()
+
 Revision 1.367  2007/10/15 22:55:14  cheshire
 Make read_msg return "void" (since request_callback just ignores the redundant return value anyway)
 
@@ -3009,16 +3012,14 @@ mDNSlocal request_state *NewRequest(void)
 	}
 
 // read_msg may be called any time when the transfer state (req->ts) is t_morecoming.
-// returns the current state of the request (morecoming, error, complete, terminated.)
 // if there is no data on the socket, the socket will be closed and t_terminated will be returned
-// *** NOTE return value is actually ignored -- should change return type to void ***
 mDNSlocal void read_msg(request_state *req)
 	{
 	mDNSu32 nleft;
 	int nread;
 
 	if (req->ts == t_terminated || req->ts == t_error)
-		{ LogMsg("ERROR: read_msg called with transfer state terminated or error"); req->ts = t_error; return; }
+		{ LogMsg("%3d: ERROR: read_msg called with transfer state terminated or error", req->sd); req->ts = t_error; return; }
 
 	if (req->ts == t_complete)	// this must be death or something is wrong
 		{
@@ -3026,13 +3027,13 @@ mDNSlocal void read_msg(request_state *req)
 		nread = recv(req->sd, buf, 4, 0);
 		if (!nread) { req->ts = t_terminated; return; }
 		if (nread < 0) goto rerror;
-		LogMsg("ERROR: read data from a completed request.");
+		LogMsg("%3d: ERROR: read data from a completed request", req->sd);
 		req->ts = t_error;
 		return;
 		}
 
 	if (req->ts != t_morecoming)
-		{ LogMsg("ERROR: read_msg called with invalid transfer state (%d)", req->ts); req->ts = t_error; return; }
+		{ LogMsg("%3d: ERROR: read_msg called with invalid transfer state (%d)", req->sd, req->ts); req->ts = t_error; return; }
 
 	if (req->hdr_bytes < sizeof(ipc_msg_hdr))
 		{
@@ -3042,20 +3043,20 @@ mDNSlocal void read_msg(request_state *req)
 		if (nread < 0) goto rerror;
 		req->hdr_bytes += nread;
 		if (req->hdr_bytes > sizeof(ipc_msg_hdr))
-			{ LogMsg("ERROR: read_msg - read too many header bytes"); req->ts = t_error; return; }
+			{ LogMsg("%3d: ERROR: read_msg - read too many header bytes", req->sd); req->ts = t_error; return; }
 
 		// only read data if header is complete
 		if (req->hdr_bytes == sizeof(ipc_msg_hdr))
 			{
 			ConvertHeaderBytes(&req->hdr);
 			if (req->hdr.version != VERSION)
-				{ LogMsg("ERROR: client version 0x%08X daemon version 0x%08X", req->hdr.version, VERSION); req->ts = t_error; return; }
+				{ LogMsg("%3d: ERROR: client version 0x%08X daemon version 0x%08X", req->sd, req->hdr.version, VERSION); req->ts = t_error; return; }
 
 			// Largest conceivable single request is a DNSServiceRegisterRecord() or DNSServiceAddRecord()
 			// with 64kB of rdata. Adding 1005 byte for a maximal domain name, plus a safety margin
 			// for other overhead, this means any message above 70kB is definitely bogus.
 			if (req->hdr.datalen > 70000)
-				{ LogMsg("ERROR: read_msg - hdr.datalen %lu (%X) > 70000", req->hdr.datalen, req->hdr.datalen); req->ts = t_error; return; }
+				{ LogMsg("%3d: ERROR: read_msg - hdr.datalen %lu (%X) > 70000", req->sd, req->hdr.datalen, req->hdr.datalen); req->ts = t_error; return; }
 			req->msgbuf = mallocL("request_state msgbuf", req->hdr.datalen + MSG_PAD_BYTES);
 			if (!req->msgbuf) { my_perror("ERROR: malloc"); req->ts = t_error; return; }
 			req->msgptr = req->msgbuf;
@@ -3087,7 +3088,7 @@ mDNSlocal void read_msg(request_state *req)
 		if (nread < 0) goto rerror;
 		req->data_bytes += nread;
 		if (req->data_bytes > req->hdr.datalen)
-			{ LogMsg("ERROR: read_msg - read too many data bytes"); req->ts = t_error; return; }
+			{ LogMsg("%3d: ERROR: read_msg - read too many data bytes", req->sd); req->ts = t_error; return; }
 		cmsg = CMSG_FIRSTHDR(&msg);
 		if (msg.msg_controllen == sizeof(cbuf) &&
 			cmsg->cmsg_len     == sizeof(cbuf) &&
@@ -3131,7 +3132,7 @@ mDNSlocal void read_msg(request_state *req)
 			if (ctrl_path[0] == 0)
 				{
 				if (req->errsd == req->sd)
-					{ LogMsg("%3d: request_callback: ERROR failed to get errsd via SCM_RIGHTS", req->sd); req->ts = t_error; return; }
+					{ LogMsg("%3d: read_msg: ERROR failed to get errsd via SCM_RIGHTS", req->sd); req->ts = t_error; return; }
 				goto got_errfd;
 				}
 #endif
@@ -3143,12 +3144,12 @@ mDNSlocal void read_msg(request_state *req)
 				{
 #if !defined(USE_TCP_LOOPBACK)
 				struct stat sb;
-				LogMsg("request_callback: Couldn't connect to error return path socket “%s” errno %d %s",
-					cliaddr.sun_path, dnssd_errno(), dnssd_strerror(dnssd_errno()));
+				LogMsg("%3d: read_msg: Couldn't connect to error return path socket “%s” errno %d %s",
+					req->sd, cliaddr.sun_path, dnssd_errno(), dnssd_strerror(dnssd_errno()));
 				if (stat(cliaddr.sun_path, &sb) < 0)
-					LogMsg("request_callback: stat failed “%s” errno %d %s", cliaddr.sun_path, dnssd_errno(), dnssd_strerror(dnssd_errno()));
+					LogMsg("%3d: read_msg: stat failed “%s” errno %d %s", req->sd, cliaddr.sun_path, dnssd_errno(), dnssd_strerror(dnssd_errno()));
 				else
-					LogMsg("request_callback: file “%s” mode %o (octal) uid %d gid %d", cliaddr.sun_path, sb.st_mode, sb.st_uid, sb.st_gid);
+					LogMsg("%3d: read_msg: file “%s” mode %o (octal) uid %d gid %d", req->sd, cliaddr.sun_path, sb.st_mode, sb.st_uid, sb.st_gid);
 #endif
 				req->ts = t_error;
 				return;
@@ -3161,7 +3162,12 @@ got_errfd:
 #else
 			if (fcntl(req->errsd, F_SETFL, fcntl(req->errsd, F_GETFL, 0) | O_NONBLOCK) != 0)
 #endif
-				{ my_perror("ERROR: could not set control socket to non-blocking mode"); req->ts = t_error; return; }
+				{
+				LogMsg("%3d: ERROR: could not set control socket to non-blocking mode errno %d %s",
+					req->sd, dnssd_errno(), dnssd_strerror(dnssd_errno()));
+				req->ts = t_error;
+				return;
+				}
 			}
 		
 		req->ts = t_complete;
@@ -3171,7 +3177,7 @@ got_errfd:
 
 rerror:
 	if (dnssd_errno() == dnssd_EWOULDBLOCK || dnssd_errno() == dnssd_EINTR) return;
-	my_perror("ERROR: read_msg");
+	LogMsg("%3d: ERROR: read_msg errno %d %s", req->sd, dnssd_errno(), dnssd_strerror(dnssd_errno()));
 	req->ts = t_error;
 	}
 
