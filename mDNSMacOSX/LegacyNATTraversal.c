@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.42  2007/10/16 17:37:18  cheshire
+<rdar://problem/3557903> Performance: Core code will not work on platforms with small stacks
+Cut SendSOAPMsgControlAction stack from 2144 to 96 bytes
+
 Revision 1.41  2007/10/15 23:02:00  cheshire
 Off-by-one error: Incorrect trailing zero byte on the end of the SSDP Discovery message
 
@@ -524,16 +528,16 @@ mDNSlocal mStatus SendSOAPMsgControlAction(mDNS *m, tcpLNTInfo *info, char *Acti
 		"</SOAP-ENV:Envelope>\r\n";
 
 	mStatus err;
-	char    body[2048];		// Typically requires 1110-1122 bytes, so 2048 allows a generous safety margin
+	char   *body = (char *)&m->omsg;			// Typically requires 1110-1122 bytes; m->omsg is 8952 bytes, which is plenty
 	int     bodyLen;
 
 	if (m->UPnPSOAPURL == mDNSNULL || m->UPnPSOAPAddressString == mDNSNULL)	// if no SOAP URL or address exists get out here
 		{ LogOperation("SendSOAPMsgControlAction: no SOAP URL or address string"); return mStatus_Invalid; }
 
 	// Create body
-	bodyLen  = mDNS_snprintf   (body,           sizeof(body),           body1,   Action);
-	bodyLen += AddSOAPArguments(body + bodyLen, sizeof(body) - bodyLen, numArgs, Arguments);
-	bodyLen += mDNS_snprintf   (body + bodyLen, sizeof(body) - bodyLen, body2,   Action);
+	bodyLen  = mDNS_snprintf   (body,           sizeof(m->omsg),           body1,   Action);
+	bodyLen += AddSOAPArguments(body + bodyLen, sizeof(m->omsg) - bodyLen, numArgs, Arguments);
+	bodyLen += mDNS_snprintf   (body + bodyLen, sizeof(m->omsg) - bodyLen, body2,   Action);
 
 	// Create info->Request; the header needs to contain the bodyLen in the "Content-Length" field
 	if (!info->Request) info->Request = mDNSPlatformMemAllocate(LNT_MAXBUFSIZE);
