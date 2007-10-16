@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.369  2007/10/16 17:18:27  cheshire
+Fixed Posix compile errors
+
 Revision 1.368  2007/10/16 16:58:58  cheshire
 Improved debugging error messages in read_msg()
 
@@ -3015,16 +3018,13 @@ mDNSlocal request_state *NewRequest(void)
 // if there is no data on the socket, the socket will be closed and t_terminated will be returned
 mDNSlocal void read_msg(request_state *req)
 	{
-	mDNSu32 nleft;
-	int nread;
-
 	if (req->ts == t_terminated || req->ts == t_error)
 		{ LogMsg("%3d: ERROR: read_msg called with transfer state terminated or error", req->sd); req->ts = t_error; return; }
 
 	if (req->ts == t_complete)	// this must be death or something is wrong
 		{
 		char buf[4];	// dummy for death notification
-		nread = recv(req->sd, buf, 4, 0);
+		int nread = recv(req->sd, buf, 4, 0);
 		if (!nread) { req->ts = t_terminated; return; }
 		if (nread < 0) goto rerror;
 		LogMsg("%3d: ERROR: read data from a completed request", req->sd);
@@ -3037,8 +3037,8 @@ mDNSlocal void read_msg(request_state *req)
 
 	if (req->hdr_bytes < sizeof(ipc_msg_hdr))
 		{
-		nleft = sizeof(ipc_msg_hdr) - req->hdr_bytes;
-		nread = recv(req->sd, (char *)&req->hdr + req->hdr_bytes, nleft, 0);
+		mDNSu32 nleft = sizeof(ipc_msg_hdr) - req->hdr_bytes;
+		int nread = recv(req->sd, (char *)&req->hdr + req->hdr_bytes, nleft, 0);
 		if (nread == 0) { req->ts = t_terminated; return; }
 		if (nread < 0) goto rerror;
 		req->hdr_bytes += nread;
@@ -3071,7 +3071,8 @@ mDNSlocal void read_msg(request_state *req)
 	// (even if only the one-byte empty C string placeholder for the old ctrl_path parameter)
 	if (req->hdr_bytes == sizeof(ipc_msg_hdr) && req->data_bytes < req->hdr.datalen)
 		{
-		nleft = req->hdr.datalen - req->data_bytes;
+		mDNSu32 nleft = req->hdr.datalen - req->data_bytes;
+		int nread;
 		struct iovec vec = { req->msgbuf + req->data_bytes, nleft };	// Tell recvmsg where we want the bytes put
 		struct msghdr msg;
 		struct cmsghdr *cmsg;
