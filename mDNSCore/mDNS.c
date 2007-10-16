@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.730  2007/10/16 21:16:07  cheshire
+<rdar://problem/5539930> Goodbye packets not being sent for services on shutdown
+
 Revision 1.729  2007/10/05 17:56:10  cheshire
 Move CountLabels and SkipLeadingLabels to DNSCommon.c so they're callable from other files
 
@@ -3425,7 +3428,9 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 	if (sleepstate)
 		{
 #ifndef UNICAST_DISABLED
-		uDNS_Sleep(m);
+		SuspendLLQs(m, mDNStrue);
+		SleepServiceRegistrations(m);
+		SleepRecordRegistrations(m);
 #endif
 		// Mark all the records we need to deregister and send them
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
@@ -6907,7 +6912,8 @@ mDNSexport void mDNS_Close(mDNS *const m)
 	m->mDNS_shutdown = mDNStrue;
 
 #ifndef UNICAST_DISABLED
-	uDNS_Sleep(m);
+	SuspendLLQs(m, mDNStrue);
+	SleepServiceRegistrations(m);
 	while (m->Hostnames) mDNS_RemoveDynDNSHostName(m, &m->Hostnames->fqdn);
 #endif
 
@@ -6970,6 +6976,7 @@ mDNSexport void mDNS_Close(mDNS *const m)
 		}
 
 	// Now deregister any remaining records we didn't get the first time through
+	m->CurrentRecord = m->ResourceRecords;
 	while (m->CurrentRecord)
 		{
 		rr = m->CurrentRecord;
