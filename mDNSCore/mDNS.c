@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.734  2007/10/17 22:49:54  cheshire
+<rdar://problem/5519458> BTMM: Machines don't appear in the sidebar on wake from sleep
+
 Revision 1.733  2007/10/17 22:37:23  cheshire
 <rdar://problem/5536979> BTMM: Need to create NAT port mapping for receiving LLQ events
 
@@ -3442,7 +3445,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 	if (sleepstate)
 		{
 #ifndef UNICAST_DISABLED
-		SuspendLLQs(m, mDNStrue);
+		SuspendLLQs(m);
 		SleepServiceRegistrations(m);
 		SleepRecordRegistrations(m);
 #endif
@@ -4315,8 +4318,7 @@ mDNSexport void GrantCacheExtensions(mDNS *const m, DNSQuestion *q, mDNSu32 leas
 
 mDNSlocal mDNSu32 GetEffectiveTTL(const uDNS_LLQType LLQType, mDNSu32 ttl)		// TTL in seconds
 	{
-	if      (LLQType == uDNS_LLQ_Poll)  ttl = LLQ_POLL_INTERVAL * 2 / mDNSPlatformOneSecond;
-	else if (LLQType == uDNS_LLQ_Setup) ttl = kLLQ_DefLease;
+	if      (LLQType == uDNS_LLQ_Setup) ttl = kLLQ_DefLease;
 	else if (LLQType == uDNS_LLQ_Events)
 		{
 		// If the TTL is -1 for uDNS LLQ event packet, that means "remove"
@@ -5022,7 +5024,7 @@ mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question)
 			LogOperation("ActivateUnicastQuery: %##s %s%s",
 				question->qname.c, DNSTypeName(question->qtype), question->AuthInfo ? " (Private)" : "");
 			if (question->nta) CancelGetZoneData(m, question->nta);
-			question->state = LLQ_GetZoneInfo;		// Necessary to stop "bad state" error in startLLQHandshakeCallback
+			question->state = LLQ_InitialRequest;
 			question->nta = StartGetZoneData(m, &question->qname, ZoneServiceLLQ, LLQGotZoneData, question);
 			if (!question->nta) LogMsg("ERROR: startLLQ - StartGetZoneData failed");
 			}
@@ -5151,7 +5153,7 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 		question->tcp               = mDNSNULL;
 		question->NoAnswer          = NoAnswer_Normal;
 
-		question->state             = LLQ_GetZoneInfo;
+		question->state             = LLQ_InitialRequest;
 		question->origLease         = 0;
 		question->expire            = 0;
 		question->ntries            = 0;
@@ -5307,7 +5309,7 @@ mDNSexport mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const que
 			}
 
 		// If necessary, tell server it can delete this LLQ state
-		uDNS_StopLongLivedQuery(m, question);
+		if (question->state == LLQ_Established) sendLLQRefresh(m, question, 0);
 		}
 
 	return(mStatus_NoError);
@@ -6851,6 +6853,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 	mDNSAddr     v4, v6, r;
 	domainname   fqdn;
 	DNSServer   *ptr, **p = &m->DNSServers;
+	const DNSServer *oldServers = m->DNSServers;
 	DNSQuestion *q;
 
 	if (m->RegisterSearchDomains) uDNS_RegisterSearchDomains(m);
@@ -6900,10 +6903,11 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 			p = &(*p)->next;
 		}
 
-	// If we have no DNS servers at all, then immediately purge all unicast cache records (including for LLQs)
-	// This is important for giving prompt remove events when the user disconnects the Ethernet cable or turns off wireless
-	// Otherwise, stale data lingers for 5-10 seconds, which is not the user-experience people expect from Bonjour
-	if (!m->DNSServers)
+	// If we now have no DNS servers at all and we used to have some, then immediately purge all unicast cache records (including for LLQs).
+	// This is important for giving prompt remove events when the user disconnects the Ethernet cable or turns off wireless.
+	// Otherwise, stale data lingers for 5-10 seconds, which is not the user-experience people expect from Bonjour.
+	// Similarly, if we now have some DNS servers and we used to have none, we want to purge any fake negative results we may have generated.
+	if ((m->DNSServers != mDNSNULL) != (oldServers != mDNSNULL))
 		{
 		int count = 0;
 		FORALL_CACHERECORDS(slot, cg, cr) if (!cr->resrec.InterfaceID) { mDNS_PurgeCacheResourceRecord(m, cr); count++; }
@@ -6972,7 +6976,7 @@ mDNSexport void mDNS_Close(mDNS *const m)
 	m->mDNS_shutdown = mDNStrue;
 
 #ifndef UNICAST_DISABLED
-	SuspendLLQs(m, mDNStrue);
+	SuspendLLQs(m);
 	SleepServiceRegistrations(m);
 	while (m->Hostnames) mDNS_RemoveDynDNSHostName(m, &m->Hostnames->fqdn);
 #endif

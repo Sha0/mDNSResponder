@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.502  2007/10/17 22:49:54  cheshire
+<rdar://problem/5519458> BTMM: Machines don't appear in the sidebar on wake from sleep
+
 Revision 1.501  2007/10/17 22:37:23  cheshire
 <rdar://problem/5536979> BTMM: Need to create NAT port mapping for receiving LLQ events
 
@@ -1464,7 +1467,7 @@ mDNSlocal void StartLLQPolling(mDNS *const m, DNSQuestion *q)
 	{
 	LogOperation("StartLLQPolling: %##s", q->qname.c);
 	q->state = LLQ_Poll;
-	q->ThisQInterval = LLQ_POLL_INTERVAL;
+	q->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
 	q->LastQTime     = m->timenow - q->ThisQInterval;	// trigger immediate poll
 	SetNextQueryTime(m, q);
 	}
@@ -1499,36 +1502,17 @@ mDNSlocal mDNSu8 *putLLQ(DNSMessage *const msg, mDNSu8 *ptr, const DNSQuestion *
 	return ptr;
 	}
 
-mDNSlocal mStatus constructQueryMsg(DNSMessage *msg, mDNSu8 **endPtr, DNSQuestion *const question)
-	{
-	InitializeDNSMessage(&msg->h, question->TargetQID, uQueryFlags);
-
-	*endPtr = putQuestion(msg, msg->data, msg->data + AbsoluteMaxDNSMessageData, &question->qname, question->qtype, question->qclass);
-	if (!*endPtr)
-	    {
-	    LogMsg("ERROR: Unicast query out of space in packet");
-	    return mStatus_UnknownErr;
-	    }
-	return mStatus_NoError;
-	}
-
 // Normally called with llq set.
 // May be called with llq NULL, when retransmitting a lost Challenge Response
 mDNSlocal void sendChallengeResponse(mDNS *const m, DNSQuestion *const q, const LLQOptData *llq)
 	{
 	mDNSu8 *responsePtr = m->omsg.data;
-	mStatus err;
 	LLQOptData llqBuf;
 
 	if (q->ntries++ == kLLQ_MAX_TRIES)
 		{
-		LogMsg("sendChallengeResponse: %d failed attempts for LLQ %##s Will re-try in %d minutes",
-			   kLLQ_MAX_TRIES, q->qname.c, kLLQ_DEF_RETRY / 60);
-		q->state         = LLQ_Retry;
-		q->LastQTime     = m->timenow;
-		q->ThisQInterval = (kLLQ_DEF_RETRY * mDNSPlatformOneSecond);
-		SetNextQueryTime(m, q);
-		// !!!KRS give a callback error in these cases?
+		LogMsg("sendChallengeResponse: %d failed attempts for LLQ %##s", kLLQ_MAX_TRIES, q->qname.c);
+		StartLLQPolling(m,q);
 		return;
 		}
 
@@ -1546,66 +1530,30 @@ mDNSlocal void sendChallengeResponse(mDNS *const m, DNSQuestion *const q, const 
 	q->ThisQInterval = q->tcp ? 0 : (kLLQ_INIT_RESEND * q->ntries * mDNSPlatformOneSecond);		// If using TCP, don't need to retransmit
 	SetNextQueryTime(m, q);
 
-	if (constructQueryMsg(&m->omsg, &responsePtr, q)) goto error;
-	responsePtr = putLLQ(&m->omsg, responsePtr, q, llq, mDNSfalse);
-	if (!responsePtr) { LogMsg("ERROR: sendChallengeResponse - putLLQ"); goto error; }
-
-	//LogOperation("sendChallengeResponse %#a:%d %d %p %d", &q->servAddr, mDNSVal16(q->servPort), q->tcp, q->AuthInfo, responsePtr - (mDNSu8 *)&m->omsg);
-	err = mDNSSendDNSMessage(m, &m->omsg, responsePtr, mDNSInterface_Any, &q->servAddr, q->servPort, q->tcp ? q->tcp->sock : mDNSNULL, q->AuthInfo);
-	if (err) debugf("ERROR: sendChallengeResponse - mDNSSendDNSMessage returned %ld", err);
-	// on error, we procede as normal and retry after the appropriate interval
-
-	return;
-
-	error:
-	q->state = LLQ_Error;
+	InitializeDNSMessage(&m->omsg.h, q->TargetQID, uQueryFlags);
+	responsePtr = putQuestion(&m->omsg, responsePtr, m->omsg.data + AbsoluteMaxDNSMessageData, &q->qname, q->qtype, q->qclass);
+	if (responsePtr) responsePtr = putLLQ(&m->omsg, responsePtr, q, llq, mDNSfalse);
+	if (responsePtr) mDNSSendDNSMessage(m, &m->omsg, responsePtr, mDNSInterface_Any, &q->servAddr, q->servPort, q->tcp ? q->tcp->sock : mDNSNULL, q->AuthInfo);
+	else StartLLQPolling(m,q);
 	}
 
 mDNSlocal void recvSetupResponse(mDNS *const m, mDNSu8 rcode, DNSQuestion *const q, const rdataOPT *opt)
 	{
-	mStatus err = mStatus_NoError;
-
 	if (rcode && rcode != kDNSFlag1_RC_NXDomain)
-		{ LogMsg("ERROR: recvSetupResponse %##s - rcode && rcode != kDNSFlag1_RC_NXDomain", q->qname.c); goto fail; }
+		{ LogMsg("ERROR: recvSetupResponse %##s - rcode && rcode != kDNSFlag1_RC_NXDomain", q->qname.c); return; }
 
 	if (opt->OptData.llq.llqOp != kLLQOp_Setup)
-		{ LogMsg("ERROR: recvSetupResponse %##s - bad op %d", q->qname.c, opt->OptData.llq.llqOp); goto fail; }
+		{ LogMsg("ERROR: recvSetupResponse %##s - bad op %d", q->qname.c, opt->OptData.llq.llqOp); return; }
 
 	if (opt->OptData.llq.vers != kLLQ_Vers)
-		{ LogMsg("ERROR: recvSetupResponse %##s - bad vers %d", q->qname.c, opt->OptData.llq.vers); goto fail; }
+		{ LogMsg("ERROR: recvSetupResponse %##s - bad vers %d", q->qname.c, opt->OptData.llq.vers); return; }
 
 	if (q->state == LLQ_InitialRequest)
 		{
 		const LLQOptData *const llq = &opt->OptData.llq;
 		//LogOperation("Got LLQ_InitialRequest");
 
-		switch(llq->err)
-			{
-			case LLQErr_NoError: break;
-			case LLQErr_ServFull:
-				LogMsg("recvSetupResponse - received ServFull from server for LLQ %##s Retry in %lu sec", q->qname.c, llq->llqlease);
-				q->LastQTime     = m->timenow;
-				q->ThisQInterval = ((mDNSs32)llq->llqlease * mDNSPlatformOneSecond);
-				q->state = LLQ_Retry;
-				SetNextQueryTime(m, q);
-			case LLQErr_Static:
-				q->state = LLQ_Static;
-				q->ThisQInterval = 0;
-				LogMsg("LLQ %##s: static", q->qname.c);
-				goto exit;
-			case LLQErr_FormErr:
-				LogMsg("ERROR: recvSetupResponse - received FormErr from server for LLQ %##s", q->qname.c);
-				goto error;
-			case LLQErr_BadVers:
-				LogMsg("ERROR: recvSetupResponse - received BadVers from server");
-				goto error;
-			case LLQErr_UnknownErr:
-				LogMsg("ERROR: recvSetupResponse - received UnknownErr from server for LLQ %##s", q->qname.c);
-				goto error;
-			default:
-				LogMsg("ERROR: recvSetupResponse - received invalid error %d for LLQ %##s", llq->err, q->qname.c);
-				goto error;
-			}
+		if (llq->err) { LogMsg("recvSetupResponse - received %d from server", llq->err); StartLLQPolling(m,q); return; }
 	
 		if (q->origLease != llq->llqlease)
 			debugf("recvSetupResponse: requested lease %lu, granted lease %lu", q->origLease, llq->llqlease);
@@ -1617,15 +1565,10 @@ mDNSlocal void recvSetupResponse(mDNS *const m, mDNSu8 rcode, DNSQuestion *const
 		// update state
 		q->state  = LLQ_SecondaryRequest;
 		q->id     = llq->id;
-		// if (q->ntries == 1) goto exit;	// Test for simulating loss of challenge response packet
+		// if (q->ntries == 1) return;	// Test for simulating loss of challenge response packet
 		q->ntries = 0; // first attempt to send response
 	
 		sendChallengeResponse(m, q, llq);
-		goto exit;
-	
-		error:
-		q->state = LLQ_Error;
-		goto exit;
 		}
 
 	if (q->state == LLQ_SecondaryRequest)
@@ -1642,31 +1585,16 @@ mDNSlocal void recvSetupResponse(mDNS *const m, mDNSu8 rcode, DNSQuestion *const
 			q->id = opt->OptData.llq.id;
 			}
 
-		if (opt->OptData.llq.err) { LogMsg("ERROR: recvSetupResponse %##s code %d from server", q->qname.c, opt->OptData.llq.err); q->state = LLQ_Error; goto fail; }
+		if (opt->OptData.llq.err) { LogMsg("ERROR: recvSetupResponse %##s code %d from server", q->qname.c, opt->OptData.llq.err); StartLLQPolling(m,q); return; }
 		if (!mDNSSameOpaque64(&q->id, &opt->OptData.llq.id))
-			{ LogMsg("recvSetupResponse - ID changed.  discarding"); goto exit; } // this can happen rarely (on packet loss + reordering)
+			{ LogMsg("recvSetupResponse - ID changed.  discarding"); return; } // this can happen rarely (on packet loss + reordering)
 		q->expire        = m->timenow + ((mDNSs32)opt->OptData.llq.llqlease *  mDNSPlatformOneSecond    );
 		q->LastQTime     = m->timenow;
 		q->ThisQInterval =              ((mDNSs32)opt->OptData.llq.llqlease * (mDNSPlatformOneSecond / 2));
 		q->origLease     = opt->OptData.llq.llqlease;
 		q->state         = LLQ_Established;
+		q->ntries        = 0;
 		SetNextQueryTime(m, q);
-		goto exit;
-		}
-
-	if (q->state == LLQ_Established) goto exit;
-
-	LogMsg("ERROR: recvSetupResponse %##s - bad state %d", q->qname.c, q->state);
-
-fail:
-	err = mStatus_UnknownErr;
-
-exit:
-
-	if (err)
-		{
-		LogOperation("recvSetupResponse error %d ", err);
-		StartLLQPolling(m, q);
 		}
 	}
 
@@ -1676,78 +1604,75 @@ mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *co
 	if (msg->h.numQuestions && getQuestion(msg, msg->data, end, 0, &pktQ))
 		{
 		const rdataOPT *opt = GetLLQOptData(m, msg, end);
-		if (opt)
+		if (!opt) return uDNS_LLQ_Not;
+
+		for (q = m->Questions; q; q = q->next)
 			{
-			for (q = m->Questions; q; q = q->next)
+			if (q->LongLived && q->qtype == pktQ.qtype && q->qnamehash == pktQ.qnamehash && SameDomainName(&q->qname, &pktQ.qname))
 				{
-				if (q->LongLived && q->qtype == pktQ.qtype && q->qnamehash == pktQ.qnamehash && SameDomainName(&q->qname, &pktQ.qname))
+				debugf("uDNS_recvLLQResponse found %##s (%s) %d %#a %#a %X %X %X %X %d",
+					q->qname.c, DNSTypeName(q->qtype), q->state, srcaddr, &q->servAddr,
+					opt->OptData.llq.id.l[0], opt->OptData.llq.id.l[1], q->id.l[0], q->id.l[1], opt->OptData.llq.llqOp);
+				if (q->state == LLQ_Poll)
 					{
-					debugf("uDNS_recvLLQResponse found %##s (%s) %d %#a %#a %X %X %X %X %d",
-						q->qname.c, DNSTypeName(q->qtype), q->state, srcaddr, &q->servAddr,
-						opt->OptData.llq.id.l[0], opt->OptData.llq.id.l[1], q->id.l[0], q->id.l[1], opt->OptData.llq.llqOp);
-					if (q->state == LLQ_Poll)
+					m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
+					LogOperation("uDNS_recvLLQResponse got poll response; moving to LLQ_InitialRequest for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+					q->state         = LLQ_InitialRequest;
+					q->ThisQInterval = LLQ_POLL_INTERVAL;	// Retry LLQ setup in 15 minutes
+					q->LastQTime     = m->timenow;
+					SetNextQueryTime(m, q);
+					return uDNS_LLQ_Events;
+					}
+				else if (q->state == LLQ_Established && opt->OptData.llq.llqOp == kLLQOp_Event && mDNSSameOpaque64(&opt->OptData.llq.id, &q->id))
+					{
+					mDNSu8 *ackEnd;
+					if (q->ThisQInterval < MAX_UCAST_POLL_INTERVAL) q->ThisQInterval = MAX_UCAST_POLL_INTERVAL;
+					//debugf("Sending LLQ ack for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+					InitializeDNSMessage(&m->omsg.h, msg->h.id, ResponseFlags);
+					ackEnd = putLLQ(&m->omsg, m->omsg.data, mDNSNULL, &opt->OptData.llq, mDNSfalse);
+					if (ackEnd) mDNSSendDNSMessage(m, &m->omsg, ackEnd, mDNSInterface_Any, srcaddr, srcport, mDNSNULL, mDNSNULL);
+					m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
+					return uDNS_LLQ_Events;
+					}
+				if (mDNSSameOpaque16(msg->h.id, q->TargetQID))
+					{
+					if (q->state == LLQ_Established && opt->OptData.llq.llqOp == kLLQOp_Refresh && mDNSSameOpaque64(&opt->OptData.llq.id, &q->id) && msg->h.numAdditionals && !msg->h.numAnswers)
 						{
+						if (opt->OptData.llq.err != LLQErr_NoError) LogMsg("recvRefreshReply: received error %d from server", opt->OptData.llq.err);
+						else
+							{
+							//LogOperation("Received refresh confirmation ntries %d for %##s (%s)", q->ntries, q->qname.c, DNSTypeName(q->qtype));
+							GrantCacheExtensions(m, q, opt->OptData.llq.llqlease);
+							q->expire   = q->LastQTime + ((mDNSs32)opt->OptData.llq.llqlease *  mDNSPlatformOneSecond   );
+							q->ThisQInterval =           ((mDNSs32)opt->OptData.llq.llqlease * (mDNSPlatformOneSecond/2));
+							q->origLease = opt->OptData.llq.llqlease;
+							q->state = LLQ_Established;
+							q->ntries = 0;
+							}
 						m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
-						return uDNS_LLQ_Poll;
+						return uDNS_LLQ_Events;
 						}
-					else if (q->state == LLQ_Established || (q->state == LLQ_Refresh && msg->h.numAnswers))
+					if (q->state < LLQ_Established && mDNSSameAddress(srcaddr, &q->servAddr))
 						{
-						if (opt->OptData.llq.llqOp == kLLQOp_Event && mDNSSameOpaque64(&opt->OptData.llq.id, &q->id))
-							{
-							mDNSu8 *ackEnd;
-							if (q->LongLived && q->state == LLQ_Poll && !mDNSIPPortIsZero(q->servPort)) q->ThisQInterval = LLQ_POLL_INTERVAL;
-							else if (q->ThisQInterval < MAX_UCAST_POLL_INTERVAL)                        q->ThisQInterval = MAX_UCAST_POLL_INTERVAL;
-							//debugf("Sending LLQ ack for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
-							InitializeDNSMessage(&m->omsg.h, msg->h.id, ResponseFlags);
-							ackEnd = putLLQ(&m->omsg, m->omsg.data, mDNSNULL, &opt->OptData.llq, mDNSfalse);
-							if (ackEnd) mDNSSendDNSMessage(m, &m->omsg, ackEnd, mDNSInterface_Any, srcaddr, srcport, mDNSNULL, mDNSNULL);
-							m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
-							return uDNS_LLQ_Events;
-							}
-						}
-					if (mDNSSameOpaque16(msg->h.id, q->TargetQID))
-						{
-						if (opt->OptData.llq.llqOp == kLLQOp_Refresh && q->state == LLQ_Refresh && msg->h.numAdditionals && !msg->h.numAnswers && mDNSSameOpaque64(&opt->OptData.llq.id, &q->id))
-							{
-							if (opt->OptData.llq.err != LLQErr_NoError) LogMsg("recvRefreshReply: received error %d from server", opt->OptData.llq.err);
-							else
-								{
-								//LogOperation("Received refresh confirmation ntries %d for %##s (%s)", q->ntries, q->qname.c, DNSTypeName(q->qtype));
-								GrantCacheExtensions(m, q, opt->OptData.llq.llqlease);
-								q->expire   = q->LastQTime + ((mDNSs32)opt->OptData.llq.llqlease *  mDNSPlatformOneSecond   );
-								q->ThisQInterval =           ((mDNSs32)opt->OptData.llq.llqlease * (mDNSPlatformOneSecond/2));
-								q->origLease = opt->OptData.llq.llqlease;
-								q->state = LLQ_Established;
-								}
-							m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
-							return uDNS_LLQ_Events;
-							}
-						if (q->state < LLQ_Static)
-							{
-							if (mDNSSameAddress(srcaddr, &q->servAddr))
-								{
-								LLQ_State oldstate = q->state;
-								recvSetupResponse(m, msg->h.flags.b[1] & kDNSFlag1_RC_Mask, q, opt);
-								m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
-								//DumpPacket(m, msg, end);
-								// If this is our Ack+Answers packet resulting from a correct challenge response, then it's a full list
-								// of answers, and any cache answers we have that are not included in this packet need to be flushed
-								//LogMsg("uDNS_recvLLQResponse: recvSetupResponse state %d returning %d", oldstate, oldstate != LLQ_SecondaryRequest);
-								return (oldstate == LLQ_SecondaryRequest ? uDNS_LLQ_Setup : uDNS_LLQ_Events);
-								}
-							}
+						//LLQ_State oldstate = q->state;
+						recvSetupResponse(m, msg->h.flags.b[1] & kDNSFlag1_RC_Mask, q, opt);
+						m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
+						//DumpPacket(m, msg, end);
+						// If this is our Ack+Answers packet resulting from a correct challenge response, then it's a full list
+						// of answers, and any cache answers we have that are not included in this packet need to be flushed
+						//LogMsg("uDNS_recvLLQResponse: recvSetupResponse state %d returning %d", oldstate, oldstate != LLQ_SecondaryRequest);
+
+						// Not sure why this code did this -- should just return result based on llqOp
+						//return (oldstate == LLQ_SecondaryRequest ? uDNS_LLQ_Setup : uDNS_LLQ_Events);
+						return opt->OptData.llq.llqOp == kLLQOp_Setup ? uDNS_LLQ_Setup : uDNS_LLQ_Events;
 						}
 					}
 				}
-			m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
-			//LogMsg("uDNS_recvLLQResponse: returning 0");
 			}
+		m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 		}
 	return uDNS_LLQ_Not;
 	}
-
-// Forward declaration
-mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease);
 
 // Stub definition of TCPSocket_struct so we can access flags field. (Rest of TCPSocket_struct is platform-dependent.)
 struct TCPSocket_struct { TCPSocketFlags flags; /* ... */ };
@@ -1779,7 +1704,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 	if (ConnectionEstablished)
 		{
 		// connection is established - send the message
-		if (tcpInfo->question && tcpInfo->question->LongLived && (tcpInfo->question->state == LLQ_Established || tcpInfo->question->state == LLQ_Refresh))
+		if (tcpInfo->question && tcpInfo->question->LongLived && tcpInfo->question->state == LLQ_Established)
 			{
 			//LogMsg("tcpCallback calling sendLLQRefresh %##s (%s)", tcpInfo->question->qname.c, DNSTypeName(tcpInfo->question->qtype));
 			mDNS_Lock(m);
@@ -1809,8 +1734,9 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			}
 		else if (tcpInfo->question)
 			{
-			err = constructQueryMsg(&tcpInfo->request, &end, tcpInfo->question);
-			if (err) { LogMsg("ERROR: tcpCallback: constructQueryMsg - %ld", err); err = mStatus_UnknownErr; goto exit; }
+			DNSQuestion *q = tcpInfo->question;
+			InitializeDNSMessage(&tcpInfo->request.h, q->TargetQID, uQueryFlags);
+			end = putQuestion(&tcpInfo->request, tcpInfo->request.data, tcpInfo->request.data + AbsoluteMaxDNSMessageData, &q->qname, q->qtype, q->qclass);
 			}
 		else
 			end = ((mDNSu8*) &tcpInfo->request) + tcpInfo->requestLen;
@@ -1917,7 +1843,7 @@ exit:
 				}
 			// ConnFailed is actually okay.  It just means that the server closed the connection but the LLQ is still okay.
 			// If the error isn't ConnFailed, then the LLQ is in bad shape.
-			if (err != mStatus_ConnFailed) tcpInfo->question->state = LLQ_Error;
+			if (err != mStatus_ConnFailed) StartLLQPolling(m, tcpInfo->question);
 			mDNS_Unlock(m);
 			}
 
@@ -2003,12 +1929,25 @@ mDNSexport void DisposeTCPConn(struct tcpInfo_t *tcp)
 // Lock must be held
 mDNSexport void startLLQHandshake(mDNS *m, DNSQuestion *q)
 	{
-	mStatus err = mStatus_NoError;
-
 	if (mDNSIPPortIsZero(m->LLQNAT.ExternalPort))
 		{
 		LogOperation("startLLQHandshake: Cannot receive inbound packets; will poll for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 		StartLLQPolling(m, q);
+		return;
+		}
+
+	if (mDNSIPPortIsZero(q->servPort))
+		{
+		if (!q->nta)
+			{
+			LogOperation("startLLQHandshake: StartGetZoneData for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+			q->ThisQInterval = LLQ_POLL_INTERVAL;
+			q->LastQTime     = m->timenow - q->ThisQInterval;
+			SetNextQueryTime(m, q);
+			q->servAddr = zeroAddr;
+			q->servPort = zeroIPPort;
+			q->nta = StartGetZoneData(m, &q->qname, ZoneServiceLLQ, LLQGotZoneData, q);
+			}
 		return;
 		}
 
@@ -2025,52 +1964,44 @@ mDNSexport void startLLQHandshake(mDNS *m, DNSQuestion *q)
 		q->ThisQInterval = 0;
 		q->LastQTime     = m->timenow;
 		SetNextQueryTime(m, q);
-
-		err = mStatus_NoError;
 		}
 	else
 		{
-		mDNSu8 *end;
-		LLQOptData llqData;
-
 		LogOperation("startLLQHandshake Addr %#a%s Server %#a:%d%s %##s (%s)",
 			&m->AdvertisedV4,                     mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) ? " (RFC 1918)" : "",
 			&q->servAddr, mDNSVal16(q->servPort), mDNSAddrIsRFC1918(&q->servAddr)             ? " (RFC 1918)" : "",
 			q->qname.c, DNSTypeName(q->qtype));
 
 		if (q->ntries++ >= kLLQ_MAX_TRIES)
-			{ LogMsg("startLLQHandshake: %d failed attempts for LLQ %##s Polling.", kLLQ_MAX_TRIES, q->qname.c); err = mStatus_UnknownErr; goto exit; }
+			{
+			LogMsg("startLLQHandshake: %d failed attempts for LLQ %##s Polling.", kLLQ_MAX_TRIES, q->qname.c);
+			StartLLQPolling(m, q);
+			}
+		else
+			{
+			mDNSu8 *end;
+			LLQOptData llqData;
 
-		// set llq rdata
-		llqData.vers  = kLLQ_Vers;
-		llqData.llqOp = kLLQOp_Setup;
-		llqData.err   = LLQErr_NoError;
-		llqData.id    = zeroOpaque64;
-		llqData.llqlease = kLLQ_DefLease;
-
-		InitializeDNSMessage(&m->omsg.h, q->TargetQID, uQueryFlags);
-		end = putLLQ(&m->omsg, m->omsg.data, q, &llqData, mDNStrue);
-		if (!end) { LogMsg("ERROR: startLLQHandshake - putLLQ"); q->state = LLQ_Error; return; }
-
-		err = mDNSSendDNSMessage(m, &m->omsg, end, mDNSInterface_Any, &q->servAddr, q->servPort, mDNSNULL, mDNSNULL);
-		// on error, we procede as normal and retry after the appropriate interval
-		if (err) { debugf("ERROR: startLLQHandshake - mDNSSendDNSMessage returned %ld", err); err = mStatus_NoError; }
-
-		// update question state
-		q->state         = LLQ_InitialRequest;
-		q->origLease     = kLLQ_DefLease;
-		q->ThisQInterval = (kLLQ_INIT_RESEND * mDNSPlatformOneSecond);
-		q->LastQTime     = m->timenow - q->ThisQInterval;
-		SetNextQueryTime(m, q);
-
-		err = mStatus_NoError;
-		}
-
-exit:
-	if (err)
-		{
-		LogOperation("startLLQHandshake error %d ", err);
-		StartLLQPolling(m, q);
+			// set llq rdata
+			llqData.vers  = kLLQ_Vers;
+			llqData.llqOp = kLLQOp_Setup;
+			llqData.err   = LLQErr_NoError;
+			llqData.id    = zeroOpaque64;
+			llqData.llqlease = kLLQ_DefLease;
+	
+			InitializeDNSMessage(&m->omsg.h, q->TargetQID, uQueryFlags);
+			end = putLLQ(&m->omsg, m->omsg.data, q, &llqData, mDNStrue);
+			if (!end) { LogMsg("ERROR: startLLQHandshake - putLLQ"); StartLLQPolling(m,q); return; }
+	
+			mDNSSendDNSMessage(m, &m->omsg, end, mDNSInterface_Any, &q->servAddr, q->servPort, mDNSNULL, mDNSNULL);
+	
+			// update question state
+			q->state         = LLQ_InitialRequest;
+			q->origLease     = kLLQ_DefLease;
+			q->ThisQInterval = (kLLQ_INIT_RESEND * mDNSPlatformOneSecond);
+			q->LastQTime     = m->timenow - q->ThisQInterval;
+			SetNextQueryTime(m, q);
+			}
 		}
 	}
 
@@ -3729,7 +3660,7 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 #pragma mark - Query Routines
 #endif
 
-mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
+mDNSexport void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 	{
 	mDNSu8 *end;
 	LLQOptData llq;
@@ -3749,15 +3680,11 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 		return;
 		}
 
-	if ((q->state == LLQ_Refresh && q->ntries >= kLLQ_MAX_TRIES) || q->expire - m->timenow < 0)
+	if ((q->state == LLQ_Established && q->ntries >= kLLQ_MAX_TRIES) || q->expire - m->timenow < 0)
 		{
-		LogMsg("Unable to refresh LLQ %##s (%s) - will retry in %d minutes", q->qname.c, DNSTypeName(q->qtype), kLLQ_DEF_RETRY/60);
-		q->state         = LLQ_Retry;
-		q->LastQTime     = m->timenow;
-		q->ThisQInterval = kLLQ_DEF_RETRY * mDNSPlatformOneSecond;
-		SetNextQueryTime(m, q);
+		LogMsg("Unable to refresh LLQ %##s (%s) - will retry in %d minutes", q->qname.c, DNSTypeName(q->qtype), LLQ_POLL_INTERVAL/3600);
+		StartLLQPolling(m,q);
 		return;
-		//!!!KRS handle this - periodically try to re-establish
 		}
 
 	llq.vers  = kLLQ_Vers;
@@ -3773,12 +3700,10 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 	err = mDNSSendDNSMessage(m, &m->omsg, end, mDNSInterface_Any, &q->servAddr, q->servPort, q->tcp ? q->tcp->sock : mDNSNULL, q->AuthInfo);
 	if (err) debugf("ERROR: sendLLQRefresh - mDNSSendDNSMessage returned %ld", err);
 
-	if (q->state == LLQ_Established) q->ntries = 1;
-	else q->ntries++;
+	q->ntries++;
 
 	debugf("sendLLQRefresh ntries %d %##s (%s)", q->ntries, q->qname.c, DNSTypeName(q->qtype));
 
-	q->state = LLQ_Refresh;
 	q->LastQTime = m->timenow;
 	SetNextQueryTime(m, q);
 	}
@@ -3787,64 +3712,26 @@ mDNSexport void LLQGotZoneData(mDNS *const m, mStatus err, const ZoneData *zoneI
 	{
 	DNSQuestion *q = (DNSQuestion *)zoneInfo->ZoneDataContext;
 
+	mDNS_Lock(m);
+
 	// If we get here it means that the GetZoneData operation has completed, and is is about to cancel
 	// its question and free the ZoneData memory. We no longer need to hold onto our pointer (which
 	// we use for cleaning up if our LLQ is cancelled *before* the GetZoneData operation has completes).
-	q->nta = mDNSNULL;
+	q->nta      = mDNSNULL;
+	q->servAddr = zeroAddr;
+	q->servPort = zeroIPPort;
 
-	// check state first to make sure it is OK to touch question object
-	if (q->state == LLQ_Cancelled)
+	if (!err && zoneInfo && !mDNSIPPortIsZero(zoneInfo->Port))
 		{
-		// StopQuery was called while we were getting the zone info
-		debugf("LLQGotZoneData - LLQ Cancelled.");
-		return;
+		q->servAddr  = zoneInfo->Addr;
+		q->servPort  = zoneInfo->Port;
+		if (!zoneInfo->ZonePrivate) q->AuthInfo = mDNSNULL;
+		q->ntries = 0;
+		LogOperation("LLQGotZoneData %#a:%d", &q->servAddr, mDNSVal16(q->servPort));
+		startLLQHandshake(m, q);
 		}
-
-	mDNS_Lock(m);
-
-	if (q->state != LLQ_GetZoneInfo)
-		{
-		LogMsg("ERROR: LLQGotZoneData - bad state %d", q->state);
-		err = mStatus_UnknownErr;
-		goto exit;
-		}
-
-	if (err)
-		{
-		LogMsg("ERROR: LLQGotZoneData %##s (%s) invoked with error code %ld", q->qname.c, DNSTypeName(q->qtype), err);
-		StartLLQPolling(m, q);
-		err = mStatus_NoError;
-		goto exit;
-		}
-
-	if (!zoneInfo)
-		{
-		LogMsg("ERROR: LLQGotZoneData invoked with NULL result and no error code");
-		err = mStatus_UnknownErr;
-		goto exit;
-		}
-
-	if (mDNSIPPortIsZero(zoneInfo->Port))
-		{
-		LogOperation("LLQ port lookup failed - reverting to polling for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
-		q->servPort = zeroIPPort;
-		StartLLQPolling(m, q);
-		goto exit;
-		}
-
-	// cache necessary zone data
-	q->servAddr  = zoneInfo->Addr;
-	q->servPort  = zoneInfo->Port;
-	if (!zoneInfo->ZonePrivate) q->AuthInfo = mDNSNULL;
-
-	q->ntries = 0;
-
-	if (q->state == LLQ_SuspendDeferred) q->state = LLQ_Suspended;
-	else startLLQHandshake(m, q);
-
-exit:
-
-	if (err && q) q->state = LLQ_Error;
+	else
+		StartLLQPolling(m,q);
 
 	mDNS_Unlock(m);
 	}
@@ -3864,14 +3751,13 @@ mDNSlocal void startPrivateQueryCallback(mDNS *const m, mStatus err, const ZoneD
 	if (err)
 		{
 		LogMsg("ERROR: startPrivateQueryCallback %##s (%s) invoked with error code %ld", q->qname.c, DNSTypeName(q->qtype), err);
-		goto exit;
+		return;
 		}
 
 	if (!zoneInfo)
 		{
 		LogMsg("ERROR: startPrivateQueryCallback invoked with NULL result and no error code");
-		err = mStatus_UnknownErr;
-		goto exit;
+		return;
 		}
 
 	if (!zoneInfo->ZonePrivate)
@@ -3883,47 +3769,19 @@ mDNSlocal void startPrivateQueryCallback(mDNS *const m, mStatus err, const ZoneD
 		mDNS_Lock(m);
 		SetNextQueryTime(m, q);
 		mDNS_Unlock(m);
-		goto exit;
+		return;
 		// Next call to uDNS_CheckCurrentQuestion() will do this as a non-private query
 		}
 
 	if (!q->AuthInfo)
 		{
 		LogMsg("ERROR: startPrivateQueryCallback: cannot find credentials for q %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
-		err = mStatus_UnknownErr;
-		goto exit;
+		return;
 		}
 
 	q->TargetQID = mDNS_NewMessageID(m);
-	if (q->tcp)
-		{
-		LogOperation("startPrivateQueryCallback: Already have TCP connection for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
-		tcpCallback(q->tcp->sock, q->tcp, mDNStrue, mStatus_NoError);
-		}
-	else q->tcp = MakeTCPConn(m, mDNSNULL, mDNSNULL, kTCPSocketFlags_UseTLS, &zoneInfo->Addr, zoneInfo->Port, q, mDNSNULL, mDNSNULL);
-
-exit:
-
-	if (err) mDNS_StopQuery(m, q);
-	}
-
-// uDNS_StopLongLivedQuery happens IN ADDITION to stopQuery
-mDNSexport void uDNS_StopLongLivedQuery(mDNS *const m, DNSQuestion *const question)
-	{
-	LogOperation("uDNS_StopLongLivedQuery %##s (%s) state %d", question->qname.c, DNSTypeName(question->qtype), question->state);
-
-	switch (question->state)
-		{
-		case LLQ_UnInit: LogMsg("ERROR: uDNS_StopLongLivedQuery - state LLQ_UnInit"); return; //!!!KRS should we unlink info<->question here?
-
-		case LLQ_GetZoneInfo:
-		case LLQ_SuspendDeferred: question->state = LLQ_Cancelled; return;
-
-		case LLQ_Established:
-		case LLQ_Refresh: sendLLQRefresh(m, question, 0); break;
-
-		default: debugf("uDNS_StopLongLivedQuery - silently discarding LLQ in state %d", question->state); break;
-		}
+	if (q->tcp) DisposeTCPConn(q->tcp);
+	q->tcp = MakeTCPConn(m, mDNSNULL, mDNSNULL, kTCPSocketFlags_UseTLS, &zoneInfo->Addr, zoneInfo->Port, q, mDNSNULL, mDNSNULL);
 	}
 
 // ***************************************************************************
@@ -4241,25 +4099,14 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 		sendtime = m->SuppressStdPort53Queries;
 	if (m->timenow - sendtime < 0) return;
 
-	if (q->LongLived && q->state != LLQ_Poll)
+	if (q->LongLived)
 		{
-		if (q->state >= LLQ_InitialRequest && q->state <= LLQ_Established)
+		switch (q->state)
 			{
-			// sanity check to avoid packet flood bugs
-			if      (q->state == LLQ_Established || q->state == LLQ_Refresh) sendLLQRefresh(m, q, q->origLease);
-			else if (q->state == LLQ_InitialRequest                        ) startLLQHandshake(m, q);
-			else if (q->state == LLQ_SecondaryRequest                      ) sendChallengeResponse(m, q, mDNSNULL);
-			else if (q->state == LLQ_Retry                                 ) { q->ntries = 0; startLLQHandshake(m, q); }
-			}
-		else
-			{
-			// This should never happen. Any LLQ not in states LLQ_InitialRequest to LLQ_Established should not have have ThisQInterval set.
-			// (uDNS_CheckCurrentQuestion() is only called for DNSQuestions with non-zero ThisQInterval)
-			LogMsg("uDNS_CheckCurrentQuestion: %##s (%s) state %d sendtime %d ThisQInterval %d",
-				q->qname.c, DNSTypeName(q->qtype), q->state, sendtime - m->timenow, q->ThisQInterval);
-			q->LastQTime = m->timenow;
-			q->ThisQInterval *= 2;
-			SetNextQueryTime(m, q);
+			case LLQ_InitialRequest:   startLLQHandshake(m, q); break;
+			case LLQ_SecondaryRequest: sendChallengeResponse(m, q, mDNSNULL); break;
+			case LLQ_Established:      sendLLQRefresh(m, q, q->origLease); break;
+			case LLQ_Poll:             break;	// Do nothing (handled below)
 			}
 		}
 
@@ -4274,51 +4121,42 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 
 			if (q->qDNSServer->teststate != DNSServer_Untested || NoTestQuery(q))
 				{
-				err = constructQueryMsg(&m->omsg, &end, q);
+				InitializeDNSMessage(&m->omsg.h, q->TargetQID, uQueryFlags);
+				end = putQuestion(&m->omsg, m->omsg.data, m->omsg.data + AbsoluteMaxDNSMessageData, &q->qname, q->qtype, q->qclass);
 				private = q->AuthInfo;
 				}
 			else if (m->timenow - q->qDNSServer->lasttest >= INIT_UCAST_POLL_INTERVAL)	// Make sure at least three seconds has elapsed since last test query
 				{
 				LogOperation("Sending DNS test query to %#a:%d", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port));
-				q->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
+				q->ThisQInterval = INIT_UCAST_POLL_INTERVAL / QuestionIntervalStep;
 				q->qDNSServer->lasttest = m->timenow;
 				InitializeDNSMessage(&m->omsg.h, mDNS_NewMessageID(m), uQueryFlags);
 				end = putQuestion(&m->omsg, m->omsg.data, m->omsg.data + AbsoluteMaxDNSMessageData, DNSRelayTestQuestion, kDNSType_PTR, kDNSClass_IN);
 				}
 
-			if (err) LogMsg("Error: uDNS_CheckCurrentQuestion - constructQueryMsg. Skipping question %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+			if (end > m->omsg.data && (q->qDNSServer->teststate != DNSServer_Failed || NoTestQuery(q)))
+				{
+				//LogMsg("uDNS_CheckCurrentQuestion %d %p %##s (%s)", sendtime - m->timenow, private, q->qname.c, DNSTypeName(q->qtype));
+				if (private)
+					{
+					if (q->nta) LogMsg("uDNS_CheckCurrentQuestion Error: GetZoneData already started for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+					else q->nta = StartGetZoneData(m, &q->qname, q->LongLived ? ZoneServiceLLQ : ZoneServiceQuery, startPrivateQueryCallback, q);
+					q->ThisQInterval = LLQ_POLL_INTERVAL / QuestionIntervalStep;
+					}
+				else
+					{
+					err = mDNSSendDNSMessage(m, &m->omsg, end, q->qDNSServer->interface, &q->qDNSServer->addr, q->qDNSServer->port, mDNSNULL, mDNSNULL);
+					m->SuppressStdPort53Queries = NonZeroTime(m->timenow + (mDNSPlatformOneSecond+99)/100);
+					}
+				}
+
+			if (err) debugf("ERROR: uDNS_idle - mDNSSendDNSMessage - %ld", err); // surpress syslog messages if we have no network
 			else
 				{
-				if (end > m->omsg.data && (q->qDNSServer->teststate != DNSServer_Failed || NoTestQuery(q)))
-					{
-					//LogMsg("uDNS_CheckCurrentQuestion %d %p %##s (%s)", sendtime - m->timenow, private, q->qname.c, DNSTypeName(q->qtype));
-					if (private)
-						{
-						if (q->nta) LogMsg("uDNS_CheckCurrentQuestion Error: GetZoneData already started for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
-						else q->nta = StartGetZoneData(m, &q->qname, q->LongLived ? ZoneServiceLLQ : ZoneServiceQuery, startPrivateQueryCallback, q);
-						q->ThisQInterval = 0;		// Suspend this question until GetZoneData completes
-						}
-					else
-						{
-						err = mDNSSendDNSMessage(m, &m->omsg, end, q->qDNSServer->interface, &q->qDNSServer->addr, q->qDNSServer->port, mDNSNULL, mDNSNULL);
-						m->SuppressStdPort53Queries = NonZeroTime(m->timenow + (mDNSPlatformOneSecond+99)/100);
-						}
-					}
-
-				if (err) debugf("ERROR: uDNS_idle - mDNSSendDNSMessage - %ld", err); // surpress syslog messages if we have no network
-				else if (!q->LongLived && q->ThisQInterval < MAX_UCAST_POLL_INTERVAL)
-					{
-					q->ThisQInterval = q->ThisQInterval * QuestionIntervalStep;	// Only increase interval if send succeeded
-					LogOperation("Adjusted ThisQInterval to %d for %##s (%s)", q->ThisQInterval, q->qname.c, DNSTypeName(q->qtype));
-					}
-				else if (q->LongLived && q->state == LLQ_Poll)
-					{
-					// Bit of a hack here -- if we dropped the interval down to do the DNS test query, need to put
-					// it back or we'll poll every three seconds. The real solution is that the DNS test query
-					// should be a real query in its own right, which other queries are blocked on, rather than
-					// being shoehorned in here and borrowing another question's q->LastQTime and q->ThisQInterval
-					q->ThisQInterval = LLQ_POLL_INTERVAL;
-					}
+				q->ThisQInterval = q->ThisQInterval * QuestionIntervalStep;	// Only increase interval if send succeeded
+				if (q->ThisQInterval > MAX_UCAST_POLL_INTERVAL)
+					q->ThisQInterval = MAX_UCAST_POLL_INTERVAL;
+				LogOperation("Increased ThisQInterval to %d for %##s (%s)", q->ThisQInterval, q->qname.c, DNSTypeName(q->qtype));
 				}
 			q->LastQTime = m->timenow;
 			SetNextQueryTime(m, q);
@@ -4568,44 +4406,19 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 #pragma mark - Startup, Shutdown, and Sleep
 #endif
 
-// DeregisterActive causes active LLQs to be removed from the server, e.g. before sleep. Pass false
-// following a location change, as the server will reject deletions from a source address different
-// from the address on which the LLQ was created.
-
-mDNSexport void SuspendLLQs(mDNS *m, mDNSBool DeregisterActive)
+mDNSexport void SuspendLLQs(mDNS *m)
 	{
 	DNSQuestion *q;
-
 	for (q = m->Questions; q; q = q->next)
-		{
 		if (q->LongLived)
 			{
-			if (q->state == LLQ_GetZoneInfo)
-				{
-				debugf("Marking %##s suspend-deferred", q->qname.c);
-				q->state = LLQ_SuspendDeferred;	// suspend once we're done getting zone info
-				}
-			else if (q->state < LLQ_Suspended)
-				{
-				if (DeregisterActive && (q->state == LLQ_Established || q->state == LLQ_Refresh))
-					{
-					debugf("Deleting LLQ %##s", q->qname.c);
-					sendLLQRefresh(m, q, 0);
-					}
-				debugf("Marking %##s suspended", q->qname.c);
-				q->state = LLQ_Suspended;
-
-				if (q->tcp) { DisposeTCPConn(q->tcp); q->tcp = mDNSNULL; }
-
-				q->id = zeroOpaque64;
-				}
-			else if (q->state == LLQ_Poll)
-				{
-				debugf("Marking %##s suspended-poll", q->qname.c);
-				q->state = LLQ_SuspendedPoll;
-				}
+			// If necessary, tell server it can delete this LLQ state
+			if (q->state == LLQ_Established) sendLLQRefresh(m, q, 0);
+			if (q->nta) { CancelGetZoneData(m, q->nta); q->nta = mDNSNULL; }
+			if (q->tcp) { DisposeTCPConn(q->tcp); q->tcp = mDNSNULL; }
+			q->state = LLQ_InitialRequest;	// Will need to set up new LLQ on wake from sleep
+			q->id = zeroOpaque64;
 			}
-		}
 	}
 
 mDNSlocal void RestartQueries(mDNS *m)
@@ -4622,21 +4435,9 @@ mDNSlocal void RestartQueries(mDNS *m)
 			{
 			if (q->LongLived)
 				{
-				if (q->state == LLQ_Suspended || q->state == LLQ_NatMapWaitUDP)
-					{
-					q->ntries = -1;
-					startLLQHandshake(m, q);
-					}
-				else if (q->state == LLQ_SuspendDeferred)
-					q->state = LLQ_GetZoneInfo; // we never finished getting zone data - proceed as usual
-				else if (q->state == LLQ_SuspendedPoll)
-					{
-					// if we were polling, we may have had bad zone data due to firewall, etc. - refetch
-					q->ntries = 0;
-					q->state = LLQ_GetZoneInfo;
-					if (q->nta) CancelGetZoneData(m, q->nta); // Make sure we cancel old one before we start a new one
-					q->nta = StartGetZoneData(m, &q->qname, ZoneServiceLLQ, LLQGotZoneData, q);
-					}
+				q->state = LLQ_InitialRequest;
+				if (q->nta) CancelGetZoneData(m, q->nta); // Make sure we cancel old one before we start a new one
+				q->nta = StartGetZoneData(m, &q->qname, ZoneServiceLLQ, LLQGotZoneData, q);
 				}
 			else
 				{
@@ -4647,14 +4448,6 @@ mDNSlocal void RestartQueries(mDNS *m)
 			}
 		}
 	m->CurrentQuestion = mDNSNULL;
-	}
-
-mDNSexport void mDNS_UpdateLLQs(mDNS *m)
-	{
-	mDNS_Lock(m);
-	SuspendLLQs(m, mDNStrue);
-	RestartQueries(m);
-	mDNS_Unlock(m);
 	}
 
 // simplest sleep logic - rather than having sleep states that must be dealt with explicitly in all parts of

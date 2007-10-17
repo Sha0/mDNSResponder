@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.446  2007/10/17 22:49:54  cheshire
+<rdar://problem/5519458> BTMM: Machines don't appear in the sidebar on wake from sleep
+
 Revision 1.445  2007/10/17 22:37:23  cheshire
 <rdar://problem/5536979> BTMM: Need to create NAT port mapping for receiving LLQ events
 
@@ -1605,24 +1608,10 @@ typedef struct
 
 typedef enum
 	{
-	// Setup states
-	LLQ_UnInit            = 0,
-	LLQ_GetZoneInfo       = 1,
-	LLQ_InitialRequest    = 2,
-	LLQ_SecondaryRequest  = 3,
-	LLQ_Refresh           = 4,
-	LLQ_Retry             = 5,
-	LLQ_Established       = 6,
-	LLQ_Suspended         = 7,
-	LLQ_SuspendDeferred   = 8, // suspend once we get zone info
-	LLQ_SuspendedPoll     = 9, // suspended from polling state
-	LLQ_NatMapWaitUDP     = 10,
-
-	// Established/error states
-	LLQ_Static            = 16,
-	LLQ_Poll              = 17,
-	LLQ_Error             = 18,
-	LLQ_Cancelled         = 19
+	LLQ_InitialRequest    = 1,
+	LLQ_SecondaryRequest  = 2,
+	LLQ_Established       = 3,
+	LLQ_Poll              = 4
 	} LLQ_State;
 
 // LLQ constants
@@ -1632,7 +1621,6 @@ typedef enum
 #define kLLQ_DefLease  7200 // 2 hours
 #define kLLQ_MAX_TRIES 3    // retry an operation 3 times max
 #define kLLQ_INIT_RESEND 2 // resend an un-ack'd packet after 2 seconds, then double for each additional
-#define kLLQ_DEF_RETRY 1800 // retry a failed operation after 30 minutes
 // LLQ Operation Codes
 #define kLLQOp_Setup     1
 #define kLLQOp_Refresh   2
@@ -2409,10 +2397,6 @@ extern mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 // Host domains added prior to specification of the primary interface address and computer name will be deferred until
 // these values are initialized.
 
-// When routable V4 interfaces are added or removed, mDNS_UpdateLLQs should be called to re-estabish LLQs in case the
-// destination address for events (i.e. the route) has changed.  For performance reasons, the caller is responsible for
-// batching changes, e.g.  calling the routine only once if multiple interfaces are simultanously removed or added.
-
 // DNS servers used to resolve unicast queries are specified by mDNS_AddDNSServer.
 // For "split" DNS configurations, in which queries for different domains are sent to different servers (e.g. VPN and external),
 // a domain may be associated with a DNS server.  For standard configurations, specify the root label (".") or NULL.
@@ -2420,7 +2404,6 @@ extern mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 extern void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSRecordCallback *StatusCallback, const void *StatusContext);
 extern void mDNS_RemoveDynDNSHostName(mDNS *m, const domainname *fqdn);
 extern void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr,  const mDNSAddr *v6addr, const mDNSAddr *router);
-extern void mDNS_UpdateLLQs(mDNS *m);
 extern DNSServer *mDNS_AddDNSServer(mDNS *const m, const domainname *d, const mDNSInterfaceID interface, const mDNSAddr *addr, const mDNSIPPort port);
 extern void mDNS_AddSearchDomain(const domainname *const domain);
 

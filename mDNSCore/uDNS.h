@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.84  2007/10/17 22:49:54  cheshire
+<rdar://problem/5519458> BTMM: Machines don't appear in the sidebar on wake from sleep
+
 Revision 1.83  2007/10/17 22:37:23  cheshire
 <rdar://problem/5536979> BTMM: Need to create NAT port mapping for receiving LLQ events
 
@@ -214,11 +217,11 @@ Revision 1.33  2006/07/05 22:53:28  cheshire
 
 extern void LLQGotZoneData(mDNS *const m, mStatus err, const ZoneData *zoneInfo);
 extern void startLLQHandshake(mDNS *m, DNSQuestion *q);
-extern void uDNS_StopLongLivedQuery(mDNS *const m, DNSQuestion *const question);
+extern void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease);
 
 extern void uDNS_Wake(mDNS *const m);
 
-extern void SuspendLLQs(mDNS *m, mDNSBool DeregisterActive);
+extern void SuspendLLQs(mDNS *m);
 extern void SleepServiceRegistrations(mDNS *m);
 extern void SleepRecordRegistrations(mDNS *m);
 
@@ -266,7 +269,6 @@ extern mStatus         uDNS_RegisterSearchDomains(mDNS *const m);
 typedef enum
 	{
 	uDNS_LLQ_Not = 0,	// Normal uDNS answer: Flush any stale records from cache, and respect record TTL
-	uDNS_LLQ_Poll,		// LLQ Poll: Flush any stale records from cache, but assume TTL is 2 x poll interval
 	uDNS_LLQ_Setup,		// LLQ Initial answer packet: Flush any stale records from cache; assume TTL is 2 x LLQ refresh interval
 	uDNS_LLQ_Events		// LLQ event packet: don't flush cache; assume TTL is 2 x LLQ refresh interval
 	} uDNS_LLQType;

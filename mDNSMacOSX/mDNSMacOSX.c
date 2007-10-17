@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.500  2007/10/17 22:49:55  cheshire
+<rdar://problem/5519458> BTMM: Machines don't appear in the sidebar on wake from sleep
+
 Revision 1.499  2007/10/17 19:47:54  cheshire
 Improved debugging messages
 
@@ -3514,8 +3517,8 @@ mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 	mDNSs32 utc = mDNSPlatformUTC();
 	MarkAllInterfacesInactive(m, utc);
 	UpdateInterfaceList(m, utc);
-	int nDeletions = ClearInactiveInterfaces(m, utc);
-	int nAdditions = SetupActiveInterfaces(m, utc);
+	ClearInactiveInterfaces(m, utc);
+	SetupActiveInterfaces(m, utc);
 
 	#if APPLE_OSX_mDNSResponder
 		{
@@ -3549,8 +3552,7 @@ mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 		}
 	#endif APPLE_OSX_mDNSResponder
 
-	uDNS_SetupDNSConfig(m);                           // note - call DynDNSConfigChanged *before* mDNS_UpdateLLQs
-	if (nDeletions || nAdditions) mDNS_UpdateLLQs(m); // so that LLQs are restarted against the up to date name servers
+	uDNS_SetupDNSConfig(m);
 
 	if (m->MainCallback)
 		m->MainCallback(m, mStatus_ConfigChanged);
