@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.731  2007/10/17 18:37:50  cheshire
+<rdar://problem/5539930> Goodbye packets not being sent for services on shutdown
+Further refinement: pre-increment m->CurrentRecord before calling mDNS_Deregister_internal()
+
 Revision 1.730  2007/10/16 21:16:07  cheshire
 <rdar://problem/5539930> Goodbye packets not being sent for services on shutdown
 
@@ -6969,10 +6973,9 @@ mDNSexport void mDNS_Close(mDNS *const m)
 	while (m->CurrentRecord)
 		{
 		rr = m->CurrentRecord;
+		m->CurrentRecord = rr->next;
 		if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
 			mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
-		else
-			m->CurrentRecord = rr->next;
 		}
 
 	// Now deregister any remaining records we didn't get the first time through
@@ -6980,10 +6983,9 @@ mDNSexport void mDNS_Close(mDNS *const m)
 	while (m->CurrentRecord)
 		{
 		rr = m->CurrentRecord;
+		m->CurrentRecord = rr->next;
 		if (rr->resrec.RecordType != kDNSRecordTypeDeregistering)
 			mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
-		else
-			m->CurrentRecord = rr->next;
 		}
 
 	if (m->ResourceRecords) debugf("mDNS_Close: Sending final packets for deregistering records");
