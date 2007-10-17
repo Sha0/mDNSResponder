@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.345  2007/10/17 18:41:21  cheshire
+For debugging, make SIGUSR1 simulate a KeychainChanged event as well as a NetworkChanged
+
 Revision 1.344  2007/09/29 01:06:17  mcguire
 <rdar://problem/5507862> 9A564: mDNSResponder crash in mDNS_Execute
 
@@ -2042,11 +2045,11 @@ mDNSlocal void SignalCallback(CFMachPortRef port, void *msg, CFIndex size, void 
 	(void)size;		// Unused
 	(void)info;		// Unused
 	mach_msg_header_t *msg_header = (mach_msg_header_t *)msg;
-	KQueueLock(&mDNSStorage);
+	mDNS *const m = &mDNSStorage;
+	KQueueLock(m);
 	switch(msg_header->msgh_id)
 		{
 		case SIGHUP:	{
-						mDNS *m = &mDNSStorage;
 						mDNSu32 slot;
 						CacheGroup *cg;
 						CacheRecord *rr;
@@ -2057,11 +2060,18 @@ mDNSlocal void SignalCallback(CFMachPortRef port, void *msg, CFIndex size, void 
 		case SIGTERM:	ExitCallback(msg_header->msgh_id); break;
 		case SIGINFO:	INFOCallback(); break;
 		case SIGUSR1:	LogMsg("SIGUSR1: Simulate Network Configuration Change Event");
-						mDNSMacOSXNetworkChanged(&mDNSStorage); break;
+						mDNSMacOSXNetworkChanged(m);
+
+						// Simulate KeychainChanged
+						mDNS_Lock(m);
+						SetDomainSecrets(m);
+						mDNS_Unlock(m);
+
+						break;
 		case SIGUSR2:	SigLogLevel(); break;
 		default: LogMsg("SignalCallback: Unknown signal %d", msg_header->msgh_id); break;
 		}
-	KQueueUnlock(&mDNSStorage, "Unix Signal");
+	KQueueUnlock(m, "Unix Signal");
 	}
 
 // On 10.2 the MachServerName is DNSServiceDiscoveryServer
