@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.733  2007/10/17 22:37:23  cheshire
+<rdar://problem/5536979> BTMM: Need to create NAT port mapping for receiving LLQ events
+
 Revision 1.732  2007/10/17 21:53:51  cheshire
 Improved debugging messages; renamed startLLQHandshakeCallback to LLQGotZoneData
 
@@ -4956,7 +4959,6 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const questi
 
 				q->state             = question->state;
 			//	q->NATInfoUDP        = question->NATInfoUDP;
-				q->eventPort         = question->eventPort;
 			//	q->tcp               = question->tcp;
 				q->origLease         = question->origLease;
 				q->expire            = question->expire;
@@ -5030,6 +5032,17 @@ mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question)
 			question->LastQTime     = m->timenow - question->ThisQInterval;
 			}
 		}
+	}
+
+// Called in normal client context (lock not held)
+mDNSlocal void LLQNATCallback(mDNS *m, NATTraversalInfo *n)
+	{
+	DNSQuestion *q;
+	mDNS_Lock(m);
+	LogOperation("LLQNATCallback external address:port %.4a:%u", &n->ExternalAddress, mDNSVal16(n->ExternalPort));
+	for (q = m->Questions; q; q=q->next)
+		if (q->LongLived) startLLQHandshake(m, q);	// If ExternalPort is zero, will do StartLLQPolling instead
+	mDNS_Unlock(m);
 	}
 
 mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const question)
@@ -5139,8 +5152,6 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 		question->NoAnswer          = NoAnswer_Normal;
 
 		question->state             = LLQ_GetZoneInfo;
-		mDNSPlatformMemZero(&question->NATInfoUDP, sizeof(question->NATInfoUDP));
-		question->eventPort         = zeroIPPort;
 		question->origLease         = 0;
 		question->expire            = 0;
 		question->ntries            = 0;
@@ -5176,6 +5187,17 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 				{
 				question->qDNSServer = GetServerForName(m, &question->qname);
 				ActivateUnicastQuery(m, question);
+
+				// If long-lived query, and we don't have our NAT mapping active, start it now
+				if (question->LongLived && !m->LLQNAT.clientContext)
+					{
+					m->LLQNAT.Protocol       = NATOp_MapUDP;
+					m->LLQNAT.IntPort        = m->UnicastPort4;
+					m->LLQNAT.RequestedPort  = m->UnicastPort4;
+					m->LLQNAT.clientCallback = LLQNATCallback;
+					m->LLQNAT.clientContext  = m;	// Must be set non-null so we know this NATTraversalInfo is active
+					mDNS_StartNATOperation_internal(m, &m->LLQNAT);
+					}
 				}
 			SetNextQueryTime(m,question);
 			}
@@ -5266,7 +5288,27 @@ mDNSexport mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const que
 	// *first*, then they're all ready to be updated a second time if necessary when we cancel our GetZoneData query.
 	if (question->nta) CancelGetZoneData(m, question->nta);
 	if (question->tcp) { DisposeTCPConn(question->tcp); question->tcp = mDNSNULL; }
-	if (!mDNSOpaque16IsZero(question->TargetQID) && question->LongLived) uDNS_StopLongLivedQuery(m, question);
+	if (!mDNSOpaque16IsZero(question->TargetQID) && question->LongLived)
+		{
+		// Scan our list to see if any more wide-area LLQs remain. If not, stop our NAT Traversal.
+		DNSQuestion *q;
+		for (q = m->Questions; q; q=q->next)
+			if (!mDNSOpaque16IsZero(q->TargetQID) && q->LongLived) break;
+		if (!q)
+			{
+			if (!m->LLQNAT.clientContext)		// Should never happen, but just in case...
+				LogMsg("mDNS_StopQuery ERROR LLQNAT.clientContext NULL");
+			else
+				{
+				LogOperation("Stopping LLQNAT");
+				mDNS_StopNATOperation_internal(m, &m->LLQNAT);
+				m->LLQNAT.clientContext = mDNSNULL;
+				}
+			}
+
+		// If necessary, tell server it can delete this LLQ state
+		uDNS_StopLongLivedQuery(m, question);
+		}
 
 	return(mStatus_NoError);
 	}

@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.501  2007/10/17 22:37:23  cheshire
+<rdar://problem/5536979> BTMM: Need to create NAT port mapping for receiving LLQ events
+
 Revision 1.500  2007/10/17 21:53:51  cheshire
 Improved debugging messages; renamed startLLQHandshakeCallback to LLQGotZoneData
 
@@ -1466,20 +1469,6 @@ mDNSlocal void StartLLQPolling(mDNS *const m, DNSQuestion *q)
 	SetNextQueryTime(m, q);
 	}
 
-// Forward reference
-mDNSlocal void LLQNatMapComplete(mDNS *m, NATTraversalInfo *n);
-
-mDNSlocal void StartLLQNatMap(mDNS *m, DNSQuestion *q)
-	{
-	LogOperation("StartLLQNatMap: LLQ_NatMapWaitUDP");
-	mDNSPlatformMemZero(&q->NATInfoUDP, sizeof(NATTraversalInfo));
-	q->NATInfoUDP.IntPort = q->NATInfoUDP.RequestedPort = m->UnicastPort4;
-	q->NATInfoUDP.Protocol = NATOp_MapUDP;
-	q->NATInfoUDP.clientCallback = LLQNatMapComplete;
-	q->NATInfoUDP.clientContext = q;	// Must be set non-null so we know this NATTraversalInfo object is in use
-	mDNS_StartNATOperation_internal(m, &q->NATInfoUDP);
-	}
-
 mDNSlocal mDNSu8 *putLLQ(DNSMessage *const msg, mDNSu8 *ptr, const DNSQuestion *const question, const LLQOptData *const data, mDNSBool includeQuestion)
 	{
 	AuthRecord rr;
@@ -1798,7 +1787,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			mDNS_Unlock(m);
 			return;
 			}
-		else if (tcpInfo->question && tcpInfo->question->LongLived && tcpInfo->question->state != LLQ_Poll)
+		else if (tcpInfo->question && tcpInfo->question->LongLived && tcpInfo->question->state != LLQ_Poll && !mDNSIPPortIsZero(m->LLQNAT.ExternalPort))
 			{
 			// Notes:
 			// If we have a NAT port mapping, ExternalPort is the external port
@@ -1808,8 +1797,8 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			llqData.vers  = kLLQ_Vers;
 			llqData.llqOp = kLLQOp_Setup;
 			llqData.err   = LLQErr_NoError;
-			llqData.err   = mDNSVal16(tcpInfo->question->eventPort);		// Tell server our external NAT-mapped UDP port
-			if (llqData.err == 0) llqData.err = 5353;	// If not using NAT, then we need events sent directly to 5353
+			// Get shared external port
+			llqData.err   = mDNSVal16(m->LLQNAT.ExternalPort);	// Tell server what UDP port to send notifications to
 			LogOperation("tcpCallback: eventPort %d", llqData.err);
 			llqData.id    = zeroOpaque64;
 			llqData.llqlease = kLLQ_DefLease;
@@ -2011,40 +2000,20 @@ mDNSexport void DisposeTCPConn(struct tcpInfo_t *tcp)
 	mDNSPlatformMemFree(tcp);
 	}
 
-mDNSlocal void RemoveLLQNatMappings(mDNS *m, DNSQuestion *q)
-	{
-	if (q->NATInfoUDP.clientContext)
-		{
-		mDNS_StopNATOperation_internal(m, &q->NATInfoUDP);
-		q->NATInfoUDP.clientContext = mDNSNULL;
-		}
-	}
-
 // Lock must be held
-mDNSlocal void startLLQHandshake(mDNS *m, DNSQuestion *q)
+mDNSexport void startLLQHandshake(mDNS *m, DNSQuestion *q)
 	{
 	mStatus err = mStatus_NoError;
+
+	if (mDNSIPPortIsZero(m->LLQNAT.ExternalPort))
+		{
+		LogOperation("startLLQHandshake: Cannot receive inbound packets; will poll for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+		StartLLQPolling(m, q);
+		return;
+		}
+
 	if (q->AuthInfo)
 		{
-		LogOperation("startLLQHandshakePrivate Addr %#a%s Server %#a:%d%s %##s (%s) eventport %d",
-			&m->AdvertisedV4,                     mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) ? " (RFC 1918)" : "",
-			&q->servAddr, mDNSVal16(q->servPort), mDNSAddrIsRFC1918(&q->servAddr)             ? " (RFC 1918)" : "",
-			q->qname.c, DNSTypeName(q->qtype), mDNSVal16(q->eventPort));
-
-		if (mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsRFC1918(&q->servAddr))
-			if (q->state == LLQ_InitialRequest)
-				{
-				// start
-				if (!q->NATInfoUDP.clientContext) { q->state = LLQ_NatMapWaitUDP; StartLLQNatMap(m, q); goto exit; }
-				else
-					{
-					LogMsg("startLLQHandshake state == LLQ_InitialRequest but already have NATInfoUDP.clientContext %##s (%s)",
-						q->qname.c, DNSTypeName(q->qtype));
-					err = mStatus_UnknownErr;
-					goto exit;
-					}
-				}
-
 		LogOperation("startLLQHandshake TCP %p %##s (%s)", q->tcp, q->qname.c, DNSTypeName(q->qtype));
 		if (q->tcp) LogMsg("startLLQHandshake: Already have TCP connection for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 		else q->tcp = MakeTCPConn(m, mDNSNULL, mDNSNULL, kTCPSocketFlags_UseTLS, &q->servAddr, q->servPort, q, mDNSNULL, mDNSNULL);
@@ -2068,13 +2037,6 @@ mDNSlocal void startLLQHandshake(mDNS *m, DNSQuestion *q)
 			&m->AdvertisedV4,                     mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) ? " (RFC 1918)" : "",
 			&q->servAddr, mDNSVal16(q->servPort), mDNSAddrIsRFC1918(&q->servAddr)             ? " (RFC 1918)" : "",
 			q->qname.c, DNSTypeName(q->qtype));
-
-		if (mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsRFC1918(&q->servAddr))
-			{
-			// start
-			if (!q->NATInfoUDP.clientContext) { q->state = LLQ_NatMapWaitUDP; StartLLQNatMap(m, q); }
-			else { err = mStatus_UnknownErr; goto exit; }
-			}
 
 		if (q->ntries++ >= kLLQ_MAX_TRIES)
 			{ LogMsg("startLLQHandshake: %d failed attempts for LLQ %##s Polling.", kLLQ_MAX_TRIES, q->qname.c); err = mStatus_UnknownErr; goto exit; }
@@ -2110,40 +2072,6 @@ exit:
 		LogOperation("startLLQHandshake error %d ", err);
 		StartLLQPolling(m, q);
 		}
-	}
-
-// Called in normal client context (lock not held)
-mDNSlocal void LLQNatMapComplete(mDNS *m, NATTraversalInfo *n)
-	{
-	if (m->CurrentQuestion)
-		LogMsg("LLQNatMapComplete: ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
-	m->CurrentQuestion = m->Questions;
-
-	while (m->CurrentQuestion)
-		{
-		DNSQuestion *q = m->CurrentQuestion;
-		m->CurrentQuestion = m->CurrentQuestion->next;
-		if (q->LongLived)
-			{
-			if (q->state == LLQ_NatMapWaitUDP)
-				{
-				if (!n->Result)
-					{
-					q->state = LLQ_GetZoneInfo;
-					q->eventPort = n->ExternalPort;
-					startLLQHandshake(m, q);
-					}
-				else
-					{
-					LogMsg("LLQNatMapComplete error %d Internal %d Requested %d External %d", n->Result,
-						mDNSVal16(q->NATInfoUDP.IntPort), mDNSVal16(q->NATInfoUDP.RequestedPort), mDNSVal16(q->NATInfoUDP.ExternalPort));
-					RemoveLLQNatMappings(m, q);
-					StartLLQPolling(m, q);
-					}
-				}
-			}
-		}
-	m->CurrentQuestion = mDNSNULL;
 	}
 
 mDNSexport const domainname *GetServiceTarget(mDNS *m, ServiceRecordSet *srs)
@@ -2462,24 +2390,6 @@ mDNSexport ZoneData *StartGetZoneData(mDNS *const m, const domainname *const nam
 	mDNS_ReclaimLockAfterCallback();
 
 	return zd;
-	}
-
-// if LLQ NAT context unreferenced, delete the mapping
-mDNSlocal void CheckForUnreferencedLLQMapping(mDNS *m)
-	{
-	NATTraversalInfo *n = m->NATTraversals;
-	DNSQuestion *q;
-
-	while (n)
-		{
-		NATTraversalInfo *current = n;
-		n = n->next;
-		if (current->clientCallback == LLQNatMapComplete)
-			{
-			for (q = m->Questions; q; q = q->next) if (&q->NATInfoUDP == current) break;
-			if (!q) mDNS_StopNATOperation_internal(m, current);
-			}
-		}
 	}
 
 // ***************************************************************************
@@ -4014,9 +3924,6 @@ mDNSexport void uDNS_StopLongLivedQuery(mDNS *const m, DNSQuestion *const questi
 
 		default: debugf("uDNS_StopLongLivedQuery - silently discarding LLQ in state %d", question->state); break;
 		}
-
-	RemoveLLQNatMappings(m, question);
-	CheckForUnreferencedLLQMapping(m);
 	}
 
 // ***************************************************************************
@@ -4697,11 +4604,8 @@ mDNSexport void SuspendLLQs(mDNS *m, mDNSBool DeregisterActive)
 				debugf("Marking %##s suspended-poll", q->qname.c);
 				q->state = LLQ_SuspendedPoll;
 				}
-
-			RemoveLLQNatMappings(m, q); // may not need nat mapping if we restart with new route
 			}
 		}
-	CheckForUnreferencedLLQMapping(m);
 	}
 
 mDNSlocal void RestartQueries(mDNS *m)

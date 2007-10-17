@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.445  2007/10/17 22:37:23  cheshire
+<rdar://problem/5536979> BTMM: Need to create NAT port mapping for receiving LLQ events
+
 Revision 1.444  2007/09/29 03:14:52  cheshire
 <rdar://problem/5513168> BTMM: mDNSResponder memory corruption in GetAuthInfoForName_internal
 Added AutoTunnelUnregistered macro to check state of DomainAuthInfo AuthRecords
@@ -1558,7 +1561,7 @@ struct ServiceRecordSet_struct
 	domainname        zone;						// the zone that is updated
 	mDNSAddr          ns;						// primary name server for the record's zone  !!!KRS not technically correct to cache longer than TTL
 	mDNSIPPort        SRSUpdatePort;			// port on which server accepts dynamic updates
-	NATTraversalInfo  NATinfo;					// may be NULL
+	NATTraversalInfo  NATinfo;
 	mDNSBool          ClientCallbackDeferred;	// invoke client callback on completion of pending operation(s)
 	mStatus           DeferredStatus;			// status to deliver when above flag is set
 	mDNSBool          SRVUpdateDeferred;		// do we need to change target or port once current operation completes?
@@ -1723,8 +1726,6 @@ struct DNSQuestion_struct
 
 	// LLQ-specific fields. These fields are only meaningful when LongLived flag is set
 	LLQ_State             state;
-	NATTraversalInfo      NATInfoUDP;
-	mDNSIPPort            eventPort;		// This is non-zero if this is a private LLQ. If we're behind NAT, it's the external UDP port.
 	mDNSu32               origLease;		// seconds (relative)
 	mDNSs32               expire;			// ticks (absolute)
 	mDNSs16               ntries;
@@ -1943,6 +1944,7 @@ struct mDNS_struct
 	mDNSBool          RegisterSearchDomains;
 
 	// NAT traversal fields
+	NATTraversalInfo  LLQNAT;					// Single shared NAT Traversal to receive inbound LLQ notifications
 	NATTraversalInfo *NATTraversals;
 	NATTraversalInfo *CurrentNATTraversal;
 	mDNSs32           retryIntervalGetAddr;		// delta between time sent and retry
@@ -2660,7 +2662,7 @@ struct CompileTimeAssertionChecks_mDNS
 	char sizecheck_AuthRecord          [(sizeof(AuthRecord)           <=  1290) ? 1 : -1];
 	char sizecheck_CacheRecord         [(sizeof(CacheRecord)          <=   170) ? 1 : -1];
 	char sizecheck_CacheGroup          [(sizeof(CacheGroup)           <=   170) ? 1 : -1];
-	char sizecheck_DNSQuestion         [(sizeof(DNSQuestion)          <=   700) ? 1 : -1];
+	char sizecheck_DNSQuestion         [(sizeof(DNSQuestion)          <=   560) ? 1 : -1];
 	char sizecheck_ZoneData            [(sizeof(ZoneData)             <=  1600) ? 1 : -1];
 	char sizecheck_NATTraversalInfo    [(sizeof(NATTraversalInfo)     <=   140) ? 1 : -1];
 	char sizecheck_HostnameInfo        [(sizeof(HostnameInfo)         <=  3000) ? 1 : -1];

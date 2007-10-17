@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.83  2007/10/17 22:37:23  cheshire
+<rdar://problem/5536979> BTMM: Need to create NAT port mapping for receiving LLQ events
+
 Revision 1.82  2007/10/17 21:53:51  cheshire
 Improved debugging messages; renamed startLLQHandshakeCallback to LLQGotZoneData
 
@@ -210,7 +213,7 @@ Revision 1.33  2006/07/05 22:53:28  cheshire
 // Entry points into unicast-specific routines
 
 extern void LLQGotZoneData(mDNS *const m, mStatus err, const ZoneData *zoneInfo);
-
+extern void startLLQHandshake(mDNS *m, DNSQuestion *q);
 extern void uDNS_StopLongLivedQuery(mDNS *const m, DNSQuestion *const question);
 
 extern void uDNS_Wake(mDNS *const m);
