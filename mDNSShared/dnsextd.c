@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.83  2007/10/17 22:52:26  cheshire
+Get rid of unused mDNS_UpdateLLQs()
+
 Revision 1.82  2007/09/27 17:42:49  cheshire
 Fix naming: for consistency, "kDNSFlag1_RC" should be "kDNSFlag1_RC_Mask"
 
@@ -3236,7 +3239,6 @@ mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 	const domainname *domain, const domainname *keyname, const char *b64keydata, mDNSBool AutoTunnel)
 	{ ( void ) m; ( void ) info; ( void ) domain; ( void ) keyname; ( void ) b64keydata; ( void ) AutoTunnel; return 0; }
 mStatus mDNS_StopQuery(mDNS *const m, DNSQuestion *const question) { ( void ) m; ( void ) question; return 0; }
-void mDNS_UpdateLLQs(mDNS * const m) { ( void ) m; }
 mDNS mDNSStorage;
 
 
