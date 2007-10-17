@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.498  2007/10/17 18:42:06  cheshire
+Export SetDomainSecrets so its callable from other files
+
 Revision 1.497  2007/10/16 17:03:07  cheshire
 <rdar://problem/3557903> Performance: Core code will not work on platforms with small stacks
 Cut SetDomainSecrets stack from 3792 to 1760 bytes
@@ -3261,7 +3264,7 @@ mDNSexport void mDNSPlatformDynDNSHostNameStatusChanged(const domainname *const 
 	}
 
 // MUST be called holding the lock -- this routine calls SetupLocalAutoTunnelInterface_internal()
-mDNSlocal void SetDomainSecrets(mDNS *m)
+mDNSexport void SetDomainSecrets(mDNS *m)
 	{
 #ifdef NO_SECURITYFRAMEWORK
 	(void)m;
