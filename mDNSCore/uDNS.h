@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.82  2007/10/17 21:53:51  cheshire
+Improved debugging messages; renamed startLLQHandshakeCallback to LLQGotZoneData
+
 Revision 1.81  2007/10/16 21:16:50  cheshire
 Get rid of unused uDNS_Sleep() routine
 
@@ -206,7 +209,7 @@ Revision 1.33  2006/07/05 22:53:28  cheshire
 
 // Entry points into unicast-specific routines
 
-extern void startLLQHandshakeCallback(mDNS *const m, mStatus err, const ZoneData *zoneInfo);
+extern void LLQGotZoneData(mDNS *const m, mStatus err, const ZoneData *zoneInfo);
 
 extern void uDNS_StopLongLivedQuery(mDNS *const m, DNSQuestion *const question);
 

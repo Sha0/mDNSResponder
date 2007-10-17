@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.500  2007/10/17 21:53:51  cheshire
+Improved debugging messages; renamed startLLQHandshakeCallback to LLQGotZoneData
+
 Revision 1.499  2007/10/16 21:16:50  cheshire
 Get rid of unused uDNS_Sleep() routine
 
@@ -1453,6 +1456,7 @@ mDNSexport mStatus mDNS_StopNATOperation(mDNS *m, NATTraversalInfo *traversal)
 #pragma mark - Long-Lived Queries
 #endif
 
+// Lock must be held -- otherwise m->timenow is undefined
 mDNSlocal void StartLLQPolling(mDNS *const m, DNSQuestion *q)
 	{
 	LogOperation("StartLLQPolling: %##s", q->qname.c);
@@ -1677,8 +1681,6 @@ exit:
 		}
 	}
 
-// Returns mDNStrue if mDNSCoreReceiveResponse should treat this packet as a series of add/remove instructions (like an mDNS response)
-// Returns mDNSfalse if mDNSCoreReceiveResponse should treat this as a single authoritative result (like a normal unicast DNS response)
 mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *const srcaddr, const mDNSIPPort srcport)
 	{
 	DNSQuestion pktQ, *q;
@@ -1798,6 +1800,10 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			}
 		else if (tcpInfo->question && tcpInfo->question->LongLived && tcpInfo->question->state != LLQ_Poll)
 			{
+			// Notes:
+			// If we have a NAT port mapping, ExternalPort is the external port
+			// If we have a routable address so we don't need a port mapping, ExternalPort is the same as our own internal port
+			// If we need a NAT port mapping but can't get one, then ExternalPort is zero
 			LLQOptData llqData;			// set llq rdata
 			llqData.vers  = kLLQ_Vers;
 			llqData.llqOp = kLLQOp_Setup;
@@ -1810,7 +1816,6 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			InitializeDNSMessage(&tcpInfo->request.h, tcpInfo->question->TargetQID, uQueryFlags);
 			//LogMsg("tcpCallback: putLLQ %p", AuthInfo);
 			end = putLLQ(&tcpInfo->request, tcpInfo->request.data, tcpInfo->question, &llqData, mDNStrue);
-
 			if (!end) { LogMsg("ERROR: tcpCallback - putLLQ"); err = mStatus_UnknownErr; goto exit; }
 			}
 		else if (tcpInfo->question)
@@ -1921,10 +1926,10 @@ exit:
 				q->ThisQInterval = MAX_UCAST_POLL_INTERVAL;
 				SetNextQueryTime(m, q);
 				}
-			mDNS_Unlock(m);
 			// ConnFailed is actually okay.  It just means that the server closed the connection but the LLQ is still okay.
 			// If the error isn't ConnFailed, then the LLQ is in bad shape.
 			if (err != mStatus_ConnFailed) tcpInfo->question->state = LLQ_Error;
+			mDNS_Unlock(m);
 			}
 
 		if (tcpInfo->rr)
@@ -2015,6 +2020,7 @@ mDNSlocal void RemoveLLQNatMappings(mDNS *m, DNSQuestion *q)
 		}
 	}
 
+// Lock must be held
 mDNSlocal void startLLQHandshake(mDNS *m, DNSQuestion *q)
 	{
 	mStatus err = mStatus_NoError;
@@ -2058,10 +2064,10 @@ mDNSlocal void startLLQHandshake(mDNS *m, DNSQuestion *q)
 		mDNSu8 *end;
 		LLQOptData llqData;
 
-		LogOperation("startLLQHandshake Addr %#a%s Server %#a:%d%s %##s (%s) RequestedPort %d",
+		LogOperation("startLLQHandshake Addr %#a%s Server %#a:%d%s %##s (%s)",
 			&m->AdvertisedV4,                     mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) ? " (RFC 1918)" : "",
 			&q->servAddr, mDNSVal16(q->servPort), mDNSAddrIsRFC1918(&q->servAddr)             ? " (RFC 1918)" : "",
-			q->qname.c, DNSTypeName(q->qtype), mDNSVal16(q->NATInfoUDP.RequestedPort));
+			q->qname.c, DNSTypeName(q->qtype));
 
 		if (mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsRFC1918(&q->servAddr))
 			{
@@ -2356,7 +2362,7 @@ mDNSexport void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *questio
 			}
 		else
 			{
-			LogMsg("ERROR: GetZoneData_QuestionCallback - recursed to root label of %##s without finding SOA", zd->ChildName.c);
+			LogOperation("ERROR: GetZoneData_QuestionCallback - recursed to root label of %##s without finding SOA", zd->ChildName.c);
 			zd->ZoneDataCallback(m, mStatus_NoSuchNameErr, zd);
 			mDNSPlatformMemFree(zd);
 			}
@@ -2406,9 +2412,9 @@ mDNSlocal mStatus GetZoneData_StartQuery(mDNS *const m, ZoneData *zd, mDNSu16 qt
 	{
 	if (qtype == kDNSType_SRV)
 		{
-		LogOperation("lookupDNSPort %##s", ZoneDataSRV(zd));
 		AssignDomainName(&zd->question.qname, ZoneDataSRV(zd));
 		AppendDomainName(&zd->question.qname, &zd->ZoneName);
+		LogOperation("lookupDNSPort %##s", zd->question.qname.c);
 		}
 
 	zd->question.ThisQInterval       = -1;		// So that GetZoneData_QuestionCallback() knows whether to cancel this question (Is this necessary?)
@@ -2576,7 +2582,10 @@ mDNSexport void ServiceRegistrationZoneDataComplete(mDNS *const m, mStatus err, 
 		srs->srs_uselease = mDNSfalse;
 		}
 
-	LogOperation("ServiceRegistrationZoneDataComplete %#a %d %#a %d", &m->AdvertisedV4, mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4), &srs->ns, mDNSAddrIsRFC1918(&srs->ns));
+	LogOperation("ServiceRegistrationZoneDataComplete My IPv4 %#a%s Server %#a:%d%s for %##s",
+		&m->AdvertisedV4, mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) ? " (RFC1918)" : "",
+		&srs->ns, mDNSVal16(srs->SRSUpdatePort), mDNSAddrIsRFC1918(&srs->ns) ? " (RFC1918)" : "",
+		srs->RR_SRV.resrec.name->c);
 
 	if (!mDNSIPPortIsZero(srs->RR_SRV.resrec.rdata->u.srv.port) &&
 		mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsRFC1918(&srs->ns) &&
@@ -3739,26 +3748,25 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 		{
 		//if (srcaddr && recvLLQResponse(m, msg, end, srcaddr, srcport)) return;
 		if (uDNS_ReceiveTestQuestionResponse(m, msg, end, srcaddr, srcport)) return;
-		if (!mDNSOpaque16IsZero(msg->h.id))
-			for (qptr = m->Questions; qptr; qptr = qptr->next)
-				if (msg->h.flags.b[0] & kDNSFlag0_TC && mDNSSameOpaque16(qptr->TargetQID, msg->h.id) && m->timenow - qptr->LastQTime < RESPONSE_WINDOW)
+		for (qptr = m->Questions; qptr; qptr = qptr->next)
+			if (msg->h.flags.b[0] & kDNSFlag0_TC && mDNSSameOpaque16(qptr->TargetQID, msg->h.id) && m->timenow - qptr->LastQTime < RESPONSE_WINDOW)
+				{
+				if (!srcaddr) LogMsg("uDNS_ReceiveMsg: TCP DNS response had TC bit set: ignoring");
+				else if (qptr->tcp)
 					{
-					if (!srcaddr) LogMsg("uDNS_ReceiveMsg: TCP DNS response had TC bit set: ignoring");
-					else if (qptr->tcp)
-						{
-						// There may be a race condition here, if the server decides to drop the connection just as we decide to reuse it
-						// For now it should not be serious because our normal retry logic (as used to handle UDP packet loss)
-						// should take care of it but later we may want to look at handling this case explicitly
-						LogOperation("uDNS_ReceiveMsg: Using existing TCP connection for %##s (%s)", qptr->qname.c, DNSTypeName(qptr->qtype));
-						mDNS_DropLockBeforeCallback();
-						tcpCallback(qptr->tcp->sock, qptr->tcp, mDNStrue, mStatus_NoError);
-						mDNS_ReclaimLockAfterCallback();
-						}
-					else qptr->tcp = MakeTCPConn(m, mDNSNULL, mDNSNULL, kTCPSocketFlags_Zero, srcaddr, srcport, qptr, mDNSNULL, mDNSNULL);
+					// There may be a race condition here, if the server decides to drop the connection just as we decide to reuse it
+					// For now it should not be serious because our normal retry logic (as used to handle UDP packet loss)
+					// should take care of it but later we may want to look at handling this case explicitly
+					LogOperation("uDNS_ReceiveMsg: Using existing TCP connection for %##s (%s)", qptr->qname.c, DNSTypeName(qptr->qtype));
+					mDNS_DropLockBeforeCallback();
+					tcpCallback(qptr->tcp->sock, qptr->tcp, mDNStrue, mStatus_NoError);
+					mDNS_ReclaimLockAfterCallback();
 					}
+				else qptr->tcp = MakeTCPConn(m, mDNSNULL, mDNSNULL, kTCPSocketFlags_Zero, srcaddr, srcport, qptr, mDNSNULL, mDNSNULL);
+				}
 		}
 
-	if (QR_OP == UpdateR && !mDNSOpaque16IsZero(msg->h.id))
+	if (QR_OP == UpdateR)
 		{
 		mDNSu32 lease = GetPktLease(m, msg, end);
 		mDNSs32 expire = (m->timenow + (((mDNSs32)lease * mDNSPlatformOneSecond)) * 3/4);
@@ -3865,8 +3873,7 @@ mDNSlocal void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 	SetNextQueryTime(m, q);
 	}
 
-// wrapper for startLLQHandshake, invoked by async op callback
-mDNSexport void startLLQHandshakeCallback(mDNS *const m, mStatus err, const ZoneData *zoneInfo)
+mDNSexport void LLQGotZoneData(mDNS *const m, mStatus err, const ZoneData *zoneInfo)
 	{
 	DNSQuestion *q = (DNSQuestion *)zoneInfo->ZoneDataContext;
 
@@ -3879,7 +3886,7 @@ mDNSexport void startLLQHandshakeCallback(mDNS *const m, mStatus err, const Zone
 	if (q->state == LLQ_Cancelled)
 		{
 		// StopQuery was called while we were getting the zone info
-		debugf("startLLQHandshakeCallback - LLQ Cancelled.");
+		debugf("LLQGotZoneData - LLQ Cancelled.");
 		return;
 		}
 
@@ -3887,14 +3894,14 @@ mDNSexport void startLLQHandshakeCallback(mDNS *const m, mStatus err, const Zone
 
 	if (q->state != LLQ_GetZoneInfo)
 		{
-		LogMsg("ERROR: startLLQHandshakeCallback - bad state %d", q->state);
+		LogMsg("ERROR: LLQGotZoneData - bad state %d", q->state);
 		err = mStatus_UnknownErr;
 		goto exit;
 		}
 
 	if (err)
 		{
-		LogMsg("ERROR: startLLQHandshakeCallback %##s (%s) invoked with error code %ld", q->qname.c, DNSTypeName(q->qtype), err);
+		LogMsg("ERROR: LLQGotZoneData %##s (%s) invoked with error code %ld", q->qname.c, DNSTypeName(q->qtype), err);
 		StartLLQPolling(m, q);
 		err = mStatus_NoError;
 		goto exit;
@@ -3902,7 +3909,7 @@ mDNSexport void startLLQHandshakeCallback(mDNS *const m, mStatus err, const Zone
 
 	if (!zoneInfo)
 		{
-		LogMsg("ERROR: startLLQHandshakeCallback invoked with NULL result and no error code");
+		LogMsg("ERROR: LLQGotZoneData invoked with NULL result and no error code");
 		err = mStatus_UnknownErr;
 		goto exit;
 		}
@@ -4038,8 +4045,7 @@ mDNSexport void RecordRegistrationCallback(mDNS *const m, mStatus err, const Zon
 
 	if (newRR->resrec.rrclass != zoneData->ZoneClass)
 		{
-		LogMsg("ERROR: New resource record's class (%d) does not match zone class (%d)",
-			   newRR->resrec.rrclass, zoneData->ZoneClass);
+		LogMsg("ERROR: New resource record's class (%d) does not match zone class (%d)", newRR->resrec.rrclass, zoneData->ZoneClass);
 		goto error;
 		}
 
@@ -4416,7 +4422,10 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 			// a transient failure indication to the client. This is important for things like iPhone
 			// where we want to return timely feedback to the user when no network is available.
 			// After calling MakeNegativeCacheRecord() we store the resulting record in the
-			// cache so that it will be visible to other clients asking the same question
+			// cache so that it will be visible to other clients asking the same question.
+			// (When we have a group of identical questions, only the active representative of the group gets
+			// passed to uDNS_CheckCurrentQuestion -- we only want one set of query packets hitting the wire --
+			// but we want *all* of the questions to get answer callbacks.)
 
 			CacheRecord *rr;
 			const mDNSu32 slot = HashSlot(&q->qname);
@@ -4425,7 +4434,7 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 				for (rr = cg->members; rr; rr=rr->next)
 					if (SameNameRecordAnswersQuestion(&rr->resrec, q)) mDNS_PurgeCacheResourceRecord(m, rr);
 
-			if (!q->qDNSServer) LogMsg("uDNS_CheckCurrentQuestion no DNS server for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+			if (!q->qDNSServer) LogOperation("uDNS_CheckCurrentQuestion no DNS server for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 			else LogMsg("uDNS_CheckCurrentQuestion DNS server %#a:%d for %##s is disabled", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qname.c);
 
 			MakeNegativeCacheRecord(m, &q->qname, q->qnamehash, q->qtype, q->qclass, 60);
@@ -4538,7 +4547,7 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 					cur->Result != cur->NewResult)
 					{
 					//LogMsg("NAT callback %d %d %d", cur->Protocol, cur->ExpiryTime, cur->retryInterval);
-					if (cur->Protocol && mDNSIPPortIsZero(ExternalPort))
+					if (cur->Protocol && mDNSIPPortIsZero(ExternalPort) && !mDNSIPv4AddressIsZero(m->Router.ip.v4))
 						LogMsg("Failed to obtain NAT port mapping from router %#a external address %.4a internal port %d",
 							&m->Router, &m->ExternalAddress, mDNSVal16(cur->IntPort));
 					cur->ExternalAddress = m->ExternalAddress;
@@ -4722,7 +4731,7 @@ mDNSlocal void RestartQueries(mDNS *m)
 					q->ntries = 0;
 					q->state = LLQ_GetZoneInfo;
 					if (q->nta) CancelGetZoneData(m, q->nta); // Make sure we cancel old one before we start a new one
-					q->nta = StartGetZoneData(m, &q->qname, ZoneServiceLLQ, startLLQHandshakeCallback, q);
+					q->nta = StartGetZoneData(m, &q->qname, ZoneServiceLLQ, LLQGotZoneData, q);
 					}
 				}
 			else

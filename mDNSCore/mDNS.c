@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.732  2007/10/17 21:53:51  cheshire
+Improved debugging messages; renamed startLLQHandshakeCallback to LLQGotZoneData
+
 Revision 1.731  2007/10/17 18:37:50  cheshire
 <rdar://problem/5539930> Goodbye packets not being sent for services on shutdown
 Further refinement: pre-increment m->CurrentRecord before calling mDNS_Deregister_internal()
@@ -757,6 +760,10 @@ mDNSexport void SetNextQueryTime(mDNS *const m, const DNSQuestion *const q)
 	{
 	if (m->mDNS_busy != m->mDNS_reentrancy+1)
 		LogMsg("SetNextQueryTime: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
+
+#if ForceAlerts
+	if (m->mDNS_busy != m->mDNS_reentrancy+1) *(long*)0 = 0;
+#endif
 
 	if (ActiveQuestion(q))
 		{
@@ -4767,7 +4774,7 @@ exit:
 					RefreshCacheRecord(m, rr, negttl);
 				else while (1)
 					{
-					LogOperation("Making negative cache entry TTL %d for %##s (%s)", negttl, name->c, DNSTypeName(q.qtype));
+					LogOperation("mDNSCoreReceiveResponse making negative cache entry TTL %d for %##s (%s)", negttl, name->c, DNSTypeName(q.qtype));
 					MakeNegativeCacheRecord(m, name, hash, q.qtype, q.qclass, negttl);
 					CreateNewCacheEntry(m, slot, cg);
 					m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
@@ -4868,13 +4875,14 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 	m->PktNum++;
 #ifndef UNICAST_DISABLED
 	if (!dstaddr || (!mDNSAddressIsAllDNSLinkGroup(dstaddr) && (QR_OP == StdR || QR_OP == UpdR)))
-		{
-		if (!mDNSOpaque16IsZero(msg->h.id)) ifid = mDNSInterface_Any;
-		if (mDNS_LogLevel >= MDNS_LOG_VERBOSE_DEBUG)
-			DumpPacket(m, mDNSfalse, TLS ? "TLS" : !dstaddr ? "TCP" : "UDP", srcaddr, srcport, msg, end);
-		uDNS_ReceiveMsg(m, msg, end, srcaddr, srcport);
-		// Note: mDNSCore also needs to get access to received unicast responses
-		}
+		if (!mDNSOpaque16IsZero(msg->h.id)) // uDNS_ReceiveMsg only needs to get real uDNS responses, not "QU" mDNS responses
+			{
+			ifid = mDNSInterface_Any;
+			if (mDNS_LogLevel >= MDNS_LOG_VERBOSE_DEBUG)
+				DumpPacket(m, mDNSfalse, TLS ? "TLS" : !dstaddr ? "TCP" : "UDP", srcaddr, srcport, msg, end);
+			uDNS_ReceiveMsg(m, msg, end, srcaddr, srcport);
+			// Note: mDNSCore also needs to get access to received unicast responses
+			}
 #endif
 	if      (QR_OP == StdQ) mDNSCoreReceiveQuery   (m, msg, end, srcaddr, srcport, dstaddr, dstport, ifid);
 	else if (QR_OP == StdR) mDNSCoreReceiveResponse(m, msg, end, srcaddr, srcport, dstaddr, dstport, ifid);
@@ -5009,11 +5017,11 @@ mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question)
 			{
 			question->ThisQInterval = 0;	// Question is suspended, waiting for GetZoneData to complete
 			question->LastQTime     = m->timenow;
-			LogOperation("uDNS_InitLongLivedQuery: %##s %s %s %d",
-				question->qname.c, DNSTypeName(question->qtype), question->AuthInfo ? "(Private)" : "", question->ThisQInterval);
+			LogOperation("ActivateUnicastQuery: %##s %s%s",
+				question->qname.c, DNSTypeName(question->qtype), question->AuthInfo ? " (Private)" : "");
 			if (question->nta) CancelGetZoneData(m, question->nta);
 			question->state = LLQ_GetZoneInfo;		// Necessary to stop "bad state" error in startLLQHandshakeCallback
-			question->nta = StartGetZoneData(m, &question->qname, ZoneServiceLLQ, startLLQHandshakeCallback, question);
+			question->nta = StartGetZoneData(m, &question->qname, ZoneServiceLLQ, LLQGotZoneData, question);
 			if (!question->nta) LogMsg("ERROR: startLLQ - StartGetZoneData failed");
 			}
 		else
@@ -6853,7 +6861,13 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 	// If we have no DNS servers at all, then immediately purge all unicast cache records (including for LLQs)
 	// This is important for giving prompt remove events when the user disconnects the Ethernet cable or turns off wireless
 	// Otherwise, stale data lingers for 5-10 seconds, which is not the user-experience people expect from Bonjour
-	if (!m->DNSServers) FORALL_CACHERECORDS(slot, cg, cr) if (!cr->resrec.InterfaceID) mDNS_PurgeCacheResourceRecord(m, cr);
+	if (!m->DNSServers)
+		{
+		int count = 0;
+		FORALL_CACHERECORDS(slot, cg, cr) if (!cr->resrec.InterfaceID) { mDNS_PurgeCacheResourceRecord(m, cr); count++; }
+		LogOperation("uDNS_SetupDNSConfig: %s available; purged %d unicast DNS records from cache",
+			m->DNSServers ? "DNS server became" : "No DNS servers", count);
+		}
 
 	// Did our FQDN change?
 	if (!SameDomainName(&fqdn, &m->FQDN))
