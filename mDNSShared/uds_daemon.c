@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.370  2007/10/17 18:44:23  cheshire
+<rdar://problem/5539930> Goodbye packets not being sent for services on shutdown
+
 Revision 1.369  2007/10/16 17:18:27  cheshire
 Fixed Posix compile errors
 
@@ -2053,7 +2056,16 @@ mDNSlocal void udsserver_automatic_browse_domain_changed(const DNameListElem *co
 mDNSlocal void FreeARElemCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
 	{
 	(void)m;  // unused
-	if (result == mStatus_MemFree) mDNSPlatformMemFree(rr->RecordContext);
+	if (result == mStatus_MemFree)
+		{
+		// On shutdown, mDNS_Close automatically deregisters all records
+		// Since in this case no one has called DeregisterLocalOnlyDomainEnumPTR to cut the record
+		// from the LocalDomainEnumRecords list, we do this here before we free the memory.
+		ARListElem **ptr = &LocalDomainEnumRecords;
+		while (*ptr && &(*ptr)->ar != rr) ptr = &(*ptr)->next;
+		if (*ptr) *ptr = (*ptr)->next;
+		mDNSPlatformMemFree(rr->RecordContext);
+		}
 	}
 
 mDNSlocal void RegisterLocalOnlyDomainEnumPTR(mDNS *m, const domainname *d, int type)
