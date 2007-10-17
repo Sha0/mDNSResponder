@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.499  2007/10/17 19:47:54  cheshire
+Improved debugging messages
+
 Revision 1.498  2007/10/17 18:42:06  cheshire
 Export SetDomainSecrets so its callable from other files
 
@@ -943,6 +946,9 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 	else
 		{
 		LogMsg("mDNSPlatformSendUDP: dst is not an IPv4 or IPv6 address!");
+#if ForceAlerts
+		*(long*)0 = 0;
+#endif
 		return mStatus_BadParamErr;
 		}
 
@@ -2842,7 +2848,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 			}
 		else
 			{
-			LogOperation("mDNSPlatformSetDNSConfig: Registering %d resolvers", config->n_resolver);
+			LogOperation("mDNSPlatformSetDNSConfig: config->n_resolver = %d", config->n_resolver);
 			if (setservers)
 				{
 				for (i = 0; i < config->n_resolver; i++)
