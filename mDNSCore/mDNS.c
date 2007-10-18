@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.736  2007/10/18 20:23:17  cheshire
+Moved SuspendLLQs into mDNS.c, since it's only called from one place
+
 Revision 1.735  2007/10/18 00:12:34  cheshire
 Fixed "unused variable" compiler warning
 
@@ -3423,6 +3426,21 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 #endif
 	mDNS_Unlock(m);		// Calling mDNS_Unlock is what gives m->NextScheduledEvent its new value
 	return(m->NextScheduledEvent);
+	}
+
+mDNSlocal void SuspendLLQs(mDNS *m)
+	{
+	DNSQuestion *q;
+	for (q = m->Questions; q; q = q->next)
+		if (ActiveQuestion(q) && !mDNSOpaque16IsZero(q->TargetQID) && q->LongLived)
+			{
+			// If necessary, tell server it can delete this LLQ state
+			if (q->state == LLQ_Established) sendLLQRefresh(m, q, 0);
+			if (q->nta) { CancelGetZoneData(m, q->nta); q->nta = mDNSNULL; }
+			if (q->tcp) { DisposeTCPConn(q->tcp); q->tcp = mDNSNULL; }
+			q->state = LLQ_InitialRequest;	// Will need to set up new LLQ on wake from sleep
+			q->id = zeroOpaque64;
+			}
 	}
 
 // Call mDNSCoreMachineSleep(m, mDNStrue) when the machine is about to go to sleep.
@@ -6876,12 +6894,13 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 		if (!mDNSOpaque16IsZero(q->TargetQID))
 			{
 			DNSServer *s = GetServerForName(m, &q->qname);
-			if (q->qDNSServer != s)
+			DNSServer *t = q->qDNSServer;
+			if (t != s)
 				{
 				// If DNS Server for this question has changed, reactivate it
-				LogOperation("Updating DNS Server from %#a:%d to %#a:%d for %##s (%s)",
-					q->qDNSServer ? &q->qDNSServer->addr : mDNSNULL, mDNSVal16(q->qDNSServer ? q->qDNSServer->port : zeroIPPort),
-					s             ? &s->addr             : mDNSNULL, mDNSVal16(s             ? s->port             : zeroIPPort),
+				LogOperation("Updating DNS Server from %p %#a:%d (%##s) to %p %#a:%d (%##s) for %##s (%s)",
+					t, t ? &t->addr : mDNSNULL, mDNSVal16(t ? t->port : zeroIPPort), t ? t->domain.c : (mDNSu8*)"",
+					s, s ? &s->addr : mDNSNULL, mDNSVal16(s ? s->port : zeroIPPort), s ? s->domain.c : (mDNSu8*)"",
 					q->qname.c, DNSTypeName(q->qtype));
 				q->qDNSServer = s;
 				ActivateUnicastQuery(m, q);

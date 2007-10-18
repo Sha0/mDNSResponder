@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.85  2007/10/18 20:23:17  cheshire
+Moved SuspendLLQs into mDNS.c, since it's only called from one place
+
 Revision 1.84  2007/10/17 22:49:54  cheshire
 <rdar://problem/5519458> BTMM: Machines don't appear in the sidebar on wake from sleep
 
@@ -221,7 +224,6 @@ extern void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease);
 
 extern void uDNS_Wake(mDNS *const m);
 
-extern void SuspendLLQs(mDNS *m);
 extern void SleepServiceRegistrations(mDNS *m);
 extern void SleepRecordRegistrations(mDNS *m);
 

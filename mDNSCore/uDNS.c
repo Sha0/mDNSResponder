@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.503  2007/10/18 20:23:17  cheshire
+Moved SuspendLLQs into mDNS.c, since it's only called from one place
+
 Revision 1.502  2007/10/17 22:49:54  cheshire
 <rdar://problem/5519458> BTMM: Machines don't appear in the sidebar on wake from sleep
 
@@ -4405,21 +4408,6 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark - Startup, Shutdown, and Sleep
 #endif
-
-mDNSexport void SuspendLLQs(mDNS *m)
-	{
-	DNSQuestion *q;
-	for (q = m->Questions; q; q = q->next)
-		if (q->LongLived)
-			{
-			// If necessary, tell server it can delete this LLQ state
-			if (q->state == LLQ_Established) sendLLQRefresh(m, q, 0);
-			if (q->nta) { CancelGetZoneData(m, q->nta); q->nta = mDNSNULL; }
-			if (q->tcp) { DisposeTCPConn(q->tcp); q->tcp = mDNSNULL; }
-			q->state = LLQ_InitialRequest;	// Will need to set up new LLQ on wake from sleep
-			q->id = zeroOpaque64;
-			}
-	}
 
 mDNSlocal void RestartQueries(mDNS *m)
 	{
