@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.86  2007/10/18 23:06:42  cheshire
+<rdar://problem/5519458> BTMM: Machines don't appear in the sidebar on wake from sleep
+Additional fixes and refinements
+
 Revision 1.85  2007/10/18 20:23:17  cheshire
 Moved SuspendLLQs into mDNS.c, since it's only called from one place
 
@@ -271,7 +275,8 @@ extern mStatus         uDNS_RegisterSearchDomains(mDNS *const m);
 typedef enum
 	{
 	uDNS_LLQ_Not = 0,	// Normal uDNS answer: Flush any stale records from cache, and respect record TTL
-	uDNS_LLQ_Setup,		// LLQ Initial answer packet: Flush any stale records from cache; assume TTL is 2 x LLQ refresh interval
+	uDNS_LLQ_Ignore,	// LLQ initial challenge packet: ignore -- has no useful records for us
+	uDNS_LLQ_Entire,	// LLQ initial set of answers: Flush any stale records from cache, but assume TTL is 2 x LLQ refresh interval
 	uDNS_LLQ_Events		// LLQ event packet: don't flush cache; assume TTL is 2 x LLQ refresh interval
 	} uDNS_LLQType;
 

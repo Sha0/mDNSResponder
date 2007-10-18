@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.737  2007/10/18 23:06:42  cheshire
+<rdar://problem/5519458> BTMM: Machines don't appear in the sidebar on wake from sleep
+Additional fixes and refinements
+
 Revision 1.736  2007/10/18 20:23:17  cheshire
 Moved SuspendLLQs into mDNS.c, since it's only called from one place
 
@@ -4339,7 +4343,7 @@ mDNSexport void GrantCacheExtensions(mDNS *const m, DNSQuestion *q, mDNSu32 leas
 
 mDNSlocal mDNSu32 GetEffectiveTTL(const uDNS_LLQType LLQType, mDNSu32 ttl)		// TTL in seconds
 	{
-	if      (LLQType == uDNS_LLQ_Setup) ttl = kLLQ_DefLease;
+	if      (LLQType == uDNS_LLQ_Entire) ttl = kLLQ_DefLease;
 	else if (LLQType == uDNS_LLQ_Events)
 		{
 		// If the TTL is -1 for uDNS LLQ event packet, that means "remove"
@@ -4410,6 +4414,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		response->h.numAuthorities, response->h.numAuthorities == 1 ? "y,  " : "ies,",
 		response->h.numAdditionals, response->h.numAdditionals == 1 ? "" : "s", LLQType);
 
+	if (LLQType == uDNS_LLQ_Ignore) return;
+
 	// 1. We ignore questions (if any) in mDNS response packets
 	// 2. If this is an LLQ response, we handle it much the same
 	// 3. If we get a uDNS UDP response with the TC (truncated) bit set, then we can't treat this
@@ -4440,9 +4446,9 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 				for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
 					if (SameNameRecordAnswersQuestion(&rr->resrec, &q))
 						{
-						//LogMsg("uDNS Q for %s", CRDisplayString(m, rr));
+						//LogMsg("uDNS marking %s", CRDisplayString(m, rr));
 						// Don't want to disturb rroriginalttl here, because code below might need it for the exponential backoff doubling algorithm
-						rr->TimeRcvd          = m->timenow - rr->resrec.rroriginalttl * mDNSPlatformOneSecond;
+						rr->TimeRcvd          = m->timenow - TicksTTL(rr) - 1;
 						rr->UnansweredQueries = MaxUnansweredQueries;
 						}
 				}
@@ -4730,19 +4736,19 @@ exit:
 		ptr = getQuestion(response, ptr, end, InterfaceID, &q);
 		if (ptr && ExpectingUnicastResponseForQuestion(m, response->h.id, &q))
 			{
-			CacheRecord *rr;
+			CacheRecord *rr, *neg = mDNSNULL;
 			mDNSu32 slot = HashSlot(&q.qname);
 			CacheGroup *cg = CacheGroupForName(m, slot, q.qnamehash, &q.qname);
 			for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
 				if (SameNameRecordAnswersQuestion(&rr->resrec, &q))
 					{
 					// 1. If we got a fresh answer to this query, then don't need to generate a negative entry
-					// 2. If we already had a negative entry which we were about to discard, then we should resurrect it
-					if (rr->resrec.rroriginalttl) break;
-					if (rr->resrec.RecordType == kDNSRecordTypePacketNegative) break;
+					if (rr->TimeRcvd + TicksTTL(rr) - m->timenow > 0) break;
+					// 2. If we already had a negative entry, keep track of it so we can resurrect it instead of creating a new one
+					if (rr->resrec.RecordType == kDNSRecordTypePacketNegative) neg = rr;
 					}
 
-			if (!rr || rr->resrec.RecordType == kDNSRecordTypePacketNegative)
+			if (!rr)
 				{
 				// We start off assuming a negative caching TTL of 60 seconds
 				// but then look to see if we can find an SOA authority record to tell us a better value we should be using
@@ -4783,21 +4789,22 @@ exit:
 				// of 60 seconds, and we end up polling the server every minute for a record that doesn't exist.
 				// With this fix in place, when this happens, we double the effective TTL each time (up to one hour),
 				// so that we back off our polling rate and don't keep hitting the server continually.
-				if (rr)
+				if (neg)
 					{
-					if (negttl < rr->resrec.rroriginalttl * 2)
-						negttl = rr->resrec.rroriginalttl * 2;
+					if (negttl < neg->resrec.rroriginalttl * 2)
+						negttl = neg->resrec.rroriginalttl * 2;
 					if (negttl > 3600)
 						negttl = 3600;
 					}
 
 				negttl = GetEffectiveTTL(LLQType, negttl);	// Add 25% grace period if necessary
 
-				if (rr) LogOperation("Renewing negative TTL from %d to %d %s", rr->resrec.rroriginalttl, negttl, CRDisplayString(m, rr));
-
 				// If we already had a negative cache entry just update it, else make one or more new negative cache entries
-				if (rr)
-					RefreshCacheRecord(m, rr, negttl);
+				if (neg)
+					{
+					LogOperation("Renewing negative TTL from %d to %d %s", neg->resrec.rroriginalttl, negttl, CRDisplayString(m, neg));
+					RefreshCacheRecord(m, neg, negttl);
+					}
 				else while (1)
 					{
 					LogOperation("mDNSCoreReceiveResponse making negative cache entry TTL %d for %##s (%s)", negttl, name->c, DNSTypeName(q.qtype));
@@ -5063,9 +5070,12 @@ mDNSlocal void LLQNATCallback(mDNS *m, NATTraversalInfo *n)
 	DNSQuestion *q;
 	(void)n;    // Unused
 	mDNS_Lock(m);
+
 	LogOperation("LLQNATCallback external address:port %.4a:%u", &n->ExternalAddress, mDNSVal16(n->ExternalPort));
+	m->LLQNAT.clientContext = (void*)2; // Means we got a callback
 	for (q = m->Questions; q; q=q->next)
-		if (q->LongLived) startLLQHandshake(m, q);	// If ExternalPort is zero, will do StartLLQPolling instead
+		if (ActiveQuestion(q) && !mDNSOpaque16IsZero(q->TargetQID) && q->LongLived)
+			startLLQHandshake(m, q);	// If ExternalPort is zero, will do StartLLQPolling instead
 	mDNS_Unlock(m);
 	}
 
@@ -5219,7 +5229,7 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 					m->LLQNAT.IntPort        = m->UnicastPort4;
 					m->LLQNAT.RequestedPort  = m->UnicastPort4;
 					m->LLQNAT.clientCallback = LLQNATCallback;
-					m->LLQNAT.clientContext  = m;	// Must be set non-null so we know this NATTraversalInfo is active
+					m->LLQNAT.clientContext  = (void*)1; // Means LLQ NAT Traversal has been requested, but no callback yet
 					mDNS_StartNATOperation_internal(m, &m->LLQNAT);
 					}
 				}
@@ -5326,7 +5336,7 @@ mDNSexport mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const que
 				{
 				LogOperation("Stopping LLQNAT");
 				mDNS_StopNATOperation_internal(m, &m->LLQNAT);
-				m->LLQNAT.clientContext = mDNSNULL;
+				m->LLQNAT.clientContext = 0; // Means LLQ NAT Traversal not running
 				}
 			}
 
