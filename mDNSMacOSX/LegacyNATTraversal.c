@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.43  2007/10/18 20:09:47  cheshire
+<rdar://problem/5545930> BTMM: Back to My Mac not working with D-Link DGL-4100 NAT gateway
+
 Revision 1.42  2007/10/16 17:37:18  cheshire
 <rdar://problem/3557903> Performance: Core code will not work on platforms with small stacks
 Cut SendSOAPMsgControlAction stack from 2144 to 96 bytes
@@ -290,28 +293,25 @@ mDNSlocal void handleLNTGetExternalAddressResponse(tcpLNTInfo *tcpInfo)
 	mDNS       *m = tcpInfo->m;
 	mDNSu16     err = NATErr_None;
 	mDNSv4Addr  ExtAddr;
-	char       *addrPtr;
 	char       *ptr = (char *)tcpInfo->Reply;
 	char       *end = (char *)tcpInfo->Reply + tcpInfo->nread;
+	char       *addrend;
+	static char tagname[20] = "NewExternalIPAddress";		// Array NOT including a terminating nul
 
 //	LogOperation("handleLNTGetExternalAddressResponse: %s", ptr);
 
-	while (ptr && ptr < end)	// Find "NewExternalIPAddress"
-		{
-		if (*ptr == 'N' && (strncasecmp(ptr, "NewExternalIPAddress", 20) == 0)) break;	// find the first 'N'; is this NewExternalIPAddress? if not, keep looking
-		ptr++;
-		}
-	if (ptr == mDNSNULL || ptr >= end) return;	// bad or incomplete response
-	ptr+=21;									// skip over "NewExternalIPAddress>"
-	if (ptr >= end) { LogOperation("handleLNTGetExternalAddressResponse: past end of buffer!"); return; }
-
-	// find the end of the address and terminate the string so inet_pton() can convert it
-	for (addrPtr = ptr; addrPtr && addrPtr < end; addrPtr++) if (*addrPtr == '<') break;	// first find the next '<' and count the chars
-	if (addrPtr == mDNSNULL || addrPtr >= end) { LogOperation("handleLNTGetExternalAddressResponse: didn't find SOAP URL string"); return; }
-	*addrPtr = '\0';
+	while (ptr < end && strncasecmp(ptr, tagname, sizeof(tagname))) ptr++;
+	ptr += sizeof(tagname);						// Skip over "NewExternalIPAddress"
+	while (ptr < end && *ptr != '>') ptr++;
+	ptr += 1;									// Skip over ">"
+	// Find the end of the address and terminate the string so inet_pton() can convert it
+	addrend = ptr;
+	while (addrend < end && (mdnsIsDigit(*addrend) || *addrend == '.')) addrend++;
+	if (addrend >= end) return;
+	*addrend = 0;
 
 	if (inet_pton(AF_INET, ptr, &ExtAddr) <= 0)
-		{ LogMsg("handleLNTGetExternalAddressResponse: Router returned bad address"); err = NATErr_NetFail; }
+		{ LogMsg("handleLNTGetExternalAddressResponse: Router returned bad address %s", ptr); err = NATErr_NetFail; }
 	if (!err) LogOperation("handleLNTGetExternalAddressResponse: External IP address is %.4a", &ExtAddr);
 
 	natTraversalHandleAddressReply(m, err, ExtAddr);
@@ -326,7 +326,7 @@ mDNSlocal void handleLNTPortMappingResponse(tcpLNTInfo *tcpInfo)
 	NATTraversalInfo *natInfo;
 
 	for (natInfo = m->NATTraversals; natInfo; natInfo=natInfo->next) { if (natInfo == tcpInfo->parentNATInfo) break; }
-	
+
 	if (!natInfo) { LogOperation("handleLNTPortMappingResponse: can't find matching tcpInfo in NATTraversals!"); return; }
 
 	// start from the beginning of the HTTP header; find "200 OK" status message; if the first characters after the
@@ -816,7 +816,7 @@ mDNSexport void LNT_SendDiscoveryMsg(mDNS *m)
 		"Man:\"ssdp:discover\"\r\n"
 		"MX:3\r\n\r\n";
 
-	LogOperation("LNT_SendDiscoveryMsg %.4a %.4a", &m->Router.ip.v4, &m->ExternalAddress);
+	LogOperation("LNT_SendDiscoveryMsg Router %.4a Current External Address %.4a", &m->Router.ip.v4, &m->ExternalAddress);
 
 	if (!mDNSIPv4AddressIsZero(m->Router.ip.v4) && mDNSIPv4AddressIsZero(m->ExternalAddress))
 		mDNSPlatformSendUDP(m, msg, msg + sizeof(msg) - 1, 0, &m->Router, SSDPPort);
