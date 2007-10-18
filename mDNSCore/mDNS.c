@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.735  2007/10/18 00:12:34  cheshire
+Fixed "unused variable" compiler warning
+
 Revision 1.734  2007/10/17 22:49:54  cheshire
 <rdar://problem/5519458> BTMM: Machines don't appear in the sidebar on wake from sleep
 
@@ -5040,6 +5043,7 @@ mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question)
 mDNSlocal void LLQNATCallback(mDNS *m, NATTraversalInfo *n)
 	{
 	DNSQuestion *q;
+	(void)n;    // Unused
 	mDNS_Lock(m);
 	LogOperation("LLQNATCallback external address:port %.4a:%u", &n->ExternalAddress, mDNSVal16(n->ExternalPort));
 	for (q = m->Questions; q; q=q->next)
