@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.371  2007/10/18 23:34:40  cheshire
+<rdar://problem/5532821> Need "considerable burden on the network" warning in uds_daemon.c
+
 Revision 1.370  2007/10/17 18:44:23  cheshire
 <rdar://problem/5539930> Goodbye packets not being sent for services on shutdown
 
@@ -790,6 +793,7 @@ struct request_state
 			DNSQuestion qsrv;
 			const ResourceRecord *txt;
 			const ResourceRecord *srv;
+			mDNSs32 ReportTime;
 			} resolve;
 		 ;
 		} u;
@@ -2478,6 +2482,7 @@ mDNSlocal mStatus handle_resolve_request(request_state *request)
 	request->u.resolve.qtxt.ReturnIntermed   = (flags & kDNSServiceFlagsReturnIntermediates) != 0;
 	request->u.resolve.qtxt.QuestionCallback = resolve_result_callback;
 	request->u.resolve.qtxt.QuestionContext  = request;
+	request->u.resolve.ReportTime            = NonZeroTime(mDNS_TimeNow(&mDNSStorage) + 130 * mDNSPlatformOneSecond);
 
 	// ask the questions
 	LogOperation("%3d: DNSServiceResolve(%##s) START", request->sd, request->u.resolve.qsrv.qname.c);
@@ -3807,6 +3812,14 @@ mDNSexport mDNSs32 udsserver_idle(mDNSs32 nextevent)
 
 	while (*req)
 		{
+		if ((*req)->terminate == resolve_termination_callback)
+			if ((*req)->u.resolve.ReportTime && now - (*req)->u.resolve.ReportTime >= 0)
+				{
+				(*req)->u.resolve.ReportTime = 0;
+				LogMsgNoIdent("Client application bug: DNSServiceResolver(%##s) active for over two minutes. "
+					"This places considerable burden on the network.", (*req)->u.resolve.qsrv.qname.c);
+				}
+
 		while ((*req)->replies)		// Send queued replies
 			{
 			transfer_state result;
