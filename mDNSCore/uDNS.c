@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.505  2007/10/19 22:08:49  cheshire
+<rdar://problem/5519458> BTMM: Machines don't appear in the sidebar on wake from sleep
+Additional fixes and refinements
+
 Revision 1.504  2007/10/18 23:06:43  cheshire
 <rdar://problem/5519458> BTMM: Machines don't appear in the sidebar on wake from sleep
 Additional fixes and refinements
@@ -51,7 +55,7 @@ Revision 1.496  2007/10/04 22:38:59  cheshire
 Added LogOperation message showing new q->ThisQInterval after sending uDNS query packet
 
 Revision 1.495  2007/10/03 00:16:19  cheshire
-In startPrivateQueryCallback, need to grab lock before calling SetNextQueryTime
+In PrivateQueryGotZoneData, need to grab lock before calling SetNextQueryTime
 
 Revision 1.494  2007/10/02 21:11:08  cheshire
 <rdar://problem/5518270> LLQ refreshes don't work, which breaks BTMM browsing
@@ -181,7 +185,7 @@ otherwise those records will expire and vanish from the cache.
 
 Revision 1.456  2007/09/05 21:00:17  cheshire
 <rdar://problem/5457287> mDNSResponder taking up 100% CPU in ReissueBlockedQuestions
-Additional refinement: ThisQInterval needs to be restored in tcpCallback, not in startPrivateQueryCallback
+Additional refinement: ThisQInterval needs to be restored in tcpCallback, not in PrivateQueryGotZoneData
 
 Revision 1.455  2007/09/05 20:53:06  cheshire
 Tidied up alignment of code layout; code was clearing m->tcpAddrInfo.sock instead of m->tcpDeviceInfo.sock
@@ -191,7 +195,7 @@ Fixed posix build error (mixed declarations and code)
 
 Revision 1.453  2007/09/05 02:26:57  cheshire
 <rdar://problem/5457287> mDNSResponder taking up 100% CPU in ReissueBlockedQuestions
-In startPrivateQueryCallback, restore q->ThisQInterval to non-zero value after GetZoneData completes
+In PrivateQueryGotZoneData, restore q->ThisQInterval to non-zero value after GetZoneData completes
 
 Revision 1.452  2007/08/31 22:58:22  cheshire
 If we have an existing TCP connection we should re-use it instead of just bailing out
@@ -1921,6 +1925,12 @@ mDNSlocal tcpInfo_t *MakeTCPConn(mDNS *const m, const DNSMessage *const msg, con
 	if (!info->sock) { LogMsg("SendServiceRegistration: uanble to create TCP socket"); mDNSPlatformMemFree(info); return(mDNSNULL); }
 	err = mDNSPlatformTCPConnect(info->sock, Addr, Port, 0, tcpCallback, info);
 
+	// Probably suboptimal here.
+	// Instead of returning mDNSNULL here on failure, we should probably invoke the callback with an error code.
+	// That way clients can put all the error handling and retry/recovery code in one place,
+	// instead of having to handle immediate errors in one place and async errors in another.
+	// Also: "err == mStatus_ConnEstablished" probably never happens.
+
 	if      (err == mStatus_ConnEstablished) { tcpCallback(info->sock, info, mDNStrue, mStatus_NoError); }
 	else if (err != mStatus_ConnPending    ) { LogMsg("MakeTCPConnection: connection failed"); mDNSPlatformMemFree(info); return(mDNSNULL); }
 	return(info);
@@ -1972,12 +1982,14 @@ mDNSexport void startLLQHandshake(mDNS *m, DNSQuestion *q)
 		if (q->tcp) LogMsg("startLLQHandshake: Disposing existing TCP connection for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 		if (q->tcp) DisposeTCPConn(q->tcp);
 		q->tcp = MakeTCPConn(m, mDNSNULL, mDNSNULL, kTCPSocketFlags_UseTLS, &q->servAddr, q->servPort, q, mDNSNULL, mDNSNULL);
-
-		// update question state
-		//q->state         = LLQ_InitialRequest;
-		q->state         = LLQ_SecondaryRequest;		// Right now, for private DNS, we skip the four-way LLQ handshake
-		q->origLease     = kLLQ_DefLease;
-		q->ThisQInterval = 0;
+		if (!q->tcp)
+			q->ThisQInterval = mDNSPlatformOneSecond * 5;	// If TCP failed (transient networking glitch) try again in five seconds
+		else
+			{
+			q->state         = LLQ_SecondaryRequest;		// Right now, for private DNS, we skip the four-way LLQ handshake
+			q->origLease     = kLLQ_DefLease;
+			q->ThisQInterval = 0;
+			}
 		q->LastQTime     = m->timenow;
 		SetNextQueryTime(m, q);
 		}
@@ -3739,9 +3751,9 @@ mDNSexport void LLQGotZoneData(mDNS *const m, mStatus err, const ZoneData *zoneI
 
 	if (!err && zoneInfo && !mDNSIPPortIsZero(zoneInfo->Port))
 		{
-		q->servAddr  = zoneInfo->Addr;
-		q->servPort  = zoneInfo->Port;
-		if (!zoneInfo->ZonePrivate) q->AuthInfo = mDNSNULL;
+		q->servAddr = zoneInfo->Addr;
+		q->servPort = zoneInfo->Port;
+		q->AuthInfo = zoneInfo->ZonePrivate ? GetAuthInfoForName_internal(m, &q->qname) : mDNSNULL;
 		q->ntries = 0;
 		LogOperation("LLQGotZoneData %#a:%d", &q->servAddr, mDNSVal16(q->servPort));
 		startLLQHandshake(m, q);
@@ -3753,11 +3765,11 @@ mDNSexport void LLQGotZoneData(mDNS *const m, mStatus err, const ZoneData *zoneI
 	}
 
 // Called in normal callback context (i.e. mDNS_busy and mDNS_reentrancy are both 1)
-mDNSlocal void startPrivateQueryCallback(mDNS *const m, mStatus err, const ZoneData *zoneInfo)
+mDNSlocal void PrivateQueryGotZoneData(mDNS *const m, mStatus err, const ZoneData *zoneInfo)
 	{
 	DNSQuestion *q = (DNSQuestion *) zoneInfo->ZoneDataContext;
 
-	LogOperation("startPrivateQueryCallback %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+	LogOperation("PrivateQueryGotZoneData %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 
 	// If we get here it means that the GetZoneData operation has completed, and is is about to cancel
 	// its question and free the ZoneData memory. We no longer need to hold onto our pointer (which
@@ -3766,13 +3778,13 @@ mDNSlocal void startPrivateQueryCallback(mDNS *const m, mStatus err, const ZoneD
 
 	if (err)
 		{
-		LogMsg("ERROR: startPrivateQueryCallback %##s (%s) invoked with error code %ld", q->qname.c, DNSTypeName(q->qtype), err);
+		LogMsg("ERROR: PrivateQueryGotZoneData %##s (%s) invoked with error code %ld", q->qname.c, DNSTypeName(q->qtype), err);
 		return;
 		}
 
 	if (!zoneInfo)
 		{
-		LogMsg("ERROR: startPrivateQueryCallback invoked with NULL result and no error code");
+		LogMsg("ERROR: PrivateQueryGotZoneData invoked with NULL result and no error code");
 		return;
 		}
 
@@ -3791,7 +3803,7 @@ mDNSlocal void startPrivateQueryCallback(mDNS *const m, mStatus err, const ZoneD
 
 	if (!q->AuthInfo)
 		{
-		LogMsg("ERROR: startPrivateQueryCallback: cannot find credentials for q %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+		LogMsg("ERROR: PrivateQueryGotZoneData: cannot find credentials for q %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 		return;
 		}
 
@@ -4156,7 +4168,7 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 				if (private)
 					{
 					if (q->nta) LogMsg("uDNS_CheckCurrentQuestion Error: GetZoneData already started for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
-					else q->nta = StartGetZoneData(m, &q->qname, q->LongLived ? ZoneServiceLLQ : ZoneServiceQuery, startPrivateQueryCallback, q);
+					else q->nta = StartGetZoneData(m, &q->qname, q->LongLived ? ZoneServiceLLQ : ZoneServiceQuery, PrivateQueryGotZoneData, q);
 					q->ThisQInterval = LLQ_POLL_INTERVAL / QuestionIntervalStep;
 					}
 				else
@@ -4421,34 +4433,6 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark - Startup, Shutdown, and Sleep
 #endif
-
-mDNSlocal void RestartQueries(mDNS *m)
-	{
-	if (m->CurrentQuestion)
-		LogMsg("RestartQueries: ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
-	m->CurrentQuestion = m->Questions;
-	while (m->CurrentQuestion)
-		{
-		DNSQuestion *q = m->CurrentQuestion;
-		m->CurrentQuestion = m->CurrentQuestion->next;
-
-		if (!mDNSOpaque16IsZero(q->TargetQID) && !q->DuplicateOf)
-			{
-			if (q->LongLived)
-				{
-				q->state = LLQ_InitialRequest;
-				if (q->nta) CancelGetZoneData(m, q->nta); // Make sure we cancel old one before we start a new one
-				q->nta = StartGetZoneData(m, &q->qname, ZoneServiceLLQ, LLQGotZoneData, q);
-				}
-			else
-				{
-				q->LastQTime = m->timenow;
-				q->ThisQInterval = INIT_UCAST_POLL_INTERVAL; // trigger poll in 3 seconds (to reduce packet rate when restarts come in rapid succession)
-				SetNextQueryTime(m, q);
-				}
-			}
-		}
-	}
 
 // simplest sleep logic - rather than having sleep states that must be dealt with explicitly in all parts of
 // the code, we simply send a deregistration, and put the service in Refresh state, with a timeout far enough
@@ -4754,7 +4738,6 @@ mDNSexport mStatus uDNS_RegisterSearchDomains(mDNS *const m)
 
 mDNSexport void uDNS_Wake(mDNS *const m)
 	{
-	RestartQueries(m);
 	WakeServiceRegistrations(m);
 	WakeRecordRegistrations(m);
 	}

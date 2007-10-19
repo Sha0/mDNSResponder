@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.738  2007/10/19 22:08:49  cheshire
+<rdar://problem/5519458> BTMM: Machines don't appear in the sidebar on wake from sleep
+Additional fixes and refinements
+
 Revision 1.737  2007/10/18 23:06:42  cheshire
 <rdar://problem/5519458> BTMM: Machines don't appear in the sidebar on wake from sleep
 Additional fixes and refinements
@@ -3447,6 +3451,31 @@ mDNSlocal void SuspendLLQs(mDNS *m)
 			}
 	}
 
+mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question)
+	{
+	// For now this AutoTunnel stuff is specific to Mac OS X.
+	// In the future, if there's demand, we may see if we can abstract it out cleanly into the platform layer
+#if APPLE_OSX_mDNSResponder
+	if (question->qtype == kDNSType_AAAA && question->AuthInfo && question->AuthInfo->AutoTunnel && question->QuestionCallback != AutoTunnelCallback)
+		{
+		question->NoAnswer = NoAnswer_Suspended;
+		AddNewClientTunnel(m, question);
+		return;
+		}
+#endif // APPLE_OSX_mDNSResponder
+
+	if (!question->DuplicateOf)
+		{
+		LogOperation("ActivateUnicastQuery: %##s %s%s",
+			question->qname.c, DNSTypeName(question->qtype), question->AuthInfo ? " (Private)" : "");
+		if (question->nta) CancelGetZoneData(m, question->nta);
+		if (question->LongLived) question->state = LLQ_InitialRequest;
+		question->ThisQInterval = InitialQuestionInterval;
+		question->LastQTime     = m->timenow - question->ThisQInterval;
+		SetNextQueryTime(m, question);
+		}
+	}
+
 // Call mDNSCoreMachineSleep(m, mDNStrue) when the machine is about to go to sleep.
 // Call mDNSCoreMachineSleep(m, mDNSfalse) when the machine is has just woken up.
 // Normally, the platform support layer below mDNSCore should call this, not the client layer above.
@@ -3488,9 +3517,20 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 		CacheRecord *cr;
 
 #ifndef UNICAST_DISABLED
+		// On wake, retrigger all our uDNS questions
+		if (m->CurrentQuestion)
+			LogMsg("RestartQueries: ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
+		m->CurrentQuestion = m->Questions;
+		while (m->CurrentQuestion)
+			{
+			DNSQuestion *q = m->CurrentQuestion;
+			m->CurrentQuestion = m->CurrentQuestion->next;
+			if (!mDNSOpaque16IsZero(q->TargetQID)) ActivateUnicastQuery(m, q);
+			}
+		// and reactivtate record (and service) registrations
 		uDNS_Wake(m);
 #endif
-        // 1. Retrigger all our questions
+        // 1. Retrigger all our mDNS questions
 		for (q = m->Questions; q; q=q->next)				// Scan our list of questions
 			if (mDNSOpaque16IsZero(q->TargetQID) && ActiveQuestion(q))
 				{
@@ -5030,47 +5070,12 @@ mDNSlocal DNSServer *GetServerForName(mDNS *m, const domainname *name)
 #define ValidQuestionTarget(Q) (((Q)->Target.type == mDNSAddrType_IPv4 || (Q)->Target.type == mDNSAddrType_IPv6) && \
 	(mDNSSameIPPort((Q)->TargetPort, UnicastDNSPort) || mDNSSameIPPort((Q)->TargetPort, MulticastDNSPort)))
 
-mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question)
-	{
-	// For now this AutoTunnel stuff is specific to Mac OS X.
-	// In the future, if there's demand, we may see if we can abstract it out cleanly into the platform layer
-#if APPLE_OSX_mDNSResponder
-	if (question->qtype == kDNSType_AAAA && question->AuthInfo && question->AuthInfo->AutoTunnel && question->QuestionCallback != AutoTunnelCallback)
-		{
-		question->NoAnswer = NoAnswer_Suspended;
-		AddNewClientTunnel(m, question);
-		return;
-		}
-#endif // APPLE_OSX_mDNSResponder
-
-	if (!question->DuplicateOf)
-		{
-		if (question->LongLived)
-			{
-			question->ThisQInterval = 0;	// Question is suspended, waiting for GetZoneData to complete
-			question->LastQTime     = m->timenow;
-			LogOperation("ActivateUnicastQuery: %##s %s%s",
-				question->qname.c, DNSTypeName(question->qtype), question->AuthInfo ? " (Private)" : "");
-			if (question->nta) CancelGetZoneData(m, question->nta);
-			question->state = LLQ_InitialRequest;
-			question->nta = StartGetZoneData(m, &question->qname, ZoneServiceLLQ, LLQGotZoneData, question);
-			if (!question->nta) LogMsg("ERROR: startLLQ - StartGetZoneData failed");
-			}
-		else
-			{
-			question->ThisQInterval = InitialQuestionInterval;
-			question->LastQTime     = m->timenow - question->ThisQInterval;
-			}
-		}
-	}
-
 // Called in normal client context (lock not held)
 mDNSlocal void LLQNATCallback(mDNS *m, NATTraversalInfo *n)
 	{
 	DNSQuestion *q;
 	(void)n;    // Unused
 	mDNS_Lock(m);
-
 	LogOperation("LLQNATCallback external address:port %.4a:%u", &n->ExternalAddress, mDNSVal16(n->ExternalPort));
 	m->LLQNAT.clientContext = (void*)2; // Means we got a callback
 	for (q = m->Questions; q; q=q->next)
