@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.739  2007/10/22 23:46:41  cheshire
+<rdar://problem/5519458> BTMM: Machines don't appear in the sidebar on wake from sleep
+Need to clear question->nta pointer after calling CancelGetZoneData()
+
 Revision 1.738  2007/10/19 22:08:49  cheshire
 <rdar://problem/5519458> BTMM: Machines don't appear in the sidebar on wake from sleep
 Additional fixes and refinements
@@ -3468,7 +3472,7 @@ mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question)
 		{
 		LogOperation("ActivateUnicastQuery: %##s %s%s",
 			question->qname.c, DNSTypeName(question->qtype), question->AuthInfo ? " (Private)" : "");
-		if (question->nta) CancelGetZoneData(m, question->nta);
+		if (question->nta) { CancelGetZoneData(m, question->nta); question->nta = mDNSNULL; }
 		if (question->LongLived) question->state = LLQ_InitialRequest;
 		question->ThisQInterval = InitialQuestionInterval;
 		question->LastQTime     = m->timenow - question->ThisQInterval;
@@ -5267,7 +5271,9 @@ mDNSexport mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const que
 	if (*q) *q = (*q)->next;
 	else
 		{
+#if !ForceAlerts
 		if (question->ThisQInterval >= 0)	// Only log error message if the query was supposed to be active
+#endif
 			LogMsg("mDNS_StopQuery_internal: Question %##s (%s) not found in active list",
 				question->qname.c, DNSTypeName(question->qtype));
 #if ForceAlerts
@@ -5325,7 +5331,7 @@ mDNSexport mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const que
 	// so if we delete it earlier in this routine, we could find that our "question->next" pointer above is already
 	// invalid before we even use it. By making sure that we update m->CurrentQuestion and m->NewQuestions if necessary
 	// *first*, then they're all ready to be updated a second time if necessary when we cancel our GetZoneData query.
-	if (question->nta) CancelGetZoneData(m, question->nta);
+	if (question->nta) { CancelGetZoneData(m, question->nta); question->nta = mDNSNULL; }
 	if (question->tcp) { DisposeTCPConn(question->tcp); question->tcp = mDNSNULL; }
 	if (!mDNSOpaque16IsZero(question->TargetQID) && question->LongLived)
 		{
