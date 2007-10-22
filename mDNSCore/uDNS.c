@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.506  2007/10/22 19:54:13  cheshire
+<rdar://problem/5519458> BTMM: Machines don't appear in the sidebar on wake from sleep
+Only put EventPort in LLQ request when sending from an RFC 1918 source address, not when sending over VPN
+
 Revision 1.505  2007/10/19 22:08:49  cheshire
 <rdar://problem/5519458> BTMM: Machines don't appear in the sidebar on wake from sleep
 Additional fixes and refinements
@@ -1515,6 +1519,14 @@ mDNSlocal mDNSu8 *putLLQ(DNSMessage *const msg, mDNSu8 *ptr, const DNSQuestion *
 	return ptr;
 	}
 
+mDNSlocal mDNSu16 GetLLQEventPort(const mDNS *const m, const mDNSAddr *const dst)
+	{
+	mDNSAddr src;
+	mDNSPlatformSourceAddrForDest(&src, dst);
+	//LogMsg("GetLLQEventPort: src %#a for dst %#a (%d)", &src, dst, mDNSv4AddrIsRFC1918(&src.ip.v4) ? mDNSVal16(m->LLQNAT.ExternalPort) : 0);
+	return(mDNSv4AddrIsRFC1918(&src.ip.v4) ? mDNSVal16(m->LLQNAT.ExternalPort) : 0);
+	}
+
 // Normally called with llq set.
 // May be called with llq NULL, when retransmitting a lost Challenge Response
 mDNSlocal void sendChallengeResponse(mDNS *const m, DNSQuestion *const q, const LLQOptData *llq)
@@ -1533,7 +1545,7 @@ mDNSlocal void sendChallengeResponse(mDNS *const m, DNSQuestion *const q, const 
 		{
 		llqBuf.vers     = kLLQ_Vers;
 		llqBuf.llqOp    = kLLQOp_Setup;
-		llqBuf.err      = LLQErr_NoError;
+		llqBuf.err      = LLQErr_NoError;	// Don't need to tell server UDP notification port when sending over UDP
 		llqBuf.id       = q->id;
 		llqBuf.llqlease = q->origLease;
 		llq = &llqBuf;
@@ -1732,9 +1744,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			LLQOptData llqData;			// set llq rdata
 			llqData.vers  = kLLQ_Vers;
 			llqData.llqOp = kLLQOp_Setup;
-			llqData.err   = LLQErr_NoError;
-			// Get shared external port
-			llqData.err   = mDNSVal16(m->LLQNAT.ExternalPort);	// Tell server what UDP port to send notifications to
+			llqData.err   = GetLLQEventPort(m, &tcpInfo->Addr);	// We're using TCP; tell server what UDP port to send notifications to
 			LogOperation("tcpCallback: eventPort %d", llqData.err);
 			llqData.id    = zeroOpaque64;
 			llqData.llqlease = kLLQ_DefLease;
@@ -1964,16 +1974,14 @@ mDNSexport void startLLQHandshake(mDNS *m, DNSQuestion *q)
 
 	if (mDNSIPPortIsZero(q->servPort))
 		{
-		if (!q->nta)
-			{
-			LogOperation("startLLQHandshake: StartGetZoneData for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
-			q->ThisQInterval = LLQ_POLL_INTERVAL;
-			q->LastQTime     = m->timenow;
-			SetNextQueryTime(m, q);
-			q->servAddr = zeroAddr;
-			q->servPort = zeroIPPort;
-			q->nta = StartGetZoneData(m, &q->qname, ZoneServiceLLQ, LLQGotZoneData, q);
-			}
+		LogOperation("startLLQHandshake: StartGetZoneData for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+		q->ThisQInterval = LLQ_POLL_INTERVAL;
+		q->LastQTime     = m->timenow;
+		SetNextQueryTime(m, q);
+		q->servAddr = zeroAddr;
+		q->servPort = zeroIPPort;
+		if (q->nta) CancelGetZoneData(m, q->nta);
+		q->nta = StartGetZoneData(m, &q->qname, ZoneServiceLLQ, LLQGotZoneData, q);
 		return;
 		}
 
@@ -2013,7 +2021,7 @@ mDNSexport void startLLQHandshake(mDNS *m, DNSQuestion *q)
 			// set llq rdata
 			llqData.vers  = kLLQ_Vers;
 			llqData.llqOp = kLLQOp_Setup;
-			llqData.err   = LLQErr_NoError;
+			llqData.err   = LLQErr_NoError;	// Don't need to tell server UDP notification port when sending over UDP
 			llqData.id    = zeroOpaque64;
 			llqData.llqlease = kLLQ_DefLease;
 	
@@ -3717,7 +3725,7 @@ mDNSexport void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 
 	llq.vers  = kLLQ_Vers;
 	llq.llqOp = kLLQOp_Refresh;
-	llq.err   = LLQErr_NoError;
+	llq.err   = q->tcp ? GetLLQEventPort(m, &q->servAddr) : LLQErr_NoError;	// If using TCP tell server what UDP port to send notifications to
 	llq.id    = q->id;
 	llq.llqlease = lease;
 
