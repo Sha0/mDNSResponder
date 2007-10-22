@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.501  2007/10/22 19:40:30  cheshire
+<rdar://problem/5519458> BTMM: Machines don't appear in the sidebar on wake from sleep
+Made subroutine mDNSPlatformSourceAddrForDest(mDNSAddr *const src, const mDNSAddr *const dst)
+
 Revision 1.500  2007/10/17 22:49:55  cheshire
 <rdar://problem/5519458> BTMM: Machines don't appear in the sidebar on wake from sleep
 
@@ -1773,6 +1777,45 @@ mDNSexport void mDNSPlatformUDPClose(UDPSocket *sock)
 	freeL("UDPSocket", sock);
 	}
 
+// Bind a UDP socket to find the source address to a destination
+mDNSexport void mDNSPlatformSourceAddrForDest(mDNSAddr *const src, const mDNSAddr *const dst)
+	{
+	union { struct sockaddr s; struct sockaddr_in a4; struct sockaddr_in6 a6; } addr;
+	socklen_t len = sizeof(addr);
+	int sock = socket(AF_INET, SOCK_DGRAM, 0);
+	src->type = mDNSAddrType_None;
+	if (sock == -1) return;
+	if (dst->type == mDNSAddrType_IPv4)
+		{
+		addr.a4.sin_len         = sizeof(addr.a4);
+		addr.a4.sin_family      = AF_INET;
+		addr.a4.sin_port        = 1;	// Not important, any port will do
+		addr.a4.sin_addr.s_addr = dst->ip.v4.NotAnInteger;
+		}
+	else if (dst->type == mDNSAddrType_IPv6)
+		{
+		addr.a6.sin6_len      = sizeof(addr.a6);
+		addr.a6.sin6_family   = AF_INET6;
+		addr.a6.sin6_flowinfo = 0;
+		addr.a6.sin6_port     = 1;	// Not important, any port will do
+		addr.a6.sin6_addr     = *(struct in6_addr*)&dst->ip.v6;
+		addr.a6.sin6_scope_id = 0;
+		}
+	else return;
+	
+	if ((connect(sock, &addr.s, addr.s.sa_len)) < 0)
+		{ LogMsg("mDNSPlatformSourceAddrForDest: connect %#a failed errno %d (%s)", dst, errno, strerror(errno)); goto exit; }
+
+	if ((getsockname(sock, &addr.s, &len)) < 0)
+		{ LogMsg("mDNSPlatformSourceAddrForDest: getsockname failed errno %d (%s)", errno, strerror(errno)); goto exit; }
+
+	src->type = dst->type;
+	if (dst->type == mDNSAddrType_IPv4) src->ip.v4.NotAnInteger = addr.a4.sin_addr.s_addr;
+	else                                src->ip.v6 = *(mDNSv6Addr*)&addr.a6.sin6_addr;
+exit:
+	close(sock);
+	}
+
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
 #pragma mark - Key Management
@@ -2336,7 +2379,7 @@ mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const R
 		mDNSAddr tmpDst = { mDNSAddrType_IPv4, {{{0}}} };
 		tmpDst.ip.v4 = tun->rmt_outer;
 		mDNSAddr tmpSrc = zeroAddr;
-		FindSourceAddrForIP(&tmpDst, &tmpSrc);
+		mDNSPlatformSourceAddrForDest(&tmpSrc, &tmpDst);
 		if (tmpSrc.type == mDNSAddrType_IPv4) tun->loc_outer = tmpSrc.ip.v4;
 		else tun->loc_outer = m->AdvertisedV4.ip.v4;
 
@@ -3539,7 +3582,7 @@ mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 				mDNSAddr tmpSrc = zeroAddr;
 				mDNSAddr tmpDst = { mDNSAddrType_IPv4, {{{0}}} };
 				tmpDst.ip.v4 = p->rmt_outer;
-				FindSourceAddrForIP(&tmpDst, &tmpSrc);
+				mDNSPlatformSourceAddrForDest(&tmpSrc, &tmpDst);
 				if (!mDNSSameIPv6Address(p->loc_inner, m->AutoTunnelHostAddr) ||
 					!mDNSSameIPv4Address(p->loc_outer, tmpSrc.ip.v4))
 					{
