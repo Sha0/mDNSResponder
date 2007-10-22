@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.448  2007/10/22 22:19:44  cheshire
+Tidied up code alignment
+
 Revision 1.447  2007/10/22 19:40:30  cheshire
 <rdar://problem/5519458> BTMM: Machines don't appear in the sidebar on wake from sleep
 Made subroutine mDNSPlatformSourceAddrForDest(mDNSAddr *const src, const mDNSAddr *const dst)
@@ -1149,12 +1152,12 @@ typedef enum
 
 enum
 	{
-	NATErr_None = 0,
-	NATErr_Vers = 1,
+	NATErr_None    = 0,
+	NATErr_Vers    = 1,
 	NATErr_Refused = 2,
 	NATErr_NetFail = 3,
-	NATErr_Res = 4,
-	NATErr_Opcode = 5
+	NATErr_Res     = 4,
+	NATErr_Opcode  = 5
 	};
 
 typedef mDNSu16 NATErr_t;
@@ -1636,12 +1639,12 @@ typedef enum
 // LLQ Errror Codes
 enum
 	{
-	LLQErr_NoError = 0,
-	LLQErr_ServFull = 1,
-	LLQErr_Static = 2,
-	LLQErr_FormErr = 3,
-	LLQErr_NoSuchLLQ = 4,
-	LLQErr_BadVers = 5,
+	LLQErr_NoError    = 0,
+	LLQErr_ServFull   = 1,
+	LLQErr_Static     = 2,
+	LLQErr_FormErr    = 3,
+	LLQErr_NoSuchLLQ  = 4,
+	LLQErr_BadVers    = 5,
 	LLQErr_UnknownErr = 6
 	};
 
