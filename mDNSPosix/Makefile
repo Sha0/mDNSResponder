@@ -31,6 +31,9 @@
 # then try typing "gmake os=xxx" instead.
 #
 # $Log: Makefile,v $
+# Revision 1.77  2007/10/22 20:04:51  cheshire
+# Need to include PlatformCommon.c.o in embedded targets
+#
 # Revision 1.76  2007/07/31 23:39:02  mcguire
 # Don't bail on errors in flex-generated .c files
 #
@@ -661,7 +664,8 @@ JavaDoc: Java setup
 #############################################################################
 
 # The following targets build embedded example programs
-SPECIALOBJ = $(OBJDIR)/mDNSPosix.c.o $(OBJDIR)/mDNSUNP.c.o $(OBJDIR)/mDNSDebug.c.o $(OBJDIR)/GenLinkedList.c.o $(OBJDIR)/DNSDigest.c.o $(OBJDIR)/uDNS.c.o $(OBJDIR)/DNSCommon.c.o
+SPECIALOBJ = $(OBJDIR)/mDNSPosix.c.o $(OBJDIR)/mDNSUNP.c.o $(OBJDIR)/mDNSDebug.c.o $(OBJDIR)/GenLinkedList.c.o \
+	$(OBJDIR)/DNSDigest.c.o $(OBJDIR)/uDNS.c.o $(OBJDIR)/DNSCommon.c.o $(OBJDIR)/PlatformCommon.c.o
 COMMONOBJ  = $(SPECIALOBJ) $(OBJDIR)/mDNS.c.o
 APPOBJ     = $(COMMONOBJ) $(OBJDIR)/ExampleClientApp.c.o
 
