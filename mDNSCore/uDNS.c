@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.507  2007/10/23 00:33:36  cheshire
+Improved debugging messages
+
 Revision 1.506  2007/10/22 19:54:13  cheshire
 <rdar://problem/5519458> BTMM: Machines don't appear in the sidebar on wake from sleep
 Only put EventPort in LLQ request when sending from an RFC 1918 source address, not when sending over VPN
@@ -2003,7 +2006,7 @@ mDNSexport void startLLQHandshake(mDNS *m, DNSQuestion *q)
 		}
 	else
 		{
-		LogOperation("startLLQHandshake Addr %#a%s Server %#a:%d%s %##s (%s)",
+		LogOperation("startLLQHandshake m->AdvertisedV4 %#a%s Server %#a:%d%s %##s (%s)",
 			&m->AdvertisedV4,                     mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) ? " (RFC 1918)" : "",
 			&q->servAddr, mDNSVal16(q->servPort), mDNSAddrIsRFC1918(&q->servAddr)             ? " (RFC 1918)" : "",
 			q->qname.c, DNSTypeName(q->qtype));
@@ -3777,7 +3780,7 @@ mDNSlocal void PrivateQueryGotZoneData(mDNS *const m, mStatus err, const ZoneDat
 	{
 	DNSQuestion *q = (DNSQuestion *) zoneInfo->ZoneDataContext;
 
-	LogOperation("PrivateQueryGotZoneData %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+	LogOperation("PrivateQueryGotZoneData %##s (%s) err %d ZonePrivate %d", q->qname.c, DNSTypeName(q->qtype), err, zoneInfo->ZonePrivate);
 
 	// If we get here it means that the GetZoneData operation has completed, and is is about to cancel
 	// its question and free the ZoneData memory. We no longer need to hold onto our pointer (which
@@ -3787,12 +3790,6 @@ mDNSlocal void PrivateQueryGotZoneData(mDNS *const m, mStatus err, const ZoneDat
 	if (err)
 		{
 		LogMsg("ERROR: PrivateQueryGotZoneData %##s (%s) invoked with error code %ld", q->qname.c, DNSTypeName(q->qtype), err);
-		return;
-		}
-
-	if (!zoneInfo)
-		{
-		LogMsg("ERROR: PrivateQueryGotZoneData invoked with NULL result and no error code");
 		return;
 		}
 
