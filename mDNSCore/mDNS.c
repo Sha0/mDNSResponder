@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.740  2007/10/23 00:38:03  cheshire
+When sending uDNS cache expiration query, need to increment rr->UnansweredQueries
+or code will spin sending the same cache expiration query repeatedly
+
 Revision 1.739  2007/10/22 23:46:41  cheshire
 <rdar://problem/5519458> BTMM: Machines don't appear in the sidebar on wake from sleep
 Need to clear question->nta pointer after calling CancelGetZoneData()
@@ -2346,8 +2350,10 @@ mDNSlocal void SendQueries(mDNS *const m)
 					LogOperation("Sending %d%% cache expiration query for %s", 80 + 5 * rr->UnansweredQueries, CRDisplayString(m, rr));
 					q = rr->CRActiveQuestion;
 					ExpireDupSuppressInfoOnInterface(q->DupSuppress, m->timenow - TicksTTL(rr)/20, rr->resrec.InterfaceID);
-					if      (q->Target.type) q->SendQNow = mDNSInterfaceMark;	// If targeted query, mark it
-					else if (!mDNSOpaque16IsZero(q->TargetQID))     q->LastQTime = m->timenow - q->ThisQInterval;	// For uDNS, adjust LastQTime
+					// For uDNS queries (TargetQID non-zero) we adjust LastQTime,
+					// and bump UnansweredQueries so that we don't spin trying to send the same cache expiration query repeatedly
+					if      (q->Target.type)                        q->SendQNow = mDNSInterfaceMark;	// If targeted query, mark it
+					else if (!mDNSOpaque16IsZero(q->TargetQID))     { q->LastQTime = m->timenow - q->ThisQInterval; rr->UnansweredQueries++; }
 					else if (q->SendQNow == mDNSNULL)               q->SendQNow = rr->resrec.InterfaceID;
 					else if (q->SendQNow != rr->resrec.InterfaceID) q->SendQNow = mDNSInterfaceMark;
 					}
