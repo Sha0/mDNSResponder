@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.510  2007/10/24 22:40:06  cheshire
+Renamed: RecordRegistrationCallback          -> RecordRegistrationGotZoneData
+Renamed: ServiceRegistrationZoneDataComplete -> ServiceRegistrationGotZoneData
+
 Revision 1.509  2007/10/24 00:54:07  cheshire
 <rdar://problem/5496734> BTMM: Need to retry registrations after failures
 
@@ -2375,7 +2379,7 @@ mDNSlocal void CompleteSRVNatMap(mDNS *m, NATTraversalInfo *n)
 		LogOperation("ERROR: CompleteSRVNatMap called but srs->ns.ip.v4 is zero!");
 		srs->state = regState_FetchingZoneData;
 		if (srs->nta) CancelGetZoneData(m, srs->nta); // Make sure we cancel old one before we start a new one
-		srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationZoneDataComplete, srs);
+		srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationGotZoneData, srs);
 		}
 	mDNS_Unlock(m);
 	}
@@ -2398,21 +2402,21 @@ mDNSlocal void StartSRVNatMap(mDNS *m, ServiceRecordSet *srs)
 
 	error:
 	if (srs->nta) CancelGetZoneData(m, srs->nta); // Make sure we cancel old one before we start a new one
-	srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationZoneDataComplete, srs);
+	srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationGotZoneData, srs);
 	}
 
 // Called in normal callback context (i.e. mDNS_busy and mDNS_reentrancy are both 1)
-mDNSexport void ServiceRegistrationZoneDataComplete(mDNS *const m, mStatus err, const ZoneData *zoneData)
+mDNSexport void ServiceRegistrationGotZoneData(mDNS *const m, mStatus err, const ZoneData *zoneData)
 	{
 	ServiceRecordSet *srs = (ServiceRecordSet *)zoneData->ZoneDataContext;
 	
 	if (m->mDNS_busy != m->mDNS_reentrancy)
-		LogMsg("ServiceRegistrationZoneDataComplete: mDNS_busy (%ld) != mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
+		LogMsg("ServiceRegistrationGotZoneData: mDNS_busy (%ld) != mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
 	srs->nta = mDNSNULL;
 
 	if (err) goto error;
-	if (!zoneData) { LogMsg("ERROR: ServiceRegistrationZoneDataComplete invoked with NULL result and no error"); goto error; }
+	if (!zoneData) { LogMsg("ERROR: ServiceRegistrationGotZoneData invoked with NULL result and no error"); goto error; }
 
 	if (srs->RR_SRV.resrec.rrclass != zoneData->ZoneClass)
 		{ LogMsg("Service %##s - class does not match zone", srs->RR_SRV.resrec.name->c); goto error; }
@@ -2433,7 +2437,7 @@ mDNSexport void ServiceRegistrationZoneDataComplete(mDNS *const m, mStatus err, 
 		srs->srs_uselease = mDNSfalse;
 		}
 
-	LogOperation("ServiceRegistrationZoneDataComplete My IPv4 %#a%s Server %#a:%d%s for %##s",
+	LogOperation("ServiceRegistrationGotZoneData My IPv4 %#a%s Server %#a:%d%s for %##s",
 		&m->AdvertisedV4, mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) ? " (RFC1918)" : "",
 		&srs->ns, mDNSVal16(srs->SRSUpdatePort), mDNSAddrIsRFC1918(&srs->ns) ? " (RFC1918)" : "",
 		srs->RR_SRV.resrec.name->c);
@@ -2443,7 +2447,7 @@ mDNSexport void ServiceRegistrationZoneDataComplete(mDNS *const m, mStatus err, 
 		srs->RR_SRV.AutoTarget == Target_AutoHostAndNATMAP)
 		{
 		srs->state = regState_NATMap;
-		LogOperation("ServiceRegistrationZoneDataComplete StartSRVNatMap");
+		LogOperation("ServiceRegistrationGotZoneData StartSRVNatMap");
 		StartSRVNatMap(m, srs);
 		}
 	else
@@ -2581,7 +2585,7 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 					{
 					srs->state = regState_FetchingZoneData;
 					if (srs->nta) CancelGetZoneData(m, srs->nta); // Make sure we cancel old one before we start a new one
-					srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationZoneDataComplete, srs);
+					srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationGotZoneData, srs);
 					}
 				else
 					{
@@ -3783,23 +3787,23 @@ mDNSlocal void PrivateQueryGotZoneData(mDNS *const m, mStatus err, const ZoneDat
 #endif
 
 // Called in normal callback context (i.e. mDNS_busy and mDNS_reentrancy are both 1)
-mDNSexport void RecordRegistrationCallback(mDNS *const m, mStatus err, const ZoneData *zoneData)
+mDNSexport void RecordRegistrationGotZoneData(mDNS *const m, mStatus err, const ZoneData *zoneData)
 	{
 	AuthRecord *newRR = (AuthRecord*)zoneData->ZoneDataContext;
 	AuthRecord *ptr;
 
 	if (m->mDNS_busy != m->mDNS_reentrancy)
-		LogMsg("RecordRegistrationCallback: mDNS_busy (%ld) != mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
+		LogMsg("RecordRegistrationGotZoneData: mDNS_busy (%ld) != mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
 	newRR->nta = mDNSNULL;
 
 	// make sure record is still in list (!!!)
 	for (ptr = m->ResourceRecords; ptr; ptr = ptr->next) if (ptr == newRR) break;
-	if (!ptr) { LogMsg("RecordRegistrationCallback - RR no longer in list.  Discarding."); return; }
+	if (!ptr) { LogMsg("RecordRegistrationGotZoneData - RR no longer in list.  Discarding."); return; }
 
 	// check error/result
-	if (err) { LogMsg("RecordRegistrationCallback: error %ld", err); return; }
-	if (!zoneData) { LogMsg("ERROR: RecordRegistrationCallback invoked with NULL result and no error"); return; }
+	if (err) { LogMsg("RecordRegistrationGotZoneData: error %ld", err); return; }
+	if (!zoneData) { LogMsg("ERROR: RecordRegistrationGotZoneData invoked with NULL result and no error"); return; }
 
 	if (newRR->resrec.rrclass != zoneData->ZoneClass)
 		{
@@ -3812,7 +3816,7 @@ mDNSexport void RecordRegistrationCallback(mDNS *const m, mStatus err, const Zon
 	// organizations use their own private pseudo-TLD, like ".home", etc, and we don't want to block that.
 	if (zoneData->ZoneName.c[0] == 0)
 		{
-		LogMsg("RecordRegistrationCallback: Only name server claiming responsibility for \"%##s\" is \"%##s\"!", newRR->resrec.name->c, zoneData->ZoneName.c);
+		LogMsg("RecordRegistrationGotZoneData: Only name server claiming responsibility for \"%##s\" is \"%##s\"!", newRR->resrec.name->c, zoneData->ZoneName.c);
 		return;
 		}
 
@@ -3821,12 +3825,12 @@ mDNSexport void RecordRegistrationCallback(mDNS *const m, mStatus err, const Zon
 	newRR->UpdateServer = zoneData->Addr;
 	newRR->UpdatePort   = zoneData->Port;
 	newRR->Private      = zoneData->ZonePrivate;
-	debugf("RecordRegistrationCallback: Set newRR->UpdateServer %##s %##s to %#a:%d",
+	debugf("RecordRegistrationGotZoneData: Set newRR->UpdateServer %##s %##s to %#a:%d",
 		newRR->resrec.name->c, zoneData->ZoneName.c, &newRR->UpdateServer, mDNSVal16(newRR->UpdatePort));
 
 	if (mDNSIPPortIsZero(zoneData->Port) || mDNSAddressIsZero(&zoneData->Addr))
 		{
-		LogMsg("RecordRegistrationCallback: No _dns-update._udp service found for \"%##s\"!", newRR->resrec.name->c);
+		LogMsg("RecordRegistrationGotZoneData: No _dns-update._udp service found for \"%##s\"!", newRR->resrec.name->c);
 		return;
 		}
 

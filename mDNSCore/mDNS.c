@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.742  2007/10/24 22:40:06  cheshire
+Renamed: RecordRegistrationCallback          -> RecordRegistrationGotZoneData
+Renamed: ServiceRegistrationZoneDataComplete -> ServiceRegistrationGotZoneData
+
 Revision 1.741  2007/10/24 00:50:29  cheshire
 <rdar://problem/5496734> BTMM: Need to retry registrations after failures
 Retrigger record registrations whenever a new network interface is added
@@ -1353,7 +1357,7 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 		rr->AnnounceCount = 0;
 		rr->state = regState_FetchingZoneData;
 		rr->uselease = mDNStrue;
-		rr->nta = StartGetZoneData(m, rr->resrec.name, ZoneServiceUpdate, RecordRegistrationCallback, rr);
+		rr->nta = StartGetZoneData(m, rr->resrec.name, ZoneServiceUpdate, RecordRegistrationGotZoneData, rr);
 		}
 #endif
 	
@@ -6123,7 +6127,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 		if (!rr->resrec.InterfaceID && !rr->ForceMCast && !IsLocalDomain(rr->resrec.name))
 			{
 			if (rr->nta) CancelGetZoneData(m, rr->nta);
-			rr->nta = StartGetZoneData(m, rr->resrec.name, ZoneServiceUpdate, RecordRegistrationCallback, rr);
+			rr->nta = StartGetZoneData(m, rr->resrec.name, ZoneServiceUpdate, RecordRegistrationGotZoneData, rr);
 			}
 
 	mDNS_Unlock(m);
@@ -6345,7 +6349,7 @@ mDNSlocal mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 		}
 
 	srs->state = regState_FetchingZoneData;
-	srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationZoneDataComplete, srs);
+	srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationGotZoneData, srs);
 	return srs->nta ? mStatus_NoError : mStatus_NoMemoryErr;
 	}
 

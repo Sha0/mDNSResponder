@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.87  2007/10/24 22:40:06  cheshire
+Renamed: RecordRegistrationCallback          -> RecordRegistrationGotZoneData
+Renamed: ServiceRegistrationZoneDataComplete -> ServiceRegistrationGotZoneData
+
 Revision 1.86  2007/10/18 23:06:42  cheshire
 <rdar://problem/5519458> BTMM: Machines don't appear in the sidebar on wake from sleep
 Additional fixes and refinements
@@ -252,11 +256,11 @@ extern mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const questi
 extern mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const question);
 extern mStatus mDNS_StartNATOperation_internal(mDNS *const m, NATTraversalInfo *traversal);
 
-extern void RecordRegistrationCallback(mDNS *const m, mStatus err, const ZoneData *zoneData);
+extern void RecordRegistrationGotZoneData(mDNS *const m, mStatus err, const ZoneData *zoneData);
 extern void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord);
 extern mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr);
 
-extern void ServiceRegistrationZoneDataComplete(mDNS *const m, mStatus err, const ZoneData *result);
+extern void ServiceRegistrationGotZoneData(mDNS *const m, mStatus err, const ZoneData *result);
 extern const domainname *GetServiceTarget(mDNS *m, ServiceRecordSet *srs);
 extern mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs);
 
