@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.84  2007/10/24 18:19:37  cheshire
+Fixed header byte order bug sending update responses
+
 Revision 1.83  2007/10/17 22:52:26  cheshire
 Get rid of unused mDNS_UpdateLLQs()
 
@@ -1605,6 +1608,7 @@ mDNSlocal PktMsg *FormatLeaseReply(DaemonInfo *d, PktMsg *orig, mDNSu32 lease)
 	ptr = putUpdateLease(&reply->msg, ptr, lease);
 	if (!ptr) { Log("FormatLeaseReply: putUpdateLease failed"); free(reply); return NULL; }
 	reply->len = ptr - (mDNSu8 *)&reply->msg;
+	HdrHToN(reply);
 	return reply;
 	}
 
@@ -1630,7 +1634,7 @@ HandleRequest
 		int i, adds = 0, dels = 0;
 		const mDNSu8 *ptr, *end = (mDNSu8 *)&request->msg + request->len;
 		HdrNToH(request);
-		lease = GetPktLease(NULL, &request->msg, end);
+		lease = GetPktLease(&mDNSStorage, &request->msg, end);
 		ptr = LocateAuthorities(&request->msg, end);
 		for (i = 0; i < request->msg.h.mDNS_numUpdates; i++)
 			{
