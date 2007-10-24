@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.741  2007/10/24 00:50:29  cheshire
+<rdar://problem/5496734> BTMM: Need to retry registrations after failures
+Retrigger record registrations whenever a new network interface is added
+
 Revision 1.740  2007/10/23 00:38:03  cheshire
 When sending uDNS cache expiration query, need to increment rr->UnansweredQueries
 or code will spin sending the same cache expiration query repeatedly
@@ -1350,7 +1354,6 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 		rr->state = regState_FetchingZoneData;
 		rr->uselease = mDNStrue;
 		rr->nta = StartGetZoneData(m, rr->resrec.name, ZoneServiceUpdate, RecordRegistrationCallback, rr);
-		return rr->nta ? mStatus_NoError : mStatus_NoMemoryErr;
 		}
 #endif
 	
@@ -6009,6 +6012,7 @@ mDNSlocal void UpdateInterfaceProtocols(mDNS *const m, NetworkInterfaceInfo *act
 
 mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *set, mDNSBool flapping)
 	{
+	AuthRecord *rr;
 	mDNSBool FirstOfType = mDNStrue;
 	NetworkInterfaceInfo **p = &m->HostInterfaces;
 
@@ -6065,7 +6069,6 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	if (set->McastTxRx && ((m->KnownBugs & mDNS_KnownBug_PhantomInterfaces) || FirstOfType || set->InterfaceActive))
 		{
 		DNSQuestion *q;
-		AuthRecord *rr;
 		// If flapping, delay between first and second queries is eight seconds instead of one
 		mDNSs32 delay    = flapping ? mDNSPlatformOneSecond   * 5 : 0;
 		mDNSu8  announce = flapping ? (mDNSu8)1                   : InitialAnnounceCount;
@@ -6115,6 +6118,13 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 				InitializeLastAPTime(m, rr);
 				}
 		}
+
+	for (rr = m->ResourceRecords; rr; rr=rr->next)
+		if (!rr->resrec.InterfaceID && !rr->ForceMCast && !IsLocalDomain(rr->resrec.name))
+			{
+			if (rr->nta) CancelGetZoneData(m, rr->nta);
+			rr->nta = StartGetZoneData(m, rr->resrec.name, ZoneServiceUpdate, RecordRegistrationCallback, rr);
+			}
 
 	mDNS_Unlock(m);
 	return(mStatus_NoError);
@@ -6328,7 +6338,7 @@ mDNSlocal mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	if (!GetServiceTarget(m, srs))
 		{
 		// defer registration until we've got a target
-		debugf("uDNS_RegisterService - no target for %##s", srs->RR_SRV.resrec.name->c);
+		LogOperation("uDNS_RegisterService - no target for %##s", srs->RR_SRV.resrec.name->c);
 		srs->state = regState_NoTarget;
 		srs->nta   = mDNSNULL;
 		return mStatus_NoError;
