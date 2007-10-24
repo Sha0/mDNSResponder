@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.508  2007/10/24 00:05:03  cheshire
+<rdar://problem/5519458> BTMM: Machines don't appear in the sidebar on wake from sleep
+When sending TLS/TCP LLQ setup request over VPN, need to set EventPort to 5353, not zero
+
 Revision 1.507  2007/10/23 00:33:36  cheshire
 Improved debugging messages
 
@@ -1522,12 +1526,20 @@ mDNSlocal mDNSu8 *putLLQ(DNSMessage *const msg, mDNSu8 *ptr, const DNSQuestion *
 	return ptr;
 	}
 
+// Normally we'd just request event packets be sent directly to m->LLQNAT.ExternalPort, except...
+// with LLQs over TLS/TCP we're doing a weird thing where instead of requesting packets be sent to ExternalAddress:ExternalPort
+// we're requesting that packets be sent to ExternalPort, but at the source address of our outgoing TCP connection.
+// Normally, after going through the NAT gateway, the source address of our outgoing TCP connection is the same as ExternalAddress,
+// so this is fine, except when the TCP connection ends up going over a VPN tunnel instead.
+// To work around this, if we find that the source address for our TCP connection is not a private address,
+// we tell the Dot Mac LLQ server to send events to us directly at port 5353, instead of at our mapped external NAT port.
+
 mDNSlocal mDNSu16 GetLLQEventPort(const mDNS *const m, const mDNSAddr *const dst)
 	{
 	mDNSAddr src;
 	mDNSPlatformSourceAddrForDest(&src, dst);
 	//LogMsg("GetLLQEventPort: src %#a for dst %#a (%d)", &src, dst, mDNSv4AddrIsRFC1918(&src.ip.v4) ? mDNSVal16(m->LLQNAT.ExternalPort) : 0);
-	return(mDNSv4AddrIsRFC1918(&src.ip.v4) ? mDNSVal16(m->LLQNAT.ExternalPort) : 0);
+	return(mDNSv4AddrIsRFC1918(&src.ip.v4) ? mDNSVal16(m->LLQNAT.ExternalPort) : mDNSVal16(MulticastDNSPort));
 	}
 
 // Normally called with llq set.
