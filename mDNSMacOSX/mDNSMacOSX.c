@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.503  2007/10/25 23:11:42  cheshire
+Ignore IPv6 ULA addresses configured on lo0 loopback interface
+
 Revision 1.502  2007/10/22 20:07:07  cheshire
 Moved mDNSPlatformSourceAddrForDest from mDNSMacOSX.c to PlatformCommon.c so
 Posix build can share the code (better than just pasting it into mDNSPosix.c)
@@ -2494,9 +2497,9 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 					{
 					int ifru_flags6 = 0;
 #ifndef NO_IPV6
+					struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)ifa->ifa_addr;
 					if (ifa->ifa_addr->sa_family == AF_INET6 && InfoSocket >= 0)
 						{
-						struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)ifa->ifa_addr;
 						struct in6_ifreq ifr6;
 						mDNSPlatformMemZero((char *)&ifr6, sizeof(ifr6));
 						strlcpy(ifr6.ifr_name, ifa->ifa_name, sizeof(ifr6.ifr_name));
@@ -2509,8 +2512,12 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 					if (!(ifru_flags6 & (IN6_IFF_NOTREADY | IN6_IFF_DETACHED | IN6_IFF_DEPRECATED | IN6_IFF_TEMPORARY)))
 						{
 						if (ifa->ifa_flags & IFF_LOOPBACK)
-							if (ifa->ifa_addr->sa_family == AF_INET) v4Loopback = ifa;
-							else                                     v6Loopback = ifa;
+							{
+							if (ifa->ifa_addr->sa_family == AF_INET)     v4Loopback = ifa;
+#ifndef NO_IPV6
+							else if (sin6->sin6_addr.s6_addr[0] != 0xFD) v6Loopback = ifa;
+#endif
+							}
 						else
 							{
 							NetworkInterfaceInfoOSX *i = AddInterfaceToList(m, ifa, utc);
