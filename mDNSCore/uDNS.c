@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.517  2007/10/25 23:30:12  cheshire
+Private DNS registered records now deregistered on sleep and re-registered on wake
+
 Revision 1.516  2007/10/25 22:53:52  cheshire
 <rdar://problem/5496734> BTMM: Need to retry registrations after failures
 Don't unlinkSRS and permanently give up at the first sign of trouble
@@ -3911,12 +3914,10 @@ mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 	if (!ptr)
 		{
 		LogMsg("SendRecordDeregistration Error: could not contruct deregistration packet for %s", ARDisplayString(m, rr));
-		CompleteDeregistration(m, rr);
+		if (rr->state == regState_DeregPending) CompleteDeregistration(m, rr);
 		}
 	else
 		{
-		rr->state = regState_DeregPending;
-	
 		if (rr->Private)
 			{
 			LogOperation("SendRecordDeregistration TCP %p %s", rr->tcp, ARDisplayString(m, rr));
@@ -3931,7 +3932,7 @@ mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 			{
 			mStatus err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, GetAuthInfoForName_internal(m, rr->resrec.name));
 			if (err) debugf("ERROR: SendRecordDeregistration - mDNSSendDNSMessage - %ld", err);
-			CompleteDeregistration(m, rr);		// Don't touch rr after this
+			if (rr->state == regState_DeregPending) CompleteDeregistration(m, rr);		// Don't touch rr after this
 			}
 		}
 	}
@@ -3958,7 +3959,7 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 		default: LogMsg("uDNS_DeregisterRecord: State %d for %##s type %s", rr->state, rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype)); return mStatus_NoError;
 		}
 
-	if (rr->state != regState_Unregistered) SendRecordDeregistration(m, rr);
+	if (rr->state != regState_Unregistered) { rr->state = regState_DeregPending; SendRecordDeregistration(m, rr); }
 	return mStatus_NoError;
 	}
 
@@ -4444,16 +4445,7 @@ mDNSexport void SleepRecordRegistrations(mDNS *m)
 		if (rr->state == regState_Registered ||
 			rr->state == regState_Refresh)
 			{
-			mDNSu8 *ptr = m->omsg.data, *end = (mDNSu8 *)&m->omsg + sizeof(DNSMessage);
-			InitializeDNSMessage(&m->omsg.h, mDNS_NewMessageID(m), UpdateReqFlags);
-
-			// construct deletion update
-			ptr = putZone(&m->omsg, ptr, end, &rr->zone, mDNSOpaque16fromIntVal(rr->resrec.rrclass));
-			if (!ptr) { LogMsg("Error: SleepRecordRegistrations - could not put zone"); return; }
-			ptr = putDeletionRecord(&m->omsg, ptr, &rr->resrec);
-			if (!ptr) { LogMsg("Error: SleepRecordRegistrations - could not put deletion record"); return; }
-
-			mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, GetAuthInfoForName_internal(m, rr->resrec.name));
+			SendRecordDeregistration(m, rr);
 			rr->state = regState_Refresh;
 			rr->LastAPTime = m->timenow;
 			rr->ThisAPInterval = 300 * mDNSPlatformOneSecond;
