@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.512  2007/10/25 18:25:15  cheshire
+<rdar://problem/5496734> BTMM: Need to retry registrations after failures
+Don't need a NAT mapping for autotunnel services
+
 Revision 1.511  2007/10/25 00:16:23  cheshire
 <rdar://problem/5496734> BTMM: Need to retry registrations after failures
 Fixed retry timing logic; when DNS server returns an error code, we should retry later,
@@ -2545,14 +2549,14 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 	// We were not behind a NAT and now we are
 
 	mDNSIPPort port        = srs->RR_SRV.resrec.rdata->u.srv.port;
-	mDNSBool NowBehindNAT  = (!mDNSIPPortIsZero(port) && mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsRFC1918(&srs->ns));
+	mDNSBool NowNeedNATMAP = (srs->RR_SRV.AutoTarget == Target_AutoHostAndNATMAP && !mDNSIPPortIsZero(port) && mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsRFC1918(&srs->ns));
 	mDNSBool WereBehindNAT = (srs->NATinfo.clientContext != mDNSNULL);
 	mDNSBool PortWasMapped = (srs->NATinfo.clientContext && !mDNSSameIPPort(srs->NATinfo.RequestedPort, port));		// I think this is always false -- SC Sept 07
-	mDNSBool NATChanged    = (!WereBehindNAT && NowBehindNAT) || (!NowBehindNAT && PortWasMapped);
+	mDNSBool NATChanged    = (!WereBehindNAT && NowNeedNATMAP) || (!NowNeedNATMAP && PortWasMapped);
 
-	LogOperation("UpdateSRV %##s newtarget %##s TargetChanged %d HaveZoneData %d port %d NowBehindNAT %d WereBehindNAT %d PortWasMapped %d NATChanged %d",
+	LogOperation("UpdateSRV %##s newtarget %##s TargetChanged %d HaveZoneData %d port %d NowNeedNATMAP %d WereBehindNAT %d PortWasMapped %d NATChanged %d",
 		srs->RR_SRV.resrec.name->c, newtarget,
-		TargetChanged, HaveZoneData, mDNSVal16(port), NowBehindNAT, WereBehindNAT, PortWasMapped, NATChanged);
+		TargetChanged, HaveZoneData, mDNSVal16(port), NowNeedNATMAP, WereBehindNAT, PortWasMapped, NATChanged);
 
 	if (m->mDNS_busy != m->mDNS_reentrancy+1)
 		LogMsg("UpdateSRV: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
@@ -2585,7 +2589,7 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 		case regState_NoTarget:
 			if (newtarget->c[0])
 				{
-				debugf("UpdateSRV: %s service %##s", HaveZoneData ? (NATChanged && NowBehindNAT ? "Starting Port Map for" : "Registering") : "Getting Zone Data for", srs->RR_SRV.resrec.name->c);
+				debugf("UpdateSRV: %s service %##s", HaveZoneData ? (NATChanged && NowNeedNATMAP ? "Starting Port Map for" : "Registering") : "Getting Zone Data for", srs->RR_SRV.resrec.name->c);
 				if (!HaveZoneData)
 					{
 					srs->state = regState_FetchingZoneData;
@@ -2594,12 +2598,12 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 					}
 				else
 					{
-					if (srs->NATinfo.clientContext && (NATChanged || !NowBehindNAT))
+					if (srs->NATinfo.clientContext && (NATChanged || !NowNeedNATMAP))
 						{
 						mDNS_StopNATOperation_internal(m, &srs->NATinfo);
 						srs->NATinfo.clientContext = mDNSNULL;
 						}
-					if (NATChanged && NowBehindNAT && srs->RR_SRV.AutoTarget == Target_AutoHostAndNATMAP)
+					if (NATChanged && NowNeedNATMAP && srs->RR_SRV.AutoTarget == Target_AutoHostAndNATMAP)
 						{ srs->state = regState_NATMap; StartSRVNatMap(m, srs); }
 					else SendServiceRegistration(m, srs);
 					}
