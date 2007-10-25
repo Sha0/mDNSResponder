@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.373  2007/10/25 21:28:43  cheshire
+Add ServiceRegistrations to SIGINFO output
+
 Revision 1.372  2007/10/25 21:21:45  cheshire
 <rdar://problem/5496734> BTMM: Need to retry registrations after failures
 Don't unlink_and_free_service_instance at the first error
@@ -3639,6 +3642,15 @@ mDNSexport void udsserver_info(mDNS *const m)
 		AuthRecord *ar;
 		for (ar = m->ResourceRecords; ar; ar=ar->next)
 			LogMsgNoIdent("%s", ARDisplayString(m, ar));
+		}
+
+	LogMsgNoIdent("----- ServiceRegistrations -----");
+	if (!m->ServiceRegistrations) LogMsgNoIdent("<None>");
+	else
+		{
+		ServiceRecordSet *s;
+		for (s = m->ServiceRegistrations; s; s = s->uDNS_next)
+			LogMsgNoIdent("%s", ARDisplayString(m, &s->RR_SRV));
 		}
 
 	LogMsgNoIdent("---------- Questions -----------");
