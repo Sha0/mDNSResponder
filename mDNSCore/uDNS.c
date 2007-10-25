@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.513  2007/10/25 20:06:13  cheshire
+Don't try to do SOA queries using private DNS (TLS over TCP) queries
+
 Revision 1.512  2007/10/25 18:25:15  cheshire
 <rdar://problem/5496734> BTMM: Need to retry registrations after failures
 Don't need a NAT mapping for autotunnel services
@@ -1256,16 +1259,13 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 	// Check to see if adding this new DomainAuthInfo has changed the credentials for any of our questions
 	for (q = m->Questions; q; q=q->next)
 		{
-		if (q->QuestionCallback != GetZoneData_QuestionCallback)
+		DomainAuthInfo *newinfo = GetAuthInfoForQuestion(m, q);
+		if (q->AuthInfo != newinfo)
 			{
-			DomainAuthInfo *newinfo = GetAuthInfoForName_internal(m, &q->qname);
-			if (q->AuthInfo != newinfo)
-				{
-				debugf("mDNS_SetSecretForDomain updating q->AuthInfo from %##s to %##s for %##s (%s)",
-					q->AuthInfo ? q->AuthInfo->domain.c : mDNSNULL,
-					newinfo     ? newinfo    ->domain.c : mDNSNULL, q->qname.c, DNSTypeName(q->qtype));
-				q->AuthInfo = newinfo;
-				}
+			debugf("mDNS_SetSecretForDomain updating q->AuthInfo from %##s to %##s for %##s (%s)",
+				q->AuthInfo ? q->AuthInfo->domain.c : mDNSNULL,
+				newinfo     ? newinfo    ->domain.c : mDNSNULL, q->qname.c, DNSTypeName(q->qtype));
+			q->AuthInfo = newinfo;
 			}
 		}
 
@@ -2234,7 +2234,7 @@ mDNSlocal const domainname *PRIVATE_LLQ_SERVICE_TYPE    = (const domainname*)"\x
 mDNSlocal mStatus GetZoneData_StartQuery(mDNS *const m, ZoneData *zd, mDNSu16 qtype);
 
 // GetZoneData_QuestionCallback is called from normal client callback context (core API calls allowed)
-mDNSexport void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
+mDNSlocal void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
 	ZoneData *zd = (ZoneData*)question->QuestionContext;
 
@@ -2363,6 +2363,18 @@ mDNSexport ZoneData *StartGetZoneData(mDNS *const m, const domainname *const nam
 	mDNS_ReclaimLockAfterCallback();
 
 	return zd;
+	}
+
+// GetZoneData queries are a special case -- even if we have a key for them, we don't do them privately,
+// because that would result in an infinite loop (i.e. to do a private query we first need to get
+// the _dns-query-tls SRV record for the zone, and we can't do *that* privately because to do so
+// we'd need to already know the _dns-query-tls SRV record.
+// Also, as a general rule, we never do SOA queries privately
+mDNSexport DomainAuthInfo *GetAuthInfoForQuestion(mDNS *m, const DNSQuestion *const q)	// Must be called with lock held
+	{
+	if (q->QuestionCallback == GetZoneData_QuestionCallback) return(mDNSNULL);
+	if (q->qtype            == kDNSType_SOA                ) return(mDNSNULL);
+	return(GetAuthInfoForName_internal(m, &q->qname));
 	}
 
 // ***************************************************************************

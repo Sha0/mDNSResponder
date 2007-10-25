@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: uDNS.h,v $
+Revision 1.88  2007/10/25 20:06:13  cheshire
+Don't try to do SOA queries using private DNS (TLS over TCP) queries
+
 Revision 1.87  2007/10/24 22:40:06  cheshire
 Renamed: RecordRegistrationCallback          -> RecordRegistrationGotZoneData
 Renamed: ServiceRegistrationZoneDataComplete -> ServiceRegistrationGotZoneData
@@ -257,7 +260,6 @@ extern mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const questio
 extern mStatus mDNS_StartNATOperation_internal(mDNS *const m, NATTraversalInfo *traversal);
 
 extern void RecordRegistrationGotZoneData(mDNS *const m, mStatus err, const ZoneData *zoneData);
-extern void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord);
 extern mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr);
 
 extern void ServiceRegistrationGotZoneData(mDNS *const m, mStatus err, const ZoneData *result);
@@ -286,6 +288,7 @@ typedef enum
 
 extern uDNS_LLQType    uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *const srcaddr, const mDNSIPPort srcport);
 extern DomainAuthInfo *GetAuthInfoForName_internal(mDNS *m, const domainname *const name);
+extern DomainAuthInfo *GetAuthInfoForQuestion(mDNS *m, const DNSQuestion *const q);
 extern void DisposeTCPConn(struct tcpInfo_t *tcp);
 
 // NAT traversal

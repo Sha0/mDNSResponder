@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.744  2007/10/25 20:06:14  cheshire
+Don't try to do SOA queries using private DNS (TLS over TCP) queries
+
 Revision 1.743  2007/10/25 00:12:46  cheshire
 <rdar://problem/5496734> BTMM: Need to retry registrations after failures
 Retrigger service registrations whenever a new network interface is added
@@ -5189,13 +5192,7 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 		question->UniqueAnswers     = 0;
 		question->FlappingInterface1 = mDNSNULL;
 		question->FlappingInterface2 = mDNSNULL;
-		// GetZoneData queries are a special case -- even if we have a key for them, we don't do them privately,
-		// because that would result in an infinite loop (i.e. to do a private query we first need to get
-		// the _dns-query-tls SRV record for the zone, and we can't do *that* privately because to do so
-		// we'd need to already know the _dns-query-tls SRV record.
-		// Also: Make sure we set AuthInfo before calling FindDuplicateQuestion()
-		question->AuthInfo          = (question->QuestionCallback == GetZoneData_QuestionCallback) ? mDNSNULL
-		                            : GetAuthInfoForName_internal(m, &question->qname);
+		question->AuthInfo          = GetAuthInfoForQuestion(m, question);		// Must do this before calling FindDuplicateQuestion()
 		question->DuplicateOf       = FindDuplicateQuestion(m, question);
 		question->NextInDQList      = mDNSNULL;
 		question->SendQNow          = mDNSNULL;
