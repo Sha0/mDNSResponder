@@ -17,6 +17,10 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.372  2007/10/25 21:21:45  cheshire
+<rdar://problem/5496734> BTMM: Need to retry registrations after failures
+Don't unlink_and_free_service_instance at the first error
+
 Revision 1.371  2007/10/18 23:34:40  cheshire
 <rdar://problem/5532821> Need "considerable burden on the network" warning in uds_daemon.c
 
@@ -1201,7 +1205,8 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 	else if (result == mStatus_NameConflict)
 		LogOperation("%3d: DNSServiceRegister(%##s, %u) NAME CONFLICT", instance->sd, srs->RR_SRV.resrec.name->c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port));
 	else
-		LogOperation("%3d: DNSServiceRegister(%##s, %u) CALLBACK %d",   instance->sd, srs->RR_SRV.resrec.name->c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port), result);
+		LogOperation("%3d: DNSServiceRegister(%##s, %u) %s %d",         instance->sd, srs->RR_SRV.resrec.name->c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port),
+			SuppressError ? "suppressed error" : "CALLBACK", result);
 
 	if (!instance->request && result != mStatus_MemFree) { LogMsg("regservice_callback: instance->request is NULL %d", result); return; }
 
@@ -1265,15 +1270,12 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 		}
 	else
 		{
-		if (result != mStatus_NATTraversal)
-			LogMsg("regservice_callback: Error %d%s for %s", result, SuppressError ? " (suppressed)" : "", ARDisplayString(m, &srs->RR_SRV));
 		if (!SuppressError) 
 			{
 			if (GenerateNTDResponse(srs->RR_SRV.resrec.name, srs->RR_SRV.resrec.InterfaceID, instance->request, &rep, reg_service_reply_op, kDNSServiceFlagsAdd, result) != mStatus_NoError)
 				LogMsg("%3d: regservice_callback: %##s is not valid DNS-SD SRV name", instance->sd, srs->RR_SRV.resrec.name->c);
 			else { append_reply(instance->request, rep); instance->clientnotified = mDNStrue; }
 			}
-		unlink_and_free_service_instance(instance);
 		}
 	}
 
