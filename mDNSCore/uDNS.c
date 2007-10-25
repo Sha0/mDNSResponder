@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.516  2007/10/25 22:53:52  cheshire
+<rdar://problem/5496734> BTMM: Need to retry registrations after failures
+Don't unlinkSRS and permanently give up at the first sign of trouble
+
 Revision 1.515  2007/10/25 21:08:07  cheshire
 Don't try to send record registrations/deletions before we have our server address
 
@@ -1098,6 +1102,17 @@ mDNSlocal void unlinkSRS(mDNS *const m, ServiceRecordSet *srs)
 mDNSlocal void SetRecordRetry(mDNS *const m, AuthRecord *rr, mStatus SendErr)
 	{
 	rr->LastAPTime = m->timenow;
+
+	// Code for stress-testing registration renewal code
+#if 0
+	if (rr->expire && rr->expire - m->timenow > mDNSPlatformOneSecond * 120)
+		{
+		LogOperation("Adjusting expiry from %d to 120 seconds for %s",
+			(rr->expire - m->timenow) / mDNSPlatformOneSecond, ARDisplayString(m, rr));
+		rr->expire = m->timenow + mDNSPlatformOneSecond * 120;
+		}
+#endif
+
 	if (rr->expire && rr->expire - m->timenow > mDNSPlatformOneSecond) { rr->ThisAPInterval = (rr->expire - m->timenow)/2;
 		LogOperation("SetRecordRetry refresh in %d for %s", rr->ThisAPInterval / mDNSPlatformOneSecond, ARDisplayString(m, rr)); return; }
 
@@ -2210,13 +2225,13 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 		}
 
 	SetRecordRetry(m, &srs->RR_SRV, err);
-	err = mStatus_NoError;
+	return;
 
 exit:
 
 	if (err)
 		{
-		LogMsg("SendServiceRegistration - Error formatting message %d", err);
+		LogMsg("SendServiceRegistration ERROR formatting message %d!! Permanently abandoning service registration %##s", err, srs->RR_SRV.resrec.name->c);
 
 		unlinkSRS(m, srs);
 		srs->state = regState_Unregistered;
@@ -2421,21 +2436,17 @@ mDNSlocal void StartSRVNatMap(mDNS *m, ServiceRecordSet *srs)
 	{
 	mDNSu8 *p = srs->RR_PTR.resrec.name->c;
 	if (p[0]) p += 1 + p[0];
-
 	if      (SameDomainLabel(p, (mDNSu8 *)"\x4" "_tcp")) srs->NATinfo.Protocol = NATOp_MapTCP;
 	else if (SameDomainLabel(p, (mDNSu8 *)"\x4" "_udp")) srs->NATinfo.Protocol = NATOp_MapUDP;
-	else { LogMsg("StartSRVNatMap: could not determine transport protocol of service %##s", srs->RR_SRV.resrec.name->c); goto error; }
+	else { LogMsg("StartSRVNatMap: could not determine transport protocol of service %##s", srs->RR_SRV.resrec.name->c); return; }
+	
+	if (srs->NATinfo.clientContext) mDNS_StopNATOperation_internal(m, &srs->NATinfo);
 	srs->NATinfo.IntPort        = srs->RR_SRV.resrec.rdata->u.srv.port;
 	srs->NATinfo.RequestedPort  = srs->RR_SRV.resrec.rdata->u.srv.port;
 	srs->NATinfo.NATLease       = 0;		// Request default lease
 	srs->NATinfo.clientCallback = CompleteSRVNatMap;
 	srs->NATinfo.clientContext  = srs;
 	mDNS_StartNATOperation_internal(m, &srs->NATinfo);
-	return;
-
-	error:
-	if (srs->nta) CancelGetZoneData(m, srs->nta); // Make sure we cancel old one before we start a new one
-	srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationGotZoneData, srs);
 	}
 
 // Called in normal callback context (i.e. mDNS_busy and mDNS_reentrancy are both 1)
@@ -2448,11 +2459,7 @@ mDNSexport void ServiceRegistrationGotZoneData(mDNS *const m, mStatus err, const
 
 	srs->nta = mDNSNULL;
 
-	if (err) goto error;
-	if (!zoneData) { LogMsg("ERROR: ServiceRegistrationGotZoneData invoked with NULL result and no error"); goto error; }
-
-	if (srs->RR_SRV.resrec.rrclass != zoneData->ZoneClass)
-		{ LogMsg("Service %##s - class does not match zone", srs->RR_SRV.resrec.name->c); goto error; }
+	if (err || !zoneData) return;
 
 	// cache zone data
 	AssignDomainName(&srs->zone, &zoneData->ZoneName);
@@ -2461,7 +2468,7 @@ mDNSexport void ServiceRegistrationGotZoneData(mDNS *const m, mStatus err, const
 	if (!mDNSIPPortIsZero(zoneData->Port))
 		{
 		srs->SRSUpdatePort = zoneData->Port;
-		srs->Private = zoneData->ZonePrivate;
+		srs->Private       = zoneData->ZonePrivate;
 		}
 	else
 		{
@@ -2489,17 +2496,6 @@ mDNSexport void ServiceRegistrationGotZoneData(mDNS *const m, mStatus err, const
 		SendServiceRegistration(m, srs);
 		mDNS_Unlock(m);
 		}
-	return;
-
-error:
-	unlinkSRS(m, srs);
-	srs->state = regState_Unregistered;
-
-	// Don't need to do the mDNS_DropLockBeforeCallback stuff here, because this code is
-	// *already* being invoked in the right callback context, with mDNS_reentrancy correctly incremented.
-	srs->ServiceCallback(m, srs, err);
-	// CAUTION: MUST NOT do anything more with rr after calling srs->ServiceCallback(), because the client's callback function
-	// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
 	}
 
 mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
@@ -2554,6 +2550,7 @@ exit:
 
 	if (err)
 		{
+		LogMsg("SendServiceDeregistration ERROR formatting message %d!! Permanently abandoning service registration %##s", err, srs->RR_SRV.resrec.name->c);
 		unlinkSRS(m, srs);
 		srs->state = regState_Unregistered;
 		}
@@ -3209,8 +3206,7 @@ mDNSlocal void hndlServiceUpdateReply(mDNS *const m, ServiceRecordSet *srs,  mSt
 				{
 				srs->TestForSelfConflict = mDNSfalse;
 				if (err == mStatus_NoSuchRecord) err = mStatus_NameConflict;	// NoSuchRecord implies that our prereq was not met, so we actually have a name conflict
-				if (err) srs->state = regState_Unregistered;
-				else srs->state = regState_Registered;
+				if (!err) srs->state = regState_Registered;
 				InvokeCallback = mDNStrue;
 				break;
 				}
@@ -3224,7 +3220,7 @@ mDNSlocal void hndlServiceUpdateReply(mDNS *const m, ServiceRecordSet *srs,  mSt
 			else
 				{
 				//!!!KRS make sure all structs will still get cleaned up when client calls DeregisterService with this state
-				if (err) { LogMsg("Error %ld for registration of service %##s", err, srs->RR_SRV.resrec.name->c); srs->state = regState_Unregistered; }
+				if (err) LogMsg("Error %ld for registration of service %##s", err, srs->RR_SRV.resrec.name->c);
 				else srs->state = regState_Registered;
 				InvokeCallback = mDNStrue;
 				break;
@@ -3234,7 +3230,6 @@ mDNSlocal void hndlServiceUpdateReply(mDNS *const m, ServiceRecordSet *srs,  mSt
 				{
 				LogMsg("Error %ld for refresh of service %##s", err, srs->RR_SRV.resrec.name->c);
 				InvokeCallback = mDNStrue;
-				srs->state = regState_Unregistered;
 				}
 			else srs->state = regState_Registered;
 			break;
@@ -3275,7 +3270,6 @@ mDNSlocal void hndlServiceUpdateReply(mDNS *const m, ServiceRecordSet *srs,  mSt
 			if (err)
 				{
 				LogMsg("hndlServiceUpdateReply: error updating TXT record for service %##s", srs->RR_SRV.resrec.name->c);
-				srs->state = regState_Unregistered;
 				InvokeCallback = mDNStrue;
 				}
 			else
@@ -3340,7 +3334,11 @@ mDNSlocal void hndlServiceUpdateReply(mDNS *const m, ServiceRecordSet *srs,  mSt
 		}
 
 	srs->RR_SRV.ThisAPInterval = INIT_UCAST_POLL_INTERVAL - 1;	// reset retry delay for future refreshes, dereg, etc.
-	if (srs->state == regState_Unregistered) unlinkSRS(m, srs);
+	if (srs->state == regState_Unregistered)
+		{
+		LogMsg("hndlServiceUpdateReply ERROR! state == regState_Unregistered. Permanently abandoning service registration %##s", srs->RR_SRV.resrec.name->c);
+		unlinkSRS(m, srs);
+		}
 	else if (txt->QueuedRData && srs->state == regState_Registered)
 		{
 		if (InvokeCallback)
