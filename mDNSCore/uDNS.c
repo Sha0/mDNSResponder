@@ -22,6 +22,11 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.511  2007/10/25 00:16:23  cheshire
+<rdar://problem/5496734> BTMM: Need to retry registrations after failures
+Fixed retry timing logic; when DNS server returns an error code, we should retry later,
+instead of just deleting our record ("UnlinkAuthRecord") and completely giving up
+
 Revision 1.510  2007/10/24 22:40:06  cheshire
 Renamed: RecordRegistrationCallback          -> RecordRegistrationGotZoneData
 Renamed: ServiceRegistrationZoneDataComplete -> ServiceRegistrationGotZoneData
@@ -1085,7 +1090,7 @@ mDNSlocal void SetRecordRetry(mDNS *const m, AuthRecord *rr, mStatus SendErr)
 
 	rr->expire = 0;
 	if (SendErr == mStatus_TransientErr || rr->ThisAPInterval < INIT_UCAST_POLL_INTERVAL)  rr->ThisAPInterval = INIT_UCAST_POLL_INTERVAL;
-	else if (rr->ThisAPInterval*2 <= MAX_UCAST_POLL_INTERVAL)                              rr->ThisAPInterval *= 2;
+	else if (rr->ThisAPInterval <= MAX_UCAST_POLL_INTERVAL / 2)                            rr->ThisAPInterval *= 2;
 	else                                                                                   rr->ThisAPInterval = MAX_UCAST_POLL_INTERVAL;
 
 	LogOperation("SetRecordRetry retry in %d for %s", rr->ThisAPInterval / mDNSPlatformOneSecond, ARDisplayString(m, rr));
@@ -2179,16 +2184,16 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 		if (srs->tcp) LogOperation("SendServiceRegistration: Disposing existing TCP connection for %s", ARDisplayString(m, &srs->RR_SRV));
 		if (srs->tcp) DisposeTCPConn(srs->tcp);
 		srs->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &srs->ns, srs->SRSUpdatePort, mDNSNULL, srs, mDNSNULL);
-		srs->RR_SRV.LastAPTime = m->timenow;
-		srs->RR_SRV.ThisAPInterval = srs->tcp ? 0x3FFFFFFF : mDNSPlatformOneSecond * 5; // TCP will handle any necessary retransmissions for us
+		if (!srs->tcp) srs->RR_SRV.ThisAPInterval = mDNSPlatformOneSecond * 5; // If failed to make TCP connection, try again in ten seconds (5*2)
+		else if (srs->RR_SRV.ThisAPInterval < mDNSPlatformOneSecond * 30) srs->RR_SRV.ThisAPInterval = mDNSPlatformOneSecond * 30;
 		}
 	else
 		{
 		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &srs->ns, srs->SRSUpdatePort, mDNSNULL, GetAuthInfoForName_internal(m, srs->RR_SRV.resrec.name));
 		if (err) debugf("ERROR: SendServiceRegistration - mDNSSendDNSMessage - %ld", err);
-		SetRecordRetry(m, &srs->RR_SRV, err);
 		}
 
+	SetRecordRetry(m, &srs->RR_SRV, err);
 	err = mStatus_NoError;
 
 exit:
@@ -2254,7 +2259,7 @@ mDNSexport void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *questio
 			}
 		else
 			{
-			LogOperation("ERROR: GetZoneData_QuestionCallback - recursed to root label of %##s without finding SOA", zd->ChildName.c);
+			LogOperation("GetZoneData recursed to root label of %##s without finding SOA", zd->ChildName.c);
 			zd->ZoneDataCallback(m, mStatus_NoSuchNameErr, zd);
 			mDNSPlatformMemFree(zd);
 			}
@@ -2497,15 +2502,15 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 		if (srs->tcp) LogOperation("SendServiceDeregistration: Disposing existing TCP connection for %s", ARDisplayString(m, &srs->RR_SRV));
 		if (srs->tcp) DisposeTCPConn(srs->tcp);
 		srs->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &srs->ns, srs->SRSUpdatePort, mDNSNULL, srs, mDNSNULL);
-		srs->RR_SRV.LastAPTime = m->timenow;
-		srs->RR_SRV.ThisAPInterval = srs->tcp ? 0x3FFFFFFF : mDNSPlatformOneSecond * 5; // TCP will handle any necessary retransmissions for us
+		if (!srs->tcp) srs->RR_SRV.ThisAPInterval = mDNSPlatformOneSecond * 5; // If failed to make TCP connection, try again in ten seconds (5*2)
+		else if (srs->RR_SRV.ThisAPInterval < mDNSPlatformOneSecond * 30) srs->RR_SRV.ThisAPInterval = mDNSPlatformOneSecond * 30;
 		}
 	else
 		{
 		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &srs->ns, srs->SRSUpdatePort, mDNSNULL, GetAuthInfoForName_internal(m, srs->RR_SRV.resrec.name));
 		if (err && err != mStatus_TransientErr) { debugf("ERROR: SendServiceDeregistration - mDNSSendDNSMessage - %ld", err); goto exit; }
-		SetRecordRetry(m, &srs->RR_SRV, err);
 		}
+	SetRecordRetry(m, &srs->RR_SRV, err);
 
 	err = mStatus_NoError;
 
@@ -3117,15 +3122,15 @@ mDNSlocal void SendRecordRegistration(mDNS *const m, AuthRecord *rr)
 		if (rr->tcp) LogOperation("SendRecordRegistration: Disposing existing TCP connection for %s", ARDisplayString(m, rr));
 		if (rr->tcp) DisposeTCPConn(rr->tcp);
 		rr->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, mDNSNULL, rr);
-		rr->LastAPTime = m->timenow;
-		rr->ThisAPInterval = rr->tcp ? 0x3FFFFFFF : mDNSPlatformOneSecond * 5; // TCP will handle any necessary retransmissions for us
+		if (!rr->tcp) rr->ThisAPInterval = mDNSPlatformOneSecond * 5; // If failed to make TCP connection, try again in ten seconds (5*2)
+		else if (rr->ThisAPInterval < mDNSPlatformOneSecond * 30) rr->ThisAPInterval = mDNSPlatformOneSecond * 30;
 		}
 	else
 		{
 		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, GetAuthInfoForName_internal(m, rr->resrec.name));
 		if (err) debugf("ERROR: SendRecordRegistration - mDNSSendDNSMessage - %ld", err);
-		SetRecordRetry(m, rr, err);
 		}
+	SetRecordRetry(m, rr, err);
 
 	if (rr->state != regState_Refresh && rr->state != regState_DeregDeferred && rr->state != regState_UpdatePending)
 		rr->state = regState_Pending;
@@ -3392,14 +3397,14 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 				return;
 				}
 			LogMsg("hndlRecordUpdateReply: Registration of record %##s type %d failed with error %ld", rr->resrec.name->c, rr->resrec.rrtype, err);
-			rr->state = regState_Unregistered;
+			return;
 			}
 		}
 
 	if (rr->state == regState_Unregistered)		// Should never happen
 		{
 		LogMsg("hndlRecordUpdateReply rr->state == regState_Unregistered %s", ARDisplayString(m, rr));
-		UnlinkAuthRecord(m, rr);
+		return;
 		}
 
 	if (rr->QueuedRData && rr->state == regState_Registered)
@@ -3613,7 +3618,7 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 	if (QR_OP == UpdateR)
 		{
 		mDNSu32 lease = GetPktLease(m, msg, end);
-		mDNSs32 expire = (m->timenow + (((mDNSs32)lease * mDNSPlatformOneSecond)) * 3/4);
+		mDNSs32 expire = m->timenow + (mDNSs32)lease * mDNSPlatformOneSecond;
 
 		if (CurrentServiceRecordSet)
 			LogMsg("uDNS_ReceiveMsg ERROR CurrentServiceRecordSet already set");
@@ -3802,7 +3807,12 @@ mDNSexport void RecordRegistrationGotZoneData(mDNS *const m, mStatus err, const 
 	if (!ptr) { LogMsg("RecordRegistrationGotZoneData - RR no longer in list.  Discarding."); return; }
 
 	// check error/result
-	if (err) { LogMsg("RecordRegistrationGotZoneData: error %ld", err); return; }
+	if (err)
+		{
+		if (err != mStatus_NoSuchNameErr) LogMsg("RecordRegistrationGotZoneData: error %ld", err);
+		return;
+		}
+
 	if (!zoneData) { LogMsg("ERROR: RecordRegistrationGotZoneData invoked with NULL result and no error"); return; }
 
 	if (newRR->resrec.rrclass != zoneData->ZoneClass)
@@ -3863,8 +3873,9 @@ mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 			if (rr->tcp) LogOperation("SendRecordDeregistration: Disposing existing TCP connection for %s", ARDisplayString(m, rr));
 			if (rr->tcp) DisposeTCPConn(rr->tcp);
 			rr->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, mDNSNULL, rr);
-			rr->LastAPTime = m->timenow;
-			rr->ThisAPInterval = rr->tcp ? 0x3FFFFFFF : mDNSPlatformOneSecond * 5; // TCP will handle any necessary retransmissions for us
+			if (!rr->tcp) rr->ThisAPInterval = mDNSPlatformOneSecond * 5; // If failed to make TCP connection, try again in ten seconds (5*2)
+			else if (rr->ThisAPInterval < mDNSPlatformOneSecond * 30) rr->ThisAPInterval = mDNSPlatformOneSecond * 30;
+			SetRecordRetry(m, rr, mStatus_NoError);
 			}
 		else
 			{
@@ -4296,7 +4307,8 @@ mDNSlocal mDNSs32 CheckRecordRegistrations(mDNS *m)
 				if (rr->state == regState_DeregPending) SendRecordDeregistration(m, rr);
 				else SendRecordRegistration(m, rr);
 				}
-			if (rr->LastAPTime + rr->ThisAPInterval - nextevent < 0) nextevent = rr->LastAPTime + rr->ThisAPInterval;
+			if (nextevent - (rr->LastAPTime + rr->ThisAPInterval) > 0)
+				nextevent = (rr->LastAPTime + rr->ThisAPInterval);
 			}
 		}
 	return nextevent;
@@ -4315,16 +4327,17 @@ mDNSlocal mDNSs32 CheckServiceRegistrations(mDNS *m)
 		{
 		ServiceRecordSet *srs = CurrentServiceRecordSet;
 		CurrentServiceRecordSet = CurrentServiceRecordSet->uDNS_next;
-		if (srs->state == regState_Pending || srs->state == regState_DeregPending || srs->state == regState_DeregDeferred || srs->state == regState_Refresh || srs->state == regState_UpdatePending)
+		if (srs->state == regState_Pending || srs->state == regState_DeregPending || srs->state == regState_DeregDeferred ||
+			srs->state == regState_Refresh || srs->state == regState_UpdatePending)
 			{
 			if (srs->RR_SRV.LastAPTime + srs->RR_SRV.ThisAPInterval - m->timenow < 0)
 				{
-				if (srs->tcp) { srs->RR_SRV.LastAPTime = m->timenow; srs->RR_SRV.ThisAPInterval = 0x3FFFFFFF; }
-				else if (srs->state == regState_DeregPending) { SendServiceDeregistration(m, srs); continue; }
+				if (srs->tcp) { DisposeTCPConn(srs->tcp); srs->tcp = mDNSNULL; }
+				if (srs->state == regState_DeregPending) SendServiceDeregistration(m, srs);
 				else SendServiceRegistration(m, srs);
 				}
-			if (nextevent - srs->RR_SRV.LastAPTime + srs->RR_SRV.ThisAPInterval > 0)
-				nextevent = srs->RR_SRV.LastAPTime + srs->RR_SRV.ThisAPInterval;
+			if (nextevent - (srs->RR_SRV.LastAPTime + srs->RR_SRV.ThisAPInterval) > 0)
+				nextevent = (srs->RR_SRV.LastAPTime + srs->RR_SRV.ThisAPInterval);
 			}
 
 		if (srs->srs_uselease && srs->state == regState_Registered)
