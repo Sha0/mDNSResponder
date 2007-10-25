@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.746  2007/10/25 22:48:50  cheshire
+Added LogOperation message saying when we restart GetZoneData for record and service registrations
+
 Revision 1.745  2007/10/25 20:48:47  cheshire
 For naming consistency (with AuthRecord's UpdateServer) renamed 'ns' to 'SRSUpdateServer'
 
@@ -6131,12 +6134,14 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		if (!rr->resrec.InterfaceID && !rr->ForceMCast && !IsLocalDomain(rr->resrec.name))
 			{
+			LogOperation("mDNS_RegisterInterface: StartGetZoneData for %##s", rr->resrec.name->c);
 			if (rr->nta) CancelGetZoneData(m, rr->nta);
 			rr->nta = StartGetZoneData(m, rr->resrec.name, ZoneServiceUpdate, RecordRegistrationGotZoneData, rr);
 			}
 
 	for (s = m->ServiceRegistrations; s; s = s->uDNS_next)
 		{
+		LogOperation("mDNS_RegisterInterface: StartGetZoneData for %##s", s->RR_SRV.resrec.name->c);
 		if (s->nta) CancelGetZoneData(m, s->nta);
 		s->nta = StartGetZoneData(m, s->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationGotZoneData, s);
 		}
