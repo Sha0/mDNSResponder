@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.374  2007/10/25 22:45:02  cheshire
+Tidied up code for DNSServiceRegister callback status messages
+
 Revision 1.373  2007/10/25 21:28:43  cheshire
 Add ServiceRegistrations to SIGINFO output
 
@@ -1191,6 +1194,10 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 	mDNSBool SuppressError = mDNSfalse;
 	service_instance *instance = srs->ServiceContext;
 	reply_state         *rep;
+	char *fmt = (result == mStatus_NoError)      ? "%3d: DNSServiceRegister(%##s, %u) REGISTERED"    :
+				(result == mStatus_MemFree)      ? "%3d: DNSServiceRegister(%##s, %u) DEREGISTERED"  :
+				(result == mStatus_NameConflict) ? "%3d: DNSServiceRegister(%##s, %u) NAME CONFLICT" :
+				                                   "%3d: DNSServiceRegister(%##s, %u) %s %d";
 	(void)m; // Unused
 	if (!srs)      { LogMsg("regservice_callback: srs is NULL %d",                 result); return; }
 	if (!instance) { LogMsg("regservice_callback: srs->ServiceContext is NULL %d", result); return; }
@@ -1201,15 +1208,7 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 		!instance->default_local)
 		SuppressError = mDNStrue;
 
-	if (result == mStatus_NoError)
-		LogOperation("%3d: DNSServiceRegister(%##s, %u) REGISTERED",    instance->sd, srs->RR_SRV.resrec.name->c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port));
-	else if (result == mStatus_MemFree)
-		LogOperation("%3d: DNSServiceRegister(%##s, %u) DEREGISTERED",  instance->sd, srs->RR_SRV.resrec.name->c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port));
-	else if (result == mStatus_NameConflict)
-		LogOperation("%3d: DNSServiceRegister(%##s, %u) NAME CONFLICT", instance->sd, srs->RR_SRV.resrec.name->c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port));
-	else
-		LogOperation("%3d: DNSServiceRegister(%##s, %u) %s %d",         instance->sd, srs->RR_SRV.resrec.name->c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port),
-			SuppressError ? "suppressed error" : "CALLBACK", result);
+	LogOperation(fmt, instance->sd, srs->RR_SRV.resrec.name->c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port), SuppressError ? "suppressed error" : "CALLBACK", result);
 
 	if (!instance->request && result != mStatus_MemFree) { LogMsg("regservice_callback: instance->request is NULL %d", result); return; }
 
