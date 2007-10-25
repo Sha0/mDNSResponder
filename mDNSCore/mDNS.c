@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.743  2007/10/25 00:12:46  cheshire
+<rdar://problem/5496734> BTMM: Need to retry registrations after failures
+Retrigger service registrations whenever a new network interface is added
+
 Revision 1.742  2007/10/24 22:40:06  cheshire
 Renamed: RecordRegistrationCallback          -> RecordRegistrationGotZoneData
 Renamed: ServiceRegistrationZoneDataComplete -> ServiceRegistrationGotZoneData
@@ -6017,6 +6021,7 @@ mDNSlocal void UpdateInterfaceProtocols(mDNS *const m, NetworkInterfaceInfo *act
 mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *set, mDNSBool flapping)
 	{
 	AuthRecord *rr;
+	ServiceRecordSet *s;
 	mDNSBool FirstOfType = mDNStrue;
 	NetworkInterfaceInfo **p = &m->HostInterfaces;
 
@@ -6129,6 +6134,12 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 			if (rr->nta) CancelGetZoneData(m, rr->nta);
 			rr->nta = StartGetZoneData(m, rr->resrec.name, ZoneServiceUpdate, RecordRegistrationGotZoneData, rr);
 			}
+
+	for (s = m->ServiceRegistrations; s; s = s->uDNS_next)
+		{
+		if (s->nta) CancelGetZoneData(m, s->nta);
+		s->nta = StartGetZoneData(m, s->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationGotZoneData, s);
+		}
 
 	mDNS_Unlock(m);
 	return(mStatus_NoError);
