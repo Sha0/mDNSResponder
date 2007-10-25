@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.449  2007/10/25 20:48:47  cheshire
+For naming consistency (with AuthRecord's UpdateServer) renamed 'ns' to 'SRSUpdateServer'
+
 Revision 1.448  2007/10/22 22:19:44  cheshire
 Tidied up code alignment
 
@@ -1569,7 +1572,7 @@ struct ServiceRecordSet_struct
 	ZoneData         *nta;
 	mDNSOpaque16      id;
 	domainname        zone;						// the zone that is updated
-	mDNSAddr          ns;						// primary name server for the record's zone  !!!KRS not technically correct to cache longer than TTL
+	mDNSAddr          SRSUpdateServer;			// primary name server for the record's zone  !!!KRS not technically correct to cache longer than TTL
 	mDNSIPPort        SRSUpdatePort;			// port on which server accepts dynamic updates
 	NATTraversalInfo  NATinfo;
 	mDNSBool          ClientCallbackDeferred;	// invoke client callback on completion of pending operation(s)

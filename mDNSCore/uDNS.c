@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.514  2007/10/25 20:48:47  cheshire
+For naming consistency (with AuthRecord's UpdateServer) renamed 'ns' to 'SRSUpdateServer'
+
 Revision 1.513  2007/10/25 20:06:13  cheshire
 Don't try to do SOA queries using private DNS (TLS over TCP) queries
 
@@ -2102,7 +2105,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	if (m->mDNS_busy != m->mDNS_reentrancy+1)
 		LogMsg("SendServiceRegistration: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
-	if (mDNSIPv4AddressIsZero(srs->ns.ip.v4)) { LogMsg("SendServiceRegistration - NS not set!"); return; }
+	if (mDNSIPv4AddressIsZero(srs->SRSUpdateServer.ip.v4)) { LogMsg("SendServiceRegistration - NS not set!"); return; }
 
 	id = mDNS_NewMessageID(m);
 	InitializeDNSMessage(&m->omsg.h, id, UpdateReqFlags);
@@ -2161,7 +2164,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	target = GetServiceTarget(m, srs);
 	if (!target)
 		{
-		debugf("SendServiceRegistration - no target for %##s", srs->RR_SRV.resrec.name->c);
+		LogOperation("SendServiceRegistration - no target for %##s", srs->RR_SRV.resrec.name->c);
 		srs->state = regState_NoTarget;
 		return;
 		}
@@ -2187,13 +2190,13 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 		{
 		if (srs->tcp) LogOperation("SendServiceRegistration: Disposing existing TCP connection for %s", ARDisplayString(m, &srs->RR_SRV));
 		if (srs->tcp) DisposeTCPConn(srs->tcp);
-		srs->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &srs->ns, srs->SRSUpdatePort, mDNSNULL, srs, mDNSNULL);
+		srs->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &srs->SRSUpdateServer, srs->SRSUpdatePort, mDNSNULL, srs, mDNSNULL);
 		if (!srs->tcp) srs->RR_SRV.ThisAPInterval = mDNSPlatformOneSecond * 5; // If failed to make TCP connection, try again in ten seconds (5*2)
 		else if (srs->RR_SRV.ThisAPInterval < mDNSPlatformOneSecond * 30) srs->RR_SRV.ThisAPInterval = mDNSPlatformOneSecond * 30;
 		}
 	else
 		{
-		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &srs->ns, srs->SRSUpdatePort, mDNSNULL, GetAuthInfoForName_internal(m, srs->RR_SRV.resrec.name));
+		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &srs->SRSUpdateServer, srs->SRSUpdatePort, mDNSNULL, GetAuthInfoForName_internal(m, srs->RR_SRV.resrec.name));
 		if (err) debugf("ERROR: SendServiceRegistration - mDNSSendDNSMessage - %ld", err);
 		}
 
@@ -2392,12 +2395,12 @@ mDNSlocal void CompleteSRVNatMap(mDNS *m, NATTraversalInfo *n)
 	if (!n->NATLease) return;
 
 	mDNS_Lock(m);
-	if (!mDNSIPv4AddressIsZero(srs->ns.ip.v4))
+	if (!mDNSIPv4AddressIsZero(srs->SRSUpdateServer.ip.v4))
 		SendServiceRegistration(m, srs);	// non-zero server address means we already have necessary zone data to send update
 	else
 		{
 		// SHOULD NEVER HAPPEN!
-		LogOperation("ERROR: CompleteSRVNatMap called but srs->ns.ip.v4 is zero!");
+		LogOperation("ERROR: CompleteSRVNatMap called but srs->SRSUpdateServer.ip.v4 is zero!");
 		srs->state = regState_FetchingZoneData;
 		if (srs->nta) CancelGetZoneData(m, srs->nta); // Make sure we cancel old one before we start a new one
 		srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationGotZoneData, srs);
@@ -2444,8 +2447,8 @@ mDNSexport void ServiceRegistrationGotZoneData(mDNS *const m, mStatus err, const
 
 	// cache zone data
 	AssignDomainName(&srs->zone, &zoneData->ZoneName);
-	srs->ns.type = mDNSAddrType_IPv4;
-	srs->ns = zoneData->Addr;
+	srs->SRSUpdateServer.type = mDNSAddrType_IPv4;
+	srs->SRSUpdateServer = zoneData->Addr;
 	if (!mDNSIPPortIsZero(zoneData->Port))
 		{
 		srs->SRSUpdatePort = zoneData->Port;
@@ -2460,11 +2463,11 @@ mDNSexport void ServiceRegistrationGotZoneData(mDNS *const m, mStatus err, const
 
 	LogOperation("ServiceRegistrationGotZoneData My IPv4 %#a%s Server %#a:%d%s for %##s",
 		&m->AdvertisedV4, mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) ? " (RFC1918)" : "",
-		&srs->ns, mDNSVal16(srs->SRSUpdatePort), mDNSAddrIsRFC1918(&srs->ns) ? " (RFC1918)" : "",
+		&srs->SRSUpdateServer, mDNSVal16(srs->SRSUpdatePort), mDNSAddrIsRFC1918(&srs->SRSUpdateServer) ? " (RFC1918)" : "",
 		srs->RR_SRV.resrec.name->c);
 
 	if (!mDNSIPPortIsZero(srs->RR_SRV.resrec.rdata->u.srv.port) &&
-		mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsRFC1918(&srs->ns) &&
+		mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsRFC1918(&srs->SRSUpdateServer) &&
 		srs->RR_SRV.AutoTarget == Target_AutoHostAndNATMAP)
 		{
 		srs->state = regState_NATMap;
@@ -2517,13 +2520,13 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 		{
 		if (srs->tcp) LogOperation("SendServiceDeregistration: Disposing existing TCP connection for %s", ARDisplayString(m, &srs->RR_SRV));
 		if (srs->tcp) DisposeTCPConn(srs->tcp);
-		srs->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &srs->ns, srs->SRSUpdatePort, mDNSNULL, srs, mDNSNULL);
+		srs->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &srs->SRSUpdateServer, srs->SRSUpdatePort, mDNSNULL, srs, mDNSNULL);
 		if (!srs->tcp) srs->RR_SRV.ThisAPInterval = mDNSPlatformOneSecond * 5; // If failed to make TCP connection, try again in ten seconds (5*2)
 		else if (srs->RR_SRV.ThisAPInterval < mDNSPlatformOneSecond * 30) srs->RR_SRV.ThisAPInterval = mDNSPlatformOneSecond * 30;
 		}
 	else
 		{
-		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &srs->ns, srs->SRSUpdatePort, mDNSNULL, GetAuthInfoForName_internal(m, srs->RR_SRV.resrec.name));
+		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &srs->SRSUpdateServer, srs->SRSUpdatePort, mDNSNULL, GetAuthInfoForName_internal(m, srs->RR_SRV.resrec.name));
 		if (err && err != mStatus_TransientErr) { debugf("ERROR: SendServiceDeregistration - mDNSSendDNSMessage - %ld", err); goto exit; }
 		}
 	SetRecordRetry(m, &srs->RR_SRV, err);
@@ -2553,7 +2556,7 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 	const domainname *const nt = GetServiceTarget(m, srs);
 	const domainname *const newtarget = nt ? nt : (domainname*)"";
 	mDNSBool TargetChanged = (newtarget->c[0] && srs->state == regState_NoTarget) || !SameDomainName(curtarget, newtarget);
-	mDNSBool HaveZoneData  = !mDNSIPv4AddressIsZero(srs->ns.ip.v4);
+	mDNSBool HaveZoneData  = !mDNSIPv4AddressIsZero(srs->SRSUpdateServer.ip.v4);
 
 	// Nat state change if:
 	// We were behind a NAT, and now we are behind a new NAT, or
@@ -2561,7 +2564,7 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 	// We were not behind a NAT and now we are
 
 	mDNSIPPort port        = srs->RR_SRV.resrec.rdata->u.srv.port;
-	mDNSBool NowNeedNATMAP = (srs->RR_SRV.AutoTarget == Target_AutoHostAndNATMAP && !mDNSIPPortIsZero(port) && mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsRFC1918(&srs->ns));
+	mDNSBool NowNeedNATMAP = (srs->RR_SRV.AutoTarget == Target_AutoHostAndNATMAP && !mDNSIPPortIsZero(port) && mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsRFC1918(&srs->SRSUpdateServer));
 	mDNSBool WereBehindNAT = (srs->NATinfo.clientContext != mDNSNULL);
 	mDNSBool PortWasMapped = (srs->NATinfo.clientContext && !mDNSSameIPPort(srs->NATinfo.RequestedPort, port));		// I think this is always false -- SC Sept 07
 	mDNSBool NATChanged    = (!WereBehindNAT && NowNeedNATMAP) || (!NowNeedNATMAP && PortWasMapped);
@@ -3294,7 +3297,7 @@ mDNSlocal void hndlServiceUpdateReply(mDNS *const m, ServiceRecordSet *srs,  mSt
 				{
 				// extra resource record queued for this service - copy zone srs and register
 				AssignDomainName(&(*e)->r.zone, &srs->zone);
-				(*e)->r.UpdateServer    = srs->ns;
+				(*e)->r.UpdateServer    = srs->SRSUpdateServer;
 				(*e)->r.UpdatePort  = srs->SRSUpdatePort;
 				(*e)->r.uselease = srs->srs_uselease;
 				SendRecordRegistration(m, &(*e)->r);

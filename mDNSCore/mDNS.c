@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.745  2007/10/25 20:48:47  cheshire
+For naming consistency (with AuthRecord's UpdateServer) renamed 'ns' to 'SRSUpdateServer'
+
 Revision 1.744  2007/10/25 20:06:14  cheshire
 Don't try to do SOA queries using private DNS (TLS over TCP) queries
 
@@ -6386,7 +6389,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	sr->Private                = 0;
 	sr->id                     = zeroID;
 	sr->zone.c[0]              = 0;
-	sr->ns                     = zeroAddr;
+	sr->SRSUpdateServer        = zeroAddr;
 	sr->SRSUpdatePort          = zeroIPPort;
 	mDNSPlatformMemZero(&sr->NATinfo, sizeof(sr->NATinfo));
 	sr->ClientCallbackDeferred = 0;
