@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.515  2007/10/25 21:08:07  cheshire
+Don't try to send record registrations/deletions before we have our server address
+
 Revision 1.514  2007/10/25 20:48:47  cheshire
 For naming consistency (with AuthRecord's UpdateServer) renamed 'ns' to 'SRSUpdateServer'
 
@@ -2105,7 +2108,13 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	if (m->mDNS_busy != m->mDNS_reentrancy+1)
 		LogMsg("SendServiceRegistration: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
-	if (mDNSIPv4AddressIsZero(srs->SRSUpdateServer.ip.v4)) { LogMsg("SendServiceRegistration - NS not set!"); return; }
+	if (mDNSIPv4AddressIsZero(srs->SRSUpdateServer.ip.v4))	// Don't know our UpdateServer yet
+		{
+		srs->RR_SRV.LastAPTime = m->timenow;
+		if (srs->RR_SRV.ThisAPInterval < mDNSPlatformOneSecond * 5)
+			srs->RR_SRV.ThisAPInterval = mDNSPlatformOneSecond * 5;
+		return;
+		}
 
 	id = mDNS_NewMessageID(m);
 	InitializeDNSMessage(&m->omsg.h, id, UpdateReqFlags);
@@ -2448,7 +2457,7 @@ mDNSexport void ServiceRegistrationGotZoneData(mDNS *const m, mStatus err, const
 	// cache zone data
 	AssignDomainName(&srs->zone, &zoneData->ZoneName);
 	srs->SRSUpdateServer.type = mDNSAddrType_IPv4;
-	srs->SRSUpdateServer = zoneData->Addr;
+	srs->SRSUpdateServer      = zoneData->Addr;
 	if (!mDNSIPPortIsZero(zoneData->Port))
 		{
 		srs->SRSUpdatePort = zoneData->Port;
@@ -2500,6 +2509,14 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 	mDNSu8 *end = (mDNSu8 *)&m->omsg + sizeof(DNSMessage);
 	mStatus err = mStatus_UnknownErr;
 	mDNSu32 i;
+
+	if (mDNSIPv4AddressIsZero(srs->SRSUpdateServer.ip.v4))	// Don't know our UpdateServer yet
+		{
+		srs->RR_SRV.LastAPTime = m->timenow;
+		if (srs->RR_SRV.ThisAPInterval < mDNSPlatformOneSecond * 5)
+			srs->RR_SRV.ThisAPInterval = mDNSPlatformOneSecond * 5;
+		return;
+		}
 
 	id = mDNS_NewMessageID(m);
 	InitializeDNSMessage(&m->omsg.h, id, UpdateReqFlags);
@@ -3091,6 +3108,14 @@ mDNSlocal void SendRecordRegistration(mDNS *const m, AuthRecord *rr)
 
 	if (m->mDNS_busy != m->mDNS_reentrancy+1)
 		LogMsg("SendRecordRegistration: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
+
+	if (mDNSIPv4AddressIsZero(rr->UpdateServer.ip.v4))	// Don't know our UpdateServer yet
+		{
+		rr->LastAPTime = m->timenow;
+		if (rr->ThisAPInterval < mDNSPlatformOneSecond * 5)
+			rr->ThisAPInterval = mDNSPlatformOneSecond * 5;
+		return;
+		}
 
 	rr->RequireGoodbye = mDNStrue;
 	rr->id = mDNS_NewMessageID(m);
@@ -3872,6 +3897,14 @@ mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 	{
 	mDNSu8 *ptr = m->omsg.data;
 	mDNSu8 *end = (mDNSu8 *)&m->omsg + sizeof(DNSMessage);
+
+	if (mDNSIPv4AddressIsZero(rr->UpdateServer.ip.v4))	// Don't know our UpdateServer yet
+		{
+		rr->LastAPTime = m->timenow;
+		if (rr->ThisAPInterval < mDNSPlatformOneSecond * 5)
+			rr->ThisAPInterval = mDNSPlatformOneSecond * 5;
+		return;
+		}
 
 	InitializeDNSMessage(&m->omsg.h, rr->id, UpdateReqFlags);
 
