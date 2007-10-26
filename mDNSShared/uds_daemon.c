@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.375  2007/10/26 22:51:38  cheshire
+Improved SIGINFO output to show timers for AuthRecords and ServiceRegistrations
+
 Revision 1.374  2007/10/25 22:45:02  cheshire
 Tidied up code for DNSServiceRegister callback status messages
 
@@ -3639,8 +3642,13 @@ mDNSexport void udsserver_info(mDNS *const m)
 	else
 		{
 		AuthRecord *ar;
+		LogMsgNoIdent("    Int    Next  Expire   State");
 		for (ar = m->ResourceRecords; ar; ar=ar->next)
-			LogMsgNoIdent("%s", ARDisplayString(m, ar));
+			LogMsgNoIdent("%7d %7d %7d %7d %s",
+				ar->ThisAPInterval / mDNSPlatformOneSecond,
+				AuthRecord_uDNS(ar) || ar->AnnounceCount ? (ar->LastAPTime + ar->ThisAPInterval - now) / mDNSPlatformOneSecond : 0,
+				AuthRecord_uDNS(ar) ? (ar->expire - now) / mDNSPlatformOneSecond : 0,
+				ar->state, ARDisplayString(m, ar));
 		}
 
 	LogMsgNoIdent("----- ServiceRegistrations -----");
@@ -3648,8 +3656,13 @@ mDNSexport void udsserver_info(mDNS *const m)
 	else
 		{
 		ServiceRecordSet *s;
+		LogMsgNoIdent("    Int    Next  Expire   State");
 		for (s = m->ServiceRegistrations; s; s = s->uDNS_next)
-			LogMsgNoIdent("%s", ARDisplayString(m, &s->RR_SRV));
+			LogMsgNoIdent("%7d %7d %7d %7d %s",
+				s->RR_SRV.ThisAPInterval / mDNSPlatformOneSecond,
+				(s->RR_SRV.LastAPTime + s->RR_SRV.ThisAPInterval - now) / mDNSPlatformOneSecond,
+				(s->RR_SRV.expire - now) / mDNSPlatformOneSecond,
+				s->state, ARDisplayString(m, &s->RR_SRV));
 		}
 
 	LogMsgNoIdent("---------- Questions -----------");
