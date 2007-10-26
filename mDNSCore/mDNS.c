@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.747  2007/10/26 22:53:50  cheshire
+Made mDNS_Register_internal and mDNS_Deregister_internal use AuthRecord_uDNS macro
+instead of replicating the logic in both places
+
 Revision 1.746  2007/10/25 22:48:50  cheshire
 Added LogOperation message saying when we restart GetZoneData for record and service registrations
 
@@ -1356,7 +1360,7 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 		*p = rr;
 		}
 
-	if (rr->resrec.InterfaceID != mDNSInterface_Any || rr->ForceMCast || IsLocalDomain(rr->resrec.name))
+	if (!AuthRecord_uDNS(rr))
 		{
 		// For records that are not going to probe, acknowledge them right away
 		if (rr->resrec.RecordType != kDNSRecordTypeUnique && rr->resrec.RecordType != kDNSRecordTypeDeregistering)
@@ -1491,18 +1495,17 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 	// actual goodbye packets.
 	
 #ifndef UNICAST_DISABLED
-	if (rr->resrec.InterfaceID != mDNSInterface_LocalOnly && !rr->ForceMCast && !IsLocalDomain(rr->resrec.name))
-		if (rr->RequireGoodbye)
-			{
-			if (rr->tcp) { DisposeTCPConn(rr->tcp); rr->tcp = mDNSNULL; }
-			rr->resrec.RecordType    = kDNSRecordTypeDeregistering;
-			uDNS_DeregisterRecord(m, rr);
-			// At this point unconditionally we bail out
-			// Either uDNS_DeregisterRecord will have completed synchronously, and called CompleteDeregistration,
-			// which calls us back here with RequireGoodbye set to false, or it will have initiated the deregistration
-			// process and will complete asynchronously. Either way we don't need to do anything more here.
-			return(mStatus_NoError);
-			}
+	if (AuthRecord_uDNS(rr) && rr->RequireGoodbye)
+		{
+		if (rr->tcp) { DisposeTCPConn(rr->tcp); rr->tcp = mDNSNULL; }
+		rr->resrec.RecordType    = kDNSRecordTypeDeregistering;
+		uDNS_DeregisterRecord(m, rr);
+		// At this point unconditionally we bail out
+		// Either uDNS_DeregisterRecord will have completed synchronously, and called CompleteDeregistration,
+		// which calls us back here with RequireGoodbye set to false, or it will have initiated the deregistration
+		// process and will complete asynchronously. Either way we don't need to do anything more here.
+		return(mStatus_NoError);
+		}
 #endif UNICAST_DISABLED
 
 	if (RecordType == kDNSRecordTypeShared && (rr->RequireGoodbye || rr->LocalAnswer))
@@ -6389,7 +6392,6 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 
 	sr->state                  = regState_Zero;
 	sr->srs_uselease           = 0;
-	sr->expire                 = 0;
 	sr->TestForSelfConflict    = 0;
 	sr->Private                = 0;
 	sr->id                     = zeroID;
