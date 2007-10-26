@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.450  2007/10/26 22:24:08  cheshire
+Added AuthRecord_uDNS() macro to determine when a given AuthRecord needs to be registered via unicast DNS
+
 Revision 1.449  2007/10/25 20:48:47  cheshire
 For naming consistency (with AuthRecord's UpdateServer) renamed 'ns' to 'SRSUpdateServer'
 
@@ -1407,6 +1410,8 @@ struct AuthRecord_struct
 	// are appended after the end of the AuthRecord, logically augmenting the size of the rdatastorage
 	// DO NOT ADD ANY MORE FIELDS HERE
 	};
+
+#define AuthRecord_uDNS(R) ((R)->resrec.InterfaceID == mDNSInterface_Any && !(R)->ForceMCast && !IsLocalDomain((R)->resrec.name))
 
 // Wrapper struct for Auth Records for higher-level code that cannot use the AuthRecord's ->next pointer field
 typedef struct ARListElem
