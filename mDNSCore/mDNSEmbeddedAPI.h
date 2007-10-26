@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.451  2007/10/26 23:42:57  cheshire
+Removed unused "mDNSs32 expire" field from ServiceRecordSet_struct
+
 Revision 1.450  2007/10/26 22:24:08  cheshire
 Added AuthRecord_uDNS() macro to determine when a given AuthRecord needs to be registered via unicast DNS
 
@@ -1571,7 +1574,6 @@ struct ServiceRecordSet_struct
 	ServiceRecordSet *uDNS_next;
 	regState_t        state;
 	mDNSBool          srs_uselease;				// dynamic update contains (should contain) lease option
-	mDNSs32           expire;					// expiration of lease (-1 for static)
 	mDNSBool          TestForSelfConflict;		// on name conflict, check if we're just seeing our own orphaned records
 	mDNSBool          Private;					// If zone is private, DNS updates may have to be encrypted to prevent eavesdropping
 	ZoneData         *nta;
