@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.518  2007/10/26 23:41:29  cheshire
+<rdar://problem/5496734> BTMM: Need to retry registrations after failures
+
 Revision 1.517  2007/10/25 23:30:12  cheshire
 Private DNS registered records now deregistered on sleep and re-registered on wake
 
@@ -1703,6 +1706,7 @@ mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *co
 					m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 					LogOperation("uDNS_recvLLQResponse got poll response; moving to LLQ_InitialRequest for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 					q->state         = LLQ_InitialRequest;
+					q->servPort      = zeroIPPort;		// Clear servPort so that startLLQHandshake will retry the GetZoneData processing
 					q->ThisQInterval = LLQ_POLL_INTERVAL;	// Retry LLQ setup in 15 minutes
 					q->LastQTime     = m->timenow;
 					SetNextQueryTime(m, q);
@@ -2134,6 +2138,8 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 		return;
 		}
 
+	if (srs->state == regState_Registered) srs->state = regState_Refresh;
+
 	id = mDNS_NewMessageID(m);
 	InitializeDNSMessage(&m->omsg.h, id, UpdateReqFlags);
 
@@ -2189,7 +2195,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 		if (!(ptr = PutResourceRecordTTLJumbo(&m->omsg, ptr, &m->omsg.h.mDNS_numUpdates, &srs->RR_TXT.resrec, srs->RR_TXT.resrec.rroriginalttl))) { err = mStatus_UnknownErr; goto exit; }
 
 	target = GetServiceTarget(m, srs);
-	if (!target)
+	if (!target || target->c[0] == 0)
 		{
 		LogOperation("SendServiceRegistration - no target for %##s", srs->RR_SRV.resrec.name->c);
 		srs->state = regState_NoTarget;
@@ -3174,6 +3180,7 @@ mDNSlocal void SendRecordRegistration(mDNS *const m, AuthRecord *rr)
 		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, GetAuthInfoForName_internal(m, rr->resrec.name));
 		if (err) debugf("ERROR: SendRecordRegistration - mDNSSendDNSMessage - %ld", err);
 		}
+
 	SetRecordRetry(m, rr, err);
 
 	if (rr->state != regState_Refresh && rr->state != regState_DeregDeferred && rr->state != regState_UpdatePending)
@@ -3194,6 +3201,8 @@ mDNSlocal void hndlServiceUpdateReply(mDNS *const m, ServiceRecordSet *srs,  mSt
 
 	if (m->mDNS_busy != m->mDNS_reentrancy+1)
 		LogMsg("hndlServiceUpdateReply: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
+
+	SetRecordRetry(m, &srs->RR_SRV, mStatus_NoError);
 
 	switch (srs->state)
 		{
@@ -3336,7 +3345,6 @@ mDNSlocal void hndlServiceUpdateReply(mDNS *const m, ServiceRecordSet *srs,  mSt
 		else e = &(*e)->next;
 		}
 
-	srs->RR_SRV.ThisAPInterval = INIT_UCAST_POLL_INTERVAL - 1;	// reset retry delay for future refreshes, dereg, etc.
 	if (srs->state == regState_Unregistered)
 		{
 		LogMsg("hndlServiceUpdateReply ERROR! state == regState_Unregistered. Permanently abandoning service registration %##s", srs->RR_SRV.resrec.name->c);
@@ -3678,8 +3686,8 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 				{
 				err = checkUpdateResult(m, sptr->RR_SRV.resrec.name, rcode, msg, end);
 				if (!err && sptr->srs_uselease && lease)
-					if (sptr->expire - expire >= 0 || sptr->state != regState_UpdatePending)
-						sptr->expire = expire;
+					if (sptr->RR_SRV.expire - expire >= 0 || sptr->state != regState_UpdatePending)
+						sptr->RR_SRV.expire = expire;
 				hndlServiceUpdateReply(m, sptr, err);
 				CurrentServiceRecordSet = mDNSNULL;
 				return;
@@ -3794,7 +3802,7 @@ mDNSlocal void PrivateQueryGotZoneData(mDNS *const m, mStatus err, const ZoneDat
 	{
 	DNSQuestion *q = (DNSQuestion *) zoneInfo->ZoneDataContext;
 
-	LogOperation("PrivateQueryGotZoneData %##s (%s) err %d ZonePrivate %d", q->qname.c, DNSTypeName(q->qtype), err, zoneInfo->ZonePrivate);
+	LogOperation("PrivateQueryGotZoneData %##s (%s) err %d Zone %##s Private %d", q->qname.c, DNSTypeName(q->qtype), err, zoneInfo->ZoneName.c, zoneInfo->ZonePrivate);
 
 	// If we get here it means that the GetZoneData operation has completed, and is is about to cancel
 	// its question and free the ZoneData memory. We no longer need to hold onto our pointer (which
@@ -4378,10 +4386,10 @@ mDNSlocal mDNSs32 CheckServiceRegistrations(mDNS *m)
 		{
 		ServiceRecordSet *srs = CurrentServiceRecordSet;
 		CurrentServiceRecordSet = CurrentServiceRecordSet->uDNS_next;
-		if (srs->state == regState_Pending || srs->state == regState_DeregPending || srs->state == regState_DeregDeferred ||
-			srs->state == regState_Refresh || srs->state == regState_UpdatePending)
+		if (srs->state == regState_Pending || srs->state == regState_DeregPending  || srs->state == regState_DeregDeferred ||
+			srs->state == regState_Refresh || srs->state == regState_UpdatePending || srs->state == regState_Registered)
 			{
-			if (srs->RR_SRV.LastAPTime + srs->RR_SRV.ThisAPInterval - m->timenow < 0)
+			if (srs->RR_SRV.LastAPTime + srs->RR_SRV.ThisAPInterval - m->timenow <= 0)
 				{
 				if (srs->tcp) { DisposeTCPConn(srs->tcp); srs->tcp = mDNSNULL; }
 				if (srs->state == regState_DeregPending) SendServiceDeregistration(m, srs);
@@ -4389,17 +4397,6 @@ mDNSlocal mDNSs32 CheckServiceRegistrations(mDNS *m)
 				}
 			if (nextevent - (srs->RR_SRV.LastAPTime + srs->RR_SRV.ThisAPInterval) > 0)
 				nextevent = (srs->RR_SRV.LastAPTime + srs->RR_SRV.ThisAPInterval);
-			}
-
-		if (srs->srs_uselease && srs->state == regState_Registered)
-			{
-			if (srs->expire - m->timenow < 0)
-				{
-				debugf("refreshing service %##s", srs->RR_SRV.resrec.name->c);
-				srs->state = regState_Refresh;
-				SendServiceRegistration(m, srs);
-				}
-			if (srs->expire - nextevent < 0) nextevent = srs->expire;
 			}
 		}
 	return nextevent;
