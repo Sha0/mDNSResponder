@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.748  2007/10/29 20:02:50  cheshire
+<rdar://problem/5526813> BTMM: Wide-area records being announced via multicast
+
 Revision 1.747  2007/10/26 22:53:50  cheshire
 Made mDNS_Register_internal and mDNS_Deregister_internal use AuthRecord_uDNS macro
 instead of replicating the logic in both places
@@ -2493,7 +2496,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 			{
 			AuthRecord *rr = m->CurrentRecord;
 			m->CurrentRecord = rr->next;
-			if (rr->resrec.RecordType == kDNSRecordTypeUnique)			// For all records that are still probing...
+			if (!AuthRecord_uDNS(rr) && rr->resrec.RecordType == kDNSRecordTypeUnique)	// For all records that are still probing...
 				{
 				// 1. If it's not reached its probe time, just make sure we update m->NextScheduledProbe correctly
 				if (m->timenow - (rr->LastAPTime + rr->ThisAPInterval) < 0)
@@ -3582,13 +3585,14 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 
 		// 3. Retrigger probing and announcing for all our authoritative records
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
-			{
-			if (rr->resrec.RecordType == kDNSRecordTypeVerified && !rr->DependentOn) rr->resrec.RecordType = kDNSRecordTypeUnique;
-			rr->ProbeCount     = DefaultProbeCountForRecordType(rr->resrec.RecordType);
-			rr->AnnounceCount  = InitialAnnounceCount;
-			rr->ThisAPInterval = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
-			InitializeLastAPTime(m, rr);
-			}
+			if (!AuthRecord_uDNS(rr))
+				{
+				if (rr->resrec.RecordType == kDNSRecordTypeVerified && !rr->DependentOn) rr->resrec.RecordType = kDNSRecordTypeUnique;
+				rr->ProbeCount     = DefaultProbeCountForRecordType(rr->resrec.RecordType);
+				rr->AnnounceCount  = InitialAnnounceCount;
+				rr->ThisAPInterval = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
+				InitializeLastAPTime(m, rr);
+				}
 		}
 
 	mDNS_Unlock(m);
@@ -5471,7 +5475,7 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 	if (!ConstructServiceName(&question->qname, mDNSNULL, srv, domain)) return(mStatus_BadParamErr);
 
 #ifndef UNICAST_DISABLED
-    if (question->InterfaceID != mDNSInterface_LocalOnly && !question->ForceMCast && !IsLocalDomain(&question->qname))
+    if (Question_uDNS(question))
 		{
 		question->LongLived     = mDNStrue;
 		question->ThisQInterval = InitialQuestionInterval;
@@ -6124,18 +6128,19 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 		// For all our non-specific authoritative resource records (and any dormant records specific to this interface)
 		// we now need them to re-probe if necessary, and then re-announce.
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
-			if (!rr->resrec.InterfaceID || rr->resrec.InterfaceID == set->InterfaceID)
-				{
-				if (rr->resrec.RecordType == kDNSRecordTypeVerified && !rr->DependentOn) rr->resrec.RecordType = kDNSRecordTypeUnique;
-				rr->ProbeCount     = DefaultProbeCountForRecordType(rr->resrec.RecordType);
-				if (rr->AnnounceCount < announce) rr->AnnounceCount  = announce;
-				rr->ThisAPInterval = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
-				InitializeLastAPTime(m, rr);
-				}
+			if (!AuthRecord_uDNS(rr))
+				if (!rr->resrec.InterfaceID || rr->resrec.InterfaceID == set->InterfaceID)
+					{
+					if (rr->resrec.RecordType == kDNSRecordTypeVerified && !rr->DependentOn) rr->resrec.RecordType = kDNSRecordTypeUnique;
+					rr->ProbeCount     = DefaultProbeCountForRecordType(rr->resrec.RecordType);
+					if (rr->AnnounceCount < announce) rr->AnnounceCount  = announce;
+					rr->ThisAPInterval = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
+					InitializeLastAPTime(m, rr);
+					}
 		}
 
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
-		if (!rr->resrec.InterfaceID && !rr->ForceMCast && !IsLocalDomain(rr->resrec.name))
+		if (AuthRecord_uDNS(rr))
 			{
 			LogOperation("mDNS_RegisterInterface: StartGetZoneData for %##s", rr->resrec.name->c);
 			if (rr->nta) CancelGetZoneData(m, rr->nta);
@@ -6554,7 +6559,7 @@ mDNSexport mStatus mDNS_AddRecordToService(mDNS *const m, ServiceRecordSet *sr,
 		{
 		*e = extra;
 #ifndef UNICAST_DISABLED
-		if (sr->RR_SRV.resrec.InterfaceID != mDNSInterface_LocalOnly && !IsLocalDomain(sr->RR_SRV.resrec.name))
+		if (AuthRecord_uDNS(&sr->RR_SRV))
 			{
 			extra->r.resrec.RecordType = kDNSRecordTypeShared;	// don't want it to conflict with the service name (???)
 			extra->r.RecordCallback = DummyCallback;	// don't generate callbacks for extra RRs for unicast services (WHY NOT????)
@@ -7130,8 +7135,8 @@ mDNSexport void mDNS_Close(mDNS *const m)
 			mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
 		}
 
-	if (m->ResourceRecords) debugf("mDNS_Close: Sending final packets for deregistering records");
-	else debugf("mDNS_Close: No deregistering records remain");
+	if (m->ResourceRecords) LogOperation("mDNS_Close: Sending final packets for deregistering records");
+	else                    LogOperation("mDNS_Close: No deregistering records remain");
 
 	// If any deregistering records remain, send their deregistration announcements before we exit
 	if (m->mDNSPlatformStatus != mStatus_NoError) DiscardDeregistrations(m);
