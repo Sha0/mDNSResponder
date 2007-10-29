@@ -17,6 +17,11 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.505  2007/10/29 23:55:10  cheshire
+<rdar://problem/5526791> BTMM: Changing Local Hostname doesn't update Back to My Mac registered records
+Don't need to manually fake another AutoTunnelNATCallback if it has not yet received its first callback
+(and indeed should not, since the result fields will not yet be set up correctly in this case)
+
 Revision 1.504  2007/10/26 00:50:37  cheshire
 <rdar://problem/5526791> BTMM: Changing Local Hostname doesn't update Back to My Mac registered records
 
@@ -2636,7 +2641,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 		{
 		DomainAuthInfo *info;
 		for (info = m->AuthInfoList; info; info = info->next)
-			if (info->AutoTunnelNAT.clientContext)
+			if (info->AutoTunnelNAT.clientContext && !mDNSIPv4AddressIsOnes(info->AutoTunnelNAT.ExternalAddress))
 				AutoTunnelNATCallback(m, &info->AutoTunnelNAT);
 		}
 #endif
