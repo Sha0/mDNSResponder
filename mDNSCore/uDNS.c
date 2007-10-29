@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.519  2007/10/29 21:37:00  cheshire
+<rdar://problem/5496734> BTMM: Need to retry registrations after failures
+Added 10% random variation on record refresh time, to reduce accidental timing correlation between multiple machines
+
 Revision 1.518  2007/10/26 23:41:29  cheshire
 <rdar://problem/5496734> BTMM: Need to retry registrations after failures
 
@@ -1109,8 +1113,8 @@ mDNSlocal void SetRecordRetry(mDNS *const m, AuthRecord *rr, mStatus SendErr)
 	{
 	rr->LastAPTime = m->timenow;
 
-	// Code for stress-testing registration renewal code
 #if 0
+	// Code for stress-testing registration renewal code
 	if (rr->expire && rr->expire - m->timenow > mDNSPlatformOneSecond * 120)
 		{
 		LogOperation("Adjusting expiry from %d to 120 seconds for %s",
@@ -1119,8 +1123,16 @@ mDNSlocal void SetRecordRetry(mDNS *const m, AuthRecord *rr, mStatus SendErr)
 		}
 #endif
 
-	if (rr->expire && rr->expire - m->timenow > mDNSPlatformOneSecond) { rr->ThisAPInterval = (rr->expire - m->timenow)/2;
-		LogOperation("SetRecordRetry refresh in %d for %s", rr->ThisAPInterval / mDNSPlatformOneSecond, ARDisplayString(m, rr)); return; }
+	if (rr->expire && rr->expire - m->timenow > mDNSPlatformOneSecond)
+		{
+		mDNSs32 remaining = rr->expire - m->timenow;
+		rr->ThisAPInterval = remaining/2 + mDNSRandom(remaining/10);
+		LogOperation("SetRecordRetry refresh in %d of %d for %s",
+			rr->ThisAPInterval / mDNSPlatformOneSecond,
+			(rr->expire - m->timenow) / mDNSPlatformOneSecond,
+			ARDisplayString(m, rr));
+		return;
+		}
 
 	rr->expire = 0;
 	if (SendErr == mStatus_TransientErr || rr->ThisAPInterval < INIT_UCAST_POLL_INTERVAL)  rr->ThisAPInterval = INIT_UCAST_POLL_INTERVAL;
@@ -1580,8 +1592,8 @@ mDNSlocal mDNSu8 *putLLQ(DNSMessage *const msg, mDNSu8 *ptr, const DNSQuestion *
 // we're requesting that packets be sent to ExternalPort, but at the source address of our outgoing TCP connection.
 // Normally, after going through the NAT gateway, the source address of our outgoing TCP connection is the same as ExternalAddress,
 // so this is fine, except when the TCP connection ends up going over a VPN tunnel instead.
-// To work around this, if we find that the source address for our TCP connection is not a private address,
-// we tell the Dot Mac LLQ server to send events to us directly at port 5353, instead of at our mapped external NAT port.
+// To work around this, if we find that the source address for our TCP connection is not a private address, we tell the Dot Mac
+// LLQ server to send events to us directly at port 5353 on that address, instead of at our mapped external NAT port.
 
 mDNSlocal mDNSu16 GetLLQEventPort(const mDNS *const m, const mDNSAddr *const dst)
 	{
