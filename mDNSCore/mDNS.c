@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.749  2007/10/29 21:28:36  cheshire
+Change "Correcting TTL" log message to LogOperation to suppress it in customer build
+
 Revision 1.748  2007/10/29 20:02:50  cheshire
 <rdar://problem/5526813> BTMM: Wide-area records being announced via multicast
 
@@ -4770,9 +4773,9 @@ exit:
 						// so our received TTLs are expected to vary in that case
 						if (r2->resrec.rroriginalttl != r1->resrec.rroriginalttl && r1->resrec.rroriginalttl > 1)
 							{
-							if (r2->resrec.rroriginalttl != 240 && r1->resrec.rroriginalttl != 60 && r2->resrec.rrtype != kDNSType_TXT &&
+							if (!(r2->resrec.rroriginalttl == 240 && r1->resrec.rroriginalttl == 60 && r2->resrec.rrtype == kDNSType_TXT) &&
 								mDNSOpaque16IsZero(response->h.id))
-								LogMsg("Correcting TTL from %4d to %4d for %s",
+								LogOperation("Correcting TTL from %4d to %4d for %s",
 									r2->resrec.rroriginalttl, r1->resrec.rroriginalttl, CRDisplayString(m, r2));
 							r2->resrec.rroriginalttl = r1->resrec.rroriginalttl;
 							}
