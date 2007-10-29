@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.453  2007/10/29 23:51:22  cheshire
+Added comment about NATTraversalInfo ExternalAddress field
+
 Revision 1.452  2007/10/29 18:13:40  cheshire
 Added Question_uDNS macro, analogous to AuthRecord_uDNS macro
 
@@ -1268,7 +1271,7 @@ struct NATTraversalInfo_struct
 	// mapping response from the NAT-PMP or UPnP gateway. For example, if we ask for port 80, and
 	// get assigned port 81, then thereafter we'll contine asking for port 81.
 	mDNSInterfaceID             InterfaceID;
-	mDNSv4Addr                  ExternalAddress;
+	mDNSv4Addr                  ExternalAddress;	// Initially set to onesIPv4Addr, until first callback
 	mDNSIPPort                  ExternalPort;
 	mDNSu32                     Lifetime;
 	mStatus                     Result;
