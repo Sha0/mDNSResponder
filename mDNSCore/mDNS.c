@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.750  2007/10/29 23:58:52  cheshire
+<rdar://problem/5536979> BTMM: Need to create NAT port mapping for receiving LLQ events
+Use standard "if (mDNSIPv4AddressIsOnes(....ExternalAddress))" mechanism to determine whether callback has been invoked yet
+
 Revision 1.749  2007/10/29 21:28:36  cheshire
 Change "Correcting TTL" log message to LogOperation to suppress it in customer build
 
@@ -5117,7 +5121,6 @@ mDNSlocal void LLQNATCallback(mDNS *m, NATTraversalInfo *n)
 	(void)n;    // Unused
 	mDNS_Lock(m);
 	LogOperation("LLQNATCallback external address:port %.4a:%u", &n->ExternalAddress, mDNSVal16(n->ExternalPort));
-	m->LLQNAT.clientContext = (void*)2; // Means we got a callback
 	for (q = m->Questions; q; q=q->next)
 		if (ActiveQuestion(q) && !mDNSOpaque16IsZero(q->TargetQID) && q->LongLived)
 			startLLQHandshake(m, q);	// If ExternalPort is zero, will do StartLLQPolling instead
@@ -5268,7 +5271,7 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 					m->LLQNAT.IntPort        = m->UnicastPort4;
 					m->LLQNAT.RequestedPort  = m->UnicastPort4;
 					m->LLQNAT.clientCallback = LLQNATCallback;
-					m->LLQNAT.clientContext  = (void*)1; // Means LLQ NAT Traversal has been requested, but no callback yet
+					m->LLQNAT.clientContext  = (void*)1; // Means LLQ NAT Traversal is active
 					mDNS_StartNATOperation_internal(m, &m->LLQNAT);
 					}
 				}
@@ -5377,7 +5380,7 @@ mDNSexport mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const que
 				{
 				LogOperation("Stopping LLQNAT");
 				mDNS_StopNATOperation_internal(m, &m->LLQNAT);
-				m->LLQNAT.clientContext = 0; // Means LLQ NAT Traversal not running
+				m->LLQNAT.clientContext = mDNSNULL; // Means LLQ NAT Traversal not running
 				}
 			}
 

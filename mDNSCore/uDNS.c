@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.521  2007/10/29 23:58:52  cheshire
+<rdar://problem/5536979> BTMM: Need to create NAT port mapping for receiving LLQ events
+Use standard "if (mDNSIPv4AddressIsOnes(....ExternalAddress))" mechanism to determine whether callback has been invoked yet
+
 Revision 1.520  2007/10/29 21:48:36  cheshire
 <rdar://problem/5519458> BTMM: Machines don't appear in the sidebar on wake from sleep
 Added 10% random variation on LLQ renewal time, to reduce unintended timing correlation between multiple machines
@@ -2009,7 +2013,7 @@ mDNSexport void DisposeTCPConn(struct tcpInfo_t *tcp)
 // Lock must be held
 mDNSexport void startLLQHandshake(mDNS *m, DNSQuestion *q)
 	{
-	if (m->LLQNAT.clientContext != (void*)2)
+	if (mDNSIPv4AddressIsOnes(m->LLQNAT.ExternalAddress))
 		{
 		LogOperation("startLLQHandshake: waiting for NAT status for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 		q->ThisQInterval = LLQ_POLL_INTERVAL + mDNSRandom(LLQ_POLL_INTERVAL/10);	// Retry in approx 15 minutes
