@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.452  2007/10/29 18:13:40  cheshire
+Added Question_uDNS macro, analogous to AuthRecord_uDNS macro
+
 Revision 1.451  2007/10/26 23:42:57  cheshire
 Removed unused "mDNSs32 expire" field from ServiceRecordSet_struct
 
@@ -1415,6 +1418,7 @@ struct AuthRecord_struct
 	};
 
 #define AuthRecord_uDNS(R) ((R)->resrec.InterfaceID == mDNSInterface_Any && !(R)->ForceMCast && !IsLocalDomain((R)->resrec.name))
+#define Question_uDNS(Q)   ((Q)->InterfaceID == mDNSInterface_Any        && !(Q)->ForceMCast && !IsLocalDomain(&(Q)->qname))
 
 // Wrapper struct for Auth Records for higher-level code that cannot use the AuthRecord's ->next pointer field
 typedef struct ARListElem
