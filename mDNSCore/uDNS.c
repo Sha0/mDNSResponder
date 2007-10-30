@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.522  2007/10/30 00:04:43  cheshire
+<rdar://problem/5496734> BTMM: Need to retry registrations after failures
+Made the code not give up and abandon the record when it gets an error in regState_UpdatePending state
+
 Revision 1.521  2007/10/29 23:58:52  cheshire
 <rdar://problem/5536979> BTMM: Need to create NAT port mapping for receiving LLQ events
 Use standard "if (mDNSIPv4AddressIsOnes(....ExternalAddress))" mechanism to determine whether callback has been invoked yet
@@ -3416,21 +3420,13 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 
 	if (rr->state == regState_UpdatePending)
 		{
-		if (err)
-			{
-			LogMsg("Update record failed for %##s (err %d)", rr->resrec.name->c, err);
-			rr->state = regState_Unregistered;
-			}
-		else
-			{
-			debugf("Update record %##s - success", rr->resrec.name->c);
-			rr->state = regState_Registered;
-			// deallocate old RData
-			if (rr->UpdateCallback) rr->UpdateCallback(m, rr, rr->OrigRData);
-			SetNewRData(&rr->resrec, rr->InFlightRData, rr->InFlightRDLen);
-			rr->OrigRData = mDNSNULL;
-			rr->InFlightRData = mDNSNULL;
-			}
+		if (err) LogMsg("Update record failed for %##s (err %d)", rr->resrec.name->c, err);
+		rr->state = regState_Registered;
+		// deallocate old RData
+		if (rr->UpdateCallback) rr->UpdateCallback(m, rr, rr->OrigRData);
+		SetNewRData(&rr->resrec, rr->InFlightRData, rr->InFlightRDLen);
+		rr->OrigRData = mDNSNULL;
+		rr->InFlightRData = mDNSNULL;
 		}
 
 	if (rr->state == regState_DeregPending)
