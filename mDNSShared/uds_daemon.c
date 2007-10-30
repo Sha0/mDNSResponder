@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.377  2007/10/30 23:48:20  cheshire
+Improved SIGINFO listing of question state
+
 Revision 1.376  2007/10/30 20:43:54  cheshire
 Fixed compiler warning when LogAllOperations is turned off
 
@@ -3677,7 +3680,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 		DNSQuestion *q;
 		CacheUsed = 0;
 		CacheActive = 0;
-		LogMsgNoIdent("   Int  Next if    T NumAns Type  Name");
+		LogMsgNoIdent("   Int  Next if    T  NumAns Type  Name");
 		for (q = m->Questions; q; q=q->next)
 			{
 			mDNSs32 i = q->ThisQInterval / mDNSPlatformOneSecond;
@@ -3685,10 +3688,11 @@ mDNSexport void udsserver_info(mDNS *const m)
 			NetworkInterfaceInfo *info = (NetworkInterfaceInfo *)q->InterfaceID;
 			CacheUsed++;
 			if (q->ThisQInterval) CacheActive++;
-			LogMsgNoIdent("%6d%6d %-6s%s %5d  %-6s%##s%s",
+			LogMsgNoIdent("%6d%6d %-6s%s%s %5d  %-6s%##s%s",
 				i, n,
 				info ? info->ifname : mDNSOpaque16IsZero(q->TargetQID) ? "" : "-U-",
 				mDNSOpaque16IsZero(q->TargetQID) ? " " : q->LongLived ? "L" : "O", // mDNS, long-lived, or one-shot query?
+				q->AuthInfo    ? "P" : " ",
 				q->CurrentAnswers,
 				DNSTypeName(q->qtype), q->qname.c, q->DuplicateOf ? " (dup)" : "");
 			usleep(1000);	// Limit rate a little so we don't flood syslog too fast
