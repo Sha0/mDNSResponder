@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.506  2007/10/30 20:46:45  cheshire
+<rdar://problem/5496734> BTMM: Need to retry registrations after failures
+
 Revision 1.505  2007/10/29 23:55:10  cheshire
 <rdar://problem/5526791> BTMM: Changing Local Hostname doesn't update Back to My Mac registered records
 Don't need to manually fake another AutoTunnelNATCallback if it has not yet received its first callback
@@ -2090,10 +2093,10 @@ mDNSlocal mDNSBool TunnelClients(mDNS *const m)
 
 mDNSlocal void RegisterAutoTunnelRecords(mDNS *m, DomainAuthInfo *info)
 	{
-	if (!info->AutoTunnelNAT.Result && !mDNSIPPortIsZero(info->AutoTunnelNAT.ExternalPort) && AutoTunnelUnregistered(info))
+	if (info->AutoTunnelNAT.clientContext && !info->AutoTunnelNAT.Result && !mDNSIPPortIsZero(info->AutoTunnelNAT.ExternalPort) && AutoTunnelUnregistered(info))
 		{
 		mStatus err;
-		LogOperation("RegisterAutoTunnelRecords %##s", info->AutoTunnelService.namestorage.c);
+		LogOperation("RegisterAutoTunnelRecords %##s (%#s)", info->domain.c, m->hostlabel.c);
 
 		// 1. Set up our address record for the internal tunnel address
 		// (User-visible user-friendly host name, used as target in AutoTunnel SRV records)
@@ -2122,12 +2125,13 @@ mDNSlocal void RegisterAutoTunnelRecords(mDNS *m, DomainAuthInfo *info)
 		AppendDomainLabel(&info->AutoTunnelTarget.namestorage, &m->AutoTunnelLabel);
 		AppendDomainName (&info->AutoTunnelTarget.namestorage, &info->domain);
 		info->AutoTunnelTarget.resrec.RecordType = kDNSRecordTypeKnownUnique;
+
 		mDNS_Lock(m);
 		mDNS_AddDynDNSHostName(m, &info->AutoTunnelTarget.namestorage, mDNSNULL, info);
 		mDNS_Unlock(m);
 
 		// 4. Set up IKE tunnel's SRV record: "AutoTunnelHostRecord SRV 0 0 port AutoTunnelTarget"
-		AssignDomainName(&info->AutoTunnelService.namestorage, (const domainname*) "\x0B" "_autotunnel" "\x04" "_udp");
+		AssignDomainName (&info->AutoTunnelService.namestorage, (const domainname*) "\x0B" "_autotunnel" "\x04" "_udp");
 		AppendDomainLabel(&info->AutoTunnelService.namestorage, &m->hostlabel);
 		AppendDomainName (&info->AutoTunnelService.namestorage, &info->domain);
 		info->AutoTunnelService.resrec.rdata->u.srv.priority = 0;
@@ -2146,7 +2150,7 @@ mDNSlocal void RegisterAutoTunnelRecords(mDNS *m, DomainAuthInfo *info)
 
 mDNSlocal void DeregisterAutoTunnelRecords(mDNS *m, DomainAuthInfo *info)
 	{
-	LogOperation("DeregisterAutoTunnelRecords %##s", info->AutoTunnelService.namestorage.c);
+	LogOperation("DeregisterAutoTunnelRecords %##s", info->domain.c);
 	if (info->AutoTunnelService.resrec.RecordType > kDNSRecordTypeDeregistering)
 		{
 		mStatus err = mDNS_Deregister(m, &info->AutoTunnelService);
@@ -2169,7 +2173,6 @@ mDNSlocal void DeregisterAutoTunnelRecords(mDNS *m, DomainAuthInfo *info)
 			info->AutoTunnelHostRecord.resrec.RecordType = kDNSRecordTypeUnregistered;
 			LogMsg("DeregisterAutoTunnelRecords error %d deregistering AutoTunnelHostRecord %##s", err, info->AutoTunnelHostRecord.namestorage.c);
 			}
-		info->AutoTunnelHostRecord.namestorage.c[0] = 0;
 		}
 
 	if (info->AutoTunnelDeviceInfo.resrec.RecordType > kDNSRecordTypeDeregistering)
@@ -2196,7 +2199,8 @@ mDNSlocal void AutoTunnelRecordCallback(mDNS *const m, AuthRecord *const rr, mSt
 mDNSlocal void AutoTunnelNATCallback(mDNS *m, NATTraversalInfo *n)
 	{
 	DomainAuthInfo *info = (DomainAuthInfo *)n->clientContext;
-	LogOperation("AutoTunnelNATCallback Result %d %.4a Internal %d External %d %##s", n->Result, &n->ExternalAddress, mDNSVal16(n->IntPort), mDNSVal16(n->ExternalPort), info->AutoTunnelService.namestorage.c);
+	LogOperation("AutoTunnelNATCallback Result %d %.4a Internal %d External %d %#s.%##s",
+		n->Result, &n->ExternalAddress, mDNSVal16(n->IntPort), mDNSVal16(n->ExternalPort), m->hostlabel.c, info->domain.c);
 
 	m->NextSRVUpdate = m->timenow;
 	DeregisterAutoTunnelRecords(m,info);
@@ -2213,6 +2217,17 @@ mDNSlocal void AutoTunnelNATCallback(mDNS *m, NATTraversalInfo *n)
 		// Create or revert configuration file, and start (or SIGHUP) Racoon
 		(void)mDNSConfigureServer(AnonymousRacoonConfig ? kmDNSUp : kmDNSDown, info ? info->b64keydata : "");
 		}
+	}
+
+mDNSlocal void AbortDeregistration(mDNS *const m, AuthRecord *rr)
+	{
+	if (rr->resrec.RecordType == kDNSRecordTypeDeregistering)
+		{
+		LogOperation("Aborting deregistration of %s", ARDisplayString(m, rr));
+		CompleteDeregistration(m, rr);
+		}
+	else if (rr->resrec.RecordType != kDNSRecordTypeUnregistered)
+		LogMsg("AbortDeregistration ERROR RecordType %02X for %s", ARDisplayString(m, rr));
 	}
 
 // Before SetupLocalAutoTunnelInterface_internal is called,
@@ -2238,6 +2253,11 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 			{
 			if (info->AutoTunnel && !info->deltime && !info->AutoTunnelNAT.clientContext)
 				{
+				// If we just resurrected a DomainAuthInfo that is still deregistering, we need to abort the deregistration process before re-using the AuthRecord memory
+				AbortDeregistration(m, &info->AutoTunnelHostRecord);
+				AbortDeregistration(m, &info->AutoTunnelDeviceInfo);
+				AbortDeregistration(m, &info->AutoTunnelService);
+
 				mDNS_SetupResourceRecord(&info->AutoTunnelHostRecord, mDNSNULL, mDNSInterface_Any, kDNSType_AAAA, kHostNameTTL, kDNSRecordTypeUnregistered, AutoTunnelRecordCallback, info);
 				mDNS_SetupResourceRecord(&info->AutoTunnelDeviceInfo, mDNSNULL, mDNSInterface_Any, kDNSType_TXT,  kStandardTTL, kDNSRecordTypeUnregistered, AutoTunnelRecordCallback, info);
 				mDNS_SetupResourceRecord(&info->AutoTunnelTarget,     mDNSNULL, mDNSInterface_Any, kDNSType_A,    kHostNameTTL, kDNSRecordTypeUnregistered, AutoTunnelRecordCallback, info);
@@ -3467,7 +3487,7 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 				{
 				ClientTunnel *cur = *ptr;
 				LogOperation("SetDomainSecrets: removing client %##s from list", cur->dstname.c);
-				if (cur->q.ThisQInterval >= 0)	mDNS_StopQuery(m, &cur->q);
+				if (cur->q.ThisQInterval >= 0) mDNS_StopQuery(m, &cur->q);
 				AutoTunnelSetKeys(cur, mDNSfalse);
 				*ptr = cur->next;
 				freeL("ClientTunnel", cur);
@@ -3483,9 +3503,9 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 				{
 				// stop the NAT operation
 				mDNS_StopNATOperation_internal(m, &info->AutoTunnelNAT);
-				if (info->AutoTunnelHostRecord.namestorage.c[0] && info->AutoTunnelNAT.clientCallback)
+				if (info->AutoTunnelNAT.clientCallback)
 					{
-					// reset port and let the AutoTunnelNATCallback handle cleanup
+					// Reset port and let the AutoTunnelNATCallback handle cleanup
 					info->AutoTunnelNAT.ExternalAddress = m->ExternalAddress;
 					info->AutoTunnelNAT.ExternalPort    = zeroIPPort;
 					info->AutoTunnelNAT.Lifetime        = 0;
