@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.525  2007/10/30 23:58:59  cheshire
+<rdar://problem/5496734> BTMM: Need to retry registrations after failures
+After failure, double retry interval up to maximum of 30 minutes
+
 Revision 1.524  2007/10/30 20:10:47  cheshire
 <rdar://problem/5496734> BTMM: Need to retry registrations after failures
 
@@ -1156,12 +1160,14 @@ mDNSlocal void SetRecordRetry(mDNS *const m, AuthRecord *rr, mStatus SendErr)
 
 	rr->expire = 0;
 
-	// If interval too small, set to at least INIT_UCAST_POLL_INTERVAL
-	// If interval too large, limit to at most MAX_UCAST_POLL_INTERVAL
-	// Otherwise, if at least half our our time interval has elapsed, it's time to double rr->ThisAPInterval
-	if (SendErr == mStatus_TransientErr || rr->ThisAPInterval <= INIT_UCAST_POLL_INTERVAL/2) rr->ThisAPInterval = INIT_UCAST_POLL_INTERVAL;
-	else if (rr->ThisAPInterval >= MAX_UCAST_POLL_INTERVAL / 2)                              rr->ThisAPInterval = MAX_UCAST_POLL_INTERVAL;
-	else if (rr->ThisAPInterval / 2 <= elapsed)                                              rr->ThisAPInterval *= 2;
+	// If at least half our our time interval has elapsed, it's time to double rr->ThisAPInterval
+	// If resulting interval is too small, set to at least INIT_UCAST_POLL_INTERVAL (3 seconds)
+	// If resulting interval is too large, set to at most 30 minutes
+	if (rr->ThisAPInterval / 2 <= elapsed) rr->ThisAPInterval *= 2;
+	if (rr->ThisAPInterval < INIT_UCAST_POLL_INTERVAL || SendErr == mStatus_TransientErr)
+		rr->ThisAPInterval = INIT_UCAST_POLL_INTERVAL;
+	if (rr->ThisAPInterval > 30 * 60 * mDNSPlatformOneSecond)
+		rr->ThisAPInterval = 30 * 60 * mDNSPlatformOneSecond;
 
 	LogOperation("SetRecordRetry retry in %d for %s", rr->ThisAPInterval / mDNSPlatformOneSecond, ARDisplayString(m, rr));
 	}
