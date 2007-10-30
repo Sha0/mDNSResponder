@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.524  2007/10/30 20:10:47  cheshire
+<rdar://problem/5496734> BTMM: Need to retry registrations after failures
+
 Revision 1.523  2007/10/30 00:54:31  cheshire
 <rdar://problem/5496734> BTMM: Need to retry registrations after failures
 Fixed timing logic to double retry interval properly
@@ -2123,11 +2126,11 @@ mDNSexport const domainname *GetServiceTarget(mDNS *m, ServiceRecordSet *srs)
 		DomainAuthInfo *AuthInfo = GetAuthInfoForName_internal(m, srs->RR_SRV.resrec.name);
 		if (AuthInfo && AuthInfo->AutoTunnel)
 			{
-			if (AuthInfo->AutoTunnelHostRecord.namestorage.c[0] == 0)
-				{
-				if (m->AutoTunnelHostAddr.b[0]) SetupLocalAutoTunnelInterface_internal(m);
-				return(mDNSNULL);
-				}
+			// If this AutoTunnel is not yet active, start it now (which entails activating its NAT Traversal request,
+			// which will subsequently advertise the appropriate records when the NAT Traversal returns a result)
+			if (!AuthInfo->AutoTunnelNAT.clientContext && m->AutoTunnelHostAddr.b[0])
+				SetupLocalAutoTunnelInterface_internal(m);
+			if (AuthInfo->AutoTunnelHostRecord.namestorage.c[0] == 0) return(mDNSNULL);
 			return(&AuthInfo->AutoTunnelHostRecord.namestorage);
 			}
 		else
