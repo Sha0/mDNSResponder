@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.523  2007/10/30 00:54:31  cheshire
+<rdar://problem/5496734> BTMM: Need to retry registrations after failures
+Fixed timing logic to double retry interval properly
+
 Revision 1.522  2007/10/30 00:04:43  cheshire
 <rdar://problem/5496734> BTMM: Need to retry registrations after failures
 Made the code not give up and abandon the record when it gets an error in regState_UpdatePending state
@@ -1123,6 +1127,7 @@ mDNSlocal void unlinkSRS(mDNS *const m, ServiceRecordSet *srs)
 // (for service record sets, use RR_SRV as representative for time checks
 mDNSlocal void SetRecordRetry(mDNS *const m, AuthRecord *rr, mStatus SendErr)
 	{
+	mDNSs32 elapsed = m->timenow - rr->LastAPTime;
 	rr->LastAPTime = m->timenow;
 
 #if 0
@@ -1147,9 +1152,13 @@ mDNSlocal void SetRecordRetry(mDNS *const m, AuthRecord *rr, mStatus SendErr)
 		}
 
 	rr->expire = 0;
-	if (SendErr == mStatus_TransientErr || rr->ThisAPInterval < INIT_UCAST_POLL_INTERVAL)  rr->ThisAPInterval = INIT_UCAST_POLL_INTERVAL;
-	else if (rr->ThisAPInterval <= MAX_UCAST_POLL_INTERVAL / 2)                            rr->ThisAPInterval *= 2;
-	else                                                                                   rr->ThisAPInterval = MAX_UCAST_POLL_INTERVAL;
+
+	// If interval too small, set to at least INIT_UCAST_POLL_INTERVAL
+	// If interval too large, limit to at most MAX_UCAST_POLL_INTERVAL
+	// Otherwise, if at least half our our time interval has elapsed, it's time to double rr->ThisAPInterval
+	if (SendErr == mStatus_TransientErr || rr->ThisAPInterval <= INIT_UCAST_POLL_INTERVAL/2) rr->ThisAPInterval = INIT_UCAST_POLL_INTERVAL;
+	else if (rr->ThisAPInterval >= MAX_UCAST_POLL_INTERVAL / 2)                              rr->ThisAPInterval = MAX_UCAST_POLL_INTERVAL;
+	else if (rr->ThisAPInterval / 2 <= elapsed)                                              rr->ThisAPInterval *= 2;
 
 	LogOperation("SetRecordRetry retry in %d for %s", rr->ThisAPInterval / mDNSPlatformOneSecond, ARDisplayString(m, rr));
 	}
@@ -2578,9 +2587,9 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, &srs->SRSUpdateServer, srs->SRSUpdatePort, mDNSNULL, GetAuthInfoForName_internal(m, srs->RR_SRV.resrec.name));
 		if (err && err != mStatus_TransientErr) { debugf("ERROR: SendServiceDeregistration - mDNSSendDNSMessage - %ld", err); goto exit; }
 		}
-	SetRecordRetry(m, &srs->RR_SRV, err);
 
-	err = mStatus_NoError;
+	SetRecordRetry(m, &srs->RR_SRV, err);
+	return;
 
 exit:
 
@@ -3691,6 +3700,8 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 		{
 		mDNSu32 lease = GetPktLease(m, msg, end);
 		mDNSs32 expire = m->timenow + (mDNSs32)lease * mDNSPlatformOneSecond;
+
+		//rcode = kDNSFlag1_RC_SrvErr;	// Simulate server failure (rcode 2)
 
 		if (CurrentServiceRecordSet)
 			LogMsg("uDNS_ReceiveMsg ERROR CurrentServiceRecordSet already set");
