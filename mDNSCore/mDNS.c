@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.751  2007/10/30 23:49:41  cheshire
+<rdar://problem/5519458> BTMM: Machines don't appear in the sidebar on wake from sleep
+LLQ state was not being transferred properly between duplicate questions
+
 Revision 1.750  2007/10/29 23:58:52  cheshire
 <rdar://problem/5536979> BTMM: Need to create NAT port mapping for receiving LLQ events
 Use standard "if (mDNSIPv4AddressIsOnes(....ExternalAddress))" mechanism to determine whether callback has been invoked yet
@@ -5028,6 +5032,12 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 #define SameQTarget(A,B) (((A)->Target.type == mDNSAddrType_None && (B)->Target.type == mDNSAddrType_None) || \
 	(mDNSSameAddress(&(A)->Target, &(B)->Target) && mDNSSameIPPort((A)->TargetPort, (B)->TargetPort)))
 
+// Note: We explicitly disallow making a public query be a duplicate of a private one. This is to avoid the
+// circular deadlock where a client does a query for something like "dns-sd -Q _dns-query-tls._tcp.company.com SRV"
+// and we have a key for company.com, so we try to locate the private query server for company.com, which necessarily entails
+// doing a standard DNS query for the _dns-query-tls._tcp SRV record for company.com. If we make the latter (public) query
+// a duplicate of the former (private) query, then it will block forever waiting for an answer that will never come.
+
 mDNSlocal DNSQuestion *FindDuplicateQuestion(const mDNS *const m, const DNSQuestion *const question)
 	{
 	DNSQuestion *q;
@@ -5038,11 +5048,11 @@ mDNSlocal DNSQuestion *FindDuplicateQuestion(const mDNS *const m, const DNSQuest
 	for (q = m->Questions; q && q != question; q=q->next)		// Scan our list for another question
 		if (q->InterfaceID == question->InterfaceID &&			// with the same InterfaceID,
 			SameQTarget(q, question)                &&			// and same unicast/multicast target settings
-			q->qtype       == question->qtype       &&			// type,
-			q->qclass      == question->qclass      &&			// class,
-			q->AuthInfo    == question->AuthInfo    &&			// and privacy status matches
-			q->LongLived   == question->LongLived   &&			// and long-lived status matches
-			q->qnamehash   == question->qnamehash   &&
+			q->qtype      == question->qtype        &&			// type,
+			q->qclass     == question->qclass       &&			// class,
+			q->LongLived  == question->LongLived    &&			// and long-lived status matches
+			(!q->AuthInfo || question->AuthInfo)    &&			// to avoid deadlock, don't make public query dup of a private one
+			q->qnamehash  == question->qnamehash    &&
 			SameDomainName(&q->qname, &question->qname))		// and name
 			return(q);
 	return(mDNSNULL);
@@ -5072,7 +5082,6 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const questi
 				q->servPort          = question->servPort;
 
 				q->state             = question->state;
-			//	q->NATInfoUDP        = question->NATInfoUDP;
 			//	q->tcp               = question->tcp;
 				q->origLease         = question->origLease;
 				q->expire            = question->expire;
@@ -5080,7 +5089,6 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const questi
 				q->id                = question->id;
 
 				question->nta        = mDNSNULL;	// If we've got a GetZoneData in progress, transfer it to the newly active question
-			//	question->NATInfoUDP = mDNSNULL;
 			//	question->tcp        = mDNSNULL;
 				if (q->nta)
 					{
@@ -5090,7 +5098,13 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const questi
 
 				// Need to work out how to safely transfer this state too -- appropriate context pointers need to be updated or the code will crash
 				if (question->tcp) LogOperation("UpdateQuestionDuplicates did not transfer tcp pointer");
-	
+
+				if (question->state == LLQ_Established)
+					{
+					LogOperation("UpdateQuestionDuplicates transferred LLQ state for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+					question->state = 0;	// Must zero question->state, or mDNS_StopQuery_internal will clean up and cancel our LLQ from the server
+					}
+
 				SetNextQueryTime(m,q);
 				}
 	}
@@ -5232,6 +5246,8 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 		question->expire            = 0;
 		question->ntries            = 0;
 		question->id                = zeroOpaque64;
+
+		if (question->DuplicateOf) question->AuthInfo = question->DuplicateOf->AuthInfo;
 
 		for (i=0; i<DupSuppressInfoSize; i++)
 			question->DupSuppress[i].InterfaceID = mDNSNULL;
