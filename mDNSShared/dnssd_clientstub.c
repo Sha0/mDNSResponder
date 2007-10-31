@@ -28,6 +28,10 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.95  2007/10/31 20:07:16  cheshire
+<rdar://problem/5541498> Set SO_NOSIGPIPE on client socket
+Refinement: the cleanup code still needs to close listenfd when necesssary
+
 Revision 1.94  2007/10/15 22:34:27  cheshire
 <rdar://problem/5541498> Set SO_NOSIGPIPE on client socket
 
@@ -668,7 +672,11 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 			syslog(LOG_WARNING, "dnssd_clientstub ERROR: sendmsg failed read sd=%d write sd=%d errno %d (%s)",
 				errsd, listenfd, errno, strerror(errno));
 #endif
-		if (dnssd_SocketValid(listenfd)) dnssd_close(listenfd);
+		// Close our end of the socketpair *before* blocking in read_all to get the four-byte error code.
+		// Otherwise, if the daemon closes our socket (or crashes), we block in read_all() forever
+		// because the socket is not closed (we still have an open reference to it ourselves).
+		dnssd_close(listenfd);
+		listenfd = dnssd_InvalidSocket;		// Make sure we don't close it a second time in the cleanup handling below
 		}
 
 	// At this point we may block in read_all for a few milliseconds waiting for the daemon to send us the error code,
@@ -683,7 +691,8 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 cleanup:
 	if (MakeSeparateReturnSocket)
 		{
-		if (dnssd_SocketValid(errsd)) dnssd_close(errsd);
+		if (dnssd_SocketValid(listenfd)) dnssd_close(listenfd);
+		if (dnssd_SocketValid(errsd))    dnssd_close(errsd);
 #if defined(USE_NAMED_ERROR_RETURN_SOCKET)
 		// syslog(LOG_WARNING, "dnssd_clientstub deliver_request: removing UDS: %s", data);
 		if (unlink(data) != 0)
