@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.378  2007/10/31 19:21:40  cheshire
+Don't show Expire time for records and services that aren't currently registered
+
 Revision 1.377  2007/10/30 23:48:20  cheshire
 Improved SIGINFO listing of question state
 
@@ -3655,7 +3658,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 			LogMsgNoIdent("%7d %7d %7d %7d %s",
 				ar->ThisAPInterval / mDNSPlatformOneSecond,
 				AuthRecord_uDNS(ar) || ar->AnnounceCount ? (ar->LastAPTime + ar->ThisAPInterval - now) / mDNSPlatformOneSecond : 0,
-				AuthRecord_uDNS(ar) ? (ar->expire - now) / mDNSPlatformOneSecond : 0,
+				AuthRecord_uDNS(ar) && ar->expire        ? (ar->expire - now) / mDNSPlatformOneSecond : 0,
 				ar->state, ARDisplayString(m, ar));
 		}
 
@@ -3669,7 +3672,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 			LogMsgNoIdent("%7d %7d %7d %7d %s",
 				s->RR_SRV.ThisAPInterval / mDNSPlatformOneSecond,
 				(s->RR_SRV.LastAPTime + s->RR_SRV.ThisAPInterval - now) / mDNSPlatformOneSecond,
-				(s->RR_SRV.expire - now) / mDNSPlatformOneSecond,
+				s->RR_SRV.expire ? (s->RR_SRV.expire - now) / mDNSPlatformOneSecond : 0,
 				s->state, ARDisplayString(m, &s->RR_SRV));
 		}
 
