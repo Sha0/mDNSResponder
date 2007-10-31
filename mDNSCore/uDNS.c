@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.526  2007/10/31 19:26:55  cheshire
+Don't need to log "Permanently abandoning service registration" message when we're intentionally deleting a service
+
 Revision 1.525  2007/10/30 23:58:59  cheshire
 <rdar://problem/5496734> BTMM: Need to retry registrations after failures
 After failure, double retry interval up to maximum of 30 minutes
@@ -1696,7 +1699,7 @@ mDNSlocal void recvSetupResponse(mDNS *const m, mDNSu8 rcode, DNSQuestion *const
 		{
 		//LogOperation("Got LLQ_InitialRequest");
 
-		if (llq->err) { LogMsg("recvSetupResponse - received %d from server", llq->err); StartLLQPolling(m,q); return; }
+		if (llq->err) { LogMsg("recvSetupResponse - received llq->err %d from server", llq->err); StartLLQPolling(m,q); return; }
 	
 		if (q->origLease != llq->llqlease)
 			debugf("recvSetupResponse: requested lease %lu, granted lease %lu", q->origLease, llq->llqlease);
@@ -3392,7 +3395,9 @@ mDNSlocal void hndlServiceUpdateReply(mDNS *const m, ServiceRecordSet *srs,  mSt
 
 	if (srs->state == regState_Unregistered)
 		{
-		LogMsg("hndlServiceUpdateReply ERROR! state == regState_Unregistered. Permanently abandoning service registration %##s", srs->RR_SRV.resrec.name->c);
+		if (err != mStatus_MemFree)
+			LogMsg("hndlServiceUpdateReply ERROR! state == regState_Unregistered but err != mStatus_MemFree. Permanently abandoning service registration %##s",
+				srs->RR_SRV.resrec.name->c);
 		unlinkSRS(m, srs);
 		}
 	else if (txt->QueuedRData && srs->state == regState_Registered)
