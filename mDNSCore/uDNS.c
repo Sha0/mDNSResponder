@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.527  2007/11/01 16:08:51  cheshire
+Tidy up alignment of "SetRecordRetry refresh" log messages
+
 Revision 1.526  2007/10/31 19:26:55  cheshire
 Don't need to log "Permanently abandoning service registration" message when we're intentionally deleting a service
 
@@ -1154,7 +1157,7 @@ mDNSlocal void SetRecordRetry(mDNS *const m, AuthRecord *rr, mStatus SendErr)
 		{
 		mDNSs32 remaining = rr->expire - m->timenow;
 		rr->ThisAPInterval = remaining/2 + mDNSRandom(remaining/10);
-		LogOperation("SetRecordRetry refresh in %d of %d for %s",
+		LogOperation("SetRecordRetry refresh in %4d of %4d for %s",
 			rr->ThisAPInterval / mDNSPlatformOneSecond,
 			(rr->expire - m->timenow) / mDNSPlatformOneSecond,
 			ARDisplayString(m, rr));
@@ -1172,7 +1175,7 @@ mDNSlocal void SetRecordRetry(mDNS *const m, AuthRecord *rr, mStatus SendErr)
 	if (rr->ThisAPInterval > 30 * 60 * mDNSPlatformOneSecond)
 		rr->ThisAPInterval = 30 * 60 * mDNSPlatformOneSecond;
 
-	LogOperation("SetRecordRetry retry in %d for %s", rr->ThisAPInterval / mDNSPlatformOneSecond, ARDisplayString(m, rr));
+	LogOperation("SetRecordRetry retry   in %4d for %s", rr->ThisAPInterval / mDNSPlatformOneSecond, ARDisplayString(m, rr));
 	}
 
 // ***************************************************************************
