@@ -28,6 +28,10 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.96  2007/11/01 15:59:33  cheshire
+umask not being set and restored properly in USE_NAMED_ERROR_RETURN_SOCKET code
+(no longer used on OS X, but relevant for other platforms)
+
 Revision 1.95  2007/10/31 20:07:16  cheshire
 <rdar://problem/5541498> Set SO_NOSIGPIPE on client socket
 Refinement: the cleanup code still needs to close listenfd when necesssary
@@ -580,8 +584,9 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 			}
 		#elif defined(USE_NAMED_ERROR_RETURN_SOCKET)
 			{
+			mode_t mask;
+			int bindresult;
 			dnssd_sockaddr_t caddr;
-			mode_t mask = umask(0);
 			listenfd = socket(AF_DNSSD, SOCK_STREAM, 0);
 			if (!dnssd_SocketValid(listenfd)) goto cleanup;
 
@@ -592,8 +597,10 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 			caddr.sun_len = sizeof(struct sockaddr_un);
 			#endif
 			strcpy(caddr.sun_path, data);
+			mask = umask(0);
+			bindresult = bind(listenfd, (struct sockaddr *)&caddr, sizeof(caddr));
 			umask(mask);
-			if (bind(listenfd, (struct sockaddr *)&caddr, sizeof(caddr)) < 0) goto cleanup;
+			if (bindresult < 0) goto cleanup;
 			listen(listenfd, 1);
 			}
 		#else
