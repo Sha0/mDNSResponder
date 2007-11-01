@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.379  2007/11/01 19:32:14  cheshire
+Added "DEBUG_64BIT_SCM_RIGHTS" debugging code
+
 Revision 1.378  2007/10/31 19:21:40  cheshire
 Don't show Expire time for records and services that aren't currently registered
 
@@ -3111,7 +3114,7 @@ mDNSlocal void read_msg(request_state *req)
 		struct iovec vec = { req->msgbuf + req->data_bytes, nleft };	// Tell recvmsg where we want the bytes put
 		struct msghdr msg;
 		struct cmsghdr *cmsg;
-		char cbuf[sizeof(struct cmsghdr) + sizeof(dnssd_sock_t)];
+		char cbuf[CMSG_SPACE(sizeof(dnssd_sock_t))];
 		msg.msg_name       = 0;
 		msg.msg_namelen    = 0;
 		msg.msg_iov        = &vec;
@@ -3126,12 +3129,19 @@ mDNSlocal void read_msg(request_state *req)
 		if (req->data_bytes > req->hdr.datalen)
 			{ LogMsg("%3d: ERROR: read_msg - read too many data bytes", req->sd); req->ts = t_error; return; }
 		cmsg = CMSG_FIRSTHDR(&msg);
+#if DEBUG_64BIT_SCM_RIGHTS
+		LogMsg("%3d: Expecting %d %d %d %d", req->sd, sizeof(cbuf),       sizeof(cbuf),   SOL_SOCKET,       SCM_RIGHTS);
+		LogMsg("%3d: Got       %d %d %d %d", req->sd, msg.msg_controllen, cmsg->cmsg_len, cmsg->cmsg_level, cmsg->cmsg_type);
+#endif DEBUG_64BIT_SCM_RIGHTS
 		if (msg.msg_controllen == sizeof(cbuf) &&
 			cmsg->cmsg_len     == sizeof(cbuf) &&
 			cmsg->cmsg_level   == SOL_SOCKET   &&
 			cmsg->cmsg_type    == SCM_RIGHTS)
 			{
 			req->errsd = *(dnssd_sock_t *)CMSG_DATA(cmsg);
+#if DEBUG_64BIT_SCM_RIGHTS
+			LogMsg("%3d: read req->errsd %d", req->sd, req->errsd);
+#endif DEBUG_64BIT_SCM_RIGHTS
 			if (req->data_bytes < req->hdr.datalen)
 				{
 				LogMsg("%3d: Client sent error socket %d via SCM_RIGHTS with req->data_bytes %d < req->hdr.datalen %d",
@@ -3175,7 +3185,7 @@ mDNSlocal void read_msg(request_state *req)
 	
 			req->errsd = socket(AF_DNSSD, SOCK_STREAM, 0);
 			if (!dnssd_SocketValid(req->errsd)) { my_perror("ERROR: socket"); req->ts = t_error; return; }
-	
+
 			if (connect(req->errsd, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) < 0)
 				{
 #if !defined(USE_TCP_LOOPBACK)
