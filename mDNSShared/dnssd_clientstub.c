@@ -28,6 +28,10 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.97  2007/11/01 19:45:55  cheshire
+Added "DEBUG_64BIT_SCM_RIGHTS" debugging code
+See <rdar://problem/5565787> Bonjour API broken for 64-bit apps (SCM_RIGHTS sendmsg fails)
+
 Revision 1.96  2007/11/01 15:59:33  cheshire
 umask not being set and restored properly in USE_NAMED_ERROR_RETURN_SOCKET code
 (no longer used on OS X, but relevant for other platforms)
@@ -659,25 +663,34 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 		struct iovec vec = { ((char *)hdr) + sizeof(ipc_msg_hdr) + datalen, 1 }; // Send the last byte along with the SCM_RIGHTS
 		struct msghdr msg;
 		struct cmsghdr *cmsg;
-		char cbuf[sizeof(struct cmsghdr) + sizeof(dnssd_sock_t)];
+		char cbuf[CMSG_SPACE(sizeof(dnssd_sock_t))];
 		msg.msg_name       = 0;
 		msg.msg_namelen    = 0;
 		msg.msg_iov        = &vec;
 		msg.msg_iovlen     = 1;
 		msg.msg_control    = cbuf;
-		msg.msg_controllen = sizeof(cbuf);
+		msg.msg_controllen = CMSG_LEN(sizeof(dnssd_sock_t));
 		msg.msg_flags      = 0;
 		cmsg = CMSG_FIRSTHDR(&msg);
-		cmsg->cmsg_len     = sizeof(cbuf);
+		cmsg->cmsg_len     = CMSG_LEN(sizeof(dnssd_sock_t));
 		cmsg->cmsg_level   = SOL_SOCKET;
 		cmsg->cmsg_type    = SCM_RIGHTS;
 		*((dnssd_sock_t *)CMSG_DATA(cmsg)) = listenfd;
 #if TEST_KQUEUE_CONTROL_MESSAGE_BUG
 		sleep(1);
 #endif
+		printf("dnssd_clientstub read sd=%d write sd=%d %ld %ld/%ld/%ld/%ld\n", errsd, listenfd, sizeof(dnssd_sock_t), 
+			sizeof(struct cmsghdr) + sizeof(dnssd_sock_t),
+			CMSG_LEN(sizeof(dnssd_sock_t)), (long)CMSG_SPACE(sizeof(dnssd_sock_t)),
+			(long)((char*)CMSG_DATA(cmsg) + 4 - cbuf));
 		if (sendmsg(sdr->sockfd, &msg, 0) < 0)
+			{
 			syslog(LOG_WARNING, "dnssd_clientstub ERROR: sendmsg failed read sd=%d write sd=%d errno %d (%s)",
 				errsd, listenfd, errno, strerror(errno));
+			err = kDNSServiceErr_Incompatible;
+			goto cleanup;
+			}
+		printf("dnssd_clientstub sendmsg read sd=%d write sd=%d okay\n", errsd, listenfd);
 #endif
 		// Close our end of the socketpair *before* blocking in read_all to get the four-byte error code.
 		// Otherwise, if the daemon closes our socket (or crashes), we block in read_all() forever
