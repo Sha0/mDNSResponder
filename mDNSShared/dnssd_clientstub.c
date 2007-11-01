@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.98  2007/11/01 19:52:43  cheshire
+Wrap debugging messages in "#if DEBUG_64BIT_SCM_RIGHTS"
+
 Revision 1.97  2007/11/01 19:45:55  cheshire
 Added "DEBUG_64BIT_SCM_RIGHTS" debugging code
 See <rdar://problem/5565787> Bonjour API broken for 64-bit apps (SCM_RIGHTS sendmsg fails)
@@ -676,13 +679,19 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 		cmsg->cmsg_level   = SOL_SOCKET;
 		cmsg->cmsg_type    = SCM_RIGHTS;
 		*((dnssd_sock_t *)CMSG_DATA(cmsg)) = listenfd;
+
 #if TEST_KQUEUE_CONTROL_MESSAGE_BUG
 		sleep(1);
 #endif
-		printf("dnssd_clientstub read sd=%d write sd=%d %ld %ld/%ld/%ld/%ld\n", errsd, listenfd, sizeof(dnssd_sock_t), 
+
+#if DEBUG_64BIT_SCM_RIGHTS
+		syslog(LOG_WARNING, "dnssd_clientstub sendmsg read sd=%d write sd=%d %ld %ld %ld/%ld/%ld/%ld",
+			errsd, listenfd, sizeof(dnssd_sock_t), sizeof(void*),
 			sizeof(struct cmsghdr) + sizeof(dnssd_sock_t),
 			CMSG_LEN(sizeof(dnssd_sock_t)), (long)CMSG_SPACE(sizeof(dnssd_sock_t)),
 			(long)((char*)CMSG_DATA(cmsg) + 4 - cbuf));
+#endif DEBUG_64BIT_SCM_RIGHTS
+
 		if (sendmsg(sdr->sockfd, &msg, 0) < 0)
 			{
 			syslog(LOG_WARNING, "dnssd_clientstub ERROR: sendmsg failed read sd=%d write sd=%d errno %d (%s)",
@@ -690,7 +699,11 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 			err = kDNSServiceErr_Incompatible;
 			goto cleanup;
 			}
-		printf("dnssd_clientstub sendmsg read sd=%d write sd=%d okay\n", errsd, listenfd);
+
+#if DEBUG_64BIT_SCM_RIGHTS
+		syslog(LOG_WARNING, "dnssd_clientstub sendmsg read sd=%d write sd=%d okay", errsd, listenfd);
+#endif DEBUG_64BIT_SCM_RIGHTS
+
 #endif
 		// Close our end of the socketpair *before* blocking in read_all to get the four-byte error code.
 		// Otherwise, if the daemon closes our socket (or crashes), we block in read_all() forever
