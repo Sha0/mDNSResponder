@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.508  2007/11/02 21:59:37  cheshire
+Added comment about locking
+
 Revision 1.507  2007/11/02 20:18:13  cheshire
 <rdar://problem/5575583> BTMM: Work around keychain notification bug <rdar://problem/5124399>
 
@@ -3748,6 +3751,7 @@ mDNSlocal OSStatus KeychainChanged(SecKeychainEvent keychainEvent, SecKeychainCa
 					keychainEvent == kSecAddEvent    ? "kSecAddEvent" : 
 					keychainEvent == kSecDeleteEvent ? "kSecDeleteEvent" : 
 					keychainEvent == kSecUpdateEvent ? "kSecUpdateEvent" :  "<Unknown>");
+				// We're running on the CFRunLoop (Mach port) thread, not the kqueue thread, so we need to grab the KQueueLock before proceeding
 				KQueueLock(m);
 				mDNS_Lock(m);
 				SetDomainSecrets(m);
