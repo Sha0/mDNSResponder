@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.507  2007/11/02 20:18:13  cheshire
+<rdar://problem/5575583> BTMM: Work around keychain notification bug <rdar://problem/5124399>
+
 Revision 1.506  2007/10/30 20:46:45  cheshire
 <rdar://problem/5496734> BTMM: Need to retry registrations after failures
 
@@ -3564,7 +3567,7 @@ mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 	{
 	LogOperation("***   Network Configuration Change   ***  (%d)%s",
 		m->p->NetworkChanged ? mDNS_TimeNow(m) - m->p->NetworkChanged : 0,
-		m->p->NetworkChanged ? "": " (no scheduled configuration change)");
+		m->p->NetworkChanged ? "" : " (no scheduled configuration change)");
 	m->p->NetworkChanged = 0;		// If we received a network change event and deferred processing, we're now dealing with it
 	mDNSs32 utc = mDNSPlatformUTC();
 	MarkAllInterfacesInactive(m, utc);
@@ -3646,6 +3649,17 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 	if (!m->p->NetworkChanged ||
 		m->p->NetworkChanged - NonZeroTime(m->timenow + delay) < 0)
 		m->p->NetworkChanged = NonZeroTime(m->timenow + delay);
+
+	// KeyChain frequently fails to notify clients of change events. To work around this
+	// we set a timer and periodically poll to detect if any changes have occurred.
+	// Without this Back To My Mac just does't work for a large number of users.
+	// See <rdar://problem/5124399> Not getting Keychain Changed events when enabling BTMM
+	if (c3 || CFArrayContainsValue(changedKeys, range, NetworkChangedKey_BackToMyMac))
+		{
+		LogOperation("***   NetworkChanged   *** starting KeyChainBugTimer");
+		m->p->KeyChainBugTimer    = NonZeroTime(m->timenow + delay);
+		m->p->KeyChainBugInterval = mDNSPlatformOneSecond;
+		}
 
 	if (!m->SuppressSending ||
 		m->SuppressSending - m->p->NetworkChanged < 0)
@@ -3918,6 +3932,7 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	m->p->userhostlabel.c[0] = 0;
 	m->p->usernicelabel.c[0] = 0;
 	m->p->NotifyUser         = 0;
+	m->p->KeyChainBugTimer   = 0;
 
 	m->AutoTunnelHostAddr.b[0] = 0;		// Zero out AutoTunnelHostAddr so UpdateInterfaceList() know it has to set it up
 

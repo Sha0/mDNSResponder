@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.346  2007/11/02 20:18:13  cheshire
+<rdar://problem/5575583> BTMM: Work around keychain notification bug <rdar://problem/5124399>
+
 Revision 1.345  2007/10/17 18:41:21  cheshire
 For debugging, make SIGUSR1 simulate a KeychainChanged event as well as a NetworkChanged
 
@@ -2141,12 +2144,28 @@ mDNSlocal mDNSs32 mDNSDaemonIdle(mDNS *const m)
 	// we then systematically lose our own looped-back packets.
 	if (m->p->NetworkChanged && now - m->p->NetworkChanged >= 0) mDNSMacOSXNetworkChanged(m);
 
+	// KeyChain frequently fails to notify clients of change events. To work around this
+	// we set a timer and periodically poll to detect if any changes have occurred.
+	// Without this Back To My Mac just does't work for a large number of users.
+	// See <rdar://problem/5124399> Not getting Keychain Changed events when enabling BTMM
+	if (m->p->KeyChainBugTimer && now - m->p->KeyChainBugTimer >= 0)
+		{
+		m->p->KeyChainBugTimer = NonZeroTime(now + m->p->KeyChainBugInterval);
+		m->p->KeyChainBugInterval *= 2;
+		if (m->p->KeyChainBugInterval > 16 * mDNSPlatformOneSecond) m->p->KeyChainBugTimer = 0;
+		SetDomainSecrets(m);
+		}
+
 	// 2. Call mDNS_Execute() to let mDNSCore do what it needs to do
 	mDNSs32 nextevent = mDNS_Execute(m);
 
 	if (m->p->NetworkChanged)
 		if (nextevent - m->p->NetworkChanged > 0)
 			nextevent = m->p->NetworkChanged;
+
+	if (m->p->KeyChainBugTimer)
+		if (nextevent - m->p->KeyChainBugTimer > 0)
+			nextevent = m->p->KeyChainBugTimer;
 
 	// 3. Deliver any waiting browse messages to clients
 	DNSServiceBrowser *b = DNSServiceBrowserList;
