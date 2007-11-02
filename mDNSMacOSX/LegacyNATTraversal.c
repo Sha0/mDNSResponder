@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.44  2007/11/02 20:45:40  cheshire
+Don't log "connection failed" in customer builds
+
 Revision 1.43  2007/10/18 20:09:47  cheshire
 <rdar://problem/5545930> BTMM: Back to My Mac not working with D-Link DGL-4100 NAT gateway
 
@@ -472,7 +475,8 @@ mDNSlocal mStatus MakeTCPConnection(mDNS *const m, tcpLNTInfo *info, const mDNSA
 		}
 	else
 		{
-		LogMsg("LNT MakeTCPConnection: connection failed");
+		// Don't need to log this in customer builds -- it happens quite often during sleep, wake, configuration changes, etc.
+		LogOperation("LNT MakeTCPConnection: connection failed");
 		mDNSPlatformTCPCloseConnection(info->sock);	// Dispose the socket we created with mDNSPlatformTCPSocket() above
 		info->sock = mDNSNULL;
 		mDNSPlatformMemFree(info->Reply);
