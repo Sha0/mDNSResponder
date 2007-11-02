@@ -28,6 +28,10 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.99  2007/11/02 17:29:40  cheshire
+<rdar://problem/5565787> Bonjour API broken for 64-bit apps (SCM_RIGHTS sendmsg fails)
+To get 64-bit code that works, we need to NOT use the standard CMSG_* macros
+
 Revision 1.98  2007/11/01 19:52:43  cheshire
 Wrap debugging messages in "#if DEBUG_64BIT_SCM_RIGHTS"
 
@@ -663,6 +667,17 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 		errsd = accept(listenfd, (struct sockaddr *)&daddr, &len);
 		if (!dnssd_SocketValid(errsd)) goto cleanup;
 #else
+
+// On Leopard, the stock definitions of CMSG_*, while arguably correct in theory,
+// nonetheless in practice produce code that doesn't work on 64-bit machines
+// For details see <rdar://problem/5565787> Bonjour API broken for 64-bit apps (SCM_RIGHTS sendmsg fails)
+#undef  CMSG_DATA
+#define CMSG_DATA(cmsg) ((unsigned char *)(cmsg) + (sizeof(struct cmsghdr)))
+#undef  CMSG_SPACE
+#define CMSG_SPACE(l)   ((sizeof(struct cmsghdr)) + (l))
+#undef  CMSG_LEN
+#define CMSG_LEN(l)     ((sizeof(struct cmsghdr)) + (l))
+
 		struct iovec vec = { ((char *)hdr) + sizeof(ipc_msg_hdr) + datalen, 1 }; // Send the last byte along with the SCM_RIGHTS
 		struct msghdr msg;
 		struct cmsghdr *cmsg;
