@@ -30,6 +30,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.347  2007/11/02 22:00:13  cheshire
+<rdar://problem/5575583> BTMM: Work around keychain notification bug <rdar://problem/5124399>
+Need to hold the lock while calling SetDomainSecrets
+
 Revision 1.346  2007/11/02 20:18:13  cheshire
 <rdar://problem/5575583> BTMM: Work around keychain notification bug <rdar://problem/5124399>
 
@@ -2049,6 +2053,8 @@ mDNSlocal void SignalCallback(CFMachPortRef port, void *msg, CFIndex size, void 
 	(void)info;		// Unused
 	mach_msg_header_t *msg_header = (mach_msg_header_t *)msg;
 	mDNS *const m = &mDNSStorage;
+
+	// We're running on the CFRunLoop (Mach port) thread, not the kqueue thread, so we need to grab the KQueueLock before proceeding
 	KQueueLock(m);
 	switch(msg_header->msgh_id)
 		{
@@ -2153,7 +2159,9 @@ mDNSlocal mDNSs32 mDNSDaemonIdle(mDNS *const m)
 		m->p->KeyChainBugTimer = NonZeroTime(now + m->p->KeyChainBugInterval);
 		m->p->KeyChainBugInterval *= 2;
 		if (m->p->KeyChainBugInterval > 16 * mDNSPlatformOneSecond) m->p->KeyChainBugTimer = 0;
+		mDNS_Lock(m);
 		SetDomainSecrets(m);
+		mDNS_Unlock(m);
 		}
 
 	// 2. Call mDNS_Execute() to let mDNSCore do what it needs to do
