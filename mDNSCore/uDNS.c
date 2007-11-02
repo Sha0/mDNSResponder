@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.528  2007/11/02 21:32:30  cheshire
+<rdar://problem/5575593> BTMM: Deferring deregistration of record log messages on sleep/wake
+
 Revision 1.527  2007/11/01 16:08:51  cheshire
 Tidy up alignment of "SetRecordRetry refresh" log messages
 
@@ -1824,10 +1827,6 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 	mDNSBool   closed  = mDNSfalse;
 	mDNSu8    *end;
 	mDNS      *m       = tcpInfo->m;
-	DomainAuthInfo *AuthInfo =
-		tcpInfo->question ? tcpInfo->question->AuthInfo :
-		tcpInfo->srs      ? GetAuthInfoForName(m, tcpInfo->srs->RR_SRV.resrec.name)  :
-		tcpInfo->rr       ? GetAuthInfoForName(m, tcpInfo->rr->resrec.name) : mDNSNULL;
 
 	tcpInfo_t **backpointer =
 		tcpInfo->question ? &tcpInfo->question->tcp :
@@ -1842,6 +1841,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 
 	if (ConnectionEstablished)
 		{
+		DomainAuthInfo *AuthInfo;
 		// connection is established - send the message
 		if (tcpInfo->question && tcpInfo->question->LongLived && tcpInfo->question->state == LLQ_Established)
 			{
@@ -1865,7 +1865,6 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			llqData.id    = zeroOpaque64;
 			llqData.llqlease = kLLQ_DefLease;
 			InitializeDNSMessage(&tcpInfo->request.h, tcpInfo->question->TargetQID, uQueryFlags);
-			//LogMsg("tcpCallback: putLLQ %p", AuthInfo);
 			end = putLLQ(&tcpInfo->request, tcpInfo->request.data, tcpInfo->question, &llqData, mDNStrue);
 			if (!end) { LogMsg("ERROR: tcpCallback - putLLQ"); err = mStatus_UnknownErr; goto exit; }
 			}
@@ -1877,6 +1876,21 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			}
 		else
 			end = ((mDNSu8*) &tcpInfo->request) + tcpInfo->requestLen;
+
+		// Defensive coding for <rdar://problem/5546824> Crash in mDNSResponder at GetAuthInfoForName_internal + 366
+		// Don't know yet what's causing this, but at least we can be cautious and try to avoid crashing if we find our pointers in an unexpected state
+		if (tcpInfo->srs && tcpInfo->srs->RR_SRV.resrec.name != &tcpInfo->srs->RR_SRV.namestorage)
+			LogMsg("tcpCallback: ERROR: tcpInfo->srs->RR_SRV.resrec.name %p != &tcpInfo->srs->RR_SRV.namestorage %p",
+				tcpInfo->srs->RR_SRV.resrec.name, &tcpInfo->srs->RR_SRV.namestorage);
+		if (tcpInfo->rr && tcpInfo->rr->resrec.name != &tcpInfo->rr->namestorage)
+			LogMsg("tcpCallback: ERROR: tcpInfo->rr->resrec.name %p != &tcpInfo->rr->namestorage %p",
+				tcpInfo->rr->resrec.name, &tcpInfo->rr->namestorage);
+		if (tcpInfo->srs && tcpInfo->srs->RR_SRV.resrec.name != &tcpInfo->srs->RR_SRV.namestorage) return;
+		if (tcpInfo->rr  && tcpInfo->rr->        resrec.name != &tcpInfo->rr->        namestorage) return;
+
+		AuthInfo = 	tcpInfo->question ? tcpInfo->question->AuthInfo :
+					tcpInfo->srs      ? GetAuthInfoForName(m, tcpInfo->srs->RR_SRV.resrec.name) :
+					tcpInfo->rr       ? GetAuthInfoForName(m, tcpInfo->rr->resrec.name) : mDNSNULL;
 
 		err = mDNSSendDNSMessage(m, &tcpInfo->request, end, mDNSInterface_Any, &tcpInfo->Addr, tcpInfo->Port, sock, AuthInfo);
 
@@ -2026,8 +2040,9 @@ mDNSlocal tcpInfo_t *MakeTCPConn(mDNS *const m, const DNSMessage *const msg, con
 	// instead of having to handle immediate errors in one place and async errors in another.
 	// Also: "err == mStatus_ConnEstablished" probably never happens.
 
+	// Don't need to log "connection failed" in customer builds -- it happens quite often during sleep, wake, configuration changes, etc.
 	if      (err == mStatus_ConnEstablished) { tcpCallback(info->sock, info, mDNStrue, mStatus_NoError); }
-	else if (err != mStatus_ConnPending    ) { LogMsg("MakeTCPConnection: connection failed"); mDNSPlatformMemFree(info); return(mDNSNULL); }
+	else if (err != mStatus_ConnPending    ) { LogOperation("MakeTCPConnection: connection failed"); mDNSPlatformMemFree(info); return(mDNSNULL); }
 	return(info);
 	}
 
@@ -3926,7 +3941,7 @@ mDNSexport void RecordRegistrationGotZoneData(mDNS *const m, mStatus err, const 
 	// organizations use their own private pseudo-TLD, like ".home", etc, and we don't want to block that.
 	if (zoneData->ZoneName.c[0] == 0)
 		{
-		LogMsg("RecordRegistrationGotZoneData: Only name server claiming responsibility for \"%##s\" is \"%##s\"!", newRR->resrec.name->c, zoneData->ZoneName.c);
+		LogOperation("RecordRegistrationGotZoneData: No name server found claiming responsibility for \"%##s\"!", newRR->resrec.name->c);
 		return;
 		}
 
@@ -3940,7 +3955,7 @@ mDNSexport void RecordRegistrationGotZoneData(mDNS *const m, mStatus err, const 
 
 	if (mDNSIPPortIsZero(zoneData->Port) || mDNSAddressIsZero(&zoneData->Addr))
 		{
-		LogMsg("RecordRegistrationGotZoneData: No _dns-update._udp service found for \"%##s\"!", newRR->resrec.name->c);
+		LogOperation("RecordRegistrationGotZoneData: No _dns-update._udp service found for \"%##s\"!", newRR->resrec.name->c);
 		return;
 		}
 
@@ -4001,9 +4016,6 @@ mDNSexport mStatus uDNS_DeregisterRecord(mDNS *const m, AuthRecord *const rr)
 		case regState_Refresh:
 		case regState_Pending:
 		case regState_UpdatePending:
-			LogMsg("Deferring deregistration of record %##s state %d until registration completes", rr->resrec.name->c, rr->state);
-			rr->state = regState_DeregDeferred;
-			return mStatus_NoError;
 		case regState_FetchingZoneData:
 		case regState_Registered: break;
 		case regState_DeregPending: break;
@@ -4042,12 +4054,6 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 		case regState_Unregistered:
 			debugf("uDNS_DeregisterService - service %##s not registered", srs->RR_SRV.resrec.name->c);
 			return mStatus_BadReferenceErr;
-		case regState_Pending:
-		case regState_Refresh:
-		case regState_UpdatePending:
-			// deregister following completion of in-flight operation
-			srs->state = regState_DeregDeferred;
-			return mStatus_NoError;
 		case regState_DeregPending:
 		case regState_DeregDeferred:
 			debugf("Double deregistration of service %##s", srs->RR_SRV.resrec.name->c);
@@ -4061,6 +4067,9 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 			srs->ServiceCallback(m, srs, mStatus_MemFree);
 			mDNS_ReclaimLockAfterCallback();
 			return mStatus_NoError;
+		case regState_Pending:
+		case regState_Refresh:
+		case regState_UpdatePending:
 		case regState_FetchingZoneData:
 		case regState_Registered:
 			srs->state = regState_DeregPending;
@@ -4226,8 +4235,8 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 				//LogMsg("uDNS_CheckCurrentQuestion %d %p %##s (%s)", sendtime - m->timenow, private, q->qname.c, DNSTypeName(q->qtype));
 				if (private)
 					{
-					if (q->nta) LogMsg("uDNS_CheckCurrentQuestion Error: GetZoneData already started for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
-					else q->nta = StartGetZoneData(m, &q->qname, q->LongLived ? ZoneServiceLLQ : ZoneServiceQuery, PrivateQueryGotZoneData, q);
+					if (q->nta) CancelGetZoneData(m, q->nta);
+					q->nta = StartGetZoneData(m, &q->qname, q->LongLived ? ZoneServiceLLQ : ZoneServiceQuery, PrivateQueryGotZoneData, q);
 					q->ThisQInterval = (LLQ_POLL_INTERVAL + mDNSRandom(LLQ_POLL_INTERVAL/10)) / QuestionIntervalStep;
 					}
 				else
