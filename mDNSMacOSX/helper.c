@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.21  2007/11/07 00:22:30  jgraessley
+Bug #: <rdar://problem/5573573> mDNSResponder doesn't build without IPSec
+Reviewed by: Stuart Cheshire
+
 Revision 1.20  2007/09/12 18:07:44  cheshire
 Fix compile errors ("passing argument from incompatible pointer type")
 
@@ -103,6 +107,7 @@ Revision 1.1  2007/08/08 22:34:58  mcguire
 #include <SystemConfiguration/SCDynamicStore.h>
 #include <SystemConfiguration/SCPreferencesSetSpecific.h>
 #include <SystemConfiguration/SCDynamicStoreCopySpecific.h>
+#include <TargetConditionals.h>
 #include "mDNSEmbeddedAPI.h"
 #include "dns_sd.h"
 #include "dnssd_ipc.h"
@@ -110,6 +115,7 @@ Revision 1.1  2007/08/08 22:34:58  mcguire
 #include "helper.h"
 #include "helpermsgServer.h"
 #include "helper-server.h"
+#include "ipsec_options.h"
 
 #if TARGET_OS_EMBEDDED
 #define NO_SECURITYFRAMEWORK 1
@@ -153,6 +159,7 @@ authorized(audit_token_t *token)
 	return ok;
 	}
 
+#ifndef MDNS_NO_IPSEC
 static void
 closefds(int from)
 	{
@@ -175,6 +182,7 @@ closefds(int from)
 		}
 	closedir(dirp);
 	}
+#endif
 
 kern_return_t
 do_mDNSIdleExit(__unused mach_port_t port, audit_token_t token)
@@ -874,6 +882,7 @@ fin:
 #endif
 	}
 
+#ifndef MDNS_NO_IPSEC
 typedef enum _mDNSTunnelPolicyWhich
 	{
 	kmDNSTunnelPolicySetup,
@@ -981,11 +990,13 @@ fin:
 		close(s);
 	return err;
 	}
+#endif /* ifndef MDNS_NO_IPSEC */
 
 int
 do_mDNSAutoTunnelInterfaceUpDown(__unused mach_port_t port, int updown,
     v6addr_t address, int *err, audit_token_t token)
 	{
+#ifndef MDNS_NO_IPSEC
 	debug("entry");
 	*err = 0;
 	if (!authorized(&token))
@@ -1008,10 +1019,15 @@ do_mDNSAutoTunnelInterfaceUpDown(__unused mach_port_t port, int updown,
 	debug("succeeded");
 
 fin:
+#else
+	(void)port; (void)updown; (void)address; (void)token;
+	*err = kmDNSHelperIPsecDisabled;
+#endif
 	update_idle_timer();
 	return KERN_SUCCESS;
 	}
 
+#ifndef MDNS_NO_IPSEC
 static const char racoon_config_path[] = "/etc/racoon/remote/anonymous.conf";
 static const char racoon_config_path_orig[] = "/etc/racoon/remote/anonymous.conf.orig";
 
@@ -1237,9 +1253,12 @@ kickRacoon(void)
 	return startRacoon();
 	}
 
+#endif /* ndef MDNS_NO_IPSEC */
+
 int
 do_mDNSConfigureServer(__unused mach_port_t port, int updown, const char *keydata, int *err, audit_token_t token)
 	{
+#ifndef MDNS_NO_IPSEC
 	debug("entry");
 	*err = 0;
 
@@ -1271,9 +1290,15 @@ do_mDNSConfigureServer(__unused mach_port_t port, int updown, const char *keydat
 	debug("succeeded");
 
 fin:
+#else
+	(void)port; (void)updown; (void)keydata; (void)token;
+	*err = kmDNSHelperIPsecDisabled;
+#endif
 	update_idle_timer();
 	return KERN_SUCCESS;
 	}
+
+#ifndef MDNS_NO_IPSEC
 
 static unsigned int routeSeq = 1;
 
@@ -1620,12 +1645,15 @@ fin:
 	return err;
 	}
 
+#endif /* ndef MDNS_NO_IPSEC */
+
 int
 do_mDNSAutoTunnelSetKeys(__unused mach_port_t port, int replacedelete,
     v6addr_t loc_inner, v4addr_t loc_outer, uint16_t loc_port,
     v6addr_t rmt_inner, v4addr_t rmt_outer, uint16_t rmt_port,
     const char *keydata, int *err, audit_token_t token)
 	{
+#ifndef MDNS_NO_IPSEC
 	static const char config[] =
 	  "%s"
 	  "remote %s [%u] {\n"
@@ -1773,6 +1801,12 @@ fin:
 	if (0 <= fd)
 		close(fd);
 	unlink(tmp_path);
+#else
+	(void)replacedelete; (void)loc_inner; (void)loc_outer; (void)loc_port; (void)rmt_inner;
+	(void)rmt_outer; (void)rmt_port; (void)keydata; (void)token;
+	
+	*err = kmDNSHelperIPsecDisabled;
+#endif /* MDNS_NO_IPSEC */
 	update_idle_timer();
 	return KERN_SUCCESS;
 	}
