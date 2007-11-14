@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.752  2007/11/14 01:10:51  cheshire
+Fixed LogOperation() message wording
+
 Revision 1.751  2007/10/30 23:49:41  cheshire
 <rdar://problem/5519458> BTMM: Machines don't appear in the sidebar on wake from sleep
 LLQ state was not being transferred properly between duplicate questions
@@ -6135,7 +6138,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 					mDNSBool dodelay = flapping && (q->FlappingInterface1 == set->InterfaceID || q->FlappingInterface2 == set->InterfaceID);
 					mDNSs32 initial  = dodelay ? InitialQuestionInterval * QuestionIntervalStep2 : InitialQuestionInterval;
 					mDNSs32 qdelay   = dodelay ? mDNSPlatformOneSecond * 5 : 0;
-					if (dodelay) LogOperation("No cache records for expired %##s (%s); okay to delay questions a little", q->qname.c, DNSTypeName(q->qtype));
+					if (dodelay) LogOperation("No cache records expired for %##s (%s); okay to delay questions a little", q->qname.c, DNSTypeName(q->qtype));
 						
 					if (!q->ThisQInterval || q->ThisQInterval > initial)
 						{
