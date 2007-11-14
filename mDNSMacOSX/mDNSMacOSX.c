@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.510  2007/11/14 22:29:19  cheshire
+Updated comments and debugging log messages
+
 Revision 1.509  2007/11/14 01:07:53  cheshire
 Updated comments
 
@@ -2746,7 +2749,7 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 					mStatus err = setsockopt(m->p->permanentsockets.sktv4, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imr, sizeof(imr));
 					// Joining same group twice can give "Address already in use" error -- no need to report that
 					if (err < 0 && errno != EADDRINUSE)
-						LogMsg("setsockopt - IP_ADD_MEMBERSHIP error %ld errno %d (%s)", err, errno, strerror(errno));
+						LogMsg("setsockopt - IP_ADD_MEMBERSHIP error %ld errno %d (%s) group %.4a on %.4a", err, errno, strerror(errno), &imr.imr_multiaddr, &imr.imr_interface);
 					}
 #ifndef NO_IPV6
 				if (i->sa_family == AF_INET6)
@@ -2757,7 +2760,7 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 					mStatus err = setsockopt(m->p->permanentsockets.sktv6, IPPROTO_IPV6, IPV6_JOIN_GROUP, &i6mr, sizeof(i6mr));
 					// Joining same group twice can give "Address already in use" error -- no need to report that
 					if (err < 0 && errno != EADDRINUSE)
-						LogMsg("setsockopt - IPV6_JOIN_GROUP error %ld errno %d (%s)", err, errno, strerror(errno));
+						LogMsg("setsockopt - IPV6_JOIN_GROUP error %ld errno %d (%s) group %.16a on %u", err, errno, strerror(errno), &i6mr.ipv6mr_multiaddr, i6mr.ipv6mr_interface);
 					}
 #endif
 				}
@@ -2802,9 +2805,9 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m, mDNSs32 utc)
 				mDNS_DeregisterInterface(m, &i->ifinfo, i->Flashing && i->Occulting);
 				if (!mDNSAddressIsLinkLocal(&i->ifinfo.ip)) count++;
 				i->ifinfo.InterfaceID = mDNSNULL;
-				// NOTE: If n->InterfaceID is set, that means we've called mDNS_RegisterInterface() for this interface,
+				// NOTE: If i->ifinfo.InterfaceID is set, that means we've called mDNS_RegisterInterface() for this interface,
 				// so we need to make sure we call mDNS_DeregisterInterface() before disposing it.
-				// If n->InterfaceID is NOT set, then it's not registered and we should not call mDNS_DeregisterInterface() on it.
+				// If i->ifinfo.InterfaceID is NOT set, then it's not registered and we should not call mDNS_DeregisterInterface() on it.
 				}
 		}
 
