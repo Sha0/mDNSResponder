@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.509  2007/11/14 01:07:53  cheshire
+Updated comments
+
 Revision 1.508  2007/11/02 21:59:37  cheshire
 Added comment about locking
 
@@ -2701,7 +2704,7 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 	for (i = m->p->InterfaceList; i; i = i->next)
 		if (i->Exists)
 			{
-			NetworkInterfaceInfo *n = &i->ifinfo;
+			NetworkInterfaceInfo *const n = &i->ifinfo;
 			NetworkInterfaceInfoOSX *primary = SearchForInterfaceByName(m, i->ifa_name, i->sa_family);
 			if (!primary) LogMsg("SetupActiveInterfaces ERROR! SearchForInterfaceByName didn't find %s", i->ifa_name);
 
@@ -2780,8 +2783,6 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m, mDNSs32 utc)
 	// We also have to deregister it if the primary interface that it's using for its InterfaceID is going away.
 	// We have to do this because mDNSCore will use that InterfaceID when sending packets, and if the memory
 	// it refers to has gone away we'll crash.
-	// Don't actually close the sockets or free the memory yet: When the last representative of an interface goes away
-	// mDNSCore may want to send goodbye packets on that interface. (Not yet implemented, but a good idea anyway.)
 	NetworkInterfaceInfoOSX *i;
 	int count = 0;
 	for (i = m->p->InterfaceList; i; i = i->next)
@@ -2808,7 +2809,7 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m, mDNSs32 utc)
 		}
 
 	// Second pass:
-	// Now that everything that's going to deregister has done so, we can close sockets and free the memory
+	// Now that everything that's going to deregister has done so, we can clean up and free the memory
 	NetworkInterfaceInfoOSX **p = &m->p->InterfaceList;
 	while (*p)
 		{
