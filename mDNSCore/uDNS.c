@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.529  2007/11/15 22:52:29  cheshire
+<rdar://problem/5589039> ERROR: mDNSPlatformWriteTCP - send Broken pipe
+
 Revision 1.528  2007/11/02 21:32:30  cheshire
 <rdar://problem/5575593> BTMM: Deferring deregistration of record log messages on sleep/wake
 
@@ -1676,7 +1679,15 @@ mDNSlocal void sendChallengeResponse(mDNS *const m, DNSQuestion *const q, const 
 	InitializeDNSMessage(&m->omsg.h, q->TargetQID, uQueryFlags);
 	responsePtr = putQuestion(&m->omsg, responsePtr, m->omsg.data + AbsoluteMaxDNSMessageData, &q->qname, q->qtype, q->qclass);
 	if (responsePtr) responsePtr = putLLQ(&m->omsg, responsePtr, q, llq, mDNSfalse);
-	if (responsePtr) mDNSSendDNSMessage(m, &m->omsg, responsePtr, mDNSInterface_Any, &q->servAddr, q->servPort, q->tcp ? q->tcp->sock : mDNSNULL, q->AuthInfo);
+	if (responsePtr)
+		{
+		mStatus err = mDNSSendDNSMessage(m, &m->omsg, responsePtr, mDNSInterface_Any, &q->servAddr, q->servPort, q->tcp ? q->tcp->sock : mDNSNULL, q->AuthInfo);
+		if (err)
+			{
+			LogMsg("sendChallengeResponse: mDNSSendDNSMessage%s failed: %d", q->tcp ? " (TCP)" : "", err);
+			if (q->tcp) { DisposeTCPConn(q->tcp); q->tcp = mDNSNULL; }
+			}
+		}
 	else StartLLQPolling(m,q);
 	}
 
@@ -1893,7 +1904,6 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 					tcpInfo->rr       ? GetAuthInfoForName(m, tcpInfo->rr->resrec.name) : mDNSNULL;
 
 		err = mDNSSendDNSMessage(m, &tcpInfo->request, end, mDNSInterface_Any, &tcpInfo->Addr, tcpInfo->Port, sock, AuthInfo);
-
 		if (err) { debugf("ERROR: tcpCallback: mDNSSendDNSMessage - %ld", err); err = mStatus_UnknownErr; goto exit; }
 
 		// Record time we sent this question
@@ -3821,7 +3831,11 @@ mDNSexport void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
 	if (!end) { LogMsg("ERROR: sendLLQRefresh - putLLQ"); return; }
 
 	err = mDNSSendDNSMessage(m, &m->omsg, end, mDNSInterface_Any, &q->servAddr, q->servPort, q->tcp ? q->tcp->sock : mDNSNULL, q->AuthInfo);
-	if (err) debugf("ERROR: sendLLQRefresh - mDNSSendDNSMessage returned %ld", err);
+	if (err)
+		{
+		LogMsg("sendLLQRefresh: mDNSSendDNSMessage%s failed: %d", q->tcp ? " (TCP)" : "", err);
+		if (q->tcp) { DisposeTCPConn(q->tcp); q->tcp = mDNSNULL; }
+		}
 
 	q->ntries++;
 

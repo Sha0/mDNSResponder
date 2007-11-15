@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.186  2007/11/15 22:52:29  cheshire
+<rdar://problem/5589039> ERROR: mDNSPlatformWriteTCP - send Broken pipe
+
 Revision 1.185  2007/10/10 20:22:03  cheshire
 Added sanity checks in mDNSSendDNSMessage -- we've seen crashes in DNSDigest_SignMessage
 apparently caused by trying to sign zero-length messages
@@ -2489,10 +2492,7 @@ struct TCPSocket_struct { TCPSocketFlags flags; /* ... */ };
 mDNSexport mStatus mDNSSendDNSMessage(mDNS *const m, DNSMessage *const msg, mDNSu8 *end,
     mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, TCPSocket *sock, DomainAuthInfo *authInfo)
 	{
-	mStatus status;
-	long nsent;
-	unsigned long msglen;
-	mDNSu8 lenbuf[2];
+	mStatus status = mStatus_NoError;
 	mDNSu16 numQuestions   = msg->h.numQuestions;
 	mDNSu16 numAnswers     = msg->h.numAnswers;
 	mDNSu16 numAuthorities = msg->h.numAuthorities;
@@ -2515,30 +2515,25 @@ mDNSexport mStatus mDNSSendDNSMessage(mDNS *const m, DNSMessage *const msg, mDNS
 	*ptr++ = (mDNSu8)(numAdditionals >> 8);
 	*ptr++ = (mDNSu8)(numAdditionals &  0xFF);
 
-	if (authInfo)
-		{
-		end = DNSDigest_SignMessage(msg, &end, authInfo, 0);
-		if (!end) return mStatus_UnknownErr;
-		}
-
-	// Send the packet on the wire
-	if (sock)
-		{
-		msglen = (mDNSu16)(end - (mDNSu8 *)msg);
-		lenbuf[0] = (mDNSu8)(msglen >> 8);  // host->network byte conversion
-		lenbuf[1] = (mDNSu8)(msglen &  0xFF);
-
-		nsent = mDNSPlatformWriteTCP(sock, (char*)lenbuf, 2);
-		//!!!KRS make sure kernel is sending these as 1 packet!
-		if (nsent != 2) goto tcp_error;
-
-		nsent = mDNSPlatformWriteTCP(sock, (char *)msg, msglen);
-		if (nsent != (long)msglen) goto tcp_error;
-		status = mStatus_NoError;
-		}
+	if (authInfo) DNSDigest_SignMessage(msg, &end, authInfo, 0);
+	if (!end) { LogMsg("mDNSSendDNSMessage: DNSDigest_SignMessage failed"); status = mStatus_NoMemoryErr; }
 	else
 		{
-		status = mDNSPlatformSendUDP(m, msg, end, InterfaceID, dst, dstport);
+		// Send the packet on the wire
+		if (!sock)
+			status = mDNSPlatformSendUDP(m, msg, end, InterfaceID, dst, dstport);
+		else
+			{
+			mDNSu16 msglen = (mDNSu16)(end - (mDNSu8 *)msg);
+			mDNSu8 lenbuf[2] = { (mDNSu8)(msglen >> 8), (mDNSu8)(msglen & 0xFF) };
+			long nsent = mDNSPlatformWriteTCP(sock, (char*)lenbuf, 2);		// Should do scatter/gather here -- this is probably going out as two packets
+			if (nsent != 2) { LogMsg("mDNSSendDNSMessage: write msg length failed %d/%d", nsent, 2); status = mStatus_ConnFailed; }
+			else
+				{
+				nsent = mDNSPlatformWriteTCP(sock, (char *)msg, msglen);
+				if (nsent != msglen) { LogMsg("mDNSSendDNSMessage: write msg body failed %d/%d", nsent, msglen); status = mStatus_ConnFailed; }
+				}
+			}
 		}
 
 	// Put all the integer values back the way they were before we return
@@ -2555,10 +2550,6 @@ mDNSexport mStatus mDNSSendDNSMessage(mDNS *const m, DNSMessage *const msg, mDNS
 		}
 
 	return(status);
-
-	tcp_error:
-	LogMsg("mDNSSendDNSMessage: error sending message over tcp");
-	return mStatus_UnknownErr;
 	}
 
 // ***************************************************************************
