@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.512  2007/11/16 22:09:26  cheshire
+Added missing type information in mDNSPlatformTCPCloseConnection debugging log message
+
 Revision 1.511  2007/11/14 23:06:13  cheshire
 <rdar://problem/5585972> IP_ADD_MEMBERSHIP fails for previously-connected removable interfaces
 
@@ -1543,7 +1546,7 @@ mDNSexport void mDNSPlatformTCPCloseConnection(TCPSocket *sock)
 			sock->fd = -1;
 			}
 
-		freeL("mDNSPlatformTCPCloseConnection", sock);
+		freeL("TCPSocket/mDNSPlatformTCPCloseConnection", sock);
 		}
 	}
 
