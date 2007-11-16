@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.530  2007/11/16 22:19:40  cheshire
+<rdar://problem/5547474> mDNSResponder leaks on network changes
+The "connection failed" code path in MakeTCPConn was not disposing of the TCPSocket it had created
+
 Revision 1.529  2007/11/15 22:52:29  cheshire
 <rdar://problem/5589039> ERROR: mDNSPlatformWriteTCP - send Broken pipe
 
@@ -2026,21 +2030,27 @@ mDNSlocal tcpInfo_t *MakeTCPConn(mDNS *const m, const DNSMessage *const msg, con
 	mDNSIPPort srcport = zeroIPPort;
 	tcpInfo_t *info = (tcpInfo_t *)mDNSPlatformMemAllocate(sizeof(tcpInfo_t));
 	if (!info) { LogMsg("ERROR: MakeTCP - memallocate failed"); return(mDNSNULL); }
-
 	mDNSPlatformMemZero(info, sizeof(tcpInfo_t));
+
 	info->m          = m;
-	if (msg)
-		{
-		info->request    = *msg;
-		info->requestLen = (int) (end - ((mDNSu8*)msg));
-		}
+	info->sock       = mDNSPlatformTCPSocket(m, flags, &srcport);
+	info->requestLen = 0;
 	info->question   = question;
 	info->srs        = srs;
 	info->rr         = rr;
 	info->Addr       = *Addr;
 	info->Port       = Port;
+	info->reply      = mDNSNULL;
+	info->replylen   = 0;
+	info->nread      = 0;
+	info->numReplies = 0;
 
-	info->sock = mDNSPlatformTCPSocket(m, flags, &srcport);
+	if (msg)
+		{
+		info->requestLen = (int) (end - ((mDNSu8*)msg));
+		mDNSPlatformMemCopy(&info->request, msg, info->requestLen);
+		}
+
 	if (!info->sock) { LogMsg("SendServiceRegistration: uanble to create TCP socket"); mDNSPlatformMemFree(info); return(mDNSNULL); }
 	err = mDNSPlatformTCPConnect(info->sock, Addr, Port, 0, tcpCallback, info);
 
@@ -2052,7 +2062,7 @@ mDNSlocal tcpInfo_t *MakeTCPConn(mDNS *const m, const DNSMessage *const msg, con
 
 	// Don't need to log "connection failed" in customer builds -- it happens quite often during sleep, wake, configuration changes, etc.
 	if      (err == mStatus_ConnEstablished) { tcpCallback(info->sock, info, mDNStrue, mStatus_NoError); }
-	else if (err != mStatus_ConnPending    ) { LogOperation("MakeTCPConnection: connection failed"); mDNSPlatformMemFree(info); return(mDNSNULL); }
+	else if (err != mStatus_ConnPending    ) { LogOperation("MakeTCPConnection: connection failed"); DisposeTCPConn(info); return(mDNSNULL); }
 	return(info);
 	}
 
