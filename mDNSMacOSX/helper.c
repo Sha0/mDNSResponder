@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.22  2007/11/27 00:08:49  jgraessley
+<rdar://problem/5613538> Interface-specific resolvers not setup correctly
+
 Revision 1.21  2007/11/07 00:22:30  jgraessley
 Bug #: <rdar://problem/5573573> mDNSResponder doesn't build without IPSec
 Reviewed by: Stuart Cheshire
@@ -118,6 +121,7 @@ Revision 1.1  2007/08/08 22:34:58  mcguire
 #include "ipsec_options.h"
 
 #if TARGET_OS_EMBEDDED
+#define NO_CFUSERNOTIFICATION 1
 #define NO_SECURITYFRAMEWORK 1
 #endif
 
@@ -280,6 +284,7 @@ char userhostname[MAX_DOMAIN_LABEL+1] = {0}; // the last local host name the use
 char lastcompname[MAX_DOMAIN_LABEL+1] = {0}; // the last computer name saved to preferences
 char lasthostname[MAX_DOMAIN_LABEL+1] = {0}; // the last local host name saved to preferences
 
+#ifndef NO_CFUSERNOTIFICATION
 static CFStringRef CFS_OQ = NULL;
 static CFStringRef CFS_CQ = NULL;
 static CFStringRef CFS_Format = NULL;
@@ -408,9 +413,11 @@ static CFMutableArrayRef GetHeader(const char* oldname, const char* newname, con
 
 	return alertHeader;
 	}
+#endif /* ndef NO_CFUSERNOTIFICATION */
 
 static void update_notification(void)
 	{
+#ifndef NO_CFUSERNOTIFICATION
 	debug("entry ucn=%s, uhn=%s, lcn=%s, lhn=%s", usercompname, userhostname, lastcompname, lasthostname);
 	if (!CFS_OQ)
 		{
@@ -461,6 +468,7 @@ static void update_notification(void)
 		ShowNameConflictNotification(header, *subtext);
 		CFRelease(header);
 		}
+#endif
 	}
 
 kern_return_t

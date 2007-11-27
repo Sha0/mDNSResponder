@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.513  2007/11/27 00:08:49  jgraessley
+<rdar://problem/5613538> Interface-specific resolvers not setup correctly
+
 Revision 1.512  2007/11/16 22:09:26  cheshire
 Added missing type information in mDNSPlatformTCPCloseConnection debugging log message
 
@@ -711,6 +714,7 @@ Add (commented out) trigger value for testing "mach_absolute_time went backwards
 
 #if TARGET_OS_EMBEDDED
 #define NO_SECURITYFRAMEWORK 1
+#define NO_CFUSERNOTIFICATION 1
 #endif
 
 #ifndef NO_SECURITYFRAMEWORK
@@ -3027,7 +3031,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 								if (SetupAddr(&saddr, r->nameserver[n])) LogMsg("RegisterSplitDNS: bad IP address");
 								else
 									{
-									DNSServer *s = mDNS_AddDNSServer(m, &d, mDNSInterface_Any, &saddr, r->port ? mDNSOpaque16fromIntVal(r->port) : UnicastDNSPort);
+									DNSServer *s = mDNS_AddDNSServer(m, &d, interface, &saddr, r->port ? mDNSOpaque16fromIntVal(r->port) : UnicastDNSPort);
 									if (s && disabled) s->teststate = DNSServer_Disabled;
 									}
 								}
