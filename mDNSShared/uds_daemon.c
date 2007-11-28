@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.381  2007/11/28 22:02:52  cheshire
+Remove pointless "if (!domain)" check (domain is an array on the stack, so its address can never be null)
+
 Revision 1.380  2007/11/28 18:38:41  cheshire
 Fixed typo in log message: "DNSServiceResolver" -> "DNSServiceResolve"
 
@@ -2338,7 +2341,7 @@ mDNSlocal mStatus handle_browse_request(request_state *request)
 
 	if (!request->msgptr) { LogMsg("%3d: DNSServiceBrowse(unreadable parameters)", request->sd); return(mStatus_BadParamErr); }
 
-	if (!domain || (domain[0] == '\0')) uDNS_RegisterSearchDomains(&mDNSStorage);
+	if (domain[0] == '\0') uDNS_RegisterSearchDomains(&mDNSStorage);
 
 	typedn.c[0] = 0;
 	NumSubTypes = ChopSubTypes(regtype);	// Note: Modifies regtype string to remove trailing subtypes
