@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.380  2007/11/28 18:38:41  cheshire
+Fixed typo in log message: "DNSServiceResolver" -> "DNSServiceResolve"
+
 Revision 1.379  2007/11/01 19:32:14  cheshire
 Added "DEBUG_64BIT_SCM_RIGHTS" debugging code
 
@@ -3864,7 +3867,7 @@ mDNSexport mDNSs32 udsserver_idle(mDNSs32 nextevent)
 			if ((*req)->u.resolve.ReportTime && now - (*req)->u.resolve.ReportTime >= 0)
 				{
 				(*req)->u.resolve.ReportTime = 0;
-				LogMsgNoIdent("Client application bug: DNSServiceResolver(%##s) active for over two minutes. "
+				LogMsgNoIdent("Client application bug: DNSServiceResolve(%##s) active for over two minutes. "
 					"This places considerable burden on the network.", (*req)->u.resolve.qsrv.qname.c);
 				}
 
