@@ -67,7 +67,7 @@
 
 /* Begin PBXBuildFile section */
 		2E0405F50C3195F700F13B59 /* helper.c in Sources */ = {isa = PBXBuildFile; fileRef = 2E0405F40C3195F700F13B59 /* helper.c */; };
-		2E0405F60C31961100F13B59 /* helpermsg.defs in Sources */ = {isa = PBXBuildFile; fileRef = 2E0405EB0C3190DC00F13B59 /* helpermsg.defs */; settings = {ATTRIBUTES = (Server, Client, ); }; };
+		2E0405F60C31961100F13B59 /* helpermsg.defs in Sources */ = {isa = PBXBuildFile; fileRef = 2E0405EB0C3190DC00F13B59 /* helpermsg.defs */; settings = {ATTRIBUTES = (Server, Client, ); COMPILER_FLAGS = "-Wno-error"; }; };
 		2E0406150C3197CB00F13B59 /* libbsm.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 2E0406140C3197CB00F13B59 /* libbsm.dylib */; };
 		2E04061F0C3198B700F13B59 /* helpermsg.defs in Sources */ = {isa = PBXBuildFile; fileRef = 2E0405EB0C3190DC00F13B59 /* helpermsg.defs */; };
 		2E0406200C3198B700F13B59 /* helpermsg.defs in Sources */ = {isa = PBXBuildFile; fileRef = 2E0405EB0C3190DC00F13B59 /* helpermsg.defs */; };
