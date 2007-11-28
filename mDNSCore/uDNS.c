@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.531  2007/11/28 22:00:09  cheshire
+In StartSRVNatMap, change "mDNSu8 *p" to "const mDNSu8 *p"
+
 Revision 1.530  2007/11/16 22:19:40  cheshire
 <rdar://problem/5547474> mDNSResponder leaks on network changes
 The "connection failed" code path in MakeTCPConn was not disposing of the TCPSocket it had created
@@ -2529,7 +2532,7 @@ mDNSlocal void CompleteSRVNatMap(mDNS *m, NATTraversalInfo *n)
 
 mDNSlocal void StartSRVNatMap(mDNS *m, ServiceRecordSet *srs)
 	{
-	mDNSu8 *p = srs->RR_PTR.resrec.name->c;
+	const mDNSu8 *p = srs->RR_PTR.resrec.name->c;
 	if (p[0]) p += 1 + p[0];
 	if      (SameDomainLabel(p, (mDNSu8 *)"\x4" "_tcp")) srs->NATinfo.Protocol = NATOp_MapTCP;
 	else if (SameDomainLabel(p, (mDNSu8 *)"\x4" "_udp")) srs->NATinfo.Protocol = NATOp_MapUDP;
