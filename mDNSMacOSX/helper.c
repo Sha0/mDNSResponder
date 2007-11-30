@@ -17,8 +17,11 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.23  2007/11/30 23:21:51  cheshire
+Rename variables to eliminate "declaration of 'sin_loc' shadows a previous local" warning
+
 Revision 1.22  2007/11/27 00:08:49  jgraessley
-<rdar://problem/5613538> Interface-specific resolvers not setup correctly
+<rdar://problem/5613538> Interface specific resolvers not setup correctly
 
 Revision 1.21  2007/11/07 00:22:30  jgraessley
 Bug #: <rdar://problem/5573573> mDNSResponder doesn't build without IPSec
@@ -1565,8 +1568,8 @@ doTunnelPolicy(mDNSTunnelPolicyWhich which,
 	       v6addr_t rmt_inner, uint8_t rmt_bits,
 	       v4addr_t rmt_outer, uint16_t rmt_port)
 	{
-	struct sockaddr_in6 sin_loc;
-	struct sockaddr_in6 sin_rmt;
+	struct sockaddr_in6 sin6_loc;
+	struct sockaddr_in6 sin6_rmt;
 	ipsec_policy_t policy = NULL;
 	size_t len = 0;
 	int s = -1;
@@ -1582,17 +1585,17 @@ doTunnelPolicy(mDNSTunnelPolicyWhich which,
 		goto fin;
 		}
 
-	memset(&sin_loc, 0, sizeof(sin_loc));
-	sin_loc.sin6_len = sizeof(sin_loc);
-	sin_loc.sin6_family = AF_INET6;
-	sin_loc.sin6_port = htons(0);
-	memcpy(&sin_loc.sin6_addr, loc_inner, sizeof(sin_loc.sin6_addr));
+	memset(&sin6_loc, 0, sizeof(sin6_loc));
+	sin6_loc.sin6_len = sizeof(sin6_loc);
+	sin6_loc.sin6_family = AF_INET6;
+	sin6_loc.sin6_port = htons(0);
+	memcpy(&sin6_loc.sin6_addr, loc_inner, sizeof(sin6_loc.sin6_addr));
 
-	memset(&sin_rmt, 0, sizeof(sin_rmt));
-	sin_rmt.sin6_len = sizeof(sin_rmt);
-	sin_rmt.sin6_family = AF_INET6;
-	sin_rmt.sin6_port = htons(0);
-	memcpy(&sin_rmt.sin6_addr, rmt_inner, sizeof(sin_rmt.sin6_addr));
+	memset(&sin6_rmt, 0, sizeof(sin6_rmt));
+	sin6_rmt.sin6_len = sizeof(sin6_rmt);
+	sin6_rmt.sin6_family = AF_INET6;
+	sin6_rmt.sin6_port = htons(0);
+	memcpy(&sin6_rmt.sin6_addr, rmt_inner, sizeof(sin6_rmt.sin6_addr));
 
 	int setup = which != kmDNSTunnelPolicyTeardown;
 
@@ -1602,8 +1605,8 @@ doTunnelPolicy(mDNSTunnelPolicyWhich which,
 	    &policy, &len)))
 		goto fin;
 	if (0 != (err = sendPolicy(s, setup,
-	    (struct sockaddr *)&sin_rmt, rmt_bits,
-	    (struct sockaddr *)&sin_loc, loc_bits,
+	    (struct sockaddr *)&sin6_rmt, rmt_bits,
+	    (struct sockaddr *)&sin6_loc, loc_bits,
 	    policy, len)))
 		goto fin;
 	if (NULL != policy)
@@ -1617,8 +1620,8 @@ doTunnelPolicy(mDNSTunnelPolicyWhich which,
 	    &policy, &len)))
 		goto fin;
 	if (0 != (err = sendPolicy(s, setup,
-	    (struct sockaddr *)&sin_loc, loc_bits,
-	    (struct sockaddr *)&sin_rmt, rmt_bits,
+	    (struct sockaddr *)&sin6_loc, loc_bits,
+	    (struct sockaddr *)&sin6_rmt, rmt_bits,
 	    policy, len)))
 		goto fin;
 
