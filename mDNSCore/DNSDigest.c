@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSDigest.c,v $
+Revision 1.24  2007/11/30 23:03:51  cheshire
+Fixes for EFI: Use "mDNSPlatformMemCopy" instead of assuming existence of "memcpy"
+
 Revision 1.23  2007/09/21 21:12:36  cheshire
 DNSDigest_SignMessage does not need separate "mDNSu16 *numAdditionals" parameter
 
@@ -810,7 +813,7 @@ int HASH_UPDATE (HASH_CTX *c, const void *data_, unsigned long len)
 #if !defined(HASH_BLOCK_DATA_ORDER)
 			while (sw--)
 				{
-				memcpy (p=c->data,data,HASH_CBLOCK);
+				mDNSPlatformMemCopy(p=c->data,data,HASH_CBLOCK);
 				HASH_BLOCK_DATA_ORDER_ALIGNED(c,p,1);
 				data+=HASH_CBLOCK;
 				len-=HASH_CBLOCK;
@@ -853,7 +856,7 @@ void HASH_TRANSFORM (HASH_CTX *c, const unsigned char *data)
 	else
 #if !defined(HASH_BLOCK_DATA_ORDER)
 		{
-		memcpy (c->data,data,HASH_CBLOCK);
+		mDNSPlatformMemCopy(c->data,data,HASH_CBLOCK);
 		HASH_BLOCK_DATA_ORDER_ALIGNED (c,c->data,1);
 		}
 #endif
