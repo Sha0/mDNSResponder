@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.382  2007/11/30 20:11:48  cheshire
+Fixed compile warning: declaration of 'remove' shadows a global declaration
+
 Revision 1.381  2007/11/28 22:02:52  cheshire
 Remove pointless "if (!domain)" check (domain is an array on the stack, so its address can never be null)
 
@@ -2073,10 +2076,10 @@ mDNSlocal void udsserver_automatic_browse_domain_changed(const DNameListElem *co
 					if (p) debugf("udsserver_automatic_browse_domain_changed %##s still in list, not removing", &d->name);
 					else
 						{
-						browser_t *remove = *ptr;
+						browser_t *rem = *ptr;
 						*ptr = (*ptr)->next;
-						mDNS_StopQueryWithRemoves(&mDNSStorage, &remove->q);
-						freeL("browser_t/udsserver_automatic_browse_domain_changed", remove);
+						mDNS_StopQueryWithRemoves(&mDNSStorage, &rem->q);
+						freeL("browser_t/udsserver_automatic_browse_domain_changed", rem);
 						}
 					}
 				}
@@ -2144,9 +2147,9 @@ mDNSlocal void DeregisterLocalOnlyDomainEnumPTR(mDNS *m, const domainname *d, in
 		{
 		if (SameDomainName(&(*ptr)->ar.resrec.rdata->u.name, d) && SameDomainName((*ptr)->ar.resrec.name, &lhs))
 			{
-			ARListElem *remove = *ptr;
+			ARListElem *rem = *ptr;
 			*ptr = (*ptr)->next;
-			mDNS_Deregister(m, &remove->ar);
+			mDNS_Deregister(m, &rem->ar);
 			return;
 			}
 		else ptr = &(*ptr)->next;
@@ -3408,10 +3411,10 @@ mDNSlocal void connect_callback(int fd, short filter, void *info)
 		request->errsd = sd;
 #if APPLE_OSX_mDNSResponder
 	struct xucred x;
-	socklen_t len = sizeof(x);
-	if (getsockopt(sd, 0, LOCAL_PEERCRED, &x, &len) >= 0 && x.cr_version == XUCRED_VERSION) request->uid = x.cr_uid;
+	socklen_t xucredlen = sizeof(x);
+	if (getsockopt(sd, 0, LOCAL_PEERCRED, &x, &xucredlen) >= 0 && x.cr_version == XUCRED_VERSION) request->uid = x.cr_uid;
 	else my_perror("ERROR: getsockopt, LOCAL_PEERCRED");
-	debugf("LOCAL_PEERCRED %d %u %u %d", len, x.cr_version, x.cr_uid, x.cr_ngroups);
+	debugf("LOCAL_PEERCRED %d %u %u %d", xucredlen, x.cr_version, x.cr_uid, x.cr_ngroups);
 #endif APPLE_OSX_mDNSResponder
 		LogOperation("%3d: Adding FD for uid %u", request->sd, request->uid);
 		udsSupportAddFDToEventLoop(sd, request_callback, request);
