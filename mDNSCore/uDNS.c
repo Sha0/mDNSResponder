@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.532  2007/11/30 20:16:44  cheshire
+Fixed compile warning: declaration of 'end' shadows a previous local
+
 Revision 1.531  2007/11/28 22:00:09  cheshire
 In StartSRVNatMap, change "mDNSu8 *p" to "const mDNSu8 *p"
 
@@ -1843,7 +1846,6 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 	{
 	tcpInfo_t *tcpInfo = (tcpInfo_t *)context;
 	mDNSBool   closed  = mDNSfalse;
-	mDNSu8    *end;
 	mDNS      *m       = tcpInfo->m;
 
 	tcpInfo_t **backpointer =
@@ -1859,6 +1861,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 
 	if (ConnectionEstablished)
 		{
+		mDNSu8    *end;
 		DomainAuthInfo *AuthInfo;
 		// connection is established - send the message
 		if (tcpInfo->question && tcpInfo->question->LongLived && tcpInfo->question->state == LLQ_Established)
@@ -3670,16 +3673,16 @@ mDNSlocal mDNSBool uDNS_ReceiveTestQuestionResponse(mDNS *const m, DNSMessage *c
 	const mDNSAddr *const srcaddr, const mDNSIPPort srcport)
 	{
 	const mDNSu8 *ptr = msg->data;
-	DNSQuestion q;
+	DNSQuestion pktq;
 	DNSServer *s;
 	mDNSu32 result = 0;
 
 	// 1. Find out if this is an answer to one of our test questions
 	if (msg->h.numQuestions != 1) return(mDNSfalse);
-	ptr = getQuestion(msg, ptr, end, mDNSInterface_Any, &q);
+	ptr = getQuestion(msg, ptr, end, mDNSInterface_Any, &pktq);
 	if (!ptr) return(mDNSfalse);
-	if (q.qtype != kDNSType_PTR || q.qclass != kDNSClass_IN) return(mDNSfalse);
-	if (!SameDomainName(&q.qname, DNSRelayTestQuestion)) return(mDNSfalse);
+	if (pktq.qtype != kDNSType_PTR || pktq.qclass != kDNSClass_IN) return(mDNSfalse);
+	if (!SameDomainName(&pktq.qname, DNSRelayTestQuestion)) return(mDNSfalse);
 
 	// 2. If the DNS relay gave us a positive response, then it's got buggy firmware
 	// else, if the DNS relay gave us an error or no-answer response, it passed our test
