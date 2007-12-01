@@ -101,14 +101,16 @@
 #include <sys/types.h>
 
 /* EFI does not have stdint.h, or anything else equivalent */
-#elif defined(EFI32) || defined(EFI64)
+#elif defined(EFI32) || defined(EFI64) || defined(EFIX64)
+#include "Tiano.h"
+#if !defined(_STDINT_H_)
 typedef UINT8       uint8_t;
 typedef INT8        int8_t;
 typedef UINT16      uint16_t;
 typedef INT16       int16_t;
 typedef UINT32      uint32_t;
 typedef INT32       int32_t;
-
+#endif
 /* Windows has its own differences */
 #elif defined(_WIN32)
 #include <windows.h>
@@ -1347,7 +1349,7 @@ DNSServiceErrorType DNSSD_API DNSServiceResolve
 
 typedef void (DNSSD_API *DNSServiceQueryRecordReply)
     (
-    DNSServiceRef                       DNSServiceRef,
+    DNSServiceRef                       sdRef,
     DNSServiceFlags                     flags,
     uint32_t                            interfaceIndex,
     DNSServiceErrorType                 errorCode,
@@ -2190,7 +2192,7 @@ uint16_t DNSSD_API TXTRecordGetCount
  *
  * txtRecord:       Pointer to the received TXT Record bytes.
  *
- * index:           An index into the TXT Record.
+ * itemIndex:       An index into the TXT Record.
  *
  * keyBufLen:       The size of the string buffer being supplied.
  *
@@ -2215,7 +2217,7 @@ DNSServiceErrorType DNSSD_API TXTRecordGetItemAtIndex
     (
     uint16_t         txtLen,
     const void       *txtRecord,
-    uint16_t         index,
+    uint16_t         itemIndex,
     uint16_t         keyBufLen,
     char             *key,
     uint8_t          *valueLen,

@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.454  2007/12/01 00:34:03  cheshire
+Fixes from Bob Bradley for building on EFI
+
 Revision 1.453  2007/10/29 23:51:22  cheshire
 Added comment about NATTraversalInfo ExternalAddress field
 
@@ -605,13 +608,15 @@ Fixes to avoid code generation warning/error on FreeBSD 7
 #ifndef __mDNSClientAPI_h
 #define __mDNSClientAPI_h
 
-#if defined(EFI32) || defined(EFI64)
-// EFI doesn't have stdarg.h
+#if defined(EFI32) || defined(EFI64) || defined(EFIX64)
+// EFI doesn't have stdarg.h unless it's building with GCC.
 #include "Tiano.h"
+#if !defined(__GNUC__)
 #define va_list         VA_LIST
 #define va_start(a, b)  VA_START(a, b)
 #define va_end(a)       VA_END(a)
 #define va_arg(a, b)    VA_ARG(a, b)
+#endif
 #else
 #include <stdarg.h>		// stdarg.h is required for for va_list support for the mDNS_vsnprintf declaration
 #endif
@@ -2261,8 +2266,8 @@ extern mDNSOpaque16 mDNS_NewMessageID(mDNS *const m);
 // A simple C structure assignment of a domainname can cause a protection fault by accessing unmapped memory,
 // because that object is defined to be 256 bytes long, but not all domainname objects are truly the full size.
 // This macro uses mDNSPlatformMemCopy() to make sure it only touches the actual bytes that are valid.
-#define AssignDomainName(DST, SRC) do { mDNSu16 len = DomainNameLength((SRC)); \
-	if (len <= MAX_DOMAIN_NAME) mDNSPlatformMemCopy((DST)->c, (SRC)->c, len); else (DST)->c[0] = 0; } while(0)
+#define AssignDomainName(DST, SRC) do { mDNSu16 len__ = DomainNameLength((SRC)); \
+	if (len__ <= MAX_DOMAIN_NAME) mDNSPlatformMemCopy((DST)->c, (SRC)->c, len__); else (DST)->c[0] = 0; } while(0)
 
 // Comparison functions
 #define SameDomainLabelCS(A,B) ((A)[0] == (B)[0] && mDNSPlatformMemSame((A)+1, (B)+1, (A)[0]))
@@ -2432,7 +2437,7 @@ extern DNSServer *mDNS_AddDNSServer(mDNS *const m, const domainname *d, const mD
 extern void mDNS_AddSearchDomain(const domainname *const domain);
 
 #define mDNS_AddSearchDomain_CString(X) \
-	do { domainname d; if ((X) && MakeDomainNameFromDNSNameString(&d, (X)) && d.c[0]) mDNS_AddSearchDomain(&d); } while(0)
+	do { domainname d__; if ((X) && MakeDomainNameFromDNSNameString(&d__, (X)) && d__.c[0]) mDNS_AddSearchDomain(&d__); } while(0)
 
 // Routines called by the core, exported by DNSDigest.c
 
@@ -2510,10 +2515,15 @@ extern mDNSs32  mDNSPlatformRawTime     (void);
 extern mDNSs32  mDNSPlatformUTC         (void);
 #define mDNS_TimeNow_NoLock(m) (mDNSPlatformRawTime() + m->timenow_adjust)
 
+#if MDNS_DEBUGMSGS
+extern void	mDNSPlatformWriteDebugMsg(const char *msg);
+#endif
+extern void	mDNSPlatformWriteLogMsg(const char *ident, const char *msg, int flags);
+
 // Platform support modules should provide the following functions to map between opaque interface IDs
 // and interface indexes in order to support the DNS-SD API. If your target platform does not support
 // multiple interfaces and/or does not support the DNS-SD API, these functions can be empty.
-extern mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(mDNS *const m, mDNSu32 index);
+extern mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(mDNS *const m, mDNSu32 ifindex);
 extern mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(mDNS *const m, mDNSInterfaceID id);
 
 // Every platform support module must provide the following functions if it is to support unicast DNS
