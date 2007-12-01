@@ -17,8 +17,11 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.514  2007/12/01 00:38:32  cheshire
+Fixed compile warning: declaration of 'index' shadows a global declaration
+
 Revision 1.513  2007/11/27 00:08:49  jgraessley
-<rdar://problem/5613538> Interface-specific resolvers not setup correctly
+<rdar://problem/5613538> Interface specific resolvers not setup correctly
 
 Revision 1.512  2007/11/16 22:09:26  cheshire
 Added missing type information in mDNSPlatformTCPCloseConnection debugging log message
@@ -685,7 +688,6 @@ Add (commented out) trigger value for testing "mach_absolute_time went backwards
 #include "../mDNSShared/uds_daemon.h" // Defines communication interface from platform layer up to UDS daemon
 #include "PlatformCommon.h"
 
-
 #include <stdio.h>
 #include <stdarg.h>                 // For va_list support
 #include <net/if.h>
@@ -849,31 +851,31 @@ mDNSlocal NetworkInterfaceInfoOSX *SearchForInterfaceByName(mDNS *const m, const
 	return(NULL);
 	}
 
-mDNSlocal int myIfIndexToName(u_short index, char *name)
+mDNSlocal int myIfIndexToName(u_short ifindex, char *name)
 	{
 	struct ifaddrs *ifa;
 	for (ifa = myGetIfAddrs(0); ifa; ifa = ifa->ifa_next)
 		if (ifa->ifa_addr->sa_family == AF_LINK)
-			if (((struct sockaddr_dl*)ifa->ifa_addr)->sdl_index == index)
+			if (((struct sockaddr_dl*)ifa->ifa_addr)->sdl_index == ifindex)
 				{ strlcpy(name, ifa->ifa_name, IF_NAMESIZE); return 0; }
 	return -1;
 	}
 
-mDNSexport mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(mDNS *const m, mDNSu32 index)
+mDNSexport mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(mDNS *const m, mDNSu32 ifindex)
 	{
 	NetworkInterfaceInfoOSX *i;
-	if (index == kDNSServiceInterfaceIndexLocalOnly) return(mDNSInterface_LocalOnly);
-	if (index == kDNSServiceInterfaceIndexAny      ) return(mDNSNULL);
+	if (ifindex == kDNSServiceInterfaceIndexLocalOnly) return(mDNSInterface_LocalOnly);
+	if (ifindex == kDNSServiceInterfaceIndexAny      ) return(mDNSNULL);
 
 	// Don't get tricked by inactive interfaces with no InterfaceID set
 	for (i = m->p->InterfaceList; i; i = i->next)
-		if (i->ifinfo.InterfaceID && i->scope_id == index) return(i->ifinfo.InterfaceID);
+		if (i->ifinfo.InterfaceID && i->scope_id == ifindex) return(i->ifinfo.InterfaceID);
 
 	// Not found. Make sure our interface list is up to date, then try again.
-	LogOperation("InterfaceID for interface index %d not found; Updating interface list", index);
+	LogOperation("InterfaceID for interface index %d not found; Updating interface list", ifindex);
 	mDNSMacOSXNetworkChanged(m);
 	for (i = m->p->InterfaceList; i; i = i->next)
-		if (i->ifinfo.InterfaceID && i->scope_id == index) return(i->ifinfo.InterfaceID);
+		if (i->ifinfo.InterfaceID && i->scope_id == ifindex) return(i->ifinfo.InterfaceID);
 
 	return(mDNSNULL);
 	}
@@ -937,11 +939,8 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 	// anonymous socket created for this purpose, so that we'll receive the response.
 	// If we use one of the many multicast sockets bound to port 5353 then we may not receive responses reliably.
 	if (InterfaceID && !mDNSAddrIsDNSMulticast(dst))
-		{
-		const DNSMessage *const m = (DNSMessage *)msg;
-		if ((m->h.flags.b[0] & kDNSFlag0_QR_Mask) == kDNSFlag0_QR_Query)
+		if ((((DNSMessage *)msg)->h.flags.b[0] & kDNSFlag0_QR_Mask) == kDNSFlag0_QR_Query)
 			LogMsg("mDNSPlatformSendUDP: ERROR: Sending query OP from mDNS port to non-mDNS destination %#a:%d", dst, mDNSVal16(dstPort));
-		}
 
 	if (dst->type == mDNSAddrType_IPv4)
 		{
@@ -1158,10 +1157,10 @@ mDNSlocal void myKQSocketCallBack(int s1, short filter, void *context)
 		count++;
 		if (from.ss_family == AF_INET)
 			{
-			struct sockaddr_in *sin = (struct sockaddr_in*)&from;
+			struct sockaddr_in *s = (struct sockaddr_in*)&from;
 			senderAddr.type = mDNSAddrType_IPv4;
-			senderAddr.ip.v4.NotAnInteger = sin->sin_addr.s_addr;
-			senderPort.NotAnInteger = sin->sin_port;
+			senderAddr.ip.v4.NotAnInteger = s->sin_addr.s_addr;
+			senderPort.NotAnInteger = s->sin_port;
 			//LogOperation("myKQSocketCallBack received IPv4 packet from %#-15a to %#-15a on skt %d %s", &senderAddr, &destAddr, s1, packetifname);
 			}
 		else if (from.ss_family == AF_INET6)
@@ -1336,9 +1335,9 @@ mDNSlocal void tcpKQSocketCallback(__unused int fd, short filter, void *context)
 #endif /* NO_SECURITYFRAMEWORK */
 		}
 
-	mDNSBool connect = !sock->connected;
+	mDNSBool c = !sock->connected;
 	sock->connected = mDNStrue;
-	sock->callback(sock, sock->context, connect, err);
+	sock->callback(sock, sock->context, c, err);
 	// NOTE: the callback may call CloseConnection here, which frees the context structure!
 	}
 
@@ -3004,7 +3003,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 								// The option may be in the form of interface=xxx where xxx is an interface name.
 								if (strncmp(currentOption, kInterfaceSpecificOption, sizeof(kInterfaceSpecificOption) - 1) == 0)
 									{
-									NetworkInterfaceInfoOSX *i;
+									NetworkInterfaceInfoOSX *ni;
 									char	ifname[IF_NAMESIZE+1];
 									mDNSu32	ifindex = 0;
 									// If something goes wrong finding the interface, create the server entry anyhow but mark it as disabled.
@@ -3015,9 +3014,9 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 									LogOperation("%s: Interface specific entry: %s on %s (%d)", __FUNCTION__, r->domain, ifname, ifindex);
 									// Find the interface, can't use mDNSPlatformInterfaceIDFromInterfaceIndex
 									// because that will call mDNSMacOSXNetworkChanged if the interface doesn't exist
-									for (i = m->p->InterfaceList; i; i = i->next)
-										if (i->ifinfo.InterfaceID && i->scope_id == ifindex) break;
-									if (i != NULL) interface = i->ifinfo.InterfaceID;
+									for (ni = m->p->InterfaceList; ni; ni = ni->next)
+										if (ni->ifinfo.InterfaceID && ni->scope_id == ifindex) break;
+									if (ni != NULL) interface = ni->ifinfo.InterfaceID;
 									if (interface == mDNSNULL) { disabled = 1; LogMsg("RegisterSplitDNS: interfaceSpecific - index %d (%s) not found", ifindex, ifname); continue; }
 									}
 								}
@@ -3060,12 +3059,12 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:mDNSPlatformSetDNSConfig"), NULL, NULL);
 	if (store)
 		{
-		CFDictionaryRef dict = SCDynamicStoreCopyValue(store, NetworkChangedKey_DynamicDNS);
-		if (dict)
+		CFDictionaryRef ddnsdict = SCDynamicStoreCopyValue(store, NetworkChangedKey_DynamicDNS);
+		if (ddnsdict)
 			{
 			if (fqdn)
 				{
-				CFArrayRef fqdnArray = CFDictionaryGetValue(dict, CFSTR("HostNames"));
+				CFArrayRef fqdnArray = CFDictionaryGetValue(ddnsdict, CFSTR("HostNames"));
 				if (fqdnArray && CFArrayGetCount(fqdnArray) > 0)
 					{
 					// for now, we only look at the first array element.  if we ever support multiple configurations, we will walk the list
@@ -3086,7 +3085,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 
 			if (RegDomains)
 				{
-				CFArrayRef regArray = CFDictionaryGetValue(dict, CFSTR("RegistrationDomains"));
+				CFArrayRef regArray = CFDictionaryGetValue(ddnsdict, CFSTR("RegistrationDomains"));
 				if (regArray && CFArrayGetCount(regArray) > 0)
 					{
 					CFDictionaryRef regDict = CFArrayGetValueAtIndex(regArray, 0);
@@ -3110,7 +3109,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 
 			if (BrowseDomains)
 				{
-				CFArrayRef browseArray = CFDictionaryGetValue(dict, CFSTR("BrowseDomains"));
+				CFArrayRef browseArray = CFDictionaryGetValue(ddnsdict, CFSTR("BrowseDomains"));
 				if (browseArray)
 					{
 					for (i = 0; i < CFArrayGetCount(browseArray); i++)
@@ -3134,7 +3133,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 						}
 					}
 				}
-			CFRelease(dict);
+			CFRelease(ddnsdict);
 			}
 
 		if (RegDomains)
@@ -3169,56 +3168,50 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 
 		if (setservers || setsearch)
 			{
-			CFStringRef key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetDNS);
-			if (key)
+			CFDictionaryRef dict = SCDynamicStoreCopyValue(store, NetworkChangedKey_DNS);
+			if (dict)
 				{
-				CFDictionaryRef dict = SCDynamicStoreCopyValue(store, key);
-				if (dict)
+				if (setservers)
 					{
-					if (setservers)
+					CFArrayRef values = CFDictionaryGetValue(dict, kSCPropNetDNSServerAddresses);
+					if (values)
 						{
-						CFArrayRef values = CFDictionaryGetValue(dict, kSCPropNetDNSServerAddresses);
-						if (values)
+						for (i = 0; i < CFArrayGetCount(values); i++)
 							{
-							for (i = 0; i < CFArrayGetCount(values); i++)
-								{
-								CFStringRef s = CFArrayGetValueAtIndex(values, i);
-								char buf[256];
-								mDNSAddr addr = { mDNSAddrType_IPv4, { { { 0 } } } };
-								if (s && CFStringGetCString(s, buf, 256, kCFStringEncodingUTF8) &&
-									inet_aton(buf, (struct in_addr *) &addr.ip.v4))
-									mDNS_AddDNSServer(m, mDNSNULL, mDNSInterface_Any, &addr, UnicastDNSPort);
-								}
+							CFStringRef s = CFArrayGetValueAtIndex(values, i);
+							mDNSAddr addr = { mDNSAddrType_IPv4, { { { 0 } } } };
+							if (s && CFStringGetCString(s, buf, 256, kCFStringEncodingUTF8) &&
+								inet_aton(buf, (struct in_addr *) &addr.ip.v4))
+								mDNS_AddDNSServer(m, mDNSNULL, mDNSInterface_Any, &addr, UnicastDNSPort);
 							}
 						}
-					if (setsearch)
+					}
+				if (setsearch)
+					{
+					// Add the manual and/or DHCP-dicovered search domains
+					CFArrayRef searchDomains = CFDictionaryGetValue(dict, kSCPropNetDNSSearchDomains);
+					if (searchDomains)
 						{
-						// Add the manual and/or DHCP-dicovered search domains
-						CFArrayRef searchDomains = CFDictionaryGetValue(dict, kSCPropNetDNSSearchDomains);
-						if (searchDomains)
+						for (i = 0; i < CFArrayGetCount(searchDomains); i++)
 							{
-							for (i = 0; i < CFArrayGetCount(searchDomains); i++)
-								{
-								CFStringRef s = CFArrayGetValueAtIndex(searchDomains, i);
-								if (s && CFStringGetCString(s, buf, sizeof(buf), kCFStringEncodingUTF8))
-									mDNS_AddSearchDomain_CString(buf);
-								}
-							}
-						else	// No kSCPropNetDNSSearchDomains, so use kSCPropNetDNSDomainName
-							{
-							// Due to the vagaries of Apple's SystemConfiguration and dnsinfo.h APIs, if there are no search domains
-							// listed, then you're supposed to interpret the "domain" field as also being the search domain, but if
-							// there *are* search domains listed, then you're supposed to ignore the "domain" field completely and
-							// instead use the search domain list as the sole authority for what domains to search and in what order
-							// (and the domain from the "domain" field will also appear somewhere in that list).
-							CFStringRef string = CFDictionaryGetValue(dict, kSCPropNetDNSDomainName);
-							if (string && CFStringGetCString(string, buf, sizeof(buf), kCFStringEncodingUTF8))
+							CFStringRef s = CFArrayGetValueAtIndex(searchDomains, i);
+							if (s && CFStringGetCString(s, buf, sizeof(buf), kCFStringEncodingUTF8))
 								mDNS_AddSearchDomain_CString(buf);
 							}
 						}
-					CFRelease(dict);
+					else	// No kSCPropNetDNSSearchDomains, so use kSCPropNetDNSDomainName
+						{
+						// Due to the vagaries of Apple's SystemConfiguration and dnsinfo.h APIs, if there are no search domains
+						// listed, then you're supposed to interpret the "domain" field as also being the search domain, but if
+						// there *are* search domains listed, then you're supposed to ignore the "domain" field completely and
+						// instead use the search domain list as the sole authority for what domains to search and in what order
+						// (and the domain from the "domain" field will also appear somewhere in that list).
+						CFStringRef string = CFDictionaryGetValue(dict, kSCPropNetDNSDomainName);
+						if (string && CFStringGetCString(string, buf, sizeof(buf), kCFStringEncodingUTF8))
+							mDNS_AddSearchDomain_CString(buf);
+						}
 					}
-				CFRelease(key);
+				CFRelease(dict);
 				}
 			}
 		CFRelease(store);
@@ -3227,103 +3220,86 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 
 mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS *const m, mDNSAddr *v4, mDNSAddr *v6, mDNSAddr *r)
 	{
-	SCDynamicStoreRef	store	= NULL;
-	CFDictionaryRef		dict	= NULL;
-	CFStringRef			key		= NULL;
-	CFStringRef			string	= NULL;
-	int					nAdditions = 0;
-	int					nDeletions = 0;
 	char				buf[256];
 	mStatus				err		= 0;
+	(void)m; // Unused
 
-	// get IPv4 settings
-
-	store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:mDNSPlatformGetPrimaryInterface"), NULL, NULL);
-	require_action(store, exit, err = mStatus_UnknownErr);
-
-	key = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetIPv4);
-	require_action(key, exit, err = mStatus_UnknownErr);
-
-	dict = SCDynamicStoreCopyValue(store, key);
-	require_action(dict, exit, err = mStatus_UnknownErr);
-
-	// handle router changes
-
-	r->type  = mDNSAddrType_IPv4;
-	r->ip.v4 = zerov4Addr;
-	 
-	string = CFDictionaryGetValue(dict, kSCPropNetIPv4Router);
-
-	if (string)
+	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:mDNSPlatformGetPrimaryInterface"), NULL, NULL);
+	if (!store) LogMsg("mDNSPlatformGetPrimaryInterface: SCDynamicStoreCreate failed");
+	else
 		{
-		struct sockaddr_in saddr;
-
-		if (!CFStringGetCString(string, buf, 256, kCFStringEncodingUTF8))
-			LogMsg("Could not convert router to CString");
+		CFDictionaryRef dict = SCDynamicStoreCopyValue(store, NetworkChangedKey_IPv4);
+		if (!dict) LogMsg("mDNSPlatformGetPrimaryInterface: SCDynamicStoreCopyValue failed");
 		else
 			{
-			saddr.sin_len = sizeof(saddr);
-			saddr.sin_family = AF_INET;
-			saddr.sin_port = 0;
-			inet_aton(buf, &saddr.sin_addr);
-
-			if (AddrRequiresPPPConnection((struct sockaddr *)&saddr)) debugf("Ignoring router %s (requires PPP connection)", buf);
-			else *(in_addr_t *)&r->ip.v4 = saddr.sin_addr.s_addr;
-			}
-		}
-
-	// handle primary interface changes
-	// if we gained or lost DNS servers (e.g. logged into VPN) "toggle" primary address so it gets re-registered even if it is unchanged
-	if (nAdditions || nDeletions) mDNS_SetPrimaryInterfaceInfo(m, NULL, NULL, NULL);
-
-	string = CFDictionaryGetValue(dict, kSCDynamicStorePropNetPrimaryInterface);
-
-	if (string)
-		{
-		mDNSBool HavePrimaryGlobalv6 = mDNSfalse;  // does the primary interface have a global v6 address?
-		struct ifaddrs *ifa = myGetIfAddrs(1);
-
-		*v4 = *v6 = zeroAddr;
-
-		if (!CFStringGetCString(string, buf, 256, kCFStringEncodingUTF8)) { LogMsg("Could not convert router to CString"); goto exit; }
-
-		// find primary interface in list
-		while (ifa && (mDNSIPv4AddressIsZero(v4->ip.v4) || mDNSv4AddressIsLinkLocal(&v4->ip.v4) || !HavePrimaryGlobalv6))
-			{
-			mDNSAddr tmp6 = zeroAddr;
-			if (!strcmp(buf, ifa->ifa_name))
+			r->type  = mDNSAddrType_IPv4;
+			r->ip.v4 = zerov4Addr;
+			CFStringRef string = CFDictionaryGetValue(dict, kSCPropNetIPv4Router);
+			if (string)
 				{
-				if (ifa->ifa_addr->sa_family == AF_INET)
+				if (!CFStringGetCString(string, buf, 256, kCFStringEncodingUTF8))
+					LogMsg("Could not convert router to CString");
+				else
 					{
-					if (mDNSIPv4AddressIsZero(v4->ip.v4) || mDNSv4AddressIsLinkLocal(&v4->ip.v4)) SetupAddr(v4, ifa->ifa_addr);
-					}
-				else if (ifa->ifa_addr->sa_family == AF_INET6)
-					{
-					SetupAddr(&tmp6, ifa->ifa_addr);
-					if (tmp6.ip.v6.b[0] >> 5 == 1)   // global prefix: 001
-						{ HavePrimaryGlobalv6 = mDNStrue; *v6 = tmp6; }
+					struct sockaddr_in saddr;
+					saddr.sin_len = sizeof(saddr);
+					saddr.sin_family = AF_INET;
+					saddr.sin_port = 0;
+					inet_aton(buf, &saddr.sin_addr);
+		
+					if (AddrRequiresPPPConnection((struct sockaddr *)&saddr)) debugf("Ignoring router %s (requires PPP connection)", buf);
+					else *(in_addr_t *)&r->ip.v4 = saddr.sin_addr.s_addr;
 					}
 				}
-			else
+		
+			string = CFDictionaryGetValue(dict, kSCDynamicStorePropNetPrimaryInterface);
+			if (string)
 				{
-				// We'll take a V6 address from the non-primary interface if the primary interface doesn't have a global V6 address
-				if (!HavePrimaryGlobalv6 && ifa->ifa_addr->sa_family == AF_INET6 && !v6->ip.v6.b[0])
+				mDNSBool HavePrimaryGlobalv6 = mDNSfalse;  // does the primary interface have a global v6 address?
+				struct ifaddrs *ifa = myGetIfAddrs(1);
+		
+				*v4 = *v6 = zeroAddr;
+		
+				if (!CFStringGetCString(string, buf, 256, kCFStringEncodingUTF8)) { LogMsg("Could not convert router to CString"); goto exit; }
+		
+				// find primary interface in list
+				while (ifa && (mDNSIPv4AddressIsZero(v4->ip.v4) || mDNSv4AddressIsLinkLocal(&v4->ip.v4) || !HavePrimaryGlobalv6))
 					{
-					SetupAddr(&tmp6, ifa->ifa_addr);
-					if (tmp6.ip.v6.b[0] >> 5 == 1) *v6 = tmp6;
+					mDNSAddr tmp6 = zeroAddr;
+					if (!strcmp(buf, ifa->ifa_name))
+						{
+						if (ifa->ifa_addr->sa_family == AF_INET)
+							{
+							if (mDNSIPv4AddressIsZero(v4->ip.v4) || mDNSv4AddressIsLinkLocal(&v4->ip.v4)) SetupAddr(v4, ifa->ifa_addr);
+							}
+						else if (ifa->ifa_addr->sa_family == AF_INET6)
+							{
+							SetupAddr(&tmp6, ifa->ifa_addr);
+							if (tmp6.ip.v6.b[0] >> 5 == 1)   // global prefix: 001
+								{ HavePrimaryGlobalv6 = mDNStrue; *v6 = tmp6; }
+							}
+						}
+					else
+						{
+						// We'll take a V6 address from the non-primary interface if the primary interface doesn't have a global V6 address
+						if (!HavePrimaryGlobalv6 && ifa->ifa_addr->sa_family == AF_INET6 && !v6->ip.v6.b[0])
+							{
+							SetupAddr(&tmp6, ifa->ifa_addr);
+							if (tmp6.ip.v6.b[0] >> 5 == 1) *v6 = tmp6;
+							}
+						}
+					ifa = ifa->ifa_next;
 					}
+		
+				// Note that while we advertise v6, we still require v4 (possibly NAT'd, but not link-local) because we must use
+				// V4 to communicate w/ our DNS server
 				}
-			ifa = ifa->ifa_next;
+		
+			exit:
+			CFRelease(dict);
 			}
-
-		// Note that while we advertise v6, we still require v4 (possibly NAT'd, but not link-local) because we must use
-		// V4 to communicate w/ our DNS server
+		CFRelease(store);
 		}
-
-	exit:
-	if (dict) CFRelease(dict);
-	if (key) CFRelease(key);
-	if (store) CFRelease(store);
 	return err;
 	}
 
@@ -3537,20 +3513,20 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 	#if APPLE_OSX_mDNSResponder
 		{
 		// clean up ClientTunnels
-		ClientTunnel **ptr = &m->TunnelClients;
-		while (*ptr)
+		ClientTunnel **pp = &m->TunnelClients;
+		while (*pp)
 			{
-			if ((*ptr)->markedForDeletion)
+			if ((*pp)->markedForDeletion)
 				{
-				ClientTunnel *cur = *ptr;
+				ClientTunnel *cur = *pp;
 				LogOperation("SetDomainSecrets: removing client %##s from list", cur->dstname.c);
 				if (cur->q.ThisQInterval >= 0) mDNS_StopQuery(m, &cur->q);
 				AutoTunnelSetKeys(cur, mDNSfalse);
-				*ptr = cur->next;
+				*pp = cur->next;
 				freeL("ClientTunnel", cur);
 				}
 			else 
-				ptr = &(*ptr)->next;
+				pp = &(*pp)->next;
 			}
 
 		DomainAuthInfo *info = m->AuthInfoList;
