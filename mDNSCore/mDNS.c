@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.753  2007/12/01 00:44:15  cheshire
+Fixed compile warnings, e.g. declaration of 'rr' shadows a previous local
+
 Revision 1.752  2007/11/14 01:10:51  cheshire
 Fixed LogOperation() message wording
 
@@ -2214,7 +2217,7 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 						q->qname.c, DNSTypeName(q->qtype), newptr + forecast - query->data);
 					query->h.numQuestions--;
 					ka = *kalistptrptr;		// Go back to where we started and retract these answer records
-					while (*ka) { CacheRecord *rr = *ka; *ka = mDNSNULL; ka = &rr->NextInKAList; }
+					while (*ka) { CacheRecord *c = *ka; *ka = mDNSNULL; ka = &c->NextInKAList; }
 					return(mDNSfalse);		// Return false, so we'll try again in the next packet
 					}
 				}
@@ -2626,16 +2629,16 @@ mDNSlocal void SendQueries(mDNS *const m)
 		// Put our known answer list (either new one from this question or questions, or remainder of old one from last time)
 		while (KnownAnswerList)
 			{
-			CacheRecord *rr = KnownAnswerList;
-			mDNSu32 SecsSinceRcvd = ((mDNSu32)(m->timenow - rr->TimeRcvd)) / mDNSPlatformOneSecond;
-			mDNSu8 *newptr = PutResourceRecordTTL(&m->omsg, queryptr, &m->omsg.h.numAnswers, &rr->resrec, rr->resrec.rroriginalttl - SecsSinceRcvd);
+			CacheRecord *ka = KnownAnswerList;
+			mDNSu32 SecsSinceRcvd = ((mDNSu32)(m->timenow - ka->TimeRcvd)) / mDNSPlatformOneSecond;
+			mDNSu8 *newptr = PutResourceRecordTTL(&m->omsg, queryptr, &m->omsg.h.numAnswers, &ka->resrec, ka->resrec.rroriginalttl - SecsSinceRcvd);
 			if (newptr)
 				{
 				verbosedebugf("SendQueries:   Put %##s (%s) at %d - %d",
-					rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype), queryptr - m->omsg.data, newptr - m->omsg.data);
+					ka->resrec.name->c, DNSTypeName(ka->resrec.rrtype), queryptr - m->omsg.data, newptr - m->omsg.data);
 				queryptr = newptr;
-				KnownAnswerList = rr->NextInKAList;
-				rr->NextInKAList = mDNSNULL;
+				KnownAnswerList = ka->NextInKAList;
+				ka->NextInKAList = mDNSNULL;
 				}
 			else
 				{
@@ -2889,7 +2892,7 @@ mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
 		m->CurrentQuestion = m->Questions;
 		while (m->CurrentQuestion && m->CurrentQuestion != m->NewQuestions)
 			{
-			DNSQuestion *q = m->CurrentQuestion;
+			q = m->CurrentQuestion;
 			if (ResourceRecordAnswersQuestion(&rr->resrec, q))
 				AnswerCurrentQuestionWithResourceRecord(m, rr, QC_add);
 			if (m->CurrentQuestion == q)	// If m->CurrentQuestion was not auto-advanced, do it ourselves now
@@ -3071,7 +3074,6 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m, CacheGroup *const cg)
 mDNSlocal void AnswerNewQuestion(mDNS *const m)
 	{
 	mDNSBool ShouldQueryImmediately = mDNStrue;
-	CacheRecord *rr;
 	DNSQuestion *q = m->NewQuestions;		// Grab the question we're going to answer
 	const mDNSu32 slot = HashSlot(&q->qname);
 	CacheGroup *const cg = CacheGroupForName(m, slot, q->qnamehash, &q->qname);
@@ -3123,6 +3125,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 
 	if (m->CurrentQuestion == q)
 		{
+		CacheRecord *rr;
 		for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
 			if (SameNameRecordAnswersQuestion(&rr->resrec, q))
 				{
@@ -3573,7 +3576,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 		m->CurrentQuestion = m->Questions;
 		while (m->CurrentQuestion)
 			{
-			DNSQuestion *q = m->CurrentQuestion;
+			q = m->CurrentQuestion;
 			m->CurrentQuestion = m->CurrentQuestion->next;
 			if (!mDNSOpaque16IsZero(q->TargetQID)) ActivateUnicastQuery(m, q);
 			}
@@ -3931,24 +3934,24 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 			{
 			const mDNSu32 slot = HashSlot(&pktq.qname);
 			CacheGroup *cg = CacheGroupForName(m, slot, pktq.qnamehash, &pktq.qname);
-			CacheRecord *rr;
+			CacheRecord *cr;
 
 			// Make a list indicating which of our own cache records we expect to see updated as a result of this query
 			// Note: Records larger than 1K are not habitually multicast, so don't expect those to be updated
-			for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
-				if (SameNameRecordAnswersQuestion(&rr->resrec, &pktq) && rr->resrec.rdlength <= SmallRecordLimit)
-					if (!rr->NextInKAList && eap != &rr->NextInKAList)
+			for (cr = cg ? cg->members : mDNSNULL; cr; cr=cr->next)
+				if (SameNameRecordAnswersQuestion(&cr->resrec, &pktq) && cr->resrec.rdlength <= SmallRecordLimit)
+					if (!cr->NextInKAList && eap != &cr->NextInKAList)
 						{
-						*eap = rr;
-						eap = &rr->NextInKAList;
-						if (rr->MPUnansweredQ == 0 || m->timenow - rr->MPLastUnansweredQT >= mDNSPlatformOneSecond)
+						*eap = cr;
+						eap = &cr->NextInKAList;
+						if (cr->MPUnansweredQ == 0 || m->timenow - cr->MPLastUnansweredQT >= mDNSPlatformOneSecond)
 							{
 							// Although MPUnansweredQ is only really used for multi-packet query processing,
 							// we increment it for both single-packet and multi-packet queries, so that it stays in sync
 							// with the MPUnansweredKA value, which by necessity is incremented for both query types.
-							rr->MPUnansweredQ++;
-							rr->MPLastUnansweredQT = m->timenow;
-							rr->MPExpectingKA = mDNStrue;
+							cr->MPUnansweredQ++;
+							cr->MPLastUnansweredQT = m->timenow;
+							cr->MPExpectingKA = mDNStrue;
 							}
 						}
 	
@@ -3986,7 +3989,6 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	for (i=0; i<query->h.numAnswers; i++)						// For each record in the query's answer section...
 		{
 		// Get the record...
-		AuthRecord *rr;
 		CacheRecord *ourcacherr;
 		ptr = GetLargeResourceRecord(m, query, ptr, end, InterfaceID, kDNSRecordTypePacketAns, &m->rec);
 		if (!ptr) goto exit;
@@ -4036,10 +4038,10 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		eap = &ExpectedAnswers;
 		while (*eap)
 			{
-			CacheRecord *rr = *eap;
-			if (rr->resrec.InterfaceID == InterfaceID && IdenticalResourceRecord(&m->rec.r.resrec, &rr->resrec))
-				{ *eap = rr->NextInKAList; rr->NextInKAList = mDNSNULL; }
-			else eap = &rr->NextInKAList;
+			CacheRecord *cr = *eap;
+			if (cr->resrec.InterfaceID == InterfaceID && IdenticalResourceRecord(&m->rec.r.resrec, &cr->resrec))
+				{ *eap = cr->NextInKAList; cr->NextInKAList = mDNSNULL; }
+			else eap = &cr->NextInKAList;
 			}
 		
 		// See if this Known-Answer is a surprise to us. If so, we shouldn't suppress our own query.
@@ -4186,38 +4188,38 @@ exit:
 	
 	while (ExpectedAnswers)
 		{
-		CacheRecord *rr;
-		rr = ExpectedAnswers;
-		ExpectedAnswers = rr->NextInKAList;
-		rr->NextInKAList = mDNSNULL;
+		CacheRecord *cr;
+		cr = ExpectedAnswers;
+		ExpectedAnswers = cr->NextInKAList;
+		cr->NextInKAList = mDNSNULL;
 		
 		// For non-truncated queries, we can definitively say that we should expect
 		// to be seeing a response for any records still left in the ExpectedAnswers list
 		if (!(query->h.flags.b[0] & kDNSFlag0_TC))
-			if (rr->UnansweredQueries == 0 || m->timenow - rr->LastUnansweredTime >= mDNSPlatformOneSecond)
+			if (cr->UnansweredQueries == 0 || m->timenow - cr->LastUnansweredTime >= mDNSPlatformOneSecond)
 				{
-				rr->UnansweredQueries++;
-				rr->LastUnansweredTime = m->timenow;
-				if (rr->UnansweredQueries > 1)
+				cr->UnansweredQueries++;
+				cr->LastUnansweredTime = m->timenow;
+				if (cr->UnansweredQueries > 1)
 					debugf("ProcessQuery: (!TC) UAQ %lu MPQ %lu MPKA %lu %s",
-						rr->UnansweredQueries, rr->MPUnansweredQ, rr->MPUnansweredKA, CRDisplayString(m, rr));
-				SetNextCacheCheckTime(m, rr);
+						cr->UnansweredQueries, cr->MPUnansweredQ, cr->MPUnansweredKA, CRDisplayString(m, cr));
+				SetNextCacheCheckTime(m, cr);
 				}
 
 		// If we've seen multiple unanswered queries for this record,
 		// then mark it to expire in five seconds if we don't get a response by then.
-		if (rr->UnansweredQueries >= MaxUnansweredQueries)
+		if (cr->UnansweredQueries >= MaxUnansweredQueries)
 			{
 			// Only show debugging message if this record was not about to expire anyway
-			if (RRExpireTime(rr) - m->timenow > 4 * mDNSPlatformOneSecond)
+			if (RRExpireTime(cr) - m->timenow > 4 * mDNSPlatformOneSecond)
 				debugf("ProcessQuery: (Max) UAQ %lu MPQ %lu MPKA %lu mDNS_Reconfirm() for %s",
-					rr->UnansweredQueries, rr->MPUnansweredQ, rr->MPUnansweredKA, CRDisplayString(m, rr));
-			mDNS_Reconfirm_internal(m, rr, kDefaultReconfirmTimeForNoAnswer);
+					cr->UnansweredQueries, cr->MPUnansweredQ, cr->MPUnansweredKA, CRDisplayString(m, cr));
+			mDNS_Reconfirm_internal(m, cr, kDefaultReconfirmTimeForNoAnswer);
 			}
 		// Make a guess, based on the multi-packet query / known answer counts, whether we think we
 		// should have seen an answer for this. (We multiply MPQ by 4 and MPKA by 5, to allow for
 		// possible packet loss of up to 20% of the additional KA packets.)
-		else if (rr->MPUnansweredQ * 4 > rr->MPUnansweredKA * 5 + 8)
+		else if (cr->MPUnansweredQ * 4 > cr->MPUnansweredKA * 5 + 8)
 			{
 			// We want to do this conservatively.
 			// If there are so many machines on the network that they have to use multi-packet known-answer lists,
@@ -4225,30 +4227,29 @@ exit:
 			// By setting the record to expire in four minutes, we achieve two things:
 			// (a) the 90-95% final expiration queries will be less bunched together
 			// (b) we allow some time for us to witness enough other failed queries that we don't have to do our own
-			mDNSu32 remain = (mDNSu32)(RRExpireTime(rr) - m->timenow) / 4;
+			mDNSu32 remain = (mDNSu32)(RRExpireTime(cr) - m->timenow) / 4;
 			if (remain > 240 * (mDNSu32)mDNSPlatformOneSecond)
 				remain = 240 * (mDNSu32)mDNSPlatformOneSecond;
 			
 			// Only show debugging message if this record was not about to expire anyway
-			if (RRExpireTime(rr) - m->timenow > 4 * mDNSPlatformOneSecond)
+			if (RRExpireTime(cr) - m->timenow > 4 * mDNSPlatformOneSecond)
 				debugf("ProcessQuery: (MPQ) UAQ %lu MPQ %lu MPKA %lu mDNS_Reconfirm() for %s",
-					rr->UnansweredQueries, rr->MPUnansweredQ, rr->MPUnansweredKA, CRDisplayString(m, rr));
+					cr->UnansweredQueries, cr->MPUnansweredQ, cr->MPUnansweredKA, CRDisplayString(m, cr));
 
 			if (remain <= 60 * (mDNSu32)mDNSPlatformOneSecond)
-				rr->UnansweredQueries++;	// Treat this as equivalent to one definite unanswered query
-			rr->MPUnansweredQ  = 0;			// Clear MPQ/MPKA statistics
-			rr->MPUnansweredKA = 0;
-			rr->MPExpectingKA  = mDNSfalse;
+				cr->UnansweredQueries++;	// Treat this as equivalent to one definite unanswered query
+			cr->MPUnansweredQ  = 0;			// Clear MPQ/MPKA statistics
+			cr->MPUnansweredKA = 0;
+			cr->MPExpectingKA  = mDNSfalse;
 			
 			if (remain < kDefaultReconfirmTimeForNoAnswer)
 				remain = kDefaultReconfirmTimeForNoAnswer;
-			mDNS_Reconfirm_internal(m, rr, remain);
+			mDNS_Reconfirm_internal(m, cr, remain);
 			}
 		}
 	
 	while (DupQuestions)
 		{
-		int i;
 		DNSQuestion *q = DupQuestions;
 		DupQuestions = q->NextInDQList;
 		q->NextInDQList = mDNSNULL;
@@ -5314,13 +5315,13 @@ mDNSexport mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const que
 	const mDNSu32 slot = HashSlot(&question->qname);
 	CacheGroup *cg = CacheGroupForName(m, slot, question->qnamehash, &question->qname);
 	CacheRecord *rr;
-	DNSQuestion **q = &m->Questions;
+	DNSQuestion **qp = &m->Questions;
 	
 	//LogOperation("mDNS_StopQuery_internal %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
 
-	if (question->InterfaceID == mDNSInterface_LocalOnly) q = &m->LocalOnlyQuestions;
-	while (*q && *q != question) q=&(*q)->next;
-	if (*q) *q = (*q)->next;
+	if (question->InterfaceID == mDNSInterface_LocalOnly) qp = &m->LocalOnlyQuestions;
+	while (*qp && *qp != question) qp=&(*qp)->next;
+	if (*qp) *qp = (*qp)->next;
 	else
 		{
 #if !ForceAlerts
