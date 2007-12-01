@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.348  2007/12/01 00:27:43  cheshire
+Fixed compile warning: declaration of 'r' shadows a previous local
+
 Revision 1.347  2007/11/02 22:00:13  cheshire
 <rdar://problem/5575583> BTMM: Work around keychain notification bug <rdar://problem/5124399>
 Need to hold the lock while calling SetDomainSecrets
@@ -709,9 +712,9 @@ mDNSlocal void AbortClient(mach_port_t ClientMachPort, void *m)
 			}
 		while (x->results)
 			{
-			DNSServiceBrowserResult *r = x->results;
+			DNSServiceBrowserResult *t = x->results;
 			x->results = x->results->next;
-			freeL("DNSServiceBrowserResult", r);
+			freeL("DNSServiceBrowserResult", t);
 			}
 		freeL("DNSServiceBrowser", x);
 		return;
@@ -999,10 +1002,10 @@ mDNSexport void machserver_automatic_browse_domain_changed(const domainname *d, 
 					{
 					if (SameDomainName(&(*q)->domain, d))
 						{
-						DNSServiceBrowserQuestion *remove = *q;
+						DNSServiceBrowserQuestion *rem = *q;
 						*q = (*q)->next;
-						mDNS_StopQueryWithRemoves(&mDNSStorage, &remove->q);
-						freeL("DNSServiceBrowserQuestion", remove );
+						mDNS_StopQueryWithRemoves(&mDNSStorage, &rem->q);
+						freeL("DNSServiceBrowserQuestion", rem);
 						return;
 						}
 					q = &(*q)->next;
@@ -1111,11 +1114,11 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 
 	if (ifx && ifx->ifinfo.ip.type == mDNSAddrType_IPv4)
 		{
-		struct sockaddr_in *sin = (struct sockaddr_in*)&interface;
-		sin->sin_len         = sizeof(*sin);
-		sin->sin_family      = AF_INET;
-		sin->sin_port        = 0;
-		sin->sin_addr.s_addr = ifx->ifinfo.ip.ip.v4.NotAnInteger;
+		struct sockaddr_in *s = (struct sockaddr_in*)&interface;
+		s->sin_len         = sizeof(*s);
+		s->sin_family      = AF_INET;
+		s->sin_port        = 0;
+		s->sin_addr.s_addr = ifx->ifinfo.ip.ip.v4.NotAnInteger;
 		}
 	else if (ifx && ifx->ifinfo.ip.type == mDNSAddrType_IPv6)
 		{
@@ -1130,11 +1133,11 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 
 	if (query->info->ip.type == mDNSAddrType_IPv4)
 		{
-		struct sockaddr_in *sin = (struct sockaddr_in*)&address;
-		sin->sin_len           = sizeof(*sin);
-		sin->sin_family        = AF_INET;
-		sin->sin_port          = query->info->port.NotAnInteger;
-		sin->sin_addr.s_addr   = query->info->ip.ip.v4.NotAnInteger;
+		struct sockaddr_in *s = (struct sockaddr_in*)&address;
+		s->sin_len         = sizeof(*s);
+		s->sin_family      = AF_INET;
+		s->sin_port        = query->info->port.NotAnInteger;
+		s->sin_addr.s_addr = query->info->ip.ip.v4.NotAnInteger;
 		}
 	else
 		{
@@ -1474,9 +1477,9 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationCreate_rpc(mach_port_t un
 
 	if (x->DefaultDomain)
 		{
-		DNameListElem *ptr;
-		for (ptr = AutoRegistrationDomains; ptr; ptr = ptr->next)
-			AddServiceInstance(x, &ptr->name);
+		DNameListElem *p;
+		for (p = AutoRegistrationDomains; p; p = p->next)
+			AddServiceInstance(x, &p->name);
 		}
 
 	// Succeeded: Wrap up and return
@@ -1909,9 +1912,9 @@ mDNSlocal kern_return_t destroyBootstrapService()
 	return bootstrap_register(server_priv_port, (char*)kmDNSBootstrapName, MACH_PORT_NULL);
 	}
 
-mDNSlocal void ExitCallback(int signal)
+mDNSlocal void ExitCallback(int sig)
 	{
-	(void)signal; // Unused
+	(void)sig; // Unused
 	LogMsgIdent(mDNSResponderVersionString, "stopping");
 
 	debugf("ExitCallback");
@@ -1935,20 +1938,20 @@ mDNSlocal void ExitCallback(int signal)
 	}
 
 // Send a mach_msg to ourselves (since that is signal safe) telling us to cleanup and exit
-mDNSlocal void HandleSIG(int signal)
+mDNSlocal void HandleSIG(int sig)
 	{
 	debugf(" ");
-	debugf("HandleSIG %d", signal);
+	debugf("HandleSIG %d", sig);
 	mach_msg_header_t header;
 	header.msgh_bits = MACH_MSGH_BITS(MACH_MSG_TYPE_MAKE_SEND, 0);
 	header.msgh_remote_port = signal_port;
 	header.msgh_local_port = MACH_PORT_NULL;
 	header.msgh_size = sizeof(header);
-	header.msgh_id = signal;
+	header.msgh_id = sig;
 	if (mach_msg_send(&header) != MACH_MSG_SUCCESS)
 		{
-		LogMsg("HandleSIG %d: mach_msg_send failed", signal);
-		if (signal == SIGTERM || signal == SIGINT) exit(-1);
+		LogMsg("HandleSIG %d: mach_msg_send failed", sig);
+		if (sig == SIGTERM || sig == SIGINT) exit(-1);
 		}
 	}
 
@@ -2297,8 +2300,7 @@ mDNSlocal void KQWokenFlushBytes(int fd, __unused short filter, __unused void *c
 	{
 	// Read all of the bytes so we won't wake again.
 	char    buffer[100];
-	ssize_t read = sizeof(buffer);
-	while (read > 0) read = recv(fd, buffer, sizeof(buffer), MSG_DONTWAIT);
+	while (recv(fd, buffer, sizeof(buffer), MSG_DONTWAIT) > 0) continue;
 	}
 
 mDNSlocal void * KQueueLoop(void *m_param)
@@ -2401,14 +2403,14 @@ mDNSlocal void * KQueueLoop(void *m_param)
 			for (i = 0; i < events_found; i++)
 				{
 				const KQueueEntry *const kqentry = new_events[i].udata;
-				mDNSs32 start = mDNSPlatformRawTime();
+				mDNSs32 stime = mDNSPlatformRawTime();
 #if LogAllOperations || MDNS_DEBUGMSGS
 				const char *const KQtask = kqentry->KQtask;	// Grab a copy in case KQcallback deletes the task
 #endif
 				kqentry->KQcallback(new_events[i].ident, new_events[i].filter, kqentry->KQcontext);
-				mDNSs32 end   = mDNSPlatformRawTime();
-				if (end - start >= WatchDogReportingThreshold)
-					LogOperation("WARNING: %s took %dms to complete", KQtask, end - start);
+				mDNSs32 etime = mDNSPlatformRawTime();
+				if (etime - stime >= WatchDogReportingThreshold)
+					LogOperation("WARNING: %s took %dms to complete", KQtask, etime - stime);
 				}
 			}
 		}
