@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.455  2007/12/01 01:21:27  jgraessley
+<rdar://problem/5623140> mDNSResponder unicast DNS improvements
+
 Revision 1.454  2007/12/01 00:34:03  cheshire
 Fixes from Bob Bradley for building on EFI
 
@@ -1498,13 +1501,19 @@ enum
 	DNSServer_Disabled = 3
 	};
 
+enum
+	{
+	DNSServer_FlagDelete = 1,
+	DNSServer_FlagNew    = 2
+	};
+
 typedef struct DNSServer
 	{
 	struct DNSServer *next;
 	mDNSInterfaceID interface;	// For specialized uses; we can have DNS servers reachable over specific interfaces
 	mDNSAddr        addr;
 	mDNSIPPort      port;
-	mDNSBool        del;		// Set when we're planning to delete this from the list
+	mDNSu32         flags;		// Set when we're planning to delete this from the list
 	mDNSu32         teststate;	// Have we sent bug-detection query to this server?
 	mDNSs32         lasttest;	// Time we sent last bug-detection query to this server
 	domainname      domain;		// name->server matching for "split dns"

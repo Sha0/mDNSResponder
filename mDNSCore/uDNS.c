@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.533  2007/12/01 01:21:27  jgraessley
+<rdar://problem/5623140> mDNSResponder unicast DNS improvements
+
 Revision 1.532  2007/11/30 20:16:44  cheshire
 Fixed compile warning: declaration of 'end' shadows a previous local
 
@@ -1214,8 +1217,8 @@ mDNSexport DNSServer *mDNS_AddDNSServer(mDNS *const m, const domainname *d, cons
 		if ((*p)->interface == interface && (*p)->teststate != DNSServer_Disabled &&
 			mDNSSameAddress(&(*p)->addr, addr) && mDNSSameIPPort((*p)->port, port) && SameDomainName(&(*p)->domain, d))
 			{
-			if (!(*p)->del) LogMsg("Note: DNS Server %#a for domain %##s registered more than once", addr, d->c);
-			(*p)->del = mDNSfalse;
+			if (!((*p)->flags & DNSServer_FlagDelete)) LogMsg("Note: DNS Server %#a for domain %##s registered more than once", addr, d->c);
+			(*p)->flags &= ~DNSServer_FlagDelete;
 			return(*p);
 			}
 		p=&(*p)->next;
@@ -1229,7 +1232,7 @@ mDNSexport DNSServer *mDNS_AddDNSServer(mDNS *const m, const domainname *d, cons
 		(*p)->interface = interface;
 		(*p)->addr      = *addr;
 		(*p)->port      = port;
-		(*p)->del       = mDNSfalse;
+		(*p)->flags     = DNSServer_FlagNew;
 		(*p)->teststate = DNSServer_Untested;
 		(*p)->lasttest  = m->timenow - INIT_UCAST_POLL_INTERVAL;
 		AssignDomainName(&(*p)->domain, d);

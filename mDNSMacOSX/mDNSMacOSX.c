@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.516  2007/12/01 01:21:27  jgraessley
+<rdar://problem/5623140> mDNSResponder unicast DNS improvements
+
 Revision 1.515  2007/12/01 00:40:00  cheshire
 Add mDNSPlatformWriteLogMsg & mDNSPlatformWriteDebugMsg abstractions, to facilitate EFI conversion
 
@@ -3663,7 +3666,7 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 	int c2 = (CFArrayContainsValue(changedKeys, range, NetworkChangedKey_Computername) != 0);
 	int c3 = (CFArrayContainsValue(changedKeys, range, NetworkChangedKey_DynamicDNS  ) != 0);
 	if (c && c - c1 - c2 - c3 == 0) delay = mDNSPlatformOneSecond/20;	// If these were the only changes, shorten delay
-
+	
 #if LogAllOperations
 	int i;
 	for (i=0; i<c; i++)
@@ -3683,6 +3686,9 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 	if (!m->p->NetworkChanged ||
 		m->p->NetworkChanged - NonZeroTime(m->timenow + delay) < 0)
 		m->p->NetworkChanged = NonZeroTime(m->timenow + delay);
+
+	// If we have a global DNS change, then disregard delay and reconfigure immediately
+	if (CFArrayContainsValue(changedKeys, range, NetworkChangedKey_DNS) != 0) m->p->NetworkChanged = NonZeroTime(m->timenow);
 
 	// KeyChain frequently fails to notify clients of change events. To work around this
 	// we set a timer and periodically poll to detect if any changes have occurred.

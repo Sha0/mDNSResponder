@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.754  2007/12/01 01:21:27  jgraessley
+<rdar://problem/5623140> mDNSResponder unicast DNS improvements
+
 Revision 1.753  2007/12/01 00:44:15  cheshire
 Fixed compile warnings, e.g. declaration of 'rr' shadows a previous local
 
@@ -5122,7 +5125,7 @@ mDNSlocal DNSServer *GetServerForName(mDNS *m, const domainname *name)
 	for (p = m->DNSServers; p; p = p->next)
 		{
 		int scount = CountLabels(&p->domain);
-		if (!p->del && ncount >= scount && scount > curmatchlen)
+		if (!(p->flags & DNSServer_FlagDelete) && ncount >= scount && scount > curmatchlen)
 			if (SameDomainName(SkipLeadingLabels(name, ncount - scount), &p->domain))
 				{ curmatch = p; curmatchlen = scount; }
 		}
@@ -6975,7 +6978,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 	// Let the platform layer get the current DNS information
 	// The m->RegisterSearchDomains boolean is so that we lazily get the search domain list only on-demand
 	// (no need to hit the network with domain enumeration queries until we actually need that information).
-	for (ptr = m->DNSServers; ptr; ptr = ptr->next) ptr->del = mDNStrue;
+	for (ptr = m->DNSServers; ptr; ptr = ptr->next) ptr->flags |= DNSServer_FlagDelete;
 
 	mDNSPlatformSetDNSConfig(m, mDNStrue, mDNSfalse, &fqdn, mDNSNULL, mDNSNULL);
 
@@ -6997,15 +7000,28 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 				}
 			}
 
+	// Flush all records that match a new resolver
+	FORALL_CACHERECORDS(slot, cg, cr)
+		{
+		ptr = GetServerForName(m, cr->resrec.name);
+		if ((ptr->flags & DNSServer_FlagNew) && !cr->resrec.InterfaceID)
+			{
+			if (cr->resrec.RecordType == kDNSRecordTypePacketNegative)
+				mDNS_PurgeCacheResourceRecord(m, cr);
+			else
+				mDNS_Reconfirm_internal(m, cr, kDefaultReconfirmTimeForNoAnswer);
+			}
+		}
+	
 	while (*p)
 		{
-		if ((*p)->del)
+		if (((*p)->flags & DNSServer_FlagDelete) != 0)
 			{
 			// Scan our cache, looking for uDNS records that we would have queried this server for.
 			// We reconfirm any records that match, because in this world of split DNS, firewalls, etc.
 			// different DNS servers can give different answers to the same question.
 			ptr = *p;
-			ptr->del = mDNSfalse;	// Clear del so GetServerForName will (temporarily) find this server again before it's finally deleted
+			ptr->flags &= ~DNSServer_FlagDelete;	// Clear del so GetServerForName will (temporarily) find this server again before it's finally deleted
 			FORALL_CACHERECORDS(slot, cg, cr)
 				if (!cr->resrec.InterfaceID && GetServerForName(m, cr->resrec.name) == ptr)
 					mDNS_Reconfirm_internal(m, cr, kDefaultReconfirmTimeForNoAnswer);
@@ -7013,7 +7029,10 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 			mDNSPlatformMemFree(ptr);
 			}
 		else
+			{
+			(*p)->flags &= ~DNSServer_FlagNew;
 			p = &(*p)->next;
+			}
 		}
 
 	// If we now have no DNS servers at all and we used to have some, then immediately purge all unicast cache records (including for LLQs).
