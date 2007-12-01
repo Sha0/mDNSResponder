@@ -1848,6 +1848,7 @@
 					"-Wmissing-prototypes",
 					"-Wno-four-char-constants",
 					"-Wno-unknown-pragmas",
+					"-Wshadow",
 				);
 				YACC_GENERATED_FILE_STEM = Standard;
 			};
