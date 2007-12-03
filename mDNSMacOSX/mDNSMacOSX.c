@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.517  2007/12/03 18:37:26  cheshire
+Moved mDNSPlatformWriteLogMsg & mDNSPlatformWriteDebugMsg
+from mDNSMacOSX.c to PlatformCommon.c, so that Posix build can use them
+
 Revision 1.516  2007/12/01 01:21:27  jgraessley
 <rdar://problem/5623140> mDNSResponder unicast DNS improvements
 
@@ -709,7 +713,6 @@ Add (commented out) trigger value for testing "mach_absolute_time went backwards
 #include <time.h>                   // platform support for UTC time
 #include <arpa/inet.h>              // for inet_aton
 #include <pthread.h>
-#include <syslog.h>
 
 #include <netinet/in.h>             // For IP_RECVTTL
 #ifndef IP_RECVTTL
@@ -4138,29 +4141,6 @@ mDNSexport mDNSs32 mDNSPlatformRawTime(void)
 mDNSexport mDNSs32 mDNSPlatformUTC(void)
 	{
 	return time(NULL);
-	}
-
-#if MDNS_DEBUGMSGS
-mDNSexport void	mDNSPlatformWriteDebugMsg(const char *msg)
-	{
-	fprintf(stderr,"%s\n", msg);
-	fflush(stderr);
-	}
-#endif
-
-mDNSexport void	mDNSPlatformWriteLogMsg(const char *ident, const char *buffer, int logoptflags)
-	{
-	if (mDNS_DebugMode)	// In debug mode we write to stderr
-		{
-		fprintf(stderr,"%s\n", buffer);
-		fflush(stderr);
-		}
-	else				// else, in production mode, we write to syslog
-		{
-		openlog(ident, LOG_CONS | logoptflags, LOG_DAEMON);
-		syslog(LOG_ERR, "%s", buffer);
-		closelog();
-		}
 	}
 
 // Locking is a no-op here, because we're single-threaded with a CFRunLoop, so we can never interrupt ourselves
