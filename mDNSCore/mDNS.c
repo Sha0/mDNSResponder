@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.755  2007/12/03 23:36:45  cheshire
+<rdar://problem/5623140> mDNSResponder unicast DNS improvements
+Need to check GetServerForName() result is non-null before dereferencing pointer
+
 Revision 1.754  2007/12/01 01:21:27  jgraessley
 <rdar://problem/5623140> mDNSResponder unicast DNS improvements
 
@@ -7004,7 +7008,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 	FORALL_CACHERECORDS(slot, cg, cr)
 		{
 		ptr = GetServerForName(m, cr->resrec.name);
-		if ((ptr->flags & DNSServer_FlagNew) && !cr->resrec.InterfaceID)
+		if (ptr && (ptr->flags & DNSServer_FlagNew) && !cr->resrec.InterfaceID)
 			{
 			if (cr->resrec.RecordType == kDNSRecordTypePacketNegative)
 				mDNS_PurgeCacheResourceRecord(m, cr);
