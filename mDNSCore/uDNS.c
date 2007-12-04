@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.534  2007/12/04 00:49:37  cheshire
+<rdar://problem/5607082> BTMM: mDNSResponder taking 100 percent CPU after upgrading to 10.5.1
+
 Revision 1.533  2007/12/01 01:21:27  jgraessley
 <rdar://problem/5623140> mDNSResponder unicast DNS improvements
 
@@ -1850,15 +1853,15 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 	tcpInfo_t *tcpInfo = (tcpInfo_t *)context;
 	mDNSBool   closed  = mDNSfalse;
 	mDNS      *m       = tcpInfo->m;
-
+	DNSQuestion *const q = tcpInfo->question;
 	tcpInfo_t **backpointer =
-		tcpInfo->question ? &tcpInfo->question->tcp :
+		q                 ? &q           ->tcp :
 		tcpInfo->srs      ? &tcpInfo->srs->tcp :
-		tcpInfo->rr       ? &tcpInfo->rr->tcp : mDNSNULL;
+		tcpInfo->rr       ? &tcpInfo->rr ->tcp : mDNSNULL;
 	if (!backpointer) LogMsg("tcpCallback: Purpose of connection unidentified");
 	else if (*backpointer != tcpInfo)
 		LogMsg("tcpCallback: %d backpointer %p incorrect tcpInfo %p question %p srs %p rr %p",
-			mDNSPlatformTCPGetFD(tcpInfo->sock), *backpointer, tcpInfo, tcpInfo->question, tcpInfo->srs, tcpInfo->rr);
+			mDNSPlatformTCPGetFD(tcpInfo->sock), *backpointer, tcpInfo, q, tcpInfo->srs, tcpInfo->rr);
 
 	if (err) goto exit;
 
@@ -1867,15 +1870,15 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 		mDNSu8    *end;
 		DomainAuthInfo *AuthInfo;
 		// connection is established - send the message
-		if (tcpInfo->question && tcpInfo->question->LongLived && tcpInfo->question->state == LLQ_Established)
+		if (q && q->LongLived && q->state == LLQ_Established)
 			{
-			//LogMsg("tcpCallback calling sendLLQRefresh %##s (%s)", tcpInfo->question->qname.c, DNSTypeName(tcpInfo->question->qtype));
+			//LogMsg("tcpCallback calling sendLLQRefresh %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 			mDNS_Lock(m);
-			sendLLQRefresh(m, tcpInfo->question, tcpInfo->question->origLease);
+			sendLLQRefresh(m, q, q->origLease);
 			mDNS_Unlock(m);
 			return;
 			}
-		else if (tcpInfo->question && tcpInfo->question->LongLived && tcpInfo->question->state != LLQ_Poll && !mDNSIPPortIsZero(m->LLQNAT.ExternalPort))
+		else if (q && q->LongLived && q->state != LLQ_Poll && !mDNSIPPortIsZero(m->LLQNAT.ExternalPort))
 			{
 			// Notes:
 			// If we have a NAT port mapping, ExternalPort is the external port
@@ -1888,13 +1891,12 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			LogOperation("tcpCallback: eventPort %d", llqData.err);
 			llqData.id    = zeroOpaque64;
 			llqData.llqlease = kLLQ_DefLease;
-			InitializeDNSMessage(&tcpInfo->request.h, tcpInfo->question->TargetQID, uQueryFlags);
-			end = putLLQ(&tcpInfo->request, tcpInfo->request.data, tcpInfo->question, &llqData, mDNStrue);
+			InitializeDNSMessage(&tcpInfo->request.h, q->TargetQID, uQueryFlags);
+			end = putLLQ(&tcpInfo->request, tcpInfo->request.data, q, &llqData, mDNStrue);
 			if (!end) { LogMsg("ERROR: tcpCallback - putLLQ"); err = mStatus_UnknownErr; goto exit; }
 			}
-		else if (tcpInfo->question)
+		else if (q)
 			{
-			DNSQuestion *q = tcpInfo->question;
 			InitializeDNSMessage(&tcpInfo->request.h, q->TargetQID, uQueryFlags);
 			end = putQuestion(&tcpInfo->request, tcpInfo->request.data, tcpInfo->request.data + AbsoluteMaxDNSMessageData, &q->qname, q->qtype, q->qclass);
 			}
@@ -1912,7 +1914,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 		if (tcpInfo->srs && tcpInfo->srs->RR_SRV.resrec.name != &tcpInfo->srs->RR_SRV.namestorage) return;
 		if (tcpInfo->rr  && tcpInfo->rr->        resrec.name != &tcpInfo->rr->        namestorage) return;
 
-		AuthInfo = 	tcpInfo->question ? tcpInfo->question->AuthInfo :
+		AuthInfo = 	q ? q->AuthInfo :
 					tcpInfo->srs      ? GetAuthInfoForName(m, tcpInfo->srs->RR_SRV.resrec.name) :
 					tcpInfo->rr       ? GetAuthInfoForName(m, tcpInfo->rr->resrec.name) : mDNSNULL;
 
@@ -1920,12 +1922,12 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 		if (err) { debugf("ERROR: tcpCallback: mDNSSendDNSMessage - %ld", err); err = mStatus_UnknownErr; goto exit; }
 
 		// Record time we sent this question
-		if (tcpInfo->question)
+		if (q)
 			{
 			mDNS_Lock(m);
-			tcpInfo->question->LastQTime = m->timenow;
-			tcpInfo->question->ThisQInterval = MAX_UCAST_POLL_INTERVAL;
-			SetNextQueryTime(m, tcpInfo->question);
+			q->LastQTime = m->timenow;
+			q->ThisQInterval = MAX_UCAST_POLL_INTERVAL;
+			SetNextQueryTime(m, q);
 			mDNS_Unlock(m);
 			}
 		}
@@ -1979,7 +1981,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			tcpInfo->replylen = 0;
 			
 			// If we're going to dispose this connection, do it FIRST, before calling client callback
-			if (!tcpInfo->question || !tcpInfo->question->LongLived) { *backpointer = mDNSNULL; DisposeTCPConn(tcpInfo); }
+			if (!q || !q->LongLived) { *backpointer = mDNSNULL; DisposeTCPConn(tcpInfo); }
 			
 			if (rr && rr->resrec.RecordType == kDNSRecordTypeDeregistering)
 				{
@@ -2007,9 +2009,8 @@ exit:
 
 		mDNS_Lock(m);		// Need to grab the lock to get m->timenow
 
-		if (tcpInfo->question)
+		if (q)
 			{
-			DNSQuestion *q = tcpInfo->question;
 			if (q->ThisQInterval == 0 || q->LastQTime + q->ThisQInterval - m->timenow > MAX_UCAST_POLL_INTERVAL)
 				{
 				q->LastQTime     = m->timenow;
@@ -2018,7 +2019,10 @@ exit:
 				}
 			// ConnFailed is actually okay.  It just means that the server closed the connection but the LLQ is still okay.
 			// If the error isn't ConnFailed, then the LLQ is in bad shape.
-			if (err != mStatus_ConnFailed) StartLLQPolling(m, tcpInfo->question);
+			if (err != mStatus_ConnFailed)
+				{
+				if (q->LongLived && q->state != LLQ_Poll) StartLLQPolling(m, q);
+				}
 			}
 
 		if (tcpInfo->rr) SetRecordRetry(m, tcpInfo->rr, mStatus_NoError);
@@ -2434,6 +2438,16 @@ mDNSlocal void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *question
 		mDNS_StopQuery(m, question);
 		zd->Addr.type  = mDNSAddrType_IPv4;
 		zd->Addr.ip.v4 = (answer->rdlength == 4) ? answer->rdata->u.ipv4 : zerov4Addr;
+		// In order to simulate firewalls blocking our outgoing TCP connections, returning immediate ICMP errors or TCP resets,
+		// the code below will make us try to connect to loopback, resulting in an immediate "port unreachable" failure.
+		// This helps us test to make sure we handle this case gracefully
+		// <rdar://problem/5607082> BTMM: mDNSResponder taking 100 percent CPU after upgrading to 10.5.1
+#if 0
+		zd->Addr.ip.v4.b[0] = 127;
+		zd->Addr.ip.v4.b[1] = 0;
+		zd->Addr.ip.v4.b[2] = 0;
+		zd->Addr.ip.v4.b[3] = 1;
+#endif
 		zd->ZoneDataCallback(m, mStatus_NoError, zd);
 		mDNSPlatformMemFree(zd);
 		}
