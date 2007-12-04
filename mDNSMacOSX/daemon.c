@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.349  2007/12/04 22:00:54  cheshire
+Fixed mistake in comment
+
 Revision 1.348  2007/12/01 00:27:43  cheshire
 Fixed compile warning: declaration of 'r' shadows a previous local
 
@@ -2266,7 +2269,7 @@ mDNSlocal void ShowTaskSchedulingError(mDNS *const m)
 
 	LogMsg("Task Scheduling Error: Continuously busy for more than a second");
 	
-	// NOTE: To accurately diagnose *why* we're busy, the debugging code here to show needs to mirror the logic in GetNextScheduledEvent
+	// NOTE: To accurately diagnose *why* we're busy, the debugging code here needs to mirror the logic in GetNextScheduledEvent
 
 	if (m->NewQuestions && (!m->NewQuestions->DelayAnswering || m->timenow - m->NewQuestions->DelayAnswering >= 0))
 		LogMsg("Task Scheduling Error: NewQuestion %##s (%s)",
