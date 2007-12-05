@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.518  2007/12/05 01:52:30  cheshire
+<rdar://problem/5624763> BTMM: getaddrinfo_async_start returns EAI_NONAME when resolving BTMM hostname
+Delay returning IPv4 address ("A") results for autotunnel names until after we've set up the tunnel (or tried to)
+
 Revision 1.517  2007/12/03 18:37:26  cheshire
 Moved mDNSPlatformWriteLogMsg & mDNSPlatformWriteDebugMsg
 from mDNSMacOSX.c to PlatformCommon.c, so that Posix build can use them
@@ -90,7 +94,7 @@ Revision 1.496  2007/10/04 20:33:05  mcguire
 <rdar://problem/5518845> BTMM: Racoon configuration removed when network changes
 
 Revision 1.495  2007/10/02 05:03:38  cheshire
-Fix bugus indentation in mDNSPlatformDynDNSHostNameStatusChanged
+Fix bogus indentation in mDNSPlatformDynDNSHostNameStatusChanged
 
 Revision 1.494  2007/09/29 20:40:19  cheshire
 <rdar://problem/5513378> Crash in ReissueBlockedQuestions
@@ -2318,14 +2322,14 @@ mDNSlocal mStatus AutoTunnelSetKeys(ClientTunnel *tun, mDNSBool AddNew)
 // If the EUI-64 part of the IPv6 ULA matches, then that means the two addresses point to the same machine
 #define mDNSSameClientTunnel(A,B) ((A)->l[2] == (B)->l[2] && (A)->l[3] == (B)->l[3])
 
-mDNSlocal void ReissueBlockedQuestions(mDNS *const m, domainname *d, mDNSBool success)
+mDNSlocal void ReissueBlockedQuestionWithType(mDNS *const m, domainname *d, mDNSBool success, mDNSu16 qtype)
 	{
 	DNSQuestion *q = m->Questions;
 	while (q)
 		{
-		if (q->NoAnswer == NoAnswer_Suspended && q->qtype == kDNSType_AAAA && q->AuthInfo && q->AuthInfo->AutoTunnel && SameDomainName(&q->qname, d))
+		if (q->NoAnswer == NoAnswer_Suspended && q->qtype == qtype && q->AuthInfo && q->AuthInfo->AutoTunnel && SameDomainName(&q->qname, d))
 			{
-			LogOperation("Restart %##s", q->qname.c);
+			LogOperation("Restart %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 			mDNSQuestionCallback *tmp = q->QuestionCallback;
 			q->QuestionCallback = AutoTunnelCallback;	// Set QuestionCallback to suppress another call back to AddNewClientTunnel
 			mDNS_StopQuery(m, q);
@@ -2345,12 +2349,24 @@ mDNSlocal void ReissueBlockedQuestions(mDNS *const m, domainname *d, mDNSBool su
 		}
 	}
 
+mDNSlocal void ReissueBlockedQuestions(mDNS *const m, domainname *d, mDNSBool success)
+	{
+	// 1. We deliberately restart AAAA queries before A queries, because in the common case where a BTTM host has
+	//    a v6 address but no v4 address, we prefer the caller to get the positive AAAA response before the A NXDOMAIN.
+	// 2. In the case of AAAA queries, if our tunnel setup failed, then we return a deliberate failure indication to the caller --
+	//    even if the name does have a valid AAAA record, we don't want clients trying to connect to it without a properly encrypted tunnel.
+	// 3. For A queries we never fabricate failures -- if a BTTM service is really using raw IPv4, then it doesn't need the IPv6 tunnel.
+	ReissueBlockedQuestionWithType(m, d, success, kDNSType_AAAA);
+	ReissueBlockedQuestionWithType(m, d, mDNStrue, kDNSType_A);
+	}
+
 mDNSlocal void UnlinkAndReissueBlockedQuestions(mDNS *const m, ClientTunnel *tun, mDNSBool success)
 	{
 	ClientTunnel **p = &m->TunnelClients;
 	while (*p != tun && *p) p = &(*p)->next;
 	if (*p) *p = tun->next;
 	ReissueBlockedQuestions(m, &tun->dstname, success);
+	LogOperation("UnlinkAndReissueBlockedQuestions: Disposing ClientTunnel %p", tun);
 	freeL("ClientTunnel", tun);
 	}
 
@@ -2364,7 +2380,7 @@ mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const R
 
 	if (!answer->rdlength)
 		{
-		LogOperation("AutoTunnelCallback NXDOMAIN %##s", question->qname.c);
+		LogOperation("AutoTunnelCallback NXDOMAIN %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
 		UnlinkAndReissueBlockedQuestions(m, tun, mDNSfalse);
 		return;
 		}
@@ -2373,7 +2389,7 @@ mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const R
 		{
 		if (mDNSSameIPv6Address(answer->rdata->u.ipv6, m->AutoTunnelHostAddr))
 			{
-			LogOperation("AutoTunnelCallback: supressing tunnel to self %.16a", &answer->rdata->u.ipv6);
+			LogOperation("AutoTunnelCallback: suppressing tunnel to self %.16a", &answer->rdata->u.ipv6);
 			UnlinkAndReissueBlockedQuestions(m, tun, mDNStrue);
 			return;
 			}
@@ -2429,6 +2445,7 @@ mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const R
 					}
 				else needSetKeys = mDNSfalse;
 
+				LogOperation("AutoTunnelCallback: Disposing ClientTunnel %p", tun);
 				freeL("ClientTunnel", old);
 				}
 			}
@@ -2451,7 +2468,7 @@ mDNSexport void AddNewClientTunnel(mDNS *const m, DNSQuestion *const q)
 	ClientTunnel *p = mallocL("ClientTunnel", sizeof(ClientTunnel));
 	if (!p) return;
 	AssignDomainName(&p->dstname, &q->qname);
-	p->markedForDeletion = mDNSfalse;
+	p->MarkedForDeletion = mDNSfalse;
 	p->loc_inner      = zerov6Addr;
 	p->loc_outer      = zerov4Addr;
 	p->rmt_inner      = zerov6Addr;
@@ -2459,7 +2476,7 @@ mDNSexport void AddNewClientTunnel(mDNS *const m, DNSQuestion *const q)
 	p->rmt_outer_port = zeroIPPort;
 	mDNS_snprintf(p->b64keydata, sizeof(p->b64keydata), "%s", q->AuthInfo->b64keydata);
 	p->next = m->TunnelClients;
-	m->TunnelClients = p;		// Intentionally build list in reverse order
+	m->TunnelClients = p;		// We intentionally build list in reverse order
 
 	p->q.InterfaceID      = mDNSInterface_Any;
 	p->q.Target           = zeroAddr;
@@ -2473,7 +2490,7 @@ mDNSexport void AddNewClientTunnel(mDNS *const m, DNSQuestion *const q)
 	p->q.QuestionCallback = AutoTunnelCallback;
 	p->q.QuestionContext  = p;
 
-	LogOperation("AddNewClientTunnel start  %##s (%s)%s", &p->q.qname.c, DNSTypeName(p->q.qtype), q->LongLived ? " LongLived" : "");
+	LogOperation("AddNewClientTunnel start tun %p %##s (%s)%s", p, &q->qname.c, DNSTypeName(q->qtype), q->LongLived ? " LongLived" : "");
 	mDNS_StartQuery_internal(m, &p->q);
 	}
 
@@ -3394,7 +3411,7 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 	for (client = m->TunnelClients; client; client = client->next)
 		{
 		LogOperation("SetDomainSecrets: tunnel to %##s marked for deletion", client->dstname.c);
-		client->markedForDeletion = mDNStrue;
+		client->MarkedForDeletion = mDNStrue;
 		}
 	}
 #endif APPLE_OSX_mDNSResponder
@@ -3466,7 +3483,7 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 					if (FoundInList == GetAuthInfoForName_internal(m, &client->dstname))
 					{
 					LogOperation("SetDomainSecrets: tunnel to %##s no longer marked for deletion", client->dstname.c);
-					client->markedForDeletion = mDNSfalse;
+					client->MarkedForDeletion = mDNSfalse;
 					// If the key has changed, reconfigure the tunnel
 					if (strncmp(stringbuf, client->b64keydata, sizeof(client->b64keydata)))
 						{
@@ -3526,10 +3543,10 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 		ClientTunnel **pp = &m->TunnelClients;
 		while (*pp)
 			{
-			if ((*pp)->markedForDeletion)
+			if ((*pp)->MarkedForDeletion)
 				{
 				ClientTunnel *cur = *pp;
-				LogOperation("SetDomainSecrets: removing client %##s from list", cur->dstname.c);
+				LogOperation("SetDomainSecrets: removing client %p %##s from list", cur, cur->dstname.c);
 				if (cur->q.ThisQInterval >= 0) mDNS_StopQuery(m, &cur->q);
 				AutoTunnelSetKeys(cur, mDNSfalse);
 				*pp = cur->next;

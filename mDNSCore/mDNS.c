@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.756  2007/12/05 01:52:30  cheshire
+<rdar://problem/5624763> BTMM: getaddrinfo_async_start returns EAI_NONAME when resolving BTMM hostname
+Delay returning IPv4 address ("A") results for autotunnel names until after we've set up the tunnel (or tried to)
+
 Revision 1.755  2007/12/03 23:36:45  cheshire
 <rdar://problem/5623140> mDNSResponder unicast DNS improvements
 Need to check GetServerForName() result is non-null before dereferencing pointer
@@ -3516,7 +3520,12 @@ mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question)
 	// For now this AutoTunnel stuff is specific to Mac OS X.
 	// In the future, if there's demand, we may see if we can abstract it out cleanly into the platform layer
 #if APPLE_OSX_mDNSResponder
-	if (question->qtype == kDNSType_AAAA && question->AuthInfo && question->AuthInfo->AutoTunnel && question->QuestionCallback != AutoTunnelCallback)
+	// Even though BTMM client tunnels are only useful for AAAA queries, we need to treat v4 and v6 queries equally.
+	// Otherwise we can get the situation where the A query completes really fast (with an NXDOMAIN result) and the
+	// caller then gives up waiting for the AAAA result while we're still in the process of setting up the tunnel.
+	// To level the playing field, we block both A and AAAA queries while tunnel setup is in progress, and then
+	// returns results for both at the same time.
+	if (RRTypeIsAddressType(question->qtype) && question->AuthInfo && question->AuthInfo->AutoTunnel && question->QuestionCallback != AutoTunnelCallback)
 		{
 		question->NoAnswer = NoAnswer_Suspended;
 		AddNewClientTunnel(m, question);
