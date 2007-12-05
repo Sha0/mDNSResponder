@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.456  2007/12/05 01:45:35  cheshire
+Renamed markedForDeletion -> MarkedForDeletion
+
 Revision 1.455  2007/12/01 01:21:27  jgraessley
 <rdar://problem/5623140> mDNSResponder unicast DNS improvements
 
@@ -1844,7 +1847,7 @@ typedef struct ClientTunnel
 	{
 	struct ClientTunnel *next;
 	domainname dstname;
-	mDNSBool   markedForDeletion;
+	mDNSBool   MarkedForDeletion;
 	mDNSv6Addr loc_inner;
 	mDNSv4Addr loc_outer;
 	mDNSv6Addr rmt_inner;
