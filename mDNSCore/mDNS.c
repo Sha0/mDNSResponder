@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.757  2007/12/06 00:22:27  mcguire
+<rdar://problem/5604567> BTMM: Doesn't work with Linksys WAG300N 1.01.06 (sending from 1026/udp)
+
 Revision 1.756  2007/12/05 01:52:30  cheshire
 <rdar://problem/5624763> BTMM: getaddrinfo_async_start returns EAI_NONAME when resolving BTMM hostname
 Delay returning IPv4 address ("A") results for autotunnel names until after we've set up the tunnel (or tried to)
@@ -4962,6 +4965,11 @@ mDNSexport void MakeNegativeCacheRecord(mDNS *const m, const domainname *const n
 	m->rec.r.NextInCFList       = mDNSNULL;
 	}
 
+struct UDPSocket_struct
+	{
+	mDNSIPPort port; // MUST BE FIRST FIELD -- mDNSCoreReceive expects every UDPSocket_struct to begin with mDNSIPPort port
+	};
+	
 mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *const end,
 	const mDNSAddr *const srcaddr, const mDNSIPPort srcport, const mDNSAddr *dstaddr, const mDNSIPPort dstport,
 	const mDNSInterfaceID InterfaceID)
@@ -4979,15 +4987,8 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 #ifndef UNICAST_DISABLED
 	if (mDNSSameAddress(srcaddr, &m->Router))
 		{
-		if (mDNSSameIPPort(srcport, NATPMPPort))
-			{
-			mDNS_Lock(m);
-			uDNS_ReceiveNATPMPPacket(m, InterfaceID, pkt, (mDNSu16)(end - (mDNSu8 *)pkt));
-			mDNS_Unlock(m);
-			return;
-			}
 #ifdef _LEGACY_NAT_TRAVERSAL_
-		if (mDNSSameIPPort(srcport, SSDPPort))
+		if (mDNSSameIPPort(srcport, SSDPPort) || (m->SSDPSocket && mDNSSameIPPort(dstport, m->SSDPSocket->port)))
 			{
 			mDNS_Lock(m);
 			LNT_ConfigureRouterInfo(m, InterfaceID, pkt, (mDNSu16)(end - (mDNSu8 *)pkt));
@@ -4995,6 +4996,13 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 			return;
 			}
 #endif
+		if (mDNSSameIPPort(srcport, NATPMPPort))
+			{
+			mDNS_Lock(m);
+			uDNS_ReceiveNATPMPPacket(m, InterfaceID, pkt, (mDNSu16)(end - (mDNSu8 *)pkt));
+			mDNS_Unlock(m);
+			return;
+			}
 		}
 #endif
 	if ((unsigned)(end - (mDNSu8 *)pkt) < sizeof(DNSMessageHeader)) { LogMsg("DNS Message too short"); return; }
@@ -6942,6 +6950,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->LastNATReplyLocalTime    = timenow;
 
 	m->UPnPInterfaceID          = 0;
+	m->SSDPSocket               = mDNSNULL;
 	m->UPnPRouterPort           = zeroIPPort;
 	m->UPnPSOAPPort             = zeroIPPort;
 	m->UPnPRouterURL            = mDNSNULL;

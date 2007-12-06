@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.519  2007/12/06 00:22:27  mcguire
+<rdar://problem/5604567> BTMM: Doesn't work with Linksys WAG300N 1.01.06 (sending from 1026/udp)
+
 Revision 1.518  2007/12/05 01:52:30  cheshire
 <rdar://problem/5624763> BTMM: getaddrinfo_async_start returns EAI_NONAME when resolving BTMM hostname
 Delay returning IPv4 address ("A") results for autotunnel names until after we've set up the tunnel (or tried to)
@@ -934,6 +937,12 @@ mDNSlocal mDNSBool AddrRequiresPPPConnection(const struct sockaddr *addr)
 	return result;
 	}
 
+struct UDPSocket_struct
+	{
+	mDNSIPPort port; // MUST BE FIRST FIELD -- mDNSCore expects every UDPSocket_struct to begin with mDNSIPPort port
+	KQSocketSet ss;
+	};
+
 // NOTE: If InterfaceID is NULL, it means, "send this packet through our anonymous unicast socket"
 // NOTE: If InterfaceID is non-NULL it means, "send this packet through our port 5353 socket on the specified interface"
 // OR send via our primary v4 unicast socket
@@ -964,6 +973,12 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 		sin_to->sin_port           = dstPort.NotAnInteger;
 		sin_to->sin_addr.s_addr    = dst->ip.v4.NotAnInteger;
 		s = m->p->permanentsockets.sktv4;
+
+#ifdef _LEGACY_NAT_TRAVERSAL_
+		if (m->SSDPSocket && mDNSSameIPPort(dstPort, SSDPPort))
+			s = m->SSDPSocket->ss.sktv4;
+#endif _LEGACY_NAT_TRAVERSAL_
+
 		if (info)	// Specify outgoing interface
 			{
 			if (!mDNSAddrIsDNSMulticast(dst))
@@ -1160,7 +1175,7 @@ mDNSlocal void myKQSocketCallBack(int s1, short filter, void *context)
 	while (1)
 		{
 		mDNSAddr senderAddr, destAddr;
-		mDNSIPPort senderPort, destPort = MulticastDNSPort;
+		mDNSIPPort senderPort, destPort = (m->SSDPSocket && ss == &m->SSDPSocket->ss ? m->SSDPSocket->port : MulticastDNSPort);
 		struct sockaddr_storage from;
 		size_t fromlen = sizeof(from);
 		char packetifname[IF_NAMESIZE] = "";
@@ -1658,7 +1673,7 @@ mDNSexport int mDNSPlatformTCPGetFD(TCPSocket *sock)
 
 // If mDNSIPPort port is non-zero, then it's a multicast socket on the specified interface
 // If mDNSIPPort port is zero, then it's a randomly assigned port number, used for sending unicast queries
-mDNSlocal mStatus SetupSocket(KQSocketSet *cp, const mDNSIPPort port, u_short sa_family)
+mDNSlocal mStatus SetupSocket(KQSocketSet *cp, const mDNSIPPort port, u_short sa_family, mDNSIPPort *const outport)
 	{
 	const int ip_tosbits = IPTOS_LOWDELAY | IPTOS_THROUGHPUT;
 	int         *s        = (sa_family == AF_INET) ? &cp->sktv4 : &cp->sktv6;
@@ -1708,6 +1723,7 @@ mDNSlocal mStatus SetupSocket(KQSocketSet *cp, const mDNSIPPort port, u_short sa
 		listening_sockaddr.sin_addr.s_addr = 0; // Want to receive multicasts AND unicasts on this socket
 		err = bind(skt, (struct sockaddr *) &listening_sockaddr, sizeof(listening_sockaddr));
 		if (err) { errstr = "bind"; goto fail; }
+		if (outport) outport->NotAnInteger = listening_sockaddr.sin_port;
 		}
 	else if (sa_family == AF_INET6)
 		{
@@ -1755,6 +1771,7 @@ mDNSlocal mStatus SetupSocket(KQSocketSet *cp, const mDNSIPPort port, u_short sa
 		listening_sockaddr6.sin6_scope_id    = 0;
 		err = bind(skt, (struct sockaddr *) &listening_sockaddr6, sizeof(listening_sockaddr6));
 		if (err) { errstr = "bind"; goto fail; }
+		if (outport) outport->NotAnInteger = listening_sockaddr6.sin6_port;
 		}
 
 	fcntl(skt, F_SETFL, fcntl(skt, F_GETFL, 0) | O_NONBLOCK); // set non-blocking
@@ -1784,11 +1801,6 @@ mDNSlocal mStatus SetupSocket(KQSocketSet *cp, const mDNSIPPort port, u_short sa
 	return(err);
 	}
 
-struct UDPSocket_struct
-	{
-	KQSocketSet ss;
-	};
-
 mDNSexport UDPSocket *mDNSPlatformUDPSocket(mDNS *const m, const mDNSIPPort port)
 	{
 	mStatus err;
@@ -1798,7 +1810,8 @@ mDNSexport UDPSocket *mDNSPlatformUDPSocket(mDNS *const m, const mDNSIPPort port
 	p->ss.m     = m;
 	p->ss.sktv4 = -1;
 	p->ss.sktv6 = -1;
-	err = SetupSocket(&p->ss, port, AF_INET);
+	p->port = zeroIPPort;
+	err = SetupSocket(&p->ss, port, AF_INET, &p->port);
 	if (err)
 		{
 		// In customer builds we don't want to log failures with port 5351, because this is a known issue
@@ -3970,9 +3983,9 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	m->p->permanentsockets.kqsv4.KQcontext  = m->p->permanentsockets.kqsv6.KQcontext  = &m->p->permanentsockets;
 	m->p->permanentsockets.kqsv4.KQtask     = m->p->permanentsockets.kqsv6.KQtask     = "UDP packet reception";
 
-	err = SetupSocket(&m->p->permanentsockets, MulticastDNSPort, AF_INET);
+	err = SetupSocket(&m->p->permanentsockets, MulticastDNSPort, AF_INET, mDNSNULL);
 #ifndef NO_IPV6
-	err = SetupSocket(&m->p->permanentsockets, MulticastDNSPort, AF_INET6);
+	err = SetupSocket(&m->p->permanentsockets, MulticastDNSPort, AF_INET6, mDNSNULL);
 #endif
 
 	struct sockaddr_in s4;
