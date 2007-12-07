@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.350  2007/12/07 00:45:58  cheshire
+<rdar://problem/5526800> BTMM: Need to clean up registrations on shutdown
+
 Revision 1.349  2007/12/04 22:00:54  cheshire
 Fixed mistake in comment
 
@@ -1934,10 +1937,10 @@ mDNSlocal void ExitCallback(int sig)
 	while (DNSServiceRegistrationList)
 		AbortClient(DNSServiceRegistrationList     ->ClientMachPort, DNSServiceRegistrationList);
 
-	debugf("ExitCallback: mDNS_Close");
-	mDNS_Close(&mDNSStorage);
 	if (udsserver_exit(launchd_fd) < 0) LogMsg("ExitCallback: udsserver_exit failed");
-	exit(0);
+
+	debugf("ExitCallback: mDNS_StartExit");
+	mDNS_StartExit(&mDNSStorage);
 	}
 
 // Send a mach_msg to ourselves (since that is signal safe) telling us to cleanup and exit
@@ -2339,9 +2342,24 @@ mDNSlocal void * KQueueLoop(void *m_param)
 		mDNSs32 end            = mDNSPlatformRawTime();
 		if (end - start >= WatchDogReportingThreshold)
 			LogOperation("WARNING: Idle task took %dms to complete", end - start);
-		
+
+		mDNSs32 now = mDNS_TimeNow(m);
+
+		if (m->ShutdownTime)
+			{
+			if (mDNS_ExitNow(m, now))
+				{
+				LogOperation("mDNS_FinalExit");
+				mDNS_FinalExit(&mDNSStorage);
+				usleep(1000);		// Little 1ms pause before exiting, so we don't lose our final syslog messages
+				exit(0);
+				}
+			if (nextTimerEvent - m->ShutdownTime >= 0)
+				nextTimerEvent = m->ShutdownTime;
+			}
+
 		// Convert absolute wakeup time to a relative time from now
-		mDNSs32 ticks = nextTimerEvent - mDNS_TimeNow(m);
+		mDNSs32 ticks = nextTimerEvent - now;
 		if (ticks < 1) ticks = 1;
 		
 		static mDNSs32 RepeatedBusy = 0;	// Debugging sanity check, to guard against CPU spins

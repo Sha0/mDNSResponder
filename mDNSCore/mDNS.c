@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.758  2007/12/07 00:45:57  cheshire
+<rdar://problem/5526800> BTMM: Need to clean up registrations on shutdown
+
 Revision 1.757  2007/12/06 00:22:27  mcguire
 <rdar://problem/5604567> BTMM: Doesn't work with Linksys WAG300N 1.01.06 (sending from 1026/udp)
 
@@ -4207,8 +4210,7 @@ exit:
 	
 	while (ExpectedAnswers)
 		{
-		CacheRecord *cr;
-		cr = ExpectedAnswers;
+		CacheRecord *cr = ExpectedAnswers;
 		ExpectedAnswers = cr->NextInKAList;
 		cr->NextInKAList = mDNSNULL;
 		
@@ -5978,7 +5980,7 @@ mDNSlocal void DeadvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 			intf->RR_A.RRSet = A;
 
 	// Unregister these records.
-	// When doing the mDNS_Close processing, we first call DeadvertiseInterface for each interface, so by the time the platform
+	// When doing the mDNS_Exit processing, we first call DeadvertiseInterface for each interface, so by the time the platform
 	// support layer gets to call mDNS_DeregisterInterface, the address and PTR records have already been deregistered for it.
 	// Also, in the event of a name conflict, one or more of our records will have been forcibly deregistered.
 	// To avoid unnecessary and misleading warning messages, we check the RecordType before calling mDNS_Deregister_internal().
@@ -6321,7 +6323,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 	// In some versions of OS X the IPv6 address remains on an interface even when the interface is turned off,
 	// giving the false impression that there's an active representative of this interface when there really isn't.
 	// Don't need to do this when shutting down, because *all* interfaces are about to go away
-	if (revalidate && !m->mDNS_shutdown)
+	if (revalidate && !m->ShutdownTime)
 		{
 		mDNSu32 slot;
 		CacheGroup *cg;
@@ -6560,7 +6562,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	err = mDNS_Register_internal(m, &sr->RR_SRV);
 	if (!err) err = mDNS_Register_internal(m, &sr->RR_TXT);
 	// We register the RR_PTR last, because we want to be sure that in the event of a forced call to
-	// mDNS_Close, the RR_PTR will be the last one to be forcibly deregistered, since that is what triggers
+	// mDNS_StartExit, the RR_PTR will be the last one to be forcibly deregistered, since that is what triggers
 	// the mStatus_MemFree callback to ServiceCallback, which in turn passes on the mStatus_MemFree back to
 	// the client callback, which is then at liberty to free the ServiceRecordSet memory at will. We need to
 	// make sure we've deregistered all our records and done any other necessary cleanup before that happens.
@@ -6854,7 +6856,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	// For debugging: To catch and report locking failures
 	m->mDNS_busy               = 0;
 	m->mDNS_reentrancy         = 0;
-	m->mDNS_shutdown           = mDNSfalse;
+	m->ShutdownTime            = 0;
 	m->lock_rrcache            = 0;
 	m->lock_Questions          = 0;
 	m->lock_Records            = 0;
@@ -7118,20 +7120,23 @@ mDNSexport void mDNSCoreInitComplete(mDNS *const m, mStatus result)
 		}
 	}
 
-mDNSexport void mDNS_Close(mDNS *const m)
+mDNSexport void mDNS_StartExit(mDNS *const m)
 	{
 	mDNSu32 rrcache_active = 0;
 	mDNSu32 rrcache_totalused = 0;
 	mDNSu32 slot;
 	NetworkInterfaceInfo *intf;
 	AuthRecord *rr;
+	ServiceRecordSet *srs;
+
 	mDNS_Lock(m);
 	
-	m->mDNS_shutdown = mDNStrue;
+	m->ShutdownTime = NonZeroTime(m->timenow + mDNSPlatformOneSecond * 5);
 
 #ifndef UNICAST_DISABLED
 	SuspendLLQs(m);
-	SleepServiceRegistrations(m);
+	// Don't need to do SleepRecordRegistrations() or SleepServiceRegistrations() here,
+	// because we deregister all records and services later in this routine
 	while (m->Hostnames) mDNS_RemoveDynDNSHostName(m, &m->Hostnames->fqdn);
 #endif
 
@@ -7152,7 +7157,7 @@ mDNSexport void mDNS_Close(mDNS *const m)
 			ReleaseCacheGroup(m, &m->rrcache_hash[slot]);
 			}
 		}
-	debugf("mDNS_Close: RR Cache was using %ld records, %lu active", rrcache_totalused, rrcache_active);
+	debugf("mDNS_StartExit: RR Cache was using %ld records, %lu active", rrcache_totalused, rrcache_active);
 	if (rrcache_active != m->rrcache_active)
 		LogMsg("*** ERROR *** rrcache_active %lu != m->rrcache_active %lu", rrcache_active, m->rrcache_active);
 
@@ -7179,10 +7184,11 @@ mDNSexport void mDNS_Close(mDNS *const m)
 
 	// Make sure there are nothing but deregistering records remaining in the list
 	if (m->CurrentRecord)
-		LogMsg("mDNS_Close ERROR m->CurrentRecord already set %s", ARDisplayString(m, m->CurrentRecord));
+		LogMsg("mDNS_StartExit ERROR m->CurrentRecord already set %s", ARDisplayString(m, m->CurrentRecord));
 
 	// First we deregister any non-shared records. In particular, we want to make sure we deregister
-	// any extra records added to a Service Record Set first, before we deregister its PTR record.
+	// any extra records added to a Service Record Set first, before we deregister its PTR record,
+	// because the freeing of the memory is triggered off the mStatus_MemFree for the PTR record.
 	m->CurrentRecord = m->ResourceRecords;
 	while (m->CurrentRecord)
 		{
@@ -7202,18 +7208,38 @@ mDNSexport void mDNS_Close(mDNS *const m)
 			mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
 		}
 
-	if (m->ResourceRecords) LogOperation("mDNS_Close: Sending final packets for deregistering records");
-	else                    LogOperation("mDNS_Close: No deregistering records remain");
+	for (srs = m->ServiceRegistrations; srs; srs = srs->uDNS_next)
+		{
+		LogOperation("mDNS_StartExit: Deregistering %##s", srs->RR_SRV.resrec.name->c);
+		uDNS_DeregisterService(m, srs);
+		}
+
+	if (m->ResourceRecords) LogOperation("mDNS_StartExit: Sending final record deregistrations");
+	else                    LogOperation("mDNS_StartExit: No deregistering records remain");
+
+	if (m->ServiceRegistrations) LogOperation("mDNS_StartExit: Sending final service deregistrations");
+	else                         LogOperation("mDNS_StartExit: No deregistering services remain");
 
 	// If any deregistering records remain, send their deregistration announcements before we exit
 	if (m->mDNSPlatformStatus != mStatus_NoError) DiscardDeregistrations(m);
-	else if (m->ResourceRecords) SendResponses(m);
+
+	mDNS_Unlock(m);
+
+	LogOperation("mDNS_StartExit: done");
+	}
+
+mDNSexport void mDNS_FinalExit(mDNS *const m)
+	{
+	AuthRecord *rr;
+	ServiceRecordSet *srs;
+	LogOperation("mDNS_FinalExit: mDNSPlatformClose");
+	mDNSPlatformClose(m);
 
 	for (rr = m->ResourceRecords; rr; rr = rr->next)
-		LogMsg("mDNS_Close failed to send goodbye for: %s", ARDisplayString(m, rr));
-	
-	mDNS_Unlock(m);
-	debugf("mDNS_Close: mDNSPlatformClose");
-	mDNSPlatformClose(m);
-	debugf("mDNS_Close: done");
+		LogMsg("mDNS_FinalExit failed to send goodbye for: %s", ARDisplayString(m, rr));
+
+	for (srs = m->ServiceRegistrations; srs; srs = srs->uDNS_next)
+		LogMsg("mDNS_FinalExit failed to deregister service: %##s", srs->RR_SRV.resrec.name->c);
+
+	LogOperation("mDNS_FinalExit: done");
 	}

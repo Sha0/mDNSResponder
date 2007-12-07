@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.458  2007/12/07 00:45:58  cheshire
+<rdar://problem/5526800> BTMM: Need to clean up registrations on shutdown
+
 Revision 1.457  2007/12/06 00:22:27  mcguire
 <rdar://problem/5604567> BTMM: Doesn't work with Linksys WAG300N 1.01.06 (sending from 1026/udp)
 
@@ -1143,7 +1146,7 @@ typedef struct mDNS_struct mDNS;
 typedef struct mDNS_PlatformSupport_struct mDNS_PlatformSupport;
 typedef struct NATTraversalInfo_struct NATTraversalInfo;
 
-// Note: Within an mDNSRecordCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute()
+// Note: Within an mDNSRecordCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Exit(), mDNS_Execute()
 typedef void mDNSRecordCallback(mDNS *const m, AuthRecord *const rr, mStatus result);
 
 // Note:
@@ -1570,7 +1573,7 @@ struct ExtraResourceRecord_struct
 	// that this extra memory is available, which would result in any fields after the AuthRecord getting smashed
 	};
 
-// Note: Within an mDNSServiceCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute()
+// Note: Within an mDNSServiceCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Exit(), mDNS_Execute()
 typedef struct ServiceRecordSet_struct ServiceRecordSet;
 typedef void mDNSServiceCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus result);
 
@@ -1715,7 +1718,7 @@ typedef struct DomainAuthInfo
 	mDNSu8           keydata_opad[HMAC_LEN];	// padded key for outer hash rounds
 	} DomainAuthInfo;
 
-// Note: Within an mDNSQuestionCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute()
+// Note: Within an mDNSQuestionCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Exit(), mDNS_Execute()
 typedef enum { QC_rmv = 0, QC_add = 1, QC_addnocache = 2 } QC_result;
 typedef void mDNSQuestionCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord);
 struct DNSQuestion_struct
@@ -1791,7 +1794,7 @@ typedef struct
 	mDNSu8          TXTinfo[2048];		// Additional demultiplexing information (e.g. LPR queue name)
 	} ServiceInfo;
 
-// Note: Within an mDNSServiceInfoQueryCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Close(), mDNS_Execute()
+// Note: Within an mDNSServiceInfoQueryCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Exit(), mDNS_Execute()
 typedef struct ServiceInfoQuery_struct ServiceInfoQuery;
 typedef void mDNSServiceInfoQueryCallback(mDNS *const m, ServiceInfoQuery *query);
 struct ServiceInfoQuery_struct
@@ -1895,7 +1898,6 @@ struct mDNS_struct
 	// For debugging: To catch and report locking failures
 	mDNSu32 mDNS_busy;					// Incremented between mDNS_Lock/mDNS_Unlock section
 	mDNSu32 mDNS_reentrancy;			// Incremented when calling a client callback
-	mDNSu8  mDNS_shutdown;				// Set when we're shutting down, allows us to skip some unnecessary steps
 	mDNSu8  lock_rrcache;				// For debugging: Set at times when these lists may not be modified
 	mDNSu8  lock_Questions;
 	mDNSu8  lock_Records;
@@ -1907,6 +1909,7 @@ struct mDNS_struct
 	mDNSs32  timenow;					// The time that this particular activation of the mDNS code started
 	mDNSs32  timenow_last;				// The time the last time we ran
 	mDNSs32  NextScheduledEvent;		// Derived from values below
+	mDNSs32  ShutdownTime;				// Set when we're shutting down, allows us to skip some unnecessary steps
 	mDNSs32  SuppressSending;			// Don't send *any* packets during this time
 	mDNSs32  NextCacheCheck;			// Next time to refresh cache record before it expires
 	mDNSs32  NextScheduledQuery;		// Next time to send query in its exponential backoff sequence
@@ -2130,7 +2133,9 @@ mDNSinline mDNSOpaque16 mDNSOpaque16fromIntVal(mDNSu16 v)
 // When mDNS has finished setting up the client's callback is called
 // A client can also spin and poll the mDNSPlatformStatus field to see when it changes from mStatus_Waiting to mStatus_NoError
 //
-// Call mDNS_Close to tidy up before exiting
+// Call mDNS_StartExit to tidy up before exiting
+// Because exiting may be an asynchronous process (e.g. if unicast records need to be deregistered)
+// client layer may choose to wait until mDNS_ExitNow() returns true before calling mDNS_FinalExit().
 //
 // Call mDNS_Register with a completed AuthRecord object to register a resource record
 // If the resource record type is kDNSRecordTypeUnique (or kDNSknownunique) then if a conflicting resource record is discovered,
@@ -2164,7 +2169,11 @@ extern mStatus mDNS_Init      (mDNS *const m, mDNS_PlatformSupport *const p,
 #define mDNS_Init_NoInitCallbackContext       mDNSNULL
 
 extern void    mDNS_GrowCache (mDNS *const m, CacheEntity *storage, mDNSu32 numrecords);
-extern void    mDNS_Close     (mDNS *const m);
+extern void    mDNS_StartExit (mDNS *const m);
+extern void    mDNS_FinalExit (mDNS *const m);
+#define mDNS_Close(m) do { mDNS_StartExit(m); mDNS_FinalExit(m); } while(0)
+#define mDNS_ExitNow(m, now) ((now) - (m)->ShutdownTime >= 0 || (!(m)->ResourceRecords && !(m)->ServiceRegistrations))
+
 extern mDNSs32 mDNS_Execute   (mDNS *const m);
 
 extern mStatus mDNS_Register  (mDNS *const m, AuthRecord *const rr);
