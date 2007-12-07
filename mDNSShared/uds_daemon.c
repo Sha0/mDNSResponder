@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.383  2007/12/07 00:45:58  cheshire
+<rdar://problem/5526800> BTMM: Need to deregister records and services on shutdown/sleep
+
 Revision 1.382  2007/11/30 20:11:48  cheshire
 Fixed compile warning: declaration of 'remove' shadows a global declaration
 
@@ -3309,7 +3312,13 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 		req = newreq;
 		}
 
-	switch(req->hdr.op)
+	// If we're shutting down, don't allow new client requests
+	// We do allow "cancel" and "getproperty" during shutdown
+	if (mDNSStorage.ShutdownTime && req->hdr.op != cancel_request && req->hdr.op != getproperty_request)
+		{
+		err = mStatus_ServiceNotRunning;
+		}
+	else switch(req->hdr.op)
 		{
 		// These are all operations that have their own first-class request_state object
 		case connection_request:
@@ -3340,8 +3349,7 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 	if (req->msgbuf) freeL("request_state msgbuf", req->msgbuf);
 
 	// There's no return data for a cancel request (DNSServiceRefDeallocate returns no result)
-	// For a DNSServiceGetProperty call, the handler already generated the response,
-	// so no need to do it again here
+	// For a DNSServiceGetProperty call, the handler already generated the response, so no need to do it again here
 	if (req->hdr.op != cancel_request && req->hdr.op != getproperty_request)
 		{
 		err = dnssd_htonl(err);
