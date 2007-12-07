@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.459  2007/12/07 22:40:34  cheshire
+Rename 'LocalAnswer' to more descriptive 'AnsweredLocalQ'
+
 Revision 1.458  2007/12/07 00:45:58  cheshire
 <rdar://problem/5526800> BTMM: Need to clean up registrations on shutdown
 
@@ -1378,7 +1381,7 @@ struct AuthRecord_struct
 	mDNSu8          ProbeCount;			// Number of probes remaining before this record is valid (kDNSRecordTypeUnique)
 	mDNSu8          AnnounceCount;		// Number of announcements remaining (kDNSRecordTypeShared)
 	mDNSu8          RequireGoodbye;		// Set if this RR has been announced on the wire and will require a goodbye packet
-	mDNSu8          LocalAnswer;		// Set if this RR has been delivered to LocalOnly questions
+	mDNSu8          AnsweredLocalQ;		// Set if this RR has been delivered to LocalOnly questions
 	mDNSu8          IncludeInProbe;		// Set if this RR is being put into a probe right now
 	mDNSInterfaceID ImmedAnswer;		// Someone on this interface issued a query we need to answer (all-ones for all interfaces)
 	mDNSu8          ImmedUnicast;		// Set if we may send our response directly via unicast to the requester
