@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.759  2007/12/07 22:41:29  cheshire
+<rdar://problem/5526800> BTMM: Need to clean up registrations on shutdown
+Further refinements -- records on the DuplicateRecords list were getting missed on shutdown
+
 Revision 1.758  2007/12/07 00:45:57  cheshire
 <rdar://problem/5526800> BTMM: Need to clean up registrations on shutdown
 
@@ -916,7 +920,7 @@ mDNSlocal mDNSBool AddressIsLocalSubnet(mDNS *const m, const mDNSInterfaceID Int
 mDNSlocal void AnswerLocalOnlyQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, AuthRecord *rr, QC_result AddRecord)
 	{
 	// Indicate that we've given at least one positive answer for this record, so we should be prepared to send a goodbye for it
-	if (AddRecord) rr->LocalAnswer = mDNStrue;
+	if (AddRecord) rr->AnsweredLocalQ = mDNStrue;
 	mDNS_DropLockBeforeCallback();		// Allow client to legally make mDNS API calls from the callback
 	if (q->QuestionCallback && !q->NoAnswer)
 		q->QuestionCallback(m, q, &rr->resrec, AddRecord);
@@ -1124,10 +1128,10 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr)
 	if (m->SuppressProbes == 0 || m->SuppressProbes - m->timenow < 0)
 		{
 		m->SuppressProbes = NonZeroTime(m->timenow + DefaultProbeIntervalForTypeUnique);
-		// If we already have a probe scheduled to go out sooner, then use that time to get better aggregation
+		// If we already have a *probe* scheduled to go out sooner, then use that time to get better aggregation
 		if (m->SuppressProbes - m->NextScheduledProbe >= 0)
 			m->SuppressProbes = m->NextScheduledProbe;
-		// If we already have a query scheduled to go out sooner, then use that time to get better aggregation
+		// If we already have a *query* scheduled to go out sooner, then use that time to get better aggregation
 		if (m->SuppressProbes - m->NextScheduledQuery >= 0)
 			m->SuppressProbes = m->NextScheduledQuery;
 		}
@@ -1282,7 +1286,7 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	rr->ProbeCount        = DefaultProbeCountForRecordType(rr->resrec.RecordType);
 	rr->AnnounceCount     = InitialAnnounceCount;
 	rr->RequireGoodbye    = mDNSfalse;
-	rr->LocalAnswer       = mDNSfalse;
+	rr->AnsweredLocalQ    = mDNSfalse;
 	rr->IncludeInProbe    = mDNSfalse;
 	rr->ImmedAnswer       = mDNSNULL;
 	rr->ImmedUnicast      = mDNSfalse;
@@ -1545,7 +1549,7 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 		}
 #endif UNICAST_DISABLED
 
-	if (RecordType == kDNSRecordTypeShared && (rr->RequireGoodbye || rr->LocalAnswer))
+	if (RecordType == kDNSRecordTypeShared && (rr->RequireGoodbye || rr->AnsweredLocalQ))
 		{
 		verbosedebugf("mDNS_Deregister_internal: Sending deregister for %s", ARDisplayString(m, rr));
 		rr->resrec.RecordType    = kDNSRecordTypeDeregistering;
@@ -1755,7 +1759,7 @@ mDNSexport void CompleteDeregistration(mDNS *const m, AuthRecord *rr)
 	// it should go ahead and immediately dispose of this registration
 	rr->resrec.RecordType = kDNSRecordTypeShared;
 	rr->RequireGoodbye    = mDNSfalse;
-	if (rr->LocalAnswer) { AnswerLocalQuestions(m, rr, mDNSfalse); rr->LocalAnswer = mDNSfalse; }
+	if (rr->AnsweredLocalQ) { AnswerLocalQuestions(m, rr, mDNSfalse); rr->AnsweredLocalQ = mDNSfalse; }
 	mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);		// Don't touch rr after this
 	}
 
@@ -2085,13 +2089,13 @@ mDNSlocal void SendResponses(mDNS *const m)
 		if (rr->SendRNow)
 			{
 			if (rr->resrec.InterfaceID != mDNSInterface_LocalOnly)
-				LogMsg("SendResponses: No active interface to send: %s", ARDisplayString(m, rr));
+				LogMsg("SendResponses: No active interface to send: %02X %s", rr->resrec.RecordType, ARDisplayString(m, rr));
 			rr->SendRNow = mDNSNULL;
 			}
 
 		if (rr->ImmedAnswer)
 			{
-			if (rr->NewRData) CompleteRDataUpdate(m,rr);	// Update our rdata, clear the NewRData pointer, and return memory to the client
+			if (rr->NewRData) CompleteRDataUpdate(m, rr);	// Update our rdata, clear the NewRData pointer, and return memory to the client
 	
 			if (rr->resrec.RecordType == kDNSRecordTypeDeregistering)
 				CompleteDeregistration(m, rr);		// Don't touch rr after this
@@ -7122,15 +7126,12 @@ mDNSexport void mDNSCoreInitComplete(mDNS *const m, mStatus result)
 
 mDNSexport void mDNS_StartExit(mDNS *const m)
 	{
-	mDNSu32 rrcache_active = 0;
-	mDNSu32 rrcache_totalused = 0;
-	mDNSu32 slot;
 	NetworkInterfaceInfo *intf;
 	AuthRecord *rr;
 	ServiceRecordSet *srs;
 
 	mDNS_Lock(m);
-	
+
 	m->ShutdownTime = NonZeroTime(m->timenow + mDNSPlatformOneSecond * 5);
 
 #ifndef UNICAST_DISABLED
@@ -7139,27 +7140,6 @@ mDNSexport void mDNS_StartExit(mDNS *const m)
 	// because we deregister all records and services later in this routine
 	while (m->Hostnames) mDNS_RemoveDynDNSHostName(m, &m->Hostnames->fqdn);
 #endif
-
-	rrcache_totalused = m->rrcache_totalused;
-	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
-		{
-		while (m->rrcache_hash[slot])
-			{
-			CacheGroup *cg = m->rrcache_hash[slot];
-			while (cg->members)
-				{
-				CacheRecord *cr = cg->members;
-				cg->members = cg->members->next;
-				if (cr->CRActiveQuestion) rrcache_active++;
-				ReleaseCacheRecord(m, cr);
-				}
-			cg->rrcache_tail = &cg->members;
-			ReleaseCacheGroup(m, &m->rrcache_hash[slot]);
-			}
-		}
-	debugf("mDNS_StartExit: RR Cache was using %ld records, %lu active", rrcache_totalused, rrcache_active);
-	if (rrcache_active != m->rrcache_active)
-		LogMsg("*** ERROR *** rrcache_active %lu != m->rrcache_active %lu", rrcache_active, m->rrcache_active);
 
 	for (intf = m->HostInterfaces; intf; intf = intf->next)
 		if (intf->Advertise)
@@ -7193,9 +7173,13 @@ mDNSexport void mDNS_StartExit(mDNS *const m)
 	while (m->CurrentRecord)
 		{
 		rr = m->CurrentRecord;
-		m->CurrentRecord = rr->next;
 		if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
 			mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
+		// Note: We mustn't advance m->CurrentRecord until *after* mDNS_Deregister_internal, because when
+		// we have records on the DuplicateRecords list, the duplicate gets inserted in place of the record
+		// we're removing, and if we've already advanced to rr->next we'll miss the newly activated duplicate
+		if (m->CurrentRecord == rr)		// If m->CurrentRecord was not auto-advanced, do it ourselves now
+			m->CurrentRecord = rr->next;
 		}
 
 	// Now deregister any remaining records we didn't get the first time through
@@ -7203,14 +7187,21 @@ mDNSexport void mDNS_StartExit(mDNS *const m)
 	while (m->CurrentRecord)
 		{
 		rr = m->CurrentRecord;
-		m->CurrentRecord = rr->next;
 		if (rr->resrec.RecordType != kDNSRecordTypeDeregistering)
+			{
+			//LogOperation("mDNS_StartExit: Deregistering %s", ARDisplayString(m, rr));
 			mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
+			}
+		// Note: We mustn't advance m->CurrentRecord until *after* mDNS_Deregister_internal, because when
+		// we have records on the DuplicateRecords list, the duplicate gets inserted in place of the record
+		// we're removing, and if we've already advanced to rr->next we'll miss the newly activated duplicate
+		if (m->CurrentRecord == rr)		// If m->CurrentRecord was not auto-advanced, do it ourselves now
+			m->CurrentRecord = rr->next;
 		}
 
 	for (srs = m->ServiceRegistrations; srs; srs = srs->uDNS_next)
 		{
-		LogOperation("mDNS_StartExit: Deregistering %##s", srs->RR_SRV.resrec.name->c);
+		//LogOperation("mDNS_StartExit: Deregistering %##s", srs->RR_SRV.resrec.name->c);
 		uDNS_DeregisterService(m, srs);
 		}
 
@@ -7230,13 +7221,38 @@ mDNSexport void mDNS_StartExit(mDNS *const m)
 
 mDNSexport void mDNS_FinalExit(mDNS *const m)
 	{
+	mDNSu32 rrcache_active = 0;
+	mDNSu32 rrcache_totalused = 0;
+	mDNSu32 slot;
 	AuthRecord *rr;
 	ServiceRecordSet *srs;
+
 	LogOperation("mDNS_FinalExit: mDNSPlatformClose");
 	mDNSPlatformClose(m);
 
+	rrcache_totalused = m->rrcache_totalused;
+	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
+		{
+		while (m->rrcache_hash[slot])
+			{
+			CacheGroup *cg = m->rrcache_hash[slot];
+			while (cg->members)
+				{
+				CacheRecord *cr = cg->members;
+				cg->members = cg->members->next;
+				if (cr->CRActiveQuestion) rrcache_active++;
+				ReleaseCacheRecord(m, cr);
+				}
+			cg->rrcache_tail = &cg->members;
+			ReleaseCacheGroup(m, &m->rrcache_hash[slot]);
+			}
+		}
+	debugf("mDNS_StartExit: RR Cache was using %ld records, %lu active", rrcache_totalused, rrcache_active);
+	if (rrcache_active != m->rrcache_active)
+		LogMsg("*** ERROR *** rrcache_active %lu != m->rrcache_active %lu", rrcache_active, m->rrcache_active);
+
 	for (rr = m->ResourceRecords; rr; rr = rr->next)
-		LogMsg("mDNS_FinalExit failed to send goodbye for: %s", ARDisplayString(m, rr));
+		LogMsg("mDNS_FinalExit failed to send goodbye for: %02X %s", rr->resrec.RecordType, ARDisplayString(m, rr));
 
 	for (srs = m->ServiceRegistrations; srs; srs = srs->uDNS_next)
 		LogMsg("mDNS_FinalExit failed to deregister service: %##s", srs->RR_SRV.resrec.name->c);
