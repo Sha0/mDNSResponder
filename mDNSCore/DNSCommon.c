@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.187  2007/12/08 00:35:20  cheshire
+<rdar://problem/5636422> Updating TXT records is too slow
+m->SuppressSending should not suppress all activity, just mDNS Query/Probe/Response
+
 Revision 1.186  2007/11/15 22:52:29  cheshire
 <rdar://problem/5589039> ERROR: mDNSPlatformWriteTCP - send Broken pipe
 
@@ -2614,15 +2618,22 @@ mDNSlocal mDNSs32 GetNextScheduledEvent(const mDNS *const m)
 		}
 	if (m->NewLocalOnlyQuestions)                                   return(m->timenow);
 	if (m->NewLocalRecords && LocalRecordReady(m->NewLocalRecords)) return(m->timenow);
-	if (m->SuppressSending)                                         return(m->SuppressSending);
 #ifndef UNICAST_DISABLED
 	if (e - m->NextuDNSEvent         > 0) e = m->NextuDNSEvent;
 #endif
 	if (e - m->NextCacheCheck        > 0) e = m->NextCacheCheck;
-	if (e - m->NextScheduledQuery    > 0) e = m->NextScheduledQuery;
-	if (e - m->NextScheduledProbe    > 0) e = m->NextScheduledProbe;
-	if (e - m->NextScheduledResponse > 0) e = m->NextScheduledResponse;
 	if (e - m->NextScheduledNATOp    > 0) e = m->NextScheduledNATOp;
+
+	if (m->SuppressSending)
+		{
+		if (e - m->SuppressSending       > 0) e = m->SuppressSending;
+		}
+	else
+		{
+		if (e - m->NextScheduledQuery    > 0) e = m->NextScheduledQuery;
+		if (e - m->NextScheduledProbe    > 0) e = m->NextScheduledProbe;
+		if (e - m->NextScheduledResponse > 0) e = m->NextScheduledResponse;
+		}
 	return(e);
 	}
 
