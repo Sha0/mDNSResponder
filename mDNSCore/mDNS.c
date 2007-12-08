@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.760  2007/12/08 00:36:19  cheshire
+<rdar://problem/5636422> Updating TXT records is too slow
+Remove unnecessary delays on announcing record updates, and on processing them on reception
+
 Revision 1.759  2007/12/07 22:41:29  cheshire
 <rdar://problem/5526800> BTMM: Need to clean up registrations on shutdown
 Further refinements -- records on the DuplicateRecords list were getting missed on shutdown
@@ -1115,8 +1119,10 @@ mDNSlocal void SetNextAnnounceProbeTime(mDNS *const m, const AuthRecord *const r
 		}
 	}
 
-mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr)
+mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr, mDNSs32 interval)
 	{
+	rr->ThisAPInterval = interval;
+
 	// To allow us to aggregate probes when a group of services are registered together,
 	// the first probe is delayed 1/4 second. This means the common-case behaviour is:
 	// 1/4 second wait; probe
@@ -1124,19 +1130,22 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr)
 	// 1/4 second wait; probe
 	// 1/4 second wait; announce (i.e. service is normally announced exactly one second after being registered)
 
-	// If we have no probe suppression time set, or it is in the past, set it now
-	if (m->SuppressProbes == 0 || m->SuppressProbes - m->timenow < 0)
+	if (rr->ProbeCount)
 		{
-		m->SuppressProbes = NonZeroTime(m->timenow + DefaultProbeIntervalForTypeUnique);
-		// If we already have a *probe* scheduled to go out sooner, then use that time to get better aggregation
-		if (m->SuppressProbes - m->NextScheduledProbe >= 0)
-			m->SuppressProbes = m->NextScheduledProbe;
-		// If we already have a *query* scheduled to go out sooner, then use that time to get better aggregation
-		if (m->SuppressProbes - m->NextScheduledQuery >= 0)
-			m->SuppressProbes = m->NextScheduledQuery;
+		// If we have no probe suppression time set, or it is in the past, set it now
+		if (m->SuppressProbes == 0 || m->SuppressProbes - m->timenow < 0)
+			{
+			m->SuppressProbes = NonZeroTime(m->timenow + DefaultProbeIntervalForTypeUnique);
+			// If we already have a *probe* scheduled to go out sooner, then use that time to get better aggregation
+			if (m->SuppressProbes - m->NextScheduledProbe >= 0)
+				m->SuppressProbes = m->NextScheduledProbe;
+			// If we already have a *query* scheduled to go out sooner, then use that time to get better aggregation
+			if (m->SuppressProbes - m->NextScheduledQuery >= 0)
+				m->SuppressProbes = m->NextScheduledQuery;
+			}
 		}
-	
-	rr->LastAPTime      = m->SuppressProbes - rr->ThisAPInterval;
+
+	rr->LastAPTime      = m->SuppressProbes - interval;
 	// Set LastMCTime to now, to inhibit multicast responses
 	// (no need to send additional multicast responses when we're announcing anyway)
 	rr->LastMCTime      = m->timenow;
@@ -1145,12 +1154,16 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr)
 	// If this is a record type that's not going to probe, then delay its first announcement so that
 	// it will go out synchronized with the first announcement for the other records that *are* probing.
 	// This is a minor performance tweak that helps keep groups of related records synchronized together.
-	// The addition of "rr->ThisAPInterval / 2" is to make sure that, in the event that any of the probes are
+	// The addition of "interval / 2" is to make sure that, in the event that any of the probes are
 	// delayed by a few milliseconds, this announcement does not inadvertently go out *before* the probing is complete.
 	// When the probing is complete and those records begin to announce, these records will also be picked up and accelerated,
 	// because they will meet the criterion of being at least half-way to their scheduled announcement time.
-	if (rr->resrec.RecordType != kDNSRecordTypeUnique)
-		rr->LastAPTime += DefaultProbeIntervalForTypeUnique * DefaultProbeCountForTypeUnique + rr->ThisAPInterval / 2;
+	// The exception is unique records that have already been verified and are just being updated
+	// via mDNS_Update() -- for these we want to announce the new value immediately, without delay.
+	if (rr->resrec.RecordType == kDNSRecordTypeVerified)
+		rr->LastAPTime = m->timenow - interval;
+	else if (rr->resrec.RecordType != kDNSRecordTypeUnique)
+		rr->LastAPTime += DefaultProbeIntervalForTypeUnique * DefaultProbeCountForTypeUnique + interval / 2;
 	
 	SetNextAnnounceProbeTime(m, rr);
 	}
@@ -1185,8 +1198,7 @@ mDNSlocal void SetTargetToHostName(mDNS *const m, AuthRecord *const rr)
 
 		rr->AnnounceCount  = InitialAnnounceCount;
 		rr->RequireGoodbye = mDNSfalse;
-		rr->ThisAPInterval = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
-		InitializeLastAPTime(m,rr);
+		InitializeLastAPTime(m, rr, DefaultAPIntervalForRecordType(rr->resrec.RecordType));
 		}
 	}
 
@@ -1297,8 +1309,7 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	rr->NextResponse      = mDNSNULL;
 	rr->NR_AnswerTo       = mDNSNULL;
 	rr->NR_AdditionalTo   = mDNSNULL;
-	rr->ThisAPInterval    = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
-	if (!rr->AutoTarget) InitializeLastAPTime(m, rr);
+	if (!rr->AutoTarget) InitializeLastAPTime(m, rr, DefaultAPIntervalForRecordType(rr->resrec.RecordType));
 //	rr->LastAPTime        = Set for us in InitializeLastAPTime()
 //	rr->LastMCTime        = Set for us in InitializeLastAPTime()
 //	rr->LastMCInterface   = Set for us in InitializeLastAPTime()
@@ -2121,11 +2132,14 @@ mDNSlocal void SendResponses(mDNS *const m)
 //    and is expiring, and had an original TTL more than ten seconds, we'll allow it to be one second late
 // 4. Else, it is expiring and had an original TTL of ten seconds or less (includes explicit goodbye packets),
 //    so allow at most 1/10 second lateness
+// 5. For records with rroriginalttl set to zero, that means we really want to delete them immediately
+//    (we have a new record with DelayDelivery set, waiting for the old record to go away before we can notify clients).
 #define CacheCheckGracePeriod(RR) (                                                   \
 	((RR)->DelayDelivery                           ) ? (mDNSPlatformOneSecond/10)   : \
 	((RR)->CRActiveQuestion == mDNSNULL            ) ? (60 * mDNSPlatformOneSecond) : \
 	((RR)->UnansweredQueries < MaxUnansweredQueries) ? (TicksTTL(rr)/50)            : \
-	((RR)->resrec.rroriginalttl > 10               ) ? (mDNSPlatformOneSecond)      : (mDNSPlatformOneSecond/10))
+	((RR)->resrec.rroriginalttl > 10               ) ? (mDNSPlatformOneSecond)      : \
+	((RR)->resrec.rroriginalttl > 0                ) ? (mDNSPlatformOneSecond/10)   : 0)
 
 // Note: MUST call SetNextCacheCheckTime any time we change:
 // rr->TimeRcvd
@@ -3633,8 +3647,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 				if (rr->resrec.RecordType == kDNSRecordTypeVerified && !rr->DependentOn) rr->resrec.RecordType = kDNSRecordTypeUnique;
 				rr->ProbeCount     = DefaultProbeCountForRecordType(rr->resrec.RecordType);
 				rr->AnnounceCount  = InitialAnnounceCount;
-				rr->ThisAPInterval = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
-				InitializeLastAPTime(m, rr);
+				InitializeLastAPTime(m, rr, DefaultAPIntervalForRecordType(rr->resrec.RecordType));
 				}
 		}
 
@@ -4647,8 +4660,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 								debugf("mDNSCoreReceiveResponse: Reseting to Probing: %##s (%s)", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
 								rr->resrec.RecordType     = kDNSRecordTypeUnique;
 								rr->ProbeCount     = DefaultProbeCountForTypeUnique + 1;
-								rr->ThisAPInterval = DefaultAPIntervalForRecordType(kDNSRecordTypeUnique);
-								InitializeLastAPTime(m, rr);
+								InitializeLastAPTime(m, rr, DefaultAPIntervalForRecordType(kDNSRecordTypeUnique));
 								RecordProbeFailure(m, rr);	// Repeated late conflicts also cause us to back off to the slower probing rate
 								}
 							// If we're probing for this record, we just failed
@@ -4740,6 +4752,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 						// out one second into the future. Also, we set UnansweredQueries to MaxUnansweredQueries.
 						// Otherwise, we'll do final queries for this record at 80% and 90% of its apparent
 						// lifetime (800ms and 900ms from now) which is a pointless waste of network bandwidth.
+						debugf("DE for %s", CRDisplayString(m, rr));
 						rr->resrec.rroriginalttl = 1;
 						rr->UnansweredQueries = MaxUnansweredQueries;
 						SetNextCacheCheckTime(m, rr);
@@ -4785,58 +4798,76 @@ exit:
 		// in one second, thereby inadvertently delaying its actual expiration, instead of hastening it.
 		// If this were to happen repeatedly, the record's expiration could be deferred indefinitely.
 		// To avoid this, we need to ensure that the cache flushing operation will only act to
-		// *decrease* a record's remaining lifetime, never *increase* it. If a record has less than
-		// one second to go, we simply leave it alone, and leave it to expire at its assigned time.
+		// *decrease* a record's remaining lifetime, never *increase* it.
 		for (r2 = cg ? cg->members : mDNSNULL; r2; r2=r2->next)
 			if (r1->resrec.InterfaceID == r2->resrec.InterfaceID &&
 				r1->resrec.rrtype      == r2->resrec.rrtype &&
 				r1->resrec.rrclass     == r2->resrec.rrclass)
-				if (RRExpireTime(r2) - m->timenow > mDNSPlatformOneSecond)
+				{
+				// If record is recent, just ensure the whole RRSet has the same TTL (as required by DNS semantics)
+				// else, if record is old, mark it to be flushed
+				if (m->timenow - r2->TimeRcvd < mDNSPlatformOneSecond && RRExpireTime(r2) - m->timenow > mDNSPlatformOneSecond)
 					{
-					// If record is recent, just ensure the whole RRSet has the same TTL (as required by DNS semantics)
-					// else, if record is old, mark it to be flushed
-					if (m->timenow - r2->TimeRcvd < mDNSPlatformOneSecond)
+					// If we find mismatched TTLs in an RRSet, correct them.
+					// We only do this for records with a TTL of 2 or higher. It's possible to have a
+					// goodbye announcement with the cache flush bit set (or a case change on record rdata,
+					// which we treat as a goodbye followed by an addition) and in that case it would be
+					// inappropriate to synchronize all the other records to a TTL of 0 (or 1).
+					// We suppress the message for the specific case of correcting from 240 to 60 for type TXT,
+					// because certain early Bonjour devices are known to have this specific mismatch, and
+					// there's no point filling syslog with messages about something we already know about.
+					// We also don't log this for uDNS responses, since a caching name server is obliged
+					// to give us an aged TTL to correct for how long it has held the record,
+					// so our received TTLs are expected to vary in that case
+					if (r2->resrec.rroriginalttl != r1->resrec.rroriginalttl && r1->resrec.rroriginalttl > 1)
 						{
-						// If we find mismatched TTLs in an RRSet, correct them.
-						// We only do this for records with a TTL of 2 or higher. It's possible to have a
-						// goodbye announcement with the cache flush bit set (or a case change on record rdata,
-						// which we treat as a goodbye followed by an addition) and in that case it would be
-						// inappropriate to synchronize all the other records to a TTL of 0 (or 1).
-						// We suppress the message for the specific case of correcting from 240 to 60 for type TXT,
-						// because certain early Bonjour devices are known to have this specific mismatch, and
-						// there's no point filling syslog with messages about something we already know about.
-						// We also don't log this for uDNS responses, since a caching name server is obliged
-						// to give us an aged TTL to correct for how long it has held the record,
-						// so our received TTLs are expected to vary in that case
-						if (r2->resrec.rroriginalttl != r1->resrec.rroriginalttl && r1->resrec.rroriginalttl > 1)
-							{
-							if (!(r2->resrec.rroriginalttl == 240 && r1->resrec.rroriginalttl == 60 && r2->resrec.rrtype == kDNSType_TXT) &&
-								mDNSOpaque16IsZero(response->h.id))
-								LogOperation("Correcting TTL from %4d to %4d for %s",
-									r2->resrec.rroriginalttl, r1->resrec.rroriginalttl, CRDisplayString(m, r2));
-							r2->resrec.rroriginalttl = r1->resrec.rroriginalttl;
-							}
-						}
-					else				// else, if record is old, mark it to be flushed
-						{
-						verbosedebugf("Cache flush %p X %p %s", r1, r2, CRDisplayString(m, r2));
-						// We set stale records to expire in one second.
-						// This gives the owner a chance to rescue it if necessary.
-						// This is important in the case of multi-homing and bridged networks:
-						//   Suppose host X is on Ethernet. X then connects to an AirPort base station, which happens to be
-						//   bridged onto the same Ethernet. When X announces its AirPort IP address with the cache-flush bit
-						//   set, the AirPort packet will be bridged onto the Ethernet, and all other hosts on the Ethernet
-						//   will promptly delete their cached copies of the (still valid) Ethernet IP address record.
-						//   By delaying the deletion by one second, we give X a change to notice that this bridging has
-						//   happened, and re-announce its Ethernet IP address to rescue it from deletion from all our caches.
-						// We set UnansweredQueries to MaxUnansweredQueries to avoid expensive and unnecessary
-						// final expiration queries for this record.
-						r2->resrec.rroriginalttl = 1;
-						r2->UnansweredQueries = MaxUnansweredQueries;
+						if (!(r2->resrec.rroriginalttl == 240 && r1->resrec.rroriginalttl == 60 && r2->resrec.rrtype == kDNSType_TXT) &&
+							mDNSOpaque16IsZero(response->h.id))
+							LogOperation("Correcting TTL from %4d to %4d for %s",
+								r2->resrec.rroriginalttl, r1->resrec.rroriginalttl, CRDisplayString(m, r2));
+						r2->resrec.rroriginalttl = r1->resrec.rroriginalttl;
 						}
 					r2->TimeRcvd = m->timenow;
-					SetNextCacheCheckTime(m, r2);
 					}
+				else				// else, if record is old, mark it to be flushed
+					{
+					verbosedebugf("Cache flush %p X %p %s", r1, r2, CRDisplayString(m, r2));
+					// We set stale records to expire in one second.
+					// This gives the owner a chance to rescue it if necessary.
+					// This is important in the case of multi-homing and bridged networks:
+					//   Suppose host X is on Ethernet. X then connects to an AirPort base station, which happens to be
+					//   bridged onto the same Ethernet. When X announces its AirPort IP address with the cache-flush bit
+					//   set, the AirPort packet will be bridged onto the Ethernet, and all other hosts on the Ethernet
+					//   will promptly delete their cached copies of the (still valid) Ethernet IP address record.
+					//   By delaying the deletion by one second, we give X a change to notice that this bridging has
+					//   happened, and re-announce its Ethernet IP address to rescue it from deletion from all our caches.
+
+					// We set UnansweredQueries to MaxUnansweredQueries to avoid expensive and unnecessary
+					// final expiration queries for this record.
+
+					// If a record is deleted twice, first with an explicit DE record, then a second time by virtue of the cache
+					// flush bit on the new record replacing it, then we allow the record to be deleted immediately, without the usual
+					// one-second grace period. This improves responsiveness for mDNS_Update(), as used for things like iChat status updates.
+					if (r2->TimeRcvd == m->timenow && r2->resrec.rroriginalttl <= 1 && r2->UnansweredQueries == MaxUnansweredQueries)
+						{
+						debugf("Cache flush for DE record %s", CRDisplayString(m, r2));
+						r2->resrec.rroriginalttl = 0;
+						m->NextCacheCheck = m->timenow;
+						m->NextScheduledEvent = m->timenow;
+						}
+					else if (RRExpireTime(r2) - m->timenow > mDNSPlatformOneSecond)
+						{
+						// We only set a record to expire in one second if it currently has *more* than a second to live
+						// If it's already due to expire in a second or less, we just leave it alone
+						r2->resrec.rroriginalttl = 1;
+						r2->UnansweredQueries = MaxUnansweredQueries;
+						r2->TimeRcvd = m->timenow - 1;
+						// We use (m->timenow - 1) instead of m->timenow, because we use that to identify records
+						// that we marked for deletion via an explicit DE record
+						}
+					}
+				SetNextCacheCheckTime(m, r2);
+				}
 		if (r1->DelayDelivery)	// If we were planning to delay delivery of this record, see if we still need to
 			{
 			// Note, only need to call SetNextCacheCheckTime() when DelayDelivery is set, not when it's cleared
@@ -5858,8 +5889,7 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, AuthRecord *const rr, mDNSu32 newt
 		// even though there's no actual semantic change, so the mDNSPlatformMemSame() check doesn't help us.
 		// To work around this, we simply unilaterally limit all legacy _ichat-type updates to a single announcement.
 		if (SameDomainLabel(type.c, (mDNSu8*)"\x6_ichat")) rr->AnnounceCount = 1;
-		rr->ThisAPInterval       = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
-		InitializeLastAPTime(m, rr);
+		InitializeLastAPTime(m, rr, DefaultAPIntervalForRecordType(rr->resrec.RecordType));
 		while (rr->NextUpdateCredit && m->timenow - rr->NextUpdateCredit >= 0) GrantUpdateCredit(rr);
 		if (!rr->UpdateBlocked && rr->UpdateCredits) rr->UpdateCredits--;
 		if (!rr->NextUpdateCredit) rr->NextUpdateCredit = NonZeroTime(m->timenow + kUpdateCreditRefreshInterval);
@@ -6190,8 +6220,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 					if (rr->resrec.RecordType == kDNSRecordTypeVerified && !rr->DependentOn) rr->resrec.RecordType = kDNSRecordTypeUnique;
 					rr->ProbeCount     = DefaultProbeCountForRecordType(rr->resrec.RecordType);
 					if (rr->AnnounceCount < announce) rr->AnnounceCount  = announce;
-					rr->ThisAPInterval = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
-					InitializeLastAPTime(m, rr);
+					InitializeLastAPTime(m, rr, DefaultAPIntervalForRecordType(rr->resrec.RecordType));
 					}
 		}
 
