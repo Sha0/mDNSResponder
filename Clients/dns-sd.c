@@ -433,6 +433,7 @@ static void myTimerCallBack(void)
 			else                      updatetest[1] = 'A';
 			updatetest[0] = 3 - updatetest[0];
 			updatetest[2] = updatetest[1];
+			printtimestamp();
 			printf("Updating Test TXT record to %c\n", updatetest[1]);
 			err = DNSServiceUpdateRecord(client, NULL, 0, 1+updatetest[0], &updatetest[0], 0);
 			}
