@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.520  2007/12/10 23:01:01  cheshire
+Remove some unnecessary log messages
+
 Revision 1.519  2007/12/06 00:22:27  mcguire
 <rdar://problem/5604567> BTMM: Doesn't work with Linksys WAG300N 1.01.06 (sending from 1026/udp)
 
@@ -38,7 +41,7 @@ Revision 1.514  2007/12/01 00:38:32  cheshire
 Fixed compile warning: declaration of 'index' shadows a global declaration
 
 Revision 1.513  2007/11/27 00:08:49  jgraessley
-<rdar://problem/5613538> Interface specific resolvers not setup correctly
+<rdar://problem/5613538> Interface-specific resolvers not setup correctly
 
 Revision 1.512  2007/11/16 22:09:26  cheshire
 Added missing type information in mDNSPlatformTCPCloseConnection debugging log message
@@ -2192,7 +2195,7 @@ mDNSlocal void RegisterAutoTunnelRecords(mDNS *m, DomainAuthInfo *info)
 		err = mDNS_Register(m, &info->AutoTunnelService);
 		if (err) LogMsg("RegisterAutoTunnelRecords error %d registering AutoTunnelService %##s", err, info->AutoTunnelService.namestorage.c);
 
-		LogMsg("AutoTunnel server listening for connections on %##s[%.4a]:%d:%##s[%.16a]",
+		LogOperation("AutoTunnel server listening for connections on %##s[%.4a]:%d:%##s[%.16a]",
 			info->AutoTunnelTarget.namestorage.c,     &m->AdvertisedV4.ip.v4, mDNSVal16(info->AutoTunnelNAT.IntPort),
 			info->AutoTunnelHostRecord.namestorage.c, &m->AutoTunnelHostAddr);
 		}
@@ -2291,7 +2294,7 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 	if (!m->AutoTunnelHostAddrActive)
 		{
 		m->AutoTunnelHostAddrActive = mDNStrue;
-		LogMsg("Setting up AutoTunnel address %.16a", &m->AutoTunnelHostAddr);
+		LogOperation("Setting up AutoTunnel address %.16a", &m->AutoTunnelHostAddr);
 		(void)mDNSAutoTunnelInterfaceUpDown(kmDNSUp, m->AutoTunnelHostAddr.b);
 		}
 
@@ -3051,7 +3054,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 									strlcpy(ifname, currentOption + sizeof(kInterfaceSpecificOption)-1, sizeof(ifname));
 									ifindex = if_nametoindex(ifname);
 									if (ifindex == 0) { disabled = 1; LogMsg("RegisterSplitDNS: interfaceSpecific - interface %s not found", ifname); continue; }
-									LogOperation("%s: Interface specific entry: %s on %s (%d)", __FUNCTION__, r->domain, ifname, ifindex);
+									LogOperation("%s: Interface-specific entry: %s on %s (%d)", __FUNCTION__, r->domain, ifname, ifindex);
 									// Find the interface, can't use mDNSPlatformInterfaceIDFromInterfaceIndex
 									// because that will call mDNSMacOSXNetworkChanged if the interface doesn't exist
 									for (ni = m->p->InterfaceList; ni; ni = ni->next)
@@ -3269,8 +3272,7 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS *const m, mDNSAddr *v4, 
 	else
 		{
 		CFDictionaryRef dict = SCDynamicStoreCopyValue(store, NetworkChangedKey_IPv4);
-		if (!dict) LogMsg("mDNSPlatformGetPrimaryInterface: SCDynamicStoreCopyValue failed");
-		else
+		if (dict)
 			{
 			r->type  = mDNSAddrType_IPv4;
 			r->ip.v4 = zerov4Addr;
