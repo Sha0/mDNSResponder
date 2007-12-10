@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.536  2007/12/10 23:07:00  cheshire
+Removed some unnecessary log messages
+
 Revision 1.535  2007/12/06 00:22:27  mcguire
 <rdar://problem/5604567> BTMM: Doesn't work with Linksys WAG300N 1.01.06 (sending from 1026/udp)
 
@@ -2343,7 +2346,6 @@ exit:
 	if (err)
 		{
 		LogMsg("SendServiceRegistration ERROR formatting message %d!! Permanently abandoning service registration %##s", err, srs->RR_SRV.resrec.name->c);
-
 		unlinkSRS(m, srs);
 		srs->state = regState_Unregistered;
 
@@ -2809,7 +2811,7 @@ mDNSlocal void hostnameGetPublicAddressCallback(mDNS *m, NATTraversalInfo *n)
 			}
 		else
 			{
-			LogMsg("Advertising hostname %##s IPv4 %.4a (NAT gateway's external address)", h->arv4.resrec.name->c, &n->ExternalAddress);
+			LogOperation("Advertising hostname %##s IPv4 %.4a (NAT gateway's external address)", h->arv4.resrec.name->c, &n->ExternalAddress);
 			h->arv4.resrec.RecordType = kDNSRecordTypeKnownUnique;
 			h->arv4.resrec.rdata->u.ipv4 = n->ExternalAddress;
 			mDNS_Register(m, &h->arv4);
@@ -2840,7 +2842,7 @@ mDNSlocal void AdvertiseHostname(mDNS *m, HostnameInfo *h)
 			}
 		else
 			{
-			LogMsg("Advertising hostname %##s IPv4 %.4a", h->arv4.resrec.name->c, &m->AdvertisedV4.ip.v4);
+			LogOperation("Advertising hostname %##s IPv4 %.4a", h->arv4.resrec.name->c, &m->AdvertisedV4.ip.v4);
 			h->arv4.resrec.RecordType = kDNSRecordTypeKnownUnique;
 			mDNS_Register_internal(m, &h->arv4);
 			}
@@ -2852,7 +2854,7 @@ mDNSlocal void AdvertiseHostname(mDNS *m, HostnameInfo *h)
 		AssignDomainName(&h->arv6.namestorage, &h->fqdn);
 		h->arv6.resrec.rdata->u.ipv6 = m->AdvertisedV6.ip.v6;
 		h->arv6.state = regState_Unregistered;
-		LogMsg("Advertising hostname %##s IPv6 %.16a", h->arv6.resrec.name->c, &m->AdvertisedV6.ip.v6);
+		LogOperation("Advertising hostname %##s IPv6 %.16a", h->arv6.resrec.name->c, &m->AdvertisedV6.ip.v6);
 		mDNS_Register_internal(m, &h->arv6);
 		}
 	}
@@ -2914,9 +2916,9 @@ mDNSlocal void HostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 	// Deliver success to client
 	if (!hi) { LogMsg("HostnameCallback invoked with orphaned address record"); return; }
 	if (rr->resrec.rrtype == kDNSType_A)
-		LogMsg("Registered hostname %##s IP %.4a", rr->resrec.name->c, &rr->resrec.rdata->u.ipv4);
+		LogOperation("Registered hostname %##s IP %.4a", rr->resrec.name->c, &rr->resrec.rdata->u.ipv4);
 	else
-		LogMsg("Registered hostname %##s IP %.16a", rr->resrec.name->c, &rr->resrec.rdata->u.ipv6);
+		LogOperation("Registered hostname %##s IP %.16a", rr->resrec.name->c, &rr->resrec.rdata->u.ipv6);
 
 	rr->RecordContext = (void *)hi->StatusContext;
 	if (hi->StatusCallback)
