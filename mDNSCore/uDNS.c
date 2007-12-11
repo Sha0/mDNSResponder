@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.537  2007/12/11 00:18:25  cheshire
+<rdar://problem/5569316> BTMM: My iMac has a "ghost" ID associated with it
+There were cases where the code was incorrectly clearing the "uselease" flag, and never resetting it.
+
 Revision 1.536  2007/12/10 23:07:00  cheshire
 Removed some unnecessary log messages
 
@@ -2576,29 +2580,26 @@ mDNSlocal void StartSRVNatMap(mDNS *m, ServiceRecordSet *srs)
 mDNSexport void ServiceRegistrationGotZoneData(mDNS *const m, mStatus err, const ZoneData *zoneData)
 	{
 	ServiceRecordSet *srs = (ServiceRecordSet *)zoneData->ZoneDataContext;
-	
+
 	if (m->mDNS_busy != m->mDNS_reentrancy)
 		LogMsg("ServiceRegistrationGotZoneData: mDNS_busy (%ld) != mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
 	srs->nta = mDNSNULL;
 
+	// Start off assuming we're going to use a lease
+	// If we get an error from the server, and the update port as given in the SRV record is 53, then we'll retry without the lease option
+	srs->srs_uselease = mDNStrue;
+
 	if (err || !zoneData) return;
+
+	if (mDNSIPPortIsZero(zoneData->Port) || mDNSAddressIsZero(&zoneData->Addr)) return;
 
 	// cache zone data
 	AssignDomainName(&srs->zone, &zoneData->ZoneName);
 	srs->SRSUpdateServer.type = mDNSAddrType_IPv4;
 	srs->SRSUpdateServer      = zoneData->Addr;
-	if (!mDNSIPPortIsZero(zoneData->Port))
-		{
-		srs->SRSUpdatePort = zoneData->Port;
-		srs->Private       = zoneData->ZonePrivate;
-		}
-	else
-		{
-		debugf("Update port not advertised via SRV - guessing port 53, no lease option");
-		srs->SRSUpdatePort = UnicastDNSPort;
-		srs->srs_uselease = mDNSfalse;
-		}
+	srs->SRSUpdatePort        = zoneData->Port;
+	srs->Private              = zoneData->ZonePrivate;
 
 	LogOperation("ServiceRegistrationGotZoneData My IPv4 %#a%s Server %#a:%d%s for %##s",
 		&m->AdvertisedV4, mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) ? " (RFC1918)" : "",
@@ -3899,7 +3900,7 @@ mDNSexport void LLQGotZoneData(mDNS *const m, mStatus err, const ZoneData *zoneI
 	q->servAddr = zeroAddr;
 	q->servPort = zeroIPPort;
 
-	if (!err && zoneInfo && !mDNSIPPortIsZero(zoneInfo->Port))
+	if (!err && zoneInfo && !mDNSIPPortIsZero(zoneInfo->Port) && !mDNSAddressIsZero(&zoneInfo->Addr))
 		{
 		q->servAddr = zoneInfo->Addr;
 		q->servPort = zoneInfo->Port;
@@ -3971,6 +3972,10 @@ mDNSexport void RecordRegistrationGotZoneData(mDNS *const m, mStatus err, const 
 		LogMsg("RecordRegistrationGotZoneData: mDNS_busy (%ld) != mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
 	newRR->nta = mDNSNULL;
+
+	// Start off assuming we're going to use a lease
+	// If we get an error from the server, and the update port as given in the SRV record is 53, then we'll retry without the lease option
+	newRR->uselease = mDNStrue;
 
 	// make sure record is still in list (!!!)
 	for (ptr = m->ResourceRecords; ptr; ptr = ptr->next) if (ptr == newRR) break;
