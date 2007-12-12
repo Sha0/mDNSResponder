@@ -30,6 +30,11 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.351  2007/12/12 21:34:18  cheshire
+Now that <rdar://problem/5124399> "Not getting Keychain events" is apparently fixed,
+it makes sense to reduce our workaround retry count from 5 to 2 retries. Once we've
+confirmed that the bug is definitely fixed we'll remove the workaround altogether.
+
 Revision 1.350  2007/12/07 00:45:58  cheshire
 <rdar://problem/5526800> BTMM: Need to clean up registrations on shutdown
 
@@ -2165,9 +2170,9 @@ mDNSlocal mDNSs32 mDNSDaemonIdle(mDNS *const m)
 	// See <rdar://problem/5124399> Not getting Keychain Changed events when enabling BTMM
 	if (m->p->KeyChainBugTimer && now - m->p->KeyChainBugTimer >= 0)
 		{
-		m->p->KeyChainBugTimer = NonZeroTime(now + m->p->KeyChainBugInterval);
 		m->p->KeyChainBugInterval *= 2;
-		if (m->p->KeyChainBugInterval > 16 * mDNSPlatformOneSecond) m->p->KeyChainBugTimer = 0;
+		m->p->KeyChainBugTimer = NonZeroTime(now + m->p->KeyChainBugInterval);
+		if (m->p->KeyChainBugInterval > 2 * mDNSPlatformOneSecond) m->p->KeyChainBugTimer = 0;
 		mDNS_Lock(m);
 		SetDomainSecrets(m);
 		mDNS_Unlock(m);
