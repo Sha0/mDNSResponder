@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.761  2007/12/13 00:03:31  cheshire
+Improved efficiency in IdenticalResourceRecord() by doing SameRData() check before SameDomainName() check
+
 Revision 1.760  2007/12/08 00:36:19  cheshire
 <rdar://problem/5636422> Updating TXT records is too slow
 Remove unnecessary delays on announcing record updates, and on processing them on reception
@@ -1054,19 +1057,20 @@ mDNSlocal mDNSBool PacketRRMatchesSignature(const CacheRecord *const pktrr, cons
 
 mDNSlocal mDNSBool IdenticalResourceRecord(const ResourceRecord *const r1, const ResourceRecord *const r2)
 	{
-	if (!r1) { LogMsg("IdenticalResourceRecord ERROR: r1 is NULL"); return(mDNSfalse); }
-	if (!r2) { LogMsg("IdenticalResourceRecord ERROR: r2 is NULL"); return(mDNSfalse); }
-	if (r1->rrtype != r2->rrtype || r1->rrclass != r2->rrclass || r1->namehash != r2->namehash || !SameDomainName(r1->name, r2->name))
-		return(mDNSfalse);
-	return(SameRData(r1, r2));
+	// Note: The dominant use of this routine is from ProcessQuery(), handling known-answer lists. In this case it's
+	// common to have a whole bunch or records with exactly the same name (e.g. "_http._tcp.local") but different RDATA.
+	// The SameDomainName() check is expensive when the names match, and in this case *all* the names match, so we waste
+	// lots of CPU time verifying that the names match, only then to find that the RDATA is different.
+	// We observed mDNSResponder spending 30% of its total CPU time on this single task alone.
+	// By swapping the checks so that we check the RDATA first, we can quickly detect when it's different
+	// (99% of the time) and then bail out before we waste time on the expensive SameDomainName() check.
+	if (r1->rrtype != r2->rrtype || r1->rrclass != r2->rrclass || r1->namehash != r2->namehash || !SameRData(r1, r2)) return(mDNSfalse);
+	return(SameDomainName(r1->name, r2->name));
 	}
 
 mDNSlocal mDNSBool IdenticalSameNameRecord(const ResourceRecord *const r1, const ResourceRecord *const r2)
 	{
-	if (!r1) { LogMsg("IdenticalSameNameRecord ERROR: r1 is NULL"); return(mDNSfalse); }
-	if (!r2) { LogMsg("IdenticalSameNameRecord ERROR: r2 is NULL"); return(mDNSfalse); }
-	if (r1->rrtype != r2->rrtype || r1->rrclass != r2->rrclass)
-		return(mDNSfalse);
+	if (r1->rrtype != r2->rrtype || r1->rrclass != r2->rrclass) return(mDNSfalse);
 
 #if VerifySameNameAssumptions
 	if (r1->namehash != r2->namehash || !SameDomainName(r1->name, r2->name))
@@ -1079,7 +1083,7 @@ mDNSlocal mDNSBool IdenticalSameNameRecord(const ResourceRecord *const r1, const
 	return(SameRData(r1, r2));
 	}
 
-// CacheRecord *ks is the CacheRecord from the known answer list in the query.
+// CacheRecord *ka is the CacheRecord from the known answer list in the query.
 // This is the information that the requester believes to be correct.
 // AuthRecord *rr is the answer we are proposing to give, if not suppressed.
 // This is the information that we believe to be correct.
@@ -3869,7 +3873,7 @@ exit:
 	m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 	}
 
-mDNSlocal CacheRecord *FindIdenticalRecordInCache(const mDNS *const m, ResourceRecord *pktrr)
+mDNSlocal CacheRecord *FindIdenticalRecordInCache(const mDNS *const m, const ResourceRecord *const pktrr)
 	{
 	mDNSu32 slot = HashSlot(pktrr->name);
 	CacheGroup *cg = CacheGroupForRecord(m, slot, pktrr);
