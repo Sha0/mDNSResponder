@@ -17,6 +17,11 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.190  2007/12/13 20:20:17  cheshire
+Minor efficiency tweaks -- converted IdenticalResourceRecord, IdenticalSameNameRecord, and
+SameRData from functions to macros, which allows the code to be inlined (the compiler can't
+inline a function defined in a different compilation unit) and therefore optimized better.
+
 Revision 1.189  2007/12/13 00:17:32  cheshire
 RDataHashValue was not calculating hash value reliably for RDATA types that have 'holes' in the
 in-memory representation (particularly SOA was affected by this, resulting in multiple duplicate
@@ -1379,22 +1384,6 @@ mDNSexport mDNSBool SameRDataBody(const ResourceRecord *const r1, const RDataBod
 		}
 	}
 
-mDNSexport mDNSBool SameRData(const ResourceRecord *const r1, const ResourceRecord *const r2)
-	{
-	if (r1->rrtype     != r2->rrtype)     return(mDNSfalse);
-	if (r1->rdlength   != r2->rdlength)   return(mDNSfalse);
-	if (r1->rdatahash  != r2->rdatahash)  return(mDNSfalse);
-	return(SameRDataBody(r1, &r2->rdata->u));
-	}
-
-mDNSexport mDNSBool SameResourceRecord(ResourceRecord *r1, ResourceRecord *r2)
-	{
-	return (r1->namehash == r2->namehash &&
-			r1->rrtype == r2->rrtype &&
-			SameDomainName(r1->name, r2->name) &&
-			SameRData(r1, r2));
-	}
-
 // ResourceRecordAnswersQuestion returns mDNStrue if the given resource record is a valid answer to the given question.
 // SameNameRecordAnswersQuestion is the same, except it skips the expensive SameDomainName() call.
 // SameDomainName() is generally cheap when the names don't match, but expensive when they do match,
@@ -1414,14 +1403,6 @@ mDNSexport mDNSBool SameNameRecordAnswersQuestion(const ResourceRecord *const rr
 	// RR type CNAME matches any query type. QTYPE ANY matches any RR type. QCLASS ANY matches any RR class.
 	if (rr->rrtype != kDNSType_CNAME && rr->rrtype  != q->qtype  && q->qtype  != kDNSQType_ANY ) return(mDNSfalse);
 	if (                                rr->rrclass != q->qclass && q->qclass != kDNSQClass_ANY) return(mDNSfalse);
-
-#if VerifySameNameAssumptions
-	if (rr->namehash != q->qnamehash || !SameDomainName(rr->name, &q->qname))
-		{
-		LogMsg("Bogus SameNameRecordAnswersQuestion call: RR %##s does not match Q %##s", rr->name->c, q->qname.c);
-		return(mDNSfalse);
-		}
-#endif
 
 	return(mDNStrue);
 	}
@@ -2206,9 +2187,9 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 
 	if (!RecordType) LogMsg("GetLargeResourceRecord: No RecordType for %##s", rr->resrec.name->c);
 
-	// IMPORTANT: Any record type we understand and unpack into a structure containing domainnames needs to have
-	// a corresponding case in SameRDataBody() to do a semantic comparison of the structure instead of a blind
-	// bitwise memory compare. This is because a domainname is a fixed size structure holding variable-length data.
+	// IMPORTANT: Any record type we understand and unpack into a structure containing domainnames needs to have corresponding
+	// cases in SameRDataBody() and RDataHashValue() to do a semantic comparison (or checksum) of the structure instead of a blind
+	// bitwise memory compare (or sum). This is because a domainname is a fixed size structure holding variable-length data.
 	// Any bytes past the logical end of the name are undefined, and a blind bitwise memory compare may indicate that
 	// two domainnames are different when semantically they are the same name and it's only the unused bytes that differ.
 	if (rr->resrec.rrclass == kDNSQClass_ANY && pktrdlength == 0)	// Used in update packets to mean "Delete An RRset" (RFC 2136)

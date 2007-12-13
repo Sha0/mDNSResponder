@@ -38,6 +38,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.763  2007/12/13 20:20:17  cheshire
+Minor efficiency tweaks -- converted IdenticalResourceRecord, IdenticalSameNameRecord, and
+SameRData from functions to macros, which allows the code to be inlined (the compiler can't
+inline a function defined in a different compilation unit) and therefore optimized better.
+
 Revision 1.762  2007/12/13 00:13:03  cheshire
 Simplified RDataHashValue to take a single ResourceRecord pointer, instead of separate rdlength and RDataBody
 
@@ -1050,40 +1055,6 @@ mDNSlocal mDNSBool PacketRRMatchesSignature(const CacheRecord *const pktrr, cons
 		pktrr->resrec.rrclass == authrr->resrec.rrclass &&
 		pktrr->resrec.namehash == authrr->resrec.namehash &&
 		SameDomainName(pktrr->resrec.name, authrr->resrec.name));
-	}
-
-// IdenticalResourceRecord returns true if two resources records have
-// the same name, type, class, and identical rdata (InterfaceID and TTL may differ)
-
-// IdenticalSameNameRecord is the same, except it skips the expensive SameDomainName() check,
-// which is at its most expensive and least useful in cases where we know in advance that the names match
-
-mDNSlocal mDNSBool IdenticalResourceRecord(const ResourceRecord *const r1, const ResourceRecord *const r2)
-	{
-	// Note: The dominant use of this routine is from ProcessQuery(), handling known-answer lists. In this case it's
-	// common to have a whole bunch or records with exactly the same name (e.g. "_http._tcp.local") but different RDATA.
-	// The SameDomainName() check is expensive when the names match, and in this case *all* the names match, so we waste
-	// lots of CPU time verifying that the names match, only then to find that the RDATA is different.
-	// We observed mDNSResponder spending 30% of its total CPU time on this single task alone.
-	// By swapping the checks so that we check the RDATA first, we can quickly detect when it's different
-	// (99% of the time) and then bail out before we waste time on the expensive SameDomainName() check.
-	if (r1->rrtype != r2->rrtype || r1->rrclass != r2->rrclass || r1->namehash != r2->namehash || !SameRData(r1, r2)) return(mDNSfalse);
-	return(SameDomainName(r1->name, r2->name));
-	}
-
-mDNSlocal mDNSBool IdenticalSameNameRecord(const ResourceRecord *const r1, const ResourceRecord *const r2)
-	{
-	if (r1->rrtype != r2->rrtype || r1->rrclass != r2->rrclass) return(mDNSfalse);
-
-#if VerifySameNameAssumptions
-	if (r1->namehash != r2->namehash || !SameDomainName(r1->name, r2->name))
-		{
-		LogMsg("Bogus IdenticalSameNameRecord call: %##s does not match %##s", r1->name->c, r1->name->c);
-		return(mDNSfalse);
-		}
-#endif
-
-	return(SameRData(r1, r2));
 	}
 
 // CacheRecord *ka is the CacheRecord from the known answer list in the query.
