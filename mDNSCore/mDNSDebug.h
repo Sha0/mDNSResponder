@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.38  2007/12/13 20:27:07  cheshire
+Remove unused VerifySameNameAssumptions symbol
+
 Revision 1.37  2007/12/01 00:33:17  cheshire
 Fixes from Bob Bradley for building on EFI
 
@@ -243,8 +246,6 @@ extern void udns_validatelists(void *const v);
 #endif
 
 #define ForceAlerts 0
-
-#define VerifySameNameAssumptions 0
 
 #ifdef	__cplusplus
 	}
