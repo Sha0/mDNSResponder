@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.86  2007/12/13 20:22:34  cheshire
+Got rid of redundant SameResourceRecord() routine; replaced calls to this
+with calls to IdenticalResourceRecord() which does exactly the same thing.
+
 Revision 1.85  2007/12/01 00:30:36  cheshire
 Fixed compile warning: declaration of 'time' shadows a global declaration
 
@@ -1533,7 +1537,7 @@ mDNSlocal void UpdateLeaseTable(PktMsg *pkt, DaemonInfo *d, mDNSs32 lease)
 			  if (SameDomainName((*rptr)->rr.resrec.name, rr->name) &&
 				 (DeleteAllRRSets ||
 				 (DeleteOneRRSet && (*rptr)->rr.resrec.rrtype == rr->rrtype) ||
-				  (DeleteOneRR && SameResourceRecord(&(*rptr)->rr.resrec, rr))))
+				  (DeleteOneRR && IdenticalResourceRecord(&(*rptr)->rr.resrec, rr))))
 				  {
 				  tmp = *rptr;
 				  VLog("Received deletion update for %s", GetRRDisplayString_rdb(&tmp->rr.resrec, &tmp->rr.resrec.rdata->u, buf));
@@ -1547,7 +1551,7 @@ mDNSlocal void UpdateLeaseTable(PktMsg *pkt, DaemonInfo *d, mDNSs32 lease)
 		else if (lease > 0)
 			{
 			// see if add or refresh
-			while (*rptr && !SameResourceRecord(&(*rptr)->rr.resrec, rr)) rptr = &(*rptr)->next;
+			while (*rptr && !IdenticalResourceRecord(&(*rptr)->rr.resrec, rr)) rptr = &(*rptr)->next;
 			if (*rptr)
 				{
 				// refresh
@@ -1956,7 +1960,7 @@ mDNSlocal void *UpdateAnswerList(void *args)
 		{
 		for (na = &NewAnswers; *na; na = &(*na)->next)
 			{
-			if (SameResourceRecord(&(*ka)->resrec, &(*na)->resrec))
+			if (IdenticalResourceRecord(&(*ka)->resrec, &(*na)->resrec))
 				{ (*ka)->resrec.rroriginalttl = 0; break; } // 0 means no change
 			}
 		}
@@ -1966,7 +1970,7 @@ mDNSlocal void *UpdateAnswerList(void *args)
 	while (*na)
 		{
 		for (ka = &a->KnownAnswers; *ka; ka = &(*ka)->next)
-			if (SameResourceRecord(&(*ka)->resrec, &(*na)->resrec)) break;
+			if (IdenticalResourceRecord(&(*ka)->resrec, &(*na)->resrec)) break;
 		if (!*ka)
 			{
 			// answer is not in list - splice from NewAnswers list, add to Event list
