@@ -17,6 +17,11 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.189  2007/12/13 00:17:32  cheshire
+RDataHashValue was not calculating hash value reliably for RDATA types that have 'holes' in the
+in-memory representation (particularly SOA was affected by this, resulting in multiple duplicate
+cache entities for the same SOA record, because they had erroneously different rdatahash values).
+
 Revision 1.188  2007/12/13 00:13:03  cheshire
 Simplified RDataHashValue to take a single ResourceRecord pointer, instead of separate rdlength and RDataBody
 
@@ -1285,18 +1290,50 @@ mDNSexport void mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mD
 
 mDNSexport mDNSu32 RDataHashValue(const ResourceRecord *const rr)
 	{
-	mDNSu32 sum = 0;
-	int i;
-	for (i=0; i+1 < rr->rdlength; i+=2)
+	switch(rr->rrtype)
 		{
-		sum += (((mDNSu32)(rr->rdata->u.data[i])) << 8) | rr->rdata->u.data[i+1];
-		sum = (sum<<3) | (sum>>29);
+		case kDNSType_NS:
+		case kDNSType_CNAME:
+		case kDNSType_PTR:
+		case kDNSType_DNAME: return DomainNameHashValue(&rr->rdata->u.name);
+
+		case kDNSType_SOA:   return rr->rdata->u.soa.serial  +
+									rr->rdata->u.soa.refresh +
+									rr->rdata->u.soa.retry   +
+									rr->rdata->u.soa.expire  +
+									rr->rdata->u.soa.min     +
+									DomainNameHashValue(&rr->rdata->u.soa.mname) +
+									DomainNameHashValue(&rr->rdata->u.soa.rname);
+
+		case kDNSType_MX:
+		case kDNSType_AFSDB:
+		case kDNSType_RT:
+		case kDNSType_KX:	 return DomainNameHashValue(&rr->rdata->u.mx.exchange);
+
+		case kDNSType_RP:	 return DomainNameHashValue(&rr->rdata->u.rp.mbox)   + DomainNameHashValue(&rr->rdata->u.rp.txt);
+
+		case kDNSType_PX:	 return DomainNameHashValue(&rr->rdata->u.px.map822) + DomainNameHashValue(&rr->rdata->u.px.mapx400);
+
+		case kDNSType_SRV:	 return DomainNameHashValue(&rr->rdata->u.srv.target);
+
+		case kDNSType_OPT:	// Okay to use blind memory sum because there are no 'holes' in the in-memory representation
+
+		default:
+			{
+			mDNSu32 sum = 0;
+			int i;
+			for (i=0; i+1 < rr->rdlength; i+=2)
+				{
+				sum += (((mDNSu32)(rr->rdata->u.data[i])) << 8) | rr->rdata->u.data[i+1];
+				sum = (sum<<3) | (sum>>29);
+				}
+			if (i < rr->rdlength)
+				{
+				sum += ((mDNSu32)(rr->rdata->u.data[i])) << 8;
+				}
+			return(sum);
+			}
 		}
-	if (i < rr->rdlength)
-		{
-		sum += ((mDNSu32)(rr->rdata->u.data[i])) << 8;
-		}
-	return(sum);
 	}
 
 // r1 has to be a full ResourceRecord including rrtype and rdlength
