@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.188  2007/12/13 00:13:03  cheshire
+Simplified RDataHashValue to take a single ResourceRecord pointer, instead of separate rdlength and RDataBody
+
 Revision 1.187  2007/12/08 00:35:20  cheshire
 <rdar://problem/5636422> Updating TXT records is too slow
 m->SuppressSending should not suppress all activity, just mDNS Query/Probe/Response
@@ -1280,18 +1283,18 @@ mDNSexport void mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mD
 	rr->namestorage.c[0]  = 0;		// MUST be set by client before calling mDNS_Register()
 	}
 
-mDNSexport mDNSu32 RDataHashValue(mDNSu16 const rdlength, const RDataBody *const rdb)
+mDNSexport mDNSu32 RDataHashValue(const ResourceRecord *const rr)
 	{
 	mDNSu32 sum = 0;
 	int i;
-	for (i=0; i+1 < rdlength; i+=2)
+	for (i=0; i+1 < rr->rdlength; i+=2)
 		{
-		sum += (((mDNSu32)(rdb->data[i])) << 8) | rdb->data[i+1];
+		sum += (((mDNSu32)(rr->rdata->u.data[i])) << 8) | rr->rdata->u.data[i+1];
 		sum = (sum<<3) | (sum>>29);
 		}
-	if (i < rdlength)
+	if (i < rr->rdlength)
 		{
-		sum += ((mDNSu32)(rdb->data[i])) << 8;
+		sum += ((mDNSu32)(rr->rdata->u.data[i])) << 8;
 		}
 	return(sum);
 	}
@@ -1333,7 +1336,7 @@ mDNSexport mDNSBool SameRDataBody(const ResourceRecord *const r1, const RDataBod
 												mDNSSameIPPort(r1->rdata->u.srv.port, r2->srv.port) &&
 												SameDomainName(&r1->rdata->u.srv.target, &r2->srv.target));
 
-		case kDNSType_OPT:	// Okay to use memory compare because there are no 'holes' in the in-memory representation
+		case kDNSType_OPT:	// Okay to use blind memory compare because there are no 'holes' in the in-memory representation
 
 		default:			return(mDNSPlatformMemSame(r1->rdata->u.data, r2->data, r1->rdlength));
 		}
@@ -2014,7 +2017,7 @@ mDNSexport void SetNewRData(ResourceRecord *const rr, RData *NewRData, mDNSu16 r
 	target = GetRRDomainNameTarget(rr);
 	rr->rdlength   = GetRDLength(rr, mDNSfalse);
 	rr->rdestimate = GetRDLength(rr, mDNStrue);
-	rr->rdatahash  = target ? DomainNameHashValue(target) : RDataHashValue(rr->rdlength, &rr->rdata->u);
+	rr->rdatahash  = target ? DomainNameHashValue(target) : RDataHashValue(rr);
 	}
 
 mDNSexport const mDNSu8 *skipDomainName(const DNSMessage *const msg, const mDNSu8 *ptr, const mDNSu8 *const end)

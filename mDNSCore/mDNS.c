@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.762  2007/12/13 00:13:03  cheshire
+Simplified RDataHashValue to take a single ResourceRecord pointer, instead of separate rdlength and RDataBody
+
 Revision 1.761  2007/12/13 00:03:31  cheshire
 Improved efficiency in IdenticalResourceRecord() by doing SameRData() check before SameDomainName() check
 
@@ -1370,7 +1373,7 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 		{ LogMsg("Attempt to register record with invalid rdata: %s", ARDisplayString(m, rr)); return(mStatus_Invalid); }
 
 	rr->resrec.namehash   = DomainNameHashValue(rr->resrec.name);
-	rr->resrec.rdatahash  = target ? DomainNameHashValue(target) : RDataHashValue(rr->resrec.rdlength, &rr->resrec.rdata->u);
+	rr->resrec.rdatahash  = target ? DomainNameHashValue(target) : RDataHashValue(&rr->resrec);
 	
 	if (rr->resrec.InterfaceID == mDNSInterface_LocalOnly)
 		{

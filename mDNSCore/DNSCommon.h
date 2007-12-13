@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.56  2007/12/13 00:13:03  cheshire
+Simplified RDataHashValue to take a single ResourceRecord pointer, instead of separate rdlength and RDataBody
+
 Revision 1.55  2007/12/13 00:09:28  cheshire
 For completeness added MX, AFSDB, RT, KX to list of RRTYPES that are considered to have a target domainname in their rdata
 
@@ -195,7 +198,7 @@ extern void AppendLabelSuffix(domainlabel *name, mDNSu32 val, mDNSBool RichText)
 #pragma mark - Resource Record Utility Functions
 #endif
 
-extern mDNSu32 RDataHashValue(mDNSu16 const rdlength, const RDataBody *const rdb);
+extern mDNSu32 RDataHashValue(const ResourceRecord *const rr);
 extern mDNSBool SameRDataBody(const ResourceRecord *const r1, const RDataBody *const r2);
 extern mDNSBool SameRData(const ResourceRecord *const r1, const ResourceRecord *const r2);
 extern mDNSBool ResourceRecordAnswersQuestion(const ResourceRecord *const rr, const DNSQuestion *const q);
