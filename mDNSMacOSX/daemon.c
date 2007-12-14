@@ -30,6 +30,11 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.352  2007/12/14 00:58:29  cheshire
+<rdar://problem/5526800> BTMM: Need to deregister records and services on shutdown/sleep
+Additional fixes: When going to sleep, mDNSResponder needs to postpone sleep
+until TLS/TCP deregistrations have completed (up to five seconds maximum)
+
 Revision 1.351  2007/12/12 21:34:18  cheshire
 Now that <rdar://problem/5124399> "Not getting Keychain events" is apparently fixed,
 it makes sense to reduce our workaround retry count from 5 to 2 retries. Once we've
@@ -2307,6 +2312,25 @@ mDNSlocal void ShowTaskSchedulingError(mDNS *const m)
 	mDNS_Unlock(&mDNSStorage);
 	}
 
+mDNSlocal mDNSBool ReadyForSleep(mDNS *m)
+	{
+	(void)m;
+
+	// 1. Scan list of private LLQs, and make sure they've all completed their handshake with the server
+
+	// 2. Scan list of registered records
+	AuthRecord *rr;
+	for (rr = m->ResourceRecords; rr; rr = rr->next)
+		if (rr->state == regState_Refresh && rr->tcp) return(mDNSfalse);
+
+	// 2. Scan list of registered services
+	ServiceRecordSet *srs;
+	for (srs = m->ServiceRegistrations; srs; srs = srs->uDNS_next)
+		if (srs->state == regState_NoTarget && srs->tcp) return(mDNSfalse);
+
+	return(mDNStrue);
+	}
+
 mDNSlocal void KQWokenFlushBytes(int fd, __unused short filter, __unused void *context)
 	{
 	// Read all of the bytes so we won't wake again.
@@ -2361,6 +2385,15 @@ mDNSlocal void * KQueueLoop(void *m_param)
 				}
 			if (nextTimerEvent - m->ShutdownTime >= 0)
 				nextTimerEvent = m->ShutdownTime;
+			}
+
+		if (m->p->SleepLimit)
+			{
+			if (now - m->p->SleepLimit >= 0 || ReadyForSleep(m))
+				{
+				m->p->SleepLimit = 0;
+				IOAllowPowerChange(m->p->PowerConnection, m->p->SleepCookie);
+				}
 			}
 
 		// Convert absolute wakeup time to a relative time from now

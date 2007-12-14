@@ -17,6 +17,11 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.521  2007/12/14 00:58:28  cheshire
+<rdar://problem/5526800> BTMM: Need to deregister records and services on shutdown/sleep
+Additional fixes: When going to sleep, mDNSResponder needs to postpone sleep
+until TLS/TCP deregistrations have completed (up to five seconds maximum)
+
 Revision 1.520  2007/12/10 23:01:01  cheshire
 Remove some unnecessary log messages
 
@@ -2255,7 +2260,7 @@ mDNSlocal void AutoTunnelNATCallback(mDNS *m, NATTraversalInfo *n)
 	LogOperation("AutoTunnelNATCallback Result %d %.4a Internal %d External %d %#s.%##s",
 		n->Result, &n->ExternalAddress, mDNSVal16(n->IntPort), mDNSVal16(n->ExternalPort), m->hostlabel.c, info->domain.c);
 
-	m->NextSRVUpdate = m->timenow;
+	m->NextSRVUpdate = NonZeroTime(m->timenow);
 	DeregisterAutoTunnelRecords(m,info);
 	RegisterAutoTunnelRecords(m,info);
 
@@ -3844,6 +3849,7 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 	mDNS *const m = (mDNS *const)refcon;
 	KQueueLock(m);
 	(void)service;    // Parameter not used
+	LogOperation("PowerChanged %X %lX", messageType, messageArgument);
 	switch(messageType)
 		{
 		case kIOMessageCanSystemPowerOff:		debugf      ("PowerChanged kIOMessageCanSystemPowerOff (no action)");				break; // E0000240
@@ -3867,7 +3873,15 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 												mDNSMacOSXNetworkChanged(m); mDNSCoreMachineSleep(m, false);						break; // E0000320
 		default:								LogOperation("PowerChanged unknown message %X", messageType);						break;
 		}
-	IOAllowPowerChange(m->p->PowerConnection, (long)messageArgument);
+
+	if (!m->p->SleepLimit && messageType == kIOMessageSystemWillSleep)
+		{
+		m->p->SleepLimit  = NonZeroTime(mDNS_TimeNow(m) + mDNSPlatformOneSecond * 5);
+		m->p->SleepCookie = (long)messageArgument;
+		}
+	else
+		IOAllowPowerChange(m->p->PowerConnection, (long)messageArgument);
+
 	KQueueUnlock(m, "Sleep/Wake");
 	}
 #endif /* NO_IOPOWER */
@@ -4009,6 +4023,7 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	m->p->usernicelabel.c[0] = 0;
 	m->p->NotifyUser         = 0;
 	m->p->KeyChainBugTimer   = 0;
+	m->p->SleepLimit         = 0;
 
 	m->AutoTunnelHostAddr.b[0] = 0;		// Zero out AutoTunnelHostAddr so UpdateInterfaceList() know it has to set it up
 
