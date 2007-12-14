@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.539  2007/12/14 20:44:24  cheshire
+<rdar://problem/5526800> BTMM: Need to deregister records and services on shutdown/sleep
+SleepRecordRegistrations/WakeRecordRegistrations should only operate on uDNS records
+
 Revision 1.538  2007/12/14 01:13:40  cheshire
 <rdar://problem/5526800> BTMM: Need to deregister records and services on shutdown/sleep
 Additional fixes (existing code to deregister private records and services didn't work at all)
@@ -4568,37 +4572,31 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 
 mDNSexport void SleepRecordRegistrations(mDNS *m)
 	{
-	AuthRecord *rr = m->ResourceRecords;
-
-	while (rr)
-		{
-		if (rr->state == regState_Registered ||
-			rr->state == regState_Refresh)
-			{
-			SendRecordDeregistration(m, rr);
-			rr->state = regState_Refresh;
-			rr->LastAPTime = m->timenow;
-			rr->ThisAPInterval = 300 * mDNSPlatformOneSecond;
-			}
-		rr = rr->next;
-		}
+	AuthRecord *rr;
+	for (rr = m->ResourceRecords; rr; rr=rr->next)
+		if (AuthRecord_uDNS(rr))
+			if (rr->state == regState_Registered ||
+				rr->state == regState_Refresh)
+				{
+				SendRecordDeregistration(m, rr);
+				rr->state = regState_Refresh;
+				rr->LastAPTime = m->timenow;
+				rr->ThisAPInterval = 300 * mDNSPlatformOneSecond;
+				}
 	}
 
 mDNSlocal void WakeRecordRegistrations(mDNS *m)
 	{
-	AuthRecord *rr = m->ResourceRecords;
-
-	while (rr)
-		{
-		if (rr->state == regState_Refresh)
-			{
-			// trigger slightly delayed refresh (we usually get this message before kernel is ready to send packets)
-			rr->state = regState_Pending;
-			rr->LastAPTime = m->timenow;
-			rr->ThisAPInterval = mDNSPlatformOneSecond;
-			}
-		rr = rr->next;
-		}
+	AuthRecord *rr;
+	for (rr = m->ResourceRecords; rr; rr=rr->next)
+		if (AuthRecord_uDNS(rr))
+			if (rr->state == regState_Refresh)
+				{
+				// trigger slightly delayed refresh (we usually get this message before kernel is ready to send packets)
+				rr->state = regState_Pending;
+				rr->LastAPTime = m->timenow;
+				rr->ThisAPInterval = mDNSPlatformOneSecond;
+				}
 	}
 
 mDNSexport void SleepServiceRegistrations(mDNS *m)
