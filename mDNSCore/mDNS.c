@@ -38,6 +38,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.764  2007/12/14 00:49:53  cheshire
+Fixed crash in mDNS_StartExit -- the service deregistration loop needs to use
+the CurrentServiceRecordSet mechanism to guard against services being deleted,
+just like the record deregistration loop uses m->CurrentRecord.
+
 Revision 1.763  2007/12/13 20:20:17  cheshire
 Minor efficiency tweaks -- converted IdenticalResourceRecord, IdenticalSameNameRecord, and
 SameRData from functions to macros, which allows the code to be inlined (the compiler can't
@@ -4358,7 +4363,7 @@ mDNSlocal mDNSBool ExpectingUnicastResponseForRecord(mDNS *const m, const mDNSAd
 					if (mDNSSameOpaque16(q->TargetQID, id))                     return(mDNStrue);
 				//	if (q->LongLived && mDNSSameAddress(srcaddr, &q->servAddr)) return(mDNStrue); Shouldn't need this now that we have LLQType checking
 					if (TrustedSource(m, srcaddr))                              return(mDNStrue);
-					LogOperation("WARNING: Ignoring suspect uDNS response for %##s (%s) %#a from %#a: %s",
+					LogOperation("WARNING: Ignoring suspect uDNS response for %##s (%s) [q->Target %#a] from %#a: %s",
 						q->qname.c, DNSTypeName(q->qtype), &q->Target, srcaddr, CRDisplayString(m, rr));
 					return(mDNSfalse);
 					}
@@ -7131,11 +7136,12 @@ mDNSexport void mDNSCoreInitComplete(mDNS *const m, mStatus result)
 		}
 	}
 
+extern ServiceRecordSet *CurrentServiceRecordSet;
+
 mDNSexport void mDNS_StartExit(mDNS *const m)
 	{
 	NetworkInterfaceInfo *intf;
 	AuthRecord *rr;
-	ServiceRecordSet *srs;
 
 	mDNS_Lock(m);
 
@@ -7206,10 +7212,14 @@ mDNSexport void mDNS_StartExit(mDNS *const m)
 			m->CurrentRecord = rr->next;
 		}
 
-	for (srs = m->ServiceRegistrations; srs; srs = srs->uDNS_next)
+	CurrentServiceRecordSet = m->ServiceRegistrations;
+	while (CurrentServiceRecordSet)
 		{
-		//LogOperation("mDNS_StartExit: Deregistering %##s", srs->RR_SRV.resrec.name->c);
+		ServiceRecordSet *srs = CurrentServiceRecordSet;
+		LogOperation("mDNS_StartExit: Deregistering %##s", srs->RR_SRV.resrec.name->c);
 		uDNS_DeregisterService(m, srs);
+		if (CurrentServiceRecordSet == srs)
+			CurrentServiceRecordSet = srs->uDNS_next;
 		}
 
 	if (m->ResourceRecords) LogOperation("mDNS_StartExit: Sending final record deregistrations");
