@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.460  2007/12/14 23:55:28  cheshire
+Moved "struct tcpInfo_t" definition from uDNS.c to mDNSEmbeddedAPI.h
+
 Revision 1.459  2007/12/07 22:40:34  cheshire
 Rename 'LocalAnswer' to more descriptive 'AnsweredLocalQ'
 
@@ -941,6 +944,21 @@ typedef struct { mDNSu8 c[256]; } UTF8str255;		// Null-terminated C string
 
 #define DefaultTTLforRRType(X) (((X) == kDNSType_A || (X) == kDNSType_AAAA || (X) == kDNSType_SRV) ? kHostNameTTL : kStandardTTL)
 
+typedef struct AuthRecord_struct AuthRecord;
+typedef struct ServiceRecordSet_struct ServiceRecordSet;
+typedef struct CacheRecord_struct CacheRecord;
+typedef struct CacheGroup_struct CacheGroup;
+typedef struct DNSQuestion_struct DNSQuestion;
+typedef struct ZoneData_struct ZoneData;
+typedef struct mDNS_struct mDNS;
+typedef struct mDNS_PlatformSupport_struct mDNS_PlatformSupport;
+typedef struct NATTraversalInfo_struct NATTraversalInfo;
+
+// Structure to abstract away the differences between TCP/SSL sockets, and one for UDP sockets
+// The actual definition of these structures in the in the appropriate platform support code
+typedef struct TCPSocket_struct TCPSocket;
+typedef struct UDPSocket_struct UDPSocket;
+
 // ***************************************************************************
 #if 0
 #pragma mark - DNS Message structures
@@ -970,6 +988,23 @@ typedef packedstruct
 	DNSMessageHeader h;						// Note: Size 12 bytes
 	mDNSu8 data[AbsoluteMaxDNSMessageData];	// 40 (IPv6) + 8 (UDP) + 12 (DNS header) + 8940 (data) = 9000
 	} DNSMessage;
+
+typedef struct tcpInfo_t
+	{
+	mDNS             *m;
+	TCPSocket        *sock;
+	DNSMessage        request;
+	int               requestLen;
+	DNSQuestion      *question;   // For queries
+	ServiceRecordSet *srs;        // For service record updates
+	AuthRecord       *rr;         // For record updates
+	mDNSAddr          Addr;
+	mDNSIPPort        Port;
+	DNSMessage       *reply;
+	mDNSu16           replylen;
+	unsigned long     nread;
+	int               numReplies;
+	} tcpInfo_t;
 
 // ***************************************************************************
 #if 0
@@ -1140,15 +1175,6 @@ typedef struct
 	} RData;
 #define sizeofRDataHeader (sizeof(RData) - sizeof(RDataBody))
 
-typedef struct AuthRecord_struct AuthRecord;
-typedef struct CacheRecord_struct CacheRecord;
-typedef struct CacheGroup_struct CacheGroup;
-typedef struct DNSQuestion_struct DNSQuestion;
-typedef struct ZoneData_struct ZoneData;
-typedef struct mDNS_struct mDNS;
-typedef struct mDNS_PlatformSupport_struct mDNS_PlatformSupport;
-typedef struct NATTraversalInfo_struct NATTraversalInfo;
-
 // Note: Within an mDNSRecordCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Exit(), mDNS_Execute()
 typedef void mDNSRecordCallback(mDNS *const m, AuthRecord *const rr, mStatus result);
 
@@ -1168,11 +1194,6 @@ typedef void mDNSRecordUpdateCallback(mDNS *const m, AuthRecord *const rr, RData
 #define NATMAP_INIT_RETRY                     (mDNSPlatformOneSecond / 4)             // start at 250ms w/ exponential decay
 #define NATMAP_DEFAULT_LEASE (60 * 60)                             // lease life in seconds
 #define NATMAP_VERS 0
-
-// Structure to abstract away the differences between TCP/SSL sockets, and one for UDP sockets
-// The actual definition of these structures in the in the appropriate platform support code
-typedef struct TCPSocket_struct TCPSocket;
-typedef struct UDPSocket_struct UDPSocket;
 
 typedef enum
 	{
@@ -1447,7 +1468,7 @@ struct AuthRecord_struct
 typedef struct ARListElem
 	{
 	struct ARListElem *next;
-	AuthRecord ar;          // Note: Must be last struct in field to accomodate oversized AuthRecords
+	AuthRecord ar;          // Note: Must be last element of structure, to accomodate oversized AuthRecords
 	} ARListElem;
 
 struct CacheGroup_struct				// Header object for a list of CacheRecords with the same name
@@ -1577,7 +1598,6 @@ struct ExtraResourceRecord_struct
 	};
 
 // Note: Within an mDNSServiceCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Exit(), mDNS_Execute()
-typedef struct ServiceRecordSet_struct ServiceRecordSet;
 typedef void mDNSServiceCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus result);
 
 // A ServiceRecordSet is basically a convenience structure to group together

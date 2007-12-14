@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.540  2007/12/14 23:55:28  cheshire
+Moved "struct tcpInfo_t" definition from uDNS.c to mDNSEmbeddedAPI.h
+
 Revision 1.539  2007/12/14 20:44:24  cheshire
 <rdar://problem/5526800> BTMM: Need to deregister records and services on shutdown/sleep
 SleepRecordRegistrations/WakeRecordRegistrations should only operate on uDNS records
@@ -1081,23 +1084,6 @@ Revision 1.227  2006/01/09 20:47:05  cheshire
 	#pragma warning(disable:4706)
 #endif
 
-typedef struct tcpInfo_t
-	{
-	mDNS             *m;
-	TCPSocket        *sock;
-	DNSMessage        request;
-	int               requestLen;
-	DNSQuestion      *question;   // For queries
-	ServiceRecordSet *srs;        // For service record updates
-	AuthRecord       *rr;         // For record updates
-	mDNSAddr          Addr;
-	mDNSIPPort        Port;
-	DNSMessage       *reply;
-	mDNSu16           replylen;
-	unsigned long     nread;
-	int               numReplies;
-	} tcpInfo_t;
-
 typedef struct SearchListElem
 	{
 	struct SearchListElem *next;
@@ -1963,7 +1949,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 				// be sending gratuitous replies using UDP and doesn't have a need to leave the TCP socket open.
 				// We'll only log this event if we've never received a reply before.
 				// BIND 9 appears to close an idle connection after 30 seconds.
-				if (tcpInfo->numReplies == 0) LogMsg("ERROR: socket closed prematurely %d", tcpInfo->nread);
+				if (tcpInfo->numReplies == 0) LogMsg("ERROR: socket closed prematurely tcpInfo->nread = %d", tcpInfo->nread);
 				err = mStatus_ConnFailed;
 				goto exit;
 				}
