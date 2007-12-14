@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.353  2007/12/14 19:14:02  cheshire
+Added (commented out) code for testing sleep/wake
+
 Revision 1.352  2007/12/14 00:58:29  cheshire
 <rdar://problem/5526800> BTMM: Need to deregister records and services on shutdown/sleep
 Additional fixes: When going to sleep, mDNSResponder needs to postpone sleep
@@ -2087,7 +2090,8 @@ mDNSlocal void SignalCallback(CFMachPortRef port, void *msg, CFIndex size, void 
 		case SIGINT:
 		case SIGTERM:	ExitCallback(msg_header->msgh_id); break;
 		case SIGINFO:	INFOCallback(); break;
-		case SIGUSR1:	LogMsg("SIGUSR1: Simulate Network Configuration Change Event");
+		case SIGUSR1:	// mDNSCoreMachineSleep(m, !m->SleepState); break;
+						LogMsg("SIGUSR1: Simulate Network Configuration Change Event");
 						mDNSMacOSXNetworkChanged(m);
 
 						// Simulate KeychainChanged
