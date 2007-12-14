@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.538  2007/12/14 01:13:40  cheshire
+<rdar://problem/5526800> BTMM: Need to deregister records and services on shutdown/sleep
+Additional fixes (existing code to deregister private records and services didn't work at all)
+
 Revision 1.537  2007/12/11 00:18:25  cheshire
 <rdar://problem/5569316> BTMM: My iMac has a "ghost" ID associated with it
 There were cases where the code was incorrectly clearing the "uselease" flag, and never resetting it.
@@ -1115,7 +1119,7 @@ static SearchListElem *SearchList = mDNSNULL;
 // -- it should just be a grouping of records that are treated the same as any other registered records.
 // In that case it may no longer be necessary to keep an explicit list of ServiceRecordSets, which in turn
 // would avoid the perils of modifying that list cleanly while some other piece of code is iterating through it.
-static ServiceRecordSet *CurrentServiceRecordSet = mDNSNULL;
+ServiceRecordSet *CurrentServiceRecordSet = mDNSNULL;
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -1924,9 +1928,9 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 		if (tcpInfo->srs && tcpInfo->srs->RR_SRV.resrec.name != &tcpInfo->srs->RR_SRV.namestorage) return;
 		if (tcpInfo->rr  && tcpInfo->rr->        resrec.name != &tcpInfo->rr->        namestorage) return;
 
-		AuthInfo = 	q ? q->AuthInfo :
-					tcpInfo->srs      ? GetAuthInfoForName(m, tcpInfo->srs->RR_SRV.resrec.name) :
-					tcpInfo->rr       ? GetAuthInfoForName(m, tcpInfo->rr->resrec.name) : mDNSNULL;
+		AuthInfo =  q            ? q->AuthInfo                                             :
+					tcpInfo->srs ? GetAuthInfoForName(m, tcpInfo->srs->RR_SRV.resrec.name) :
+					tcpInfo->rr  ? GetAuthInfoForName(m, tcpInfo->rr->resrec.name) : mDNSNULL;
 
 		err = mDNSSendDNSMessage(m, &tcpInfo->request, end, mDNSInterface_Any, &tcpInfo->Addr, tcpInfo->Port, sock, AuthInfo);
 		if (err) { debugf("ERROR: tcpCallback: mDNSSendDNSMessage - %ld", err); err = mStatus_UnknownErr; goto exit; }
@@ -1991,6 +1995,8 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			tcpInfo->replylen = 0;
 			
 			// If we're going to dispose this connection, do it FIRST, before calling client callback
+			// Note: Sleep code depends on us clearing *backpointer here -- it uses the clearing of rr->tcp and srs->tcp
+			// as the signal that the DNS deregistration operation with the server has completed, and the machine may now sleep
 			if (!q || !q->LongLived) { *backpointer = mDNSNULL; DisposeTCPConn(tcpInfo); }
 			
 			if (rr && rr->resrec.RecordType == kDNSRecordTypeDeregistering)
@@ -2346,7 +2352,6 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	return;
 
 exit:
-
 	if (err)
 		{
 		LogMsg("SendServiceRegistration ERROR formatting message %d!! Permanently abandoning service registration %##s", err, srs->RR_SRV.resrec.name->c);
@@ -2655,6 +2660,7 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 
 	if (srs->Private)
 		{
+		LogOperation("SendServiceDeregistration TCP %p %s", srs->tcp, ARDisplayString(m, &srs->RR_SRV));
 		if (srs->tcp) LogOperation("SendServiceDeregistration: Disposing existing TCP connection for %s", ARDisplayString(m, &srs->RR_SRV));
 		if (srs->tcp) DisposeTCPConn(srs->tcp);
 		srs->tcp = MakeTCPConn(m, &m->omsg, ptr, kTCPSocketFlags_UseTLS, &srs->SRSUpdateServer, srs->SRSUpdatePort, mDNSNULL, srs, mDNSNULL);
@@ -2671,7 +2677,6 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 	return;
 
 exit:
-
 	if (err)
 		{
 		LogMsg("SendServiceDeregistration ERROR formatting message %d!! Permanently abandoning service registration %##s", err, srs->RR_SRV.resrec.name->c);
@@ -2778,6 +2783,9 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 // Called with lock held
 mDNSlocal void UpdateSRVRecords(mDNS *m)
 	{
+	LogOperation("UpdateSRVRecords%s", m->SleepState ? " (ignored due to SleepState)" : "");
+	if (m->SleepState) return;
+
 	if (CurrentServiceRecordSet)
 		LogMsg("UpdateSRVRecords ERROR CurrentServiceRecordSet already set");
 	CurrentServiceRecordSet = m->ServiceRegistrations;
@@ -2945,7 +2953,7 @@ mDNSlocal void FoundStaticHostname(mDNS *const m, DNSQuestion *question, const R
 				h->arv6.state == regState_FetchingZoneData || h->arv6.state == regState_Pending)
 				{
 				// if we're in the process of registering a dynamic hostname, delay SRV update so we don't have to reregister services if the dynamic name succeeds
-				m->NextSRVUpdate = NonZeroTime(m->timenow + (5 * mDNSPlatformOneSecond));
+				m->NextSRVUpdate = NonZeroTime(m->timenow + 5 * mDNSPlatformOneSecond);
 				return;
 				}
 			h = h->next;
@@ -3317,6 +3325,8 @@ mDNSlocal void hndlServiceUpdateReply(mDNS *const m, ServiceRecordSet *srs,  mSt
 	if (m->mDNS_busy != m->mDNS_reentrancy+1)
 		LogMsg("hndlServiceUpdateReply: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
+	LogOperation("hndlServiceUpdateReply: err %d state %d %##s", err, srs->state, srs->RR_SRV.resrec.name->c);
+
 	SetRecordRetry(m, &srs->RR_SRV, mStatus_NoError);
 
 	switch (srs->state)
@@ -3409,11 +3419,13 @@ mDNSlocal void hndlServiceUpdateReply(mDNS *const m, ServiceRecordSet *srs,  mSt
 				txt->InFlightRData = mDNSNULL;
 				}
 			break;
+		case regState_NoTarget:
+			// This state is used when using SendServiceDeregistration() when going to sleep -- no further action required
+			return;
 		case regState_FetchingZoneData:
 		case regState_Registered:
 		case regState_Unregistered:
 		case regState_NATMap:
-		case regState_NoTarget:
 		case regState_ExtraQueued:
 		case regState_NATError:
 			LogMsg("hndlServiceUpdateReply called for service %##s in unexpected state %d with error %ld.  Unlinking.",
@@ -3506,6 +3518,10 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 	if (m->mDNS_busy != m->mDNS_reentrancy+1)
 		LogMsg("hndlRecordUpdateReply: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
+	LogOperation("hndlRecordUpdateReply: err %d state %d %s", err, rr->state, ARDisplayString(m, rr));
+
+	if (m->SleepState) return;		// If we just sent a deregister on going to sleep, no further action required
+
 	SetRecordRetry(m, rr, mStatus_NoError);
 
 	if (rr->state == regState_UpdatePending)
@@ -3546,8 +3562,8 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 		{
 		if (!err)
 			{
-			rr->state = regState_Registered;
 			if (rr->state == regState_Refresh) InvokeCallback = mDNSfalse;
+			rr->state = regState_Registered;
 			}
 		else
 			{
@@ -4577,8 +4593,9 @@ mDNSlocal void WakeRecordRegistrations(mDNS *m)
 		if (rr->state == regState_Refresh)
 			{
 			// trigger slightly delayed refresh (we usually get this message before kernel is ready to send packets)
+			rr->state = regState_Pending;
 			rr->LastAPTime = m->timenow;
-			rr->ThisAPInterval = INIT_UCAST_POLL_INTERVAL;
+			rr->ThisAPInterval = mDNSPlatformOneSecond;
 			}
 		rr = rr->next;
 		}
@@ -4589,6 +4606,7 @@ mDNSexport void SleepServiceRegistrations(mDNS *m)
 	ServiceRecordSet *srs = m->ServiceRegistrations;
 	while (srs)
 		{
+		LogOperation("SleepServiceRegistrations: state %d %s", srs->state, ARDisplayString(m, &srs->RR_SRV));
 		if (srs->nta) { CancelGetZoneData(m, srs->nta); srs->nta = mDNSNULL; }
 
 		if (srs->NATinfo.clientContext)
@@ -4610,31 +4628,19 @@ mDNSexport void SleepServiceRegistrations(mDNS *m)
 			}
 
 		if (srs->state == regState_Registered || srs->state == regState_Refresh)
-			{
-			mDNSOpaque16 origid = srs->id;
-			srs->state = regState_DeregPending;	// state expected by SendDereg()
 			SendServiceDeregistration(m, srs);
-			srs->id = origid;
-			srs->state = regState_NoTarget;	// when we wake, we'll re-register (and optionally nat-map) once our address record completes
-			srs->RR_SRV.resrec.rdata->u.srv.target.c[0] = 0;
-			}
+
+		srs->state = regState_NoTarget;	// when we wake, we'll re-register (and optionally nat-map) once our address record completes
+		srs->RR_SRV.resrec.rdata->u.srv.target.c[0] = 0;
+
 		srs = srs->uDNS_next;
 		}
 	}
 
 mDNSlocal void WakeServiceRegistrations(mDNS *m)
 	{
-	ServiceRecordSet *srs = m->ServiceRegistrations;
-	while (srs)
-		{
-		if (srs->state == regState_Refresh)
-			{
-			// trigger slightly delayed refresh (we usually get this message before kernel is ready to send packets)
-			srs->RR_SRV.LastAPTime = m->timenow;
-			srs->RR_SRV.ThisAPInterval = INIT_UCAST_POLL_INTERVAL;
-			}
-		srs = srs->uDNS_next;
-		}
+	m->NextSRVUpdate = NonZeroTime(m->timenow + mDNSPlatformOneSecond);
+	LogOperation("WakeServiceRegistrations %d %d", m->timenow, m->NextSRVUpdate);
 	}
 
 mDNSexport void mDNS_AddSearchDomain(const domainname *const domain)
