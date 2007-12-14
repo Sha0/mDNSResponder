@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.191  2007/12/14 00:59:36  cheshire
+<rdar://problem/5526800> BTMM: Need to deregister records and services on shutdown/sleep
+While going to sleep, don't block event scheduling
+
 Revision 1.190  2007/12/13 20:20:17  cheshire
 Minor efficiency tweaks -- converted IdenticalResourceRecord, IdenticalSameNameRecord, and
 SameRData from functions to macros, which allows the code to be inlined (the compiler can't
@@ -2631,7 +2635,7 @@ mDNSexport void mDNS_Lock_(mDNS *const m)
 mDNSlocal mDNSs32 GetNextScheduledEvent(const mDNS *const m)
 	{
 	mDNSs32 e = m->timenow + 0x78000000;
-	if (m->mDNSPlatformStatus != mStatus_NoError || m->SleepState) return(e);
+	if (m->mDNSPlatformStatus != mStatus_NoError) return(e);
 	if (m->NewQuestions)
 		{
 		if (m->NewQuestions->DelayAnswering) e = m->NewQuestions->DelayAnswering;
