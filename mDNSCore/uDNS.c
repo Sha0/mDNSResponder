@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.542  2007/12/15 01:12:27  cheshire
+<rdar://problem/5526796> Need to remove active LLQs from server upon question cancellation, on sleep, and on shutdown
+
 Revision 1.541  2007/12/15 00:18:51  cheshire
 Renamed question->origLease to question->ReqLease
 
@@ -1865,8 +1868,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 		q                 ? &q           ->tcp :
 		tcpInfo->srs      ? &tcpInfo->srs->tcp :
 		tcpInfo->rr       ? &tcpInfo->rr ->tcp : mDNSNULL;
-	if (!backpointer) LogMsg("tcpCallback: Purpose of connection unidentified");
-	else if (*backpointer != tcpInfo)
+	if (backpointer && *backpointer != tcpInfo)
 		LogMsg("tcpCallback: %d backpointer %p incorrect tcpInfo %p question %p srs %p rr %p",
 			mDNSPlatformTCPGetFD(tcpInfo->sock), *backpointer, tcpInfo, q, tcpInfo->srs, tcpInfo->rr);
 
@@ -1879,11 +1881,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 		// connection is established - send the message
 		if (q && q->LongLived && q->state == LLQ_Established)
 			{
-			//LogMsg("tcpCallback calling sendLLQRefresh %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
-			mDNS_Lock(m);
-			sendLLQRefresh(m, q, q->ReqLease);
-			mDNS_Unlock(m);
-			return;
+			end = ((mDNSu8*) &tcpInfo->request) + tcpInfo->requestLen;
 			}
 		else if (q && q->LongLived && q->state != LLQ_Poll && !mDNSIPPortIsZero(m->LLQNAT.ExternalPort))
 			{
@@ -1990,7 +1988,9 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			// If we're going to dispose this connection, do it FIRST, before calling client callback
 			// Note: Sleep code depends on us clearing *backpointer here -- it uses the clearing of rr->tcp and srs->tcp
 			// as the signal that the DNS deregistration operation with the server has completed, and the machine may now sleep
-			if (!q || !q->LongLived) { *backpointer = mDNSNULL; DisposeTCPConn(tcpInfo); }
+			if (backpointer)
+				if (!q || !q->LongLived || m->SleepState)
+					{ *backpointer = mDNSNULL; DisposeTCPConn(tcpInfo); }
 			
 			if (rr && rr->resrec.RecordType == kDNSRecordTypeDeregistering)
 				{
@@ -2014,7 +2014,7 @@ exit:
 		{
 		// Clear client backpointer FIRST -- that way if one of the callbacks cancels its operation
 		// we won't end up double-disposing our tcpInfo_t
-		*backpointer = mDNSNULL;
+		if (backpointer) *backpointer = mDNSNULL;
 
 		mDNS_Lock(m);		// Need to grab the lock to get m->timenow
 
@@ -3844,48 +3844,42 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 #pragma mark - Query Routines
 #endif
 
-mDNSexport void sendLLQRefresh(mDNS *m, DNSQuestion *q, mDNSu32 lease)
+mDNSexport void sendLLQRefresh(mDNS *m, DNSQuestion *q)
 	{
 	mDNSu8 *end;
 	LLQOptData llq;
-	mStatus err;
 
-	// If this is supposed to be a private question and the server dropped the TCP connection,
-	// we don't want to cancel it with a clear-text UDP packet, and and it's not worth the expense of
-	// setting up a new TLS session just to cancel the outstanding LLQ, so we just let it expire naturally
-	if (lease == 0 && q->AuthInfo && !q->tcp) return;
+	if (q->ReqLease)
+		if ((q->state == LLQ_Established && q->ntries >= kLLQ_MAX_TRIES) || q->expire - m->timenow < 0)
+			{
+			LogMsg("Unable to refresh LLQ %##s (%s) - will retry in %d minutes", q->qname.c, DNSTypeName(q->qtype), LLQ_POLL_INTERVAL/3600);
+			StartLLQPolling(m,q);
+			return;
+			}
 
-	if (q->AuthInfo && !q->tcp)
-		{
-		//LogOperation("sendLLQRefresh setting up new TLS session %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
-		q->tcp = MakeTCPConn(m, mDNSNULL, mDNSNULL, kTCPSocketFlags_UseTLS, &q->servAddr, q->servPort, q, mDNSNULL, mDNSNULL);
-		q->LastQTime = m->timenow;
-		SetNextQueryTime(m, q);
-		return;
-		}
-
-	if ((q->state == LLQ_Established && q->ntries >= kLLQ_MAX_TRIES) || q->expire - m->timenow < 0)
-		{
-		LogMsg("Unable to refresh LLQ %##s (%s) - will retry in %d minutes", q->qname.c, DNSTypeName(q->qtype), LLQ_POLL_INTERVAL/3600);
-		StartLLQPolling(m,q);
-		return;
-		}
-
-	llq.vers  = kLLQ_Vers;
-	llq.llqOp = kLLQOp_Refresh;
-	llq.err   = q->tcp ? GetLLQEventPort(m, &q->servAddr) : LLQErr_NoError;	// If using TCP tell server what UDP port to send notifications to
-	llq.id    = q->id;
-	llq.llqlease = lease;
+	llq.vers     = kLLQ_Vers;
+	llq.llqOp    = kLLQOp_Refresh;
+	llq.err      = q->tcp ? GetLLQEventPort(m, &q->servAddr) : LLQErr_NoError;	// If using TCP tell server what UDP port to send notifications to
+	llq.id       = q->id;
+	llq.llqlease = q->ReqLease;
 
 	InitializeDNSMessage(&m->omsg.h, q->TargetQID, uQueryFlags);
 	end = putLLQ(&m->omsg, m->omsg.data, q, &llq, mDNStrue);
 	if (!end) { LogMsg("ERROR: sendLLQRefresh - putLLQ"); return; }
 
-	err = mDNSSendDNSMessage(m, &m->omsg, end, mDNSInterface_Any, &q->servAddr, q->servPort, q->tcp ? q->tcp->sock : mDNSNULL, q->AuthInfo);
-	if (err)
+	if (q->AuthInfo && !q->tcp)
 		{
-		LogMsg("sendLLQRefresh: mDNSSendDNSMessage%s failed: %d", q->tcp ? " (TCP)" : "", err);
-		if (q->tcp) { DisposeTCPConn(q->tcp); q->tcp = mDNSNULL; }
+		LogOperation("sendLLQRefresh setting up new TLS session %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+		q->tcp = MakeTCPConn(m, &m->omsg, end, kTCPSocketFlags_UseTLS, &q->servAddr, q->servPort, q, mDNSNULL, mDNSNULL);
+		}
+	else
+		{
+		mStatus err = mDNSSendDNSMessage(m, &m->omsg, end, mDNSInterface_Any, &q->servAddr, q->servPort, q->tcp ? q->tcp->sock : mDNSNULL, q->AuthInfo);
+		if (err)
+			{
+			LogMsg("sendLLQRefresh: mDNSSendDNSMessage%s failed: %d", q->tcp ? " (TCP)" : "", err);
+			if (q->tcp) { DisposeTCPConn(q->tcp); q->tcp = mDNSNULL; }
+			}
 		}
 
 	q->ntries++;
@@ -4270,7 +4264,7 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 			{
 			case LLQ_InitialRequest:   startLLQHandshake(m, q); break;
 			case LLQ_SecondaryRequest: sendChallengeResponse(m, q, mDNSNULL); break;
-			case LLQ_Established:      sendLLQRefresh(m, q, q->ReqLease); break;
+			case LLQ_Established:      sendLLQRefresh(m, q); break;
 			case LLQ_Poll:             break;	// Do nothing (handled below)
 			}
 		}

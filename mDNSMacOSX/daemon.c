@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.354  2007/12/15 01:12:28  cheshire
+<rdar://problem/5526796> Need to remove active LLQs from server upon question cancellation, on sleep, and on shutdown
+
 Revision 1.353  2007/12/14 19:14:02  cheshire
 Added (commented out) code for testing sleep/wake
 
@@ -2321,6 +2324,9 @@ mDNSlocal mDNSBool ReadyForSleep(mDNS *m)
 	(void)m;
 
 	// 1. Scan list of private LLQs, and make sure they've all completed their handshake with the server
+	DNSQuestion *q;
+	for (q = m->Questions; q; q = q->next)
+		if (mDNSOpaque16IsZero(q->TargetQID) && q->LongLived && q->ReqLease == 0 && q->tcp) return(mDNSfalse);
 
 	// 2. Scan list of registered records
 	AuthRecord *rr;

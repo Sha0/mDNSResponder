@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.766  2007/12/15 01:12:27  cheshire
+<rdar://problem/5526796> Need to remove active LLQs from server upon question cancellation, on sleep, and on shutdown
+
 Revision 1.765  2007/12/15 00:18:51  cheshire
 Renamed question->origLease to question->ReqLease
 
@@ -3514,15 +3517,8 @@ mDNSlocal void SuspendLLQs(mDNS *m)
 	{
 	DNSQuestion *q;
 	for (q = m->Questions; q; q = q->next)
-		if (ActiveQuestion(q) && !mDNSOpaque16IsZero(q->TargetQID) && q->LongLived)
-			{
-			// If necessary, tell server it can delete this LLQ state
-			if (q->state == LLQ_Established) sendLLQRefresh(m, q, 0);
-			if (q->nta) { CancelGetZoneData(m, q->nta); q->nta = mDNSNULL; }
-			if (q->tcp) { DisposeTCPConn(q->tcp); q->tcp = mDNSNULL; }
-			q->state = LLQ_InitialRequest;	// Will need to set up new LLQ on wake from sleep
-			q->id = zeroOpaque64;
-			}
+		if (ActiveQuestion(q) && !mDNSOpaque16IsZero(q->TargetQID) && q->LongLived && q->state == LLQ_Established)
+			{ q->ReqLease = 0; sendLLQRefresh(m, q); }
 	}
 
 mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question)
@@ -3548,7 +3544,7 @@ mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question)
 		LogOperation("ActivateUnicastQuery: %##s %s%s",
 			question->qname.c, DNSTypeName(question->qtype), question->AuthInfo ? " (Private)" : "");
 		if (question->nta) { CancelGetZoneData(m, question->nta); question->nta = mDNSNULL; }
-		if (question->LongLived) question->state = LLQ_InitialRequest;
+		if (question->LongLived) { question->state = LLQ_InitialRequest; question->id = zeroOpaque64; }
 		question->ThisQInterval = InitialQuestionInterval;
 		question->LastQTime     = m->timenow - question->ThisQInterval;
 		SetNextQueryTime(m, question);
@@ -5451,7 +5447,20 @@ mDNSexport mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const que
 			}
 
 		// If necessary, tell server it can delete this LLQ state
-		if (question->state == LLQ_Established) sendLLQRefresh(m, question, 0);
+		if (question->state == LLQ_Established)
+			{
+			question->ReqLease = 0;
+			sendLLQRefresh(m, question);
+			// If we need need to make a TCP connection to cancel the LLQ, that's going to take a little while.
+			// We clear the tcp->question backpointer so that when the TCP connection completes, it doesn't
+			// crash trying to access our cancelled question, but we don't cancel the TCP operation itself --
+			// we let that run out its natural course and complete asynchronously.
+			if (question->tcp)
+				{
+				question->tcp->question = mDNSNULL;
+				question->tcp           = mDNSNULL;
+				}
+			}
 		}
 
 	return(mStatus_NoError);
