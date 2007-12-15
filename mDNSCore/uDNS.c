@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.541  2007/12/15 00:18:51  cheshire
+Renamed question->origLease to question->ReqLease
+
 Revision 1.540  2007/12/14 23:55:28  cheshire
 Moved "struct tcpInfo_t" definition from uDNS.c to mDNSEmbeddedAPI.h
 
@@ -1685,7 +1688,7 @@ mDNSlocal void sendChallengeResponse(mDNS *const m, DNSQuestion *const q, const 
 		llqBuf.llqOp    = kLLQOp_Setup;
 		llqBuf.err      = LLQErr_NoError;	// Don't need to tell server UDP notification port when sending over UDP
 		llqBuf.id       = q->id;
-		llqBuf.llqlease = q->origLease;
+		llqBuf.llqlease = q->ReqLease;
 		llq = &llqBuf;
 		}
 
@@ -1714,7 +1717,7 @@ mDNSlocal void sendChallengeResponse(mDNS *const m, DNSQuestion *const q, const 
 mDNSlocal void SetLLQTimer(mDNS *const m, DNSQuestion *const q, const LLQOptData *const llq)
 	{
 	mDNSs32 lease = (mDNSs32)llq->llqlease * mDNSPlatformOneSecond;
-	q->origLease     = llq->llqlease;
+	q->ReqLease      = llq->llqlease;
 	q->LastQTime     = m->timenow;
 	q->expire        = m->timenow + lease;
 	q->ThisQInterval = lease/2 + mDNSRandom(lease/10);
@@ -1738,11 +1741,11 @@ mDNSlocal void recvSetupResponse(mDNS *const m, mDNSu8 rcode, DNSQuestion *const
 
 		if (llq->err) { LogMsg("recvSetupResponse - received llq->err %d from server", llq->err); StartLLQPolling(m,q); return; }
 	
-		if (q->origLease != llq->llqlease)
-			debugf("recvSetupResponse: requested lease %lu, granted lease %lu", q->origLease, llq->llqlease);
+		if (q->ReqLease != llq->llqlease)
+			debugf("recvSetupResponse: requested lease %lu, granted lease %lu", q->ReqLease, llq->llqlease);
 	
 		// cache expiration in case we go to sleep before finishing setup
-		q->origLease = llq->llqlease;
+		q->ReqLease = llq->llqlease;
 		q->expire = m->timenow + ((mDNSs32)llq->llqlease * mDNSPlatformOneSecond);
 	
 		// update state
@@ -1878,7 +1881,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			{
 			//LogMsg("tcpCallback calling sendLLQRefresh %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 			mDNS_Lock(m);
-			sendLLQRefresh(m, q, q->origLease);
+			sendLLQRefresh(m, q, q->ReqLease);
 			mDNS_Unlock(m);
 			return;
 			}
@@ -2134,7 +2137,7 @@ mDNSexport void startLLQHandshake(mDNS *m, DNSQuestion *q)
 		else
 			{
 			q->state         = LLQ_SecondaryRequest;		// Right now, for private DNS, we skip the four-way LLQ handshake
-			q->origLease     = kLLQ_DefLease;
+			q->ReqLease      = kLLQ_DefLease;
 			q->ThisQInterval = 0;
 			}
 		q->LastQTime     = m->timenow;
@@ -2172,7 +2175,7 @@ mDNSexport void startLLQHandshake(mDNS *m, DNSQuestion *q)
 	
 			// update question state
 			q->state         = LLQ_InitialRequest;
-			q->origLease     = kLLQ_DefLease;
+			q->ReqLease      = kLLQ_DefLease;
 			q->ThisQInterval = (kLLQ_INIT_RESEND * mDNSPlatformOneSecond);
 			q->LastQTime     = m->timenow;
 			SetNextQueryTime(m, q);
@@ -4267,7 +4270,7 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 			{
 			case LLQ_InitialRequest:   startLLQHandshake(m, q); break;
 			case LLQ_SecondaryRequest: sendChallengeResponse(m, q, mDNSNULL); break;
-			case LLQ_Established:      sendLLQRefresh(m, q, q->origLease); break;
+			case LLQ_Established:      sendLLQRefresh(m, q, q->ReqLease); break;
 			case LLQ_Poll:             break;	// Do nothing (handled below)
 			}
 		}

@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.461  2007/12/15 00:18:51  cheshire
+Renamed question->origLease to question->ReqLease
+
 Revision 1.460  2007/12/14 23:55:28  cheshire
 Moved "struct tcpInfo_t" definition from uDNS.c to mDNSEmbeddedAPI.h
 
@@ -1784,7 +1787,7 @@ struct DNSQuestion_struct
 
 	// LLQ-specific fields. These fields are only meaningful when LongLived flag is set
 	LLQ_State             state;
-	mDNSu32               origLease;		// seconds (relative)
+	mDNSu32               ReqLease;		// seconds (relative)
 	mDNSs32               expire;			// ticks (absolute)
 	mDNSs16               ntries;
 	mDNSOpaque64          id;

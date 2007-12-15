@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.765  2007/12/15 00:18:51  cheshire
+Renamed question->origLease to question->ReqLease
+
 Revision 1.764  2007/12/14 00:49:53  cheshire
 Fixed crash in mDNS_StartExit -- the service deregistration loop needs to use
 the CurrentServiceRecordSet mechanism to guard against services being deleted,
@@ -5106,8 +5109,7 @@ mDNSlocal DNSQuestion *FindDuplicateQuestion(const mDNS *const m, const DNSQuest
 	return(mDNSNULL);
 	}
 
-// This is called after a question is deleted, in case other identical questions were being
-// suppressed as duplicates
+// This is called after a question is deleted, in case other identical questions were being suppressed as duplicates
 mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const question)
 	{
 	DNSQuestion *q;
@@ -5131,7 +5133,7 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const questi
 
 				q->state             = question->state;
 			//	q->tcp               = question->tcp;
-				q->origLease         = question->origLease;
+				q->ReqLease          = question->ReqLease;
 				q->expire            = question->expire;
 				q->ntries            = question->ntries;
 				q->id                = question->id;
@@ -5157,7 +5159,7 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const questi
 				}
 	}
 
-// lookup a DNS Server, matching by name in split-dns configurations.  Result stored in addr parameter if successful
+// Look up a DNS Server, matching by name in split-dns configurations.
 mDNSlocal DNSServer *GetServerForName(mDNS *m, const domainname *name)
     {
 	DNSServer *curmatch = mDNSNULL, *p;
@@ -5290,7 +5292,7 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 		question->NoAnswer          = NoAnswer_Normal;
 
 		question->state             = LLQ_InitialRequest;
-		question->origLease         = 0;
+		question->ReqLease          = 0;
 		question->expire            = 0;
 		question->ntries            = 0;
 		question->id                = zeroOpaque64;
