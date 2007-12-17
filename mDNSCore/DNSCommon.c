@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.193  2007/12/17 23:42:36  cheshire
+Added comments about DNSDigest_SignMessage()
+
 Revision 1.192  2007/12/17 21:24:09  cheshire
 <rdar://problem/5526800> BTMM: Need to deregister records and services on shutdown/sleep
 We suspend sending of mDNS queries responses when going to sleep, so calculate GetNextScheduledEvent() time accordingly
@@ -2522,6 +2525,8 @@ mDNSexport void DumpPacket(mDNS *const m, mDNSBool sent, char *transport, const 
 // Stub definition of TCPSocket_struct so we can access flags field. (Rest of TCPSocket_struct is platform-dependent.)
 struct TCPSocket_struct { TCPSocketFlags flags; /* ... */ };
 
+// Note: When we sign a DNS message using DNSDigest_SignMessage(), the current real-time clock value is used, which
+// is why we generally defer signing until we send the message, to ensure the signature is as fresh as possible.
 mDNSexport mStatus mDNSSendDNSMessage(mDNS *const m, DNSMessage *const msg, mDNSu8 *end,
     mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, TCPSocket *sock, DomainAuthInfo *authInfo)
 	{
@@ -2548,7 +2553,7 @@ mDNSexport mStatus mDNSSendDNSMessage(mDNS *const m, DNSMessage *const msg, mDNS
 	*ptr++ = (mDNSu8)(numAdditionals >> 8);
 	*ptr++ = (mDNSu8)(numAdditionals &  0xFF);
 
-	if (authInfo) DNSDigest_SignMessage(msg, &end, authInfo, 0);
+	if (authInfo) DNSDigest_SignMessage(msg, &end, authInfo, 0);	// DNSDigest_SignMessage operates on message in network byte order
 	if (!end) { LogMsg("mDNSSendDNSMessage: DNSDigest_SignMessage failed"); status = mStatus_NoMemoryErr; }
 	else
 		{
