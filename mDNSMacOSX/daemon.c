@@ -30,6 +30,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.355  2007/12/17 22:29:22  cheshire
+<rdar://problem/5526800> BTMM: Need to deregister records and services on shutdown/sleep
+Log message indicating when we make IOAllowPowerChange call; make sure nextTimerEvent is set appropriately
+
 Revision 1.354  2007/12/15 01:12:28  cheshire
 <rdar://problem/5526796> Need to remove active LLQs from server upon question cancellation, on sleep, and on shutdown
 
@@ -2399,11 +2403,17 @@ mDNSlocal void * KQueueLoop(void *m_param)
 
 		if (m->p->SleepLimit)
 			{
-			if (now - m->p->SleepLimit >= 0 || ReadyForSleep(m))
+			mDNSBool ready = ReadyForSleep(m);
+			if (ready || now - m->p->SleepLimit >= 0)
 				{
+				LogOperation("IOAllowPowerChange %s at %ld (%d ticks remaining)",
+					ready ? "ready for sleep" : "giving up", now, m->p->SleepLimit - now);
 				m->p->SleepLimit = 0;
 				IOAllowPowerChange(m->p->PowerConnection, m->p->SleepCookie);
 				}
+			else
+				if (nextTimerEvent - m->p->SleepLimit >= 0)
+					nextTimerEvent = m->p->SleepLimit;
 			}
 
 		// Convert absolute wakeup time to a relative time from now
