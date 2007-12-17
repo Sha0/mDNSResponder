@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.87  2007/12/17 23:34:50  cheshire
+Don't need to set ptr to result of DNSDigest_SignMessage -- ptr is updated anyway (it's passed by reference)
+
 Revision 1.86  2007/12/13 20:22:34  cheshire
 Got rid of redundant SameResourceRecord() routine; replaced calls to this
 with calls to IdenticalResourceRecord() which does exactly the same thing.
@@ -1101,7 +1104,7 @@ mDNSlocal int UpdateSRV(DaemonInfo *d, mDNSBool registration)
 
 		if ( zone->updateKeys )
 			{
-			ptr = DNSDigest_SignMessage( &pkt.msg, &ptr, zone->updateKeys, 0 );
+			DNSDigest_SignMessage( &pkt.msg, &ptr, zone->updateKeys, 0 );
 			require_action( ptr, exit, Log("UpdateSRV: Error constructing lease expiration update" ) );
 			}
 
@@ -1436,7 +1439,7 @@ mDNSlocal void DeleteOneRecord(DaemonInfo *d, CacheRecord *rr, domainname *zname
 
 	if ( zone && zone->updateKeys)
 		{
-		ptr = DNSDigest_SignMessage(&pkt.msg, &ptr, zone->updateKeys, 0 );
+		DNSDigest_SignMessage(&pkt.msg, &ptr, zone->updateKeys, 0 );
 		if (!ptr) goto end;
 		}
 
