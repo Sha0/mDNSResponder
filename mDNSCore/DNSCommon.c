@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.192  2007/12/17 21:24:09  cheshire
+<rdar://problem/5526800> BTMM: Need to deregister records and services on shutdown/sleep
+We suspend sending of mDNS queries responses when going to sleep, so calculate GetNextScheduledEvent() time accordingly
+
 Revision 1.191  2007/12/14 00:59:36  cheshire
 <rdar://problem/5526800> BTMM: Need to deregister records and services on shutdown/sleep
 While going to sleep, don't block event scheduling
@@ -2645,19 +2649,22 @@ mDNSlocal mDNSs32 GetNextScheduledEvent(const mDNS *const m)
 	if (m->NewLocalRecords && LocalRecordReady(m->NewLocalRecords)) return(m->timenow);
 #ifndef UNICAST_DISABLED
 	if (e - m->NextuDNSEvent         > 0) e = m->NextuDNSEvent;
+	if (e - m->NextScheduledNATOp    > 0) e = m->NextScheduledNATOp;
 #endif
 	if (e - m->NextCacheCheck        > 0) e = m->NextCacheCheck;
-	if (e - m->NextScheduledNATOp    > 0) e = m->NextScheduledNATOp;
 
-	if (m->SuppressSending)
+	if (!m->SleepState)
 		{
-		if (e - m->SuppressSending       > 0) e = m->SuppressSending;
-		}
-	else
-		{
-		if (e - m->NextScheduledQuery    > 0) e = m->NextScheduledQuery;
-		if (e - m->NextScheduledProbe    > 0) e = m->NextScheduledProbe;
-		if (e - m->NextScheduledResponse > 0) e = m->NextScheduledResponse;
+		if (m->SuppressSending)
+			{
+			if (e - m->SuppressSending       > 0) e = m->SuppressSending;
+			}
+		else
+			{
+			if (e - m->NextScheduledQuery    > 0) e = m->NextScheduledQuery;
+			if (e - m->NextScheduledProbe    > 0) e = m->NextScheduledProbe;
+			if (e - m->NextScheduledResponse > 0) e = m->NextScheduledResponse;
+			}
 		}
 	return(e);
 	}
