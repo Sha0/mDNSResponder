@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.463  2007/12/17 23:53:25  cheshire
+Added DNSDigest_SignMessageHostByteOrder, for signing messages not yet converted to network byte order
+
 Revision 1.462  2007/12/17 23:48:29  cheshire
 DNSDigest_SignMessage doesn't need to return a result -- it already updates the 'end' parameter
 
@@ -2503,6 +2506,16 @@ extern mDNSs32 DNSDigest_ConstructHMACKeyfromBase64(DomainAuthInfo *info, const 
 // records in HOST byte order, which is incremented upon successful completion of this routine.  The function returns
 // the new end pointer on success, and NULL on failure.
 extern void DNSDigest_SignMessage(DNSMessage *msg, mDNSu8 **end, DomainAuthInfo *info, mDNSu16 tcode);
+
+#define SwapDNSHeaderBytes(M) do { \
+    (M)->h.numQuestions   = (mDNSu16)((mDNSu8 *)&(M)->h.numQuestions  )[0] << 8 | ((mDNSu8 *)&(M)->h.numQuestions  )[1]; \
+    (M)->h.numAnswers     = (mDNSu16)((mDNSu8 *)&(M)->h.numAnswers    )[0] << 8 | ((mDNSu8 *)&(M)->h.numAnswers    )[1]; \
+    (M)->h.numAuthorities = (mDNSu16)((mDNSu8 *)&(M)->h.numAuthorities)[0] << 8 | ((mDNSu8 *)&(M)->h.numAuthorities)[1]; \
+    (M)->h.numAdditionals = (mDNSu16)((mDNSu8 *)&(M)->h.numAdditionals)[0] << 8 | ((mDNSu8 *)&(M)->h.numAdditionals)[1]; \
+    } while (0)
+
+#define DNSDigest_SignMessageHostByteOrder(M,E,INFO) \
+	do { SwapDNSHeaderBytes(M); DNSDigest_SignMessage((M), (E), (INFO), 0); SwapDNSHeaderBytes(M); } while (0)
 
 // verify a DNS message.  The message must be complete, with all values in network byte order.  end points to the
 // end of the record.  tsig is a pointer to the resource record that contains the TSIG OPT record.  info is
