@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.543  2007/12/17 23:57:43  cheshire
+<rdar://problem/5526796> Need to remove active LLQs from server upon question cancellation, on sleep, and on shutdown
+Need to include TSIG signature when sending LLQ cancellations over TLS
+
 Revision 1.542  2007/12/15 01:12:27  cheshire
 <rdar://problem/5526796> Need to remove active LLQs from server upon question cancellation, on sleep, and on shutdown
 
@@ -3865,7 +3869,12 @@ mDNSexport void sendLLQRefresh(mDNS *m, DNSQuestion *q)
 
 	InitializeDNSMessage(&m->omsg.h, q->TargetQID, uQueryFlags);
 	end = putLLQ(&m->omsg, m->omsg.data, q, &llq, mDNStrue);
-	if (!end) { LogMsg("ERROR: sendLLQRefresh - putLLQ"); return; }
+	if (!end) { LogMsg("sendLLQRefresh: putLLQ failed %##s (%s)", q->qname.c, DNSTypeName(q->qtype)); return; }
+	if (q->AuthInfo)
+		{
+		DNSDigest_SignMessageHostByteOrder(&m->omsg, &end, q->AuthInfo);
+		if (!end) { LogMsg("sendLLQRefresh: DNSDigest_SignMessage failed %##s (%s)", q->qname.c, DNSTypeName(q->qtype)); return; }
+		}
 
 	if (q->AuthInfo && !q->tcp)
 		{
