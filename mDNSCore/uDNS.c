@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.544  2007/12/18 00:40:11  cheshire
+<rdar://problem/5526796> Need to remove active LLQs from server upon question cancellation, on sleep, and on shutdown
+Reordered code to avoid double-TSIGs in some cases
+
 Revision 1.543  2007/12/17 23:57:43  cheshire
 <rdar://problem/5526796> Need to remove active LLQs from server upon question cancellation, on sleep, and on shutdown
 Need to include TSIG signature when sending LLQ cancellations over TLS
@@ -1880,8 +1884,23 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 
 	if (ConnectionEstablished)
 		{
-		mDNSu8    *end;
+		mDNSu8    *end = ((mDNSu8*) &tcpInfo->request) + tcpInfo->requestLen;
 		DomainAuthInfo *AuthInfo;
+
+		// Defensive coding for <rdar://problem/5546824> Crash in mDNSResponder at GetAuthInfoForName_internal + 366
+		// Don't know yet what's causing this, but at least we can be cautious and try to avoid crashing if we find our pointers in an unexpected state
+		if (tcpInfo->srs && tcpInfo->srs->RR_SRV.resrec.name != &tcpInfo->srs->RR_SRV.namestorage)
+			LogMsg("tcpCallback: ERROR: tcpInfo->srs->RR_SRV.resrec.name %p != &tcpInfo->srs->RR_SRV.namestorage %p",
+				tcpInfo->srs->RR_SRV.resrec.name, &tcpInfo->srs->RR_SRV.namestorage);
+		if (tcpInfo->rr && tcpInfo->rr->resrec.name != &tcpInfo->rr->namestorage)
+			LogMsg("tcpCallback: ERROR: tcpInfo->rr->resrec.name %p != &tcpInfo->rr->namestorage %p",
+				tcpInfo->rr->resrec.name, &tcpInfo->rr->namestorage);
+		if (tcpInfo->srs && tcpInfo->srs->RR_SRV.resrec.name != &tcpInfo->srs->RR_SRV.namestorage) return;
+		if (tcpInfo->rr  && tcpInfo->rr->        resrec.name != &tcpInfo->rr->        namestorage) return;
+
+		AuthInfo =  tcpInfo->srs ? GetAuthInfoForName(m, tcpInfo->srs->RR_SRV.resrec.name) :
+					tcpInfo->rr  ? GetAuthInfoForName(m, tcpInfo->rr->resrec.name)         : mDNSNULL;
+
 		// connection is established - send the message
 		if (q && q->LongLived && q->state == LLQ_Established)
 			{
@@ -1903,29 +1922,14 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			InitializeDNSMessage(&tcpInfo->request.h, q->TargetQID, uQueryFlags);
 			end = putLLQ(&tcpInfo->request, tcpInfo->request.data, q, &llqData, mDNStrue);
 			if (!end) { LogMsg("ERROR: tcpCallback - putLLQ"); err = mStatus_UnknownErr; goto exit; }
+			AuthInfo = q->AuthInfo;		// Need to add TSIG to this message
 			}
 		else if (q)
 			{
 			InitializeDNSMessage(&tcpInfo->request.h, q->TargetQID, uQueryFlags);
 			end = putQuestion(&tcpInfo->request, tcpInfo->request.data, tcpInfo->request.data + AbsoluteMaxDNSMessageData, &q->qname, q->qtype, q->qclass);
+			AuthInfo = q->AuthInfo;		// Need to add TSIG to this message
 			}
-		else
-			end = ((mDNSu8*) &tcpInfo->request) + tcpInfo->requestLen;
-
-		// Defensive coding for <rdar://problem/5546824> Crash in mDNSResponder at GetAuthInfoForName_internal + 366
-		// Don't know yet what's causing this, but at least we can be cautious and try to avoid crashing if we find our pointers in an unexpected state
-		if (tcpInfo->srs && tcpInfo->srs->RR_SRV.resrec.name != &tcpInfo->srs->RR_SRV.namestorage)
-			LogMsg("tcpCallback: ERROR: tcpInfo->srs->RR_SRV.resrec.name %p != &tcpInfo->srs->RR_SRV.namestorage %p",
-				tcpInfo->srs->RR_SRV.resrec.name, &tcpInfo->srs->RR_SRV.namestorage);
-		if (tcpInfo->rr && tcpInfo->rr->resrec.name != &tcpInfo->rr->namestorage)
-			LogMsg("tcpCallback: ERROR: tcpInfo->rr->resrec.name %p != &tcpInfo->rr->namestorage %p",
-				tcpInfo->rr->resrec.name, &tcpInfo->rr->namestorage);
-		if (tcpInfo->srs && tcpInfo->srs->RR_SRV.resrec.name != &tcpInfo->srs->RR_SRV.namestorage) return;
-		if (tcpInfo->rr  && tcpInfo->rr->        resrec.name != &tcpInfo->rr->        namestorage) return;
-
-		AuthInfo =  q            ? q->AuthInfo                                             :
-					tcpInfo->srs ? GetAuthInfoForName(m, tcpInfo->srs->RR_SRV.resrec.name) :
-					tcpInfo->rr  ? GetAuthInfoForName(m, tcpInfo->rr->resrec.name) : mDNSNULL;
 
 		err = mDNSSendDNSMessage(m, &tcpInfo->request, end, mDNSInterface_Any, &tcpInfo->Addr, tcpInfo->Port, sock, AuthInfo);
 		if (err) { debugf("ERROR: tcpCallback: mDNSSendDNSMessage - %ld", err); err = mStatus_UnknownErr; goto exit; }
@@ -3883,7 +3887,7 @@ mDNSexport void sendLLQRefresh(mDNS *m, DNSQuestion *q)
 		}
 	else
 		{
-		mStatus err = mDNSSendDNSMessage(m, &m->omsg, end, mDNSInterface_Any, &q->servAddr, q->servPort, q->tcp ? q->tcp->sock : mDNSNULL, q->AuthInfo);
+		mStatus err = mDNSSendDNSMessage(m, &m->omsg, end, mDNSInterface_Any, &q->servAddr, q->servPort, q->tcp ? q->tcp->sock : mDNSNULL, mDNSNULL);
 		if (err)
 			{
 			LogMsg("sendLLQRefresh: mDNSSendDNSMessage%s failed: %d", q->tcp ? " (TCP)" : "", err);
