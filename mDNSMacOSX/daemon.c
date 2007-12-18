@@ -30,6 +30,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.356  2007/12/18 00:28:56  cheshire
+<rdar://problem/5526800> BTMM: Need to deregister records and services on shutdown/sleep
+Error in ReadyForSleep() logic -- missing "not" in "!mDNSOpaque16IsZero(q->TargetQID)"
+
 Revision 1.355  2007/12/17 22:29:22  cheshire
 <rdar://problem/5526800> BTMM: Need to deregister records and services on shutdown/sleep
 Log message indicating when we make IOAllowPowerChange call; make sure nextTimerEvent is set appropriately
@@ -2330,7 +2334,7 @@ mDNSlocal mDNSBool ReadyForSleep(mDNS *m)
 	// 1. Scan list of private LLQs, and make sure they've all completed their handshake with the server
 	DNSQuestion *q;
 	for (q = m->Questions; q; q = q->next)
-		if (mDNSOpaque16IsZero(q->TargetQID) && q->LongLived && q->ReqLease == 0 && q->tcp) return(mDNSfalse);
+		if (!mDNSOpaque16IsZero(q->TargetQID) && q->LongLived && q->ReqLease == 0 && q->tcp) return(mDNSfalse);
 
 	// 2. Scan list of registered records
 	AuthRecord *rr;
@@ -2406,7 +2410,7 @@ mDNSlocal void * KQueueLoop(void *m_param)
 			mDNSBool ready = ReadyForSleep(m);
 			if (ready || now - m->p->SleepLimit >= 0)
 				{
-				LogOperation("IOAllowPowerChange %s at %ld (%d ticks remaining)",
+				LogOperation("IOAllowPowerChange(%lX) %s at %ld (%d ticks remaining)", m->p->SleepCookie,
 					ready ? "ready for sleep" : "giving up", now, m->p->SleepLimit - now);
 				m->p->SleepLimit = 0;
 				IOAllowPowerChange(m->p->PowerConnection, m->p->SleepCookie);
