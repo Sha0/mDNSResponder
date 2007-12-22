@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.545  2007/12/22 02:25:29  cheshire
+<rdar://problem/5661128> Records and Services sometimes not re-registering on wake from sleep
+
 Revision 1.544  2007/12/18 00:40:11  cheshire
 <rdar://problem/5526796> Need to remove active LLQs from server upon question cancellation, on sleep, and on shutdown
 Reordered code to avoid double-TSIGs in some cases
@@ -1212,6 +1215,7 @@ mDNSlocal void SetRecordRetry(mDNS *const m, AuthRecord *rr, mStatus SendErr)
 	if (rr->ThisAPInterval / 2 <= elapsed) rr->ThisAPInterval *= 2;
 	if (rr->ThisAPInterval < INIT_UCAST_POLL_INTERVAL || SendErr == mStatus_TransientErr)
 		rr->ThisAPInterval = INIT_UCAST_POLL_INTERVAL;
+	rr->ThisAPInterval += mDNSRandom(rr->ThisAPInterval/20);
 	if (rr->ThisAPInterval > 30 * 60 * mDNSPlatformOneSecond)
 		rr->ThisAPInterval = 30 * 60 * mDNSPlatformOneSecond;
 
@@ -2607,6 +2611,9 @@ mDNSexport void ServiceRegistrationGotZoneData(mDNS *const m, mStatus err, const
 	srs->SRSUpdatePort        = zoneData->Port;
 	srs->Private              = zoneData->ZonePrivate;
 
+	srs->RR_SRV.LastAPTime     = m->timenow;
+	srs->RR_SRV.ThisAPInterval = 0;
+
 	LogOperation("ServiceRegistrationGotZoneData My IPv4 %#a%s Server %#a:%d%s for %##s",
 		&m->AdvertisedV4, mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) ? " (RFC1918)" : "",
 		&srs->SRSUpdateServer, mDNSVal16(srs->SRSUpdatePort), mDNSAddrIsRFC1918(&srs->SRSUpdateServer) ? " (RFC1918)" : "",
@@ -2658,6 +2665,7 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 
 	srs->id    = id;
 	srs->state = regState_DeregPending;
+	srs->RR_SRV.expire = 0;		// Indicate that we have no active registration any more
 
 	if (srs->Private)
 		{
@@ -4035,6 +4043,8 @@ mDNSexport void RecordRegistrationGotZoneData(mDNS *const m, mStatus err, const 
 		return;
 		}
 
+	newRR->ThisAPInterval = 5 * mDNSPlatformOneSecond;		// After doubling, first retry will happen after ten seconds
+
 	mDNS_Lock(m);	// SendRecordRegistration expects to be called with the lock held
 	SendRecordRegistration(m, newRR);
 	mDNS_Unlock(m);
@@ -4064,6 +4074,7 @@ mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 		}
 	else
 		{
+		rr->expire = 0;		// Indicate that we have no active registration any more
 		if (rr->Private)
 			{
 			LogOperation("SendRecordDeregistration TCP %p %s", rr->tcp, ARDisplayString(m, rr));
@@ -4490,13 +4501,20 @@ mDNSlocal mDNSs32 CheckRecordRegistrations(mDNS *m)
 
 	for (rr = m->ResourceRecords; rr; rr = rr->next)
 		{
-		if (rr->state == regState_Pending || rr->state == regState_DeregPending || rr->state == regState_UpdatePending ||
+		if (rr->state == regState_FetchingZoneData ||
+			rr->state == regState_Pending || rr->state == regState_DeregPending || rr->state == regState_UpdatePending ||
 			rr->state == regState_DeregDeferred || rr->state == regState_Refresh || rr->state == regState_Registered)
 			{
 			if (rr->LastAPTime + rr->ThisAPInterval - m->timenow < 0)
 				{
 				if (rr->tcp) { DisposeTCPConn(rr->tcp); rr->tcp = mDNSNULL; }
-				if (rr->state == regState_DeregPending) SendRecordDeregistration(m, rr);
+				if (rr->state == regState_FetchingZoneData)
+					{
+					if (rr->nta) CancelGetZoneData(m, rr->nta);
+					rr->nta = StartGetZoneData(m, rr->resrec.name, ZoneServiceUpdate, RecordRegistrationGotZoneData, rr);
+					SetRecordRetry(m, rr, mStatus_NoError);
+					}
+				else if (rr->state == regState_DeregPending) SendRecordDeregistration(m, rr);
 				else SendRecordRegistration(m, rr);
 				}
 			if (nextevent - (rr->LastAPTime + rr->ThisAPInterval) > 0)
@@ -4519,13 +4537,20 @@ mDNSlocal mDNSs32 CheckServiceRegistrations(mDNS *m)
 		{
 		ServiceRecordSet *srs = CurrentServiceRecordSet;
 		CurrentServiceRecordSet = CurrentServiceRecordSet->uDNS_next;
-		if (srs->state == regState_Pending || srs->state == regState_DeregPending  || srs->state == regState_DeregDeferred ||
+		if (srs->state == regState_FetchingZoneData ||
+			srs->state == regState_Pending || srs->state == regState_DeregPending  || srs->state == regState_DeregDeferred ||
 			srs->state == regState_Refresh || srs->state == regState_UpdatePending || srs->state == regState_Registered)
 			{
 			if (srs->RR_SRV.LastAPTime + srs->RR_SRV.ThisAPInterval - m->timenow <= 0)
 				{
 				if (srs->tcp) { DisposeTCPConn(srs->tcp); srs->tcp = mDNSNULL; }
-				if (srs->state == regState_DeregPending) SendServiceDeregistration(m, srs);
+				if (srs->state == regState_FetchingZoneData)
+					{
+					if (srs->nta) CancelGetZoneData(m, srs->nta);
+					srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationGotZoneData, srs);
+					SetRecordRetry(m, &srs->RR_SRV, mStatus_NoError);
+					}
+				else if (srs->state == regState_DeregPending) SendServiceDeregistration(m, srs);
 				else SendServiceRegistration(m, srs);
 				}
 			if (nextevent - (srs->RR_SRV.LastAPTime + srs->RR_SRV.ThisAPInterval) > 0)
@@ -4581,20 +4606,6 @@ mDNSexport void SleepRecordRegistrations(mDNS *m)
 				}
 	}
 
-mDNSlocal void WakeRecordRegistrations(mDNS *m)
-	{
-	AuthRecord *rr;
-	for (rr = m->ResourceRecords; rr; rr=rr->next)
-		if (AuthRecord_uDNS(rr))
-			if (rr->state == regState_Refresh)
-				{
-				// trigger slightly delayed refresh (we usually get this message before kernel is ready to send packets)
-				rr->state = regState_Pending;
-				rr->LastAPTime = m->timenow;
-				rr->ThisAPInterval = mDNSPlatformOneSecond;
-				}
-	}
-
 mDNSexport void SleepServiceRegistrations(mDNS *m)
 	{
 	ServiceRecordSet *srs = m->ServiceRegistrations;
@@ -4626,15 +4637,11 @@ mDNSexport void SleepServiceRegistrations(mDNS *m)
 
 		srs->state = regState_NoTarget;	// when we wake, we'll re-register (and optionally nat-map) once our address record completes
 		srs->RR_SRV.resrec.rdata->u.srv.target.c[0] = 0;
+		srs->SRSUpdateServer = zeroAddr;		// This will cause UpdateSRV to do a new StartGetZoneData
+		srs->RR_SRV.ThisAPInterval = 5 * mDNSPlatformOneSecond;		// After doubling, first retry will happen after ten seconds
 
 		srs = srs->uDNS_next;
 		}
-	}
-
-mDNSlocal void WakeServiceRegistrations(mDNS *m)
-	{
-	m->NextSRVUpdate = NonZeroTime(m->timenow + mDNSPlatformOneSecond);
-	LogOperation("WakeServiceRegistrations %d %d", m->timenow, m->NextSRVUpdate);
 	}
 
 mDNSexport void mDNS_AddSearchDomain(const domainname *const domain)
@@ -4837,12 +4844,6 @@ mDNSexport mStatus uDNS_RegisterSearchDomains(mDNS *const m)
 // 5) global list delivered to client via GetSearchDomainList()
 // 6) client calls to enumerate domains now go over LocalOnly interface
 //    (!!!KRS may add outgoing interface in addition)
-
-mDNSexport void uDNS_Wake(mDNS *const m)
-	{
-	WakeServiceRegistrations(m);
-	WakeRecordRegistrations(m);
-	}
 
 struct CompileTimeAssertionChecks_uDNS
 	{

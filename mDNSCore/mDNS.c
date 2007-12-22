@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.767  2007/12/22 02:25:29  cheshire
+<rdar://problem/5661128> Records and Services sometimes not re-registering on wake from sleep
+
 Revision 1.766  2007/12/15 01:12:27  cheshire
 <rdar://problem/5526796> Need to remove active LLQs from server upon question cancellation, on sleep, and on shutdown
 
@@ -1204,6 +1207,16 @@ mDNSlocal void AcknowledgeRecord(mDNS *const m, AuthRecord *const rr)
 		}
 	}
 
+mDNSlocal void ActivateUnicastRegistration(mDNS *const m, AuthRecord *const rr)
+	{
+	rr->ProbeCount     = 0;
+	rr->AnnounceCount  = 0;
+	rr->ThisAPInterval = 5 * mDNSPlatformOneSecond;		// After doubling, first retry will happen after ten seconds
+	rr->LastAPTime     = m->timenow - rr->ThisAPInterval;
+	rr->state = regState_FetchingZoneData;
+	rr->uselease = mDNStrue;
+	}
+
 // Two records qualify to be local duplicates if the RecordTypes are the same, or if one is Unique and the other Verified
 #define RecordLDT(A,B) ((A)->resrec.RecordType == (B)->resrec.RecordType || \
 	((A)->resrec.RecordType | (B)->resrec.RecordType) == (kDNSRecordTypeUnique | kDNSRecordTypeVerified))
@@ -1411,11 +1424,7 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	else
 		{
 		if (rr->resrec.RecordType == kDNSRecordTypeUnique) rr->resrec.RecordType = kDNSRecordTypeVerified;
-		rr->ProbeCount    = 0;
-		rr->AnnounceCount = 0;
-		rr->state = regState_FetchingZoneData;
-		rr->uselease = mDNStrue;
-		rr->nta = StartGetZoneData(m, rr->resrec.name, ZoneServiceUpdate, RecordRegistrationGotZoneData, rr);
+		ActivateUnicastRegistration(m, rr);
 		}
 #endif
 	
@@ -3602,8 +3611,9 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 			m->CurrentQuestion = m->CurrentQuestion->next;
 			if (!mDNSOpaque16IsZero(q->TargetQID)) ActivateUnicastQuery(m, q);
 			}
-		// and reactivtate record (and service) registrations
-		uDNS_Wake(m);
+		// and reactivtate service registrations
+		m->NextSRVUpdate = NonZeroTime(m->timenow + mDNSPlatformOneSecond);
+		LogOperation("WakeServiceRegistrations %d %d", m->timenow, m->NextSRVUpdate);
 #endif
         // 1. Retrigger all our mDNS questions
 		for (q = m->Questions; q; q=q->next)				// Scan our list of questions
@@ -3624,7 +3634,11 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 
 		// 3. Retrigger probing and announcing for all our authoritative records
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
-			if (!AuthRecord_uDNS(rr))
+			if (AuthRecord_uDNS(rr))
+				{
+				ActivateUnicastRegistration(m, rr);
+				}
+			else
 				{
 				if (rr->resrec.RecordType == kDNSRecordTypeVerified && !rr->DependentOn) rr->resrec.RecordType = kDNSRecordTypeUnique;
 				rr->ProbeCount     = DefaultProbeCountForRecordType(rr->resrec.RecordType);
@@ -6451,9 +6465,10 @@ mDNSlocal mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 		return mStatus_NoError;
 		}
 
+	ActivateUnicastRegistration(m, &srs->RR_SRV);
 	srs->state = regState_FetchingZoneData;
-	srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationGotZoneData, srs);
-	return srs->nta ? mStatus_NoError : mStatus_NoMemoryErr;
+	srs->nta   = mDNSNULL;
+	return mStatus_NoError;
 	}
 
 // Note:
