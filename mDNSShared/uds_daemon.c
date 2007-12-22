@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.384  2007/12/22 01:38:05  cheshire
+Improve display of "Auth Records" SIGINFO output
+
 Revision 1.383  2007/12/07 00:45:58  cheshire
 <rdar://problem/5526800> BTMM: Need to deregister records and services on shutdown/sleep
 
@@ -3682,11 +3685,19 @@ mDNSexport void udsserver_info(mDNS *const m)
 		AuthRecord *ar;
 		LogMsgNoIdent("    Int    Next  Expire   State");
 		for (ar = m->ResourceRecords; ar; ar=ar->next)
-			LogMsgNoIdent("%7d %7d %7d %7d %s",
-				ar->ThisAPInterval / mDNSPlatformOneSecond,
-				AuthRecord_uDNS(ar) || ar->AnnounceCount ? (ar->LastAPTime + ar->ThisAPInterval - now) / mDNSPlatformOneSecond : 0,
-				AuthRecord_uDNS(ar) && ar->expire        ? (ar->expire - now) / mDNSPlatformOneSecond : 0,
-				ar->state, ARDisplayString(m, ar));
+			if (AuthRecord_uDNS(ar))
+				LogMsgNoIdent("%7d %7d %7d %7d %s",
+					ar->ThisAPInterval / mDNSPlatformOneSecond,
+					(ar->LastAPTime + ar->ThisAPInterval - now) / mDNSPlatformOneSecond,
+					ar->expire ? (ar->expire - now) / mDNSPlatformOneSecond : 0,
+					ar->state, ARDisplayString(m, ar));
+			else if (ar->resrec.InterfaceID != mDNSInterface_LocalOnly)
+				LogMsgNoIdent("%7d %7d               M %s",
+					ar->ThisAPInterval / mDNSPlatformOneSecond,
+					ar->AnnounceCount ? (ar->LastAPTime + ar->ThisAPInterval - now) / mDNSPlatformOneSecond : 0,
+					ARDisplayString(m, ar));
+			else
+				LogMsgNoIdent("                             LO %s", ARDisplayString(m, ar));
 		}
 
 	LogMsgNoIdent("----- ServiceRegistrations -----");
