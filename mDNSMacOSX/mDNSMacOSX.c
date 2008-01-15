@@ -17,6 +17,11 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.523  2008/01/15 01:32:56  jgraessley
+Bug #: 5595309
+Reviewed by: Stuart Cheshire
+Additional change to print warning message up to 1000 times to make it more visible
+
 Revision 1.522  2008/01/15 01:14:02  mcguire
 <rdar://problem/5674390> mDNSPlatformSendUDP should allow unicast queries on specific interfaces
 removed check and log message, as they are no longer relevant
@@ -993,9 +998,9 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 				#else
 					{
 					static int displayed = 0;
-					if (!displayed)
+					if (displayed < 1000)
 						{
-						displayed = 1;
+						displayed++;
 						LogOperation("IP_FORCE_OUT_IFP Socket option not defined -- cannot specify interface for unicast packets");
 						}
 					}
