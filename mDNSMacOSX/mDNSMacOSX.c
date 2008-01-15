@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.522  2008/01/15 01:14:02  mcguire
+<rdar://problem/5674390> mDNSPlatformSendUDP should allow unicast queries on specific interfaces
+removed check and log message, as they are no longer relevant
+
 Revision 1.521  2007/12/14 00:58:28  cheshire
 <rdar://problem/5526800> BTMM: Need to deregister records and services on shutdown/sleep
 Additional fixes: When going to sleep, mDNSResponder needs to postpone sleep
@@ -965,13 +969,6 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 	struct sockaddr_storage to;
 	int s = -1, err;
 	mStatus result = mStatus_NoError;
-
-	// Sanity check: Make sure that if we're sending a query via unicast, we're sending it using our
-	// anonymous socket created for this purpose, so that we'll receive the response.
-	// If we use one of the many multicast sockets bound to port 5353 then we may not receive responses reliably.
-	if (InterfaceID && !mDNSAddrIsDNSMulticast(dst))
-		if ((((DNSMessage *)msg)->h.flags.b[0] & kDNSFlag0_QR_Mask) == kDNSFlag0_QR_Query)
-			LogMsg("mDNSPlatformSendUDP: ERROR: Sending query OP from mDNS port to non-mDNS destination %#a:%d", dst, mDNSVal16(dstPort));
 
 	if (dst->type == mDNSAddrType_IPv4)
 		{
