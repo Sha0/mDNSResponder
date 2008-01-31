@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.524  2008/01/31 22:25:10  jgraessley
+<rdar://problem/5715434> using default Macintosh-0016CBF62EFD.local
+Use sysctlbyname to get hardware type for the default name.
+
 Revision 1.523  2008/01/15 01:32:56  jgraessley
 Bug #: 5595309
 Reviewed by: Stuart Cheshire
@@ -2524,6 +2528,32 @@ mDNSexport void AddNewClientTunnel(mDNS *const m, DNSQuestion *const q)
 #pragma mark - Power State & Configuration Change Management
 #endif
 
+mDNSlocal void GenerateDefaultName(const mDNSEthAddr PrimaryMAC, char *buffer, mDNSu32 length)
+{
+	char	hwName[32];
+	size_t	hwNameLen = sizeof(hwName);
+	
+	hwName[0] = 0;
+	if (sysctlbyname("hw.model", &hwName, &hwNameLen, NULL, 0) == 0)
+		{
+		// hw.model contains a number like iMac6,1. We want the "iMac" part.
+		hwName[sizeof(hwName) - 1] = 0;
+		char	*ptr;
+		for (ptr = hwName; *ptr != 0; ptr++)
+			{
+			if (*ptr >= '0' && *ptr <= '9') *ptr = 0;
+			if (*ptr == ',') break;
+			}
+		// Prototype model names do not contain commas, do not use prototype names
+		if (*ptr != ',') hwName[0] = 0;
+		}
+	
+	if (hwName[0] == 0) strlcpy(hwName, "Device", sizeof(hwName));
+	
+	mDNS_snprintf(buffer, length, "%s-%02X%02X%02X%02X%02X%02X", hwName,
+		PrimaryMAC.b[0], PrimaryMAC.b[1], PrimaryMAC.b[2], PrimaryMAC.b[3], PrimaryMAC.b[4], PrimaryMAC.b[5]);
+}
+
 mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 	{
 	mDNSBool foundav4           = mDNSfalse;
@@ -2532,7 +2562,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 	struct ifaddrs *v4Loopback  = NULL;
 	struct ifaddrs *v6Loopback  = NULL;
 	mDNSEthAddr PrimaryMAC      = zeroEthAddr;
-	char defaultname[32];
+	char defaultname[64];
 #ifndef NO_IPV6
 	int InfoSocket              = socket(AF_INET6, SOCK_DGRAM, 0);
 	if (InfoSocket < 3 && errno != EAFNOSUPPORT) LogMsg("UpdateInterfaceList: InfoSocket error %d errno %d (%s)", InfoSocket, errno, strerror(errno));
@@ -2677,12 +2707,8 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 			m->AutoTunnelHostAddr.b[0xC], m->AutoTunnelHostAddr.b[0xD], m->AutoTunnelHostAddr.b[0xE], m->AutoTunnelHostAddr.b[0xF]);
 		LogOperation("m->AutoTunnelLabel %#s", m->AutoTunnelLabel.c);
 		}
-
-	#ifndef kDefaultLocalHostNamePrefix
-	#define kDefaultLocalHostNamePrefix "Macintosh"
-	#endif
-	mDNS_snprintf(defaultname, sizeof(defaultname), kDefaultLocalHostNamePrefix "-%02X%02X%02X%02X%02X%02X",
-		PrimaryMAC.b[0], PrimaryMAC.b[1], PrimaryMAC.b[2], PrimaryMAC.b[3], PrimaryMAC.b[4], PrimaryMAC.b[5]);
+	
+	GenerateDefaultName(PrimaryMAC, defaultname, sizeof(defaultname));
 
 	// Set up the nice label
 	domainlabel nicelabel;
