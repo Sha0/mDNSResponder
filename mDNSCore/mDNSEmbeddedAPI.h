@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.464  2008/01/31 23:33:29  mcguire
+<rdar://problem/5614450> changes to build using gcc 4.2 with -Werror
+
 Revision 1.463  2007/12/17 23:53:25  cheshire
 Added DNSDigest_SignMessageHostByteOrder, for signing messages not yet converted to network byte order
 
@@ -2493,8 +2496,9 @@ extern void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr,  const
 extern DNSServer *mDNS_AddDNSServer(mDNS *const m, const domainname *d, const mDNSInterfaceID interface, const mDNSAddr *addr, const mDNSIPPort port);
 extern void mDNS_AddSearchDomain(const domainname *const domain);
 
+// We use ((void *)0) here instead of mDNSNULL to avoid compile warnings on gcc 4.2
 #define mDNS_AddSearchDomain_CString(X) \
-	do { domainname d__; if ((X) && MakeDomainNameFromDNSNameString(&d__, (X)) && d__.c[0]) mDNS_AddSearchDomain(&d__); } while(0)
+	do { domainname d__; if (((X) != (void*)0) && MakeDomainNameFromDNSNameString(&d__, (X)) && d__.c[0]) mDNS_AddSearchDomain(&d__); } while(0)
 
 // Routines called by the core, exported by DNSDigest.c
 
