@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.357  2008/02/13 17:40:43  cheshire
+<rdar://problem/5740501> Investigate mysterious SIGABRTs in mDNSResponder
+
 Revision 1.356  2007/12/18 00:28:56  cheshire
 <rdar://problem/5526800> BTMM: Need to deregister records and services on shutdown/sleep
 Error in ReadyForSleep() logic -- missing "not" in "!mDNSOpaque16IsZero(q->TargetQID)"
@@ -1985,6 +1988,13 @@ mDNSlocal void HandleSIG(int sig)
 		}
 	}
 
+mDNSlocal void CatchABRT(int sig)
+	{
+	LogMsg("Received SIGABRT %d", sig);
+	sleep(1);					// Pause to make sure syslog gets the message
+	while(1) *(long*)0 = 0;		// Generate a CrashReporter stack trace so we can find out what library called abort();
+	}
+
 mDNSlocal void INFOCallback(void)
 	{
 	mDNSs32 utc = mDNSPlatformUTC();
@@ -2611,6 +2621,7 @@ mDNSexport int main(int argc, char **argv)
 
 	signal(SIGHUP,  HandleSIG);		// (Debugging) Purge the cache to check for cache handling bugs
 	signal(SIGINT,  HandleSIG);		// Ctrl-C: Detach from Mach BootstrapService and exit cleanly
+	signal(SIGABRT, CatchABRT);		// For debugging -- SIGABRT should never happen
 	signal(SIGPIPE, SIG_IGN  );		// Don't want SIGPIPE signals -- we'll handle EPIPE errors directly
 	signal(SIGTERM, HandleSIG);		// Machine shutting down: Detach from and exit cleanly like Ctrl-C
 	signal(SIGINFO, HandleSIG);		// (Debugging) Write state snapshot to syslog
