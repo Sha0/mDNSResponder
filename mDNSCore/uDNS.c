@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.546  2008/02/19 23:26:50  cheshire
+<rdar://problem/5661661> BTMM: Too many members.mac.com SOA queries
+
 Revision 1.545  2007/12/22 02:25:29  cheshire
 <rdar://problem/5661128> Records and Services sometimes not re-registering on wake from sleep
 
@@ -3719,6 +3722,27 @@ mDNSlocal const domainname *DNSRelayTestQuestion = (const domainname*)
 	"\x1" "1" "\x1" "0" "\x1" "0" "\x3" "127" "\xa" "dnsbugtest"
 	"\x1" "1" "\x1" "0" "\x1" "0" "\x3" "127" "\x7" "in-addr" "\x4" "arpa";
 
+// See comments above for DNSRelayTestQuestion
+// If this is the kind of query that has the risk of crashing buggy DNS servers, we do a test question first
+mDNSlocal mDNSBool NoTestQuery(DNSQuestion *q)
+	{
+	int i;
+	mDNSu8 *p = q->qname.c;
+	if (q->AuthInfo) return(mDNStrue);		// Don't need a test query for private queries sent directly to authoritative server over TLS/TCP
+	if (q->qtype != kDNSType_PTR) return(mDNStrue);		// Don't need a test query for any non-PTR queries
+	for (i=0; i<4; i++)		// If qname does not begin with num.num.num.num, can't skip the test query
+		{
+		if (p[0] < 1 || p[0] > 3) return(mDNSfalse);
+		if (              p[1] < '0' || p[1] > '9' ) return(mDNSfalse);
+		if (p[0] >= 2 && (p[2] < '0' || p[2] > '9')) return(mDNSfalse);
+		if (p[0] >= 3 && (p[3] < '0' || p[3] > '9')) return(mDNSfalse);
+		p += 1 + p[0];
+		}
+	// If remainder of qname is ".in-addr.arpa.", this is a vanilla reverse-mapping query and
+	// we can safely do it without needing a test query first, otherwise we need the test query.
+	return(SameDomainName((domainname*)p, (const domainname*)"\x7" "in-addr" "\x4" "arpa"));
+	}
+
 // Returns mDNStrue if response was handled
 mDNSlocal mDNSBool uDNS_ReceiveTestQuestionResponse(mDNS *const m, DNSMessage *const msg, const mDNSu8 *const end,
 	const mDNSAddr *const srcaddr, const mDNSIPPort srcport)
@@ -3747,15 +3771,15 @@ mDNSlocal mDNSBool uDNS_ReceiveTestQuestionResponse(mDNS *const m, DNSMessage *c
 		if (mDNSSameAddress(srcaddr, &s->addr) && mDNSSameIPPort(srcport, s->port) && s->teststate != result)
 			{
 			DNSQuestion *q;
-			if (s->teststate != result)
-				{
-				s->teststate = result;
-				if (result == DNSServer_Passed) LogOperation("DNS Server %#a:%d passed", srcaddr, mDNSVal16(srcport));
-				else LogMsg("NOTE: Wide-Area Service Discovery disabled to avoid crashing defective DNS relay %#a:%d", srcaddr, mDNSVal16(srcport));
-				}
+			s->teststate = result;
+			if (result == DNSServer_Passed) LogOperation("DNS Server %#a:%d passed", srcaddr, mDNSVal16(srcport));
+			else LogMsg("NOTE: Wide-Area Service Discovery disabled to avoid crashing defective DNS relay %#a:%d", srcaddr, mDNSVal16(srcport));
+
+			// If this server has just changed state from DNSServer_Untested to DNSServer_Passed, then retrigger any waiting questions.
+			// We use the NoTestQuery() test so that we only retrigger questions that were actually blocked waiting for this test to complete.
 			if (result == DNSServer_Passed)		// Unblock any questions that were waiting for this result
 				for (q = m->Questions; q; q=q->next)
-					if (q->qDNSServer == s)
+					if (q->qDNSServer == s && !NoTestQuery(q))
 						{ q->LastQTime = m->timenow - q->ThisQInterval; m->NextScheduledQuery = m->timenow; }
 			}
 
@@ -4249,27 +4273,6 @@ mDNSexport mStatus uDNS_UpdateRecord(mDNS *m, AuthRecord *rr)
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark - Periodic Execution Routines
 #endif
-
-// See comments above for DNSRelayTestQuestion
-// If this is the kind of query that has the risk of crashing buggy DNS servers, we do a test question first
-mDNSlocal mDNSBool NoTestQuery(DNSQuestion *q)
-	{
-	int i;
-	mDNSu8 *p = q->qname.c;
-	if (q->AuthInfo) return(mDNStrue);		// Don't need a test query for private queries sent directly to authoritative server over TLS/TCP
-	if (q->qtype != kDNSType_PTR) return(mDNStrue);		// Don't need a test query for any non-PTR queries
-	for (i=0; i<4; i++)		// If qname does not begin with num.num.num.num, can't skip the test query
-		{
-		if (p[0] < 1 || p[0] > 3) return(mDNSfalse);
-		if (              p[1] < '0' || p[1] > '9' ) return(mDNSfalse);
-		if (p[0] >= 2 && (p[2] < '0' || p[2] > '9')) return(mDNSfalse);
-		if (p[0] >= 3 && (p[3] < '0' || p[3] > '9')) return(mDNSfalse);
-		p += 1 + p[0];
-		}
-	// If remainder of qname is ".in-addr.arpa.", this is a vanilla reverse-mapping query and
-	// we can safely do it without needing a test query first, otherwise we need the test query.
-	return(SameDomainName((domainname*)p, (const domainname*)"\x7" "in-addr" "\x4" "arpa"));
-	}
 
 // The question to be checked is not passed in as an explicit parameter;
 // instead it is implicit that the question to be checked is m->CurrentQuestion.

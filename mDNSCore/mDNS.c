@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.768  2008/02/19 23:26:50  cheshire
+<rdar://problem/5661661> BTMM: Too many members.mac.com SOA queries
+
 Revision 1.767  2007/12/22 02:25:29  cheshire
 <rdar://problem/5661128> Records and Services sometimes not re-registering on wake from sleep
 
@@ -2802,6 +2805,7 @@ mDNSexport void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheReco
 			q->RecentAnswerPkts = 0;
 			q->ThisQInterval    = MaxQuestionInterval;
 			q->RequestUnicast   = mDNSfalse;
+			debugf("AnswerCurrentQuestionWithResourceRecord: Set MaxQuestionInterval for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 			}
 
 	if (rr->DelayDelivery) return;		// We'll come back later when CacheRecordDeferredAdd() calls us
@@ -3156,6 +3160,8 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 		m->CurrentRecord = mDNSNULL;
 		}
 
+	if (m->CurrentQuestion != q) debugf("AnswerNewQuestion: question deleted while giving LocalOnly record answers");
+
 	if (m->CurrentQuestion == q)
 		{
 		CacheRecord *rr;
@@ -3186,19 +3192,22 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 					ShouldQueryImmediately = mDNSfalse;
 		}
 
+	if (m->CurrentQuestion != q) debugf("AnswerNewQuestion: question deleted while giving cache answers");
+
 	if (m->CurrentQuestion == q && ShouldQueryImmediately && ActiveQuestion(q))
 		{
 		q->ThisQInterval  = InitialQuestionInterval;
 		q->LastQTime      = m->timenow - q->ThisQInterval;
-		if (mDNSOpaque16IsZero(q->TargetQID))
+		if (mDNSOpaque16IsZero(q->TargetQID))		// For mDNS, spread packets to avoid a burst of simultaneous queries
 			{
 			// Compute random delay in the range 1-6 seconds, then divide by 50 to get 20-120ms
 			if (!m->RandomQueryDelay)
 				m->RandomQueryDelay = (mDNSPlatformOneSecond + mDNSRandom(mDNSPlatformOneSecond*5) - 1) / 50 + 1;
 			q->LastQTime += m->RandomQueryDelay;
 			}
-		
-		m->NextScheduledQuery = m->timenow;
+
+		if (m->NextScheduledQuery - (q->LastQTime + q->ThisQInterval) > 0)
+			m->NextScheduledQuery = (q->LastQTime + q->ThisQInterval);
 		}
 
 	m->CurrentQuestion = mDNSNULL;
@@ -3530,7 +3539,13 @@ mDNSlocal void SuspendLLQs(mDNS *m)
 			{ q->ReqLease = 0; sendLLQRefresh(m, q); }
 	}
 
-mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question)
+// ActivateUnicastQuery() is called from three places:
+// 1. When a new question is created
+// 2. On wake from sleep
+// 3. When the DNS configuration changes
+// In case 1 we don't want to mess with our established ThisQInterval and LastQTime (ScheduleImmediately is false)
+// In cases 2 and 3 we do want to cause the question to be resent immediately (ScheduleImmediately is true)
+mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question, mDNSBool ScheduleImmediately)
 	{
 	// For now this AutoTunnel stuff is specific to Mac OS X.
 	// In the future, if there's demand, we may see if we can abstract it out cleanly into the platform layer
@@ -3550,13 +3565,16 @@ mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question)
 
 	if (!question->DuplicateOf)
 		{
-		LogOperation("ActivateUnicastQuery: %##s %s%s",
-			question->qname.c, DNSTypeName(question->qtype), question->AuthInfo ? " (Private)" : "");
+		LogOperation("ActivateUnicastQuery: %##s %s%s%s",
+			question->qname.c, DNSTypeName(question->qtype), question->AuthInfo ? " (Private)" : "", ScheduleImmediately ? " ScheduleImmediately" : "");
 		if (question->nta) { CancelGetZoneData(m, question->nta); question->nta = mDNSNULL; }
 		if (question->LongLived) { question->state = LLQ_InitialRequest; question->id = zeroOpaque64; }
-		question->ThisQInterval = InitialQuestionInterval;
-		question->LastQTime     = m->timenow - question->ThisQInterval;
-		SetNextQueryTime(m, question);
+		if (ScheduleImmediately)
+			{
+			question->ThisQInterval = InitialQuestionInterval;
+			question->LastQTime     = m->timenow - question->ThisQInterval;
+			SetNextQueryTime(m, question);
+			}
 		}
 	}
 
@@ -3609,7 +3627,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
 			{
 			q = m->CurrentQuestion;
 			m->CurrentQuestion = m->CurrentQuestion->next;
-			if (!mDNSOpaque16IsZero(q->TargetQID)) ActivateUnicastQuery(m, q);
+			if (!mDNSOpaque16IsZero(q->TargetQID)) ActivateUnicastQuery(m, q, mDNStrue);
 			}
 		// and reactivtate service registrations
 		m->NextSRVUpdate = NonZeroTime(m->timenow + mDNSPlatformOneSecond);
@@ -5216,16 +5234,11 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 		question->TargetQID  = zeroID;
 		}
 
+	question->TargetQID =
 #ifndef UNICAST_DISABLED
-	// If the client has specified 'kDNSServiceFlagsForceMulticast'
-	// then we do a multicast query on that interface, even for unicast domains.
-	if (question->InterfaceID == mDNSInterface_LocalOnly || question->ForceMCast || IsLocalDomain(&question->qname))
-		question->TargetQID = zeroID;
-	else
-		question->TargetQID = mDNS_NewMessageID(m);
-#else
-    question->TargetQID = zeroID;
+		Question_uDNS(question) ? mDNS_NewMessageID(m) :
 #endif // UNICAST_DISABLED
+		zeroID;
 
 	debugf("mDNS_StartQuery: %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
 
@@ -5338,7 +5351,7 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 			if (!mDNSOpaque16IsZero(question->TargetQID))
 				{
 				question->qDNSServer = GetServerForName(m, &question->qname);
-				ActivateUnicastQuery(m, question);
+				ActivateUnicastQuery(m, question, mDNSfalse);
 
 				// If long-lived query, and we don't have our NAT mapping active, start it now
 				if (question->LongLived && !m->LLQNAT.clientContext)
@@ -7062,7 +7075,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 					s, s ? &s->addr : mDNSNULL, mDNSVal16(s ? s->port : zeroIPPort), s ? s->domain.c : (mDNSu8*)"",
 					q->qname.c, DNSTypeName(q->qtype));
 				q->qDNSServer = s;
-				ActivateUnicastQuery(m, q);
+				ActivateUnicastQuery(m, q, mDNStrue);
 				}
 			}
 
