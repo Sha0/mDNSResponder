@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.525  2008/02/20 00:53:20  cheshire
+<rdar://problem/5492035> getifaddrs is returning invalid netmask family for fw0 and vmnet
+Removed overly alarming syslog message
+
 Revision 1.524  2008/01/31 22:25:10  jgraessley
 <rdar://problem/5715434> using default Macintosh-0016CBF62EFD.local
 Use sysctlbyname to get hardware type for the default name.
@@ -2612,7 +2616,9 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 					LogMsg("getifaddrs: ifa_netmask is NULL for %5s(%d) Flags %04X Family %2d %#a",
 						ifa->ifa_name, if_nametoindex(ifa->ifa_name), ifa->ifa_flags, ifa->ifa_addr->sa_family, &ip);
 					}
-				else if (ifa->ifa_addr->sa_family != ifa->ifa_netmask->sa_family)
+				// Apparently it's normal for the sa_family of an ifa_netmask to sometimes be zero, so we don't complain about that
+				// <rdar://problem/5492035> getifaddrs is returning invalid netmask family for fw0 and vmnet
+				else if (ifa->ifa_netmask->sa_family != ifa->ifa_addr->sa_family && ifa->ifa_netmask->sa_family != 0)
 					{
 					mDNSAddr ip;
 					SetupAddr(&ip, ifa->ifa_addr);
@@ -2621,6 +2627,9 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 					}
 				else
 					{
+					// Make sure ifa_netmask->sa_family is set correctly
+					// <rdar://problem/5492035> getifaddrs is returning invalid netmask family for fw0 and vmnet
+					ifa->ifa_netmask->sa_family = ifa->ifa_addr->sa_family;
 					int ifru_flags6 = 0;
 #ifndef NO_IPV6
 					struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)ifa->ifa_addr;
@@ -3005,9 +3014,12 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 				ifa->ifa_netmask                    &&
 				!(ifa->ifa_flags & IFF_LOOPBACK)	&&
 				!SetupAddr(&a, ifa->ifa_addr)		&&
-				!SetupAddr(&n, ifa->ifa_netmask)	&&
 				!mDNSv4AddressIsLinkLocal(&a.ip.v4)  )
 				{
+				// Apparently it's normal for the sa_family of an ifa_netmask to sometimes be incorrect, so we explicitly fix it here before calling SetupAddr
+				// <rdar://problem/5492035> getifaddrs is returning invalid netmask family for fw0 and vmnet
+				ifa->ifa_netmask->sa_family = ifa->ifa_addr->sa_family;		// Make sure ifa_netmask->sa_family is set correctly
+				SetupAddr(&n, ifa->ifa_netmask);
 				// Note: This is reverse order compared to a normal dotted-decimal IP address, so we can't use our customary "%.4a" format code
 				mDNS_snprintf(buf, sizeof(buf), "%d.%d.%d.%d.in-addr.arpa.", a.ip.v4.b[3] & n.ip.v4.b[3],
 																			 a.ip.v4.b[2] & n.ip.v4.b[2],
