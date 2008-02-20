@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.101  2008/02/20 21:18:21  cheshire
+<rdar://problem/5708953> DNSServiceGetAddrInfo doesn't set the scope ID of returned IPv6 link local addresses
+
 Revision 1.100  2007/11/02 17:56:37  cheshire
 <rdar://problem/5565787> Bonjour API broken for 64-bit apps (SCM_RIGHTS sendmsg fails)
 Wrap hack code in "#if APPLE_OSX_mDNSResponder" since (as far as we know right now)
@@ -1081,13 +1084,10 @@ DNSServiceErrorType DNSSD_API DNSServiceQueryRecord
 
 static void handle_addrinfo_response(DNSServiceOp *sdr, CallbackHeader *cbh, char *data, char *end)
 	{
-	uint32_t ttl;
 	char hostname[kDNSServiceMaxDomainName];
 	uint16_t rrtype, rrclass, rdlen;
 	char *rdata;
-	struct sockaddr_in  sa4;
-	struct sockaddr_in6 sa6;
-	struct sockaddr   * sa = NULL;
+	uint32_t ttl;
 
 	get_string(&data, end, hostname, kDNSServiceMaxDomainName);
 	rrtype  = get_uint16(&data, end);
@@ -1099,14 +1099,18 @@ static void handle_addrinfo_response(DNSServiceOp *sdr, CallbackHeader *cbh, cha
 	if (!data) syslog(LOG_WARNING, "dnssd_clientstub handle_addrinfo_response: error reading result from daemon");
 	else
 		{
+		struct sockaddr_in  sa4;
+		struct sockaddr_in6 sa6;
+		struct sockaddr   * sa = NULL;
 		if (rrtype == kDNSServiceType_A)
 			{
 			sa = (struct sockaddr *)&sa4;
 			bzero(&sa4, sizeof(sa4));
 			#ifndef NOT_HAVE_SA_LEN
-			sa->sa_len = sizeof(struct sockaddr_in);
+			sa4.sin_len = sizeof(struct sockaddr_in);
 			#endif
-			sa->sa_family = AF_INET;
+			sa4.sin_family = AF_INET;
+			//  sin_port   = 0;
 			if (!cbh->cb_err) memcpy(&sa4.sin_addr, rdata, rdlen);
 			}
 		else if (rrtype == kDNSServiceType_AAAA)
@@ -1114,10 +1118,17 @@ static void handle_addrinfo_response(DNSServiceOp *sdr, CallbackHeader *cbh, cha
 			sa = (struct sockaddr *)&sa6;
 			bzero(&sa6, sizeof(sa6));
 			#ifndef NOT_HAVE_SA_LEN
-			sa->sa_len = sizeof(struct sockaddr_in6);
+			sa6.sin6_len = sizeof(struct sockaddr_in6);
 			#endif
-			sa->sa_family = AF_INET6;
-			if (!cbh->cb_err) memcpy(&sa6.sin6_addr, rdata, rdlen);
+			sa6.sin6_family     = AF_INET6;
+			//  sin6_port     = 0;
+			//  sin6_flowinfo = 0;
+			//  sin6_scope_id = 0;
+			if (!cbh->cb_err)
+				{
+				memcpy(&sa6.sin6_addr, rdata, rdlen);
+				if (IN6_IS_ADDR_LINKLOCAL(&sa6.sin6_addr)) sa6.sin6_scope_id = cbh->cb_interface;
+				}
 			}
 		((DNSServiceGetAddrInfoReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, hostname, sa, ttl, sdr->AppContext);
 		// MUST NOT touch sdr after invoking AppCallback -- client is allowed to dispose it from within callback function
