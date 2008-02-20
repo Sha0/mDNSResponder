@@ -597,23 +597,27 @@ static void DNSSD_API addrinfo_reply(DNSServiceRef sdref, DNSServiceFlags flags,
 	(void) sdref;
 	(void) context;
 	
-	if (num_printed++ == 0) printf("Timestamp     A/R Flags if %-25s %-40s %s\n", "Hostname", "Address", "TTL");
+	if (num_printed++ == 0) printf("Timestamp     A/R Flags if %-25s %-44s %s\n", "Hostname", "Address", "TTL");
 	printtimestamp();
 
 	if (address && address->sa_family == AF_INET)
 		{
-		const unsigned char *digits = (const unsigned char *) &((struct sockaddr_in *)address)->sin_addr;
-		snprintf(addr, sizeof(addr), "%d.%d.%d.%d", digits[0], digits[1], digits[2], digits[3]);
+		const unsigned char *b = (const unsigned char *) &((struct sockaddr_in *)address)->sin_addr;
+		snprintf(addr, sizeof(addr), "%d.%d.%d.%d", b[0], b[1], b[2], b[3]);
 		}
 	else if (address && address->sa_family == AF_INET6)
 		{
-		const unsigned char *digits = (const unsigned char *) &((struct sockaddr_in6 *)address)->sin6_addr;
-		snprintf(addr, sizeof(addr), "%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X",
-				digits[0x0], digits[0x1], digits[0x2], digits[0x3], digits[0x4], digits[0x5], digits[0x6], digits[0x7],
-				digits[0x8], digits[0x9], digits[0xA], digits[0xB], digits[0xC], digits[0xD], digits[0xE], digits[0xF]);
+		char if_name[IFNAMSIZ];		// Older Linux distributions don't define IF_NAMESIZE
+		const struct sockaddr_in6 *s6 = (const struct sockaddr_in6 *)address;
+		const unsigned char       *b  = (const unsigned char *      )&s6->sin6_addr;
+		if (!if_indextoname(s6->sin6_scope_id, if_name))
+			snprintf(if_name, sizeof(if_name), "<%d>", s6->sin6_scope_id);
+		snprintf(addr, sizeof(addr), "%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X%%%s",
+				b[0x0], b[0x1], b[0x2], b[0x3], b[0x4], b[0x5], b[0x6], b[0x7],
+				b[0x8], b[0x9], b[0xA], b[0xB], b[0xC], b[0xD], b[0xE], b[0xF], if_name);
 		}
 
-	printf("%s%6X%3d %-25s %-40s %d", op, flags, interfaceIndex, hostname, addr, ttl);
+	printf("%s%6X%3d %-25s %-44s %d", op, flags, interfaceIndex, hostname, addr, ttl);
 	if (errorCode)
 		{
 		if (errorCode == kDNSServiceErr_NoSuchRecord) printf("   No Such Record");
