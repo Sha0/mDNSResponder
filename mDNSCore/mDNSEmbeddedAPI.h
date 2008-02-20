@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.465  2008/02/20 00:39:05  mcguire
+<rdar://problem/5427102> Some device info XML blobs too large
+
 Revision 1.464  2008/01/31 23:33:29  mcguire
 <rdar://problem/5614450> changes to build using gcc 4.2 with -Werror
 
@@ -1274,7 +1277,7 @@ typedef enum
 	LNTPortMapDeleteOp  = 4
 	} LNTOp_t;
 
-#define LNT_MAXBUFSIZE 4096
+#define LNT_MAXBUFSIZE 8192
 typedef struct tcpLNTInfo_struct tcpLNTInfo;
 struct tcpLNTInfo_struct
 	{
