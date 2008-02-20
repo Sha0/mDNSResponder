@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.548  2008/02/20 23:54:18  cheshire
+<rdar://problem/5661518> "Failed to obtain NAT port mapping" syslog messages
+Improved log message so it tells us more about what's going on
+
 Revision 1.547  2008/02/20 00:41:09  cheshire
 Change "PrivateQueryGotZoneData ... invoked with error code" from LogMsg to LogOperation
 
@@ -4483,8 +4487,8 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 					{
 					//LogMsg("NAT callback %d %d %d", cur->Protocol, cur->ExpiryTime, cur->retryInterval);
 					if (cur->Protocol && mDNSIPPortIsZero(ExternalPort) && !mDNSIPv4AddressIsZero(m->Router.ip.v4))
-						LogMsg("Failed to obtain NAT port mapping from router %#a external address %.4a internal port %d",
-							&m->Router, &m->ExternalAddress, mDNSVal16(cur->IntPort));
+						LogMsg("Failed to obtain NAT port mapping %p from router %#a external address %.4a internal port %d error %d",
+							cur, &m->Router, &m->ExternalAddress, mDNSVal16(cur->IntPort), cur->NewResult);
 					cur->ExternalAddress = m->ExternalAddress;
 					cur->ExternalPort    = ExternalPort;
 					cur->Lifetime        = cur->ExpiryTime && !mDNSIPPortIsZero(ExternalPort) ?
