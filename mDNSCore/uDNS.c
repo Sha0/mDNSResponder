@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.547  2008/02/20 00:41:09  cheshire
+Change "PrivateQueryGotZoneData ... invoked with error code" from LogMsg to LogOperation
+
 Revision 1.546  2008/02/19 23:26:50  cheshire
 <rdar://problem/5661661> BTMM: Too many members.mac.com SOA queries
 
@@ -3977,7 +3980,7 @@ mDNSlocal void PrivateQueryGotZoneData(mDNS *const m, mStatus err, const ZoneDat
 
 	if (err)
 		{
-		LogMsg("ERROR: PrivateQueryGotZoneData %##s (%s) invoked with error code %ld", q->qname.c, DNSTypeName(q->qtype), err);
+		LogOperation("ERROR: PrivateQueryGotZoneData %##s (%s) invoked with error code %ld", q->qname.c, DNSTypeName(q->qtype), err);
 		return;
 		}
 
