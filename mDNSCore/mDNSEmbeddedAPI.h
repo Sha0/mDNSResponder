@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.466  2008/02/21 21:36:32  cheshire
+Updated comment about record type values (kDNSRecordTypePacketAns/Auth/Add)
+
 Revision 1.465  2008/02/20 00:39:05  mcguire
 <rdar://problem/5427102> Some device info XML blobs too large
 
@@ -1076,7 +1079,7 @@ typedef struct tcpInfo_t
 // Cache Resource Records (received from the network):
 // There are four basic types: Answer, Unique Answer, Additional, Unique Additional
 // Bit 7 (the top bit) of kDNSRecordType is always set for Cache Resource Records; always clear for Authoritative Resource Records
-// Bit 6 (value 0x40) is set for answer records; clear for additional records
+// Bit 6 (value 0x40) is set for answer records; clear for authority/additional records
 // Bit 5 (value 0x20) is set for records received with the kDNSClass_UniqueRRSet
 
 enum
