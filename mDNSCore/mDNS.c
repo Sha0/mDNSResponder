@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.769  2008/02/22 00:00:19  cheshire
+<rdar://problem/5338420> BTMM: Not processing additional records
+
 Revision 1.768  2008/02/19 23:26:50  cheshire
 <rdar://problem/5661661> BTMM: Too many members.mac.com SOA queries
 
@@ -3196,6 +3199,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 
 	if (m->CurrentQuestion == q && ShouldQueryImmediately && ActiveQuestion(q))
 		{
+		debugf("AnswerNewQuestion: ShouldQueryImmediately %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 		q->ThisQInterval  = InitialQuestionInterval;
 		q->LastQTime      = m->timenow - q->ThisQInterval;
 		if (mDNSOpaque16IsZero(q->TargetQID))		// For mDNS, spread packets to avoid a burst of simultaneous queries
@@ -4424,6 +4428,8 @@ mDNSexport CacheRecord *CreateNewCacheEntry(mDNS *const m, const mDNSu32 slot, C
 		default:           RDLength = m->rec.r.resrec.rdlength; break;
 		}
 
+	if (!m->rec.r.resrec.InterfaceID) debugf("CreateNewCacheEntry %s", CRDisplayString(m, &m->rec.r));
+
 	//if (RDLength > InlineCacheRDSize)
 	//	LogOperation("Rdata len %4d > InlineCacheRDSize %d %s", RDLength, InlineCacheRDSize, CRDisplayString(m, &m->rec.r));
 
@@ -4543,7 +4549,9 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	// All records in a DNS response packet are treated as equally valid statements of truth. If we want
 	// to guard against spoof responses, then the only credible protection against that is cryptographic
 	// security, e.g. DNSSEC., not worring about which section in the spoof packet contained the record
-	int totalrecords = response->h.numAnswers + response->h.numAuthorities + response->h.numAdditionals;
+	int firstauthority  =                   response->h.numAnswers;
+	int firstadditional = firstauthority  + response->h.numAuthorities;
+	int totalrecords    = firstadditional + response->h.numAdditionals;
 	const mDNSu8 *ptr = response->data;
 
 	// Currently used only for display in debugging message
@@ -4607,9 +4615,12 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		// (Note that just because we are willing to cache something, that doesn't necessarily make it a trustworthy answer
 		// to any specific question -- any code reading records from the cache needs to make that determination for itself.)
 
-		const mDNSu8 RecordType = (mDNSu8)((i < response->h.numAnswers) ? kDNSRecordTypePacketAns : kDNSRecordTypePacketAdd);
+		const mDNSu8 RecordType =
+			(i < firstauthority ) ? (mDNSu8)kDNSRecordTypePacketAns  :
+			(i < firstadditional) ? (mDNSu8)kDNSRecordTypePacketAuth : (mDNSu8)kDNSRecordTypePacketAdd;
 		ptr = GetLargeResourceRecord(m, response, ptr, end, InterfaceID, RecordType, &m->rec);
 		if (!ptr) goto exit;		// Break out of the loop and clean up our CacheFlushRecords list before exiting
+
 		// Don't want to cache OPT or TSIG pseudo-RRs
 		if (m->rec.r.resrec.rrtype == kDNSType_OPT || m->rec.r.resrec.rrtype == kDNSType_TSIG)
 			{ m->rec.r.resrec.RecordType = 0; continue; }
@@ -4709,9 +4720,20 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 				}
 			}
 
+		if (!AcceptableResponse)
+			{
+			CacheRecord *cr;
+			for (cr = CacheFlushRecords; cr != (CacheRecord*)1; cr = cr->NextInCFList)
+				{
+				domainname *target = GetRRDomainNameTarget(&cr->resrec);
+				if (target && SameDomainName(m->rec.r.resrec.name, target)) AcceptableResponse = mDNStrue;
+				}
+			}
+
 		// 2. See if we want to add this packet resource record to our cache
 		// We only try to cache answers if we have a cache to put them in
 		// Also, we ignore any apparent attempts at cache poisoning unicast to us that do not answer any outstanding active query
+		if (!AcceptableResponse) debugf("mDNSCoreReceiveResponse ignoring %s", CRDisplayString(m, &m->rec.r));
 		if (m->rrcache_size && AcceptableResponse)
 			{
 			const mDNSu32 slot = HashSlot(m->rec.r.resrec.name);
