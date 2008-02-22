@@ -38,6 +38,12 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.770  2008/02/22 23:09:02  cheshire
+<rdar://problem/5338420> BTMM: Not processing additional records
+Refinements:
+1. Check rdatahash == namehash, to skip expensive SameDomainName check when possible
+2. Once we decide a record is acceptable, we can break out of the loop
+
 Revision 1.769  2008/02/22 00:00:19  cheshire
 <rdar://problem/5338420> BTMM: Not processing additional records
 
@@ -4726,7 +4732,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 			for (cr = CacheFlushRecords; cr != (CacheRecord*)1; cr = cr->NextInCFList)
 				{
 				domainname *target = GetRRDomainNameTarget(&cr->resrec);
-				if (target && SameDomainName(m->rec.r.resrec.name, target)) AcceptableResponse = mDNStrue;
+				if (target && cr->resrec.rdatahash == m->rec.r.resrec.namehash && SameDomainName(target, m->rec.r.resrec.name))
+					{ AcceptableResponse = mDNStrue; break; }
 				}
 			}
 
