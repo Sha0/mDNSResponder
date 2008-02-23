@@ -6,10 +6,10 @@
 	<string>com.apple.mDNSResponder</string>
 	<key>OnDemand</key>
 	<false/>
-        <key>UserName</key>
-        <string>_mdnsresponder</string>
-        <key>GroupName</key>
-        <string>_mdnsresponder</string>
+	<key>UserName</key>
+	<string>_mdnsresponder</string>
+	<key>GroupName</key>
+	<string>_mdnsresponder</string>
 	<key>ProgramArguments</key>
 	<array>
 		<string>/usr/sbin/mDNSResponder</string>
