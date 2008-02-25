@@ -28,6 +28,10 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.102  2008/02/25 19:16:19  cheshire
+<rdar://problem/5708953> Problems with DNSServiceGetAddrInfo API
+Was returning a bogus result (NULL pointer) when following a CNAME referral
+
 Revision 1.101  2008/02/20 21:18:21  cheshire
 <rdar://problem/5708953> DNSServiceGetAddrInfo doesn't set the scope ID of returned IPv6 link local addresses
 
@@ -1093,18 +1097,21 @@ static void handle_addrinfo_response(DNSServiceOp *sdr, CallbackHeader *cbh, cha
 	rrtype  = get_uint16(&data, end);
 	rrclass = get_uint16(&data, end);
 	rdlen   = get_uint16(&data, end);
-	rdata   = get_rdata(&data, end, rdlen);
+	rdata   = get_rdata (&data, end, rdlen);
 	ttl     = get_uint32(&data, end);
-	
+
+	// We only generate client callbacks for A and AAAA results (including NXDOMAIN results for
+	// those types, if the client has requested those with the kDNSServiceFlagsReturnIntermediates).
+	// Other result types, specifically CNAME referrals, are not communicated to the client, because
+	// the DNSServiceGetAddrInfoReply interface doesn't have any meaningful way to communiate CNAME referrals.
 	if (!data) syslog(LOG_WARNING, "dnssd_clientstub handle_addrinfo_response: error reading result from daemon");
-	else
+	else if (rrtype == kDNSServiceType_A || rrtype == kDNSServiceType_AAAA)
 		{
 		struct sockaddr_in  sa4;
 		struct sockaddr_in6 sa6;
-		struct sockaddr   * sa = NULL;
+		const struct sockaddr *const sa = (rrtype == kDNSServiceType_A) ? (struct sockaddr*)&sa4 : (struct sockaddr*)&sa6;
 		if (rrtype == kDNSServiceType_A)
 			{
-			sa = (struct sockaddr *)&sa4;
 			bzero(&sa4, sizeof(sa4));
 			#ifndef NOT_HAVE_SA_LEN
 			sa4.sin_len = sizeof(struct sockaddr_in);
@@ -1113,9 +1120,8 @@ static void handle_addrinfo_response(DNSServiceOp *sdr, CallbackHeader *cbh, cha
 			//  sin_port   = 0;
 			if (!cbh->cb_err) memcpy(&sa4.sin_addr, rdata, rdlen);
 			}
-		else if (rrtype == kDNSServiceType_AAAA)
+		else
 			{
-			sa = (struct sockaddr *)&sa6;
 			bzero(&sa6, sizeof(sa6));
 			#ifndef NOT_HAVE_SA_LEN
 			sa6.sin6_len = sizeof(struct sockaddr_in6);
