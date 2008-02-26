@@ -38,6 +38,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.771  2008/02/26 22:04:44  cheshire
+<rdar://problem/5661661> BTMM: Too many members.mac.com SOA queries
+Additional fixes -- should not be calling uDNS_CheckCurrentQuestion on a
+question while it's still in our 'm->NewQuestions' section of the list
+
 Revision 1.770  2008/02/22 23:09:02  cheshire
 <rdar://problem/5338420> BTMM: Not processing additional records
 Refinements:
@@ -2456,7 +2461,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 		if (m->CurrentQuestion)
 			LogMsg("SendQueries ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
 		m->CurrentQuestion = m->Questions;
-		while (m->CurrentQuestion)
+		while (m->CurrentQuestion && m->CurrentQuestion != m->NewQuestions)
 			{
 			q = m->CurrentQuestion;
 			if (ActiveQuestion(q) && !mDNSOpaque16IsZero(q->TargetQID)) uDNS_CheckCurrentQuestion(m);
@@ -2488,6 +2493,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 			// m->CurrentQuestion point to the right question
 			if (q == m->CurrentQuestion) m->CurrentQuestion = m->CurrentQuestion->next;
 			}
+		m->CurrentQuestion = mDNSNULL;
 
 		// Scan our list of questions
 		// (a) to see if there are any more that are worth accelerating, and
@@ -2496,7 +2502,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 		// which causes NextScheduledQuery to get (incorrectly) set to m->timenow. Setting it here is the right place, because the very
 		// next thing we do is scan the list and call SetNextQueryTime() for every question we find, so we know we end up with the right value.
 		m->NextScheduledQuery = m->timenow + 0x78000000;
-		for (q = m->Questions; q; q=q->next)
+		for (q = m->Questions; q && q != m->NewQuestions; q=q->next)
 			{
 			if (mDNSOpaque16IsZero(q->TargetQID) && (q->SendQNow ||
 				(!q->Target.type && ActiveQuestion(q) && q->ThisQInterval <= maxExistingQuestionInterval && AccelerateThisQuery(m,q))))
@@ -2629,7 +2635,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 			mDNSu32 answerforecast = 0;
 			
 			// Put query questions in this packet
-			for (q = m->Questions; q; q=q->next)
+			for (q = m->Questions; q && q != m->NewQuestions; q=q->next)
 				{
 				if (mDNSOpaque16IsZero(q->TargetQID) && (q->SendQNow == intf->InterfaceID))
 					{
@@ -2891,7 +2897,7 @@ mDNSlocal mDNSs32 CheckForSoonToExpireRecords(mDNS *const m, const domainname *c
 mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
 	{
 	DNSQuestion *q;
-	for (q = m->Questions; q; q=q->next)
+	for (q = m->Questions; q; q=q->next)		// We do this for *all* questions, not stopping when we get to m->NewQuestions
 		{
 		if (ResourceRecordAnswersQuestion(&rr->resrec, q))
 			{
@@ -2966,6 +2972,8 @@ mDNSlocal void NoCacheAnswer(mDNS *const m, CacheRecord *rr)
 	if (m->CurrentQuestion)
 		LogMsg("NoCacheAnswer ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
 	m->CurrentQuestion = m->Questions;
+	// We do this for *all* questions, not stopping when we get to m->NewQuestions,
+	// since we're not caching the record and we'll get no opportunity to do this later
 	while (m->CurrentQuestion)
 		{
 		DNSQuestion *q = m->CurrentQuestion;
@@ -2987,12 +2995,16 @@ mDNSlocal void NoCacheAnswer(mDNS *const m, CacheRecord *rr)
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void CacheRecordRmv(mDNS *const m, CacheRecord *rr)
 	{
+	mDNSBool answerable = mDNStrue;
 	if (m->CurrentQuestion)
 		LogMsg("CacheRecordRmv ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
 	m->CurrentQuestion = m->Questions;
-	while (m->CurrentQuestion && m->CurrentQuestion != m->NewQuestions)
+	while (m->CurrentQuestion)
 		{
 		DNSQuestion *q = m->CurrentQuestion;
+		// For new questions, we still maintain the CurrentAnswers count (if we incremented it in
+		// CacheRecordAdd we need to decrement it here) but we mustn't generate a client callback.
+		if (q == m->NewQuestions) answerable = mDNSfalse;
 		if (ResourceRecordAnswersQuestion(&rr->resrec, q))
 			{
 			verbosedebugf("CacheRecordRmv %p %s", rr, CRDisplayString(m, rr));
@@ -3015,13 +3027,12 @@ mDNSlocal void CacheRecordRmv(mDNS *const m, CacheRecord *rr)
 						q->qname.c, DNSTypeName(q->qtype));
 					ReconfirmAntecedents(m, &q->qname, q->qnamehash, 0);
 					}
-				AnswerCurrentQuestionWithResourceRecord(m, rr, QC_rmv);
+				if (answerable) AnswerCurrentQuestionWithResourceRecord(m, rr, QC_rmv);
 				}
 			}
 		if (m->CurrentQuestion == q)	// If m->CurrentQuestion was not auto-advanced, do it ourselves now
 			m->CurrentQuestion = q->next;
 		}
-	m->CurrentQuestion = mDNSNULL;
 	}
 
 mDNSlocal void ReleaseCacheEntity(mDNS *const m, CacheEntity *e)
@@ -3229,7 +3240,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 mDNSlocal void AnswerNewLocalOnlyQuestion(mDNS *const m)
 	{
 	DNSQuestion *q = m->NewLocalOnlyQuestions;		// Grab the question we're going to answer
-	m->NewLocalOnlyQuestions = q->next;				// Advance NewQuestions to the next (if any)
+	m->NewLocalOnlyQuestions = q->next;				// Advance NewLocalOnlyQuestions to the next (if any)
 
 	debugf("AnswerNewLocalOnlyQuestion: Answering %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 
@@ -3489,7 +3500,7 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 				LogMsg("mDNS_Execute: SendQueries didn't send all its queries (%d - %d = %d) will try again in one second",
 					m->timenow, m->NextScheduledQuery, m->timenow - m->NextScheduledQuery);
 				m->NextScheduledQuery = m->timenow + mDNSPlatformOneSecond;
-				for (q = m->Questions; q; q=q->next)
+				for (q = m->Questions; q && q != m->NewQuestions; q=q->next)
 					if (ActiveQuestion(q) && q->LastQTime + q->ThisQInterval - m->timenow <= 0)
 						LogMsg("mDNS_Execute: SendQueries didn't send %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 				}
@@ -5355,12 +5366,12 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 			question->DupSuppress[i].InterfaceID = mDNSNULL;
 
 		if (!question->DuplicateOf)
-			debugf("mDNS_StartQuery: Question %##s (%s) %p %d (%p) started",
-				question->qname.c, DNSTypeName(question->qtype), question->InterfaceID,
+			debugf("mDNS_StartQuery: now %d Question %##s (%s) %p %d (%p) started",
+				m->timenow, question->qname.c, DNSTypeName(question->qtype), question->InterfaceID,
 				question->LastQTime + question->ThisQInterval - m->timenow, question);
 		else
-			debugf("mDNS_StartQuery: Question %##s (%s) %p %d (%p) duplicate of (%p)",
-				question->qname.c, DNSTypeName(question->qtype), question->InterfaceID,
+			debugf("mDNS_StartQuery: now %d Question %##s (%s) %p %d (%p) duplicate of (%p)",
+				m->timenow, question->qname.c, DNSTypeName(question->qtype), question->InterfaceID,
 				question->LastQTime + question->ThisQInterval - m->timenow, question, question->DuplicateOf);
 
 		if (question->InterfaceID == mDNSInterface_LocalOnly)
