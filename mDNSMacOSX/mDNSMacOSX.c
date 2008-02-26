@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.526  2008/02/26 21:43:54  cheshire
+Renamed 'clockdivisor' to 'mDNSPlatformClockDivisor' (LogTimeStamps code needs to be able to access it)
+
 Revision 1.525  2008/02/20 00:53:20  cheshire
 <rdar://problem/5492035> getifaddrs is returning invalid netmask family for fw0 and vmnet
 Removed overly alarming syslog message
@@ -794,8 +797,6 @@ Add (commented out) trigger value for testing "mach_absolute_time went backwards
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark - Globals
 #endif
-
-static mDNSu32 clockdivisor = 0;
 
 mDNSexport int KQueueFD;
 
@@ -4171,6 +4172,7 @@ mDNSexport mDNSu32 mDNSPlatformRandomSeed(void)
 	}
 
 mDNSexport mDNSs32 mDNSPlatformOneSecond = 1000;
+mDNSexport mDNSu32 mDNSPlatformClockDivisor = 0;
 
 mDNSexport mStatus mDNSPlatformTimeInit(void)
 	{
@@ -4194,13 +4196,13 @@ mDNSexport mStatus mDNSPlatformTimeInit(void)
 	// When we ship Macs with clock frequencies above 1000GHz, we may have to update this code.
 	struct mach_timebase_info tbi;
 	kern_return_t result = mach_timebase_info(&tbi);
-	if (result == KERN_SUCCESS) clockdivisor = ((uint64_t)tbi.denom * 1000000) / tbi.numer;
+	if (result == KERN_SUCCESS) mDNSPlatformClockDivisor = ((uint64_t)tbi.denom * 1000000) / tbi.numer;
 	return(result);
 	}
 
 mDNSexport mDNSs32 mDNSPlatformRawTime(void)
 	{
-	if (clockdivisor == 0) { LogMsg("mDNSPlatformRawTime called before mDNSPlatformTimeInit"); return(0); }
+	if (mDNSPlatformClockDivisor == 0) { LogMsg("mDNSPlatformRawTime called before mDNSPlatformTimeInit"); return(0); }
 
 	static uint64_t last_mach_absolute_time = 0;
 	//static uint64_t last_mach_absolute_time = 0x8000000000000000LL;	// Use this value for testing the alert display
@@ -4222,7 +4224,7 @@ mDNSexport mDNSs32 mDNSPlatformRawTime(void)
 		}
 	last_mach_absolute_time = this_mach_absolute_time;
 
-	return((mDNSs32)(this_mach_absolute_time / clockdivisor));
+	return((mDNSs32)(this_mach_absolute_time / mDNSPlatformClockDivisor));
 	}
 
 mDNSexport mDNSs32 mDNSPlatformUTC(void)
