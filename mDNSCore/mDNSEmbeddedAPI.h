@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.467  2008/02/26 20:48:46  cheshire
+Need parentheses around use of macro argument in mDNS_TimeNow_NoLock(m)
+
 Revision 1.466  2008/02/21 21:36:32  cheshire
 Updated comment about record type values (kDNSRecordTypePacketAns/Auth/Add)
 
@@ -2590,7 +2593,7 @@ extern mDNSu32  mDNSPlatformRandomSeed  (void);
 extern mStatus  mDNSPlatformTimeInit    (void);
 extern mDNSs32  mDNSPlatformRawTime     (void);
 extern mDNSs32  mDNSPlatformUTC         (void);
-#define mDNS_TimeNow_NoLock(m) (mDNSPlatformRawTime() + m->timenow_adjust)
+#define mDNS_TimeNow_NoLock(m) (mDNSPlatformRawTime() + (m)->timenow_adjust)
 
 #if MDNS_DEBUGMSGS
 extern void	mDNSPlatformWriteDebugMsg(const char *msg);
