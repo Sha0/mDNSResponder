@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.386  2008/02/26 20:23:15  cheshire
+Updated comments
+
 Revision 1.385  2008/02/19 21:50:52  cheshire
 Shortened some overly-long lines
 
@@ -725,7 +728,7 @@ typedef struct registered_record_entry
 	{
 	struct registered_record_entry *next;
 	mDNSu32 key;
-	AuthRecord *rr;		// Variable-sized AuthRecord
+	AuthRecord *rr;				// Pointer to variable-sized AuthRecord
 	client_context_t client_context;
 	request_state *request;
 	} registered_record_entry;
@@ -743,7 +746,7 @@ typedef struct service_instance
     mDNSBool clientnotified;		// Has client been notified of successful registration yet?
 	mDNSBool default_local;			// is this the "local." from an empty-string registration?
 	domainname domain;
-	ServiceRecordSet srs;			// note - must be last field in struct
+	ServiceRecordSet srs;			// note -- variable-sized opbject -- must be last field in struct
 	} service_instance;
 
 // for multi-domain default browsing
@@ -769,7 +772,7 @@ struct request_state
 	transfer_state ts;
 	mDNSu32 hdr_bytes;				// bytes of header already read
 	ipc_msg_hdr hdr;
-	mDNSu32 data_bytes;			// bytes of message data already read
+	mDNSu32 data_bytes;				// bytes of message data already read
 	char *msgbuf;					// pointer to data storage to pass to free()
 	char *msgptr;					// pointer to data to be read from (may be modified)
 	char *msgend;					// pointer to byte after last byte of message
@@ -2549,11 +2552,6 @@ mDNSlocal mStatus handle_resolve_request(request_state *request)
 // to the mDNSCore routine) that sends results back to the client, and a termination routine that aborts
 // the mDNSCore operation if the client dies or closes its socket.
 
-// query and resolve calls have separate request handlers that parse the arguments from the client and
-// massage the name parameters appropriately, but the rest of the operations (making the query call,
-// delivering the result to the client, and termination) are identical.
-
-// what gets called when a resolve is completed and we need to send the data back to the client
 mDNSlocal void queryrecord_result_callback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
 	char name[MAX_ESCAPED_DOMAIN_NAME];
