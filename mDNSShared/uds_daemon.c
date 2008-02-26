@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.387  2008/02/26 21:24:13  cheshire
+Fixed spelling mistake in comment
+
 Revision 1.386  2008/02/26 20:23:15  cheshire
 Updated comments
 
@@ -746,7 +749,7 @@ typedef struct service_instance
     mDNSBool clientnotified;		// Has client been notified of successful registration yet?
 	mDNSBool default_local;			// is this the "local." from an empty-string registration?
 	domainname domain;
-	ServiceRecordSet srs;			// note -- variable-sized opbject -- must be last field in struct
+	ServiceRecordSet srs;			// note -- variable-sized object -- must be last field in struct
 	} service_instance;
 
 // for multi-domain default browsing
