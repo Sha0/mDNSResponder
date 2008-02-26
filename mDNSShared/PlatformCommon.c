@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: PlatformCommon.c,v $
+Revision 1.16  2008/02/26 21:47:45  cheshire
+Added cast to avoid compiler warning
+
 Revision 1.15  2008/02/26 21:42:26  cheshire
 Added 'LogTimeStamps' option, to show ms-granularity timestamps on every log message
 
@@ -209,7 +212,7 @@ mDNSexport void mDNSPlatformWriteLogMsg(const char *ident, const char *buffer, i
 		{
 #if LogTimeStamps
 		if (mDNSPlatformClockDivisor)
-			fprintf(stderr,"%8d.%03d: %s\n", t / 1000, ms, buffer);
+			fprintf(stderr,"%8d.%03d: %s\n", (int)(t/1000), ms, buffer);
 		else
 #endif
 			fprintf(stderr,"%s\n", buffer);
@@ -220,7 +223,7 @@ mDNSexport void mDNSPlatformWriteLogMsg(const char *ident, const char *buffer, i
 		openlog(ident, LOG_CONS | logoptflags, LOG_DAEMON);
 #if LogTimeStamps
 		if (mDNSPlatformClockDivisor)
-			syslog(LOG_ERR, "%8d.%03d: %s", t / 1000, ms, buffer);
+			syslog(LOG_ERR, "%8d.%03d: %s", (int)(t/1000), ms, buffer);
 		else
 #endif
 			syslog(LOG_ERR, "%s", buffer);
