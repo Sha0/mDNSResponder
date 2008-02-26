@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: PlatformCommon.c,v $
+Revision 1.15  2008/02/26 21:42:26  cheshire
+Added 'LogTimeStamps' option, to show ms-granularity timestamps on every log message
+
 Revision 1.14  2007/12/03 18:37:26  cheshire
 Moved mDNSPlatformWriteLogMsg & mDNSPlatformWriteDebugMsg
 from mDNSMacOSX.c to PlatformCommon.c, so that Posix build can use them
@@ -160,7 +163,7 @@ mDNSexport void ReadDDNSSettingsFromConfFile(mDNS *const m, const char *const fi
 		if (hostname && GetConfigOption(buf, "hostname", f) && !MakeDomainNameFromDNSNameString(hostname, buf)) goto badf;
 		if (domain && GetConfigOption(buf, "zone", f) && !MakeDomainNameFromDNSNameString(domain, buf)) goto badf;
 		buf[0] = 0;
-		GetConfigOption(buf, "secret-64", f);  // failure means no authentication	   		
+		GetConfigOption(buf, "secret-64", f);  // failure means no authentication
 		fclose(f);
 		f = NULL;
 		}
@@ -182,28 +185,45 @@ mDNSexport void ReadDDNSSettingsFromConfFile(mDNS *const m, const char *const fi
 
 	badf:
 	LogMsg("ERROR: malformatted config file");
-	if (f) fclose(f);	
+	if (f) fclose(f);
 	}
 
 #if MDNS_DEBUGMSGS
-mDNSexport void	mDNSPlatformWriteDebugMsg(const char *msg)
+mDNSexport void mDNSPlatformWriteDebugMsg(const char *msg)
 	{
 	fprintf(stderr,"%s\n", msg);
 	fflush(stderr);
 	}
 #endif
 
-mDNSexport void	mDNSPlatformWriteLogMsg(const char *ident, const char *buffer, int logoptflags)
+mDNSexport void mDNSPlatformWriteLogMsg(const char *ident, const char *buffer, int logoptflags)
 	{
+#if LogTimeStamps
+	extern mDNS mDNSStorage;
+	extern mDNSu32 mDNSPlatformClockDivisor;
+	mDNSs32 t = mDNSStorage.timenow ? mDNSStorage.timenow : mDNSPlatformClockDivisor ? mDNS_TimeNow_NoLock(&mDNSStorage) : 0;
+	int ms = ((t < 0) ? -t : t) % 1000;
+#endif
+
 	if (mDNS_DebugMode)	// In debug mode we write to stderr
 		{
-		fprintf(stderr,"%s\n", buffer);
+#if LogTimeStamps
+		if (mDNSPlatformClockDivisor)
+			fprintf(stderr,"%8d.%03d: %s\n", t / 1000, ms, buffer);
+		else
+#endif
+			fprintf(stderr,"%s\n", buffer);
 		fflush(stderr);
 		}
 	else				// else, in production mode, we write to syslog
 		{
 		openlog(ident, LOG_CONS | logoptflags, LOG_DAEMON);
-		syslog(LOG_ERR, "%s", buffer);
+#if LogTimeStamps
+		if (mDNSPlatformClockDivisor)
+			syslog(LOG_ERR, "%8d.%03d: %s", t / 1000, ms, buffer);
+		else
+#endif
+			syslog(LOG_ERR, "%s", buffer);
 		closelog();
 		}
 	}
