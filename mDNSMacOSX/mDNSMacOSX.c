@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.527  2008/02/28 03:25:26  mcguire
+<rdar://problem/5535772> config cleanup on shutdown/reboot
+
 Revision 1.526  2008/02/26 21:43:54  cheshire
 Renamed 'clockdivisor' to 'mDNSPlatformClockDivisor' (LogTimeStamps code needs to be able to access it)
 
@@ -4152,10 +4155,28 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 	CloseSocketSet(&m->p->permanentsockets);
 
 	#if APPLE_OSX_mDNSResponder
+	// clean up tunnels
+	while (m->TunnelClients)
+		{
+		ClientTunnel *cur = m->TunnelClients;
+		LogOperation("mDNSPlatformClose: removing client tunnel %p %##s from list", cur, cur->dstname.c);
+		if (cur->q.ThisQInterval >= 0) mDNS_StopQuery(m, &cur->q);
+		AutoTunnelSetKeys(cur, mDNSfalse);
+		m->TunnelClients = cur->next;
+		freeL("ClientTunnel", cur);
+		}
+
+	if (AnonymousRacoonConfig)
+		{
+		AnonymousRacoonConfig = mDNSfalse;
+		LogOperation("mDNSPlatformClose: Deconfiguring autotunnel");
+		(void)mDNSConfigureServer(kmDNSDown, "");
+		}
+
 	if (m->AutoTunnelHostAddrActive && m->AutoTunnelHostAddr.b[0])
 		{
 		m->AutoTunnelHostAddrActive = mDNSfalse;
-		LogMsg("Removing AutoTunnel address %.16a", &m->AutoTunnelHostAddr);
+		LogOperation("mDNSPlatformClose: Removing AutoTunnel address %.16a", &m->AutoTunnelHostAddr);
 		(void)mDNSAutoTunnelInterfaceUpDown(kmDNSDown, m->AutoTunnelHostAddr.b);
 		}
 	#endif // APPLE_OSX_mDNSResponder
