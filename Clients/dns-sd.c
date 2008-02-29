@@ -574,16 +574,16 @@ static void DNSSD_API port_mapping_create_reply(DNSServiceRef sdref, DNSServiceF
 	(void)context;     // Unused
 	(void)flags;       // Unused
 	
-	if (num_printed++ == 0) printf("Timestamp     if   %-20s %-15s %-15s %-15s %s\n", "External Address", "Protocol", "Internal Port", "External Port", "TTL");
+	if (num_printed++ == 0) printf("Timestamp     if   %-20s %-15s %-15s %-15s %-6s\n", "External Address", "Protocol", "Internal Port", "External Port", "TTL");
 	printtimestamp();
-	if (errorCode) printf("Error code %d\n", errorCode);
+	if (errorCode && errorCode != kDNSServiceErr_DoubleNAT) printf("Error code %d\n", errorCode);
 	else
 		{
 		const unsigned char *digits = (const unsigned char *)&publicAddress;
 		char                 addr[256];
 
 		snprintf(addr, sizeof(addr), "%d.%d.%d.%d", digits[0], digits[1], digits[2], digits[3]);
-		printf("%-4d %-20s %-15d %-15d %-15d %d\n", ifIndex, addr, protocol, ntohs(privatePort), ntohs(publicPort), ttl);
+		printf("%-4d %-20s %-15d %-15d %-15d %-6d%s\n", ifIndex, addr, protocol, ntohs(privatePort), ntohs(publicPort), ttl, errorCode == kDNSServiceErr_DoubleNAT ? " Double NAT" : "");
 		}
 	fflush(stdout);
 	}
