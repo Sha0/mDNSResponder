@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.549  2008/02/29 01:35:37  mcguire
+<rdar://problem/5736313> BTMM: Double-NAT'd machines register all but AutoTunnel v4 address records
+
 Revision 1.548  2008/02/20 23:54:18  cheshire
 <rdar://problem/5661518> "Failed to obtain NAT port mapping" syslog messages
 Improved log message so it tells us more about what's going on
@@ -1476,7 +1479,7 @@ mDNSexport void natTraversalHandleAddressReply(mDNS *const m, mDNSu16 err, mDNSv
 		{
 		LogOperation("Received external IP address %.4a from NAT", &ExtAddr);
 		if (mDNSv4AddrIsRFC1918(&ExtAddr))
-			LogMsg("Double NAT (external NAT gateway address %.4a is also a private RFC 1918 address)", &ExtAddr);
+			LogOperation("Double NAT (external NAT gateway address %.4a is also a private RFC 1918 address)", &ExtAddr);
 		m->ExternalAddress = ExtAddr;
 		RecreateNATMappings(m);		// Also sets NextScheduledNATOp for us
 		}
@@ -1529,6 +1532,8 @@ mDNSexport void natTraversalHandlePortMapReply(mDNS *const m, NATTraversalInfo *
 	
 		NATSetNextRenewalTime(m, n);			// Got our port mapping; now set timer to renew it at halfway point
 		m->NextScheduledNATOp = m->timenow;		// May need to invoke client callback immediately
+		
+		if (mDNSv4AddrIsRFC1918(&m->ExternalAddress)) n->NewResult = mStatus_DoubleNAT;
 		}
 	}
 
@@ -4471,6 +4476,8 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 			if (m->NextScheduledNATOp - cur->retryPortMap > 0)
 				m->NextScheduledNATOp = cur->retryPortMap;
 			}
+		else if (!cur->NewResult && mDNSv4AddrIsRFC1918(&m->ExternalAddress))
+			cur->NewResult = mStatus_DoubleNAT;
 
 		// Notify the client if necessary. We invoke the callback if:
 		// (1) we have an ExternalAddress, or we've tried and failed a couple of times to discover it
@@ -4489,6 +4496,11 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 					if (cur->Protocol && mDNSIPPortIsZero(ExternalPort) && !mDNSIPv4AddressIsZero(m->Router.ip.v4))
 						LogMsg("Failed to obtain NAT port mapping %p from router %#a external address %.4a internal port %d error %d",
 							cur, &m->Router, &m->ExternalAddress, mDNSVal16(cur->IntPort), cur->NewResult);
+							
+					// if we're reporting no connectivity, make sure to set the error code to NoError
+					if (mDNSIPv4AddressIsZero(m->ExternalAddress) && !mDNSIPv4AddressIsZero(cur->ExternalAddress) && mDNSIPv4AddressIsZero(m->Router.ip.v4))
+						cur->NewResult = mStatus_NoError;
+					
 					cur->ExternalAddress = m->ExternalAddress;
 					cur->ExternalPort    = ExternalPort;
 					cur->Lifetime        = cur->ExpiryTime && !mDNSIPPortIsZero(ExternalPort) ?

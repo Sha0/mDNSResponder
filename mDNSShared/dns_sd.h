@@ -1729,9 +1729,11 @@ DNSServiceErrorType DNSSD_API DNSServiceReconfirmRecord
  *
  * interfaceIndex:  The interface through which the NAT gateway is reached.
  *
- * errorCode:       Will be kDNSServiceErr_NoError on success, otherwise will
- *                  indicate the failure that occurred. Other parameters are
- *                  undefined if errorCode is nonzero.
+ * errorCode:       Will be kDNSServiceErr_NoError on success.
+ *                  Will be kDNSServiceErr_DoubleNAT when the NAT gateway is itself behind one or
+ *                  more layers of NAT, in which case the other parameters have the defined values.
+ *                  For other failures, will indicate the failure that occurred, and the other
+ *                  parameters are undefined.
  *
  * publicAddress:   Four byte IPv4 address in network byte order.
  *
