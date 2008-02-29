@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.528  2008/02/29 01:33:57  mcguire
+<rdar://problem/5611801> BTMM: Services stay registered after previously successful NAT Port mapping fails
+
 Revision 1.527  2008/02/28 03:25:26  mcguire
 <rdar://problem/5535772> config cleanup on shutdown/reboot
 
@@ -2264,6 +2267,12 @@ mDNSlocal void AutoTunnelRecordCallback(mDNS *const m, AuthRecord *const rr, mSt
 	if (result == mStatus_MemFree)
 		{
 		LogOperation("AutoTunnelRecordCallback MemFree %s", ARDisplayString(m, rr));
+		// Reset the host record namestorage to force high-level PTR/SRV/TXT to deregister
+		if (rr == &info->AutoTunnelHostRecord)
+			{
+			rr->namestorage.c[0] = 0;
+			m->NextSRVUpdate = NonZeroTime(m->timenow);
+			}
 		RegisterAutoTunnelRecords(m,info);
 		}
 	}
