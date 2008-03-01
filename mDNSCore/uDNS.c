@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.550  2008/03/01 01:34:47  cheshire
+<rdar://problem/5736313> BTMM: Double-NAT'd machines register all but AutoTunnel v4 address records
+Further refinements
+
 Revision 1.549  2008/02/29 01:35:37  mcguire
 <rdar://problem/5736313> BTMM: Double-NAT'd machines register all but AutoTunnel v4 address records
 
@@ -1479,7 +1483,7 @@ mDNSexport void natTraversalHandleAddressReply(mDNS *const m, mDNSu16 err, mDNSv
 		{
 		LogOperation("Received external IP address %.4a from NAT", &ExtAddr);
 		if (mDNSv4AddrIsRFC1918(&ExtAddr))
-			LogOperation("Double NAT (external NAT gateway address %.4a is also a private RFC 1918 address)", &ExtAddr);
+			LogMsg("Double NAT (external NAT gateway address %.4a is also a private RFC 1918 address)", &ExtAddr);
 		m->ExternalAddress = ExtAddr;
 		RecreateNATMappings(m);		// Also sets NextScheduledNATOp for us
 		}
@@ -1532,8 +1536,6 @@ mDNSexport void natTraversalHandlePortMapReply(mDNS *const m, NATTraversalInfo *
 	
 		NATSetNextRenewalTime(m, n);			// Got our port mapping; now set timer to renew it at halfway point
 		m->NextScheduledNATOp = m->timenow;		// May need to invoke client callback immediately
-		
-		if (mDNSv4AddrIsRFC1918(&m->ExternalAddress)) n->NewResult = mStatus_DoubleNAT;
 		}
 	}
 
@@ -4476,8 +4478,6 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 			if (m->NextScheduledNATOp - cur->retryPortMap > 0)
 				m->NextScheduledNATOp = cur->retryPortMap;
 			}
-		else if (!cur->NewResult && mDNSv4AddrIsRFC1918(&m->ExternalAddress))
-			cur->NewResult = mStatus_DoubleNAT;
 
 		// Notify the client if necessary. We invoke the callback if:
 		// (1) we have an ExternalAddress, or we've tried and failed a couple of times to discover it
@@ -4485,27 +4485,24 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 		// and (3) we have new data to give the client that's changed since the last callback
 		if (!mDNSIPv4AddressIsZero(m->ExternalAddress) || m->retryIntervalGetAddr > NATMAP_INIT_RETRY * 8)
 			{
+			const mStatus EffectiveResult = cur->NewResult ? cur->NewResult : mDNSv4AddrIsRFC1918(&m->ExternalAddress) ? mStatus_DoubleNAT : mStatus_NoError;
 			const mDNSIPPort ExternalPort = HaveRoutable ? cur->IntPort :
 				!mDNSIPv4AddressIsZero(m->ExternalAddress) && cur->ExpiryTime ? cur->RequestedPort : zeroIPPort;
 			if (!cur->Protocol || HaveRoutable || cur->ExpiryTime || cur->retryInterval > NATMAP_INIT_RETRY * 8)
 				if (!mDNSSameIPv4Address(cur->ExternalAddress, m->ExternalAddress) ||
 					!mDNSSameIPPort     (cur->ExternalPort,       ExternalPort)    ||
-					cur->Result != cur->NewResult)
+					cur->Result != EffectiveResult)
 					{
 					//LogMsg("NAT callback %d %d %d", cur->Protocol, cur->ExpiryTime, cur->retryInterval);
 					if (cur->Protocol && mDNSIPPortIsZero(ExternalPort) && !mDNSIPv4AddressIsZero(m->Router.ip.v4))
 						LogMsg("Failed to obtain NAT port mapping %p from router %#a external address %.4a internal port %d error %d",
-							cur, &m->Router, &m->ExternalAddress, mDNSVal16(cur->IntPort), cur->NewResult);
-							
-					// if we're reporting no connectivity, make sure to set the error code to NoError
-					if (mDNSIPv4AddressIsZero(m->ExternalAddress) && !mDNSIPv4AddressIsZero(cur->ExternalAddress) && mDNSIPv4AddressIsZero(m->Router.ip.v4))
-						cur->NewResult = mStatus_NoError;
-					
+							cur, &m->Router, &m->ExternalAddress, mDNSVal16(cur->IntPort), EffectiveResult);
+
 					cur->ExternalAddress = m->ExternalAddress;
 					cur->ExternalPort    = ExternalPort;
 					cur->Lifetime        = cur->ExpiryTime && !mDNSIPPortIsZero(ExternalPort) ?
 						(cur->ExpiryTime - m->timenow + mDNSPlatformOneSecond/2) / mDNSPlatformOneSecond : 0;
-					cur->Result          = cur->NewResult;
+					cur->Result          = EffectiveResult;
 					mDNS_DropLockBeforeCallback();		// Allow client to legally make mDNS API calls from the callback
 					if (cur->clientCallback)
 						cur->clientCallback(m, cur);
