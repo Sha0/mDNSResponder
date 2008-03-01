@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.551  2008/03/01 01:43:04  cheshire
+<rdar://problem/5631565> BTMM: Lots of "Error getting external address 3" when double-NATed prevents sleep
+Added code to suppress logging of multiple identical error results
+
 Revision 1.550  2008/03/01 01:34:47  cheshire
 <rdar://problem/5736313> BTMM: Double-NAT'd machines register all but AutoTunnel v4 address records
 Further refinements
@@ -1478,7 +1482,11 @@ mDNSlocal void ClearUPnPState(mDNS *const m)
 
 mDNSexport void natTraversalHandleAddressReply(mDNS *const m, mDNSu16 err, mDNSv4Addr ExtAddr)
 	{
-	if (err) LogMsg("Error getting external address %d", err);
+	static mDNSu16 last_err;
+	if (err)
+		{
+		if (err != last_err) LogMsg("Error getting external address %d", err);
+		}
 	else if (!mDNSSameIPv4Address(m->ExternalAddress, ExtAddr))
 		{
 		LogOperation("Received external IP address %.4a from NAT", &ExtAddr);
@@ -1494,6 +1502,8 @@ mDNSexport void natTraversalHandleAddressReply(mDNS *const m, mDNSu16 err, mDNSv
 	m->retryGetAddr = m->timenow + m->retryIntervalGetAddr;
 	if (m->NextScheduledNATOp - m->retryIntervalGetAddr > 0)
 		m->NextScheduledNATOp = m->retryIntervalGetAddr;
+
+	last_err = err;
 	}
 
 // Both places that call NATSetNextRenewalTime() update m->NextScheduledNATOp correctly afterwards
