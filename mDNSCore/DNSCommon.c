@@ -17,6 +17,11 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.196  2008/03/05 22:01:53  cheshire
+<rdar://problem/5500969> BTMM: Need ability to identify version of mDNSResponder client
+Now that we optionally add the HINFO record, when rewriting the header fields into network byte
+order, we need to use our updated msg->h.numAdditionals, not the stack variable numAdditionals
+
 Revision 1.195  2008/03/05 19:06:30  mcguire
 <rdar://problem/5500969> BTMM: Need ability to identify version of mDNSResponder client
 further refinements
@@ -2538,10 +2543,10 @@ mDNSexport mStatus mDNSSendDNSMessage(mDNS *const m, DNSMessage *const msg, mDNS
     mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport, TCPSocket *sock, DomainAuthInfo *authInfo)
 	{
 	mStatus status = mStatus_NoError;
-	mDNSu16 numQuestions   = msg->h.numQuestions;
-	mDNSu16 numAnswers     = msg->h.numAnswers;
-	mDNSu16 numAuthorities = msg->h.numAuthorities;
-	mDNSu16 numAdditionals = msg->h.numAdditionals;
+	const mDNSu16 numQuestions   = msg->h.numQuestions;
+	const mDNSu16 numAnswers     = msg->h.numAnswers;
+	const mDNSu16 numAuthorities = msg->h.numAuthorities;
+	const mDNSu16 numAdditionals = msg->h.numAdditionals;
 	mDNSu8 *ptr = (mDNSu8 *)&msg->h.numQuestions;
 
 	if (end <= msg->data || end - msg->data > AbsoluteMaxDNSMessageData)
@@ -2567,18 +2572,17 @@ mDNSexport mStatus mDNSSendDNSMessage(mDNS *const m, DNSMessage *const msg, mDNS
 		hinfo.resrec.rdestimate = len;
 		newptr = PutResourceRecord(msg, end, &msg->h.numAdditionals, &hinfo.resrec);
 		if (newptr) end = newptr;
-		if (numAdditionals != msg->h.numAdditionals) numAdditionals = msg->h.numAdditionals;
 		}
 
 	// Put all the integer values in IETF byte-order (MSB first, LSB second)
-	*ptr++ = (mDNSu8)(numQuestions   >> 8);
-	*ptr++ = (mDNSu8)(numQuestions   &  0xFF);
-	*ptr++ = (mDNSu8)(numAnswers     >> 8);
-	*ptr++ = (mDNSu8)(numAnswers     &  0xFF);
-	*ptr++ = (mDNSu8)(numAuthorities >> 8);
-	*ptr++ = (mDNSu8)(numAuthorities &  0xFF);
-	*ptr++ = (mDNSu8)(numAdditionals >> 8);
-	*ptr++ = (mDNSu8)(numAdditionals &  0xFF);
+	*ptr++ = (mDNSu8)(msg->h.numQuestions   >> 8);
+	*ptr++ = (mDNSu8)(msg->h.numQuestions   &  0xFF);
+	*ptr++ = (mDNSu8)(msg->h.numAnswers     >> 8);
+	*ptr++ = (mDNSu8)(msg->h.numAnswers     &  0xFF);
+	*ptr++ = (mDNSu8)(msg->h.numAuthorities >> 8);
+	*ptr++ = (mDNSu8)(msg->h.numAuthorities &  0xFF);
+	*ptr++ = (mDNSu8)(msg->h.numAdditionals >> 8);
+	*ptr++ = (mDNSu8)(msg->h.numAdditionals &  0xFF);
 
 	if (authInfo) DNSDigest_SignMessage(msg, &end, authInfo, 0);	// DNSDigest_SignMessage operates on message in network byte order
 	if (!end) { LogMsg("mDNSSendDNSMessage: DNSDigest_SignMessage failed"); status = mStatus_NoMemoryErr; }
@@ -2610,7 +2614,7 @@ mDNSexport mStatus mDNSSendDNSMessage(mDNS *const m, DNSMessage *const msg, mDNS
 	if (mDNS_LogLevel >= MDNS_LOG_VERBOSE_DEBUG && !mDNSOpaque16IsZero(msg->h.id))
 		{
 		// Want to include TSIG and HINFO, if present, in DumpPacket output
-		msg->h.numAdditionals += (authInfo != mDNSNULL);
+		msg->h.numAdditionals += (authInfo != mDNSNULL) + (authInfo && authInfo->AutoTunnel);
 		DumpPacket(m, mDNStrue, sock && (sock->flags & kTCPSocketFlags_UseTLS) ? "TLS" : sock ? "TCP" : "UDP", dst, dstport, msg, end);
 		msg->h.numAdditionals = numAdditionals;		// Restore old value, excluding temporary additional records we added
 		}
