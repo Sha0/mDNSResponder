@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.552  2008/03/05 01:56:42  cheshire
+<rdar://problem/5687667> BTMM: Don't fallback to unencrypted operations when SRV lookup fails
+
 Revision 1.551  2008/03/01 01:43:04  cheshire
 <rdar://problem/5631565> BTMM: Lots of "Error getting external address 3" when double-NATed prevents sleep
 Added code to suppress logging of multiple identical error results
@@ -2453,12 +2456,17 @@ mDNSlocal void GetZoneData_QuestionCallback(mDNS *const m, DNSQuestion *question
 		{
 		debugf("GetZoneData GOT SRV %s", RRDisplayString(m, answer));
 		mDNS_StopQuery(m, question);
+// Right now we don't want to fail back to non-encrypted operations
+// If the AuthInfo has the AutoTunnel field set, then we want private or nothing
+// <rdar://problem/5687667> BTMM: Don't fallback to unencrypted operations when SRV lookup fails
+#if 0
 		if (!answer->rdlength && zd->ZonePrivate && zd->ZoneService != ZoneServiceQuery)
 			{
 			zd->ZonePrivate = mDNSfalse;	// Causes ZoneDataSRV() to yield a different SRV name when building the query
 			GetZoneData_StartQuery(m, zd, kDNSType_SRV);		// Try again, non-private this time
 			}
 		else
+#endif
 			{
 			if (answer->rdlength)
 				{
@@ -2542,7 +2550,7 @@ mDNSexport ZoneData *StartGetZoneData(mDNS *const m, const domainname *const nam
 	zd->Host.c[0]        = 0;
 	zd->Port             = zeroIPPort;
 	zd->Addr             = zeroAddr;
-	zd->ZonePrivate      = AuthInfo ? mDNStrue : mDNSfalse;
+	zd->ZonePrivate      = AuthInfo && AuthInfo->AutoTunnel ? mDNStrue : mDNSfalse;
 	zd->ZoneDataCallback = callback;
 	zd->ZoneDataContext  = ZoneDataContext;
 
@@ -3999,9 +4007,12 @@ mDNSlocal void PrivateQueryGotZoneData(mDNS *const m, mStatus err, const ZoneDat
 	// we use for cleaning up if our LLQ is cancelled *before* the GetZoneData operation has completes).
 	q->nta = mDNSNULL;
 
-	if (err)
+	if (err || !zoneInfo || mDNSAddressIsZero(&zoneInfo->Addr) || mDNSIPPortIsZero(zoneInfo->Port))
 		{
-		LogOperation("ERROR: PrivateQueryGotZoneData %##s (%s) invoked with error code %ld", q->qname.c, DNSTypeName(q->qtype), err);
+		LogOperation("ERROR: PrivateQueryGotZoneData %##s (%s) invoked with error code %ld %p %#a:%d",
+			q->qname.c, DNSTypeName(q->qtype), err, zoneInfo,
+			zoneInfo ? &zoneInfo->Addr : mDNSNULL,
+			zoneInfo ? mDNSVal16(zoneInfo->Port) : 0);
 		return;
 		}
 
@@ -4327,13 +4338,13 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 			{
 			mDNSu8 *end = m->omsg.data;
 			mStatus err = mStatus_NoError;
-			DomainAuthInfo *private = mDNSNULL;
+			mDNSBool private = mDNSfalse;
 
 			if (q->qDNSServer->teststate != DNSServer_Untested || NoTestQuery(q))
 				{
 				InitializeDNSMessage(&m->omsg.h, q->TargetQID, uQueryFlags);
 				end = putQuestion(&m->omsg, m->omsg.data, m->omsg.data + AbsoluteMaxDNSMessageData, &q->qname, q->qtype, q->qclass);
-				private = q->AuthInfo;
+				private = (q->AuthInfo && q->AuthInfo->AutoTunnel);
 				}
 			else if (m->timenow - q->qDNSServer->lasttest >= INIT_UCAST_POLL_INTERVAL)	// Make sure at least three seconds has elapsed since last test query
 				{
