@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.195  2008/03/05 19:06:30  mcguire
+<rdar://problem/5500969> BTMM: Need ability to identify version of mDNSResponder client
+further refinements
+
 Revision 1.194  2008/03/05 00:26:06  cheshire
 <rdar://problem/5500969> BTMM: Need ability to identify version of mDNSResponder client
 
@@ -2563,6 +2567,7 @@ mDNSexport mStatus mDNSSendDNSMessage(mDNS *const m, DNSMessage *const msg, mDNS
 		hinfo.resrec.rdestimate = len;
 		newptr = PutResourceRecord(msg, end, &msg->h.numAdditionals, &hinfo.resrec);
 		if (newptr) end = newptr;
+		if (numAdditionals != msg->h.numAdditionals) numAdditionals = msg->h.numAdditionals;
 		}
 
 	// Put all the integer values in IETF byte-order (MSB first, LSB second)
@@ -2605,7 +2610,7 @@ mDNSexport mStatus mDNSSendDNSMessage(mDNS *const m, DNSMessage *const msg, mDNS
 	if (mDNS_LogLevel >= MDNS_LOG_VERBOSE_DEBUG && !mDNSOpaque16IsZero(msg->h.id))
 		{
 		// Want to include TSIG and HINFO, if present, in DumpPacket output
-		msg->h.numAdditionals += (authInfo != mDNSNULL) + (authInfo && authInfo->AutoTunnel);
+		msg->h.numAdditionals += (authInfo != mDNSNULL);
 		DumpPacket(m, mDNStrue, sock && (sock->flags & kTCPSocketFlags_UseTLS) ? "TLS" : sock ? "TCP" : "UDP", dst, dstport, msg, end);
 		msg->h.numAdditionals = numAdditionals;		// Restore old value, excluding temporary additional records we added
 		}
