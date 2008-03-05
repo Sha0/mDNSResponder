@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.194  2008/03/05 00:26:06  cheshire
+<rdar://problem/5500969> BTMM: Need ability to identify version of mDNSResponder client
+
 Revision 1.193  2007/12/17 23:42:36  cheshire
 Added comments about DNSDigest_SignMessage()
 
@@ -527,7 +530,7 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd,
 								rd->soa.serial, rd->soa.refresh, rd->soa.retry, rd->soa.expire, rd->soa.min);
 							break;
 
-		case kDNSType_HINFO:// Display this the same as TXT (show all constituent string)
+		case kDNSType_HINFO:// Display this the same as TXT (show all constituent strings)
 		case kDNSType_TXT:  {
 							mDNSu8 *t = rd->txt.c;
 							while (t < rd->txt.c + rr->rdlength)
@@ -2543,6 +2546,25 @@ mDNSexport mStatus mDNSSendDNSMessage(mDNS *const m, DNSMessage *const msg, mDNS
 		return mStatus_BadParamErr;
 		}
 
+	if (authInfo && authInfo->AutoTunnel)
+		{
+		AuthRecord hinfo;
+		mDNSu8 *h = hinfo.rdatastorage.u.data;
+		mDNSu16 len = 2 + m->HIHardware.c[0] + m->HISoftware.c[0];
+		mDNSu8 *newptr;
+		mDNS_SetupResourceRecord(&hinfo, mDNSNULL, mDNSInterface_Any, kDNSType_HINFO, 0, kDNSRecordTypeUnique, mDNSNULL, mDNSNULL);
+		AppendDomainLabel(&hinfo.namestorage, &m->hostlabel);
+		AppendDomainName (&hinfo.namestorage, &authInfo->domain);
+		hinfo.resrec.rroriginalttl = 0;
+		mDNSPlatformMemCopy(h, &m->HIHardware, 1 + (mDNSu32)m->HIHardware.c[0]);
+		h += 1 + (int)h[0];
+		mDNSPlatformMemCopy(h, &m->HISoftware, 1 + (mDNSu32)m->HISoftware.c[0]);
+		hinfo.resrec.rdlength   = len;
+		hinfo.resrec.rdestimate = len;
+		newptr = PutResourceRecord(msg, end, &msg->h.numAdditionals, &hinfo.resrec);
+		if (newptr) end = newptr;
+		}
+
 	// Put all the integer values in IETF byte-order (MSB first, LSB second)
 	*ptr++ = (mDNSu8)(numQuestions   >> 8);
 	*ptr++ = (mDNSu8)(numQuestions   &  0xFF);
@@ -2582,9 +2604,10 @@ mDNSexport mStatus mDNSSendDNSMessage(mDNS *const m, DNSMessage *const msg, mDNS
 
 	if (mDNS_LogLevel >= MDNS_LOG_VERBOSE_DEBUG && !mDNSOpaque16IsZero(msg->h.id))
 		{
-		if (authInfo) msg->h.numAdditionals++;	// Want to include TSIG in DumpPacket output
+		// Want to include TSIG and HINFO, if present, in DumpPacket output
+		msg->h.numAdditionals += (authInfo != mDNSNULL) + (authInfo && authInfo->AutoTunnel);
 		DumpPacket(m, mDNStrue, sock && (sock->flags & kTCPSocketFlags_UseTLS) ? "TLS" : sock ? "TCP" : "UDP", dst, dstport, msg, end);
-		if (authInfo) msg->h.numAdditionals--;
+		msg->h.numAdditionals = numAdditionals;		// Restore old value, excluding temporary additional records we added
 		}
 
 	return(status);
