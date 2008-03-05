@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: PlatformCommon.c,v $
+Revision 1.17  2008/03/05 00:19:09  cheshire
+Conditionalize LogTimeStamps so it's specific to APPLE_OSX, for now
+
 Revision 1.16  2008/02/26 21:47:45  cheshire
 Added cast to avoid compiler warning
 
@@ -201,7 +204,7 @@ mDNSexport void mDNSPlatformWriteDebugMsg(const char *msg)
 
 mDNSexport void mDNSPlatformWriteLogMsg(const char *ident, const char *buffer, int logoptflags)
 	{
-#if LogTimeStamps
+#if APPLE_OSX_mDNSResponder && LogTimeStamps
 	extern mDNS mDNSStorage;
 	extern mDNSu32 mDNSPlatformClockDivisor;
 	mDNSs32 t = mDNSStorage.timenow ? mDNSStorage.timenow : mDNSPlatformClockDivisor ? mDNS_TimeNow_NoLock(&mDNSStorage) : 0;
@@ -210,7 +213,7 @@ mDNSexport void mDNSPlatformWriteLogMsg(const char *ident, const char *buffer, i
 
 	if (mDNS_DebugMode)	// In debug mode we write to stderr
 		{
-#if LogTimeStamps
+#if APPLE_OSX_mDNSResponder && LogTimeStamps
 		if (mDNSPlatformClockDivisor)
 			fprintf(stderr,"%8d.%03d: %s\n", (int)(t/1000), ms, buffer);
 		else
@@ -221,7 +224,7 @@ mDNSexport void mDNSPlatformWriteLogMsg(const char *ident, const char *buffer, i
 	else				// else, in production mode, we write to syslog
 		{
 		openlog(ident, LOG_CONS | logoptflags, LOG_DAEMON);
-#if LogTimeStamps
+#if APPLE_OSX_mDNSResponder && LogTimeStamps
 		if (mDNSPlatformClockDivisor)
 			syslog(LOG_ERR, "%8d.%03d: %s", (int)(t/1000), ms, buffer);
 		else
