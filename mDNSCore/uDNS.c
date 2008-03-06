@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.553  2008/03/06 02:48:34  mcguire
+<rdar://problem/5321824> write status to the DS
+
 Revision 1.552  2008/03/05 01:56:42  cheshire
 <rdar://problem/5687667> BTMM: Don't fallback to unencrypted operations when SRV lookup fails
 
@@ -1665,6 +1668,9 @@ mDNSlocal void StartLLQPolling(mDNS *const m, DNSQuestion *q)
 	// we risk causing spurious "SendQueries didn't send all its queries" log messages
 	q->LastQTime     = m->timenow - q->ThisQInterval + 1;
 	SetNextQueryTime(m, q);
+#if APPLE_OSX_mDNSResponder
+	UpdateAutoTunnelDomainStatuses(m);
+#endif
 	}
 
 mDNSlocal mDNSu8 *putLLQ(DNSMessage *const msg, mDNSu8 *ptr, const DNSQuestion *const question, const LLQOptData *const data, mDNSBool includeQuestion)
@@ -1819,6 +1825,9 @@ mDNSlocal void recvSetupResponse(mDNS *const m, mDNSu8 rcode, DNSQuestion *const
 		q->state         = LLQ_Established;
 		q->ntries        = 0;
 		SetLLQTimer(m, q, llq);
+#if APPLE_OSX_mDNSResponder
+		UpdateAutoTunnelDomainStatuses(m);
+#endif
 		}
 	}
 
@@ -3166,6 +3175,9 @@ mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr, co
 
 		UpdateSRVRecords(m);
 		GetStaticHostname(m);	// look up reverse map record to find any static hostnames for our IP address
+#if APPLE_OSX_mDNSResponder
+		UpdateAutoTunnelDomainStatuses(m);
+#endif
 		}
 
 	mDNS_Unlock(m);

@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.468  2008/03/06 02:48:34  mcguire
+<rdar://problem/5321824> write status to the DS
+
 Revision 1.467  2008/02/26 20:48:46  cheshire
 Need parentheses around use of macro argument in mDNS_TimeNow_NoLock(m)
 
@@ -904,9 +907,11 @@ enum
 	mStatus_BadKey                    = -65561,
 	mStatus_TransientErr              = -65562,     // transient failures, e.g. sending packets shortly after a network transition or wake from sleep
 	mStatus_ServiceNotRunning         = -65563,     // Background daemon not running
-	mStatus_NATPortMappingUnsupported = -65564,     // No NAT or if the NAT doesn't support NAT-PMP or UPnP
+	mStatus_NATPortMappingUnsupported = -65564,     // NAT doesn't support NAT-PMP or UPnP
 	mStatus_NATPortMappingDisabled    = -65565,     // NAT supports NAT-PMP or UPnP but it's disabled by the administrator
-	// -65566 to -65786 currently unused; available for allocation
+	mStatus_NoRouter                  = -65566,
+	mStatus_PollingMode               = -65567,
+	// -65568 to -65786 currently unused; available for allocation
 
 	// tcp connection status
 	mStatus_ConnPending       = -65787,
@@ -2720,6 +2725,7 @@ extern void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheRecord *
 extern void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord);
 extern void AddNewClientTunnel(mDNS *const m, DNSQuestion *const q);
 extern void SetupLocalAutoTunnelInterface_internal(mDNS *const m);
+extern void UpdateAutoTunnelDomainStatuses(const mDNS *const m);
 #endif
 
 // ***************************************************************************

@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.772  2008/03/06 02:48:34  mcguire
+<rdar://problem/5321824> write status to the DS
+
 Revision 1.771  2008/02/26 22:04:44  cheshire
 <rdar://problem/5661661> BTMM: Too many members.mac.com SOA queries
 Additional fixes -- should not be calling uDNS_CheckCurrentQuestion on a
@@ -5256,6 +5259,9 @@ mDNSlocal void LLQNATCallback(mDNS *m, NATTraversalInfo *n)
 	for (q = m->Questions; q; q=q->next)
 		if (ActiveQuestion(q) && !mDNSOpaque16IsZero(q->TargetQID) && q->LongLived)
 			startLLQHandshake(m, q);	// If ExternalPort is zero, will do StartLLQPolling instead
+#if APPLE_OSX_mDNSResponder
+	UpdateAutoTunnelDomainStatuses(m);
+#endif
 	mDNS_Unlock(m);
 	}
 
@@ -5528,6 +5534,9 @@ mDNSexport mStatus mDNS_StopQuery_internal(mDNS *const m, DNSQuestion *const que
 				question->tcp           = mDNSNULL;
 				}
 			}
+#if APPLE_OSX_mDNSResponder
+		UpdateAutoTunnelDomainStatuses(m);
+#endif
 		}
 
 	return(mStatus_NoError);

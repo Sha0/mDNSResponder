@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.529  2008/03/06 02:48:35  mcguire
+<rdar://problem/5321824> write status to the DS
+
 Revision 1.528  2008/02/29 01:33:57  mcguire
 <rdar://problem/5611801> BTMM: Services stay registered after previously successful NAT Port mapping fails
 
@@ -2144,6 +2147,155 @@ mDNSlocal NetworkInterfaceInfoOSX *FindRoutableIPv4(mDNS *const m, mDNSu32 scope
 
 static mDNSBool AnonymousRacoonConfig = mDNSfalse;
 
+static CFMutableDictionaryRef domainStatusDict = NULL;
+
+// MUST be called with lock held
+mDNSlocal void RemoveAutoTunnelDomain(const DomainAuthInfo *const info)
+	{
+	char buffer[1024];
+	CFStringRef domain;
+
+	LogOperation("RemoveAutoTunnelDomain: %##s", info->domain.c);
+
+	if (!domainStatusDict) { LogMsg("RemoveAutoTunnelDomain: No domainStatusDict"); return; }
+	
+	buffer[mDNS_snprintf(buffer, sizeof(buffer), "%##s", info->domain.c) - 1] = 0;
+	domain = CFStringCreateWithCString(NULL, buffer, kCFStringEncodingUTF8);
+	
+	if (CFDictionaryContainsKey(domainStatusDict, domain))
+		{
+		CFDictionaryRemoveValue(domainStatusDict, domain);
+		mDNSDynamicStoreSetConfig(kmDNSBackToMyMacConfig, domainStatusDict);
+		}
+	CFRelease(domain);
+	}
+	
+// MUST be called with lock held
+mDNSlocal void UpdateAutoTunnelDomainStatus(const mDNS *const m, const DomainAuthInfo *const info)
+	{
+	const NATTraversalInfo *const llq = m->LLQNAT.clientContext ? &m->LLQNAT : mDNSNULL;
+	const NATTraversalInfo *const tun = info->AutoTunnelNAT.clientContext ? &info->AutoTunnelNAT : mDNSNULL;
+	char buffer[1024];
+	CFMutableDictionaryRef dict = CFDictionaryCreateMutable(NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+	CFStringRef domain;
+	CFStringRef tmp;
+	CFNumberRef num;
+	mStatus status = mStatus_NoError;
+	
+	if (!domainStatusDict)
+		{
+		domainStatusDict = CFDictionaryCreateMutable(NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+		if (!domainStatusDict) LogMsg("AutoTunnelDomainStatus: Could not create CFDictionary");
+		}
+	
+	buffer[mDNS_snprintf(buffer, sizeof(buffer), "%##s", info->domain.c) - 1] = 0;
+	domain = CFStringCreateWithCString(NULL, buffer, kCFStringEncodingUTF8);
+
+	mDNS_snprintf(buffer, sizeof(buffer), "%#a", &m->Router);
+	tmp = CFStringCreateWithCString(NULL, buffer, kCFStringEncodingUTF8);
+	CFDictionarySetValue(dict, CFSTR("RouterAddress"), tmp);
+	CFRelease(tmp);
+	
+	mDNS_snprintf(buffer, sizeof(buffer), "%.4a", &m->ExternalAddress);
+	tmp = CFStringCreateWithCString(NULL, buffer, kCFStringEncodingUTF8);
+	CFDictionarySetValue(dict, CFSTR("ExternalAddress"), tmp);
+	CFRelease(tmp);
+	
+	if (llq)
+		{
+		num = CFNumberCreate(NULL, kCFNumberSInt32Type, &llq->Result);
+		CFDictionarySetValue(dict, CFSTR("LLQNATStatus"), num);
+		CFRelease(num);	
+		}
+	
+	if (tun)
+		{
+		num = CFNumberCreate(NULL, kCFNumberSInt32Type, &tun->Result);
+		CFDictionarySetValue(dict, CFSTR("AutoTunnelNATStatus"), num);
+		CFRelease(num);	
+		}
+	
+	if (!llq && !tun)
+		{
+		status = kDNSServiceErr_NotInitialized;
+		mDNS_snprintf(buffer, sizeof(buffer), "Neither LLQ nor AutoTunnel NAT mapping is currently active");
+		}	
+	else if ((llq && llq->Result == mStatus_DoubleNAT) || (tun && tun->Result == mStatus_DoubleNAT))
+		{
+		status = mStatus_DoubleNAT;
+		mDNS_snprintf(buffer, sizeof(buffer), "Double NAT: Router is reporting an external address");
+		}
+	else if ((llq && llq->Result) || (tun && tun->Result))
+		{
+		status = mStatus_NATTraversal;
+		mDNS_snprintf(buffer, sizeof(buffer), "Error obtaining NAT mapping from router");
+		}
+	else if (m->Router.type == mDNSAddrType_None)
+		{
+		status = mStatus_NoRouter;
+		mDNS_snprintf(buffer, sizeof(buffer), "No network connection - none");
+		}
+	else if (m->Router.type == mDNSAddrType_IPv4 && mDNSIPv4AddressIsZero(m->Router.ip.v4))
+		{
+		status = mStatus_NoRouter;
+		mDNS_snprintf(buffer, sizeof(buffer), "No network connection - v4 zero");
+		}
+	else if ((llq && mDNSIPPortIsZero(llq->ExternalPort)) || (tun && mDNSIPPortIsZero(tun->ExternalPort)))
+		{
+		status = mStatus_NATTraversal;
+		mDNS_snprintf(buffer, sizeof(buffer), "Unable to obtain NAT mapping from router");
+		}
+	else
+		{
+		DNSQuestion* q;
+		for (q = m->Questions; q; q=q->next)
+			if (q->LongLived && q->AuthInfo == info && q->state == LLQ_Poll)
+				{
+				status = mStatus_PollingMode;
+				mDNS_snprintf(buffer, sizeof(buffer), "Query polling %##s", q->qname.c);
+				break;
+				}
+		if (status == mStatus_NoError)
+			for (q = m->Questions; q; q=q->next)
+				if (q->LongLived && q->AuthInfo == info && q->state != LLQ_Established)
+					{
+					status = mStatus_TransientErr;
+					mDNS_snprintf(buffer, sizeof(buffer), "Query not yet established %##s", q->qname.c);
+					break;
+					}
+		if (status == mStatus_NoError) mDNS_snprintf(buffer, sizeof(buffer), "Success");
+		}
+	
+	num = CFNumberCreate(NULL, kCFNumberSInt32Type, &status);
+	CFDictionarySetValue(dict, CFSTR("StatusCode"), num);
+	CFRelease(num);	
+
+	tmp = CFStringCreateWithCString(NULL, buffer, kCFStringEncodingUTF8);
+	CFDictionarySetValue(dict, CFSTR("InternalStatusString"), tmp);
+	CFRelease(tmp);
+
+	if (!CFDictionaryContainsKey(domainStatusDict, domain) ||
+	    !CFEqual(dict, (CFMutableDictionaryRef)CFDictionaryGetValue(domainStatusDict, domain)))
+	    {
+		CFDictionarySetValue(domainStatusDict, domain, dict);
+		mDNSDynamicStoreSetConfig(kmDNSBackToMyMacConfig, domainStatusDict);
+		}
+		
+	CFRelease(domain);
+	CFRelease(dict);
+
+	LogOperation("UpdateAutoTunnelDomainStatus: %s", buffer);
+	}
+
+// MUST be called with lock held
+mDNSexport void UpdateAutoTunnelDomainStatuses(const mDNS *const m)
+	{
+	DomainAuthInfo* info;
+	for (info = m->AuthInfoList; info; info = info->next)
+		if (info->AutoTunnel)
+			UpdateAutoTunnelDomainStatus(m, info);
+	}
+	
 // MUST be called with lock held
 mDNSlocal mDNSBool TunnelServers(mDNS *const m)
 	{
@@ -2298,6 +2450,8 @@ mDNSlocal void AutoTunnelNATCallback(mDNS *m, NATTraversalInfo *n)
 		// Create or revert configuration file, and start (or SIGHUP) Racoon
 		(void)mDNSConfigureServer(AnonymousRacoonConfig ? kmDNSUp : kmDNSDown, info ? info->b64keydata : "");
 		}
+		
+	UpdateAutoTunnelDomainStatus(m, (DomainAuthInfo *)n->clientContext);
 	}
 
 mDNSlocal void AbortDeregistration(mDNS *const m, AuthRecord *rr)
@@ -3599,6 +3753,8 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 				LogOperation("SetDomainSecrets: secret changed for %##s", &domain);
 				(void)mDNSConfigureServer(kmDNSUp, stringbuf);
 				}
+				
+			if (ptr->AutoTunnel) UpdateAutoTunnelDomainStatus(m, ptr);
 #endif APPLE_OSX_mDNSResponder
 
 			ConvertDomainNameToCString(&domain, stringbuf);
@@ -3632,22 +3788,26 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 		DomainAuthInfo *info = m->AuthInfoList;
 		while (info)
 			{
-			if (info->AutoTunnel && info->deltime && info->AutoTunnelNAT.clientContext)
+			if (info->AutoTunnel && info->deltime)
 				{
-				// stop the NAT operation
-				mDNS_StopNATOperation_internal(m, &info->AutoTunnelNAT);
-				if (info->AutoTunnelNAT.clientCallback)
+				if (info->AutoTunnelNAT.clientContext)
 					{
-					// Reset port and let the AutoTunnelNATCallback handle cleanup
-					info->AutoTunnelNAT.ExternalAddress = m->ExternalAddress;
-					info->AutoTunnelNAT.ExternalPort    = zeroIPPort;
-					info->AutoTunnelNAT.Lifetime        = 0;
-					info->AutoTunnelNAT.Result          = mStatus_NoError;
-					mDNS_DropLockBeforeCallback(); // Allow client to legally make mDNS API calls from the callback
-					info->AutoTunnelNAT.clientCallback(m, &info->AutoTunnelNAT);
-					mDNS_ReclaimLockAfterCallback(); // Decrement mDNS_reentrancy to block mDNS API calls again
+					// stop the NAT operation
+					mDNS_StopNATOperation_internal(m, &info->AutoTunnelNAT);
+					if (info->AutoTunnelNAT.clientCallback)
+						{
+						// Reset port and let the AutoTunnelNATCallback handle cleanup
+						info->AutoTunnelNAT.ExternalAddress = m->ExternalAddress;
+						info->AutoTunnelNAT.ExternalPort    = zeroIPPort;
+						info->AutoTunnelNAT.Lifetime        = 0;
+						info->AutoTunnelNAT.Result          = mStatus_NoError;
+						mDNS_DropLockBeforeCallback(); // Allow client to legally make mDNS API calls from the callback
+						info->AutoTunnelNAT.clientCallback(m, &info->AutoTunnelNAT);
+						mDNS_ReclaimLockAfterCallback(); // Decrement mDNS_reentrancy to block mDNS API calls again
+						}
+					info->AutoTunnelNAT.clientContext = mDNSNULL;
 					}
-				info->AutoTunnelNAT.clientContext = mDNSNULL;
+				RemoveAutoTunnelDomain(info);
 				}
 			info = info->next;
 			}

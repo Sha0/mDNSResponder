@@ -443,8 +443,10 @@ enum
     kDNSServiceErr_BadKey                    = -65561,
     kDNSServiceErr_Transient                 = -65562,
     kDNSServiceErr_ServiceNotRunning         = -65563,  /* Background daemon not running */
-    kDNSServiceErr_NATPortMappingUnsupported = -65564,  /* No NAT or if the NAT doesn't support NAT-PMP or UPnP. */
-    kDNSServiceErr_NATPortMappingDisabled    = -65565   /* NAT supports NAT-PMP or UPnP but it's disabled by the administrator */
+    kDNSServiceErr_NATPortMappingUnsupported = -65564,  /* NAT doesn't support NAT-PMP or UPnP */
+    kDNSServiceErr_NATPortMappingDisabled    = -65565,  /* NAT supports NAT-PMP or UPnP but it's disabled by the administrator */
+    kDNSServiceErr_NoRouter                  = -65566,  /* No router currently configured (probably no network connectivity) */
+    kDNSServiceErr_PollingMode               = -65567
 
     /* mDNS Error codes are in the range
      * FFFE FF00 (-65792) to FFFE FFFF (-65537) */
