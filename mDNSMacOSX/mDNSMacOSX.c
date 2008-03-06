@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.531  2008/03/06 21:27:47  cheshire
+<rdar://problem/5500969> BTMM: Need ability to identify version of mDNSResponder client
+To save network bandwidth, removed unnecessary redundant information from HINFO record
+
 Revision 1.530  2008/03/06 03:15:48  mcguire
 <rdar://problem/5321824> write status to the DS
 use mStatus_* instead of kDNSServiceErr_*
@@ -4133,7 +4137,7 @@ mDNSexport int mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring)
 		CFRelease(vers);
 		}
 	if (!major) { major=8; LogMsg("Note: No Major Build Version number found; assuming 8"); }
-	if (HINFO_SWstring) mDNS_snprintf(HINFO_SWstring, 256, "%s %s (%s), %s", prodname, prodvers, buildver, mDNSResponderVersionString);
+	if (HINFO_SWstring) mDNS_snprintf(HINFO_SWstring, 256, "%s %s (%s), %s", prodname, prodvers, buildver, STRINGIFY(mDNSResponderVersion));
 	return(major);
 	}
 
