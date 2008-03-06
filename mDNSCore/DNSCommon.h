@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.58  2008/03/06 21:26:10  cheshire
+Moved duplicated STRINGIFY macro from individual C files to DNSCommon.h
+
 Revision 1.57  2007/12/13 20:20:17  cheshire
 Minor efficiency tweaks -- converted IdenticalResourceRecord, IdenticalSameNameRecord, and
 SameRData from functions to macros, which allows the code to be inlined (the compiler can't
@@ -110,6 +113,15 @@ Split out SameRDataBody() into a separate routine so it can be called from other
 #ifdef	__cplusplus
 	extern "C" {
 #endif
+
+//*************************************************************************************************************
+// Macros
+
+// Note: The C preprocessor stringify operator ('#') makes a string from its argument, without macro expansion
+// e.g. If "version" is #define'd to be "4", then STRINGIFY_AWE(version) will return the string "version", not "4"
+// To expand "version" to its value before making the string, use STRINGIFY(version) instead
+#define STRINGIFY_ARGUMENT_WITHOUT_EXPANSION(s) #s
+#define STRINGIFY(s) STRINGIFY_ARGUMENT_WITHOUT_EXPANSION(s)
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
