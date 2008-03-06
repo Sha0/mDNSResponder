@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.530  2008/03/06 03:15:48  mcguire
+<rdar://problem/5321824> write status to the DS
+use mStatus_* instead of kDNSServiceErr_*
+
 Revision 1.529  2008/03/06 02:48:35  mcguire
 <rdar://problem/5321824> write status to the DS
 
@@ -2217,7 +2221,7 @@ mDNSlocal void UpdateAutoTunnelDomainStatus(const mDNS *const m, const DomainAut
 	
 	if (!llq && !tun)
 		{
-		status = kDNSServiceErr_NotInitialized;
+		status = mStatus_NotInitializedErr;
 		mDNS_snprintf(buffer, sizeof(buffer), "Neither LLQ nor AutoTunnel NAT mapping is currently active");
 		}	
 	else if ((llq && llq->Result == mStatus_DoubleNAT) || (tun && tun->Result == mStatus_DoubleNAT))
