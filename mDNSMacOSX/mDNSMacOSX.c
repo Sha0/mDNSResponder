@@ -17,6 +17,13 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.532  2008/03/06 23:44:39  mcguire
+<rdar://problem/5321824> write status to the DS
+cleanup function names & log messages
+add external port numbers to dictionary
+add defensive code in case CF*Create fails
+don't output NAT statuses if zero
+
 Revision 1.531  2008/03/06 21:27:47  cheshire
 <rdar://problem/5500969> BTMM: Need ability to identify version of mDNSResponder client
 To save network bandwidth, removed unnecessary redundant information from HINFO record
@@ -2158,17 +2165,18 @@ static mDNSBool AnonymousRacoonConfig = mDNSfalse;
 static CFMutableDictionaryRef domainStatusDict = NULL;
 
 // MUST be called with lock held
-mDNSlocal void RemoveAutoTunnelDomain(const DomainAuthInfo *const info)
+mDNSlocal void RemoveAutoTunnelDomainStatus(const DomainAuthInfo *const info)
 	{
 	char buffer[1024];
 	CFStringRef domain;
 
-	LogOperation("RemoveAutoTunnelDomain: %##s", info->domain.c);
+	LogOperation("RemoveAutoTunnelDomainStatus: %##s", info->domain.c);
 
-	if (!domainStatusDict) { LogMsg("RemoveAutoTunnelDomain: No domainStatusDict"); return; }
+	if (!domainStatusDict) { LogMsg("RemoveAutoTunnelDomainStatus: No domainStatusDict"); return; }
 	
 	buffer[mDNS_snprintf(buffer, sizeof(buffer), "%##s", info->domain.c) - 1] = 0;
 	domain = CFStringCreateWithCString(NULL, buffer, kCFStringEncodingUTF8);
+	if (!domain) { LogMsg("RemoveAutoTunnelDomainStatus: Could not create CFString domain"); return; }
 	
 	if (CFDictionaryContainsKey(domainStatusDict, domain))
 		{
@@ -2185,42 +2193,93 @@ mDNSlocal void UpdateAutoTunnelDomainStatus(const mDNS *const m, const DomainAut
 	const NATTraversalInfo *const tun = info->AutoTunnelNAT.clientContext ? &info->AutoTunnelNAT : mDNSNULL;
 	char buffer[1024];
 	CFMutableDictionaryRef dict = CFDictionaryCreateMutable(NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-	CFStringRef domain;
-	CFStringRef tmp;
-	CFNumberRef num;
+	CFStringRef domain = NULL;
+	CFStringRef tmp = NULL;
+	CFNumberRef num = NULL;
 	mStatus status = mStatus_NoError;
 	
 	if (!domainStatusDict)
 		{
 		domainStatusDict = CFDictionaryCreateMutable(NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-		if (!domainStatusDict) LogMsg("AutoTunnelDomainStatus: Could not create CFDictionary");
+		if (!domainStatusDict) { LogMsg("UpdateAutoTunnelDomainStatus: Could not create CFDictionary domainStatusDict"); return; }
 		}
 	
+	if (!dict) { LogMsg("UpdateAutoTunnelDomainStatus: Could not create CFDictionary dict"); return; }
+
 	buffer[mDNS_snprintf(buffer, sizeof(buffer), "%##s", info->domain.c) - 1] = 0;
 	domain = CFStringCreateWithCString(NULL, buffer, kCFStringEncodingUTF8);
+	if (!domain) { LogMsg("UpdateAutoTunnelDomainStatus: Could not create CFString domain"); return; }
 
 	mDNS_snprintf(buffer, sizeof(buffer), "%#a", &m->Router);
 	tmp = CFStringCreateWithCString(NULL, buffer, kCFStringEncodingUTF8);
-	CFDictionarySetValue(dict, CFSTR("RouterAddress"), tmp);
-	CFRelease(tmp);
+	if (!tmp)
+		LogMsg("UpdateAutoTunnelDomainStatus: Could not create CFString RouterAddress");
+	else
+		{
+		CFDictionarySetValue(dict, CFSTR("RouterAddress"), tmp);
+		CFRelease(tmp);
+		}
 	
 	mDNS_snprintf(buffer, sizeof(buffer), "%.4a", &m->ExternalAddress);
 	tmp = CFStringCreateWithCString(NULL, buffer, kCFStringEncodingUTF8);
-	CFDictionarySetValue(dict, CFSTR("ExternalAddress"), tmp);
-	CFRelease(tmp);
+	if (!tmp)
+		LogMsg("UpdateAutoTunnelDomainStatus: Could not create CFString ExternalAddress");
+	else
+		{
+		CFDictionarySetValue(dict, CFSTR("ExternalAddress"), tmp);
+		CFRelease(tmp);
+		}
 	
 	if (llq)
 		{
-		num = CFNumberCreate(NULL, kCFNumberSInt32Type, &llq->Result);
-		CFDictionarySetValue(dict, CFSTR("LLQNATStatus"), num);
-		CFRelease(num);	
+		mDNSu32 port = mDNSVal16(llq->ExternalPort);
+		
+		num = CFNumberCreate(NULL, kCFNumberSInt32Type, &port);
+		if (!num)
+			LogMsg("UpdateAutoTunnelDomainStatus: Could not create CFNumber LLQNATExternalPort");
+		else
+			{
+			CFDictionarySetValue(dict, CFSTR("LLQNATExternalPort"), num);
+			CFRelease(num);
+			}
+
+		if (llq->Result)
+			{
+			num = CFNumberCreate(NULL, kCFNumberSInt32Type, &llq->Result);
+			if (!num)
+				LogMsg("UpdateAutoTunnelDomainStatus: Could not create CFNumber LLQNATStatus");
+			else
+				{
+				CFDictionarySetValue(dict, CFSTR("LLQNATStatus"), num);
+				CFRelease(num);
+				}
+			}
 		}
 	
 	if (tun)
 		{
-		num = CFNumberCreate(NULL, kCFNumberSInt32Type, &tun->Result);
-		CFDictionarySetValue(dict, CFSTR("AutoTunnelNATStatus"), num);
-		CFRelease(num);	
+		mDNSu32 port = mDNSVal16(tun->ExternalPort);
+		
+		num = CFNumberCreate(NULL, kCFNumberSInt32Type, &port);
+		if (!num)
+			LogMsg("UpdateAutoTunnelDomainStatus: Could not create CFNumber AutoTunnelNATExternalPort");
+		else
+			{
+			CFDictionarySetValue(dict, CFSTR("AutoTunnelNATExternalPort"), num);
+			CFRelease(num);
+			}
+
+		if (tun->Result)
+			{
+			num = CFNumberCreate(NULL, kCFNumberSInt32Type, &tun->Result);
+			if (!num)
+				LogMsg("UpdateAutoTunnelDomainStatus: Could not create CFNumber AutoTunnelNATStatus");
+			else
+				{
+				CFDictionarySetValue(dict, CFSTR("AutoTunnelNATStatus"), num);
+				CFRelease(num);
+				}
+			}
 		}
 	
 	if (!llq && !tun)
@@ -2275,12 +2334,22 @@ mDNSlocal void UpdateAutoTunnelDomainStatus(const mDNS *const m, const DomainAut
 		}
 	
 	num = CFNumberCreate(NULL, kCFNumberSInt32Type, &status);
-	CFDictionarySetValue(dict, CFSTR("StatusCode"), num);
-	CFRelease(num);	
-
+	if (!num)
+		LogMsg("UpdateAutoTunnelDomainStatus: Could not create CFNumber StatusCode");
+	else
+		{
+		CFDictionarySetValue(dict, CFSTR("StatusCode"), num);
+		CFRelease(num);
+		}
+		
 	tmp = CFStringCreateWithCString(NULL, buffer, kCFStringEncodingUTF8);
-	CFDictionarySetValue(dict, CFSTR("InternalStatusString"), tmp);
-	CFRelease(tmp);
+	if (!tmp)
+		LogMsg("UpdateAutoTunnelDomainStatus: Could not create CFString StatusMessage");
+	else
+		{
+		CFDictionarySetValue(dict, CFSTR("StatusMessage"), tmp);
+		CFRelease(tmp);
+		}
 
 	if (!CFDictionaryContainsKey(domainStatusDict, domain) ||
 	    !CFEqual(dict, (CFMutableDictionaryRef)CFDictionaryGetValue(domainStatusDict, domain)))
@@ -3815,7 +3884,7 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 						}
 					info->AutoTunnelNAT.clientContext = mDNSNULL;
 					}
-				RemoveAutoTunnelDomain(info);
+				RemoveAutoTunnelDomainStatus(info);
 				}
 			info = info->next;
 			}
