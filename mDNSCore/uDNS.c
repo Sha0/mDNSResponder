@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.556  2008/03/07 23:55:05  cheshire
+<rdar://problem/5787898> LLQ refresh randomization not working properly
+
 Revision 1.555  2008/03/07 23:25:56  cheshire
 Improved debugging messages
 
@@ -1778,6 +1781,7 @@ mDNSlocal void SetLLQTimer(mDNS *const m, DNSQuestion *const q, const LLQOptData
 	q->LastQTime     = m->timenow;
 	q->expire        = m->timenow + lease;
 	q->ThisQInterval = lease/2 + mDNSRandom(lease/10);
+	debugf("SetLLQTimer setting %##s (%s) to %d %d", q->qname.c, DNSTypeName(q->qtype), lease/mDNSPlatformOneSecond, q->ThisQInterval/mDNSPlatformOneSecond);
 	SetNextQueryTime(m, q);
 	}
 
@@ -1865,7 +1869,6 @@ mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *co
 				else if (opt && q->state == LLQ_Established && opt->OptData.llq.llqOp == kLLQOp_Event && mDNSSameOpaque64(&opt->OptData.llq.id, &q->id))
 					{
 					mDNSu8 *ackEnd;
-					if (q->ThisQInterval < MAX_UCAST_POLL_INTERVAL) q->ThisQInterval = MAX_UCAST_POLL_INTERVAL;
 					//debugf("Sending LLQ ack for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 					InitializeDNSMessage(&m->omsg.h, msg->h.id, ResponseFlags);
 					ackEnd = putLLQ(&m->omsg, m->omsg.data, mDNSNULL, &opt->OptData.llq, mDNSfalse);
@@ -1988,7 +1991,8 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			{
 			mDNS_Lock(m);
 			q->LastQTime = m->timenow;
-			q->ThisQInterval = MAX_UCAST_POLL_INTERVAL;
+			if (q->ThisQInterval < (256 * mDNSPlatformOneSecond))	// Now we have a TCP connection open, make sure we wait at least 256 seconds before retrying
+				q->ThisQInterval = (256 * mDNSPlatformOneSecond);
 			SetNextQueryTime(m, q);
 			mDNS_Unlock(m);
 			}
