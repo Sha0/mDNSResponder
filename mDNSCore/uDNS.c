@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.554  2008/03/07 18:56:03  cheshire
+<rdar://problem/5777647> dnsbugtest query every three seconds when source IP address of response doesn't match
+
 Revision 1.553  2008/03/06 02:48:34  mcguire
 <rdar://problem/5321824> write status to the DS
 
@@ -3812,12 +3815,25 @@ mDNSlocal mDNSBool uDNS_ReceiveTestQuestionResponse(mDNS *const m, DNSMessage *c
 
 	// 3. Find occurrences of this server in our list, and mark them appropriately
 	for (s = m->DNSServers; s; s = s->next)
-		if (mDNSSameAddress(srcaddr, &s->addr) && mDNSSameIPPort(srcport, s->port) && s->teststate != result)
+		{
+		mDNSBool matchaddr = (s->teststate != result && mDNSSameAddress(srcaddr, &s->addr) && mDNSSameIPPort(srcport, s->port));
+		mDNSBool matchid   = (s->teststate == DNSServer_Untested && mDNSSameOpaque16(msg->h.id, s->testid));
+		if (matchaddr || matchid)
 			{
 			DNSQuestion *q;
 			s->teststate = result;
-			if (result == DNSServer_Passed) LogOperation("DNS Server %#a:%d passed", srcaddr, mDNSVal16(srcport));
-			else LogMsg("NOTE: Wide-Area Service Discovery disabled to avoid crashing defective DNS relay %#a:%d", srcaddr, mDNSVal16(srcport));
+			if (result == DNSServer_Passed)
+				{
+				LogOperation("DNS Server %#a:%d (%#a:%d) %d passed%s",
+					&s->addr, mDNSVal16(s->port), srcaddr, mDNSVal16(srcport), mDNSVal16(s->testid),
+					matchaddr ? "" : " NOTE: Reply did not come from address to which query was sent");
+				}
+			else
+				{
+				LogMsg("NOTE: Wide-Area Service Discovery disabled to avoid crashing defective DNS relay %#a:%d (%#a:%d) %d%s",
+					&s->addr, mDNSVal16(s->port), srcaddr, mDNSVal16(srcport), mDNSVal16(s->testid),
+					matchaddr ? "" : " NOTE: Reply did not come from address to which query was sent");
+				}
 
 			// If this server has just changed state from DNSServer_Untested to DNSServer_Passed, then retrigger any waiting questions.
 			// We use the NoTestQuery() test so that we only retrigger questions that were actually blocked waiting for this test to complete.
@@ -3826,6 +3842,7 @@ mDNSlocal mDNSBool uDNS_ReceiveTestQuestionResponse(mDNS *const m, DNSMessage *c
 					if (q->qDNSServer == s && !NoTestQuery(q))
 						{ q->LastQTime = m->timenow - q->ThisQInterval; m->NextScheduledQuery = m->timenow; }
 			}
+		}
 
 	return(mDNStrue); // Return mDNStrue to tell uDNS_ReceiveMsg it doesn't need to process this packet further
 	}
@@ -4365,6 +4382,7 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 				q->qDNSServer->lasttest = m->timenow;
 				InitializeDNSMessage(&m->omsg.h, mDNS_NewMessageID(m), uQueryFlags);
 				end = putQuestion(&m->omsg, m->omsg.data, m->omsg.data + AbsoluteMaxDNSMessageData, DNSRelayTestQuestion, kDNSType_PTR, kDNSClass_IN);
+				q->qDNSServer->testid = m->omsg.h.id;
 				}
 
 			if (end > m->omsg.data && (q->qDNSServer->teststate != DNSServer_Failed || NoTestQuery(q)))

@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.469  2008/03/07 18:56:02  cheshire
+<rdar://problem/5777647> dnsbugtest query every three seconds when source IP address of response doesn't match
+
 Revision 1.468  2008/03/06 02:48:34  mcguire
 <rdar://problem/5321824> write status to the DS
 
@@ -1572,6 +1575,7 @@ typedef struct DNSServer
 	mDNSInterfaceID interface;	// For specialized uses; we can have DNS servers reachable over specific interfaces
 	mDNSAddr        addr;
 	mDNSIPPort      port;
+	mDNSOpaque16    testid;
 	mDNSu32         flags;		// Set when we're planning to delete this from the list
 	mDNSu32         teststate;	// Have we sent bug-detection query to this server?
 	mDNSs32         lasttest;	// Time we sent last bug-detection query to this server
