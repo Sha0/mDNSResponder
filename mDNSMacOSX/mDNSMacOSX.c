@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.533  2008/03/07 00:48:54  mcguire
+<rdar://problem/5321824> write status to the DS
+cleanup strings
+
 Revision 1.532  2008/03/06 23:44:39  mcguire
 <rdar://problem/5321824> write status to the DS
 cleanup function names & log messages
@@ -2236,10 +2240,10 @@ mDNSlocal void UpdateAutoTunnelDomainStatus(const mDNS *const m, const DomainAut
 		
 		num = CFNumberCreate(NULL, kCFNumberSInt32Type, &port);
 		if (!num)
-			LogMsg("UpdateAutoTunnelDomainStatus: Could not create CFNumber LLQNATExternalPort");
+			LogMsg("UpdateAutoTunnelDomainStatus: Could not create CFNumber LLQExternalPort");
 		else
 			{
-			CFDictionarySetValue(dict, CFSTR("LLQNATExternalPort"), num);
+			CFDictionarySetValue(dict, CFSTR("LLQExternalPort"), num);
 			CFRelease(num);
 			}
 
@@ -2247,10 +2251,10 @@ mDNSlocal void UpdateAutoTunnelDomainStatus(const mDNS *const m, const DomainAut
 			{
 			num = CFNumberCreate(NULL, kCFNumberSInt32Type, &llq->Result);
 			if (!num)
-				LogMsg("UpdateAutoTunnelDomainStatus: Could not create CFNumber LLQNATStatus");
+				LogMsg("UpdateAutoTunnelDomainStatus: Could not create CFNumber LLQNPMStatus");
 			else
 				{
-				CFDictionarySetValue(dict, CFSTR("LLQNATStatus"), num);
+				CFDictionarySetValue(dict, CFSTR("LLQNPMStatus"), num);
 				CFRelease(num);
 				}
 			}
@@ -2262,10 +2266,10 @@ mDNSlocal void UpdateAutoTunnelDomainStatus(const mDNS *const m, const DomainAut
 		
 		num = CFNumberCreate(NULL, kCFNumberSInt32Type, &port);
 		if (!num)
-			LogMsg("UpdateAutoTunnelDomainStatus: Could not create CFNumber AutoTunnelNATExternalPort");
+			LogMsg("UpdateAutoTunnelDomainStatus: Could not create CFNumber AutoTunnelExternalPort");
 		else
 			{
-			CFDictionarySetValue(dict, CFSTR("AutoTunnelNATExternalPort"), num);
+			CFDictionarySetValue(dict, CFSTR("AutoTunnelExternalPort"), num);
 			CFRelease(num);
 			}
 
@@ -2273,10 +2277,10 @@ mDNSlocal void UpdateAutoTunnelDomainStatus(const mDNS *const m, const DomainAut
 			{
 			num = CFNumberCreate(NULL, kCFNumberSInt32Type, &tun->Result);
 			if (!num)
-				LogMsg("UpdateAutoTunnelDomainStatus: Could not create CFNumber AutoTunnelNATStatus");
+				LogMsg("UpdateAutoTunnelDomainStatus: Could not create CFNumber AutoTunnelNPMStatus");
 			else
 				{
-				CFDictionarySetValue(dict, CFSTR("AutoTunnelNATStatus"), num);
+				CFDictionarySetValue(dict, CFSTR("AutoTunnelNPMStatus"), num);
 				CFRelease(num);
 				}
 			}
@@ -2285,7 +2289,7 @@ mDNSlocal void UpdateAutoTunnelDomainStatus(const mDNS *const m, const DomainAut
 	if (!llq && !tun)
 		{
 		status = mStatus_NotInitializedErr;
-		mDNS_snprintf(buffer, sizeof(buffer), "Neither LLQ nor AutoTunnel NAT mapping is currently active");
+		mDNS_snprintf(buffer, sizeof(buffer), "Neither LLQ nor AutoTunnel NAT port mapping is currently active");
 		}	
 	else if ((llq && llq->Result == mStatus_DoubleNAT) || (tun && tun->Result == mStatus_DoubleNAT))
 		{
@@ -2295,7 +2299,7 @@ mDNSlocal void UpdateAutoTunnelDomainStatus(const mDNS *const m, const DomainAut
 	else if ((llq && llq->Result) || (tun && tun->Result))
 		{
 		status = mStatus_NATTraversal;
-		mDNS_snprintf(buffer, sizeof(buffer), "Error obtaining NAT mapping from router");
+		mDNS_snprintf(buffer, sizeof(buffer), "Error obtaining NAT port mapping from router");
 		}
 	else if (m->Router.type == mDNSAddrType_None)
 		{
@@ -2310,7 +2314,7 @@ mDNSlocal void UpdateAutoTunnelDomainStatus(const mDNS *const m, const DomainAut
 	else if ((llq && mDNSIPPortIsZero(llq->ExternalPort)) || (tun && mDNSIPPortIsZero(tun->ExternalPort)))
 		{
 		status = mStatus_NATTraversal;
-		mDNS_snprintf(buffer, sizeof(buffer), "Unable to obtain NAT mapping from router");
+		mDNS_snprintf(buffer, sizeof(buffer), "Unable to obtain NAT port mapping from router");
 		}
 	else
 		{
