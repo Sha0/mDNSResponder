@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.555  2008/03/07 23:25:56  cheshire
+Improved debugging messages
+
 Revision 1.554  2008/03/07 18:56:03  cheshire
 <rdar://problem/5777647> dnsbugtest query every three seconds when source IP address of response doesn't match
 
@@ -1781,13 +1784,13 @@ mDNSlocal void SetLLQTimer(mDNS *const m, DNSQuestion *const q, const LLQOptData
 mDNSlocal void recvSetupResponse(mDNS *const m, mDNSu8 rcode, DNSQuestion *const q, const LLQOptData *const llq)
 	{
 	if (rcode && rcode != kDNSFlag1_RC_NXDomain)
-		{ LogMsg("ERROR: recvSetupResponse %##s - rcode && rcode != kDNSFlag1_RC_NXDomain", q->qname.c); return; }
+		{ LogMsg("ERROR: recvSetupResponse %##s (%s) - rcode && rcode != kDNSFlag1_RC_NXDomain", q->qname.c, DNSTypeName(q->qtype)); return; }
 
 	if (llq->llqOp != kLLQOp_Setup)
-		{ LogMsg("ERROR: recvSetupResponse %##s - bad op %d", q->qname.c, llq->llqOp); return; }
+		{ LogMsg("ERROR: recvSetupResponse %##s (%s) - bad op %d", q->qname.c, DNSTypeName(q->qtype), llq->llqOp); return; }
 
 	if (llq->vers != kLLQ_Vers)
-		{ LogMsg("ERROR: recvSetupResponse %##s - bad vers %d", q->qname.c, llq->vers); return; }
+		{ LogMsg("ERROR: recvSetupResponse %##s (%s) - bad vers %d", q->qname.c, DNSTypeName(q->qtype), llq->vers); return; }
 
 	if (q->state == LLQ_InitialRequest)
 		{
@@ -1822,7 +1825,7 @@ mDNSlocal void recvSetupResponse(mDNS *const m, mDNSu8 rcode, DNSQuestion *const
 			q->id = llq->id;
 			}
 
-		if (llq->err) { LogMsg("ERROR: recvSetupResponse %##s code %d from server", q->qname.c, llq->err); StartLLQPolling(m,q); return; }
+		if (llq->err) { LogMsg("ERROR: recvSetupResponse %##s (%s) code %d from server", q->qname.c, DNSTypeName(q->qtype), llq->err); StartLLQPolling(m,q); return; }
 		if (!mDNSSameOpaque64(&q->id, &llq->id))
 			{ LogMsg("recvSetupResponse - ID changed.  discarding"); return; } // this can happen rarely (on packet loss + reordering)
 		q->state         = LLQ_Established;
@@ -2080,7 +2083,7 @@ exit:
 				q->ThisQInterval = MAX_UCAST_POLL_INTERVAL;
 				SetNextQueryTime(m, q);
 				}
-			// ConnFailed is actually okay.  It just means that the server closed the connection but the LLQ is still okay.
+			// ConnFailed may be actually okay. It just means that the server closed the connection but the LLQ may still be okay.
 			// If the error isn't ConnFailed, then the LLQ is in bad shape.
 			if (err != mStatus_ConnFailed)
 				{
@@ -3953,7 +3956,7 @@ mDNSexport void sendLLQRefresh(mDNS *m, DNSQuestion *q)
 	if (q->ReqLease)
 		if ((q->state == LLQ_Established && q->ntries >= kLLQ_MAX_TRIES) || q->expire - m->timenow < 0)
 			{
-			LogMsg("Unable to refresh LLQ %##s (%s) - will retry in %d minutes", q->qname.c, DNSTypeName(q->qtype), LLQ_POLL_INTERVAL/3600);
+			LogMsg("Unable to refresh LLQ %##s (%s) - will retry in %d seconds", q->qname.c, DNSTypeName(q->qtype), LLQ_POLL_INTERVAL / mDNSPlatformOneSecond);
 			StartLLQPolling(m,q);
 			return;
 			}
