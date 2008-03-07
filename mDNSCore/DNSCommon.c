@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.198  2008/03/07 23:29:24  cheshire
+Fixed cosmetic byte order display issue in DumpPacket output
+
 Revision 1.197  2008/03/05 22:51:29  mcguire
 <rdar://problem/5500969> BTMM: Need ability to identify version of mDNSResponder client
 Even further refinements
@@ -2619,7 +2622,8 @@ mDNSexport mStatus mDNSSendDNSMessage(mDNS *const m, DNSMessage *const msg, mDNS
 	// Dump the packet with the HINFO and TSIG
 	if (mDNS_LogLevel >= MDNS_LOG_VERBOSE_DEBUG && !mDNSOpaque16IsZero(msg->h.id))
 		{
-		msg->h.numAdditionals = ((msg->h.numAdditionals & 0xFF) << 8) + ((msg->h.numAdditionals >> 8) & 0xFF);
+		ptr = (mDNSu8 *)&msg->h.numAdditionals;
+		msg->h.numAdditionals = (mDNSu16)ptr[0] << 8 | (mDNSu16)ptr[1];
 		DumpPacket(m, mDNStrue, sock && (sock->flags & kTCPSocketFlags_UseTLS) ? "TLS" : sock ? "TCP" : "UDP", dst, dstport, msg, end);
 		}
 
