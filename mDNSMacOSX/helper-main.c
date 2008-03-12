@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper-main.c,v $
+Revision 1.14  2008/03/12 23:02:59  mcguire
+<rdar://problem/5769316> fix deprecated warnings/errors
+
 Revision 1.13  2007/09/21 16:13:14  cheshire
 Additional Tiger compatibility fix: After bootstrap_check_in, we need to give
 ourselves a Mach "send" right to the port, otherwise our ten-second idle timeout
@@ -84,6 +87,7 @@ Revision 1.1  2007/08/08 22:34:58  mcguire
 #include "helpermsgServer.h"
 
 #if TARGET_OS_EMBEDDED
+#include <bootstrap_priv.h>
 #define NO_SECURITYFRAMEWORK 1
 #endif
 
@@ -247,9 +251,17 @@ static mach_port_t register_service(const char *service_name)
 		{ helplog(ASL_LEVEL_ERR, "mach_port_allocate: %s", mach_error_string(kr)); goto error; }
 	if (KERN_SUCCESS != (kr = mach_port_insert_right(mach_task_self(), port, port, MACH_MSG_TYPE_MAKE_SEND)))
 		{ helplog(ASL_LEVEL_ERR, "mach_port_insert_right: %s", mach_error_string(kr)); goto error; }
+
+#if TARGET_OS_EMBEDDED
+	// XXX bootstrap_register2 does not modify its second argument, but the prototype does not include const.
+	if (KERN_SUCCESS != (kr = bootstrap_register2(bootstrap_port, (char *)service_name, port, 0)))
+		{ helplog(ASL_LEVEL_ERR, "bootstrap_register2 failed: %s", mach_error_string(kr)); goto error; }
+#else
 	// XXX bootstrap_register does not modify its second argument, but the prototype does not include const.
 	if (KERN_SUCCESS != (kr = bootstrap_register(bootstrap_port, (char *)service_name, port)))
 		{ helplog(ASL_LEVEL_ERR, "bootstrap_register failed: %s", mach_error_string(kr)); goto error; }
+#endif
+
 	return port;
 error:
 	if (MACH_PORT_NULL != port) mach_port_deallocate(mach_task_self(), port);
@@ -291,12 +303,12 @@ int main(int ac, char *av[])
 	// Explicitly ensure that our Keychain operations utilize the system domain.
 	SecKeychainSetPreferenceDomain(kSecPreferencesDomainSystem);
 #endif
-	if (!opt_debug)
+	port = checkin(kmDNSHelperServiceName);
+	if (!port)
 		{
-		port = checkin(kmDNSHelperServiceName);
-		if (!port) helplog(ASL_LEVEL_ERR, "Launchd provided no launchdata; will open Mach port explicitly");
+		helplog(ASL_LEVEL_ERR, "Launchd provided no launchdata; will open Mach port explicitly");
+		port = register_service(kmDNSHelperServiceName);
 		}
-	if (!port) port = register_service(kmDNSHelperServiceName);
 
 	if (maxidle) actualidle = maxidle;
 	initialize_timer(port);
