@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.534  2008/03/12 22:58:15  mcguire
+<rdar://problem/5321824> write status to the DS
+Fixes for NO_SECURITYFRAMEWORK
+
 Revision 1.533  2008/03/07 00:48:54  mcguire
 <rdar://problem/5321824> write status to the DS
 cleanup strings
@@ -2166,6 +2170,8 @@ mDNSlocal NetworkInterfaceInfoOSX *FindRoutableIPv4(mDNS *const m, mDNSu32 scope
 
 static mDNSBool AnonymousRacoonConfig = mDNSfalse;
 
+#ifndef NO_SECURITYFRAMEWORK
+
 static CFMutableDictionaryRef domainStatusDict = NULL;
 
 // MUST be called with lock held
@@ -2189,10 +2195,16 @@ mDNSlocal void RemoveAutoTunnelDomainStatus(const DomainAuthInfo *const info)
 		}
 	CFRelease(domain);
 	}
-	
+
+#endif // ndef NO_SECURITYFRAMEWORK
+
 // MUST be called with lock held
 mDNSlocal void UpdateAutoTunnelDomainStatus(const mDNS *const m, const DomainAuthInfo *const info)
 	{
+#ifdef NO_SECURITYFRAMEWORK
+	(void)m;
+	(void)info;
+#else
 	const NATTraversalInfo *const llq = m->LLQNAT.clientContext ? &m->LLQNAT : mDNSNULL;
 	const NATTraversalInfo *const tun = info->AutoTunnelNAT.clientContext ? &info->AutoTunnelNAT : mDNSNULL;
 	char buffer[1024];
@@ -2366,15 +2378,20 @@ mDNSlocal void UpdateAutoTunnelDomainStatus(const mDNS *const m, const DomainAut
 	CFRelease(dict);
 
 	LogOperation("UpdateAutoTunnelDomainStatus: %s", buffer);
+#endif // def NO_SECURITYFRAMEWORK
 	}
 
 // MUST be called with lock held
 mDNSexport void UpdateAutoTunnelDomainStatuses(const mDNS *const m)
 	{
+#ifdef NO_SECURITYFRAMEWORK
+	(void)m;
+#else
 	DomainAuthInfo* info;
 	for (info = m->AuthInfoList; info; info = info->next)
 		if (info->AutoTunnel)
 			UpdateAutoTunnelDomainStatus(m, info);
+#endif // def NO_SECURITYFRAMEWORK
 	}
 	
 // MUST be called with lock held
