@@ -30,6 +30,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.360  2008/03/13 20:55:16  mcguire
+<rdar://problem/5769316> fix deprecated warnings/errors
+Additional cleanup: use a conditional macro instead of lots of #if
+
 Revision 1.359  2008/03/12 23:02:58  mcguire
 <rdar://problem/5769316> fix deprecated warnings/errors
 
@@ -377,6 +381,8 @@ Revision 1.261  2006/01/06 01:22:28  cheshire
 
 #if TARGET_OS_EMBEDDED
 #include <bootstrap_priv.h>
+
+#define bootstrap_register(A,B,C) bootstrap_register2((A),(B),(C),0)
 #endif
 
 #include "DNSServiceDiscoveryRequestServer.h"
@@ -1943,11 +1949,7 @@ mDNSlocal kern_return_t registerBootstrapService()
 mDNSlocal kern_return_t destroyBootstrapService()
 	{
 	debugf("Destroying Bootstrap Service");
-#if TARGET_OS_EMBEDDED
-	return bootstrap_register2(server_priv_port, (char*)kmDNSBootstrapName, MACH_PORT_NULL, 0);
-#else
 	return bootstrap_register(server_priv_port, (char*)kmDNSBootstrapName, MACH_PORT_NULL);
-#endif
 	}
 
 mDNSlocal void ExitCallback(int sig)
@@ -2148,20 +2150,14 @@ mDNSlocal kern_return_t mDNSDaemonInitialize(void)
 		s_port = CFMachPortCreate(NULL, DNSserverCallback, NULL, NULL);
 		m_port = CFMachPortGetPort(s_port);
 		char *MachServerName = OSXVers < 7 ? "DNSServiceDiscoveryServer" : "com.apple.mDNSResponder";
-#if TARGET_OS_EMBEDDED
-		kern_return_t status = bootstrap_register2(bootstrap_port, MachServerName, m_port, 0);
-		char bootregname[] = "bootstrap_register2";
-#else
 		kern_return_t status = bootstrap_register(bootstrap_port, MachServerName, m_port);
-		char bootregname[] = "bootstrap_register";
-#endif
 	
 		if (status)
 			{
 			if (status == 1103)
-				LogMsg("%s failed(): A copy of the daemon is apparently already running", bootregname);
+				LogMsg("bootstrap_register() failed: A copy of the daemon is apparently already running");
 			else
-				LogMsg("%s failed(): %s %d", bootregname, mach_error_string(status), status);
+				LogMsg("bootstrap_register() failed: %s %d", mach_error_string(status), status);
 			return(status);
 			}
 		}

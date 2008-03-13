@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: helper-main.c,v $
+Revision 1.15  2008/03/13 20:55:16  mcguire
+<rdar://problem/5769316> fix deprecated warnings/errors
+Additional cleanup: use a conditional macro instead of lots of #if
+
 Revision 1.14  2008/03/12 23:02:59  mcguire
 <rdar://problem/5769316> fix deprecated warnings/errors
 
@@ -89,6 +93,8 @@ Revision 1.1  2007/08/08 22:34:58  mcguire
 #if TARGET_OS_EMBEDDED
 #include <bootstrap_priv.h>
 #define NO_SECURITYFRAMEWORK 1
+
+#define bootstrap_register(A,B,C) bootstrap_register2((A),(B),(C),0)
 #endif
 
 #ifndef LAUNCH_JOBKEY_MACHSERVICES
@@ -252,15 +258,9 @@ static mach_port_t register_service(const char *service_name)
 	if (KERN_SUCCESS != (kr = mach_port_insert_right(mach_task_self(), port, port, MACH_MSG_TYPE_MAKE_SEND)))
 		{ helplog(ASL_LEVEL_ERR, "mach_port_insert_right: %s", mach_error_string(kr)); goto error; }
 
-#if TARGET_OS_EMBEDDED
-	// XXX bootstrap_register2 does not modify its second argument, but the prototype does not include const.
-	if (KERN_SUCCESS != (kr = bootstrap_register2(bootstrap_port, (char *)service_name, port, 0)))
-		{ helplog(ASL_LEVEL_ERR, "bootstrap_register2 failed: %s", mach_error_string(kr)); goto error; }
-#else
 	// XXX bootstrap_register does not modify its second argument, but the prototype does not include const.
 	if (KERN_SUCCESS != (kr = bootstrap_register(bootstrap_port, (char *)service_name, port)))
 		{ helplog(ASL_LEVEL_ERR, "bootstrap_register failed: %s", mach_error_string(kr)); goto error; }
-#endif
 
 	return port;
 error:
