@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.773  2008/03/14 22:52:36  mcguire
+<rdar://problem/5321824> write status to the DS
+Update status when any unicast LLQ is started
+
 Revision 1.772  2008/03/06 02:48:34  mcguire
 <rdar://problem/5321824> write status to the DS
 
@@ -5409,6 +5413,12 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 					m->LLQNAT.clientContext  = (void*)1; // Means LLQ NAT Traversal is active
 					mDNS_StartNATOperation_internal(m, &m->LLQNAT);
 					}
+					
+#if APPLE_OSX_mDNSResponder
+				if (question->LongLived)
+					UpdateAutoTunnelDomainStatuses(m);
+#endif
+					
 				}
 			SetNextQueryTime(m,question);
 			}
