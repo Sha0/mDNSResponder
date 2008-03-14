@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.535  2008/03/14 22:52:51  mcguire
+<rdar://problem/5321824> write status to the DS
+Ignore duplicate queries, which don't get established (since they're duplicates)
+
 Revision 1.534  2008/03/12 22:58:15  mcguire
 <rdar://problem/5321824> write status to the DS
 Fixes for NO_SECURITYFRAMEWORK
@@ -2340,7 +2344,7 @@ mDNSlocal void UpdateAutoTunnelDomainStatus(const mDNS *const m, const DomainAut
 				}
 		if (status == mStatus_NoError)
 			for (q = m->Questions; q; q=q->next)
-				if (q->LongLived && q->AuthInfo == info && q->state != LLQ_Established)
+				if (q->LongLived && q->AuthInfo == info && q->state != LLQ_Established && !q->DuplicateOf)
 					{
 					status = mStatus_TransientErr;
 					mDNS_snprintf(buffer, sizeof(buffer), "Query not yet established %##s", q->qname.c);
