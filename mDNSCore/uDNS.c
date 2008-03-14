@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.557  2008/03/14 19:58:38  mcguire
+<rdar://problem/5500969> BTMM: Need ability to identify version of mDNSResponder client
+Make sure we add the record when sending LLQ refreshes
+
 Revision 1.556  2008/03/07 23:55:05  cheshire
 <rdar://problem/5787898> LLQ refresh randomization not working properly
 
@@ -3974,6 +3978,12 @@ mDNSexport void sendLLQRefresh(mDNS *m, DNSQuestion *q)
 	InitializeDNSMessage(&m->omsg.h, q->TargetQID, uQueryFlags);
 	end = putLLQ(&m->omsg, m->omsg.data, q, &llq, mDNStrue);
 	if (!end) { LogMsg("sendLLQRefresh: putLLQ failed %##s (%s)", q->qname.c, DNSTypeName(q->qtype)); return; }
+
+	// Note that we (conditionally) add HINFO and TSIG here, since the question might be going away,
+	// so we may not be able to reference it (most importantly it's AuthInfo) when we actually send the message
+	end = putHINFO(m, &m->omsg, end, q->AuthInfo);
+	if (!end) { LogMsg("sendLLQRefresh: putHINFO failed %##s (%s)", q->qname.c, DNSTypeName(q->qtype)); return; }
+
 	if (q->AuthInfo)
 		{
 		DNSDigest_SignMessageHostByteOrder(&m->omsg, &end, q->AuthInfo);

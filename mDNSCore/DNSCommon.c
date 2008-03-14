@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.199  2008/03/14 19:58:38  mcguire
+<rdar://problem/5500969> BTMM: Need ability to identify version of mDNSResponder client
+Make sure we add the record when sending LLQ refreshes
+
 Revision 1.198  2008/03/07 23:29:24  cheshire
 Fixed cosmetic byte order display issue in DumpPacket output
 
@@ -2032,6 +2036,30 @@ mDNSexport mDNSu8 *putUpdateLease(DNSMessage *msg, mDNSu8 *end, mDNSu32 lease)
 	return end;
 	}
 
+mDNSexport mDNSu8 *putHINFO(const mDNS *const m, DNSMessage *const msg, mDNSu8 *end, DomainAuthInfo *authInfo)
+	{
+	if (authInfo && authInfo->AutoTunnel)
+		{
+		AuthRecord hinfo;
+		mDNSu8 *h = hinfo.rdatastorage.u.data;
+		mDNSu16 len = 2 + m->HIHardware.c[0] + m->HISoftware.c[0];
+		mDNSu8 *newptr;
+		mDNS_SetupResourceRecord(&hinfo, mDNSNULL, mDNSInterface_Any, kDNSType_HINFO, 0, kDNSRecordTypeUnique, mDNSNULL, mDNSNULL);
+		AppendDomainLabel(&hinfo.namestorage, &m->hostlabel);
+		AppendDomainName (&hinfo.namestorage, &authInfo->domain);
+		hinfo.resrec.rroriginalttl = 0;
+		mDNSPlatformMemCopy(h, &m->HIHardware, 1 + (mDNSu32)m->HIHardware.c[0]);
+		h += 1 + (int)h[0];
+		mDNSPlatformMemCopy(h, &m->HISoftware, 1 + (mDNSu32)m->HISoftware.c[0]);
+		hinfo.resrec.rdlength   = len;
+		hinfo.resrec.rdestimate = len;
+		newptr = PutResourceRecord(msg, end, &msg->h.numAdditionals, &hinfo.resrec);
+		return newptr;
+		}
+	else
+		return end;
+	}
+
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
@@ -2563,53 +2591,40 @@ mDNSexport mStatus mDNSSendDNSMessage(mDNS *const m, DNSMessage *const msg, mDNS
 		return mStatus_BadParamErr;
 		}
 
-	if (authInfo && authInfo->AutoTunnel)
-		{
-		AuthRecord hinfo;
-		mDNSu8 *h = hinfo.rdatastorage.u.data;
-		mDNSu16 len = 2 + m->HIHardware.c[0] + m->HISoftware.c[0];
-		mDNSu8 *newptr;
-		mDNS_SetupResourceRecord(&hinfo, mDNSNULL, mDNSInterface_Any, kDNSType_HINFO, 0, kDNSRecordTypeUnique, mDNSNULL, mDNSNULL);
-		AppendDomainLabel(&hinfo.namestorage, &m->hostlabel);
-		AppendDomainName (&hinfo.namestorage, &authInfo->domain);
-		hinfo.resrec.rroriginalttl = 0;
-		mDNSPlatformMemCopy(h, &m->HIHardware, 1 + (mDNSu32)m->HIHardware.c[0]);
-		h += 1 + (int)h[0];
-		mDNSPlatformMemCopy(h, &m->HISoftware, 1 + (mDNSu32)m->HISoftware.c[0]);
-		hinfo.resrec.rdlength   = len;
-		hinfo.resrec.rdestimate = len;
-		newptr = PutResourceRecord(msg, end, &msg->h.numAdditionals, &hinfo.resrec);
-		tmpNumAdditionals = msg->h.numAdditionals;
-		if (newptr) end = newptr;
-		}
-
-	// Put all the integer values in IETF byte-order (MSB first, LSB second)
-	*ptr++ = (mDNSu8)(numQuestions   >> 8);
-	*ptr++ = (mDNSu8)(numQuestions   &  0xFF);
-	*ptr++ = (mDNSu8)(numAnswers     >> 8);
-	*ptr++ = (mDNSu8)(numAnswers     &  0xFF);
-	*ptr++ = (mDNSu8)(numAuthorities >> 8);
-	*ptr++ = (mDNSu8)(numAuthorities &  0xFF);
-	*ptr++ = (mDNSu8)(tmpNumAdditionals >> 8);
-	*ptr++ = (mDNSu8)(tmpNumAdditionals &  0xFF);
-
-	if (authInfo) DNSDigest_SignMessage(msg, &end, authInfo, 0);	// DNSDigest_SignMessage operates on message in network byte order
-	if (!end) { LogMsg("mDNSSendDNSMessage: DNSDigest_SignMessage failed"); status = mStatus_NoMemoryErr; }
+	end = putHINFO(m, msg, end, authInfo);
+	if (!end) { LogMsg("mDNSSendDNSMessage: putHINFO failed"); status = mStatus_NoMemoryErr; }
 	else
 		{
-		// Send the packet on the wire
-		if (!sock)
-			status = mDNSPlatformSendUDP(m, msg, end, InterfaceID, dst, dstport);
+		tmpNumAdditionals = msg->h.numAdditionals;
+	
+		// Put all the integer values in IETF byte-order (MSB first, LSB second)
+		*ptr++ = (mDNSu8)(numQuestions   >> 8);
+		*ptr++ = (mDNSu8)(numQuestions   &  0xFF);
+		*ptr++ = (mDNSu8)(numAnswers     >> 8);
+		*ptr++ = (mDNSu8)(numAnswers     &  0xFF);
+		*ptr++ = (mDNSu8)(numAuthorities >> 8);
+		*ptr++ = (mDNSu8)(numAuthorities &  0xFF);
+		*ptr++ = (mDNSu8)(tmpNumAdditionals >> 8);
+		*ptr++ = (mDNSu8)(tmpNumAdditionals &  0xFF);
+	
+		if (authInfo) DNSDigest_SignMessage(msg, &end, authInfo, 0);	// DNSDigest_SignMessage operates on message in network byte order
+		if (!end) { LogMsg("mDNSSendDNSMessage: DNSDigest_SignMessage failed"); status = mStatus_NoMemoryErr; }
 		else
 			{
-			mDNSu16 msglen = (mDNSu16)(end - (mDNSu8 *)msg);
-			mDNSu8 lenbuf[2] = { (mDNSu8)(msglen >> 8), (mDNSu8)(msglen & 0xFF) };
-			long nsent = mDNSPlatformWriteTCP(sock, (char*)lenbuf, 2);		// Should do scatter/gather here -- this is probably going out as two packets
-			if (nsent != 2) { LogMsg("mDNSSendDNSMessage: write msg length failed %d/%d", nsent, 2); status = mStatus_ConnFailed; }
+			// Send the packet on the wire
+			if (!sock)
+				status = mDNSPlatformSendUDP(m, msg, end, InterfaceID, dst, dstport);
 			else
 				{
-				nsent = mDNSPlatformWriteTCP(sock, (char *)msg, msglen);
-				if (nsent != msglen) { LogMsg("mDNSSendDNSMessage: write msg body failed %d/%d", nsent, msglen); status = mStatus_ConnFailed; }
+				mDNSu16 msglen = (mDNSu16)(end - (mDNSu8 *)msg);
+				mDNSu8 lenbuf[2] = { (mDNSu8)(msglen >> 8), (mDNSu8)(msglen & 0xFF) };
+				long nsent = mDNSPlatformWriteTCP(sock, (char*)lenbuf, 2);		// Should do scatter/gather here -- this is probably going out as two packets
+				if (nsent != 2) { LogMsg("mDNSSendDNSMessage: write msg length failed %d/%d", nsent, 2); status = mStatus_ConnFailed; }
+				else
+					{
+					nsent = mDNSPlatformWriteTCP(sock, (char *)msg, msglen);
+					if (nsent != msglen) { LogMsg("mDNSSendDNSMessage: write msg body failed %d/%d", nsent, msglen); status = mStatus_ConnFailed; }
+					}
 				}
 			}
 		}

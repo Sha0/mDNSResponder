@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.59  2008/03/14 19:58:38  mcguire
+<rdar://problem/5500969> BTMM: Need ability to identify version of mDNSResponder client
+Make sure we add the record when sending LLQ refreshes
+
 Revision 1.58  2008/03/06 21:26:10  cheshire
 Moved duplicated STRINGIFY macro from individual C files to DNSCommon.h
 
@@ -289,6 +293,8 @@ extern  mDNSu8 *putDeleteRRSet(DNSMessage *msg, mDNSu8 *ptr, const domainname *n
 extern mDNSu8 *putDeleteAllRRSets(DNSMessage *msg, mDNSu8 *ptr, const domainname *name);
 extern mDNSu8 *putUpdateLease(DNSMessage *msg, mDNSu8 *end, mDNSu32 lease);
 #define PutResourceRecord(MSG, P, C, RR) PutResourceRecordTTL((MSG), (P), (C), (RR), (RR)->rroriginalttl)
+
+extern mDNSu8 *putHINFO(const mDNS *const m, DNSMessage *const msg, mDNSu8 *end, DomainAuthInfo *authInfo);
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
