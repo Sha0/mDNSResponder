@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.558  2008/03/17 18:02:35  mkrochma
+Add space to log message for consistency
+
 Revision 1.557  2008/03/14 19:58:38  mcguire
 <rdar://problem/5500969> BTMM: Need ability to identify version of mDNSResponder client
 Make sure we add the record when sending LLQ refreshes
@@ -2008,7 +2011,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			{
 			mDNSu8 *lenptr = (mDNSu8 *)&tcpInfo->replylen;
 			n = mDNSPlatformReadTCP(sock, lenptr + tcpInfo->nread, 2 - tcpInfo->nread, &closed);
-			if (n < 0) { LogMsg("ERROR:tcpCallback - attempt to read message length failed (%d)", n); err = mStatus_ConnFailed; goto exit; }
+			if (n < 0) { LogMsg("ERROR: tcpCallback - attempt to read message length failed (%d)", n); err = mStatus_ConnFailed; goto exit; }
 			else if (closed)
 				{
 				// It's perfectly fine for this socket to close after the first reply. The server might
