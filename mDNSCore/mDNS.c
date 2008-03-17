@@ -38,6 +38,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.774  2008/03/17 17:46:08  mcguire
+When activating an LLQ, reset all the important state and destroy any tcp connection,
+so that everything will be restarted as if the question had just been asked.
+Also reset servPort, so that the SOA query will be re-issued.
+
 Revision 1.773  2008/03/14 22:52:36  mcguire
 <rdar://problem/5321824> write status to the DS
 Update status when any unicast LLQ is started
@@ -3596,7 +3601,13 @@ mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question, 
 		LogOperation("ActivateUnicastQuery: %##s %s%s%s",
 			question->qname.c, DNSTypeName(question->qtype), question->AuthInfo ? " (Private)" : "", ScheduleImmediately ? " ScheduleImmediately" : "");
 		if (question->nta) { CancelGetZoneData(m, question->nta); question->nta = mDNSNULL; }
-		if (question->LongLived) { question->state = LLQ_InitialRequest; question->id = zeroOpaque64; }
+		if (question->LongLived)
+			{
+			question->state = LLQ_InitialRequest;
+			question->id = zeroOpaque64;
+			question->servPort = zeroIPPort;
+			if (question->tcp) { DisposeTCPConn(question->tcp); question->tcp = mDNSNULL; }
+			}
 		if (ScheduleImmediately)
 			{
 			question->ThisQInterval = InitialQuestionInterval;
