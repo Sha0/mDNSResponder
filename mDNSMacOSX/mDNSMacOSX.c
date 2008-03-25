@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.536  2008/03/25 01:27:30  mcguire
+<rdar://problem/5810718> Status sometimes wrong when link goes down
+
 Revision 1.535  2008/03/14 22:52:51  mcguire
 <rdar://problem/5321824> write status to the DS
 Ignore duplicate queries, which don't get established (since they're duplicates)
@@ -2393,7 +2396,7 @@ mDNSexport void UpdateAutoTunnelDomainStatuses(const mDNS *const m)
 #else
 	DomainAuthInfo* info;
 	for (info = m->AuthInfoList; info; info = info->next)
-		if (info->AutoTunnel)
+		if (info->AutoTunnel && !info->deltime)
 			UpdateAutoTunnelDomainStatus(m, info);
 #endif // def NO_SECURITYFRAMEWORK
 	}
