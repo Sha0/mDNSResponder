@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.775  2008/03/26 01:53:34  mcguire
+<rdar://problem/5820489> Can't resolve via uDNS when an interface is specified
+
 Revision 1.774  2008/03/17 17:46:08  mcguire
 When activating an LLQ, reset all the important state and destroy any tcp connection,
 so that everything will be restarted as if the question had just been asked.
@@ -5297,7 +5300,7 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 
 	question->TargetQID =
 #ifndef UNICAST_DISABLED
-		Question_uDNS(question) ? mDNS_NewMessageID(m) :
+		(question->InterfaceID != mDNSInterface_LocalOnly && !question->ForceMCast && !IsLocalDomain(&question->qname)) ? mDNS_NewMessageID(m) :
 #endif // UNICAST_DISABLED
 		zeroID;
 
