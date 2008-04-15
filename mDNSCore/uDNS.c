@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.559  2008/04/15 22:37:58  mkrochma
+Change LogMsg to LogOperation
+
 Revision 1.558  2008/03/17 18:02:35  mkrochma
 Add space to log message for consistency
 
@@ -2885,7 +2888,7 @@ mDNSlocal void hostnameGetPublicAddressCallback(mDNS *m, NATTraversalInfo *n)
 		if (h->arv4.resrec.RecordType)
 			{
 			if (mDNSSameIPv4Address(h->arv4.resrec.rdata->u.ipv4, n->ExternalAddress)) return;	// If address unchanged, do nothing
-			LogMsg("Updating hostname %##s IPv4 from %.4a to %.4a (NAT gateway's external address)", h->arv4.resrec.name->c, &h->arv4.resrec.rdata->u.ipv4, &n->ExternalAddress);
+			LogOperation("Updating hostname %##s IPv4 from %.4a to %.4a (NAT gateway's external address)", h->arv4.resrec.name->c, &h->arv4.resrec.rdata->u.ipv4, &n->ExternalAddress);
 			mDNS_Deregister(m, &h->arv4);	// mStatus_MemFree callback will re-register with new address
 			}
 		else
