@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.776  2008/04/17 20:14:14  cheshire
+<rdar://problem/5870023> CurrentAnswers/LargeAnswers/UniqueAnswers counter mismatch
+
 Revision 1.775  2008/03/26 01:53:34  mcguire
 <rdar://problem/5820489> Can't resolve via uDNS when an interface is specified
 
@@ -2912,7 +2915,10 @@ mDNSlocal mDNSs32 CheckForSoonToExpireRecords(mDNS *const m, const domainname *c
 mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
 	{
 	DNSQuestion *q;
-	for (q = m->Questions; q; q=q->next)		// We do this for *all* questions, not stopping when we get to m->NewQuestions
+
+	// We stop when we get to NewQuestions -- if we increment their CurrentAnswers/LargeAnswers/UniqueAnswers
+	// counters here we'll end up double-incrementing them when we do it again in AnswerNewQuestion().
+	for (q = m->Questions; q && q != m->NewQuestions; q=q->next)
 		{
 		if (ResourceRecordAnswersQuestion(&rr->resrec, q))
 			{
@@ -3000,7 +3006,8 @@ mDNSlocal void NoCacheAnswer(mDNS *const m, CacheRecord *rr)
 	m->CurrentQuestion = mDNSNULL;
 	}
 
-// CacheRecordRmv is only called from CheckCacheExpiration, which is called from mDNS_Execute
+// CacheRecordRmv is only called from CheckCacheExpiration, which is called from mDNS_Execute.
+// Note that CacheRecordRmv is *only* called for records that are referenced by at least one active question.
 // If new questions are created as a result of invoking client callbacks, they will be added to
 // the end of the question list, and m->NewQuestions will be set to indicate the first new question.
 // rr is an existing cache CacheRecord that just expired and is being deleted
@@ -3010,16 +3017,15 @@ mDNSlocal void NoCacheAnswer(mDNS *const m, CacheRecord *rr)
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void CacheRecordRmv(mDNS *const m, CacheRecord *rr)
 	{
-	mDNSBool answerable = mDNStrue;
 	if (m->CurrentQuestion)
 		LogMsg("CacheRecordRmv ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
 	m->CurrentQuestion = m->Questions;
-	while (m->CurrentQuestion)
+
+	// We stop when we get to NewQuestions -- for new questions their CurrentAnswers/LargeAnswers/UniqueAnswers counters
+	// will all still be zero because we haven't yet gone through the cache counting how many answers we have for them.
+	while (m->CurrentQuestion && m->CurrentQuestion != m->NewQuestions)
 		{
 		DNSQuestion *q = m->CurrentQuestion;
-		// For new questions, we still maintain the CurrentAnswers count (if we incremented it in
-		// CacheRecordAdd we need to decrement it here) but we mustn't generate a client callback.
-		if (q == m->NewQuestions) answerable = mDNSfalse;
 		if (ResourceRecordAnswersQuestion(&rr->resrec, q))
 			{
 			verbosedebugf("CacheRecordRmv %p %s", rr, CRDisplayString(m, rr));
@@ -3042,12 +3048,13 @@ mDNSlocal void CacheRecordRmv(mDNS *const m, CacheRecord *rr)
 						q->qname.c, DNSTypeName(q->qtype));
 					ReconfirmAntecedents(m, &q->qname, q->qnamehash, 0);
 					}
-				if (answerable) AnswerCurrentQuestionWithResourceRecord(m, rr, QC_rmv);
+				AnswerCurrentQuestionWithResourceRecord(m, rr, QC_rmv);
 				}
 			}
 		if (m->CurrentQuestion == q)	// If m->CurrentQuestion was not auto-advanced, do it ourselves now
 			m->CurrentQuestion = q->next;
 		}
+	m->CurrentQuestion = mDNSNULL;
 	}
 
 mDNSlocal void ReleaseCacheEntity(mDNS *const m, CacheEntity *e)
@@ -5389,14 +5396,11 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 		for (i=0; i<DupSuppressInfoSize; i++)
 			question->DupSuppress[i].InterfaceID = mDNSNULL;
 
-		if (!question->DuplicateOf)
-			debugf("mDNS_StartQuery: now %d Question %##s (%s) %p %d (%p) started",
-				m->timenow, question->qname.c, DNSTypeName(question->qtype), question->InterfaceID,
-				question->LastQTime + question->ThisQInterval - m->timenow, question);
-		else
-			debugf("mDNS_StartQuery: now %d Question %##s (%s) %p %d (%p) duplicate of (%p)",
-				m->timenow, question->qname.c, DNSTypeName(question->qtype), question->InterfaceID,
-				question->LastQTime + question->ThisQInterval - m->timenow, question, question->DuplicateOf);
+		debugf("mDNS_StartQuery: Question %##s (%s) Interface %p Now %d Send in %d Answer in %d (%p) %s (%p)",
+			question->qname.c, DNSTypeName(question->qtype), question->InterfaceID, m->timenow,
+			question->LastQTime + question->ThisQInterval - m->timenow,
+			question->DelayAnswering ? question->DelayAnswering - m->timenow : 0,
+			question, question->DuplicateOf ? "duplicate of" : "not duplicate", question->DuplicateOf);
 
 		if (question->InterfaceID == mDNSInterface_LocalOnly)
 			{
