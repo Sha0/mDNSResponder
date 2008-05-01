@@ -890,7 +890,7 @@ int main(int argc, char **argv)
 					typ = gettype(buffer, typ);
 					if (dom[0] == '.' && dom[1] == 0) dom = "local";   // We allow '.' on the command line as a synonym for "local"
 					printf("Lookup %s.%s.%s\n", argv[opi+0], typ, dom);
-					err = DNSServiceResolve(&client, 0, opinterface, argv[opi+0], typ, dom, (DNSServiceResolveReply)resolve_reply, NULL);
+					err = DNSServiceResolve(&client, 0, opinterface, argv[opi+0], typ, dom, resolve_reply, NULL);
 					break;
 
 		case 'R':	if (argc < opi+4) goto Fail;
