@@ -6,8 +6,6 @@
 	<string>com.apple.mDNSResponder</string>
 	<key>OnDemand</key>
 	<false/>
-	<key>HopefullyExitsFirst</key>
-	<true/>
 	<key>UserName</key>
 	<string>_mdnsresponder</string>
 	<key>GroupName</key>

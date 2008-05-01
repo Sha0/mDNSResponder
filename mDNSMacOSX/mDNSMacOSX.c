@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.537  2008/05/01 18:30:54  mkrochma
+<rdar://problem/5895642> Make mDNSResponder and mDNSResponderHelper shutdown at regular time
+
 Revision 1.536  2008/03/25 01:27:30  mcguire
 <rdar://problem/5810718> Status sometimes wrong when link goes down
 
@@ -4428,7 +4431,8 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 	ClearInactiveInterfaces(m, utc);
 	CloseSocketSet(&m->p->permanentsockets);
 
-	#if APPLE_OSX_mDNSResponder
+	// Temporarily disable cleanup for now.  See bug <rdar://problem/5895642>
+	#if 0 && APPLE_OSX_mDNSResponder
 	// clean up tunnels
 	while (m->TunnelClients)
 		{
