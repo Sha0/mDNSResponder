@@ -40,6 +40,9 @@
     Change History (most recent first):
 
 $Log: ClientCommon.c,v $
+Revision 1.2  2008/05/08 00:42:03  cheshire
+Removed some unnecessary header files
+
 Revision 1.1  2008/05/08 00:25:48  cheshire
 <rdar://problem/5919272> GetNextLabel insufficiently defensive
 
@@ -48,11 +51,6 @@ Revision 1.1  2008/05/08 00:25:48  cheshire
 
 #include <ctype.h>
 #include <stdio.h>			// For stdout, stderr
-#include <stdlib.h>			// For exit()
-#include <string.h>			// For strlen(), strcpy(), bzero()
-#include <errno.h>			// For errno, EINTR
-#include <time.h>
-#include <sys/types.h>		// For u_char
 
 #include "ClientCommon.h"
 
