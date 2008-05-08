@@ -1,6 +1,6 @@
 /* -*- Mode: C; tab-width: 4 -*-
  *
- * Copyright (c) 2002-2006 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2002-2008 Apple Inc. All rights reserved.
  *
  * Disclaimer: IMPORTANT:  This Apple software is supplied to you by Apple Computer, Inc.
  * ("Apple") in consideration of your agreement to the following terms, and your
@@ -68,7 +68,7 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT ws2_32.lib ..\mDNSWindows\DLL\Rele
 // This also useful to work around link errors when you're working on an older version of Mac OS X,
 // and trying to build a newer version of the "dns-sd" command which uses new API entry points that
 // aren't in the system's /usr/lib/libSystem.dylib.
-//#define TEST_NEW_CLIENTSTUB 1
+#define TEST_NEW_CLIENTSTUB 1
 
 #include <ctype.h>
 #include <stdio.h>			// For stdout, stderr
@@ -103,6 +103,8 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT ws2_32.lib ..\mDNSWindows\DLL\Rele
 #endif
 
 #include "dns_sd.h"
+
+#include "ClientCommon.h"
 
 #if TEST_NEW_CLIENTSTUB
 #include "../mDNSShared/dnssd_ipc.c"
@@ -239,31 +241,7 @@ static void printtimestamp(void)
 #define DomainMsg(X) (((X) & kDNSServiceFlagsDefault) ? "(Default)" : \
                       ((X) & kDNSServiceFlagsAdd)     ? "Added"     : "Removed")
 
-static const char *GetNextLabel(const char *cstr, char label[64])
-	{
-	char *ptr = label;
-	while (*cstr && *cstr != '.')								// While we have characters in the label...
-		{
-		char c = *cstr++;
-		if (c == '\\')
-			{
-			c = *cstr++;
-			if (isdigit(cstr[-1]) && isdigit(cstr[0]) && isdigit(cstr[1]))
-				{
-				int v0 = cstr[-1] - '0';						// then interpret as three-digit decimal
-				int v1 = cstr[ 0] - '0';
-				int v2 = cstr[ 1] - '0';
-				int val = v0 * 100 + v1 * 10 + v2;
-				if (val <= 255) { c = (char)val; cstr += 2; }	// If valid three-digit decimal value, use it
-				}
-			}
-		*ptr++ = c;
-		if (ptr >= label+64) return(NULL);
-		}
-	if (*cstr) cstr++;											// Skip over the trailing dot (if present)
-	*ptr++ = 0;
-	return(cstr);
-	}
+#define MAX_LABELS 128
 
 static void DNSSD_API enum_reply(DNSServiceRef sdref, const DNSServiceFlags flags, uint32_t ifIndex,
 	DNSServiceErrorType errorCode, const char *replyDomain, void *context)
@@ -271,7 +249,7 @@ static void DNSSD_API enum_reply(DNSServiceRef sdref, const DNSServiceFlags flag
 	DNSServiceFlags partialflags = flags & ~(kDNSServiceFlagsMoreComing | kDNSServiceFlagsAdd | kDNSServiceFlagsDefault);
 	int labels = 0, depth = 0, i, initial = 0;
 	char text[64];
-	const char *label[128];
+	const char *label[MAX_LABELS];
 	
 	(void)sdref;        // Unused
 	(void)ifIndex;      // Unused
@@ -292,7 +270,7 @@ static void DNSSD_API enum_reply(DNSServiceRef sdref, const DNSServiceFlags flag
 		else printf("             ");
 		
 		// 2. Count the labels
-		while (*replyDomain)
+		while (replyDomain && *replyDomain && labels < MAX_LABELS)
 			{
 			label[labels++] = replyDomain;
 			replyDomain = GetNextLabel(replyDomain, text);
