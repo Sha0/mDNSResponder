@@ -43,6 +43,10 @@
     Change History (most recent first):
 
 $Log: DNSServiceDiscoveryPref.m,v $
+Revision 1.12  2008/05/08 00:46:38  cheshire
+<rdar://problem/5919272> GetNextLabel insufficiently defensive
+User shared copy of GetNextLabel in ClientCommon.c instead of having a local copy here
+
 Revision 1.11  2007/11/30 23:42:09  cheshire
 Fixed compile warning: declaration of 'index' shadows a global declaration
 
@@ -84,6 +88,8 @@ Add Preference Pane to facilitate testing of DDNS & wide-area features
 #import "PrivilegedOperations.h"
 #import <unistd.h>
 
+#include "../../Clients/ClientCommon.h"
+
 @implementation DNSServiceDiscoveryPref
 
 static int
@@ -101,34 +107,6 @@ MyDomainArrayCompareFunction(id val1, id val2, void *context)
 	NSString *domain1 = [val1 objectForKey:(NSString *)SC_DYNDNS_DOMAIN_KEY];
 	NSString *domain2 = [val2 objectForKey:(NSString *)SC_DYNDNS_DOMAIN_KEY];
     return CFStringCompare((CFStringRef)domain1, (CFStringRef)domain2, kCFCompareCaseInsensitive);
-}
-
-
-static const char *
-GetNextLabel(const char *cstr, char label[64])
-{
-	char *ptr = label;
-	while (*cstr && *cstr != '.')								// While we have characters in the label...
-		{
-		char c = *cstr++;
-		if (c == '\\')
-			{
-			c = *cstr++;
-			if (isdigit(cstr[-1]) && isdigit(cstr[0]) && isdigit(cstr[1]))
-				{
-				int v0 = cstr[-1] - '0';						// then interpret as three-digit decimal
-				int v1 = cstr[ 0] - '0';
-				int v2 = cstr[ 1] - '0';
-				int val = v0 * 100 + v1 * 10 + v2;
-				if (val <= 255) { c = (char)val; cstr += 2; }	// If valid three-digit decimal value, use it
-				}
-			}
-		*ptr++ = c;
-		if (ptr >= label+64) return(NULL);
-		}
-	if (*cstr) cstr++;											// Skip over the trailing dot (if present)
-	*ptr++ = 0;
-	return(cstr);
 }
 
 
