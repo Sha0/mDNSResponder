@@ -61,7 +61,7 @@ class	BrowserApp implements ListSelectionListener, ResolveListener
 	DomainListModel		domainList;
 	BrowserListModel	servicesList, serviceList;
 	JList				domainPane, servicesPane, servicePane;
-	DNSSDService		servicesBrowser, serviceBrowser, domainBrowser;
+	DNSSDService		servicesBrowser, serviceBrowser, domainBrowser, currentResolve;
 	JLabel				hostLabel, portLabel;
 
 	public		BrowserApp()
@@ -166,7 +166,10 @@ class	BrowserApp implements ListSelectionListener, ResolveListener
 
 				if ( -1 != newSel)
 				{
-					DNSSD.resolve( 0, serviceList.getNthInterface( newSel), 
+					if (currentResolve != null)
+						currentResolve.stop();
+					
+					currentResolve = DNSSD.resolve( 0, serviceList.getNthInterface( newSel), 
 										serviceList.getNthServiceName( newSel), 
 										serviceList.getNthRegType( newSel), 
 										serviceList.getNthDomain( newSel), 
@@ -180,12 +183,20 @@ class	BrowserApp implements ListSelectionListener, ResolveListener
 	public void	serviceResolved( DNSSDService resolver, int flags, int ifIndex, String fullName, 
 								String hostName, int port, TXTRecord txtRecord)
 	{
+		if (currentResolve == resolver) {
+			currentResolve.stop();
+			currentResolve = null;
+		}
 		hostLabel.setText( hostName);
 		portLabel.setText( String.valueOf( port));
 	}
 
 	public void	operationFailed( DNSSDService service, int errorCode)
 	{
+		if (currentResolve == resolver) {
+			currentResolve.stop();
+			currentResolve = null;
+		}
 		// handle failure here
 	}
 
