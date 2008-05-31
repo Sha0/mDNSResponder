@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.560  2008/05/31 01:51:09  mcguire
+fixed typo in log message
+
 Revision 1.559  2008/04/15 22:37:58  mkrochma
 Change LogMsg to LogOperation
 
@@ -2144,7 +2147,7 @@ mDNSlocal tcpInfo_t *MakeTCPConn(mDNS *const m, const DNSMessage *const msg, con
 		mDNSPlatformMemCopy(&info->request, msg, info->requestLen);
 		}
 
-	if (!info->sock) { LogMsg("SendServiceRegistration: uanble to create TCP socket"); mDNSPlatformMemFree(info); return(mDNSNULL); }
+	if (!info->sock) { LogMsg("SendServiceRegistration: unable to create TCP socket"); mDNSPlatformMemFree(info); return(mDNSNULL); }
 	err = mDNSPlatformTCPConnect(info->sock, Addr, Port, 0, tcpCallback, info);
 
 	// Probably suboptimal here.
