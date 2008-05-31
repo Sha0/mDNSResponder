@@ -54,15 +54,17 @@ import javax.swing.event.*;
 import com.apple.dnssd.*;
 
 
-class	BrowserApp implements ListSelectionListener, ResolveListener
+class	BrowserApp implements ListSelectionListener, ResolveListener, Runnable
 {
 	static BrowserApp	app;
 	JFrame				frame;
 	DomainListModel		domainList;
 	BrowserListModel	servicesList, serviceList;
 	JList				domainPane, servicesPane, servicePane;
-	DNSSDService		servicesBrowser, serviceBrowser, domainBrowser, currentResolve;
+	DNSSDService		servicesBrowser, serviceBrowser, domainBrowser;
 	JLabel				hostLabel, portLabel;
+	String				hostNameForUpdate;
+	int					portForUpdate;
 
 	public		BrowserApp()
 	{
@@ -166,37 +168,47 @@ class	BrowserApp implements ListSelectionListener, ResolveListener
 
 				if ( -1 != newSel)
 				{
-					if (currentResolve != null)
-						currentResolve.stop();
-					
-					currentResolve = DNSSD.resolve( 0, serviceList.getNthInterface( newSel), 
+					DNSSD.resolve( 0, serviceList.getNthInterface( newSel), 
 										serviceList.getNthServiceName( newSel), 
 										serviceList.getNthRegType( newSel), 
 										serviceList.getNthDomain( newSel), 
-										new SwingResolveListener( this));
+										this);
 				}
 			}
 		}
 		catch ( Exception ex) { terminateWithException( ex); }
 	}
 
+	public void run()
+	{
+		hostLabel.setText( hostNameForUpdate);
+		portLabel.setText( String.valueOf( portForUpdate));		
+	}
+
 	public void	serviceResolved( DNSSDService resolver, int flags, int ifIndex, String fullName, 
 								String hostName, int port, TXTRecord txtRecord)
 	{
-		if (currentResolve == resolver) {
-			currentResolve.stop();
-			currentResolve = null;
+		// We want to update GUI on the AWT event dispatching thread, but we can't stop
+		// the resolve from that thread, since stop() is synchronized with this callback.
+		// So, we stop the resolve on this thread, then invokeAndWait on the AWT event thread.
+
+		resolver.stop();
+
+		hostNameForUpdate = hostName;
+		portForUpdate = port;
+
+		try {
+			SwingUtilities.invokeAndWait(this);
 		}
-		hostLabel.setText( hostName);
-		portLabel.setText( String.valueOf( port));
+		catch ( Exception e)
+		{
+			e.printStackTrace();
+		}
 	}
 
 	public void	operationFailed( DNSSDService service, int errorCode)
 	{
-		if (currentResolve == resolver) {
-			currentResolve.stop();
-			currentResolve = null;
-		}
+		service.stop();
 		// handle failure here
 	}
 
