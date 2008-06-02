@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.538  2008/06/02 05:39:39  mkrochma
+<rdar://problem/5932760> Don't set TOS bits anymore
+
 Revision 1.537  2008/05/01 18:30:54  mkrochma
 <rdar://problem/5895642> Make mDNSResponder and mDNSResponderHelper shutdown at regular time
 
@@ -1736,7 +1739,6 @@ mDNSexport int mDNSPlatformTCPGetFD(TCPSocket *sock)
 // If mDNSIPPort port is zero, then it's a randomly assigned port number, used for sending unicast queries
 mDNSlocal mStatus SetupSocket(KQSocketSet *cp, const mDNSIPPort port, u_short sa_family, mDNSIPPort *const outport)
 	{
-	const int ip_tosbits = IPTOS_LOWDELAY | IPTOS_THROUGHPUT;
 	int         *s        = (sa_family == AF_INET) ? &cp->sktv4 : &cp->sktv6;
 	KQueueEntry	*k        = (sa_family == AF_INET) ? &cp->kqsv4 : &cp->kqsv6;
 	const int on = 1;
@@ -1773,10 +1775,6 @@ mDNSlocal mStatus SetupSocket(KQSocketSet *cp, const mDNSIPPort port, u_short sa
 		err = setsockopt(skt, IPPROTO_IP, IP_MULTICAST_TTL, &twofivefive, sizeof(twofivefive));
 		if (err < 0) { errstr = "setsockopt - IP_MULTICAST_TTL"; goto fail; }
 
-		// Mark packets as high-throughput/low-delay (i.e. lowest reliability) to get maximum 802.11 multicast rate
-		err = setsockopt(skt, IPPROTO_IP, IP_TOS, &ip_tosbits, sizeof(ip_tosbits));
-		if (err < 0) { errstr = "setsockopt - IP_TOS"; goto fail; }
-
 		// And start listening for packets
 		struct sockaddr_in listening_sockaddr;
 		listening_sockaddr.sin_family      = AF_INET;
@@ -1808,14 +1806,6 @@ mDNSlocal mStatus SetupSocket(KQSocketSet *cp, const mDNSIPPort port, u_short sa
 		// And multicast packets with TTL 255 too
 		err = setsockopt(skt, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, &twofivefive, sizeof(twofivefive));
 		if (err < 0) { errstr = "setsockopt - IPV6_MULTICAST_HOPS"; goto fail; }
-
-		// Note: IPV6_TCLASS appears not to be implemented on OS X right now (or indeed on ANY version of Unix?)
-		#ifdef IPV6_TCLASS
-		// Mark packets as high-throughput/low-delay (i.e. lowest reliability) to get maximum 802.11 multicast rate
-		int tclass = IPTOS_LOWDELAY | IPTOS_THROUGHPUT; // This may not be right (since tclass is not implemented on OS X, I can't test it)
-		err = setsockopt(skt, IPPROTO_IPV6, IPV6_TCLASS, &tclass, sizeof(tclass));
-		if (err < 0) { errstr = "setsockopt - IPV6_TCLASS"; goto fail; }
-		#endif
 
 		// Want to receive our own packets
 		err = setsockopt(skt, IPPROTO_IPV6, IPV6_MULTICAST_LOOP, &on, sizeof(on));
