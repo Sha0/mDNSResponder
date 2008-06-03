@@ -26,6 +26,9 @@
 ; SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ;
 ; $Log: mDNSResponder.sb,v $
+; Revision 1.26  2008/06/03 01:21:12  mcguire
+; <rdar://problem/5902470> add /var/db/mds to sb profile
+;
 ; Revision 1.25  2008/03/17 18:04:41  mcguire
 ; <rdar://problem/5800476> SC now reads preference file
 ;
@@ -183,4 +186,6 @@
 ; Our Module Directory Services cache
 (allow file-read-data                 (regex "^/private/var/tmp/mds/"))
 (allow file-read* file-write*         (regex "^/private/var/tmp/mds/[0-9]+(/|\$)"))
+(allow file-read-data                 (regex "^/private/var/db/mds/"))
+(allow file-read* file-write*         (regex "^/private/var/db/mds/[0-9]+(/|\$)"))
 
