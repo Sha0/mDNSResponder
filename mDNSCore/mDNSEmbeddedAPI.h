@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.470  2008/06/19 01:20:49  mcguire
+<rdar://problem/4206534> Use all configured DNS servers
+
 Revision 1.469  2008/03/07 18:56:02  cheshire
 <rdar://problem/5777647> dnsbugtest query every three seconds when source IP address of response doesn't match
 
@@ -1805,6 +1808,7 @@ struct DNSQuestion_struct
 
 	// Wide Area fields. These are used internally by the uDNS core
 	DNSServer            *qDNSServer;		// Caching server for this query (in the absence of an SRV saying otherwise)
+	mDNSu8                unansweredQueries;// The number of unanswered queries to this server
 
 	ZoneData             *nta;				// Used for getting zone data for private or LLQ query
 	mDNSAddr              servAddr;			// Address and port learned from _dns-llq, _dns-llq-tls or _dns-query-tls SRV query
@@ -2329,6 +2333,8 @@ extern mStatus mDNS_AdvertiseDomains(mDNS *const m, AuthRecord *rr, mDNS_DomainT
 #define        mDNS_StopAdvertiseDomains mDNS_Deregister
 
 extern mDNSOpaque16 mDNS_NewMessageID(mDNS *const m);
+		
+extern DNSServer *GetServerForName(mDNS *m, const domainname *name);
 
 // ***************************************************************************
 #if 0

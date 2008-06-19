@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.777  2008/06/19 01:20:48  mcguire
+<rdar://problem/4206534> Use all configured DNS servers
+
 Revision 1.776  2008/04/17 20:14:14  cheshire
 <rdar://problem/5870023> CurrentAnswers/LargeAnswers/UniqueAnswers counter mismatch
 
@@ -2944,6 +2947,7 @@ mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
 			verbosedebugf("CacheRecordAdd %p %##s (%s) %lu",
 				rr, rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype), rr->resrec.rroriginalttl);
 			q->CurrentAnswers++;
+			q->unansweredQueries = 0;
 			if (rr->resrec.rdlength > SmallRecordLimit) q->LargeAnswers++;
 			if (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) q->UniqueAnswers++;
 			if (q->CurrentAnswers > 4000)
@@ -5226,6 +5230,8 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const questi
 				q->nta               = question->nta;
 				q->servAddr          = question->servAddr;
 				q->servPort          = question->servPort;
+				q->qDNSServer        = question->qDNSServer;
+				q->unansweredQueries = question->unansweredQueries;
 
 				q->state             = question->state;
 			//	q->tcp               = question->tcp;
@@ -5256,7 +5262,7 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const questi
 	}
 
 // Look up a DNS Server, matching by name in split-dns configurations.
-mDNSlocal DNSServer *GetServerForName(mDNS *m, const domainname *name)
+mDNSexport DNSServer *GetServerForName(mDNS *m, const domainname *name)
     {
 	DNSServer *curmatch = mDNSNULL, *p;
 	int curmatchlen = -1, ncount = name ? CountLabels(name) : 0;
@@ -5379,6 +5385,7 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 		question->CNAMEReferrals    = 0;
 
 		question->qDNSServer        = mDNSNULL;
+		question->unansweredQueries = 0;
 		question->nta               = mDNSNULL;
 		question->servAddr          = zeroAddr;
 		question->servPort          = zeroIPPort;
@@ -7152,6 +7159,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 					s, s ? &s->addr : mDNSNULL, mDNSVal16(s ? s->port : zeroIPPort), s ? s->domain.c : (mDNSu8*)"",
 					q->qname.c, DNSTypeName(q->qtype));
 				q->qDNSServer = s;
+				q->unansweredQueries = 0;
 				ActivateUnicastQuery(m, q, mDNStrue);
 				}
 			}

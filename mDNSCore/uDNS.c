@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.561  2008/06/19 01:20:49  mcguire
+<rdar://problem/4206534> Use all configured DNS servers
+
 Revision 1.560  2008/05/31 01:51:09  mcguire
 fixed typo in log message
 
@@ -1313,6 +1316,25 @@ mDNSexport DNSServer *mDNS_AddDNSServer(mDNS *const m, const domainname *d, cons
 		(*p)->next = mDNSNULL;
 		}
 	return(*p);
+	}
+
+mDNSlocal void PushDNSServerToEnd(mDNS *const m, DNSQuestion *q)
+	{
+	DNSServer **p = &m->DNSServers;
+
+	LogOperation("PushDNSServerToEnd: Pushing DNS server %#a for %##s due to %##s (%s) %d", q->qDNSServer->addr, q->qDNSServer->domain.c, q->qname.c, DNSTypeName(q->qtype), q->unansweredQueries);
+
+	if (m->mDNS_busy != m->mDNS_reentrancy+1)
+		LogMsg("PushDNSServerToEnd: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
+
+	while (*p)
+		{
+		if (*p == q->qDNSServer) *p = q->qDNSServer->next;
+		else p=&(*p)->next;
+		}
+
+	*p = q->qDNSServer;
+	q->qDNSServer->next = mDNSNULL; 
 	}
 
 // ***************************************************************************
@@ -3860,7 +3882,12 @@ mDNSlocal mDNSBool uDNS_ReceiveTestQuestionResponse(mDNS *const m, DNSMessage *c
 			if (result == DNSServer_Passed)		// Unblock any questions that were waiting for this result
 				for (q = m->Questions; q; q=q->next)
 					if (q->qDNSServer == s && !NoTestQuery(q))
-						{ q->LastQTime = m->timenow - q->ThisQInterval; m->NextScheduledQuery = m->timenow; }
+						{
+						q->ThisQInterval = INIT_UCAST_POLL_INTERVAL / QuestionIntervalStep;
+						q->unansweredQueries = 0;
+						q->LastQTime = m->timenow - q->ThisQInterval;
+						m->NextScheduledQuery = m->timenow;
+						}
 			}
 		}
 
@@ -4389,6 +4416,17 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 	// We repeat the check above (rather than just making this the "else" case) because startLLQHandshake can change q->state to LLQ_Poll
 	if (!(q->LongLived && q->state != LLQ_Poll))
 		{
+		if (q->unansweredQueries > MAX_UCAST_UNANSWERED_QUERIES)
+			{
+			DNSServer *orig = q->qDNSServer;
+			PushDNSServerToEnd(m, q);
+			q->qDNSServer = GetServerForName(m, &q->qname);
+			q->unansweredQueries = 0;
+			if (q->qDNSServer != orig)
+				q->ThisQInterval = INIT_UCAST_POLL_INTERVAL / QuestionIntervalStep;
+			debugf("Server for query %##s (%s) changed to %#a:%d due to %d unanswered queries", q->qname.c, DNSTypeName(q->qtype), &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->unansweredQueries);
+			}
+
 		if (q->qDNSServer && q->qDNSServer->teststate != DNSServer_Disabled)
 			{
 			mDNSu8 *end = m->omsg.data;
@@ -4413,7 +4451,7 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 
 			if (end > m->omsg.data && (q->qDNSServer->teststate != DNSServer_Failed || NoTestQuery(q)))
 				{
-				//LogMsg("uDNS_CheckCurrentQuestion %d %p %##s (%s)", sendtime - m->timenow, private, q->qname.c, DNSTypeName(q->qtype));
+				//LogMsg("uDNS_CheckCurrentQuestion %p %d %p %##s (%s)", q, sendtime - m->timenow, private, q->qname.c, DNSTypeName(q->qtype));
 				if (private)
 					{
 					if (q->nta) CancelGetZoneData(m, q->nta);
@@ -4431,6 +4469,7 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 			else
 				{
 				q->ThisQInterval = q->ThisQInterval * QuestionIntervalStep;	// Only increase interval if send succeeded
+				q->unansweredQueries++;
 				if (q->ThisQInterval > MAX_UCAST_POLL_INTERVAL)
 					q->ThisQInterval = MAX_UCAST_POLL_INTERVAL;
 				LogOperation("Increased ThisQInterval to %d for %##s (%s)", q->ThisQInterval, q->qname.c, DNSTypeName(q->qtype));
@@ -4462,6 +4501,7 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 			MakeNegativeCacheRecord(m, &q->qname, q->qnamehash, q->qtype, q->qclass, 60);
 			// Inactivate this question until the next change of DNS servers (do this before AnswerCurrentQuestionWithResourceRecord)
 			q->ThisQInterval = 0;
+			q->unansweredQueries = 0;
 			CreateNewCacheEntry(m, slot, cg);
 			m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 			// MUST NOT touch m->CurrentQuestion (or q) after this -- client callback could have deleted it
