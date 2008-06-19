@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.563  2008/06/19 17:46:14  mcguire
+<rdar://problem/4206534> Use all configured DNS servers
+Don't do extra work for log messages if we're not going to log
+
 Revision 1.562  2008/06/19 17:35:19  mcguire
 <rdar://problem/4206534> Use all configured DNS servers
 cleanup log messages
@@ -4430,18 +4434,23 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 		if (q->unansweredQueries > MAX_UCAST_UNANSWERED_QUERIES)
 			{
 			DNSServer *orig = q->qDNSServer;
+			
+#if LogAllOperations || MDNS_DEBUGMSGS
 			char buffer[1024];
 
 			mDNS_snprintf(buffer, sizeof(buffer), orig ? "%#a:%d (%##s)" : "null", &orig->addr, mDNSVal16(orig->port), orig->domain.c);
 			LogOperation("Sent %d unanswered queries for %##s (%s) to %s", q->unansweredQueries, q->qname.c, DNSTypeName(q->qtype), buffer);
+#endif
 
 			PushDNSServerToEnd(m, q);
 			q->qDNSServer = GetServerForName(m, &q->qname);
 
 			if (q->qDNSServer != orig)
 				{
+#if LogAllOperations || MDNS_DEBUGMSGS
 				mDNS_snprintf(buffer, sizeof(buffer), q->qDNSServer ? "%#a:%d (%##s)" : "null", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qDNSServer->domain.c);
 				LogOperation("Server for %##s (%s) changed to %s", q->qname.c, DNSTypeName(q->qtype), buffer);
+#endif
 				q->ThisQInterval = INIT_UCAST_POLL_INTERVAL / QuestionIntervalStep;
 				}
 
