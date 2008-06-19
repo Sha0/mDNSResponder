@@ -22,6 +22,11 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.562  2008/06/19 17:35:19  mcguire
+<rdar://problem/4206534> Use all configured DNS servers
+cleanup log messages
+check for null pointers
+
 Revision 1.561  2008/06/19 01:20:49  mcguire
 <rdar://problem/4206534> Use all configured DNS servers
 
@@ -1321,11 +1326,17 @@ mDNSexport DNSServer *mDNS_AddDNSServer(mDNS *const m, const domainname *d, cons
 mDNSlocal void PushDNSServerToEnd(mDNS *const m, DNSQuestion *q)
 	{
 	DNSServer **p = &m->DNSServers;
-
-	LogOperation("PushDNSServerToEnd: Pushing DNS server %#a for %##s due to %##s (%s) %d", q->qDNSServer->addr, q->qDNSServer->domain.c, q->qname.c, DNSTypeName(q->qtype), q->unansweredQueries);
-
+	
 	if (m->mDNS_busy != m->mDNS_reentrancy+1)
 		LogMsg("PushDNSServerToEnd: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
+
+	if (!q->qDNSServer)
+		{
+		LogMsg("PushDNSServerToEnd: Null DNS server for %##s (%s) %d", q->qname.c, DNSTypeName(q->qtype), q->unansweredQueries);
+		return;
+		}
+
+	LogOperation("PushDNSServerToEnd: Pushing DNS server %#a:%d (%##s) due to %d unanswered queries for %##s (%s)", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qDNSServer->domain.c, q->unansweredQueries, q->qname.c, DNSTypeName(q->qtype));
 
 	while (*p)
 		{
@@ -4419,12 +4430,22 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 		if (q->unansweredQueries > MAX_UCAST_UNANSWERED_QUERIES)
 			{
 			DNSServer *orig = q->qDNSServer;
+			char buffer[1024];
+
+			mDNS_snprintf(buffer, sizeof(buffer), orig ? "%#a:%d (%##s)" : "null", &orig->addr, mDNSVal16(orig->port), orig->domain.c);
+			LogOperation("Sent %d unanswered queries for %##s (%s) to %s", q->unansweredQueries, q->qname.c, DNSTypeName(q->qtype), buffer);
+
 			PushDNSServerToEnd(m, q);
 			q->qDNSServer = GetServerForName(m, &q->qname);
-			q->unansweredQueries = 0;
+
 			if (q->qDNSServer != orig)
+				{
+				mDNS_snprintf(buffer, sizeof(buffer), q->qDNSServer ? "%#a:%d (%##s)" : "null", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qDNSServer->domain.c);
+				LogOperation("Server for %##s (%s) changed to %s", q->qname.c, DNSTypeName(q->qtype), buffer);
 				q->ThisQInterval = INIT_UCAST_POLL_INTERVAL / QuestionIntervalStep;
-			debugf("Server for query %##s (%s) changed to %#a:%d due to %d unanswered queries", q->qname.c, DNSTypeName(q->qtype), &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->unansweredQueries);
+				}
+
+			q->unansweredQueries = 0;
 			}
 
 		if (q->qDNSServer && q->qDNSServer->teststate != DNSServer_Disabled)
