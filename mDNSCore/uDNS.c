@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.564  2008/06/19 23:42:03  mcguire
+<rdar://problem/4206534> Use all configured DNS servers
+
 Revision 1.563  2008/06/19 17:46:14  mcguire
 <rdar://problem/4206534> Use all configured DNS servers
 Don't do extra work for log messages if we're not going to log
@@ -4431,7 +4434,7 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 	// We repeat the check above (rather than just making this the "else" case) because startLLQHandshake can change q->state to LLQ_Poll
 	if (!(q->LongLived && q->state != LLQ_Poll))
 		{
-		if (q->unansweredQueries > MAX_UCAST_UNANSWERED_QUERIES)
+		if (q->unansweredQueries >= MAX_UCAST_UNANSWERED_QUERIES)
 			{
 			DNSServer *orig = q->qDNSServer;
 			
