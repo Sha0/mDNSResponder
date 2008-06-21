@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.565  2008/06/21 19:06:58  mcguire
+<rdar://problem/4206534> Use all configured DNS servers
+
 Revision 1.564  2008/06/19 23:42:03  mcguire
 <rdar://problem/4206534> Use all configured DNS servers
 
@@ -4454,7 +4457,7 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 				mDNS_snprintf(buffer, sizeof(buffer), q->qDNSServer ? "%#a:%d (%##s)" : "null", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qDNSServer->domain.c);
 				LogOperation("Server for %##s (%s) changed to %s", q->qname.c, DNSTypeName(q->qtype), buffer);
 #endif
-				q->ThisQInterval = INIT_UCAST_POLL_INTERVAL / QuestionIntervalStep;
+				q->ThisQInterval = q->ThisQInterval / QuestionIntervalStep; // Decrease interval one step so we don't quickly bounce between servers for queries that will not be answered.
 				}
 
 			q->unansweredQueries = 0;
