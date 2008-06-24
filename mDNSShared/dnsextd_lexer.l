@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd_lexer.l,v $
+Revision 1.5  2008/06/24 18:32:26  mcguire
+<rdar://problem/6024542> flex producing .c files that result in warnings
+
 Revision 1.4  2007/05/25 20:01:43  cheshire
 <rdar://problem/5226767> /usr/bin/flex failures prevent mDNSResponder from building
 Only define "int yylineno" on flex 2.5.4 and earlier
@@ -69,6 +72,7 @@ StripQuotes
 
 %}
 
+%option nounput
 %%
 
 options								return OPTIONS;
