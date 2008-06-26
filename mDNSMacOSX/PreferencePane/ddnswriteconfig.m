@@ -45,6 +45,9 @@
     Change History (most recent first):
 
 $Log: ddnswriteconfig.m,v $
+Revision 1.11  2008/06/26 17:34:18  mkrochma
+<rdar://problem/6030630> Pref pane destroying shared "system.preferences" authorization right
+
 Revision 1.10  2007/11/30 23:43:04  cheshire
 Fixed compile warning: declaration of 'access' shadows a global declaration
 
@@ -202,7 +205,7 @@ SetAuthInfo( int fd)
 	require( len == kAuthorizationExternalFormLength, ReadParamsFailed);
 
 	if (gAuthRef != 0) {
-		(void) AuthorizationFree(gAuthRef, kAuthorizationFlagDestroyRights);
+		(void) AuthorizationFree(gAuthRef, kAuthorizationFlagDefaults);
 		gAuthRef = 0;
 	}
 
