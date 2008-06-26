@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.471  2008/06/26 17:24:11  mkrochma
+<rdar://problem/5450912> BTMM: Stop listening on UDP 5351 for NAT Status Announcements
+
 Revision 1.470  2008/06/19 01:20:49  mcguire
 <rdar://problem/4206534> Use all configured DNS servers
 
@@ -2044,7 +2047,6 @@ struct mDNS_struct
 	mDNSv4Addr        ExternalAddress;
 
 	UDPSocket        *NATMcastRecvskt;			// For receiving NAT-PMP AddrReply multicasts from router on port 5350
-	UDPSocket        *NATMcastRecvsk2;			// For backwards compatibility, same as above but listening on port 5351
 	mDNSu32           LastNATupseconds;			// NAT engine uptime in seconds, from most recent NAT packet
 	mDNSs32           LastNATReplyLocalTime;	// Local time in ticks when most recent NAT packet was received
 

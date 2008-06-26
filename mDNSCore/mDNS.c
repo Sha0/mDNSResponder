@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.778  2008/06/26 17:24:11  mkrochma
+<rdar://problem/5450912> BTMM: Stop listening on UDP 5351 for NAT Status Announcements
+
 Revision 1.777  2008/06/19 01:20:48  mcguire
 <rdar://problem/4206534> Use all configured DNS servers
 
@@ -7086,7 +7089,6 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->ExternalAddress          = zerov4Addr;
 
 	m->NATMcastRecvskt          = mDNSNULL;
-	m->NATMcastRecvsk2          = mDNSNULL;
 	m->LastNATupseconds         = 0;
 	m->LastNATReplyLocalTime    = timenow;
 

@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.566  2008/06/26 17:24:11  mkrochma
+<rdar://problem/5450912> BTMM: Stop listening on UDP 5351 for NAT Status Announcements
+
 Revision 1.565  2008/06/21 19:06:58  mcguire
 <rdar://problem/4206534> Use all configured DNS servers
 
@@ -4559,15 +4562,12 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 		if (m->NATMcastRecvskt == mDNSNULL)		// If we are behind a NAT and the socket hasn't been opened yet, open it
 			{
 			m->NATMcastRecvskt = mDNSPlatformUDPSocket(m, NATPMPAnnouncementPort);
-			m->NATMcastRecvsk2 = mDNSPlatformUDPSocket(m, NATPMPPort);	// For backwards compatibility with older base stations that announce on 5351
 			if (!m->NATMcastRecvskt) LogMsg("CheckNATMappings: Failed to allocate port 5350 UDP multicast socket for NAT-PMP announcements");
-			if (!m->NATMcastRecvsk2) LogOperation("CheckNATMappings: Failed to allocate port 5351 UDP multicast socket for NAT-PMP announcements");
 			}
 		}
 	else										// else, we don't want to listen for announcements, so close them if they're open
 		{
 		if (m->NATMcastRecvskt) { mDNSPlatformUDPClose(m->NATMcastRecvskt); m->NATMcastRecvskt = mDNSNULL; }
-		if (m->NATMcastRecvsk2) { mDNSPlatformUDPClose(m->NATMcastRecvsk2); m->NATMcastRecvsk2 = mDNSNULL; }
 		if (m->SSDPSocket)      { LogOperation("CheckNATMappings destroying SSDPSocket %p", &m->SSDPSocket); mDNSPlatformUDPClose(m->SSDPSocket); m->SSDPSocket = mDNSNULL; }
 		}
 
