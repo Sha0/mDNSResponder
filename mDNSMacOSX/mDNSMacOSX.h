@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.76  2008/07/01 01:40:01  mcguire
+<rdar://problem/5823010> 64-bit fixes
+
 Revision 1.75  2007/12/14 00:45:21  cheshire
 Add SleepLimit and SleepCookie, for when we need to delay sleep until TLS/TCP record deregistration completes
 
@@ -222,8 +225,8 @@ struct CompileTimeAssertionChecks_mDNSMacOSX
 	// Check our structures are reasonable sizes. Including overly-large buffers, or embedding
 	// other overly-large structures instead of having a pointer to them, can inadvertently
 	// cause structure sizes (and therefore memory usage) to balloon unreasonably.
-	char sizecheck_NetworkInterfaceInfoOSX[(sizeof(NetworkInterfaceInfoOSX) <=  4100) ? 1 : -1];
-	char sizecheck_mDNS_PlatformSupport   [(sizeof(mDNS_PlatformSupport)    <=   268) ? 1 : -1];
+	char sizecheck_NetworkInterfaceInfoOSX[(sizeof(NetworkInterfaceInfoOSX) <=  4456) ? 1 : -1];
+	char sizecheck_mDNS_PlatformSupport   [(sizeof(mDNS_PlatformSupport)    <=   352) ? 1 : -1];
 	};
 
 #ifdef  __cplusplus

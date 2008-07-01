@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.388  2008/07/01 01:40:02  mcguire
+<rdar://problem/5823010> 64-bit fixes
+
 Revision 1.387  2008/02/26 21:24:13  cheshire
 Fixed spelling mistake in comment
 
@@ -3954,10 +3957,10 @@ struct CompileTimeAssertionChecks_uds_daemon
 	// Check our structures are reasonable sizes. Including overly-large buffers, or embedding
 	// other overly-large structures instead of having a pointer to them, can inadvertently
 	// cause structure sizes (and therefore memory usage) to balloon unreasonably.
-	char sizecheck_request_state          [(sizeof(request_state)           <= 1800) ? 1 : -1];
-	char sizecheck_registered_record_entry[(sizeof(registered_record_entry) <=   30) ? 1 : -1];
-	char sizecheck_service_instance       [(sizeof(service_instance)        <= 6000) ? 1 : -1];
-	char sizecheck_browser_t              [(sizeof(browser_t)               <= 1000) ? 1 : -1];
-	char sizecheck_reply_hdr              [(sizeof(reply_hdr)               <=   20) ? 1 : -1];
-	char sizecheck_reply_state            [(sizeof(reply_state)             <=   40) ? 1 : -1];
+	char sizecheck_request_state          [(sizeof(request_state)           <= 1760) ? 1 : -1];
+	char sizecheck_registered_record_entry[(sizeof(registered_record_entry) <=   40) ? 1 : -1];
+	char sizecheck_service_instance       [(sizeof(service_instance)        <= 6552) ? 1 : -1];
+	char sizecheck_browser_t              [(sizeof(browser_t)               <=  984) ? 1 : -1];
+	char sizecheck_reply_hdr              [(sizeof(reply_hdr)               <=   12) ? 1 : -1];
+	char sizecheck_reply_state            [(sizeof(reply_state)             <=   64) ? 1 : -1];
 	};

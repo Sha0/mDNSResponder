@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.567  2008/07/01 01:40:00  mcguire
+<rdar://problem/5823010> 64-bit fixes
+
 Revision 1.566  2008/06/26 17:24:11  mkrochma
 <rdar://problem/5450912> BTMM: Stop listening on UDP 5351 for NAT Status Announcements
 
@@ -5022,6 +5025,6 @@ struct CompileTimeAssertionChecks_uDNS
 	// Check our structures are reasonable sizes. Including overly-large buffers, or embedding
 	// other overly-large structures instead of having a pointer to them, can inadvertently
 	// cause structure sizes (and therefore memory usage) to balloon unreasonably.
-	char sizecheck_tcpInfo_t     [(sizeof(tcpInfo_t)      <=  9100) ? 1 : -1];
-	char sizecheck_SearchListElem[(sizeof(SearchListElem) <=  3800) ? 1 : -1];
+	char sizecheck_tcpInfo_t     [(sizeof(tcpInfo_t)      <=  9056) ? 1 : -1];
+	char sizecheck_SearchListElem[(sizeof(SearchListElem) <=  3880) ? 1 : -1];
 	};

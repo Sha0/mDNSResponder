@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: DNSServiceDiscoveryPref.m,v $
+Revision 1.13  2008/07/01 01:40:01  mcguire
+<rdar://problem/5823010> 64-bit fixes
+
 Revision 1.12  2008/05/08 00:46:38  cheshire
 <rdar://problem/5919272> GetNextLabel insufficiently defensive
 User shared copy of GetNextLabel in ClientCommon.c instead of having a local copy here
@@ -92,7 +95,7 @@ Add Preference Pane to facilitate testing of DDNS & wide-area features
 
 @implementation DNSServiceDiscoveryPref
 
-static int
+static NSComparisonResult
 MyArrayCompareFunction(id val1, id val2, void *context)
 {
 	(void)context; // Unused
@@ -100,7 +103,7 @@ MyArrayCompareFunction(id val1, id val2, void *context)
 }
 
 
-static int
+static NSComparisonResult
 MyDomainArrayCompareFunction(id val1, id val2, void *context)
 {
 	(void)context; // Unused
@@ -437,7 +440,7 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
 
 
 
-- (int)numberOfRowsInTableView:(NSTableView *)tableView;
+- (NSInteger)numberOfRowsInTableView:(NSTableView *)tableView;
 {
 	(void)tableView; // Unused
 	int numberOfRows = 0;
@@ -458,7 +461,7 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
 }
  
 
-- (id)tableView:(NSTableView *)tableView objectValueForTableColumn:(NSTableColumn *)tableColumn row:(int)row;
+- (id)tableView:(NSTableView *)tableView objectValueForTableColumn:(NSTableColumn *)tableColumn row:(NSInteger)row;
 {
 	(void)tableView; // Unused
 	NSDictionary *browseDomainDict;
@@ -577,7 +580,7 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
     InitConfigAuthority();
     err = EnsureToolInstalled();
     if (err == noErr) toolInstalled = YES;
-    else fprintf(stderr, "EnsureToolInstalled returned %ld\n", err);
+    else { long int tmp = err; fprintf(stderr, "EnsureToolInstalled returned %ld\n", tmp); }
     
 }
 
@@ -1173,7 +1176,7 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
 }
 
 
-- (BOOL)tableView:(NSTableView *)tableView shouldSelectRow:(int)row;
+- (BOOL)tableView:(NSTableView *)tableView shouldSelectRow:(NSInteger)row;
 {
 	(void)row; // Unused
 	(void)tableView; // Unused

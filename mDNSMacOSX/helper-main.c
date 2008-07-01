@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper-main.c,v $
+Revision 1.16  2008/07/01 01:40:01  mcguire
+<rdar://problem/5823010> 64-bit fixes
+
 Revision 1.15  2008/03/13 20:55:16  mcguire
 <rdar://problem/5769316> fix deprecated warnings/errors
 Additional cleanup: use a conditional macro instead of lots of #if
@@ -153,10 +156,11 @@ static void initialize_id(void)
 
 static void diediedie(CFRunLoopTimerRef timer, void *context)
 	{
-	debug("entry");
+	debug("entry %p %p %d", timer, context, maxidle);
 	assert(gTimer == timer);
+	assert(context);
 	if (maxidle)
-	  (void)proxy_mDNSIdleExit((mach_port_t)context);
+		(void)proxy_mDNSIdleExit(*(mach_port_t*)context);
 	}
 
 void pause_idle_timer(void)
@@ -201,12 +205,14 @@ static void *idletimer(void *context)
 
 static void initialize_timer(mach_port_t port)
 	{
-	CFRunLoopTimerContext cxt = {0, (void *)port, NULL, NULL, NULL};
-	gTimer = CFRunLoopTimerCreate(kCFAllocatorDefault, CFAbsoluteTimeGetCurrent() + actualidle, actualidle, 0, 0, diediedie, &cxt);
+	mach_port_t *ptr = malloc(sizeof(mach_port_t));
+	*ptr = port;
+	CFRunLoopTimerContext ctx = {0, (void *)ptr, NULL, NULL, NULL};
+	gTimer = CFRunLoopTimerCreate(kCFAllocatorDefault, CFAbsoluteTimeGetCurrent() + actualidle, actualidle, 0, 0, diediedie, &ctx);
 	int err = 0;
 
 	debug("entry port=%p", port);
-	if (0 != (err = pthread_create(&idletimer_thread, NULL, idletimer, (void *)port)))
+	if (0 != (err = pthread_create(&idletimer_thread, NULL, idletimer, NULL)))
 		helplog(ASL_LEVEL_ERR, "Could not start idletimer thread: %s", strerror(err));
 	}
 

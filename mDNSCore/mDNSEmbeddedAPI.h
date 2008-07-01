@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.472  2008/07/01 01:39:59  mcguire
+<rdar://problem/5823010> 64-bit fixes
+
 Revision 1.471  2008/06/26 17:24:11  mkrochma
 <rdar://problem/5450912> BTMM: Stop listening on UDP 5351 for NAT Status Announcements
 
@@ -2774,21 +2777,21 @@ struct CompileTimeAssertionChecks_mDNS
 	// Check our structures are reasonable sizes. Including overly-large buffers, or embedding
 	// other overly-large structures instead of having a pointer to them, can inadvertently
 	// cause structure sizes (and therefore memory usage) to balloon unreasonably.
-	char sizecheck_ResourceRecord      [(sizeof(ResourceRecord)       <=    40) ? 1 : -1];
-	char sizecheck_AuthRecord          [(sizeof(AuthRecord)           <=  1290) ? 1 : -1];
-	char sizecheck_CacheRecord         [(sizeof(CacheRecord)          <=   170) ? 1 : -1];
-	char sizecheck_CacheGroup          [(sizeof(CacheGroup)           <=   170) ? 1 : -1];
-	char sizecheck_DNSQuestion         [(sizeof(DNSQuestion)          <=   560) ? 1 : -1];
-	char sizecheck_ZoneData            [(sizeof(ZoneData)             <=  1600) ? 1 : -1];
-	char sizecheck_NATTraversalInfo    [(sizeof(NATTraversalInfo)     <=   140) ? 1 : -1];
-	char sizecheck_HostnameInfo        [(sizeof(HostnameInfo)         <=  3000) ? 1 : -1];
-	char sizecheck_DNSServer           [(sizeof(DNSServer)            <=   300) ? 1 : -1];
-	char sizecheck_NetworkInterfaceInfo[(sizeof(NetworkInterfaceInfo) <=  4000) ? 1 : -1];
-	char sizecheck_ServiceRecordSet    [(sizeof(ServiceRecordSet)     <=  5700) ? 1 : -1];
-	char sizecheck_DomainAuthInfo      [(sizeof(DomainAuthInfo)       <=  6000) ? 1 : -1];
-	char sizecheck_ServiceInfoQuery    [(sizeof(ServiceInfoQuery)     <=  2900) ? 1 : -1];
+	char sizecheck_ResourceRecord      [(sizeof(ResourceRecord)       <=    56) ? 1 : -1];
+	char sizecheck_AuthRecord          [(sizeof(AuthRecord)           <=  1416) ? 1 : -1];
+	char sizecheck_CacheRecord         [(sizeof(CacheRecord)          <=   200) ? 1 : -1];
+	char sizecheck_CacheGroup          [(sizeof(CacheGroup)           <=   184) ? 1 : -1];
+	char sizecheck_DNSQuestion         [(sizeof(DNSQuestion)          <=   720) ? 1 : -1];
+	char sizecheck_ZoneData            [(sizeof(ZoneData)             <=  1552) ? 1 : -1];
+	char sizecheck_NATTraversalInfo    [(sizeof(NATTraversalInfo)     <=   192) ? 1 : -1];
+	char sizecheck_HostnameInfo        [(sizeof(HostnameInfo)         <=  3304) ? 1 : -1];
+	char sizecheck_DNSServer           [(sizeof(DNSServer)            <=   312) ? 1 : -1];
+	char sizecheck_NetworkInterfaceInfo[(sizeof(NetworkInterfaceInfo) <=  4392) ? 1 : -1];
+	char sizecheck_ServiceRecordSet    [(sizeof(ServiceRecordSet)     <=  6248) ? 1 : -1];
+	char sizecheck_DomainAuthInfo      [(sizeof(DomainAuthInfo)       <=  6544) ? 1 : -1];
+	char sizecheck_ServiceInfoQuery    [(sizeof(ServiceInfoQuery)     <=  2912) ? 1 : -1];
 #if APPLE_OSX_mDNSResponder
-	char sizecheck_ClientTunnel        [(sizeof(ClientTunnel)         <=  1040) ? 1 : -1];
+	char sizecheck_ClientTunnel        [(sizeof(ClientTunnel)         <=  1064) ? 1 : -1];
 #endif
 	};
 
