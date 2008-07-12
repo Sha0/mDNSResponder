@@ -190,7 +190,6 @@
 		D284BF040ADD80B00027CCDF /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FF2609FA07B4433800CE10E5 /* Cocoa.framework */; };
 		D284BF050ADD80B00027CCDF /* PreferencePanes.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FF260A1F07B4436900CE10E5 /* PreferencePanes.framework */; };
 		D284BF060ADD80B00027CCDF /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 09AB6884FE841BABC02AAC07 /* CoreFoundation.framework */; };
-		D284C04E0ADD95D30027CCDF /* Info-PreferencePane.plist in Resources */ = {isa = PBXBuildFile; fileRef = D284C04D0ADD95D30027CCDF /* Info-PreferencePane.plist */; };
 		DB2CC4560662DE4500335AB3 /* BaseListener.java in Sources */ = {isa = PBXBuildFile; fileRef = DB2CC4430662DD1100335AB3 /* BaseListener.java */; };
 		DB2CC4570662DE4600335AB3 /* BrowseListener.java in Sources */ = {isa = PBXBuildFile; fileRef = DB2CC4440662DD1100335AB3 /* BrowseListener.java */; };
 		DB2CC4580662DE4700335AB3 /* DNSRecord.java in Sources */ = {isa = PBXBuildFile; fileRef = DB2CC4450662DD1100335AB3 /* DNSRecord.java */; };
@@ -1302,7 +1301,6 @@
 				D284BEF90ADD80B00027CCDF /* InfoPlist.strings in Resources */,
 				D284BEFB0ADD80B00027CCDF /* inprogress.tiff in Resources */,
 				D284BEFC0ADD80B00027CCDF /* installtool in Resources */,
-				D284C04E0ADD95D30027CCDF /* Info-PreferencePane.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
