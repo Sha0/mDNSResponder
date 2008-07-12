@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: PlatformCommon.c,v $
+Revision 1.18  2008/07/12 17:19:41  mkrochma
+<rdar://problem/6068351> mDNSResponder PlatformCommon.c uses sin_len even on non-compliant platforms
+
 Revision 1.17  2008/03/05 00:19:09  cheshire
 Conditionalize LogTimeStamps so it's specific to APPLE_OSX, for now
 
@@ -102,14 +105,18 @@ mDNSexport void mDNSPlatformSourceAddrForDest(mDNSAddr *const src, const mDNSAdd
 	if (sock == -1) return;
 	if (dst->type == mDNSAddrType_IPv4)
 		{
+		#ifndef NOT_HAVE_SA_LEN
 		addr.a4.sin_len         = sizeof(addr.a4);
+		#endif
 		addr.a4.sin_family      = AF_INET;
 		addr.a4.sin_port        = 1;	// Not important, any port will do
 		addr.a4.sin_addr.s_addr = dst->ip.v4.NotAnInteger;
 		}
 	else if (dst->type == mDNSAddrType_IPv6)
 		{
+		#ifndef NOT_HAVE_SA_LEN
 		addr.a6.sin6_len      = sizeof(addr.a6);
+		#endif
 		addr.a6.sin6_family   = AF_INET6;
 		addr.a6.sin6_flowinfo = 0;
 		addr.a6.sin6_port     = 1;	// Not important, any port will do
@@ -117,9 +124,11 @@ mDNSexport void mDNSPlatformSourceAddrForDest(mDNSAddr *const src, const mDNSAdd
 		addr.a6.sin6_scope_id = 0;
 		}
 	else return;
-	
+
+	#ifndef NOT_HAVE_SA_LEN
 	if ((connect(sock, &addr.s, addr.s.sa_len)) < 0)
 		{ LogMsg("mDNSPlatformSourceAddrForDest: connect %#a failed errno %d (%s)", dst, errno, strerror(errno)); goto exit; }
+	#endif
 
 	if ((getsockname(sock, &addr.s, &len)) < 0)
 		{ LogMsg("mDNSPlatformSourceAddrForDest: getsockname failed errno %d (%s)", errno, strerror(errno)); goto exit; }
