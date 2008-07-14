@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: PlatformCommon.c,v $
+Revision 1.19  2008/07/14 17:43:36  mkrochma
+Fix previous check in so connect still gets called
+
 Revision 1.18  2008/07/12 17:19:41  mkrochma
 <rdar://problem/6068351> mDNSResponder PlatformCommon.c uses sin_len even on non-compliant platforms
 
@@ -100,13 +103,15 @@ mDNSexport void mDNSPlatformSourceAddrForDest(mDNSAddr *const src, const mDNSAdd
 	{
 	union { struct sockaddr s; struct sockaddr_in a4; struct sockaddr_in6 a6; } addr;
 	socklen_t len = sizeof(addr);
+	socklen_t inner_len = 0;
 	int sock = socket(AF_INET, SOCK_DGRAM, 0);
 	src->type = mDNSAddrType_None;
 	if (sock == -1) return;
 	if (dst->type == mDNSAddrType_IPv4)
 		{
+		inner_len = sizeof(addr.a4);
 		#ifndef NOT_HAVE_SA_LEN
-		addr.a4.sin_len         = sizeof(addr.a4);
+		addr.a4.sin_len         = inner_len;
 		#endif
 		addr.a4.sin_family      = AF_INET;
 		addr.a4.sin_port        = 1;	// Not important, any port will do
@@ -114,8 +119,9 @@ mDNSexport void mDNSPlatformSourceAddrForDest(mDNSAddr *const src, const mDNSAdd
 		}
 	else if (dst->type == mDNSAddrType_IPv6)
 		{
+		inner_len = sizeof(addr.a6);
 		#ifndef NOT_HAVE_SA_LEN
-		addr.a6.sin6_len      = sizeof(addr.a6);
+		addr.a6.sin6_len      = inner_len;
 		#endif
 		addr.a6.sin6_family   = AF_INET6;
 		addr.a6.sin6_flowinfo = 0;
@@ -125,10 +131,8 @@ mDNSexport void mDNSPlatformSourceAddrForDest(mDNSAddr *const src, const mDNSAdd
 		}
 	else return;
 
-	#ifndef NOT_HAVE_SA_LEN
-	if ((connect(sock, &addr.s, addr.s.sa_len)) < 0)
+	if ((connect(sock, &addr.s, inner_len)) < 0)
 		{ LogMsg("mDNSPlatformSourceAddrForDest: connect %#a failed errno %d (%s)", dst, errno, strerror(errno)); goto exit; }
-	#endif
 
 	if ((getsockname(sock, &addr.s, &len)) < 0)
 		{ LogMsg("mDNSPlatformSourceAddrForDest: getsockname failed errno %d (%s)", errno, strerror(errno)); goto exit; }
