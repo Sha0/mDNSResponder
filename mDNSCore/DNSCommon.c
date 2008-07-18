@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.200  2008/07/18 00:07:50  cheshire
+<rdar://problem/5904999> Log a message for applications that register service types longer than 14 characters
+
 Revision 1.199  2008/03/14 19:58:38  mcguire
 <rdar://problem/5500969> BTMM: Need ability to identify version of mDNSResponder client
 Make sure we add the record when sending LLQ refreshes
@@ -1031,11 +1034,10 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 
 	src = type->c;										// Put the service type into the domain name
 	len = *src;
-	if (len < 2 || len >= 0x40 || (len > 15 && !SameDomainName(domain, &localdomain)))
-		{
-		errormsg = "Application protocol name must be underscore plus 1-14 characters. See <http://www.dns-sd.org/ServiceTypes.html>";
-		goto fail;
-		}
+	if (len < 2 || len > 15)
+		LogMsg("Bad service type in %#s.%##s%##s Application protocol name must be underscore plus 1-14 characters. "
+			"See <http://www.dns-sd.org/ServiceTypes.html>", name->c, type->c, domain->c);
+	if (len < 2 || len >= 0x40 || (len > 15 && !SameDomainName(domain, &localdomain))) return(mDNSNULL);
 	if (src[1] != '_') { errormsg = "Application protocol name must begin with underscore"; goto fail; }
 	for (i=2; i<=len; i++)
 		{
