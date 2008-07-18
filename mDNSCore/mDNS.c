@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.781  2008/07/18 21:37:35  mcguire
+<rdar://problem/5736845> BTMM: alternate SSDP queries between multicast & unicast
+
 Revision 1.780  2008/07/18 02:24:36  cheshire
 <rdar://problem/6041178> Only trigger reconfirm on hostname if both A and AAAA query fail to elicit a response
 Additional fix: Don't want to do the ReconfirmAntecedents() stuff if q->RequestUnicast is set (that indicates
@@ -7117,6 +7120,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 
 	m->UPnPInterfaceID          = 0;
 	m->SSDPSocket               = mDNSNULL;
+	m->SSDPMulticast            = mDNSfalse;
 	m->UPnPRouterPort           = zeroIPPort;
 	m->UPnPSOAPPort             = zeroIPPort;
 	m->UPnPRouterURL            = mDNSNULL;

@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.473  2008/07/18 21:37:42  mcguire
+<rdar://problem/5736845> BTMM: alternate SSDP queries between multicast & unicast
+
 Revision 1.472  2008/07/01 01:39:59  mcguire
 <rdar://problem/5823010> 64-bit fixes
 
@@ -2058,6 +2061,7 @@ struct mDNS_struct
 	tcpLNTInfo       *tcpInfoUnmapList;			// list of pending unmap requests
 	mDNSInterfaceID   UPnPInterfaceID;
 	UDPSocket        *SSDPSocket;               // For SSDP request/response
+	mDNSBool          SSDPMulticast;            // whether we should send the SSDP query via multicast
 	mDNSIPPort        UPnPRouterPort;			// port we send discovery messages to
 	mDNSIPPort        UPnPSOAPPort;				// port we send SOAP messages to
 	mDNSu8           *UPnPRouterURL;			// router's URL string

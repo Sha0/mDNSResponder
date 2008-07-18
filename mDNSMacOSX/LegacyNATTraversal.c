@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.47  2008/07/18 21:37:46  mcguire
+<rdar://problem/5736845> BTMM: alternate SSDP queries between multicast & unicast
+
 Revision 1.46  2008/05/13 01:51:12  mcguire
 <rdar://problem/5839161> UPnP compatibility workaround for Netgear WGT624
 
@@ -826,14 +829,20 @@ mDNSexport void LNT_SendDiscoveryMsg(mDNS *m)
 		"ST:urn:schemas-upnp-org:service:WANIPConnection:1\r\n"
 		"Man:\"ssdp:discover\"\r\n"
 		"MX:3\r\n\r\n";
+	static const mDNSAddr multicastDest = { mDNSAddrType_IPv4, { { { 239, 255, 255, 250 } } } };
+	
+	// Always send the first SSDP packet via unicast
+	if (m->retryIntervalGetAddr <= NATMAP_INIT_RETRY) m->SSDPMulticast = mDNSfalse;
 
 	LogOperation("LNT_SendDiscoveryMsg Router %.4a Current External Address %.4a", &m->Router.ip.v4, &m->ExternalAddress);
 
 	if (!mDNSIPv4AddressIsZero(m->Router.ip.v4) && mDNSIPv4AddressIsZero(m->ExternalAddress))
 		{
 		if (!m->SSDPSocket) { m->SSDPSocket = mDNSPlatformUDPSocket(m, zeroIPPort); LogOperation("LNT_SendDiscoveryMsg created SSDPSocket %p", &m->SSDPSocket); }
-		mDNSPlatformSendUDP(m, msg, msg + sizeof(msg) - 1, 0, &m->Router, SSDPPort);
+		mDNSPlatformSendUDP(m, msg, msg + sizeof(msg) - 1, 0, m->SSDPMulticast ? &multicastDest : &m->Router, SSDPPort);
 		}
+		
+	m->SSDPMulticast = !m->SSDPMulticast;
 	}
 
 #endif /* _LEGACY_NAT_TRAVERSAL_ */
