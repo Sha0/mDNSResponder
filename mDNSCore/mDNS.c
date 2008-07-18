@@ -38,6 +38,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.780  2008/07/18 02:24:36  cheshire
+<rdar://problem/6041178> Only trigger reconfirm on hostname if both A and AAAA query fail to elicit a response
+Additional fix: Don't want to do the ReconfirmAntecedents() stuff if q->RequestUnicast is set (that indicates
+we're still on our first or second query after an interface registration or wake from sleep).
+
 Revision 1.779  2008/07/18 01:05:23  cheshire
 <rdar://problem/6041178> Only trigger reconfirm on hostname if both A and AAAA query fail to elicit a response
 
@@ -2553,10 +2558,12 @@ mDNSlocal void SendQueries(mDNS *const m)
 					{
 					//LogOperation("Accelerating %##s (%s) %d", q->qname.c, DNSTypeName(q->qtype), m->timenow - (q->LastQTime + q->ThisQInterval));
 					q->SendQNow = mDNSInterfaceMark;	// Mark this question for sending on all interfaces
+					debugf("SendQueries: %##s (%s) next interval %d seconds RequestUnicast = %d",
+						q->qname.c, DNSTypeName(q->qtype), q->ThisQInterval / InitialQuestionInterval, q->RequestUnicast);
 					q->ThisQInterval *= QuestionIntervalStep;
 					if (q->ThisQInterval > MaxQuestionInterval)
 						q->ThisQInterval = MaxQuestionInterval;
-					else if (q->CurrentAnswers == 0 && q->ThisQInterval == InitialQuestionInterval * QuestionIntervalStep3 &&
+					else if (q->CurrentAnswers == 0 && q->ThisQInterval == InitialQuestionInterval * QuestionIntervalStep3 && !q->RequestUnicast &&
 							!(RRTypeIsAddressType(q->qtype) && CacheHasAddressTypeForName(m, &q->qname, q->qnamehash)))
 						{
 						// Generally don't need to log this.
@@ -2956,8 +2963,8 @@ mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
 				if (mDNSOpaque16IsZero(q->TargetQID) && ActiveQuestion(q) && ++q->RecentAnswerPkts >= 10 &&
 					q->ThisQInterval > InitialQuestionInterval * QuestionIntervalStep3 && m->timenow - q->LastQTxTime < mDNSPlatformOneSecond)
 					{
-					LogMsg("CacheRecordAdd: %##s (%s) got immediate answer burst; restarting exponential backoff sequence",
-						q->qname.c, DNSTypeName(q->qtype));
+					LogMsg("CacheRecordAdd: %##s (%s) got immediate answer burst (%d); restarting exponential backoff sequence (%d)",
+						q->qname.c, DNSTypeName(q->qtype), q->RecentAnswerPkts, q->ThisQInterval);
 					q->LastQTime      = m->timenow - InitialQuestionInterval + (mDNSs32)mDNSRandom((mDNSu32)mDNSPlatformOneSecond*4);
 					q->ThisQInterval  = InitialQuestionInterval;
 					SetNextQueryTime(m,q);
