@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd_lexer.l,v $
+Revision 1.6  2008/07/18 17:40:46  cheshire
+Removed redundant definition of "YY_NO_UNPUT" (not needed now that we use "%option nounput" instead)
+
 Revision 1.5  2008/06/24 18:32:26  mcguire
 <rdar://problem/6024542> flex producing .c files that result in warnings
 
@@ -49,8 +52,6 @@ extern YYSTYPE yylval;
 #if YY_FLEX_MAJOR_VERSION <= 2 && YY_FLEX_MINOR_VERSION <= 5 && YY_FLEX_SUBMINOR_VERSION <= 4
 int yylineno = 1;
 #endif
-
-#define YY_NO_UNPUT
 
 int  yylex(void);
 
