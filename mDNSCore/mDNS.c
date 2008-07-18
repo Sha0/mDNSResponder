@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.779  2008/07/18 01:05:23  cheshire
+<rdar://problem/6041178> Only trigger reconfirm on hostname if both A and AAAA query fail to elicit a response
+
 Revision 1.778  2008/06/26 17:24:11  mkrochma
 <rdar://problem/5450912> BTMM: Stop listening on UDP 5351 for NAT Status Announcements
 
@@ -2346,6 +2349,18 @@ mDNSlocal void ReconfirmAntecedents(mDNS *const m, const domainname *const name,
 		}
 	}
 
+// If we get no answer for a AAAA query, then before doing an automatic implicit ReconfirmAntecedents
+// we check if we have an address record for the same name. If we do have an IPv4 address for a given
+// name but not an IPv6 address, that's okay (it just means the device doesn't do IPv6) so the failure
+// to get a AAAA response is not grounds to doubt the PTR/SRV chain that lead us to that name.
+mDNSlocal CacheRecord *CacheHasAddressTypeForName(mDNS *const m, const domainname *const name, const mDNSu32 namehash)
+	{
+	CacheGroup *const cg = CacheGroupForName(m, HashSlot(name), namehash, name);
+	CacheRecord *cr = cg ? cg->members : mDNSNULL;
+	while (cr && !RRTypeIsAddressType(cr->resrec.rrtype)) cr=cr->next;
+	return(cr);
+	}
+
 // Only DupSuppressInfos newer than the specified 'time' are allowed to remain active
 mDNSlocal void ExpireDupSuppressInfo(DupSuppressInfo ds[DupSuppressInfoSize], mDNSs32 time)
 	{
@@ -2541,7 +2556,8 @@ mDNSlocal void SendQueries(mDNS *const m)
 					q->ThisQInterval *= QuestionIntervalStep;
 					if (q->ThisQInterval > MaxQuestionInterval)
 						q->ThisQInterval = MaxQuestionInterval;
-					else if (q->CurrentAnswers == 0 && q->ThisQInterval == InitialQuestionInterval * QuestionIntervalStep2)
+					else if (q->CurrentAnswers == 0 && q->ThisQInterval == InitialQuestionInterval * QuestionIntervalStep3 &&
+							!(RRTypeIsAddressType(q->qtype) && CacheHasAddressTypeForName(m, &q->qname, q->qnamehash)))
 						{
 						// Generally don't need to log this.
 						// It's not especially noteworthy if a query finds no results -- this usually happens for domain
