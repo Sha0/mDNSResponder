@@ -43,6 +43,10 @@
     Change History (most recent first):
 
 $Log: DNSServiceDiscoveryPref.m,v $
+Revision 1.14  2008/07/18 17:39:14  cheshire
+If NSInteger is not defined (indicated by lack of definition for NSINTEGER_DEFINED)
+then #define "NSInteger" to be "int" like it used to be
+
 Revision 1.13  2008/07/01 01:40:01  mcguire
 <rdar://problem/5823010> 64-bit fixes
 
@@ -92,6 +96,10 @@ Add Preference Pane to facilitate testing of DDNS & wide-area features
 #import <unistd.h>
 
 #include "../../Clients/ClientCommon.h"
+
+#ifndef NSINTEGER_DEFINED
+#define NSInteger int
+#endif
 
 @implementation DNSServiceDiscoveryPref
 
