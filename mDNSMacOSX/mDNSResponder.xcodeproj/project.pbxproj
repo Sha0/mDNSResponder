@@ -66,8 +66,6 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
-		2151029B0DF48EC700A8086E /* ClientCommon.c in Sources */ = {isa = PBXBuildFile; fileRef = 2151029A0DF48EC700A8086E /* ClientCommon.c */; };
-		215102A00DF48F1C00A8086E /* ClientCommon.c in Sources */ = {isa = PBXBuildFile; fileRef = 2151029A0DF48EC700A8086E /* ClientCommon.c */; };
 		2E0405F50C3195F700F13B59 /* helper.c in Sources */ = {isa = PBXBuildFile; fileRef = 2E0405F40C3195F700F13B59 /* helper.c */; };
 		2E0405F60C31961100F13B59 /* helpermsg.defs in Sources */ = {isa = PBXBuildFile; fileRef = 2E0405EB0C3190DC00F13B59 /* helpermsg.defs */; settings = {ATTRIBUTES = (Server, Client, ); COMPILER_FLAGS = "-Wno-error"; }; };
 		2E0406150C3197CB00F13B59 /* libbsm.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 2E0406140C3197CB00F13B59 /* libbsm.dylib */; };
@@ -221,6 +219,8 @@
 		FFC22AA50B00F43000BAB070 /* DNSServiceDiscoveryReply.defs in Sources */ = {isa = PBXBuildFile; fileRef = 6575FC00022EAFBA00000109 /* DNSServiceDiscoveryReply.defs */; settings = {ATTRIBUTES = (Server, ); }; };
 		FFC22AA60B00F43100BAB070 /* DNSServiceDiscoveryReply.defs in Sources */ = {isa = PBXBuildFile; fileRef = 6575FC00022EAFBA00000109 /* DNSServiceDiscoveryReply.defs */; settings = {ATTRIBUTES = (Server, ); }; };
 		FFC22AA70B00F43100BAB070 /* DNSServiceDiscoveryReply.defs in Sources */ = {isa = PBXBuildFile; fileRef = 6575FC00022EAFBA00000109 /* DNSServiceDiscoveryReply.defs */; settings = {ATTRIBUTES = (Server, ); }; };
+		FFF589B70E37F66800EF515C /* ClientCommon.c in Sources */ = {isa = PBXBuildFile; fileRef = FF5852100DD27BD300862BDF /* ClientCommon.c */; };
+		FFF589C10E37F67E00EF515C /* ClientCommon.c in Sources */ = {isa = PBXBuildFile; fileRef = FF5852100DD27BD300862BDF /* ClientCommon.c */; };
 		FFFA38630AEEDB090065B80A /* dnssd_clientlib.c in Sources */ = {isa = PBXBuildFile; fileRef = FFFA38620AEEDB090065B80A /* dnssd_clientlib.c */; };
 		FFFA38650AEEDB130065B80A /* dnssd_clientstub.c in Sources */ = {isa = PBXBuildFile; fileRef = FFFA38640AEEDB130065B80A /* dnssd_clientstub.c */; };
 		FFFA38660AEEDB2B0065B80A /* dnssd_ipc.c in Sources */ = {isa = PBXBuildFile; fileRef = F5E11B5A04A28126019798ED /* dnssd_ipc.c */; };
@@ -460,7 +460,6 @@
 		000753D303367C1C0CCA2C71 /* mDNSMacOSX.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = mDNSMacOSX.h; sourceTree = "<group>"; };
 		00CA213D02786FC30CCA2C71 /* IOKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = IOKit.framework; path = /System/Library/Frameworks/IOKit.framework; sourceTree = "<absolute>"; };
 		09AB6884FE841BABC02AAC07 /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = /System/Library/Frameworks/CoreFoundation.framework; sourceTree = "<absolute>"; };
-		2151029A0DF48EC700A8086E /* ClientCommon.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = ClientCommon.c; path = ../Clients/ClientCommon.c; sourceTree = SOURCE_ROOT; };
 		2E0405EB0C3190DC00F13B59 /* helpermsg.defs */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.mig; path = helpermsg.defs; sourceTree = "<group>"; };
 		2E0405F00C31955500F13B59 /* mDNSResponderHelper */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = mDNSResponderHelper; sourceTree = BUILT_PRODUCTS_DIR; };
 		2E0405F40C3195F700F13B59 /* helper.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = helper.c; sourceTree = "<group>"; };
@@ -543,6 +542,7 @@
 		FF2C5FB20A48B86E0066DA11 /* RegisterRecordListener.java */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.java; name = RegisterRecordListener.java; path = ../mDNSShared/Java/RegisterRecordListener.java; sourceTree = SOURCE_ROOT; };
 		FF354EB108516C63007C00E1 /* installtool */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.perl; name = installtool; path = PreferencePane/installtool; sourceTree = SOURCE_ROOT; };
 		FF485D5105632E0000130380 /* mDNSResponder.8 */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = mDNSResponder.8; path = ../mDNSShared/mDNSResponder.8; sourceTree = SOURCE_ROOT; };
+		FF5852100DD27BD300862BDF /* ClientCommon.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = ClientCommon.c; path = ../Clients/ClientCommon.c; sourceTree = SOURCE_ROOT; };
 		FF85880B0BD599F40080D89F /* mDNSResponder.sb */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = mDNSResponder.sb; sourceTree = SOURCE_ROOT; };
 		FFA572390AF18F1C0055A0F1 /* libdns_sd_debug.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libdns_sd_debug.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		FFA572450AF18F450055A0F1 /* libdns_sd_profile.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libdns_sd_profile.a; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -737,7 +737,6 @@
 				FFF4F63A06CFE4DD00459EFD /* dnsextd.8 */,
 				FFFF8F800C3307AC00722979 /* dnsextd.conf */,
 				FF85880B0BD599F40080D89F /* mDNSResponder.sb */,
-				2151029A0DF48EC700A8086E /* ClientCommon.c */,
 				7F18A9F60587CEF6001880B3 /* DNSCommon.c */,
 				7F18A9F70587CEF6001880B3 /* uDNS.c */,
 				FF25794606C9A8BF00376F7B /* dnsextd.c */,
@@ -806,6 +805,7 @@
 			children = (
 				6575FC20022EB7AA00000109 /* SamplemDNSClient.c */,
 				FF1C919F07021E3F001048AB /* dns-sd.c */,
+				FF5852100DD27BD300862BDF /* ClientCommon.c */,
 			);
 			name = "Command-Line Clients";
 			sourceTree = "<group>";
@@ -1531,7 +1531,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D284BEA80ADD80920027CCDF /* dns-sd.c in Sources */,
-				2151029B0DF48EC700A8086E /* ClientCommon.c in Sources */,
+				FFF589B70E37F66800EF515C /* ClientCommon.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1577,7 +1577,7 @@
 				D284BEFE0ADD80B00027CCDF /* DNSServiceDiscoveryPref.m in Sources */,
 				D284BEFF0ADD80B00027CCDF /* PrivilegedOperations.c in Sources */,
 				D284BF000ADD80B00027CCDF /* ConfigurationAuthority.c in Sources */,
-				215102A00DF48F1C00A8086E /* ClientCommon.c in Sources */,
+				FFF589C10E37F67E00EF515C /* ClientCommon.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
