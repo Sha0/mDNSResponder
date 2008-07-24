@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper-main.c,v $
+Revision 1.17  2008/07/24 01:04:04  mcguire
+<rdar://problem/6003721> helper spawned every 10s
+
 Revision 1.16  2008/07/01 01:40:01  mcguire
 <rdar://problem/5823010> 64-bit fixes
 
@@ -117,7 +120,7 @@ static aslclient logclient = NULL;
 static int opt_debug;
 static pthread_t idletimer_thread;
 
-unsigned long maxidle = 10;
+unsigned long maxidle = 15;
 unsigned long actualidle = 3600;
 
 CFRunLoopRef gRunLoop = NULL;
