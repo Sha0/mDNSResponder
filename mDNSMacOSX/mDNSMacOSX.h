@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.77  2008/07/24 20:23:04  cheshire
+<rdar://problem/3988320> Should use randomized source ports and transaction IDs to avoid DNS cache poisoning
+
 Revision 1.76  2008/07/01 01:40:01  mcguire
 <rdar://problem/5823010> 64-bit fixes
 
@@ -127,12 +130,19 @@ typedef struct
 
 typedef struct
 	{
+	mDNSIPPort port; // MUST BE FIRST FIELD -- UDPSocket_struct begins with a KQSocketSet,
+	// and mDNSCore requires every UDPSocket_struct to begin with a mDNSIPPort port
 	mDNS                    *m;
 	int                      sktv4;
 	KQueueEntry				 kqsv4;
 	int                      sktv6;
 	KQueueEntry	             kqsv6;
 	} KQSocketSet;
+
+struct UDPSocket_struct
+	{
+	KQSocketSet ss;		// First field of KQSocketSet has to be mDNSIPPort -- mDNSCore requires every UDPSocket_struct to begin with mDNSIPPort port
+	};
 
 struct NetworkInterfaceInfoOSX_struct
 	{

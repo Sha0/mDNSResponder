@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.474  2008/07/24 20:23:03  cheshire
+<rdar://problem/3988320> Should use randomized source ports and transaction IDs to avoid DNS cache poisoning
+
 Revision 1.473  2008/07/18 21:37:42  mcguire
 <rdar://problem/5736845> BTMM: alternate SSDP queries between multicast & unicast
 
@@ -1837,6 +1840,7 @@ struct DNSQuestion_struct
 	mDNSAddr              Target;			// Non-zero if you want to direct queries to a specific unicast target address
 	mDNSIPPort            TargetPort;		// Must be set if Target is set
 	mDNSOpaque16          TargetQID;		// Must be set if Target is set
+	UDPSocket            *LocalSocket;
 	domainname            qname;
 	mDNSu16               qtype;
 	mDNSu16               qclass;
@@ -2024,7 +2028,6 @@ struct mDNS_struct
 	mDNSs32 SuppressStdPort53Queries;       // Wait before allowing the next standard unicast query to the user's configured DNS server
 
 	ServiceRecordSet *ServiceRegistrations;
-	mDNSu16           NextMessageID;
 	DNSServer        *DNSServers;           // list of DNS servers
 
 	mDNSAddr          Router;
@@ -2597,7 +2600,7 @@ extern mDNSBool DNSDigest_VerifyMessage(DNSMessage *msg, mDNSu8 *end, LargeCache
 extern mStatus  mDNSPlatformInit        (mDNS *const m);
 extern void     mDNSPlatformClose       (mDNS *const m);
 extern mStatus  mDNSPlatformSendUDP(const mDNS *const m, const void *const msg, const mDNSu8 *const end,
-mDNSInterfaceID InterfaceID, const mDNSAddr *dst, mDNSIPPort dstport);
+mDNSInterfaceID InterfaceID, UDPSocket *src, const mDNSAddr *dst, mDNSIPPort dstport);
 
 extern void     mDNSPlatformLock        (const mDNS *const m);
 extern void     mDNSPlatformUnlock      (const mDNS *const m);
@@ -2662,7 +2665,7 @@ extern mStatus    mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr *dst, m
 extern void       mDNSPlatformTCPCloseConnection(TCPSocket *sock);
 extern long       mDNSPlatformReadTCP(TCPSocket *sock, void *buf, unsigned long buflen, mDNSBool *closed);
 extern long       mDNSPlatformWriteTCP(TCPSocket *sock, const char *msg, unsigned long len);
-extern UDPSocket *mDNSPlatformUDPSocket(mDNS *const m, mDNSIPPort port);
+extern UDPSocket *mDNSPlatformUDPSocket(mDNS *const m, const mDNSIPPort requestedport);
 extern void       mDNSPlatformUDPClose(UDPSocket *sock);
 extern void       mDNSPlatformSourceAddrForDest(mDNSAddr *const src, const mDNSAddr *const dst);
 

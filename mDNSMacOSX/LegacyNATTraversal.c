@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.48  2008/07/24 20:23:04  cheshire
+<rdar://problem/3988320> Should use randomized source ports and transaction IDs to avoid DNS cache poisoning
+
 Revision 1.47  2008/07/18 21:37:46  mcguire
 <rdar://problem/5736845> BTMM: alternate SSDP queries between multicast & unicast
 
@@ -839,7 +842,7 @@ mDNSexport void LNT_SendDiscoveryMsg(mDNS *m)
 	if (!mDNSIPv4AddressIsZero(m->Router.ip.v4) && mDNSIPv4AddressIsZero(m->ExternalAddress))
 		{
 		if (!m->SSDPSocket) { m->SSDPSocket = mDNSPlatformUDPSocket(m, zeroIPPort); LogOperation("LNT_SendDiscoveryMsg created SSDPSocket %p", &m->SSDPSocket); }
-		mDNSPlatformSendUDP(m, msg, msg + sizeof(msg) - 1, 0, m->SSDPMulticast ? &multicastDest : &m->Router, SSDPPort);
+		mDNSPlatformSendUDP(m, msg, msg + sizeof(msg) - 1, 0, m->SSDPSocket, m->SSDPMulticast ? &multicastDest : &m->Router, SSDPPort);
 		}
 		
 	m->SSDPMulticast = !m->SSDPMulticast;
