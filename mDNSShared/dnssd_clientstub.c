@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.103  2008/07/24 18:51:13  cheshire
+Removed spurious spaces
+
 Revision 1.102  2008/02/25 19:16:19  cheshire
 <rdar://problem/5708953> Problems with DNSServiceGetAddrInfo API
 Was returning a bogus result (NULL pointer) when following a CNAME referral
@@ -306,7 +309,7 @@ struct _DNSRecordRef_t
 static int write_all(dnssd_sock_t sd, char *buf, int len)
 	{
 	// Don't use "MSG_WAITALL"; it returns "Invalid argument" on some Linux versions; use an explicit while() loop instead.
-	//if (send(sd, buf, len, MSG_WAITALL) != len)   return -1;
+	//if (send(sd, buf, len, MSG_WAITALL) != len) return -1;
 	while (len)
 		{
 		ssize_t num_written = send(sd, buf, len, 0);
