@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.783  2008/07/25 07:09:51  mcguire
+<rdar://problem/3988320> Should use randomized source ports and transaction IDs to avoid DNS cache poisoning
+
 Revision 1.782  2008/07/24 20:23:03  cheshire
 <rdar://problem/3988320> Should use randomized source ports and transaction IDs to avoid DNS cache poisoning
 
@@ -4475,6 +4478,7 @@ mDNSlocal mDNSBool ExpectingUnicastResponseForRecord(mDNS *const m, const mDNSAd
 	{
 	DNSQuestion *q;
 	(void)id;
+	(void)srcaddr;
 	for (q = m->Questions; q; q=q->next)
 		if (ResourceRecordAnswersQuestion(&rr->resrec, q))
 			{
