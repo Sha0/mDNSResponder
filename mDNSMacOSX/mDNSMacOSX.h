@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.78  2008/07/25 22:34:11  mcguire
+fix sizecheck issues for 64bit
+
 Revision 1.77  2008/07/24 20:23:04  cheshire
 <rdar://problem/3988320> Should use randomized source ports and transaction IDs to avoid DNS cache poisoning
 
@@ -236,7 +239,7 @@ struct CompileTimeAssertionChecks_mDNSMacOSX
 	// other overly-large structures instead of having a pointer to them, can inadvertently
 	// cause structure sizes (and therefore memory usage) to balloon unreasonably.
 	char sizecheck_NetworkInterfaceInfoOSX[(sizeof(NetworkInterfaceInfoOSX) <=  4456) ? 1 : -1];
-	char sizecheck_mDNS_PlatformSupport   [(sizeof(mDNS_PlatformSupport)    <=   352) ? 1 : -1];
+	char sizecheck_mDNS_PlatformSupport   [(sizeof(mDNS_PlatformSupport)    <=   360) ? 1 : -1];
 	};
 
 #ifdef  __cplusplus

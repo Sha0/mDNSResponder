@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.475  2008/07/25 22:34:11  mcguire
+fix sizecheck issues for 64bit
+
 Revision 1.474  2008/07/24 20:23:03  cheshire
 <rdar://problem/3988320> Should use randomized source ports and transaction IDs to avoid DNS cache poisoning
 
@@ -2788,17 +2791,17 @@ struct CompileTimeAssertionChecks_mDNS
 	char sizecheck_AuthRecord          [(sizeof(AuthRecord)           <=  1416) ? 1 : -1];
 	char sizecheck_CacheRecord         [(sizeof(CacheRecord)          <=   200) ? 1 : -1];
 	char sizecheck_CacheGroup          [(sizeof(CacheGroup)           <=   184) ? 1 : -1];
-	char sizecheck_DNSQuestion         [(sizeof(DNSQuestion)          <=   720) ? 1 : -1];
-	char sizecheck_ZoneData            [(sizeof(ZoneData)             <=  1552) ? 1 : -1];
+	char sizecheck_DNSQuestion         [(sizeof(DNSQuestion)          <=   728) ? 1 : -1];
+	char sizecheck_ZoneData            [(sizeof(ZoneData)             <=  1560) ? 1 : -1];
 	char sizecheck_NATTraversalInfo    [(sizeof(NATTraversalInfo)     <=   192) ? 1 : -1];
 	char sizecheck_HostnameInfo        [(sizeof(HostnameInfo)         <=  3304) ? 1 : -1];
 	char sizecheck_DNSServer           [(sizeof(DNSServer)            <=   312) ? 1 : -1];
 	char sizecheck_NetworkInterfaceInfo[(sizeof(NetworkInterfaceInfo) <=  4392) ? 1 : -1];
 	char sizecheck_ServiceRecordSet    [(sizeof(ServiceRecordSet)     <=  6248) ? 1 : -1];
 	char sizecheck_DomainAuthInfo      [(sizeof(DomainAuthInfo)       <=  6544) ? 1 : -1];
-	char sizecheck_ServiceInfoQuery    [(sizeof(ServiceInfoQuery)     <=  2912) ? 1 : -1];
+	char sizecheck_ServiceInfoQuery    [(sizeof(ServiceInfoQuery)     <=  2944) ? 1 : -1];
 #if APPLE_OSX_mDNSResponder
-	char sizecheck_ClientTunnel        [(sizeof(ClientTunnel)         <=  1064) ? 1 : -1];
+	char sizecheck_ClientTunnel        [(sizeof(ClientTunnel)         <=  1072) ? 1 : -1];
 #endif
 	};
 

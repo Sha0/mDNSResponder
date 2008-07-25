@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.389  2008/07/25 22:34:11  mcguire
+fix sizecheck issues for 64bit
+
 Revision 1.388  2008/07/01 01:40:02  mcguire
 <rdar://problem/5823010> 64-bit fixes
 
@@ -3960,7 +3963,7 @@ struct CompileTimeAssertionChecks_uds_daemon
 	char sizecheck_request_state          [(sizeof(request_state)           <= 1760) ? 1 : -1];
 	char sizecheck_registered_record_entry[(sizeof(registered_record_entry) <=   40) ? 1 : -1];
 	char sizecheck_service_instance       [(sizeof(service_instance)        <= 6552) ? 1 : -1];
-	char sizecheck_browser_t              [(sizeof(browser_t)               <=  984) ? 1 : -1];
+	char sizecheck_browser_t              [(sizeof(browser_t)               <=  992) ? 1 : -1];
 	char sizecheck_reply_hdr              [(sizeof(reply_hdr)               <=   12) ? 1 : -1];
 	char sizecheck_reply_state            [(sizeof(reply_state)             <=   64) ? 1 : -1];
 	};

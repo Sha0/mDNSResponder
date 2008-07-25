@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.569  2008/07/25 22:34:11  mcguire
+fix sizecheck issues for 64bit
+
 Revision 1.568  2008/07/24 20:23:03  cheshire
 <rdar://problem/3988320> Should use randomized source ports and transaction IDs to avoid DNS cache poisoning
 
@@ -5032,5 +5035,5 @@ struct CompileTimeAssertionChecks_uDNS
 	// other overly-large structures instead of having a pointer to them, can inadvertently
 	// cause structure sizes (and therefore memory usage) to balloon unreasonably.
 	char sizecheck_tcpInfo_t     [(sizeof(tcpInfo_t)      <=  9056) ? 1 : -1];
-	char sizecheck_SearchListElem[(sizeof(SearchListElem) <=  3880) ? 1 : -1];
+	char sizecheck_SearchListElem[(sizeof(SearchListElem) <=  3920) ? 1 : -1];
 	};
