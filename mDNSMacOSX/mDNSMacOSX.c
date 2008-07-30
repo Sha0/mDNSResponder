@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.540  2008/07/30 00:55:56  mcguire
+<rdar://problem/3988320> Should use randomized source ports and transaction IDs to avoid DNS cache poisoning
+Additional fixes so that we know when a socket has been closed while in a loop reading from it
+
 Revision 1.539  2008/07/24 20:23:04  cheshire
 <rdar://problem/3988320> Should use randomized source ports and transaction IDs to avoid DNS cache poisoning
 
@@ -1217,9 +1221,9 @@ mDNSlocal ssize_t myrecvfrom(const int s, void *const buffer, const size_t max,
 
 mDNSlocal void myKQSocketCallBack(int s1, short filter, void *context)
 	{
-	const KQSocketSet *const ss = (const KQSocketSet *)context;
+	KQSocketSet *const ss = (KQSocketSet *)context;
 	mDNS *const m = ss->m;
-	int err, count = 0;
+	int err = 0, count = 0, closed = 0;
 
 	if (filter != EVFILT_READ)
 		LogMsg("myKQSocketCallBack: Why is filter %d not EVFILT_READ (%d)?", filter, EVFILT_READ);
@@ -1231,7 +1235,7 @@ mDNSlocal void myKQSocketCallBack(int s1, short filter, void *context)
 		LogMsg("myKQSocketCallBack: sktv6 %d", ss->sktv6);
  		}
 
-	while (1)
+	while (!closed)
 		{
 		mDNSAddr senderAddr, destAddr;
 		mDNSIPPort senderPort;
@@ -1280,7 +1284,17 @@ mDNSlocal void myKQSocketCallBack(int s1, short filter, void *context)
 //		LogMsg("myKQSocketCallBack got packet from %#a to %#a on interface %#a/%s",
 //			&senderAddr, &destAddr, &ss->info->ifinfo.ip, ss->info->ifa_name);
 
+		// mDNSCoreReceive may close the socket we're reading from.  We must break out of our
+		// loop when that happens, or we may try to read from an invalid FD.  We do this by
+		// setting the closeFlag pointer in the socketset, so CloseSocketSet can inform us
+		// if it closes the socketset.
+		ss->closeFlag = &closed;
+
 		mDNSCoreReceive(m, &m->imsg, (unsigned char*)&m->imsg + err, &senderAddr, senderPort, &destAddr, ss->port, InterfaceID);
+
+		// if we didn't close, we can safely dereference the socketset, and should to
+		// reset the closeFlag, since it points to something on the stack
+		if (!closed) ss->closeFlag = mDNSNULL;
 		}
 
 	if (err < 0 && (errno != EWOULDBLOCK || count == 0))
@@ -1740,6 +1754,8 @@ mDNSlocal mStatus SetupSocket(KQSocketSet *cp, const mDNSIPPort port, u_short sa
 	const int twofivefive = 255;
 	mStatus err = mStatus_NoError;
 	char *errstr = mDNSNULL;
+	
+	cp->closeFlag = mDNSNULL;
 
 	int skt = socket(sa_family, SOCK_DGRAM, IPPROTO_UDP);
 	if (skt < 3) { if (errno != EAFNOSUPPORT) LogMsg("SetupSocket: socket error %d errno %d (%s)", skt, errno, strerror(errno)); return(skt); }
@@ -1892,6 +1908,7 @@ mDNSlocal void CloseSocketSet(KQSocketSet *ss)
 		close(ss->sktv6);
 		ss->sktv6 = -1;
 		}
+	if (ss->closeFlag) *ss->closeFlag = 1;
 	}
 
 mDNSexport void mDNSPlatformUDPClose(UDPSocket *sock)

@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.79  2008/07/30 00:55:56  mcguire
+<rdar://problem/3988320> Should use randomized source ports and transaction IDs to avoid DNS cache poisoning
+Additional fixes so that we know when a socket has been closed while in a loop reading from it
+
 Revision 1.78  2008/07/25 22:34:11  mcguire
 fix sizecheck issues for 64bit
 
@@ -140,6 +144,7 @@ typedef struct
 	KQueueEntry				 kqsv4;
 	int                      sktv6;
 	KQueueEntry	             kqsv6;
+	int                     *closeFlag;
 	} KQSocketSet;
 
 struct UDPSocket_struct
@@ -239,7 +244,7 @@ struct CompileTimeAssertionChecks_mDNSMacOSX
 	// other overly-large structures instead of having a pointer to them, can inadvertently
 	// cause structure sizes (and therefore memory usage) to balloon unreasonably.
 	char sizecheck_NetworkInterfaceInfoOSX[(sizeof(NetworkInterfaceInfoOSX) <=  4456) ? 1 : -1];
-	char sizecheck_mDNS_PlatformSupport   [(sizeof(mDNS_PlatformSupport)    <=   360) ? 1 : -1];
+	char sizecheck_mDNS_PlatformSupport   [(sizeof(mDNS_PlatformSupport)    <=   368) ? 1 : -1];
 	};
 
 #ifdef  __cplusplus
