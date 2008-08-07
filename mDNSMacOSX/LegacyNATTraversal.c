@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.49  2008/08/07 21:51:13  mcguire
+<rdar://problem/5904423> UPnP: Possible memory corruption bug
+<rdar://problem/5930173> UPnP: Combine URL parsing code
+
 Revision 1.48  2008/07/24 20:23:04  cheshire
 <rdar://problem/3988320> Should use randomized source ports and transaction IDs to avoid DNS cache poisoning
 
@@ -211,6 +215,66 @@ mDNSlocal mStatus SendPortMapRequest(mDNS *m, NATTraversalInfo *n);
 
 #define RequestedPortNum(n) (mDNSVal16(mDNSIPPortIsZero((n)->RequestedPort) ? (n)->IntPort : (n)->RequestedPort) + (n)->tcpInfo.retries)
 
+// Note that this function assumes src is already NULL terminated
+mDNSlocal void AllocAndCopy(mDNSu8** dst, mDNSu8* src)
+	{
+	if (src == mDNSNULL) return;
+	if ((*dst = (mDNSu8 *) mDNSPlatformMemAllocate(strlen((char*)src) + 1)) == mDNSNULL) { LogMsg("AllocAndCopy: can't allocate string"); return; }
+	strcpy((char *)*dst, (char*)src);
+	}
+
+// This function does a simple parse of an HTTP URL that may include a hostname, port, and path
+// If found in the URL, addressAndPort and path out params will point to newly allocated space (and will leak if they were previously pointing at allocated space)
+mDNSlocal mStatus ParseHttpUrl(char* ptr, char* end, mDNSu8** addressAndPort, mDNSIPPort* port, mDNSu8** path)
+	{
+	// if the data begins with "http://", we assume there is a hostname and possibly a port number
+	if (end - ptr >= 7 && strncasecmp(ptr, "http://", 7) == 0)
+		{
+		int  i;
+		char* stop = end;
+		char* addrPtr = mDNSNULL;
+		
+		ptr += 7; //skip over "http://"
+		if (ptr >= end) { LogOperation("ParseHttpUrl: past end of buffer parsing host:port"); return mStatus_BadParamErr; }
+		
+		// find the end of the host:port
+		addrPtr = ptr;
+		for (i = 0; addrPtr && addrPtr != end; i++, addrPtr++) if (*addrPtr == '/') break;
+
+		// allocate the buffer (len i+1 so we have space to terminate the string)
+		if ((*addressAndPort = (mDNSu8 *) mDNSPlatformMemAllocate(i+1)) == mDNSNULL) { LogMsg("ParseHttpUrl: can't allocate address string"); return mStatus_NoMemoryErr; }
+		strncpy((char *)*addressAndPort, ptr, i);
+		(*addressAndPort)[i] = '\0';
+
+		// find the port number in the string, by looking backwards for the ':'
+		stop = ptr;    // can't go back farther than the original start
+		ptr = addrPtr; // move ptr to the path part
+		
+		for (addrPtr--;addrPtr>stop;addrPtr--)
+			{
+			if (*addrPtr == ':')
+				{
+				int tmpport;
+				addrPtr++; // skip over ':'
+				tmpport = (int)strtol(addrPtr, mDNSNULL, 10);
+				*port = mDNSOpaque16fromIntVal(tmpport); // store it properly converted
+				break;
+				}
+			}
+		}
+		
+	// ptr should now point to the first character we haven't yet processed
+	// everything that remains is the path
+	if (ptr < end)
+		{
+		if ((*path = (mDNSu8 *)mDNSPlatformMemAllocate(end - ptr + 1)) == mDNSNULL) { LogMsg("ParseHttpUrl: can't mDNSPlatformMemAllocate path"); return mStatus_NoMemoryErr; }
+		strncpy((char *)*path, ptr, end - ptr);
+		(*path)[end - ptr] = '\0';
+		}
+		
+	return mStatus_NoError;
+	}
+
 // This function parses the xml body of the device description response from the router. Basically, we look to make sure this is a response
 // referencing a service we care about (WANIPConnection), look for the "controlURL" header immediately following, and copy the addressing and URL info we need
 mDNSlocal void handleLNTDeviceDescriptionResponse(tcpLNTInfo *tcpInfo)
@@ -244,61 +308,28 @@ mDNSlocal void handleLNTDeviceDescriptionResponse(tcpLNTInfo *tcpInfo)
 	// fill in default port
 	m->UPnPSOAPPort = m->UPnPRouterPort;
 
-	// is there an address string "http://"?
-	if (strncasecmp(ptr, "http://", 7) == 0)
+	// free string pointers and set to NULL	
+	if (m->UPnPSOAPAddressString != mDNSNULL)
 		{
-		int  i;
-		char *addrPtr = mDNSNULL;
-		
-		ptr += 7;						//skip over "http://"
-		if (ptr >= end) { LogOperation("handleLNTDeviceDescriptionResponse: past end of buffer and no URL!"); return; }
-		addrPtr = ptr;
-		for (i = 0; addrPtr && addrPtr != end; i++, addrPtr++) if (*addrPtr == '/') break; // first find the beginning of the URL and count the chars
-		if (addrPtr == mDNSNULL || addrPtr == end) { LogOperation("handleLNTDeviceDescriptionResponse: didn't find SOAP address string"); return; }
-
-		// allocate the buffer (len i+1 so we have space to terminate the string)
-		if (m->UPnPSOAPAddressString != mDNSNULL)  mDNSPlatformMemFree(m->UPnPSOAPAddressString);
-		if ((m->UPnPSOAPAddressString = (mDNSu8 *) mDNSPlatformMemAllocate(i+1)) == mDNSNULL) { LogMsg("can't allocate SOAP address string"); return; }
-		
-		strncpy((char *)m->UPnPSOAPAddressString, ptr, i);				// copy the address string
-		m->UPnPSOAPAddressString[i] = '\0';								// terminate the string
-		
-		stop = ptr; // remember where to stop (just after "http://")
-		ptr = addrPtr; // move ptr past the rest of what we just processed
-		
-		// find the port number in the string
-		for (addrPtr--;addrPtr>stop;addrPtr--)
-			{
-			if (*addrPtr == ':')
-				{
-				int port;
-				addrPtr++; // skip over ':'
-				port = (int)strtol(addrPtr, mDNSNULL, 10);
-				m->UPnPSOAPPort = mDNSOpaque16fromIntVal(port);		// store it properly converted
-				break;
-				}
-			}
+		mDNSPlatformMemFree(m->UPnPSOAPAddressString);
+		m->UPnPSOAPAddressString = mDNSNULL;
 		}
-
-	if (m->UPnPSOAPAddressString == mDNSNULL) m->UPnPSOAPAddressString = m->UPnPRouterAddressString; // just copy the pointer, don't allocate more memory
-	LogOperation("handleLNTDeviceDescriptionResponse: SOAP address string [%s]", m->UPnPSOAPAddressString);
-
-	// ptr should now point to the first character we haven't yet processed
-	if (ptr != end)
+	if (m->UPnPSOAPURL != mDNSNULL)
 		{
-		// allocate the buffer
-		if (m->UPnPSOAPURL != mDNSNULL) mDNSPlatformMemFree(m->UPnPSOAPURL);
-		if ((m->UPnPSOAPURL = (mDNSu8 *)mDNSPlatformMemAllocate(end - ptr + 1)) == mDNSNULL) { LogMsg("can't mDNSPlatformMemAllocate SOAP URL"); return; }
-		
-		// now copy
-		strncpy((char *)m->UPnPSOAPURL, ptr, end - ptr); // this URL looks something like "/uuid:0013-108c-4b3f0000f3dc"
-		m->UPnPSOAPURL[end - ptr] = '\0';				 // terminate the string
+		mDNSPlatformMemFree(m->UPnPSOAPURL);
+		m->UPnPSOAPURL = mDNSNULL; 
 		}
-
-	// if we get to the end and haven't found the URL fill in the defaults
-	if (m->UPnPSOAPURL == mDNSNULL) m->UPnPSOAPURL = m->UPnPRouterURL;	// just copy the pointer, don't allocate more memory
 	
-	LogOperation("handleLNTDeviceDescriptionResponse: SOAP URL [%s] port %d", m->UPnPSOAPURL, mDNSVal16(m->UPnPSOAPPort));
+	if (ParseHttpUrl(ptr, end, &m->UPnPSOAPAddressString, &m->UPnPSOAPPort, &m->UPnPSOAPURL) != mStatus_NoError) return;
+	// the SOAPURL should look something like "/uuid:0013-108c-4b3f0000f3dc"
+
+	if (m->UPnPSOAPAddressString == mDNSNULL) AllocAndCopy(&m->UPnPSOAPAddressString, m->UPnPRouterAddressString);
+	if (m->UPnPSOAPAddressString == mDNSNULL) LogMsg("handleLNTDeviceDescriptionResponse: UPnPSOAPAddressString is NULL");
+	else LogOperation("handleLNTDeviceDescriptionResponse: SOAP address string [%s]", m->UPnPSOAPAddressString);
+
+	if (m->UPnPSOAPURL == mDNSNULL) AllocAndCopy(&m->UPnPSOAPURL, m->UPnPRouterURL);
+	if (m->UPnPSOAPURL == mDNSNULL) LogMsg("handleLNTDeviceDescriptionResponse: UPnPSOAPURL is NULL");
+	else LogOperation("handleLNTDeviceDescriptionResponse: SOAP URL [%s]", m->UPnPSOAPURL);
 	}
 
 mDNSlocal void handleLNTGetExternalAddressResponse(tcpLNTInfo *tcpInfo)
@@ -733,6 +764,7 @@ mDNSexport void LNT_ConfigureRouterInfo(mDNS *m, const mDNSInterfaceID Interface
 	{
 	char *ptr = (char *)data;
 	char *end = (char *)data + len;
+	char *stop = ptr;
 
 	// The formatting of the HTTP header is not always the same when it comes to the placement of
 	// the service and location strings, so we just look for each of them from the beginning for every response
@@ -749,74 +781,46 @@ mDNSexport void LNT_ConfigureRouterInfo(mDNS *m, const mDNSInterfaceID Interface
 	ptr = (char *)data;
 	while (ptr && ptr != end)
 		{
-		if (*ptr == 'L' && (strncasecmp(ptr, "Location", 8) == 0)) break;			// find the first 'L'; is this Location? if not, keep looking
+		if (*ptr == 'L' && (strncasecmp(ptr, "Location:", 9) == 0)) break;			// find the first 'L'; is this Location? if not, keep looking
 		ptr++;
 		}
 	if (ptr == mDNSNULL || ptr == end) return;	// not a message we care about
+	ptr += 9; //Skip over 'Location:'
+	while (*ptr == ' ' && ptr < end) ptr++; // skip over spaces
+	if (ptr >= end) return;
 	
-	// find "http://", starting from where we left off
-	while (ptr && ptr != end)
-		{
-		if (*ptr == 'h' && (strncasecmp(ptr, "http://", 7) == 0))					// find the first 'h'; is this a URL? if not, keep looking
-			{
-			int i;
-			char *addrPtr = mDNSNULL;
-			
-			ptr += 7;							//skip over "http://"
-			if (ptr >= end) { LogOperation("LNT_ConfigureRouterInfo: past end of buffer and no URL!"); return; }
-			addrPtr = ptr;
-			for (i = 0; addrPtr && addrPtr != end; i++, addrPtr++) if (*addrPtr == '/') break;	// first find the beginning of the URL and count the chars
-			if (addrPtr == mDNSNULL || addrPtr == end) return; // not a valid message
+	// find the end of the line
+	for (stop = ptr; stop != end; stop++) { if (*stop == '\r') { end = stop; break; } }
 	
-			// allocate the buffer (len i+1 so we have space to terminate the string)
-			if (m->UPnPRouterAddressString != mDNSNULL)  mDNSPlatformMemFree(m->UPnPRouterAddressString);
-			if ((m->UPnPRouterAddressString = (mDNSu8 *) mDNSPlatformMemAllocate(i+1)) == mDNSNULL) { LogMsg("can't mDNSPlatformMemAllocate router address string"); return; }
-			
-			strncpy((char *)m->UPnPRouterAddressString, ptr, i);	// copy the address string
-			m->UPnPRouterAddressString[i] = '\0';					// terminate the string
-			LogOperation("LNT_ConfigureRouterInfo: router address string [%s]", m->UPnPRouterAddressString);
-			break;
-			}
-		ptr++;	// continue
-		}
+	// fill in default port
+	m->UPnPRouterPort = mDNSOpaque16fromIntVal(80);
 
-	// find port and router URL, starting after the "http://" if it was there
-	while (ptr && ptr != end)
+	// free string pointers and set to NULL	
+	if (m->UPnPRouterAddressString != mDNSNULL)
 		{
-		if (*ptr == ':')										// found the port number
-			{
-			int port;
-			ptr++;										// skip over ':'
-			if (ptr == end) { LogOperation("LNT_ConfigureRouterInfo: reached end of buffer and no address!"); return; }
-			port = (int)strtol(ptr, (char **)mDNSNULL, 10);			// get the port
-			m->UPnPRouterPort = mDNSOpaque16fromIntVal(port);	// store it properly converted
-			}
-		else if (*ptr == '/')									// found router URL
-			{
-			int j;
-			char *urlPtr;
-			m->UPnPInterfaceID = InterfaceID;
-			if (mDNSIPPortIsZero(m->UPnPRouterPort)) m->UPnPRouterPort = mDNSOpaque16fromIntVal(80);		// fill in default port if we didn't find one before
-			
-			urlPtr = ptr;
-			for (j = 0; urlPtr && urlPtr != end; j++, urlPtr++) if (*urlPtr == '\r') break;	// first find the end of the line and count the chars
-			if (urlPtr == mDNSNULL || urlPtr == end) return; // not a valid message
-			
-			// allocate the buffer (len j+1 so we have space to terminate the string)
-			if (m->UPnPRouterURL != mDNSNULL) mDNSPlatformMemFree(m->UPnPRouterURL);
-			if ((m->UPnPRouterURL = (mDNSu8 *) mDNSPlatformMemAllocate(j+1)) == mDNSNULL) { LogMsg("can't allocate router URL"); return; }
-			
-			// now copy everything to the end of the line
-			strncpy((char *)m->UPnPRouterURL, ptr, j);			// this URL looks something like "/dyndev/uuid:0013-108c-4b3f0000f3dc"
-			m->UPnPRouterURL[j] = '\0';					// terminate the string
-			break;									// we've got everything we need, so get out here
-			}
-		ptr++;	// continue
+		mDNSPlatformMemFree(m->UPnPRouterAddressString);
+		m->UPnPRouterAddressString = mDNSNULL;
 		}
-
-	if (ptr == mDNSNULL || ptr == end) return;	// not a valid message
-	LogOperation("Router port %d, URL set to [%s]...", mDNSVal16(m->UPnPRouterPort), m->UPnPRouterURL);
+	if (m->UPnPRouterURL != mDNSNULL)
+		{
+		mDNSPlatformMemFree(m->UPnPRouterURL);
+		m->UPnPRouterURL = mDNSNULL; 
+		}
 	
+	if (ParseHttpUrl(ptr, end, &m->UPnPRouterAddressString, &m->UPnPRouterPort, &m->UPnPRouterURL) != mStatus_NoError) return;
+	// the Router URL should look something like "/dyndev/uuid:0013-108c-4b3f0000f3dc"
+	
+	m->UPnPInterfaceID = InterfaceID;
+
+	if (m->UPnPRouterAddressString == mDNSNULL) LogMsg("LNT_ConfigureRouterInfo: UPnPRouterAddressString is NULL");
+	else LogOperation("LNT_ConfigureRouterInfo: Router address string [%s]", m->UPnPRouterAddressString);
+
+	if (m->UPnPRouterURL == mDNSNULL) LogMsg("LNT_ConfigureRouterInfo: UPnPRouterURL is NULL");
+	else LogOperation("LNT_ConfigureRouterInfo: Router URL [%s]", m->UPnPRouterURL);
+
+	LogOperation("LNT_ConfigureRouterInfo: Router port %d", mDNSVal16(m->UPnPRouterPort));
+	LogOperation("LNT_ConfigureRouterInfo: Router interface %d", m->UPnPInterfaceID);
+
 	// Don't need the SSDP socket anymore
 	if (m->SSDPSocket) { LogOperation("LNT_ConfigureRouterInfo destroying SSDPSocket %p", &m->SSDPSocket); mDNSPlatformUDPClose(m->SSDPSocket); m->SSDPSocket = mDNSNULL; }
 
