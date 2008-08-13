@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper-main.c,v $
+Revision 1.20  2008/08/13 23:11:35  mcguire
+<rdar://problem/5858535> handle SIGTERM in mDNSResponderHelper
+
 Revision 1.19  2008/08/13 23:04:06  mcguire
 <rdar://problem/5858535> handle SIGTERM in mDNSResponderHelper
 Preparation: rename message function, as it will no longer be called only on idle exit
@@ -148,6 +151,13 @@ void helplog(int level, const char *fmt, ...)
 	va_start(ap, fmt);
 	helplogv(level, fmt, ap);
 	va_end(ap);
+	}
+
+static void handle_sigterm(int sig)
+	{
+	debug("entry sig=%d", sig);
+	assert(sig == SIGTERM);
+	(void)proxy_mDNSExit(gPort);
 	}
 
 static void initialize_logging(void)
@@ -326,6 +336,8 @@ int main(int ac, char *av[])
 
 	if (maxidle) actualidle = maxidle;
 	initialize_timer();
+
+	signal(SIGTERM, handle_sigterm);
 
 	kr = mach_msg_server(helper_server, MAX_MSG_SIZE, gPort,
 		MACH_RCV_TRAILER_ELEMENTS(MACH_RCV_TRAILER_AUDIT) | MACH_RCV_TRAILER_TYPE(MACH_MSG_TRAILER_FORMAT_0));
