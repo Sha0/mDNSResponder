@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: helper-main.c,v $
+Revision 1.18  2008/08/13 22:56:32  mcguire
+<rdar://problem/5858535> handle SIGTERM in mDNSResponderHelper
+Preparation: store mach port in global variable so we can write to it from a signal handler
+
 Revision 1.17  2008/07/24 01:04:04  mcguire
 <rdar://problem/6003721> helper spawned every 10s
 
@@ -126,6 +130,8 @@ unsigned long actualidle = 3600;
 CFRunLoopRef gRunLoop = NULL;
 CFRunLoopTimerRef gTimer = NULL;
 
+mach_port_t gPort = MACH_PORT_NULL;
+
 static void helplogv(int level, const char *fmt, va_list ap)
 	{
 	if (NULL == logclient) { vfprintf(stderr, fmt, ap); fflush(stderr); }
@@ -161,9 +167,8 @@ static void diediedie(CFRunLoopTimerRef timer, void *context)
 	{
 	debug("entry %p %p %d", timer, context, maxidle);
 	assert(gTimer == timer);
-	assert(context);
 	if (maxidle)
-		(void)proxy_mDNSIdleExit(*(mach_port_t*)context);
+		(void)proxy_mDNSIdleExit(gPort);
 	}
 
 void pause_idle_timer(void)
@@ -206,15 +211,12 @@ static void *idletimer(void *context)
 	return NULL;
 	}
 
-static void initialize_timer(mach_port_t port)
+static void initialize_timer()
 	{
-	mach_port_t *ptr = malloc(sizeof(mach_port_t));
-	*ptr = port;
-	CFRunLoopTimerContext ctx = {0, (void *)ptr, NULL, NULL, NULL};
-	gTimer = CFRunLoopTimerCreate(kCFAllocatorDefault, CFAbsoluteTimeGetCurrent() + actualidle, actualidle, 0, 0, diediedie, &ctx);
+	gTimer = CFRunLoopTimerCreate(kCFAllocatorDefault, CFAbsoluteTimeGetCurrent() + actualidle, actualidle, 0, 0, diediedie, NULL);
 	int err = 0;
 
-	debug("entry port=%p", port);
+	debug("entry");
 	if (0 != (err = pthread_create(&idletimer_thread, NULL, idletimer, NULL)))
 		helplog(ASL_LEVEL_ERR, "Could not start idletimer thread: %s", strerror(err));
 	}
@@ -281,7 +283,6 @@ int main(int ac, char *av[])
 	{
 	char *p = NULL;
 	kern_return_t kr = KERN_FAILURE;
-	mach_port_t port = MACH_PORT_NULL;
 	long n;
 	int ch;
 
@@ -312,17 +313,17 @@ int main(int ac, char *av[])
 	// Explicitly ensure that our Keychain operations utilize the system domain.
 	SecKeychainSetPreferenceDomain(kSecPreferencesDomainSystem);
 #endif
-	port = checkin(kmDNSHelperServiceName);
-	if (!port)
+	gPort = checkin(kmDNSHelperServiceName);
+	if (!gPort)
 		{
 		helplog(ASL_LEVEL_ERR, "Launchd provided no launchdata; will open Mach port explicitly");
-		port = register_service(kmDNSHelperServiceName);
+		gPort = register_service(kmDNSHelperServiceName);
 		}
 
 	if (maxidle) actualidle = maxidle;
-	initialize_timer(port);
+	initialize_timer();
 
-	kr = mach_msg_server(helper_server, MAX_MSG_SIZE, port,
+	kr = mach_msg_server(helper_server, MAX_MSG_SIZE, gPort,
 		MACH_RCV_TRAILER_ELEMENTS(MACH_RCV_TRAILER_AUDIT) | MACH_RCV_TRAILER_TYPE(MACH_MSG_TRAILER_FORMAT_0));
 	if (KERN_SUCCESS != kr)
 		{ helplog(ASL_LEVEL_ERR, "mach_msg_server: %s\n", mach_error_string(kr)); exit(EXIT_FAILURE); }
