@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.784  2008/08/13 00:47:53  mcguire
+Handle failures when packet logging
+
 Revision 1.783  2008/07/25 07:09:51  mcguire
 <rdar://problem/3988320> Should use randomized source ports and transaction IDs to avoid DNS cache poisoning
 
@@ -5190,7 +5193,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 			{
 			ifid = mDNSInterface_Any;
 			if (mDNS_LogLevel >= MDNS_LOG_VERBOSE_DEBUG)
-				DumpPacket(m, mDNSfalse, TLS ? "TLS" : !dstaddr ? "TCP" : "UDP", srcaddr, srcport, dstaddr, dstport, msg, end);
+				DumpPacket(m, mStatus_NoError, mDNSfalse, TLS ? "TLS" : !dstaddr ? "TCP" : "UDP", srcaddr, srcport, dstaddr, dstport, msg, end);
 			uDNS_ReceiveMsg(m, msg, end, srcaddr, srcport);
 			// Note: mDNSCore also needs to get access to received unicast responses
 			}

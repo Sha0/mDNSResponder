@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.203  2008/08/13 00:47:53  mcguire
+Handle failures when packet logging
+
 Revision 1.202  2008/08/13 00:32:48  mcguire
 refactor to use SwapDNSHeaderBytes instead of swapping manually
 
@@ -2551,7 +2554,7 @@ mDNSlocal const mDNSu8 *DumpRecords(mDNS *const m, const DNSMessage *const msg, 
 	(X) == kDNSFlag1_RC_NotZone  ? "NotZone"  : "??" )
 
 // Note: DumpPacket expects the packet header fields in host byte order, not network byte order
-mDNSexport void DumpPacket(mDNS *const m, mDNSBool sent, char *transport,
+mDNSexport void DumpPacket(mDNS *const m, mStatus status, mDNSBool sent, char *transport,
 	const mDNSAddr *srcaddr, mDNSIPPort srcport,
 	const mDNSAddr *dstaddr, mDNSIPPort dstport, const DNSMessage *const msg, const mDNSu8 *const end)
 	{
@@ -2559,14 +2562,16 @@ mDNSexport void DumpPacket(mDNS *const m, mDNSBool sent, char *transport,
 	const mDNSu8 *ptr = msg->data;
 	int i;
 	DNSQuestion q;
-	char sbuffer[64], dbuffer[64] = "";
+	char tbuffer[64], sbuffer[64], dbuffer[64] = "";
+	if (!status) tbuffer[mDNS_snprintf(tbuffer, sizeof(tbuffer), sent ? "Sent" : "Received"                        )] = 0;
+	else         tbuffer[mDNS_snprintf(tbuffer, sizeof(tbuffer), "ERROR %d %sing", status, sent ? "Send" : "Receiv")] = 0;
 	if (sent) sbuffer[mDNS_snprintf(sbuffer, sizeof(sbuffer), "port "        )] = 0;
 	else      sbuffer[mDNS_snprintf(sbuffer, sizeof(sbuffer), "%#a:", srcaddr)] = 0;
 	if (dstaddr || !mDNSIPPortIsZero(dstport))
 		dbuffer[mDNS_snprintf(dbuffer, sizeof(dbuffer), " to %#a:%d", dstaddr, mDNSVal16(dstport))] = 0;
 
 	LogMsg("-- %s %s DNS %s%s (flags %02X%02X) RCODE: %s (%d) %s%s%s%s%s%sID: %d %d bytes from %s%d%s%s --",
-		sent ? "Sent" : "Received", transport,
+		tbuffer, transport,
 		DNS_OP_Name(msg->h.flags.b[0] & kDNSFlag0_OP_Mask),
 		msg->h.flags.b[0] & kDNSFlag0_QR_Response ? "Response" : "Query",
 		msg->h.flags.b[0], msg->h.flags.b[1],
@@ -2658,7 +2663,7 @@ mDNSexport mStatus mDNSSendDNSMessage(mDNS *const m, DNSMessage *const msg, mDNS
 
 	// Dump the packet with the HINFO and TSIG
 	if (mDNS_LogLevel >= MDNS_LOG_VERBOSE_DEBUG && !mDNSOpaque16IsZero(msg->h.id))
-		DumpPacket(m, mDNStrue, sock && (sock->flags & kTCPSocketFlags_UseTLS) ? "TLS" : sock ? "TCP" : "UDP", mDNSNULL, src ? src->port : MulticastDNSPort, dst, dstport, msg, end);
+		DumpPacket(m, status, mDNStrue, sock && (sock->flags & kTCPSocketFlags_UseTLS) ? "TLS" : sock ? "TCP" : "UDP", mDNSNULL, src ? src->port : MulticastDNSPort, dst, dstport, msg, end);
 
 	// put the number of additionals back the way it was
 	msg->h.numAdditionals = numAdditionals;

@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.61  2008/08/13 00:47:53  mcguire
+Handle failures when packet logging
+
 Revision 1.60  2008/07/24 20:23:03  cheshire
 <rdar://problem/3988320> Should use randomized source ports and transaction IDs to avoid DNS cache poisoning
 
@@ -324,7 +327,7 @@ extern const mDNSu8 *LocateLLQOptData(const DNSMessage *const msg, const mDNSu8 
 extern const rdataOPT *GetLLQOptData(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end);
 extern const mDNSu8 *LocateLeaseOptData(const DNSMessage *const msg, const mDNSu8 *const end);
 extern mDNSu32 GetPktLease(mDNS *m, DNSMessage *msg, const mDNSu8 *end);
-extern void DumpPacket(mDNS *const m, mDNSBool sent, char *transport,
+extern void DumpPacket(mDNS *const m, mStatus status, mDNSBool sent, char *transport,
 	const mDNSAddr *srcaddr, mDNSIPPort srcport,
 	const mDNSAddr *dstaddr, mDNSIPPort dstport, const DNSMessage *const msg, const mDNSu8 *const end);
 
