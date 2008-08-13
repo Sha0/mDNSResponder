@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: helper-main.c,v $
+Revision 1.19  2008/08/13 23:04:06  mcguire
+<rdar://problem/5858535> handle SIGTERM in mDNSResponderHelper
+Preparation: rename message function, as it will no longer be called only on idle exit
+
 Revision 1.18  2008/08/13 22:56:32  mcguire
 <rdar://problem/5858535> handle SIGTERM in mDNSResponderHelper
 Preparation: store mach port in global variable so we can write to it from a signal handler
@@ -168,7 +172,7 @@ static void diediedie(CFRunLoopTimerRef timer, void *context)
 	debug("entry %p %p %d", timer, context, maxidle);
 	assert(gTimer == timer);
 	if (maxidle)
-		(void)proxy_mDNSIdleExit(gPort);
+		(void)proxy_mDNSExit(gPort);
 	}
 
 void pause_idle_timer(void)

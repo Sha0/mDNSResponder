@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.25  2008/08/13 23:04:06  mcguire
+<rdar://problem/5858535> handle SIGTERM in mDNSResponderHelper
+Preparation: rename message function, as it will no longer be called only on idle exit
+
 Revision 1.24  2008/01/30 19:01:51  mcguire
 <rdar://problem/5703989> Crash in mDNSResponderHelper
 
@@ -192,12 +196,12 @@ closefds(int from)
 #endif
 
 kern_return_t
-do_mDNSIdleExit(__unused mach_port_t port, audit_token_t token)
+do_mDNSExit(__unused mach_port_t port, audit_token_t token)
 	{
 	debug("entry");
 	if (!authorized(&token))
 		goto fin;
-	helplog(ASL_LEVEL_INFO, "Idle exit");
+	helplog(ASL_LEVEL_INFO, "exit");
 	exit(0);
 
 fin:

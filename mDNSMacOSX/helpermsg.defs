@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: helpermsg.defs,v $
+Revision 1.7  2008/08/13 23:04:06  mcguire
+<rdar://problem/5858535> handle SIGTERM in mDNSResponderHelper
+Preparation: rename message function, as it will no longer be called only on idle exit
+
 Revision 1.6  2007/09/07 22:44:03  mcguire
 <rdar://problem/5448420> Move CFUserNotification code to mDNSResponderHelper
 
@@ -49,7 +53,7 @@ subsystem helper 1833193043;
 serverprefix do_;
 userprefix proxy_;
 
-simpleroutine mDNSIdleExit(
+simpleroutine mDNSExit(
 				port		: mach_port_t;
 	ServerAuditToken	token		: audit_token_t);
 
