@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.785  2008/08/14 19:20:55  cheshire
+<rdar://problem/6143846> Negative responses over TCP incorrectly rejected
+
 Revision 1.784  2008/08/13 00:47:53  mcguire
 Handle failures when packet logging
 
@@ -4686,7 +4689,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 			{
 			DNSQuestion q;
 			ptr = getQuestion(response, ptr, end, InterfaceID, &q);
-			if (ptr && ExpectingUnicastResponseForQuestion(m, dstport, response->h.id, &q))
+			if (ptr && (!dstaddr || ExpectingUnicastResponseForQuestion(m, dstport, response->h.id, &q)))
 				{
 				CacheRecord *rr;
 				const mDNSu32 slot = HashSlot(&q.qname);
@@ -5015,7 +5018,7 @@ exit:
 		{
 		DNSQuestion q;
 		ptr = getQuestion(response, ptr, end, InterfaceID, &q);
-		if (ptr && ExpectingUnicastResponseForQuestion(m, dstport, response->h.id, &q))
+		if (ptr && (!dstaddr || ExpectingUnicastResponseForQuestion(m, dstport, response->h.id, &q)))
 			{
 			CacheRecord *rr, *neg = mDNSNULL;
 			mDNSu32 slot = HashSlot(&q.qname);
