@@ -1988,7 +1988,7 @@ void DNSSD_API TXTRecordDeallocate
  *
  * key:             A null-terminated string which only contains printable ASCII
  *                  values (0x20-0x7E), excluding '=' (0x3D). Keys should be
- *                  8 characters or less (not counting the terminating null).
+ *                  9 characters or fewer (not counting the terminating null).
  *
  * valueSize:       The size of the value.
  *
@@ -2203,7 +2203,7 @@ uint16_t DNSSD_API TXTRecordGetCount
  * key:             A string buffer used to store the key name.
  *                  On return, the buffer contains a null-terminated C string
  *                  giving the key name. DNS-SD TXT keys are usually
- *                  8 characters or less. To hold the maximum possible
+ *                  9 characters or fewer. To hold the maximum possible
  *                  key name, the buffer should be 256 bytes long.
  *
  * valueLen:        On output, will be set to the size of the "value" data.
