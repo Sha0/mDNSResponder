@@ -43,6 +43,9 @@
     Change History (most recent first):
 
 $Log: DNSServiceDiscoveryPref.m,v $
+Revision 1.15  2008/08/18 17:57:04  mcguire
+<rdar://problem/6156209> build error
+
 Revision 1.14  2008/07/18 17:39:14  cheshire
 If NSInteger is not defined (indicated by lack of definition for NSINTEGER_DEFINED)
 then #define "NSInteger" to be "int" like it used to be
@@ -583,8 +586,6 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
     [self startDomainBrowsing];
     [self watchForPreferenceChanges];
 	
-	[tabView setDelegate:self];    
-    
     InitConfigAuthority();
     err = EnsureToolInstalled();
     if (err == noErr) toolInstalled = YES;
