@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.26  2008/08/19 00:35:02  mcguire
+<rdar://problem/5858535> handle SIGTERM in mDNSResponderHelper
+
 Revision 1.25  2008/08/13 23:04:06  mcguire
 <rdar://problem/5858535> handle SIGTERM in mDNSResponderHelper
 Preparation: rename message function, as it will no longer be called only on idle exit
@@ -121,6 +124,7 @@ Revision 1.1  2007/08/08 22:34:58  mcguire
 #include <SystemConfiguration/SCPreferencesSetSpecific.h>
 #include <SystemConfiguration/SCDynamicStoreCopySpecific.h>
 #include <TargetConditionals.h>
+#include <vproc.h>
 #include "mDNSEmbeddedAPI.h"
 #include "dns_sd.h"
 #include "dnssd_ipc.h"
@@ -133,6 +137,19 @@ Revision 1.1  2007/08/08 22:34:58  mcguire
 #if TARGET_OS_EMBEDDED
 #define NO_CFUSERNOTIFICATION 1
 #define NO_SECURITYFRAMEWORK 1
+#endif
+
+// This can be removed once <rdar://6156146> is addressed
+#if defined(MAC_OS_X_VERSION_10_6) && !defined(HAS_VPROCTRANSACTIONS)
+#define HAS_VPROCTRANSACTIONS 1
+#endif
+
+#if !HAS_VPROCTRANSACTIONS
+typedef void* vproc_transaction_t;
+#else
+// These can be removed once <rdar://6156146> is addressed
+extern vproc_transaction_t vproc_transaction_begin(vproc_t virtual_proc) AVAILABLE_MAC_OS_X_VERSION_10_6_AND_LATER;
+extern void vproc_transaction_end(vproc_t virtual_proc, vproc_transaction_t handle) AVAILABLE_MAC_OS_X_VERSION_10_6_AND_LATER;
 #endif
 
 typedef struct sadb_x_policy *ipsec_policy_t;
@@ -153,6 +170,27 @@ debug_(const char *func, const char *fmt, ...)
 	helplog(ASL_LEVEL_DEBUG, "%s: %s", func, buf);
 	}
 
+static vproc_transaction_t safe_vproc_transaction_begin()
+	{
+#if !HAS_VPROCTRANSACTIONS
+	helplog(ASL_LEVEL_NOTICE, "Compiled without vproc_transaction support");
+	return NULL;
+#else
+	if (vproc_transaction_begin) return vproc_transaction_begin(NULL);
+	else {helplog(ASL_LEVEL_NOTICE, "vproc_transaction support unavailable");return NULL;}
+#endif
+	}
+	
+static void safe_vproc_transaction_end(vproc_transaction_t vt)
+	{
+#if !HAS_VPROCTRANSACTIONS
+	assert(vt == NULL);
+#else
+	if (vproc_transaction_end) vproc_transaction_end(NULL, vt);
+	else assert(vt == NULL);
+#endif
+	}
+	
 static int
 authorized(audit_token_t *token)
 	{
@@ -218,6 +256,7 @@ do_mDNSDynamicStoreSetConfig(__unused mach_port_t port, int key,
 	CFDataRef bytes = NULL;
 	CFPropertyListRef plist = NULL;
 	SCDynamicStoreRef store = NULL;
+	vproc_transaction_t vt = safe_vproc_transaction_begin(NULL);
 
 	debug("entry");
 	*err = 0;
@@ -282,6 +321,7 @@ fin:
 	if (NULL != store)
 		CFRelease(store);
 	vm_deallocate(mach_task_self(), value, valueCnt);
+	if (vt) safe_vproc_transaction_end(vt);
 	update_idle_timer();
 	return KERN_SUCCESS;
 	}
@@ -488,8 +528,9 @@ do_mDNSPreferencesSetName(__unused mach_port_t port, int key, const char* old, c
 	char* user = NULL;
 	char* last = NULL;
 	Boolean needUpdate = FALSE;
+	vproc_transaction_t vt = safe_vproc_transaction_begin(NULL);
 
-	debug("entry %s old=%s new=%s", key==kmDNSComputerName ? "ComputerName" : (key==kmDNSLocalHostName ? "LocalHostName" : "UNKNOWN"), old, new);
+	debug("entry %s old=%s new=%s vt=%p", key==kmDNSComputerName ? "ComputerName" : (key==kmDNSLocalHostName ? "LocalHostName" : "UNKNOWN"), old, new, vt);
 	*err = 0;
 	if (!authorized(&token))
 		{
@@ -615,6 +656,7 @@ fin:
 			SCPreferencesUnlock(session);
 		CFRelease(session);
 		}
+	if (vt) safe_vproc_transaction_end(vt);
 	update_idle_timer();
 	if (needUpdate) update_notification();
 	return KERN_SUCCESS;
@@ -799,6 +841,7 @@ do_mDNSKeychainGetSecrets(__unused mach_port_t port, __unused unsigned int *nums
 	SecKeychainAttributeList *attributes = NULL;
 	enum DNSKeyFormat format;
 	OSStatus status = 0;
+	vproc_transaction_t vt = safe_vproc_transaction_begin(NULL);
 
 	debug("entry");
 	*err = 0;
@@ -890,6 +933,7 @@ fin:
 		CFRelease(search);
 	if (NULL != skc)
 		CFRelease(skc);
+	if (vt) safe_vproc_transaction_end(vt);
 	update_idle_timer();
 	return KERN_SUCCESS;
 #else
@@ -1012,6 +1056,7 @@ do_mDNSAutoTunnelInterfaceUpDown(__unused mach_port_t port, int updown,
     v6addr_t address, int *err, audit_token_t token)
 	{
 #ifndef MDNS_NO_IPSEC
+	vproc_transaction_t vt = safe_vproc_transaction_begin(NULL);
 	debug("entry");
 	*err = 0;
 	if (!authorized(&token))
@@ -1034,6 +1079,7 @@ do_mDNSAutoTunnelInterfaceUpDown(__unused mach_port_t port, int updown,
 	debug("succeeded");
 
 fin:
+	if (vt) safe_vproc_transaction_end(vt);
 #else
 	(void)port; (void)updown; (void)address; (void)token;
 	*err = kmDNSHelperIPsecDisabled;
@@ -1274,6 +1320,7 @@ int
 do_mDNSConfigureServer(__unused mach_port_t port, int updown, const char *keydata, int *err, audit_token_t token)
 	{
 #ifndef MDNS_NO_IPSEC
+	vproc_transaction_t vt = safe_vproc_transaction_begin(NULL);
 	debug("entry");
 	*err = 0;
 
@@ -1305,6 +1352,7 @@ do_mDNSConfigureServer(__unused mach_port_t port, int updown, const char *keydat
 	debug("succeeded");
 
 fin:
+	if (vt) safe_vproc_transaction_end(vt);
 #else
 	(void)port; (void)updown; (void)keydata; (void)token;
 	*err = kmDNSHelperIPsecDisabled;
@@ -1712,6 +1760,7 @@ do_mDNSAutoTunnelSetKeys(__unused mach_port_t port, int replacedelete,
 	FILE *fp = NULL;
 	int fd = -1;
 	char tmp_path[PATH_MAX] = "";
+	vproc_transaction_t vt = safe_vproc_transaction_begin(NULL);
 
 	debug("entry");
 	*err = 0;
@@ -1816,6 +1865,7 @@ fin:
 	if (0 <= fd)
 		close(fd);
 	unlink(tmp_path);
+	if (vt) safe_vproc_transaction_end(vt);
 #else
 	(void)replacedelete; (void)loc_inner; (void)loc_outer; (void)loc_port; (void)rmt_inner;
 	(void)rmt_outer; (void)rmt_port; (void)keydata; (void)token;
