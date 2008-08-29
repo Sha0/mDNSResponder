@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.204  2008/08/29 19:03:05  cheshire
+<rdar://problem/6185645> Off-by-one error in putDomainNameAsLabels()
+
 Revision 1.203  2008/08/13 00:47:53  mcguire
 Handle failures when packet logging
 
@@ -1658,7 +1661,7 @@ mDNSexport mDNSu8 *putDomainNameAsLabels(const DNSMessage *const msg,
 
 	if (!ptr) { LogMsg("putDomainNameAsLabels ptr is null"); return(mDNSNULL); }
 
-	while (*np && ptr < limit-1)		// While we've got characters in the name, and space to write them in the message...
+	while (*np)							// While we've got characters in the name
 		{
 		if (*np > MAX_DOMAIN_LABEL)
 			{ LogMsg("Malformed domain name %##s (label more than 63 bytes)", name->c); return(mDNSNULL); }
@@ -1678,7 +1681,8 @@ mDNSexport mDNSu8 *putDomainNameAsLabels(const DNSMessage *const msg,
 		if (base) pointer = FindCompressionPointer(base, searchlimit, np);
 		if (pointer)					// Use a compression pointer if we can
 			{
-			mDNSu16 offset = (mDNSu16)(pointer - base);
+			const mDNSu16 offset = (mDNSu16)(pointer - base);
+			if (ptr+2 > limit) return(mDNSNULL);	// If we don't have two bytes of space left, give up
 			*ptr++ = (mDNSu8)(0xC0 | (offset >> 8));
 			*ptr++ = (mDNSu8)(        offset &  0xFF);
 			return(ptr);
@@ -1687,19 +1691,15 @@ mDNSexport mDNSu8 *putDomainNameAsLabels(const DNSMessage *const msg,
 			{
 			int i;
 			mDNSu8 len = *np++;
+			// If we don't at least have enough space for this label *plus* a terminating zero on the end, give up
 			if (ptr + 1 + len >= limit) return(mDNSNULL);
 			*ptr++ = len;
 			for (i=0; i<len; i++) *ptr++ = *np++;
 			}
 		}
 
-	if (ptr < limit)												// If we didn't run out of space
-		{
-		*ptr++ = 0;													// Put the final root label
-		return(ptr);												// and return
-		}
-
-	return(mDNSNULL);
+	*ptr++ = 0;		// Put the final root label
+	return(ptr);
 	}
 
 mDNSlocal mDNSu8 *putVal16(mDNSu8 *ptr, mDNSu16 val)
