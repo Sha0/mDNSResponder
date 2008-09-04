@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.28  2008/09/04 22:49:28  mcguire
+<rdar://problem/5536811> change location of racoon files
+
 Revision 1.27  2008/08/28 23:11:12  mcguire
 <rdar://problem/5858535> handle SIGTERM in mDNSResponderHelper
 
@@ -1049,15 +1052,17 @@ fin:
 	}
 
 #ifndef MDNS_NO_IPSEC
-static const char racoon_config_path[] = "/etc/racoon/remote/anonymous.conf";
-static const char racoon_config_path_orig[] = "/etc/racoon/remote/anonymous.conf.orig";
+static const char racoon_config_dir[] = "/var/run/racoon/";
+static const char racoon_config_dir_old[] = "/etc/racoon/remote/";
+static const char racoon_config_file[] = "anonymous.conf";
+static const char racoon_config_file_orig[] = "anonymous.conf.orig";
 
 static const char configHeader[] = "# BackToMyMac\n";
 
-static int IsFamiliarRacoonConfiguration()
+static int IsFamiliarRacoonConfiguration(const char* racoon_config_path)
 	{
 	int fd = open(racoon_config_path, O_RDONLY);
-	debug("entry");
+	debug("entry %s", racoon_config_path);
 	if (0 > fd)
 		{
 		helplog(ASL_LEVEL_NOTICE, "open \"%s\" failed: %s", racoon_config_path, strerror(errno));
@@ -1074,14 +1079,33 @@ static int IsFamiliarRacoonConfiguration()
 	}
 
 static void
-revertAnonymousRacoonConfiguration()
+revertAnonymousRacoonConfiguration(const char* dir)
 	{
-	debug("entry");
-	if (!IsFamiliarRacoonConfiguration())
+	char racoon_config_path[64];
+	char racoon_config_path_orig[64];
+	struct stat s;
+	int ret;
+	
+	debug("entry %s", dir);
+
+	strlcpy(racoon_config_path, dir, sizeof(racoon_config_path));
+	strlcat(racoon_config_path, racoon_config_file, sizeof(racoon_config_path));
+
+	ret = stat(racoon_config_path, &s);
+	debug("stat(%s): %d errno=%d", dir, ret, errno);
+	if (ret == 0 && !IsFamiliarRacoonConfiguration(racoon_config_path))
 		{
 		helplog(ASL_LEVEL_NOTICE, "\"%s\" does not look familiar, leaving in place", racoon_config_path);
 		return;
 		}
+	else if (ret != 0 && errno != ENOENT)
+		{
+		helplog(ASL_LEVEL_NOTICE, "stat failed for \"%s\", leaving in place", racoon_config_path);
+		return;
+		}
+
+	strlcpy(racoon_config_path_orig, dir, sizeof(racoon_config_path_orig));
+	strlcat(racoon_config_path_orig, racoon_config_file_orig, sizeof(racoon_config_path_orig));
 
 	if (0 > rename(racoon_config_path_orig, racoon_config_path))
 		{
@@ -1089,6 +1113,30 @@ revertAnonymousRacoonConfiguration()
 		helplog(ASL_LEVEL_NOTICE, "\"%s\" looks familiar, unlinking", racoon_config_path);
 		unlink(racoon_config_path);
 		}
+	}
+
+static void
+moveAsideAnonymousRacoonConfiguration(const char* dir)
+	{
+	char racoon_config_path[64];
+	char racoon_config_path_orig[64];
+
+	debug("entry");
+	
+	strlcpy(racoon_config_path, dir, sizeof(racoon_config_path));
+	strlcat(racoon_config_path, racoon_config_file, sizeof(racoon_config_path));
+	strlcpy(racoon_config_path_orig, dir, sizeof(racoon_config_path_orig));
+	strlcat(racoon_config_path_orig, racoon_config_file_orig, sizeof(racoon_config_path_orig));
+
+	if (IsFamiliarRacoonConfiguration(racoon_config_path))
+		{
+		helplog(ASL_LEVEL_NOTICE, "\"%s\" looks familiar, unlinking", racoon_config_path);
+		unlink(racoon_config_path);
+		}
+	else if (0 > rename(racoon_config_path, racoon_config_path_orig)) // If we didn't write it, move it to the side so it can be reverted later
+		helplog(ASL_LEVEL_NOTICE, "rename \"%s\" \"%s\" failed: %s", racoon_config_path, racoon_config_path_orig, strerror(errno));
+	else
+		debug("successfully renamed \"%s\" \"%s\"", racoon_config_path, racoon_config_path_orig);
 	}
 
 static int
@@ -1125,11 +1173,47 @@ createAnonymousRacoonConfiguration(const char *keydata)
 	  "  authentication_algorithm hmac_sha1;\n"
 	  "  compression_algorithm deflate;\n"
 	  "}\n";
-	char tmp_config_path[] =
-	    "/etc/racoon/remote/tmp.XXXXXX";
-	int fd = mkstemp(tmp_config_path);
-
+	char tmp_config_path[64];
+	char racoon_config_path[64];
+	int ret = 0;
+	struct stat s;
+	int fd = -1;
+	
 	debug("entry");
+	
+	ret = stat(racoon_config_dir, &s);
+	if (ret != 0)
+		{
+		if (errno != ENOENT)
+			{
+			helplog(ASL_LEVEL_ERR, "stat of \"%s\" failed (%d): %s",
+				racoon_config_dir, ret, strerror(errno));
+			return -1;
+			}
+		else
+			{
+			ret = mkdir(racoon_config_dir, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
+			if (ret != 0)
+				{
+				helplog(ASL_LEVEL_ERR, "mkdir \"%s\" failed: %s",
+					racoon_config_dir, strerror(errno));
+				return -1;
+				}
+			else
+				helplog(ASL_LEVEL_INFO, "created directory \"%s\"", racoon_config_dir);
+			}
+		}
+	else if (!(s.st_mode & S_IFDIR))
+		{
+		helplog(ASL_LEVEL_ERR, "\"%s\" is not a directory!",
+			racoon_config_dir);
+		return -1;
+		}
+
+	strlcpy(tmp_config_path, racoon_config_dir, sizeof(tmp_config_path));
+	strlcat(tmp_config_path, "tmp.XXXXXX", sizeof(tmp_config_path));
+
+	fd = mkstemp(tmp_config_path);
 
 	if (0 > fd)
 		{
@@ -1143,19 +1227,19 @@ createAnonymousRacoonConfiguration(const char *keydata)
 	write(fd, config2, sizeof(config2)-1);
 	close(fd);
 
-	if (IsFamiliarRacoonConfiguration())
-		helplog(ASL_LEVEL_NOTICE, "\"%s\" looks familiar, will overwrite", racoon_config_path);
-	else if (0 > rename(racoon_config_path, racoon_config_path_orig)) // If we didn't write it, move it to the side so it can be reverted later
-		helplog(ASL_LEVEL_NOTICE, "rename \"%s\" \"%s\" failed: %s", racoon_config_path, racoon_config_path_orig, strerror(errno));
-	else
-		debug("successfully renamed \"%s\" \"%s\"", racoon_config_path, racoon_config_path_orig);
+	strlcpy(racoon_config_path, racoon_config_dir, sizeof(racoon_config_path));
+	strlcat(racoon_config_path, racoon_config_file, sizeof(racoon_config_path));
+
+	moveAsideAnonymousRacoonConfiguration(racoon_config_dir_old);
+	moveAsideAnonymousRacoonConfiguration(racoon_config_dir);
 
 	if (0 > rename(tmp_config_path, racoon_config_path))
 		{
 		unlink(tmp_config_path);
 		helplog(ASL_LEVEL_ERR, "rename \"%s\" \"%s\" failed: %s",
 		    tmp_config_path, racoon_config_path, strerror(errno));
-		revertAnonymousRacoonConfiguration();
+		revertAnonymousRacoonConfiguration(racoon_config_dir_old);
+		revertAnonymousRacoonConfiguration(racoon_config_dir);
 		return -1;
 		}
 
@@ -1299,7 +1383,8 @@ do_mDNSConfigureServer(__unused mach_port_t port, int updown, const char *keydat
 				}
 			break;
 		case kmDNSDown:
-			revertAnonymousRacoonConfiguration();
+			revertAnonymousRacoonConfiguration(racoon_config_dir_old);
+			revertAnonymousRacoonConfiguration(racoon_config_dir);
 			break;
 		default:
 			*err = kmDNSHelperInvalidServerState;
@@ -1748,7 +1833,7 @@ do_mDNSAutoTunnelSetKeys(__unused mach_port_t port, int replacedelete,
 	    lo, loc_port, ro, rmt_port);
 
 	if ((int)sizeof(path) <= snprintf(path, sizeof(path),
-	    "/etc/racoon/remote/%s.%u.conf", ro,
+	    "%s%s.%u.conf", racoon_config_dir, ro,
 	    rmt_port))
 		{
 		*err = kmDNSHelperResultTooLarge;
