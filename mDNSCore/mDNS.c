@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.786  2008/09/05 22:23:28  cheshire
+Moved initialization of "question->LocalSocket" to more logical place
+
 Revision 1.785  2008/08/14 19:20:55  cheshire
 <rdar://problem/6143846> Negative responses over TCP incorrectly rejected
 
@@ -5437,6 +5440,7 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 		question->LastQTxTime       = m->timenow;
 		question->CNAMEReferrals    = 0;
 
+		question->LocalSocket       = mDNSNULL;
 		question->qDNSServer        = mDNSNULL;
 		question->unansweredQueries = 0;
 		question->nta               = mDNSNULL;
@@ -5450,8 +5454,6 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 		question->expire            = 0;
 		question->ntries            = 0;
 		question->id                = zeroOpaque64;
-
-		question->LocalSocket       = mDNSNULL;
 
 		if (question->DuplicateOf) question->AuthInfo = question->DuplicateOf->AuthInfo;
 
