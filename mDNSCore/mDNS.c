@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.787  2008/09/05 22:53:24  cheshire
+Improve "How is rr->resrec.rroriginalttl <= SecsSinceRcvd" debugging message
+
 Revision 1.786  2008/09/05 22:23:28  cheshire
 Moved initialization of "question->LocalSocket" to more logical place
 
@@ -3262,8 +3265,8 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 				mDNSu32 SecsSinceRcvd = ((mDNSu32)(m->timenow - rr->TimeRcvd)) / mDNSPlatformOneSecond;
 				if (rr->resrec.rroriginalttl <= SecsSinceRcvd)
 					{
-					LogMsg("AnswerNewQuestion: How is rr->resrec.rroriginalttl %lu <= SecsSinceRcvd %lu for %##s (%s) %d %d",
-						rr->resrec.rroriginalttl, SecsSinceRcvd, rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype), m->timenow, rr->TimeRcvd);
+					LogMsg("AnswerNewQuestion: How is rr->resrec.rroriginalttl %lu <= SecsSinceRcvd %lu for %s %d %d",
+						rr->resrec.rroriginalttl, SecsSinceRcvd, CRDisplayString(m, rr), m->timenow, rr->TimeRcvd);
 					continue;	// Go to next one in loop
 					}
 	
