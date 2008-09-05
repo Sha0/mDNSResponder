@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.476  2008/09/05 22:22:01  cheshire
+Move "UDPSocket *LocalSocket" field to more logical place in DNSQuestion_struct
+
 Revision 1.475  2008/07/25 22:34:11  mcguire
 fix sizecheck issues for 64bit
 
@@ -1822,6 +1825,7 @@ struct DNSQuestion_struct
 	mDNSu32               CNAMEReferrals;	// Count of how many CNAME redirections we've done
 
 	// Wide Area fields. These are used internally by the uDNS core
+	UDPSocket            *LocalSocket;
 	DNSServer            *qDNSServer;		// Caching server for this query (in the absence of an SRV saying otherwise)
 	mDNSu8                unansweredQueries;// The number of unanswered queries to this server
 
@@ -1833,7 +1837,7 @@ struct DNSQuestion_struct
 
 	// LLQ-specific fields. These fields are only meaningful when LongLived flag is set
 	LLQ_State             state;
-	mDNSu32               ReqLease;		// seconds (relative)
+	mDNSu32               ReqLease;			// seconds (relative)
 	mDNSs32               expire;			// ticks (absolute)
 	mDNSs16               ntries;
 	mDNSOpaque64          id;
@@ -1843,7 +1847,6 @@ struct DNSQuestion_struct
 	mDNSAddr              Target;			// Non-zero if you want to direct queries to a specific unicast target address
 	mDNSIPPort            TargetPort;		// Must be set if Target is set
 	mDNSOpaque16          TargetQID;		// Must be set if Target is set
-	UDPSocket            *LocalSocket;
 	domainname            qname;
 	mDNSu16               qtype;
 	mDNSu16               qclass;
