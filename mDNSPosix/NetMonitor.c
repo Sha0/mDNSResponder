@@ -30,6 +30,10 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.90  2008/09/05 22:20:26  cheshire
+<rdar://problem/3988320> Should use randomized source ports and transaction IDs to avoid DNS cache poisoning
+Add "UDPSocket *src" parameter in mDNSPlatformSendUDP call
+
 Revision 1.89  2007/05/17 19:12:42  cheshire
 Tidy up code layout
 
@@ -361,7 +365,7 @@ mDNSlocal void SendUnicastQuery(mDNS *const m, HostEntry *entry, domainname *nam
 		InterfaceID = mDNSInterface_Any;	// Send query from our unicast reply socket
 		}
 
-	mDNSSendDNSMessage(&mDNSStorage, &query, qptr, InterfaceID, target, MulticastDNSPort, mDNSNULL, mDNSNULL);
+	mDNSSendDNSMessage(&mDNSStorage, &query, qptr, InterfaceID, mDNSNULL, target, MulticastDNSPort, mDNSNULL, mDNSNULL);
 	}
 
 mDNSlocal void AnalyseHost(mDNS *const m, HostEntry *entry, const mDNSInterfaceID InterfaceID)
