@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.30  2008/09/05 21:51:26  mcguire
+<rdar://problem/6077707> BTMM: Need to launch racoon by opening VPN control socket
+
 Revision 1.29  2008/09/05 18:26:53  mcguire
 <rdar://problem/6077707> BTMM: Need to launch racoon by opening VPN control socket
 
@@ -1290,8 +1293,8 @@ startRacoon(void)
 	int fd = socket(PF_UNIX, SOCK_STREAM, 0);
 	if (0 > fd)
 		{
-		helplog(ASL_LEVEL_ERR, "Could not create endpoint for racoon control socket %s: %d %s",
-			racoon_control_sock_path, errno, strerror(errno));
+		helplog(ASL_LEVEL_ERR, "Could not create endpoint for racoon control socket: %d %s",
+			errno, strerror(errno));
 		return kmDNSHelperRacoonStartFailed;
 		}
 
