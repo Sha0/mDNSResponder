@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.29  2008/09/05 18:26:53  mcguire
+<rdar://problem/6077707> BTMM: Need to launch racoon by opening VPN control socket
+
 Revision 1.28  2008/09/04 22:49:28  mcguire
 <rdar://problem/5536811> change location of racoon files
 
@@ -178,31 +181,6 @@ authorized(audit_token_t *token)
 		    (unsigned long)euid, (unsigned long)pid);
 	return ok;
 	}
-
-#ifndef MDNS_NO_IPSEC
-static void
-closefds(int from)
-	{
-	int fd = 0;
-	struct dirent entry, *entryp = NULL;
-	DIR *dirp = opendir("/dev/fd");
-
-	if (dirp == NULL)
-		{
-		/* fall back to the erroneous getdtablesize method */
-		for (fd = from; fd < getdtablesize(); ++fd)
-			close(fd);
-		return;
-		}
-	while (0 == readdir_r(dirp, &entry, &entryp) && NULL != entryp)
-		{
-		fd = atoi(entryp->d_name);
-		if (fd >= from && fd != dirfd(dirp))
-			close(fd);
-		}
-	closedir(dirp);
-	}
-#endif
 
 kern_return_t
 do_mDNSExit(__unused mach_port_t port, audit_token_t token)
@@ -1293,60 +1271,107 @@ notifyRacoon(void)
 	return 0;
 	}
 
+// constant and structure for the racoon control socket
+#define VPNCTL_CMD_PING 0x0004
+typedef struct vpnctl_hdr_struct
+	{
+	u_int16_t msg_type;
+	u_int16_t flags;
+	u_int32_t cookie;
+	u_int32_t reserved;
+	u_int16_t result;
+	u_int16_t len;
+	} vpnctl_hdr;
+
 static int
 startRacoon(void)
 	{
 	debug("entry");
-	char * const racoon_args[] = { "/usr/sbin/racoon", "-e", NULL 	};
-	ssize_t n = 0;
-	pid_t pid = 0;
-	int status = 0;
+	int fd = socket(PF_UNIX, SOCK_STREAM, 0);
+	if (0 > fd)
+		{
+		helplog(ASL_LEVEL_ERR, "Could not create endpoint for racoon control socket %s: %d %s",
+			racoon_control_sock_path, errno, strerror(errno));
+		return kmDNSHelperRacoonStartFailed;
+		}
 
-	if (0 == (pid = fork()))
+	struct sockaddr_un saddr;
+	memset(&saddr, 0, sizeof(saddr));
+	saddr.sun_family = AF_UNIX;
+	saddr.sun_len = sizeof(saddr);
+	static const char racoon_control_sock_path[] = "/var/run/vpncontrol.sock";
+	strcpy(saddr.sun_path, racoon_control_sock_path);
+	int result = connect(fd, (struct sockaddr*) &saddr, saddr.sun_len);
+	if (0 > result)
 		{
-		closefds(0);
-		execve(racoon_args[0], racoon_args, NULL);
-		helplog(ASL_LEVEL_ERR, "execve of \"%s\" failed: %s",
-		    racoon_args[0], strerror(errno));
-		exit(2);
-		}
-	helplog(ASL_LEVEL_NOTICE, "racoon (pid=%lu) started",
-	    (unsigned long)pid);
-	n = waitpid(pid, &status, 0);
-	if (-1 == n)
-		{
-		helplog(ASL_LEVEL_ERR, "Unexpected waitpid failure: %s",
-		    strerror(errno));
+		helplog(ASL_LEVEL_ERR, "Could not connect racoon control socket %s: %d %s",
+			racoon_control_sock_path, errno, strerror(errno));
 		return kmDNSHelperRacoonStartFailed;
 		}
-	else if (pid != n)
+	
+	u_int32_t btmm_cookie = 0x4d4d5442;
+	vpnctl_hdr h = { VPNCTL_CMD_PING, 0, btmm_cookie, 0, 0, 0 };
+	size_t bytes = 0;
+	ssize_t ret = 0;
+	
+	while (bytes < sizeof(vpnctl_hdr))
 		{
-		helplog(ASL_LEVEL_ERR, "Unexpected waitpid return value %d",
-		    (int)n);
-		return kmDNSHelperRacoonStartFailed;
+		ret = write(fd, ((unsigned char*)&h)+bytes, sizeof(vpnctl_hdr) - bytes);
+		if (ret == -1)
+			{
+			helplog(ASL_LEVEL_ERR, "Could not write to racoon control socket: %d %s",
+				errno, strerror(errno));
+			return kmDNSHelperRacoonStartFailed;
+			}
+		bytes += ret;
 		}
-	else if (WIFSIGNALED(status))
+	
+	int nfds = fd + 1;
+	fd_set fds;
+	int counter = 0;
+	struct timeval tv;
+	bytes = 0;
+	h.cookie = 0;
+	
+	while (counter < 100)
 		{
-		helplog(ASL_LEVEL_ERR,
-		    "racoon (pid=%lu) terminated due to signal %d",
-		    (unsigned long)pid, WTERMSIG(status));
-		return kmDNSHelperRacoonStartFailed;
+		FD_ZERO(&fds);
+		FD_SET(fd, &fds);
+		tv = (struct timeval){ 0, 10000 }; // 10 milliseconds * 100 iterations = 1 second max wait time
+
+		result = select(nfds, &fds, (fd_set*)NULL, (fd_set*)NULL, &tv);
+		if (result > 0)
+			{
+			if (FD_ISSET(fd, &fds))
+				{
+				ret = read(fd, ((unsigned char*)&h)+bytes, sizeof(vpnctl_hdr) - bytes);
+				
+				if (ret == -1)
+					{
+					helplog(ASL_LEVEL_ERR, "Could not read from racoon control socket: %d %s",
+						strerror(errno));
+					break;
+					}
+				bytes += ret;
+				if (bytes >= sizeof(vpnctl_hdr)) break;
+				}
+			else
+				{
+				debug("select returned but fd_isset not on expected fd\n");
+				}
+			}
+		else if (result < 0)
+			{
+			debug("select returned %d errno %d %s\n", result, errno, strerror(errno));
+			if (errno != EINTR) break;
+			}
 		}
-	else if (WIFSTOPPED(status))
-		{
-		helplog(ASL_LEVEL_ERR,
-		    "racoon (pid=%lu) has stopped due to signal %d",
-		    (unsigned long)pid, WSTOPSIG(status));
-		return kmDNSHelperRacoonStartFailed;
-		}
-	else if (0 != WEXITSTATUS(status))
-		{
-		helplog(ASL_LEVEL_ERR,
-		    "racoon (pid=%lu) exited with status %d",
-		    (unsigned long)pid, WEXITSTATUS(status));
-		return kmDNSHelperRacoonStartFailed;
-		}
-	debug("racoon (pid=%lu) daemonized normally", (unsigned long)pid);
+	
+	close(fd);
+	
+	if (bytes < sizeof(vpnctl_hdr) || h.cookie != btmm_cookie) return kmDNSHelperRacoonStartFailed;
+
+	debug("racoon started");
 	return 0;
 	}
 
