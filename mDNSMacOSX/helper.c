@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.31  2008/09/08 17:42:40  mcguire
+<rdar://problem/5536811> change location of racoon files
+cleanup, handle stat failure cases, reduce log messages
+
 Revision 1.30  2008/09/05 21:51:26  mcguire
 <rdar://problem/6077707> BTMM: Need to launch racoon by opening VPN control socket
 
@@ -1062,62 +1066,88 @@ static int IsFamiliarRacoonConfiguration(const char* racoon_config_path)
 static void
 revertAnonymousRacoonConfiguration(const char* dir)
 	{
-	char racoon_config_path[64];
-	char racoon_config_path_orig[64];
-	struct stat s;
-	int ret;
-	
 	debug("entry %s", dir);
 
+	char racoon_config_path[64];
 	strlcpy(racoon_config_path, dir, sizeof(racoon_config_path));
 	strlcat(racoon_config_path, racoon_config_file, sizeof(racoon_config_path));
 
-	ret = stat(racoon_config_path, &s);
-	debug("stat(%s): %d errno=%d", dir, ret, errno);
-	if (ret == 0 && !IsFamiliarRacoonConfiguration(racoon_config_path))
+	struct stat s;
+	int ret = stat(racoon_config_path, &s);
+	debug("stat(%s): %d errno=%d", racoon_config_path, ret, errno);
+	if (ret == 0)
 		{
-		helplog(ASL_LEVEL_NOTICE, "\"%s\" does not look familiar, leaving in place", racoon_config_path);
-		return;
+		if (IsFamiliarRacoonConfiguration(racoon_config_path))
+			{
+			helplog(ASL_LEVEL_INFO, "\"%s\" looks familiar, unlinking", racoon_config_path);
+			unlink(racoon_config_path);
+			}
+		else
+			{
+			helplog(ASL_LEVEL_NOTICE, "\"%s\" does not look familiar, leaving in place", racoon_config_path);
+			return;
+			}
 		}
-	else if (ret != 0 && errno != ENOENT)
+	else if (errno != ENOENT)
 		{
-		helplog(ASL_LEVEL_NOTICE, "stat failed for \"%s\", leaving in place", racoon_config_path);
+		helplog(ASL_LEVEL_NOTICE, "stat failed for \"%s\", leaving in place: %s", racoon_config_path, strerror(errno));
 		return;
 		}
 
+	char racoon_config_path_orig[64];
 	strlcpy(racoon_config_path_orig, dir, sizeof(racoon_config_path_orig));
 	strlcat(racoon_config_path_orig, racoon_config_file_orig, sizeof(racoon_config_path_orig));
 
-	if (0 > rename(racoon_config_path_orig, racoon_config_path))
+	ret = stat(racoon_config_path_orig, &s);
+	debug("stat(%s): %d errno=%d", racoon_config_path_orig, ret, errno);
+	if (ret == 0)
 		{
-		helplog(ASL_LEVEL_NOTICE, "rename \"%s\" \"%s\" failed: %s", racoon_config_path_orig, racoon_config_path, strerror(errno));
-		helplog(ASL_LEVEL_NOTICE, "\"%s\" looks familiar, unlinking", racoon_config_path);
-		unlink(racoon_config_path);
+		if (0 > rename(racoon_config_path_orig, racoon_config_path))
+			helplog(ASL_LEVEL_NOTICE, "rename \"%s\" \"%s\" failed: %s", racoon_config_path_orig, racoon_config_path, strerror(errno));
+		else
+			debug("reverted \"%s\" to \"%s\"", racoon_config_path_orig, racoon_config_path);
+		}
+	else if (errno != ENOENT)
+		{
+		helplog(ASL_LEVEL_NOTICE, "stat failed for \"%s\", leaving in place: %s", racoon_config_path_orig, strerror(errno));
+		return;
 		}
 	}
 
 static void
 moveAsideAnonymousRacoonConfiguration(const char* dir)
 	{
-	char racoon_config_path[64];
-	char racoon_config_path_orig[64];
-
-	debug("entry");
+	debug("entry %s", dir);
 	
+	char racoon_config_path[64];
 	strlcpy(racoon_config_path, dir, sizeof(racoon_config_path));
 	strlcat(racoon_config_path, racoon_config_file, sizeof(racoon_config_path));
-	strlcpy(racoon_config_path_orig, dir, sizeof(racoon_config_path_orig));
-	strlcat(racoon_config_path_orig, racoon_config_file_orig, sizeof(racoon_config_path_orig));
-
-	if (IsFamiliarRacoonConfiguration(racoon_config_path))
+	
+	struct stat s;
+	int ret = stat(racoon_config_path, &s);
+	if (ret == 0)
 		{
-		helplog(ASL_LEVEL_NOTICE, "\"%s\" looks familiar, unlinking", racoon_config_path);
-		unlink(racoon_config_path);
+		if (IsFamiliarRacoonConfiguration(racoon_config_path))
+			{
+			helplog(ASL_LEVEL_INFO, "\"%s\" looks familiar, unlinking", racoon_config_path);
+			unlink(racoon_config_path);
+			}
+		else
+			{
+			char racoon_config_path_orig[64];
+			strlcpy(racoon_config_path_orig, dir, sizeof(racoon_config_path_orig));
+			strlcat(racoon_config_path_orig, racoon_config_file_orig, sizeof(racoon_config_path_orig));
+			if (0 > rename(racoon_config_path, racoon_config_path_orig)) // If we didn't write it, move it to the side so it can be reverted later
+				helplog(ASL_LEVEL_NOTICE, "rename \"%s\" to \"%s\" failed: %s", racoon_config_path, racoon_config_path_orig, strerror(errno));
+			else
+				debug("successfully renamed \"%s\" to \"%s\"", racoon_config_path, racoon_config_path_orig);
+			}
 		}
-	else if (0 > rename(racoon_config_path, racoon_config_path_orig)) // If we didn't write it, move it to the side so it can be reverted later
-		helplog(ASL_LEVEL_NOTICE, "rename \"%s\" \"%s\" failed: %s", racoon_config_path, racoon_config_path_orig, strerror(errno));
-	else
-		debug("successfully renamed \"%s\" \"%s\"", racoon_config_path, racoon_config_path_orig);
+	else if (errno != ENOENT)
+		{
+		helplog(ASL_LEVEL_NOTICE, "stat failed for \"%s\", leaving in place: %s", racoon_config_path, strerror(errno));
+		return;
+		}
 	}
 
 static int
