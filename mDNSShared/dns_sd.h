@@ -1702,24 +1702,65 @@ DNSServiceErrorType DNSSD_API DNSServiceReconfirmRecord
 
 /* DNSServiceNATPortMappingCreate
  *
- * Request a port mapping in the NAT gateway which maps a port on the local machine
- * to a public port on the NAT.
+ * Request a port mapping in the NAT gateway, which maps a port on the local machine
+ * to an external port on the NAT.
+ *
  * The port mapping will be renewed indefinitely until the client process exits, or
  * explicitly terminates the port mapping request by calling DNSServiceRefDeallocate().
  * The client callback will be invoked, informing the client of the NAT gateway's
- * public IP address and the public port that has been allocated for this client.
- * The client should then record this public IP address and port using whatever
+ * external IP address and the external port that has been allocated for this client.
+ * The client should then record this external IP address and port using whatever
  * directory service mechanism it is using to enable peers to connect to it.
  * (Clients advertising services using Wide-Area DNS-SD DO NOT need to use this API
  * -- when a client calls DNSServiceRegister() NAT mappings are automatically created
- * and the public IP address and port for the service are recorded in the global DNS.
+ * and the external IP address and port for the service are recorded in the global DNS.
  * Only clients using some directory mechanism other than Wide-Area DNS-SD need to use
  * this API to explicitly map their own ports.)
+ *
  * It's possible that the client callback could be called multiple times, for example
  * if the NAT gateway's IP address changes, or if a configuration change results in a
- * different public port being mapped for this client. Over the lifetime of any long-lived
+ * different external port being mapped for this client. Over the lifetime of any long-lived
  * port mapping, the client should be prepared to handle these notifications of changes
  * in the environment, and should update its recorded address and/or port as appropriate.
+ *
+ * NOTE: There are two unusual aspects of how the DNSServiceNATPortMappingCreate API works,
+ * which were intentionally designed to help simplify client code:
+ *
+ *  1. It's not an error to request a NAT mapping when the machine is not behind a NAT gateway.
+ *     In other NAT mapping APIs, if you request a NAT mapping and the machine is not behind a NAT
+ *     gateway, then the API returns an error code -- it can't get you a NAT mapping if there's no
+ *     NAT gateway. The DNSServiceNATPortMappingCreate API takes a different view. Working out
+ *     whether or not you need a NAT mapping can be tricky and non-obvious, particularly on
+ *     a machine with multiple active network interfaces. Rather than make every client recreate
+ *     this logic for deciding whether a NAT mapping is required, the PortMapping API does that
+ *     work for you. If the client calls the PortMapping API when the machine already has a
+ *     routable public IP address, then instead of complaining about it and giving an error,
+ *     the PortMapping API just invokes your callback, giving the machine's public address
+ *     and your own port number. This means you don't need to write code to work out whether
+ *     your client needs to call the PortMapping API -- just call it anyway, and if it wasn't
+ *     necessary, no harm is done:
+ *
+ *     - If the machine already has a routable public IP address, then your callback
+ *       will just be invoked giving your own address and port.
+ *     - If a NAT mapping is required and obtained, then your callback will be invoked
+ *       giving you the external address and port.
+ *     - If a NAT mapping is required but not obtained from the local NAT gateway,
+ *       or the machine has no network connectivity, then your callback will be
+ *       invoked giving zero address and port.
+ *
+ *  2. In other NAT mapping APIs, if a laptop computer is put to sleep and woken up on a new
+ *     network, it's the client's job to notice this, and work out whether a NAT mapping
+ *     is required on the new network, and make a new NAT mapping request if necessary.
+ *     The DNSServiceNATPortMappingCreate API does this for you, automatically.
+ *     The client just needs to make one call to the PortMapping API, and its callback will
+ *     be invoked any time the mapping state changes. This property complements point (1) above.
+ *     If the client didn't make a NAT mapping request just because it determined that one was
+ *     not required at that particular moment in time, the client would then have to monitor
+ *     for network state changes to determine if a NAT port mapping later became necessary.
+ *     By unconditionally making a NAT mapping request, even when a NAT mapping not to be
+ *     necessary, the PortMapping API will then begin monitoring network state changes on behalf of
+ *     the client, and if a NAT mapping later becomes necessary, it will automatically create a NAT
+ *     mapping and inform the client with a new callback giving the new address and port information.
  *
  * DNSServiceNATPortMappingReply() parameters:
  *
@@ -1735,14 +1776,14 @@ DNSServiceErrorType DNSSD_API DNSServiceReconfirmRecord
  *                  For other failures, will indicate the failure that occurred, and the other
  *                  parameters are undefined.
  *
- * publicAddress:   Four byte IPv4 address in network byte order.
+ * externalAddress: Four byte IPv4 address in network byte order.
  *
  * protocol:        Will be kDNSServiceProtocol_UDP or kDNSServiceProtocol_TCP or both.
  *
- * privatePort:     The port on the local machine that was mapped.
+ * internalPort:    The port on the local machine that was mapped.
  *
- * publicPort:      The actual public port in the NAT gateway that was mapped.
- *                  This is very likely to be different than the requested public port.
+ * externalPort:    The actual external port in the NAT gateway that was mapped.
+ *                  This is likely to be different than the requested external port.
  *
  * ttl:             The lifetime of the NAT port mapping created on the gateway.
  *                  This controls how quickly stale mappings will be garbage-collected
@@ -1761,11 +1802,11 @@ typedef void (DNSSD_API *DNSServiceNATPortMappingReply)
     DNSServiceFlags                  flags,
     uint32_t                         interfaceIndex,
     DNSServiceErrorType              errorCode,
-    uint32_t                         publicAddress,    /* four byte IPv4 address in network byte order */
+    uint32_t                         externalAddress,   /* four byte IPv4 address in network byte order */
     DNSServiceProtocol               protocol,
-    uint16_t                         privatePort,
-    uint16_t                         publicPort,       /* may be different than the requested port */
-    uint32_t                         ttl,              /* may be different than the requested ttl */
+    uint16_t                         internalPort,
+    uint16_t                         externalPort,      /* may be different than the requested port     */
+    uint32_t                         ttl,               /* may be different than the requested ttl      */
     void                             *context
     );
 
@@ -1784,14 +1825,14 @@ typedef void (DNSSD_API *DNSServiceNATPortMappingReply)
  *
  * protocol:        To request a port mapping, pass in kDNSServiceProtocol_UDP, or kDNSServiceProtocol_TCP,
  *                  or (kDNSServiceProtocol_UDP | kDNSServiceProtocol_TCP) to map both.
- *                  The local listening port number must also be specified in the privatePort parameter.
- *                  To just discover the NAT gateway's public IP address, pass zero for protocol,
- *                  privatePort, publicPort and ttl.
+ *                  The local listening port number must also be specified in the internalPort parameter.
+ *                  To just discover the NAT gateway's external IP address, pass zero for protocol,
+ *                  internalPort, externalPort and ttl.
  *
- * privatePort:     The port number in network byte order on the local machine which is listening for packets.
+ * internalPort:    The port number in network byte order on the local machine which is listening for packets.
  *
- * publicPort:      The requested public port in network byte order in the NAT gateway that you would
- *                  like to map to the private port. Pass 0 if you don't care which public port is chosen for you.
+ * externalPort:    The requested external port in network byte order in the NAT gateway that you would
+ *                  like to map to the internal port. Pass 0 if you don't care which external port is chosen for you.
  *
  * ttl:             The requested renewal period of the NAT port mapping, in seconds.
  *                  If the client machine crashes, suffers a power failure, is disconnected from
@@ -1815,8 +1856,8 @@ typedef void (DNSSD_API *DNSServiceNATPortMappingReply)
  *                  the error that occurred.
  *
  *                  If you don't actually want a port mapped, and are just calling the API
- *                  because you want to find out the NAT's public IP address (e.g. for UI
- *                  display) then pass zero for protocol, privatePort, publicPort and ttl.
+ *                  because you want to find out the NAT's external IP address (e.g. for UI
+ *                  display) then pass zero for protocol, internalPort, externalPort and ttl.
  */
 
 DNSServiceErrorType DNSSD_API DNSServiceNATPortMappingCreate
@@ -1824,12 +1865,12 @@ DNSServiceErrorType DNSSD_API DNSServiceNATPortMappingCreate
     DNSServiceRef                    *sdRef,
     DNSServiceFlags                  flags,
     uint32_t                         interfaceIndex,
-    DNSServiceProtocol               protocol,         /* TCP and/or UDP */
-    uint16_t                         privatePort,      /* network byte order */
-    uint16_t                         publicPort,       /* network byte order */
-    uint32_t                         ttl,              /* time to live in seconds */
+    DNSServiceProtocol               protocol,          /* TCP and/or UDP          */
+    uint16_t                         internalPort,      /* network byte order      */
+    uint16_t                         externalPort,      /* network byte order      */
+    uint32_t                         ttl,               /* time to live in seconds */
     DNSServiceNATPortMappingReply    callBack,
-    void                             *context          /* may be NULL */
+    void                             *context           /* may be NULL             */
     );
 
 
