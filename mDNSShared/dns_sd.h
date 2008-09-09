@@ -242,10 +242,8 @@ enum
      * the CNAME referral, the intermediate CNAME result is also returned to the client.
      * When this flag is not set, NXDomain errors are not returned, and CNAME records
      * are followed silently without informing the client of the intermediate steps.
+     * (In earlier builds this flag was briefly calledkDNSServiceFlagsReturnCNAME)
      */
-
-    /* Previous name for kDNSServiceFlagsReturnIntermediates flag (not used externally) */
-    #define kDNSServiceFlagsReturnCNAME kDNSServiceFlagsReturnIntermediates
 
     kDNSServiceFlagsNonBrowsable        = 0x2000,
     /* A service registered with the NonBrowsable flag set can be resolved using
