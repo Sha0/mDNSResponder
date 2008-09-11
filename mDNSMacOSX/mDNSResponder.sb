@@ -26,8 +26,8 @@
 ; SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ;
 ; $Log: mDNSResponder.sb,v $
-; Revision 1.28  2008/09/11 20:04:14  mcguire
-; <rdar://problem/6211355> Instances of \. in regex exprs don't do what is intended
+; Revision 1.29  2008/09/11 20:46:08  mcguire
+; <rdar://problem/6208848> can't write to -Caches-
 ;
 ; Revision 1.27  2008/07/24 21:18:14  cheshire
 ; <rdar://problem/3988320> Should use randomized source ports and transaction IDs to avoid DNS cache poisoning
@@ -196,4 +196,5 @@
 (allow file-read* file-write*         (regex #"^/private/var/tmp/mds/[0-9]+(/|$)"))
 (allow file-read-data                 (regex #"^/private/var/db/mds/"))
 (allow file-read* file-write*         (regex #"^/private/var/db/mds/[0-9]+(/|$)"))
+(allow file-read* file-write*         (regex #"^/private/var/folders/[^/]+/[^/]+/-Caches-/mds(/|$)"))
 
