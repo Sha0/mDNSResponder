@@ -21,6 +21,10 @@
 	Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.44  2008/09/15 23:52:30  cheshire
+<rdar://problem/6218902> mDNSResponder-177 fails to compile on Linux with .desc pseudo-op
+Made __crashreporter_info__ symbol conditional, so we only use it for OS X build
+
 Revision 1.43  2007/10/22 20:05:34  cheshire
 Use mDNSPlatformSourceAddrForDest instead of FindSourceAddrForIP
 
@@ -269,9 +273,11 @@ mDNSexport void RecordUpdatedNiceLabel(mDNS *const m, mDNSs32 delay)
 	// No-op, for now
 	}
 
+#if _BUILDING_XCODE_PROJECT_
 // If the process crashes, then this string will be magically included in the automatically-generated crash log
 const char *__crashreporter_info__ = mDNSResponderVersionString_SCCS + 5;
 asm(".desc ___crashreporter_info__, 0x10");
+#endif
 
 // For convenience when using the "strings" command, this is the last thing in the file
 #if mDNSResponderVersion > 1

@@ -30,6 +30,10 @@
 	Change History (most recent first):
 
 $Log: SamplemDNSClient.c,v $
+Revision 1.55  2008/09/15 23:52:30  cheshire
+<rdar://problem/6218902> mDNSResponder-177 fails to compile on Linux with .desc pseudo-op
+Made __crashreporter_info__ symbol conditional, so we only use it for OS X build
+
 Revision 1.54  2007/11/30 23:39:55  cheshire
 Fixed compile warning: declaration of 'client' shadows a global declaration
 
@@ -466,6 +470,8 @@ Fail:
 // The "@(#) " pattern is a special prefix the "what" command looks for
 const char VersionString_SCCS[] = "@(#) mDNS " STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ")";
 
+#if _BUILDING_XCODE_PROJECT_
 // If the process crashes, then this string will be magically included in the automatically-generated crash log
 const char *__crashreporter_info__ = VersionString_SCCS + 5;
 asm(".desc ___crashreporter_info__, 0x10");
+#endif

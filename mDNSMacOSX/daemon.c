@@ -30,6 +30,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.361  2008/09/15 23:52:30  cheshire
+<rdar://problem/6218902> mDNSResponder-177 fails to compile on Linux with .desc pseudo-op
+Made __crashreporter_info__ symbol conditional, so we only use it for OS X build
+
 Revision 1.360  2008/03/13 20:55:16  mcguire
 <rdar://problem/5769316> fix deprecated warnings/errors
 Additional cleanup: use a conditional macro instead of lots of #if
@@ -2758,9 +2762,11 @@ mStatus udsSupportRemoveFDFromEventLoop(int fd)		// Note: This also CLOSES the f
 	return mStatus_NoSuchNameErr;
 	}
 
+#if _BUILDING_XCODE_PROJECT_
 // If mDNSResponder crashes, then this string will be magically included in the automatically-generated crash log
 const char *__crashreporter_info__ = mDNSResponderVersionString;
 asm(".desc ___crashreporter_info__, 0x10");
+#endif
 
 // For convenience when using the "strings" command, this is the last thing in the file
 // The "@(#) " pattern is a special prefix the "what" command looks for

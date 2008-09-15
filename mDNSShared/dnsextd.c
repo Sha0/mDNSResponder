@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.89  2008/09/15 23:52:30  cheshire
+<rdar://problem/6218902> mDNSResponder-177 fails to compile on Linux with .desc pseudo-op
+Made __crashreporter_info__ symbol conditional, so we only use it for OS X build
+
 Revision 1.88  2008/03/06 21:26:11  cheshire
 Moved duplicated STRINGIFY macro from individual C files to DNSCommon.h
 
@@ -3262,6 +3266,8 @@ mDNS mDNSStorage;
 // The "@(#) " pattern is a special prefix the "what" command looks for
 const char mDNSResponderVersionString_SCCS[] = "@(#) dnsextd " STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ")";
 
+#if _BUILDING_XCODE_PROJECT_
 // If the process crashes, then this string will be magically included in the automatically-generated crash log
 const char *__crashreporter_info__ = mDNSResponderVersionString_SCCS + 5;
 asm(".desc ___crashreporter_info__, 0x10");
+#endif

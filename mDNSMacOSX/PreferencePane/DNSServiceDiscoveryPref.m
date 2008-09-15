@@ -43,6 +43,10 @@
     Change History (most recent first):
 
 $Log: DNSServiceDiscoveryPref.m,v $
+Revision 1.16  2008/09/15 23:52:30  cheshire
+<rdar://problem/6218902> mDNSResponder-177 fails to compile on Linux with .desc pseudo-op
+Made __crashreporter_info__ symbol conditional, so we only use it for OS X build
+
 Revision 1.15  2008/08/18 17:57:04  mcguire
 <rdar://problem/6156209> build error
 
@@ -1240,6 +1244,8 @@ MyDNSServiceAddServiceToRunLoop(MyDNSServiceState * query)
 // The "@(#) " pattern is a special prefix the "what" command looks for
 const char VersionString_SCCS[] = "@(#) Bonjour Preference Pane " STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ")";
 
+#if _BUILDING_XCODE_PROJECT_
 // If the process crashes, then this string will be magically included in the automatically-generated crash log
 const char *__crashreporter_info__ = VersionString_SCCS + 5;
 asm(".desc ___crashreporter_info__, 0x10");
+#endif

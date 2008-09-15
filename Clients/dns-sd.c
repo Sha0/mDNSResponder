@@ -1048,6 +1048,8 @@ Fail:
 // The "@(#) " pattern is a special prefix the "what" command looks for
 const char VersionString_SCCS[] = "@(#) dns-sd " STRINGIFY(mDNSResponderVersion) " (" __DATE__ " " __TIME__ ")";
 
+#if _BUILDING_XCODE_PROJECT_
 // If the process crashes, then this string will be magically included in the automatically-generated crash log
 const char *__crashreporter_info__ = VersionString_SCCS + 5;
 asm(".desc ___crashreporter_info__, 0x10");
+#endif
