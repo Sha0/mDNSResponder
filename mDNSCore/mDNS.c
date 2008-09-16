@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.788  2008/09/16 21:11:41  cheshire
+<rdar://problem/6223969> mDNS: Duplicate TXT record queries being produced by iPhone Remote
+
 Revision 1.787  2008/09/05 22:53:24  cheshire
 Improve "How is rr->resrec.rroriginalttl <= SecsSinceRcvd" debugging message
 
@@ -5240,6 +5243,12 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 // doing a standard DNS query for the _dns-query-tls._tcp SRV record for company.com. If we make the latter (public) query
 // a duplicate of the former (private) query, then it will block forever waiting for an answer that will never come.
 
+// If IsLLQ(Q) is true, it means the question is both:
+// (a) long-lived and
+// (b) being performed by a unicast DNS long-lived query (either full LLQ, or polling)
+// for multicast questions, we don't want to treat LongLived as anything special
+#define IsLLQ(Q) ((Q)->LongLived && !mDNSOpaque16IsZero((Q)->TargetQID))
+
 mDNSlocal DNSQuestion *FindDuplicateQuestion(const mDNS *const m, const DNSQuestion *const question)
 	{
 	DNSQuestion *q;
@@ -5252,7 +5261,7 @@ mDNSlocal DNSQuestion *FindDuplicateQuestion(const mDNS *const m, const DNSQuest
 			SameQTarget(q, question)                &&			// and same unicast/multicast target settings
 			q->qtype      == question->qtype        &&			// type,
 			q->qclass     == question->qclass       &&			// class,
-			q->LongLived  == question->LongLived    &&			// and long-lived status matches
+			IsLLQ(q)      == IsLLQ(question)        &&			// and long-lived status matches
 			(!q->AuthInfo || question->AuthInfo)    &&			// to avoid deadlock, don't make public query dup of a private one
 			q->qnamehash  == question->qnamehash    &&
 			SameDomainName(&q->qname, &question->qname))		// and name
