@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.390  2008/09/16 21:06:56  cheshire
+Improved syslog output to show if q->LongLived flag is set for multicast questions
+
 Revision 1.389  2008/07/25 22:34:11  mcguire
 fix sizecheck issues for 64bit
 
@@ -3747,7 +3750,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 			LogMsgNoIdent("%6d%6d %-6s%s%s %5d  %-6s%##s%s",
 				i, n,
 				info ? info->ifname : mDNSOpaque16IsZero(q->TargetQID) ? "" : "-U-",
-				mDNSOpaque16IsZero(q->TargetQID) ? " " : q->LongLived ? "L" : "O", // mDNS, long-lived, or one-shot query?
+				mDNSOpaque16IsZero(q->TargetQID) ? (q->LongLived ? "l" : " ") : (q->LongLived ? "L" : "O"),
 				q->AuthInfo    ? "P" : " ",
 				q->CurrentAnswers,
 				DNSTypeName(q->qtype), q->qname.c, q->DuplicateOf ? " (dup)" : "");
