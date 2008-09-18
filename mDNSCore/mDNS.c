@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.789  2008/09/18 06:15:06  mkrochma
+<rdar://problem/6117156> Cleanup: mDNSResponder logging debugging information to console
+
 Revision 1.788  2008/09/16 21:11:41  cheshire
 <rdar://problem/6223969> mDNS: Duplicate TXT record queries being produced by iPhone Remote
 
@@ -6890,8 +6893,8 @@ mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordS
 		}
 	
 	if (SameDomainName(&domain, &localdomain))
-		LogMsg("%##s service renamed from \"%#s\" to \"%#s\"", type.c, name1.c, newname->c);
-	else LogMsg("%##s service (domain %##s) renamed from \"%#s\" to \"%#s\"",type.c, domain.c, name1.c, newname->c);
+		debugf("%##s service renamed from \"%#s\" to \"%#s\"", type.c, name1.c, newname->c);
+	else debugf("%##s service (domain %##s) renamed from \"%#s\" to \"%#s\"",type.c, domain.c, name1.c, newname->c);
 
 	err = mDNS_RegisterService(m, sr, newname, &type, &domain,
 		host, sr->RR_SRV.resrec.rdata->u.srv.port, sr->RR_TXT.resrec.rdata->u.txt.c, sr->RR_TXT.resrec.rdlength,
