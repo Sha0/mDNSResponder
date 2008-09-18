@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.790  2008/09/18 22:46:34  cheshire
+<rdar://problem/6230680> 100ms delay on shutdown
+
 Revision 1.789  2008/09/18 06:15:06  mkrochma
 <rdar://problem/6117156> Cleanup: mDNSResponder logging debugging information to console
 
@@ -7403,7 +7406,10 @@ mDNSexport void mDNS_StartExit(mDNS *const m)
 		{
 		rr = m->CurrentRecord;
 		if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
+			{
+			//LogOperation("mDNS_StartExit: Deregistering %s", ARDisplayString(m, rr));
 			mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
+			}
 		// Note: We mustn't advance m->CurrentRecord until *after* mDNS_Deregister_internal, because when
 		// we have records on the DuplicateRecords list, the duplicate gets inserted in place of the record
 		// we're removing, and if we've already advanced to rr->next we'll miss the newly activated duplicate
@@ -7428,11 +7434,15 @@ mDNSexport void mDNS_StartExit(mDNS *const m)
 			m->CurrentRecord = rr->next;
 		}
 
+	// If we scheduled a response to send goodbye packets, we set NextScheduledResponse to now. Normally when deregistering records,
+	// we allow up to 100ms delay (to help improve record grouping) but when shutting down we don't want any such delay.
+	if (m->NextScheduledResponse - m->timenow < mDNSPlatformOneSecond) m->NextScheduledResponse = m->timenow;
+
 	CurrentServiceRecordSet = m->ServiceRegistrations;
 	while (CurrentServiceRecordSet)
 		{
 		ServiceRecordSet *srs = CurrentServiceRecordSet;
-		LogOperation("mDNS_StartExit: Deregistering %##s", srs->RR_SRV.resrec.name->c);
+		LogOperation("mDNS_StartExit: Deregistering uDNS service %##s", srs->RR_SRV.resrec.name->c);
 		uDNS_DeregisterService(m, srs);
 		if (CurrentServiceRecordSet == srs)
 			CurrentServiceRecordSet = srs->uDNS_next;
@@ -7441,8 +7451,8 @@ mDNSexport void mDNS_StartExit(mDNS *const m)
 	if (m->ResourceRecords) LogOperation("mDNS_StartExit: Sending final record deregistrations");
 	else                    LogOperation("mDNS_StartExit: No deregistering records remain");
 
-	if (m->ServiceRegistrations) LogOperation("mDNS_StartExit: Sending final service deregistrations");
-	else                         LogOperation("mDNS_StartExit: No deregistering services remain");
+	if (m->ServiceRegistrations) LogOperation("mDNS_StartExit: Sending final uDNS service deregistrations");
+	else                         LogOperation("mDNS_StartExit: No deregistering uDNS services remain");
 
 	// If any deregistering records remain, send their deregistration announcements before we exit
 	if (m->mDNSPlatformStatus != mStatus_NoError) DiscardDeregistrations(m);
