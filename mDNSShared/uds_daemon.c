@@ -17,6 +17,10 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.391  2008/09/18 22:05:44  cheshire
+Fixed "DNSServiceRegister ... ADDED" message to have escaping consistent with
+the other DNSServiceRegister operation messages
+
 Revision 1.390  2008/09/16 21:06:56  cheshire
 Improved syslog output to show if q->LongLived flag is set for multicast questions
 
@@ -1753,9 +1757,6 @@ mDNSlocal mStatus register_service_instance(request_state *request, const domain
 	if (request->u.servicereg.num_subtypes && !instance->subtypes)
 		{ unlink_and_free_service_instance(instance); instance = NULL; FatalError("ERROR: malloc"); }
 
-	LogOperation("%3d: DNSServiceRegister(%#s.%##s%##s, %u) ADDING",
-		instance->sd, &request->u.servicereg.name, &request->u.servicereg.type, domain->c, mDNSVal16(request->u.servicereg.port));
-
 	result = mDNS_RegisterService(&mDNSStorage, &instance->srs,
 		&request->u.servicereg.name, &request->u.servicereg.type, domain,
 		request->u.servicereg.host.c[0] ? &request->u.servicereg.host : NULL,
@@ -1764,7 +1765,12 @@ mDNSlocal mStatus register_service_instance(request_state *request, const domain
 		instance->subtypes, request->u.servicereg.num_subtypes,
 		request->u.servicereg.InterfaceID, regservice_callback, instance);
 
-	if (!result) *ptr = instance;		// Append this to the end of our request->u.servicereg.instances list
+	if (!result)
+		{
+		*ptr = instance;		// Append this to the end of our request->u.servicereg.instances list
+		LogOperation("%3d: DNSServiceRegister(%##s, %u) ADDED",
+			instance->sd, instance->srs.RR_SRV.resrec.name->c, mDNSVal16(request->u.servicereg.port));
+		}
 	else
 		{
 		LogMsg("register_service_instance %#s.%##s%##s error %d",
