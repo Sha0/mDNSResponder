@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.392  2008/09/18 22:30:06  cheshire
+<rdar://problem/6230679> device-info record not removed when last service deregisters
+
 Revision 1.391  2008/09/18 22:05:44  cheshire
 Fixed "DNSServiceRegister ... ADDED" message to have escaping consistent with
 the other DNSServiceRegister operation messages
@@ -1805,7 +1808,12 @@ mDNSlocal void regservice_termination_callback(request_state *request)
 		}
 	if (request->u.servicereg.txtdata)
 		{ freeL("service_info txtdata", request->u.servicereg.txtdata); request->u.servicereg.txtdata = NULL; }
-	if (request->u.servicereg.autoname) UpdateDeviceInfoRecord(&mDNSStorage);
+	if (request->u.servicereg.autoname)
+		{
+		// Clear autoname before calling UpdateDeviceInfoRecord() so it doesn't mistakenly include this in its count of active autoname registrations
+		request->u.servicereg.autoname = mDNSfalse;
+		UpdateDeviceInfoRecord(&mDNSStorage);
+		}
 	}
 
 mDNSlocal void udsserver_default_reg_domain_changed(const DNameListElem *const d, const mDNSBool add)
