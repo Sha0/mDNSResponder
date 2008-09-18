@@ -1598,7 +1598,7 @@ DNSServiceErrorType DNSSD_API DNSServiceCreateConnection(DNSServiceRef *sdRef);
  *                  call, this ref may be passed to DNSServiceUpdateRecord() or DNSServiceRemoveRecord().
  *                  (To deregister ALL records registered on a single connected DNSServiceRef
  *                  and deallocate each of their corresponding DNSServiceRecordRefs, call
- *                  DNSServiceRefDealloocate()).
+ *                  DNSServiceRefDeallocate()).
  *
  * flags:           Possible values are kDNSServiceFlagsShared or kDNSServiceFlagsUnique
  *                  (see flag type definitions for details).
