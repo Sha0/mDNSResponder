@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.477  2008/09/20 00:34:22  mcguire
+<rdar://problem/6129039> BTMM: Add support for WANPPPConnection
+
 Revision 1.476  2008/09/05 22:22:01  cheshire
 Move "UDPSocket *LocalSocket" field to more logical place in DNSQuestion_struct
 
@@ -2070,10 +2073,11 @@ struct mDNS_struct
 	tcpLNTInfo       *tcpInfoUnmapList;			// list of pending unmap requests
 	mDNSInterfaceID   UPnPInterfaceID;
 	UDPSocket        *SSDPSocket;               // For SSDP request/response
-	mDNSBool          SSDPMulticast;            // whether we should send the SSDP query via multicast
+	mDNSBool          SSDPWANPPPConnection;     // whether we should send the SSDP query for WANIPConnection or WANPPPConnection
 	mDNSIPPort        UPnPRouterPort;			// port we send discovery messages to
 	mDNSIPPort        UPnPSOAPPort;				// port we send SOAP messages to
 	mDNSu8           *UPnPRouterURL;			// router's URL string
+	mDNSBool          UPnPWANPPPConnection;     // whether we're using WANIPConnection or WANPPPConnection
 	mDNSu8           *UPnPSOAPURL;				// router's SOAP control URL string
 	mDNSu8           *UPnPRouterAddressString;	// holds both the router's address and port
 	mDNSu8           *UPnPSOAPAddressString;	// holds both address and port for SOAP messages

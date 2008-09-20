@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.791  2008/09/20 00:34:21  mcguire
+<rdar://problem/6129039> BTMM: Add support for WANPPPConnection
+
 Revision 1.790  2008/09/18 22:46:34  cheshire
 <rdar://problem/6230680> 100ms delay on shutdown
 
@@ -7186,10 +7189,11 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 
 	m->UPnPInterfaceID          = 0;
 	m->SSDPSocket               = mDNSNULL;
-	m->SSDPMulticast            = mDNSfalse;
+	m->SSDPWANPPPConnection     = mDNSfalse;
 	m->UPnPRouterPort           = zeroIPPort;
 	m->UPnPSOAPPort             = zeroIPPort;
 	m->UPnPRouterURL            = mDNSNULL;
+	m->UPnPWANPPPConnection     = mDNSfalse;
 	m->UPnPSOAPURL              = mDNSNULL;
 	m->UPnPRouterAddressString  = mDNSNULL;
 	m->UPnPSOAPAddressString    = mDNSNULL;
