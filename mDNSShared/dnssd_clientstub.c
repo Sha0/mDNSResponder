@@ -28,6 +28,10 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.104  2008/09/23 01:36:00  cheshire
+Updated code to use internalPort/externalPort terminology, instead of the old privatePort/publicPort
+terms (which could be misleading, because the word "private" suggests security).
+
 Revision 1.103  2008/07/24 18:51:13  cheshire
 Removed spurious spaces
 
@@ -1656,27 +1660,27 @@ static void handle_port_mapping_response(DNSServiceOp *sdr, CallbackHeader *cbh,
 	{
 	union { uint32_t l; u_char b[4]; } addr;
 	uint8_t protocol = 0;
-	union { uint16_t s; u_char b[2]; } privatePort;
-	union { uint16_t s; u_char b[2]; } publicPort;
+	union { uint16_t s; u_char b[2]; } internalPort;
+	union { uint16_t s; u_char b[2]; } externalPort;
 	uint32_t ttl = 0;
 
 	if (data + 13 > end) data = NULL;
 	else
 		{
-		addr       .b[0] = *data++;
-		addr       .b[1] = *data++;
-		addr       .b[2] = *data++;
-		addr       .b[3] = *data++;
-		protocol         = *data++;
-		privatePort.b[0] = *data++;
-		privatePort.b[1] = *data++;
-		publicPort .b[0] = *data++;
-		publicPort .b[1] = *data++;
-		ttl              = get_uint32(&data, end);
+		addr        .b[0] = *data++;
+		addr        .b[1] = *data++;
+		addr        .b[2] = *data++;
+		addr        .b[3] = *data++;
+		protocol          = *data++;
+		internalPort.b[0] = *data++;
+		internalPort.b[1] = *data++;
+		externalPort.b[0] = *data++;
+		externalPort.b[1] = *data++;
+		ttl               = get_uint32(&data, end);
 		}
 
 	if (!data) syslog(LOG_WARNING, "dnssd_clientstub handle_port_mapping_response: error reading result from daemon");
-	else ((DNSServiceNATPortMappingReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, addr.l, protocol, privatePort.s, publicPort.s, ttl, sdr->AppContext);
+	else ((DNSServiceNATPortMappingReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, addr.l, protocol, internalPort.s, externalPort.s, ttl, sdr->AppContext);
 	// MUST NOT touch sdr after invoking AppCallback -- client is allowed to dispose it from within callback function
 	}
 
@@ -1686,8 +1690,8 @@ DNSServiceErrorType DNSSD_API DNSServiceNATPortMappingCreate
 	DNSServiceFlags                     flags,
 	uint32_t                            interfaceIndex,
 	uint32_t                            protocol,     /* TCP and/or UDP */
-	uint16_t                            privatePortInNetworkByteOrder,
-	uint16_t                            publicPortInNetworkByteOrder,
+	uint16_t                            internalPortInNetworkByteOrder,
+	uint16_t                            externalPortInNetworkByteOrder,
 	uint32_t                            ttl,          /* time to live in seconds */
 	DNSServiceNATPortMappingReply       callBack,
 	void                                *context      /* may be NULL */
@@ -1696,8 +1700,8 @@ DNSServiceErrorType DNSSD_API DNSServiceNATPortMappingCreate
 	char *ptr;
 	size_t len;
 	ipc_msg_hdr *hdr;
-	union { uint16_t s; u_char b[2]; } privatePort = { privatePortInNetworkByteOrder };
-	union { uint16_t s; u_char b[2]; } publicPort  = { publicPortInNetworkByteOrder };
+	union { uint16_t s; u_char b[2]; } internalPort = { internalPortInNetworkByteOrder };
+	union { uint16_t s; u_char b[2]; } externalPort = { externalPortInNetworkByteOrder };
 
 	DNSServiceErrorType err = ConnectToServer(sdRef, flags, port_mapping_request, handle_port_mapping_response, callBack, context);
 	if (err) return err;	// On error ConnectToServer leaves *sdRef set to NULL
@@ -1705,8 +1709,8 @@ DNSServiceErrorType DNSSD_API DNSServiceNATPortMappingCreate
 	len = sizeof(flags);
 	len += sizeof(interfaceIndex);
 	len += sizeof(protocol);
-	len += sizeof(privatePort);
-	len += sizeof(publicPort);
+	len += sizeof(internalPort);
+	len += sizeof(externalPort);
 	len += sizeof(ttl);
 
 	hdr = create_hdr(port_mapping_request, &len, &ptr, (*sdRef)->primary ? 1 : 0, *sdRef);
@@ -1715,10 +1719,10 @@ DNSServiceErrorType DNSSD_API DNSServiceNATPortMappingCreate
 	put_flags(flags, &ptr);
 	put_uint32(interfaceIndex, &ptr);
 	put_uint32(protocol, &ptr);
-	*ptr++ = privatePort.b[0];
-	*ptr++ = privatePort.b[1];
-	*ptr++ = publicPort .b[0];
-	*ptr++ = publicPort .b[1];
+	*ptr++ = internalPort.b[0];
+	*ptr++ = internalPort.b[1];
+	*ptr++ = externalPort.b[0];
+	*ptr++ = externalPort.b[1];
 	put_uint32(ttl, &ptr);
 
 	err = deliver_request(hdr, *sdRef);		// Will free hdr for us
