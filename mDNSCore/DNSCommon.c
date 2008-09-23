@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.206  2008/09/23 02:26:09  cheshire
+Don't need to export putEmptyResourceRecord (it's only used from DNSCommon.c)
+
 Revision 1.205  2008/09/23 02:21:00  cheshire
 Don't need to force setting of rrclass in PutResourceRecordTTLWithLimit() now that putLLQ() sets it correctly
 
@@ -1951,7 +1954,7 @@ mDNSexport mDNSu8 *PutResourceRecordCappedTTL(DNSMessage *const msg, mDNSu8 *ptr
 	return(PutResourceRecordTTL(msg, ptr, count, rr, maxttl));
 	}
 
-mDNSexport mDNSu8 *putEmptyResourceRecord(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit,
+mDNSlocal mDNSu8 *putEmptyResourceRecord(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit,
 	mDNSu16 *count, const AuthRecord *rr)
 	{
 	ptr = putDomainNameAsLabels(msg, ptr, limit, rr->resrec.name);
