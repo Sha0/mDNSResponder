@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.478  2008/09/23 02:37:10  cheshire
+Added FirstLabel/SecondLabel macros
+
 Revision 1.477  2008/09/20 00:34:22  mcguire
 <rdar://problem/6129039> BTMM: Add support for WANPPPConnection
 
@@ -2396,6 +2399,9 @@ extern mDNSu8  *AppendLiteralLabelString(domainname *const name, const char *cst
 extern mDNSu8  *AppendDNSNameString     (domainname *const name, const char *cstr);
 extern mDNSu8  *AppendDomainLabel       (domainname *const name, const domainlabel *const label);
 extern mDNSu8  *AppendDomainName        (domainname *const name, const domainname *const append);
+
+#define FirstLabel(X)  ((const domainlabel *)(X))
+#define SecondLabel(X) ((const domainlabel *)&(X)->c[1 + (X)->c[0]])
 
 // Convert from null-terminated string to native DNS format:
 //   The DomainLabel form makes a single label from a literal C string, with no escape character interpretation.
