@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.393  2008/09/23 03:01:58  cheshire
+Added operation logging of domain enumeration results
+
 Revision 1.392  2008/09/18 22:30:06  cheshire
 <rdar://problem/6230679> device-info record not removed when last service deregisters
 
@@ -2751,6 +2754,9 @@ mDNSlocal void enum_result_callback(mDNS *const m,
 	// network, so we just pass kDNSServiceInterfaceIndexAny
 	reply = format_enumeration_reply(request, domain, flags, kDNSServiceInterfaceIndexAny, kDNSServiceErr_NoError);
 	if (!reply) { LogMsg("ERROR: enum_result_callback, format_enumeration_reply"); return; }
+
+	LogOperation("%3d: DNSServiceEnumerateDomains(%#s) RESULT %s: %s", request->sd, question->qname.c, AddRecord ? "Add" : "Rmv", domain);
+
 	append_reply(request, reply);
 	}
 
