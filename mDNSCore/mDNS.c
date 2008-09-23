@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.793  2008/09/23 04:11:53  cheshire
+<rdar://problem/6238774> Remove "local" from the end of _services._dns-sd._udp PTR records
+
 Revision 1.792  2008/09/23 02:30:07  cheshire
 Get rid of PutResourceRecordCappedTTL()
 
@@ -6731,7 +6734,9 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	AssignDomainName(&sr->RR_TXT.namestorage, sr->RR_SRV.resrec.name);
 	
 	// 1. Set up the ADV record rdata to advertise our service type
-	AssignDomainName(&sr->RR_ADV.resrec.rdata->u.name, sr->RR_PTR.resrec.name);
+	sr->RR_ADV.resrec.rdata->u.name.c[0] = 0;
+	AppendDomainLabel(&sr->RR_ADV.resrec.rdata->u.name, FirstLabel(&sr->RR_PTR.namestorage));
+	AppendDomainLabel(&sr->RR_ADV.resrec.rdata->u.name, SecondLabel(&sr->RR_PTR.namestorage));
 
 	// 2. Set up the PTR record rdata to point to our service name
 	// We set up two additionals, so when a client asks for this PTR we automatically send the SRV and the TXT too
