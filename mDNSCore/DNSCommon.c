@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.208  2008/09/23 02:33:56  cheshire
+<rdar://problem/4738033> uDNS: Should not compress SRV rdata in uDNS packets
+
 Revision 1.207  2008/09/23 02:30:07  cheshire
 Get rid of PutResourceRecordCappedTTL()
 
@@ -1913,10 +1916,14 @@ mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNS
 		}
 	}
 
+#define IsUnicastUpdate(X) (!mDNSOpaque16IsZero((X)->h.id) && ((X)->h.flags.b[0] & kDNSFlag0_OP_Mask) == kDNSFlag0_OP_Update)
+
 mDNSexport mDNSu8 *PutResourceRecordTTLWithLimit(DNSMessage *const msg, mDNSu8 *ptr, mDNSu16 *count, ResourceRecord *rr, mDNSu32 ttl, const mDNSu8 *limit)
 	{
 	mDNSu8 *endofrdata;
 	mDNSu16 actualLength;
+	// When sending SRV to conventional DNS server (i.e. in DNS update requests) we should not do name compression on the rdata (RFC 2782)
+	const DNSMessage *const rdatacompressionbase = (IsUnicastUpdate(msg) && rr->rrtype == kDNSType_SRV) ? mDNSNULL : msg;
 
 	if (rr->RecordType == kDNSRecordTypeUnregistered)
 		{
@@ -1936,7 +1943,7 @@ mDNSexport mDNSu8 *PutResourceRecordTTLWithLimit(DNSMessage *const msg, mDNSu8 *
 	ptr[5] = (mDNSu8)((ttl >> 16) &  0xFF);
 	ptr[6] = (mDNSu8)((ttl >>  8) &  0xFF);
 	ptr[7] = (mDNSu8)( ttl        &  0xFF);
-	endofrdata = putRData(msg, ptr+10, limit, rr);
+	endofrdata = putRData(rdatacompressionbase, ptr+10, limit, rr);
 	if (!endofrdata) { verbosedebugf("Ran out of space in PutResourceRecord for %##s (%s)", rr->name->c, DNSTypeName(rr->rrtype)); return(mDNSNULL); }
 
 	// Go back and fill in the actual number of data bytes we wrote
@@ -1950,8 +1957,7 @@ mDNSexport mDNSu8 *PutResourceRecordTTLWithLimit(DNSMessage *const msg, mDNSu8 *
 	return(endofrdata);
 	}
 
-mDNSlocal mDNSu8 *putEmptyResourceRecord(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit,
-	mDNSu16 *count, const AuthRecord *rr)
+mDNSlocal mDNSu8 *putEmptyResourceRecord(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, mDNSu16 *count, const AuthRecord *rr)
 	{
 	ptr = putDomainNameAsLabels(msg, ptr, limit, rr->resrec.name);
 	if (!ptr || ptr + 10 > limit) return(mDNSNULL);		// If we're out-of-space, return mDNSNULL
