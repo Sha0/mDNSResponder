@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.205  2008/09/23 02:21:00  cheshire
+Don't need to force setting of rrclass in PutResourceRecordTTLWithLimit() now that putLLQ() sets it correctly
+
 Revision 1.204  2008/08/29 19:03:05  cheshire
 <rdar://problem/6185645> Off-by-one error in putDomainNameAsLabels()
 
@@ -1906,7 +1909,6 @@ mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNS
 
 mDNSexport mDNSu8 *PutResourceRecordTTLWithLimit(DNSMessage *const msg, mDNSu8 *ptr, mDNSu16 *count, ResourceRecord *rr, mDNSu32 ttl, const mDNSu8 *limit)
 	{
-	mDNSu16 rrclass = (rr->rrtype == kDNSType_OPT) ? NormalMaxDNSMessageData : rr->rrclass;
 	mDNSu8 *endofrdata;
 	mDNSu16 actualLength;
 
@@ -1922,8 +1924,8 @@ mDNSexport mDNSu8 *PutResourceRecordTTLWithLimit(DNSMessage *const msg, mDNSu8 *
 	if (!ptr || ptr + 10 >= limit) return(mDNSNULL);	// If we're out-of-space, return mDNSNULL
 	ptr[0] = (mDNSu8)(rr->rrtype  >> 8);
 	ptr[1] = (mDNSu8)(rr->rrtype  &  0xFF);
-	ptr[2] = (mDNSu8)(rrclass     >> 8);
-	ptr[3] = (mDNSu8)(rrclass     &  0xFF);
+	ptr[2] = (mDNSu8)(rr->rrclass >> 8);
+	ptr[3] = (mDNSu8)(rr->rrclass &  0xFF);
 	ptr[4] = (mDNSu8)((ttl >> 24) &  0xFF);
 	ptr[5] = (mDNSu8)((ttl >> 16) &  0xFF);
 	ptr[6] = (mDNSu8)((ttl >>  8) &  0xFF);
