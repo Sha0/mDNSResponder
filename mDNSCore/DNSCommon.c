@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.207  2008/09/23 02:30:07  cheshire
+Get rid of PutResourceRecordCappedTTL()
+
 Revision 1.206  2008/09/23 02:26:09  cheshire
 Don't need to export putEmptyResourceRecord (it's only used from DNSCommon.c)
 
@@ -1945,13 +1948,6 @@ mDNSexport mDNSu8 *PutResourceRecordTTLWithLimit(DNSMessage *const msg, mDNSu8 *
 	if (count) (*count)++;
 	else LogMsg("PutResourceRecordTTL: ERROR: No target count to update for %##s (%s)", rr->name->c, DNSTypeName(rr->rrtype));
 	return(endofrdata);
-	}
-
-mDNSexport mDNSu8 *PutResourceRecordCappedTTL(DNSMessage *const msg, mDNSu8 *ptr, mDNSu16 *count, ResourceRecord *rr, mDNSu32
-											   maxttl)
-	{
-	if (maxttl > rr->rroriginalttl) maxttl = rr->rroriginalttl;
-	return(PutResourceRecordTTL(msg, ptr, count, rr, maxttl));
 	}
 
 mDNSlocal mDNSu8 *putEmptyResourceRecord(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit,

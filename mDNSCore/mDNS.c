@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.792  2008/09/23 02:30:07  cheshire
+Get rid of PutResourceRecordCappedTTL()
+
 Revision 1.791  2008/09/20 00:34:21  mcguire
 <rdar://problem/6129039> BTMM: Add support for WANPPPConnection
 
@@ -3833,7 +3836,8 @@ mDNSlocal mDNSu8 *GenerateUnicastResponse(const DNSMessage *const query, const m
 	for (rr=ResponseRecords; rr; rr=rr->NextResponse)
 		if (rr->NR_AnswerTo)
 			{
-			mDNSu8 *p = PutResourceRecordCappedTTL(response, responseptr, &response->h.numAnswers, &rr->resrec, maxttl);
+			mDNSu8 *p = PutResourceRecordTTL(response, responseptr, &response->h.numAnswers, &rr->resrec,
+				maxttl < rr->resrec.rroriginalttl ? maxttl : rr->resrec.rroriginalttl);
 			if (p) responseptr = p;
 			else { debugf("GenerateUnicastResponse: Ran out of space for answers!"); response->h.flags.b[0] |= kDNSFlag0_TC; }
 			}
@@ -3844,7 +3848,8 @@ mDNSlocal mDNSu8 *GenerateUnicastResponse(const DNSMessage *const query, const m
 	for (rr=ResponseRecords; rr; rr=rr->NextResponse)
 		if (rr->NR_AdditionalTo && !rr->NR_AnswerTo)
 			{
-			mDNSu8 *p = PutResourceRecordCappedTTL(response, responseptr, &response->h.numAdditionals, &rr->resrec, maxttl);
+			mDNSu8 *p = PutResourceRecordTTL(response, responseptr, &response->h.numAdditionals, &rr->resrec,
+				maxttl < rr->resrec.rroriginalttl ? maxttl : rr->resrec.rroriginalttl);
 			if (p) responseptr = p;
 			else debugf("GenerateUnicastResponse: No more space for additionals");
 			}

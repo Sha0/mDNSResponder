@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.63  2008/09/23 02:30:07  cheshire
+Get rid of PutResourceRecordCappedTTL()
+
 Revision 1.62  2008/09/23 02:26:09  cheshire
 Don't need to export putEmptyResourceRecord (it's only used from DNSCommon.c)
 
@@ -287,11 +290,12 @@ extern mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *
 // If we have a single large record to put in the packet, then we allow the packet to be up to 9K bytes,
 // but in the normal case we try to keep the packets below 1500 to avoid IP fragmentation on standard Ethernet
 extern mDNSu8 *PutResourceRecordTTLWithLimit(DNSMessage *const msg, mDNSu8 *ptr, mDNSu16 *count, ResourceRecord *rr, mDNSu32 ttl, const mDNSu8 *limit);
-#define PutResourceRecordTTL(msg, ptr, count, rr, ttl) PutResourceRecordTTLWithLimit((msg), (ptr), (count), (rr), (ttl), \
+
+#define PutResourceRecordTTL(msg, ptr, count, rr, ttl) \
+	PutResourceRecordTTLWithLimit((msg), (ptr), (count), (rr), (ttl), \
 	((msg)->h.numAnswers || (msg)->h.numAuthorities || (msg)->h.numAdditionals) ? (msg)->data + NormalMaxDNSMessageData : (msg)->data + AbsoluteMaxDNSMessageData)
-#define PutResourceRecordTTLJumbo(msg, ptr, count, rr, ttl) PutResourceRecordTTLWithLimit((msg), (ptr), (count), (rr), (ttl), \
-	(msg)->data + AbsoluteMaxDNSMessageData)
-extern mDNSu8 *PutResourceRecordCappedTTL(DNSMessage *const msg, mDNSu8 *ptr, mDNSu16 *count, ResourceRecord *rr, mDNSu32 maxttl);
+#define PutResourceRecordTTLJumbo(msg, ptr, count, rr, ttl) \
+	PutResourceRecordTTLWithLimit((msg), (ptr), (count), (rr), (ttl), (msg)->data + AbsoluteMaxDNSMessageData)
 
 extern mDNSu8 *putQuestion(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, const domainname *const name, mDNSu16 rrtype, mDNSu16 rrclass);
 extern mDNSu8 *putZone(DNSMessage *const msg, mDNSu8 *ptr, mDNSu8 *limit, const domainname *zone, mDNSOpaque16 zoneClass);
