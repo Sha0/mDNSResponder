@@ -885,7 +885,7 @@ int main(int argc, char **argv)
 					err = RegisterProxyAddressRecord(client_pa, argv[opi+4], argv[opi+5]);
 					//err = RegisterProxyAddressRecord(client_pa, "two", argv[opi+5]);
 					if (err) break;
-					err = RegisterService(&client, argv[opi+0], argv[opi+1], argv[opi+2], argv[opi+4], argv[opi+3], argc-(opi+6), argv+(opi+6));
+					err = RegisterService(&client, argv[opi+0], gettype(buffer, argv[opi+1]), argv[opi+2], argv[opi+4], argv[opi+3], argc-(opi+6), argv+(opi+6));
 					//DNSServiceRemoveRecord(client_pa, record, 0);
 					//DNSServiceRemoveRecord(client_pa, record, 0);
 					break;
