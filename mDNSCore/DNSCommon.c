@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.209  2008/09/23 04:13:30  cheshire
+<rdar://problem/6238774> Remove "local" from the end of _services._dns-sd._udp PTR records
+Removed old special-case Bonjour Browser hack that is no longer needed
+
 Revision 1.208  2008/09/23 02:33:56  cheshire
 <rdar://problem/4738033> uDNS: Should not compress SRV rdata in uDNS packets
 
@@ -1140,9 +1144,8 @@ mDNSexport mDNSBool DeconstructServiceName(const domainname *const fqdn,
 
 	len = *src;
 	if (!len)         { debugf("DeconstructServiceName: FQDN contains only two labels!");          return(mDNSfalse); }
-	// Can't do this check right now, until Bonjour Browser is updated to use DNSServiceQueryRecord instead of DNSServiceBrowse
-	//if (!ValidTransportProtocol(src))
-	//                  { debugf("DeconstructServiceName: Transport protocol must be _udp or _tcp"); return(mDNSfalse); }
+	if (!ValidTransportProtocol(src))
+	                  { debugf("DeconstructServiceName: Transport protocol must be _udp or _tcp"); return(mDNSfalse); }
 	for (i=0; i<=len; i++) *dst++ = *src++;
 	*dst++ = 0;											// Put terminator on the end of service type
 
