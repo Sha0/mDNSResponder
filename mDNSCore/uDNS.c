@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.571  2008/09/23 22:56:53  cheshire
+<rdar://problem/5298845> Remove dnsbugtest query
+
 Revision 1.570  2008/09/23 01:30:18  cheshire
 The putLLQ() routine was not setting the OPT record's rrclass to NormalMaxDNSMessageData
 
@@ -1340,7 +1343,7 @@ mDNSexport DNSServer *mDNS_AddDNSServer(mDNS *const m, const domainname *d, cons
 		(*p)->addr      = *addr;
 		(*p)->port      = port;
 		(*p)->flags     = DNSServer_FlagNew;
-		(*p)->teststate = DNSServer_Untested;
+		(*p)->teststate = /* DNSServer_Untested */ DNSServer_Passed;
 		(*p)->lasttest  = m->timenow - INIT_UCAST_POLL_INTERVAL;
 		AssignDomainName(&(*p)->domain, d);
 		(*p)->next = mDNSNULL;
@@ -1361,7 +1364,8 @@ mDNSlocal void PushDNSServerToEnd(mDNS *const m, DNSQuestion *q)
 		return;
 		}
 
-	LogOperation("PushDNSServerToEnd: Pushing DNS server %#a:%d (%##s) due to %d unanswered queries for %##s (%s)", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qDNSServer->domain.c, q->unansweredQueries, q->qname.c, DNSTypeName(q->qtype));
+	LogOperation("PushDNSServerToEnd: Pushing DNS server %#a:%d (%##s) due to %d unanswered queries for %##s (%s)",
+		&q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qDNSServer->domain.c, q->unansweredQueries, q->qname.c, DNSTypeName(q->qtype));
 
 	while (*p)
 		{
@@ -2953,7 +2957,8 @@ mDNSlocal void hostnameGetPublicAddressCallback(mDNS *m, NATTraversalInfo *n)
 		if (h->arv4.resrec.RecordType)
 			{
 			if (mDNSSameIPv4Address(h->arv4.resrec.rdata->u.ipv4, n->ExternalAddress)) return;	// If address unchanged, do nothing
-			LogOperation("Updating hostname %##s IPv4 from %.4a to %.4a (NAT gateway's external address)", h->arv4.resrec.name->c, &h->arv4.resrec.rdata->u.ipv4, &n->ExternalAddress);
+			LogOperation("Updating hostname %##s IPv4 from %.4a to %.4a (NAT gateway's external address)",
+				h->arv4.resrec.name->c, &h->arv4.resrec.rdata->u.ipv4, &n->ExternalAddress);
 			mDNS_Deregister(m, &h->arv4);	// mStatus_MemFree callback will re-register with new address
 			}
 		else
