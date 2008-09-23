@@ -17,6 +17,10 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.394  2008/09/23 04:12:40  cheshire
+<rdar://problem/6238774> Remove "local" from the end of _services._dns-sd._udp PTR records
+Added a special-case to massage these new records for Bonjour Browser's benefit
+
 Revision 1.393  2008/09/23 03:01:58  cheshire
 Added operation logging of domain enumeration results
 
@@ -1075,6 +1079,46 @@ mDNSlocal mStatus GenerateNTDResponse(const domainname *const servicename, const
 		}
 	}
 
+// Special support to enable the DNSServiceBrowse call made by Bonjour Browser
+// Remove after Bonjour Browser is updated to use DNSServiceQueryRecord instead of DNSServiceBrowse
+mDNSlocal void GenerateBonjourBrowserResponse(const domainname *const servicename, const mDNSInterfaceID id,
+	request_state *const request, reply_state **const rep, reply_op_t op, DNSServiceFlags flags, mStatus err)
+	{
+	char namestr[MAX_DOMAIN_LABEL+1];
+	char typestr[MAX_ESCAPED_DOMAIN_NAME];
+	static const char domstr[] = ".";
+	int len;
+	char *data;
+
+	*rep = NULL;
+
+	// 1. Put first label in namestr
+	ConvertDomainLabelToCString_unescaped((const domainlabel *)servicename, namestr);
+
+	// 2. Put second label and "local" into typestr
+	mDNS_snprintf(typestr, sizeof(typestr), "%#s.local.", SecondLabel(servicename));
+
+	// Calculate reply data length
+	len = sizeof(DNSServiceFlags);
+	len += sizeof(mDNSu32);  // if index
+	len += sizeof(DNSServiceErrorType);
+	len += (int) (strlen(namestr) + 1);
+	len += (int) (strlen(typestr) + 1);
+	len += (int) (strlen(domstr) + 1);
+
+	// Build reply header
+	*rep = create_reply(op, len, request);
+	(*rep)->rhdr->flags = dnssd_htonl(flags);
+	(*rep)->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(&mDNSStorage, id));
+	(*rep)->rhdr->error = dnssd_htonl(err);
+
+	// Build reply body
+	data = (*rep)->sdata;
+	put_string(namestr, &data);
+	put_string(typestr, &data);
+	put_string(domstr, &data);
+	}
+
 // Returns a resource record (allocated w/ malloc) containing the data found in an IPC message
 // Data must be in the following format: flags, interfaceIndex, name, rrtype, rrclass, rdlen, rdata, (optional) ttl
 // (ttl only extracted/set if ttl argument is non-zero). Returns NULL for a bad-parameter error
@@ -2030,10 +2074,20 @@ mDNSlocal void FoundInstance(mDNS *const m, DNSQuestion *question, const Resourc
 
 	if (GenerateNTDResponse(&answer->rdata->u.name, answer->InterfaceID, req, &rep, browse_reply_op, flags, mStatus_NoError) != mStatus_NoError)
 		{
+		if (SameDomainName(&req->u.browser.regtype, (const domainname*)"\x09_services\x07_dns-sd\x04_udp"))
+			{
+			// Special support to enable the DNSServiceBrowse call made by Bonjour Browser
+			// Remove after Bonjour Browser is updated to use DNSServiceQueryRecord instead of DNSServiceBrowse
+			GenerateBonjourBrowserResponse(&answer->rdata->u.name, answer->InterfaceID, req, &rep, browse_reply_op, flags, mStatus_NoError);
+			goto bonjourbrowserhack;
+			}
+
 		LogMsg("%3d: FoundInstance: %##s PTR %##s received from network is not valid DNS-SD service pointer",
 			req->sd, answer->name->c, answer->rdata->u.name.c);
 		return;
 		}
+
+bonjourbrowserhack:
 
 	LogOperation("%3d: DNSServiceBrowse(%##s, %s) RESULT %s %d: %s",
 		req->sd, question->qname.c, DNSTypeName(question->qtype), AddRecord ? "Add" : "Rmv",
