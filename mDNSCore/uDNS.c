@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.570  2008/09/23 01:30:18  cheshire
+The putLLQ() routine was not setting the OPT record's rrclass to NormalMaxDNSMessageData
+
 Revision 1.569  2008/07/25 22:34:11  mcguire
 fix sizecheck issues for 64bit
 
@@ -1767,6 +1770,7 @@ mDNSlocal mDNSu8 *putLLQ(DNSMessage *const msg, mDNSu8 *ptr, const DNSQuestion *
 
 	// format opt rr (fields not specified are zero-valued)
 	mDNS_SetupResourceRecord(&rr, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
+	opt->rrclass    = NormalMaxDNSMessageData;
 	opt->rdlength   = LLQ_OPT_RDLEN;
 	opt->rdestimate = LLQ_OPT_RDLEN;
 
