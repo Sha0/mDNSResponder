@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.572  2008/09/24 23:48:05  cheshire
+Don't need to pass whole ServiceRecordSet reference to GetServiceTarget;
+it only needs to access the embedded SRV member of the set
+
 Revision 1.571  2008/09/23 22:56:53  cheshire
 <rdar://problem/5298845> Remove dnsbugtest query
 
@@ -2323,16 +2327,16 @@ mDNSexport void startLLQHandshake(mDNS *m, DNSQuestion *q)
 		}
 	}
 
-mDNSexport const domainname *GetServiceTarget(mDNS *m, ServiceRecordSet *srs)
+mDNSexport const domainname *GetServiceTarget(mDNS *m, AuthRecord *const rr)
 	{
-	LogOperation("GetServiceTarget %##s", srs->RR_SRV.resrec.name->c);
+	LogOperation("GetServiceTarget %##s", rr->resrec.name->c);
 
-	if (!srs->RR_SRV.AutoTarget)		// If not automatically tracking this host's current name, just return the existing target
-		return(&srs->RR_SRV.resrec.rdata->u.srv.target);
+	if (!rr->AutoTarget)		// If not automatically tracking this host's current name, just return the existing target
+		return(&rr->resrec.rdata->u.srv.target);
 	else
 		{
 #if APPLE_OSX_mDNSResponder
-		DomainAuthInfo *AuthInfo = GetAuthInfoForName_internal(m, srs->RR_SRV.resrec.name);
+		DomainAuthInfo *AuthInfo = GetAuthInfoForName_internal(m, rr->resrec.name);
 		if (AuthInfo && AuthInfo->AutoTunnel)
 			{
 			// If this AutoTunnel is not yet active, start it now (which entails activating its NAT Traversal request,
@@ -2345,7 +2349,7 @@ mDNSexport const domainname *GetServiceTarget(mDNS *m, ServiceRecordSet *srs)
 		else
 #endif APPLE_OSX_mDNSResponder
 			{
-			const int srvcount = CountLabels(srs->RR_SRV.resrec.name);
+			const int srvcount = CountLabels(rr->resrec.name);
 			HostnameInfo *besthi = mDNSNULL, *hi;
 			int best = 0;
 			for (hi = m->Hostnames; hi; hi = hi->next)
@@ -2354,7 +2358,7 @@ mDNSexport const domainname *GetServiceTarget(mDNS *m, ServiceRecordSet *srs)
 					{
 					int x, hostcount = CountLabels(&hi->fqdn);
 					for (x = hostcount < srvcount ? hostcount : srvcount; x > 0 && x > best; x--)
-						if (SameDomainName(SkipLeadingLabels(srs->RR_SRV.resrec.name, srvcount - x), SkipLeadingLabels(&hi->fqdn, hostcount - x)))
+						if (SameDomainName(SkipLeadingLabels(rr->resrec.name, srvcount - x), SkipLeadingLabels(&hi->fqdn, hostcount - x)))
 							{ best = x; besthi = hi; }
 					}
 	
@@ -2442,7 +2446,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	else
 		if (!(ptr = PutResourceRecordTTLJumbo(&m->omsg, ptr, &m->omsg.h.mDNS_numUpdates, &srs->RR_TXT.resrec, srs->RR_TXT.resrec.rroriginalttl))) { err = mStatus_UnknownErr; goto exit; }
 
-	target = GetServiceTarget(m, srs);
+	target = GetServiceTarget(m, &srs->RR_SRV);
 	if (!target || target->c[0] == 0)
 		{
 		LogOperation("SendServiceRegistration - no target for %##s", srs->RR_SRV.resrec.name->c);
@@ -2838,7 +2842,7 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 	// The target has changed
 
 	domainname *curtarget = &srs->RR_SRV.resrec.rdata->u.srv.target;
-	const domainname *const nt = GetServiceTarget(m, srs);
+	const domainname *const nt = GetServiceTarget(m, &srs->RR_SRV);
 	const domainname *const newtarget = nt ? nt : (domainname*)"";
 	mDNSBool TargetChanged = (newtarget->c[0] && srs->state == regState_NoTarget) || !SameDomainName(curtarget, newtarget);
 	mDNSBool HaveZoneData  = !mDNSIPv4AddressIsZero(srs->SRSUpdateServer.ip.v4);

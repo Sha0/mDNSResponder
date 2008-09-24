@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.794  2008/09/24 23:48:05  cheshire
+Don't need to pass whole ServiceRecordSet reference to GetServiceTarget;
+it only needs to access the embedded SRV member of the set
+
 Revision 1.793  2008/09/23 04:11:53  cheshire
 <rdar://problem/6238774> Remove "local" from the end of _services._dns-sd._udp PTR records
 
@@ -1252,7 +1256,7 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr, mDNSs32
 // Eventually we should unify this with GetServiceTarget() in uDNS.c
 mDNSlocal void SetTargetToHostName(mDNS *const m, AuthRecord *const rr)
 	{
-	domainname *target = GetRRDomainNameTarget(&rr->resrec);
+	domainname *const target = GetRRDomainNameTarget(&rr->resrec);
 
 	if (!target) debugf("SetTargetToHostName: Don't know how to set the target of rrtype %d", rr->resrec.rrtype);
 
@@ -6652,7 +6656,7 @@ mDNSlocal mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 		if (!AuthInfo || !AuthInfo->AutoTunnel) srs->RR_SRV.AutoTarget = Target_AutoHostAndNATMAP;
 		}
 
-	if (!GetServiceTarget(m, srs))
+	if (!GetServiceTarget(m, &srs->RR_SRV))
 		{
 		// defer registration until we've got a target
 		LogOperation("uDNS_RegisterService - no target for %##s", srs->RR_SRV.resrec.name->c);
@@ -6798,6 +6802,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 		return(status);
 		}
 #endif
+
 	mDNS_Lock(m);
 	err = mDNS_Register_internal(m, &sr->RR_SRV);
 	if (!err) err = mDNS_Register_internal(m, &sr->RR_TXT);
