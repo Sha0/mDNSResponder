@@ -26,6 +26,9 @@
 ; SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ;
 ; $Log: mDNSResponder.sb,v $
+; Revision 1.31  2008/09/24 23:57:27  mcguire
+; <rdar://problem/6227808> need read access to /private/var/db/crls/crlcache.db
+;
 ; Revision 1.30  2008/09/11 22:01:51  mcguire
 ; re-add accidentally removed log comment
 ;
@@ -203,4 +206,5 @@
 (allow file-read-data                 (regex #"^/private/var/db/mds/"))
 (allow file-read* file-write*         (regex #"^/private/var/db/mds/[0-9]+(/|$)"))
 (allow file-read* file-write*         (regex #"^/private/var/folders/[^/]+/[^/]+/-Caches-/mds(/|$)"))
-
+; CRL Cache for SSL/TLS connections
+(allow file-read-data                 (regex #"^/private/var/db/crls/crlcache\.db$"))
