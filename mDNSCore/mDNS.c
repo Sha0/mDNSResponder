@@ -38,6 +38,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.796  2008/09/25 20:17:10  cheshire
+<rdar://problem/6245044> Stop using separate m->ServiceRegistrations list
+Added defensive code to make sure *all* records of a ServiceRecordSet have
+completed deregistering before we pass on the mStatus_MemFree message
+
 Revision 1.795  2008/09/25 00:30:11  cheshire
 <rdar://problem/6245044> Stop using separate m->ServiceRegistrations list
 
@@ -6616,10 +6621,14 @@ mDNSlocal void ServiceCallback(mDNS *const m, AuthRecord *const rr, mStatus resu
 	
 	if (result == mStatus_MemFree)
 		{
-		// If the PTR record or any of the subtype PTR records are still in the process of deregistering,
-		// don't pass on the NameConflict/MemFree message until every record is finished cleaning up.
+		// If the SRV/TXT/PTR records, or the _services._dns-sd._udp record, or any of the subtype PTR records,
+		// are still in the process of deregistering, don't pass on the NameConflict/MemFree message until
+		// every record is finished cleaning up.
 		mDNSu32 i;
+		if (sr->RR_SRV.resrec.RecordType != kDNSRecordTypeUnregistered) return;
+		if (sr->RR_TXT.resrec.RecordType != kDNSRecordTypeUnregistered) return;
 		if (sr->RR_PTR.resrec.RecordType != kDNSRecordTypeUnregistered) return;
+		if (sr->RR_ADV.resrec.RecordType != kDNSRecordTypeUnregistered) return;
 		for (i=0; i<sr->NumSubTypes; i++) if (sr->SubTypes[i].resrec.RecordType != kDNSRecordTypeUnregistered) return;
 
 		// If this ServiceRecordSet was forcibly deregistered, and now its memory is ready for reuse,
