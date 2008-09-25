@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.795  2008/09/25 00:30:11  cheshire
+<rdar://problem/6245044> Stop using separate m->ServiceRegistrations list
+
 Revision 1.794  2008/09/24 23:48:05  cheshire
 Don't need to pass whole ServiceRecordSet reference to GetServiceTarget;
 it only needs to access the embedded SRV member of the set
@@ -1257,15 +1260,22 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr, mDNSs32
 mDNSlocal void SetTargetToHostName(mDNS *const m, AuthRecord *const rr)
 	{
 	domainname *const target = GetRRDomainNameTarget(&rr->resrec);
+	const domainname *newname = &m->MulticastHostname;
 
 	if (!target) debugf("SetTargetToHostName: Don't know how to set the target of rrtype %d", rr->resrec.rrtype);
 
-	if (target && SameDomainName(target, &m->MulticastHostname))
+	if (!(rr->resrec.InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(&rr->namestorage)))
+		{
+		const domainname *const n = GetServiceTarget(m, rr);
+		if (n) newname = n;
+		}
+
+	if (target && SameDomainName(target, newname))
 		debugf("SetTargetToHostName: Target of %##s is already %##s", rr->resrec.name->c, target->c);
 	
-	if (target && !SameDomainName(target, &m->MulticastHostname))
+	if (target && !SameDomainName(target, newname))
 		{
-		AssignDomainName(target, &m->MulticastHostname);
+		AssignDomainName(target, newname);
 		SetNewRData(&rr->resrec, mDNSNULL, 0);		// Update rdlength, rdestimate, rdatahash
 		
 		// If we're in the middle of probing this record, we need to start again,
@@ -6630,6 +6640,7 @@ mDNSlocal void NSSCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
 		sr->ServiceCallback(m, sr, result);
 	}
 
+#if !defined(UNICAST_DISABLED) && defined(USE_SEPARATE_UDNS_SERVICE_LIST)
 mDNSlocal mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	{
 	mDNSu32 i;
@@ -6670,6 +6681,7 @@ mDNSlocal mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	srs->nta   = mDNSNULL;
 	return mStatus_NoError;
 	}
+#endif
 
 // Note:
 // Name is first label of domain name (any dots in the name are actual dots, not label separators)
@@ -6784,7 +6796,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 		}
 	sr->RR_TXT.DependentOn = &sr->RR_SRV;
 
-#ifndef UNICAST_DISABLED
+#if !defined(UNICAST_DISABLED) && defined(USE_SEPARATE_UDNS_SERVICE_LIST)
 	// If the client has specified an explicit InterfaceID,
 	// then we do a multicast registration on that interface, even for unicast domains.
 	if (!(InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(&sr->RR_SRV.namestorage)))
@@ -6943,7 +6955,7 @@ mDNSexport mStatus mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr)
 	// If port number is zero, that means this was actually registered using mDNS_RegisterNoSuchService()
 	if (mDNSIPPortIsZero(sr->RR_SRV.resrec.rdata->u.srv.port)) return(mDNS_DeregisterNoSuchService(m, &sr->RR_SRV));
 
-#ifndef UNICAST_DISABLED
+#if !defined(UNICAST_DISABLED) && defined(USE_SEPARATE_UDNS_SERVICE_LIST)
 	if (!(sr->RR_SRV.resrec.InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(sr->RR_SRV.resrec.name)))
 		{
 		mStatus status;
@@ -7457,6 +7469,7 @@ mDNSexport void mDNS_StartExit(mDNS *const m)
 	// we allow up to 100ms delay (to help improve record grouping) but when shutting down we don't want any such delay.
 	if (m->NextScheduledResponse - m->timenow < mDNSPlatformOneSecond) m->NextScheduledResponse = m->timenow;
 
+#if !defined(UNICAST_DISABLED) && defined(USE_SEPARATE_UDNS_SERVICE_LIST)
 	CurrentServiceRecordSet = m->ServiceRegistrations;
 	while (CurrentServiceRecordSet)
 		{
@@ -7466,6 +7479,7 @@ mDNSexport void mDNS_StartExit(mDNS *const m)
 		if (CurrentServiceRecordSet == srs)
 			CurrentServiceRecordSet = srs->uDNS_next;
 		}
+#endif
 
 	if (m->ResourceRecords) LogOperation("mDNS_StartExit: Sending final record deregistrations");
 	else                    LogOperation("mDNS_StartExit: No deregistering records remain");
