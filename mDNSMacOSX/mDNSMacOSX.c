@@ -17,6 +17,11 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.541  2008/09/25 21:02:05  cheshire
+<rdar://problem/6245044> Stop using separate m->ServiceRegistrations list
+In TunnelServers(), need to check main m->ResourceRecords list to see
+if we have a non-zero number of advertised AutoTunnel services
+
 Revision 1.540  2008/07/30 00:55:56  mcguire
 <rdar://problem/3988320> Should use randomized source ports and transaction IDs to avoid DNS cache poisoning
 Additional fixes so that we know when a socket has been closed while in a loop reading from it
@@ -2424,6 +2429,15 @@ mDNSlocal mDNSBool TunnelServers(mDNS *const m)
 		DomainAuthInfo *AuthInfo = GetAuthInfoForName_internal(m, p->RR_SRV.resrec.name);
 		if (AuthInfo && AuthInfo->AutoTunnel && !AuthInfo->deltime) return(mDNStrue);
 		}
+
+	AuthRecord *r;
+	for (r = m->ResourceRecords; r; r = r->next)
+		if (r->resrec.rrtype == kDNSType_SRV)
+			{
+			DomainAuthInfo *AuthInfo = GetAuthInfoForName_internal(m, r->resrec.name);
+			if (AuthInfo && AuthInfo->AutoTunnel && !AuthInfo->deltime) return(mDNStrue);
+			}
+
 	return(mDNSfalse);
 	}
 
