@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.797  2008/09/25 20:40:59  cheshire
+<rdar://problem/6245044> Stop using separate m->ServiceRegistrations list
+In mDNS_SetFQDN, need to update all AutoTarget SRV records, even if m->MulticastHostname hasn't changed
+
 Revision 1.796  2008/09/25 20:17:10  cheshire
 <rdar://problem/6245044> Stop using separate m->ServiceRegistrations list
 Added defensive code to make sure *all* records of a ServiceRecordSet have
@@ -6255,21 +6259,24 @@ mDNSexport void mDNS_SetFQDN(mDNS *const m)
 
 	if (!AppendDomainLabel(&newmname, &m->hostlabel))  { LogMsg("ERROR: mDNS_SetFQDN: Cannot create MulticastHostname"); return; }
 	if (!AppendLiteralLabelString(&newmname, "local")) { LogMsg("ERROR: mDNS_SetFQDN: Cannot create MulticastHostname"); return; }
-	if (SameDomainNameCS(&m->MulticastHostname, &newmname)) { LogMsg("mDNS_SetFQDN - hostname unchanged"); return; }
 
 	mDNS_Lock(m);
 
-	AssignDomainName(&m->MulticastHostname, &newmname);
-	// 1. Stop advertising our address records on all interfaces
-	for (intf = m->HostInterfaces; intf; intf = intf->next)
-		if (intf->Advertise) DeadvertiseInterface(m, intf);
+	if (SameDomainNameCS(&m->MulticastHostname, &newmname)) LogMsg("mDNS_SetFQDN - hostname unchanged");
+	else
+		{
+		AssignDomainName(&m->MulticastHostname, &newmname);
+	
+		// 1. Stop advertising our address records on all interfaces
+		for (intf = m->HostInterfaces; intf; intf = intf->next)
+			if (intf->Advertise) DeadvertiseInterface(m, intf);
+	
+		// 2. Start advertising our address records using the new name
+		for (intf = m->HostInterfaces; intf; intf = intf->next)
+			if (intf->Advertise) AdvertiseInterface(m, intf);
+		}
 
-	// 2. Start advertising our address records using the new name
-	for (intf = m->HostInterfaces; intf; intf = intf->next)
-		if (intf->Advertise) AdvertiseInterface(m, intf);
-
-	// 3. Make sure that any SRV records (and the like) that reference our
-	// host name in their rdata get updated to reference this new host name
+	// 3. Make sure that any AutoTarget SRV records (and the like) get updated
 	for (rr = m->ResourceRecords;  rr; rr=rr->next) if (rr->AutoTarget) SetTargetToHostName(m, rr);
 	for (rr = m->DuplicateRecords; rr; rr=rr->next) if (rr->AutoTarget) SetTargetToHostName(m, rr);
 	
