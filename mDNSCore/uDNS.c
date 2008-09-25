@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.573  2008/09/25 20:43:44  cheshire
+<rdar://problem/6245044> Stop using separate m->ServiceRegistrations list
+In UpdateSRVRecords, call mDNS_SetFQDN(m) to update AutoTarget SRV records on the main m->ResourceRecords list
+
 Revision 1.572  2008/09/24 23:48:05  cheshire
 Don't need to pass whole ServiceRecordSet reference to GetServiceTarget;
 it only needs to access the embedded SRV member of the set
@@ -2942,6 +2946,10 @@ mDNSlocal void UpdateSRVRecords(mDNS *m)
 		CurrentServiceRecordSet = CurrentServiceRecordSet->uDNS_next;
 		UpdateSRV(m, s);
 		}
+
+	mDNS_DropLockBeforeCallback();		// mDNS_SetFQDN expects to be called without the lock held, so we emulate that here
+	mDNS_SetFQDN(m);
+	mDNS_ReclaimLockAfterCallback();
 	}
 
 // Forward reference: AdvertiseHostname references HostnameCallback, and HostnameCallback calls AdvertiseHostname
@@ -3426,7 +3434,8 @@ mDNSlocal void SendRecordRegistration(mDNS *const m, AuthRecord *rr)
 
 		else if (rr->resrec.RecordType != kDNSRecordTypeShared)
 			{
-			ptr = putPrereqNameNotInUse(rr->resrec.name, &m->omsg, ptr, end);
+			// For now don't do this, until we have the logic for intelligent grouping of individual recors into logical service record sets
+			//ptr = putPrereqNameNotInUse(rr->resrec.name, &m->omsg, ptr, end);
 			if (!ptr) { err = mStatus_UnknownErr; goto exit; }
 			}
 
