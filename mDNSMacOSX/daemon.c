@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.362  2008/09/26 19:47:42  cheshire
+Fixed locking error: lock is supposed to be held when calling mDNS_PurgeCacheResourceRecord
+
 Revision 1.361  2008/09/15 23:52:30  cheshire
 <rdar://problem/6218902> mDNSResponder-177 fails to compile on Linux with .desc pseudo-op
 Made __crashreporter_info__ symbol conditional, so we only use it for OS X build
@@ -2117,7 +2120,9 @@ mDNSlocal void SignalCallback(CFMachPortRef port, void *msg, CFIndex size, void 
 						CacheGroup *cg;
 						CacheRecord *rr;
 						LogMsg("SIGHUP: Purge cache");
+						mDNS_Lock(m);
 						FORALL_CACHERECORDS(slot, cg, rr) mDNS_PurgeCacheResourceRecord(m, rr);
+						mDNS_Unlock(m);
 						} break;
 		case SIGINT:
 		case SIGTERM:	ExitCallback(msg_header->msgh_id); break;
