@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.543  2008/09/26 23:05:56  mkrochma
+Improve log messages by using good old UTF-8
+
 Revision 1.542  2008/09/26 19:49:51  cheshire
 Improved "failed to send packet" debugging message
 
@@ -3028,7 +3031,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 	GetUserSpecifiedFriendlyComputerName(&nicelabel);
 	if (nicelabel.c[0] == 0)
 		{
-		LogMsg("Couldn't read user-specified Computer Name; using default “%s” instead", defaultname);
+		LogMsg("Couldn’t read user-specified Computer Name; using default “%s” instead", defaultname);
 		MakeDomainLabelFromLiteralString(&nicelabel, defaultname);
 		}
 
@@ -3038,7 +3041,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 	GetUserSpecifiedLocalHostName(&hostlabel);
 	if (hostlabel.c[0] == 0)
 		{
-		LogMsg("Couldn't read user-specified local hostname; using default “%s.local” instead", defaultname);
+		LogMsg("Couldn’t read user-specified Local Hostname; using default “%s.local” instead", defaultname);
 		MakeDomainLabelFromLiteralString(&hostlabel, defaultname);
 		}
 
@@ -3051,7 +3054,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 	else
 		{
 		if (m->p->usernicelabel.c[0])	// Don't show message first time through, when we first read name from prefs on boot
-			LogMsg("User updated Computer Name from %#s to %#s", m->p->usernicelabel.c, nicelabel.c);
+			LogMsg("User updated Computer Name from “%#s” to “%#s”", m->p->usernicelabel.c, nicelabel.c);
 		m->p->usernicelabel = m->nicelabel = nicelabel;
 		namechange = mDNStrue;
 		}
@@ -3061,7 +3064,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 	else
 		{
 		if (m->p->userhostlabel.c[0])	// Don't show message first time through, when we first read name from prefs on boot
-			LogMsg("User updated Local Hostname from %#s to %#s", m->p->userhostlabel.c, hostlabel.c);
+			LogMsg("User updated Local Hostname from “%#s” to “%#s”", m->p->userhostlabel.c, hostlabel.c);
 		m->p->userhostlabel = m->hostlabel = hostlabel;
 		mDNS_SetFQDN(m);
 		namechange = mDNStrue;
