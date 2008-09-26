@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helpermsg.defs,v $
+Revision 1.8  2008/09/26 21:18:13  cheshire
+Tidy up code layout
+
 Revision 1.7  2008/08/13 23:04:06  mcguire
 <rdar://problem/5858535> handle SIGTERM in mDNSResponderHelper
 Preparation: rename message function, as it will no longer be called only on idle exit
@@ -53,55 +56,50 @@ subsystem helper 1833193043;
 serverprefix do_;
 userprefix proxy_;
 
-simpleroutine mDNSExit(
-				port		: mach_port_t;
-	ServerAuditToken	token		: audit_token_t);
+simpleroutine mDNSExit(			port			: mach_port_t;
+		ServerAuditToken		token			: audit_token_t);
 
 routine mDNSDynamicStoreSetConfig(
-				port		: mach_port_t;
-				key		: int;
-				value		: pointer_t;
-	out			err		: int;
-	ServerAuditToken	token		: audit_token_t);
+								port			: mach_port_t;
+								key				: int;
+								value			: pointer_t;
+		out						err				: int;
+		ServerAuditToken		token			: audit_token_t);
 
-routine mDNSPreferencesSetName(
-						port	: mach_port_t;
- 						key		: int;
- 						old		: string_t;
- 						new		: string_t;
-	out					err		: int;
-	ServerAuditToken	token	: audit_token_t);
+routine mDNSPreferencesSetName( port			: mach_port_t;
+								key				: int;
+								old				: string_t;
+								new				: string_t;
+		out						err				: int;
+		ServerAuditToken		token			: audit_token_t);
 
-routine mDNSKeychainGetSecrets(
-				port		: mach_port_t;
-	out			numsecrets	: unsigned;
-	out			secrets		: pointer_t;
-	out			err		: int;
-	ServerAuditToken	token		: audit_token_t);
+routine mDNSKeychainGetSecrets( port			: mach_port_t;
+		out						numsecrets		: unsigned;
+		out						secrets			: pointer_t;
+		out						err				: int;
+		ServerAuditToken		token			: audit_token_t);
 
 routine mDNSAutoTunnelInterfaceUpDown(
-				port		: mach_port_t;
-				updown		: int;
-				address		: v6addr_t;
-	out			err		: int;
-	ServerAuditToken	token		: audit_token_t);
+								port			: mach_port_t;
+								updown			: int;
+								address			: v6addr_t;
+		out						err				: int;
+		ServerAuditToken		token			: audit_token_t);
 
-routine mDNSConfigureServer(
-				port		: mach_port_t;
-				updown		: int;
-				keydata		: string_t;
-	out			err		: int;
-	ServerAuditToken	token		: audit_token_t);
+routine mDNSConfigureServer(	port			: mach_port_t;
+								updown			: int;
+								keydata			: string_t;
+		out						err				: int;
+		ServerAuditToken		token			: audit_token_t);
 
-routine mDNSAutoTunnelSetKeys(
-				port		: mach_port_t;
-				replacedelete	: int;
-				local_inner	: v6addr_t;
-				local_outer	: v4addr_t;
-				local_port	: uint16_t;
-				remote_inner	: v6addr_t;
-				remote_outer	: v4addr_t;
-				remote_port	: uint16_t;
-				keydata		: string_t;
-	out			err		: int;
-	ServerAuditToken	token		: audit_token_t);
+routine mDNSAutoTunnelSetKeys(	port			: mach_port_t;
+								replacedelete	: int;
+								local_inner		: v6addr_t;
+								local_outer		: v4addr_t;
+								local_port		: uint16_t;
+								remote_inner	: v6addr_t;
+								remote_outer	: v4addr_t;
+								remote_port		: uint16_t;
+								keydata			: string_t;
+		out						err				: int;
+		ServerAuditToken		token			: audit_token_t);
