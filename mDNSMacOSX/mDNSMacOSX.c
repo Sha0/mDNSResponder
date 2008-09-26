@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.542  2008/09/26 19:49:51  cheshire
+Improved "failed to send packet" debugging message
+
 Revision 1.541  2008/09/25 21:02:05  cheshire
 <rdar://problem/6245044> Stop using separate m->ServiceRegistrations list
 In TunnelServers(), need to check main m->ResourceRecords list to see
@@ -1132,8 +1135,8 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 		if (MessageCount < 1000)
 			{
 			MessageCount++;
-			LogMsg("mDNSPlatformSendUDP sendto failed to send packet on InterfaceID %p %5s/%ld to %#a:%d skt %d error %d errno %d (%s) %lu",
-				InterfaceID, ifa_name, dst->type, dst, mDNSVal16(dstPort), s, err, errno, strerror(errno), (mDNSu32)(m->timenow));
+			LogMsg("mDNSPlatformSendUDP sendto(%d) failed to send packet on InterfaceID %p %5s/%ld to %#a:%d skt %d error %d errno %d (%s) %lu",
+				s, InterfaceID, ifa_name, dst->type, dst, mDNSVal16(dstPort), s, err, errno, strerror(errno), (mDNSu32)(m->timenow));
 			}
 		result = mStatus_UnknownErr;
 		}
