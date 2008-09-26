@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.798  2008/09/26 19:53:14  cheshire
+Fixed locking error: should not call mDNS_Deregister_internal within "mDNS_DropLock" section
+
 Revision 1.797  2008/09/25 20:40:59  cheshire
 <rdar://problem/6245044> Stop using separate m->ServiceRegistrations list
 In mDNS_SetFQDN, need to update all AutoTarget SRV records, even if m->MulticastHostname hasn't changed
@@ -1710,17 +1713,20 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 		// is allowed to do anything, including starting/stopping queries, registering/deregistering records, etc.
 		// In this case the likely client action to the mStatus_MemFree message is to free the memory,
 		// so any attempt to touch rr after this is likely to lead to a crash.
-		mDNS_DropLockBeforeCallback();		// Allow client to legally make mDNS API calls from the callback
 		if (drt != mDNS_Dereg_conflict)
 			{
+			mDNS_DropLockBeforeCallback();		// Allow client to legally make mDNS API calls from the callback
 			if (rr->RecordCallback)
 				rr->RecordCallback(m, rr, mStatus_MemFree);			// MUST NOT touch rr after this
+			mDNS_ReclaimLockAfterCallback();	// Decrement mDNS_reentrancy to block mDNS API calls again
 			}
 		else
 			{
 			RecordProbeFailure(m, rr);
+			mDNS_DropLockBeforeCallback();		// Allow client to legally make mDNS API calls from the callback
 			if (rr->RecordCallback)
 				rr->RecordCallback(m, rr, mStatus_NameConflict);	// MUST NOT touch rr after this
+			mDNS_ReclaimLockAfterCallback();	// Decrement mDNS_reentrancy to block mDNS API calls again
 			// Now that we've finished deregistering rr, check our DuplicateRecords list for any that we marked previously.
 			// Note that with all the client callbacks going on, by the time we get here all the
 			// records we marked may have been explicitly deregistered by the client anyway.
@@ -1731,7 +1737,6 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 				else { mDNS_Deregister_internal(m, r2, mDNS_Dereg_conflict); r2 = m->DuplicateRecords; }
 				}
 			}
-		mDNS_ReclaimLockAfterCallback();	// Decrement mDNS_reentrancy to block mDNS API calls again
 		}
 	return(mStatus_NoError);
 	}
@@ -3513,6 +3518,8 @@ mDNSlocal CacheGroup *GetCacheGroup(mDNS *const m, const mDNSu32 slot, const Res
 
 mDNSexport void mDNS_PurgeCacheResourceRecord(mDNS *const m, CacheRecord *rr)
 	{
+	if (m->mDNS_busy != m->mDNS_reentrancy+1)
+		LogMsg("mDNS_PurgeCacheResourceRecord: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 	// Make sure we mark this record as thoroughly expired -- we don't ever want to give
 	// a positive answer using an expired record (e.g. from an interface that has gone away).
 	// We don't want to clear CRActiveQuestion here, because that would leave the record subject to
@@ -4103,7 +4110,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 					// NR_AnswerTo == (mDNSu8*)~1             means "answer via delayed unicast" (to modern querier; may promote to multicast instead)
 					// NR_AnswerTo == (mDNSu8*)~0             means "definitely answer via multicast" (can't downgrade to unicast later)
 					// If we're not multicasting this record because the kDNSQClass_UnicastResponse bit was set,
-					// but the multicast querier is not on a matching subnet (e.g. because of overalyed subnets on one link)
+					// but the multicast querier is not on a matching subnet (e.g. because of overlaid subnets on one link)
 					// then we'll multicast it anyway (if we unicast, the receiver will ignore it because it has an apparently non-local source)
 					if (QuestionNeedsMulticastResponse || (!FromLocalSubnet && QueryWasMulticast && !LegacyQuery))
 						{
