@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.363  2008/09/27 01:29:15  cheshire
+Call mDNSRequestBPF() to request the helper to send us the BPF fd
+
 Revision 1.362  2008/09/26 19:47:42  cheshire
 Fixed locking error: lock is supposed to be held when calling mDNS_PurgeCacheResourceRecord
 
@@ -2702,6 +2705,7 @@ mDNSexport int main(int argc, char **argv)
 	if (status) { LogMsg("Daemon start: mDNSDaemonInitialize failed"); goto exit; }
 	status = udsserver_init(launchd_fd);
 	if (status) { LogMsg("Daemon start: udsserver_init failed"); goto exit; }
+	mDNSRequestBPF();
 	
 	// Start the kqueue thread
 	i = pthread_create(&KQueueThread, NULL, KQueueLoop, &mDNSStorage);
