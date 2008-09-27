@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.h,v $
+Revision 1.7  2008/09/27 00:58:11  cheshire
+Added mDNSRequestBPF declaration
+
 Revision 1.6  2007/09/20 22:33:17  cheshire
 Tidied up inconsistent and error-prone naming -- used to be mDNSResponderHelper in
 some places and mDNSResponder.helper in others; now mDNSResponderHelper everywhere
@@ -44,7 +47,8 @@ enum mDNSDynamicStoreSetConfigKey
 	kmDNSMulticastConfig = 1,
 	kmDNSDynamicConfig,
 	kmDNSPrivateConfig,
-	kmDNSBackToMyMacConfig
+	kmDNSBackToMyMacConfig,
+	kmDNSSendBPF
 	};
 
 enum mDNSPreferencesSetNameKey
@@ -80,6 +84,7 @@ enum mDNSHelperErrors
 extern const char *mDNSHelperError(int errornum);
 extern int mDNSPreferencesSetName(int key, domainlabel* old, domainlabel* new);
 extern int mDNSDynamicStoreSetConfig(int key, CFPropertyListRef value);
+extern int mDNSRequestBPF(void);
 extern int mDNSKeychainGetSecrets(CFArrayRef *secrets);
 extern int mDNSAutoTunnelInterfaceUpDown(int updown, v6addr_t addr);
 extern int mDNSConfigureServer(int updown, const char *keydata);
