@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.105  2008/09/27 01:26:34  cheshire
+Added handler to pass back BPF fd when requested
+
 Revision 1.104  2008/09/23 01:36:00  cheshire
 Updated code to use internalPort/externalPort terminology, instead of the old privatePort/publicPort
 terms (which could be misleading, because the word "private" suggests security).
@@ -217,6 +220,7 @@ Minor textual tidying
 
 #include <errno.h>
 #include <stdlib.h>
+#include <sys/fcntl.h>		// For O_RDWR etc.
 
 #include "dnssd_ipc.h"
 
@@ -656,7 +660,7 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 	// any associated data does not work reliably -- e.g. one particular issue we ran
 	// into is that if the receiving program is in a kqueue loop waiting to be notified
 	// of the received message, it doesn't get woken up when the control message arrives.
-	if (MakeSeparateReturnSocket) datalen--;
+	if (MakeSeparateReturnSocket || sdr->op == send_bpf) datalen--;		// Okay to use sdr->op when checking for op == send_bpf
 #endif
 
 	// At this point, our listening socket is set up and waiting, if necessary, for the daemon to connect back to
@@ -676,7 +680,7 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 #endif
 
 	if (!MakeSeparateReturnSocket) errsd = sdr->sockfd;
-	else
+	if (MakeSeparateReturnSocket || sdr->op == send_bpf)	// Okay to use sdr->op when checking for op == send_bpf
 		{
 #if defined(USE_TCP_LOOPBACK) || defined(USE_NAMED_ERROR_RETURN_SOCKET)
 		// At this point we may block in accept for a few milliseconds waiting for the daemon to connect back to us,
@@ -703,6 +707,19 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 		struct msghdr msg;
 		struct cmsghdr *cmsg;
 		char cbuf[CMSG_SPACE(sizeof(dnssd_sock_t))];
+
+		if (sdr->op == send_bpf)	// Okay to use sdr->op when checking for op == send_bpf
+			{
+			int i;
+			char p[12];		// Room for "/dev/bpf999" with terminating null
+			for (i=0; i<100; i++)
+				{
+				snprintf(p, sizeof(p), "/dev/bpf%d", i);
+				listenfd = open(p, O_RDWR, 0);
+				if (dnssd_SocketValid(listenfd) || errno != EBUSY) break;
+				}
+			}
+
 		msg.msg_name       = 0;
 		msg.msg_namelen    = 0;
 		msg.msg_iov        = &vec;
@@ -750,7 +767,9 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 
 	// At this point we may block in read_all for a few milliseconds waiting for the daemon to send us the error code,
 	// but that's okay -- the daemon is a trusted service and we know if won't take more than a few milliseconds to respond.
-	if (read_all(errsd, (char*)&err, (int)sizeof(err)) < 0)
+	if (sdr->op == send_bpf)	// Okay to use sdr->op when checking for op == send_bpf
+		err = kDNSServiceErr_NoError;
+	else if (read_all(errsd, (char*)&err, (int)sizeof(err)) < 0)
 		err = kDNSServiceErr_ServiceNotRunning;	// On failure read_all will have written a message to syslog for us
 	else
 		err = ntohl(err);
