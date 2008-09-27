@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.32  2008/09/27 01:11:46  cheshire
+Added handler to respond to kmDNSSendBPF message
+
 Revision 1.31  2008/09/08 17:42:40  mcguire
 <rdar://problem/5536811> change location of racoon files
 cleanup, handle stat failure cases, reduce log messages
@@ -154,6 +157,10 @@ Revision 1.1  2007/08/08 22:34:58  mcguire
 #define NO_SECURITYFRAMEWORK 1
 #endif
 
+// Embed the client stub code here, so we can access private functions like ConnectToServer, create_hdr, deliver_request
+#include "../mDNSShared/dnssd_ipc.c"
+#include "../mDNSShared/dnssd_clientstub.c"
+
 typedef struct sadb_x_policy *ipsec_policy_t;
 
 uid_t mDNSResponderUID;
@@ -203,6 +210,26 @@ fin:
 	return KERN_SUCCESS;
 	}
 
+mDNSlocal DNSServiceErrorType DNSSD_API DNSServiceSendBPF(void)
+	{
+	char *ptr;
+	size_t len;
+	ipc_msg_hdr *hdr;
+	DNSServiceRef tmp;
+
+	DNSServiceErrorType err = ConnectToServer(&tmp, 0, send_bpf, NULL, NULL, NULL);
+	if (err) return err;
+
+	len = sizeof(DNSServiceFlags);
+	hdr = create_hdr(send_bpf, &len, &ptr, 0, tmp);
+	if (!hdr) { DNSServiceRefDeallocate(tmp); return kDNSServiceErr_NoMemory; }
+
+	put_flags(0, &ptr);
+	err = deliver_request(hdr, tmp);		// Will free hdr for us
+	DNSServiceRefDeallocate(tmp);
+	return err;
+	}
+
 kern_return_t
 do_mDNSDynamicStoreSetConfig(__unused mach_port_t port, int key,
     vm_offset_t value, mach_msg_type_number_t valueCnt, int *err,
@@ -220,24 +247,26 @@ do_mDNSDynamicStoreSetConfig(__unused mach_port_t port, int key,
 		*err = kmDNSHelperNotAuthorized;
 		goto fin;
 		}
+
 	switch ((enum mDNSDynamicStoreSetConfigKey)key)
-	{
-	case kmDNSMulticastConfig:
-		sckey = CFSTR("State:/Network/" kDNSServiceCompMulticastDNS);
-		break;
-	case kmDNSDynamicConfig:
-		sckey = CFSTR("State:/Network/DynamicDNS");
-		break;
-	case kmDNSPrivateConfig:
-		sckey = CFSTR("State:/Network/" kDNSServiceCompPrivateDNS);
-		break;
-	case kmDNSBackToMyMacConfig:
-		sckey = CFSTR("State:/Network/BackToMyMac");
-		break;
-	default:
-		debug("unrecognized key %d", key);
-		*err = kmDNSHelperInvalidConfigKey;
-		goto fin;
+		{
+		case kmDNSMulticastConfig:
+			sckey = CFSTR("State:/Network/" kDNSServiceCompMulticastDNS);
+			break;
+		case kmDNSDynamicConfig:
+			sckey = CFSTR("State:/Network/DynamicDNS");
+			break;
+		case kmDNSPrivateConfig:
+			sckey = CFSTR("State:/Network/" kDNSServiceCompPrivateDNS);
+			break;
+		case kmDNSBackToMyMacConfig:
+			sckey = CFSTR("State:/Network/BackToMyMac");
+			break;
+		case kmDNSSendBPF: DNSServiceSendBPF(); goto fin;
+		default:
+			debug("unrecognized key %d", key);
+			*err = kmDNSHelperInvalidConfigKey;
+			goto fin;
 		}
 	if (NULL == (bytes = CFDataCreateWithBytesNoCopy(NULL, (void *)value,
 	    valueCnt, kCFAllocatorNull)))
