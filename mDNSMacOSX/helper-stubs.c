@@ -16,6 +16,9 @@
     Change History (most recent first):
 
 $Log: helper-stubs.c,v $
+Revision 1.7  2008/09/27 00:58:32  cheshire
+Added mDNSRequestBPF definition
+
 Revision 1.6  2007/12/10 23:23:48  cheshire
 Removed unnecessary log message ("mDNSKeychainGetSecrets failed 0 00000000" because mDNSKeychainGetSecrets was failing to return a valid array)
 
@@ -90,8 +93,7 @@ mDNSHelperError(int err)
 		}								\
 	if (0 != (err)) { LogMsg("%s: %s", __func__, mDNSHelperError((err))); goto fin; }
 
-int
-mDNSPreferencesSetName(int key, domainlabel* old, domainlabel* new)
+int mDNSPreferencesSetName(int key, domainlabel* old, domainlabel* new)
 	{
 	kern_return_t kr = KERN_FAILURE;
 	int retry = 0;
@@ -109,8 +111,7 @@ fin:
 	return err;
 	}
 
-int
-mDNSDynamicStoreSetConfig(int key, CFPropertyListRef value)
+int mDNSDynamicStoreSetConfig(int key, CFPropertyListRef value)
 	{
 	CFWriteStreamRef stream = NULL;
 	CFDataRef bytes = NULL;
@@ -118,8 +119,7 @@ mDNSDynamicStoreSetConfig(int key, CFPropertyListRef value)
 	int retry = 0;
 	int err = 0;
 
-	if (NULL == (stream = CFWriteStreamCreateWithAllocatedBuffers(NULL,
-	    NULL)))
+	if (NULL == (stream = CFWriteStreamCreateWithAllocatedBuffers(NULL, NULL)))
 		{
 		err = kmDNSHelperCreationFailed;
 		LogMsg("%s: CFWriteStreamCreateWithAllocatedBuffers failed",
@@ -127,15 +127,13 @@ mDNSDynamicStoreSetConfig(int key, CFPropertyListRef value)
 		goto fin;
 		}
 	CFWriteStreamOpen(stream);
-	if (0 == CFPropertyListWriteToStream(value, stream,
-	    kCFPropertyListBinaryFormat_v1_0, NULL))
+	if (0 == CFPropertyListWriteToStream(value, stream, kCFPropertyListBinaryFormat_v1_0, NULL))
 		{
 		err = kmDNSHelperPListWriteFailed;
 		LogMsg("%s: CFPropertyListWriteToStream failed", __func__);
 		goto fin;
 		}
-	if (NULL == (bytes = CFWriteStreamCopyProperty(stream,
-	    kCFStreamPropertyDataWritten)))
+	if (NULL == (bytes = CFWriteStreamCopyProperty(stream, kCFStreamPropertyDataWritten)))
 		{
 		err = kmDNSHelperCreationFailed;
 		LogMsg("%s: CFWriteStreamCopyProperty failed", __func__);
@@ -161,8 +159,18 @@ fin:
 	return err;
 	}
 
-int
-mDNSKeychainGetSecrets(CFArrayRef *result)
+int mDNSRequestBPF(void)
+	{
+	kern_return_t kr = KERN_FAILURE;
+	int retry = 0, err = 0;
+	MACHRETRYLOOP_BEGIN(kr, retry, err, fin);
+	kr = proxy_mDNSDynamicStoreSetConfig(getHelperPort(retry), kmDNSSendBPF, (vm_offset_t)0, 0, &err);
+	MACHRETRYLOOP_END(kr, retry, err, fin);
+fin:
+	return err;
+	}
+
+int mDNSKeychainGetSecrets(CFArrayRef *result)
 	{
 	CFPropertyListRef plist = NULL;
 	CFDataRef bytes = NULL;
@@ -211,8 +219,7 @@ fin:
 	return err;
 	}
 
-int
-mDNSAutoTunnelInterfaceUpDown(int updown, v6addr_t address)
+int mDNSAutoTunnelInterfaceUpDown(int updown, v6addr_t address)
 	{
 	kern_return_t kr = KERN_SUCCESS;
 	int retry = 0;
@@ -227,8 +234,7 @@ fin:
 	return err;
 	}
 
-int
-mDNSConfigureServer(int updown, const char *keydata)
+int mDNSConfigureServer(int updown, const char *keydata)
 	{
 	kern_return_t kr = KERN_SUCCESS;
 	int retry = 0;
@@ -242,8 +248,7 @@ fin:
 	return err;
 	}
 
-int
-mDNSAutoTunnelSetKeys(int replacedelete, v6addr_t local_inner,
+int mDNSAutoTunnelSetKeys(int replacedelete, v6addr_t local_inner,
     v4addr_t local_outer, short local_port, v6addr_t remote_inner,
     v4addr_t remote_outer, short remote_port, const char *keydata)
 	{
