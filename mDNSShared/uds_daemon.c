@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.395  2008/09/27 01:28:43  cheshire
+Added code to receive and store BPF fd when passed via a send_bpf message
+
 Revision 1.394  2008/09/23 04:12:40  cheshire
 <rdar://problem/6238774> Remove "local" from the end of _services._dns-sd._udp PTR records
 Added a special-case to massage these new records for Bonjour Browser's benefit
@@ -901,6 +904,7 @@ typedef struct reply_state
 
 // globals
 mDNSexport mDNS mDNSStorage;
+mDNSexport dnssd_sock_t BPF_fd;
 mDNSexport const char ProgramName[] = "mDNSResponder";
 
 static dnssd_sock_t listenfd = dnssd_InvalidSocket;
@@ -1288,8 +1292,7 @@ mDNSlocal void SendServiceRemovalNotification(ServiceRecordSet *const srs)
 	}
 
 // service registration callback performs three duties - frees memory for deregistered services,
-// handles name conflicts, and delivers completed registration information to the client (via
-// process_service_registraion())
+// handles name conflicts, and delivers completed registration information to the client
 mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, mStatus result)
 	{
 	mStatus err;
@@ -3244,7 +3247,13 @@ mDNSlocal void read_msg(request_state *req)
 			cmsg->cmsg_level   == SOL_SOCKET   &&
 			cmsg->cmsg_type    == SCM_RIGHTS)
 			{
-			req->errsd = *(dnssd_sock_t *)CMSG_DATA(cmsg);
+			if (req->hdr.op == send_bpf)
+				{
+				BPF_fd = *(dnssd_sock_t *)CMSG_DATA(cmsg);
+				LogOperation("%3d: Got BPF_fd %d", req->sd, msg.msg_controllen, cmsg->cmsg_len, cmsg->cmsg_level, cmsg->cmsg_type);
+				}
+			else
+				req->errsd = *(dnssd_sock_t *)CMSG_DATA(cmsg);
 #if DEBUG_64BIT_SCM_RIGHTS
 			LogMsg("%3d: read req->errsd %d", req->sd, req->errsd);
 #endif DEBUG_64BIT_SCM_RIGHTS
@@ -3378,6 +3387,7 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 		case getproperty_request:      min_size = 2;                                                                           break;
 		case port_mapping_request:     min_size += sizeof(mDNSu32) + 4 /* udp/tcp */ + 4 /* int/ext port */    + 4 /* ttl */;  break;
 		case addrinfo_request:         min_size += sizeof(mDNSu32) + 4 /* v4/v6 */   + 1 /* hostname */;                       break;
+		case send_bpf:                 // Same as cancel_request below
 		case cancel_request:           min_size = 0;                                                                           break;
 		default: LogMsg("ERROR: validate_message - unsupported req type: %d", req->hdr.op); min_size = -1;                     break;
 		}
@@ -3429,6 +3439,7 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 		case getproperty_request:                handle_getproperty_request (req); break;
 		case port_mapping_request:         err = handle_port_mapping_request(req); break;
 		case addrinfo_request:             err = handle_addrinfo_request    (req); break;
+		case send_bpf:                                                             break;
 
 		// These are all operations that work with an existing request_state object
 		case reg_record_request:           err = handle_regrecord_request   (req); break;
@@ -3444,7 +3455,7 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 
 	// There's no return data for a cancel request (DNSServiceRefDeallocate returns no result)
 	// For a DNSServiceGetProperty call, the handler already generated the response, so no need to do it again here
-	if (req->hdr.op != cancel_request && req->hdr.op != getproperty_request)
+	if (req->hdr.op != cancel_request && req->hdr.op != getproperty_request && req->hdr.op != send_bpf)
 		{
 		err = dnssd_htonl(err);
 		send_all(req->errsd, (const char *)&err, sizeof(err));
