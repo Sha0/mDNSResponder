@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.41  2008/09/27 01:04:09  cheshire
+Added "send_bpf" to list of request_op_t operation codes
+
 Revision 1.40  2007/09/07 20:56:03  cheshire
 Renamed uint32_t field in client_context_t from "ptr64" to more accurate name "u32"
 
@@ -241,6 +244,7 @@ typedef enum
 	getproperty_request,	// New in B4W 1.0.4
     port_mapping_request,	// New in Leopard and B4W 2.0
 	addrinfo_request,
+	send_bpf,				// New in SL
 
 	cancel_request = 63
     } request_op_t;
