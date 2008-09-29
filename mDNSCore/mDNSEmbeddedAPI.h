@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.479  2008/09/29 20:12:37  cheshire
+Rename 'AnswerLocalQuestions' to more descriptive 'AnswerLocalOnlyQuestions' and 'AnsweredLocalQ' to 'AnsweredLOQ'
+
 Revision 1.478  2008/09/23 02:37:10  cheshire
 Added FirstLabel/SecondLabel macros
 
@@ -1444,7 +1447,7 @@ struct AuthRecord_struct
 
 	// Field Group 2: Persistent metadata for Authoritative Records
 	AuthRecord     *Additional1;		// Recommended additional record to include in response (e.g. SRV for PTR record)
-	AuthRecord     *Additional2;		// Another additional (e.g. TXT for record)
+	AuthRecord     *Additional2;		// Another additional (e.g. TXT for PTR record)
 	AuthRecord     *DependentOn;		// This record depends on another for its uniqueness checking
 	AuthRecord     *RRSet;				// This unique record is part of an RRSet
 	mDNSRecordCallback *RecordCallback;	// Callback function to call for state changes, and to free memory asynchronously on deregistration
@@ -1458,7 +1461,7 @@ struct AuthRecord_struct
 	mDNSu8          ProbeCount;			// Number of probes remaining before this record is valid (kDNSRecordTypeUnique)
 	mDNSu8          AnnounceCount;		// Number of announcements remaining (kDNSRecordTypeShared)
 	mDNSu8          RequireGoodbye;		// Set if this RR has been announced on the wire and will require a goodbye packet
-	mDNSu8          AnsweredLocalQ;		// Set if this RR has been delivered to LocalOnly questions
+	mDNSu8          AnsweredLOQ;		// Set if this RR has been delivered to LocalOnly questions
 	mDNSu8          IncludeInProbe;		// Set if this RR is being put into a probe right now
 	mDNSInterfaceID ImmedAnswer;		// Someone on this interface issued a query we need to answer (all-ones for all interfaces)
 	mDNSu8          ImmedUnicast;		// Set if we may send our response directly via unicast to the requester
