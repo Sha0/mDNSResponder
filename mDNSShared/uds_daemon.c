@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.396  2008/09/30 01:04:55  cheshire
+Made BPF code a bit more defensive, to ignore subsequent BPF fds if we get passed more than one
+
 Revision 1.395  2008/09/27 01:28:43  cheshire
 Added code to receive and store BPF fd when passed via a send_bpf message
 
@@ -904,7 +907,7 @@ typedef struct reply_state
 
 // globals
 mDNSexport mDNS mDNSStorage;
-mDNSexport dnssd_sock_t BPF_fd;
+mDNSexport dnssd_sock_t BPF_fd = dnssd_InvalidSocket;
 mDNSexport const char ProgramName[] = "mDNSResponder";
 
 static dnssd_sock_t listenfd = dnssd_InvalidSocket;
@@ -949,7 +952,7 @@ mDNSlocal mDNSu32 dnssd_htonl(mDNSu32 l)
 // hack to search-replace perror's to LogMsg's
 mDNSlocal void my_perror(char *errmsg)
 	{
-	LogMsg("%s: %s", errmsg, dnssd_strerror(dnssd_errno()));
+	LogMsg("%s: %d %s", errmsg, dnssd_errno(), dnssd_strerror(dnssd_errno()));
 	}
 
 mDNSlocal void abort_request(request_state *req)
@@ -3249,8 +3252,9 @@ mDNSlocal void read_msg(request_state *req)
 			{
 			if (req->hdr.op == send_bpf)
 				{
-				BPF_fd = *(dnssd_sock_t *)CMSG_DATA(cmsg);
-				LogOperation("%3d: Got BPF_fd %d", req->sd, msg.msg_controllen, cmsg->cmsg_len, cmsg->cmsg_level, cmsg->cmsg_type);
+				dnssd_sock_t x = *(dnssd_sock_t *)CMSG_DATA(cmsg);
+				if (!dnssd_SocketValid(BPF_fd)) { BPF_fd = x; LogOperation("%3d: Got BPF_fd %d", req->sd, x); }
+				else LogMsg("%3d: ERROR: Already had BPF_fd old %d new %d", req->sd, BPF_fd, x);
 				}
 			else
 				req->errsd = *(dnssd_sock_t *)CMSG_DATA(cmsg);
@@ -3500,7 +3504,7 @@ mDNSlocal void connect_callback(int fd, short filter, void *info)
 	// Some environments (e.g. OS X) support turning off SIGPIPE for a socket
 	if (setsockopt(sd, SOL_SOCKET, SO_NOSIGPIPE, &optval, sizeof(optval)) < 0)
 		{
-		my_perror("ERROR: setsockopt - SO_NOSIGPIPE - aborting client");
+		LogMsg("%3d: ERROR: setsockopt - SO_NOSIGPIPE - aborting client %d %s", sd, dnssd_errno(), dnssd_strerror(dnssd_errno()));
 		dnssd_close(sd);
 		return;
 		}
