@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.33  2008/09/30 01:00:45  cheshire
+Added workaround to avoid SO_NOSIGPIPE bug
+
 Revision 1.32  2008/09/27 01:11:46  cheshire
 Added handler to respond to kmDNSSendBPF message
 
@@ -215,18 +218,30 @@ mDNSlocal DNSServiceErrorType DNSSD_API DNSServiceSendBPF(void)
 	char *ptr;
 	size_t len;
 	ipc_msg_hdr *hdr;
-	DNSServiceRef tmp;
+	static DNSServiceRef ref;
 
-	DNSServiceErrorType err = ConnectToServer(&tmp, 0, send_bpf, NULL, NULL, NULL);
+	if (ref)
+		{
+		helplog(ASL_LEVEL_ERR, "ERROR: Closing previous SendBPF connection");
+		DNSServiceRefDeallocate(ref);
+		}
+
+	DNSServiceErrorType err = ConnectToServer(&ref, 0, send_bpf, NULL, NULL, NULL);
 	if (err) return err;
 
 	len = sizeof(DNSServiceFlags);
-	hdr = create_hdr(send_bpf, &len, &ptr, 0, tmp);
-	if (!hdr) { DNSServiceRefDeallocate(tmp); return kDNSServiceErr_NoMemory; }
+	hdr = create_hdr(send_bpf, &len, &ptr, 0, ref);
+	if (!hdr) { DNSServiceRefDeallocate(ref); return kDNSServiceErr_NoMemory; }
 
 	put_flags(0, &ptr);
-	err = deliver_request(hdr, tmp);		// Will free hdr for us
-	DNSServiceRefDeallocate(tmp);
+	err = deliver_request(hdr, ref);		// Will free hdr for us
+	
+	// We would normally close the DNSServiceRef here, which works on 10.4, but on 10.5 and later if we close our end of the UDS
+	// connection before the daemon has got around to processing its end (i.e., doing accept(), SO_NOSIGPIPE, O_NONBLOCK, etc.)
+	// then when the daemon tries to do its SO_NOSIGPIPE, the kernel complains with an "Invalid argument (errno 22)" error.
+	// Instead we let the DNSServiceRef stay open, and it will evaporate when the helper exits.
+	// This is not a big deal, since the daemon only requests a BPF fd from us once, at startup.
+	//DNSServiceRefDeallocate(ref);
 	return err;
 	}
 
