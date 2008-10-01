@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.364  2008/10/01 21:23:40  cheshire
+In SIGINFO interface listing, indicate whether NetWake is set
+
 Revision 1.363  2008/09/27 01:29:15  cheshire
 Call mDNSRequestBPF() to request the helper to send us the BPF fd
 
@@ -2071,15 +2074,16 @@ mDNSlocal void INFOCallback(void)
 					i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id, &i->BSSID,
 					&i->ifinfo.ip, utc - i->LastSeen);
 			else
-				LogMsgNoIdent("Interface: %s %5s(%lu) %.6a %s %s %-15.4a %s InterfaceID %p %s %s %#a",
+				LogMsgNoIdent("Interface: %s %5s(%lu) %.6a %s %s %-15.4a %s InterfaceID %p %s %s %s %#a",
 					i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id, &i->BSSID,
 					i->ifinfo.InterfaceActive ? "Active" : "      ",
 					i->ifinfo.IPv4Available ? "v4" : "  ",
 					i->ifinfo.IPv4Available ? (mDNSv4Addr*)&i->ifa_v4addr : &zerov4Addr,
 					i->ifinfo.IPv6Available ? "v6" : "  ",
 					i->ifinfo.InterfaceID,
-					i->ifinfo.Advertise ? "Adv"  : "   ",
-					i->ifinfo.McastTxRx ? "TxRx" : "    ",
+					i->ifinfo.Advertise ? "⊙" : " ",
+					i->ifinfo.McastTxRx ? "⇆" : " ",
+					i->ifinfo.NetWake   ? "☀" : " ",
 					&i->ifinfo.ip);
 			}
 		}
