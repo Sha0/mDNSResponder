@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.544  2008/10/01 21:35:35  cheshire
+Monitor "State:/IOKit/PowerManagement/CurrentSettings" to track state of "Wake for network access" setting
+
 Revision 1.543  2008/09/26 23:05:56  mkrochma
 Improve log messages by using good old UTF-8
 
@@ -2124,6 +2127,24 @@ mDNSlocal mDNSEthAddr GetBSSID(char *ifa_name)
 	return(eth);
 	}
 
+mDNSlocal mDNSBool GetNetWakeSetting(void)
+	{
+	mDNSs32 val = 0;
+	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:GetNetWakeSetting"), NULL, NULL);
+	if (store)
+		{
+		CFDictionaryRef dict = SCDynamicStoreCopyValue(store, CFSTR("State:/IOKit/PowerManagement/CurrentSettings"));
+		if (dict)
+			{
+			CFNumberRef number = CFDictionaryGetValue(dict, CFSTR("Wake On LAN"));
+			if (number) CFNumberGetValue(number, kCFNumberSInt32Type, &val);
+			CFRelease(dict);
+			}
+		CFRelease(store);
+		}
+	return val ? mDNStrue : mDNSfalse;
+	}
+
 // Returns pointer to newly created NetworkInterfaceInfoOSX object, or
 // pointer to already-existing NetworkInterfaceInfoOSX object found in list, or
 // may return NULL if out of memory (unlikely) or parameters are invalid for some reason
@@ -2143,6 +2164,9 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 			{
 			debugf("AddInterfaceToList: Found existing interface %lu %.6a with address %#a at %p", scope_id, &bssid, &ip, *p);
 			(*p)->Exists = mDNStrue;
+			// Even if this is not a new interface (index, address and BSSID match) the NetWake setting may have changed,
+			// so we need to make sure it's updated correctly
+			(*p)->ifinfo.NetWake = !(*p)->BSSID.l[0] && GetNetWakeSetting();
 			// If interface was not in getifaddrs list last time we looked, but it is now, update 'AppearanceTime' for this record
 			if ((*p)->LastSeen != utc) (*p)->AppearanceTime = utc;
 			return(*p);
@@ -2163,13 +2187,14 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 	i->ifinfo.ifname[sizeof(i->ifinfo.ifname)-1] = 0;
 	i->ifinfo.Advertise   = m->AdvertiseLocalAddresses;
 	i->ifinfo.McastTxRx   = mDNSfalse; // For now; will be set up later at the end of UpdateInterfaceList
+	i->ifinfo.NetWake     = !bssid.l[0] && GetNetWakeSetting();
 
 	i->next            = mDNSNULL;
 	i->Exists          = mDNStrue;
-	i->AppearanceTime  = utc;		// Brand new interface; AppearanceTime is now
-	i->LastSeen        = utc;
 	i->Flashing        = mDNSfalse;
 	i->Occulting       = mDNSfalse;
+	i->AppearanceTime  = utc;		// Brand new interface; AppearanceTime is now
+	i->LastSeen        = utc;
 	i->scope_id        = scope_id;
 	i->BSSID           = bssid;
 	i->sa_family       = ifa->ifa_addr->sa_family;
@@ -3905,7 +3930,7 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 	mDNSDynamicStoreSetConfig(kmDNSPrivateConfig, sa);
 	CFRelease(sa);
 
-	#if APPLE_OSX_mDNSResponder
+#if APPLE_OSX_mDNSResponder
 		{
 		// clean up ClientTunnels
 		ClientTunnel **pp = &m->TunnelClients;
@@ -3971,7 +3996,7 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 			if (TunnelClients(m) || TunnelServers(m))
 				SetupLocalAutoTunnelInterface_internal(m);
 		}
-	#endif APPLE_OSX_mDNSResponder
+#endif APPLE_OSX_mDNSResponder
 
 #endif /* NO_SECURITYFRAMEWORK */
 	}
@@ -4004,7 +4029,7 @@ mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 	ClearInactiveInterfaces(m, utc);
 	SetupActiveInterfaces(m, utc);
 
-	#if APPLE_OSX_mDNSResponder
+#if APPLE_OSX_mDNSResponder
 		{
 		if (m->AutoTunnelHostAddr.b[0])
 			{
@@ -4034,7 +4059,7 @@ mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 					}
 				}
 		}
-	#endif APPLE_OSX_mDNSResponder
+#endif APPLE_OSX_mDNSResponder
 
 	uDNS_SetupDNSConfig(m);
 
@@ -4124,6 +4149,7 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	CFArrayAppendValue(patterns, pattern1);
 	CFArrayAppendValue(patterns, pattern2);
 	CFArrayAppendValue(patterns, CFSTR("State:/Network/Interface/[^/]+/AirPort"));
+	CFArrayAppendValue(patterns, CFSTR("State:/IOKit/PowerManagement/CurrentSettings"));
 	if (!SCDynamicStoreSetNotificationKeys(store, keys, patterns))
 		{ LogMsg("SCDynamicStoreSetNotificationKeys failed: %s", SCErrorString(SCError())); goto error; }
 
@@ -4464,7 +4490,7 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 	CloseSocketSet(&m->p->permanentsockets);
 
 	// Temporarily disable cleanup for now.  See bug <rdar://problem/5895642>
-	#if 0 && APPLE_OSX_mDNSResponder
+#if 0 && APPLE_OSX_mDNSResponder
 	// clean up tunnels
 	while (m->TunnelClients)
 		{
@@ -4489,7 +4515,7 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 		LogOperation("mDNSPlatformClose: Removing AutoTunnel address %.16a", &m->AutoTunnelHostAddr);
 		(void)mDNSAutoTunnelInterfaceUpDown(kmDNSDown, m->AutoTunnelHostAddr.b);
 		}
-	#endif // APPLE_OSX_mDNSResponder
+#endif // APPLE_OSX_mDNSResponder
 	}
 
 #if COMPILER_LIKES_PRAGMA_MARK
