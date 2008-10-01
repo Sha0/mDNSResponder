@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.545  2008/10/01 22:01:40  cheshire
+On Allan Nathanson's advice, add "State:/IOKit/PowerManagement/CurrentSettings"
+to keys array instead of patterns array, for efficiency
+
 Revision 1.544  2008/10/01 21:35:35  cheshire
 Monitor "State:/IOKit/PowerManagement/CurrentSettings" to track state of "Wake for network access" setting
 
@@ -4146,10 +4150,10 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	CFArrayAppendValue(keys, NetworkChangedKey_DNS);
 	CFArrayAppendValue(keys, NetworkChangedKey_DynamicDNS);
 	CFArrayAppendValue(keys, NetworkChangedKey_BackToMyMac);
+	CFArrayAppendValue(keys, CFSTR("State:/IOKit/PowerManagement/CurrentSettings"));
 	CFArrayAppendValue(patterns, pattern1);
 	CFArrayAppendValue(patterns, pattern2);
 	CFArrayAppendValue(patterns, CFSTR("State:/Network/Interface/[^/]+/AirPort"));
-	CFArrayAppendValue(patterns, CFSTR("State:/IOKit/PowerManagement/CurrentSettings"));
 	if (!SCDynamicStoreSetNotificationKeys(store, keys, patterns))
 		{ LogMsg("SCDynamicStoreSetNotificationKeys failed: %s", SCErrorString(SCError())); goto error; }
 
