@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.480  2008/10/01 21:22:17  cheshire
+Added NetWake field to NetworkInterfaceInfo structure, to signal when Wake-On-Magic-Packet is enabled for that interface
+
 Revision 1.479  2008/09/29 20:12:37  cheshire
 Rename 'AnswerLocalQuestions' to more descriptive 'AnswerLocalOnlyQuestions' and 'AnsweredLocalQ' to 'AnsweredLOQ'
 
@@ -1628,9 +1631,9 @@ struct NetworkInterfaceInfo_struct
 	// Internal state fields. These are used internally by mDNSCore; the client layer needn't be concerned with them.
 	NetworkInterfaceInfo *next;
 
-	mDNSBool        InterfaceActive;	// Set if interface is sending & receiving packets (see comment above)
-	mDNSBool        IPv4Available;		// If InterfaceActive, set if v4 available on this InterfaceID
-	mDNSBool        IPv6Available;		// If InterfaceActive, set if v6 available on this InterfaceID
+	mDNSu8          InterfaceActive;	// Set if interface is sending & receiving packets (see comment above)
+	mDNSu8          IPv4Available;		// If InterfaceActive, set if v4 available on this InterfaceID
+	mDNSu8          IPv6Available;		// If InterfaceActive, set if v6 available on this InterfaceID
 
 	// Standard AuthRecords that every Responder host should have (one per active IP address)
 	AuthRecord RR_A;					// 'A' or 'AAAA' (address) record for our ".local" name
@@ -1642,8 +1645,9 @@ struct NetworkInterfaceInfo_struct
 	mDNSAddr        ip;					// The IPv4 or IPv6 address to advertise
 	mDNSAddr        mask;
 	char            ifname[64];			// Windows uses a GUID string for the interface name, which doesn't fit in 16 bytes
-	mDNSBool        Advertise;			// False if you are only searching on this interface
-	mDNSBool        McastTxRx;			// Send/Receive multicast on this { InterfaceID, address family } ?
+	mDNSu8          Advertise;			// False if you are only searching on this interface
+	mDNSu8          McastTxRx;			// Send/Receive multicast on this { InterfaceID, address family } ?
+	mDNSu8          NetWake;			// Set if Wake-On-Magic-Packet is enabled on this interface
 	};
 
 typedef struct ExtraResourceRecord_struct ExtraResourceRecord;
