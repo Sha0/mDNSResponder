@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.80  2008/10/02 22:47:01  cheshire
+<rdar://problem/6134215> Sleep Proxy: Mac with Internet Sharing should also offer Sleep Proxy service
+Added SCPreferencesRef so we can track whether Internet Sharing is on or off
+
 Revision 1.79  2008/07/30 00:55:56  mcguire
 <rdar://problem/3988320> Should use randomized source ports and transaction IDs to avoid DNS cache poisoning
 Additional fixes so that we know when a socket has been closed while in a loop reading from it
@@ -156,15 +160,15 @@ struct NetworkInterfaceInfoOSX_struct
 	{
 	NetworkInterfaceInfo     ifinfo;			// MUST be the first element in this structure
 	NetworkInterfaceInfoOSX *next;
-	mDNSu32                  Exists;			// 1 = currently exists in getifaddrs list; 0 = doesn't
+	mDNSu8                   Exists;			// 1 = currently exists in getifaddrs list; 0 = doesn't
 												// 2 = exists, but McastTxRx state changed
+	mDNSu8                   Flashing;			// Set if interface appeared for less than 60 seconds and then vanished
+	mDNSu8                   Occulting;			// Set if interface vanished for less than 60 seconds and then came back
 	mDNSs32                  AppearanceTime;	// Time this interface appeared most recently in getifaddrs list
 												// i.e. the first time an interface is seen, AppearanceTime is set.
 												// If an interface goes away temporarily and then comes back then
 												// AppearanceTime is updated to the time of the most recent appearance.
 	mDNSs32                  LastSeen;			// If Exists==0, last time this interface appeared in getifaddrs list
-	mDNSBool                 Flashing;			// Set if interface appeared for less than 60 seconds and then vanished
-	mDNSBool                 Occulting;			// Set if interface vanished for less than 60 seconds and then came back
 	char                    *ifa_name;			// Memory for this is allocated using malloc
 	unsigned int             ifa_flags;
 	struct in_addr           ifa_v4addr;
@@ -195,6 +199,7 @@ struct mDNS_PlatformSupport_struct
 	IONotificationPortRef    PowerPortRef;
 	io_connect_t             PowerConnection;
 	io_object_t              PowerNotifier;
+	SCPreferencesRef         SCPrefs;
 	mDNSs32                  SleepLimit;		// Set when we get kIOMessageSystemWillSleep notification
 	long                     SleepCookie;		// Cookie we need to pass to IOAllowPowerChange()
 	pthread_mutex_t          BigMutex;
