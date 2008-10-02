@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.800  2008/10/02 22:13:15  cheshire
+<rdar://problem/6230680> 100ms delay on shutdown
+Additional refinement: Also need to clear m->SuppressSending
+
 Revision 1.799  2008/09/29 20:12:37  cheshire
 Rename 'AnswerLocalQuestions' to more descriptive 'AnswerLocalOnlyQuestions' and 'AnsweredLocalQ' to 'AnsweredLOQ'
 
@@ -1353,6 +1357,9 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 
 	if (!rr->resrec.RecordType)
 		{ LogMsg("mDNS_Register_internal: RecordType must be non-zero %s", ARDisplayString(m, rr)); return(mStatus_BadParamErr); }
+
+	if (m->ShutdownTime)
+		{ LogMsg("mDNS_Register_internal: Shutting down, can't register %s", ARDisplayString(m, rr)); return(mStatus_ServiceNotRunning); }
 
 	while (*p && *p != rr) p=&(*p)->next;
 	while (*d && *d != rr) d=&(*d)->next;
@@ -7493,7 +7500,11 @@ mDNSexport void mDNS_StartExit(mDNS *const m)
 
 	// If we scheduled a response to send goodbye packets, we set NextScheduledResponse to now. Normally when deregistering records,
 	// we allow up to 100ms delay (to help improve record grouping) but when shutting down we don't want any such delay.
-	if (m->NextScheduledResponse - m->timenow < mDNSPlatformOneSecond) m->NextScheduledResponse = m->timenow;
+	if (m->NextScheduledResponse - m->timenow < mDNSPlatformOneSecond)
+		{
+		m->NextScheduledResponse = m->timenow;
+		m->SuppressSending = 0;
+		}
 
 #if !defined(UNICAST_DISABLED) && defined(USE_SEPARATE_UDNS_SERVICE_LIST)
 	CurrentServiceRecordSet = m->ServiceRegistrations;
@@ -7512,6 +7523,9 @@ mDNSexport void mDNS_StartExit(mDNS *const m)
 
 	if (m->ServiceRegistrations) LogOperation("mDNS_StartExit: Sending final uDNS service deregistrations");
 	else                         LogOperation("mDNS_StartExit: No deregistering uDNS services remain");
+
+	for (rr = m->DuplicateRecords; rr; rr = rr->next)
+		LogMsg("mDNS_StartExit should not still have Duplicate Records remaining: %02X %s", rr->resrec.RecordType, ARDisplayString(m, rr));
 
 	// If any deregistering records remain, send their deregistration announcements before we exit
 	if (m->mDNSPlatformStatus != mStatus_NoError) DiscardDeregistrations(m);
