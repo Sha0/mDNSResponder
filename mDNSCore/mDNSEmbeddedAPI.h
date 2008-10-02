@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.481  2008/10/02 22:38:58  cheshire
+Added SleepProxyServer fields, and mDNSCoreBeSleepProxyServer() call for turning SleepProxyServer on and off
+
 Revision 1.480  2008/10/01 21:22:17  cheshire
 Added NetWake field to NetworkInterfaceInfo structure, to signal when Wake-On-Magic-Packet is enabled for that interface
 
@@ -2092,6 +2095,11 @@ struct mDNS_struct
 	mDNSu8           *UPnPRouterAddressString;	// holds both the router's address and port
 	mDNSu8           *UPnPSOAPAddressString;	// holds both address and port for SOAP messages
 
+	mDNSu8            BeSleepProxyServer;
+	mDNSu8            SleepProxyServerState;	// 0 = off, 1 = running, 2 = shutting down
+	UDPSocket        *SleepProxyServerSocket;
+	ServiceRecordSet  SleepProxyServerSRS;
+
 #if APPLE_OSX_mDNSResponder
 	ClientTunnel     *TunnelClients;
 #endif
@@ -2755,6 +2763,7 @@ extern void     mDNSCoreReceive(mDNS *const m, void *const msg, const mDNSu8 *co
 								const mDNSAddr *const srcaddr, const mDNSIPPort srcport,
 								const mDNSAddr *const dstaddr, const mDNSIPPort dstport, const mDNSInterfaceID InterfaceID);
 extern void     mDNSCoreMachineSleep(mDNS *const m, mDNSBool wake);
+extern void     mDNSCoreBeSleepProxyServer(mDNS *const m, mDNSBool sps);
 
 extern mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip);
 
