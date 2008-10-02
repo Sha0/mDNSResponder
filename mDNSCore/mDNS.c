@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.801  2008/10/02 22:51:04  cheshire
+<rdar://problem/6134215> Sleep Proxy: Mac with Internet Sharing should also offer Sleep Proxy service
+Added mDNSCoreBeSleepProxyServer() routine to start and stop Sleep Proxy Service
+
 Revision 1.800  2008/10/02 22:13:15  cheshire
 <rdar://problem/6230680> 100ms delay on shutdown
 Additional refinement: Also need to clear m->SuppressSending
@@ -7107,6 +7111,52 @@ mDNSexport mDNSOpaque16 mDNS_NewMessageID(mDNS * const m)
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
+#pragma mark - Sleep Proxy Server
+#endif
+
+mDNSlocal void SleepProxyServerCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus result)
+	{
+	LogOperation("SleepProxyServerCallback: %d %d %##s", m->BeSleepProxyServer, result, sr->RR_SRV.resrec.name->c);
+
+	if (result != mStatus_MemFree) return;
+
+	m->SleepProxyServerState = m->BeSleepProxyServer;
+
+	if (m->BeSleepProxyServer)
+		{
+		m->SleepProxyServerSocket = mDNSPlatformUDPSocket(m, zeroIPPort);
+		mDNS_RegisterService(m, sr,
+			&m->nicelabel, (const domainname *)"\xC_sleep-proxy\x4_udp", (const domainname *)"\x5local",
+			mDNSNULL, m->SleepProxyServerSocket->port,	// Host, port
+			(mDNSu8 *)"", 1,							// TXT data, length
+			mDNSNULL, 0,								// Subtypes (none)
+			mDNSInterface_Any,							// Interface ID
+			SleepProxyServerCallback, mDNSNULL);		// Callback and context
+		}
+	}
+
+mDNSexport void mDNSCoreBeSleepProxyServer(mDNS *const m, mDNSBool sps)
+	{
+	m->BeSleepProxyServer = sps;
+	if (sps)
+		{
+		if (m->SleepProxyServerState == 0)
+			SleepProxyServerCallback(m, &m->SleepProxyServerSRS, mStatus_MemFree);
+		}
+	else
+		{
+		if (m->SleepProxyServerState == 1)
+			{
+			m->SleepProxyServerState = 2;
+			mDNSPlatformUDPClose(m->SleepProxyServerSocket);
+			mDNS_DeregisterService(m, &m->SleepProxyServerSRS);
+			}
+		}
+	}
+
+// ***************************************************************************
+#if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark -
 #pragma mark - Startup and Shutdown
 #endif
 
@@ -7257,6 +7307,9 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->UPnPSOAPURL              = mDNSNULL;
 	m->UPnPRouterAddressString  = mDNSNULL;
 	m->UPnPSOAPAddressString    = mDNSNULL;
+	m->BeSleepProxyServer       = mDNSfalse;
+	m->SleepProxyServerState    = 0;
+
 #endif
 
 #if APPLE_OSX_mDNSResponder
@@ -7429,6 +7482,8 @@ mDNSexport void mDNS_StartExit(mDNS *const m)
 	mDNS_Lock(m);
 
 	m->ShutdownTime = NonZeroTime(m->timenow + mDNSPlatformOneSecond * 5);
+
+	mDNSCoreBeSleepProxyServer(m, mDNSfalse);
 
 #ifndef UNICAST_DISABLED
 	SuspendLLQs(m);
