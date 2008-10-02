@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.365  2008/10/02 22:23:13  cheshire
+Additional debugging message giving explanation if shutdown is delayed
+
 Revision 1.364  2008/10/01 21:23:40  cheshire
 In SIGINFO interface listing, indicate whether NetWake is set
 
@@ -2427,6 +2430,15 @@ mDNSlocal void * KQueueLoop(void *m_param)
 
 		if (m->ShutdownTime)
 			{
+#if LogAllOperations || MDNS_DEBUGMSGS
+			if (mDNSStorage.ResourceRecords)
+				{
+				LogMsg("Cannot exit yet; Resource Record still exists: %s", ARDisplayString(m, mDNSStorage.ResourceRecords));
+				usleep(10000);		// Sleep 10ms so that we don't flood syslog with too many messages
+				}
+			if (mDNSStorage.ServiceRegistrations)
+				LogOperation("Cannot exit yet; ServiceRegistrations still exists: %s", ARDisplayString(m, &mDNSStorage.ServiceRegistrations->RR_SRV));
+#endif
 			if (mDNS_ExitNow(m, now))
 				{
 				LogOperation("mDNS_FinalExit");
