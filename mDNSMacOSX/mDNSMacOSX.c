@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.547  2008/10/02 23:50:07  mcguire
+<rdar://problem/6136442> shutdown time issues
+improve log messages when SCDynamicStoreCreate() fails
+
 Revision 1.546  2008/10/02 22:26:21  cheshire
 Moved declaration of BPF_fd from uds_daemon.c to mDNSMacOSX.c, where it really belongs
 
@@ -2133,6 +2137,8 @@ mDNSlocal mDNSEthAddr GetBSSID(char *ifa_name)
 			}
 		CFRelease(store);
 		}
+	else
+		LogMsg("GetBSSID: SCDynamicStoreCreate failed: %s", SCErrorString(SCError()));
 	return(eth);
 	}
 
@@ -2151,6 +2157,8 @@ mDNSlocal mDNSBool GetNetWakeSetting(void)
 			}
 		CFRelease(store);
 		}
+	else
+		LogMsg("GetNetWakeSetting: SCDynamicStoreCreate failed: %s", SCErrorString(SCError()));
 	return val ? mDNStrue : mDNSfalse;
 	}
 
@@ -3644,6 +3652,8 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 			}
 		CFRelease(store);
 		}
+	else
+		LogMsg("mDNSPlatformSetDNSConfig: SCDynamicStoreCreate failed: %s", SCErrorString(SCError()));
 	}
 
 mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS *const m, mDNSAddr *v4, mDNSAddr *v6, mDNSAddr *r)
@@ -3653,7 +3663,7 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS *const m, mDNSAddr *v4, 
 	(void)m; // Unused
 
 	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:mDNSPlatformGetPrimaryInterface"), NULL, NULL);
-	if (!store) LogMsg("mDNSPlatformGetPrimaryInterface: SCDynamicStoreCreate failed");
+	if (!store) LogMsg("mDNSPlatformGetPrimaryInterface: SCDynamicStoreCreate failed: %s", SCErrorString(SCError()));
 	else
 		{
 		CFDictionaryRef dict = SCDynamicStoreCopyValue(store, NetworkChangedKey_IPv4);

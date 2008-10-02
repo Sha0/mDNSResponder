@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.34  2008/10/02 23:50:07  mcguire
+<rdar://problem/6136442> shutdown time issues
+improve log messages when SCDynamicStoreCreate() fails
+
 Revision 1.33  2008/09/30 01:00:45  cheshire
 Added workaround to avoid SO_NOSIGPIPE bug
 
@@ -142,6 +146,7 @@ Revision 1.1  2007/08/08 22:34:58  mcguire
 #include <string.h>
 #include <unistd.h>
 #include <Security/Security.h>
+#include <SystemConfiguration/SystemConfiguration.h>
 #include <SystemConfiguration/SCDynamicStore.h>
 #include <SystemConfiguration/SCPreferencesSetSpecific.h>
 #include <SystemConfiguration/SCDynamicStoreCopySpecific.h>
@@ -302,7 +307,7 @@ do_mDNSDynamicStoreSetConfig(__unused mach_port_t port, int key,
 	if (NULL == (store = SCDynamicStoreCreate(NULL,
 	    CFSTR(kmDNSHelperServiceName), NULL, NULL)))
 		{
-		debug("SCDynamicStoreCreate failed");
+		debug("SCDynamicStoreCreate failed: %s", SCErrorString(SCError()));
 		*err = kmDNSHelperDynamicStoreFailed;
 		goto fin;
 		}
