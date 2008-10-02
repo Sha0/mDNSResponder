@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.802  2008/10/02 23:13:48  cheshire
+<rdar://problem/6134215> Sleep Proxy: Mac with Internet Sharing should also offer Sleep Proxy service
+Need to drop lock before calling "mDNSCoreBeSleepProxyServer(m, mDNSfalse);"
+
 Revision 1.801  2008/10/02 22:51:04  cheshire
 <rdar://problem/6134215> Sleep Proxy: Mac with Internet Sharing should also offer Sleep Proxy service
 Added mDNSCoreBeSleepProxyServer() routine to start and stop Sleep Proxy Service
@@ -7483,7 +7487,9 @@ mDNSexport void mDNS_StartExit(mDNS *const m)
 
 	m->ShutdownTime = NonZeroTime(m->timenow + mDNSPlatformOneSecond * 5);
 
+	mDNS_DropLockBeforeCallback();		// mDNSCoreBeSleepProxyServer expects to be called without the lock held, so we emulate that here
 	mDNSCoreBeSleepProxyServer(m, mDNSfalse);
+	mDNS_ReclaimLockAfterCallback();
 
 #ifndef UNICAST_DISABLED
 	SuspendLLQs(m);
