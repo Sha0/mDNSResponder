@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.803  2008/10/02 23:38:56  mcguire
+<rdar://problem/6266145> mDNS_FinalExit failed to send goodbye for duplicate uDNS records
+
 Revision 1.802  2008/10/02 23:13:48  cheshire
 <rdar://problem/6134215> Sleep Proxy: Mac with Internet Sharing should also offer Sleep Proxy service
 Need to drop lock before calling "mDNSCoreBeSleepProxyServer(m, mDNSfalse);"
@@ -7478,10 +7481,27 @@ mDNSexport void mDNSCoreInitComplete(mDNS *const m, mStatus result)
 
 extern ServiceRecordSet *CurrentServiceRecordSet;
 
+mDNSlocal void DeregLoop(mDNS *const m, AuthRecord *const start)
+	{
+	m->CurrentRecord = start;
+	while (m->CurrentRecord)
+		{
+		AuthRecord *rr = m->CurrentRecord;
+		if (rr->resrec.RecordType != kDNSRecordTypeDeregistering)
+			{
+			LogOperation("DeregLoop: Deregistering %p %02X %s", rr, rr->resrec.RecordType, ARDisplayString(m, rr));
+			mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
+			}
+		// Note: We mustn't advance m->CurrentRecord until *after* mDNS_Deregister_internal, because
+		// the list may have been changed in that call.
+		if (m->CurrentRecord == rr) // If m->CurrentRecord was not advanced for us, do it now
+			m->CurrentRecord = rr->next;
+		}
+	}
+
 mDNSexport void mDNS_StartExit(mDNS *const m)
 	{
 	NetworkInterfaceInfo *intf;
-	AuthRecord *rr;
 
 	mDNS_Lock(m);
 
@@ -7523,42 +7543,15 @@ mDNSexport void mDNS_StartExit(mDNS *const m)
 	if (m->CurrentRecord)
 		LogMsg("mDNS_StartExit ERROR m->CurrentRecord already set %s", ARDisplayString(m, m->CurrentRecord));
 
-	// First we deregister any non-shared records. In particular, we want to make sure we deregister
-	// any extra records added to a Service Record Set first, before we deregister its PTR record,
-	// because the freeing of the memory is triggered off the mStatus_MemFree for the PTR record.
-	m->CurrentRecord = m->ResourceRecords;
-	while (m->CurrentRecord)
-		{
-		rr = m->CurrentRecord;
-		if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
-			{
-			//LogOperation("mDNS_StartExit: Deregistering %s", ARDisplayString(m, rr));
-			mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
-			}
-		// Note: We mustn't advance m->CurrentRecord until *after* mDNS_Deregister_internal, because when
-		// we have records on the DuplicateRecords list, the duplicate gets inserted in place of the record
-		// we're removing, and if we've already advanced to rr->next we'll miss the newly activated duplicate
-		if (m->CurrentRecord == rr)		// If m->CurrentRecord was not auto-advanced, do it ourselves now
-			m->CurrentRecord = rr->next;
-		}
-
-	// Now deregister any remaining records we didn't get the first time through
-	m->CurrentRecord = m->ResourceRecords;
-	while (m->CurrentRecord)
-		{
-		rr = m->CurrentRecord;
-		if (rr->resrec.RecordType != kDNSRecordTypeDeregistering)
-			{
-			//LogOperation("mDNS_StartExit: Deregistering %s", ARDisplayString(m, rr));
-			mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
-			}
-		// Note: We mustn't advance m->CurrentRecord until *after* mDNS_Deregister_internal, because when
-		// we have records on the DuplicateRecords list, the duplicate gets inserted in place of the record
-		// we're removing, and if we've already advanced to rr->next we'll miss the newly activated duplicate
-		if (m->CurrentRecord == rr)		// If m->CurrentRecord was not auto-advanced, do it ourselves now
-			m->CurrentRecord = rr->next;
-		}
-
+	// We're in the process of shutting down, so queries, etc. are no longer available.
+	// Consequently, determining certain information, e.g. the uDNS update server's IP
+	// address, will not be possible.  The records on the main list are more likely to
+	// already contain such information, so we deregister the duplicate records first.
+	LogOperation("mDNS_StartExit: Deregistering duplicate resource records");
+	DeregLoop(m, m->DuplicateRecords);
+	LogOperation("mDNS_StartExit: Deregistering resource records");
+	DeregLoop(m, m->ResourceRecords);
+	
 	// If we scheduled a response to send goodbye packets, we set NextScheduledResponse to now. Normally when deregistering records,
 	// we allow up to 100ms delay (to help improve record grouping) but when shutting down we don't want any such delay.
 	if (m->NextScheduledResponse - m->timenow < mDNSPlatformOneSecond)
@@ -7584,9 +7577,6 @@ mDNSexport void mDNS_StartExit(mDNS *const m)
 
 	if (m->ServiceRegistrations) LogOperation("mDNS_StartExit: Sending final uDNS service deregistrations");
 	else                         LogOperation("mDNS_StartExit: No deregistering uDNS services remain");
-
-	for (rr = m->DuplicateRecords; rr; rr = rr->next)
-		LogMsg("mDNS_StartExit should not still have Duplicate Records remaining: %02X %s", rr->resrec.RecordType, ARDisplayString(m, rr));
 
 	// If any deregistering records remain, send their deregistration announcements before we exit
 	if (m->mDNSPlatformStatus != mStatus_NoError) DiscardDeregistrations(m);
@@ -7624,15 +7614,15 @@ mDNSexport void mDNS_FinalExit(mDNS *const m)
 			ReleaseCacheGroup(m, &m->rrcache_hash[slot]);
 			}
 		}
-	debugf("mDNS_StartExit: RR Cache was using %ld records, %lu active", rrcache_totalused, rrcache_active);
+	debugf("mDNS_FinalExit: RR Cache was using %ld records, %lu active", rrcache_totalused, rrcache_active);
 	if (rrcache_active != m->rrcache_active)
 		LogMsg("*** ERROR *** rrcache_active %lu != m->rrcache_active %lu", rrcache_active, m->rrcache_active);
 
 	for (rr = m->ResourceRecords; rr; rr = rr->next)
-		LogMsg("mDNS_FinalExit failed to send goodbye for: %02X %s", rr->resrec.RecordType, ARDisplayString(m, rr));
+		LogMsg("mDNS_FinalExit failed to send goodbye for: %p %02X %s", rr, rr->resrec.RecordType, ARDisplayString(m, rr));
 
 	for (srs = m->ServiceRegistrations; srs; srs = srs->uDNS_next)
-		LogMsg("mDNS_FinalExit failed to deregister service: %##s", srs->RR_SRV.resrec.name->c);
+		LogMsg("mDNS_FinalExit failed to deregister service: %p %##s", srs, srs->RR_SRV.resrec.name->c);
 
 	LogOperation("mDNS_FinalExit: done");
 	}
