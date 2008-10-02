@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.546  2008/10/02 22:26:21  cheshire
+Moved declaration of BPF_fd from uds_daemon.c to mDNSMacOSX.c, where it really belongs
+
 Revision 1.545  2008/10/01 22:01:40  cheshire
 On Allan Nathanson's advice, add "State:/IOKit/PowerManagement/CurrentSettings"
 to keys array instead of patterns array, for efficiency
@@ -869,6 +872,7 @@ Add (commented out) trigger value for testing "mach_absolute_time went backwards
 #endif
 
 mDNSexport int KQueueFD;
+mDNSexport dnssd_sock_t BPF_fd = dnssd_InvalidSocket;
 
 #ifndef NO_SECURITYFRAMEWORK
 static CFArrayRef ServerCerts;
@@ -2068,12 +2072,13 @@ mDNSlocal void GetUserSpecifiedLocalHostName(domainlabel *const namelabel)
 		}
 	}
 
-mDNSlocal mDNSBool DDNSSettingEnabled(CFDictionaryRef dict)
+mDNSlocal mDNSBool DictionaryIsEnabled(CFDictionaryRef dict)
 	{
 	mDNSs32 val;
 	CFNumberRef state = CFDictionaryGetValue(dict, CFSTR("Enabled"));
 	if (!state) return mDNSfalse;
-	if (!CFNumberGetValue(state, kCFNumberSInt32Type, &val)) { LogMsg("ERROR: DDNSSettingEnabled - CFNumberGetValue"); return mDNSfalse; }
+	if (!CFNumberGetValue(state, kCFNumberSInt32Type, &val))
+		{ LogMsg("ERROR: DictionaryIsEnabled - CFNumberGetValue"); return mDNSfalse; }
 	return val ? mDNStrue : mDNSfalse;
 	}
 
@@ -3107,7 +3112,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 			if (info->AutoTunnelNAT.clientContext && !mDNSIPv4AddressIsOnes(info->AutoTunnelNAT.ExternalAddress))
 				AutoTunnelNATCallback(m, &info->AutoTunnelNAT);
 		}
-#endif
+#endif APPLE_OSX_mDNSResponder
 
 	return(mStatus_NoError);
 	}
@@ -3492,7 +3497,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 					{
 					// for now, we only look at the first array element.  if we ever support multiple configurations, we will walk the list
 					CFDictionaryRef fqdnDict = CFArrayGetValueAtIndex(fqdnArray, 0);
-					if (fqdnDict && DDNSSettingEnabled(fqdnDict))
+					if (fqdnDict && DictionaryIsEnabled(fqdnDict))
 						{
 						CFStringRef name = CFDictionaryGetValue(fqdnDict, CFSTR("Domain"));
 						if (name)
@@ -3512,7 +3517,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 				if (regArray && CFArrayGetCount(regArray) > 0)
 					{
 					CFDictionaryRef regDict = CFArrayGetValueAtIndex(regArray, 0);
-					if (regDict && DDNSSettingEnabled(regDict))
+					if (regDict && DictionaryIsEnabled(regDict))
 						{
 						CFStringRef name = CFDictionaryGetValue(regDict, CFSTR("Domain"));
 						if (name)
@@ -3538,7 +3543,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 					for (i = 0; i < CFArrayGetCount(browseArray); i++)
 						{
 						CFDictionaryRef browseDict = CFArrayGetValueAtIndex(browseArray, i);
-						if (browseDict && DDNSSettingEnabled(browseDict))
+						if (browseDict && DictionaryIsEnabled(browseDict))
 							{
 							CFStringRef name = CFDictionaryGetValue(browseDict, CFSTR("Domain"));
 							if (name)
@@ -4074,7 +4079,6 @@ mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, void *context)
 	{
 	(void)store;        // Parameter not used
-	(void)changedKeys;  // Parameter not used
 	mDNS *const m = (mDNS *const)context;
 	KQueueLock(m);
 	mDNS_Lock(m);

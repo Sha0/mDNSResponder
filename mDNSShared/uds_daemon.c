@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.397  2008/10/02 22:26:21  cheshire
+Moved declaration of BPF_fd from uds_daemon.c to mDNSMacOSX.c, where it really belongs
+
 Revision 1.396  2008/09/30 01:04:55  cheshire
 Made BPF code a bit more defensive, to ignore subsequent BPF fds if we get passed more than one
 
@@ -907,7 +910,6 @@ typedef struct reply_state
 
 // globals
 mDNSexport mDNS mDNSStorage;
-mDNSexport dnssd_sock_t BPF_fd = dnssd_InvalidSocket;
 mDNSexport const char ProgramName[] = "mDNSResponder";
 
 static dnssd_sock_t listenfd = dnssd_InvalidSocket;
@@ -3250,8 +3252,12 @@ mDNSlocal void read_msg(request_state *req)
 			cmsg->cmsg_level   == SOL_SOCKET   &&
 			cmsg->cmsg_type    == SCM_RIGHTS)
 			{
+			// Strictly speaking BPF_fd belongs solely in the platform support layer, but because
+			// of privilege separation on Mac OS X we need to get BPF_fd from mDNSResponderHelper,
+			// and it's convenient to repurpose the existing fd passing code here for that task
 			if (req->hdr.op == send_bpf)
 				{
+				extern dnssd_sock_t BPF_fd;
 				dnssd_sock_t x = *(dnssd_sock_t *)CMSG_DATA(cmsg);
 				if (!dnssd_SocketValid(BPF_fd)) { BPF_fd = x; LogOperation("%3d: Got BPF_fd %d", req->sd, x); }
 				else LogMsg("%3d: ERROR: Already had BPF_fd old %d new %d", req->sd, BPF_fd, x);

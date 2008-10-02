@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: uds_daemon.h,v $
+Revision 1.26  2008/10/02 22:26:21  cheshire
+Moved declaration of BPF_fd from uds_daemon.c to mDNSMacOSX.c, where it really belongs
+
 Revision 1.25  2008/09/27 01:08:25  cheshire
 Added external declaration of "dnssd_sock_t BPF_fd"
 
@@ -129,7 +132,6 @@ extern void RecordUpdatedNiceLabel(mDNS *const m, mDNSs32 delay);
 // Globals and functions defined in uds_daemon.c and also shared with the old "daemon.c" on OS X
 
 extern mDNS mDNSStorage;
-extern dnssd_sock_t BPF_fd;
 extern DNameListElem *AutoRegistrationDomains;
 extern DNameListElem *AutoBrowseDomains;
 
