@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.551  2008/10/03 18:25:16  cheshire
+Instead of calling "m->MainCallback" function pointer directly, call mDNSCore routine "mDNS_ConfigChanged(m);"
+
 Revision 1.550  2008/10/03 00:51:58  cheshire
 Removed spurious "else" case that got left in by mistake
 
@@ -4091,9 +4094,7 @@ mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 #endif APPLE_OSX_mDNSResponder
 
 	uDNS_SetupDNSConfig(m);
-
-	if (m->MainCallback)
-		m->MainCallback(m, mStatus_ConfigChanged);
+	mDNS_ConfigChanged(m);
 	}
 
 mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, void *context)

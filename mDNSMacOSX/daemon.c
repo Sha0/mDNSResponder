@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.367  2008/10/03 18:25:17  cheshire
+Instead of calling "m->MainCallback" function pointer directly, call mDNSCore routine "mDNS_ConfigChanged(m);"
+
 Revision 1.366  2008/10/03 00:34:55  cheshire
 <rdar://problem/6134215> Mac with Internet Sharing should also offer Sleep Proxy service
 Start and stop Sleep Proxy service when user starts and stops Internet Sharing
@@ -1327,7 +1330,7 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const srs, mStatus r
 			{
 			// On conflict for an autoname service, rename and reregister *all* autoname services
 			IncrementLabelSuffix(&m->nicelabel, mDNStrue);
-			m->MainCallback(m, mStatus_ConfigChanged);
+			mDNS_ConfigChanged(m);
 			}
 		else if (si->autoname)
 			{

@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSVxWorks.c,v $
+Revision 1.34  2008/10/03 18:25:18  cheshire
+Instead of calling "m->MainCallback" function pointer directly, call mDNSCore routine "mDNS_ConfigChanged(m);"
+
 Revision 1.33  2007/03/22 18:31:48  cheshire
 Put dst parameter first in mDNSPlatformStrCopy/mDNSPlatformMemCopy, like conventional Posix strcpy/memcpy
 
@@ -1592,7 +1595,7 @@ mDNSlocal mStatus	ProcessCommand( mDNS * const inMDNS )
 			SetupActiveInterfaces( inMDNS, utc );
 			
 			mDNSPlatformUnlock( inMDNS );
-			if( inMDNS->MainCallback ) inMDNS->MainCallback( inMDNS, mStatus_ConfigChanged );	
+			mDNS_ConfigChanged(inMDNS);
 			break;
 		
 		case kMDNSPipeCommandCodeQuit:			// Quit: just set a flag so the task exits cleanly.

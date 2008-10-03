@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.131  2008/10/03 18:25:18  cheshire
+Instead of calling "m->MainCallback" function pointer directly, call mDNSCore routine "mDNS_ConfigChanged(m);"
+
 Revision 1.130  2007/11/16 18:53:56  cheshire
 TCPSocketFlags needs to be first field of TCPSocket_struct
 
@@ -3682,14 +3685,11 @@ mDNSlocal void	ProcessingThreadInterfaceListChanged( mDNS *inMDNS )
 	
 	// Inform clients of the change.
 	
-	if( inMDNS->MainCallback )
-	{
-		inMDNS->MainCallback( inMDNS, mStatus_ConfigChanged );
-	}
+	mDNS_ConfigChanged(inMDNS);
 	
 	// Force mDNS to update.
 	
-	mDNSCoreMachineSleep( inMDNS, mDNSfalse );
+	mDNSCoreMachineSleep( inMDNS, mDNSfalse ); // What is this for? Mac OS X does not do this
 }
 
 

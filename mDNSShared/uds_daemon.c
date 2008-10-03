@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.398  2008/10/03 18:25:17  cheshire
+Instead of calling "m->MainCallback" function pointer directly, call mDNSCore routine "mDNS_ConfigChanged(m);"
+
 Revision 1.397  2008/10/02 22:26:21  cheshire
 Moved declaration of BPF_fd from uds_daemon.c to mDNSMacOSX.c, where it really belongs
 
@@ -1363,7 +1366,7 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 				{
 				// On conflict for an autoname service, rename and reregister *all* autoname services
 				IncrementLabelSuffix(&m->nicelabel, mDNStrue);
-				m->MainCallback(m, mStatus_ConfigChanged);	// will call back into udsserver_handle_configchange()
+				mDNS_ConfigChanged(m);	// Will call back into udsserver_handle_configchange()
 				}
 			else	// On conflict for a non-autoname service, rename and reregister just that one service
 				{

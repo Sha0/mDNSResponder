@@ -21,6 +21,9 @@
 	Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.45  2008/10/03 18:25:17  cheshire
+Instead of calling "m->MainCallback" function pointer directly, call mDNSCore routine "mDNS_ConfigChanged(m);"
+
 Revision 1.44  2008/09/15 23:52:30  cheshire
 <rdar://problem/6218902> mDNSResponder-177 fails to compile on Linux with .desc pseudo-op
 Made __crashreporter_info__ symbol conditional, so we only use it for OS X build
@@ -134,7 +137,7 @@ static void Reconfigure(mDNS *m)
 	mDNSPlatformSourceAddrForDest(&DynDNSIP, &dummy);
 	if (DynDNSHostname.c[0]) mDNS_AddDynDNSHostName(m, &DynDNSHostname, NULL, NULL);
 	if (DynDNSIP.type)       mDNS_SetPrimaryInterfaceInfo(m, &DynDNSIP, NULL, NULL);
-	m->MainCallback(m, mStatus_ConfigChanged);
+	mDNS_ConfigChanged(m);
 	}
 
 // Do appropriate things at startup with command line arguments. Calls exit() if unhappy.

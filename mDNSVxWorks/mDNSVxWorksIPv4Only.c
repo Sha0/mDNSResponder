@@ -21,6 +21,9 @@
 	Change History (most recent first):
 
 $Log: mDNSVxWorksIPv4Only.c,v $
+Revision 1.32  2008/10/03 18:25:18  cheshire
+Instead of calling "m->MainCallback" function pointer directly, call mDNSCore routine "mDNS_ConfigChanged(m);"
+
 Revision 1.31  2007/03/22 18:31:49  cheshire
 Put dst parameter first in mDNSPlatformStrCopy/mDNSPlatformMemCopy, like conventional Posix strcpy/memcpy
 
@@ -1447,14 +1450,11 @@ mDNSlocal void	ProcessCommandReconfigure( mDNS *inMDNS )
 	
 	// Inform clients of the change.
 	
-	if( inMDNS->MainCallback )
-	{
-		inMDNS->MainCallback( inMDNS, mStatus_ConfigChanged );
-	}
+	mDNS_ConfigChanged(m);
 	
 	// Force mDNS to update.
 	
-	mDNSCoreMachineSleep( inMDNS, mDNSfalse );
+	mDNSCoreMachineSleep( inMDNS, mDNSfalse ); // What is this for? Mac OS X does not do this
 	
 	// Bump the config ID so the main processing loop detects the configuration change.
 	
