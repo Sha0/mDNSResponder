@@ -30,6 +30,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.366  2008/10/03 00:34:55  cheshire
+<rdar://problem/6134215> Mac with Internet Sharing should also offer Sleep Proxy service
+Start and stop Sleep Proxy service when user starts and stops Internet Sharing
+
 Revision 1.365  2008/10/02 22:23:13  cheshire
 Additional debugging message giving explanation if shutdown is delayed
 
@@ -414,7 +418,9 @@ Revision 1.261  2006/01/06 01:22:28  cheshire
 #include "helper.h"
 
 //*************************************************************************************************************
-// Globals
+#if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark - Globals
+#endif
 
 static mDNS_PlatformSupport PlatformStorage;
 
@@ -449,7 +455,10 @@ static int OSXVers;
 static CFRunLoopRef CFRunLoop;
 
 //*************************************************************************************************************
-// Active client list structures
+#if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark -
+#pragma mark - Active client list structures
+#endif
 
 typedef struct DNSServiceDomainEnumeration_struct DNSServiceDomainEnumeration;
 struct DNSServiceDomainEnumeration_struct
@@ -550,7 +559,10 @@ typedef struct KQSocketEventSource
 static KQSocketEventSource *gEventSources;
 
 //*************************************************************************************************************
-// General Utility Functions
+#if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark -
+#pragma mark - General Utility Functions
+#endif
 
 #if APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING
 
@@ -699,6 +711,12 @@ void freeL(char *msg, void *x)
 		}
 	}
 
+#endif
+
+//*************************************************************************************************************
+#if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark -
+#pragma mark - Mach client request handlers
 #endif
 
 //*************************************************************************************************************
@@ -1813,7 +1831,10 @@ fail:
 	}
 
 //*************************************************************************************************************
-// Support Code
+#if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark -
+#pragma mark - Startup, shutdown, and supporting code
+#endif
 
 mDNSlocal void DNSserverCallback(CFMachPortRef port, void *msg, CFIndex size, void *info)
 	{
@@ -2153,6 +2174,34 @@ mDNSlocal void SignalCallback(CFMachPortRef port, void *msg, CFIndex size, void 
 	KQueueUnlock(m, "Unix Signal");
 	}
 
+mDNSlocal SCPreferencesRef SCPrefs;
+
+mDNSlocal void InternetSharingChanged(SCPreferencesRef prefs, SCPreferencesNotification notificationType, void *context)
+	{
+	(void)prefs;             // Parameter not used
+	(void)notificationType;  // Parameter not used
+	mDNS *const m = (mDNS *const)context;
+	SCPreferencesSynchronize(SCPrefs);
+	CFDictionaryRef dict = SCPreferencesGetValue(SCPrefs, CFSTR("NAT"));
+	mDNSCoreBeSleepProxyServer(m, (CFGetTypeID(dict) == CFDictionaryGetTypeID()) && DictionaryIsEnabled(dict));
+	LogOperation("InternetSharingChanged: Sleep Proxy Server %s", m->BeSleepProxyServer ? "Starting" : "Stopping");
+	}
+
+mDNSlocal mStatus WatchForInternetSharingChanges(mDNS *const m)
+	{
+	SCPrefs = SCPreferencesCreate(NULL, CFSTR("mDNSResponder:WatchForInternetSharingChanges"), CFSTR("com.apple.nat.plist"));
+	if (!SCPrefs) { LogMsg("SCPreferencesCreate failed: %s", SCErrorString(SCError())); return(mStatus_NoMemoryErr); }
+
+	SCPreferencesContext context = { 0, m, NULL, NULL, NULL };
+	if (!SCPreferencesSetCallback(SCPrefs, InternetSharingChanged, &context))
+		{ LogMsg("SCPreferencesSetCallback failed: %s", SCErrorString(SCError())); CFRelease(SCPrefs); return(mStatus_NoMemoryErr); }
+
+	if (!SCPreferencesScheduleWithRunLoop(SCPrefs, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode))
+		{ LogMsg("SCPreferencesScheduleWithRunLoop failed: %s", SCErrorString(SCError())); CFRelease(SCPrefs); return(mStatus_NoMemoryErr); }
+
+	return(mStatus_NoError);
+	}
+
 // On 10.2 the MachServerName is DNSServiceDiscoveryServer
 // On 10.3 and later, the MachServerName is com.apple.mDNSResponder
 
@@ -2250,7 +2299,7 @@ mDNSlocal mDNSs32 mDNSDaemonIdle(mDNS *const m)
 
 	while (b)
 		{
-		// NOTE: Need to advance b to the next element BEFORE we call DeliverInstance(), because in the
+		// Note: Need to advance b to the next element BEFORE we call DeliverInstance(), because in the
 		// event that the client Mach queue overflows, DeliverInstance() will call AbortBlockedClient()
 		// and that will cause the DNSServiceBrowser object's memory to be freed before it returns
 		DNSServiceBrowser *x = b;
@@ -2333,7 +2382,7 @@ mDNSlocal void ShowTaskSchedulingError(mDNS *const m)
 
 	LogMsg("Task Scheduling Error: Continuously busy for more than a second");
 	
-	// NOTE: To accurately diagnose *why* we're busy, the debugging code here needs to mirror the logic in GetNextScheduledEvent
+	// Note: To accurately diagnose *why* we're busy, the debugging code here needs to mirror the logic in GetNextScheduledEvent
 
 	if (m->NewQuestions && (!m->NewQuestions->DelayAnswering || m->timenow - m->NewQuestions->DelayAnswering >= 0))
 		LogMsg("Task Scheduling Error: NewQuestion %##s (%s)",
@@ -2719,10 +2768,16 @@ mDNSexport int main(int argc, char **argv)
 	OSXVers = mDNSMacOSXSystemBuildNumber(NULL);
 	status = mDNSDaemonInitialize();
 	if (status) { LogMsg("Daemon start: mDNSDaemonInitialize failed"); goto exit; }
+
 	status = udsserver_init(launchd_fd);
 	if (status) { LogMsg("Daemon start: udsserver_init failed"); goto exit; }
+
 	mDNSRequestBPF();
-	
+
+	mStatus err = WatchForInternetSharingChanges(&mDNSStorage);
+	if (err) { LogMsg("WatchForInternetSharingChanges failed %d", err); return(err); }
+	InternetSharingChanged(SCPrefs, 0, &mDNSStorage);
+
 	// Start the kqueue thread
 	i = pthread_create(&KQueueThread, NULL, KQueueLoop, &mDNSStorage);
 	if (i == -1) { LogMsg("pthread_create() failed errno %d (%s)", errno, strerror(errno)); status = errno; goto exit; }
