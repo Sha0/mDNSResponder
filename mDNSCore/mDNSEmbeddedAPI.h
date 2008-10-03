@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.482  2008/10/03 17:30:05  cheshire
+Added declaration of mDNS_ConfigChanged(mDNS *const m);
+
 Revision 1.481  2008/10/02 22:38:58  cheshire
 Added SleepProxyServer fields, and mDNSCoreBeSleepProxyServer() call for turning SleepProxyServer on and off
 
@@ -2265,6 +2268,7 @@ extern mStatus mDNS_Init      (mDNS *const m, mDNS_PlatformSupport *const p,
 #define mDNS_Init_NoInitCallback              mDNSNULL
 #define mDNS_Init_NoInitCallbackContext       mDNSNULL
 
+extern void    mDNS_ConfigChanged(mDNS *const m);
 extern void    mDNS_GrowCache (mDNS *const m, CacheEntity *storage, mDNSu32 numrecords);
 extern void    mDNS_StartExit (mDNS *const m);
 extern void    mDNS_FinalExit (mDNS *const m);
