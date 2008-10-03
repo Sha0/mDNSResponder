@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.804  2008/10/03 01:26:06  mcguire
+<rdar://problem/6266145> mDNS_FinalExit failed to send goodbye for duplicate uDNS records
+Put back Duplicate Record check
+
 Revision 1.803  2008/10/02 23:38:56  mcguire
 <rdar://problem/6266145> mDNS_FinalExit failed to send goodbye for duplicate uDNS records
 
@@ -7502,6 +7506,7 @@ mDNSlocal void DeregLoop(mDNS *const m, AuthRecord *const start)
 mDNSexport void mDNS_StartExit(mDNS *const m)
 	{
 	NetworkInterfaceInfo *intf;
+	AuthRecord *rr;
 
 	mDNS_Lock(m);
 
@@ -7541,7 +7546,7 @@ mDNSexport void mDNS_StartExit(mDNS *const m)
 
 	// Make sure there are nothing but deregistering records remaining in the list
 	if (m->CurrentRecord)
-		LogMsg("mDNS_StartExit ERROR m->CurrentRecord already set %s", ARDisplayString(m, m->CurrentRecord));
+		LogMsg("mDNS_StartExit: ERROR m->CurrentRecord already set %s", ARDisplayString(m, m->CurrentRecord));
 
 	// We're in the process of shutting down, so queries, etc. are no longer available.
 	// Consequently, determining certain information, e.g. the uDNS update server's IP
@@ -7577,6 +7582,9 @@ mDNSexport void mDNS_StartExit(mDNS *const m)
 
 	if (m->ServiceRegistrations) LogOperation("mDNS_StartExit: Sending final uDNS service deregistrations");
 	else                         LogOperation("mDNS_StartExit: No deregistering uDNS services remain");
+
+	for (rr = m->DuplicateRecords; rr; rr = rr->next)
+		LogMsg("mDNS_StartExit: Should not still have Duplicate Records remaining: %02X %s", rr->resrec.RecordType, ARDisplayString(m, rr));
 
 	// If any deregistering records remain, send their deregistration announcements before we exit
 	if (m->mDNSPlatformStatus != mStatus_NoError) DiscardDeregistrations(m);
