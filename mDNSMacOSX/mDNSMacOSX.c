@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.548  2008/10/03 00:26:25  cheshire
+Export DictionaryIsEnabled() so it's callable from other files
+
 Revision 1.547  2008/10/02 23:50:07  mcguire
 <rdar://problem/6136442> shutdown time issues
 improve log messages when SCDynamicStoreCreate() fails
@@ -2076,7 +2079,7 @@ mDNSlocal void GetUserSpecifiedLocalHostName(domainlabel *const namelabel)
 		}
 	}
 
-mDNSlocal mDNSBool DictionaryIsEnabled(CFDictionaryRef dict)
+mDNSexport mDNSBool DictionaryIsEnabled(CFDictionaryRef dict)
 	{
 	mDNSs32 val;
 	CFNumberRef state = CFDictionaryGetValue(dict, CFSTR("Enabled"));

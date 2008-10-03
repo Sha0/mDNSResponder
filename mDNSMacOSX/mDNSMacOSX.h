@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.81  2008/10/03 00:26:25  cheshire
+Export DictionaryIsEnabled() so it's callable from other files
+
 Revision 1.80  2008/10/02 22:47:01  cheshire
 <rdar://problem/6134215> Sleep Proxy: Mac with Internet Sharing should also offer Sleep Proxy service
 Added SCPreferencesRef so we can track whether Internet Sharing is on or off
@@ -199,7 +202,6 @@ struct mDNS_PlatformSupport_struct
 	IONotificationPortRef    PowerPortRef;
 	io_connect_t             PowerConnection;
 	io_object_t              PowerNotifier;
-	SCPreferencesRef         SCPrefs;
 	mDNSs32                  SleepLimit;		// Set when we get kIOMessageSystemWillSleep notification
 	long                     SleepCookie;		// Cookie we need to pass to IOAllowPowerChange()
 	pthread_mutex_t          BigMutex;
@@ -220,6 +222,8 @@ extern int KQueueSet(int fd, u_short flags, short filter, const KQueueEntry *con
 // Interface changes, Keychain changes, etc.) they must use KQueueLock/KQueueUnlock to lock out the kqueue thread
 extern void KQueueLock(mDNS *const m);
 extern void KQueueUnlock(mDNS *const m, const char const *task);
+
+extern mDNSBool DictionaryIsEnabled(CFDictionaryRef dict);
 
 // If any event takes more than WatchDogReportingThreshold milliseconds to be processed, we log a warning message
 // General event categories are:
