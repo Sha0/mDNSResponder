@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.90  2008/10/03 18:18:57  cheshire
+Define dummy "mDNS_ConfigChanged(mDNS *const m)" routine to avoid link errors
+
 Revision 1.89  2008/09/15 23:52:30  cheshire
 <rdar://problem/6218902> mDNSResponder-177 fails to compile on Linux with .desc pseudo-op
 Made __crashreporter_info__ symbol conditional, so we only use it for OS X build
@@ -3228,6 +3231,7 @@ int main(int argc, char *argv[])
 // It's an error for these routines to actually be called, so perhaps we should log any call
 // to them.
 void mDNSCoreInitComplete( mDNS * const m, mStatus result) { ( void ) m; ( void ) result; }
+void mDNS_ConfigChanged(mDNS *const m)  { ( void ) m; }
 void mDNSCoreMachineSleep(mDNS * const m, mDNSBool wake) { ( void ) m; ( void ) wake; }
 void mDNSCoreReceive(mDNS *const m, void *const msg, const mDNSu8 *const end,
                                 const mDNSAddr *const srcaddr, const mDNSIPPort srcport,
