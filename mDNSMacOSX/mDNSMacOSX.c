@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.549  2008/10/03 00:50:13  cheshire
+Minor code rearrangement; don't set up interface list until *after* we've started watching for network changes
+
 Revision 1.548  2008/10/03 00:26:25  cheshire
 Export DictionaryIsEnabled() so it's callable from other files
 
@@ -2123,7 +2126,9 @@ mDNSlocal mDNSEthAddr GetBSSID(char *ifa_name)
 	{
 	mDNSEthAddr eth = zeroEthAddr;
 	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:GetBSSID"), NULL, NULL);
-	if (store)
+	if (!store)
+		LogMsg("GetBSSID: SCDynamicStoreCreate failed: %s", SCErrorString(SCError()));
+	else
 		{
 		CFStringRef entityname = CFStringCreateWithFormat(NULL, NULL, CFSTR("State:/Network/Interface/%s/AirPort"), ifa_name);
 		if (entityname)
@@ -2149,7 +2154,9 @@ mDNSlocal mDNSBool GetNetWakeSetting(void)
 	{
 	mDNSs32 val = 0;
 	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:GetNetWakeSetting"), NULL, NULL);
-	if (store)
+	if (!store)
+		LogMsg("GetNetWakeSetting: SCDynamicStoreCreate failed: %s", SCErrorString(SCError()));
+	else
 		{
 		CFDictionaryRef dict = SCDynamicStoreCopyValue(store, CFSTR("State:/IOKit/PowerManagement/CurrentSettings"));
 		if (dict)
@@ -2160,8 +2167,6 @@ mDNSlocal mDNSBool GetNetWakeSetting(void)
 			}
 		CFRelease(store);
 		}
-	else
-		LogMsg("GetNetWakeSetting: SCDynamicStoreCreate failed: %s", SCErrorString(SCError()));
 	return val ? mDNStrue : mDNSfalse;
 	}
 
@@ -2876,7 +2881,7 @@ mDNSexport void AddNewClientTunnel(mDNS *const m, DNSQuestion *const q)
 	mDNS_StartQuery_internal(m, &p->q);
 	}
 
-#endif // APPLE_OSX_mDNSResponder
+#endif APPLE_OSX_mDNSResponder
 
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
@@ -3496,7 +3501,9 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 #endif // MDNS_NO_DNSINFO
 
 	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:mDNSPlatformSetDNSConfig"), NULL, NULL);
-	if (store)
+	if (!store)
+		LogMsg("mDNSPlatformSetDNSConfig: SCDynamicStoreCreate failed: %s", SCErrorString(SCError()));
+	else
 		{
 		CFDictionaryRef ddnsdict = SCDynamicStoreCopyValue(store, NetworkChangedKey_DynamicDNS);
 		if (ddnsdict)
@@ -3655,8 +3662,6 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 			}
 		CFRelease(store);
 		}
-	else
-		LogMsg("mDNSPlatformSetDNSConfig: SCDynamicStoreCreate failed: %s", SCErrorString(SCError()));
 	}
 
 mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS *const m, mDNSAddr *v4, mDNSAddr *v6, mDNSAddr *r)
@@ -3666,7 +3671,8 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS *const m, mDNSAddr *v4, 
 	(void)m; // Unused
 
 	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:mDNSPlatformGetPrimaryInterface"), NULL, NULL);
-	if (!store) LogMsg("mDNSPlatformGetPrimaryInterface: SCDynamicStoreCreate failed: %s", SCErrorString(SCError()));
+	if (!store)
+		LogMsg("mDNSPlatformGetPrimaryInterface: SCDynamicStoreCreate failed: %s", SCErrorString(SCError()));
 	else
 		{
 		CFDictionaryRef dict = SCDynamicStoreCopyValue(store, NetworkChangedKey_IPv4);
@@ -4427,10 +4433,6 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 
 	m->AutoTunnelHostAddr.b[0] = 0;		// Zero out AutoTunnelHostAddr so UpdateInterfaceList() know it has to set it up
 
-	mDNSs32 utc = mDNSPlatformUTC();
-	UpdateInterfaceList(m, utc);
-	SetupActiveInterfaces(m, utc);
-
 	NetworkChangedKey_IPv4         = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetIPv4);
 	NetworkChangedKey_IPv6         = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetIPv6);
 	NetworkChangedKey_Hostnames    = SCDynamicStoreKeyCreateHostNames(NULL);
@@ -4441,6 +4443,10 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 
 	err = WatchForNetworkChanges(m);
 	if (err) { LogMsg("mDNSPlatformInit_setup: WatchForNetworkChanges failed %d", err); return(err); }
+
+	mDNSs32 utc = mDNSPlatformUTC();
+	UpdateInterfaceList(m, utc);
+	SetupActiveInterfaces(m, utc);
 
 	// Explicitly ensure that our Keychain operations utilize the system domain.
 #ifndef NO_SECURITYFRAMEWORK
