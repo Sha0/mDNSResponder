@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.552  2008/10/03 23:32:15  cheshire
+Added definition of mDNSPlatformSendRawPacket
+
 Revision 1.551  2008/10/03 18:25:16  cheshire
 Instead of calling "m->MainCallback" function pointer directly, call mDNSCore routine "mDNS_ConfigChanged(m);"
 
@@ -819,7 +822,7 @@ Add (commented out) trigger value for testing "mach_absolute_time went backwards
 #include "DNSCommon.h"
 #include "uDNS.h"
 #include "mDNSMacOSX.h"               // Defines the specific types needed to run mDNS on this platform
-#include "../mDNSShared/uds_daemon.h" // Defines communication interface from platform layer up to UDS daemon
+#include "dns_sd.h"					// For mDNSInterface_LocalOnly etc.
 #include "PlatformCommon.h"
 
 #include <stdio.h>
@@ -827,6 +830,7 @@ Add (commented out) trigger value for testing "mach_absolute_time went backwards
 #include <net/if.h>
 #include <net/if_types.h>			// For IFT_ETHER
 #include <net/if_dl.h>
+#include <net/bpf.h>				// For BIOCSETIF etc.
 #include <sys/uio.h>
 #include <sys/param.h>
 #include <sys/socket.h>
@@ -888,7 +892,7 @@ Add (commented out) trigger value for testing "mach_absolute_time went backwards
 #endif
 
 mDNSexport int KQueueFD;
-mDNSexport dnssd_sock_t BPF_fd = dnssd_InvalidSocket;
+mDNSexport int BPF_fd = -1;
 
 #ifndef NO_SECURITYFRAMEWORK
 static CFArrayRef ServerCerts;
@@ -1953,6 +1957,19 @@ mDNSexport void mDNSPlatformUDPClose(UDPSocket *sock)
 	{
 	CloseSocketSet(&sock->ss);
 	freeL("UDPSocket", sock);
+	}
+
+mDNSexport void mDNSPlatformSendRawPacket(const void *const msg, const mDNSu8 *const end, mDNSInterfaceID InterfaceID)
+	{
+	if (!InterfaceID) { LogMsg("mDNSPlatformSendRawPacket: No InterfaceID specified"); return; }
+
+	NetworkInterfaceInfoOSX *info = (NetworkInterfaceInfoOSX *)InterfaceID;
+
+	struct ifreq ifr;
+	bzero(&ifr, sizeof(ifr));
+	strlcpy(ifr.ifr_name, info->ifa_name, sizeof(ifr.ifr_name));
+	LogMsg("mDNSPlatformSendRawPacket: BIOCSETIF %d", ioctl(BPF_fd, BIOCSETIF, &ifr));
+	LogMsg("mDNSPlatformSendRawPacket: write %d", write(BPF_fd, msg, end - (const mDNSu8 *)msg));
 	}
 
 #if COMPILER_LIKES_PRAGMA_MARK
