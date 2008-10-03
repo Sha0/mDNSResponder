@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.550  2008/10/03 00:51:58  cheshire
+Removed spurious "else" case that got left in by mistake
+
 Revision 1.549  2008/10/03 00:50:13  cheshire
 Minor code rearrangement; don't set up interface list until *after* we've started watching for network changes
 
@@ -2145,8 +2148,6 @@ mDNSlocal mDNSEthAddr GetBSSID(char *ifa_name)
 			}
 		CFRelease(store);
 		}
-	else
-		LogMsg("GetBSSID: SCDynamicStoreCreate failed: %s", SCErrorString(SCError()));
 	return(eth);
 	}
 
