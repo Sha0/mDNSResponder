@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.805  2008/10/03 18:17:28  cheshire
+<rdar://problem/6134215> Sleep Proxy: Mac with Internet Sharing should also offer Sleep Proxy service
+Update advertised Sleep Proxy Server name if user changes computer name
+
 Revision 1.804  2008/10/03 01:26:06  mcguire
 <rdar://problem/6266145> mDNS_FinalExit failed to send goodbye for duplicate uDNS records
 Put back Duplicate Record check
@@ -6343,9 +6347,9 @@ mDNSlocal void mDNS_HostNameCallback(mDNS *const m, AuthRecord *const rr, mStatu
 			m->MainCallback(m, mStatus_NameConflict);
 
 		// 2. If the client callback didn't do it, add (or increment) an index ourselves
-		// This needs to be case-insensitive compare, because we need to know that the name has been changed so as to
+		// This needs to be case-INSENSITIVE compare, because we need to know that the name has been changed so as to
 		// remedy the conflict, and a name that differs only in capitalization will just suffer the exact same conflict again.
-		if (SameDomainLabelCS(m->hostlabel.c, oldlabel.c))
+		if (SameDomainLabel(m->hostlabel.c, oldlabel.c))
 			IncrementLabelSuffix(&m->hostlabel, mDNSfalse);
 		
 		// 3. Generate the FQDNs from the hostlabel,
@@ -7125,24 +7129,25 @@ mDNSexport mDNSOpaque16 mDNS_NewMessageID(mDNS * const m)
 #pragma mark - Sleep Proxy Server
 #endif
 
-mDNSlocal void SleepProxyServerCallback(mDNS *const m, ServiceRecordSet *const sr, mStatus result)
+mDNSlocal void SleepProxyServerCallback(mDNS *const m, ServiceRecordSet *const srs, mStatus result)
 	{
-	LogOperation("SleepProxyServerCallback: %d %d %##s", m->BeSleepProxyServer, result, sr->RR_SRV.resrec.name->c);
+	LogOperation("SleepProxyServerCallback: %d %d %##s", m->BeSleepProxyServer, result, srs->RR_SRV.resrec.name->c);
 
-	if (result != mStatus_MemFree) return;
-
-	m->SleepProxyServerState = m->BeSleepProxyServer;
-
-	if (m->BeSleepProxyServer)
+	if (result == mStatus_NameConflict)
+		mDNS_RenameAndReregisterService(m, srs, mDNSNULL);
+	else if (result == mStatus_MemFree)
 		{
-		m->SleepProxyServerSocket = mDNSPlatformUDPSocket(m, zeroIPPort);
-		mDNS_RegisterService(m, sr,
-			&m->nicelabel, (const domainname *)"\xC_sleep-proxy\x4_udp", (const domainname *)"\x5local",
-			mDNSNULL, m->SleepProxyServerSocket->port,	// Host, port
-			(mDNSu8 *)"", 1,							// TXT data, length
-			mDNSNULL, 0,								// Subtypes (none)
-			mDNSInterface_Any,							// Interface ID
-			SleepProxyServerCallback, mDNSNULL);		// Callback and context
+		m->SleepProxyServerState = m->BeSleepProxyServer;
+		if (m->BeSleepProxyServer)
+			{
+			mDNS_RegisterService(m, srs,
+				&m->nicelabel, (const domainname *)"\xC_sleep-proxy\x4_udp", (const domainname *)"\x5local",
+				mDNSNULL, m->SleepProxyServerSocket->port,	// Host, port
+				(mDNSu8 *)"", 1,							// TXT data, length
+				mDNSNULL, 0,								// Subtypes (none)
+				mDNSInterface_Any,							// Interface ID
+				SleepProxyServerCallback, mDNSNULL);		// Callback and context
+			}
 		}
 	}
 
@@ -7151,15 +7156,25 @@ mDNSexport void mDNSCoreBeSleepProxyServer(mDNS *const m, mDNSBool sps)
 	m->BeSleepProxyServer = sps;
 	if (sps)
 		{
+		if (!m->SleepProxyServerSocket)
+			{
+			m->SleepProxyServerSocket = mDNSPlatformUDPSocket(m, zeroIPPort);
+			if (!m->SleepProxyServerSocket)
+				{ LogMsg("mDNSCoreBeSleepProxyServer: Failed to allocate SleepProxyServerSocket"); return; }
+			}
 		if (m->SleepProxyServerState == 0)
 			SleepProxyServerCallback(m, &m->SleepProxyServerSRS, mStatus_MemFree);
 		}
 	else
 		{
+		if (m->SleepProxyServerSocket)
+			{
+			mDNSPlatformUDPClose(m->SleepProxyServerSocket);
+			m->SleepProxyServerSocket = mDNSNULL;
+			}
 		if (m->SleepProxyServerState == 1)
 			{
 			m->SleepProxyServerState = 2;
-			mDNSPlatformUDPClose(m->SleepProxyServerSocket);
 			mDNS_DeregisterService(m, &m->SleepProxyServerSRS);
 			}
 		}
@@ -7320,6 +7335,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->UPnPSOAPAddressString    = mDNSNULL;
 	m->BeSleepProxyServer       = mDNSfalse;
 	m->SleepProxyServerState    = 0;
+	m->SleepProxyServerSocket   = mDNSNULL;
 
 #endif
 
@@ -7336,6 +7352,27 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 #endif
 
 	return(result);
+	}
+
+mDNSexport void mDNS_ConfigChanged(mDNS *const m)
+	{
+	if (m->SleepProxyServerState == 1)
+		{
+		domainlabel name;
+		domainname type, domain;
+		DeconstructServiceName(m->SleepProxyServerSRS.RR_SRV.resrec.name, &name, &type, &domain);
+		if (!SameDomainLabelCS(name.c, m->nicelabel.c))
+			{
+			LogOperation("Renaming SPS from “%#s” to “%#s”", name.c, m->nicelabel.c);
+			// When SleepProxyServerCallback gets the mStatus_MemFree message,
+			// it will reregister the service under the new name
+			m->SleepProxyServerState = 2;
+			mDNS_DeregisterService(m, &m->SleepProxyServerSRS);
+			}
+		}
+	
+	if (m->MainCallback)
+		m->MainCallback(m, mStatus_ConfigChanged);
 	}
 
 mDNSlocal void DynDNSHostNameCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
