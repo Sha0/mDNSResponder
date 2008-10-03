@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.368  2008/10/03 21:23:17  mkrochma
+Fix crash by not passing NULL to CFGetTypeID
+
 Revision 1.367  2008/10/03 18:25:17  cheshire
 Instead of calling "m->MainCallback" function pointer directly, call mDNSCore routine "mDNS_ConfigChanged(m);"
 
@@ -2186,7 +2189,7 @@ mDNSlocal void InternetSharingChanged(SCPreferencesRef prefs, SCPreferencesNotif
 	mDNS *const m = (mDNS *const)context;
 	SCPreferencesSynchronize(SCPrefs);
 	CFDictionaryRef dict = SCPreferencesGetValue(SCPrefs, CFSTR("NAT"));
-	mDNSCoreBeSleepProxyServer(m, (CFGetTypeID(dict) == CFDictionaryGetTypeID()) && DictionaryIsEnabled(dict));
+	mDNSCoreBeSleepProxyServer(m, dict && (CFGetTypeID(dict) == CFDictionaryGetTypeID()) && DictionaryIsEnabled(dict));
 	LogOperation("InternetSharingChanged: Sleep Proxy Server %s", m->BeSleepProxyServer ? "Starting" : "Stopping");
 	}
 
