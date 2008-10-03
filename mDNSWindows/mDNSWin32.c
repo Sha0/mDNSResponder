@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.132  2008/10/03 23:34:08  cheshire
+Added skeleton definition of mDNSPlatformSendRawPacket
+
 Revision 1.131  2008/10/03 18:25:18  cheshire
 Instead of calling "m->MainCallback" function pointer directly, call mDNSCore routine "mDNS_ConfigChanged(m);"
 
@@ -1229,7 +1232,18 @@ mDNSexport void mDNSPlatformUDPClose( UDPSocket *sock )
 	{
 	DEBUG_UNUSED( sock );
 	}
-		
+
+//===========================================================================================================================
+//	mDNSPlatformSendRawPacket
+//===========================================================================================================================
+	
+mDNSexport SOCKET BPF_fd = INVALID_SOCKET;
+mDNSexport void mDNSPlatformSendRawPacket(const void *const msg, const mDNSu8 *const end, mDNSInterfaceID InterfaceID)
+	{
+	DEBUG_UNUSED( msg );
+	DEBUG_UNUSED( end );
+	DEBUG_UNUSED( InterfaceID );
+	}
 
 //===========================================================================================================================
 //	mDNSPlatformTLSSetupCerts

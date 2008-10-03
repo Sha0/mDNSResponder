@@ -30,6 +30,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.105  2008/10/03 23:34:08  cheshire
+Added skeleton definition of mDNSPlatformSendRawPacket
+
 Revision 1.104  2008/09/05 22:16:48  cheshire
 <rdar://problem/3988320> Should use randomized source ports and transaction IDs to avoid DNS cache poisoning
 Add "UDPSocket *src" parameter in mDNSPlatformSendUDP
@@ -482,6 +485,14 @@ mDNSexport UDPSocket *mDNSPlatformUDPSocket(mDNS * const m, mDNSIPPort port)
 mDNSexport void           mDNSPlatformUDPClose(UDPSocket *sock)
 	{
 	(void)sock;			// Unused
+	}
+
+mDNSexport int BPF_fd = -1;
+mDNSexport void mDNSPlatformSendRawPacket(const void *const msg, const mDNSu8 *const end, mDNSInterfaceID InterfaceID)
+	{
+	(void)msg;			// Unused
+	(void)end;			// Unused
+	(void)InterfaceID;			// Unused
 	}
 
 mDNSexport mStatus mDNSPlatformTLSSetupCerts(void)
