@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.483  2008/10/03 23:28:41  cheshire
+Added declaration of mDNSPlatformSendRawPacket
+
 Revision 1.482  2008/10/03 17:30:05  cheshire
 Added declaration of mDNS_ConfigChanged(mDNS *const m);
 
@@ -2702,6 +2705,7 @@ extern long       mDNSPlatformReadTCP(TCPSocket *sock, void *buf, unsigned long 
 extern long       mDNSPlatformWriteTCP(TCPSocket *sock, const char *msg, unsigned long len);
 extern UDPSocket *mDNSPlatformUDPSocket(mDNS *const m, const mDNSIPPort requestedport);
 extern void       mDNSPlatformUDPClose(UDPSocket *sock);
+extern void       mDNSPlatformSendRawPacket(const void *const msg, const mDNSu8 *const end, mDNSInterfaceID InterfaceID);
 extern void       mDNSPlatformSourceAddrForDest(mDNSAddr *const src, const mDNSAddr *const dst);
 
 // mDNSPlatformTLSSetupCerts/mDNSPlatformTLSTearDownCerts used by dnsextd
