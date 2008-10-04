@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.806  2008/10/04 00:53:37  cheshire
+On interfaces that support Wake-On-LAN, browse to discover Sleep Proxy Servers
+
 Revision 1.805  2008/10/03 18:17:28  cheshire
 <rdar://problem/6134215> Sleep Proxy: Mac with Internet Sharing should also offer Sleep Proxy service
 Update advertised Sleep Proxy Server name if user changes computer name
@@ -5808,7 +5811,7 @@ mDNSexport mStatus mDNS_ReconfirmByValue(mDNS *const m, ResourceRecord *const rr
 	return(status);
 	}
 
-mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
+mDNSlocal mStatus mDNS_StartBrowse_internal(mDNS *const m, DNSQuestion *const question,
 	const domainname *const srv, const domainname *const domain,
 	const mDNSInterfaceID InterfaceID, mDNSBool ForceMCast, mDNSQuestionCallback *Callback, void *Context)
 	{
@@ -5832,7 +5835,18 @@ mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
 		question->LastQTime     = m->timenow - question->ThisQInterval;
 		}
 #endif // UNICAST_DISABLED
-	return(mDNS_StartQuery(m, question));
+	return(mDNS_StartQuery_internal(m, question));
+	}
+
+mDNSexport mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
+	const domainname *const srv, const domainname *const domain,
+	const mDNSInterfaceID InterfaceID, mDNSBool ForceMCast, mDNSQuestionCallback *Callback, void *Context)
+	{
+	mStatus status;
+	mDNS_Lock(m);
+	status = mDNS_StartBrowse_internal(m, question, srv, domain, InterfaceID, ForceMCast, Callback, Context);
+	mDNS_Unlock(m);
+	return(status);
 	}
 
 mDNSlocal mDNSBool MachineHasActiveIPv6(mDNS *const m)
@@ -6196,6 +6210,12 @@ mDNSlocal NetworkInterfaceInfo *FindFirstAdvertisedInterface(mDNS *const m)
 	return(intf);
 	}
 
+mDNSlocal void NetWakeBrowseResult(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
+	{
+	(void)question;
+	LogOperation("NetWakeBrowseResult: %d %s", AddRecord, RRDisplayString(m, answer));
+	}
+
 mDNSlocal void AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	{
 	char buffer[MAX_REVERSE_MAPPING_NAME];
@@ -6433,6 +6453,10 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 			"not represented in list; marking active and retriggering queries" :
 			"already represented in list; marking inactive for now");
 	
+	if (set->InterfaceActive && set->NetWake)
+		mDNS_StartBrowse_internal(m, &set->NetWakeBrowse, (const domainname *)"\xC_sleep-proxy\x4_udp", (const domainname *)"\x5local",
+			set->InterfaceID, mDNSfalse, NetWakeBrowseResult, set);
+
 	// In early versions of OS X the IPv6 address remains on an interface even when the interface is turned off,
 	// giving the false impression that there's an active representative of this interface when there really isn't.
 	// Therefore, when registering an interface, we want to re-trigger our questions and re-probe our Resource Records,
@@ -6528,6 +6552,9 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 	while (*p && *p != set) p=&(*p)->next;
 	if (!*p) { debugf("mDNS_DeregisterInterface: NetworkInterfaceInfo not found in list"); mDNS_Unlock(m); return; }
 
+	if (set->InterfaceActive && set->NetWake)
+		mDNS_StopQuery_internal(m, &set->NetWakeBrowse);
+
 	// Unlink this record from our list
 	*p = (*p)->next;
 	set->next = mDNSNULL;
@@ -6550,8 +6577,14 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 			{
 			LogOperation("mDNS_DeregisterInterface: Another representative of InterfaceID %p %s (%#a) exists;"
 				" making it active", set->InterfaceID, set->ifname, &set->ip);
+			if (intf->InterfaceActive)
+				LogMsg("mDNS_DeregisterInterface: ERROR intf->InterfaceActive already set for %s (%#a)", set->ifname, &set->ip);
 			intf->InterfaceActive = mDNStrue;
 			UpdateInterfaceProtocols(m, intf);
+
+			if (intf->NetWake)
+				mDNS_StartBrowse_internal(m, &intf->NetWakeBrowse, (const domainname *)"\xC_sleep-proxy\x4_udp", (const domainname *)"\x5local",
+					intf->InterfaceID, mDNSfalse, NetWakeBrowseResult, intf);
 			
 			// See if another representative *of the same type* exists. If not, we mave have gone from
 			// dual-stack to v6-only (or v4-only) so we need to reconfirm which records are still valid.
