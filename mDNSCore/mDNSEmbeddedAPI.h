@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.484  2008/10/04 00:01:45  cheshire
+Move NetworkInterfaceInfo_struct further down in file (we'll need to add a DNSQuestion to it later)
+
 Revision 1.483  2008/10/03 23:28:41  cheshire
 Added declaration of mDNSPlatformSendRawPacket
 
@@ -842,6 +845,7 @@ typedef enum				// From RFC 1035
 
 // ***************************************************************************
 #if 0
+#pragma mark -
 #pragma mark - Simple types
 #endif
 
@@ -1032,6 +1036,7 @@ typedef struct UDPSocket_struct UDPSocket;
 
 // ***************************************************************************
 #if 0
+#pragma mark -
 #pragma mark - DNS Message structures
 #endif
 
@@ -1079,6 +1084,7 @@ typedef struct tcpInfo_t
 
 // ***************************************************************************
 #if 0
+#pragma mark -
 #pragma mark - Resource Record structures
 #endif
 
@@ -1257,6 +1263,7 @@ typedef void mDNSRecordUpdateCallback(mDNS *const m, AuthRecord *const rr, RData
 
 // ***************************************************************************
 #if 0
+#pragma mark -
 #pragma mark - NAT Traversal structures and constants
 #endif
 
@@ -1624,41 +1631,6 @@ typedef struct DNSServer
 	domainname      domain;		// name->server matching for "split dns"
 	} DNSServer;
 
-typedef struct NetworkInterfaceInfo_struct NetworkInterfaceInfo;
-
-// A NetworkInterfaceInfo_struct serves two purposes:
-// 1. It holds the address, PTR and HINFO records to advertise a given IP address on a given physical interface
-// 2. It tells mDNSCore which physical interfaces are available; each physical interface has its own unique InterfaceID.
-//    Since there may be multiple IP addresses on a single physical interface,
-//    there may be multiple NetworkInterfaceInfo_structs with the same InterfaceID.
-//    In this case, to avoid sending the same packet n times, when there's more than one
-//    struct with the same InterfaceID, mDNSCore picks one member of the set to be the
-//    active representative of the set; all others have the 'InterfaceActive' flag unset.
-
-struct NetworkInterfaceInfo_struct
-	{
-	// Internal state fields. These are used internally by mDNSCore; the client layer needn't be concerned with them.
-	NetworkInterfaceInfo *next;
-
-	mDNSu8          InterfaceActive;	// Set if interface is sending & receiving packets (see comment above)
-	mDNSu8          IPv4Available;		// If InterfaceActive, set if v4 available on this InterfaceID
-	mDNSu8          IPv6Available;		// If InterfaceActive, set if v6 available on this InterfaceID
-
-	// Standard AuthRecords that every Responder host should have (one per active IP address)
-	AuthRecord RR_A;					// 'A' or 'AAAA' (address) record for our ".local" name
-	AuthRecord RR_PTR;					// PTR (reverse lookup) record
-	AuthRecord RR_HINFO;
-
-	// Client API fields: The client must set up these fields *before* calling mDNS_RegisterInterface()
-	mDNSInterfaceID InterfaceID;		// Identifies physical interface; MUST NOT be 0, -1, or -2
-	mDNSAddr        ip;					// The IPv4 or IPv6 address to advertise
-	mDNSAddr        mask;
-	char            ifname[64];			// Windows uses a GUID string for the interface name, which doesn't fit in 16 bytes
-	mDNSu8          Advertise;			// False if you are only searching on this interface
-	mDNSu8          McastTxRx;			// Send/Receive multicast on this { InterfaceID, address family } ?
-	mDNSu8          NetWake;			// Set if Wake-On-Magic-Packet is enabled on this interface
-	};
-
 typedef struct ExtraResourceRecord_struct ExtraResourceRecord;
 struct ExtraResourceRecord_struct
 	{
@@ -1733,6 +1705,7 @@ struct ServiceRecordSet_struct
 
 // ***************************************************************************
 #if 0
+#pragma mark -
 #pragma mark - Question structures
 #endif
 
@@ -1964,6 +1937,48 @@ typedef struct ClientTunnel
 
 // ***************************************************************************
 #if 0
+#pragma mark -
+#pragma mark - NetworkInterfaceInfo_struct
+#endif
+
+typedef struct NetworkInterfaceInfo_struct NetworkInterfaceInfo;
+
+// A NetworkInterfaceInfo_struct serves two purposes:
+// 1. It holds the address, PTR and HINFO records to advertise a given IP address on a given physical interface
+// 2. It tells mDNSCore which physical interfaces are available; each physical interface has its own unique InterfaceID.
+//    Since there may be multiple IP addresses on a single physical interface,
+//    there may be multiple NetworkInterfaceInfo_structs with the same InterfaceID.
+//    In this case, to avoid sending the same packet n times, when there's more than one
+//    struct with the same InterfaceID, mDNSCore picks one member of the set to be the
+//    active representative of the set; all others have the 'InterfaceActive' flag unset.
+
+struct NetworkInterfaceInfo_struct
+	{
+	// Internal state fields. These are used internally by mDNSCore; the client layer needn't be concerned with them.
+	NetworkInterfaceInfo *next;
+
+	mDNSu8          InterfaceActive;	// Set if interface is sending & receiving packets (see comment above)
+	mDNSu8          IPv4Available;		// If InterfaceActive, set if v4 available on this InterfaceID
+	mDNSu8          IPv6Available;		// If InterfaceActive, set if v6 available on this InterfaceID
+
+	// Standard AuthRecords that every Responder host should have (one per active IP address)
+	AuthRecord RR_A;					// 'A' or 'AAAA' (address) record for our ".local" name
+	AuthRecord RR_PTR;					// PTR (reverse lookup) record
+	AuthRecord RR_HINFO;
+
+	// Client API fields: The client must set up these fields *before* calling mDNS_RegisterInterface()
+	mDNSInterfaceID InterfaceID;		// Identifies physical interface; MUST NOT be 0, -1, or -2
+	mDNSAddr        ip;					// The IPv4 or IPv6 address to advertise
+	mDNSAddr        mask;
+	char            ifname[64];			// Windows uses a GUID string for the interface name, which doesn't fit in 16 bytes
+	mDNSu8          Advertise;			// False if you are only searching on this interface
+	mDNSu8          McastTxRx;			// Send/Receive multicast on this { InterfaceID, address family } ?
+	mDNSu8          NetWake;			// Set if Wake-On-Magic-Packet is enabled on this interface
+	};
+
+// ***************************************************************************
+#if 0
+#pragma mark -
 #pragma mark - Main mDNS object, used to hold all the mDNS state
 #endif
 
@@ -2123,6 +2138,7 @@ struct mDNS_struct
 
 // ***************************************************************************
 #if 0
+#pragma mark -
 #pragma mark - Useful Static Constants
 #endif
 
@@ -2169,6 +2185,7 @@ extern const mDNSOpaque64 zeroOpaque64;
 
 // ***************************************************************************
 #if 0
+#pragma mark -
 #pragma mark - Inline functions
 #endif
 
@@ -2209,6 +2226,7 @@ mDNSinline mDNSOpaque16 mDNSOpaque16fromIntVal(mDNSu16 v)
 
 // ***************************************************************************
 #if 0
+#pragma mark -
 #pragma mark - Main Client Functions
 #endif
 
@@ -2301,6 +2319,7 @@ extern DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const name)
 
 // ***************************************************************************
 #if 0
+#pragma mark -
 #pragma mark - Platform support functions that are accessible to the client layer too
 #endif
 
@@ -2308,6 +2327,7 @@ extern mDNSs32  mDNSPlatformOneSecond;
 
 // ***************************************************************************
 #if 0
+#pragma mark -
 #pragma mark - General utility and helper functions
 #endif
 
@@ -2385,6 +2405,7 @@ extern DNSServer *GetServerForName(mDNS *m, const domainname *name);
 
 // ***************************************************************************
 #if 0
+#pragma mark -
 #pragma mark - DNS name utility functions
 #endif
 
@@ -2465,6 +2486,7 @@ extern mDNSBool DeconstructServiceName(const domainname *const fqdn, domainlabel
 
 // ***************************************************************************
 #if 0
+#pragma mark -
 #pragma mark - Other utility functions and macros
 #endif
 
@@ -2532,6 +2554,7 @@ extern mDNSBool mDNSv4AddrIsRFC1918(mDNSv4Addr *addr);  // returns true for RFC1
 
 // ***************************************************************************
 #if 0
+#pragma mark -
 #pragma mark - Authentication Support
 #endif
 
@@ -2603,6 +2626,7 @@ extern mDNSBool DNSDigest_VerifyMessage(DNSMessage *msg, mDNSu8 *end, LargeCache
 
 // ***************************************************************************
 #if 0
+#pragma mark -
 #pragma mark - PlatformSupport interface
 #endif
 
@@ -2792,6 +2816,7 @@ extern void UpdateAutoTunnelDomainStatuses(const mDNS *const m);
 
 // ***************************************************************************
 #if 0
+#pragma mark -
 #pragma mark - Compile-Time assertion checks
 #endif
 
