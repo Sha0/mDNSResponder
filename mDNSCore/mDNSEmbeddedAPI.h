@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.485  2008/10/04 00:48:37  cheshire
+Added DNSQuestion to NetworkInterfaceInfo_struct, used for browsing for Sleep Proxy Servers
+
 Revision 1.484  2008/10/04 00:01:45  cheshire
 Move NetworkInterfaceInfo_struct further down in file (we'll need to add a DNSQuestion to it later)
 
@@ -1974,6 +1977,7 @@ struct NetworkInterfaceInfo_struct
 	mDNSu8          Advertise;			// False if you are only searching on this interface
 	mDNSu8          McastTxRx;			// Send/Receive multicast on this { InterfaceID, address family } ?
 	mDNSu8          NetWake;			// Set if Wake-On-Magic-Packet is enabled on this interface
+	DNSQuestion     NetWakeBrowse;
 	};
 
 // ***************************************************************************
