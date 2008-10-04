@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.553  2008/10/04 00:47:12  cheshire
+If NetWake setting changes for an interface, treat it as a whole new interface (like BSSID changing)
+
 Revision 1.552  2008/10/03 23:32:15  cheshire
 Added definition of mDNSPlatformSendRawPacket
 
@@ -2199,6 +2202,7 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 	{
 	mDNSu32 scope_id  = if_nametoindex(ifa->ifa_name);
 	mDNSEthAddr bssid = GetBSSID(ifa->ifa_name);
+	mDNSBool SystemNetWake = GetNetWakeSetting();
 
 	mDNSAddr ip, mask;
 	if (SetupAddr(&ip,   ifa->ifa_addr   ) != mStatus_NoError) return(NULL);
@@ -2206,13 +2210,13 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 
 	NetworkInterfaceInfoOSX **p;
 	for (p = &m->p->InterfaceList; *p; p = &(*p)->next)
-		if (scope_id == (*p)->scope_id && mDNSSameAddress(&ip, &(*p)->ifinfo.ip) && mDNSSameEthAddress(&bssid, &(*p)->BSSID))
+		if (scope_id == (*p)->scope_id &&
+			mDNSSameAddress(&ip, &(*p)->ifinfo.ip) &&
+			mDNSSameEthAddress(&bssid, &(*p)->BSSID) &&
+			(SystemNetWake && !(*p)->BSSID.l[0]) == (*p)->ifinfo.NetWake)
 			{
 			debugf("AddInterfaceToList: Found existing interface %lu %.6a with address %#a at %p", scope_id, &bssid, &ip, *p);
 			(*p)->Exists = mDNStrue;
-			// Even if this is not a new interface (index, address and BSSID match) the NetWake setting may have changed,
-			// so we need to make sure it's updated correctly
-			(*p)->ifinfo.NetWake = !(*p)->BSSID.l[0] && GetNetWakeSetting();
 			// If interface was not in getifaddrs list last time we looked, but it is now, update 'AppearanceTime' for this record
 			if ((*p)->LastSeen != utc) (*p)->AppearanceTime = utc;
 			return(*p);
@@ -2233,7 +2237,7 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 	i->ifinfo.ifname[sizeof(i->ifinfo.ifname)-1] = 0;
 	i->ifinfo.Advertise   = m->AdvertiseLocalAddresses;
 	i->ifinfo.McastTxRx   = mDNSfalse; // For now; will be set up later at the end of UpdateInterfaceList
-	i->ifinfo.NetWake     = !bssid.l[0] && GetNetWakeSetting();
+	i->ifinfo.NetWake     = SystemNetWake && !bssid.l[0];
 
 	i->next            = mDNSNULL;
 	i->Exists          = mDNStrue;
