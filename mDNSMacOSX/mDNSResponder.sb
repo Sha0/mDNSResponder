@@ -26,6 +26,9 @@
 ; SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ;
 ; $Log: mDNSResponder.sb,v $
+; Revision 1.32  2008/10/07 23:06:58  mcguire
+; <rdar://problem/6276444> Seatbelt: Policy denied Mach service lookup: com.apple.system.logger
+;
 ; Revision 1.31  2008/09/24 23:57:27  mcguire
 ; <rdar://problem/6227808> need read access to /private/var/db/crls/crlcache.db
 ;
@@ -166,7 +169,8 @@
 					"com.apple.SecurityServer"
 					"com.apple.SystemConfiguration.configd"
 					"com.apple.system.DirectoryService.libinfo_v1"
-					"com.apple.system.notification_center"))
+					"com.apple.system.notification_center"
+					"com.apple.system.logger"))
 
 ; Rules to allow the operations mDNSResponder needs start here
 
