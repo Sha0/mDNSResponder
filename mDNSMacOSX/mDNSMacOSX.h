@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.83  2008/10/07 21:41:57  mcguire
+Increase sizecheck limits to account for DNSQuestion added to NetworkInterfaceInfo_struct in 64bit builds
+
 Revision 1.82  2008/10/07 15:56:24  cheshire
 Increase sizecheck limits to account for DNSQuestion added to NetworkInterfaceInfo_struct
 
@@ -255,7 +258,7 @@ struct CompileTimeAssertionChecks_mDNSMacOSX
 	// Check our structures are reasonable sizes. Including overly-large buffers, or embedding
 	// other overly-large structures instead of having a pointer to them, can inadvertently
 	// cause structure sizes (and therefore memory usage) to balloon unreasonably.
-	char sizecheck_NetworkInterfaceInfoOSX[(sizeof(NetworkInterfaceInfoOSX) <=  4600) ? 1 : -1];
+	char sizecheck_NetworkInterfaceInfoOSX[(sizeof(NetworkInterfaceInfoOSX) <=  5168) ? 1 : -1];
 	char sizecheck_mDNS_PlatformSupport   [(sizeof(mDNS_PlatformSupport)    <=   368) ? 1 : -1];
 	};
 
