@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.807  2008/10/07 15:56:58  cheshire
+Fixed "unused variable" warnings in non-debug builds
+
 Revision 1.806  2008/10/04 00:53:37  cheshire
 On interfaces that support Wake-On-LAN, browse to discover Sleep Proxy Servers
 
@@ -6212,7 +6215,10 @@ mDNSlocal NetworkInterfaceInfo *FindFirstAdvertisedInterface(mDNS *const m)
 
 mDNSlocal void NetWakeBrowseResult(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
-	(void)question;
+	(void)m;			// Unused
+	(void)question;		// Unused
+	(void)answer;		// Unused
+	(void)AddRecord;	// Unused
 	LogOperation("NetWakeBrowseResult: %d %s", AddRecord, RRDisplayString(m, answer));
 	}
 
