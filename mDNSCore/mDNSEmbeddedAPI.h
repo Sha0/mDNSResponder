@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.488  2008/10/08 01:02:03  cheshire
+Added mDNS_SetupQuestion() convenience function
+
 Revision 1.487  2008/10/07 21:41:57  mcguire
 Increase sizecheck limits to account for DNSQuestion added to NetworkInterfaceInfo_struct in 64bit builds
 
@@ -1210,7 +1213,7 @@ typedef packedstruct
 
 #define LLQ_OPTLEN ((3 * sizeof(mDNSu16)) + 8 + sizeof(mDNSu32))
 
-// NOTE: rdataOPT format may be repeated an arbitrary number of times in a single resource record
+// Note: rdataOPT format may be repeated an arbitrary number of times in a single resource record
 typedef packedstruct
 	{
 	mDNSu16 opt;
@@ -1674,7 +1677,7 @@ struct ServiceRecordSet_struct
 	// Begin uDNS info ****************
 	// Hopefully much of this stuff can be simplified or eliminated
 
-	// NOTE: The current uDNS code keeps an explicit list of registered services, and handles them
+	// Note: The current uDNS code keeps an explicit list of registered services, and handles them
 	// differently to how individual records are treated (this is probably a mistake). What this means is
 	// that ServiceRecordSets for uDNS are kept in a linked list, whereas ServiceRecordSets for mDNS exist
 	// just as a convenient placeholder to group the component records together and are not kept on any list.
@@ -2381,6 +2384,9 @@ extern mStatus mDNS_RegisterNoSuchService(mDNS *const m, AuthRecord *const rr,
                const domainname *const host,
                const mDNSInterfaceID InterfaceID, mDNSRecordCallback Callback, void *Context);
 #define        mDNS_DeregisterNoSuchService mDNS_Deregister
+
+extern void mDNS_SetupQuestion(DNSQuestion *const q, const mDNSInterfaceID InterfaceID, const domainname *const name,
+               const mDNSu16 qtype, mDNSQuestionCallback *const callback, void *const context);
 
 extern mStatus mDNS_StartBrowse(mDNS *const m, DNSQuestion *const question,
                const domainname *const srv, const domainname *const domain,
