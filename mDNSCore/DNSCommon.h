@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.64  2008/10/08 01:03:33  cheshire
+Change GetFirstActiveInterface() so the NetworkInterfaceInfo it returns is not "const"
+
 Revision 1.63  2008/09/23 02:30:07  cheshire
 Get rid of PutResourceRecordCappedTTL()
 
@@ -196,7 +199,7 @@ typedef enum
 #pragma mark - General Utility Functions
 #endif
 
-extern const NetworkInterfaceInfo *GetFirstActiveInterface(const NetworkInterfaceInfo *intf);
+extern NetworkInterfaceInfo *GetFirstActiveInterface(NetworkInterfaceInfo *intf);
 extern mDNSInterfaceID GetNextActiveInterfaceID(const NetworkInterfaceInfo *intf);
 
 extern mDNSu32 mDNSRandom(mDNSu32 max);		// Returns pseudo-random result from zero to max inclusive
