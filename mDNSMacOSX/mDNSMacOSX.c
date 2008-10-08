@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.554  2008/10/08 18:36:51  mkrochma
+<rdar://problem/4371323> Supress Couldn't read user-specified Computer Name logs
+
 Revision 1.553  2008/10/04 00:47:12  cheshire
 If NetWake setting changes for an interface, treat it as a whole new interface (like BSSID changing)
 
@@ -3106,7 +3109,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 	GetUserSpecifiedFriendlyComputerName(&nicelabel);
 	if (nicelabel.c[0] == 0)
 		{
-		LogMsg("Couldn’t read user-specified Computer Name; using default “%s” instead", defaultname);
+		debugf("Couldn’t read user-specified Computer Name; using default “%s” instead", defaultname);
 		MakeDomainLabelFromLiteralString(&nicelabel, defaultname);
 		}
 
@@ -3116,7 +3119,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 	GetUserSpecifiedLocalHostName(&hostlabel);
 	if (hostlabel.c[0] == 0)
 		{
-		LogMsg("Couldn’t read user-specified Local Hostname; using default “%s.local” instead", defaultname);
+		debugf("Couldn’t read user-specified Local Hostname; using default “%s.local” instead", defaultname);
 		MakeDomainLabelFromLiteralString(&hostlabel, defaultname);
 		}
 
