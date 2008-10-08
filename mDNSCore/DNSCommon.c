@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.210  2008/10/08 01:03:52  cheshire
+Change GetFirstActiveInterface() so the NetworkInterfaceInfo it returns is not "const"
+Added mDNS_SetupQuestion() convenience function
+
 Revision 1.209  2008/09/23 04:13:30  cheshire
 <rdar://problem/6238774> Remove "local" from the end of _services._dns-sd._udp PTR records
 Removed old special-case Bonjour Browser hack that is no longer needed
@@ -510,7 +514,7 @@ mDNSexport mDNSBool mDNSv4AddrIsRFC1918(mDNSv4Addr *addr)
 			(addr->b[0] == 192 && addr->b[1] == 168));            // 192.168/16
 	}
 
-mDNSexport const NetworkInterfaceInfo *GetFirstActiveInterface(const NetworkInterfaceInfo *intf)
+mDNSexport NetworkInterfaceInfo *GetFirstActiveInterface(NetworkInterfaceInfo *intf)
 	{
 	while (intf && !intf->InterfaceActive) intf = intf->next;
 	return(intf);
@@ -1372,6 +1376,22 @@ mDNSexport void mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mD
 	rr->QueuedRDLen       = 0;	
 
 	rr->namestorage.c[0]  = 0;		// MUST be set by client before calling mDNS_Register()
+	}
+
+mDNSexport void mDNS_SetupQuestion(DNSQuestion *const q, const mDNSInterfaceID InterfaceID, const domainname *const name,
+               const mDNSu16 qtype, mDNSQuestionCallback *const callback, void *const context)
+	{
+	q->InterfaceID         = InterfaceID;
+	q->Target              = zeroAddr;
+	AssignDomainName(&q->qname, name);
+	q->qtype               = qtype;
+	q->qclass              = kDNSClass_IN;
+	q->LongLived           = (qtype == kDNSType_PTR);
+	q->ExpectUnique        = (qtype != kDNSType_PTR);
+	q->ForceMCast          = mDNSfalse;
+	q->ReturnIntermed      = mDNSfalse;
+	q->QuestionCallback    = callback;
+	q->QuestionContext     = context;
 	}
 
 mDNSexport mDNSu32 RDataHashValue(const ResourceRecord *const rr)
