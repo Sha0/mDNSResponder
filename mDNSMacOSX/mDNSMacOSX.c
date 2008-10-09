@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.557  2008/10/09 22:33:14  cheshire
+Fill in ifinfo.MAC field when fetching interface list
+
 Revision 1.556  2008/10/09 21:15:23  cheshire
 In mDNSPlatformUDPSocket(), need to create an IPv6 socket as well as IPv4
 
@@ -2208,6 +2211,20 @@ mDNSlocal mDNSBool GetNetWakeSetting(void)
 	return val ? mDNStrue : mDNSfalse;
 	}
 
+mDNSlocal int GetMAC(mDNSEthAddr *eth, u_short ifindex)
+	{
+	struct ifaddrs *ifa;
+	for (ifa = myGetIfAddrs(0); ifa; ifa = ifa->ifa_next)
+		if (ifa->ifa_addr->sa_family == AF_LINK)
+			{
+			const struct sockaddr_dl *const sdl = (const struct sockaddr_dl *)ifa->ifa_addr;
+			if (sdl->sdl_index == ifindex)
+				{ mDNSPlatformMemCopy(eth->b, sdl->sdl_data + sdl->sdl_nlen, 6); return 0; }
+			}
+	*eth = zeroEthAddr;
+	return -1;
+	}
+
 // Returns pointer to newly created NetworkInterfaceInfoOSX object, or
 // pointer to already-existing NetworkInterfaceInfoOSX object found in list, or
 // may return NULL if out of memory (unlikely) or parameters are invalid for some reason
@@ -2252,6 +2269,7 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 	i->ifinfo.Advertise   = m->AdvertiseLocalAddresses;
 	i->ifinfo.McastTxRx   = mDNSfalse; // For now; will be set up later at the end of UpdateInterfaceList
 	i->ifinfo.NetWake     = SystemNetWake && !bssid.l[0];
+	GetMAC(&i->ifinfo.MAC, scope_id);
 
 	i->next            = mDNSNULL;
 	i->Exists          = mDNStrue;
