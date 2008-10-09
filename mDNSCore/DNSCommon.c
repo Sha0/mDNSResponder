@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.211  2008/10/09 22:36:08  cheshire
+Now that we have Sleep Proxy Server, can't suppress normal scheduling logic while going to sleep
+
 Revision 1.210  2008/10/08 01:03:52  cheshire
 Change GetFirstActiveInterface() so the NetworkInterfaceInfo it returns is not "const"
 Added mDNS_SetupQuestion() convenience function
@@ -2769,19 +2772,17 @@ mDNSlocal mDNSs32 GetNextScheduledEvent(const mDNS *const m)
 #endif
 	if (e - m->NextCacheCheck        > 0) e = m->NextCacheCheck;
 
-	if (!m->SleepState)
+	if (m->SuppressSending)
 		{
-		if (m->SuppressSending)
-			{
-			if (e - m->SuppressSending       > 0) e = m->SuppressSending;
-			}
-		else
-			{
-			if (e - m->NextScheduledQuery    > 0) e = m->NextScheduledQuery;
-			if (e - m->NextScheduledProbe    > 0) e = m->NextScheduledProbe;
-			if (e - m->NextScheduledResponse > 0) e = m->NextScheduledResponse;
-			}
+		if (e - m->SuppressSending       > 0) e = m->SuppressSending;
 		}
+	else
+		{
+		if (e - m->NextScheduledQuery    > 0) e = m->NextScheduledQuery;
+		if (e - m->NextScheduledProbe    > 0) e = m->NextScheduledProbe;
+		if (e - m->NextScheduledResponse > 0) e = m->NextScheduledResponse;
+		}
+
 	return(e);
 	}
 
