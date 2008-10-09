@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.490  2008/10/09 21:39:20  cheshire
+Update list of DNS types
+
 Revision 1.489  2008/10/09 18:59:19  cheshire
 Added NetWakeResolve code, removed unused m->SendDeregistrations and m->SendImmediateAnswers
 
@@ -815,23 +818,23 @@ typedef enum				// From RFC 1035
 	kDNSType_MINFO,			// 14 Mailbox information
 	kDNSType_MX,			// 15 Mail Exchanger
 	kDNSType_TXT,			// 16 Arbitrary text string
-	kDNSType_RP,			// 17 Responsible person.
-	kDNSType_AFSDB,			// 18 AFS cell database.
-	kDNSType_X25,			// 19 X_25 calling address.
-	kDNSType_ISDN,			// 20 ISDN calling address.
-	kDNSType_RT,			// 21 Router.
-	kDNSType_NSAP,			// 22 NSAP address.
-	kDNSType_NSAP_PTR,		// 23 Reverse NSAP lookup (deprecated).
-	kDNSType_SIG,			// 24 Security signature.
-	kDNSType_KEY,			// 25 Security key.
-	kDNSType_PX,			// 26 X.400 mail mapping.
-	kDNSType_GPOS,			// 27 Geographical position (withdrawn).
-	kDNSType_AAAA,			// 28 IPv6 Address.
-	kDNSType_LOC,			// 29 Location Information.
-	kDNSType_NXT,			// 30 Next domain (security).
-	kDNSType_EID,			// 31 Endpoint identifier.
-	kDNSType_NIMLOC,		// 32 Nimrod Locator.
-	kDNSType_SRV,			// 33 Service record.
+	kDNSType_RP,			// 17 Responsible person
+	kDNSType_AFSDB,			// 18 AFS cell database
+	kDNSType_X25,			// 19 X_25 calling address
+	kDNSType_ISDN,			// 20 ISDN calling address
+	kDNSType_RT,			// 21 Router
+	kDNSType_NSAP,			// 22 NSAP address
+	kDNSType_NSAP_PTR,		// 23 Reverse NSAP lookup (deprecated)
+	kDNSType_SIG,			// 24 Security signature
+	kDNSType_KEY,			// 25 Security key
+	kDNSType_PX,			// 26 X.400 mail mapping
+	kDNSType_GPOS,			// 27 Geographical position (withdrawn)
+	kDNSType_AAAA,			// 28 IPv6 Address
+	kDNSType_LOC,			// 29 Location Information
+	kDNSType_NXT,			// 30 Next domain (security)
+	kDNSType_EID,			// 31 Endpoint identifier
+	kDNSType_NIMLOC,		// 32 Nimrod Locator
+	kDNSType_SRV,			// 33 Service record
 	kDNSType_ATMA,			// 34 ATM Address
 	kDNSType_NAPTR,			// 35 Naming Authority PoinTeR
 	kDNSType_KX,			// 36 Key Exchange
@@ -845,16 +848,29 @@ typedef enum				// From RFC 1035
 	kDNSType_SSHFP,			// 44 SSH Key Fingerprint
 	kDNSType_IPSECKEY,		// 45 IPSECKEY
 	kDNSType_RRSIG,			// 46 RRSIG
-	kDNSType_NSEC,			// 47 NSEC
+	kDNSType_NSEC,			// 47 Denial of Existence
 	kDNSType_DNSKEY,		// 48 DNSKEY
-	kDNSType_DHCID,			// 49 DHCID
+	kDNSType_DHCID,			// 49 DHCP Client Identifier
+	kDNSType_NSEC3,			// 50 Hashed Authenticated Denial of Existence
+	kDNSType_NSEC3PARAM,	// 51 Hashed Authenticated Denial of Existence
+
+	kDNSType_HIP = 55,		// 55 Host Identity Protocol
+
+	kDNSType_ARP = 90,		// Temporary placeholder value
+	kDNSType_ND  = 91,		// Temporary placeholder value
+
+	kDNSType_SPF = 99,		// 99 Sender Policy Framework for E-Mail
+	kDNSType_UINFO,			// 100 IANA-Reserved
+	kDNSType_UID,			// 101 IANA-Reserved
+	kDNSType_GID,			// 102 IANA-Reserved
+	kDNSType_UNSPEC,		// 103 IANA-Reserved
 
 	kDNSType_TKEY = 249,	// 249 Transaction key
-	kDNSType_TSIG,			// 250 Transaction signature.
-	kDNSType_IXFR,			// 251 Incremental zone transfer.
-	kDNSType_AXFR,			// 252 Transfer zone of authority.
-	kDNSType_MAILB,			// 253 Transfer mailbox records.
-	kDNSType_MAILA,			// 254 Transfer mail agent records.
+	kDNSType_TSIG,			// 250 Transaction signature
+	kDNSType_IXFR,			// 251 Incremental zone transfer
+	kDNSType_AXFR,			// 252 Transfer zone of authority
+	kDNSType_MAILB,			// 253 Transfer mailbox records
+	kDNSType_MAILA,			// 254 Transfer mail agent records
 	kDNSQType_ANY			// Not a DNS type, but a DNS query type, meaning "all types"
 	} DNS_TypeValues;
 
