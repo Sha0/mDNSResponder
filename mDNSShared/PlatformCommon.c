@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: PlatformCommon.c,v $
+Revision 1.20  2008/10/09 22:26:05  cheshire
+Save space by not showing high-resolution timestamp in LogMsgNoIdent() lines
+
 Revision 1.19  2008/07/14 17:43:36  mkrochma
 Fix previous check in so connect still gets called
 
@@ -227,7 +230,7 @@ mDNSexport void mDNSPlatformWriteLogMsg(const char *ident, const char *buffer, i
 	if (mDNS_DebugMode)	// In debug mode we write to stderr
 		{
 #if APPLE_OSX_mDNSResponder && LogTimeStamps
-		if (mDNSPlatformClockDivisor)
+		if (ident && ident[0] && mDNSPlatformClockDivisor)
 			fprintf(stderr,"%8d.%03d: %s\n", (int)(t/1000), ms, buffer);
 		else
 #endif
@@ -238,7 +241,7 @@ mDNSexport void mDNSPlatformWriteLogMsg(const char *ident, const char *buffer, i
 		{
 		openlog(ident, LOG_CONS | logoptflags, LOG_DAEMON);
 #if APPLE_OSX_mDNSResponder && LogTimeStamps
-		if (mDNSPlatformClockDivisor)
+		if (ident && ident[0] && mDNSPlatformClockDivisor)
 			syslog(LOG_ERR, "%8d.%03d: %s", (int)(t/1000), ms, buffer);
 		else
 #endif
