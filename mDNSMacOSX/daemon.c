@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.370  2008/10/09 22:32:27  cheshire
+Include MAC address in interface listing in SIGINFO output
+
 Revision 1.369  2008/10/09 19:32:39  cheshire
 Updated SIGINFO output to indicate whether we've found a sleep proxy server on a given interface
 Hollow sun with rays "☼" indicates we're still looking; solid sun with rays "☀" indicates we found one
@@ -2104,17 +2107,18 @@ mDNSlocal void INFOCallback(void)
 		for (i = mDNSStorage.p->InterfaceList; i; i = i->next)
 			{
 			if (!i->Exists)
-				LogMsgNoIdent("Interface: %s %5s(%lu) %.6a %#a dormant for %d seconds",
-					i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id, &i->BSSID,
+				LogMsgNoIdent("%p %s %5s(%lu) %.6a %.6a %#a dormant for %d seconds",
+					i->ifinfo.InterfaceID,
+					i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id, &i->ifinfo.MAC, &i->BSSID,
 					&i->ifinfo.ip, utc - i->LastSeen);
 			else
-				LogMsgNoIdent("Interface: %s %5s(%lu) %.6a %s %s %-15.4a %s InterfaceID %p %s %s %s %#a",
-					i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id, &i->BSSID,
+				LogMsgNoIdent("%p %s %5s(%lu) %.6a %.6a %s %s %-15.4a %s %s %s %s %#a",
+					i->ifinfo.InterfaceID,
+					i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id, &i->ifinfo.MAC, &i->BSSID,
 					i->ifinfo.InterfaceActive ? "Active" : "      ",
 					i->ifinfo.IPv4Available ? "v4" : "  ",
 					i->ifinfo.IPv4Available ? (mDNSv4Addr*)&i->ifa_v4addr : &zerov4Addr,
 					i->ifinfo.IPv6Available ? "v6" : "  ",
-					i->ifinfo.InterfaceID,
 					i->ifinfo.Advertise ? "⊙" : " ",
 					i->ifinfo.McastTxRx ? "⇆" : " ",
 					!(i->ifinfo.InterfaceActive && i->ifinfo.NetWake) ? " " :
