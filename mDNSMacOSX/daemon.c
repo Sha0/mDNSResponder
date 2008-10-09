@@ -30,6 +30,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.369  2008/10/09 19:32:39  cheshire
+Updated SIGINFO output to indicate whether we've found a sleep proxy server on a given interface
+Hollow sun with rays "☼" indicates we're still looking; solid sun with rays "☀" indicates we found one
+
 Revision 1.368  2008/10/03 21:23:17  mkrochma
 Fix crash by not passing NULL to CFGetTypeID
 
@@ -2113,7 +2117,8 @@ mDNSlocal void INFOCallback(void)
 					i->ifinfo.InterfaceID,
 					i->ifinfo.Advertise ? "⊙" : " ",
 					i->ifinfo.McastTxRx ? "⇆" : " ",
-					i->ifinfo.NetWake   ? "☀" : " ",
+					!(i->ifinfo.InterfaceActive && i->ifinfo.NetWake) ? " " :
+						!FindFirstAnswerInCache(&mDNSStorage, &i->ifinfo.NetWakeBrowse) ? "☼" : "☀",
 					&i->ifinfo.ip);
 			}
 		}
@@ -2190,7 +2195,7 @@ mDNSlocal void InternetSharingChanged(SCPreferencesRef prefs, SCPreferencesNotif
 	SCPreferencesSynchronize(SCPrefs);
 	CFDictionaryRef dict = SCPreferencesGetValue(SCPrefs, CFSTR("NAT"));
 	mDNSCoreBeSleepProxyServer(m, dict && (CFGetTypeID(dict) == CFDictionaryGetTypeID()) && DictionaryIsEnabled(dict));
-	LogOperation("InternetSharingChanged: Sleep Proxy Server %s", m->BeSleepProxyServer ? "Starting" : "Stopping");
+	LogOperation("InternetSharingChanged: Sleep Proxy Server %s", m->BeSleepProxyServer ? "Started" : "Stopping");
 	}
 
 mDNSlocal mStatus WatchForInternetSharingChanges(mDNS *const m)
