@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.491  2008/10/09 22:29:04  cheshire
+Added "mDNSEthAddr MAC" to NetworkInterfaceInfo_struct
+
 Revision 1.490  2008/10/09 21:39:20  cheshire
 Update list of DNS types
 
@@ -2005,6 +2008,7 @@ struct NetworkInterfaceInfo_struct
 	mDNSInterfaceID InterfaceID;		// Identifies physical interface; MUST NOT be 0, -1, or -2
 	mDNSAddr        ip;					// The IPv4 or IPv6 address to advertise
 	mDNSAddr        mask;
+	mDNSEthAddr     MAC;
 	char            ifname[64];			// Windows uses a GUID string for the interface name, which doesn't fit in 16 bytes
 	mDNSu8          Advertise;			// False if you are only searching on this interface
 	mDNSu8          McastTxRx;			// Send/Receive multicast on this { InterfaceID, address family } ?
