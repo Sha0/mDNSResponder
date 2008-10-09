@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.555  2008/10/09 19:05:57  cheshire
+No longer want to inhibit all networking when going to sleep
+
 Revision 1.554  2008/10/08 18:36:51  mkrochma
 <rdar://problem/4371323> Supress Couldn't read user-specified Computer Name logs
 
@@ -2955,7 +2958,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 	int InfoSocket              = socket(AF_INET6, SOCK_DGRAM, 0);
 	if (InfoSocket < 3 && errno != EAFNOSUPPORT) LogMsg("UpdateInterfaceList: InfoSocket error %d errno %d (%s)", InfoSocket, errno, strerror(errno));
 #endif
-	if (m->SleepState) ifa = NULL;
+	// if (m->SleepState) ifa = NULL; No longer appropriate, now that we have Sleep Proxy Server
 
 	while (ifa)
 		{
