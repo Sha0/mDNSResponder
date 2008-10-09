@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.556  2008/10/09 21:15:23  cheshire
+In mDNSPlatformUDPSocket(), need to create an IPv6 socket as well as IPv4
+
 Revision 1.555  2008/10/09 19:05:57  cheshire
 No longer want to inhibit all networking when going to sleep
 
@@ -1932,6 +1935,11 @@ mDNSexport UDPSocket *mDNSPlatformUDPSocket(mDNS *const m, const mDNSIPPort requ
 		// The kernel doesn't do cryptographically strong random port allocation, so we do it ourselves here
 		if (mDNSIPPortIsZero(requestedport)) port = mDNSOpaque16fromIntVal(0xC000 + mDNSRandom(0x3FFF));
 		err = SetupSocket(&p->ss, port, AF_INET, &p->ss.port);
+		if (!err)
+			{
+			err = SetupSocket(&p->ss, port, AF_INET6, &p->ss.port);
+			if (err) { close(p->ss.sktv4); p->ss.sktv4 = -1; }
+			}
 		if (!err) break;
 		}
 	if (err)
