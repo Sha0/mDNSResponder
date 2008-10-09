@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.489  2008/10/09 18:59:19  cheshire
+Added NetWakeResolve code, removed unused m->SendDeregistrations and m->SendImmediateAnswers
+
 Revision 1.488  2008/10/08 01:02:03  cheshire
 Added mDNS_SetupQuestion() convenience function
 
@@ -1972,6 +1975,10 @@ struct NetworkInterfaceInfo_struct
 	mDNSu8          InterfaceActive;	// Set if interface is sending & receiving packets (see comment above)
 	mDNSu8          IPv4Available;		// If InterfaceActive, set if v4 available on this InterfaceID
 	mDNSu8          IPv6Available;		// If InterfaceActive, set if v6 available on this InterfaceID
+	DNSQuestion     NetWakeBrowse;
+	DNSQuestion     NetWakeResolve;
+	mDNSAddr        SPSAddr;
+	mDNSIPPort      SPSPort;
 
 	// Standard AuthRecords that every Responder host should have (one per active IP address)
 	AuthRecord RR_A;					// 'A' or 'AAAA' (address) record for our ".local" name
@@ -1986,7 +1993,6 @@ struct NetworkInterfaceInfo_struct
 	mDNSu8          Advertise;			// False if you are only searching on this interface
 	mDNSu8          McastTxRx;			// Send/Receive multicast on this { InterfaceID, address family } ?
 	mDNSu8          NetWake;			// Set if Wake-On-Magic-Packet is enabled on this interface
-	DNSQuestion     NetWakeBrowse;
 	};
 
 // ***************************************************************************
@@ -2045,8 +2051,6 @@ struct mDNS_struct
 	mDNSs32  RandomQueryDelay;			// For de-synchronization of query packets on the wire
 	mDNSu32  RandomReconfirmDelay;		// For de-synchronization of reconfirmation queries on the wire
 	mDNSs32  PktNum;					// Unique sequence number assigned to each received packet
-	mDNSBool SendDeregistrations;		// Set if we need to send deregistrations (immediately)
-	mDNSBool SendImmediateAnswers;		// Set if we need to send answers (immediately -- or as soon as SuppressSending clears)
 	mDNSBool SleepState;				// Set if we're sleeping (send no more packets)
 
 	// These fields only required for mDNS Searcher...
@@ -2819,6 +2823,7 @@ extern CacheRecord *CreateNewCacheEntry(mDNS *const m, const mDNSu32 slot, Cache
 extern void GrantCacheExtensions(mDNS *const m, DNSQuestion *q, mDNSu32 lease);
 extern void MakeNegativeCacheRecord(mDNS *const m, const domainname *const name, const mDNSu32 namehash, const mDNSu16 rrtype, const mDNSu16 rrclass, mDNSu32 ttl_seconds);
 extern void CompleteDeregistration(mDNS *const m, AuthRecord *rr);
+extern const CacheRecord *FindFirstAnswerInCache(mDNS *const m, const DNSQuestion *const q);
 extern void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheRecord *const rr, const QC_result AddRecord);
 
 // For now this AutoTunnel stuff is specific to Mac OS X.
@@ -2874,7 +2879,7 @@ struct CompileTimeAssertionChecks_mDNS
 	char sizecheck_NATTraversalInfo    [(sizeof(NATTraversalInfo)     <=   192) ? 1 : -1];
 	char sizecheck_HostnameInfo        [(sizeof(HostnameInfo)         <=  3304) ? 1 : -1];
 	char sizecheck_DNSServer           [(sizeof(DNSServer)            <=   312) ? 1 : -1];
-	char sizecheck_NetworkInterfaceInfo[(sizeof(NetworkInterfaceInfo) <=  5112) ? 1 : -1];
+	char sizecheck_NetworkInterfaceInfo[(sizeof(NetworkInterfaceInfo) <=  7000) ? 1 : -1];
 	char sizecheck_ServiceRecordSet    [(sizeof(ServiceRecordSet)     <=  6248) ? 1 : -1];
 	char sizecheck_DomainAuthInfo      [(sizeof(DomainAuthInfo)       <=  6544) ? 1 : -1];
 	char sizecheck_ServiceInfoQuery    [(sizeof(ServiceInfoQuery)     <=  2944) ? 1 : -1];

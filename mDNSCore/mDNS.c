@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.808  2008/10/09 18:59:19  cheshire
+Added NetWakeResolve code, removed unused m->SendDeregistrations and m->SendImmediateAnswers
+
 Revision 1.807  2008/10/07 15:56:58  cheshire
 Fixed "unused variable" warnings in non-debug builds
 
@@ -2465,6 +2468,14 @@ mDNSlocal CacheRecord *CacheHasAddressTypeForName(mDNS *const m, const domainnam
 	CacheGroup *const cg = CacheGroupForName(m, HashSlot(name), namehash, name);
 	CacheRecord *cr = cg ? cg->members : mDNSNULL;
 	while (cr && !RRTypeIsAddressType(cr->resrec.rrtype)) cr=cr->next;
+	return(cr);
+	}
+
+mDNSexport const CacheRecord *FindFirstAnswerInCache(mDNS *const m, const DNSQuestion *const q)
+	{
+	CacheGroup *const cg = CacheGroupForName(m, HashSlot(&q->qname), q->qnamehash, &q->qname);
+	CacheRecord *cr = cg ? cg->members : mDNSNULL;
+	while (cr && !SameNameRecordAnswersQuestion(&cr->resrec, q)) cr=cr->next;
 	return(cr);
 	}
 
@@ -6213,15 +6224,6 @@ mDNSlocal NetworkInterfaceInfo *FindFirstAdvertisedInterface(mDNS *const m)
 	return(intf);
 	}
 
-mDNSlocal void NetWakeBrowseResult(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
-	{
-	(void)m;			// Unused
-	(void)question;		// Unused
-	(void)answer;		// Unused
-	(void)AddRecord;	// Unused
-	LogOperation("NetWakeBrowseResult: %d %s", AddRecord, RRDisplayString(m, answer));
-	}
-
 mDNSlocal void AdvertiseInterface(mDNS *const m, NetworkInterfaceInfo *set)
 	{
 	char buffer[MAX_REVERSE_MAPPING_NAME];
@@ -6425,6 +6427,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	set->InterfaceActive = mDNStrue;
 	set->IPv4Available   = (set->ip.type == mDNSAddrType_IPv4 && set->McastTxRx);
 	set->IPv6Available   = (set->ip.type == mDNSAddrType_IPv6 && set->McastTxRx);
+	set->NetWakeResolve.ThisQInterval = -1;
 
 	// Scan list to see if this InterfaceID is already represented
 	while (*p)
@@ -6461,7 +6464,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	
 	if (set->InterfaceActive && set->NetWake)
 		mDNS_StartBrowse_internal(m, &set->NetWakeBrowse, (const domainname *)"\xC_sleep-proxy\x4_udp", (const domainname *)"\x5local",
-			set->InterfaceID, mDNSfalse, NetWakeBrowseResult, set);
+			set->InterfaceID, mDNSfalse, mDNSNULL, mDNSNULL);
 
 	// In early versions of OS X the IPv6 address remains on an interface even when the interface is turned off,
 	// giving the false impression that there's an active representative of this interface when there really isn't.
@@ -6590,7 +6593,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 
 			if (intf->NetWake)
 				mDNS_StartBrowse_internal(m, &intf->NetWakeBrowse, (const domainname *)"\xC_sleep-proxy\x4_udp", (const domainname *)"\x5local",
-					intf->InterfaceID, mDNSfalse, NetWakeBrowseResult, intf);
+					intf->InterfaceID, mDNSfalse, mDNSNULL, mDNSNULL);
 			
 			// See if another representative *of the same type* exists. If not, we mave have gone from
 			// dual-stack to v6-only (or v4-only) so we need to reconfirm which records are still valid.
@@ -7292,8 +7295,6 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->RandomQueryDelay        = 0;
 	m->RandomReconfirmDelay    = 0;
 	m->PktNum                  = 0;
-	m->SendDeregistrations     = mDNSfalse;
-	m->SendImmediateAnswers    = mDNSfalse;
 	m->SleepState              = mDNSfalse;
 
 	// These fields only required for mDNS Searcher...
