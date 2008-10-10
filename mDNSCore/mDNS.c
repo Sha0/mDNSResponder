@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.809  2008/10/10 23:45:48  cheshire
+For ForceMCast records, SetTargetToHostName should use the dot-local multicast hostname,
+not a wide-area unicast hostname
+
 Revision 1.808  2008/10/09 18:59:19  cheshire
 Added NetWakeResolve code, removed unused m->SendDeregistrations and m->SendImmediateAnswers
 
@@ -1311,7 +1315,7 @@ mDNSlocal void SetTargetToHostName(mDNS *const m, AuthRecord *const rr)
 
 	if (!target) debugf("SetTargetToHostName: Don't know how to set the target of rrtype %d", rr->resrec.rrtype);
 
-	if (!(rr->resrec.InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(&rr->namestorage)))
+	if (!(rr->ForceMCast || rr->resrec.InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(&rr->namestorage)))
 		{
 		const domainname *const n = GetServiceTarget(m, rr);
 		if (n) newname = n;
