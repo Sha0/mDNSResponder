@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.811  2008/10/14 23:51:57  cheshire
+Created new routine GetRDLengthMem() to compute the in-memory storage requirements for particular rdata
+
 Revision 1.810  2008/10/14 21:37:55  cheshire
 Removed unnecessary m->BeSleepProxyServer variable
 
@@ -4620,21 +4623,24 @@ mDNSlocal mDNSBool ExpectingUnicastResponseForRecord(mDNS *const m, const mDNSAd
 	return(mDNSfalse);
 	}
 
+// Certain data types need more space for in-memory storage than their in-packet rdlength would imply
+// Currently this applies only to rdata types containing more than one domainname,
+// or types where the domainname is not the last item in the structure
+mDNSlocal mDNSu16 GetRDLengthMem(const ResourceRecord *const rr)
+	{
+	switch (rr->rrtype)
+		{
+		case kDNSType_SOA: return sizeof(rdataSOA);
+		case kDNSType_RP:  return sizeof(rdataRP);
+		case kDNSType_PX:  return sizeof(rdataPX);
+		default:           return rr->rdlength;
+		}
+	}
+
 mDNSexport CacheRecord *CreateNewCacheEntry(mDNS *const m, const mDNSu32 slot, CacheGroup *cg)
 	{
 	CacheRecord *rr = mDNSNULL;
-
-	// Certain data types need more space for in-memory storage than their in-packet rdlength would imply
-	// Currently this applies only to rdata types containing more than one domainname,
-	// or types where the domainname is not the last item in the structure
-	mDNSu16 RDLength;
-	switch (m->rec.r.resrec.rrtype)
-		{
-		case kDNSType_SOA: RDLength = sizeof(rdataSOA);         break;
-		case kDNSType_RP:  RDLength = sizeof(rdataRP);          break;
-		case kDNSType_PX:  RDLength = sizeof(rdataPX);          break;
-		default:           RDLength = m->rec.r.resrec.rdlength; break;
-		}
+	mDNSu16 RDLength = GetRDLengthMem(&m->rec.r.resrec);
 
 	if (!m->rec.r.resrec.InterfaceID) debugf("CreateNewCacheEntry %s", CRDisplayString(m, &m->rec.r));
 
