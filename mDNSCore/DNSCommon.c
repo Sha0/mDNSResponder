@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.212  2008/10/14 21:52:18  cheshire
+Added support for putting/getting/printing kDNSType_MAC
+
 Revision 1.211  2008/10/09 22:36:08  cheshire
 Now that we have Sleep Proxy Server, can't suppress normal scheduling logic while going to sleep
 
@@ -554,6 +557,7 @@ mDNSexport char *DNSTypeName(mDNSu16 rrtype)
 		case kDNSType_AAAA: return("AAAA");
 		case kDNSType_SRV:  return("SRV");
 		case kDNSType_OPT:  return("OPT");
+		case kDNSType_MAC:  return("MAC");
 		case kDNSType_TSIG: return("TSIG");
 		case kDNSQType_ANY: return("ANY");
 		default:			{
@@ -616,6 +620,9 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd,
 							else
 								length += mDNS_snprintf(buffer+length, Max-length, "Unknown opt %d", rd->opt.opt);
 							break;
+
+		case kDNSType_MAC:	mDNS_snprintf(buffer+length, Max-length, "%.6a", &rd->mac);          break;
+
 		default:			mDNS_snprintf(buffer+length, Max-length, "RDLen %d: %s", rr->rdlength, rd->data);
 							// Really should scan buffer to check if text is valid UTF-8 and only replace with dots if not
 							for (ptr = buffer; *ptr; ptr++) if (*ptr < ' ') *ptr = '.';
@@ -1354,6 +1361,7 @@ mDNSexport void mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mD
 	rr->AutoTarget        = Target_Manual;
 	rr->AllowRemoteQuery  = mDNSfalse;
 	rr->ForceMCast        = mDNSfalse;
+	rr->WakeUp            = zeroEthAddr;
 
 	// Field Group 3: Transient state for Authoritative Records (set in mDNS_Register_internal)
 	// Field Group 4: Transient uDNS state for Authoritative Records (set in mDNS_Register_internal)
@@ -1571,6 +1579,8 @@ mDNSexport mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate
 
 		case kDNSType_OPT:  return(rr->rdlength);
 
+		case kDNSType_MAC:  return(sizeof(rd->mac));
+
 		default:			debugf("Warning! Don't know how to get length of resource type %d", rr->rrtype);
 							return(rr->rdlength);
 		}
@@ -1618,6 +1628,8 @@ mDNSexport mDNSBool ValidateRData(const mDNSu16 rrtype, const mDNSu16 rdlength, 
 							// Call to DomainNameLengthLimit() implicitly enforces both requirements for us
 							len = DomainNameLengthLimit(&rd->u.srv.target, rd->u.data + rdlength);
 							return(len <= MAX_DOMAIN_NAME && rdlength == 6+len);
+
+		case kDNSType_MAC:	return(rdlength == sizeof(mDNSEthAddr));
 
 		default:			return(mDNStrue);	// Allow all other types without checking
 		}
@@ -1858,10 +1870,7 @@ mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNS
 	switch (rr->rrtype)
 		{
 		case kDNSType_A:	if (rr->rdlength != 4)
-								{
-								debugf("putRData: Illegal length %d for kDNSType_A", rr->rdlength);
-								return(mDNSNULL);
-								}
+								{ debugf("putRData: Illegal length %d for kDNSType_A", rr->rdlength); return(mDNSNULL); }
 							if (ptr + 4 > limit) return(mDNSNULL);
 							*ptr++ = rr->rdata->u.ipv4.b[0];
 							*ptr++ = rr->rdata->u.ipv4.b[1];
@@ -1916,10 +1925,7 @@ mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNS
 			                return(ptr);
 
 		case kDNSType_AAAA:	if (rr->rdlength != sizeof(rr->rdata->u.ipv6))
-								{
-								debugf("putRData: Illegal length %d for kDNSType_AAAA", rr->rdlength);
-								return(mDNSNULL);
-								}
+								{ debugf("putRData: Illegal length %d for kDNSType_AAAA", rr->rdlength); return(mDNSNULL); }
 							if (ptr + sizeof(rr->rdata->u.ipv6) > limit) return(mDNSNULL);
 							mDNSPlatformMemCopy(ptr, &rr->rdata->u.ipv6, sizeof(rr->rdata->u.ipv6));
 							return(ptr + sizeof(rr->rdata->u.ipv6));
@@ -1935,6 +1941,12 @@ mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNS
 
 		case kDNSType_OPT:	return putOptRData(ptr, limit, rr);
 							
+		case kDNSType_MAC:	if (rr->rdlength != 6)
+								{ debugf("putRData: Illegal length %d for kDNSType_MAC", rr->rdlength); return(mDNSNULL); }
+							if (ptr + 6 > limit) return(mDNSNULL);
+							mDNSPlatformMemCopy(ptr, rr->rdata->u.data, rr->rdlength);
+							return(ptr+6);
+
 		default:			debugf("putRData: Warning! Writing unknown resource type %d as raw data", rr->rrtype);
 							if (ptr + rr->rdlength > limit) return(mDNSNULL);
 							mDNSPlatformMemCopy(ptr, rr->rdata->u.data, rr->rdlength);
@@ -2401,6 +2413,10 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 		case kDNSType_OPT:  ptr = getOptRdata(ptr, end, largecr, pktrdlength); break;
 							if (ptr != end) { LogMsg("GetLargeResourceRecord: Malformed OptRdata"); return(mDNSNULL); }
 
+		case kDNSType_MAC:	if (pktrdlength != sizeof(mDNSEthAddr)) return(mDNSNULL);
+							mDNSPlatformMemCopy(rr->resrec.rdata->u.data, ptr, sizeof(mDNSEthAddr));
+							break;
+
 		default:			if (pktrdlength > rr->resrec.rdata->MaxRDLength)
 								{
 								debugf("GetLargeResourceRecord: rdata %d (%s) size (%d) exceeds storage (%d)",
@@ -2657,7 +2673,8 @@ mDNSexport mStatus mDNSSendDNSMessage(mDNS *const m, DNSMessage *const msg, mDNS
 	const mDNSu16 numAdditionals = msg->h.numAdditionals;
 	mDNSu8 *newend;
 
-	if (end <= msg->data || end - msg->data > AbsoluteMaxDNSMessageData)
+	// Zero-length message data is okay (e.g. for a DNS Update ack, where all we need is an ID and an error code
+	if (end < msg->data || end - msg->data > AbsoluteMaxDNSMessageData)
 		{
 		LogMsg("mDNSSendDNSMessage: invalid message %p %p %d", msg->data, end, end - msg->data);
 		return mStatus_BadParamErr;
