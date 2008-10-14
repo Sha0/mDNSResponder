@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.492  2008/10/14 20:26:36  cheshire
+Added definition of a new kDNSType_MAC rdata type
+
 Revision 1.491  2008/10/09 22:29:04  cheshire
 Added "mDNSEthAddr MAC" to NetworkInterfaceInfo_struct
 
@@ -859,8 +862,7 @@ typedef enum				// From RFC 1035
 
 	kDNSType_HIP = 55,		// 55 Host Identity Protocol
 
-	kDNSType_ARP = 90,		// Temporary placeholder value
-	kDNSType_ND  = 91,		// Temporary placeholder value
+	kDNSType_MAC = 90,		// Temporary placeholder value
 
 	kDNSType_SPF = 99,		// 99 Sender Policy Framework for E-Mail
 	kDNSType_UINFO,			// 100 IANA-Reserved
@@ -1277,6 +1279,7 @@ typedef union
 	mDNSv6Addr  ipv6;		// For 'AAAA' record
 	rdataSRV    srv;
 	rdataOPT    opt;		// For EDNS0 OPT record; RDataBody may contain multiple variable-length rdataOPT objects packed together
+	mDNSEthAddr mac;
 	} RDataBody;
 
 typedef struct
@@ -1508,6 +1511,7 @@ struct AuthRecord_struct
 	mDNSu8          AutoTarget;			// Set if the target of this record (PTR, CNAME, SRV, etc.) is our host name
 	mDNSu8          AllowRemoteQuery;	// Set if we allow hosts not on the local link to query this record
 	mDNSu8          ForceMCast;			// Set by client to advertise solely via multicast, even for apparently unicast names
+	mDNSEthAddr     WakeUp;				// Non-zero if we may need to generate a wakeup packet for this record
 
 	// Field Group 3: Transient state for Authoritative Records
 	mDNSu8          Acknowledged;		// Set if we've given the success callback to the client
