@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.371  2008/10/14 19:09:53  cheshire
+When going to sleep, delay sleep until we've got our acknowledgment from the SPS
+
 Revision 1.370  2008/10/09 22:32:27  cheshire
 Include MAC address in interface listing in SIGINFO output
 
@@ -2198,8 +2201,9 @@ mDNSlocal void InternetSharingChanged(SCPreferencesRef prefs, SCPreferencesNotif
 	mDNS *const m = (mDNS *const)context;
 	SCPreferencesSynchronize(SCPrefs);
 	CFDictionaryRef dict = SCPreferencesGetValue(SCPrefs, CFSTR("NAT"));
-	mDNSCoreBeSleepProxyServer(m, dict && (CFGetTypeID(dict) == CFDictionaryGetTypeID()) && DictionaryIsEnabled(dict));
-	LogOperation("InternetSharingChanged: Sleep Proxy Server %s", m->BeSleepProxyServer ? "Started" : "Stopping");
+	mDNSBool sps = (dict && (CFGetTypeID(dict) == CFDictionaryGetTypeID()) && DictionaryIsEnabled(dict));
+	LogOperation("InternetSharingChanged: Sleep Proxy Server %s", sps ? "Starting" : "Stopping");
+	mDNSCoreBeSleepProxyServer(m, sps);
 	}
 
 mDNSlocal mStatus WatchForInternetSharingChanges(mDNS *const m)
@@ -2439,7 +2443,16 @@ mDNSlocal mDNSBool ReadyForSleep(mDNS *m)
 	// 2. Scan list of registered records
 	AuthRecord *rr;
 	for (rr = m->ResourceRecords; rr; rr = rr->next)
-		if (rr->state == regState_Refresh && rr->tcp) return(mDNSfalse);
+		{
+		if (AuthRecord_uDNS(rr))
+			{
+			if (rr->state == regState_Refresh && rr->tcp) return(mDNSfalse);
+			}
+		else
+			{
+			if (!mDNSOpaque16IsZero(rr->id)) return(mDNSfalse);
+			}
+		}
 
 	// 2. Scan list of registered services
 	ServiceRecordSet *srs;
