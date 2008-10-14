@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.574  2008/10/14 19:06:45  cheshire
+In uDNS_ReceiveMsg(), only do checkUpdateResult() for uDNS records
+
 Revision 1.573  2008/09/25 20:43:44  cheshire
 <rdar://problem/6245044> Stop using separate m->ServiceRegistrations list
 In UpdateSRVRecords, call mDNS_SetFQDN(m) to update AutoTarget SRV records on the main m->ResourceRecords list
@@ -4030,7 +4033,7 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 			{
 			AuthRecord *rptr = m->CurrentRecord;
 			m->CurrentRecord = m->CurrentRecord->next;
-			if (mDNSSameOpaque16(rptr->id, msg->h.id))
+			if (AuthRecord_uDNS(rptr) && mDNSSameOpaque16(rptr->id, msg->h.id))
 				{
 				err = checkUpdateResult(m, rptr->resrec.name, rcode, msg, end);
 				if (!err && rptr->uselease && lease)
