@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.493  2008/10/14 21:37:56  cheshire
+Removed unnecessary m->BeSleepProxyServer variable
+
 Revision 1.492  2008/10/14 20:26:36  cheshire
 Added definition of a new kDNSType_MAC rdata type
 
@@ -2034,6 +2037,13 @@ enum
 	mDNS_KnownBug_PhantomInterfaces = 1
 	};
 
+enum
+	{
+	SleepState_Awake = 0,
+	SleepState_Transferring = 1,
+	SleepState_Sleeping = 2
+	};
+
 struct mDNS_struct
 	{
 	// Internal state fields. These hold the main internal state of mDNSCore;
@@ -2075,7 +2085,7 @@ struct mDNS_struct
 	mDNSs32  RandomQueryDelay;			// For de-synchronization of query packets on the wire
 	mDNSu32  RandomReconfirmDelay;		// For de-synchronization of reconfirmation queries on the wire
 	mDNSs32  PktNum;					// Unique sequence number assigned to each received packet
-	mDNSBool SleepState;				// Set if we're sleeping (send no more packets)
+	mDNSu8   SleepState;				// Set if we're sleeping
 
 	// These fields only required for mDNS Searcher...
 	DNSQuestion *Questions;				// List of all registered questions, active and inactive
@@ -2157,7 +2167,6 @@ struct mDNS_struct
 	mDNSu8           *UPnPRouterAddressString;	// holds both the router's address and port
 	mDNSu8           *UPnPSOAPAddressString;	// holds both address and port for SOAP messages
 
-	mDNSu8            BeSleepProxyServer;
 	mDNSu8            SleepProxyServerState;	// 0 = off, 1 = running, 2 = shutting down
 	UDPSocket        *SleepProxyServerSocket;
 	ServiceRecordSet  SleepProxyServerSRS;

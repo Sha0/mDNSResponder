@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.810  2008/10/14 21:37:55  cheshire
+Removed unnecessary m->BeSleepProxyServer variable
+
 Revision 1.809  2008/10/10 23:45:48  cheshire
 For ForceMCast records, SetTargetToHostName should use the dot-local multicast hostname,
 not a wide-area unicast hostname
@@ -4757,7 +4760,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	int firstauthority  =                   response->h.numAnswers;
 	int firstadditional = firstauthority  + response->h.numAuthorities;
 	int totalrecords    = firstadditional + response->h.numAdditionals;
-	const mDNSu8 *ptr = response->data;
+	const mDNSu8 *ptr   = response->data;
 
 	// Currently used only for display in debugging message
 	(void)srcport;
@@ -7177,15 +7180,12 @@ mDNSexport mDNSOpaque16 mDNS_NewMessageID(mDNS * const m)
 
 mDNSlocal void SleepProxyServerCallback(mDNS *const m, ServiceRecordSet *const srs, mStatus result)
 	{
-	LogOperation("SleepProxyServerCallback: %d %d %##s", m->BeSleepProxyServer, result, srs->RR_SRV.resrec.name->c);
-
 	if (result == mStatus_NameConflict)
 		mDNS_RenameAndReregisterService(m, srs, mDNSNULL);
 	else if (result == mStatus_MemFree)
 		{
-		m->SleepProxyServerState = m->BeSleepProxyServer;
-		if (m->BeSleepProxyServer)
-			{
+		m->SleepProxyServerState = (m->SleepProxyServerSocket != mDNSNULL);
+		if (m->SleepProxyServerState)
 			mDNS_RegisterService(m, srs,
 				&m->nicelabel, (const domainname *)"\xC_sleep-proxy\x4_udp", (const domainname *)"\x5local",
 				mDNSNULL, m->SleepProxyServerSocket->port,	// Host, port
@@ -7193,13 +7193,11 @@ mDNSlocal void SleepProxyServerCallback(mDNS *const m, ServiceRecordSet *const s
 				mDNSNULL, 0,								// Subtypes (none)
 				mDNSInterface_Any,							// Interface ID
 				SleepProxyServerCallback, mDNSNULL);		// Callback and context
-			}
 		}
 	}
 
 mDNSexport void mDNSCoreBeSleepProxyServer(mDNS *const m, mDNSBool sps)
 	{
-	m->BeSleepProxyServer = sps;
 	if (sps)
 		{
 		if (!m->SleepProxyServerSocket)
@@ -7377,7 +7375,6 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->UPnPSOAPURL              = mDNSNULL;
 	m->UPnPRouterAddressString  = mDNSNULL;
 	m->UPnPSOAPAddressString    = mDNSNULL;
-	m->BeSleepProxyServer       = mDNSfalse;
 	m->SleepProxyServerState    = 0;
 	m->SleepProxyServerSocket   = mDNSNULL;
 
