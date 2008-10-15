@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.372  2008/10/15 00:03:21  cheshire
+When finally going to sleep, update m->SleepState from SleepState_Transferring to SleepState_Sleeping
+
 Revision 1.371  2008/10/14 19:09:53  cheshire
 When going to sleep, delay sleep until we've got our acknowledgment from the SPS
 
@@ -2535,6 +2538,7 @@ mDNSlocal void * KQueueLoop(void *m_param)
 				LogOperation("IOAllowPowerChange(%lX) %s at %ld (%d ticks remaining)", m->p->SleepCookie,
 					ready ? "ready for sleep" : "giving up", now, m->p->SleepLimit - now);
 				m->p->SleepLimit = 0;
+				m->SleepState = SleepState_Sleeping;
 				IOAllowPowerChange(m->p->PowerConnection, m->p->SleepCookie);
 				}
 			else
