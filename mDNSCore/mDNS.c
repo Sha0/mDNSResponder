@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.813  2008/10/15 00:09:23  cheshire
+When acting as Sleep Proxy Server, handle DNS Updates received from SPS clients on the network
+
 Revision 1.812  2008/10/15 00:01:40  cheshire
 When going to sleep, discover and resolve SPS, and if successful, transfer records to it
 
@@ -2948,6 +2951,40 @@ mDNSlocal void SendQueries(mDNS *const m)
 			}
 	}
 
+mDNSlocal void SendWakeup(mDNS *const m, mDNSInterfaceID InterfaceID, mDNSEthAddr *EthAddr)
+	{
+	int i, j;
+	mDNSu8 *ptr = m->omsg.data;
+
+	if (!InterfaceID) { LogMsg("SendWakeup: No InterfaceID specified"); return; }
+
+	// 1. Put destination address
+	for (i=0; i<6; i++) *ptr++ = EthAddr->b[i];
+
+	// 2. Put source address (we just use zero -- driver/hardware will fill in real interface address)
+	for (i=0; i<6; i++) *ptr++ = 0x0;
+
+	// 3. Put Ethertype (0x0842)
+	*ptr++ = 0x08;
+	*ptr++ = 0x42;
+
+	// 4. Put Wakeup sync sequence
+	for (i=0; i<6; i++) *ptr++ = 0xFF;
+
+	// 4. Put Wakeup data
+	for (j=0; j<16; j++) for (i=0; i<6; i++) *ptr++ = EthAddr->b[i];
+
+	mDNSPlatformSendRawPacket(m->omsg.data, ptr, InterfaceID);
+
+	// For Ethernet switches that don't flood-foward packets with unknown unicast destination MAC addresses,
+	// broadcast is the only reliable way to get a wakeup packet to the intended target machine.
+	// For 802.11 WPA networks, where a sleeping target machine may have missed a broadcast/multicast
+	// key rotation, unicast is the only way to get a wakeup packet to the intended target machine.
+	// So, we send one of each, unicast first, then broadcast second.
+	for (i=0; i<6; i++) m->omsg.data[i] = 0xFF;
+	mDNSPlatformSendRawPacket(m->omsg.data, ptr, InterfaceID);
+	}
+
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
@@ -5329,6 +5366,80 @@ exit:
 		}
 	}
 
+mDNSlocal void SPSRecordCallback(mDNS *const m, AuthRecord *const ar, mStatus result)
+	{
+	LogOperation("SPSRecordCallback %d %s", result, ARDisplayString(m, ar));
+	if (result == mStatus_NameConflict)
+		SendWakeup(m, ar->resrec.InterfaceID, &ar->WakeUp);
+	}
+
+mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
+	const DNSMessage *const msg, const mDNSu8 *end,
+	const mDNSAddr *srcaddr, const mDNSIPPort srcport, const mDNSAddr *dstaddr, mDNSIPPort dstport,
+	const mDNSInterfaceID InterfaceID)
+	{
+	int i;
+	domainname  MACname;
+	mDNSEthAddr MACdata;
+	const mDNSu8 *ptr = LocateAuthorities(msg, end);
+
+	LogOperation("Received Update from %#-15a:%-5d to %#-15a:%-5d on 0x%p with "
+		"%2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
+		srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), InterfaceID,
+		msg->h.numQuestions,   msg->h.numQuestions   == 1 ? ", " : "s,",
+		msg->h.numAnswers,     msg->h.numAnswers     == 1 ? ", " : "s,",
+		msg->h.numAuthorities, msg->h.numAuthorities == 1 ? "y,  " : "ies,",
+		msg->h.numAdditionals, msg->h.numAdditionals == 1 ? "" : "s");
+
+	if (!m->SleepProxyServerSocket) return;
+	if (!mDNSSameIPPort(dstport, m->SleepProxyServerSocket->port)) return;
+
+	DumpPacket(m, mStatus_NoError, mDNSfalse, "UDP", srcaddr, srcport, dstaddr, dstport, msg, end);
+
+	MACname.c[0] = 0;
+	for (i = 0; i < msg->h.mDNS_numUpdates && ptr && ptr < end; i++)
+		{
+		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, kDNSRecordTypePacketAuth, &m->rec);
+		if (ptr)
+			{
+			if (m->rec.r.resrec.rrtype == kDNSType_MAC)
+				{
+				AssignDomainName(&MACname, m->rec.r.resrec.name);
+				MACdata = m->rec.r.resrec.rdata->u.mac;
+				}
+			else if (RRTypeIsAddressType(m->rec.r.resrec.rrtype))
+				{
+				mDNSu16 RDLength = GetRDLengthMem(&m->rec.r.resrec);
+				AuthRecord *ar = mDNSPlatformMemAllocate(sizeof(AuthRecord) - sizeof(RDataBody) + RDLength);
+				if (ar)
+					{
+					mDNSu8 RecordType = SameDomainName(&MACname, m->rec.r.resrec.name) ? kDNSRecordTypeUnique : kDNSRecordTypeShared;
+					mDNS_SetupResourceRecord(ar, mDNSNULL, InterfaceID, m->rec.r.resrec.rrtype,  m->rec.r.resrec.rroriginalttl, kDNSRecordTypeShared, SPSRecordCallback, ar);
+					AssignDomainName(&ar->namestorage, m->rec.r.resrec.name);
+					mDNSPlatformMemCopy(ar->resrec.rdata, m->rec.r.resrec.rdata, sizeofRDataHeader + RDLength);
+					if (RecordType == kDNSRecordTypeUnique) ar->WakeUp = MACdata;
+					mDNS_Register_internal(m, ar);
+					LogOperation("SPS Registered %s", ARDisplayString(m,ar));
+					}
+				}
+			}
+		m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
+		}
+	
+	InitializeDNSMessage(&m->omsg.h, msg->h.id, UpdateRespFlags);
+	mDNSSendDNSMessage(m, &m->omsg, m->omsg.data, InterfaceID, m->SleepProxyServerSocket, srcaddr, srcport, mDNSNULL, mDNSNULL);
+	}
+
+mDNSlocal void mDNSCoreReceiveUpdateR(mDNS *const m, const DNSMessage *const msg, const mDNSInterfaceID InterfaceID)
+	{
+	AuthRecord *rr;
+	if (InterfaceID)
+		for (rr = m->ResourceRecords; rr; rr=rr->next)
+			if (rr->resrec.InterfaceID == InterfaceID || (!rr->resrec.InterfaceID && (rr->ForceMCast || IsLocalDomain(rr->resrec.name))))
+				if (mDNSSameOpaque16(rr->id, msg->h.id))
+					rr->id = zeroID;
+	}
+
 mDNSexport void MakeNegativeCacheRecord(mDNS *const m, const domainname *const name, const mDNSu32 namehash, const mDNSu16 rrtype, const mDNSu16 rrclass, mDNSu32 ttl_seconds)
 	{
 	// Create empty resource record
@@ -5368,6 +5479,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 	DNSMessage  *msg  = (DNSMessage *)pkt;
 	const mDNSu8 StdQ = kDNSFlag0_QR_Query    | kDNSFlag0_OP_StdQuery;
 	const mDNSu8 StdR = kDNSFlag0_QR_Response | kDNSFlag0_OP_StdQuery;
+	const mDNSu8 UpdQ = kDNSFlag0_QR_Query    | kDNSFlag0_OP_Update;
 	const mDNSu8 UpdR = kDNSFlag0_QR_Response | kDNSFlag0_OP_Update;
 	mDNSu8 QR_OP;
 	mDNSu8 *ptr = mDNSNULL;
@@ -5425,7 +5537,9 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 #endif
 	if      (QR_OP == StdQ) mDNSCoreReceiveQuery   (m, msg, end, srcaddr, srcport, dstaddr, dstport, ifid);
 	else if (QR_OP == StdR) mDNSCoreReceiveResponse(m, msg, end, srcaddr, srcport, dstaddr, dstport, ifid);
-	else if (QR_OP != UpdR)
+	else if (QR_OP == UpdQ) mDNSCoreReceiveUpdate  (m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID);
+	else if (QR_OP == UpdR) mDNSCoreReceiveUpdateR (m, msg,                                          InterfaceID);
+	else
 		{
 		LogMsg("Unknown DNS packet type %02X%02X from %#-15a:%-5d to %#-15a:%-5d on %p (ignored)",
 			msg->h.flags.b[0], msg->h.flags.b[1], srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), InterfaceID);
