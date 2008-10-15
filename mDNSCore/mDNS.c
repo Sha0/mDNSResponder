@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.816  2008/10/15 23:12:36  cheshire
+On receiving SPS registration from client, broadcast ARP Announcements claiming ownership of that IP address
+
 Revision 1.815  2008/10/15 20:46:38  cheshire
 When transferring records to SPS, include Lease Option
 
@@ -1263,8 +1266,7 @@ mDNSlocal void SetNextAnnounceProbeTime(mDNS *const m, const AuthRecord *const r
 	{
 	if (rr->resrec.RecordType == kDNSRecordTypeUnique)
 		{
-		//LogMsg("ProbeCount %d Next %ld %s",
-		//	rr->ProbeCount, (rr->LastAPTime + rr->ThisAPInterval) - m->timenow, ARDisplayString(m, rr));
+		//LogMsg("ProbeCount %d Next %ld %s", rr->ProbeCount, (rr->LastAPTime + rr->ThisAPInterval) - m->timenow, ARDisplayString(m, rr));
 		if (m->NextScheduledProbe - (rr->LastAPTime + rr->ThisAPInterval) >= 0)
 			m->NextScheduledProbe = (rr->LastAPTime + rr->ThisAPInterval);
 		}
@@ -1314,12 +1316,21 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr, mDNSs32
 	// delayed by a few milliseconds, this announcement does not inadvertently go out *before* the probing is complete.
 	// When the probing is complete and those records begin to announce, these records will also be picked up and accelerated,
 	// because they will meet the criterion of being at least half-way to their scheduled announcement time.
+	if (rr->resrec.RecordType != kDNSRecordTypeUnique)
+		rr->LastAPTime += DefaultProbeIntervalForTypeUnique * DefaultProbeCountForTypeUnique + interval / 2;
+
 	// The exception is unique records that have already been verified and are just being updated
 	// via mDNS_Update() -- for these we want to announce the new value immediately, without delay.
 	if (rr->resrec.RecordType == kDNSRecordTypeVerified)
 		rr->LastAPTime = m->timenow - interval;
-	else if (rr->resrec.RecordType != kDNSRecordTypeUnique)
-		rr->LastAPTime += DefaultProbeIntervalForTypeUnique * DefaultProbeCountForTypeUnique + interval / 2;
+
+	// kDNSType_MAC is special -- we wait five seconds for the machine in question to finish going to sleep,
+	// then we broadcast ARP Announcements claiming ownership of that IP address.
+	if (rr->resrec.rrtype == kDNSType_MAC && rr->WakeUp.l[0])
+		{
+		LogMsg("InitializeLastAPTime kDNSType_MAC %d %s", interval, ARDisplayString(m,rr));
+		rr->LastAPTime = m->timenow - interval + mDNSPlatformOneSecond*5;
+		}
 	
 	SetNextAnnounceProbeTime(m, rr);
 	}
@@ -1967,6 +1978,73 @@ mDNSlocal void DiscardDeregistrations(mDNS *const m)
 		}
 	}
 
+mDNSlocal mDNSBool IsV4ReverseMapDomain(const domainname *const name)
+	{
+	int skip = CountLabels(name) - 2;
+	if (skip < 0) return(mDNSfalse);
+	return(SameDomainName(SkipLeadingLabels(name, skip), (const domainname*)"\x7" "in-addr" "\x4" "arpa"));
+	}
+
+mDNSlocal mStatus GetLabelDecimalValue(const mDNSu8 *const src, mDNSu8 *dst)
+	{
+	int i, val = 0;
+	if (src[0] < 1 || src[0] > 3) return(mStatus_Invalid);
+	for (i=1; i<=src[0]; i++)
+		{
+		if (src[i] < '0' || src[i] > '9') return(mStatus_Invalid);
+		val = val * 10 + src[i] - '0';
+		}
+	if (val > 255) return(mStatus_Invalid);
+	*dst = val;
+	return(mStatus_NoError);
+	}
+
+mDNSlocal void SendARPAnnouncement(mDNS *const m, const AuthRecord *const rr)
+	{
+	int i;
+	mDNSu8 *ptr = m->omsg.data;
+	int skip = CountLabels(rr->resrec.name) - 6;
+	NetworkInterfaceInfo *intf;
+	if (!rr->resrec.InterfaceID) { LogMsg("SendARPAnnouncement: No InterfaceID specified %s", ARDisplayString(m,rr)); return; }
+	for (intf = m->HostInterfaces; intf; intf = intf->next) if (intf->InterfaceID == rr->resrec.InterfaceID) break;
+	if (!intf) { LogMsg("SendARPAnnouncement: No interface with InterfaceID %p found %s", rr->resrec.InterfaceID, ARDisplayString(m,rr)); return; }
+	if (skip < 0) { LogMsg("SendARPAnnouncement: Need six labels in record name %s", rr->resrec.InterfaceID, ARDisplayString(m,rr)); return; }
+
+	// 1. Destination address (broadcast)
+	for (i=0; i<6; i++) *ptr++ = 0xFF;
+
+	// 2. Source address (we just use zero -- driver/hardware will fill in real interface address)
+	for (i=0; i<6; i++) *ptr++ = 0x0;
+
+	// 3. ARP Ethertype (0x0806)
+	*ptr++ = 0x08; *ptr++ = 0x06;
+
+	// 4. ARP header
+	*ptr++ = 0x00; *ptr++ = 0x01;	// Hardware address space; Ethernet = 1
+	*ptr++ = 0x08; *ptr++ = 0x00;	// Protocol address space; IP = 0x0800
+	*ptr++ = 6;						// Hardware address length
+	*ptr++ = 4;						// Protocol address length
+	*ptr++ = 0x00; *ptr++ = 0x01;	// opcode; Request = 1
+
+	// Sender hardware address (our MAC address)
+	for (i=0; i<6; i++) *ptr++ = intf->MAC.b[i];
+
+	// Sender protocol address (IP address we're capturing)
+	if (GetLabelDecimalValue(SkipLeadingLabels(rr->resrec.name, skip+3)->c, ptr++) ||
+		GetLabelDecimalValue(SkipLeadingLabels(rr->resrec.name, skip+2)->c, ptr++) ||
+		GetLabelDecimalValue(SkipLeadingLabels(rr->resrec.name, skip+1)->c, ptr++) ||
+		GetLabelDecimalValue(SkipLeadingLabels(rr->resrec.name, skip+0)->c, ptr++))
+		{ LogMsg("SendARPAnnouncement: Invalid record name %s", rr->resrec.InterfaceID, ARDisplayString(m,rr)); return; }
+
+	// Target hardware address (broadcast)
+	for (i=0; i<6; i++) *ptr++ = 0x0;
+
+	// Target protocol address (IP address we're capturing)
+	for (i=0; i<4; i++) *ptr++ = m->omsg.data[28+i];
+
+	mDNSPlatformSendRawPacket(m->omsg.data, ptr, rr->resrec.InterfaceID);
+	}
+
 mDNSlocal void GrantUpdateCredit(AuthRecord *rr)
 	{
 	if (++rr->UpdateCredits >= kMaxUpdateCredits) rr->NextUpdateCredit = 0;
@@ -2024,10 +2102,21 @@ mDNSlocal void SendResponses(mDNS *const m)
 		while (rr->NextUpdateCredit && m->timenow - rr->NextUpdateCredit >= 0) GrantUpdateCredit(rr);
 		if (TimeToAnnounceThisRecord(rr, m->timenow) && ResourceRecordIsValidAnswer(rr))
 			{
-			rr->ImmedAnswer = mDNSInterfaceMark;		// Send on all interfaces
-			if (maxExistingAnnounceInterval < rr->ThisAPInterval)
-				maxExistingAnnounceInterval = rr->ThisAPInterval;
-			if (rr->UpdateBlocked) rr->UpdateBlocked = 0;
+			if (rr->resrec.rrtype == kDNSType_MAC && rr->WakeUp.l[0])
+				{
+				rr->AnnounceCount--;
+				rr->ThisAPInterval *= 2;
+				rr->LastAPTime = m->timenow;
+				LogOperation("ARP Poison %##s (%s) %d", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype), rr->AnnounceCount);
+				SendARPAnnouncement(m, rr);
+				}
+			else
+				{
+				rr->ImmedAnswer = mDNSInterfaceMark;		// Send on all interfaces
+				if (maxExistingAnnounceInterval < rr->ThisAPInterval)
+					maxExistingAnnounceInterval = rr->ThisAPInterval;
+				if (rr->UpdateBlocked) rr->UpdateBlocked = 0;
+				}
 			}
 		}
 
@@ -2037,6 +2126,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 		if ((rr->resrec.InterfaceID && rr->ImmedAnswer) ||
 			(rr->ThisAPInterval <= maxExistingAnnounceInterval &&
 			TimeToAnnounceThisRecord(rr, m->timenow + rr->ThisAPInterval/2) &&
+			!(rr->resrec.rrtype == kDNSType_MAC && rr->WakeUp.l[0]) && // Don't include ARP Annoucements when considering which records to accelerate
 			ResourceRecordIsValidAnswer(rr)))
 			rr->ImmedAnswer = mDNSInterfaceMark;		// Send on all interfaces
 
@@ -5425,7 +5515,7 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 				AssignDomainName(&MACname, m->rec.r.resrec.name);
 				MACdata = m->rec.r.resrec.rdata->u.mac;
 				}
-			else if (RRTypeIsAddressType(m->rec.r.resrec.rrtype))
+			if (m->rec.r.resrec.rrtype != kDNSType_MAC || IsV4ReverseMapDomain(m->rec.r.resrec.name))
 				{
 				mDNSu16 RDLength = GetRDLengthMem(&m->rec.r.resrec);
 				AuthRecord *ar = mDNSPlatformMemAllocate(sizeof(AuthRecord) - sizeof(RDataBody) + RDLength);
