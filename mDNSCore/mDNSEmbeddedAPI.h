@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.495  2008/10/15 22:53:51  cheshire
+Removed unused "#define LocalReverseMapDomain"
+
 Revision 1.494  2008/10/15 20:37:17  cheshire
 Added "#define DNSOpt_Lease_Space 19"
 
@@ -2238,7 +2241,6 @@ extern const mDNSOpaque16 UpdateRespFlags;
 extern const mDNSOpaque64 zeroOpaque64;
 
 #define localdomain (*(const domainname *)"\x5" "local")
-#define LocalReverseMapDomain (*(const domainname *)"\x3" "254" "\x3" "169" "\x7" "in-addr" "\x4" "arpa")
 #define DeviceInfoName (*(const domainname *)"\xC" "_device-info" "\x4" "_tcp")
 
 // ***************************************************************************
