@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.494  2008/10/15 20:37:17  cheshire
+Added "#define DNSOpt_Lease_Space 19"
+
 Revision 1.493  2008/10/14 21:37:56  cheshire
 Removed unnecessary m->BeSleepProxyServer variable
 
@@ -1247,6 +1250,11 @@ typedef packedstruct
 	mDNSu16 optlen;
 	union { LLQOptData llq; mDNSu32 updatelease; } OptData;
 	} rdataOPT;
+
+#define DNSOpt_Lease_Space 19
+// Space needed to put a DNS Lease Option into a packet:
+// 11 bytes header (name, type, class, TTL, length)
+//  8 bytes rdata (opt, len, lease)
 
 // StandardAuthRDSize is 264 (256+8), which is large enough to hold a maximum-sized SRV record (6 + 256 bytes)
 // MaximumRDSize is 8K the absolute maximum we support (at least for now)
