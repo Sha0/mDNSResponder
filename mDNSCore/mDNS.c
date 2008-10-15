@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.812  2008/10/15 00:01:40  cheshire
+When going to sleep, discover and resolve SPS, and if successful, transfer records to it
+
 Revision 1.811  2008/10/14 23:51:57  cheshire
 Created new routine GetRDLengthMem() to compute the in-memory storage requirements for particular rdata
 
@@ -2161,14 +2164,15 @@ mDNSlocal void SendResponses(mDNS *const m)
 					}
 				else
 					{
+					mDNSu8 active = (m->SleepState != SleepState_Sleeping || intf->SPSAddr.type);
 					if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
 						rr->resrec.rrclass |= kDNSClass_UniqueRRSet;		// Temporarily set the cache flush bit so PutResourceRecord will set it
-					newptr = PutResourceRecordTTL(&m->omsg, responseptr, &m->omsg.h.numAnswers, &rr->resrec, m->SleepState ? 0 : rr->resrec.rroriginalttl);
+					newptr = PutResourceRecordTTL(&m->omsg, responseptr, &m->omsg.h.numAnswers, &rr->resrec, active ? rr->resrec.rroriginalttl : 0);
 					rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;			// Make sure to clear cache flush bit back to normal state
 					if (newptr)
 						{
 						responseptr = newptr;
-						rr->RequireGoodbye = (mDNSu8) (!m->SleepState);
+						rr->RequireGoodbye = active;
 						if (rr->LastAPTime == m->timenow) numAnnounce++; else numAnswer++;
 						}
 					else if (m->omsg.h.numAnswers) break;
@@ -3658,7 +3662,8 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 		if (i >= 1000) LogMsg("mDNS_Execute: AnswerForNewLocalRecords exceeded loop limit");
 
 		// 5. See what packets we need to send
-		if (m->mDNSPlatformStatus != mStatus_NoError || m->SleepState) DiscardDeregistrations(m);
+		if (m->mDNSPlatformStatus != mStatus_NoError || (m->SleepState == SleepState_Sleeping))
+			DiscardDeregistrations(m);
 		else if (m->SuppressSending == 0 || m->timenow - m->SuppressSending >= 0)
 			{
 			// If the platform code is ready, and we're not suppressing packet generation right now
@@ -3782,6 +3787,82 @@ mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question, 
 		}
 	}
 
+mDNSlocal void PutSPSRec(mDNS *const m, mDNSu8 **p, AuthRecord *MAC, AuthRecord *rr)
+	{
+	mDNSu8 *newptr = *p;
+	if ((rr->resrec.RecordType & kDNSRecordTypeUniqueMask) &&
+		!SameDomainName(&MAC->namestorage, rr->resrec.name))
+		{
+		AssignDomainName(&MAC->namestorage, rr->resrec.name);
+		newptr = PutResourceRecord(&m->omsg, newptr, &m->omsg.h.mDNS_numUpdates, &MAC->resrec);
+		}
+	if (newptr)
+		{
+		newptr = PutResourceRecord(&m->omsg, newptr, &m->omsg.h.mDNS_numUpdates, &rr->resrec);
+		if (newptr) { rr->SendRNow = mDNSNULL; rr->id = m->omsg.h.id; *p = newptr; }
+		}
+	}
+
+mDNSlocal void SendSPSRegistration(mDNS *const m, const NetworkInterfaceInfo *intf)
+	{
+	AuthRecord *rr;
+	AuthRecord MAC;
+	mDNS_SetupResourceRecord(&MAC, mDNSNULL, intf->InterfaceID, kDNSType_MAC, kHostNameTTL, kDNSRecordTypeUnique, mDNSNULL, mDNSNULL);
+	MAC.resrec.rdata->u.mac = intf->MAC;
+	MAC.resrec.rdlength   = sizeof(mDNSEthAddr);
+	MAC.resrec.rdestimate = sizeof(mDNSEthAddr);
+
+	for (rr = m->ResourceRecords; rr; rr=rr->next)
+		if (rr->resrec.InterfaceID == intf->InterfaceID || (!rr->resrec.InterfaceID && (rr->ForceMCast || IsLocalDomain(rr->resrec.name))))
+			rr->SendRNow = mDNSInterfaceMark;
+
+	while (1)
+		{
+		mDNSu8 *p = m->omsg.data;
+		InitializeDNSMessage(&m->omsg.h, mDNS_NewMessageID(m), UpdateReqFlags);
+		MAC.namestorage.c[0] = 0;
+		// To reduce unneccessary duplication of MAC records in the packet, we put address records first, then other types.
+		// This makes best use of our logic that only puts a single MAC record for a run of records with the same name.
+		// Otherwise, the intervening reverse-mapping PTR records get in the way
+		for (rr = m->ResourceRecords; rr; rr=rr->next) if (rr->SendRNow &&  RRTypeIsAddressType(rr->resrec.rrtype)) PutSPSRec(m, &p, &MAC, rr);
+		for (rr = m->ResourceRecords; rr; rr=rr->next) if (rr->SendRNow && !RRTypeIsAddressType(rr->resrec.rrtype)) PutSPSRec(m, &p, &MAC, rr);
+
+		if (!m->omsg.h.mDNS_numUpdates) break;
+		else
+			{
+			LogOperation("SendSPSRegistration: Sending Update id %d with %d records to %#a:%d",
+				mDNSVal16(m->omsg.h.id), m->omsg.h.mDNS_numUpdates, &intf->SPSAddr, mDNSVal16(intf->SPSPort));
+			mDNSSendDNSMessage(m, &m->omsg, p, intf->InterfaceID, mDNSNULL, &intf->SPSAddr, intf->SPSPort, mDNSNULL, mDNSNULL);
+			}
+		}
+	}
+
+mDNSlocal void NetWakeResolve(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
+	{
+	NetworkInterfaceInfo *intf = (NetworkInterfaceInfo *)question->QuestionContext;
+	(void)m;			// Unused
+	LogOperation("NetWakeResolve: %d %s", AddRecord, RRDisplayString(m, answer));
+
+	if (!AddRecord) return;												// Don't care about REMOVE events
+	if (answer->rrtype != question->qtype) return;						// Don't care about CNAMEs
+
+	if (answer->rrtype == kDNSType_SRV)
+		{
+		mDNS_StopQuery(m, question);
+		intf->SPSPort = answer->rdata->u.srv.port;
+		AssignDomainName(&question->qname, &answer->rdata->u.srv.target);
+		question->qtype = kDNSType_AAAA;
+		mDNS_StartQuery(m, question);
+		}
+	else if (answer->rrtype == kDNSType_AAAA && mDNSv6AddressIsLinkLocal(&answer->rdata->u.ipv6))
+		{
+		mDNS_StopQuery(m, question);
+		intf->SPSAddr.type = mDNSAddrType_IPv6;
+		intf->SPSAddr.ip.v6 = answer->rdata->u.ipv6;
+		SendSPSRegistration(m, intf);
+		}
+	}
+
 // Call mDNSCoreMachineSleep(m, mDNStrue) when the machine is about to go to sleep.
 // Call mDNSCoreMachineSleep(m, mDNSfalse) when the machine is has just woken up.
 // Normally, the platform support layer below mDNSCore should call this, not the client layer above.
@@ -3793,34 +3874,60 @@ mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question, 
 // While it is safe to call mDNSCoreMachineSleep(m, mDNSfalse) at any time, it does cause extra network
 // traffic, so it should only be called when there is legitimate reason to believe the machine
 // may have become attached to a new network.
-mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleepstate)
+mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 	{
 	AuthRecord *rr;
 
 	mDNS_Lock(m);
 
-	m->SleepState = sleepstate;
-	LogOperation("%s at %ld", sleepstate ? "Sleeping" : "Waking", m->timenow);
+	LogOperation("%s (%d) at %ld", sleep ? "Sleeping" : "Waking", m->SleepState, m->timenow);
 
-	if (sleepstate)
+	if (sleep && !m->SleepState)
 		{
+		NetworkInterfaceInfo *intf = GetFirstActiveInterface(m->HostInterfaces);
+		while (intf)
+			{
+			if (intf->NetWake)
+				{
+				const CacheRecord *cr = FindFirstAnswerInCache(m, &intf->NetWakeBrowse);
+				if (cr)
+					{
+					LogOperation("mDNSCoreMachineSleep: %s", CRDisplayString(m, cr));
+					m->SleepState = SleepState_Transferring;
+					intf->SPSAddr.type = mDNSAddrType_None;
+					mDNS_SetupQuestion(&intf->NetWakeResolve, intf->InterfaceID, &cr->resrec.rdata->u.name, kDNSType_SRV, NetWakeResolve, intf);
+					mDNS_StartQuery_internal(m, &intf->NetWakeResolve);
+					}
+				}
+			intf = GetFirstActiveInterface(intf->next);
+			}
+
 #ifndef UNICAST_DISABLED
 		SuspendLLQs(m);
 		SleepServiceRegistrations(m);
-		SleepRecordRegistrations(m);
+		if (!m->SleepState) SleepRecordRegistrations(m);	// If we have no SPS, need to deregister our uDNS records
 #endif
-		// Mark all the records we need to deregister and send them
-		for (rr = m->ResourceRecords; rr; rr=rr->next)
-			if (rr->resrec.RecordType == kDNSRecordTypeShared && rr->RequireGoodbye)
-				rr->ImmedAnswer = mDNSInterfaceMark;
-		SendResponses(m);
+
+		if (!m->SleepState)
+			{
+			m->SleepState = SleepState_Sleeping;
+			// Mark all the records we need to deregister and send them
+			for (rr = m->ResourceRecords; rr; rr=rr->next)
+				if (rr->resrec.RecordType == kDNSRecordTypeShared && rr->RequireGoodbye)
+					rr->ImmedAnswer = mDNSInterfaceMark;
+			SendResponses(m);
+			}
+
+		LogOperation("m->SleepState %d", m->SleepState);
 		}
-	else
+	else if (!sleep)
 		{
 		DNSQuestion *q;
 		mDNSu32 slot;
 		CacheGroup *cg;
 		CacheRecord *cr;
+
+		m->SleepState = SleepState_Awake;
 
 #ifndef UNICAST_DISABLED
 		// On wake, retrigger all our uDNS questions
