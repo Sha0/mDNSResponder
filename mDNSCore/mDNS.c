@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.814  2008/10/15 19:51:27  cheshire
+Change "NOTE:" to "Note:" so that BBEdit 9 stops putting those lines into the funtion popup menu
+
 Revision 1.813  2008/10/15 00:09:23  cheshire
 When acting as Sleep Proxy Server, handle DNS Updates received from SPS clients on the network
 
@@ -1627,7 +1630,7 @@ mDNSlocal void CompleteRDataUpdate(mDNS *const m, AuthRecord *const rr)
 		rr->UpdateCallback(m, rr, OldRData);					// ... and let the client know
 	}
 
-// NOTE: mDNS_Deregister_internal can call a user callback, which may change the record list and/or question list.
+// Note: mDNS_Deregister_internal can call a user callback, which may change the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 // Exported so uDNS.c can call this
 mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr, mDNS_Dereg_type drt)
@@ -1942,7 +1945,7 @@ mDNSexport void CompleteDeregistration(mDNS *const m, AuthRecord *rr)
 	mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);		// Don't touch rr after this
 	}
 
-// NOTE: DiscardDeregistrations calls mDNS_Deregister_internal which can call a user callback, which may change
+// Note: DiscardDeregistrations calls mDNS_Deregister_internal which can call a user callback, which may change
 // the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void DiscardDeregistrations(mDNS *const m)
@@ -1980,7 +1983,7 @@ mDNSlocal void GrantUpdateCredit(AuthRecord *rr)
 // Older records cannot have their timelines accelerated; this would just widen
 // the gap between them and their younger bretheren and get them even more out of sync.
 
-// NOTE: SendResponses calls mDNS_Deregister_internal which can call a user callback, which may change
+// Note: SendResponses calls mDNS_Deregister_internal which can call a user callback, which may change
 // the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void SendResponses(mDNS *const m)
@@ -2035,7 +2038,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 			rr->ImmedAnswer = mDNSInterfaceMark;		// Send on all interfaces
 
 	// When sending SRV records (particularly when announcing a new service) automatically add related Address record(s) as additionals
-	// NOTE: Currently all address records are interface-specific, so it's safe to set ImmedAdditional to their InterfaceID,
+	// Note: Currently all address records are interface-specific, so it's safe to set ImmedAdditional to their InterfaceID,
 	// which will be non-null. If by some chance there is an address record that's not interface-specific (should never happen)
 	// then all that means is that it won't get sent -- which would not be the end of the world.
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
@@ -2991,7 +2994,7 @@ mDNSlocal void SendWakeup(mDNS *const m, mDNSInterfaceID InterfaceID, mDNSEthAdd
 #pragma mark - RR List Management & Task Management
 #endif
 
-// NOTE: AnswerCurrentQuestionWithResourceRecord can call a user callback, which may change the record list and/or question list.
+// Note: AnswerCurrentQuestionWithResourceRecord can call a user callback, which may change the record list and/or question list.
 // Any code walking either list must use the m->CurrentQuestion (and possibly m->CurrentRecord) mechanism to protect against this.
 // In fact, to enforce this, the routine will *only* answer the question currently pointed to by m->CurrentQuestion,
 // which will be auto-advanced (possibly to NULL) if the client callback cancels the question.
@@ -3046,7 +3049,7 @@ mDNSexport void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheReco
 		q->QuestionCallback(m, q, &rr->resrec, AddRecord);
 		mDNS_ReclaimLockAfterCallback();	// Decrement mDNS_reentrancy to block mDNS API calls again
 		}
-	// NOTE: Proceed with caution here because client callback function is allowed to do anything,
+	// Note: Proceed with caution here because client callback function is allowed to do anything,
 	// including starting/stopping queries, registering/deregistering records, etc.
 
 	if (followcname && m->CurrentQuestion == q && q->CNAMEReferrals < 10)
@@ -3102,7 +3105,7 @@ mDNSlocal mDNSs32 CheckForSoonToExpireRecords(mDNS *const m, const domainname *c
 // the end of the question list, and m->NewQuestions will be set to indicate the first new question.
 // rr is a new CacheRecord just received into our cache
 // (kDNSRecordTypePacketAns/PacketAnsUnique/PacketAdd/PacketAddUnique).
-// NOTE: CacheRecordAdd calls AnswerCurrentQuestionWithResourceRecord which can call a user callback,
+// Note: CacheRecordAdd calls AnswerCurrentQuestionWithResourceRecord which can call a user callback,
 // which may change the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
@@ -3178,7 +3181,7 @@ mDNSlocal void CacheRecordAdd(mDNS *const m, CacheRecord *rr)
 // but we don't have any place to cache it. We'll deliver question 'add' events now, but we won't have any
 // way to deliver 'remove' events in future, nor will we be able to include this in known-answer lists,
 // so we immediately bump ThisQInterval up to MaxQuestionInterval to avoid pounding the network.
-// NOTE: NoCacheAnswer calls AnswerCurrentQuestionWithResourceRecord which can call a user callback,
+// Note: NoCacheAnswer calls AnswerCurrentQuestionWithResourceRecord which can call a user callback,
 // which may change the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void NoCacheAnswer(mDNS *const m, CacheRecord *rr)
@@ -3206,7 +3209,7 @@ mDNSlocal void NoCacheAnswer(mDNS *const m, CacheRecord *rr)
 // the end of the question list, and m->NewQuestions will be set to indicate the first new question.
 // rr is an existing cache CacheRecord that just expired and is being deleted
 // (kDNSRecordTypePacketAns/PacketAnsUnique/PacketAdd/PacketAddUnique).
-// NOTE: CacheRecordRmv calls AnswerCurrentQuestionWithResourceRecord which can call a user callback,
+// Note: CacheRecordRmv calls AnswerCurrentQuestionWithResourceRecord which can call a user callback,
 // which may change the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void CacheRecordRmv(mDNS *const m, CacheRecord *rr)
@@ -4193,7 +4196,7 @@ mDNSlocal mDNSBool PacketRRConflict(const mDNS *const m, const AuthRecord *const
 	return(mDNStrue);
 	}
 
-// NOTE: ResolveSimultaneousProbe calls mDNS_Deregister_internal which can call a user callback, which may change
+// Note: ResolveSimultaneousProbe calls mDNS_Deregister_internal which can call a user callback, which may change
 // the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void ResolveSimultaneousProbe(mDNS *const m, const DNSMessage *const query, const mDNSu8 *const end,
@@ -4885,7 +4888,7 @@ mDNSlocal mDNSu32 GetEffectiveTTL(const uDNS_LLQType LLQType, mDNSu32 ttl)		// T
 	return ttl;
 	}
 
-// NOTE: mDNSCoreReceiveResponse calls mDNS_Deregister_internal which can call a user callback, which may change
+// Note: mDNSCoreReceiveResponse calls mDNS_Deregister_internal which can call a user callback, which may change
 // the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
@@ -6435,7 +6438,7 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, AuthRecord *const rr, mDNSu32 newt
 	return(mStatus_NoError);
 	}
 
-// NOTE: mDNS_Deregister calls mDNS_Deregister_internal which can call a user callback, which may change
+// Note: mDNS_Deregister calls mDNS_Deregister_internal which can call a user callback, which may change
 // the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSexport mStatus mDNS_Deregister(mDNS *const m, AuthRecord *const rr)
@@ -6776,7 +6779,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	return(mStatus_NoError);
 	}
 
-// NOTE: mDNS_DeregisterInterface calls mDNS_Deregister_internal which can call a user callback, which may change
+// Note: mDNS_DeregisterInterface calls mDNS_Deregister_internal which can call a user callback, which may change
 // the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *set, mDNSBool flapping)
@@ -7237,7 +7240,7 @@ mDNSexport mStatus mDNS_RemoveRecordFromService(mDNS *const m, ServiceRecordSet 
 
 mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordSet *const sr, const domainlabel *newname)
 	{
-	// NOTE: Don't need to use mDNS_Lock(m) here, because this code is just using public routines
+	// Note: Don't need to use mDNS_Lock(m) here, because this code is just using public routines
 	// mDNS_RegisterService() and mDNS_AddRecordToService(), which do the right locking internally.
 	domainlabel name1, name2;
 	domainname type, domain;
@@ -7275,7 +7278,7 @@ mDNSexport mStatus mDNS_RenameAndReregisterService(mDNS *const m, ServiceRecordS
 	return(err);
 	}
 
-// NOTE: mDNS_DeregisterService calls mDNS_Deregister_internal which can call a user callback,
+// Note: mDNS_DeregisterService calls mDNS_Deregister_internal which can call a user callback,
 // which may change the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSexport mStatus mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr)
