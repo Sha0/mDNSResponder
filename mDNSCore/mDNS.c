@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.815  2008/10/15 20:46:38  cheshire
+When transferring records to SPS, include Lease Option
+
 Revision 1.814  2008/10/15 19:51:27  cheshire
 Change "NOTE:" to "Note:" so that BBEdit 9 stops putting those lines into the funtion popup menu
 
@@ -3827,18 +3830,25 @@ mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question, 
 		}
 	}
 
+// ***************************************************************************
+#if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark -
+#pragma mark - Power Management (Sleep/Wake)
+#endif
+
 mDNSlocal void PutSPSRec(mDNS *const m, mDNSu8 **p, AuthRecord *MAC, AuthRecord *rr)
 	{
+	const mDNSu8 *const limit = m->omsg.data + NormalMaxDNSMessageData - DNSOpt_Lease_Space;
 	mDNSu8 *newptr = *p;
 	if ((rr->resrec.RecordType & kDNSRecordTypeUniqueMask) &&
 		!SameDomainName(&MAC->namestorage, rr->resrec.name))
 		{
 		AssignDomainName(&MAC->namestorage, rr->resrec.name);
-		newptr = PutResourceRecord(&m->omsg, newptr, &m->omsg.h.mDNS_numUpdates, &MAC->resrec);
+		newptr = PutResourceRecordTTLWithLimit(&m->omsg, newptr, &m->omsg.h.mDNS_numUpdates, &MAC->resrec, MAC->resrec.rroriginalttl, limit);
 		}
 	if (newptr)
 		{
-		newptr = PutResourceRecord(&m->omsg, newptr, &m->omsg.h.mDNS_numUpdates, &rr->resrec);
+		newptr = PutResourceRecordTTLWithLimit(&m->omsg, newptr, &m->omsg.h.mDNS_numUpdates, &rr->resrec, rr->resrec.rroriginalttl, limit);
 		if (newptr) { rr->SendRNow = mDNSNULL; rr->id = m->omsg.h.id; *p = newptr; }
 		}
 	}
@@ -3859,6 +3869,10 @@ mDNSlocal void SendSPSRegistration(mDNS *const m, const NetworkInterfaceInfo *in
 	while (1)
 		{
 		mDNSu8 *p = m->omsg.data;
+		// To comply with RFC 2782, PutResourceRecord suppresses name compression for SRV records in unicast updates.
+		// For now we follow that same logic for SPS registrations too.
+		// If we decide to compress SRV records in SPS registrations in the future, we can achieve that by creating our
+		// initial DNSMessage with h.flags set to zero, and then update it to UpdateReqFlags right before sending the packet.
 		InitializeDNSMessage(&m->omsg.h, mDNS_NewMessageID(m), UpdateReqFlags);
 		MAC.namestorage.c[0] = 0;
 		// To reduce unneccessary duplication of MAC records in the packet, we put address records first, then other types.
@@ -3870,6 +3884,7 @@ mDNSlocal void SendSPSRegistration(mDNS *const m, const NetworkInterfaceInfo *in
 		if (!m->omsg.h.mDNS_numUpdates) break;
 		else
 			{
+			p = putUpdateLease(&m->omsg, p, DEFAULT_UPDATE_LEASE);
 			LogOperation("SendSPSRegistration: Sending Update id %d with %d records to %#a:%d",
 				mDNSVal16(m->omsg.h.id), m->omsg.h.mDNS_numUpdates, &intf->SPSAddr, mDNSVal16(intf->SPSPort));
 			mDNSSendDNSMessage(m, &m->omsg, p, intf->InterfaceID, mDNSNULL, &intf->SPSAddr, intf->SPSPort, mDNSNULL, mDNSNULL);
