@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.558  2008/10/16 22:42:06  cheshire
+Removed debugging messages
+
 Revision 1.557  2008/10/09 22:33:14  cheshire
 Fill in ifinfo.MAC field when fetching interface list
 
@@ -1988,8 +1991,9 @@ mDNSexport void mDNSPlatformSendRawPacket(const void *const msg, const mDNSu8 *c
 	struct ifreq ifr;
 	bzero(&ifr, sizeof(ifr));
 	strlcpy(ifr.ifr_name, info->ifa_name, sizeof(ifr.ifr_name));
-	LogMsg("mDNSPlatformSendRawPacket: BIOCSETIF %d", ioctl(BPF_fd, BIOCSETIF, &ifr));
-	LogMsg("mDNSPlatformSendRawPacket: write %d", write(BPF_fd, msg, end - (const mDNSu8 *)msg));
+	//LogMsg("mDNSPlatformSendRawPacket: BIOCSETIF %d", ioctl(BPF_fd, BIOCSETIF, &ifr));
+	if (write(BPF_fd, msg, end - (const mDNSu8 *)msg) < 0)
+		LogMsg("mDNSPlatformSendRawPacket: BPF write(%d) failed %d (%s)", BPF_fd, errno, strerror(errno));
 	}
 
 #if COMPILER_LIKES_PRAGMA_MARK
