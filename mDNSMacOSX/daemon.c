@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.373  2008/10/16 20:49:30  cheshire
+When kevent/kqueue fails, fall back to using old CFSocket RunLoopSource instead
+
 Revision 1.372  2008/10/15 00:03:21  cheshire
 When finally going to sleep, update m->SleepState from SleepState_Transferring to SleepState_Sleeping
 
@@ -573,6 +576,8 @@ typedef struct KQSocketEventSource
 	struct  KQSocketEventSource *next;
 	int                         fd;
 	KQueueEntry                 kqs;
+	CFSocketRef					cfs;
+	CFRunLoopSourceRef			rls;
 	} KQSocketEventSource;
 
 static KQSocketEventSource *gEventSources;
@@ -2830,31 +2835,67 @@ exit:
 
 // uds_daemon.c support routines /////////////////////////////////////////////
 
-// Arrange things so that callback is called with context when data appears on fd
+mDNSlocal void CFSCallBack(const CFSocketRef cfs, const CFSocketCallBackType CallBackType, const CFDataRef address, const void *const data, void *const context)
+	{
+	(void)cfs;	 			// Unused
+	(void)address;			// Unused
+	(void)data;				// Unused
+
+	if (CallBackType != kCFSocketReadCallBack)
+		LogMsg("CFSCallBack: Why is CallBackType %d not kCFSocketReadCallBack?", CallBackType);
+
+	KQSocketEventSource	*source = (KQSocketEventSource*)context;
+	KQueueLock(&mDNSStorage);
+	source->kqs.KQcallback(source->fd, EVFILT_READ, source->kqs.KQcontext);
+	usleep(100000);
+	KQueueUnlock(&mDNSStorage, "CFSocketCallBack");
+	}
+
+// Arrange things so that when data appears on fd, callback is called with context
 mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *context)
 	{
 	KQSocketEventSource *newSource = (KQSocketEventSource*) mallocL("KQSocketEventSource", sizeof *newSource);
 	if (!newSource) return mStatus_NoMemoryErr;
 
-	mDNSPlatformMemZero(newSource, sizeof(*newSource));
-	newSource->fd = fd;
+	newSource->next           = mDNSNULL;
+	newSource->fd             = fd;
 	newSource->kqs.KQcallback = callback;
 	newSource->kqs.KQcontext  = context;
 	newSource->kqs.KQtask     = "UDS client";
+	newSource->cfs            = mDNSNULL;
+	newSource->rls            = mDNSNULL;
 
-	if (KQueueSet(fd, EV_ADD, EVFILT_READ, &newSource->kqs) == 0)
+// kqueue doesn't work with BPF file descriptors.
+// Or first plan was to try kevent() first, and then if it returns ENOTSUP, make a CFSocket RunLoopSource instead.
+// Unfortunately, it appears that kevent() doesn't just return ENOTSUP, it also destroys the file descriptor
+// in the process, so even *trying* to call kevent() to see if it works is a destructive operation.
+// For now we'll give up on kqueue for these low-traffic file descriptors, and just use CFSocket for all of them.
+//	if (KQueueSet(fd, EV_ADD, EVFILT_READ, &newSource->kqs) != 0)
 		{
-		KQSocketEventSource **p = &gEventSources;
-		while (*p) p = &(*p)->next;
-		*p = newSource;
-		return mStatus_NoError;
+//		if (errno == ENOTSUP)
+			{
+//			LogMsg("KQueueSet failed for fd %d errno %d (%s); will try making CFSocket instead", fd, errno, strerror(errno));
+			CFSocketContext cfContext = { 0, newSource, NULL, NULL, NULL };
+			newSource->cfs = CFSocketCreateWithNative(kCFAllocatorDefault, fd, kCFSocketReadCallBack, CFSCallBack, &cfContext);
+			if (newSource->cfs)
+				{
+				newSource->rls = CFSocketCreateRunLoopSource(kCFAllocatorDefault, newSource->cfs, 0);
+				if (!newSource->rls) { CFRelease(newSource->cfs); newSource->cfs = mDNSNULL; }
+				else CFRunLoopAddSource(CFRunLoopGetCurrent(), newSource->rls, kCFRunLoopDefaultMode);
+				}
+			}
+		if (!newSource->rls)
+			{
+			LogMsg("KQueueSet failed for fd %d errno %d (%s)", fd, errno, strerror(errno));
+			free(newSource);
+			return mStatus_BadParamErr;
+			}
 		}
-	else
-		{
-		close(fd);
-		free(newSource);
-		return mStatus_NoMemoryErr;
-		}
+
+	KQSocketEventSource **p = &gEventSources;
+	while (*p) p = &(*p)->next;
+	*p = newSource;
+	return mStatus_NoError;
 	}
 
 mStatus udsSupportRemoveFDFromEventLoop(int fd)		// Note: This also CLOSES the file descriptor
@@ -2865,9 +2906,21 @@ mStatus udsSupportRemoveFDFromEventLoop(int fd)		// Note: This also CLOSES the f
 		{
 		KQSocketEventSource *s = *p;
 		*p = (*p)->next;
-		// We don't have to explicitly do a kqueue EV_DELETE here because closing the fd
-		// causes the kernel to automatically remove any associated kevents
-		close(s->fd);
+
+		if (s->rls)
+			{
+			CFRunLoopRemoveSource(CFRunLoopGetCurrent(), s->rls, kCFRunLoopDefaultMode);
+			CFRunLoopSourceInvalidate(s->rls);
+			CFRelease(s->rls);
+			CFSocketInvalidate(s->cfs);		// Note: Also closes the underlying socket
+			CFRelease(s->cfs);
+			}
+		else
+			{
+			// We don't have to explicitly do a kqueue EV_DELETE here because closing the fd
+			// causes the kernel to automatically remove any associated kevents
+			close(s->fd);
+			}
 		freeL("KQSocketEventSource", s);
 		return mStatus_NoError;
 		}
