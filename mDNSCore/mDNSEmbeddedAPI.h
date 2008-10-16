@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.496  2008/10/16 22:38:52  cheshire
+Added declaration of mDNSCoreReceiveRawPacket()
+
 Revision 1.495  2008/10/15 22:53:51  cheshire
 Removed unused "#define LocalReverseMapDomain"
 
@@ -2858,7 +2861,9 @@ extern void     mDNSCoreReceive(mDNS *const m, void *const msg, const mDNSu8 *co
 								const mDNSAddr *const srcaddr, const mDNSIPPort srcport,
 								const mDNSAddr *const dstaddr, const mDNSIPPort dstport, const mDNSInterfaceID InterfaceID);
 extern void     mDNSCoreMachineSleep(mDNS *const m, mDNSBool wake);
+
 extern void     mDNSCoreBeSleepProxyServer(mDNS *const m, mDNSBool sps);
+extern void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, const mDNSu8 *const end, const mDNSInterfaceID InterfaceID);
 
 extern mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip);
 
