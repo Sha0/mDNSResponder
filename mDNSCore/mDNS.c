@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.818  2008/10/16 22:01:54  cheshire
+Fix last checkin: Should be "ar->resrec.rdata->u.data", not "ar->resrec.rdata.u.data"
+
 Revision 1.817  2008/10/16 21:40:49  cheshire
 Need to set ar->resrec.rdlength correctly before calling mDNS_Register_internal()
 
@@ -5529,7 +5532,7 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 					AssignDomainName(&ar->namestorage, m->rec.r.resrec.name);
 					ar->resrec.rdlength = GetRDLength(&m->rec.r.resrec, mDNSfalse);
 					ar->resrec.rdata->MaxRDLength = RDLengthMem;
-					mDNSPlatformMemCopy(ar->resrec.rdata.u.data, m->rec.r.resrec.rdata.u.data, RDLengthMem);
+					mDNSPlatformMemCopy(ar->resrec.rdata->u.data, m->rec.r.resrec.rdata->u.data, RDLengthMem);
 					if (RecordType == kDNSRecordTypeUnique) ar->WakeUp = MACdata;
 					mDNS_Register_internal(m, ar);
 					LogOperation("SPS Registered %s", ARDisplayString(m,ar));
