@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.374  2008/10/16 22:40:48  cheshire
+Removed "usleep(100000);" from CFSCallBack()
+
 Revision 1.373  2008/10/16 20:49:30  cheshire
 When kevent/kqueue fails, fall back to using old CFSocket RunLoopSource instead
 
@@ -2844,10 +2847,9 @@ mDNSlocal void CFSCallBack(const CFSocketRef cfs, const CFSocketCallBackType Cal
 	if (CallBackType != kCFSocketReadCallBack)
 		LogMsg("CFSCallBack: Why is CallBackType %d not kCFSocketReadCallBack?", CallBackType);
 
-	KQSocketEventSource	*source = (KQSocketEventSource*)context;
 	KQueueLock(&mDNSStorage);
+	KQSocketEventSource	*source = (KQSocketEventSource*)context;
 	source->kqs.KQcallback(source->fd, EVFILT_READ, source->kqs.KQcontext);
-	usleep(100000);
 	KQueueUnlock(&mDNSStorage, "CFSocketCallBack");
 	}
 
