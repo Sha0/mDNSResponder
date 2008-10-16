@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.817  2008/10/16 21:40:49  cheshire
+Need to set ar->resrec.rdlength correctly before calling mDNS_Register_internal()
+
 Revision 1.816  2008/10/15 23:12:36  cheshire
 On receiving SPS registration from client, broadcast ARP Announcements claiming ownership of that IP address
 
@@ -5517,14 +5520,16 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 				}
 			if (m->rec.r.resrec.rrtype != kDNSType_MAC || IsV4ReverseMapDomain(m->rec.r.resrec.name))
 				{
-				mDNSu16 RDLength = GetRDLengthMem(&m->rec.r.resrec);
-				AuthRecord *ar = mDNSPlatformMemAllocate(sizeof(AuthRecord) - sizeof(RDataBody) + RDLength);
+				mDNSu16 RDLengthMem = GetRDLengthMem(&m->rec.r.resrec);
+				AuthRecord *ar = mDNSPlatformMemAllocate(sizeof(AuthRecord) - sizeof(RDataBody) + RDLengthMem);
 				if (ar)
 					{
 					mDNSu8 RecordType = SameDomainName(&MACname, m->rec.r.resrec.name) ? kDNSRecordTypeUnique : kDNSRecordTypeShared;
 					mDNS_SetupResourceRecord(ar, mDNSNULL, InterfaceID, m->rec.r.resrec.rrtype,  m->rec.r.resrec.rroriginalttl, kDNSRecordTypeShared, SPSRecordCallback, ar);
 					AssignDomainName(&ar->namestorage, m->rec.r.resrec.name);
-					mDNSPlatformMemCopy(ar->resrec.rdata, m->rec.r.resrec.rdata, sizeofRDataHeader + RDLength);
+					ar->resrec.rdlength = GetRDLength(&m->rec.r.resrec, mDNSfalse);
+					ar->resrec.rdata->MaxRDLength = RDLengthMem;
+					mDNSPlatformMemCopy(ar->resrec.rdata.u.data, m->rec.r.resrec.rdata.u.data, RDLengthMem);
 					if (RecordType == kDNSRecordTypeUnique) ar->WakeUp = MACdata;
 					mDNS_Register_internal(m, ar);
 					LogOperation("SPS Registered %s", ARDisplayString(m,ar));
