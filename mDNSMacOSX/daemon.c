@@ -30,6 +30,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.375  2008/10/20 22:31:31  cheshire
+Instead of requesting a single BPF descriptor via mDNSRequestBPF(), call mDNSMacOSXNetworkChanged()
+to signal that UDS is now available to handle BPF requests, and let it work out what it needs
+
 Revision 1.374  2008/10/16 22:40:48  cheshire
 Removed "usleep(100000);" from CFSCallBack()
 
@@ -700,7 +704,7 @@ mDNSlocal void validatelists(mDNS *const m)
 			LogMemCorruption("m->TunnelClients: %p is garbage (%d)", t, t->dstname.c[0]);
 	}
 
-void *mallocL(char *msg, unsigned int size)
+mDNSexport void *mallocL(char *msg, unsigned int size)
 	{
 	unsigned long *mem = malloc(size+8);
 	if (!mem)
@@ -721,7 +725,7 @@ void *mallocL(char *msg, unsigned int size)
 		}
 	}
 
-void freeL(char *msg, void *x)
+mDNSexport void freeL(char *msg, void *x)
 	{
 	if (!x)
 		LogMsg("free( %s @ NULL )!", msg);
@@ -2812,7 +2816,7 @@ mDNSexport int main(int argc, char **argv)
 	status = udsserver_init(launchd_fd);
 	if (status) { LogMsg("Daemon start: udsserver_init failed"); goto exit; }
 
-	mDNSRequestBPF();
+	mDNSMacOSXNetworkChanged(&mDNSStorage);
 
 	mStatus err = WatchForInternetSharingChanges(&mDNSStorage);
 	if (err) { LogMsg("WatchForInternetSharingChanges failed %d", err); return(err); }
@@ -2854,7 +2858,7 @@ mDNSlocal void CFSCallBack(const CFSocketRef cfs, const CFSocketCallBackType Cal
 	}
 
 // Arrange things so that when data appears on fd, callback is called with context
-mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *context)
+mDNSexport mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *context)
 	{
 	KQSocketEventSource *newSource = (KQSocketEventSource*) mallocL("KQSocketEventSource", sizeof *newSource);
 	if (!newSource) return mStatus_NoMemoryErr;
@@ -2900,7 +2904,7 @@ mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *cont
 	return mStatus_NoError;
 	}
 
-mStatus udsSupportRemoveFDFromEventLoop(int fd)		// Note: This also CLOSES the file descriptor
+mDNSexport mStatus udsSupportRemoveFDFromEventLoop(int fd)		// Note: This also CLOSES the file descriptor
 	{
 	KQSocketEventSource **p = &gEventSources;
 	while (*p && (*p)->fd != fd) p = &(*p)->next;
