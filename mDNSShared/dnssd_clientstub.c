@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.107  2008/10/20 21:50:11  cheshire
+Improved /dev/bpf error message
+
 Revision 1.106  2008/10/20 15:37:18  cheshire
 Log error message if opening /dev/bpf fails
 
@@ -723,7 +726,7 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 				if (dnssd_SocketValid(listenfd))
 					syslog(LOG_WARNING, "Sending fd %d for %s", listenfd, p);
 #endif
-				if (dnssd_errno() != EBUSY)
+				if (!dnssd_SocketValid(listenfd) && errno != EBUSY)
 					syslog(LOG_WARNING, "Error opening %s %d (%s)", p, errno, strerror(errno));
 				if (dnssd_SocketValid(listenfd) || errno != EBUSY) break;
 				}
