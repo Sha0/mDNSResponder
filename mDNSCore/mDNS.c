@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.819  2008/10/20 22:16:27  cheshire
+Updated comments; increased cache shedding threshold from 3000 to 4000
+
 Revision 1.818  2008/10/16 22:01:54  cheshire
 Fix last checkin: Should be "ar->resrec.rdata->u.data", not "ar->resrec.rdata.u.data"
 
@@ -2016,38 +2019,39 @@ mDNSlocal void SendARPAnnouncement(mDNS *const m, const AuthRecord *const rr)
 	if (!intf) { LogMsg("SendARPAnnouncement: No interface with InterfaceID %p found %s", rr->resrec.InterfaceID, ARDisplayString(m,rr)); return; }
 	if (skip < 0) { LogMsg("SendARPAnnouncement: Need six labels in record name %s", rr->resrec.InterfaceID, ARDisplayString(m,rr)); return; }
 
-	// 1. Destination address (broadcast)
+	// 0x00 Destination address (broadcast)
 	for (i=0; i<6; i++) *ptr++ = 0xFF;
 
-	// 2. Source address (we just use zero -- driver/hardware will fill in real interface address)
+	// 0x06 Source address (we just use zero -- driver/hardware will fill in real interface address)
 	for (i=0; i<6; i++) *ptr++ = 0x0;
 
-	// 3. ARP Ethertype (0x0806)
+	// 0x0C ARP Ethertype (0x0806)
 	*ptr++ = 0x08; *ptr++ = 0x06;
 
-	// 4. ARP header
+	// 0x0E ARP header
 	*ptr++ = 0x00; *ptr++ = 0x01;	// Hardware address space; Ethernet = 1
 	*ptr++ = 0x08; *ptr++ = 0x00;	// Protocol address space; IP = 0x0800
 	*ptr++ = 6;						// Hardware address length
 	*ptr++ = 4;						// Protocol address length
 	*ptr++ = 0x00; *ptr++ = 0x01;	// opcode; Request = 1
 
-	// Sender hardware address (our MAC address)
+	// 0x16 Sender hardware address (our MAC address)
 	for (i=0; i<6; i++) *ptr++ = intf->MAC.b[i];
 
-	// Sender protocol address (IP address we're capturing)
+	// 0x1C Sender protocol address (IP address we're capturing)
 	if (GetLabelDecimalValue(SkipLeadingLabels(rr->resrec.name, skip+3)->c, ptr++) ||
 		GetLabelDecimalValue(SkipLeadingLabels(rr->resrec.name, skip+2)->c, ptr++) ||
 		GetLabelDecimalValue(SkipLeadingLabels(rr->resrec.name, skip+1)->c, ptr++) ||
 		GetLabelDecimalValue(SkipLeadingLabels(rr->resrec.name, skip+0)->c, ptr++))
 		{ LogMsg("SendARPAnnouncement: Invalid record name %s", rr->resrec.InterfaceID, ARDisplayString(m,rr)); return; }
 
-	// Target hardware address (broadcast)
+	// 0x20 Target hardware address (broadcast)
 	for (i=0; i<6; i++) *ptr++ = 0x0;
 
-	// Target protocol address (IP address we're capturing)
+	// 0x26 Target protocol address (IP address we're capturing)
 	for (i=0; i<4; i++) *ptr++ = m->omsg.data[28+i];
 
+	// 0x2A Total ARP Packet length 42 bytes
 	mDNSPlatformSendRawPacket(m->omsg.data, ptr, rr->resrec.InterfaceID);
 	}
 
@@ -2113,7 +2117,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 				rr->AnnounceCount--;
 				rr->ThisAPInterval *= 2;
 				rr->LastAPTime = m->timenow;
-				LogOperation("ARP Poison %##s (%s) %d", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype), rr->AnnounceCount);
+				LogOperation("ARP Announcement %##s (%s) %d", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype), rr->AnnounceCount);
 				SendARPAnnouncement(m, rr);
 				}
 			else
@@ -3060,20 +3064,20 @@ mDNSlocal void SendWakeup(mDNS *const m, mDNSInterfaceID InterfaceID, mDNSEthAdd
 
 	if (!InterfaceID) { LogMsg("SendWakeup: No InterfaceID specified"); return; }
 
-	// 1. Put destination address
+	// 0x00 Destination address
 	for (i=0; i<6; i++) *ptr++ = EthAddr->b[i];
 
-	// 2. Put source address (we just use zero -- driver/hardware will fill in real interface address)
+	// 0x06 Source address (we just use zero -- BPF will fill in real interface address)
 	for (i=0; i<6; i++) *ptr++ = 0x0;
 
-	// 3. Put Ethertype (0x0842)
+	// 0x0C Ethertype (0x0842)
 	*ptr++ = 0x08;
 	*ptr++ = 0x42;
 
-	// 4. Put Wakeup sync sequence
+	// 0x0E Wakeup sync sequence
 	for (i=0; i<6; i++) *ptr++ = 0xFF;
 
-	// 4. Put Wakeup data
+	// 0x14 Wakeup data
 	for (j=0; j<16; j++) for (i=0; i<6; i++) *ptr++ = EthAddr->b[i];
 
 	mDNSPlatformSendRawPacket(m->omsg.data, ptr, InterfaceID);
@@ -3604,7 +3608,7 @@ mDNSlocal CacheEntity *GetCacheEntity(mDNS *const m, const CacheGroup *const Pre
 		// To guard against this, if our cache grows above 512kB (approx 3168 records at 164 bytes each),
 		// and we're actively using less than 1/32 of that cache, then we purge all the unused records
 		// and recycle them, instead of allocating more memory.
-		if (m->rrcache_size > 3000 && m->rrcache_size / 32 > m->rrcache_active)
+		if (m->rrcache_size > 4000 && m->rrcache_size / 32 > m->rrcache_active)
 			LogOperation("Possible denial-of-service attack in progress: m->rrcache_size %lu; m->rrcache_active %lu",
 				m->rrcache_size, m->rrcache_active);
 		else
@@ -5485,6 +5489,8 @@ mDNSlocal void SPSRecordCallback(mDNS *const m, AuthRecord *const ar, mStatus re
 	LogOperation("SPSRecordCallback %d %s", result, ARDisplayString(m, ar));
 	if (result == mStatus_NameConflict)
 		SendWakeup(m, ar->resrec.InterfaceID, &ar->WakeUp);
+	else if (result == mStatus_MemFree)
+		mDNSPlatformMemFree(ar);
 	}
 
 mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
