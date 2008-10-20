@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.35  2008/10/20 22:01:28  cheshire
+Made new Mach simpleroutine "mDNSRequestBPF"
+
 Revision 1.34  2008/10/02 23:50:07  mcguire
 <rdar://problem/6136442> shutdown time issues
 improve log messages when SCDynamicStoreCreate() fails
@@ -218,36 +221,28 @@ fin:
 	return KERN_SUCCESS;
 	}
 
-mDNSlocal DNSServiceErrorType DNSSD_API DNSServiceSendBPF(void)
+kern_return_t do_mDNSRequestBPF(__unused mach_port_t port, audit_token_t token)
 	{
-	char *ptr;
-	size_t len;
-	ipc_msg_hdr *hdr;
-	static DNSServiceRef ref;
-
-	if (ref)
-		{
-		helplog(ASL_LEVEL_ERR, "ERROR: Closing previous SendBPF connection");
-		DNSServiceRefDeallocate(ref);
-		}
-
+	if (!authorized(&token)) return KERN_SUCCESS;
+	DNSServiceRef ref;
 	DNSServiceErrorType err = ConnectToServer(&ref, 0, send_bpf, NULL, NULL, NULL);
-	if (err) return err;
-
-	len = sizeof(DNSServiceFlags);
-	hdr = create_hdr(send_bpf, &len, &ptr, 0, ref);
-	if (!hdr) { DNSServiceRefDeallocate(ref); return kDNSServiceErr_NoMemory; }
-
-	put_flags(0, &ptr);
-	err = deliver_request(hdr, ref);		// Will free hdr for us
+	if (err) { helplog(ASL_LEVEL_ERR, "do_mDNSRequestBPF: ConnectToServer %d", err); return err; }
 	
-	// We would normally close the DNSServiceRef here, which works on 10.4, but on 10.5 and later if we close our end of the UDS
-	// connection before the daemon has got around to processing its end (i.e., doing accept(), SO_NOSIGPIPE, O_NONBLOCK, etc.)
-	// then when the daemon tries to do its SO_NOSIGPIPE, the kernel complains with an "Invalid argument (errno 22)" error.
-	// Instead we let the DNSServiceRef stay open, and it will evaporate when the helper exits.
-	// This is not a big deal, since the daemon only requests a BPF fd from us once, at startup.
-	//DNSServiceRefDeallocate(ref);
-	return err;
+	char *ptr;
+	size_t len = sizeof(DNSServiceFlags);
+	ipc_msg_hdr *hdr = create_hdr(send_bpf, &len, &ptr, 0, ref);
+	if (!hdr) { DNSServiceRefDeallocate(ref); return kDNSServiceErr_NoMemory; }
+	put_flags(0, &ptr);
+	deliver_request(hdr, ref);		// Will free hdr for us
+
+	// On 10.4 we can just close the DNSServiceRef immediately, but on 10.5 and later if we close our
+	// end of the UDS connection before the daemon has got around to processing its end (i.e., doing
+	// accept(), SO_NOSIGPIPE, O_NONBLOCK, etc.) then when the daemon tries to do its SO_NOSIGPIPE,
+	// the kernel complains with an "Invalid argument (errno 22)" error. To work around this, we sleep
+	// for 100ms to give the daemon a chance to run before we close our end of the DNSServiceRef.
+	usleep(100000);
+	DNSServiceRefDeallocate(ref);
+	return KERN_SUCCESS;
 	}
 
 kern_return_t
@@ -282,7 +277,6 @@ do_mDNSDynamicStoreSetConfig(__unused mach_port_t port, int key,
 		case kmDNSBackToMyMacConfig:
 			sckey = CFSTR("State:/Network/BackToMyMac");
 			break;
-		case kmDNSSendBPF: DNSServiceSendBPF(); goto fin;
 		default:
 			debug("unrecognized key %d", key);
 			*err = kmDNSHelperInvalidConfigKey;

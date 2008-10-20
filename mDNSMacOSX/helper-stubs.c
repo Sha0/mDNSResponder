@@ -16,6 +16,9 @@
     Change History (most recent first):
 
 $Log: helper-stubs.c,v $
+Revision 1.8  2008/10/20 22:01:28  cheshire
+Made new Mach simpleroutine "mDNSRequestBPF"
+
 Revision 1.7  2008/09/27 00:58:32  cheshire
 Added mDNSRequestBPF definition
 
@@ -159,15 +162,15 @@ fin:
 	return err;
 	}
 
-int mDNSRequestBPF(void)
+void mDNSRequestBPF(void)
 	{
 	kern_return_t kr = KERN_FAILURE;
 	int retry = 0, err = 0;
 	MACHRETRYLOOP_BEGIN(kr, retry, err, fin);
-	kr = proxy_mDNSDynamicStoreSetConfig(getHelperPort(retry), kmDNSSendBPF, (vm_offset_t)0, 0, &err);
+	kr = proxy_mDNSRequestBPF(getHelperPort(retry));
 	MACHRETRYLOOP_END(kr, retry, err, fin);
 fin:
-	return err;
+	(void)err;
 	}
 
 int mDNSKeychainGetSecrets(CFArrayRef *result)

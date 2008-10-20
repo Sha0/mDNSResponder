@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.h,v $
+Revision 1.8  2008/10/20 22:01:28  cheshire
+Made new Mach simpleroutine "mDNSRequestBPF"
+
 Revision 1.7  2008/09/27 00:58:11  cheshire
 Added mDNSRequestBPF declaration
 
@@ -47,8 +50,7 @@ enum mDNSDynamicStoreSetConfigKey
 	kmDNSMulticastConfig = 1,
 	kmDNSDynamicConfig,
 	kmDNSPrivateConfig,
-	kmDNSBackToMyMacConfig,
-	kmDNSSendBPF
+	kmDNSBackToMyMacConfig
 	};
 
 enum mDNSPreferencesSetNameKey
@@ -82,9 +84,10 @@ enum mDNSHelperErrors
 #include "helpermsg-types.h"
 
 extern const char *mDNSHelperError(int errornum);
-extern int mDNSPreferencesSetName(int key, domainlabel* old, domainlabel* new);
+
+extern void mDNSRequestBPF(void);
 extern int mDNSDynamicStoreSetConfig(int key, CFPropertyListRef value);
-extern int mDNSRequestBPF(void);
+extern int mDNSPreferencesSetName(int key, domainlabel* old, domainlabel* new);
 extern int mDNSKeychainGetSecrets(CFArrayRef *secrets);
 extern int mDNSAutoTunnelInterfaceUpDown(int updown, v6addr_t addr);
 extern int mDNSConfigureServer(int updown, const char *keydata);
