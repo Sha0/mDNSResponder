@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.575  2008/10/20 02:07:49  mkrochma
+<rdar://problem/6296804> Remove Note: DNS Server <ip> for domain <d> registered more than once
+
 Revision 1.574  2008/10/14 19:06:45  cheshire
 In uDNS_ReceiveMsg(), only do checkUpdateResult() for uDNS records
 
@@ -1338,7 +1341,7 @@ mDNSexport DNSServer *mDNS_AddDNSServer(mDNS *const m, const domainname *d, cons
 		if ((*p)->interface == interface && (*p)->teststate != DNSServer_Disabled &&
 			mDNSSameAddress(&(*p)->addr, addr) && mDNSSameIPPort((*p)->port, port) && SameDomainName(&(*p)->domain, d))
 			{
-			if (!((*p)->flags & DNSServer_FlagDelete)) LogMsg("Note: DNS Server %#a for domain %##s registered more than once", addr, d->c);
+			if (!((*p)->flags & DNSServer_FlagDelete)) debugf("Note: DNS Server %#a for domain %##s registered more than once", addr, d->c);
 			(*p)->flags &= ~DNSServer_FlagDelete;
 			return(*p);
 			}
