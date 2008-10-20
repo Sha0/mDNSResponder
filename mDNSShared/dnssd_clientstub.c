@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.106  2008/10/20 15:37:18  cheshire
+Log error message if opening /dev/bpf fails
+
 Revision 1.105  2008/09/27 01:26:34  cheshire
 Added handler to pass back BPF fd when requested
 
@@ -716,6 +719,12 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 				{
 				snprintf(p, sizeof(p), "/dev/bpf%d", i);
 				listenfd = open(p, O_RDWR, 0);
+#if LogAllOperations
+				if (dnssd_SocketValid(listenfd))
+					syslog(LOG_WARNING, "Sending fd %d for %s", listenfd, p);
+#endif
+				if (dnssd_errno() != EBUSY)
+					syslog(LOG_WARNING, "Error opening %s %d (%s)", p, errno, strerror(errno));
 				if (dnssd_SocketValid(listenfd) || errno != EBUSY) break;
 				}
 			}
