@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.400  2008/10/21 01:06:57  cheshire
+Pass BPF fd to mDNSMacOSX.c using mDNSPlatformSetBPF() instead of just writing it into a shared global variable
+
 Revision 1.399  2008/10/20 22:06:42  cheshire
 Updated debugging log messages
 
@@ -729,6 +732,7 @@ mDNSlocal char *win32_strerror(int inErrorCode)
 
 #include <stdlib.h>
 #include <stdio.h>
+
 #include "mDNSEmbeddedAPI.h"
 #include "DNSCommon.h"
 #include "uDNS.h"
@@ -3263,10 +3267,9 @@ mDNSlocal void read_msg(request_state *req)
 			// and it's convenient to repurpose the existing fd-passing code here for that task
 			if (req->hdr.op == send_bpf)
 				{
-				extern dnssd_sock_t BPF_fd;
 				dnssd_sock_t x = *(dnssd_sock_t *)CMSG_DATA(cmsg);
-				if (!dnssd_SocketValid(BPF_fd)) { BPF_fd = x; LogOperation("%3d: Got BPF_fd %d", req->sd, x); }
-				else LogMsg("%3d: ERROR: Already had BPF_fd old %d new %d", req->sd, BPF_fd, x);
+				LogOperation("%3d: Got BPF %d", req->sd, x);
+				mDNSPlatformSetBPF(&mDNSStorage, x);
 				}
 			else
 				req->errsd = *(dnssd_sock_t *)CMSG_DATA(cmsg);
