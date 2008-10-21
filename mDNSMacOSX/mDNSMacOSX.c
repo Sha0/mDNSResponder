@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.559  2008/10/21 01:05:30  cheshire
+Added code to receive raw packets using Berkeley Packet Filter (BPF)
+
 Revision 1.558  2008/10/16 22:42:06  cheshire
 Removed debugging messages
 
@@ -836,12 +839,13 @@ Add (commented out) trigger value for testing "mach_absolute_time went backwards
 
 #define USE_V6_ONLY_WHEN_NO_ROUTABLE_V4 0
 
-#include "mDNSEmbeddedAPI.h"          // Defines the interface provided to the client layer above
+#include "mDNSEmbeddedAPI.h"		// Defines the interface provided to the client layer above
 #include "DNSCommon.h"
 #include "uDNS.h"
-#include "mDNSMacOSX.h"               // Defines the specific types needed to run mDNS on this platform
+#include "mDNSMacOSX.h"				// Defines the specific types needed to run mDNS on this platform
 #include "dns_sd.h"					// For mDNSInterface_LocalOnly etc.
 #include "PlatformCommon.h"
+#include "uds_daemon.h"				// For BPF-related functionality, like udsSupportAddFDToEventLoop()
 
 #include <stdio.h>
 #include <stdarg.h>                 // For va_list support
@@ -910,7 +914,6 @@ Add (commented out) trigger value for testing "mach_absolute_time went backwards
 #endif
 
 mDNSexport int KQueueFD;
-mDNSexport int BPF_fd = -1;
 
 #ifndef NO_SECURITYFRAMEWORK
 static CFArrayRef ServerCerts;
@@ -1982,19 +1985,152 @@ mDNSexport void mDNSPlatformUDPClose(UDPSocket *sock)
 	freeL("UDPSocket", sock);
 	}
 
+#if COMPILER_LIKES_PRAGMA_MARK
+#pragma mark -
+#pragma mark - BPF Raw packet sending/receiving
+#endif
+
+#if APPLE_OSX_mDNSResponder
+
 mDNSexport void mDNSPlatformSendRawPacket(const void *const msg, const mDNSu8 *const end, mDNSInterfaceID InterfaceID)
 	{
 	if (!InterfaceID) { LogMsg("mDNSPlatformSendRawPacket: No InterfaceID specified"); return; }
-
 	NetworkInterfaceInfoOSX *info = (NetworkInterfaceInfoOSX *)InterfaceID;
+	if (info->BPF_fd < 0)
+		LogMsg("mDNSPlatformSendRawPacket: BPF_fd %d not ready", info->BPF_fd);
+	else if (write(info->BPF_fd, msg, end - (const mDNSu8 *)msg) < 0)
+		LogMsg("mDNSPlatformSendRawPacket: BPF write(%d) failed %d (%s)", info->BPF_fd, errno, strerror(errno));
+	}
+
+mDNSlocal void bpf_callback(int fd, short filter, void *context)
+	{
+	(void)filter;
+	const NetworkInterfaceInfoOSX *const info = (NetworkInterfaceInfoOSX *)context;
+	const mDNSu8 *ptr = (const mDNSu8 *)&info->m->imsg;
+	ssize_t n = read(fd, &info->m->imsg, info->BPF_len);
+	debugf("%3d: bpf_callback got %d bytes on %s", fd, n, info->ifinfo.ifname);
+
+	while (ptr < (const mDNSu8 *)&info->m->imsg + n)
+		{
+		const struct bpf_hdr *bh = (struct bpf_hdr *)ptr;
+		mDNSCoreReceiveRawPacket(info->m, ptr + bh->bh_hdrlen, ptr + bh->bh_hdrlen + bh->bh_caplen, info->ifinfo.InterfaceID);
+		ptr += BPF_WORDALIGN(bh->bh_hdrlen + bh->bh_caplen);
+		}
+	}
+
+mDNSlocal void SetupBPF(mDNS *const m, NetworkInterfaceInfoOSX *const x)
+	{
+	LogOperation("SetupBPF %s", x->ifinfo.ifname);
+
+	#define MAX_BPF_ADDRS 54
+	static struct bpf_insn filter[10 + MAX_BPF_ADDRS] =
+		{
+		BPF_STMT(BPF_LD  + BPF_H   + BPF_ABS, 12),				//  0 Read Ethertype (bytes 12,13)
+		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0x0806, 7, 0),		//  1 If Ethertype == ARP goto 9, else next
+		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0x0800, 0, 7),		//  2 If Ethertype == IP goto next, else 10
+		// Is IP packet; check it's addressed to our MAC address
+		BPF_STMT(BPF_LD  + BPF_W   + BPF_ABS, 0),				//  3 Read Ether Dst (bytes 0,1,2,3)
+		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0x00112233, 0, 5),	//  4 If matches goto next, else 10
+		BPF_STMT(BPF_LD  + BPF_H   + BPF_ABS, 4),				//  5 Read Ether Dst (bytes 4,5)
+		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0x4455, 0, 3),		//  6 If matches goto next, else 10
+		// Is IP packet addressed to our MAC address; check if it's to any of our IP addresses
+		BPF_STMT(BPF_LD  + BPF_W   + BPF_ABS, 30),				//  7 Read IP Dst (bytes 30,31,32,33)
+		};
+	struct bpf_insn *pc = &filter[8];
+
+	LogOperation("   %s MAC %.6a", x->ifinfo.ifname, &x->ifinfo.MAC);
+
+	int numv4 = 0;
+	NetworkInterfaceInfo *i;
+	for (i = m->HostInterfaces; i; i = i->next)
+		if (i->ip.type == mDNSAddrType_IPv4 && i->InterfaceID == x->ifinfo.InterfaceID)
+			{
+			LogOperation("%2d %s IP  %.4a", numv4, x->ifinfo.ifname, &i->ip.ip.v4);
+			if (numv4 < MAX_BPF_ADDRS) numv4++;
+			}
+
+	// BPF Byte-Order Note
+	// The BPF API designers apparently thought that programmers would not be smart enough to use htons
+	// and htonl correctly to convert numeric values to network byte order on little-endian machines,
+	// so instead they chose to make the API implicitly byte-swap ALL values, even literal byte strings
+	// that shouldn't be byte-swapped, like ASCII text, Ethernet addresses, IP addresses, etc.
+	// As a result, if we put Ethernet addresses and IP addresses in the right byte order, the BPF API
+	// will byte-swap and make them backwards, and then our filter won't work. So, we have to arrange that on
+	// little-endian machines we deliberately put addresses in memory with the bytes backwards, so that when
+	// the BPF API goes through and swaps them all, they end up back as they should be, and the filter works.
+
+	filter[4].k  = (bpf_u_int32)x->ifinfo.MAC.b[0] << 24 | (bpf_u_int32)x->ifinfo.MAC.b[1] << 16 | (bpf_u_int32)x->ifinfo.MAC.b[2] << 8 | (bpf_u_int32)x->ifinfo.MAC.b[3];
+	filter[6].k  = (bpf_u_int32)x->ifinfo.MAC.b[4] <<  8 | (bpf_u_int32)x->ifinfo.MAC.b[5];
+	filter[4].jf = numv4 + 4;
+	filter[6].jf = numv4 + 2;
+
+	for (i = m->HostInterfaces; i; i = i->next)
+		if (i->ip.type == mDNSAddrType_IPv4 && i->InterfaceID == x->ifinfo.InterfaceID && numv4)
+			{
+			// See "BPF Byte-Order Note" above
+			numv4--;
+			pc->code = BPF_JMP + BPF_JEQ + BPF_K;
+			pc->jt   = numv4 + 1;
+			pc->jf   = 0;
+			pc->k    = (bpf_u_int32)i->ip.ip.v4.b[0] << 24 | (bpf_u_int32)i->ip.ip.v4.b[1] << 16 | (bpf_u_int32)i->ip.ip.v4.b[2] << 8 | (bpf_u_int32)i->ip.ip.v4.b[3];
+			pc++;
+			}
+
+	static const struct bpf_insn RET42 = BPF_STMT(BPF_RET + BPF_K, 42);	// Success: Return 42 bytes
+	static const struct bpf_insn RET0  = BPF_STMT(BPF_RET + BPF_K, 0);	// No match: Return nothing
+	*pc++ = RET42;
+	*pc++ = RET0;
+	struct bpf_program prog = { pc - filter, filter };
+
+#if 0
+	// For debugging BPF filter program
+	unsigned int q;
+	for (q=0; q<prog.bf_len; q++)
+		LogOperation("mDNSPlatformSetBPF: %2d { 0x%x, %d, %d, 0x%08x },", q, prog.bf_insns[q].code, prog.bf_insns[q].jt, prog.bf_insns[q].jf, prog.bf_insns[q].k);
+#endif
+
+	if (ioctl(x->BPF_fd, BIOCSETF, &prog) < 0) LogMsg("mDNSPlatformSetBPF: BIOCSETF(%d) failed %d (%s)", prog.bf_len, errno, strerror(errno));
+	else LogOperation("mDNSPlatformSetBPF: BIOCSETF(%d)", prog.bf_len);
+
+	mStatus result = udsSupportAddFDToEventLoop(x->BPF_fd, bpf_callback, x);
+	LogOperation("mDNSPlatformSetBPF: udsSupportAddFDToEventLoop %d", result);
+	}
+
+mDNSexport void mDNSPlatformSetBPF(mDNS *const m, int fd)
+	{
+	NetworkInterfaceInfoOSX *i;
+	for (i = m->p->InterfaceList; i; i = i->next) if (i->BPF_fd == -1) break;
+	if (!i) { LogOperation("mDNSPlatformSetBPF: No Interfaces awaiting BPF fd %d; closing", fd); close(fd); return; }
+
+	LogOperation("mDNSPlatformSetBPF: %s got BPF fd %d", i->ifinfo.ifname, fd);
+	i->BPF_fd = fd;
+
+	struct bpf_version v;
+	if (ioctl(fd, BIOCVERSION, &v) < 0) LogMsg("mDNSPlatformSetBPF: BIOCVERSION failed %d (%s)", errno, strerror(errno));
+	else LogOperation("mDNSPlatformSetBPF: Got BPF header version %d.%d kernel version %d.%d", BPF_MAJOR_VERSION, BPF_MINOR_VERSION, v.bv_major, v.bv_minor);
+
+	if (ioctl(fd, BIOCGBLEN, &i->BPF_len) < 0) LogMsg("mDNSPlatformSetBPF: BIOCGBLEN failed %d (%s)", errno, strerror(errno));
+	else LogOperation("mDNSPlatformSetBPF: BIOCGBLEN %d", i->BPF_len);
+
+	if (i->BPF_len > sizeof(m->imsg))
+		{
+		i->BPF_len = sizeof(m->imsg);
+		if (ioctl(fd, BIOCSBLEN, &i->BPF_len) < 0) LogMsg("mDNSPlatformSetBPF: BIOCSBLEN failed %d (%s)", errno, strerror(errno));
+		else LogOperation("mDNSPlatformSetBPF: BIOCSBLEN %d", i->BPF_len);
+		}
+
+	static const u_int opt_immediate = 1;
+	if (ioctl(fd, BIOCIMMEDIATE, &opt_immediate) < 0) LogMsg("mDNSPlatformSetBPF: BIOCIMMEDIATE failed %d (%s)", errno, strerror(errno));
 
 	struct ifreq ifr;
 	bzero(&ifr, sizeof(ifr));
-	strlcpy(ifr.ifr_name, info->ifa_name, sizeof(ifr.ifr_name));
-	//LogMsg("mDNSPlatformSendRawPacket: BIOCSETIF %d", ioctl(BPF_fd, BIOCSETIF, &ifr));
-	if (write(BPF_fd, msg, end - (const mDNSu8 *)msg) < 0)
-		LogMsg("mDNSPlatformSendRawPacket: BPF write(%d) failed %d (%s)", BPF_fd, errno, strerror(errno));
+	strlcpy(ifr.ifr_name, i->ifinfo.ifname, sizeof(ifr.ifr_name));
+	if (ioctl(fd, BIOCSETIF, &ifr) < 0) LogMsg("mDNSPlatformSetBPF: BIOCSETIF failed %d (%s)", errno, strerror(errno));
+
+	SetupBPF(m, i);
 	}
+
+#endif
 
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
@@ -2276,15 +2412,18 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 	GetMAC(&i->ifinfo.MAC, scope_id);
 
 	i->next            = mDNSNULL;
+	i->m               = m;
 	i->Exists          = mDNStrue;
 	i->Flashing        = mDNSfalse;
 	i->Occulting       = mDNSfalse;
 	i->AppearanceTime  = utc;		// Brand new interface; AppearanceTime is now
 	i->LastSeen        = utc;
+	i->ifa_flags       = ifa->ifa_flags;
 	i->scope_id        = scope_id;
 	i->BSSID           = bssid;
 	i->sa_family       = ifa->ifa_addr->sa_family;
-	i->ifa_flags       = ifa->ifa_flags;
+	i->BPF_fd          = -2;
+	i->BPF_len         = 0;
 
 	*p = i;
 	return(i);
@@ -3243,7 +3382,7 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 				i->Occulting = !(i->ifa_flags & IFF_LOOPBACK) && (utc - i->LastSeen > 0 && utc - i->LastSeen < 60);
 
 				mDNS_RegisterInterface(m, n, i->Flashing && i->Occulting);
-				if (!mDNSAddressIsLinkLocal(&i->ifinfo.ip)) count++;
+				if (!mDNSAddressIsLinkLocal(&n->ip)) count++;
 				LogOperation("SetupActiveInterfaces:   Registered    %5s(%lu) %.6a InterfaceID %p %#a/%d%s%s%s",
 					i->ifa_name, i->scope_id, &i->BSSID, primary, &n->ip, CountMaskBits(&n->mask),
 					i->Flashing        ? " (Flashing)"  : "",
@@ -3257,7 +3396,7 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 					if (i->sa_family == AF_INET)
 						{
 						struct ip_mreq imr;
-						primary->ifa_v4addr.s_addr = i->ifinfo.ip.ip.v4.NotAnInteger;
+						primary->ifa_v4addr.s_addr = n->ip.ip.v4.NotAnInteger;
 						imr.imr_multiaddr.s_addr = AllDNSLinkGroup_v4.ip.v4.NotAnInteger;
 						imr.imr_interface        = primary->ifa_v4addr;
 	
@@ -3310,6 +3449,7 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 					}
 				}
 			}
+
 	return count;
 	}
 
@@ -3378,6 +3518,7 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m, mDNSs32 utc)
 				{
 				*p = i->next;
 				if (i->ifa_name) freeL("NetworkInterfaceInfoOSX name", i->ifa_name);
+				if (i->BPF_fd >= 0) close(i->BPF_fd);
 				freeL("NetworkInterfaceInfoOSX", i);
 				continue;	// After deleting this object, don't want to do the "p = &i->next;" thing at the end of the loop
 				}
@@ -4119,35 +4260,49 @@ mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 	SetupActiveInterfaces(m, utc);
 
 #if APPLE_OSX_mDNSResponder
+
+	if (m->AutoTunnelHostAddr.b[0])
 		{
-		if (m->AutoTunnelHostAddr.b[0])
-			{
-			mDNS_Lock(m);
-			if (TunnelClients(m) || TunnelServers(m))
-				SetupLocalAutoTunnelInterface_internal(m);
-			mDNS_Unlock(m);
-			}
-		
-		// Scan to find client tunnels whose questions have completed,
-		// but whose local inner/outer addresses have changed since the tunnel was set up
-		ClientTunnel *p;
-		for (p = m->TunnelClients; p; p = p->next)
-			if (p->q.ThisQInterval < 0)
-				{
-				mDNSAddr tmpSrc = zeroAddr;
-				mDNSAddr tmpDst = { mDNSAddrType_IPv4, {{{0}}} };
-				tmpDst.ip.v4 = p->rmt_outer;
-				mDNSPlatformSourceAddrForDest(&tmpSrc, &tmpDst);
-				if (!mDNSSameIPv6Address(p->loc_inner, m->AutoTunnelHostAddr) ||
-					!mDNSSameIPv4Address(p->loc_outer, tmpSrc.ip.v4))
-					{
-					AutoTunnelSetKeys(p, mDNSfalse);
-					p->loc_inner = m->AutoTunnelHostAddr;
-					p->loc_outer = tmpSrc.ip.v4;
-					AutoTunnelSetKeys(p, mDNStrue);
-					}
-				}
+		mDNS_Lock(m);
+		if (TunnelClients(m) || TunnelServers(m))
+			SetupLocalAutoTunnelInterface_internal(m);
+		mDNS_Unlock(m);
 		}
+	
+	// Scan to find client tunnels whose questions have completed,
+	// but whose local inner/outer addresses have changed since the tunnel was set up
+	ClientTunnel *p;
+	for (p = m->TunnelClients; p; p = p->next)
+		if (p->q.ThisQInterval < 0)
+			{
+			mDNSAddr tmpSrc = zeroAddr;
+			mDNSAddr tmpDst = { mDNSAddrType_IPv4, {{{0}}} };
+			tmpDst.ip.v4 = p->rmt_outer;
+			mDNSPlatformSourceAddrForDest(&tmpSrc, &tmpDst);
+			if (!mDNSSameIPv6Address(p->loc_inner, m->AutoTunnelHostAddr) ||
+				!mDNSSameIPv4Address(p->loc_outer, tmpSrc.ip.v4))
+				{
+				AutoTunnelSetKeys(p, mDNSfalse);
+				p->loc_inner = m->AutoTunnelHostAddr;
+				p->loc_outer = tmpSrc.ip.v4;
+				AutoTunnelSetKeys(p, mDNStrue);
+				}
+			}
+
+	NetworkInterfaceInfoOSX *i;
+	for (i = m->p->InterfaceList; i; i = i->next)
+		if (i->Exists && i->ifinfo.InterfaceID == (mDNSInterfaceID)i)
+			{
+			if (i->BPF_fd >= 0)
+				SetupBPF(m, i);
+			else if (i->BPF_fd == -2)
+				{
+				LogOperation("Requesting BPF for %s", i->ifa_name);
+				i->BPF_fd = -1;
+				mDNSRequestBPF();
+				}
+			}
+
 #endif APPLE_OSX_mDNSResponder
 
 	uDNS_SetupDNSConfig(m);
