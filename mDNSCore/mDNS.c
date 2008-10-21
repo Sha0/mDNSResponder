@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.820  2008/10/21 01:11:11  cheshire
+Added mDNSCoreReceiveRawPacket for handling raw packets received by platform layer
+
 Revision 1.819  2008/10/20 22:16:27  cheshire
 Updated comments; increased cache shedding threshold from 3000 to 4000
 
@@ -7526,6 +7529,100 @@ mDNSexport mDNSOpaque16 mDNS_NewMessageID(mDNS * const m)
 #pragma mark -
 #pragma mark - Sleep Proxy Server
 #endif
+
+mDNSlocal mDNSu32 MakeReverseMappingDomainName(domainname *const x, const mDNSu8 *const addrbytes)
+	{
+	char buffer[MAX_REVERSE_MAPPING_NAME_V4];
+	mDNS_snprintf(buffer, sizeof(buffer), "%d.%d.%d.%d.in-addr.arpa.", addrbytes[3], addrbytes[2], addrbytes[1], addrbytes[0]);
+	MakeDomainNameFromDNSNameString(x, buffer);
+	return DomainNameHashValue(x);
+	}
+
+mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, const mDNSu8 *const end, const mDNSInterfaceID InterfaceID)
+	{
+	if (end >= p+42 &&
+		p[12] == 0x08 && p[13] == 0x06 &&	// Ethertype == ARP
+		p[14] == 0x00 && p[15] == 0x01 &&	// Hardware address space; Ethernet = 1
+		p[16] == 0x08 && p[17] == 0x00 &&	// Protocol address space; IP = 0x0800
+		p[18] == 0x06 && p[19] == 0x04)		// Hardware address length, Protocol address length
+		{
+		NetworkInterfaceInfo *intf;
+		for (intf = m->HostInterfaces; intf; intf = intf->next) if (intf->InterfaceID == InterfaceID) break;
+		if (!intf) return;
+		// Check to see if Sender MAC address is our own MAC address
+		if (p[22] != intf->MAC.b[0] || p[23] != intf->MAC.b[1] || p[24] != intf->MAC.b[2] ||
+			p[25] != intf->MAC.b[3] || p[26] != intf->MAC.b[4] || p[27] != intf->MAC.b[5])
+			{
+			AuthRecord *rr;
+			domainname x;
+			const mDNSu32 namehash = MakeReverseMappingDomainName(&x, p+28);	// Check for records for Sender IP address
+			mDNS_Lock(m);
+			for (rr = m->ResourceRecords; rr; rr=rr->next)
+				if (rr->resrec.InterfaceID == InterfaceID &&
+					rr->resrec.rrtype == kDNSType_MAC && rr->WakeUp.l[0] &&
+					rr->resrec.namehash == namehash && SameDomainName(&x, rr->resrec.name))
+					{
+					rr->AnnounceCount = 0;
+					// If the sender hardware address is not the sleeping machine, then this is a conflct,
+					// and we need to wake the sleeping machine to handle it.
+					// If the sender hardware address is the sleeping machine, then this signals that
+					// the machine has awoken, and we need to clear any records we were holding for it
+					// We do byte-wise compare instead of casting to longs,
+					// to avoid problems on CPUs that don't allow misaligned transfers
+					if (rr->WakeUp.b[0] != p[22] || rr->WakeUp.b[1] != p[23] || rr->WakeUp.b[2] != p[24] ||
+						rr->WakeUp.b[3] != p[25] || rr->WakeUp.b[4] != p[26] || rr->WakeUp.b[5] != p[27])
+						{
+						LogOperation("Received Conflicting ARP -- waking %.6a %s", &rr->WakeUp, ARDisplayString(m, rr));
+						SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp);
+						}
+					else
+						{
+						mDNSEthAddr w = rr->WakeUp;
+						LogOperation("Received ARP from owner -- removing %.6a %s", &rr->WakeUp, ARDisplayString(m, rr));
+						m->CurrentRecord = m->ResourceRecords;
+						while (m->CurrentRecord)
+							{
+							rr = m->CurrentRecord;
+							if (mDNSSameEthAddress(&w, &rr->WakeUp))
+								{
+								LogOperation("Removing %.6a %s", &rr->WakeUp, ARDisplayString(m, rr));
+								mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
+								}
+							// Mustn't advance m->CurrentRecord until *after* mDNS_Deregister_internal,
+							// because the list may have been changed in that call.
+							if (m->CurrentRecord == rr) // If m->CurrentRecord was not advanced for us, do it now
+								m->CurrentRecord = rr->next;
+							}
+						// We may have modified our ResourceRecords list, so reset rr back to the start and scan again
+						rr = m->ResourceRecords;
+						}
+					}
+			mDNS_Unlock(m);
+			}
+		else
+			LogOperation("Ignoring ARP from self for %.4a", p+38);
+		}
+	else if (end >= p+34 && p[12] == 0x08 && p[13] == 0x00)		// Ethertype == IP
+		{
+		AuthRecord *rr;
+		domainname x;
+		const mDNSu32 namehash = MakeReverseMappingDomainName(&x, p+30);
+
+		LogOperation("Got %d-byte IP from %-15.4a to %-15.4a", end-p, p+14 + 12, p+14 + 16);
+
+		mDNS_Lock(m);
+		for (rr = m->ResourceRecords; rr; rr=rr->next)
+			if (rr->resrec.InterfaceID == InterfaceID &&
+				rr->resrec.rrtype == kDNSType_MAC && rr->WakeUp.l[0] &&
+				rr->resrec.namehash == namehash && SameDomainName(&x, rr->resrec.name))
+				{
+				rr->AnnounceCount = 0;
+				LogOperation("Received IP -- waking host at %p %.6a for %s", rr->resrec.InterfaceID, &rr->WakeUp, ARDisplayString(m, rr));
+				SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp);
+				}
+		mDNS_Unlock(m);
+		}
+	}
 
 mDNSlocal void SleepProxyServerCallback(mDNS *const m, ServiceRecordSet *const srs, mStatus result)
 	{
