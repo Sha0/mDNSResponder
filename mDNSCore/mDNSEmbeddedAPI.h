@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.497  2008/10/21 00:51:11  cheshire
+Added declaration of mDNSPlatformSetBPF(), used by uds_daemon.c to pass BPF fd to mDNSMacOSX.c
+
 Revision 1.496  2008/10/16 22:38:52  cheshire
 Added declaration of mDNSCoreReceiveRawPacket()
 
@@ -2795,6 +2798,7 @@ extern long       mDNSPlatformReadTCP(TCPSocket *sock, void *buf, unsigned long 
 extern long       mDNSPlatformWriteTCP(TCPSocket *sock, const char *msg, unsigned long len);
 extern UDPSocket *mDNSPlatformUDPSocket(mDNS *const m, const mDNSIPPort requestedport);
 extern void       mDNSPlatformUDPClose(UDPSocket *sock);
+extern void       mDNSPlatformSetBPF(mDNS *const m, int fd);
 extern void       mDNSPlatformSendRawPacket(const void *const msg, const mDNSu8 *const end, mDNSInterfaceID InterfaceID);
 extern void       mDNSPlatformSourceAddrForDest(mDNSAddr *const src, const mDNSAddr *const dst);
 
