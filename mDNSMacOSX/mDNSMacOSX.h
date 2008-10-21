@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.85  2008/10/21 00:12:00  cheshire
+Added BPF-related fields in NetworkInterfaceInfoOSX_struct
+
 Revision 1.84  2008/10/14 20:20:44  cheshire
 Increase sizecheck limits to account for DNSQuestions added to NetworkInterfaceInfo_struct
 
@@ -172,6 +175,7 @@ struct NetworkInterfaceInfoOSX_struct
 	{
 	NetworkInterfaceInfo     ifinfo;			// MUST be the first element in this structure
 	NetworkInterfaceInfoOSX *next;
+	mDNS                    *m;
 	mDNSu8                   Exists;			// 1 = currently exists in getifaddrs list; 0 = doesn't
 												// 2 = exists, but McastTxRx state changed
 	mDNSu8                   Flashing;			// Set if interface appeared for less than 60 seconds and then vanished
@@ -187,6 +191,8 @@ struct NetworkInterfaceInfoOSX_struct
 	mDNSu32                  scope_id;			// interface index / IPv6 scope ID
 	mDNSEthAddr              BSSID;				// BSSID of 802.11 base station, if applicable
 	u_short                  sa_family;
+	int                      BPF_fd;
+	u_int                    BPF_len;
 	};
 
 struct mDNS_PlatformSupport_struct
