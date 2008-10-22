@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.501  2008/10/22 22:22:27  cheshire
+Added packet structure definitions
+
 Revision 1.500  2008/10/22 19:55:35  cheshire
 Miscellaneous fixes; renamed FindFirstAnswerInCache to FindSPSInCache
 
@@ -1141,6 +1144,67 @@ typedef struct tcpInfo_t
 	unsigned long     nread;
 	int               numReplies;
 	} tcpInfo_t;
+
+// ***************************************************************************
+#if 0
+#pragma mark -
+#pragma mark - Other Packet Format Structures
+#endif
+
+typedef packedstruct
+	{
+	mDNSEthAddr  dst;
+	mDNSEthAddr  src;
+	mDNSOpaque16 ethertype;
+	} EthernetHeader;
+
+typedef packedstruct
+	{
+	mDNSOpaque16 hrd;
+	mDNSOpaque16 pro;
+	mDNSu8       hln;
+	mDNSu8       pln;
+	mDNSOpaque16 op;
+	mDNSEthAddr  sha;
+	mDNSv4Addr   spa;
+	mDNSEthAddr  tha;
+	mDNSv4Addr   tpa;
+	} ARP_EthIP;
+
+typedef packedstruct
+	{
+	mDNSu8       vlen;
+	mDNSu8       tos;
+	mDNSu16      totlen;
+	mDNSOpaque16 id;
+	mDNSOpaque16 flagsfrags;
+	mDNSu8       ttl;
+	mDNSu8       protocol;
+	mDNSu16      checksum;
+	mDNSv4Addr   src;
+	mDNSv4Addr   dst;
+	} IPHeader;
+
+typedef packedstruct
+	{
+	mDNSOpaque16 src;
+	mDNSOpaque16 dst;
+	mDNSu16      len; 
+	mDNSu16      checksum;
+	} UDPHeader;
+
+typedef packedstruct
+	{
+	mDNSOpaque16 src;
+	mDNSOpaque16 dst;
+	mDNSu32      seq;
+	mDNSu32      ack;
+	mDNSu8       offset; 
+	mDNSu8       flags; 
+	mDNSu16      window;
+	mDNSu16      checksum;
+	mDNSu16      urgent;
+	} TCPHeader;
 
 // ***************************************************************************
 #if 0
