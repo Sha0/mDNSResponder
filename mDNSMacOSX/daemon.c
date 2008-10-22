@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.376  2008/10/22 01:42:39  cheshire
+Before allowing sleep, delay until NetWakeResolve queries have completed
+
 Revision 1.375  2008/10/20 22:31:31  cheshire
 Instead of requesting a single BPF descriptor via mDNSRequestBPF(), call mDNSMacOSXNetworkChanged()
 to signal that UDS is now available to handle BPF requests, and let it work out what it needs
@@ -2455,7 +2458,20 @@ mDNSlocal mDNSBool ReadyForSleep(mDNS *m)
 	for (q = m->Questions; q; q = q->next)
 		if (!mDNSOpaque16IsZero(q->TargetQID) && q->LongLived && q->ReqLease == 0 && q->tcp) return(mDNSfalse);
 
-	// 2. Scan list of registered records
+	// 2. Scan list of interfaces
+
+	NetworkInterfaceInfo *intf = GetFirstActiveInterface(m->HostInterfaces);
+	while (intf)
+		{
+		if (intf->NetWake && intf->NetWakeResolve.ThisQInterval >= 0)
+			{
+			LogOperation("ReadyForSleep waiting for %##s (%s)", intf->NetWakeResolve.qname.c, DNSTypeName(intf->NetWakeResolve.qtype));
+			return(mDNSfalse);
+			}
+		intf = GetFirstActiveInterface(intf->next);
+		}
+
+	// 3. Scan list of registered records
 	AuthRecord *rr;
 	for (rr = m->ResourceRecords; rr; rr = rr->next)
 		{
@@ -2469,7 +2485,7 @@ mDNSlocal mDNSBool ReadyForSleep(mDNS *m)
 			}
 		}
 
-	// 2. Scan list of registered services
+	// 4. Scan list of registered services
 	ServiceRecordSet *srs;
 	for (srs = m->ServiceRegistrations; srs; srs = srs->uDNS_next)
 		if (srs->state == regState_NoTarget && srs->tcp) return(mDNSfalse);
