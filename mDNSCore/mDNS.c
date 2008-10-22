@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.825  2008/10/22 22:31:53  cheshire
+Log SYN/FIN/RST bits from TCP header, and don't wake for FIN/RST
+
 Revision 1.824  2008/10/22 20:00:31  cheshire
 If we ourselves go to sleep, stop advertising sleep proxy service, then re-advertise after we wake up
 
@@ -7590,16 +7593,19 @@ mDNSlocal mDNSu32 MakeReverseMappingDomainName(domainname *const x, const mDNSu8
 
 mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, const mDNSu8 *const end, const mDNSInterfaceID InterfaceID)
 	{
-	if (end >= p+42 &&
-		p[12] == 0x08 && p[13] == 0x06 &&	// Ethertype == ARP
-		p[14] == 0x00 && p[15] == 0x01 &&	// Hardware address space; Ethernet = 1
-		p[16] == 0x08 && p[17] == 0x00 &&	// Protocol address space; IP = 0x0800
-		p[18] == 0x06 && p[19] == 0x04)		// Hardware address length, Protocol address length
+	static const mDNSOpaque16 Ethertype_IP = { { 0x08, 0x00 } };
+	static const mDNSOpaque32 ARP_EthIP_h0 = { { 0x08, 0x06, 0x00, 0x01 } };	// Ethertype (ARP = 0x0806), Hardware address space (Ethernet = 1)
+	static const mDNSOpaque32 ARP_EthIP_h1 = { { 0x08, 0x00, 0x06, 0x04 } };	// Protocol address space (IP = 0x0800), hlen, plen
+	static const mDNSOpaque16 ARP_op_request = { { 0, 1 } };
+	const EthernetHeader *const eth = (const EthernetHeader *)p;
+	const ARP_EthIP      *const arp = (const ARP_EthIP      *)(eth+1);
+	const IPHeader       *const ip  = (const IPHeader       *)(eth+1);
+	if (end >= p+42 && *(mDNSu32*)(p+12) == ARP_EthIP_h0.NotAnInteger && *(mDNSu32*)(p+16) == ARP_EthIP_h1.NotAnInteger)
 		{
 		AuthRecord *rr;
 		domainname x;
-		const mDNSu32 sendhash = MakeReverseMappingDomainName(&x, p+28);	// Sender IP address
-		const mDNSu32 targhash = MakeReverseMappingDomainName(&x, p+38);	// Target IP address
+		const mDNSu32 sendhash = MakeReverseMappingDomainName(&x, arp->spa.b);	// Sender IP address
+		const mDNSu32 targhash = MakeReverseMappingDomainName(&x, arp->tpa.b);	// Target IP address
 		NetworkInterfaceInfo *intf;
 		for (intf = m->HostInterfaces; intf; intf = intf->next) if (intf->InterfaceID == InterfaceID) break;
 		if (!intf) return;
@@ -7607,26 +7613,23 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 		mDNS_Lock(m);
 
 		// Answer ARP Requests for any IP address we're proxying for
-		if (p[20] == 0 && p[21] == 1)		// ARP Request
-			if (p[28] != p[38] || p[29] != p[39] || p[30] != p[40] || p[31] != p[41])	// But not an ARP Announcement
-				{
+		if (mDNSSameOpaque16(arp->op, ARP_op_request))		// ARP Request
+			if (!mDNSSameIPv4Address(arp->spa, arp->tpa))	// But not an ARP Announcement
 				for (rr = m->ResourceRecords; rr; rr=rr->next)
 					if (rr->resrec.InterfaceID == InterfaceID &&
 						rr->resrec.rrtype == kDNSType_MAC && rr->WakeUp.l[0] &&
 						rr->resrec.namehash == targhash && SameDomainName(&x, rr->resrec.name))
 						{
-						LogOperation("Answering ARP from %-15.4a for %-15.4a %s", p+28, p+38, ARDisplayString(m, rr));
-						SendARP(m, 2, rr, p+38, p+22, p+28, p+22);
+						LogOperation("Answering ARP from %-15.4a for %-15.4a %s", &arp->spa, &arp->tpa, ARDisplayString(m, rr));
+						SendARP(m, 2, rr, arp->tpa.b, arp->sha.b, arp->spa.b, arp->sha.b);
 						}
-				}
 
 		// Check for conflicting ARP packets (Sender MAC address is not our MAC address)
 		// If the sender hardware address is *not* the original owner, then this is a conflct,
 		// and we need to wake the sleeping machine to handle it.
 		// If the sender hardware address *is* the original owner, then this signals that
 		// the machine has awoken, and we need to clear any records we were holding for it
-		if (p[22] != intf->MAC.b[0] || p[23] != intf->MAC.b[1] || p[24] != intf->MAC.b[2] ||
-			p[25] != intf->MAC.b[3] || p[26] != intf->MAC.b[4] || p[27] != intf->MAC.b[5])
+		if (!mDNSSameEthAddress(&arp->sha, &intf->MAC))
 			{
 			for (rr = m->ResourceRecords; rr; rr=rr->next)
 				if (rr->resrec.InterfaceID == InterfaceID &&
@@ -7634,10 +7637,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 					rr->resrec.namehash == sendhash && SameDomainName(&x, rr->resrec.name))
 					{
 					rr->AnnounceCount = 0;
-					// We do byte-wise compare instead of casting to longs,
-					// to avoid problems on CPUs that don't allow misaligned transfers
-					if (rr->WakeUp.b[0] != p[22] || rr->WakeUp.b[1] != p[23] || rr->WakeUp.b[2] != p[24] ||
-						rr->WakeUp.b[3] != p[25] || rr->WakeUp.b[4] != p[26] || rr->WakeUp.b[5] != p[27])
+					if (!mDNSSameEthAddress(&arp->sha, &rr->WakeUp))
 						{
 						LogOperation("Received Conflicting ARP -- waking %.6a %s", &rr->WakeUp, ARDisplayString(m, rr));
 						SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp);
@@ -7666,22 +7666,31 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 					}
 			}
 		else
-			LogOperation("ARP from self for %.4a", p+38);
+			LogOperation("ARP from self for %.4a", &arp->tpa);
 
 		mDNS_Unlock(m);
 		}
-	else if (end >= p+34 && p[12] == 0x08 && p[13] == 0x00)		// Ethertype == IP
+	else if (end >= p+34 && mDNSSameOpaque16(eth->ethertype, Ethertype_IP) && (ip->flagsfrags.b[0] & 0x1F) == 0 && ip->flagsfrags.b[1] == 0)
 		{
-		const mDNSu8 *const ip    = p + 14;
-		const mDNSu8 *const trans = ip + (ip[0] & 0xF) * 4;
+		const TCPHeader *const trans = (const TCPHeader *)(p + 14 + (ip->vlen & 0xF) * 4);
 		AuthRecord *rr;
 		domainname x;
-		const mDNSu32 namehash = MakeReverseMappingDomainName(&x, ip+16);
+		const mDNSu32 namehash = MakeReverseMappingDomainName(&x, ip->dst.b);
 
-		(void)trans;	// Unused when not using LogAllOperations
-		LogOperation("Got %d-byte IP from %-15.4a to %-15.4a %d %s %d -> %d", end-p, ip+12, ip+16,
-			ip[9], ip[9] == 1 ? "(ICMP)" : ip[9] == 6 ? "(TCP) " : ip[9] == 17 ? "(UDP) " : "(?)   ",
-			(mDNSu16)trans[0] << 8 | trans[1], (mDNSu16)trans[2] << 8 | trans[3]);
+		switch (ip->protocol)
+			{
+			case  1: LogMsg("Got %d-byte ICMP from %.4a to %.4a",      end-p, &ip->src, &ip->dst); break;
+			case  6: LogMsg("Got %d-byte TCP from %.4a:%d to %.4a:%d%s%s%s%s",
+						end-p, &ip->src, mDNSVal16(trans->src), &ip->dst, mDNSVal16(trans->dst),
+						(trans->flags & 2) ? " SYN" : "",
+						(trans->flags & 1) ? " FIN" : "",
+						(trans->flags & 4) ? " RST" : "",
+						((trans->flags & 4) || (trans->flags & 3) == 1) ? " (IGNORING)" : "");
+						if ((trans->flags & 4) || (trans->flags & 3) == 1) return;
+						break;
+			case 17: LogMsg("Got %d-byte UDP from %.4a:%d to %.4a:%d", end-p, &ip->src, mDNSVal16(trans->src), &ip->dst, mDNSVal16(trans->dst)); break;
+			default: LogMsg("Got %d-byte IP packet unknown protocol %d from %.4a to %.4a", end-p, ip->protocol, &ip->src, &ip->dst); break;
+			}
 
 		mDNS_Lock(m);
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
@@ -7690,7 +7699,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 				rr->resrec.namehash == namehash && SameDomainName(&x, rr->resrec.name))
 				{
 				rr->AnnounceCount = 0;
-				LogOperation("Received IP for %.4a -- waking host at %p %.6a for %s", ip+16, rr->resrec.InterfaceID, &rr->WakeUp, ARDisplayString(m, rr));
+				LogMsg("Waking host at %.6a for %s", ip+16, &rr->WakeUp, ARDisplayString(m, rr));
 				SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp);
 				}
 		mDNS_Unlock(m);
