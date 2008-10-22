@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.402  2008/10/22 19:47:59  cheshire
+Instead of SameRData(), use equivalent IdenticalSameNameRecord() macro
+
 Revision 1.401  2008/10/22 17:20:40  cheshire
 Don't give up if setsockopt SO_NOSIGPIPE fails
 
@@ -1277,11 +1280,11 @@ mDNSexport int CountPeerRegistrations(mDNS *const m, ServiceRecordSet *const srs
 	ServiceRecordSet *s;
 
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
-		if (rr->resrec.rrtype == kDNSType_SRV && SameDomainName(rr->resrec.name, r->name) && !SameRData(&rr->resrec, r))
+		if (rr->resrec.rrtype == kDNSType_SRV && SameDomainName(rr->resrec.name, r->name) && !IdenticalSameNameRecord(&rr->resrec, r))
 			count++;
 
 	for (s = m->ServiceRegistrations; s; s = s->uDNS_next)
-		if (s->state != regState_Unregistered && SameDomainName(s->RR_SRV.resrec.name, r->name) && !SameRData(&s->RR_SRV.resrec, r))
+		if (s->state != regState_Unregistered && SameDomainName(s->RR_SRV.resrec.name, r->name) && !IdenticalSameNameRecord(&s->RR_SRV.resrec, r))
 			count++;
 
 	verbosedebugf("%d peer registrations for %##s", count, r->name->c);
