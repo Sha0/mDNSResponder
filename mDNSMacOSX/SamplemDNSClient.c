@@ -30,6 +30,9 @@
 	Change History (most recent first):
 
 $Log: SamplemDNSClient.c,v $
+Revision 1.56  2008/10/22 02:59:58  mkrochma
+<rdar://problem/6309616> Fix errors compiling mDNS tool caused by BIND8 removal
+
 Revision 1.55  2008/09/15 23:52:30  cheshire
 <rdar://problem/6218902> mDNSResponder-177 fails to compile on Linux with .desc pseudo-op
 Made __crashreporter_info__ symbol conditional, so we only use it for OS X build
@@ -64,7 +67,6 @@ Revision 1.47  2006/01/10 02:29:22  cheshire
 */
 
 #include <libc.h>
-#define BIND_8_COMPAT
 #include <arpa/nameser.h>
 #include <arpa/inet.h>
 #include <net/if.h>
@@ -260,7 +262,7 @@ static void myCFRunLoopTimerCallBack(CFRunLoopTimerRef timer, void *info)
 			switch (addtest)
 				{
 				case 0: printf("Adding Test HINFO record\n");
-						record = DNSServiceRegistrationAddRecord(client, T_HINFO, sizeof(myhinfo9), &myhinfo9[0], 120);
+						record = DNSServiceRegistrationAddRecord(client, ns_t_hinfo, sizeof(myhinfo9), &myhinfo9[0], 120);
 						addtest = 1;
 						break;
 				case 1: printf("Updating Test HINFO record\n");
@@ -289,7 +291,7 @@ static void myCFRunLoopTimerCallBack(CFRunLoopTimerRef timer, void *info)
 		case 'N':
 			{
 			printf("Adding big NULL record\n");
-			DNSServiceRegistrationAddRecord(client, T_NULL, sizeof(bigNULL), &bigNULL[0], 120);
+			DNSServiceRegistrationAddRecord(client, ns_t_null, sizeof(bigNULL), &bigNULL[0], 120);
 			CFRunLoopRemoveTimer(CFRunLoopGetCurrent(), timer, kCFRunLoopDefaultMode);
 			}
 			break;
@@ -415,7 +417,7 @@ int main(int argc, char **argv)
 					printf("Registering Service Test._testdualtxt._tcp.local.\n");
 					client = DNSServiceRegistrationCreate("", "_testdualtxt._tcp.", "", registerPort.NotAnInteger, TXT1, reg_reply, nil);
 					// use "sizeof(TXT2)-1" because we don't wan't the C compiler's null byte on the end of the string
-					record = DNSServiceRegistrationAddRecord(client, T_TXT, sizeof(TXT2)-1, TXT2, 120);
+					record = DNSServiceRegistrationAddRecord(client, ns_t_txt, sizeof(TXT2)-1, TXT2, 120);
 					break;
 					}
 
