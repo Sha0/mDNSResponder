@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.379  2008/10/22 23:23:59  cheshire
+Moved definition of OSXVers from daemon.c into mDNSMacOSX.c
+
 Revision 1.378  2008/10/22 19:55:35  cheshire
 Miscellaneous fixes; renamed FindFirstAnswerInCache to FindSPSInCache
 
@@ -487,8 +490,6 @@ static dnssd_sock_t launchd_fd = dnssd_InvalidSocket;
 
 static int restarting_via_mach_init = 0;	// Used on Jaguar/Panther when daemon is started via mach_init mechanism
 static int started_via_launchdaemon = 0;	// Indicates we're running on Tiger or later, where daemon is managed by launchd
-
-static int OSXVers;
 
 static CFRunLoopRef CFRunLoop;
 

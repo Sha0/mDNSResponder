@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.86  2008/10/22 23:23:53  cheshire
+Moved definition of OSXVers from daemon.c into mDNSMacOSX.c
+
 Revision 1.85  2008/10/21 00:12:00  cheshire
 Added BPF-related fields in NetworkInterfaceInfoOSX_struct
 
@@ -224,6 +227,7 @@ struct mDNS_PlatformSupport_struct
 	int						 WakeKQueueLoopFD;
 	};
 
+extern int OSXVers;
 extern int KQueueFD;
 
 extern void NotifyOfElusiveBug(const char *title, const char *msg);	// Both strings are UTF-8 text

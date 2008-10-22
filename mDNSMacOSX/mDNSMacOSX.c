@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.565  2008/10/22 23:23:55  cheshire
+Moved definition of OSXVers from daemon.c into mDNSMacOSX.c
+
 Revision 1.564  2008/10/22 22:08:46  cheshire
 Take IP header length into account when determining how many bytes to return from BPF filter
 
@@ -928,6 +931,7 @@ Add (commented out) trigger value for testing "mach_absolute_time went backwards
 #pragma mark - Globals
 #endif
 
+mDNSexport int OSXVers;
 mDNSexport int KQueueFD;
 
 #ifndef NO_SECURITYFRAMEWORK
@@ -2406,7 +2410,7 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 		if (scope_id == (*p)->scope_id &&
 			mDNSSameAddress(&ip, &(*p)->ifinfo.ip) &&
 			mDNSSameEthAddress(&bssid, &(*p)->BSSID) &&
-			(SystemNetWake && !(*p)->BSSID.l[0]) == (*p)->ifinfo.NetWake)
+			(OSXVers >= 10 || (SystemNetWake && !(*p)->BSSID.l[0])) == (*p)->ifinfo.NetWake)
 			{
 			debugf("AddInterfaceToList: Found existing interface %lu %.6a with address %#a at %p", scope_id, &bssid, &ip, *p);
 			(*p)->Exists = mDNStrue;
@@ -2430,7 +2434,7 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 	i->ifinfo.ifname[sizeof(i->ifinfo.ifname)-1] = 0;
 	i->ifinfo.Advertise   = m->AdvertiseLocalAddresses;
 	i->ifinfo.McastTxRx   = mDNSfalse; // For now; will be set up later at the end of UpdateInterfaceList
-	i->ifinfo.NetWake     = SystemNetWake && !bssid.l[0];
+	i->ifinfo.NetWake     = OSXVers >= 10 || (SystemNetWake && !bssid.l[0]);
 	GetMAC(&i->ifinfo.MAC, scope_id);
 
 	i->next            = mDNSNULL;
@@ -4542,9 +4546,11 @@ CF_EXPORT const CFStringRef _kCFSystemVersionProductNameKey;
 CF_EXPORT const CFStringRef _kCFSystemVersionProductVersionKey;
 CF_EXPORT const CFStringRef _kCFSystemVersionBuildVersionKey;
 
-// Major version 6 is 10.2.x (Jaguar)
-// Major version 7 is 10.3.x (Panther)
-// Major version 8 is 10.4.x (Tiger)
+// Major version  6 is 10.2.x (Jaguar)
+// Major version  7 is 10.3.x (Panther)
+// Major version  8 is 10.4.x (Tiger)
+// Major version  9 is 10.5.x (Leopard)
+// Major version 10 is 10.6.x (SnowLeopard)
 mDNSexport int mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring)
 	{
 	int major = 0, minor = 0;
