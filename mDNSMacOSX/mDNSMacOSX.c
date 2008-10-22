@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.560  2008/10/22 01:09:36  cheshire
+Fixed build warning when not using LogAllOperations
+
 Revision 1.559  2008/10/21 01:05:30  cheshire
 Added code to receive raw packets using Berkeley Packet Filter (BPF)
 
@@ -2093,6 +2096,7 @@ mDNSlocal void SetupBPF(mDNS *const m, NetworkInterfaceInfoOSX *const x)
 	else LogOperation("mDNSPlatformSetBPF: BIOCSETF(%d)", prog.bf_len);
 
 	mStatus result = udsSupportAddFDToEventLoop(x->BPF_fd, bpf_callback, x);
+	(void)result;	// Unused when not using LogAllOperations
 	LogOperation("mDNSPlatformSetBPF: udsSupportAddFDToEventLoop %d", result);
 	}
 
