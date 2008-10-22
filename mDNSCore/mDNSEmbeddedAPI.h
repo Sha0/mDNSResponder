@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.500  2008/10/22 19:55:35  cheshire
+Miscellaneous fixes; renamed FindFirstAnswerInCache to FindSPSInCache
+
 Revision 1.499  2008/10/22 17:15:47  cheshire
 Updated definitions of mDNSIPv4AddressIsZero/mDNSIPv4AddressIsOnes, etc.
 
@@ -2190,7 +2193,7 @@ struct mDNS_struct
 	mDNSu8           *UPnPRouterAddressString;	// holds both the router's address and port
 	mDNSu8           *UPnPSOAPAddressString;	// holds both address and port for SOAP messages
 
-	mDNSu8            SleepProxyServerState;	// 0 = off, 1 = running, 2 = shutting down
+	mDNSu8            SleepProxyServerState;	// 0 = off, 1 = running, 2 = shutting down, 3 = suspended during sleep
 	UDPSocket        *SleepProxyServerSocket;
 	ServiceRecordSet  SleepProxyServerSRS;
 
@@ -2883,7 +2886,7 @@ extern CacheRecord *CreateNewCacheEntry(mDNS *const m, const mDNSu32 slot, Cache
 extern void GrantCacheExtensions(mDNS *const m, DNSQuestion *q, mDNSu32 lease);
 extern void MakeNegativeCacheRecord(mDNS *const m, const domainname *const name, const mDNSu32 namehash, const mDNSu16 rrtype, const mDNSu16 rrclass, mDNSu32 ttl_seconds);
 extern void CompleteDeregistration(mDNS *const m, AuthRecord *rr);
-extern const CacheRecord *FindFirstAnswerInCache(mDNS *const m, const DNSQuestion *const q);
+extern const CacheRecord *FindSPSInCache(mDNS *const m, const DNSQuestion *const q);
 extern void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheRecord *const rr, const QC_result AddRecord);
 
 // For now this AutoTunnel stuff is specific to Mac OS X.

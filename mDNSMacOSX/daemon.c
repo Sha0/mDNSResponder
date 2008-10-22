@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.378  2008/10/22 19:55:35  cheshire
+Miscellaneous fixes; renamed FindFirstAnswerInCache to FindSPSInCache
+
 Revision 1.377  2008/10/22 17:17:22  cheshire
 Need to open and close BPF fds when turning Sleep Proxy Server on and off
 
@@ -2146,7 +2149,7 @@ mDNSlocal void INFOCallback(void)
 					i->ifinfo.Advertise ? "⊙" : " ",
 					i->ifinfo.McastTxRx ? "⇆" : " ",
 					!(i->ifinfo.InterfaceActive && i->ifinfo.NetWake) ? " " :
-						!FindFirstAnswerInCache(&mDNSStorage, &i->ifinfo.NetWakeBrowse) ? "☼" : "☀",
+						!FindSPSInCache(&mDNSStorage, &i->ifinfo.NetWakeBrowse) ? "☼" : "☀",
 					&i->ifinfo.ip);
 			}
 		}
@@ -2485,6 +2488,7 @@ mDNSlocal mDNSBool ReadyForSleep(mDNS *m)
 			}
 		else
 			{
+			if (!mDNSOpaque16IsZero(rr->id)) LogOperation("ReadyForSleep waiting for ID %d %s", mDNSVal16(rr->id), ARDisplayString(m,rr));
 			if (!mDNSOpaque16IsZero(rr->id)) return(mDNSfalse);
 			}
 		}

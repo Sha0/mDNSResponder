@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.823  2008/10/22 19:55:35  cheshire
+Miscellaneous fixes; renamed FindFirstAnswerInCache to FindSPSInCache
+
 Revision 1.822  2008/10/22 01:41:39  cheshire
 Set question->ThisQInterval back to -1 after we cancel our NetWakeResolve
 
@@ -1582,7 +1585,7 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 			for (r = m->ResourceRecords; r; r=r->next)
 				{
 				const AuthRecord *s2 = r->RRSet ? r->RRSet : r;
-				if (s1 != s2 && SameResourceRecordSignature(r, rr) && !SameRData(&r->resrec, &rr->resrec))
+				if (s1 != s2 && SameResourceRecordSignature(r, rr) && !IdenticalSameNameRecord(&r->resrec, &rr->resrec))
 					break;
 				}
 			if (r)	// If we found a conflict, set RecordType = kDNSRecordTypeDeregistering so we'll deliver the callback
@@ -2023,9 +2026,9 @@ mDNSlocal void SendARP(mDNS *const m, const mDNSu8 op, const AuthRecord *const r
 	int i;
 	mDNSu8 *ptr = m->omsg.data;
 	NetworkInterfaceInfo *intf;
-	if (!rr->resrec.InterfaceID) { LogMsg("SendARPAnnouncement: No InterfaceID specified %s", ARDisplayString(m,rr)); return; }
+	if (!rr->resrec.InterfaceID) { LogMsg("SendARP: No InterfaceID specified %s", ARDisplayString(m,rr)); return; }
 	for (intf = m->HostInterfaces; intf; intf = intf->next) if (intf->InterfaceID == rr->resrec.InterfaceID) break;
-	if (!intf) { LogMsg("SendARPAnnouncement: No interface with InterfaceID %p found %s", rr->resrec.InterfaceID, ARDisplayString(m,rr)); return; }
+	if (!intf) { LogMsg("SendARP: No interface with InterfaceID %p found %s", rr->resrec.InterfaceID, ARDisplayString(m,rr)); return; }
 
 	// 0x00 Destination address
 	for (i=0; i<6; i++) *ptr++ = dst[i];
@@ -2134,7 +2137,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 				rr->ThisAPInterval *= 2;
 				rr->LastAPTime = m->timenow;
 				if (GetIPFromName(&a, rr->resrec.name))
-					LogMsg("SendARPAnnouncement: Invalid record name %s", ARDisplayString(m,rr));
+					LogMsg("ARP Announcement: Invalid record name %s", ARDisplayString(m,rr));
 				else
 					{
 					LogOperation("ARP Announcement %##s (%s) %d", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype), rr->AnnounceCount);
@@ -2615,12 +2618,15 @@ mDNSlocal CacheRecord *CacheHasAddressTypeForName(mDNS *const m, const domainnam
 	return(cr);
 	}
 
-mDNSexport const CacheRecord *FindFirstAnswerInCache(mDNS *const m, const DNSQuestion *const q)
+mDNSexport const CacheRecord *FindSPSInCache(mDNS *const m, const DNSQuestion *const q)
 	{
 	CacheGroup *const cg = CacheGroupForName(m, HashSlot(&q->qname), q->qnamehash, &q->qname);
-	CacheRecord *cr = cg ? cg->members : mDNSNULL;
-	while (cr && !SameNameRecordAnswersQuestion(&cr->resrec, q)) cr=cr->next;
-	return(cr);
+	CacheRecord *cr;
+	for (cr = cg ? cg->members : mDNSNULL; cr; cr=cr->next)
+		if (SameNameRecordAnswersQuestion(&cr->resrec, q))
+			if (!IdenticalSameNameRecord(&cr->resrec, &m->SleepProxyServerSRS.RR_PTR.resrec))
+				return(cr);
+	return(mDNSNULL);
 	}
 
 // Only DupSuppressInfos newer than the specified 'time' are allowed to remain active
@@ -3629,7 +3635,7 @@ mDNSlocal CacheEntity *GetCacheEntity(mDNS *const m, const CacheGroup *const Pre
 		// To guard against this, if our cache grows above 512kB (approx 3168 records at 164 bytes each),
 		// and we're actively using less than 1/32 of that cache, then we purge all the unused records
 		// and recycle them, instead of allocating more memory.
-		if (m->rrcache_size > 4000 && m->rrcache_size / 32 > m->rrcache_active)
+		if (m->rrcache_size > 5000 && m->rrcache_size / 32 > m->rrcache_active)
 			LogOperation("Possible denial-of-service attack in progress: m->rrcache_size %lu; m->rrcache_active %lu",
 				m->rrcache_size, m->rrcache_active);
 		else
@@ -3984,8 +3990,9 @@ mDNSlocal void SendSPSRegistration(mDNS *const m, const NetworkInterfaceInfo *in
 	MAC.resrec.rdestimate = sizeof(mDNSEthAddr);
 
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
-		if (rr->resrec.InterfaceID == intf->InterfaceID || (!rr->resrec.InterfaceID && (rr->ForceMCast || IsLocalDomain(rr->resrec.name))))
-			rr->SendRNow = mDNSInterfaceMark;
+		if (rr->resrec.RecordType & kDNSRecordTypeActiveMask)
+			if (rr->resrec.InterfaceID == intf->InterfaceID || (!rr->resrec.InterfaceID && (rr->ForceMCast || IsLocalDomain(rr->resrec.name))))
+				rr->SendRNow = mDNSInterfaceMark;
 
 	while (1)
 		{
@@ -4066,10 +4073,10 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 			{
 			if (intf->NetWake)
 				{
-				const CacheRecord *cr = FindFirstAnswerInCache(m, &intf->NetWakeBrowse);
+				const CacheRecord *cr = FindSPSInCache(m, &intf->NetWakeBrowse);
 				if (cr)
 					{
-					LogOperation("mDNSCoreMachineSleep: %s", CRDisplayString(m, cr));
+					LogOperation("mDNSCoreMachineSleep: %s TTL %d %s", intf->ifname, cr->resrec.rroriginalttl, CRDisplayString(m, cr));
 					m->SleepState = SleepState_Transferring;
 					intf->SPSAddr.type = mDNSAddrType_None;
 					mDNS_SetupQuestion(&intf->NetWakeResolve, intf->InterfaceID, &cr->resrec.rdata->u.name, kDNSType_SRV, NetWakeResolve, intf);
@@ -4445,6 +4452,9 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 				else if (ResourceRecordIsValidAnswer(rr))
 					{
 					NumAnswersForThisQuestion++;
+					// Note: We should check here if this is a probe-type query, and if so, generate an immediate
+					// unicast answer back to the source, because timeliness in answering probes is important.
+
 					// Notes:
 					// NR_AnswerTo pointing into query packet means "answer via immediate legacy unicast" (may *also* choose to multicast)
 					// NR_AnswerTo == (mDNSu8*)~1             means "answer via delayed unicast" (to modern querier; may promote to multicast instead)
@@ -5150,7 +5160,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 				if (PacketRRMatchesSignature(&m->rec.r, rr))		// If interface, name, type (if shared record) and class match...
 					{
 					// ... check to see if type and rdata are identical
-					if (m->rec.r.resrec.rrtype == rr->resrec.rrtype && SameRData(&m->rec.r.resrec, &rr->resrec))
+					if (IdenticalSameNameRecord(&m->rec.r.resrec, &rr->resrec))
 						{
 						// If the RR in the packet is identical to ours, just check they're not trying to lower the TTL on us
 						if (m->rec.r.resrec.rroriginalttl >= rr->resrec.rroriginalttl/2 || m->SleepState)
