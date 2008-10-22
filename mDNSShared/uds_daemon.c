@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.401  2008/10/22 17:20:40  cheshire
+Don't give up if setsockopt SO_NOSIGPIPE fails
+
 Revision 1.400  2008/10/21 01:06:57  cheshire
 Pass BPF fd to mDNSMacOSX.c using mDNSPlatformSetBPF() instead of just writing it into a shared global variable
 
@@ -3518,11 +3521,7 @@ mDNSlocal void connect_callback(int fd, short filter, void *info)
 #ifdef SO_NOSIGPIPE
 	// Some environments (e.g. OS X) support turning off SIGPIPE for a socket
 	if (setsockopt(sd, SOL_SOCKET, SO_NOSIGPIPE, &optval, sizeof(optval)) < 0)
-		{
-		LogMsg("%3d: ERROR: setsockopt - SO_NOSIGPIPE - aborting client %d (%s)", sd, dnssd_errno(), dnssd_strerror(dnssd_errno()));
-		dnssd_close(sd);
-		return;
-		}
+		LogMsg("%3d: WARNING: setsockopt - SO_NOSIGPIPE %d (%s)", sd, dnssd_errno(), dnssd_strerror(dnssd_errno()));
 #endif
 
 #if defined(_WIN32)
