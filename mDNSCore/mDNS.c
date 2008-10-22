@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.826  2008/10/22 23:21:30  cheshire
+Make sure we have enough bytes before reading into the transport-level header
+
 Revision 1.825  2008/10/22 22:31:53  cheshire
 Log SYN/FIN/RST bits from TCP header, and don't wake for FIN/RST
 
@@ -7673,36 +7676,40 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 	else if (end >= p+34 && mDNSSameOpaque16(eth->ethertype, Ethertype_IP) && (ip->flagsfrags.b[0] & 0x1F) == 0 && ip->flagsfrags.b[1] == 0)
 		{
 		const TCPHeader *const trans = (const TCPHeader *)(p + 14 + (ip->vlen & 0xF) * 4);
-		AuthRecord *rr;
-		domainname x;
-		const mDNSu32 namehash = MakeReverseMappingDomainName(&x, ip->dst.b);
-
-		switch (ip->protocol)
+		const mDNSu8 *const required = (const mDNSu8 *)trans + (ip->protocol == 1 ? 4 : ip->protocol == 6 ? 20 : ip->protocol == 17 ? 8 : 0);
+		if (end >= required)
 			{
-			case  1: LogMsg("Got %d-byte ICMP from %.4a to %.4a",      end-p, &ip->src, &ip->dst); break;
-			case  6: LogMsg("Got %d-byte TCP from %.4a:%d to %.4a:%d%s%s%s%s",
-						end-p, &ip->src, mDNSVal16(trans->src), &ip->dst, mDNSVal16(trans->dst),
-						(trans->flags & 2) ? " SYN" : "",
-						(trans->flags & 1) ? " FIN" : "",
-						(trans->flags & 4) ? " RST" : "",
-						((trans->flags & 4) || (trans->flags & 3) == 1) ? " (IGNORING)" : "");
-						if ((trans->flags & 4) || (trans->flags & 3) == 1) return;
-						break;
-			case 17: LogMsg("Got %d-byte UDP from %.4a:%d to %.4a:%d", end-p, &ip->src, mDNSVal16(trans->src), &ip->dst, mDNSVal16(trans->dst)); break;
-			default: LogMsg("Got %d-byte IP packet unknown protocol %d from %.4a to %.4a", end-p, ip->protocol, &ip->src, &ip->dst); break;
-			}
-
-		mDNS_Lock(m);
-		for (rr = m->ResourceRecords; rr; rr=rr->next)
-			if (rr->resrec.InterfaceID == InterfaceID &&
-				rr->resrec.rrtype == kDNSType_MAC && rr->WakeUp.l[0] &&
-				rr->resrec.namehash == namehash && SameDomainName(&x, rr->resrec.name))
+			AuthRecord *rr;
+			domainname x;
+			const mDNSu32 namehash = MakeReverseMappingDomainName(&x, ip->dst.b);
+	
+			switch (ip->protocol)
 				{
-				rr->AnnounceCount = 0;
-				LogMsg("Waking host at %.6a for %s", ip+16, &rr->WakeUp, ARDisplayString(m, rr));
-				SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp);
+				case  1: LogMsg("Got %d-byte ICMP from %.4a to %.4a",      end-p, &ip->src, &ip->dst); break;
+				case  6: LogMsg("Got %d-byte TCP from %.4a:%d to %.4a:%d%s%s%s%s",
+							end-p, &ip->src, mDNSVal16(trans->src), &ip->dst, mDNSVal16(trans->dst),
+							(trans->flags & 2) ? " SYN" : "",
+							(trans->flags & 1) ? " FIN" : "",
+							(trans->flags & 4) ? " RST" : "",
+							((trans->flags & 4) || (trans->flags & 3) == 1) ? " (IGNORING)" : "");
+							if ((trans->flags & 4) || (trans->flags & 3) == 1) return;
+							break;
+				case 17: LogMsg("Got %d-byte UDP from %.4a:%d to %.4a:%d", end-p, &ip->src, mDNSVal16(trans->src), &ip->dst, mDNSVal16(trans->dst)); break;
+				default: LogMsg("Got %d-byte IP packet unknown protocol %d from %.4a to %.4a", end-p, ip->protocol, &ip->src, &ip->dst); break;
 				}
-		mDNS_Unlock(m);
+	
+			mDNS_Lock(m);
+			for (rr = m->ResourceRecords; rr; rr=rr->next)
+				if (rr->resrec.InterfaceID == InterfaceID &&
+					rr->resrec.rrtype == kDNSType_MAC && rr->WakeUp.l[0] &&
+					rr->resrec.namehash == namehash && SameDomainName(&x, rr->resrec.name))
+					{
+					rr->AnnounceCount = 0;
+					LogMsg("Waking host at %.6a for %s", ip+16, &rr->WakeUp, ARDisplayString(m, rr));
+					SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp);
+					}
+			mDNS_Unlock(m);
+			}
 		}
 	}
 
