@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.821  2008/10/22 01:12:53  cheshire
+Answer ARP Requests for any IP address we're proxying for
+
 Revision 1.820  2008/10/21 01:11:11  cheshire
 Added mDNSCoreReceiveRawPacket for handling raw packets received by platform layer
 
@@ -2011,19 +2014,18 @@ mDNSlocal mStatus GetLabelDecimalValue(const mDNSu8 *const src, mDNSu8 *dst)
 	return(mStatus_NoError);
 	}
 
-mDNSlocal void SendARPAnnouncement(mDNS *const m, const AuthRecord *const rr)
+mDNSlocal void SendARP(mDNS *const m, const mDNSu8 op, const AuthRecord *const rr,
+	const mDNSu8 *const spa, const mDNSu8 *const tha, const mDNSu8 *const tpa, const mDNSu8 *const dst)
 	{
 	int i;
 	mDNSu8 *ptr = m->omsg.data;
-	int skip = CountLabels(rr->resrec.name) - 6;
 	NetworkInterfaceInfo *intf;
 	if (!rr->resrec.InterfaceID) { LogMsg("SendARPAnnouncement: No InterfaceID specified %s", ARDisplayString(m,rr)); return; }
 	for (intf = m->HostInterfaces; intf; intf = intf->next) if (intf->InterfaceID == rr->resrec.InterfaceID) break;
 	if (!intf) { LogMsg("SendARPAnnouncement: No interface with InterfaceID %p found %s", rr->resrec.InterfaceID, ARDisplayString(m,rr)); return; }
-	if (skip < 0) { LogMsg("SendARPAnnouncement: Need six labels in record name %s", rr->resrec.InterfaceID, ARDisplayString(m,rr)); return; }
 
-	// 0x00 Destination address (broadcast)
-	for (i=0; i<6; i++) *ptr++ = 0xFF;
+	// 0x00 Destination address
+	for (i=0; i<6; i++) *ptr++ = dst[i];
 
 	// 0x06 Source address (we just use zero -- driver/hardware will fill in real interface address)
 	for (i=0; i<6; i++) *ptr++ = 0x0;
@@ -2036,26 +2038,33 @@ mDNSlocal void SendARPAnnouncement(mDNS *const m, const AuthRecord *const rr)
 	*ptr++ = 0x08; *ptr++ = 0x00;	// Protocol address space; IP = 0x0800
 	*ptr++ = 6;						// Hardware address length
 	*ptr++ = 4;						// Protocol address length
-	*ptr++ = 0x00; *ptr++ = 0x01;	// opcode; Request = 1
+	*ptr++ = 0x00; *ptr++ = op;		// opcode; Request = 1, Response = 2
 
 	// 0x16 Sender hardware address (our MAC address)
 	for (i=0; i<6; i++) *ptr++ = intf->MAC.b[i];
 
-	// 0x1C Sender protocol address (IP address we're capturing)
-	if (GetLabelDecimalValue(SkipLeadingLabels(rr->resrec.name, skip+3)->c, ptr++) ||
-		GetLabelDecimalValue(SkipLeadingLabels(rr->resrec.name, skip+2)->c, ptr++) ||
-		GetLabelDecimalValue(SkipLeadingLabels(rr->resrec.name, skip+1)->c, ptr++) ||
-		GetLabelDecimalValue(SkipLeadingLabels(rr->resrec.name, skip+0)->c, ptr++))
-		{ LogMsg("SendARPAnnouncement: Invalid record name %s", rr->resrec.InterfaceID, ARDisplayString(m,rr)); return; }
+	// 0x1C Sender protocol address
+	for (i=0; i<4; i++) *ptr++ = spa[i];
 
-	// 0x20 Target hardware address (broadcast)
-	for (i=0; i<6; i++) *ptr++ = 0x0;
+	// 0x20 Target hardware address
+	for (i=0; i<6; i++) *ptr++ = tha[i];
 
-	// 0x26 Target protocol address (IP address we're capturing)
-	for (i=0; i<4; i++) *ptr++ = m->omsg.data[28+i];
+	// 0x26 Target protocol address
+	for (i=0; i<4; i++) *ptr++ = tpa[i];
 
 	// 0x2A Total ARP Packet length 42 bytes
 	mDNSPlatformSendRawPacket(m->omsg.data, ptr, rr->resrec.InterfaceID);
+	}
+
+mDNSlocal mStatus GetIPFromName(mDNSv4Addr *const a, const domainname *const name)
+	{
+	int skip = CountLabels(name) - 6;
+	if (skip < 0) { LogMsg("GetIPFromName: Need six labels in record name %##s", name); return(mStatus_Invalid); }
+	if (GetLabelDecimalValue(SkipLeadingLabels(name, skip+3)->c, &a->b[0]) ||
+		GetLabelDecimalValue(SkipLeadingLabels(name, skip+2)->c, &a->b[1]) ||
+		GetLabelDecimalValue(SkipLeadingLabels(name, skip+1)->c, &a->b[2]) ||
+		GetLabelDecimalValue(SkipLeadingLabels(name, skip+0)->c, &a->b[3])) return(mStatus_Invalid);
+	return(mStatus_NoError);
 	}
 
 mDNSlocal void GrantUpdateCredit(AuthRecord *rr)
@@ -2117,11 +2126,17 @@ mDNSlocal void SendResponses(mDNS *const m)
 			{
 			if (rr->resrec.rrtype == kDNSType_MAC && rr->WakeUp.l[0])
 				{
+				mDNSv4Addr a;
 				rr->AnnounceCount--;
 				rr->ThisAPInterval *= 2;
 				rr->LastAPTime = m->timenow;
-				LogOperation("ARP Announcement %##s (%s) %d", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype), rr->AnnounceCount);
-				SendARPAnnouncement(m, rr);
+				if (GetIPFromName(&a, rr->resrec.name))
+					LogMsg("SendARPAnnouncement: Invalid record name %s", ARDisplayString(m,rr));
+				else
+					{
+					LogOperation("ARP Announcement %##s (%s) %d", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype), rr->AnnounceCount);
+					SendARP(m, 1, rr, a.b, zeroEthAddr.b, a.b, onesEthAddr.b);
+					}
 				}
 			else
 				{
@@ -7546,27 +7561,44 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 		p[16] == 0x08 && p[17] == 0x00 &&	// Protocol address space; IP = 0x0800
 		p[18] == 0x06 && p[19] == 0x04)		// Hardware address length, Protocol address length
 		{
+		AuthRecord *rr;
+		domainname x;
+		const mDNSu32 sendhash = MakeReverseMappingDomainName(&x, p+28);	// Sender IP address
+		const mDNSu32 targhash = MakeReverseMappingDomainName(&x, p+38);	// Target IP address
 		NetworkInterfaceInfo *intf;
 		for (intf = m->HostInterfaces; intf; intf = intf->next) if (intf->InterfaceID == InterfaceID) break;
 		if (!intf) return;
-		// Check to see if Sender MAC address is our own MAC address
+		
+		mDNS_Lock(m);
+
+		// Answer ARP Requests for any IP address we're proxying for
+		if (p[20] == 0 && p[21] == 1)		// ARP Request
+			if (p[28] != p[38] || p[29] != p[39] || p[30] != p[40] || p[31] != p[41])	// But not an ARP Announcement
+				{
+				for (rr = m->ResourceRecords; rr; rr=rr->next)
+					if (rr->resrec.InterfaceID == InterfaceID &&
+						rr->resrec.rrtype == kDNSType_MAC && rr->WakeUp.l[0] &&
+						rr->resrec.namehash == targhash && SameDomainName(&x, rr->resrec.name))
+						{
+						LogOperation("Answering ARP from %-15.4a for %-15.4a -- %s", p+28, p+38, ARDisplayString(m, rr));
+						SendARP(m, 2, rr, p+38, p+22, p+28, p+22);
+						}
+				}
+
+		// Check for conflicting ARP packets (Sender MAC address is not our MAC address)
+		// If the sender hardware address is *not* the original owner, then this is a conflct,
+		// and we need to wake the sleeping machine to handle it.
+		// If the sender hardware address *is* the original owner, then this signals that
+		// the machine has awoken, and we need to clear any records we were holding for it
 		if (p[22] != intf->MAC.b[0] || p[23] != intf->MAC.b[1] || p[24] != intf->MAC.b[2] ||
 			p[25] != intf->MAC.b[3] || p[26] != intf->MAC.b[4] || p[27] != intf->MAC.b[5])
 			{
-			AuthRecord *rr;
-			domainname x;
-			const mDNSu32 namehash = MakeReverseMappingDomainName(&x, p+28);	// Check for records for Sender IP address
-			mDNS_Lock(m);
 			for (rr = m->ResourceRecords; rr; rr=rr->next)
 				if (rr->resrec.InterfaceID == InterfaceID &&
 					rr->resrec.rrtype == kDNSType_MAC && rr->WakeUp.l[0] &&
-					rr->resrec.namehash == namehash && SameDomainName(&x, rr->resrec.name))
+					rr->resrec.namehash == sendhash && SameDomainName(&x, rr->resrec.name))
 					{
 					rr->AnnounceCount = 0;
-					// If the sender hardware address is not the sleeping machine, then this is a conflct,
-					// and we need to wake the sleeping machine to handle it.
-					// If the sender hardware address is the sleeping machine, then this signals that
-					// the machine has awoken, and we need to clear any records we were holding for it
 					// We do byte-wise compare instead of casting to longs,
 					// to avoid problems on CPUs that don't allow misaligned transfers
 					if (rr->WakeUp.b[0] != p[22] || rr->WakeUp.b[1] != p[23] || rr->WakeUp.b[2] != p[24] ||
@@ -7597,18 +7629,24 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 						rr = m->ResourceRecords;
 						}
 					}
-			mDNS_Unlock(m);
 			}
 		else
-			LogOperation("Ignoring ARP from self for %.4a", p+38);
+			LogOperation("ARP from self for %.4a", p+38);
+
+		mDNS_Unlock(m);
 		}
 	else if (end >= p+34 && p[12] == 0x08 && p[13] == 0x00)		// Ethertype == IP
 		{
+		const mDNSu8 *const ip    = p + 14;
+		const mDNSu8 *const trans = ip + (ip[0] & 0xF) * 4;
 		AuthRecord *rr;
 		domainname x;
-		const mDNSu32 namehash = MakeReverseMappingDomainName(&x, p+30);
+		const mDNSu32 namehash = MakeReverseMappingDomainName(&x, ip+16);
 
-		LogOperation("Got %d-byte IP from %-15.4a to %-15.4a", end-p, p+14 + 12, p+14 + 16);
+		(void)trans;	// Unused when not using LogAllOperations
+		LogOperation("Got %d-byte IP from %-15.4a to %-15.4a %d %s %d -> %d", end-p, ip+12, ip+16,
+			ip[9], ip[9] == 1 ? "(ICMP)" : ip[9] == 6 ? "(TCP) " : ip[9] == 17 ? "(UDP) " : "(?)   ",
+			(mDNSu16)trans[0] << 8 | trans[1], (mDNSu16)trans[2] << 8 | trans[3]);
 
 		mDNS_Lock(m);
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
@@ -7617,7 +7655,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 				rr->resrec.namehash == namehash && SameDomainName(&x, rr->resrec.name))
 				{
 				rr->AnnounceCount = 0;
-				LogOperation("Received IP -- waking host at %p %.6a for %s", rr->resrec.InterfaceID, &rr->WakeUp, ARDisplayString(m, rr));
+				LogOperation("Received IP for %.4a -- waking host at %p %.6a for %s", ip+16, rr->resrec.InterfaceID, &rr->WakeUp, ARDisplayString(m, rr));
 				SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp);
 				}
 		mDNS_Unlock(m);
