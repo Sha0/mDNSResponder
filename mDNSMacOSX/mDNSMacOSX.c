@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.561  2008/10/22 17:18:57  cheshire
+Need to open and close BPF fds when turning Sleep Proxy Server on and off
+
 Revision 1.560  2008/10/22 01:09:36  cheshire
 Fixed build warning when not using LogAllOperations
 
@@ -2041,14 +2044,14 @@ mDNSlocal void SetupBPF(mDNS *const m, NetworkInterfaceInfoOSX *const x)
 		};
 	struct bpf_insn *pc = &filter[8];
 
-	LogOperation("   %s MAC %.6a", x->ifinfo.ifname, &x->ifinfo.MAC);
+	LogOperation("SetupBPF: %s    MAC %.6a", x->ifinfo.ifname, &x->ifinfo.MAC);
 
 	int numv4 = 0;
 	NetworkInterfaceInfo *i;
 	for (i = m->HostInterfaces; i; i = i->next)
 		if (i->ip.type == mDNSAddrType_IPv4 && i->InterfaceID == x->ifinfo.InterfaceID)
 			{
-			LogOperation("%2d %s IP  %.4a", numv4, x->ifinfo.ifname, &i->ip.ip.v4);
+			LogOperation("SetupBPF: %s %2d IP  %.4a", x->ifinfo.ifname, numv4, &i->ip.ip.v4);
 			if (numv4 < MAX_BPF_ADDRS) numv4++;
 			}
 
@@ -2093,11 +2096,9 @@ mDNSlocal void SetupBPF(mDNS *const m, NetworkInterfaceInfoOSX *const x)
 #endif
 
 	if (ioctl(x->BPF_fd, BIOCSETF, &prog) < 0) LogMsg("mDNSPlatformSetBPF: BIOCSETF(%d) failed %d (%s)", prog.bf_len, errno, strerror(errno));
-	else LogOperation("mDNSPlatformSetBPF: BIOCSETF(%d)", prog.bf_len);
 
 	mStatus result = udsSupportAddFDToEventLoop(x->BPF_fd, bpf_callback, x);
-	(void)result;	// Unused when not using LogAllOperations
-	LogOperation("mDNSPlatformSetBPF: udsSupportAddFDToEventLoop %d", result);
+	if (result) LogMsg("mDNSPlatformSetBPF: udsSupportAddFDToEventLoop %d", result);
 	}
 
 mDNSexport void mDNSPlatformSetBPF(mDNS *const m, int fd)
@@ -2111,10 +2112,10 @@ mDNSexport void mDNSPlatformSetBPF(mDNS *const m, int fd)
 
 	struct bpf_version v;
 	if (ioctl(fd, BIOCVERSION, &v) < 0) LogMsg("mDNSPlatformSetBPF: BIOCVERSION failed %d (%s)", errno, strerror(errno));
-	else LogOperation("mDNSPlatformSetBPF: Got BPF header version %d.%d kernel version %d.%d", BPF_MAJOR_VERSION, BPF_MINOR_VERSION, v.bv_major, v.bv_minor);
+	else if (BPF_MAJOR_VERSION != v.bv_major || BPF_MINOR_VERSION != v.bv_minor)
+		LogMsg("mDNSPlatformSetBPF: BIOCVERSION header version %d.%d kernel version %d.%d", BPF_MAJOR_VERSION, BPF_MINOR_VERSION, v.bv_major, v.bv_minor);
 
 	if (ioctl(fd, BIOCGBLEN, &i->BPF_len) < 0) LogMsg("mDNSPlatformSetBPF: BIOCGBLEN failed %d (%s)", errno, strerror(errno));
-	else LogOperation("mDNSPlatformSetBPF: BIOCGBLEN %d", i->BPF_len);
 
 	if (i->BPF_len > sizeof(m->imsg))
 		{
@@ -3522,7 +3523,7 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m, mDNSs32 utc)
 				{
 				*p = i->next;
 				if (i->ifa_name) freeL("NetworkInterfaceInfoOSX name", i->ifa_name);
-				if (i->BPF_fd >= 0) close(i->BPF_fd);
+				if (i->BPF_fd >= 0) { close(i->BPF_fd); i->BPF_fd = -2; }
 				freeL("NetworkInterfaceInfoOSX", i);
 				continue;	// After deleting this object, don't want to do the "p = &i->next;" thing at the end of the loop
 				}
@@ -4295,17 +4296,22 @@ mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 
 	NetworkInterfaceInfoOSX *i;
 	for (i = m->p->InterfaceList; i; i = i->next)
-		if (i->Exists && i->ifinfo.InterfaceID == (mDNSInterfaceID)i)
+		{
+		if (!m->SleepProxyServerSocket)		// Not being Sleep Proxy Server; close any open BPF fds
 			{
-			if (i->BPF_fd >= 0)
-				SetupBPF(m, i);
-			else if (i->BPF_fd == -2)
+			if (i->BPF_fd >= 0) { close(i->BPF_fd); i->BPF_fd = -2; }
+			}
+		else								// else, we're Sleep Proxy Server; open BPF fds
+			{
+			if (i->Exists && i->ifinfo.InterfaceID == (mDNSInterfaceID)i && !(i->ifa_flags & IFF_LOOPBACK))
 				{
-				LogOperation("Requesting BPF for %s", i->ifa_name);
-				i->BPF_fd = -1;
-				mDNSRequestBPF();
+				// Even if we've previously set up our BPF filter, we need to redo it,
+				// in case we've added, removed, or changed IPv4 addresses on this interface
+				if (i->BPF_fd == -2) { LogOperation("%s requesting BPF", i->ifinfo.ifname); i->BPF_fd = -1; mDNSRequestBPF(); }
+				else if (i->BPF_fd >= 0) SetupBPF(m, i);
 				}
 			}
+		}
 
 #endif APPLE_OSX_mDNSResponder
 

@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.377  2008/10/22 17:17:22  cheshire
+Need to open and close BPF fds when turning Sleep Proxy Server on and off
+
 Revision 1.376  2008/10/22 01:42:39  cheshire
 Before allowing sleep, delay until NetWakeResolve queries have completed
 
@@ -2222,6 +2225,7 @@ mDNSlocal void InternetSharingChanged(SCPreferencesRef prefs, SCPreferencesNotif
 	mDNSBool sps = (dict && (CFGetTypeID(dict) == CFDictionaryGetTypeID()) && DictionaryIsEnabled(dict));
 	LogOperation("InternetSharingChanged: Sleep Proxy Server %s", sps ? "Starting" : "Stopping");
 	mDNSCoreBeSleepProxyServer(m, sps);
+	mDNSMacOSXNetworkChanged(m);	// Tell platform layer to open or close its BPF fds
 	}
 
 mDNSlocal mStatus WatchForInternetSharingChanges(mDNS *const m)
@@ -2831,8 +2835,6 @@ mDNSexport int main(int argc, char **argv)
 
 	status = udsserver_init(launchd_fd);
 	if (status) { LogMsg("Daemon start: udsserver_init failed"); goto exit; }
-
-	mDNSMacOSXNetworkChanged(&mDNSStorage);
 
 	mStatus err = WatchForInternetSharingChanges(&mDNSStorage);
 	if (err) { LogMsg("WatchForInternetSharingChanges failed %d", err); return(err); }
