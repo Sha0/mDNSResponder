@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.36  2008/10/22 17:22:31  cheshire
+Remove SO_NOSIGPIPE bug workaround
+
 Revision 1.35  2008/10/20 22:01:28  cheshire
 Made new Mach simpleroutine "mDNSRequestBPF"
 
@@ -234,13 +237,6 @@ kern_return_t do_mDNSRequestBPF(__unused mach_port_t port, audit_token_t token)
 	if (!hdr) { DNSServiceRefDeallocate(ref); return kDNSServiceErr_NoMemory; }
 	put_flags(0, &ptr);
 	deliver_request(hdr, ref);		// Will free hdr for us
-
-	// On 10.4 we can just close the DNSServiceRef immediately, but on 10.5 and later if we close our
-	// end of the UDS connection before the daemon has got around to processing its end (i.e., doing
-	// accept(), SO_NOSIGPIPE, O_NONBLOCK, etc.) then when the daemon tries to do its SO_NOSIGPIPE,
-	// the kernel complains with an "Invalid argument (errno 22)" error. To work around this, we sleep
-	// for 100ms to give the daemon a chance to run before we close our end of the DNSServiceRef.
-	usleep(100000);
 	DNSServiceRefDeallocate(ref);
 	return KERN_SUCCESS;
 	}
