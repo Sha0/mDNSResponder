@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.213  2008/10/22 01:01:52  cheshire
+Added onesEthAddr constant, used for sending ARP broadcasts
+
 Revision 1.212  2008/10/14 21:52:18  cheshire
 Added support for putting/getting/printing kDNSType_MAC
 
@@ -454,6 +457,7 @@ mDNSexport const mDNSEthAddr     zeroEthAddr       = { { 0 } };
 mDNSexport const mDNSv4Addr      onesIPv4Addr      = { { 255, 255, 255, 255 } };
 mDNSexport const mDNSv6Addr      onesIPv6Addr      = { { 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255 } };
 mDNSexport const mDNSAddr        zeroAddr          = { mDNSAddrType_None, {{{ 0 }}} };
+mDNSexport const mDNSEthAddr     onesEthAddr       = { { 255, 255, 255, 255, 255, 255 } };
 
 mDNSexport const mDNSInterfaceID mDNSInterface_Any       = 0;
 mDNSexport const mDNSInterfaceID mDNSInterface_LocalOnly = (mDNSInterfaceID)1;

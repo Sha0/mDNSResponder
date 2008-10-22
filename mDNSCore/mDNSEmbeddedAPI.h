@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.498  2008/10/22 01:01:52  cheshire
+Added onesEthAddr constant, used for sending ARP broadcasts
+
 Revision 1.497  2008/10/21 00:51:11  cheshire
 Added declaration of mDNSPlatformSetBPF(), used by uds_daemon.c to pass BPF fd to mDNSMacOSX.c
 
@@ -2215,6 +2218,7 @@ extern const mDNSv6Addr      zerov6Addr;
 extern const mDNSEthAddr     zeroEthAddr;
 extern const mDNSv4Addr      onesIPv4Addr;
 extern const mDNSv6Addr      onesIPv6Addr;
+extern const mDNSEthAddr     onesEthAddr;
 extern const mDNSAddr        zeroAddr;
 
 extern const mDNSInterfaceID mDNSInterface_Any;				// Zero
