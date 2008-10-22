@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.822  2008/10/22 01:41:39  cheshire
+Set question->ThisQInterval back to -1 after we cancel our NetWakeResolve
+
 Revision 1.821  2008/10/22 01:12:53  cheshire
 Answer ARP Requests for any IP address we're proxying for
 
@@ -4030,6 +4033,7 @@ mDNSlocal void NetWakeResolve(mDNS *const m, DNSQuestion *question, const Resour
 	else if (answer->rrtype == kDNSType_AAAA && mDNSv6AddressIsLinkLocal(&answer->rdata->u.ipv6))
 		{
 		mDNS_StopQuery(m, question);
+		question->ThisQInterval = -1;
 		intf->SPSAddr.type = mDNSAddrType_IPv6;
 		intf->SPSAddr.ip.v6 = answer->rdata->u.ipv6;
 		SendSPSRegistration(m, intf);
@@ -7580,7 +7584,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 						rr->resrec.rrtype == kDNSType_MAC && rr->WakeUp.l[0] &&
 						rr->resrec.namehash == targhash && SameDomainName(&x, rr->resrec.name))
 						{
-						LogOperation("Answering ARP from %-15.4a for %-15.4a -- %s", p+28, p+38, ARDisplayString(m, rr));
+						LogOperation("Answering ARP from %-15.4a for %-15.4a %s", p+28, p+38, ARDisplayString(m, rr));
 						SendARP(m, 2, rr, p+38, p+22, p+28, p+22);
 						}
 				}
@@ -7781,7 +7785,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->RandomQueryDelay        = 0;
 	m->RandomReconfirmDelay    = 0;
 	m->PktNum                  = 0;
-	m->SleepState              = mDNSfalse;
+	m->SleepState              = SleepState_Awake;
 
 	// These fields only required for mDNS Searcher...
 	m->Questions               = mDNSNULL;
