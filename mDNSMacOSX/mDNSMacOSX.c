@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.564  2008/10/22 22:08:46  cheshire
+Take IP header length into account when determining how many bytes to return from BPF filter
+
 Revision 1.563  2008/10/22 20:59:28  cheshire
 BPF filter needs to capture a few more bytes so that we can examine TCP header fields
 
@@ -2018,13 +2021,15 @@ mDNSlocal void bpf_callback(int fd, short filter, void *context)
 	{
 	(void)filter;
 	const NetworkInterfaceInfoOSX *const info = (NetworkInterfaceInfoOSX *)context;
-	const mDNSu8 *ptr = (const mDNSu8 *)&info->m->imsg;
 	ssize_t n = read(fd, &info->m->imsg, info->BPF_len);
+	const mDNSu8 *ptr = (const mDNSu8 *)&info->m->imsg;
+	const mDNSu8 *end = (const mDNSu8 *)&info->m->imsg + n;
 	debugf("%3d: bpf_callback got %d bytes on %s", fd, n, info->ifinfo.ifname);
 
-	while (ptr < (const mDNSu8 *)&info->m->imsg + n)
+	while (ptr < end)
 		{
-		const struct bpf_hdr *bh = (struct bpf_hdr *)ptr;
+		const struct bpf_hdr *bh = (const struct bpf_hdr *)ptr;
+		debugf("%3d: bpf_callback bh_caplen %4d bh_datalen %4d left %x", fd, bh->bh_caplen, bh->bh_datalen, end - (ptr + BPF_WORDALIGN(bh->bh_hdrlen + bh->bh_caplen)));
 		mDNSCoreReceiveRawPacket(info->m, ptr + bh->bh_hdrlen, ptr + bh->bh_hdrlen + bh->bh_caplen, info->ifinfo.InterfaceID);
 		ptr += BPF_WORDALIGN(bh->bh_hdrlen + bh->bh_caplen);
 		}
@@ -2032,22 +2037,29 @@ mDNSlocal void bpf_callback(int fd, short filter, void *context)
 
 mDNSlocal void SetupBPF(mDNS *const m, NetworkInterfaceInfoOSX *const x)
 	{
-	#define MAX_BPF_ADDRS 53
-	static struct bpf_insn filter[11 + MAX_BPF_ADDRS] =
+	#define MAX_BPF_ADDRS 50
+	static struct bpf_insn filter[14 + MAX_BPF_ADDRS] =
 		{
-		BPF_STMT(BPF_LD  + BPF_H   + BPF_ABS, 12),				//  0 Read Ethertype (bytes 12,13)
-		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0x0806, 0, 1),		//  1 If Ethertype == ARP goto next, else 3
-		BPF_STMT(BPF_RET + BPF_K, 42),							//  2 Return 42 byte-ARP
-		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0x0800, 0, 7),		//  3 If Ethertype == IP goto next, else 11
+		BPF_STMT(BPF_LD  + BPF_H   + BPF_ABS, 12),				// 0 Read Ethertype (bytes 12,13)
+		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0x0806, 0, 1),		// 1 If Ethertype == ARP goto next, else 3
+		BPF_STMT(BPF_RET + BPF_K, 42),							// 2 Return 42 byte-ARP
+		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0x0800, 0, 9),		// 3 If Ethertype == IP goto next, else 13 (exit)
 		// Is IP packet; check it's addressed to our MAC address
-		BPF_STMT(BPF_LD  + BPF_W   + BPF_ABS, 0),				//  4 Read Ether Dst (bytes 0,1,2,3)
-		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0x00112233, 0, 5),	//  5 If matches goto next, else 11
-		BPF_STMT(BPF_LD  + BPF_H   + BPF_ABS, 4),				//  6 Read Ether Dst (bytes 4,5)
-		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0x4455, 0, 3),		//  7 If matches goto next, else 11
+		BPF_STMT(BPF_LD  + BPF_W   + BPF_ABS, 0),				// 4 Read Ether Dst (bytes 0,1,2,3)
+		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0,      0, 7),		// 5 If matches goto next, else 13 (exit)
+		BPF_STMT(BPF_LD  + BPF_H   + BPF_ABS, 4),				// 6 Read Ether Dst (bytes 4,5)
+		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0,      0, 5),		// 7 If matches goto next, else 13 (exit)
 		// Is IP packet addressed to our MAC address; check it's not to any of our IP addresses
-		BPF_STMT(BPF_LD  + BPF_W   + BPF_ABS, 30),				//  8 Read IP Dst (bytes 30,31,32,33)
+		BPF_STMT(BPF_LD  + BPF_W   + BPF_ABS, 30),				// 8 Read IP Dst (bytes 30,31,32,33)
 		};
-	struct bpf_insn *pc = &filter[9];
+
+	struct bpf_insn *pc = &filter[9];		
+
+	static const struct bpf_insn i0 = BPF_STMT(BPF_LDX + BPF_B   + BPF_MSH, 14);	//  9 Get IP Header length (normally 20)
+	static const struct bpf_insn i1 = BPF_STMT(BPF_LD  + BPF_IMM,           34);	// 10 A = 34 (14-byte Ethernet plus 20-byte TCP)
+	static const struct bpf_insn i2 = BPF_STMT(BPF_ALU + BPF_ADD + BPF_X,    0);	// 11 A += IP Header length
+	static const struct bpf_insn i3 = BPF_STMT(BPF_RET + BPF_A, 0);					// 12 Success: Return Ethernet + IP + TCP
+	static const struct bpf_insn i4 = BPF_STMT(BPF_RET + BPF_K, 0);					// 13 No match: Return nothing
 
 	LogOperation("SetupBPF: %s MAC  %.6a", x->ifinfo.ifname, &x->ifinfo.MAC);
 
@@ -2074,8 +2086,9 @@ mDNSlocal void SetupBPF(mDNS *const m, NetworkInterfaceInfoOSX *const x)
 
 	filter[5].k  = (bpf_u_int32)x->ifinfo.MAC.b[0] << 24 | (bpf_u_int32)x->ifinfo.MAC.b[1] << 16 | (bpf_u_int32)x->ifinfo.MAC.b[2] << 8 | (bpf_u_int32)x->ifinfo.MAC.b[3];
 	filter[7].k  = (bpf_u_int32)x->ifinfo.MAC.b[4] <<  8 | (bpf_u_int32)x->ifinfo.MAC.b[5];
-	filter[5].jf = numv4 + 4;
-	filter[7].jf = numv4 + 2;
+	filter[3].jf = numv4 + 9;
+	filter[5].jf = numv4 + 7;
+	filter[7].jf = numv4 + 5;
 
 	for (i = m->HostInterfaces; i; i = i->next)
 		if (i->ip.type == mDNSAddrType_IPv4 && i->InterfaceID == x->ifinfo.InterfaceID && numv4)
@@ -2083,23 +2096,20 @@ mDNSlocal void SetupBPF(mDNS *const m, NetworkInterfaceInfoOSX *const x)
 			// See "BPF Byte-Order Note" above
 			numv4--;
 			pc->code = BPF_JMP + BPF_JEQ + BPF_K;
-			pc->jt   = numv4 + 1;
+			pc->jt   = numv4 + 4;
 			pc->jf   = 0;
 			pc->k    = (bpf_u_int32)i->ip.ip.v4.b[0] << 24 | (bpf_u_int32)i->ip.ip.v4.b[1] << 16 | (bpf_u_int32)i->ip.ip.v4.b[2] << 8 | (bpf_u_int32)i->ip.ip.v4.b[3];
 			pc++;
 			}
 
-	static const struct bpf_insn success = BPF_STMT(BPF_RET + BPF_K, 54);	// Success: Return 54 bytes
-	static const struct bpf_insn failure = BPF_STMT(BPF_RET + BPF_K, 0);	// No match: Return nothing
-	*pc++ = success;
-	*pc++ = failure;
+	*pc++ = i0; *pc++ = i1; *pc++ = i2; *pc++ = i3; *pc++ = i4;
 	struct bpf_program prog = { pc - filter, filter };
 
 #if 0
 	// For debugging BPF filter program
 	unsigned int q;
 	for (q=0; q<prog.bf_len; q++)
-		LogOperation("mDNSPlatformSetBPF: %2d { 0x%x, %d, %d, 0x%08x },", q, prog.bf_insns[q].code, prog.bf_insns[q].jt, prog.bf_insns[q].jf, prog.bf_insns[q].k);
+		LogOperation("mDNSPlatformSetBPF: %2d { 0x%02x, %d, %d, 0x%08x },", q, prog.bf_insns[q].code, prog.bf_insns[q].jt, prog.bf_insns[q].jf, prog.bf_insns[q].k);
 #endif
 
 	if (ioctl(x->BPF_fd, BIOCSETF, &prog) < 0) LogMsg("mDNSPlatformSetBPF: BIOCSETF(%d) failed %d (%s)", prog.bf_len, errno, strerror(errno));
