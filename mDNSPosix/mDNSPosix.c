@@ -30,6 +30,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.106  2008/10/22 17:19:57  cheshire
+Don't need to define BPF_fd any more (it's now per-interface, not global)
+
 Revision 1.105  2008/10/03 23:34:08  cheshire
 Added skeleton definition of mDNSPlatformSendRawPacket
 
@@ -487,7 +490,6 @@ mDNSexport void           mDNSPlatformUDPClose(UDPSocket *sock)
 	(void)sock;			// Unused
 	}
 
-mDNSexport int BPF_fd = -1;
 mDNSexport void mDNSPlatformSendRawPacket(const void *const msg, const mDNSu8 *const end, mDNSInterfaceID InterfaceID)
 	{
 	(void)msg;			// Unused
