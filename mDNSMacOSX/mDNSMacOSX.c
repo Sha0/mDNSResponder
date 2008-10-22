@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.563  2008/10/22 20:59:28  cheshire
+BPF filter needs to capture a few more bytes so that we can examine TCP header fields
+
 Revision 1.562  2008/10/22 19:48:29  cheshire
 Improved syslog messages
 
@@ -2029,21 +2032,22 @@ mDNSlocal void bpf_callback(int fd, short filter, void *context)
 
 mDNSlocal void SetupBPF(mDNS *const m, NetworkInterfaceInfoOSX *const x)
 	{
-	#define MAX_BPF_ADDRS 54
-	static struct bpf_insn filter[10 + MAX_BPF_ADDRS] =
+	#define MAX_BPF_ADDRS 53
+	static struct bpf_insn filter[11 + MAX_BPF_ADDRS] =
 		{
 		BPF_STMT(BPF_LD  + BPF_H   + BPF_ABS, 12),				//  0 Read Ethertype (bytes 12,13)
-		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0x0806, 7, 0),		//  1 If Ethertype == ARP goto 9, else next
-		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0x0800, 0, 7),		//  2 If Ethertype == IP goto next, else 10
+		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0x0806, 0, 1),		//  1 If Ethertype == ARP goto next, else 3
+		BPF_STMT(BPF_RET + BPF_K, 42),							//  2 Return 42 byte-ARP
+		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0x0800, 0, 7),		//  3 If Ethertype == IP goto next, else 11
 		// Is IP packet; check it's addressed to our MAC address
-		BPF_STMT(BPF_LD  + BPF_W   + BPF_ABS, 0),				//  3 Read Ether Dst (bytes 0,1,2,3)
-		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0x00112233, 0, 5),	//  4 If matches goto next, else 10
-		BPF_STMT(BPF_LD  + BPF_H   + BPF_ABS, 4),				//  5 Read Ether Dst (bytes 4,5)
-		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0x4455, 0, 3),		//  6 If matches goto next, else 10
-		// Is IP packet addressed to our MAC address; check if it's to any of our IP addresses
-		BPF_STMT(BPF_LD  + BPF_W   + BPF_ABS, 30),				//  7 Read IP Dst (bytes 30,31,32,33)
+		BPF_STMT(BPF_LD  + BPF_W   + BPF_ABS, 0),				//  4 Read Ether Dst (bytes 0,1,2,3)
+		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0x00112233, 0, 5),	//  5 If matches goto next, else 11
+		BPF_STMT(BPF_LD  + BPF_H   + BPF_ABS, 4),				//  6 Read Ether Dst (bytes 4,5)
+		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0x4455, 0, 3),		//  7 If matches goto next, else 11
+		// Is IP packet addressed to our MAC address; check it's not to any of our IP addresses
+		BPF_STMT(BPF_LD  + BPF_W   + BPF_ABS, 30),				//  8 Read IP Dst (bytes 30,31,32,33)
 		};
-	struct bpf_insn *pc = &filter[8];
+	struct bpf_insn *pc = &filter[9];
 
 	LogOperation("SetupBPF: %s MAC  %.6a", x->ifinfo.ifname, &x->ifinfo.MAC);
 
@@ -2059,17 +2063,19 @@ mDNSlocal void SetupBPF(mDNS *const m, NetworkInterfaceInfoOSX *const x)
 	// BPF Byte-Order Note
 	// The BPF API designers apparently thought that programmers would not be smart enough to use htons
 	// and htonl correctly to convert numeric values to network byte order on little-endian machines,
-	// so instead they chose to make the API implicitly byte-swap ALL values, even literal byte strings
+	// so instead they chose to make the API implicitly byte-swap *ALL* values, even literal byte strings
 	// that shouldn't be byte-swapped, like ASCII text, Ethernet addresses, IP addresses, etc.
 	// As a result, if we put Ethernet addresses and IP addresses in the right byte order, the BPF API
-	// will byte-swap and make them backwards, and then our filter won't work. So, we have to arrange that on
-	// little-endian machines we deliberately put addresses in memory with the bytes backwards, so that when
-	// the BPF API goes through and swaps them all, they end up back as they should be, and the filter works.
+	// will byte-swap and make them backwards, and then our filter won't work. So, we have to arrange
+	// that on little-endian machines we deliberately put addresses in memory with the bytes backwards,
+	// so that when the BPF API goes through and swaps them all, they end up back as they should be.
+	// In summary, if we byte-swap all the non-numeric fields that shouldn't be swapped, and we *don't*
+	// swap any of the numeric values that *should* be byte-swapped, then the filter will work correctly.
 
-	filter[4].k  = (bpf_u_int32)x->ifinfo.MAC.b[0] << 24 | (bpf_u_int32)x->ifinfo.MAC.b[1] << 16 | (bpf_u_int32)x->ifinfo.MAC.b[2] << 8 | (bpf_u_int32)x->ifinfo.MAC.b[3];
-	filter[6].k  = (bpf_u_int32)x->ifinfo.MAC.b[4] <<  8 | (bpf_u_int32)x->ifinfo.MAC.b[5];
-	filter[4].jf = numv4 + 4;
-	filter[6].jf = numv4 + 2;
+	filter[5].k  = (bpf_u_int32)x->ifinfo.MAC.b[0] << 24 | (bpf_u_int32)x->ifinfo.MAC.b[1] << 16 | (bpf_u_int32)x->ifinfo.MAC.b[2] << 8 | (bpf_u_int32)x->ifinfo.MAC.b[3];
+	filter[7].k  = (bpf_u_int32)x->ifinfo.MAC.b[4] <<  8 | (bpf_u_int32)x->ifinfo.MAC.b[5];
+	filter[5].jf = numv4 + 4;
+	filter[7].jf = numv4 + 2;
 
 	for (i = m->HostInterfaces; i; i = i->next)
 		if (i->ip.type == mDNSAddrType_IPv4 && i->InterfaceID == x->ifinfo.InterfaceID && numv4)
@@ -2083,10 +2089,10 @@ mDNSlocal void SetupBPF(mDNS *const m, NetworkInterfaceInfoOSX *const x)
 			pc++;
 			}
 
-	static const struct bpf_insn RET42 = BPF_STMT(BPF_RET + BPF_K, 42);	// Success: Return 42 bytes
-	static const struct bpf_insn RET0  = BPF_STMT(BPF_RET + BPF_K, 0);	// No match: Return nothing
-	*pc++ = RET42;
-	*pc++ = RET0;
+	static const struct bpf_insn success = BPF_STMT(BPF_RET + BPF_K, 54);	// Success: Return 54 bytes
+	static const struct bpf_insn failure = BPF_STMT(BPF_RET + BPF_K, 0);	// No match: Return nothing
+	*pc++ = success;
+	*pc++ = failure;
 	struct bpf_program prog = { pc - filter, filter };
 
 #if 0
