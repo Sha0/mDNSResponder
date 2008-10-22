@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.824  2008/10/22 20:00:31  cheshire
+If we ourselves go to sleep, stop advertising sleep proxy service, then re-advertise after we wake up
+
 Revision 1.823  2008/10/22 19:55:35  cheshire
 Miscellaneous fixes; renamed FindFirstAnswerInCache to FindSPSInCache
 
@@ -4068,6 +4071,16 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 
 	if (sleep && !m->SleepState)
 		{
+		// If we're going to sleep, need to stop advertising that we're a Sleep Proxy Server
+		if (m->SleepProxyServerSocket)
+			{
+			mDNSu8 oldstate = m->SleepProxyServerState;
+			mDNS_DropLockBeforeCallback();		// mDNS_DeregisterService expects to be called without the lock held, so we emulate that here
+			m->SleepProxyServerState = 2;
+			if (oldstate == 1) mDNS_DeregisterService(m, &m->SleepProxyServerSRS);
+			mDNS_ReclaimLockAfterCallback();
+			}
+
 		NetworkInterfaceInfo *intf = GetFirstActiveInterface(m->HostInterfaces);
 		while (intf)
 			{
@@ -4112,6 +4125,14 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 		CacheRecord *cr;
 
 		m->SleepState = SleepState_Awake;
+
+		if (m->SleepProxyServerState == 3)
+			{
+			mDNS_DropLockBeforeCallback();		// mDNS_DeregisterService expects to be called without the lock held, so we emulate that here
+			m->SleepProxyServerState = 0;
+			mDNSCoreBeSleepProxyServer(m, (m->SleepProxyServerSocket != mDNSNULL));
+			mDNS_ReclaimLockAfterCallback();
+			}
 
 #ifndef UNICAST_DISABLED
 		// On wake, retrigger all our uDNS questions
@@ -7682,15 +7703,20 @@ mDNSlocal void SleepProxyServerCallback(mDNS *const m, ServiceRecordSet *const s
 		mDNS_RenameAndReregisterService(m, srs, mDNSNULL);
 	else if (result == mStatus_MemFree)
 		{
-		m->SleepProxyServerState = (m->SleepProxyServerSocket != mDNSNULL);
-		if (m->SleepProxyServerState)
-			mDNS_RegisterService(m, srs,
-				&m->nicelabel, (const domainname *)"\xC_sleep-proxy\x4_udp", (const domainname *)"\x5local",
-				mDNSNULL, m->SleepProxyServerSocket->port,	// Host, port
-				(mDNSu8 *)"", 1,							// TXT data, length
-				mDNSNULL, 0,								// Subtypes (none)
-				mDNSInterface_Any,							// Interface ID
-				SleepProxyServerCallback, mDNSNULL);		// Callback and context
+		if (m->SleepState)
+			m->SleepProxyServerState = 3;
+		else
+			{
+			m->SleepProxyServerState = (m->SleepProxyServerSocket != mDNSNULL);
+			if (m->SleepProxyServerState)
+				mDNS_RegisterService(m, srs,
+					&m->nicelabel, (const domainname *)"\xC_sleep-proxy\x4_udp", (const domainname *)"\x5local",
+					mDNSNULL, m->SleepProxyServerSocket->port,	// Host, port
+					(mDNSu8 *)"", 1,							// TXT data, length
+					mDNSNULL, 0,								// Subtypes (none)
+					mDNSInterface_Any,							// Interface ID
+					SleepProxyServerCallback, mDNSNULL);		// Callback and context
+			}
 		}
 	}
 
