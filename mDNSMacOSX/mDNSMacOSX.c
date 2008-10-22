@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.562  2008/10/22 19:48:29  cheshire
+Improved syslog messages
+
 Revision 1.561  2008/10/22 17:18:57  cheshire
 Need to open and close BPF fds when turning Sleep Proxy Server on and off
 
@@ -2026,8 +2029,6 @@ mDNSlocal void bpf_callback(int fd, short filter, void *context)
 
 mDNSlocal void SetupBPF(mDNS *const m, NetworkInterfaceInfoOSX *const x)
 	{
-	LogOperation("SetupBPF %s", x->ifinfo.ifname);
-
 	#define MAX_BPF_ADDRS 54
 	static struct bpf_insn filter[10 + MAX_BPF_ADDRS] =
 		{
@@ -2044,14 +2045,14 @@ mDNSlocal void SetupBPF(mDNS *const m, NetworkInterfaceInfoOSX *const x)
 		};
 	struct bpf_insn *pc = &filter[8];
 
-	LogOperation("SetupBPF: %s    MAC %.6a", x->ifinfo.ifname, &x->ifinfo.MAC);
+	LogOperation("SetupBPF: %s MAC  %.6a", x->ifinfo.ifname, &x->ifinfo.MAC);
 
 	int numv4 = 0;
 	NetworkInterfaceInfo *i;
 	for (i = m->HostInterfaces; i; i = i->next)
 		if (i->ip.type == mDNSAddrType_IPv4 && i->InterfaceID == x->ifinfo.InterfaceID)
 			{
-			LogOperation("SetupBPF: %s %2d IP  %.4a", x->ifinfo.ifname, numv4, &i->ip.ip.v4);
+			LogOperation("SetupBPF: %s IP%2d %.4a", x->ifinfo.ifname, numv4, &i->ip.ip.v4);
 			if (numv4 < MAX_BPF_ADDRS) numv4++;
 			}
 
