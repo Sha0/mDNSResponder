@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.66  2008/10/22 19:56:54  cheshire
+Removed unused SameRData() macro -- it duplicates the functionality of IdenticalSameNameRecord()
+
 Revision 1.65  2008/10/20 15:39:20  cheshire
 Group "#define PutResourceRecord ..." with related definitions
 
@@ -269,7 +272,6 @@ extern void AppendLabelSuffix(domainlabel *name, mDNSu32 val, mDNSBool RichText)
 
 extern mDNSu32 RDataHashValue(const ResourceRecord *const rr);
 extern mDNSBool SameRDataBody(const ResourceRecord *const r1, const RDataBody *const r2);
-#define SameRData(r1,r2) ((r1)->rrtype == (r2)->rrtype && (r1)->rdlength == (r2)->rdlength && (r1)->rdatahash == (r2)->rdatahash && SameRDataBody((r1), &(r2)->rdata->u))
 extern mDNSBool ResourceRecordAnswersQuestion(const ResourceRecord *const rr, const DNSQuestion *const q);
 extern mDNSBool SameNameRecordAnswersQuestion(const ResourceRecord *const rr, const DNSQuestion *const q);
 extern mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate);
