@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.499  2008/10/22 17:15:47  cheshire
+Updated definitions of mDNSIPv4AddressIsZero/mDNSIPv4AddressIsOnes, etc.
+
 Revision 1.498  2008/10/22 01:01:52  cheshire
 Added onesEthAddr constant, used for sending ARP broadcasts
 
@@ -2583,20 +2586,21 @@ extern mDNSBool mDNSv4AddrIsRFC1918(mDNSv4Addr *addr);  // returns true for RFC1
 
 #define mDNSSameIPPort(A,B)      ((A).NotAnInteger == (B).NotAnInteger)
 #define mDNSSameOpaque16(A,B)    ((A).NotAnInteger == (B).NotAnInteger)
+#define mDNSSameOpaque32(A,B)    ((A).NotAnInteger == (B).NotAnInteger)
+#define mDNSSameOpaque64(A,B)    ((A)->l[0] == (B)->l[0] && (A)->l[1] == (B)->l[1])
+
 #define mDNSSameIPv4Address(A,B) ((A).NotAnInteger == (B).NotAnInteger)
 #define mDNSSameIPv6Address(A,B) ((A).l[0] == (B).l[0] && (A).l[1] == (B).l[1] && (A).l[2] == (B).l[2] && (A).l[3] == (B).l[3])
 #define mDNSSameEthAddress(A,B)  ((A)->w[0] == (B)->w[0] && (A)->w[1] == (B)->w[1] && (A)->w[2] == (B)->w[2])
 
-#define mDNSSameOpaque64(A,B)    ((A)->l[0] == (B)->l[0] && (A)->l[1] == (B)->l[1])
-#define mDNSOpaque64IsZero(A)    ((A)->l[0] == 0 && (A)->l[1] == 0)
+#define mDNSIPPortIsZero(A)      ((A).NotAnInteger == 0)
+#define mDNSOpaque16IsZero(A)    ((A).NotAnInteger == 0)
+#define mDNSOpaque64IsZero(A)    (((A)->l[0] | (A)->l[1]) == 0)
+#define mDNSIPv4AddressIsZero(A) ((A).NotAnInteger == 0)
+#define mDNSIPv6AddressIsZero(A) (((A).l[0] | (A).l[1] | (A).l[2] | (A).l[3]) == 0)
 
-#define mDNSIPPortIsZero(A)      mDNSSameIPPort((A), zeroIPPort)
-#define mDNSOpaque16IsZero(A)    mDNSSameOpaque16((A), zeroIPPort)
-#define mDNSIPv4AddressIsZero(A) mDNSSameIPv4Address((A), zerov4Addr)
-#define mDNSIPv6AddressIsZero(A) mDNSSameIPv6Address((A), zerov6Addr)
-
-#define mDNSIPv4AddressIsOnes(A) mDNSSameIPv4Address((A), onesIPv4Addr)
-#define mDNSIPv6AddressIsOnes(A) mDNSSameIPv6Address((A), onesIPv6Addr)
+#define mDNSIPv4AddressIsOnes(A) ((A).NotAnInteger == 0xFFFFFFFF)
+#define mDNSIPv6AddressIsOnes(A) (((A).l[0] & (A).l[1] & (A).l[2] & (A).l[3]) == 0xFFFFFFFF)
 
 #define mDNSAddressIsAllDNSLinkGroup(X) (                                                            \
 	((X)->type == mDNSAddrType_IPv4 && mDNSSameIPv4Address((X)->ip.v4, AllDNSLinkGroup_v4.ip.v4)) || \
