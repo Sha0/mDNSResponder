@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.109  2008/10/23 23:06:17  cheshire
+Removed () from dnssd_errno macro definition -- it's not a function and doesn't need any arguments
+
 Revision 1.108  2008/10/23 22:33:24  cheshire
 Changed "NOTE:" to "Note:" so that BBEdit 9 stops putting those comment lines into the funtion popup menu
 
@@ -863,7 +866,7 @@ DNSServiceErrorType DNSSD_API DNSServiceProcessResult(DNSServiceRef sdRef)
 		// On error, read_all will write a message to syslog for us, so don't need to duplicate that here
 		if (read_all(sdRef->sockfd, (void *)&cbh.ipc_hdr, sizeof(cbh.ipc_hdr)) < 0)
 			{
-			if (dnssd_errno() != dnssd_EWOULDBLOCK)
+			if (dnssd_errno != dnssd_EWOULDBLOCK)
 				{
 				sdRef->ProcessReply = NULL;
 				return kDNSServiceErr_ServiceNotRunning;

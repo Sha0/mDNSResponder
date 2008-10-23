@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.404  2008/10/23 23:06:17  cheshire
+Removed () from dnssd_errno macro definition -- it's not a function and doesn't need any arguments
+
 Revision 1.403  2008/10/23 22:33:25  cheshire
 Changed "NOTE:" to "Note:" so that BBEdit 9 stops putting those comment lines into the funtion popup menu
 
@@ -957,7 +960,7 @@ mDNSexport DNameListElem *AutoRegistrationDomains;	// Domains where we automatic
 
 mDNSlocal void FatalError(char *errmsg)
 	{
-	LogMsg("%s: %s", errmsg, dnssd_strerror(dnssd_errno()));
+	LogMsg("%s: %s", errmsg, dnssd_strerror(dnssd_errno));
 	*(long*)0 = 0;	// On OS X abort() doesn't generate a crash log, but writing to zero does
 	abort();		// On platforms where writing to zero doesn't generate an exception, abort instead
 	}
@@ -973,7 +976,7 @@ mDNSlocal mDNSu32 dnssd_htonl(mDNSu32 l)
 // hack to search-replace perror's to LogMsg's
 mDNSlocal void my_perror(char *errmsg)
 	{
-	LogMsg("%s: %d (%s)", errmsg, dnssd_errno(), dnssd_strerror(dnssd_errno()));
+	LogMsg("%s: %d (%s)", errmsg, dnssd_errno, dnssd_strerror(dnssd_errno));
 	}
 
 mDNSlocal void abort_request(request_state *req)
@@ -1219,7 +1222,7 @@ mDNSlocal void send_all(dnssd_sock_t s, const char *ptr, int len)
 	// If it does fail, we don't attempt to handle this failure, but we do log it so we know something is wrong.
 	if (n < len)
 		LogMsg("ERROR: send_all(%d) wrote %d of %d errno %d (%s)",
-			s, n, len, dnssd_errno(), dnssd_strerror(dnssd_errno()));
+			s, n, len, dnssd_errno, dnssd_strerror(dnssd_errno));
 	}
 
 // ***************************************************************************
@@ -3334,9 +3337,9 @@ mDNSlocal void read_msg(request_state *req)
 #if !defined(USE_TCP_LOOPBACK)
 				struct stat sb;
 				LogMsg("%3d: read_msg: Couldn't connect to error return path socket “%s” errno %d (%s)",
-					req->sd, cliaddr.sun_path, dnssd_errno(), dnssd_strerror(dnssd_errno()));
+					req->sd, cliaddr.sun_path, dnssd_errno, dnssd_strerror(dnssd_errno));
 				if (stat(cliaddr.sun_path, &sb) < 0)
-					LogMsg("%3d: read_msg: stat failed “%s” errno %d (%s)", req->sd, cliaddr.sun_path, dnssd_errno(), dnssd_strerror(dnssd_errno()));
+					LogMsg("%3d: read_msg: stat failed “%s” errno %d (%s)", req->sd, cliaddr.sun_path, dnssd_errno, dnssd_strerror(dnssd_errno));
 				else
 					LogMsg("%3d: read_msg: file “%s” mode %o (octal) uid %d gid %d", req->sd, cliaddr.sun_path, sb.st_mode, sb.st_uid, sb.st_gid);
 #endif
@@ -3353,7 +3356,7 @@ got_errfd:
 #endif
 				{
 				LogMsg("%3d: ERROR: could not set control socket to non-blocking mode errno %d (%s)",
-					req->sd, dnssd_errno(), dnssd_strerror(dnssd_errno()));
+					req->sd, dnssd_errno, dnssd_strerror(dnssd_errno));
 				req->ts = t_error;
 				return;
 				}
@@ -3365,8 +3368,8 @@ got_errfd:
 	return;
 
 rerror:
-	if (dnssd_errno() == dnssd_EWOULDBLOCK || dnssd_errno() == dnssd_EINTR) return;
-	LogMsg("%3d: ERROR: read_msg errno %d (%s)", req->sd, dnssd_errno(), dnssd_strerror(dnssd_errno()));
+	if (dnssd_errno == dnssd_EWOULDBLOCK || dnssd_errno == dnssd_EINTR) return;
+	LogMsg("%3d: ERROR: read_msg errno %d (%s)", req->sd, dnssd_errno, dnssd_strerror(dnssd_errno));
 	req->ts = t_error;
 	}
 
@@ -3520,14 +3523,14 @@ mDNSlocal void connect_callback(int fd, short filter, void *info)
 
 	if (!dnssd_SocketValid(sd))
 		{
-		if (dnssd_errno() != dnssd_EWOULDBLOCK) my_perror("ERROR: accept");
+		if (dnssd_errno != dnssd_EWOULDBLOCK) my_perror("ERROR: accept");
 		return;
 		}
 
 #ifdef SO_NOSIGPIPE
 	// Some environments (e.g. OS X) support turning off SIGPIPE for a socket
 	if (setsockopt(sd, SOL_SOCKET, SO_NOSIGPIPE, &optval, sizeof(optval)) < 0)
-		LogMsg("%3d: WARNING: setsockopt - SO_NOSIGPIPE %d (%s)", sd, dnssd_errno(), dnssd_strerror(dnssd_errno()));
+		LogMsg("%3d: WARNING: setsockopt - SO_NOSIGPIPE %d (%s)", sd, dnssd_errno, dnssd_strerror(dnssd_errno));
 #endif
 
 #if defined(_WIN32)
@@ -3989,17 +3992,17 @@ mDNSlocal int send_msg(reply_state *rep)
 
 	if (nwriten < 0)
 		{
-		if (dnssd_errno() == dnssd_EINTR || dnssd_errno() == dnssd_EWOULDBLOCK) nwriten = 0;
+		if (dnssd_errno == dnssd_EINTR || dnssd_errno == dnssd_EWOULDBLOCK) nwriten = 0;
 		else
 			{
 #if !defined(PLATFORM_NO_EPIPE)
-			if (dnssd_errno() == EPIPE)
+			if (dnssd_errno == EPIPE)
 				return(rep->request->ts = rep->ts = t_terminated);
 			else
 #endif
 				{
 				LogMsg("send_msg ERROR: failed to write %d bytes to fd %d errno %d (%s)",
-					rep->len - rep->nwriten, rep->sd, dnssd_errno(), dnssd_strerror(dnssd_errno()));
+					rep->len - rep->nwriten, rep->sd, dnssd_errno, dnssd_strerror(dnssd_errno));
 				return(rep->ts = t_error);
 				}
 			}

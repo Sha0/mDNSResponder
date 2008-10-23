@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.42  2008/10/23 23:06:17  cheshire
+Removed () from dnssd_errno macro definition -- it's not a function and doesn't need any arguments
+
 Revision 1.41  2008/09/27 01:04:09  cheshire
 Added "send_bpf" to list of request_op_t operation codes
 
@@ -160,7 +163,7 @@ Update to APSL 2.0
 #	define dnssd_sock_t			SOCKET
 #	define dnssd_socklen_t		int
 #	define dnssd_close(sock)	closesocket(sock)
-#	define dnssd_errno()		WSAGetLastError()
+#	define dnssd_errno			WSAGetLastError()
 #	define ssize_t				int
 #	define getpid				_getpid
 #else
@@ -181,7 +184,7 @@ Update to APSL 2.0
 #	define dnssd_sock_t			int
 #	define dnssd_socklen_t		unsigned int
 #	define dnssd_close(sock)	close(sock)
-#	define dnssd_errno()		errno
+#	define dnssd_errno			errno
 #endif
 
 #if defined(USE_TCP_LOOPBACK)
