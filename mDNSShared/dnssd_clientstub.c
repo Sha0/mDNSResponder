@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.110  2008/10/23 23:38:58  cheshire
+For Windows compatibility, instead of "strerror(errno)" use "dnssd_strerror(dnssd_errno)"
+
 Revision 1.109  2008/10/23 23:06:17  cheshire
 Removed () from dnssd_errno macro definition -- it's not a function and doesn't need any arguments
 
@@ -338,8 +341,8 @@ static int write_all(dnssd_sock_t sd, char *buf, int len)
 			// Should never happen. If it does, it indicates some OS bug,
 			// or that the mDNSResponder daemon crashed (which should never happen).
 			syslog(LOG_WARNING, "dnssd_clientstub write_all(%d) failed %d/%d %d %s", sd, num_written, len,
-				(num_written < 0) ? errno           : 0,
-				(num_written < 0) ? strerror(errno) : "");
+				(num_written < 0) ? dnssd_errno                 : 0,
+				(num_written < 0) ? dnssd_strerror(dnssd_errno) : "");
 			return -1;
 			}
 		buf += num_written;
@@ -362,8 +365,8 @@ static int read_all(dnssd_sock_t sd, char *buf, int len)
 			// Should never happen. If it does, it indicates some OS bug,
 			// or that the mDNSResponder daemon crashed (which should never happen).
 			syslog(LOG_WARNING, "dnssd_clientstub read_all(%d) failed %d/%d %d %s", sd, num_read, len,
-				(num_read < 0) ? errno           : 0,
-				(num_read < 0) ? strerror(errno) : "");
+				(num_read < 0) ? dnssd_errno                 : 0,
+				(num_read < 0) ? dnssd_strerror(dnssd_errno) : "");
 			return -1;
 			}
 		buf += num_read;
@@ -408,7 +411,7 @@ static ipc_msg_hdr *create_hdr(uint32_t op, size_t *len, char **data_start, int 
 #elif defined(USE_NAMED_ERROR_RETURN_SOCKET)
 		struct timeval time;
 		if (gettimeofday(&time, NULL) < 0)
-			{ syslog(LOG_WARNING, "dnssd_clientstub create_hdr: gettimeofday failed %d %s", errno, strerror(errno)); return NULL; }
+			{ syslog(LOG_WARNING, "dnssd_clientstub create_hdr: gettimeofday failed %d %s", dnssd_errno, dnssd_strerror(dnssd_errno)); return NULL; }
 		sprintf(ctrl_path, "%s%d-%.3lx-%.6lu", CTL_PATH_PREFIX, (int)getpid(),
 			(unsigned long)(time.tv_sec & 0xFFF), (unsigned long)(time.tv_usec));
 		*len += strlen(ctrl_path) + 1;
@@ -545,14 +548,14 @@ static DNSServiceErrorType ConnectToServer(DNSServiceRef *ref, DNSServiceFlags f
 		sdr->validator = sdr->sockfd ^ ValidatorBits;
 		if (!dnssd_SocketValid(sdr->sockfd))
 			{
-			syslog(LOG_WARNING, "dnssd_clientstub ConnectToServer: socket failed %d %s", errno, strerror(errno));
+			syslog(LOG_WARNING, "dnssd_clientstub ConnectToServer: socket failed %d %s", dnssd_errno, dnssd_strerror(dnssd_errno));
 			FreeDNSServiceOp(sdr);
 			return kDNSServiceErr_NoMemory;
 			}
 		#ifdef SO_NOSIGPIPE
 		// Some environments (e.g. OS X) support turning off SIGPIPE for a socket
 		if (setsockopt(sdr->sockfd, SOL_SOCKET, SO_NOSIGPIPE, &optval, sizeof(optval)) < 0)
-			syslog(LOG_WARNING, "dnssd_clientstub ConnectToServer: SO_NOSIGPIPE failed %d %s", errno, strerror(errno));
+			syslog(LOG_WARNING, "dnssd_clientstub ConnectToServer: SO_NOSIGPIPE failed %d %s", dnssd_errno, dnssd_strerror(dnssd_errno));
 		#endif
 		#if defined(USE_TCP_LOOPBACK)
 		saddr.sin_family      = AF_INET;
@@ -653,9 +656,9 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 			{
 			dnssd_sock_t sp[2];
 			//if (pipe(sp) < 0)
-			//	syslog(LOG_WARNING, "dnssd_clientstub ERROR: pipe() failed errno %d (%s)", errno, strerror(errno));
+			//	syslog(LOG_WARNING, "dnssd_clientstub ERROR: pipe() failed errno %d (%s)", dnssd_errno, dnssd_strerror(dnssd_errno));
 			if (socketpair(AF_DNSSD, SOCK_STREAM, 0, sp) < 0)
-				syslog(LOG_WARNING, "dnssd_clientstub ERROR: socketpair() failed errno %d (%s)", errno, strerror(errno));
+				syslog(LOG_WARNING, "dnssd_clientstub ERROR: socketpair() failed errno %d (%s)", dnssd_errno, dnssd_strerror(dnssd_errno));
 			else
 				{
 				errsd    = sp[0];	// We'll read our four-byte error code from sp[0]
@@ -732,9 +735,9 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 				if (dnssd_SocketValid(listenfd))
 					syslog(LOG_WARNING, "Sending fd %d for %s", listenfd, p);
 #endif
-				if (!dnssd_SocketValid(listenfd) && errno != EBUSY)
-					syslog(LOG_WARNING, "Error opening %s %d (%s)", p, errno, strerror(errno));
-				if (dnssd_SocketValid(listenfd) || errno != EBUSY) break;
+				if (!dnssd_SocketValid(listenfd) && dnssd_errno != EBUSY)
+					syslog(LOG_WARNING, "Error opening %s %d (%s)", p, dnssd_errno, dnssd_strerror(dnssd_errno));
+				if (dnssd_SocketValid(listenfd) || dnssd_errno != EBUSY) break;
 				}
 			}
 
@@ -766,7 +769,7 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 		if (sendmsg(sdr->sockfd, &msg, 0) < 0)
 			{
 			syslog(LOG_WARNING, "dnssd_clientstub ERROR: sendmsg failed read sd=%d write sd=%d errno %d (%s)",
-				errsd, listenfd, errno, strerror(errno));
+				errsd, listenfd, dnssd_errno, dnssd_strerror(dnssd_errno));
 			err = kDNSServiceErr_Incompatible;
 			goto cleanup;
 			}
@@ -802,7 +805,7 @@ cleanup:
 #if defined(USE_NAMED_ERROR_RETURN_SOCKET)
 		// syslog(LOG_WARNING, "dnssd_clientstub deliver_request: removing UDS: %s", data);
 		if (unlink(data) != 0)
-			syslog(LOG_WARNING, "dnssd_clientstub WARNING: unlink(\"%s\") failed errno %d (%s)", data, errno, strerror(errno));
+			syslog(LOG_WARNING, "dnssd_clientstub WARNING: unlink(\"%s\") failed errno %d (%s)", data, dnssd_errno, dnssd_strerror(dnssd_errno));
 		// else syslog(LOG_WARNING, "dnssd_clientstub deliver_request: removed UDS: %s", data);
 #endif
 		}
