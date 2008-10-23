@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.406  2008/10/23 23:55:56  cheshire
+Fixed some missing "const" declarations
+
 Revision 1.405  2008/10/23 23:21:31  cheshire
 Moved definition of dnssd_strerror() to be with the definition of dnssd_errno, in dnssd_ipc.h
 
@@ -3752,8 +3755,8 @@ mDNSexport void udsserver_info(mDNS *const m)
 	mDNSs32 now = mDNS_TimeNow(m);
 	mDNSu32 CacheUsed = 0, CacheActive = 0;
 	mDNSu32 slot;
-	CacheGroup *cg;
-	CacheRecord *cr;
+	const CacheGroup *cg;
+	const CacheRecord *cr;
 
 	LogMsgNoIdent("Timenow 0x%08lX (%ld)", (mDNSu32)now, now);
 	LogMsgNoIdent("------------ Cache -------------");

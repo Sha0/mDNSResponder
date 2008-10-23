@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.829  2008/10/23 23:55:57  cheshire
+Fixed some missing "const" declarations
+
 Revision 1.828  2008/10/23 22:25:56  cheshire
 Renamed field "id" to more descriptive "updateid"
 
@@ -2625,10 +2628,10 @@ mDNSlocal void ReconfirmAntecedents(mDNS *const m, const domainname *const name,
 // we check if we have an address record for the same name. If we do have an IPv4 address for a given
 // name but not an IPv6 address, that's okay (it just means the device doesn't do IPv6) so the failure
 // to get a AAAA response is not grounds to doubt the PTR/SRV chain that lead us to that name.
-mDNSlocal CacheRecord *CacheHasAddressTypeForName(mDNS *const m, const domainname *const name, const mDNSu32 namehash)
+mDNSlocal const CacheRecord *CacheHasAddressTypeForName(mDNS *const m, const domainname *const name, const mDNSu32 namehash)
 	{
 	CacheGroup *const cg = CacheGroupForName(m, HashSlot(name), namehash, name);
-	CacheRecord *cr = cg ? cg->members : mDNSNULL;
+	const CacheRecord *cr = cg ? cg->members : mDNSNULL;
 	while (cr && !RRTypeIsAddressType(cr->resrec.rrtype)) cr=cr->next;
 	return(cr);
 	}
@@ -2636,7 +2639,7 @@ mDNSlocal CacheRecord *CacheHasAddressTypeForName(mDNS *const m, const domainnam
 mDNSexport const CacheRecord *FindSPSInCache(mDNS *const m, const DNSQuestion *const q)
 	{
 	CacheGroup *const cg = CacheGroupForName(m, HashSlot(&q->qname), q->qnamehash, &q->qname);
-	CacheRecord *cr;
+	const CacheRecord *cr;
 	for (cr = cg ? cg->members : mDNSNULL; cr; cr=cr->next)
 		if (SameNameRecordAnswersQuestion(&cr->resrec, q))
 			if (!IdenticalSameNameRecord(&cr->resrec, &m->SleepProxyServerSRS.RR_PTR.resrec))
@@ -2709,7 +2712,7 @@ mDNSlocal mDNSBool AccelerateThisQuery(mDNS *const m, DNSQuestion *q)
 		mDNSu32 forecast = (mDNSu32)DomainNameLength(&q->qname) + 4;
 		const mDNSu32 slot = HashSlot(&q->qname);
 		const CacheGroup *const cg = CacheGroupForName(m, slot, q->qnamehash, &q->qname);
-		CacheRecord *rr;
+		const CacheRecord *rr;
 		for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)				// If we have a resource record in our cache,
 			if (rr->resrec.rdlength <= SmallRecordLimit &&					// which is small enough to sensibly fit in the packet
 				SameNameRecordAnswersQuestion(&rr->resrec, q) &&			// which answers our question
@@ -3236,7 +3239,7 @@ mDNSlocal mDNSs32 CheckForSoonToExpireRecords(mDNS *const m, const domainname *c
 	const mDNSs32 start      = m->timenow - 0x10000000;
 	mDNSs32 delay = start;
 	CacheGroup *cg = CacheGroupForName(m, slot, namehash, name);
-	CacheRecord *rr;
+	const CacheRecord *rr;
 	for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
 		if (threshhold - RRExpireTime(rr) >= 0)		// If we have records about to expire within a second
 			if (delay - RRExpireTime(rr) < 0)		// then delay until after they've been deleted
@@ -4275,7 +4278,7 @@ mDNSlocal mDNSu8 *GenerateUnicastResponse(const DNSMessage *const query, const m
 // Returns 0 if there is no conflict
 // Returns +1 if there was a conflict and we won
 // Returns -1 if there was a conflict and we lost and have to rename
-mDNSlocal int CompareRData(AuthRecord *our, CacheRecord *pkt)
+mDNSlocal int CompareRData(const AuthRecord *const our, const CacheRecord *const pkt)
 	{
 	mDNSu8 ourdata[256], *ourptr = ourdata, *ourend;
 	mDNSu8 pktdata[256], *pktptr = pktdata, *pktend;
@@ -5263,7 +5266,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 
 		if (!AcceptableResponse)
 			{
-			CacheRecord *cr;
+			const CacheRecord *cr;
 			for (cr = CacheFlushRecords; cr != (CacheRecord*)1; cr = cr->NextInCFList)
 				{
 				domainname *target = GetRRDomainNameTarget(&cr->resrec);
@@ -6207,7 +6210,7 @@ mDNSexport mStatus mDNS_StopQueryWithRemoves(mDNS *const m, DNSQuestion *const q
 	status = mDNS_StopQuery_internal(m, question);
 	if (status == mStatus_NoError && !qq)
 		{
-		CacheRecord *rr;
+		const CacheRecord *rr;
 		const mDNSu32 slot = HashSlot(&question->qname);
 		CacheGroup *const cg = CacheGroupForName(m, slot, question->qnamehash, &question->qname);
 		LogOperation("Generating terminal removes for %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
