@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.37  2008/10/23 22:33:24  cheshire
+Changed "NOTE:" to "Note:" so that BBEdit 9 stops putting those comment lines into the funtion popup menu
+
 Revision 1.36  2008/04/21 18:21:22  mkrochma
 <rdar://problem/5877307> Need to free ifi_netmask
 Submitted by Igor Seleznev
@@ -178,7 +181,7 @@ First checkin
 #if defined(AF_INET6) && HAVE_IPV6 && !HAVE_LINUX
 #include <net/if_var.h>
 #include <netinet/in_var.h>
-// NOTE: netinet/in_var.h implicitly includes netinet6/in6_var.h for us
+// Note: netinet/in_var.h implicitly includes netinet6/in6_var.h for us
 #endif
 
 #if defined(AF_INET6) && HAVE_IPV6 && HAVE_LINUX

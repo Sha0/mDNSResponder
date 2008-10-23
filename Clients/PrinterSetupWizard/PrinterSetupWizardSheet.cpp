@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.36  2008/10/23 22:33:23  cheshire
+Changed "NOTE:" to "Note:" so that BBEdit 9 stops putting those comment lines into the funtion popup menu
+
 Revision 1.35  2006/08/14 23:24:09  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -279,7 +282,7 @@ exit:
 //
 // Installs a printer with Windows.
 //
-// NOTE: this works one of two ways, depending on whether
+// Note: this works one of two ways, depending on whether
 // there are drivers already installed for this printer.
 // If there are, then we can just create a port with XcvData,
 // and then call AddPrinter.  If not, we use the printui.dll

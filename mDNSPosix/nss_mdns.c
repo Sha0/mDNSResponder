@@ -1826,7 +1826,7 @@ init_config ()
 			temp_config = (config_t *) malloc (sizeof (config_t));
 			if (temp_config)
 			{
-				// NOTE: This code will leak memory if initialisation fails
+				// Note: This code will leak memory if initialisation fails
 				// repeatedly.  This should only happen in the case of a memory
 				// error, so I'm not sure if it's a meaningful problem. - AW
 				*temp_config = k_empty_config;

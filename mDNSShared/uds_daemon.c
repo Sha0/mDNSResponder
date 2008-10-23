@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.403  2008/10/23 22:33:25  cheshire
+Changed "NOTE:" to "Note:" so that BBEdit 9 stops putting those comment lines into the funtion popup menu
+
 Revision 1.402  2008/10/22 19:47:59  cheshire
 Instead of SameRData(), use equivalent IdenticalSameNameRecord() macro
 
@@ -817,7 +820,7 @@ struct request_state
 	dnssd_sock_t errsd;
 	mDNSu32 uid;
 
-	// NOTE: On a shared connection these fields in the primary structure, including hdr, are re-used
+	// Note: On a shared connection these fields in the primary structure, including hdr, are re-used
 	// for each new request. This is because, until we've read the ipc_msg_hdr to find out what the
 	// operation is, we don't know if we're going to need to allocate a new request_state or not.
 	transfer_state ts;

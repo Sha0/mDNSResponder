@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.108  2008/10/23 22:33:24  cheshire
+Changed "NOTE:" to "Note:" so that BBEdit 9 stops putting those comment lines into the funtion popup menu
+
 Revision 1.107  2008/10/20 21:50:11  cheshire
 Improved /dev/bpf error message
 
@@ -1412,7 +1415,7 @@ static void ConnectionResponse(DNSServiceOp *sdr, CallbackHeader *cbh, char *dat
 		// to find the one this response is intended for, and then call through to its ProcessReply handler
 		while (sdr && (sdr->uid.u32[0] != cbh->ipc_hdr.client_context.u32[0] || sdr->uid.u32[1] != cbh->ipc_hdr.client_context.u32[1]))
 			sdr = sdr->next;
-		// NOTE: We may sometimes not find a matching DNSServiceOp, in the case where the client has
+		// Note: We may sometimes not find a matching DNSServiceOp, in the case where the client has
 		// cancelled the subordinate DNSServiceOp, but there are still messages in the pipeline from the daemon
 		if (sdr && sdr->ProcessReply) sdr->ProcessReply(sdr, cbh, data, end);
 		// WARNING: Don't touch sdr after this -- client may have called DNSServiceRefDeallocate

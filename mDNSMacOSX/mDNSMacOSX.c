@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.566  2008/10/23 22:33:23  cheshire
+Changed "NOTE:" to "Note:" so that BBEdit 9 stops putting those comment lines into the funtion popup menu
+
 Revision 1.565  2008/10/22 23:23:55  cheshire
 Moved definition of OSXVers from daemon.c into mDNSMacOSX.c
 
@@ -1097,8 +1100,8 @@ mDNSlocal mDNSBool AddrRequiresPPPConnection(const struct sockaddr *addr)
 	return result;
 	}
 
-// NOTE: If InterfaceID is NULL, it means, "send this packet through our anonymous unicast socket"
-// NOTE: If InterfaceID is non-NULL it means, "send this packet through our port 5353 socket on the specified interface"
+// Note: If InterfaceID is NULL, it means, "send this packet through our anonymous unicast socket"
+// Note: If InterfaceID is non-NULL it means, "send this packet through our port 5353 socket on the specified interface"
 // OR send via our primary v4 unicast socket
 // UPDATE: The UDPSocket *src parameter now allows the caller to specify the source socket
 mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const msg, const mDNSu8 *const end,
@@ -1351,7 +1354,7 @@ mDNSlocal void myKQSocketCallBack(int s1, short filter, void *context)
 			return;
 			}
 
-		// NOTE: When handling multiple packets in a batch, MUST reset InterfaceID before handling each packet
+		// Note: When handling multiple packets in a batch, MUST reset InterfaceID before handling each packet
 		mDNSInterfaceID InterfaceID = mDNSNULL;
 		NetworkInterfaceInfo *intf = m->HostInterfaces;
 		while (intf && strcmp(intf->ifname, packetifname)) intf = intf->next;
@@ -1522,7 +1525,7 @@ mDNSlocal void tcpKQSocketCallback(__unused int fd, short filter, void *context)
 	mDNSBool c = !sock->connected;
 	sock->connected = mDNStrue;
 	sock->callback(sock, sock->context, c, err);
-	// NOTE: the callback may call CloseConnection here, which frees the context structure!
+	// Note: the callback may call CloseConnection here, which frees the context structure!
 	}
 
 mDNSexport int KQueueSet(int fd, u_short flags, short filter, const KQueueEntry *const entryRef)
@@ -3397,7 +3400,7 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 
 			if (!n->InterfaceID)
 				{
-				// NOTE: If n->InterfaceID is set, that means we've called mDNS_RegisterInterface() for this interface,
+				// Note: If n->InterfaceID is set, that means we've called mDNS_RegisterInterface() for this interface,
 				// so we need to make sure we call mDNS_DeregisterInterface() before disposing it.
 				// If n->InterfaceID is NOT set, then we haven't registered it and we should not try to deregister it
 				n->InterfaceID = (mDNSInterfaceID)primary;
@@ -3516,7 +3519,7 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m, mDNSs32 utc)
 				mDNS_DeregisterInterface(m, &i->ifinfo, i->Flashing && i->Occulting);
 				if (!mDNSAddressIsLinkLocal(&i->ifinfo.ip)) count++;
 				i->ifinfo.InterfaceID = mDNSNULL;
-				// NOTE: If i->ifinfo.InterfaceID is set, that means we've called mDNS_RegisterInterface() for this interface,
+				// Note: If i->ifinfo.InterfaceID is set, that means we've called mDNS_RegisterInterface() for this interface,
 				// so we need to make sure we call mDNS_DeregisterInterface() before disposing it.
 				// If i->ifinfo.InterfaceID is NOT set, then it's not registered and we should not call mDNS_DeregisterInterface() on it.
 

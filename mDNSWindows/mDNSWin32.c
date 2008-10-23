@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.134  2008/10/23 22:33:25  cheshire
+Changed "NOTE:" to "Note:" so that BBEdit 9 stops putting those comment lines into the funtion popup menu
+
 Revision 1.133  2008/10/22 17:19:57  cheshire
 Don't need to define BPF_fd any more (it's now per-interface, not global)
 
@@ -4331,7 +4334,7 @@ mDNSlocal int	getifaddrs_ce( struct ifaddrs **outAddrs )
 	// Call WSAIoctl with SIO_ADDRESS_LIST_QUERY and pass a null buffer. This call will fail, but the size needed to 
 	// for the request will be filled in. Once we know the size, allocate a buffer to hold the entire list.
 	//
-	// NOTE: Due to a bug in Windows CE, the size returned by WSAIoctl is not enough so double it as a workaround.
+	// Note: Due to a bug in Windows CE, the size returned by WSAIoctl is not enough so double it as a workaround.
 	
 	size = 0;
 	WSAIoctl( sock, SIO_ADDRESS_LIST_QUERY, NULL, 0, NULL, 0, &size, NULL, NULL );
@@ -4349,7 +4352,7 @@ mDNSlocal int	getifaddrs_ce( struct ifaddrs **outAddrs )
 	
 	// Process the raw interface list and build a linked list of interfaces.
 	//
-	// NOTE: Due to a bug in Windows CE, the iAddressCount field is always 0 so use 1 in that case.
+	// Note: Due to a bug in Windows CE, the iAddressCount field is always 0 so use 1 in that case.
 	
 	n = addressList->iAddressCount;
 	if( n == 0 )
