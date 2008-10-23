@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.405  2008/10/23 23:21:31  cheshire
+Moved definition of dnssd_strerror() to be with the definition of dnssd_errno, in dnssd_ipc.h
+
 Revision 1.404  2008/10/23 23:06:17  cheshire
 Removed () from dnssd_errno macro definition -- it's not a function and doesn't need any arguments
 
@@ -709,29 +712,7 @@ Revision 1.189  2006/01/06 00:56:31  cheshire
 
 #if defined(_WIN32)
 #include <process.h>
-#define dnssd_strerror(X) win32_strerror(X)
 #define usleep(X) Sleep(((X)+999)/1000)
-mDNSlocal char *win32_strerror(int inErrorCode)
-	{
-	static char buffer[1024];
-	DWORD       n;
-	memset(buffer, 0, sizeof(buffer));
-	n = FormatMessageA(
-			FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-			NULL,
-			(DWORD) inErrorCode,
-			MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-			buffer,
-			sizeof(buffer),
-			NULL);
-	if (n > 0)
-		{
-		// Remove any trailing CR's or LF's since some messages have them.
-		while ((n > 0) && isspace(((unsigned char *) buffer)[n - 1]))
-			buffer[--n] = '\0';
-		}
-	return buffer;
-	}
 #else
 #include <fcntl.h>
 #include <errno.h>
@@ -739,7 +720,6 @@ mDNSlocal char *win32_strerror(int inErrorCode)
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/resource.h>
-#define dnssd_strerror(X) strerror(X)
 #endif
 
 #include <stdlib.h>

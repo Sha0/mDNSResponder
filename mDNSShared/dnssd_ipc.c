@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_ipc.c,v $
+Revision 1.21  2008/10/23 23:21:31  cheshire
+Moved definition of dnssd_strerror() to be with the definition of dnssd_errno, in dnssd_ipc.h
+
 Revision 1.20  2007/07/23 22:12:53  cheshire
 <rdar://problem/5352299> Make mDNSResponder more defensive against malicious local clients
 
@@ -74,6 +77,32 @@ Update to APSL 2.0
  */
 
 #include "dnssd_ipc.h"
+
+#if defined(_WIN32)
+
+mDNSlocal char *win32_strerror(int inErrorCode)
+	{
+	static char buffer[1024];
+	DWORD       n;
+	memset(buffer, 0, sizeof(buffer));
+	n = FormatMessageA(
+			FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+			NULL,
+			(DWORD) inErrorCode,
+			MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+			buffer,
+			sizeof(buffer),
+			NULL);
+	if (n > 0)
+		{
+		// Remove any trailing CR's or LF's since some messages have them.
+		while ((n > 0) && isspace(((unsigned char *) buffer)[n - 1]))
+			buffer[--n] = '\0';
+		}
+	return buffer;
+	}
+
+#endif
 
 void put_uint32(const uint32_t l, char **ptr)
 	{

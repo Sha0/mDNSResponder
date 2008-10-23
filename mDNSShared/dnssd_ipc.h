@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.43  2008/10/23 23:21:31  cheshire
+Moved definition of dnssd_strerror() to be with the definition of dnssd_errno, in dnssd_ipc.h
+
 Revision 1.42  2008/10/23 23:06:17  cheshire
 Removed () from dnssd_errno macro definition -- it's not a function and doesn't need any arguments
 
@@ -164,6 +167,7 @@ Update to APSL 2.0
 #	define dnssd_socklen_t		int
 #	define dnssd_close(sock)	closesocket(sock)
 #	define dnssd_errno			WSAGetLastError()
+#	define dnssd_strerror(X)	win32_strerror(X)
 #	define ssize_t				int
 #	define getpid				_getpid
 #else
@@ -185,6 +189,7 @@ Update to APSL 2.0
 #	define dnssd_socklen_t		unsigned int
 #	define dnssd_close(sock)	close(sock)
 #	define dnssd_errno			errno
+#	define dnssd_strerror(X)	strerror(X)
 #endif
 
 #if defined(USE_TCP_LOOPBACK)
