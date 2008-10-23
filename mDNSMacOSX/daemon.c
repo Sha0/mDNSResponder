@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.380  2008/10/23 02:25:08  cheshire
+Added locking in InternetSharingChanged()
+
 Revision 1.379  2008/10/22 23:23:59  cheshire
 Moved definition of OSXVers from daemon.c into mDNSMacOSX.c
 
@@ -2224,12 +2227,14 @@ mDNSlocal void InternetSharingChanged(SCPreferencesRef prefs, SCPreferencesNotif
 	(void)prefs;             // Parameter not used
 	(void)notificationType;  // Parameter not used
 	mDNS *const m = (mDNS *const)context;
+	KQueueLock(m);
 	SCPreferencesSynchronize(SCPrefs);
 	CFDictionaryRef dict = SCPreferencesGetValue(SCPrefs, CFSTR("NAT"));
 	mDNSBool sps = (dict && (CFGetTypeID(dict) == CFDictionaryGetTypeID()) && DictionaryIsEnabled(dict));
 	LogOperation("InternetSharingChanged: Sleep Proxy Server %s", sps ? "Starting" : "Stopping");
 	mDNSCoreBeSleepProxyServer(m, sps);
 	mDNSMacOSXNetworkChanged(m);	// Tell platform layer to open or close its BPF fds
+	KQueueUnlock(m, "InternetSharingChanged");
 	}
 
 mDNSlocal mStatus WatchForInternetSharingChanges(mDNS *const m)
