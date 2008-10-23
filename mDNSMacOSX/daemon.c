@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.381  2008/10/23 22:25:58  cheshire
+Renamed field "id" to more descriptive "updateid"
+
 Revision 1.380  2008/10/23 02:25:08  cheshire
 Added locking in InternetSharingChanged()
 
@@ -2494,8 +2497,8 @@ mDNSlocal mDNSBool ReadyForSleep(mDNS *m)
 			}
 		else
 			{
-			if (!mDNSOpaque16IsZero(rr->id)) LogOperation("ReadyForSleep waiting for ID %d %s", mDNSVal16(rr->id), ARDisplayString(m,rr));
-			if (!mDNSOpaque16IsZero(rr->id)) return(mDNSfalse);
+			if (!mDNSOpaque16IsZero(rr->updateid)) LogOperation("ReadyForSleep waiting for ID %d %s", mDNSVal16(rr->updateid), ARDisplayString(m,rr));
+			if (!mDNSOpaque16IsZero(rr->updateid)) return(mDNSfalse);
 			}
 		}
 

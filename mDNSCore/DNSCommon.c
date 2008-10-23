@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.214  2008/10/23 22:25:55  cheshire
+Renamed field "id" to more descriptive "updateid"
+
 Revision 1.213  2008/10/22 01:01:52  cheshire
 Added onesEthAddr constant, used for sending ARP broadcasts
 
@@ -1377,7 +1380,7 @@ mDNSexport void mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mD
 	rr->uselease          = 0;
 	rr->expire            = 0;
 	rr->Private           = 0;
-	rr->id                = zeroID;
+	rr->updateid          = zeroID;
 	rr->zone.c[0]         = 0;
 	rr->UpdateServer      = zeroAddr;
 	rr->UpdatePort        = zeroIPPort;

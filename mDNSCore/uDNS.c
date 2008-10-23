@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.576  2008/10/23 22:25:57  cheshire
+Renamed field "id" to more descriptive "updateid"
+
 Revision 1.575  2008/10/20 02:07:49  mkrochma
 <rdar://problem/6296804> Remove Note: DNS Server <ip> for domain <d> registered more than once
 
@@ -3411,8 +3414,8 @@ mDNSlocal void SendRecordRegistration(mDNS *const m, AuthRecord *rr)
 		}
 
 	rr->RequireGoodbye = mDNStrue;
-	rr->id = mDNS_NewMessageID(m);
-	InitializeDNSMessage(&m->omsg.h, rr->id, UpdateReqFlags);
+	rr->updateid = mDNS_NewMessageID(m);
+	InitializeDNSMessage(&m->omsg.h, rr->updateid, UpdateReqFlags);
 
 	// set zone
 	ptr = putZone(&m->omsg, ptr, end, &rr->zone, mDNSOpaque16fromIntVal(rr->resrec.rrclass));
@@ -4036,7 +4039,7 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 			{
 			AuthRecord *rptr = m->CurrentRecord;
 			m->CurrentRecord = m->CurrentRecord->next;
-			if (AuthRecord_uDNS(rptr) && mDNSSameOpaque16(rptr->id, msg->h.id))
+			if (AuthRecord_uDNS(rptr) && mDNSSameOpaque16(rptr->updateid, msg->h.id))
 				{
 				err = checkUpdateResult(m, rptr->resrec.name, rcode, msg, end);
 				if (!err && rptr->uselease && lease)
@@ -4268,7 +4271,7 @@ mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 		return;
 		}
 
-	InitializeDNSMessage(&m->omsg.h, rr->id, UpdateReqFlags);
+	InitializeDNSMessage(&m->omsg.h, rr->updateid, UpdateReqFlags);
 
 	ptr = putZone(&m->omsg, ptr, end, &rr->zone, mDNSOpaque16fromIntVal(rr->resrec.rrclass));
 	if (ptr) ptr = putDeletionRecord(&m->omsg, ptr, &rr->resrec);

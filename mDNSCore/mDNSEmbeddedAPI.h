@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.502  2008/10/23 22:25:56  cheshire
+Renamed field "id" to more descriptive "updateid"
+
 Revision 1.501  2008/10/22 22:22:27  cheshire
 Added packet structure definitions
 
@@ -1644,7 +1647,7 @@ struct AuthRecord_struct
 	mDNSBool     uselease;		// dynamic update contains (should contain) lease option
 	mDNSs32      expire;		// expiration of lease (-1 for static)
 	mDNSBool     Private;		// If zone is private, DNS updates may have to be encrypted to prevent eavesdropping
-	mDNSOpaque16 id;			// identifier to match update request and response
+	mDNSOpaque16 updateid;		// identifier to match update request and response
 	domainname   zone;			// the zone that is updated
 	mDNSAddr     UpdateServer;	// DNS server that handles updates for this zone
 	mDNSIPPort   UpdatePort;	// port on which server accepts dynamic updates

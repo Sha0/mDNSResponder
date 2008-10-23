@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.828  2008/10/23 22:25:56  cheshire
+Renamed field "id" to more descriptive "updateid"
+
 Revision 1.827  2008/10/23 03:06:25  cheshire
 Fixed "Waking host" log message
 
@@ -1545,7 +1548,7 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	rr->uselease          = 0;
 	rr->expire            = 0;
 	rr->Private           = 0;
-	rr->id                = zeroID;
+	rr->updateid          = zeroID;
 	rr->zone.c[0]         = 0;
 	rr->UpdateServer      = zeroAddr;
 	rr->UpdatePort        = zeroIPPort;
@@ -3988,7 +3991,7 @@ mDNSlocal void PutSPSRec(mDNS *const m, mDNSu8 **p, AuthRecord *MAC, AuthRecord 
 	if (newptr)
 		{
 		newptr = PutResourceRecordTTLWithLimit(&m->omsg, newptr, &m->omsg.h.mDNS_numUpdates, &rr->resrec, rr->resrec.rroriginalttl, limit);
-		if (newptr) { rr->SendRNow = mDNSNULL; rr->id = m->omsg.h.id; *p = newptr; }
+		if (newptr) { rr->SendRNow = mDNSNULL; rr->updateid = m->omsg.h.id; *p = newptr; }
 		}
 	}
 
@@ -5620,8 +5623,8 @@ mDNSlocal void mDNSCoreReceiveUpdateR(mDNS *const m, const DNSMessage *const msg
 	if (InterfaceID)
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
 			if (rr->resrec.InterfaceID == InterfaceID || (!rr->resrec.InterfaceID && (rr->ForceMCast || IsLocalDomain(rr->resrec.name))))
-				if (mDNSSameOpaque16(rr->id, msg->h.id))
-					rr->id = zeroID;
+				if (mDNSSameOpaque16(rr->updateid, msg->h.id))
+					rr->updateid = zeroID;
 	}
 
 mDNSexport void MakeNegativeCacheRecord(mDNS *const m, const domainname *const name, const mDNSu32 namehash, const mDNSu16 rrtype, const mDNSu16 rrclass, mDNSu32 ttl_seconds)
@@ -7575,7 +7578,7 @@ mDNSexport mDNSOpaque16 mDNS_NewMessageID(mDNS * const m)
 		AuthRecord *r;
 		DNSQuestion *q;
 		id = mDNSOpaque16fromIntVal(1 + mDNSRandom(0xFFFE));
-		for (r = m->ResourceRecords; r; r=r->next) if (mDNSSameOpaque16(id, r->id       )) continue;
+		for (r = m->ResourceRecords; r; r=r->next) if (mDNSSameOpaque16(id, r->updateid )) continue;
 		for (q = m->Questions;       q; q=q->next) if (mDNSSameOpaque16(id, q->TargetQID)) continue;
 		break;
 		}
