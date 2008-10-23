@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.827  2008/10/23 03:06:25  cheshire
+Fixed "Waking host" log message
+
 Revision 1.826  2008/10/22 23:21:30  cheshire
 Make sure we have enough bytes before reading into the transport-level header
 
@@ -7705,7 +7708,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 					rr->resrec.namehash == namehash && SameDomainName(&x, rr->resrec.name))
 					{
 					rr->AnnounceCount = 0;
-					LogMsg("Waking host at %.6a for %s", ip+16, &rr->WakeUp, ARDisplayString(m, rr));
+					LogMsg("Waking host at %.6a for %s", &rr->WakeUp, ARDisplayString(m, rr));
 					SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp);
 					}
 			mDNS_Unlock(m);
