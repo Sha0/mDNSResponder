@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.215  2008/10/23 23:54:35  cheshire
+Added missing "const" in declaration
+
 Revision 1.214  2008/10/23 22:25:55  cheshire
 Renamed field "id" to more descriptive "updateid"
 
@@ -543,7 +546,7 @@ mDNSexport mDNSu32 NumCacheRecordsForInterfaceID(const mDNS *const m, mDNSInterf
 	{
 	mDNSu32 slot, used = 0;
 	CacheGroup *cg;
-	CacheRecord *rr;
+	const CacheRecord *rr;
 	FORALL_CACHERECORDS(slot, cg, rr)
 		if (rr->resrec.InterfaceID == id) used++;
 	return(used);
