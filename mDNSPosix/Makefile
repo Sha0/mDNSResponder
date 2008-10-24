@@ -31,6 +31,9 @@
 # then try typing "gmake os=xxx" instead.
 #
 # $Log: Makefile,v $
+# Revision 1.79  2008/10/24 01:59:59  mcguire
+# <rdar://problem/6257159> Build Failure: Need to stop using Jam
+#
 # Revision 1.78  2007/10/22 20:16:49  cheshire
 # Got rid of jaguar and panther from list of target platforms;
 # changed "os=tiger" to "os=x" (which works with both Tiger and Leopard)
@@ -290,7 +293,7 @@
 LIBVERS = 1
 
 COREDIR = ../mDNSCore
-SHAREDDIR = ../mDNSShared
+SHAREDDIR ?= ../mDNSShared
 JDK = /usr/jdk
 
 CC = @cc
@@ -319,8 +322,8 @@ else
 # 1. We want to make small binaries, suitable for putting into hardware devices
 # 2. Some of the code analysis warnings only work when some form of optimization is enabled
 CFLAGS_DEBUG = -Os -DMDNS_DEBUGMSGS=0 
-OBJDIR = objects/prod
-BUILDDIR = build/prod
+OBJDIR ?= objects/prod
+BUILDDIR ?= build/prod
 STRIP = strip -S 
 endif
 
@@ -450,10 +453,8 @@ install: setup InstalledDaemon InstalledStartup InstalledLib InstalledManPages I
 
 # 'setup' sets up the build directory structure the way we want
 setup:
-	@if test ! -d objects     ; then mkdir objects     ; fi
-	@if test ! -d build       ; then mkdir build       ; fi
-	@if test ! -d $(OBJDIR)   ; then mkdir $(OBJDIR)   ; fi
-	@if test ! -d $(BUILDDIR) ; then mkdir $(BUILDDIR) ; fi
+	@if test ! -d $(OBJDIR)   ; then mkdir -p $(OBJDIR)   ; fi
+	@if test ! -d $(BUILDDIR) ; then mkdir -p $(BUILDDIR) ; fi
 
 # clean removes targets and objects
 clean:
@@ -593,12 +594,36 @@ $(NSSINSTPATH)/$(NSSLIBFILE): $(BUILDDIR)/$(NSSLIBFILE)
 #############################################################################
 
 # The following targets build Java wrappers for the dns-sd.h API.
+# Note that the JavaForXcode targets are used when building the project for OS X using Xcode
 
 JAVAC = $(JDK)/bin/javac
 JAVAH = $(JDK)/bin/javah
 JAVADOC = $(JDK)/bin/javadoc
 JAR = $(JDK)/bin/jar
 JAVACFLAGS = $(CFLAGS) $(JAVACFLAGS_OS) -I$(JDK)/include
+
+JavaForXcode_: setup $(BUILDDIR)/dns_sd.jar $(PROJECT_DERIVED_FILE_DIR)/DNSSD.java.h
+	@echo $@ done
+	
+$(PROJECT_DERIVED_FILE_DIR)/DNSSD.java.h: $(OBJDIR)/DNSSD.java.h
+	@if test ! -d $(PROJECT_DERIVED_FILE_DIR) ; then mkdir -p $(PROJECT_DERIVED_FILE_DIR) ; fi
+	$(CP) $< $@
+
+JavaForXcode_clean:
+	@if test -d $(OBJDIR) ; then rm -r $(OBJDIR) ; fi
+	@if test -f $(PROJECT_DERIVED_FILE_DIR)/DNSSD.java.h ; then $(RM) $(PROJECT_DERIVED_FILE_DIR)/DNSSD.java.h ; fi
+	@if test -f $(BUILDDIR)/dns_sd.jar ; then $(RM) $(BUILDDIR)/dns_sd.jar ; fi
+	@echo $@ done
+
+JavaForXcode_installhdrs:
+	@echo $@ NOOP
+
+JavaForXcode_install: JavaForXcode_ $(DSTROOT)/$(SYSTEM_LIBRARY_DIR)/Java/Extensions/dns_sd.jar
+	@echo $@ done
+
+$(DSTROOT)/$(SYSTEM_LIBRARY_DIR)/Java/Extensions/dns_sd.jar: $(BUILDDIR)/dns_sd.jar
+	@if test ! -d $(DSTROOT)/$(SYSTEM_LIBRARY_DIR)/Java/Extensions ; then mkdir -p $(DSTROOT)/$(SYSTEM_LIBRARY_DIR)/Java/Extensions ; fi
+	$(CP) $< $@
 
 Java: setup $(BUILDDIR)/dns_sd.jar $(BUILDDIR)/libjdns_sd.$(LDSUFFIX)
 	@echo "Java wrappers done"
@@ -636,7 +661,9 @@ $(OBJDIR)/DNSSD.java.h: $(OBJDIR)/com/apple/dnssd/DNSSD.class
 		com.apple.dnssd.AppleRegistration \
 		com.apple.dnssd.AppleQuery \
 		com.apple.dnssd.AppleDomainEnum \
-		com.apple.dnssd.AppleService 
+		com.apple.dnssd.AppleService \
+		com.apple.dnssd.AppleDNSRecord \
+		com.apple.dnssd.AppleRecordRegistrar
 
 #############################################################################
 

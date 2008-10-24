@@ -19,7 +19,6 @@
 				D284BF300ADD81630027CCDF /* PBXTargetDependency */,
 				D284BF260ADD814F0027CCDF /* PBXTargetDependency */,
 				D284BF2A0ADD81530027CCDF /* PBXTargetDependency */,
-				FFD41DDB0664169900F0C438 /* PBXTargetDependency */,
 			);
 			name = "Build More";
 			productName = "Build All";
@@ -188,20 +187,6 @@
 		D284BF040ADD80B00027CCDF /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FF2609FA07B4433800CE10E5 /* Cocoa.framework */; };
 		D284BF050ADD80B00027CCDF /* PreferencePanes.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FF260A1F07B4436900CE10E5 /* PreferencePanes.framework */; };
 		D284BF060ADD80B00027CCDF /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 09AB6884FE841BABC02AAC07 /* CoreFoundation.framework */; };
-		DB2CC4560662DE4500335AB3 /* BaseListener.java in Sources */ = {isa = PBXBuildFile; fileRef = DB2CC4430662DD1100335AB3 /* BaseListener.java */; };
-		DB2CC4570662DE4600335AB3 /* BrowseListener.java in Sources */ = {isa = PBXBuildFile; fileRef = DB2CC4440662DD1100335AB3 /* BrowseListener.java */; };
-		DB2CC4580662DE4700335AB3 /* DNSRecord.java in Sources */ = {isa = PBXBuildFile; fileRef = DB2CC4450662DD1100335AB3 /* DNSRecord.java */; };
-		DB2CC4590662DE4700335AB3 /* DNSSD.java in Sources */ = {isa = PBXBuildFile; fileRef = DB2CC4460662DD1100335AB3 /* DNSSD.java */; };
-		DB2CC45A0662DE4800335AB3 /* DNSSDException.java in Sources */ = {isa = PBXBuildFile; fileRef = DB2CC4470662DD1100335AB3 /* DNSSDException.java */; };
-		DB2CC45B0662DE4900335AB3 /* DNSSDRegistration.java in Sources */ = {isa = PBXBuildFile; fileRef = DB2CC4480662DD1100335AB3 /* DNSSDRegistration.java */; };
-		DB2CC45C0662DE4900335AB3 /* DNSSDService.java in Sources */ = {isa = PBXBuildFile; fileRef = DB2CC4490662DD1100335AB3 /* DNSSDService.java */; };
-		DB2CC45D0662DE4A00335AB3 /* DomainListener.java in Sources */ = {isa = PBXBuildFile; fileRef = DB2CC44A0662DD1100335AB3 /* DomainListener.java */; };
-		DB2CC45E0662DE4B00335AB3 /* QueryListener.java in Sources */ = {isa = PBXBuildFile; fileRef = DB2CC44C0662DD1100335AB3 /* QueryListener.java */; };
-		DB2CC45F0662DE4C00335AB3 /* RegisterListener.java in Sources */ = {isa = PBXBuildFile; fileRef = DB2CC44D0662DD1100335AB3 /* RegisterListener.java */; };
-		DB2CC4600662DE4C00335AB3 /* ResolveListener.java in Sources */ = {isa = PBXBuildFile; fileRef = DB2CC44E0662DD1100335AB3 /* ResolveListener.java */; };
-		DB2CC4610662DE4D00335AB3 /* TXTRecord.java in Sources */ = {isa = PBXBuildFile; fileRef = DB2CC44F0662DD1100335AB3 /* TXTRecord.java */; };
-		FF2C5FB10A48B8680066DA11 /* DNSSDRecordRegistrar.java in Sources */ = {isa = PBXBuildFile; fileRef = FF2C5FB00A48B8680066DA11 /* DNSSDRecordRegistrar.java */; };
-		FF2C5FB30A48B86E0066DA11 /* RegisterRecordListener.java in Sources */ = {isa = PBXBuildFile; fileRef = FF2C5FB20A48B86E0066DA11 /* RegisterRecordListener.java */; };
 		FFA572330AF18F1C0055A0F1 /* dnssd_ipc.c in Sources */ = {isa = PBXBuildFile; fileRef = F5E11B5A04A28126019798ED /* dnssd_ipc.c */; };
 		FFA572340AF18F1C0055A0F1 /* dnssd_clientlib.c in Sources */ = {isa = PBXBuildFile; fileRef = FFFA38620AEEDB090065B80A /* dnssd_clientlib.c */; };
 		FFA572350AF18F1C0055A0F1 /* dnssd_clientstub.c in Sources */ = {isa = PBXBuildFile; fileRef = FFFA38640AEEDB130065B80A /* dnssd_clientstub.c */; };
@@ -287,18 +272,11 @@
 			remoteGlobalIDString = 03067D640C83A3700022BE1F;
 			remoteInfo = "Build Some";
 		};
-		D284BDEA0ADD77F60027CCDF /* PBXContainerItemProxy */ = {
+		4AE471690EAFF83800A6C5AD /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 08FB7793FE84155DC02AAC07 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = DB2CC4530662DD6800335AB3;
-			remoteInfo = dns_sd.jar;
-		};
-		D284BEB40ADD809A0027CCDF /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 08FB7793FE84155DC02AAC07 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = DB2CC4530662DD6800335AB3;
+			remoteGlobalIDString = 4AE471670EAFF81900A6C5AD;
 			remoteInfo = dns_sd.jar;
 		};
 		D284BF250ADD814F0027CCDF /* PBXContainerItemProxy */ = {
@@ -551,7 +529,6 @@
 		FFA572630AF190C20055A0F1 /* dns_sd.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = dns_sd.h; path = ../mDNSShared/dns_sd.h; sourceTree = SOURCE_ROOT; };
 		FFB765840AEED9C700583A2C /* libdns_sd.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libdns_sd.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		FFCB6D73075D539900B8AF62 /* PlatformCommon.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = PlatformCommon.c; path = ../mDNSShared/PlatformCommon.c; sourceTree = SOURCE_ROOT; };
-		FFD41DDA0664157900F0C438 /* dns_sd.jar */ = {isa = PBXFileReference; explicitFileType = archive.jar; includeInIndex = 0; path = dns_sd.jar; sourceTree = BUILT_PRODUCTS_DIR; };
 		FFE6935007C2CA7F00283007 /* ConfigurationAuthority.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ConfigurationAuthority.h; path = PreferencePane/ConfigurationAuthority.h; sourceTree = SOURCE_ROOT; };
 		FFE6935207C2CAA400283007 /* DNSServiceDiscoveryPref.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = DNSServiceDiscoveryPref.h; path = PreferencePane/DNSServiceDiscoveryPref.h; sourceTree = SOURCE_ROOT; };
 		FFE6935407C2CABD00283007 /* PrivilegedOperations.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = PrivilegedOperations.h; path = PreferencePane/PrivilegedOperations.h; sourceTree = SOURCE_ROOT; };
@@ -655,13 +632,6 @@
 				D284BF040ADD80B00027CCDF /* Cocoa.framework in Frameworks */,
 				D284BF050ADD80B00027CCDF /* PreferencePanes.framework in Frameworks */,
 				D284BF060ADD80B00027CCDF /* CoreFoundation.framework in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		DB2CC4520662DD6800335AB3 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -772,7 +742,6 @@
 			isa = PBXGroup;
 			children = (
 				D284C04D0ADD95D30027CCDF /* Info-PreferencePane.plist */,
-				FFD41DDA0664157900F0C438 /* dns_sd.jar */,
 				D284BE730ADD80740027CCDF /* mDNSResponder */,
 				D284BE950ADD80800027CCDF /* mDNSResponder.debug */,
 				D284BEA30ADD808B0027CCDF /* mDNS */,
@@ -979,36 +948,23 @@
 		};
 /* End PBXHeadersBuildPhase section */
 
-/* Begin PBXJavaArchiveBuildPhase section */
-		DB2CC4510662DD6800335AB3 /* JavaArchive */ = {
-			isa = PBXJavaArchiveBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXJavaArchiveBuildPhase section */
-
-/* Begin PBXLibraryTarget section */
-		DB2CC4530662DD6800335AB3 /* dns_sd.jar */ = {
-			isa = PBXLibraryTarget;
-			buildConfigurationList = D284BE1C0ADD78180027CCDF /* Build configuration list for PBXLibraryTarget "dns_sd.jar" */;
+/* Begin PBXLegacyTarget section */
+		4AE471670EAFF81900A6C5AD /* dns_sd.jar */ = {
+			isa = PBXLegacyTarget;
+			buildArgumentsString = "-f ${SRCROOT}/../mDNSPosix/Makefile OBJDIR=${CONFIGURATION_TEMP_DIR}/dns_sd.jar.build BUILDDIR=${BUILT_PRODUCTS_DIR} SHAREDDIR=${SRCROOT}/../mDNSShared os=x JavaForXcode_$(ACTION)";
+			buildConfigurationList = 4AE471770EAFF84000A6C5AD /* Build configuration list for PBXLegacyTarget "dns_sd.jar" */;
 			buildPhases = (
-				DB2CC4500662DD6800335AB3 /* Sources */,
-				DB2CC4510662DD6800335AB3 /* JavaArchive */,
-				DB2CC4520662DD6800335AB3 /* Frameworks */,
-				DB2CC4550662DE1700335AB3 /* ShellScript */,
-				FFD41DDD06641B4200F0C438 /* ShellScript */,
 			);
+			buildToolPath = /usr/bin/make;
+			buildWorkingDirectory = "";
 			comments = "Multiplatform .jar file that implements Java interface to DNS-SD";
 			dependencies = (
 			);
 			name = dns_sd.jar;
-			productInstallPath = /System/Library/Java/Extensions;
+			passBuildSettingsInEnvironment = 1;
 			productName = dns_sd.jar;
-			productReference = FFD41DDA0664157900F0C438 /* dns_sd.jar */;
 		};
-/* End PBXLibraryTarget section */
+/* End PBXLegacyTarget section */
 
 /* Begin PBXNativeTarget section */
 		2E0405EF0C31955500F13B59 /* mDNSResponderHelper */ = {
@@ -1125,7 +1081,7 @@
 			);
 			comments = "Platform-specific JNI library that bridges dns_sd.jar to <dns_sd.h>.";
 			dependencies = (
-				D284BEB30ADD809A0027CCDF /* PBXTargetDependency */,
+				4AE4716A0EAFF83800A6C5AD /* PBXTargetDependency */,
 			);
 			name = libjdns_sd.jnilib;
 			productInstallPath = /usr/lib/java;
@@ -1270,7 +1226,7 @@
 				2E0405EF0C31955500F13B59 /* mDNSResponderHelper */,
 				D284BE970ADD808B0027CCDF /* mDNS tool */,
 				D284BEA50ADD80920027CCDF /* dns-sd tool */,
-				DB2CC4530662DD6800335AB3 /* dns_sd.jar */,
+				4AE471670EAFF81900A6C5AD /* dns_sd.jar */,
 				D284BEB20ADD809A0027CCDF /* libjdns_sd.jnilib */,
 				D284BEBF0ADD80A20027CCDF /* dnsextd */,
 				D284BEDB0ADD80A70027CCDF /* ddnswriteconfig */,
@@ -1420,15 +1376,6 @@
 			shellPath = /bin/sh;
 			shellScript = "if [ -e \"${SDKROOT}/usr/local/include/dnsinfo.h\" ]\nthen\nrm -f \"${CONFIGURATION_TEMP_DIR}/dnsinfo.h\"\nrm -f \"${CONFIGURATION_TEMP_DIR}/libdnsinfo.a\"\nelse\necho \"#define MDNS_NO_DNSINFO 1\" > ${CONFIGURATION_TEMP_DIR}/dnsinfo.h\ntouch \"${CONFIGURATION_TEMP_DIR}/empty.c\"\ncc -arch i386 -arch ppc \"${CONFIGURATION_TEMP_DIR}/empty.c\" -c -o \"${CONFIGURATION_TEMP_DIR}/libdnsinfo.a\"\nrm -f \"${CONFIGURATION_TEMP_DIR}/empty.c\"\nfi\n\nif [ -e \"${SDKROOT}/usr/include/sandbox.h\" ]\nthen\nrm -f \"${CONFIGURATION_TEMP_DIR}/sandbox.h\"\nelse\necho \"#define MDNS_NO_SANDBOX 1\" > \"${CONFIGURATION_TEMP_DIR}/sandbox.h\"\nfi\n";
 		};
-		DB2CC4550662DE1700335AB3 /* ShellScript */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 12;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "javah -force -J-Xbootclasspath/p:${CONFIGURATION_TEMP_DIR}/dns_sd.jar.build/JavaClasses -o ${CONFIGURATION_TEMP_DIR}/dns_sd.jar.build/DNSSD.java.h com.apple.dnssd.AppleDNSSD com.apple.dnssd.AppleBrowser com.apple.dnssd.AppleResolver com.apple.dnssd.AppleRegistration com.apple.dnssd.AppleQuery com.apple.dnssd.AppleDomainEnum com.apple.dnssd.AppleService com.apple.dnssd.AppleDNSRecord com.apple.dnssd.AppleRecordRegistrar";
-		};
 		FF045B6A0C7E4AA600448140 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 8;
@@ -1450,15 +1397,6 @@
 			runOnlyForDeploymentPostprocessing = 1;
 			shellPath = /bin/tcsh;
 			shellScript = "# Install plist to tell launchd how to start dnsextd\nmkdir -p ${DSTROOT}${SYSTEM_LIBRARY_DIR}/LaunchDaemons\ncp ${SRCROOT}/LaunchDaemonInfo.dnsextd.plist ${DSTROOT}${SYSTEM_LIBRARY_DIR}/LaunchDaemons/com.apple.dnsextd.plist\n";
-		};
-		FFD41DDD06641B4200F0C438 /* ShellScript */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "rm -f ${CONFIGURATION_BUILD_DIR}/dns_sd";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -1581,27 +1519,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		DB2CC4500662DD6800335AB3 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				DB2CC4560662DE4500335AB3 /* BaseListener.java in Sources */,
-				DB2CC4570662DE4600335AB3 /* BrowseListener.java in Sources */,
-				DB2CC4580662DE4700335AB3 /* DNSRecord.java in Sources */,
-				DB2CC4590662DE4700335AB3 /* DNSSD.java in Sources */,
-				DB2CC45A0662DE4800335AB3 /* DNSSDException.java in Sources */,
-				DB2CC45B0662DE4900335AB3 /* DNSSDRegistration.java in Sources */,
-				DB2CC45C0662DE4900335AB3 /* DNSSDService.java in Sources */,
-				DB2CC45D0662DE4A00335AB3 /* DomainListener.java in Sources */,
-				DB2CC45E0662DE4B00335AB3 /* QueryListener.java in Sources */,
-				DB2CC45F0662DE4C00335AB3 /* RegisterListener.java in Sources */,
-				DB2CC4600662DE4C00335AB3 /* ResolveListener.java in Sources */,
-				DB2CC4610662DE4D00335AB3 /* TXTRecord.java in Sources */,
-				FF2C5FB10A48B8680066DA11 /* DNSSDRecordRegistrar.java in Sources */,
-				FF2C5FB30A48B86E0066DA11 /* RegisterRecordListener.java in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		FFA572320AF18F1C0055A0F1 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -1669,10 +1586,10 @@
 			target = 03067D640C83A3700022BE1F /* Build Some */;
 			targetProxy = 03067D850C849CC30022BE1F /* PBXContainerItemProxy */;
 		};
-		D284BEB30ADD809A0027CCDF /* PBXTargetDependency */ = {
+		4AE4716A0EAFF83800A6C5AD /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = DB2CC4530662DD6800335AB3 /* dns_sd.jar */;
-			targetProxy = D284BEB40ADD809A0027CCDF /* PBXContainerItemProxy */;
+			target = 4AE471670EAFF81900A6C5AD /* dns_sd.jar */;
+			targetProxy = 4AE471690EAFF83800A6C5AD /* PBXContainerItemProxy */;
 		};
 		D284BF260ADD814F0027CCDF /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -1723,11 +1640,6 @@
 			isa = PBXTargetDependency;
 			target = 00AD62BB032D7A0C0CCA2C71 /* Build More */;
 			targetProxy = FFB7657C0AEED97F00583A2C /* PBXContainerItemProxy */;
-		};
-		FFD41DDB0664169900F0C438 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = DB2CC4530662DD6800335AB3 /* dns_sd.jar */;
-			targetProxy = D284BDEA0ADD77F60027CCDF /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -1787,34 +1699,13 @@
 			};
 			name = Development;
 		};
-		D284BE1D0ADD78180027CCDF /* Development */ = {
+		4AE471680EAFF81900A6C5AD /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CONFIGURATION_BUILD_DIR = "${BUILD_DIR}";
-				CONFIGURATION_TEMP_DIR = "${BUILD_DIR}/mDNSResponder.build";
-				DYLIB_COMPATIBILITY_VERSION = 1;
-				DYLIB_CURRENT_VERSION = 1;
+				COPY_PHASE_STRIP = NO;
 				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_ENABLE_FIX_AND_CONTINUE = YES;
-				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
-				INSTALL_PATH = "${SYSTEM_LIBRARY_DIR}/Java/Extensions";
-				JAVA_ARCHIVE_CLASSES = YES;
-				JAVA_ARCHIVE_COMPRESSION = YES;
-				JAVA_ARCHIVE_TYPE = JAR;
-				JAVA_COMPILER_DEBUGGING_SYMBOLS = NO;
-				JAVA_COMPILER_SOURCE_VERSION = 1.4;
-				JAVA_COMPILER_TARGET_VM_VERSION = 1.4;
-				JAVA_SOURCE_SUBDIR = .;
-				LIBRARY_STYLE = STATIC;
-				OTHER_CFLAGS = "";
-				OTHER_LDFLAGS = "";
-				OTHER_LIBTOOL_FLAGS = "";
-				OTHER_REZFLAGS = "";
-				PRODUCT_NAME = dns_sd;
-				PURE_JAVA = YES;
-				REZ_EXECUTABLE = YES;
-				SECTORDER_FLAGS = "";
-				STRIPFLAGS = "-S";
+				GCC_OPTIMIZATION_LEVEL = 0;
+				PRODUCT_NAME = dns_sd.jar;
 			};
 			name = Development;
 		};
@@ -1993,7 +1884,7 @@
 					../mDNSShared,
 					"${SYSTEM_LIBRARY_DIR}/Frameworks/JavaVM.framework/Versions/A/Headers",
 					"${SYSTEM_LIBRARY_DIR}/Frameworks/JavaVM.framework/Versions/1.3.1/Headers",
-					"${CONFIGURATION_TEMP_DIR}/dns_sd.jar.build",
+					"${PROJECT_DERIVED_FILE_DIR}",
 				);
 				INSTALL_PATH = /usr/lib/java;
 				LIBRARY_STYLE = DYNAMIC;
@@ -2177,10 +2068,10 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Development;
 		};
-		D284BE1C0ADD78180027CCDF /* Build configuration list for PBXLibraryTarget "dns_sd.jar" */ = {
+		4AE471770EAFF84000A6C5AD /* Build configuration list for PBXLegacyTarget "dns_sd.jar" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				D284BE1D0ADD78180027CCDF /* Development */,
+				4AE471680EAFF81900A6C5AD /* Development */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Development;
