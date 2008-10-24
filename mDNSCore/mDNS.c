@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.836  2008/10/24 23:18:18  cheshire
+If we have a Sleep Proxy Server, don't remove service registrations from the DNS server
+
 Revision 1.835  2008/10/24 23:07:59  cheshire
 Wake SPS client if we receive conflicting mDNS respoonse (record with same name as one of our unique records, but different rdata)
 
@@ -4145,8 +4148,11 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 
 #ifndef UNICAST_DISABLED
 		SuspendLLQs(m);
-		SleepServiceRegistrations(m);
-		if (!m->SleepState) SleepRecordRegistrations(m);	// If we have no SPS, need to deregister our uDNS records
+		if (!m->SleepState)
+			{
+			SleepServiceRegistrations(m);
+			SleepRecordRegistrations(m);	// If we have no SPS, need to deregister our uDNS records
+			}
 #endif
 
 		if (!m->SleepState)
