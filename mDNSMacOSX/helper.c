@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.37  2008/10/24 00:17:22  mcguire
+Add compatibility for older racoon behavior
+
 Revision 1.36  2008/10/22 17:22:31  cheshire
 Remove SO_NOSIGPIPE bug workaround
 
@@ -1076,8 +1079,54 @@ fin:
 	}
 
 #ifndef MDNS_NO_IPSEC
-static const char racoon_config_dir[] = "/var/run/racoon/";
-static const char racoon_config_dir_old[] = "/etc/racoon/remote/";
+
+static const char g_racoon_config_dir[] = "/var/run/racoon/";
+static const char g_racoon_config_dir_old[] = "/etc/racoon/remote/";
+
+CF_EXPORT CFDictionaryRef _CFCopySystemVersionDictionary(void);
+CF_EXPORT const CFStringRef _kCFSystemVersionBuildVersionKey;
+
+// Major version  6 is 10.2.x (Jaguar)
+// Major version  7 is 10.3.x (Panther)
+// Major version  8 is 10.4.x (Tiger)
+// Major version  9 is 10.5.x (Leopard)
+// Major version 10 is 10.6.x (SnowLeopard)
+static int MacOSXSystemBuildNumber()
+	{
+	int major = 0, minor = 0;
+	char letter = 0, buildver[256]="<Unknown>";
+	CFDictionaryRef vers = _CFCopySystemVersionDictionary();
+	if (vers)
+		{
+		CFStringRef cfbuildver = CFDictionaryGetValue(vers, _kCFSystemVersionBuildVersionKey);
+		if (cfbuildver) CFStringGetCString(cfbuildver, buildver, sizeof(buildver), kCFStringEncodingUTF8);
+		sscanf(buildver, "%d%c%d", &major, &letter, &minor);
+		CFRelease(vers);
+		}
+	else
+		helplog(ASL_LEVEL_NOTICE, "_CFCopySystemVersionDictionary failed");
+	
+	if (!major) { major=10; helplog(ASL_LEVEL_NOTICE, "Note: No Major Build Version number found; assuming 10"); }
+	return(major);
+	}
+	
+static int UseOldRacoon()
+	{
+	static int ret = -1;
+	if (ret == -1) ret = (MacOSXSystemBuildNumber() < 10);
+	return ret;
+	}
+	
+static const char* GetRacoonConfigDir()
+	{
+	return UseOldRacoon() ? g_racoon_config_dir_old : g_racoon_config_dir;
+	}
+	
+static const char* GetOldRacoonConfigDir()
+	{
+	return UseOldRacoon() ? NULL : g_racoon_config_dir_old;
+	}
+	
 static const char racoon_config_file[] = "anonymous.conf";
 static const char racoon_config_file_orig[] = "anonymous.conf.orig";
 
@@ -1105,6 +1154,8 @@ static int IsFamiliarRacoonConfiguration(const char* racoon_config_path)
 static void
 revertAnonymousRacoonConfiguration(const char* dir)
 	{
+	if (!dir) return;
+	
 	debug("entry %s", dir);
 
 	char racoon_config_path[64];
@@ -1156,6 +1207,8 @@ revertAnonymousRacoonConfiguration(const char* dir)
 static void
 moveAsideAnonymousRacoonConfiguration(const char* dir)
 	{
+	if (!dir) return;
+	
 	debug("entry %s", dir);
 	
 	char racoon_config_path[64];
@@ -1225,6 +1278,8 @@ createAnonymousRacoonConfiguration(const char *keydata)
 	  "}\n";
 	char tmp_config_path[64];
 	char racoon_config_path[64];
+	const char* const racoon_config_dir = GetRacoonConfigDir();
+	const char* const racoon_config_dir_old = GetOldRacoonConfigDir();
 	int ret = 0;
 	struct stat s;
 	int fd = -1;
@@ -1343,6 +1398,86 @@ notifyRacoon(void)
 	return 0;
 	}
 
+static void
+closefds(int from)
+	{
+	int fd = 0;
+	struct dirent entry, *entryp = NULL;
+	DIR *dirp = opendir("/dev/fd");
+
+	if (dirp == NULL)
+		{
+		/* fall back to the erroneous getdtablesize method */
+		for (fd = from; fd < getdtablesize(); ++fd)
+			close(fd);
+		return;
+		}
+	while (0 == readdir_r(dirp, &entry, &entryp) && NULL != entryp)
+		{
+		fd = atoi(entryp->d_name);
+		if (fd >= from && fd != dirfd(dirp))
+			close(fd);
+		}
+	closedir(dirp);
+	}
+
+static int
+startRacoonOld(void)
+	{
+	debug("entry");
+	char * const racoon_args[] = { "/usr/sbin/racoon", "-e", NULL 	};
+	ssize_t n = 0;
+	pid_t pid = 0;
+	int status = 0;
+
+	if (0 == (pid = fork()))
+		{
+		closefds(0);
+		execve(racoon_args[0], racoon_args, NULL);
+		helplog(ASL_LEVEL_ERR, "execve of \"%s\" failed: %s",
+		    racoon_args[0], strerror(errno));
+		exit(2);
+		}
+	helplog(ASL_LEVEL_NOTICE, "racoon (pid=%lu) started",
+	    (unsigned long)pid);
+	n = waitpid(pid, &status, 0);
+	if (-1 == n)
+		{
+		helplog(ASL_LEVEL_ERR, "Unexpected waitpid failure: %s",
+		    strerror(errno));
+		return kmDNSHelperRacoonStartFailed;
+		}
+	else if (pid != n)
+		{
+		helplog(ASL_LEVEL_ERR, "Unexpected waitpid return value %d",
+		    (int)n);
+		return kmDNSHelperRacoonStartFailed;
+		}
+	else if (WIFSIGNALED(status))
+		{
+		helplog(ASL_LEVEL_ERR,
+		    "racoon (pid=%lu) terminated due to signal %d",
+		    (unsigned long)pid, WTERMSIG(status));
+		return kmDNSHelperRacoonStartFailed;
+		}
+	else if (WIFSTOPPED(status))
+		{
+		helplog(ASL_LEVEL_ERR,
+		    "racoon (pid=%lu) has stopped due to signal %d",
+		    (unsigned long)pid, WSTOPSIG(status));
+		return kmDNSHelperRacoonStartFailed;
+		}
+	else if (0 != WEXITSTATUS(status))
+		{
+		helplog(ASL_LEVEL_ERR,
+		    "racoon (pid=%lu) exited with status %d",
+		    (unsigned long)pid, WEXITSTATUS(status));
+		return kmDNSHelperRacoonStartFailed;
+		}
+	debug("racoon (pid=%lu) daemonized normally", (unsigned long)pid);
+	return 0;
+	}
+
 // constant and structure for the racoon control socket
 #define VPNCTL_CMD_PING 0x0004
 typedef struct vpnctl_hdr_struct
@@ -1452,7 +1587,7 @@ kickRacoon(void)
 	{
 	if ( 0 == notifyRacoon() )
 		return 0;
-	return startRacoon();
+	return UseOldRacoon() ? startRacoonOld() : startRacoon();
 	}
 
 #endif /* ndef MDNS_NO_IPSEC */
@@ -1480,8 +1615,8 @@ do_mDNSConfigureServer(__unused mach_port_t port, int updown, const char *keydat
 				}
 			break;
 		case kmDNSDown:
-			revertAnonymousRacoonConfiguration(racoon_config_dir_old);
-			revertAnonymousRacoonConfiguration(racoon_config_dir);
+			revertAnonymousRacoonConfiguration(GetOldRacoonConfigDir());
+			revertAnonymousRacoonConfiguration(GetRacoonConfigDir());
 			break;
 		default:
 			*err = kmDNSHelperInvalidServerState;
@@ -1930,7 +2065,7 @@ do_mDNSAutoTunnelSetKeys(__unused mach_port_t port, int replacedelete,
 	    lo, loc_port, ro, rmt_port);
 
 	if ((int)sizeof(path) <= snprintf(path, sizeof(path),
-	    "%s%s.%u.conf", racoon_config_dir, ro,
+	    "%s%s.%u.conf", GetRacoonConfigDir(), ro,
 	    rmt_port))
 		{
 		*err = kmDNSHelperResultTooLarge;
