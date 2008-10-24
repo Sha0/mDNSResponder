@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.834  2008/10/24 23:03:24  cheshire
+Wake SPS client if we receive a conflicting ARP (some other machine claiming to own that IP address)
+
 Revision 1.833  2008/10/24 23:01:26  cheshire
 To reduce spurious wakeups for now, we'll only wake for incoming TCP SYN packets
 
@@ -7632,21 +7635,20 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 		{
 		AuthRecord *rr;
 		domainname x;
-		const mDNSu32 sendhash = MakeReverseMappingDomainName(&x, arp->spa.b);	// Sender IP address
-		const mDNSu32 targhash = MakeReverseMappingDomainName(&x, arp->tpa.b);	// Target IP address
-		NetworkInterfaceInfo *intf;
-		for (intf = m->HostInterfaces; intf; intf = intf->next) if (intf->InterfaceID == InterfaceID) break;
+		mDNSu32 hash;
+		NetworkInterfaceInfo *intf = FirstInterfaceForID(m, InterfaceID);
 		if (!intf) return;
 		
 		mDNS_Lock(m);
 
 		// Answer ARP Requests for any IP address we're proxying for
+		hash = MakeReverseMappingDomainName(&x, arp->tpa.b);	// Target IP address
 		if (mDNSSameOpaque16(arp->op, ARP_op_request))		// ARP Request
 			if (!mDNSSameIPv4Address(arp->spa, arp->tpa))	// But not an ARP Announcement
 				for (rr = m->ResourceRecords; rr; rr=rr->next)
 					if (rr->resrec.InterfaceID == InterfaceID &&
 						rr->resrec.rrtype == kDNSType_MAC && rr->WakeUp.l[0] &&
-						rr->resrec.namehash == targhash && SameDomainName(&x, rr->resrec.name))
+						rr->resrec.namehash == hash && SameDomainName(&x, rr->resrec.name))
 						{
 						LogOperation("Answering ARP from %-15.4a for %-15.4a %s", &arp->spa, &arp->tpa, ARDisplayString(m, rr));
 						SendARP(m, 2, rr, arp->tpa.b, arp->sha.b, arp->spa.b, arp->sha.b);
@@ -7657,12 +7659,13 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 		// and we need to wake the sleeping machine to handle it.
 		// If the sender hardware address *is* the original owner, then this signals that
 		// the machine has awoken, and we need to clear any records we were holding for it
+		hash = MakeReverseMappingDomainName(&x, arp->spa.b);	// Sender IP address
 		if (!mDNSSameEthAddress(&arp->sha, &intf->MAC))
 			{
 			for (rr = m->ResourceRecords; rr; rr=rr->next)
 				if (rr->resrec.InterfaceID == InterfaceID &&
 					rr->resrec.rrtype == kDNSType_MAC && rr->WakeUp.l[0] &&
-					rr->resrec.namehash == sendhash && SameDomainName(&x, rr->resrec.name))
+					rr->resrec.namehash == hash && SameDomainName(&x, rr->resrec.name))
 					{
 					rr->AnnounceCount = 0;
 					if (!mDNSSameEthAddress(&arp->sha, &rr->WakeUp))
