@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.382  2008/10/24 01:51:48  cheshire
+Before going to sleep, request a future wakeup to renew NAT-PMP mappings, SPS registrations, etc.
+
 Revision 1.381  2008/10/23 22:25:58  cheshire
 Renamed field "id" to more descriptive "updateid"
 
@@ -2584,6 +2587,20 @@ mDNSlocal void * KQueueLoop(void *m_param)
 					ready ? "ready for sleep" : "giving up", now, m->p->SleepLimit - now);
 				m->p->SleepLimit = 0;
 				m->SleepState = SleepState_Sleeping;
+
+				// Preliminary code to compute when next wakeup is required
+				// The real code needs to be smarter -- this could schedule a wakeup just two seconds from now
+				// The real code will have to compute a time that avoids that --
+				// e.g. If a NAT-PMP lease expires in 60 minutes, and is due to be renewed in 30 minutes,
+				// then we should plan to wake up in 45 minutes, right in the middle of the renewal window.
+				mDNSs32 e = m->timenow + 3600 * mDNSPlatformOneSecond;
+				if (e - m->NextuDNSEvent         > 0) e = m->NextuDNSEvent;
+				if (e - m->NextScheduledNATOp    > 0) e = m->NextScheduledNATOp;
+				LogMsg("mDNSPowerRequest: uDNS %d NAT-PMP %d SPS 3600 next in %d",
+					(m->NextuDNSEvent      - m->timenow) / mDNSPlatformOneSecond,
+					(m->NextScheduledNATOp - m->timenow) / mDNSPlatformOneSecond,
+					(e                     - m->timenow) / mDNSPlatformOneSecond);
+				mDNSPowerRequest(1, (e - m->timenow) / mDNSPlatformOneSecond);
 				IOAllowPowerChange(m->p->PowerConnection, m->p->SleepCookie);
 				}
 			else
