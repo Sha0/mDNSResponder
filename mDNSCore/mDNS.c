@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.837  2008/10/24 23:58:05  cheshire
+Wake up for Back to My Mac IPSEC packets, except NAT keepalive packets
+
 Revision 1.836  2008/10/24 23:18:18  cheshire
 If we have a Sleep Proxy Server, don't remove service registrations from the DNS server
 
@@ -5248,8 +5251,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					// else, the packet RR has different type or different rdata -- check to see if this is a conflict
 					else if (m->rec.r.resrec.rroriginalttl > 0 && PacketRRConflict(m, rr, &m->rec.r))
 						{
-						debugf("mDNSCoreReceiveResponse: Our Record: %08lX %s", rr->     resrec.rdatahash, ARDisplayString(m, rr));
-						debugf("mDNSCoreReceiveResponse: Pkt Record: %08lX %s", m->rec.r.resrec.rdatahash, CRDisplayString(m, &m->rec.r));
+						LogOperation("mDNSCoreReceiveResponse: Our Record: %08lX %s", rr->     resrec.rdatahash, ARDisplayString(m, rr));
+						LogOperation("mDNSCoreReceiveResponse: Pkt Record: %08lX %s", m->rec.r.resrec.rdatahash, CRDisplayString(m, &m->rec.r));
 	
 						// If this record is marked DependentOn another record for conflict detection purposes,
 						// then *that* record has to be bumped back to probing state to resolve the conflict
@@ -5261,7 +5264,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 							// If we'd previously verified this record, put it back to probing state and try again
 							if (rr->resrec.RecordType == kDNSRecordTypeVerified)
 								{
-								debugf("mDNSCoreReceiveResponse: Reseting to Probing: %##s (%s)", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
+								LogOperation("mDNSCoreReceiveResponse: Reseting to Probing: %##s (%s)", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
 								rr->resrec.RecordType     = kDNSRecordTypeUnique;
 								rr->ProbeCount     = DefaultProbeCountForTypeUnique + 1;
 								InitializeLastAPTime(m, rr, DefaultAPIntervalForRecordType(kDNSRecordTypeUnique));
@@ -5270,7 +5273,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 							// If we're probing for this record, we just failed
 							else if (rr->resrec.RecordType == kDNSRecordTypeUnique)
 								{
-								debugf("mDNSCoreReceiveResponse: Will rename %##s (%s)", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
+								LogOperation("mDNSCoreReceiveResponse: Will rename %##s (%s)", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
 								mDNS_Deregister_internal(m, rr, mDNS_Dereg_conflict);
 								}
 							// We assumed this record must be unique, but we were wrong.
@@ -5279,12 +5282,12 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 							// This is simply a misconfiguration, and we don't try to recover from it.
 							else if (rr->resrec.RecordType == kDNSRecordTypeKnownUnique)
 								{
-								debugf("mDNSCoreReceiveResponse: Unexpected conflict on %##s (%s) -- discarding our record",
-									rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
+								LogOperation("mDNSCoreReceiveResponse: Unexpected conflict on %s -- discarding our record", ARDisplayString(m, rr));
+								LogOperation("mDNSCoreReceiveResponse: Unexpected conflict pkt%s", CRDisplayString(m, &m->rec.r));
 								mDNS_Deregister_internal(m, rr, mDNS_Dereg_conflict);
 								}
 							else
-								debugf("mDNSCoreReceiveResponse: Unexpected record type %X %##s (%s)",
+								LogOperation("mDNSCoreReceiveResponse: Unexpected record type %X %##s (%s)",
 									rr->resrec.RecordType, rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
 							}
 						}
@@ -7721,8 +7724,8 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 		}
 	else if (end >= p+34 && mDNSSameOpaque16(eth->ethertype, Ethertype_IP) && (ip->flagsfrags.b[0] & 0x1F) == 0 && ip->flagsfrags.b[1] == 0)
 		{
-		const TCPHeader *const trans = (const TCPHeader *)(p + 14 + (ip->vlen & 0xF) * 4);
-		const mDNSu8 *const required = (const mDNSu8 *)trans + (ip->protocol == 1 ? 4 : ip->protocol == 6 ? 20 : ip->protocol == 17 ? 8 : 0);
+		const mDNSu8 *const trans = p + 14 + (ip->vlen & 0xF) * 4;
+		const mDNSu8 *const required = trans + (ip->protocol == 1 ? 4 : ip->protocol == 6 ? 20 : ip->protocol == 17 ? 8 : 0);
 		if (end >= required)
 			{
 			mDNSBool wake = mDNSfalse;
@@ -7735,16 +7738,31 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 				#define XX wake ? "Received" : "Ignoring", end-p
 				case  1:	LogMsg("%s %d-byte ICMP from %.4a to %.4a", XX, &ip->src, &ip->dst);
 							break;
-				case  6:	wake = (!(trans->flags & 4) && (trans->flags & 3) != 1);
-							if (!(trans->flags & 2)) wake = mDNSfalse;		// For now, to reduce spurious wakeups, we wake only for TCP SYN
+				case  6:	{
+							const TCPHeader *const tcp = (const TCPHeader *)trans;
+							wake = (!(tcp->flags & 4) && (tcp->flags & 3) != 1);
+							if (!(tcp->flags & 2)) wake = mDNSfalse;		// For now, to reduce spurious wakeups, we wake only for TCP SYN
 							LogMsg("%s %d-byte TCP from %.4a:%d to %.4a:%d%s%s%s", XX,
-								&ip->src, mDNSVal16(trans->src), &ip->dst, mDNSVal16(trans->dst),
-								(trans->flags & 2) ? " SYN" : "",
-								(trans->flags & 1) ? " FIN" : "",
-								(trans->flags & 4) ? " RST" : "");
+								&ip->src, mDNSVal16(tcp->src), &ip->dst, mDNSVal16(tcp->dst),
+								(tcp->flags & 2) ? " SYN" : "",
+								(tcp->flags & 1) ? " FIN" : "",
+								(tcp->flags & 4) ? " RST" : "");
+							}
 							break;
-				case 17:	LogMsg("%s %d-byte UDP from %.4a:%d to %.4a:%d", XX, &ip->src, mDNSVal16(trans->src), &ip->dst, mDNSVal16(trans->dst)); break;
-				default:	LogMsg("%s %d-byte IP packet unknown protocol %d from %.4a to %.4a", XX, ip->protocol, &ip->src, &ip->dst); break;
+				case 17:	{
+							#define IPSEC_AsNumber 4500
+							static const mDNSIPPort IPSEC = { { IPSEC_AsNumber >> 8, IPSEC_AsNumber & 0xFF } };
+							const UDPHeader *const udp = (const UDPHeader *)trans;
+							mDNSu16 len = (mDNSu16)((mDNSu16)trans[4] << 8 | trans[5]);
+							// Normally we ignore UDP packets, but for Back to My Mac, we wake for UDP port 4500 (IPSEC) packets
+							// unless they're just NAT keepalive packets
+							if (mDNSSameIPPort(udp->dst,IPSEC))
+								wake = (len != 9 || end < trans + 9 || trans[8] != 0xFF);
+							LogMsg("%s %d-byte UDP from %.4a:%d to %.4a:%d", XX, &ip->src, mDNSVal16(udp->src), &ip->dst, mDNSVal16(udp->dst));
+							}
+							break;
+				default:	LogMsg("%s %d-byte IP packet unknown protocol %d from %.4a to %.4a", XX, ip->protocol, &ip->src, &ip->dst);
+							break;
 				}
 	
 			if (wake)
