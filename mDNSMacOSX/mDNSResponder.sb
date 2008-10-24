@@ -26,6 +26,10 @@
 ; SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ;
 ; $Log: mDNSResponder.sb,v $
+; Revision 1.33  2008/10/24 02:03:30  cheshire
+; So we can watch for Internet Sharing changes, allow read access to
+; /Library/Preferences/SystemConfiguration/com.apple.nat.plist
+;
 ; Revision 1.32  2008/10/07 23:06:58  mcguire
 ; <rdar://problem/6276444> Seatbelt: Policy denied Mach service lookup: com.apple.system.logger
 ;
@@ -192,6 +196,7 @@
 (allow file-read-data                 (regex #"^/usr/share/icu/.*$"))
 (allow file-read-data                 (regex #"^/usr/share/zoneinfo/.*$"))
 (allow file-read-data                 (regex #"^/Library/Preferences/SystemConfiguration/preferences\.plist$"))
+(allow file-read-data                 (regex #"^/Library/Preferences/SystemConfiguration/com\.apple\.nat\.plist$"))
 (allow file-read-data                 (regex #"^/Library/Preferences/(ByHost/)?\.GlobalPreferences.*\.plist$"))
 (allow file-read-data                 (regex #"^/Library/Preferences/com\.apple\.security.*\.plist$"))
 (allow file-read-data                 (regex #"^/Library/Preferences/com\.apple\.crypto\.plist$"))
