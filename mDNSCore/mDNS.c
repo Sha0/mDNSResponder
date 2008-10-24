@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.831  2008/10/24 22:50:41  cheshire
+When waking SPS client, include interface name in syslog message
+
 Revision 1.830  2008/10/24 20:50:34  cheshire
 Use "#if USE_SEPARATE_UDNS_SERVICE_LIST" instead of "#if defined(USE_SEPARATE_UDNS_SERVICE_LIST)"
 
@@ -1153,6 +1156,19 @@ mDNSlocal mDNSBool AddressIsLocalSubnet(mDNS *const m, const mDNSInterfaceID Int
 	return(mDNSfalse);
 	}
 
+mDNSlocal NetworkInterfaceInfo *FirstInterfaceForID(mDNS *const m, const mDNSInterfaceID InterfaceID)
+	{
+	NetworkInterfaceInfo *intf = m->HostInterfaces;
+	while (intf && intf->InterfaceID != InterfaceID) intf = intf->next;
+	return(intf);
+	}
+
+mDNSlocal char *InterfaceNameForID(mDNS *const m, const mDNSInterfaceID InterfaceID)
+	{
+	NetworkInterfaceInfo *intf = FirstInterfaceForID(m, InterfaceID);
+	return(intf ? intf->ifname : "<NULL InterfaceID>");
+	}
+
 // For a single given DNSQuestion, deliver an add/remove result for the single given AuthRecord
 // Used by AnswerLocalQuestions() and AnswerNewLocalOnlyQuestion()
 mDNSlocal void AnswerLocalOnlyQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, AuthRecord *rr, QC_result AddRecord)
@@ -1494,9 +1510,7 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	// If this resource record is referencing a specific interface, make sure it exists
 	if (rr->resrec.InterfaceID && rr->resrec.InterfaceID != mDNSInterface_LocalOnly)
 		{
-		NetworkInterfaceInfo *intf;
-		for (intf = m->HostInterfaces; intf; intf = intf->next)
-			if (intf->InterfaceID == rr->resrec.InterfaceID) break;
+		NetworkInterfaceInfo *intf = FirstInterfaceForID(m, rr->resrec.InterfaceID);
 		if (!intf)
 			{
 			debugf("mDNS_Register_internal: Bogus InterfaceID %p in resource record", rr->resrec.InterfaceID);
@@ -2046,9 +2060,7 @@ mDNSlocal void SendARP(mDNS *const m, const mDNSu8 op, const AuthRecord *const r
 	{
 	int i;
 	mDNSu8 *ptr = m->omsg.data;
-	NetworkInterfaceInfo *intf;
-	if (!rr->resrec.InterfaceID) { LogMsg("SendARP: No InterfaceID specified %s", ARDisplayString(m,rr)); return; }
-	for (intf = m->HostInterfaces; intf; intf = intf->next) if (intf->InterfaceID == rr->resrec.InterfaceID) break;
+	NetworkInterfaceInfo *intf = FirstInterfaceForID(m, rr->resrec.InterfaceID);
 	if (!intf) { LogMsg("SendARP: No interface with InterfaceID %p found %s", rr->resrec.InterfaceID, ARDisplayString(m,rr)); return; }
 
 	// 0x00 Destination address
@@ -5009,7 +5021,7 @@ mDNSexport CacheRecord *CreateNewCacheEntry(mDNS *const m, const mDNSu32 slot, C
 		else
 			rr->DelayDelivery = CheckForSoonToExpireRecords(m, rr->resrec.name, rr->resrec.namehash, slot);
 
-		CacheRecordAdd(m, rr);  // CacheRecordAdd calls SetNextCacheCheckTime(m, rr); for us
+		CacheRecordAdd(m, rr);	// CacheRecordAdd calls SetNextCacheCheckTime(m, rr); for us
 		}
 	return(rr);
 	}
@@ -5557,7 +5569,7 @@ exit:
 
 mDNSlocal void SPSRecordCallback(mDNS *const m, AuthRecord *const ar, mStatus result)
 	{
-	LogOperation("SPSRecordCallback %d %s", result, ARDisplayString(m, ar));
+	LogOperation("SPS Callback %d %s", result, ARDisplayString(m, ar));
 	if (result == mStatus_NameConflict)
 		SendWakeup(m, ar->resrec.InterfaceID, &ar->WakeUp);
 	else if (result == mStatus_MemFree)
@@ -5937,9 +5949,7 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 		// If this question is referencing a specific interface, verify it exists
 		if (question->InterfaceID && question->InterfaceID != mDNSInterface_LocalOnly)
 			{
-			NetworkInterfaceInfo *intf;
-			for (intf = m->HostInterfaces; intf; intf = intf->next)
-				if (intf->InterfaceID == question->InterfaceID) break;
+			NetworkInterfaceInfo *intf = FirstInterfaceForID(m, question->InterfaceID);
 			if (!intf)
 				LogMsg("Note: InterfaceID %p for question %##s (%s) not currently found in active interface list",
 					question->InterfaceID, question->qname.c, DNSTypeName(question->qtype));
@@ -7005,10 +7015,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 		}
 	else
 		{
-		NetworkInterfaceInfo *intf;
-		for (intf = m->HostInterfaces; intf; intf = intf->next)
-			if (intf->InterfaceID == set->InterfaceID)
-				break;
+		NetworkInterfaceInfo *intf = FirstInterfaceForID(m, set->InterfaceID);
 		if (intf)
 			{
 			LogOperation("mDNS_DeregisterInterface: Another representative of InterfaceID %p %s (%#a) exists;"
@@ -7654,7 +7661,8 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 					rr->AnnounceCount = 0;
 					if (!mDNSSameEthAddress(&arp->sha, &rr->WakeUp))
 						{
-						LogOperation("Received Conflicting ARP -- waking %.6a %s", &rr->WakeUp, ARDisplayString(m, rr));
+						LogMsg("Received Conflicting ARP -- waking %s %.6a %s",
+							InterfaceNameForID(m, rr->resrec.InterfaceID), &rr->WakeUp, ARDisplayString(m, rr));
 						SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp);
 						}
 					else
