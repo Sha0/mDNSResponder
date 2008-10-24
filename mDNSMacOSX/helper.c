@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.38  2008/10/24 01:42:36  cheshire
+Added mDNSPowerRequest helper routine to request a scheduled wakeup some time in the future
+
 Revision 1.37  2008/10/24 00:17:22  mcguire
 Add compatibility for older racoon behavior
 
@@ -160,6 +163,8 @@ Revision 1.1  2007/08/08 22:34:58  mcguire
 #include <SystemConfiguration/SCPreferencesSetSpecific.h>
 #include <SystemConfiguration/SCDynamicStoreCopySpecific.h>
 #include <TargetConditionals.h>
+#include <IOKit/pwr_mgt/IOPMLib.h>
+
 #include "mDNSEmbeddedAPI.h"
 #include "dns_sd.h"
 #include "dnssd_ipc.h"
@@ -241,6 +246,28 @@ kern_return_t do_mDNSRequestBPF(__unused mach_port_t port, audit_token_t token)
 	put_flags(0, &ptr);
 	deliver_request(hdr, ref);		// Will free hdr for us
 	DNSServiceRefDeallocate(ref);
+	return KERN_SUCCESS;
+	}
+
+kern_return_t do_mDNSPowerRequest(__unused mach_port_t port, int key, int interval, int *err, audit_token_t token)
+	{
+	*err = -1;
+	if (!authorized(&token)) { *err = kmDNSHelperNotAuthorized; goto fin; }
+
+	CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+	if (now)
+		{
+		CFDateRef w = CFDateCreate(NULL, now + interval);
+		if (w)
+			{
+			IOReturn r = IOPMSchedulePowerEvent(w, CFSTR("mDNSResponder"), key ? CFSTR(kIOPMAutoWake) : CFSTR(kIOPMAutoSleep));
+			helplog(ASL_LEVEL_ERR, "IOPMSchedulePowerEvent %d", r);
+			*err = r;
+			CFRelease(w);
+			}
+		}
+fin:
+	update_idle_timer();
 	return KERN_SUCCESS;
 	}
 

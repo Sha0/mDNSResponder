@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.h,v $
+Revision 1.9  2008/10/24 01:42:36  cheshire
+Added mDNSPowerRequest helper routine to request a scheduled wakeup some time in the future
+
 Revision 1.8  2008/10/20 22:01:28  cheshire
 Made new Mach simpleroutine "mDNSRequestBPF"
 
@@ -86,13 +89,14 @@ enum mDNSHelperErrors
 extern const char *mDNSHelperError(int errornum);
 
 extern void mDNSRequestBPF(void);
-extern int mDNSDynamicStoreSetConfig(int key, CFPropertyListRef value);
-extern int mDNSPreferencesSetName(int key, domainlabel* old, domainlabel* new);
-extern int mDNSKeychainGetSecrets(CFArrayRef *secrets);
-extern int mDNSAutoTunnelInterfaceUpDown(int updown, v6addr_t addr);
-extern int mDNSConfigureServer(int updown, const char *keydata);
-extern int mDNSAutoTunnelSetKeys(int replacedelete, v6addr_t local_inner,
-    v4addr_t local_outer, short local_port, v6addr_t remote_inner,
-    v4addr_t remote_outer, short remote_port, const char *keydata);
+extern int  mDNSPowerRequest(int key, int interval);
+extern int  mDNSDynamicStoreSetConfig(int key, CFPropertyListRef value);
+extern int  mDNSPreferencesSetName(int key, domainlabel* old, domainlabel* new);
+extern int  mDNSKeychainGetSecrets(CFArrayRef *secrets);
+extern int  mDNSAutoTunnelInterfaceUpDown(int updown, v6addr_t addr);
+extern int  mDNSConfigureServer(int updown, const char *keydata);
+extern int  mDNSAutoTunnelSetKeys(int replacedelete, v6addr_t local_inner,
+				v4addr_t local_outer, short local_port, v6addr_t remote_inner,
+				v4addr_t remote_outer, short remote_port, const char *keydata);
 
 #endif /* H_HELPER_H */

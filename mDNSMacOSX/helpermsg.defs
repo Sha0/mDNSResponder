@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helpermsg.defs,v $
+Revision 1.10  2008/10/24 01:42:36  cheshire
+Added mDNSPowerRequest helper routine to request a scheduled wakeup some time in the future
+
 Revision 1.9  2008/10/20 22:01:28  cheshire
 Made new Mach simpleroutine "mDNSRequestBPF"
 
@@ -63,6 +66,12 @@ simpleroutine mDNSExit(			port			: mach_port_t;
 		ServerAuditToken		token			: audit_token_t);
 
 simpleroutine mDNSRequestBPF(	port			: mach_port_t;
+		ServerAuditToken		token			: audit_token_t);
+
+routine mDNSPowerRequest(		port			: mach_port_t;
+								key				: int;
+								interval		: int;
+		out						err				: int;
 		ServerAuditToken		token			: audit_token_t);
 
 routine mDNSDynamicStoreSetConfig(
