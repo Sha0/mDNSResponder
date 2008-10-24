@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.40  2008/10/24 20:53:37  cheshire
+For now, define USE_SEPARATE_UDNS_SERVICE_LIST, so that we use the old service list code for this submission
+
 Revision 1.39  2008/02/26 21:17:11  cheshire
 Grouped all user settings together near the start of the file; added LogTimeStamps option
 
@@ -162,6 +165,8 @@ typedef enum
 #define LogAllOperations 0
 #define LogTimeStamps 0
 #define ForceAlerts 0
+
+#define USE_SEPARATE_UDNS_SERVICE_LIST 1
 
 // Developer-settings section ends here
 
