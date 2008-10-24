@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.830  2008/10/24 20:50:34  cheshire
+Use "#if USE_SEPARATE_UDNS_SERVICE_LIST" instead of "#if defined(USE_SEPARATE_UDNS_SERVICE_LIST)"
+
 Revision 1.829  2008/10/23 23:55:57  cheshire
 Fixed some missing "const" declarations
 
@@ -7158,7 +7161,7 @@ mDNSlocal void NSSCallback(mDNS *const m, AuthRecord *const rr, mStatus result)
 		sr->ServiceCallback(m, sr, result);
 	}
 
-#if !defined(UNICAST_DISABLED) && defined(USE_SEPARATE_UDNS_SERVICE_LIST)
+#if !defined(UNICAST_DISABLED) && USE_SEPARATE_UDNS_SERVICE_LIST
 mDNSlocal mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 	{
 	mDNSu32 i;
@@ -7314,7 +7317,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 		}
 	sr->RR_TXT.DependentOn = &sr->RR_SRV;
 
-#if !defined(UNICAST_DISABLED) && defined(USE_SEPARATE_UDNS_SERVICE_LIST)
+#if !defined(UNICAST_DISABLED) && USE_SEPARATE_UDNS_SERVICE_LIST
 	// If the client has specified an explicit InterfaceID,
 	// then we do a multicast registration on that interface, even for unicast domains.
 	if (!(InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(&sr->RR_SRV.namestorage)))
@@ -7473,7 +7476,7 @@ mDNSexport mStatus mDNS_DeregisterService(mDNS *const m, ServiceRecordSet *sr)
 	// If port number is zero, that means this was actually registered using mDNS_RegisterNoSuchService()
 	if (mDNSIPPortIsZero(sr->RR_SRV.resrec.rdata->u.srv.port)) return(mDNS_DeregisterNoSuchService(m, &sr->RR_SRV));
 
-#if !defined(UNICAST_DISABLED) && defined(USE_SEPARATE_UDNS_SERVICE_LIST)
+#if !defined(UNICAST_DISABLED) && USE_SEPARATE_UDNS_SERVICE_LIST
 	if (!(sr->RR_SRV.resrec.InterfaceID == mDNSInterface_LocalOnly || IsLocalDomain(sr->RR_SRV.resrec.name)))
 		{
 		mStatus status;
@@ -8192,7 +8195,7 @@ mDNSexport void mDNS_StartExit(mDNS *const m)
 		m->SuppressSending = 0;
 		}
 
-#if !defined(UNICAST_DISABLED) && defined(USE_SEPARATE_UDNS_SERVICE_LIST)
+#if !defined(UNICAST_DISABLED) && USE_SEPARATE_UDNS_SERVICE_LIST
 	CurrentServiceRecordSet = m->ServiceRegistrations;
 	while (CurrentServiceRecordSet)
 		{
