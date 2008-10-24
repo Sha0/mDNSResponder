@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.835  2008/10/24 23:07:59  cheshire
+Wake SPS client if we receive conflicting mDNS respoonse (record with same name as one of our unique records, but different rdata)
+
 Revision 1.834  2008/10/24 23:03:24  cheshire
 Wake SPS client if we receive a conflicting ARP (some other machine claiming to own that IP address)
 
@@ -1291,6 +1294,9 @@ mDNSlocal mDNSBool SameResourceRecordSignature(const AuthRecord *const r1, const
 // complete ownership of *all* types for this name, so *any* record type with the same name is a conflict.
 // In addition, when probing we send our questions with the wildcard type kDNSQType_ANY,
 // so a response of any type should match, even if it is not actually the type the client plans to use.
+
+// For now, to make it easier to avoid false conflicts, we treat SPS Proxy records like shared records,
+// and require the rrtypes to match for the rdata to be considered potentially conflicting
 mDNSlocal mDNSBool PacketRRMatchesSignature(const CacheRecord *const pktrr, const AuthRecord *const authrr)
 	{
 	if (!pktrr)  { LogMsg("PacketRRMatchesSignature ERROR: pktrr is NULL"); return(mDNSfalse); }
@@ -1298,7 +1304,8 @@ mDNSlocal mDNSBool PacketRRMatchesSignature(const CacheRecord *const pktrr, cons
 	if (pktrr->resrec.InterfaceID &&
 		authrr->resrec.InterfaceID &&
 		pktrr->resrec.InterfaceID != authrr->resrec.InterfaceID) return(mDNSfalse);
-	if (!(authrr->resrec.RecordType & kDNSRecordTypeUniqueMask) && pktrr->resrec.rrtype != authrr->resrec.rrtype) return(mDNSfalse);
+	if (!(authrr->resrec.RecordType & kDNSRecordTypeUniqueMask) || authrr->WakeUp.l[0])
+		if (pktrr->resrec.rrtype != authrr->resrec.rrtype) return(mDNSfalse);
 	return(mDNSBool)(
 		pktrr->resrec.rrclass == authrr->resrec.rrclass &&
 		pktrr->resrec.namehash == authrr->resrec.namehash &&
@@ -5578,7 +5585,11 @@ mDNSlocal void SPSRecordCallback(mDNS *const m, AuthRecord *const ar, mStatus re
 	{
 	LogOperation("SPS Callback %d %s", result, ARDisplayString(m, ar));
 	if (result == mStatus_NameConflict)
+		{
+		LogMsg("Received Conflicting mDNS -- waking %s %.6a %s",
+			InterfaceNameForID(m, ar->resrec.InterfaceID), &ar->WakeUp, ARDisplayString(m, ar));
 		SendWakeup(m, ar->resrec.InterfaceID, &ar->WakeUp);
+		}
 	else if (result == mStatus_MemFree)
 		mDNSPlatformMemFree(ar);
 	}
@@ -5623,13 +5634,13 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 				AuthRecord *ar = mDNSPlatformMemAllocate(sizeof(AuthRecord) - sizeof(RDataBody) + RDLengthMem);
 				if (ar)
 					{
-					mDNSu8 RecordType = SameDomainName(&MACname, m->rec.r.resrec.name) ? kDNSRecordTypeUnique : kDNSRecordTypeShared;
-					mDNS_SetupResourceRecord(ar, mDNSNULL, InterfaceID, m->rec.r.resrec.rrtype,  m->rec.r.resrec.rroriginalttl, kDNSRecordTypeShared, SPSRecordCallback, ar);
+					mDNSu8 RecordType = SameDomainName(&MACname, m->rec.r.resrec.name) ? kDNSRecordTypeKnownUnique : kDNSRecordTypeShared;
+					mDNS_SetupResourceRecord(ar, mDNSNULL, InterfaceID, m->rec.r.resrec.rrtype, m->rec.r.resrec.rroriginalttl, RecordType, SPSRecordCallback, ar);
 					AssignDomainName(&ar->namestorage, m->rec.r.resrec.name);
 					ar->resrec.rdlength = GetRDLength(&m->rec.r.resrec, mDNSfalse);
 					ar->resrec.rdata->MaxRDLength = RDLengthMem;
 					mDNSPlatformMemCopy(ar->resrec.rdata->u.data, m->rec.r.resrec.rdata->u.data, RDLengthMem);
-					if (RecordType == kDNSRecordTypeUnique) ar->WakeUp = MACdata;
+					if (RecordType == kDNSRecordTypeKnownUnique) ar->WakeUp = MACdata;
 					mDNS_Register_internal(m, ar);
 					// For now, since we don't get IPv6 ND or data packets, we don't advertise AAAA records for our SPS clients
 					if (ar->resrec.rrtype == kDNSType_AAAA) { ar->WakeUp = zeroEthAddr; ar->resrec.rroriginalttl = 0; }
