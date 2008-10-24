@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.832  2008/10/24 22:58:24  cheshire
+For now, since we don't get IPv6 ND or data packets, don't advertise AAAA records for our SPS clients
+
 Revision 1.831  2008/10/24 22:50:41  cheshire
 When waking SPS client, include interface name in syslog message
 
@@ -1384,11 +1387,9 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr, mDNSs32
 
 	// kDNSType_MAC is special -- we wait five seconds for the machine in question to finish going to sleep,
 	// then we broadcast ARP Announcements claiming ownership of that IP address.
-	if (rr->resrec.rrtype == kDNSType_MAC && rr->WakeUp.l[0])
-		{
-		LogMsg("InitializeLastAPTime kDNSType_MAC %d %s", interval, ARDisplayString(m,rr));
+	// For now, since we don't get IPv6 ND or data packets, we send deletions for our SPS clients' AAAA too
+	if (rr->WakeUp.l[0] && (rr->resrec.rrtype == kDNSType_MAC || rr->resrec.rrtype == kDNSType_AAAA))
 		rr->LastAPTime = m->timenow - interval + mDNSPlatformOneSecond*5;
-		}
 	
 	SetNextAnnounceProbeTime(m, rr);
 	}
@@ -5624,6 +5625,8 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 					mDNSPlatformMemCopy(ar->resrec.rdata->u.data, m->rec.r.resrec.rdata->u.data, RDLengthMem);
 					if (RecordType == kDNSRecordTypeUnique) ar->WakeUp = MACdata;
 					mDNS_Register_internal(m, ar);
+					// For now, since we don't get IPv6 ND or data packets, we don't advertise AAAA records for our SPS clients
+					if (ar->resrec.rrtype == kDNSType_AAAA) { ar->WakeUp = zeroEthAddr; ar->resrec.rroriginalttl = 0; }
 					LogOperation("SPS Registered %s", ARDisplayString(m,ar));
 					}
 				}
