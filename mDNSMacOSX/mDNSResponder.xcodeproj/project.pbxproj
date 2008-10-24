@@ -198,6 +198,7 @@
 		FFA5724B0AF18FCC0055A0F1 /* DNSServiceDiscovery.c in Sources */ = {isa = PBXBuildFile; fileRef = FFA572480AF18FCC0055A0F1 /* DNSServiceDiscovery.c */; };
 		FFA572610AF190940055A0F1 /* DNSServiceDiscovery.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = FFA572600AF1908D0055A0F1 /* DNSServiceDiscovery.h */; };
 		FFA572640AF190C80055A0F1 /* dns_sd.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = FFA572630AF190C20055A0F1 /* dns_sd.h */; };
+		FFB437150EB165BD00E17C68 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 00CA213D02786FC30CCA2C71 /* IOKit.framework */; };
 		FFC22AA20B00F42A00BAB070 /* DNSServiceDiscoveryRequest.defs in Sources */ = {isa = PBXBuildFile; fileRef = 6575FC01022EAFBA00000109 /* DNSServiceDiscoveryRequest.defs */; };
 		FFC22AA30B00F42B00BAB070 /* DNSServiceDiscoveryRequest.defs in Sources */ = {isa = PBXBuildFile; fileRef = 6575FC01022EAFBA00000109 /* DNSServiceDiscoveryRequest.defs */; };
 		FFC22AA40B00F42C00BAB070 /* DNSServiceDiscoveryRequest.defs in Sources */ = {isa = PBXBuildFile; fileRef = 6575FC01022EAFBA00000109 /* DNSServiceDiscoveryRequest.defs */; };
@@ -476,7 +477,7 @@
 		D284BED90ADD80A20027CCDF /* dnsextd */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = dnsextd; sourceTree = BUILT_PRODUCTS_DIR; };
 		D284BEE80ADD80A70027CCDF /* ddnswriteconfig */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = ddnswriteconfig; sourceTree = BUILT_PRODUCTS_DIR; };
 		D284BF0C0ADD80B00027CCDF /* Bonjour.prefPane */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Bonjour.prefPane; sourceTree = BUILT_PRODUCTS_DIR; };
-		D284C04D0ADD95D30027CCDF /* Info-PreferencePane.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = "Info-PreferencePane.plist"; path = "PreferencePane/Info-PreferencePane.plist"; sourceTree = "<group>"; };
+		D284C04D0ADD95D30027CCDF /* Info-PreferencePane.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xml; name = "Info-PreferencePane.plist"; path = "PreferencePane/Info-PreferencePane.plist"; sourceTree = "<group>"; };
 		DB2CC4430662DD1100335AB3 /* BaseListener.java */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.java; name = BaseListener.java; path = ../mDNSShared/Java/BaseListener.java; sourceTree = SOURCE_ROOT; };
 		DB2CC4440662DD1100335AB3 /* BrowseListener.java */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.java; name = BrowseListener.java; path = ../mDNSShared/Java/BrowseListener.java; sourceTree = SOURCE_ROOT; };
 		DB2CC4450662DD1100335AB3 /* DNSRecord.java */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.java; name = DNSRecord.java; path = ../mDNSShared/Java/DNSRecord.java; sourceTree = SOURCE_ROOT; };
@@ -548,6 +549,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FFB437150EB165BD00E17C68 /* IOKit.framework in Frameworks */,
 				2E0406150C3197CB00F13B59 /* libbsm.dylib in Frameworks */,
 				2E04070A0C31EEEC00F13B59 /* CoreFoundation.framework in Frameworks */,
 				2E04070B0C31EEEC00F13B59 /* SystemConfiguration.framework in Frameworks */,
@@ -1212,7 +1214,6 @@
 		08FB7793FE84155DC02AAC07 /* Project object */ = {
 			isa = PBXProject;
 			buildConfigurationList = D284BE2B0ADD78180027CCDF /* Build configuration list for PBXProject "mDNSResponder" */;
-			compatibilityVersion = "Xcode 2.4";
 			hasScannedForEncodings = 1;
 			mainGroup = 08FB7794FE84155DC02AAC07 /* mDNSResponder */;
 			projectDirPath = "";
@@ -1347,7 +1348,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "rm -f \"${CONFIGURATION_TEMP_DIR}/ipsec_options.h\"\ntouch \"${CONFIGURATION_TEMP_DIR}/ipsec_options.h\"\n";
-			showEnvVarsInLog = 0;
 		};
 		D284BE510ADD80740027CCDF /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
