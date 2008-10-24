@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.503  2008/10/24 23:58:47  cheshire
+Ports should be mDNSIPPort, not mDNSOpaque16
+
 Revision 1.502  2008/10/23 22:25:56  cheshire
 Renamed field "id" to more descriptive "updateid"
 
@@ -1190,16 +1193,16 @@ typedef packedstruct
 
 typedef packedstruct
 	{
-	mDNSOpaque16 src;
-	mDNSOpaque16 dst;
+	mDNSIPPort   src;
+	mDNSIPPort   dst;
 	mDNSu16      len; 
 	mDNSu16      checksum;
 	} UDPHeader;
 
 typedef packedstruct
 	{
-	mDNSOpaque16 src;
-	mDNSOpaque16 dst;
+	mDNSIPPort   src;
+	mDNSIPPort   dst;
 	mDNSu32      seq;
 	mDNSu32      ack;
 	mDNSu8       offset; 
