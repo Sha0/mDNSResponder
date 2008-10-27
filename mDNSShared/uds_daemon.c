@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.407  2008/10/27 07:34:36  cheshire
+Additional sanity checks for debugging
+
 Revision 1.406  2008/10/23 23:55:56  cheshire
 Fixed some missing "const" declarations
 
@@ -964,6 +967,9 @@ mDNSlocal void my_perror(char *errmsg)
 
 mDNSlocal void abort_request(request_state *req)
 	{
+	if (req->terminate == (req_termination_fn)~0)
+		{ LogMsg("abort_request: ERROR: Attempt to abort operation %p with req->terminate %p", req, req->terminate); return; }
+	
 	// First stop whatever mDNSCore operation we were doing
 	if (req->terminate) req->terminate(req);
 
@@ -984,7 +990,7 @@ mDNSlocal void abort_request(request_state *req)
 			}
 		}
 
-// Set req->sd to something invalid, so that udsserver_idle knows to unlink and free this structure
+	// Set req->sd to something invalid, so that udsserver_idle knows to unlink and free this structure
 #if APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING
 	// Don't use dnssd_InvalidSocket (-1) because that's the sentinel value MACOSX_MDNS_MALLOC_DEBUGGING uses
 	// for detecting when the memory for an object is inadvertently freed while the object is still on some list
@@ -992,6 +998,8 @@ mDNSlocal void abort_request(request_state *req)
 #else
 	req->sd = dnssd_InvalidSocket;
 #endif
+	// We also set req->terminate to a bogus value so we know if abort_request() gets called again for this request
+	req->terminate = (req_termination_fn)~0;
 	}
 
 mDNSlocal void AbortUnlinkAndFree(request_state *req)
@@ -1000,6 +1008,7 @@ mDNSlocal void AbortUnlinkAndFree(request_state *req)
 	abort_request(req);
 	while (*p && *p != req) p=&(*p)->next;
 	if (*p) { *p = req->next; freeL("request_state/AbortUnlinkAndFree", req); }
+	else LogMsg("AbortUnlinkAndFree: ERROR: Attempt to abort operation %p not in list", req);
 	}
 
 mDNSlocal reply_state *create_reply(const reply_op_t op, const size_t datalen, request_state *const request)
@@ -3263,7 +3272,7 @@ mDNSlocal void read_msg(request_state *req)
 			if (req->hdr.op == send_bpf)
 				{
 				dnssd_sock_t x = *(dnssd_sock_t *)CMSG_DATA(cmsg);
-				LogOperation("%3d: Got BPF %d", req->sd, x);
+				LogOperation("%3d: Got BPF %d data %d of %d %p", req->sd, x, req->data_bytes, req->hdr.datalen, req->terminate);
 				mDNSPlatformSetBPF(&mDNSStorage, x);
 				}
 			else
@@ -3376,6 +3385,7 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 	read_msg(req);
 	if (req->ts == t_morecoming) return;
 	if (req->ts == t_terminated || req->ts == t_error) { AbortUnlinkAndFree(req); return; }
+	if (req->ts != t_complete) { LogMsg("req->ts %d != t_complete", req->ts); AbortUnlinkAndFree(req); return; }
 
 	if (req->hdr.version != VERSION)
 		{
@@ -3453,7 +3463,7 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 		case getproperty_request:                handle_getproperty_request (req); break;
 		case port_mapping_request:         err = handle_port_mapping_request(req); break;
 		case addrinfo_request:             err = handle_addrinfo_request    (req); break;
-		case send_bpf:                                                             break;
+		case send_bpf:                     /* Do nothing for send_bpf */           break;
 
 		// These are all operations that work with an existing request_state object
 		case reg_record_request:           err = handle_regrecord_request   (req); break;
@@ -3533,11 +3543,11 @@ mDNSlocal void connect_callback(int fd, short filter, void *info)
 		request->sd    = sd;
 		request->errsd = sd;
 #if APPLE_OSX_mDNSResponder
-	struct xucred x;
-	socklen_t xucredlen = sizeof(x);
-	if (getsockopt(sd, 0, LOCAL_PEERCRED, &x, &xucredlen) >= 0 && x.cr_version == XUCRED_VERSION) request->uid = x.cr_uid;
-	else my_perror("ERROR: getsockopt, LOCAL_PEERCRED");
-	debugf("LOCAL_PEERCRED %d %u %u %d", xucredlen, x.cr_version, x.cr_uid, x.cr_ngroups);
+		struct xucred x;
+		socklen_t xucredlen = sizeof(x);
+		if (getsockopt(sd, 0, LOCAL_PEERCRED, &x, &xucredlen) >= 0 && x.cr_version == XUCRED_VERSION) request->uid = x.cr_uid;
+		else my_perror("ERROR: getsockopt, LOCAL_PEERCRED");
+		debugf("LOCAL_PEERCRED %d %u %u %d", xucredlen, x.cr_version, x.cr_uid, x.cr_ngroups);
 #endif APPLE_OSX_mDNSResponder
 		LogOperation("%3d: Adding FD for uid %u", request->sd, request->uid);
 		udsSupportAddFDToEventLoop(sd, request_callback, request);
