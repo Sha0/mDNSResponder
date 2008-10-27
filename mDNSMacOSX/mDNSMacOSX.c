@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.567  2008/10/27 22:31:37  cheshire
+Can't just close BPF_fd using "close(i->BPF_fd);" -- need to call
+"udsSupportRemoveFDFromEventLoop(i->BPF_fd);" to remove it from our event source list
+
 Revision 1.566  2008/10/23 22:33:23  cheshire
 Changed "NOTE:" to "Note:" so that BBEdit 9 stops putting those comment lines into the funtion popup menu
 
@@ -2042,7 +2046,7 @@ mDNSlocal void bpf_callback(int fd, short filter, void *context)
 		}
 	}
 
-mDNSlocal void SetupBPF(mDNS *const m, NetworkInterfaceInfoOSX *const x)
+mDNSlocal void SetFilterProgram(mDNS *const m, NetworkInterfaceInfoOSX *const x)
 	{
 	#define MAX_BPF_ADDRS 50
 	static struct bpf_insn filter[14 + MAX_BPF_ADDRS] =
@@ -2068,14 +2072,14 @@ mDNSlocal void SetupBPF(mDNS *const m, NetworkInterfaceInfoOSX *const x)
 	static const struct bpf_insn i3 = BPF_STMT(BPF_RET + BPF_A, 0);					// 12 Success: Return Ethernet + IP + TCP
 	static const struct bpf_insn i4 = BPF_STMT(BPF_RET + BPF_K, 0);					// 13 No match: Return nothing
 
-	LogOperation("SetupBPF: %s MAC  %.6a", x->ifinfo.ifname, &x->ifinfo.MAC);
+	LogOperation("SetFilterProgram: %d %s MAC  %.6a", x->BPF_fd, x->ifinfo.ifname, &x->ifinfo.MAC);
 
 	int numv4 = 0;
 	NetworkInterfaceInfo *i;
 	for (i = m->HostInterfaces; i; i = i->next)
 		if (i->ip.type == mDNSAddrType_IPv4 && i->InterfaceID == x->ifinfo.InterfaceID)
 			{
-			LogOperation("SetupBPF: %s IP%2d %.4a", x->ifinfo.ifname, numv4, &i->ip.ip.v4);
+			LogOperation("SetFilterProgram: %d %s IP%2d %.4a", x->BPF_fd, x->ifinfo.ifname, numv4, &i->ip.ip.v4);
 			if (numv4 < MAX_BPF_ADDRS) numv4++;
 			}
 
@@ -2116,13 +2120,10 @@ mDNSlocal void SetupBPF(mDNS *const m, NetworkInterfaceInfoOSX *const x)
 	// For debugging BPF filter program
 	unsigned int q;
 	for (q=0; q<prog.bf_len; q++)
-		LogOperation("mDNSPlatformSetBPF: %2d { 0x%02x, %d, %d, 0x%08x },", q, prog.bf_insns[q].code, prog.bf_insns[q].jt, prog.bf_insns[q].jf, prog.bf_insns[q].k);
+		LogOperation("SetFilterProgram: %2d { 0x%02x, %d, %d, 0x%08x },", q, prog.bf_insns[q].code, prog.bf_insns[q].jt, prog.bf_insns[q].jf, prog.bf_insns[q].k);
 #endif
 
 	if (ioctl(x->BPF_fd, BIOCSETF, &prog) < 0) LogMsg("mDNSPlatformSetBPF: BIOCSETF(%d) failed %d (%s)", prog.bf_len, errno, strerror(errno));
-
-	mStatus result = udsSupportAddFDToEventLoop(x->BPF_fd, bpf_callback, x);
-	if (result) LogMsg("mDNSPlatformSetBPF: udsSupportAddFDToEventLoop %d", result);
 	}
 
 mDNSexport void mDNSPlatformSetBPF(mDNS *const m, int fd)
@@ -2132,7 +2133,6 @@ mDNSexport void mDNSPlatformSetBPF(mDNS *const m, int fd)
 	if (!i) { LogOperation("mDNSPlatformSetBPF: No Interfaces awaiting BPF fd %d; closing", fd); close(fd); return; }
 
 	LogOperation("mDNSPlatformSetBPF: %s got BPF fd %d", i->ifinfo.ifname, fd);
-	i->BPF_fd = fd;
 
 	struct bpf_version v;
 	if (ioctl(fd, BIOCVERSION, &v) < 0) LogMsg("mDNSPlatformSetBPF: BIOCVERSION failed %d (%s)", errno, strerror(errno));
@@ -2156,7 +2156,12 @@ mDNSexport void mDNSPlatformSetBPF(mDNS *const m, int fd)
 	strlcpy(ifr.ifr_name, i->ifinfo.ifname, sizeof(ifr.ifr_name));
 	if (ioctl(fd, BIOCSETIF, &ifr) < 0) LogMsg("mDNSPlatformSetBPF: BIOCSETIF failed %d (%s)", errno, strerror(errno));
 
-	SetupBPF(m, i);
+	mStatus result = udsSupportAddFDToEventLoop(fd, bpf_callback, i);
+	if (result) { LogMsg("mDNSPlatformSetBPF: udsSupportAddFDToEventLoop %d", result); return; }
+
+	// Success. Record our configured BPF_fd, and create a filter program for it.
+	i->BPF_fd = fd;
+	SetFilterProgram(m, i);
 	}
 
 #endif
@@ -3547,7 +3552,9 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m, mDNSs32 utc)
 				{
 				*p = i->next;
 				if (i->ifa_name) freeL("NetworkInterfaceInfoOSX name", i->ifa_name);
-				if (i->BPF_fd >= 0) { close(i->BPF_fd); i->BPF_fd = -2; }
+#if APPLE_OSX_mDNSResponder
+				if (i->BPF_fd >= 0) { udsSupportRemoveFDFromEventLoop(i->BPF_fd); i->BPF_fd = -2; }
+#endif
 				freeL("NetworkInterfaceInfoOSX", i);
 				continue;	// After deleting this object, don't want to do the "p = &i->next;" thing at the end of the loop
 				}
@@ -4323,7 +4330,7 @@ mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 		{
 		if (!m->SleepProxyServerSocket)		// Not being Sleep Proxy Server; close any open BPF fds
 			{
-			if (i->BPF_fd >= 0) { close(i->BPF_fd); i->BPF_fd = -2; }
+			if (i->BPF_fd >= 0) { udsSupportRemoveFDFromEventLoop(i->BPF_fd); i->BPF_fd = -2; }
 			}
 		else								// else, we're Sleep Proxy Server; open BPF fds
 			{
@@ -4332,7 +4339,7 @@ mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 				// Even if we've previously set up our BPF filter, we need to redo it,
 				// in case we've added, removed, or changed IPv4 addresses on this interface
 				if (i->BPF_fd == -2) { LogOperation("%s requesting BPF", i->ifinfo.ifname); i->BPF_fd = -1; mDNSRequestBPF(); }
-				else if (i->BPF_fd >= 0) SetupBPF(m, i);
+				else if (i->BPF_fd >= 0) SetFilterProgram(m, i);
 				}
 			}
 		}
