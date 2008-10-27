@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.384  2008/10/27 22:22:59  cheshire
+Extra sanity checking in udsSupportAddFDToEventLoop/udsSupportRemoveFDFromEventLoop
+
 Revision 1.383  2008/10/27 07:24:53  cheshire
 Need a "usleep(1000)" (workaround for <rdar://problem/3585273>) to avoid crashes
 
@@ -545,7 +548,7 @@ struct DNSServiceBrowser_struct
 	DNSServiceBrowserResult *results;
 	mDNSs32 lastsuccess;
     mDNSBool DefaultDomain;                // was the browse started on an explicit domain?
-    domainname type;                       //  registration type 
+    domainname type;                       //  registration type
 	};
 
 typedef struct DNSServiceResolver_struct DNSServiceResolver;
@@ -585,7 +588,7 @@ typedef struct DNSServiceRegistration
     size_t rdsize;
     int NumSubTypes;
     char regtype[MAX_ESCAPED_DOMAIN_NAME]; // for use in AllocateSubtypes
-    domainlabel name;  // used only if autoname is false 
+    domainlabel name;  // used only if autoname is false
     domainname type;
     mDNSIPPort port;
     unsigned char txtinfo[1024];
@@ -871,7 +874,7 @@ mDNSlocal void AbortClient(mach_port_t ClientMachPort, void *m)
 		while (si)
 			{
 			ServiceInstance *instance = si;
-			si = si->next;                 
+			si = si->next;
 			instance->renameonmemfree = mDNSfalse;
 			if (m && m != x) LogMsg("%5d: DNSServiceRegistration(%##s, %u) STOP; WARNING m %p != x %p", ClientMachPort, instance->srs.RR_SRV.resrec.name->c, SRS_PORT(&instance->srs), m, x);
 			else LogOperation("%5d: DNSServiceRegistration(%##s, %u) STOP", ClientMachPort, instance->srs.RR_SRV.resrec.name->c, SRS_PORT(&instance->srs));
@@ -2911,6 +2914,10 @@ mDNSlocal void CFSCallBack(const CFSocketRef cfs, const CFSocketCallBackType Cal
 // Arrange things so that when data appears on fd, callback is called with context
 mDNSexport mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *context)
 	{
+	KQSocketEventSource **p = &gEventSources;
+	while (*p && (*p)->fd != fd) p = &(*p)->next;
+	if (*p) { LogMsg("udsSupportAddFDToEventLoop: ERROR fd %d already has EventLoop source entry", fd); return mStatus_AlreadyRegistered; }
+
 	KQSocketEventSource *newSource = (KQSocketEventSource*) mallocL("KQSocketEventSource", sizeof *newSource);
 	if (!newSource) return mStatus_NoMemoryErr;
 
@@ -2949,8 +2956,6 @@ mDNSexport mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback,
 			}
 		}
 
-	KQSocketEventSource **p = &gEventSources;
-	while (*p) p = &(*p)->next;
 	*p = newSource;
 	return mStatus_NoError;
 	}
@@ -2959,7 +2964,12 @@ mDNSexport mStatus udsSupportRemoveFDFromEventLoop(int fd)		// Note: This also C
 	{
 	KQSocketEventSource **p = &gEventSources;
 	while (*p && (*p)->fd != fd) p = &(*p)->next;
-	if (*p) 
+	if (!*p)
+		{
+		LogMsg("udsSupportRemoveFDFromEventLoop: ERROR fd %d not found in EventLoop source list", fd);
+		return mStatus_NoSuchNameErr;
+		}
+	else
 		{
 		KQSocketEventSource *s = *p;
 		*p = (*p)->next;
@@ -2984,7 +2994,6 @@ mDNSexport mStatus udsSupportRemoveFDFromEventLoop(int fd)		// Note: This also C
 		freeL("KQSocketEventSource", s);
 		return mStatus_NoError;
 		}
-	return mStatus_NoSuchNameErr;
 	}
 
 #if _BUILDING_XCODE_PROJECT_
