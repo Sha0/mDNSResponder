@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.383  2008/10/27 07:24:53  cheshire
+Need a "usleep(1000)" (workaround for <rdar://problem/3585273>) to avoid crashes
+
 Revision 1.382  2008/10/24 01:51:48  cheshire
 Before going to sleep, request a future wakeup to renew NAT-PMP mappings, SPS registrations, etc.
 
@@ -2941,7 +2944,7 @@ mDNSexport mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback,
 		if (!newSource->rls)
 			{
 			LogMsg("KQueueSet failed for fd %d errno %d (%s)", fd, errno, strerror(errno));
-			free(newSource);
+			freeL("KQSocketEventSource", newSource);
 			return mStatus_BadParamErr;
 			}
 		}
@@ -2966,6 +2969,9 @@ mDNSexport mStatus udsSupportRemoveFDFromEventLoop(int fd)		// Note: This also C
 			CFRunLoopRemoveSource(CFRunLoopGetCurrent(), s->rls, kCFRunLoopDefaultMode);
 			CFRunLoopSourceInvalidate(s->rls);
 			CFRelease(s->rls);
+			// Workaround that gives time to CFSocket's select thread so it can remove the socket from its
+			// FD set before we close the socket by calling DNSServiceRefDeallocate. <rdar://problem/3585273>
+			usleep(1000);
 			CFSocketInvalidate(s->cfs);		// Note: Also closes the underlying socket
 			CFRelease(s->cfs);
 			}
