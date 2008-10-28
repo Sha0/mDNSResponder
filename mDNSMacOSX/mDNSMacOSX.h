@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.87  2008/10/28 18:32:09  cheshire
+Added CFSocketRef and CFRunLoopSourceRef in NetworkInterfaceInfoOSX_struct
+
 Revision 1.86  2008/10/22 23:23:53  cheshire
 Moved definition of OSXVers from daemon.c into mDNSMacOSX.c
 
@@ -194,8 +197,10 @@ struct NetworkInterfaceInfoOSX_struct
 	mDNSu32                  scope_id;			// interface index / IPv6 scope ID
 	mDNSEthAddr              BSSID;				// BSSID of 802.11 base station, if applicable
 	u_short                  sa_family;
-	int                      BPF_fd;
+	int                      BPF_fd;			// -1 uninitialized; -2 requested BPF; -3 failed
 	u_int                    BPF_len;
+	CFSocketRef              BPF_cfs;
+	CFRunLoopSourceRef       BPF_rls;
 	};
 
 struct mDNS_PlatformSupport_struct
