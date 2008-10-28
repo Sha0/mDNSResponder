@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.88  2008/10/28 20:33:56  cheshire
+Added CFRunLoopRef in mDNS_PlatformSupport_struct, to hold reference to our main thread's CFRunLoop
+
 Revision 1.87  2008/10/28 18:32:09  cheshire
 Added CFSocketRef and CFRunLoopSourceRef in NetworkInterfaceInfoOSX_struct
 
@@ -219,7 +222,8 @@ struct mDNS_PlatformSupport_struct
 	// See <rdar://problem/5124399> Not getting Keychain Changed events when enabling BTMM
 	mDNSs32                  KeyChainBugTimer;
 	mDNSs32                  KeyChainBugInterval;
-	
+
+	CFRunLoopRef             CFRunLoop;
 	SCDynamicStoreRef        Store;
 	CFRunLoopSourceRef       StoreRLS;
 	IONotificationPortRef    PowerPortRef;
