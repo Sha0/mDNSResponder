@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.838  2008/10/28 18:30:37  cheshire
+Added debugging message in mDNSCoreReceiveRawPacket
+
 Revision 1.837  2008/10/24 23:58:05  cheshire
 Wake up for Back to My Mac IPSEC packets, except NAT keepalive packets
 
@@ -7658,7 +7661,9 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 		mDNSu32 hash;
 		NetworkInterfaceInfo *intf = FirstInterfaceForID(m, InterfaceID);
 		if (!intf) return;
-		
+
+		debugf("Got ARP from %.4a/%.6a for %.4a", &arp->spa, &arp->sha, &arp->tpa);
+
 		mDNS_Lock(m);
 
 		// Answer ARP Requests for any IP address we're proxying for
