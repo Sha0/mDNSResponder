@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.841  2008/10/29 23:23:38  cheshire
+Refined cache size reporting to go in steps of 1000 when number is above 1000
+
 Revision 1.840  2008/10/29 21:34:10  cheshire
 Removed some old debugging messages
 
@@ -3753,8 +3756,9 @@ mDNSlocal CacheEntity *GetCacheEntity(mDNS *const m, const CacheGroup *const Pre
 		if (++m->rrcache_totalused >= m->rrcache_report)
 			{
 			LogOperation("RR Cache now using %ld objects", m->rrcache_totalused);
-			if (m->rrcache_report < 100) m->rrcache_report += 10;
-			else                         m->rrcache_report += 100;
+			if      (m->rrcache_report <  100) m->rrcache_report += 10;
+			else if (m->rrcache_report < 1000) m->rrcache_report += 100;
+			else                               m->rrcache_report += 1000;
 			}
 		mDNSPlatformMemZero(e, sizeof(*e));
 		}
