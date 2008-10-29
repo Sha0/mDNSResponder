@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.386  2008/10/29 22:03:39  cheshire
+Compute correct required wakeup time for NAT traversals and uDNS-registered records
+
 Revision 1.385  2008/10/28 20:40:13  cheshire
 Now that the BPF code in mDNSMacOSX.c makes its own CFSocketCreateWithNative directly, the
 udsSupportAddFDToEventLoop/udsSupportRemoveFDFromEventLoop routines can go back to using kqueue
@@ -2149,13 +2152,14 @@ mDNSlocal void INFOCallback(void)
 		{
 		for (i = mDNSStorage.p->InterfaceList; i; i = i->next)
 			{
+			// Allow six characters for interface name, for names like "vmnet8"
 			if (!i->Exists)
-				LogMsgNoIdent("%p %s %5s(%lu) %.6a %.6a %#a dormant for %d seconds",
+				LogMsgNoIdent("%p %s %6s(%lu) %.6a %.6a %#a dormant for %d seconds",
 					i->ifinfo.InterfaceID,
 					i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id, &i->ifinfo.MAC, &i->BSSID,
 					&i->ifinfo.ip, utc - i->LastSeen);
 			else
-				LogMsgNoIdent("%p %s %5s(%lu) %.6a %.6a %s %s %-15.4a %s %s %s %s %#a",
+				LogMsgNoIdent("%p %s %6s(%lu) %.6a %.6a %s %s %-15.4a %s %s %s %s %#a",
 					i->ifinfo.InterfaceID,
 					i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id, &i->ifinfo.MAC, &i->BSSID,
 					i->ifinfo.InterfaceActive ? "Active" : "      ",
@@ -2483,7 +2487,6 @@ mDNSlocal mDNSBool ReadyForSleep(mDNS *m)
 		if (!mDNSOpaque16IsZero(q->TargetQID) && q->LongLived && q->ReqLease == 0 && q->tcp) return(mDNSfalse);
 
 	// 2. Scan list of interfaces
-
 	NetworkInterfaceInfo *intf = GetFirstActiveInterface(m->HostInterfaces);
 	while (intf)
 		{
@@ -2516,6 +2519,59 @@ mDNSlocal mDNSBool ReadyForSleep(mDNS *m)
 		if (srs->state == regState_NoTarget && srs->tcp) return(mDNSfalse);
 
 	return(mDNStrue);
+	}
+
+// We deliberately schedule our wakeup for halfway between when we'd *like* it and when we *need* it.
+// For example, if our DHCP lease expires in two hours, we'll typically renew it at the halfway point, after one hour.
+// If we scheduled our wakeup for the one-hour renewal time, that might be just seconds from now, and sleeping
+// for a few seconds and then waking again is silly and annoying.
+// If we scheduled our wakeup for the two-hour expiry time, and we were slow to wake, we might lose our lease.
+// Scheduling our wakeup for halfway in between -- 90 minutes -- avoids short wakeups while still
+// allowing us an adequate safety margin to renew our lease before we lose it.
+
+mDNSlocal mDNSs32 ComputeWakeTime(mDNS *const m, mDNSs32 now)
+	{
+	mDNSs32 e = now + 0x78000000;
+
+	// For testing right now we assume 2 hours; in reality we need to interrogate DHCP client to get the real value
+	mDNSs32 dhcp = now + 7200 * mDNSPlatformOneSecond;
+
+	// When we implement SPS leases, we need to use the real SPS lease values here
+	mDNSs32 sps = now + 7200 * mDNSPlatformOneSecond;
+
+	if (e - dhcp > 0) e = dhcp;
+
+	if (e - sps  > 0) e = sps;
+
+	NATTraversalInfo *nat;
+	for (nat = m->NATTraversals; nat; nat=nat->next)
+		if (nat->Protocol && nat->ExpiryTime && nat->ExpiryTime - now > mDNSPlatformOneSecond*4)
+			{
+			mDNSs32 t = nat->ExpiryTime - (nat->ExpiryTime - now) / 4;
+			if (e - t > 0) e = t;
+			LogOperation("ComputeWakeTime: %p %s Int %5d Ext %5d Err %d Retry %d Interval %d Expire %d Wake %d",
+				nat, nat->Protocol == NATOp_MapTCP ? "TCP" : "UDP",
+				mDNSVal16(nat->IntPort), mDNSVal16(nat->ExternalPort), nat->Result,
+				nat->retryPortMap ? (nat->retryPortMap - now) / mDNSPlatformOneSecond : 0,
+				nat->retryInterval / mDNSPlatformOneSecond,
+				nat->ExpiryTime ? (nat->ExpiryTime - now) / mDNSPlatformOneSecond : 0,
+				(t - now) / mDNSPlatformOneSecond);
+			}
+
+	AuthRecord *ar;
+	for (ar = m->ResourceRecords; ar; ar = ar->next)
+		if (ar->state == regState_Registered && ar->expire && ar->expire - now > mDNSPlatformOneSecond*4)
+			{
+			mDNSs32 t = ar->expire - (ar->expire - now) / 4;
+			if (e - t > 0) e = t;
+			LogOperation("ComputeWakeTime: %p Int %7d Next %7d Expire %7d Wake %7d %s",
+				ar, ar->ThisAPInterval / mDNSPlatformOneSecond,
+				(ar->LastAPTime + ar->ThisAPInterval - now) / mDNSPlatformOneSecond,
+				ar->expire ? (ar->expire - now) / mDNSPlatformOneSecond : 0,
+				(t - now) / mDNSPlatformOneSecond, ARDisplayString(m, ar));
+			}
+
+	return(e - now);
 	}
 
 mDNSlocal void KQWokenFlushBytes(int fd, __unused short filter, __unused void *context)
@@ -2588,25 +2644,48 @@ mDNSlocal void * KQueueLoop(void *m_param)
 			mDNSBool ready = ReadyForSleep(m);
 			if (ready || now - m->p->SleepLimit >= 0)
 				{
+				int result = kIOReturnSuccess;
 				LogOperation("IOAllowPowerChange(%lX) %s at %ld (%d ticks remaining)", m->p->SleepCookie,
 					ready ? "ready for sleep" : "giving up", now, m->p->SleepLimit - now);
 				m->p->SleepLimit = 0;
-				m->SleepState = SleepState_Sleeping;
 
-				// Preliminary code to compute when next wakeup is required
-				// The real code needs to be smarter -- this could schedule a wakeup just two seconds from now
-				// The real code will have to compute a time that avoids that --
-				// e.g. If a NAT-PMP lease expires in 60 minutes, and is due to be renewed in 30 minutes,
-				// then we should plan to wake up in 45 minutes, right in the middle of the renewal window.
-				mDNSs32 e = m->timenow + 3600 * mDNSPlatformOneSecond;
-				if (e - m->NextuDNSEvent         > 0) e = m->NextuDNSEvent;
-				if (e - m->NextScheduledNATOp    > 0) e = m->NextScheduledNATOp;
-				LogMsg("mDNSPowerRequest: uDNS %d NAT-PMP %d SPS 3600 next in %d",
-					(m->NextuDNSEvent      - m->timenow) / mDNSPlatformOneSecond,
-					(m->NextScheduledNATOp - m->timenow) / mDNSPlatformOneSecond,
-					(e                     - m->timenow) / mDNSPlatformOneSecond);
-				mDNSPowerRequest(1, (e - m->timenow) / mDNSPlatformOneSecond);
-				IOAllowPowerChange(m->p->PowerConnection, m->p->SleepCookie);
+				// First check if any of our interfaces support wakeup
+				NetworkInterfaceInfo *intf = GetFirstActiveInterface(m->HostInterfaces);
+				while (intf && !intf->NetWake) intf = GetFirstActiveInterface(intf->next);
+				if (intf)
+					{
+					mDNSs32 interval = ComputeWakeTime(m, now);
+
+					// If we're not ready to sleep (failed to register with Sleep Proxy, maybe because of transient network problem) then
+					// schedule a wakeup in one hour to try again. Otherwise, a single SPS failure could result in a remote machine falling
+					// permanently asleep, requiring someone to go to the machine in person to wake it up again, which would be unacceptable.
+					if (!ready && interval > 3600 * mDNSPlatformOneSecond) interval = 3600 * mDNSPlatformOneSecond;
+
+					// For testing
+					// interval = 20 * mDNSPlatformOneSecond;
+
+					if (interval < mDNSPlatformOneSecond) interval = mDNSPlatformOneSecond;
+					result = mDNSPowerRequest(1, interval / mDNSPlatformOneSecond);
+
+					if (result == kIOReturnNotReady)
+						{
+						LogMsg("Requested wakeup in %d seconds unsuccessful; retrying with longer intervals", interval / mDNSPlatformOneSecond);
+						// IOPMSchedulePowerEvent fails with kIOReturnNotReady (-536870184/0xe00002d8) if the requested wake time is
+						// "too soon", but there's no API to find out what constitutes "too soon" on any given OS/hardware combination,
+						// so if we get kIOReturnNotReady we just have to iterate with successively longer intervals until it doesn't fail.
+						// Additionally, if our power request is deemed "too soon" for the machine to get to sleep and wake back up
+						// again, we don't acknowledge the sleep request, since the implication is that the system won't manage
+						// to be awake again at the time we need it.
+						do interval += (interval < mDNSPlatformOneSecond*20) ? mDNSPlatformOneSecond : ((interval+3) / 4);
+						while (mDNSPowerRequest(1, interval / mDNSPlatformOneSecond) == kIOReturnNotReady);
+						}
+
+					LogMsg("Requested wakeup in %d seconds", interval / mDNSPlatformOneSecond);
+					}
+
+				m->SleepState = SleepState_Sleeping;
+				if (result == kIOReturnSuccess) IOAllowPowerChange (m->p->PowerConnection, m->p->SleepCookie);
+				else                            IOCancelPowerChange(m->p->PowerConnection, m->p->SleepCookie);
 				}
 			else
 				if (nextTimerEvent - m->p->SleepLimit >= 0)
