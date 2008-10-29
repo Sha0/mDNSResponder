@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.39  2008/10/29 21:26:50  cheshire
+Only log IOPMSchedulePowerEvent calls when there's an error
+
 Revision 1.38  2008/10/24 01:42:36  cheshire
 Added mDNSPowerRequest helper routine to request a scheduled wakeup some time in the future
 
@@ -260,8 +263,8 @@ kern_return_t do_mDNSPowerRequest(__unused mach_port_t port, int key, int interv
 		CFDateRef w = CFDateCreate(NULL, now + interval);
 		if (w)
 			{
-			IOReturn r = IOPMSchedulePowerEvent(w, CFSTR("mDNSResponder"), key ? CFSTR(kIOPMAutoWake) : CFSTR(kIOPMAutoSleep));
-			helplog(ASL_LEVEL_ERR, "IOPMSchedulePowerEvent %d", r);
+			IOReturn r = IOPMSchedulePowerEvent(w, CFSTR("mDNSResponderHelper"), key ? CFSTR(kIOPMAutoWake) : CFSTR(kIOPMAutoSleep));
+			if (r) { usleep(100000); helplog(ASL_LEVEL_ERR, "IOPMSchedulePowerEvent(%d) %d %x", interval, r, r); }
 			*err = r;
 			CFRelease(w);
 			}
