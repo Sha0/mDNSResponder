@@ -1728,6 +1728,7 @@
 		D284BE2C0ADD78180027CCDF /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CONFIGURATION_BUILD_DIR = "$(BUILD_DIR)";
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"APPLE_OSX_mDNSResponder=1",
 					"__MigTypeCheck=1",
