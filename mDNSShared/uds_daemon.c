@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.408  2008/10/29 21:32:33  cheshire
+Align "DNSServiceEnumerateDomains ... RESULT" log messages
+
 Revision 1.407  2008/10/27 07:34:36  cheshire
 Additional sanity checks for debugging
 
@@ -2831,7 +2834,7 @@ mDNSlocal void enum_result_callback(mDNS *const m,
 	reply = format_enumeration_reply(request, domain, flags, kDNSServiceInterfaceIndexAny, kDNSServiceErr_NoError);
 	if (!reply) { LogMsg("ERROR: enum_result_callback, format_enumeration_reply"); return; }
 
-	LogOperation("%3d: DNSServiceEnumerateDomains(%#s) RESULT %s: %s", request->sd, question->qname.c, AddRecord ? "Add" : "Rmv", domain);
+	LogOperation("%3d: DNSServiceEnumerateDomains(%#2s) RESULT %s: %s", request->sd, question->qname.c, AddRecord ? "Add" : "Rmv", domain);
 
 	append_reply(request, reply);
 	}
