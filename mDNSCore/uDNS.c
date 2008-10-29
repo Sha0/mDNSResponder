@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.577  2008/10/29 21:37:01  cheshire
+Removed some old debugging messages
+
 Revision 1.576  2008/10/23 22:25:57  cheshire
 Renamed field "id" to more descriptive "updateid"
 
@@ -1381,7 +1384,7 @@ mDNSlocal void PushDNSServerToEnd(mDNS *const m, DNSQuestion *q)
 		return;
 		}
 
-	LogOperation("PushDNSServerToEnd: Pushing DNS server %#a:%d (%##s) due to %d unanswered queries for %##s (%s)",
+	debugf("PushDNSServerToEnd: Pushing DNS server %#a:%d (%##s) due to %d unanswered queries for %##s (%s)",
 		&q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qDNSServer->domain.c, q->unansweredQueries, q->qname.c, DNSTypeName(q->qtype));
 
 	while (*p)
@@ -4489,9 +4492,8 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 			
 #if LogAllOperations || MDNS_DEBUGMSGS
 			char buffer[1024];
-
 			mDNS_snprintf(buffer, sizeof(buffer), orig ? "%#a:%d (%##s)" : "null", &orig->addr, mDNSVal16(orig->port), orig->domain.c);
-			LogOperation("Sent %d unanswered queries for %##s (%s) to %s", q->unansweredQueries, q->qname.c, DNSTypeName(q->qtype), buffer);
+			debugf("Sent %d unanswered queries for %##s (%s) to %s", q->unansweredQueries, q->qname.c, DNSTypeName(q->qtype), buffer);
 #endif
 
 			PushDNSServerToEnd(m, q);
@@ -4501,7 +4503,7 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 				{
 #if LogAllOperations || MDNS_DEBUGMSGS
 				mDNS_snprintf(buffer, sizeof(buffer), q->qDNSServer ? "%#a:%d (%##s)" : "null", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qDNSServer->domain.c);
-				LogOperation("Server for %##s (%s) changed to %s", q->qname.c, DNSTypeName(q->qtype), buffer);
+				debugf("Server for %##s (%s) changed to %s", q->qname.c, DNSTypeName(q->qtype), buffer);
 #endif
 				q->ThisQInterval = q->ThisQInterval / QuestionIntervalStep; // Decrease interval one step so we don't quickly bounce between servers for queries that will not be answered.
 				}
@@ -4554,7 +4556,7 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 				q->unansweredQueries++;
 				if (q->ThisQInterval > MAX_UCAST_POLL_INTERVAL)
 					q->ThisQInterval = MAX_UCAST_POLL_INTERVAL;
-				LogOperation("Increased ThisQInterval to %d for %##s (%s)", q->ThisQInterval, q->qname.c, DNSTypeName(q->qtype));
+				debugf("Increased ThisQInterval to %d for %##s (%s)", q->ThisQInterval, q->qname.c, DNSTypeName(q->qtype));
 				}
 			q->LastQTime = m->timenow;
 			SetNextQueryTime(m, q);
@@ -4577,7 +4579,7 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 				for (rr = cg->members; rr; rr=rr->next)
 					if (SameNameRecordAnswersQuestion(&rr->resrec, q)) mDNS_PurgeCacheResourceRecord(m, rr);
 
-			if (!q->qDNSServer) LogOperation("uDNS_CheckCurrentQuestion no DNS server for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+			if (!q->qDNSServer) debugf("uDNS_CheckCurrentQuestion no DNS server for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 			else LogMsg("uDNS_CheckCurrentQuestion DNS server %#a:%d for %##s is disabled", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qname.c);
 
 			MakeNegativeCacheRecord(m, &q->qname, q->qnamehash, q->qtype, q->qclass, 60);

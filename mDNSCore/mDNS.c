@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.840  2008/10/29 21:34:10  cheshire
+Removed some old debugging messages
+
 Revision 1.839  2008/10/29 21:31:32  cheshire
 Five seconds not always enough time for machine to go to sleep -- increased to ten seconds
 
@@ -2806,7 +2809,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 			if (rr->CRActiveQuestion && rr->UnansweredQueries < MaxUnansweredQueries)
 				if (m->timenow + TicksTTL(rr)/50 - rr->NextRequiredQuery >= 0)
 					{
-					LogOperation("Sending %d%% cache expiration query for %s", 80 + 5 * rr->UnansweredQueries, CRDisplayString(m, rr));
+					debugf("Sending %d%% cache expiration query for %s", 80 + 5 * rr->UnansweredQueries, CRDisplayString(m, rr));
 					q = rr->CRActiveQuestion;
 					ExpireDupSuppressInfoOnInterface(q->DupSuppress, m->timenow - TicksTTL(rr)/20, rr->resrec.InterfaceID);
 					// For uDNS queries (TargetQID non-zero) we adjust LastQTime,
@@ -3997,7 +4000,7 @@ mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question, 
 
 	if (!question->DuplicateOf)
 		{
-		LogOperation("ActivateUnicastQuery: %##s %s%s%s",
+		debugf("ActivateUnicastQuery: %##s %s%s%s",
 			question->qname.c, DNSTypeName(question->qtype), question->AuthInfo ? " (Private)" : "", ScheduleImmediately ? " ScheduleImmediately" : "");
 		if (question->nta) { CancelGetZoneData(m, question->nta); question->nta = mDNSNULL; }
 		if (question->LongLived)
@@ -5580,7 +5583,7 @@ exit:
 					}
 				else while (1)
 					{
-					LogOperation("mDNSCoreReceiveResponse making negative cache entry TTL %d for %##s (%s)", negttl, name->c, DNSTypeName(q.qtype));
+					debugf("mDNSCoreReceiveResponse making negative cache entry TTL %d for %##s (%s)", negttl, name->c, DNSTypeName(q.qtype));
 					MakeNegativeCacheRecord(m, name, hash, q.qtype, q.qclass, negttl);
 					CreateNewCacheEntry(m, slot, cg);
 					m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
@@ -5875,7 +5878,7 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const questi
 			//	question->tcp        = mDNSNULL;
 
 				if (q->LocalSocket)
-					LogOperation("UpdateQuestionDuplicates transferred LocalSocket pointer for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+					debugf("UpdateQuestionDuplicates transferred LocalSocket pointer for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 
 				if (q->nta)
 					{
@@ -8074,7 +8077,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 			if (t != s)
 				{
 				// If DNS Server for this question has changed, reactivate it
-				LogOperation("Updating DNS Server from %p %#a:%d (%##s) to %p %#a:%d (%##s) for %##s (%s)",
+				debugf("Updating DNS Server from %p %#a:%d (%##s) to %p %#a:%d (%##s) for %##s (%s)",
 					t, t ? &t->addr : mDNSNULL, mDNSVal16(t ? t->port : zeroIPPort), t ? t->domain.c : (mDNSu8*)"",
 					s, s ? &s->addr : mDNSNULL, mDNSVal16(s ? s->port : zeroIPPort), s ? s->domain.c : (mDNSu8*)"",
 					q->qname.c, DNSTypeName(q->qtype));
