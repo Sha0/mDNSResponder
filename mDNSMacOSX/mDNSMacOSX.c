@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.569  2008/10/29 21:39:43  cheshire
+Updated syslog messages; close BPF socket on read error
+
 Revision 1.568  2008/10/28 20:37:28  cheshire
 Changed code to create its own CFSocketCreateWithNative directly, instead of
 relying on udsSupportAddFDToEventLoop/udsSupportRemoveFDFromEventLoop
@@ -1458,7 +1461,7 @@ mDNSlocal OSStatus tlsWriteSock(SSLConnectionRef connection, const void *data, s
 	if (errno == EAGAIN                      ) return(errSSLWouldBlock);
 	if (errno == ENOENT                      ) return(errSSLClosedGraceful);
 	if (errno == EPIPE || errno == ECONNRESET) return(errSSLClosedAbort);
-	LogMsg("ERROR: tlsWriteSock: error %d %s\n", errno, strerror(errno));
+	LogMsg("ERROR: tlsWriteSock: error %d (%s)\n", errno, strerror(errno));
 	return(errSSLClosedAbort);
 	}
 
@@ -1471,7 +1474,7 @@ mDNSlocal OSStatus tlsReadSock(SSLConnectionRef connection, void *data, size_t *
 	if (ret == 0 || errno == ENOENT    ) return(errSSLClosedGraceful);
 	if (            errno == EAGAIN    ) return(errSSLWouldBlock);
 	if (            errno == ECONNRESET) return(errSSLClosedAbort);
-	LogMsg("ERROR: tlsSockRead: error %d %s\n", errno, strerror(errno));
+	LogMsg("ERROR: tlsSockRead: error %d (%s)\n", errno, strerror(errno));
 	return(errSSLClosedAbort);
 	}
 
@@ -1559,7 +1562,7 @@ mDNSexport void KQueueUnlock(mDNS *const m, const char const *task)
 
 	char wake = 1;
 	if (send(m->p->WakeKQueueLoopFD, &wake, sizeof(wake), 0) == -1)
-		LogMsg("ERROR: KQueueWake: send failed with error code: %d - %s", errno, strerror(errno));
+		LogMsg("ERROR: KQueueWake: send failed with error code: %d (%s)", errno, strerror(errno));
 	}
 
 mDNSexport TCPSocket *mDNSPlatformTCPSocket(mDNS *const m, TCPSocketFlags flags, mDNSIPPort *port)
@@ -1680,7 +1683,7 @@ mDNSexport mStatus mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr *dst, 
 	if (connect(sock->fd, (struct sockaddr *)&saddr, sizeof(saddr)) < 0)
 		{
 		if (errno == EINPROGRESS) return mStatus_ConnPending;
-		LogMsg("ERROR: mDNSPlatformTCPConnect - connect failed: socket %d: Error %d %s", sock->fd, errno, strerror(errno));
+		LogMsg("ERROR: mDNSPlatformTCPConnect - connect failed: socket %d: Error %d (%s)", sock->fd, errno, strerror(errno));
 		close(sock->fd);
 		return mStatus_ConnFailed;
 		}
@@ -1790,7 +1793,7 @@ mDNSexport long mDNSPlatformReadTCP(TCPSocket *sock, void *buf, unsigned long bu
 			}
 		// else nread is negative -- see what kind of error we got
 		else if (errno == ECONNRESET) { nread = 0; *closed = mDNStrue; }
-		else if (errno != EAGAIN) { LogMsg("ERROR: mDNSPlatformReadTCP - recv: %d %s", errno, strerror(errno)); nread = -1; }
+		else if (errno != EAGAIN) { LogMsg("ERROR: mDNSPlatformReadTCP - recv: %d (%s)", errno, strerror(errno)); nread = -1; }
 		else // errno is EAGAIN (EWOULDBLOCK) -- no data available
 			{
 			nread = 0;
@@ -2031,18 +2034,38 @@ mDNSexport void mDNSPlatformSendRawPacket(const void *const msg, const mDNSu8 *c
 		LogMsg("mDNSPlatformSendRawPacket: BPF write(%d) failed %d (%s)", info->BPF_fd, errno, strerror(errno));
 	}
 
+mDNSlocal void CloseBPF(NetworkInterfaceInfoOSX *const i)
+	{
+	// Note: MUST NOT close() the underlying native BSD sockets.
+	// CFSocketInvalidate() will do that for us, in its own good time, which may not necessarily be immediately,
+	// because it first has to unhook the sockets from its select() call, before it can safely close them.
+	CFRunLoopRemoveSource(i->m->p->CFRunLoop, i->BPF_rls, kCFRunLoopDefaultMode);
+	CFRelease(i->BPF_rls);
+	CFSocketInvalidate(i->BPF_cfs);
+	CFRelease(i->BPF_cfs);
+	i->BPF_fd = -1;
+	}
+
 mDNSlocal void bpf_callback(const CFSocketRef cfs, const CFSocketCallBackType CallBackType, const CFDataRef address, const void *const data, void *const context)
 	{
 	(void)cfs;
 	(void)CallBackType;
 	(void)address;
 	(void)data;
-	const NetworkInterfaceInfoOSX *const info = (NetworkInterfaceInfoOSX *)context;
+	NetworkInterfaceInfoOSX *const info = (NetworkInterfaceInfoOSX *)context;
 	ssize_t n = read(info->BPF_fd, &info->m->imsg, info->BPF_len);
 	const mDNSu8 *ptr = (const mDNSu8 *)&info->m->imsg;
 	const mDNSu8 *end = (const mDNSu8 *)&info->m->imsg + n;
 	debugf("%3d: bpf_callback got %d bytes on %s", info->BPF_fd, n, info->ifinfo.ifname);
 
+	if (n<0)
+		{
+		LogOperation("Closing %s BPF fd %d due to error %d (%s)", info->ifinfo.ifname, info->BPF_fd, errno, strerror(errno));
+		CloseBPF(info);
+		return;
+		}
+
+	KQueueLock(info->m);
 	while (ptr < end)
 		{
 		const struct bpf_hdr *bh = (const struct bpf_hdr *)ptr;
@@ -2050,6 +2073,7 @@ mDNSlocal void bpf_callback(const CFSocketRef cfs, const CFSocketCallBackType Ca
 		mDNSCoreReceiveRawPacket(info->m, ptr + bh->bh_hdrlen, ptr + bh->bh_hdrlen + bh->bh_caplen, info->ifinfo.InterfaceID);
 		ptr += BPF_WORDALIGN(bh->bh_hdrlen + bh->bh_caplen);
 		}
+	KQueueUnlock(info->m, "bpf_callback");
 	}
 
 mDNSlocal void SetFilterProgram(mDNS *const m, NetworkInterfaceInfoOSX *const x)
@@ -2132,18 +2156,6 @@ mDNSlocal void SetFilterProgram(mDNS *const m, NetworkInterfaceInfoOSX *const x)
 	if (ioctl(x->BPF_fd, BIOCSETF, &prog) < 0) LogMsg("mDNSPlatformSetBPF: BIOCSETF(%d) failed %d (%s)", prog.bf_len, errno, strerror(errno));
 	}
 
-mDNSlocal void CloseBPF(NetworkInterfaceInfoOSX *const i)
-	{
-	// Note: MUST NOT close() the underlying native BSD sockets.
-	// CFSocketInvalidate() will do that for us, in its own good time, which may not necessarily be immediately,
-	// because it first has to unhook the sockets from its select() call, before it can safely close them.
-	CFRunLoopRemoveSource(i->m->p->CFRunLoop, i->BPF_rls, kCFRunLoopDefaultMode);
-	CFRelease(i->BPF_rls);
-	CFSocketInvalidate(i->BPF_cfs);
-	CFRelease(i->BPF_cfs);
-	i->BPF_fd = -1;
-	}
-
 mDNSexport void mDNSPlatformSetBPF(mDNS *const m, int fd)
 	{
 	NetworkInterfaceInfoOSX *i;
@@ -2153,27 +2165,32 @@ mDNSexport void mDNSPlatformSetBPF(mDNS *const m, int fd)
 	LogOperation("mDNSPlatformSetBPF: %s got BPF fd %d", i->ifinfo.ifname, fd);
 
 	struct bpf_version v;
-	if (ioctl(fd, BIOCVERSION, &v) < 0) LogMsg("mDNSPlatformSetBPF: BIOCVERSION failed %d (%s)", errno, strerror(errno));
+	if (ioctl(fd, BIOCVERSION, &v) < 0)
+		LogMsg("mDNSPlatformSetBPF: %d %s BIOCVERSION failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno));
 	else if (BPF_MAJOR_VERSION != v.bv_major || BPF_MINOR_VERSION != v.bv_minor)
-		LogMsg("mDNSPlatformSetBPF: BIOCVERSION header %d.%d kernel %d.%d", BPF_MAJOR_VERSION, BPF_MINOR_VERSION, v.bv_major, v.bv_minor);
+		LogMsg("mDNSPlatformSetBPF: %d %s BIOCVERSION header %d.%d kernel %d.%d",
+			fd, i->ifinfo.ifname, BPF_MAJOR_VERSION, BPF_MINOR_VERSION, v.bv_major, v.bv_minor);
 
-	if (ioctl(fd, BIOCGBLEN, &i->BPF_len) < 0) LogMsg("mDNSPlatformSetBPF: BIOCGBLEN failed %d (%s)", errno, strerror(errno));
+	if (ioctl(fd, BIOCGBLEN, &i->BPF_len) < 0)
+		LogMsg("mDNSPlatformSetBPF: %d %s BIOCGBLEN failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno));
 
 	if (i->BPF_len > sizeof(m->imsg))
 		{
 		i->BPF_len = sizeof(m->imsg);
-		if (ioctl(fd, BIOCSBLEN, &i->BPF_len) < 0) LogMsg("mDNSPlatformSetBPF: BIOCSBLEN failed %d (%s)", errno, strerror(errno));
-		else LogOperation("mDNSPlatformSetBPF: BIOCSBLEN %d", i->BPF_len);
+		if (ioctl(fd, BIOCSBLEN, &i->BPF_len) < 0)
+			LogMsg("mDNSPlatformSetBPF: %d %s BIOCSBLEN failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno));
+		else LogOperation("mDNSPlatformSetBPF: %d %s BIOCSBLEN %d", i->BPF_len);
 		}
 
 	static const u_int opt_immediate = 1;
-	if (ioctl(fd, BIOCIMMEDIATE, &opt_immediate) < 0) LogMsg("mDNSPlatformSetBPF: BIOCIMMEDIATE failed %d (%s)", errno, strerror(errno));
+	if (ioctl(fd, BIOCIMMEDIATE, &opt_immediate) < 0)
+		LogMsg("mDNSPlatformSetBPF: %d %s BIOCIMMEDIATE failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno));
 
 	struct ifreq ifr;
 	bzero(&ifr, sizeof(ifr));
 	strlcpy(ifr.ifr_name, i->ifinfo.ifname, sizeof(ifr.ifr_name));
 	if (ioctl(fd, BIOCSETIF, &ifr) < 0)
-		{ LogMsg("mDNSPlatformSetBPF: BIOCSETIF failed %d (%s)", errno, strerror(errno)); i->BPF_fd = -3; }
+		{ LogMsg("mDNSPlatformSetBPF: %d %s BIOCSETIF failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno)); i->BPF_fd = -3; }
 	else
 		{
 		CFSocketContext myCFSocketContext = { 0, i, NULL, NULL, NULL };
@@ -2185,7 +2202,7 @@ mDNSexport void mDNSPlatformSetBPF(mDNS *const m, int fd)
 		}
 	}
 
-#endif
+#endif APPLE_OSX_mDNSResponder
 
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
@@ -3575,7 +3592,7 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m, mDNSs32 utc)
 				if (i->ifa_name) freeL("NetworkInterfaceInfoOSX name", i->ifa_name);
 #if APPLE_OSX_mDNSResponder
 				if (i->BPF_fd >= 0) CloseBPF(i);
-#endif
+#endif APPLE_OSX_mDNSResponder
 				freeL("NetworkInterfaceInfoOSX", i);
 				continue;	// After deleting this object, don't want to do the "p = &i->next;" thing at the end of the loop
 				}
@@ -4530,7 +4547,7 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 	mDNS *const m = (mDNS *const)refcon;
 	KQueueLock(m);
 	(void)service;    // Parameter not used
-	LogOperation("PowerChanged %X %lX", messageType, messageArgument);
+	debugf("PowerChanged %X %lX", messageType, messageArgument);
 	switch(messageType)
 		{
 		case kIOMessageCanSystemPowerOff:		debugf      ("PowerChanged kIOMessageCanSystemPowerOff (no action)");				break; // E0000240
@@ -4557,7 +4574,7 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 
 	if (!m->p->SleepLimit && messageType == kIOMessageSystemWillSleep)
 		{
-		m->p->SleepLimit  = NonZeroTime(mDNS_TimeNow(m) + mDNSPlatformOneSecond * 5);
+		m->p->SleepLimit  = NonZeroTime(mDNS_TimeNow(m) + mDNSPlatformOneSecond * 10);
 		m->p->SleepCookie = (long)messageArgument;
 		}
 	else
