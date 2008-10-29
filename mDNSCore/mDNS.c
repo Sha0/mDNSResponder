@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.839  2008/10/29 21:31:32  cheshire
+Five seconds not always enough time for machine to go to sleep -- increased to ten seconds
+
 Revision 1.838  2008/10/28 18:30:37  cheshire
 Added debugging message in mDNSCoreReceiveRawPacket
 
@@ -1407,11 +1410,11 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr, mDNSs32
 	if (rr->resrec.RecordType == kDNSRecordTypeVerified)
 		rr->LastAPTime = m->timenow - interval;
 
-	// kDNSType_MAC is special -- we wait five seconds for the machine in question to finish going to sleep,
+	// kDNSType_MAC is special -- we allow ten seconds for the machine in question to finish going to sleep,
 	// then we broadcast ARP Announcements claiming ownership of that IP address.
 	// For now, since we don't get IPv6 ND or data packets, we send deletions for our SPS clients' AAAA too
 	if (rr->WakeUp.l[0] && (rr->resrec.rrtype == kDNSType_MAC || rr->resrec.rrtype == kDNSType_AAAA))
-		rr->LastAPTime = m->timenow - interval + mDNSPlatformOneSecond*5;
+		rr->LastAPTime = m->timenow - interval + mDNSPlatformOneSecond * 10;
 	
 	SetNextAnnounceProbeTime(m, rr);
 	}
@@ -5655,7 +5658,7 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 					if (RecordType == kDNSRecordTypeKnownUnique) ar->WakeUp = MACdata;
 					mDNS_Register_internal(m, ar);
 					// For now, since we don't get IPv6 ND or data packets, we don't advertise AAAA records for our SPS clients
-					if (ar->resrec.rrtype == kDNSType_AAAA) { ar->WakeUp = zeroEthAddr; ar->resrec.rroriginalttl = 0; }
+					if (ar->resrec.rrtype == kDNSType_AAAA) ar->resrec.rroriginalttl = 0;
 					LogOperation("SPS Registered %s", ARDisplayString(m,ar));
 					}
 				}
