@@ -16,6 +16,9 @@
     Change History (most recent first):
 
 $Log: helper-stubs.c,v $
+Revision 1.10  2008/10/29 21:25:35  cheshire
+Don't report kIOReturnNotReady errors
+
 Revision 1.9  2008/10/24 01:42:36  cheshire
 Added mDNSPowerRequest helper routine to request a scheduled wakeup some time in the future
 
@@ -48,6 +51,7 @@ Revision 1.1  2007/08/08 22:34:58  mcguire
 #include <mach/mach_error.h>
 #include <mach/vm_map.h>
 #include <servers/bootstrap.h>
+#include <IOKit/IOReturn.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include "mDNSDebug.h"
 #include "helper.h"
@@ -72,7 +76,7 @@ static mach_port_t getHelperPort(int retry)
 
 const char *mDNSHelperError(int err)
 	{
-	const char *p = "<unknown error>";
+	static const char *p = "<unknown error>";
 	if (mDNSHelperErrorBase < err && mDNSHelperErrorEnd > err)
 		p = errorstring[err - mDNSHelperErrorBase - 1];
 	return p;
@@ -81,6 +85,8 @@ const char *mDNSHelperError(int err)
 /* Ugly but handy. */
 #define MACHRETRYLOOP_BEGIN(kr, retry, err, fin) for (;;) {
 
+// We don't bother reporting kIOReturnNotReady because that error code occurs in "normal" operation
+// and doesn't indicate anything unexpected that needs to be investigated
 #define MACHRETRYLOOP_END(kr, retry, err, fin)												\
 		if (KERN_SUCCESS == (kr)) break;													\
 		else if (MACH_SEND_INVALID_DEST == (kr) && 0 == (retry)++) continue;				\
@@ -91,7 +97,7 @@ const char *mDNSHelperError(int err)
 			goto fin;																		\
 			}																				\
 		}																					\
-	if (0 != (err)) { LogMsg("%s: %s", __func__, mDNSHelperError((err))); goto fin; }
+	if (0 != (err) && kIOReturnNotReady != (err)) { LogMsg("%s: %s", __func__, mDNSHelperError((err))); goto fin; }
 
 int mDNSPreferencesSetName(int key, domainlabel* old, domainlabel* new)
 	{
