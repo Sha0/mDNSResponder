@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.89  2008/10/29 18:38:33  mcguire
+Increase sizecheck limits to account for CFRunLoop added to mDNS_PlatformSupport_struct in 64bit builds
+
 Revision 1.88  2008/10/28 20:33:56  cheshire
 Added CFRunLoopRef in mDNS_PlatformSupport_struct, to hold reference to our main thread's CFRunLoop
 
@@ -281,7 +284,7 @@ struct CompileTimeAssertionChecks_mDNSMacOSX
 	// other overly-large structures instead of having a pointer to them, can inadvertently
 	// cause structure sizes (and therefore memory usage) to balloon unreasonably.
 	char sizecheck_NetworkInterfaceInfoOSX[(sizeof(NetworkInterfaceInfoOSX) <=  7000) ? 1 : -1];
-	char sizecheck_mDNS_PlatformSupport   [(sizeof(mDNS_PlatformSupport)    <=   368) ? 1 : -1];
+	char sizecheck_mDNS_PlatformSupport   [(sizeof(mDNS_PlatformSupport)    <=   376) ? 1 : -1];
 	};
 
 #ifdef  __cplusplus
