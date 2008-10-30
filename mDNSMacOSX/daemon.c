@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.387  2008/10/30 01:08:18  cheshire
+After waking for network maintenance operations go back to sleep again
+
 Revision 1.386  2008/10/29 22:03:39  cheshire
 Compute correct required wakeup time for NAT traversals and uDNS-registered records
 
@@ -2334,6 +2337,8 @@ mDNSlocal mDNSs32 mDNSDaemonIdle(mDNS *const m)
 	// we then systematically lose our own looped-back packets.
 	if (m->p->NetworkChanged && now - m->p->NetworkChanged >= 0) mDNSMacOSXNetworkChanged(m);
 
+	if (m->p->SleepTime && now - m->p->SleepTime >= 0) { m->p->SleepTime = 0; mDNSPowerRequest(0, 0); }
+
 	// KeyChain frequently fails to notify clients of change events. To work around this
 	// we set a timer and periodically poll to detect if any changes have occurred.
 	// Without this Back To My Mac just does't work for a large number of users.
@@ -2358,6 +2363,10 @@ mDNSlocal mDNSs32 mDNSDaemonIdle(mDNS *const m)
 	if (m->p->KeyChainBugTimer)
 		if (nextevent - m->p->KeyChainBugTimer > 0)
 			nextevent = m->p->KeyChainBugTimer;
+
+	if (m->p->SleepTime)
+		if (nextevent - m->p->SleepTime > 0)
+			nextevent = m->p->SleepTime;
 
 	// 3. Deliver any waiting browse messages to clients
 	DNSServiceBrowser *b = DNSServiceBrowserList;
@@ -2652,13 +2661,16 @@ mDNSlocal void * KQueueLoop(void *m_param)
 				// First check if any of our interfaces support wakeup
 				NetworkInterfaceInfo *intf = GetFirstActiveInterface(m->HostInterfaces);
 				while (intf && !intf->NetWake) intf = GetFirstActiveInterface(intf->next);
-				if (intf)
+				if (!intf)
+					m->p->WakeAtUTC = 0;
+				else
 					{
 					mDNSs32 interval = ComputeWakeTime(m, now);
 
-					// If we're not ready to sleep (failed to register with Sleep Proxy, maybe because of transient network problem) then
-					// schedule a wakeup in one hour to try again. Otherwise, a single SPS failure could result in a remote machine falling
-					// permanently asleep, requiring someone to go to the machine in person to wake it up again, which would be unacceptable.
+					// If we're not ready to sleep (failed to register with Sleep Proxy, maybe because of
+					// transient network problem) then schedule a wakeup in one hour to try again. Otherwise,
+					// a single SPS failure could result in a remote machine falling permanently asleep, requiring
+					// someone to go to the machine in person to wake it up again, which would be unacceptable.
 					if (!ready && interval > 3600 * mDNSPlatformOneSecond) interval = 3600 * mDNSPlatformOneSecond;
 
 					// For testing
@@ -2669,18 +2681,21 @@ mDNSlocal void * KQueueLoop(void *m_param)
 
 					if (result == kIOReturnNotReady)
 						{
-						LogMsg("Requested wakeup in %d seconds unsuccessful; retrying with longer intervals", interval / mDNSPlatformOneSecond);
-						// IOPMSchedulePowerEvent fails with kIOReturnNotReady (-536870184/0xe00002d8) if the requested wake time is
-						// "too soon", but there's no API to find out what constitutes "too soon" on any given OS/hardware combination,
-						// so if we get kIOReturnNotReady we just have to iterate with successively longer intervals until it doesn't fail.
-						// Additionally, if our power request is deemed "too soon" for the machine to get to sleep and wake back up
-						// again, we don't acknowledge the sleep request, since the implication is that the system won't manage
-						// to be awake again at the time we need it.
+						LogMsg("Requested wakeup in %d seconds unsuccessful; retrying with longer intervals",
+							interval / mDNSPlatformOneSecond);
+						// IOPMSchedulePowerEvent fails with kIOReturnNotReady (-536870184/0xe00002d8) if the
+						// requested wake time is "too soon", but there's no API to find out what constitutes
+						// "too soon" on any given OS/hardware combination, so if we get kIOReturnNotReady
+						// we just have to iterate with successively longer intervals until it doesn't fail.
+						// Additionally, if our power request is deemed "too soon" for the machine to get to
+						// sleep and wake back up again, we attempt to cancel the sleep request, since the
+						// implication is that the system won't manage to be awake again at the time we need it.
 						do interval += (interval < mDNSPlatformOneSecond*20) ? mDNSPlatformOneSecond : ((interval+3) / 4);
 						while (mDNSPowerRequest(1, interval / mDNSPlatformOneSecond) == kIOReturnNotReady);
 						}
 
 					LogMsg("Requested wakeup in %d seconds", interval / mDNSPlatformOneSecond);
+					m->p->WakeAtUTC = mDNSPlatformUTC() + interval / mDNSPlatformOneSecond;
 					}
 
 				m->SleepState = SleepState_Sleeping;
