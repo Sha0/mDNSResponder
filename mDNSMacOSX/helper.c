@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.40  2008/10/30 01:05:27  cheshire
+mDNSPowerRequest(0, 0) means "sleep now"
+
 Revision 1.39  2008/10/29 21:26:50  cheshire
 Only log IOPMSchedulePowerEvent calls when there's an error
 
@@ -257,16 +260,23 @@ kern_return_t do_mDNSPowerRequest(__unused mach_port_t port, int key, int interv
 	*err = -1;
 	if (!authorized(&token)) { *err = kmDNSHelperNotAuthorized; goto fin; }
 
-	CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
-	if (now)
+	if (!key && !interval)		// mDNSPowerRequest(0, 0) means "sleep now"
 		{
-		CFDateRef w = CFDateCreate(NULL, now + interval);
-		if (w)
+		helplog(ASL_LEVEL_ERR, "IOPMSleepSystem %d", IOPMSleepSystem(IOPMFindPowerManagement(MACH_PORT_NULL)));
+		}
+	else
+		{
+		CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+		if (now)
 			{
-			IOReturn r = IOPMSchedulePowerEvent(w, CFSTR("mDNSResponderHelper"), key ? CFSTR(kIOPMAutoWake) : CFSTR(kIOPMAutoSleep));
-			if (r) { usleep(100000); helplog(ASL_LEVEL_ERR, "IOPMSchedulePowerEvent(%d) %d %x", interval, r, r); }
-			*err = r;
-			CFRelease(w);
+			CFDateRef w = CFDateCreate(NULL, now + interval);
+			if (w)
+				{
+				IOReturn r = IOPMSchedulePowerEvent(w, CFSTR("mDNSResponderHelper"), key ? CFSTR(kIOPMAutoWake) : CFSTR(kIOPMAutoSleep));
+				if (r) { usleep(100000); helplog(ASL_LEVEL_ERR, "IOPMSchedulePowerEvent(%d) %d %x", interval, r, r); }
+				*err = r;
+				CFRelease(w);
+				}
 			}
 		}
 fin:
