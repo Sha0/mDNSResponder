@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.90  2008/10/30 01:04:35  cheshire
+Added WakeAtUTC and SleepTime fields to mDNS_PlatformSupport_struct
+
 Revision 1.89  2008/10/29 18:38:33  mcguire
 Increase sizecheck limits to account for CFRunLoop added to mDNS_PlatformSupport_struct in 64bit builds
 
@@ -234,6 +237,8 @@ struct mDNS_PlatformSupport_struct
 	io_object_t              PowerNotifier;
 	mDNSs32                  SleepLimit;		// Set when we get kIOMessageSystemWillSleep notification
 	long                     SleepCookie;		// Cookie we need to pass to IOAllowPowerChange()
+	long                     WakeAtUTC;
+	mDNSs32                  SleepTime;
 	pthread_mutex_t          BigMutex;
 	mDNSs32                  BigMutexStartTime;
 	int						 WakeKQueueLoopFD;
