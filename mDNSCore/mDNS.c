@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.842  2008/10/30 00:12:07  cheshire
+Fixed spin when PutSPSRec fails to put a record because it's too big to fit
+
 Revision 1.841  2008/10/29 23:23:38  cheshire
 Refined cache size reporting to go in steps of 1000 when number is above 1000
 
@@ -4033,16 +4036,17 @@ mDNSlocal void PutSPSRec(mDNS *const m, mDNSu8 **p, AuthRecord *MAC, AuthRecord 
 	{
 	const mDNSu8 *const limit = m->omsg.data + NormalMaxDNSMessageData - DNSOpt_Lease_Space;
 	mDNSu8 *newptr = *p;
-	if ((rr->resrec.RecordType & kDNSRecordTypeUniqueMask) &&
-		!SameDomainName(&MAC->namestorage, rr->resrec.name))
+	mDNSu16 numUpdates = m->omsg.h.mDNS_numUpdates;
+	if ((rr->resrec.RecordType & kDNSRecordTypeUniqueMask) && !SameDomainName(&MAC->namestorage, rr->resrec.name))
 		{
 		AssignDomainName(&MAC->namestorage, rr->resrec.name);
-		newptr = PutResourceRecordTTLWithLimit(&m->omsg, newptr, &m->omsg.h.mDNS_numUpdates, &MAC->resrec, MAC->resrec.rroriginalttl, limit);
+		newptr = PutResourceRecordTTLWithLimit(&m->omsg, newptr, &numUpdates, &MAC->resrec, MAC->resrec.rroriginalttl, limit);
 		}
 	if (newptr)
 		{
-		newptr = PutResourceRecordTTLWithLimit(&m->omsg, newptr, &m->omsg.h.mDNS_numUpdates, &rr->resrec, rr->resrec.rroriginalttl, limit);
-		if (newptr) { rr->SendRNow = mDNSNULL; rr->updateid = m->omsg.h.id; *p = newptr; }
+		newptr = PutResourceRecordTTLWithLimit(&m->omsg, newptr, &numUpdates, &rr->resrec, rr->resrec.rroriginalttl, limit);
+		if (newptr) { rr->SendRNow = mDNSNULL; rr->updateid = m->omsg.h.id; *p = newptr; m->omsg.h.mDNS_numUpdates = numUpdates; }
+		else if (!numUpdates) { rr->SendRNow = mDNSNULL; LogOperation("PutSPSRec failed to put %s", ARDisplayString(m,rr)); }
 		}
 	}
 
@@ -4079,7 +4083,7 @@ mDNSlocal void SendSPSRegistration(mDNS *const m, const NetworkInterfaceInfo *in
 		else
 			{
 			p = putUpdateLease(&m->omsg, p, DEFAULT_UPDATE_LEASE);
-			LogOperation("SendSPSRegistration: Sending Update id %d with %d records to %#a:%d",
+			LogOperation("SendSPSRegistration: Sending Update id %5d with %d records to %#a:%d",
 				mDNSVal16(m->omsg.h.id), m->omsg.h.mDNS_numUpdates, &intf->SPSAddr, mDNSVal16(intf->SPSPort));
 			mDNSSendDNSMessage(m, &m->omsg, p, intf->InterfaceID, mDNSNULL, &intf->SPSAddr, intf->SPSPort, mDNSNULL, mDNSNULL);
 			}
