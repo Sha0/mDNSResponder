@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.388  2008/10/31 23:05:30  cheshire
+Move logic to decide when to at as Sleep Proxy Server from daemon.c to mDNSMacOSX.c
+
 Revision 1.387  2008/10/30 01:08:18  cheshire
 After waking for network maintenance operations go back to sleep again
 
@@ -2239,38 +2242,6 @@ mDNSlocal void SignalCallback(CFMachPortRef port, void *msg, CFIndex size, void 
 	KQueueUnlock(m, "Unix Signal");
 	}
 
-mDNSlocal SCPreferencesRef SCPrefs;
-
-mDNSlocal void InternetSharingChanged(SCPreferencesRef prefs, SCPreferencesNotification notificationType, void *context)
-	{
-	(void)prefs;             // Parameter not used
-	(void)notificationType;  // Parameter not used
-	mDNS *const m = (mDNS *const)context;
-	KQueueLock(m);
-	SCPreferencesSynchronize(SCPrefs);
-	CFDictionaryRef dict = SCPreferencesGetValue(SCPrefs, CFSTR("NAT"));
-	mDNSBool sps = (dict && (CFGetTypeID(dict) == CFDictionaryGetTypeID()) && DictionaryIsEnabled(dict));
-	LogOperation("InternetSharingChanged: Sleep Proxy Server %s", sps ? "Starting" : "Stopping");
-	mDNSCoreBeSleepProxyServer(m, sps);
-	mDNSMacOSXNetworkChanged(m);	// Tell platform layer to open or close its BPF fds
-	KQueueUnlock(m, "InternetSharingChanged");
-	}
-
-mDNSlocal mStatus WatchForInternetSharingChanges(mDNS *const m)
-	{
-	SCPrefs = SCPreferencesCreate(NULL, CFSTR("mDNSResponder:WatchForInternetSharingChanges"), CFSTR("com.apple.nat.plist"));
-	if (!SCPrefs) { LogMsg("SCPreferencesCreate failed: %s", SCErrorString(SCError())); return(mStatus_NoMemoryErr); }
-
-	SCPreferencesContext context = { 0, m, NULL, NULL, NULL };
-	if (!SCPreferencesSetCallback(SCPrefs, InternetSharingChanged, &context))
-		{ LogMsg("SCPreferencesSetCallback failed: %s", SCErrorString(SCError())); CFRelease(SCPrefs); return(mStatus_NoMemoryErr); }
-
-	if (!SCPreferencesScheduleWithRunLoop(SCPrefs, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode))
-		{ LogMsg("SCPreferencesScheduleWithRunLoop failed: %s", SCErrorString(SCError())); CFRelease(SCPrefs); return(mStatus_NoMemoryErr); }
-
-	return(mStatus_NoError);
-	}
-
 // On 10.2 the MachServerName is DNSServiceDiscoveryServer
 // On 10.3 and later, the MachServerName is com.apple.mDNSResponder
 
@@ -2965,9 +2936,7 @@ mDNSexport int main(int argc, char **argv)
 	status = udsserver_init(launchd_fd);
 	if (status) { LogMsg("Daemon start: udsserver_init failed"); goto exit; }
 
-	mStatus err = WatchForInternetSharingChanges(&mDNSStorage);
-	if (err) { LogMsg("WatchForInternetSharingChanges failed %d", err); return(err); }
-	InternetSharingChanged(SCPrefs, 0, &mDNSStorage);
+	mDNSMacOSXNetworkChanged(&mDNSStorage);
 
 	// Start the kqueue thread
 	i = pthread_create(&KQueueThread, NULL, KQueueLoop, &mDNSStorage);

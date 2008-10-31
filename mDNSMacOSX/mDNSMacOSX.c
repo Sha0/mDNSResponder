@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.571  2008/10/31 23:05:30  cheshire
+Move logic to decide when to at as Sleep Proxy Server from daemon.c to mDNSMacOSX.c
+
 Revision 1.570  2008/10/30 01:08:19  cheshire
 After waking for network maintenance operations go back to sleep again
 
@@ -4324,6 +4327,71 @@ mDNSlocal void SetLocalDomains(void)
 	CFRelease(sa);
 	}
 
+#if APPLE_OSX_mDNSResponder
+
+mDNSlocal mDNSs32 GetSystemSleepTimerSetting(void)
+	{
+	mDNSs32 val = -1;
+	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:GetSystemSleepTimerSetting"), NULL, NULL);
+	if (!store)
+		LogMsg("GetSystemSleepTimerSetting: SCDynamicStoreCreate failed: %s", SCErrorString(SCError()));
+	else
+		{
+		CFDictionaryRef dict = SCDynamicStoreCopyValue(store, CFSTR("State:/IOKit/PowerManagement/CurrentSettings"));
+		if (dict)
+			{
+			CFNumberRef number = CFDictionaryGetValue(dict, CFSTR("System Sleep Timer"));
+			if (number) CFNumberGetValue(number, kCFNumberSInt32Type, &val);
+			CFRelease(dict);
+			}
+		CFRelease(store);
+		}
+	return val;
+	}
+
+mDNSlocal void SetSPS(mDNS *const m)
+	{
+	SCPreferencesSynchronize(m->p->SCPrefs);
+	CFDictionaryRef dict = SCPreferencesGetValue(m->p->SCPrefs, CFSTR("NAT"));
+	mDNSBool natenabled = (dict && (CFGetTypeID(dict) == CFDictionaryGetTypeID()) && DictionaryIsEnabled(dict));
+	mDNSu32 sps = natenabled ? 40 : (GetSystemSleepTimerSetting() == 0) ? 60 : 0;
+
+	// For now, don't act as SPS just because the computer is set to never sleep
+	if (sps == 60) sps = 0;
+	// Also, when we enable this, we need to only act as SPS when running on AC power, not on battery
+
+	LogOperation("Sleep Proxy Server %d %s", sps, sps ? "starting" : "stopping");
+	mDNSCoreBeSleepProxyServer(m, sps);
+	}
+
+mDNSlocal void InternetSharingChanged(SCPreferencesRef prefs, SCPreferencesNotification notificationType, void *context)
+	{
+	(void)prefs;             // Parameter not used
+	(void)notificationType;  // Parameter not used
+	mDNS *const m = (mDNS *const)context;
+	KQueueLock(m);
+	mDNSMacOSXNetworkChanged(m);	// Tell platform layer to open or close its BPF fds
+	KQueueUnlock(m, "InternetSharingChanged");
+	}
+
+mDNSlocal mStatus WatchForInternetSharingChanges(mDNS *const m)
+	{
+	SCPreferencesRef SCPrefs = SCPreferencesCreate(NULL, CFSTR("mDNSResponder:WatchForInternetSharingChanges"), CFSTR("com.apple.nat.plist"));
+	if (!SCPrefs) { LogMsg("SCPreferencesCreate failed: %s", SCErrorString(SCError())); return(mStatus_NoMemoryErr); }
+
+	SCPreferencesContext context = { 0, m, NULL, NULL, NULL };
+	if (!SCPreferencesSetCallback(SCPrefs, InternetSharingChanged, &context))
+		{ LogMsg("SCPreferencesSetCallback failed: %s", SCErrorString(SCError())); CFRelease(SCPrefs); return(mStatus_NoMemoryErr); }
+
+	if (!SCPreferencesScheduleWithRunLoop(SCPrefs, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode))
+		{ LogMsg("SCPreferencesScheduleWithRunLoop failed: %s", SCErrorString(SCError())); CFRelease(SCPrefs); return(mStatus_NoMemoryErr); }
+
+	m->p->SCPrefs = SCPrefs;
+	return(mStatus_NoError);
+	}
+
+#endif APPLE_OSX_mDNSResponder
+
 mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 	{
 	LogOperation("***   Network Configuration Change   ***  (%d)%s",
@@ -4365,6 +4433,8 @@ mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 				AutoTunnelSetKeys(p, mDNStrue);
 				}
 			}
+
+	SetSPS(m);
 
 	NetworkInterfaceInfoOSX *i;
 	for (i = m->p->InterfaceList; i; i = i->next)
@@ -4565,7 +4635,7 @@ mDNSlocal void HasPoweredOn(mDNS *const m)
 			mDNSs32 i = 20;
 			//int result = mDNSPowerRequest(0, i);
 			//if (result == kIOReturnNotReady) do i += (i<20) ? 1 : ((i+3)/4); while (mDNSPowerRequest(0, i) == kIOReturnNotReady);
-			LogMsg("Waking for network maintenance operations %d; re-sleeping in %d seconds", utc - m->p->WakeAtUTC, i);
+			LogMsg("PowerChanged Waking for network maintenance operations %d; re-sleeping in %d seconds", utc - m->p->WakeAtUTC, i);
 			m->p->SleepTime = mDNS_TimeNow(m) + i * mDNSPlatformOneSecond;
 			}
 		}
@@ -4793,6 +4863,11 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	if (!m->p->PowerConnection) { LogMsg("mDNSPlatformInit_setup: IORegisterForSystemPower failed"); return(-1); }
 	else CFRunLoopAddSource(CFRunLoopGetCurrent(), IONotificationPortGetRunLoopSource(m->p->PowerPortRef), kCFRunLoopDefaultMode);
 #endif /* NO_IOPOWER */
+
+#if APPLE_OSX_mDNSResponder
+	err = WatchForInternetSharingChanges(m);
+	if (err) { LogMsg("WatchForInternetSharingChanges failed %d", err); return(err); }
+#endif APPLE_OSX_mDNSResponder
 
 	return(mStatus_NoError);
 	}
