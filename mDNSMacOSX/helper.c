@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.41  2008/10/31 18:41:55  cheshire
+Do update_idle_timer() before returning from do_mDNSRequestBPF()
+
 Revision 1.40  2008/10/30 01:05:27  cheshire
 mDNSPowerRequest(0, 0) means "sleep now"
 
@@ -252,6 +255,7 @@ kern_return_t do_mDNSRequestBPF(__unused mach_port_t port, audit_token_t token)
 	put_flags(0, &ptr);
 	deliver_request(hdr, ref);		// Will free hdr for us
 	DNSServiceRefDeallocate(ref);
+	update_idle_timer();
 	return KERN_SUCCESS;
 	}
 
