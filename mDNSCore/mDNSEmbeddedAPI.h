@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.504  2008/10/31 22:55:04  cheshire
+Initial support for structured SPS names
+
 Revision 1.503  2008/10/24 23:58:47  cheshire
 Ports should be mDNSIPPort, not mDNSOpaque16
 
@@ -2263,6 +2266,7 @@ struct mDNS_struct
 	mDNSu8           *UPnPRouterAddressString;	// holds both the router's address and port
 	mDNSu8           *UPnPSOAPAddressString;	// holds both address and port for SOAP messages
 
+	mDNSu32           SleepProxyServerType;
 	mDNSu8            SleepProxyServerState;	// 0 = off, 1 = running, 2 = shutting down, 3 = suspended during sleep
 	UDPSocket        *SleepProxyServerSocket;
 	ServiceRecordSet  SleepProxyServerSRS;
@@ -2947,7 +2951,7 @@ extern void     mDNSCoreReceive(mDNS *const m, void *const msg, const mDNSu8 *co
 								const mDNSAddr *const dstaddr, const mDNSIPPort dstport, const mDNSInterfaceID InterfaceID);
 extern void     mDNSCoreMachineSleep(mDNS *const m, mDNSBool wake);
 
-extern void     mDNSCoreBeSleepProxyServer(mDNS *const m, mDNSBool sps);
+extern void     mDNSCoreBeSleepProxyServer(mDNS *const m, mDNSu32 sps);
 extern void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, const mDNSu8 *const end, const mDNSInterfaceID InterfaceID);
 
 extern mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip);
