@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.91  2008/10/31 22:48:27  cheshire
+Added SCPreferencesRef to mDNS_PlatformSupport_struct
+
 Revision 1.90  2008/10/30 01:04:35  cheshire
 Added WakeAtUTC and SleepTime fields to mDNS_PlatformSupport_struct
 
@@ -235,6 +238,7 @@ struct mDNS_PlatformSupport_struct
 	IONotificationPortRef    PowerPortRef;
 	io_connect_t             PowerConnection;
 	io_object_t              PowerNotifier;
+	SCPreferencesRef         SCPrefs;
 	mDNSs32                  SleepLimit;		// Set when we get kIOMessageSystemWillSleep notification
 	long                     SleepCookie;		// Cookie we need to pass to IOAllowPowerChange()
 	long                     WakeAtUTC;
