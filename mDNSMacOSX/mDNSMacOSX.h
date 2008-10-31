@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.92  2008/10/31 23:49:38  mkrochma
+Increased sizecheck limit
+
 Revision 1.91  2008/10/31 22:48:27  cheshire
 Added SCPreferencesRef to mDNS_PlatformSupport_struct
 
@@ -293,7 +296,7 @@ struct CompileTimeAssertionChecks_mDNSMacOSX
 	// other overly-large structures instead of having a pointer to them, can inadvertently
 	// cause structure sizes (and therefore memory usage) to balloon unreasonably.
 	char sizecheck_NetworkInterfaceInfoOSX[(sizeof(NetworkInterfaceInfoOSX) <=  7000) ? 1 : -1];
-	char sizecheck_mDNS_PlatformSupport   [(sizeof(mDNS_PlatformSupport)    <=   376) ? 1 : -1];
+	char sizecheck_mDNS_PlatformSupport   [(sizeof(mDNS_PlatformSupport)    <=   476) ? 1 : -1];
 	};
 
 #ifdef  __cplusplus
