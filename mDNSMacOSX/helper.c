@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.42  2008/10/31 23:35:31  cheshire
+When scheduling new power event make sure all old events are deleted;
+mDNSPowerRequest(-1,-1); just clears old events without scheduling a new one
+
 Revision 1.41  2008/10/31 18:41:55  cheshire
 Do update_idle_timer() before returning from do_mDNSRequestBPF()
 
@@ -264,11 +268,32 @@ kern_return_t do_mDNSPowerRequest(__unused mach_port_t port, int key, int interv
 	*err = -1;
 	if (!authorized(&token)) { *err = kmDNSHelperNotAuthorized; goto fin; }
 
-	if (!key && !interval)		// mDNSPowerRequest(0, 0) means "sleep now"
+	CFArrayRef events = IOPMCopyScheduledPowerEvents();
+	if (events)
+		{
+		int i;
+		CFIndex count = CFArrayGetCount(events);
+		for (i=0; i<count; i++)
+			{
+			CFDictionaryRef dict = CFArrayGetValueAtIndex(events, i);
+			CFStringRef id = CFDictionaryGetValue(dict, CFSTR(kIOPMPowerEventAppNameKey));
+			if (CFEqual(id, CFSTR("mDNSResponderHelper")))
+				{
+				CFDateRef   EventTime = CFDictionaryGetValue(dict, CFSTR(kIOPMPowerEventTimeKey));
+				CFStringRef EventType = CFDictionaryGetValue(dict, CFSTR(kIOPMPowerEventTypeKey));
+				IOReturn result = IOPMCancelScheduledPowerEvent(EventTime, id, EventType);
+				//helplog(ASL_LEVEL_ERR, "Deleting old event %s");
+				if (result) helplog(ASL_LEVEL_ERR, "IOPMCancelScheduledPowerEvent %d failed %d", i, result);
+				}
+			}
+		CFRelease(events);
+		}
+
+	else if (key == 0)		// mDNSPowerRequest(0, 0) means "sleep now"
 		{
 		helplog(ASL_LEVEL_ERR, "IOPMSleepSystem %d", IOPMSleepSystem(IOPMFindPowerManagement(MACH_PORT_NULL)));
 		}
-	else
+	else if (key > 0)
 		{
 		CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
 		if (now)
