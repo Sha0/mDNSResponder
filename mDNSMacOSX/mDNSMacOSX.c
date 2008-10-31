@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.572  2008/10/31 23:36:13  cheshire
+One wakeup clear any previous power requests
+
 Revision 1.571  2008/10/31 23:05:30  cheshire
 Move logic to decide when to at as Sleep Proxy Server from daemon.c to mDNSMacOSX.c
 
@@ -4617,6 +4620,9 @@ mDNSlocal OSStatus KeychainChanged(SecKeychainEvent keychainEvent, SecKeychainCa
 #ifndef NO_IOPOWER
 mDNSlocal void HasPoweredOn(mDNS *const m)
 	{
+	// Need to explicitly clear any previous power requests -- they're not cleared automatically on wake
+	mDNSPowerRequest(-1,-1);
+
 	// If still sleeping (didn't get 'WillPowerOn' message for some reason?) wake now
 	if (m->SleepState) mDNSCoreMachineSleep(m, false);
 
