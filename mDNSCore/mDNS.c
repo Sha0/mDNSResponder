@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.844  2008/10/31 23:43:51  cheshire
+Fixed compile error in Posix build
+
 Revision 1.843  2008/10/31 22:55:04  cheshire
 Initial support for structured SPS names
 
@@ -4141,6 +4144,8 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 
 	if (sleep && !m->SleepState)
 		{
+		NetworkInterfaceInfo *intf = GetFirstActiveInterface(m->HostInterfaces);
+
 		// If we're going to sleep, need to stop advertising that we're a Sleep Proxy Server
 		if (m->SleepProxyServerSocket)
 			{
@@ -4151,7 +4156,6 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 			mDNS_ReclaimLockAfterCallback();
 			}
 
-		NetworkInterfaceInfo *intf = GetFirstActiveInterface(m->HostInterfaces);
 		while (intf)
 			{
 			if (intf->NetWake)

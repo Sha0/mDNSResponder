@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.409  2008/10/31 23:44:22  cheshire
+Fixed compile error in Posix build
+
 Revision 1.408  2008/10/29 21:32:33  cheshire
 Align "DNSServiceEnumerateDomains ... RESULT" log messages
 
@@ -3269,6 +3272,7 @@ mDNSlocal void read_msg(request_state *req)
 			cmsg->cmsg_level   == SOL_SOCKET   &&
 			cmsg->cmsg_type    == SCM_RIGHTS)
 			{
+#if APPLE_OSX_mDNSResponder
 			// Strictly speaking BPF_fd belongs solely in the platform support layer, but because
 			// of privilege separation on Mac OS X we need to get BPF_fd from mDNSResponderHelper,
 			// and it's convenient to repurpose the existing fd-passing code here for that task
@@ -3279,6 +3283,7 @@ mDNSlocal void read_msg(request_state *req)
 				mDNSPlatformSetBPF(&mDNSStorage, x);
 				}
 			else
+#endif APPLE_OSX_mDNSResponder
 				req->errsd = *(dnssd_sock_t *)CMSG_DATA(cmsg);
 #if DEBUG_64BIT_SCM_RIGHTS
 			LogMsg("%3d: read req->errsd %d", req->sd, req->errsd);
