@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.390  2008/11/02 21:22:05  cheshire
+Changed mallocL size parameter back to "unsigned int"
+
 Revision 1.389  2008/11/02 21:14:58  cheshire
 Fixes to make mallocL/freeL debugging checks work on 64-bit
 
@@ -741,7 +744,7 @@ mDNSlocal void validatelists(mDNS *const m)
 			LogMemCorruption("m->TunnelClients: %p is garbage (%d)", t, t->dstname.c[0]);
 	}
 
-mDNSexport void *mallocL(char *msg, mDNSu32 size)
+mDNSexport void *mallocL(char *msg, unsigned int size)
 	{
 	// Allocate space for two words of sanity checking data before the requested block
 	mDNSu32 *mem = malloc(sizeof(mDNSu32) * 2 + size);
