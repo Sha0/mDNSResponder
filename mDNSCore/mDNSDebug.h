@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.41  2008/11/02 21:14:58  cheshire
+Fixes to make mallocL/freeL debugging checks work on 64-bit
+
 Revision 1.40  2008/10/24 20:53:37  cheshire
 For now, define USE_SEPARATE_UDNS_SERVICE_LIST, so that we use the old service list code for this submission
 
@@ -242,7 +245,7 @@ extern void LogMsgNoIdent(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,
 extern void SigLogLevel(void);
 
 #if APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING >= 1
-extern void *mallocL(char *msg, unsigned int size);
+extern void *mallocL(char *msg, mDNSu32 size);
 extern void freeL(char *msg, void *x);
 extern void LogMemCorruption(const char *format, ...);
 extern void uds_validatelists(void);

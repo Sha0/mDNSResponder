@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.389  2008/11/02 21:14:58  cheshire
+Fixes to make mallocL/freeL debugging checks work on 64-bit
+
 Revision 1.388  2008/10/31 23:05:30  cheshire
 Move logic to decide when to at as Sleep Proxy Server from daemon.c to mDNSMacOSX.c
 
@@ -738,14 +741,12 @@ mDNSlocal void validatelists(mDNS *const m)
 			LogMemCorruption("m->TunnelClients: %p is garbage (%d)", t, t->dstname.c[0]);
 	}
 
-mDNSexport void *mallocL(char *msg, unsigned int size)
+mDNSexport void *mallocL(char *msg, mDNSu32 size)
 	{
-	unsigned long *mem = malloc(size+8);
+	// Allocate space for two words of sanity checking data before the requested block
+	mDNSu32 *mem = malloc(sizeof(mDNSu32) * 2 + size);
 	if (!mem)
-		{
-		LogMsg("malloc( %s : %d ) failed", msg, size);
-		return(NULL);
-		}
+		{ LogMsg("malloc( %s : %d ) failed", msg, size); return(NULL); }
 	else
 		{
 		if      (size > 24000)                      LogMsg("malloc( %s : %lu ) = %p suspiciously large", msg, size, &mem[2]);
@@ -765,12 +766,12 @@ mDNSexport void freeL(char *msg, void *x)
 		LogMsg("free( %s @ NULL )!", msg);
 	else
 		{
-		unsigned long *mem = ((unsigned long *)x) - 2;
-		if (mem[0] != 0xDEAD1234) { LogMsg("free( %s @ %p ) !!!! NOT ALLOCATED !!!!", msg, &mem[2]); return; }
+		mDNSu32 *mem = ((mDNSu32 *)x) - 2;
+		if      (mem[0] != 0xDEAD1234)            { LogMsg("free( %s @ %p ) !!!! NOT ALLOCATED !!!!", msg, &mem[2]); return; }
 		if      (mem[1] > 24000)                    LogMsg("free( %s : %ld @ %p) suspiciously large", msg, mem[1], &mem[2]);
 		else if (MACOSX_MDNS_MALLOC_DEBUGGING >= 2) LogMsg("free( %s : %ld @ %p)",                    msg, mem[1], &mem[2]);
-		//mDNSPlatformMemZero(mem, mem[1]+8);
-		memset(mem, 0xFF, mem[1]+8);
+		//mDNSPlatformMemZero(mem, sizeof(mDNSu32) * 2 + mem[1]);
+		memset(mem, 0xFF, sizeof(mDNSu32) * 2 + mem[1]);
 		validatelists(&mDNSStorage);
 		free(mem);
 		}
