@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.845  2008/11/03 23:52:05  cheshire
+Improved ARP debugging messages to differentiate ARP Announcements from Requests
+
 Revision 1.844  2008/10/31 23:43:51  cheshire
 Fixed compile error in Posix build
 
@@ -7723,7 +7726,13 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 					else
 						{
 						mDNSEthAddr w = rr->WakeUp;
-						LogOperation("Received ARP from owner -- removing %.6a %s", &rr->WakeUp, ARDisplayString(m, rr));
+						if (mDNSSameIPv4Address(arp->spa, arp->tpa))
+							LogOperation("Received ARP Announcement from owner %.4a -- removing %.6a %s",
+								&arp->spa, &w, ARDisplayString(m, rr));
+						else
+							LogOperation("Received ARP Request from owner %.4a for %.4a -- removing %.6a %s",
+								&arp->spa, &arp->tpa, &w, ARDisplayString(m, rr));
+
 						m->CurrentRecord = m->ResourceRecords;
 						while (m->CurrentRecord)
 							{
