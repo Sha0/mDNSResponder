@@ -31,6 +31,9 @@
 # then try typing "gmake os=xxx" instead.
 #
 # $Log: Makefile,v $
+# Revision 1.80  2008/11/03 23:27:51  cheshire
+# Defined __MAC_OS_X_VERSION_MIN_REQUIRED=__MAC_OS_X_VERSION_10_4 to stop build failures on Leopard
+#
 # Revision 1.79  2008/10/24 01:59:59  mcguire
 # <rdar://problem/6257159> Build Failure: Need to stop using Jam
 #
@@ -378,7 +381,10 @@ LDCONFIG = ldconfig
 else
 
 ifeq ($(os),x)
-CFLAGS_OS = -DHAVE_IPV6 -no-cpp-precomp -Werror -Wdeclaration-after-statement #-Wunreachable-code
+# We have to define __MAC_OS_X_VERSION_MIN_REQUIRED=__MAC_OS_X_VERSION_10_4 or on Leopard
+# we get build failures: ‘daemon’ is deprecated (declared at /usr/include/stdlib.h:283)
+CFLAGS_OS = -DHAVE_IPV6 -no-cpp-precomp -Werror -Wdeclaration-after-statement \
+	-D__MAC_OS_X_VERSION_MIN_REQUIRED=__MAC_OS_X_VERSION_10_4 #-Wunreachable-code
 CC = @gcc-4.0
 LD = $(CC) -dynamiclib
 LINKOPTS = -lSystem
