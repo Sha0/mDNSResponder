@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.573  2008/11/03 01:12:42  mkrochma
+Fix compile error that occurs when LogOperation is disabled
+
 Revision 1.572  2008/10/31 23:36:13  cheshire
 One wakeup clear any previous power requests
 
@@ -4666,8 +4669,7 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 		case kIOMessageSystemHasPoweredOn:		LogOperation("PowerChanged kIOMessageSystemHasPoweredOn"); HasPoweredOn(m);			break;	// E0000300
 		case kIOMessageSystemWillRestart:		debugf      ("PowerChanged kIOMessageSystemWillRestart (no action)");				break;	// E0000310
 		case kIOMessageSystemWillPowerOn:		{																							// E0000320
-												long utc = mDNSPlatformUTC();
-												LogOperation("PowerChanged kIOMessageSystemWillPowerOn %d late", utc - m->p->WakeAtUTC);
+												LogOperation("PowerChanged kIOMessageSystemWillPowerOn %d late", mDNSPlatformUTC() - m->p->WakeAtUTC);
 												// Make sure our interface list is cleared to the empty state, then tell mDNSCore to wake
 												mDNSMacOSXNetworkChanged(m);
 												mDNSCoreMachineSleep(m, false);
