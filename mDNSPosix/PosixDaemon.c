@@ -21,6 +21,9 @@
 	Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.46  2008/11/03 23:09:15  cheshire
+Don't need to include mDNSDebug.h as well as mDNSEmbeddedAPI.h
+
 Revision 1.45  2008/10/03 18:25:17  cheshire
 Instead of calling "m->MainCallback" function pointer directly, call mDNSCore routine "mDNS_ConfigChanged(m);"
 
@@ -86,7 +89,6 @@ Only use mallocL/freeL debugging routines when building mDNSResponder, not dnsex
 #include <sys/types.h>
 
 #include "mDNSEmbeddedAPI.h"
-#include "mDNSDebug.h"
 #include "mDNSPosix.h"
 #include "uds_daemon.h"
 #include "PlatformCommon.h"
