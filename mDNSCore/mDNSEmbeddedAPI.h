@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.505  2008/11/03 23:49:47  mkrochma
+Increase NATMAP_DEFAULT_LEASE to 2 hours so we do maintenance wake less often
+
 Revision 1.504  2008/10/31 22:55:04  cheshire
 Initial support for structured SPS names
 
@@ -1406,10 +1409,10 @@ typedef void mDNSRecordUpdateCallback(mDNS *const m, AuthRecord *const rr, RData
 #pragma mark - NAT Traversal structures and constants
 #endif
 
-#define NATMAP_MAX_RETRY_INTERVAL    ((mDNSPlatformOneSecond * 60) * 15) // Max retry interval is 15 minutes
-#define NATMAP_MIN_RETRY_INTERVAL     (mDNSPlatformOneSecond * 2)             // Min retry interval is 2 seconds
-#define NATMAP_INIT_RETRY                     (mDNSPlatformOneSecond / 4)             // start at 250ms w/ exponential decay
-#define NATMAP_DEFAULT_LEASE (60 * 60)                             // lease life in seconds
+#define NATMAP_MAX_RETRY_INTERVAL    ((mDNSPlatformOneSecond * 60) * 15)    // Max retry interval is 15 minutes
+#define NATMAP_MIN_RETRY_INTERVAL     (mDNSPlatformOneSecond * 2)           // Min retry interval is 2 seconds
+#define NATMAP_INIT_RETRY             (mDNSPlatformOneSecond / 4)           // start at 250ms w/ exponential decay
+#define NATMAP_DEFAULT_LEASE          (60 * 60 * 2)                         // 2 hour lease life in seconds
 #define NATMAP_VERS 0
 
 typedef enum
