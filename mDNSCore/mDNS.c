@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.846  2008/11/04 22:21:44  cheshire
+Changed zone field of AuthRecord_struct from domainname to pointer, saving 252 bytes per AuthRecord
+
 Revision 1.845  2008/11/03 23:52:05  cheshire
 Improved ARP debugging messages to differentiate ARP Announcements from Requests
 
@@ -1613,7 +1616,7 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	rr->expire            = 0;
 	rr->Private           = 0;
 	rr->updateid          = zeroID;
-	rr->zone.c[0]         = 0;
+	rr->zone              = rr->resrec.name;
 	rr->UpdateServer      = zeroAddr;
 	rr->UpdatePort        = zeroIPPort;
 	rr->nta               = mDNSNULL;

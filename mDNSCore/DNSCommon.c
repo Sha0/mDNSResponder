@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.218  2008/11/04 22:21:44  cheshire
+Changed zone field of AuthRecord_struct from domainname to pointer, saving 252 bytes per AuthRecord
+
 Revision 1.217  2008/11/04 22:13:43  cheshire
 Made RDataBody parameter to GetRRDisplayString_rdb "const"
 
@@ -1390,7 +1393,7 @@ mDNSexport void mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mD
 	rr->expire            = 0;
 	rr->Private           = 0;
 	rr->updateid          = zeroID;
-	rr->zone.c[0]         = 0;
+	rr->zone              = rr->resrec.name;
 	rr->UpdateServer      = zeroAddr;
 	rr->UpdatePort        = zeroIPPort;
 	rr->nta               = mDNSNULL;

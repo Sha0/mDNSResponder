@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.578  2008/11/04 22:21:46  cheshire
+Changed zone field of AuthRecord_struct from domainname to pointer, saving 252 bytes per AuthRecord
+
 Revision 1.577  2008/10/29 21:37:01  cheshire
 Removed some old debugging messages
 
@@ -3421,7 +3424,7 @@ mDNSlocal void SendRecordRegistration(mDNS *const m, AuthRecord *rr)
 	InitializeDNSMessage(&m->omsg.h, rr->updateid, UpdateReqFlags);
 
 	// set zone
-	ptr = putZone(&m->omsg, ptr, end, &rr->zone, mDNSOpaque16fromIntVal(rr->resrec.rrclass));
+	ptr = putZone(&m->omsg, ptr, end, rr->zone, mDNSOpaque16fromIntVal(rr->resrec.rrclass));
 	if (!ptr) { err = mStatus_UnknownErr; goto exit; }
 
 	if (rr->state == regState_UpdatePending)
@@ -3625,7 +3628,7 @@ mDNSlocal void hndlServiceUpdateReply(mDNS *const m, ServiceRecordSet *srs,  mSt
 			if (srs->state == regState_Registered && !err)
 				{
 				// extra resource record queued for this service - copy zone srs and register
-				AssignDomainName(&(*e)->r.zone, &srs->zone);
+				(*e)->r.zone = &srs->zone;
 				(*e)->r.UpdateServer    = srs->SRSUpdateServer;
 				(*e)->r.UpdatePort  = srs->SRSUpdatePort;
 				(*e)->r.uselease = srs->srs_uselease;
@@ -4202,6 +4205,7 @@ mDNSexport void RecordRegistrationGotZoneData(mDNS *const m, mStatus err, const 
 	{
 	AuthRecord *newRR = (AuthRecord*)zoneData->ZoneDataContext;
 	AuthRecord *ptr;
+	int c1, c2;
 
 	if (m->mDNS_busy != m->mDNS_reentrancy)
 		LogMsg("RecordRegistrationGotZoneData: mDNS_busy (%ld) != mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
@@ -4241,7 +4245,19 @@ mDNSexport void RecordRegistrationGotZoneData(mDNS *const m, mStatus err, const 
 		}
 
 	// Store discovered zone data
-	AssignDomainName(&newRR->zone, &zoneData->ZoneName);
+	c1 = CountLabels(newRR->resrec.name);
+	c2 = CountLabels(&zoneData->ZoneName);
+	if (c2 > c1)
+		{
+		LogMsg("RecordRegistrationGotZoneData: Zone \"%##s\" is longer than \"%##s\"", zoneData->ZoneName.c, newRR->resrec.name->c);
+		return;
+		}
+	newRR->zone = SkipLeadingLabels(newRR->resrec.name, c1-c2);
+	if (!SameDomainName(newRR->zone, &zoneData->ZoneName))
+		{
+		LogMsg("RecordRegistrationGotZoneData: Zone \"%##s\" does not match \"%##s\" for \"%##s\"", newRR->zone->c, zoneData->ZoneName.c, newRR->resrec.name->c);
+		return;
+		}
 	newRR->UpdateServer = zoneData->Addr;
 	newRR->UpdatePort   = zoneData->Port;
 	newRR->Private      = zoneData->ZonePrivate;
@@ -4276,7 +4292,7 @@ mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 
 	InitializeDNSMessage(&m->omsg.h, rr->updateid, UpdateReqFlags);
 
-	ptr = putZone(&m->omsg, ptr, end, &rr->zone, mDNSOpaque16fromIntVal(rr->resrec.rrclass));
+	ptr = putZone(&m->omsg, ptr, end, rr->zone, mDNSOpaque16fromIntVal(rr->resrec.rrclass));
 	if (ptr) ptr = putDeletionRecord(&m->omsg, ptr, &rr->resrec);
 	if (!ptr)
 		{

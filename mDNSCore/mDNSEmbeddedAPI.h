@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.508  2008/11/04 22:21:43  cheshire
+Changed zone field of AuthRecord_struct from domainname to pointer, saving 252 bytes per AuthRecord
+
 Revision 1.507  2008/11/04 22:13:43  cheshire
 Made RDataBody parameter to GetRRDisplayString_rdb "const"
 
@@ -1619,10 +1622,10 @@ struct AuthRecord_struct
 	AuthRecord     *RRSet;				// This unique record is part of an RRSet
 	mDNSRecordCallback *RecordCallback;	// Callback function to call for state changes, and to free memory asynchronously on deregistration
 	void           *RecordContext;		// Context parameter for the callback function
+	mDNSEthAddr     WakeUp;				// Non-zero if we may need to generate a wakeup packet for this record
 	mDNSu8          AutoTarget;			// Set if the target of this record (PTR, CNAME, SRV, etc.) is our host name
 	mDNSu8          AllowRemoteQuery;	// Set if we allow hosts not on the local link to query this record
 	mDNSu8          ForceMCast;			// Set by client to advertise solely via multicast, even for apparently unicast names
-	mDNSEthAddr     WakeUp;				// Non-zero if we may need to generate a wakeup packet for this record
 
 	// Field Group 3: Transient state for Authoritative Records
 	mDNSu8          Acknowledged;		// Set if we've given the success callback to the client
@@ -1663,7 +1666,7 @@ struct AuthRecord_struct
 	mDNSs32      expire;		// expiration of lease (-1 for static)
 	mDNSBool     Private;		// If zone is private, DNS updates may have to be encrypted to prevent eavesdropping
 	mDNSOpaque16 updateid;		// identifier to match update request and response
-	domainname   zone;			// the zone that is updated
+	const domainname *zone;		// the zone that is updated
 	mDNSAddr     UpdateServer;	// DNS server that handles updates for this zone
 	mDNSIPPort   UpdatePort;	// port on which server accepts dynamic updates
 								// !!!KRS not technically correct to cache longer than TTL
@@ -2661,7 +2664,7 @@ extern mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt, va
 extern mDNSu32 mDNS_snprintf(char *sbuffer, mDNSu32 buflen, const char *fmt, ...) IS_A_PRINTF_STYLE_FUNCTION(3,4);
 extern mDNSu32 NumCacheRecordsForInterfaceID(const mDNS *const m, mDNSInterfaceID id);
 extern char *DNSTypeName(mDNSu16 rrtype);
-extern char *GetRRDisplayString_rdb(const ResourceRecord *rr, const RDataBody *rd, char *buffer);
+extern char *GetRRDisplayString_rdb(const ResourceRecord *const rr, const RDataBody *const rd, char *const buffer);
 #define RRDisplayString(m, rr) GetRRDisplayString_rdb(rr, &(rr)->rdata->u, (m)->MsgBuffer)
 #define ARDisplayString(m, rr) GetRRDisplayString_rdb(&(rr)->resrec, &(rr)->resrec.rdata->u, (m)->MsgBuffer)
 #define CRDisplayString(m, rr) GetRRDisplayString_rdb(&(rr)->resrec, &(rr)->resrec.rdata->u, (m)->MsgBuffer)
