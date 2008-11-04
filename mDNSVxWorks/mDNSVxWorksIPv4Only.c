@@ -21,6 +21,9 @@
 	Change History (most recent first):
 
 $Log: mDNSVxWorksIPv4Only.c,v $
+Revision 1.33  2008/11/04 19:51:13  cheshire
+Updated comment about MAX_ESCAPED_DOMAIN_NAME size (should be 1009, not 1005)
+
 Revision 1.32  2008/10/03 18:25:18  cheshire
 Instead of calling "m->MainCallback" function pointer directly, call mDNSCore routine "mDNS_ConfigChanged(m);"
 
@@ -97,7 +100,7 @@ Fixes so that Posix/Linux, OS9, Windows, and VxWorks targets build again
 
 Revision 1.10  2003/11/14 21:27:09  cheshire
 <rdar://problem/3484766>: Security: Crashing bug in mDNSResponder
-Fix code that should use buffer size MAX_ESCAPED_DOMAIN_NAME (1005) instead of 256-byte buffers.
+Fix code that should use buffer size MAX_ESCAPED_DOMAIN_NAME (1009) instead of 256-byte buffers.
 
 Revision 1.9  2003/11/14 20:59:09  cheshire
 Clients can't use AssignDomainName macro because mDNSPlatformMemCopy is defined in mDNSPlatformFunctions.h.
