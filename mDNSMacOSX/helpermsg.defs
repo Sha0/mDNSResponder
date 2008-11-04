@@ -17,6 +17,11 @@
     Change History (most recent first):
 
 $Log: helpermsg.defs,v $
+Revision 1.11  2008/11/04 23:54:09  cheshire
+Added routine mDNSSetARP(), used to replace an SPS client's entry in our ARP cache with
+a dummy one, so that IP traffic to the SPS client initiated by the SPS machine can be
+captured by our BPF filters, and used as a trigger to wake the sleeping machine.
+
 Revision 1.10  2008/10/24 01:42:36  cheshire
 Added mDNSPowerRequest helper routine to request a scheduled wakeup some time in the future
 
@@ -71,6 +76,12 @@ simpleroutine mDNSRequestBPF(	port			: mach_port_t;
 routine mDNSPowerRequest(		port			: mach_port_t;
 								key				: int;
 								interval		: int;
+		out						err				: int;
+		ServerAuditToken		token			: audit_token_t);
+
+routine mDNSSetARP(				port			: mach_port_t;
+								ifindex			: int;
+								ip				: v4addr_t;
 		out						err				: int;
 		ServerAuditToken		token			: audit_token_t);
 

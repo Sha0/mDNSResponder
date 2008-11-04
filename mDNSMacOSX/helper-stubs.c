@@ -16,6 +16,11 @@
     Change History (most recent first):
 
 $Log: helper-stubs.c,v $
+Revision 1.11  2008/11/04 23:54:09  cheshire
+Added routine mDNSSetARP(), used to replace an SPS client's entry in our ARP cache with
+a dummy one, so that IP traffic to the SPS client initiated by the SPS machine can be
+captured by our BPF filters, and used as a trigger to wake the sleeping machine.
+
 Revision 1.10  2008/10/29 21:25:35  cheshire
 Don't report kIOReturnNotReady errors
 
@@ -174,6 +179,17 @@ int mDNSPowerRequest(int key, int interval)
 	int retry = 0, err = 0;
 	MACHRETRYLOOP_BEGIN(kr, retry, err, fin);
 	kr = proxy_mDNSPowerRequest(getHelperPort(retry), key, interval, &err);
+	MACHRETRYLOOP_END(kr, retry, err, fin);
+fin:
+	return err;
+	}
+
+int mDNSSetARP(int ifindex, const v4addr_t ip)
+	{
+	kern_return_t kr = KERN_FAILURE;
+	int retry = 0, err = 0;
+	MACHRETRYLOOP_BEGIN(kr, retry, err, fin);
+	kr = proxy_mDNSSetARP(getHelperPort(retry), ifindex, (uint8_t*)ip, &err);
 	MACHRETRYLOOP_END(kr, retry, err, fin);
 fin:
 	return err;

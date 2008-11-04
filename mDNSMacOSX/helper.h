@@ -17,6 +17,11 @@
     Change History (most recent first):
 
 $Log: helper.h,v $
+Revision 1.10  2008/11/04 23:54:09  cheshire
+Added routine mDNSSetARP(), used to replace an SPS client's entry in our ARP cache with
+a dummy one, so that IP traffic to the SPS client initiated by the SPS machine can be
+captured by our BPF filters, and used as a trigger to wake the sleeping machine.
+
 Revision 1.9  2008/10/24 01:42:36  cheshire
 Added mDNSPowerRequest helper routine to request a scheduled wakeup some time in the future
 
@@ -90,6 +95,7 @@ extern const char *mDNSHelperError(int errornum);
 
 extern void mDNSRequestBPF(void);
 extern int  mDNSPowerRequest(int key, int interval);
+extern int  mDNSSetARP(int ifindex, const v4addr_t ip);
 extern int  mDNSDynamicStoreSetConfig(int key, CFPropertyListRef value);
 extern int  mDNSPreferencesSetName(int key, domainlabel* old, domainlabel* new);
 extern int  mDNSKeychainGetSecrets(CFArrayRef *secrets);

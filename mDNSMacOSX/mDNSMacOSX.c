@@ -17,6 +17,11 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.575  2008/11/04 23:54:09  cheshire
+Added routine mDNSSetARP(), used to replace an SPS client's entry in our ARP cache with
+a dummy one, so that IP traffic to the SPS client initiated by the SPS machine can be
+captured by our BPF filters, and used as a trigger to wake the sleeping machine.
+
 Revision 1.574  2008/11/04 00:27:58  cheshire
 Corrected some timing anomalies in sleep/wake causing spurious name self-conflicts
 
@@ -2045,8 +2050,20 @@ mDNSexport void mDNSPlatformSendRawPacket(const void *const msg, const mDNSu8 *c
 	NetworkInterfaceInfoOSX *info = (NetworkInterfaceInfoOSX *)InterfaceID;
 	if (info->BPF_fd < 0)
 		LogMsg("mDNSPlatformSendRawPacket: %s BPF_fd %d not ready", info->ifinfo.ifname, info->BPF_fd);
-	else if (write(info->BPF_fd, msg, end - (const mDNSu8 *)msg) < 0)
-		LogMsg("mDNSPlatformSendRawPacket: BPF write(%d) failed %d (%s)", info->BPF_fd, errno, strerror(errno));
+	else
+		{
+		if (write(info->BPF_fd, msg, end - (mDNSu8 *)msg) < 0)
+			LogMsg("mDNSPlatformSendRawPacket: BPF write(%d) failed %d (%s)", info->BPF_fd, errno, strerror(errno));
+		else
+			{
+			const mDNSu8 *const b = (mDNSu8 *)msg;
+			if (b[0xC] == 0x08 && b[0xD] == 0x06)
+				{
+				int result = mDNSSetARP(info->scope_id, b+0x1C);
+				LogOperation("Set local ARP entry for %d %.4a: %d", info->scope_id, b+0x1C, result);
+				}
+			}
+		}
 	}
 
 mDNSlocal void CloseBPF(NetworkInterfaceInfoOSX *const i)
@@ -2094,28 +2111,29 @@ mDNSlocal void bpf_callback(const CFSocketRef cfs, const CFSocketCallBackType Ca
 mDNSlocal void SetFilterProgram(mDNS *const m, NetworkInterfaceInfoOSX *const x)
 	{
 	#define MAX_BPF_ADDRS 50
-	static struct bpf_insn filter[14 + MAX_BPF_ADDRS] =
+	static struct bpf_insn filter[15 + MAX_BPF_ADDRS] =
 		{
 		BPF_STMT(BPF_LD  + BPF_H   + BPF_ABS, 12),				// 0 Read Ethertype (bytes 12,13)
 		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0x0806, 0, 1),		// 1 If Ethertype == ARP goto next, else 3
 		BPF_STMT(BPF_RET + BPF_K, 42),							// 2 Return 42 byte-ARP
-		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0x0800, 0, 9),		// 3 If Ethertype == IP goto next, else 13 (exit)
+		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0x0800, 0, 10),		// 3 If Ethertype == IP goto next, else 14 (exit)
 		// Is IP packet; check it's addressed to our MAC address
 		BPF_STMT(BPF_LD  + BPF_W   + BPF_ABS, 0),				// 4 Read Ether Dst (bytes 0,1,2,3)
-		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0,      0, 7),		// 5 If matches goto next, else 13 (exit)
-		BPF_STMT(BPF_LD  + BPF_H   + BPF_ABS, 4),				// 6 Read Ether Dst (bytes 4,5)
-		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0,      0, 5),		// 7 If matches goto next, else 13 (exit)
+		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0,      3, 0),		// 5 If zero (special) goto 9, else next
+		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0,      0, 7),		// 6 If matches our MAC goto next, else 14 (exit)
+		BPF_STMT(BPF_LD  + BPF_H   + BPF_ABS, 4),				// 7 Read Ether Dst (bytes 4,5)
+		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0,      0, 5),		// 8 If matches our MAC goto next, else 14 (exit)
 		// Is IP packet addressed to our MAC address; check it's not to any of our IP addresses
-		BPF_STMT(BPF_LD  + BPF_W   + BPF_ABS, 30),				// 8 Read IP Dst (bytes 30,31,32,33)
+		BPF_STMT(BPF_LD  + BPF_W   + BPF_ABS, 30),				// 9 Read IP Dst (bytes 30,31,32,33)
 		};
 
-	struct bpf_insn *pc = &filter[9];		
+	struct bpf_insn *pc = &filter[10];
 
-	static const struct bpf_insn i0 = BPF_STMT(BPF_LDX + BPF_B   + BPF_MSH, 14);	//  9 Get IP Header length (normally 20)
-	static const struct bpf_insn i1 = BPF_STMT(BPF_LD  + BPF_IMM,           34);	// 10 A = 34 (14-byte Ethernet plus 20-byte TCP)
-	static const struct bpf_insn i2 = BPF_STMT(BPF_ALU + BPF_ADD + BPF_X,    0);	// 11 A += IP Header length
-	static const struct bpf_insn i3 = BPF_STMT(BPF_RET + BPF_A, 0);					// 12 Success: Return Ethernet + IP + TCP
-	static const struct bpf_insn i4 = BPF_STMT(BPF_RET + BPF_K, 0);					// 13 No match: Return nothing
+	static const struct bpf_insn i0 = BPF_STMT(BPF_LDX + BPF_B   + BPF_MSH, 14);	// 10 Get IP Header length (normally 20)
+	static const struct bpf_insn i1 = BPF_STMT(BPF_LD  + BPF_IMM,           34);	// 11 A = 34 (14-byte Ethernet plus 20-byte TCP)
+	static const struct bpf_insn i2 = BPF_STMT(BPF_ALU + BPF_ADD + BPF_X,    0);	// 12 A += IP Header length
+	static const struct bpf_insn i3 = BPF_STMT(BPF_RET + BPF_A, 0);					// 13 Success: Return Ethernet + IP + TCP
+	static const struct bpf_insn i4 = BPF_STMT(BPF_RET + BPF_K, 0);					// 14 No match: Return nothing
 
 	LogOperation("SetFilterProgram: %d %4s MAC  %.6a", x->BPF_fd, x->ifinfo.ifname, &x->ifinfo.MAC);
 
@@ -2140,11 +2158,11 @@ mDNSlocal void SetFilterProgram(mDNS *const m, NetworkInterfaceInfoOSX *const x)
 	// In summary, if we byte-swap all the non-numeric fields that shouldn't be swapped, and we *don't*
 	// swap any of the numeric values that *should* be byte-swapped, then the filter will work correctly.
 
-	filter[5].k  = (bpf_u_int32)x->ifinfo.MAC.b[0] << 24 | (bpf_u_int32)x->ifinfo.MAC.b[1] << 16 | (bpf_u_int32)x->ifinfo.MAC.b[2] << 8 | (bpf_u_int32)x->ifinfo.MAC.b[3];
-	filter[7].k  = (bpf_u_int32)x->ifinfo.MAC.b[4] <<  8 | (bpf_u_int32)x->ifinfo.MAC.b[5];
-	filter[3].jf = numv4 + 9;
-	filter[5].jf = numv4 + 7;
-	filter[7].jf = numv4 + 5;
+	filter[6].k  = (bpf_u_int32)x->ifinfo.MAC.b[0] << 24 | (bpf_u_int32)x->ifinfo.MAC.b[1] << 16 | (bpf_u_int32)x->ifinfo.MAC.b[2] << 8 | (bpf_u_int32)x->ifinfo.MAC.b[3];
+	filter[8].k  = (bpf_u_int32)x->ifinfo.MAC.b[4] <<  8 | (bpf_u_int32)x->ifinfo.MAC.b[5];
+	filter[3].jf += numv4;
+	filter[6].jf += numv4;
+	filter[8].jf += numv4;
 
 	for (i = m->HostInterfaces; i; i = i->next)
 		if (i->ip.type == mDNSAddrType_IPv4 && i->InterfaceID == x->ifinfo.InterfaceID && numv4)
@@ -2671,7 +2689,7 @@ mDNSlocal void UpdateAutoTunnelDomainStatus(const mDNS *const m, const DomainAut
 		{
 		status = mStatus_NotInitializedErr;
 		mDNS_snprintf(buffer, sizeof(buffer), "Neither LLQ nor AutoTunnel NAT port mapping is currently active");
-		}	
+		}
 	else if ((llq && llq->Result == mStatus_DoubleNAT) || (tun && tun->Result == mStatus_DoubleNAT))
 		{
 		status = mStatus_DoubleNAT;
@@ -2809,7 +2827,7 @@ mDNSlocal void RegisterAutoTunnelRecords(mDNS *m, DomainAuthInfo *info)
 		info->AutoTunnelHostRecord.resrec.rdata->u.ipv6 = m->AutoTunnelHostAddr;
 		info->AutoTunnelHostRecord.resrec.RecordType = kDNSRecordTypeKnownUnique;
 		err = mDNS_Register(m, &info->AutoTunnelHostRecord);
-		if (err) LogMsg("RegisterAutoTunnelRecords error %d registering AutoTunnelHostRecord %##s", err, info->AutoTunnelHostRecord.namestorage.c);	
+		if (err) LogMsg("RegisterAutoTunnelRecords error %d registering AutoTunnelHostRecord %##s", err, info->AutoTunnelHostRecord.namestorage.c);
 
 		// 2. Set up device info record
 		ConstructServiceName(&info->AutoTunnelDeviceInfo.namestorage, &m->nicelabel, &DeviceInfoName, &info->domain);
@@ -4264,7 +4282,7 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 				*pp = cur->next;
 				freeL("ClientTunnel", cur);
 				}
-			else 
+			else
 				pp = &(*pp)->next;
 			}
 
@@ -4612,9 +4630,9 @@ mDNSlocal OSStatus KeychainChanged(SecKeychainEvent keychainEvent, SecKeychainCa
 				{
 				LogMsg("***   Keychain Changed   *** KeychainEvent=%d %s",
 					keychainEvent,
-					keychainEvent == kSecAddEvent    ? "kSecAddEvent" : 
-					keychainEvent == kSecDeleteEvent ? "kSecDeleteEvent" : 
-					keychainEvent == kSecUpdateEvent ? "kSecUpdateEvent" :  "<Unknown>");
+					keychainEvent == kSecAddEvent    ? "kSecAddEvent"    :
+					keychainEvent == kSecDeleteEvent ? "kSecDeleteEvent" :
+					keychainEvent == kSecUpdateEvent ? "kSecUpdateEvent" : "<Unknown>");
 				// We're running on the CFRunLoop (Mach port) thread, not the kqueue thread, so we need to grab the KQueueLock before proceeding
 				KQueueLock(m);
 				mDNS_Lock(m);

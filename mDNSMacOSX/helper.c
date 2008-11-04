@@ -17,6 +17,11 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.43  2008/11/04 23:54:09  cheshire
+Added routine mDNSSetARP(), used to replace an SPS client's entry in our ARP cache with
+a dummy one, so that IP traffic to the SPS client initiated by the SPS machine can be
+captured by our BPF filters, and used as a trigger to wake the sleeping machine.
+
 Revision 1.42  2008/10/31 23:35:31  cheshire
 When scheduling new power event make sure all old events are deleted;
 mDNSPowerRequest(-1,-1); just clears old events without scheduling a new one
@@ -155,7 +160,10 @@ Revision 1.1  2007/08/08 22:34:58  mcguire
 #include <bsm/libbsm.h>
 #include <net/if.h>
 #include <net/route.h>
+#include <net/if_dl.h>
+#include <net/if_types.h>
 #include <netinet/in.h>
+#include <netinet/if_ether.h>
 #include <netinet6/in6_var.h>
 #include <netinet6/nd6.h>
 #include <netinet6/ipsec.h>
@@ -308,6 +316,71 @@ kern_return_t do_mDNSPowerRequest(__unused mach_port_t port, int key, int interv
 				}
 			}
 		}
+fin:
+	update_idle_timer();
+	return KERN_SUCCESS;
+	}
+
+kern_return_t do_mDNSSetARP(__unused mach_port_t port, int ifindex, v4addr_t v4, int *err, audit_token_t token)
+	{
+	*err = -1;
+	if (!authorized(&token)) { *err = kmDNSHelperNotAuthorized; goto fin; }
+
+	//helplog(ASL_LEVEL_ERR, "do_mDNSSetARP %d %d.%d.%d.%d", ifindex, v4[0], v4[1], v4[2], v4[3]);
+
+	int s = socket(PF_ROUTE, SOCK_RAW, 0);
+	if (s >= 0)
+		{
+		struct { struct rt_msghdr hdr; char data[512]; } rtmsg;
+		char *cp = rtmsg.data;
+		struct sockaddr_inarp dst;
+		struct sockaddr_dl sdl;
+
+		bzero(&rtmsg, sizeof(rtmsg));
+		rtmsg.hdr.rtm_version = RTM_VERSION;
+		rtmsg.hdr.rtm_type    = RTM_ADD;
+		rtmsg.hdr.rtm_index   = 0;
+		rtmsg.hdr.rtm_flags   = RTF_HOST | RTF_STATIC;
+		rtmsg.hdr.rtm_addrs   = RTA_DST | RTA_GATEWAY;
+		rtmsg.hdr.rtm_pid     = 0;
+		rtmsg.hdr.rtm_seq     = 0;
+		rtmsg.hdr.rtm_errno   = 0;
+		rtmsg.hdr.rtm_use     = 0;
+		rtmsg.hdr.rtm_inits   = RTV_EXPIRE;
+		struct timeval tv;
+		gettimeofday(&tv, 0);
+		rtmsg.hdr.rtm_rmx.rmx_expire = tv.tv_sec + 30;
+		
+		dst.sin_len            = sizeof(dst);
+		dst.sin_family         = AF_INET;
+		dst.sin_port           = 0;
+		dst.sin_addr.s_addr    = *(in_addr_t*)v4;
+		dst.sin_srcaddr.s_addr = 0;
+		dst.sin_tos            = 0;
+		dst.sin_other          = 0;
+
+		sdl.sdl_len            = sizeof(sdl);
+		sdl.sdl_family         = AF_LINK;
+		sdl.sdl_index          = ifindex;
+		sdl.sdl_type           = IFT_ETHER;
+		sdl.sdl_nlen           = 0;
+		sdl.sdl_alen           = ETHER_ADDR_LEN;
+		sdl.sdl_slen           = 0;
+
+		struct ether_addr *ea = (struct ether_addr *)LLADDR(&sdl);
+		bzero(ea, sizeof(*ea));
+
+		bcopy(&dst, cp, sizeof(dst)); cp += dst.sin_len;
+		bcopy(&sdl, cp, sizeof(sdl)); cp += sdl.sdl_len;
+		rtmsg.hdr.rtm_msglen = cp - (char *)&rtmsg;
+
+		//helplog(ASL_LEVEL_ERR, "write %d %d", rtmsg.hdr.rtm_msglen, write(s, (char *)&rtmsg, rtmsg.hdr.rtm_msglen));
+		int len = read(s, (char *)&rtmsg, sizeof(rtmsg));
+		//helplog(ASL_LEVEL_ERR, "read %d", len);
+		close(s);
+		*err = 0;
+		}
+
 fin:
 	update_idle_timer();
 	return KERN_SUCCESS;
