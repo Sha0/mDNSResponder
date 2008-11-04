@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.506  2008/11/04 20:06:19  cheshire
+<rdar://problem/6186231> Change MAX_DOMAIN_NAME to 256
+
 Revision 1.505  2008/11/03 23:49:47  mkrochma
 Increase NATMAP_DEFAULT_LEASE to 2 hours so we do maintenance wake less often
 
@@ -1055,26 +1058,26 @@ typedef mDNSs32 mStatus;
 #define MAX_DOMAIN_LABEL 63
 typedef struct { mDNSu8 c[ 64]; } domainlabel;		// One label: length byte and up to 63 characters
 
-// RFC 1034/1035 specify that a domain name, including length bytes, data bytes, and terminating zero, may be up to 255 bytes long
-#define MAX_DOMAIN_NAME 255
-typedef struct { mDNSu8 c[256]; } domainname;		// Up to 255 bytes of length-prefixed domainlabels
+// RFC 1034/1035/2181 specify that a domain name, including length bytes, data bytes, and terminating zero, may be up to 256 bytes long
+#define MAX_DOMAIN_NAME 256
+typedef struct { mDNSu8 c[256]; } domainname;		// Up to 256 bytes of length-prefixed domainlabels
 
 typedef struct { mDNSu8 c[256]; } UTF8str255;		// Null-terminated C string
 
-// The longest legal textual form of a DNS name is 1005 bytes, including the C-string terminating NULL at the end.
+// The longest legal textual form of a DNS name is 1009 bytes, including the C-string terminating NULL at the end.
 // Explanation:
 // When a native domainname object is converted to printable textual form using ConvertDomainNameToCString(),
 // non-printing characters are represented in the conventional DNS way, as '\ddd', where ddd is a three-digit decimal number.
-// The longest legal domain name is 255 bytes, in the form of four labels as shown below:
-// Length byte, 63 data bytes, length byte, 63 data bytes, length byte, 63 data bytes, length byte, 61 data bytes, zero byte.
+// The longest legal domain name is 256 bytes, in the form of four labels as shown below:
+// Length byte, 63 data bytes, length byte, 63 data bytes, length byte, 63 data bytes, length byte, 62 data bytes, zero byte.
 // Each label is encoded textually as characters followed by a trailing dot.
 // If every character has to be represented as a four-byte escape sequence, then this makes the maximum textual form four labels
 // plus the C-string terminating NULL as shown below:
-// 63*4+1 + 63*4+1 + 63*4+1 + 61*4+1 + 1 = 1005.
+// 63*4+1 + 63*4+1 + 63*4+1 + 62*4+1 + 1 = 1009.
 // Note that MAX_ESCAPED_DOMAIN_LABEL is not normally used: If you're only decoding a single label, escaping is usually not required.
 // It is for domain names, where dots are used as label separators, that proper escaping is vital.
 #define MAX_ESCAPED_DOMAIN_LABEL 254
-#define MAX_ESCAPED_DOMAIN_NAME 1005
+#define MAX_ESCAPED_DOMAIN_NAME 1009
 
 // MAX_REVERSE_MAPPING_NAME
 // For IPv4: "123.123.123.123.in-addr.arpa."  30 bytes including terminating NUL
@@ -1105,7 +1108,7 @@ typedef struct mDNS_PlatformSupport_struct mDNS_PlatformSupport;
 typedef struct NATTraversalInfo_struct NATTraversalInfo;
 
 // Structure to abstract away the differences between TCP/SSL sockets, and one for UDP sockets
-// The actual definition of these structures in the in the appropriate platform support code
+// The actual definition of these structures appear in the appropriate platform support code
 typedef struct TCPSocket_struct TCPSocket;
 typedef struct UDPSocket_struct UDPSocket;
 
@@ -1806,7 +1809,7 @@ struct ServiceRecordSet_struct
 	// all required data is passed as parameters to that function.
 
 	// Begin uDNS info ****************
-	// Hopefully much of this stuff can be simplified or eliminated
+	// All of these fields should be eliminated
 
 	// Note: The current uDNS code keeps an explicit list of registered services, and handles them
 	// differently to how individual records are treated (this is probably a mistake). What this means is
@@ -2615,7 +2618,7 @@ extern mDNSu8  *MakeDomainNameFromDNSNameString (domainname  *const name,  const
 // When using ConvertDomainLabelToCString, the target buffer must be MAX_ESCAPED_DOMAIN_LABEL (254) bytes long
 // to guarantee there will be no buffer overrun. It is only safe to use a buffer shorter than this in rare cases
 // where the label is known to be constrained somehow (for example, if the label is known to be either "_tcp" or "_udp").
-// Similarly, when using ConvertDomainNameToCString, the target buffer must be MAX_ESCAPED_DOMAIN_NAME (1005) bytes long.
+// Similarly, when using ConvertDomainNameToCString, the target buffer must be MAX_ESCAPED_DOMAIN_NAME (1009) bytes long.
 // See definitions of MAX_ESCAPED_DOMAIN_LABEL and MAX_ESCAPED_DOMAIN_NAME for more detailed explanation.
 extern char    *ConvertDomainLabelToCString_withescape(const domainlabel *const name, char *cstr, char esc);
 #define         ConvertDomainLabelToCString_unescaped(D,C) ConvertDomainLabelToCString_withescape((D), (C), 0)

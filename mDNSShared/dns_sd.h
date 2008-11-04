@@ -458,15 +458,15 @@ enum
 /* Maximum length, in bytes, of a domain name represented as an *escaped* C-String */
 /* including the final trailing dot, and the C-String terminating NULL at the end. */
 
-#define kDNSServiceMaxDomainName 1005
+#define kDNSServiceMaxDomainName 1009
 
 /*
  * Notes on DNS Name Escaping
  *   -- or --
- * "Why is kDNSServiceMaxDomainName 1005, when the maximum legal domain name is 255 bytes?"
+ * "Why is kDNSServiceMaxDomainName 1009, when the maximum legal domain name is 256 bytes?"
  *
- * All strings used in DNS-SD are UTF-8 strings.
- * With few exceptions, most are also escaped using standard DNS escaping rules:
+ * All strings used in the DNS-SD APIs are UTF-8 strings. Apart from the exceptions noted below,
+ * the APIs expect the strings to be properly escaped, using the conventional DNS escaping rules:
  *
  *   '\\' represents a single literal '\' in the name
  *   '\.' represents a single literal '.' in the name
@@ -491,7 +491,7 @@ enum
  * _service._udp, where the "service" part is 1-14 characters, which may be
  * letters, digits, or hyphens. The domain part of the three-part name may be
  * any legal domain, providing that the resulting servicename+regtype+domain
- * name does not exceed 255 bytes.
+ * name does not exceed 256 bytes.
  *
  * For most software, these issues are transparent. When browsing, the discovered
  * servicenames should simply be displayed as-is. When resolving, the discovered
@@ -1889,7 +1889,7 @@ DNSServiceErrorType DNSSD_API DNSServiceNATPortMappingCreate
  * Parameters:
  *
  * fullName:        A pointer to a buffer that where the resulting full domain name is to be written.
- *                  The buffer must be kDNSServiceMaxDomainName (1005) bytes in length to
+ *                  The buffer must be kDNSServiceMaxDomainName (1009) bytes in length to
  *                  accommodate the longest legal domain name without buffer overrun.
  *
  * service:         The service name - any dots or backslashes must NOT be escaped.

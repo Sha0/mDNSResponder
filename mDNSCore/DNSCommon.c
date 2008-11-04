@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.216  2008/11/04 20:06:19  cheshire
+<rdar://problem/6186231> Change MAX_DOMAIN_NAME to 256
+
 Revision 1.215  2008/10/23 23:54:35  cheshire
 Added missing "const" in declaration
 
@@ -742,7 +745,7 @@ mDNSexport mDNSBool SameDomainName(const domainname *const d1, const domainname 
 	while (*a || *b)
 		{
 		if (a + 1 + *a >= max)
-			{ debugf("Malformed domain name (more than 255 characters)"); return(mDNSfalse); }
+			{ debugf("Malformed domain name (more than 256 characters)"); return(mDNSfalse); }
 		if (!SameDomainLabel(a, b)) return(mDNSfalse);
 		a += 1 + *a;
 		b += 1 + *b;
@@ -789,8 +792,8 @@ mDNSexport mDNSBool IsLocalDomain(const domainname *d)
 // Returns length of a domain name INCLUDING the byte for the final null label
 // e.g. for the root label "." it returns one
 // For the FQDN "com." it returns 5 (length byte, three data bytes, final zero)
-// Legal results are 1 (just root label) to 255 (MAX_DOMAIN_NAME)
-// If the given domainname is invalid, result is 256 (MAX_DOMAIN_NAME+1)
+// Legal results are 1 (just root label) to 256 (MAX_DOMAIN_NAME)
+// If the given domainname is invalid, result is 257 (MAX_DOMAIN_NAME+1)
 mDNSexport mDNSu16 DomainNameLengthLimit(const domainname *const name, const mDNSu8 *limit)
 	{
 	const mDNSu8 *src = name->c;
@@ -848,7 +851,7 @@ mDNSexport const domainname *SkipLeadingLabels(const domainname *d, int skip)
 // Any dots in the name are literal dots, not label separators
 // If successful, AppendLiteralLabelString returns a pointer to the next unused byte
 // in the domainname bufer (i.e. the next byte after the terminating zero).
-// If unable to construct a legal domain name (i.e. label more than 63 bytes, or total more than 255 bytes)
+// If unable to construct a legal domain name (i.e. label more than 63 bytes, or total more than 256 bytes)
 // AppendLiteralLabelString returns mDNSNULL.
 mDNSexport mDNSu8 *AppendLiteralLabelString(domainname *const name, const char *cstr)
 	{
@@ -870,7 +873,7 @@ mDNSexport mDNSu8 *AppendLiteralLabelString(domainname *const name, const char *
 // Textual labels, escaped as necessary using the usual DNS '\' notation, separated by dots.
 // If successful, AppendDNSNameString returns a pointer to the next unused byte
 // in the domainname bufer (i.e. the next byte after the terminating zero).
-// If unable to construct a legal domain name (i.e. label more than 63 bytes, or total more than 255 bytes)
+// If unable to construct a legal domain name (i.e. label more than 63 bytes, or total more than 256 bytes)
 // AppendDNSNameString returns mDNSNULL.
 mDNSexport mDNSu8 *AppendDNSNameString(domainname *const name, const char *cstring)
 	{
@@ -912,7 +915,7 @@ mDNSexport mDNSu8 *AppendDNSNameString(domainname *const name, const char *cstri
 // AppendDomainLabel appends a single label to a name.
 // If successful, AppendDomainLabel returns a pointer to the next unused byte
 // in the domainname bufer (i.e. the next byte after the terminating zero).
-// If unable to construct a legal domain name (i.e. label more than 63 bytes, or total more than 255 bytes)
+// If unable to construct a legal domain name (i.e. label more than 63 bytes, or total more than 256 bytes)
 // AppendDomainLabel returns mDNSNULL.
 mDNSexport mDNSu8 *AppendDomainLabel(domainname *const name, const domainlabel *const label)
 	{
@@ -966,7 +969,7 @@ mDNSexport mDNSBool MakeDomainLabelFromLiteralString(domainlabel *const label, c
 // Textual labels, escaped as necessary using the usual DNS '\' notation, separated by dots.
 // If successful, MakeDomainNameFromDNSNameString returns a pointer to the next unused byte
 // in the domainname bufer (i.e. the next byte after the terminating zero).
-// If unable to construct a legal domain name (i.e. label more than 63 bytes, or total more than 255 bytes)
+// If unable to construct a legal domain name (i.e. label more than 63 bytes, or total more than 256 bytes)
 // MakeDomainNameFromDNSNameString returns mDNSNULL.
 mDNSexport mDNSu8 *MakeDomainNameFromDNSNameString(domainname *const name, const char *cstr)
 	{
@@ -1001,10 +1004,10 @@ mDNSexport char *ConvertDomainLabelToCString_withescape(const domainlabel *const
 	return(ptr);												// and return
 	}
 
-// Note: To guarantee that there will be no possible overrun, cstr must be at least MAX_ESCAPED_DOMAIN_NAME (1005 bytes)
+// Note: To guarantee that there will be no possible overrun, cstr must be at least MAX_ESCAPED_DOMAIN_NAME (1009 bytes)
 mDNSexport char *ConvertDomainNameToCString_withescape(const domainname *const name, char *ptr, char esc)
 	{
-	const mDNSu8 *src         = name->c;								// Domain name we're reading
+	const mDNSu8 *src         = name->c;							// Domain name we're reading
 	const mDNSu8 *const max   = name->c + MAX_DOMAIN_NAME;			// Maximum that's valid
 
 	if (*src == 0) *ptr++ = '.';									// Special case: For root, just write a dot
@@ -1728,15 +1731,15 @@ mDNSexport mDNSu8 *putDomainNameAsLabels(const DNSMessage *const msg,
 
 		// This check correctly allows for the final trailing root label:
 		// e.g.
-		// Suppose our domain name is exactly 255 bytes long, including the final trailing root label.
-		// Suppose np is now at name->c[248], and we're about to write our last non-null label ("local").
-		// We know that max will be at name->c[255]
+		// Suppose our domain name is exactly 256 bytes long, including the final trailing root label.
+		// Suppose np is now at name->c[249], and we're about to write our last non-null label ("local").
+		// We know that max will be at name->c[256]
 		// That means that np + 1 + 5 == max - 1, so we (just) pass the "if" test below, write our
 		// six bytes, then exit the loop, write the final terminating root label, and the domain
-		// name we've written is exactly 255 bytes long, exactly at the correct legal limit.
+		// name we've written is exactly 256 bytes long, exactly at the correct legal limit.
 		// If the name is one byte longer, then we fail the "if" test below, and correctly bail out.
 		if (np + 1 + *np >= max)
-			{ LogMsg("Malformed domain name %##s (more than 255 bytes)", name->c); return(mDNSNULL); }
+			{ LogMsg("Malformed domain name %##s (more than 256 bytes)", name->c); return(mDNSNULL); }
 
 		if (base) pointer = FindCompressionPointer(base, searchlimit, np);
 		if (pointer)					// Use a compression pointer if we can
@@ -2196,7 +2199,7 @@ mDNSexport const mDNSu8 *skipDomainName(const DNSMessage *const msg, const mDNSu
 			case 0x00:	if (ptr + len >= end)					// Remember: expect at least one more byte for the root label
 							{ debugf("skipDomainName: Malformed domain name (overruns packet end)"); return(mDNSNULL); }
 						if (total + 1 + len >= MAX_DOMAIN_NAME)	// Remember: expect at least one more byte for the root label
-							{ debugf("skipDomainName: Malformed domain name (more than 255 characters)"); return(mDNSNULL); }
+							{ debugf("skipDomainName: Malformed domain name (more than 256 characters)"); return(mDNSNULL); }
 						ptr += len;
 						total += 1 + len;
 						break;
@@ -2233,7 +2236,7 @@ mDNSexport const mDNSu8 *getDomainName(const DNSMessage *const msg, const mDNSu8
 			case 0x00:	if (ptr + len >= end)		// Remember: expect at least one more byte for the root label
 							{ debugf("getDomainName: Malformed domain name (overruns packet end)"); return(mDNSNULL); }
 						if (np + 1 + len >= limit)	// Remember: expect at least one more byte for the root label
-							{ debugf("getDomainName: Malformed domain name (more than 255 characters)"); return(mDNSNULL); }
+							{ debugf("getDomainName: Malformed domain name (more than 256 characters)"); return(mDNSNULL); }
 						*np++ = len;
 						for (i=0; i<len; i++) *np++ = *ptr++;
 						*np = 0;	// Tentatively place the root label here (may be overwritten if we have more labels)

@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.410  2008/11/04 20:06:20  cheshire
+<rdar://problem/6186231> Change MAX_DOMAIN_NAME to 256
+
 Revision 1.409  2008/10/31 23:44:22  cheshire
 Fixed compile error in Posix build
 
@@ -3225,7 +3228,7 @@ mDNSlocal void read_msg(request_state *req)
 				{ LogMsg("%3d: ERROR: client version 0x%08X daemon version 0x%08X", req->sd, req->hdr.version, VERSION); req->ts = t_error; return; }
 
 			// Largest conceivable single request is a DNSServiceRegisterRecord() or DNSServiceAddRecord()
-			// with 64kB of rdata. Adding 1005 byte for a maximal domain name, plus a safety margin
+			// with 64kB of rdata. Adding 1009 byte for a maximal domain name, plus a safety margin
 			// for other overhead, this means any message above 70kB is definitely bogus.
 			if (req->hdr.datalen > 70000)
 				{ LogMsg("%3d: ERROR: read_msg - hdr.datalen %lu (%X) > 70000", req->sd, req->hdr.datalen, req->hdr.datalen); req->ts = t_error; return; }
