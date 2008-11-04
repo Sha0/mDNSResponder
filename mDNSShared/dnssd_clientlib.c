@@ -28,6 +28,9 @@
    Change History (most recent first):
 
 $Log: dnssd_clientlib.c,v $
+Revision 1.19  2008/11/04 21:15:18  cheshire
+<rdar://problem/5969564> Potential buffer overflows in DNSServiceConstructFullName
+
 Revision 1.18  2007/11/30 23:06:10  cheshire
 Fixed compile warning: declaration of 'index' shadows a global declaration
 
@@ -111,6 +114,9 @@ like Muse Research who want to be able to use mDNS/DNS-SD from GPL-licensed code
 
 #define mdnsIsDigit(X)     ((X) >= '0' && (X) <= '9')
 
+// DomainEndsInDot returns 1 if name ends with a dot, 0 otherwise
+// (DNSServiceConstructFullName depends this returning 1 for true, rather than any non-zero value meaning true)
+
 static int DomainEndsInDot(const char *dom)
 	{
 	while (dom[0] && dom[1])
@@ -153,52 +159,66 @@ static uint8_t *InternalTXTRecordSearch
  *
  *********************************************************************************************/
 
-int DNSSD_API DNSServiceConstructFullName
+// Note: Need to make sure we don't write more than kDNSServiceMaxDomainName (1009) bytes to fullName
+// In earlier builds this constant was defined to be 1005, so to avoid buffer overruns on clients
+// compiled with that constant we'll actually limit the output to 1005 bytes.
+
+DNSServiceErrorType DNSSD_API DNSServiceConstructFullName
 	(
-	char                      *fullName,
-	const char                *service,      /* may be NULL */
-	const char                *regtype,
-	const char                *domain
+	char       *const fullName,
+	const char *const service,      // May be NULL
+	const char *const regtype,
+	const char *const domain
 	)
 	{
-	unsigned long len;
-	unsigned char c;
-	char *fn = fullName;
-	const char *s = service;
-	const char *r = regtype;
-	const char *d = domain;
+	const size_t len = !regtype ? 0 : strlen(regtype) - DomainEndsInDot(regtype);
+	char       *fn   = fullName;
+	char *const lim  = fullName + 1005;
+	const char *s    = service;
+	const char *r    = regtype;
+	const char *d    = domain;
+
+	// regtype must be at least "x._udp" or "x._tcp"
+	if (len < 6 || !domain || !domain[0]) return kDNSServiceErr_BadParam;
+	if (strncasecmp((regtype + len - 4), "_tcp", 4) && strncasecmp((regtype + len - 4), "_udp", 4)) return kDNSServiceErr_BadParam;
 
 	if (service && *service)
 		{
 		while (*s)
 			{
-			c = (unsigned char)*s++;
-			if (c == '.' || (c == '\\')) *fn++ = '\\'; // escape dot and backslash literals
-			else if (c <= ' ') // escape non-printable characters
+			unsigned char c = *s++;				// Needs to be unsigned, or values like 0xFF will be interpreted as < 32
+			if (c <= ' ')						// Escape non-printable characters
 				{
+				if (fn+4 >= lim) goto fail;
 				*fn++ = '\\';
-				*fn++ = (char) ('0' + (c / 100));
-				*fn++ = (char) ('0' + (c / 10) % 10);
-				c = (unsigned char)('0' + (c % 10));
+				*fn++ = '0' + (c / 100);
+				*fn++ = '0' + (c /  10) % 10;
+				c     = '0' + (c      ) % 10;
 				}
+			else if (c == '.' || (c == '\\'))	// Escape dot and backslash literals
+				{
+				if (fn+2 >= lim) goto fail;
+				*fn++ = '\\';
+				}
+			else
+				if (fn+1 >= lim) goto fail;
 			*fn++ = (char)c;
 			}
 		*fn++ = '.';
 		}
 
-	if (!regtype) return -1;
-	len = (unsigned long) strlen(regtype);
-	if (DomainEndsInDot(regtype)) len--;
-	if (len < 6) return -1; // regtype must be at least "x._udp" or "x._tcp"
-	if (strncasecmp((regtype + len - 4), "_tcp", 4) && strncasecmp((regtype + len - 4), "_udp", 4)) return -1;
-	while (*r) *fn++ = *r++;
-	if (!DomainEndsInDot(regtype)) *fn++ = '.';
+	while (*r) if (fn+1 >= lim) goto fail; else *fn++ = *r++;
+	if (!DomainEndsInDot(regtype)) { if (fn+1 >= lim) goto fail; else *fn++ = '.'; }
 
-	if (!domain || !domain[0]) return -1;
-	while (*d) *fn++ = *d++;
-	if (!DomainEndsInDot(domain)) *fn++ = '.';
+	while (*d) if (fn+1 >= lim) goto fail; else *fn++ = *d++;
+	if (!DomainEndsInDot(domain)) { if (fn+1 >= lim) goto fail; else *fn++ = '.'; }
+
 	*fn = '\0';
-	return 0;
+	return kDNSServiceErr_NoError;
+
+fail:
+	*fn = '\0';
+	return kDNSServiceErr_BadParam;
 	}
 
 /*********************************************************************************************
