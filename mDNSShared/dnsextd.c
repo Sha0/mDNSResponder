@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.91  2008/11/04 23:06:51  cheshire
+Split RDataBody union definition into RDataBody and RDataBody2, and removed
+SOA from the normal RDataBody union definition, saving 270 bytes per AuthRecord
+
 Revision 1.90  2008/10/03 18:18:57  cheshire
 Define dummy "mDNS_ConfigChanged(mDNS *const m)" routine to avoid link errors
 
@@ -933,7 +937,7 @@ mDNSlocal CacheRecord *CopyCacheRecord(const CacheRecord *orig, domainname *name
 	cr = malloc(size);
 	if (!cr) { LogErr("CopyCacheRecord", "malloc"); return NULL; }
 	memcpy(cr, orig, size);
-	cr->resrec.rdata = (RData*)&cr->rdatastorage;
+	cr->resrec.rdata = (RData*)&cr->smallrdatastorage;
 	cr->resrec.name = name;
 	
 	return cr;
@@ -1587,7 +1591,7 @@ mDNSlocal void UpdateLeaseTable(PktMsg *pkt, DaemonInfo *d, mDNSs32 lease)
 				tmp = malloc(allocsize);
 				if (!tmp) { LogErr("UpdateLeaseTable", "malloc"); goto cleanup; }
 				memcpy(&tmp->rr, &lcr.r, sizeof(CacheRecord) + rr->rdlength - InlineCacheRDSize);
-				tmp->rr.resrec.rdata = (RData *)&tmp->rr.rdatastorage;
+				tmp->rr.resrec.rdata = (RData *)&tmp->rr.smallrdatastorage;
 				AssignDomainName(&tmp->name, rr->name);
 				tmp->rr.resrec.name = &tmp->name;
 				tmp->expire = tv.tv_sec + (unsigned)lease;

@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.509  2008/11/04 23:06:50  cheshire
+Split RDataBody union definition into RDataBody and RDataBody2, and removed
+SOA from the normal RDataBody union definition, saving 270 bytes per AuthRecord
+
 Revision 1.508  2008/11/04 22:21:43  cheshire
 Changed zone field of AuthRecord_struct from domainname to pointer, saving 252 bytes per AuthRecord
 
@@ -1380,6 +1384,21 @@ typedef packedstruct
 
 #define InlineCacheGroupNameSize 144
 
+// The RDataBody union defines the common rdata types that fit into our 264-byte limit
+typedef union
+	{
+	mDNSu8      data[StandardAuthRDSize];
+	mDNSv4Addr  ipv4;		// For 'A' record
+	domainname  name;		// For PTR, NS, CNAME, DNAME
+	UTF8str255  txt;
+	rdataMX     mx;
+	mDNSv6Addr  ipv6;		// For 'AAAA' record
+	rdataSRV    srv;
+	rdataOPT    opt;		// For EDNS0 OPT record; RDataBody may contain multiple variable-length rdataOPT objects packed together
+	mDNSEthAddr mac;
+	} RDataBody;
+
+// The RDataBody2 union is the same as above, except it includes fields for the larger types like soa, rp, px
 typedef union
 	{
 	mDNSu8      data[StandardAuthRDSize];
@@ -1394,7 +1413,7 @@ typedef union
 	rdataSRV    srv;
 	rdataOPT    opt;		// For EDNS0 OPT record; RDataBody may contain multiple variable-length rdataOPT objects packed together
 	mDNSEthAddr mac;
-	} RDataBody;
+	} RDataBody2;
 
 typedef struct
 	{
@@ -1676,12 +1695,12 @@ struct AuthRecord_struct
 
 	// uDNS_UpdateRecord support fields
 	// Do we really need all these in *addition* to NewRData and newrdlength above?
-	RData *OrigRData;
 	mDNSu16 OrigRDLen;		// previously registered, being deleted
-	RData *InFlightRData;
 	mDNSu16 InFlightRDLen;	// currently being registered
-	RData *QueuedRData;		// if the client call Update while an update is in flight, we must finish the
 	mDNSu16 QueuedRDLen;	// pending operation (re-transmitting if necessary) THEN register the queued update
+	RData *OrigRData;
+	RData *InFlightRData;
+	RData *QueuedRData;
 
 	// Field Group 5: Large data objects go at the end
 	domainname      namestorage;
@@ -1731,7 +1750,7 @@ struct CacheRecord_struct
 	mDNSBool        MPExpectingKA;		// Multi-packet query handling: Set when we increment MPUnansweredQ; allows one KA
 	CacheRecord    *NextInCFList;		// Set if this is in the list of records we just received with the cache flush bit set
 
-	struct { mDNSu16 MaxRDLength; mDNSu8 data[InlineCacheRDSize]; } rdatastorage;	// Storage for small records is right here
+	struct { mDNSu16 MaxRDLength; mDNSu8 data[InlineCacheRDSize]; } smallrdatastorage;	// Storage for small records is right here
 	};
 
 // Storage sufficient to hold either a CacheGroup header or a CacheRecord
@@ -2664,7 +2683,7 @@ extern mDNSu32 mDNS_vsnprintf(char *sbuffer, mDNSu32 buflen, const char *fmt, va
 extern mDNSu32 mDNS_snprintf(char *sbuffer, mDNSu32 buflen, const char *fmt, ...) IS_A_PRINTF_STYLE_FUNCTION(3,4);
 extern mDNSu32 NumCacheRecordsForInterfaceID(const mDNS *const m, mDNSInterfaceID id);
 extern char *DNSTypeName(mDNSu16 rrtype);
-extern char *GetRRDisplayString_rdb(const ResourceRecord *const rr, const RDataBody *const rd, char *const buffer);
+extern char *GetRRDisplayString_rdb(const ResourceRecord *const rr, const RDataBody *const rd1, char *const buffer);
 #define RRDisplayString(m, rr) GetRRDisplayString_rdb(rr, &(rr)->rdata->u, (m)->MsgBuffer)
 #define ARDisplayString(m, rr) GetRRDisplayString_rdb(&(rr)->resrec, &(rr)->resrec.rdata->u, (m)->MsgBuffer)
 #define CRDisplayString(m, rr) GetRRDisplayString_rdb(&(rr)->resrec, &(rr)->resrec.rdata->u, (m)->MsgBuffer)
@@ -3019,18 +3038,19 @@ struct CompileTimeAssertionChecks_mDNS
 	// Check our structures are reasonable sizes. Including overly-large buffers, or embedding
 	// other overly-large structures instead of having a pointer to them, can inadvertently
 	// cause structure sizes (and therefore memory usage) to balloon unreasonably.
+	char sizecheck_RDataBody           [(sizeof(RDataBody)            ==   264) ? 1 : -1];
 	char sizecheck_ResourceRecord      [(sizeof(ResourceRecord)       <=    56) ? 1 : -1];
-	char sizecheck_AuthRecord          [(sizeof(AuthRecord)           <=  1416) ? 1 : -1];
+	char sizecheck_AuthRecord          [(sizeof(AuthRecord)           <=  1000) ? 1 : -1];
 	char sizecheck_CacheRecord         [(sizeof(CacheRecord)          <=   200) ? 1 : -1];
 	char sizecheck_CacheGroup          [(sizeof(CacheGroup)           <=   184) ? 1 : -1];
 	char sizecheck_DNSQuestion         [(sizeof(DNSQuestion)          <=   728) ? 1 : -1];
 	char sizecheck_ZoneData            [(sizeof(ZoneData)             <=  1560) ? 1 : -1];
 	char sizecheck_NATTraversalInfo    [(sizeof(NATTraversalInfo)     <=   192) ? 1 : -1];
-	char sizecheck_HostnameInfo        [(sizeof(HostnameInfo)         <=  3304) ? 1 : -1];
+	char sizecheck_HostnameInfo        [(sizeof(HostnameInfo)         <=  2800) ? 1 : -1];
 	char sizecheck_DNSServer           [(sizeof(DNSServer)            <=   312) ? 1 : -1];
-	char sizecheck_NetworkInterfaceInfo[(sizeof(NetworkInterfaceInfo) <=  7000) ? 1 : -1];
-	char sizecheck_ServiceRecordSet    [(sizeof(ServiceRecordSet)     <=  6248) ? 1 : -1];
-	char sizecheck_DomainAuthInfo      [(sizeof(DomainAuthInfo)       <=  6544) ? 1 : -1];
+	char sizecheck_NetworkInterfaceInfo[(sizeof(NetworkInterfaceInfo) <=  5500) ? 1 : -1];
+	char sizecheck_ServiceRecordSet    [(sizeof(ServiceRecordSet)     <=  5500) ? 1 : -1];
+	char sizecheck_DomainAuthInfo      [(sizeof(DomainAuthInfo)       <=  5500) ? 1 : -1];
 	char sizecheck_ServiceInfoQuery    [(sizeof(ServiceInfoQuery)     <=  2944) ? 1 : -1];
 #if APPLE_OSX_mDNSResponder
 	char sizecheck_ClientTunnel        [(sizeof(ClientTunnel)         <=  1072) ? 1 : -1];

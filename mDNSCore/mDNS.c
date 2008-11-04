@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.847  2008/11/04 23:06:50  cheshire
+Split RDataBody union definition into RDataBody and RDataBody2, and removed
+SOA from the normal RDataBody union definition, saving 270 bytes per AuthRecord
+
 Revision 1.846  2008/11/04 22:21:44  cheshire
 Changed zone field of AuthRecord_struct from domainname to pointer, saving 252 bytes per AuthRecord
 
@@ -3492,7 +3496,7 @@ mDNSlocal void ReleaseCacheGroup(mDNS *const m, CacheGroup **cp)
 mDNSlocal void ReleaseCacheRecord(mDNS *const m, CacheRecord *r)
 	{
 	//LogMsg("ReleaseCacheRecord: Releasing %s", CRDisplayString(m, r));
-	if (r->resrec.rdata && r->resrec.rdata != (RData*)&r->rdatastorage) mDNSPlatformMemFree(r->resrec.rdata);
+	if (r->resrec.rdata && r->resrec.rdata != (RData*)&r->smallrdatastorage) mDNSPlatformMemFree(r->resrec.rdata);
 	r->resrec.rdata = mDNSNULL;
 	ReleaseCacheEntity(m, (CacheEntity *)r);
 	}
@@ -3788,7 +3792,7 @@ mDNSlocal CacheRecord *GetCacheRecord(mDNS *const m, CacheGroup *cg, mDNSu16 RDL
 	CacheRecord *r = (CacheRecord *)GetCacheEntity(m, cg);
 	if (r)
 		{
-		r->resrec.rdata = (RData*)&r->rdatastorage;	// By default, assume we're usually going to be using local storage
+		r->resrec.rdata = (RData*)&r->smallrdatastorage;	// By default, assume we're usually going to be using local storage
 		if (RDLength > InlineCacheRDSize)			// If RDLength is too big, allocate extra storage
 			{
 			r->resrec.rdata = (RData*)mDNSPlatformMemAllocate(sizeofRDataHeader + RDLength);
@@ -5056,9 +5060,9 @@ mDNSexport CacheRecord *CreateNewCacheEntry(mDNS *const m, const mDNSu32 slot, C
 		rr->resrec.name  = cg->name;			// And set rr->resrec.name to point into our CacheGroup header
 
 		// If this is an oversized record with external storage allocated, copy rdata to external storage
-		if      (rr->resrec.rdata == (RData*)&rr->rdatastorage && RDLength > InlineCacheRDSize)
+		if      (rr->resrec.rdata == (RData*)&rr->smallrdatastorage && RDLength > InlineCacheRDSize)
 			LogMsg("rr->resrec.rdata == &rr->rdatastorage but length > InlineCacheRDSize %##s", m->rec.r.resrec.name->c);
-		else if (rr->resrec.rdata != (RData*)&rr->rdatastorage && RDLength <= InlineCacheRDSize)
+		else if (rr->resrec.rdata != (RData*)&rr->smallrdatastorage && RDLength <= InlineCacheRDSize)
 			LogMsg("rr->resrec.rdata != &rr->rdatastorage but length <= InlineCacheRDSize %##s", m->rec.r.resrec.name->c);
 		if (RDLength > InlineCacheRDSize)
 			mDNSPlatformMemCopy(rr->resrec.rdata, m->rec.r.resrec.rdata, sizeofRDataHeader + RDLength);
@@ -5560,8 +5564,9 @@ exit:
 					ptr = GetLargeResourceRecord(m, response, ptr, end, InterfaceID, kDNSRecordTypePacketAuth, &m->rec);
 					if (ptr && m->rec.r.resrec.rrtype == kDNSType_SOA)
 						{
-						mDNSu32 ttl_s = m->rec.r.resrec.rroriginalttl < m->rec.r.resrec.rdata->u.soa.min ?
-										m->rec.r.resrec.rroriginalttl : m->rec.r.resrec.rdata->u.soa.min;
+						const rdataSOA *const soa = (const rdataSOA *)m->rec.r.resrec.rdata->u.data;
+						mDNSu32 ttl_s = m->rec.r.resrec.rroriginalttl < soa->min ?
+										m->rec.r.resrec.rroriginalttl : soa->min;
 						if (negttl < ttl_s) negttl = ttl_s;
 	
 						// Special check for SOA queries: If we queried for a.b.c.d.com, and got no answer,
@@ -5717,7 +5722,7 @@ mDNSexport void MakeNegativeCacheRecord(mDNS *const m, const domainname *const n
 	m->rec.r.resrec.rdestimate    = 0;
 	m->rec.r.resrec.namehash      = namehash;
 	m->rec.r.resrec.rdatahash     = 0;
-	m->rec.r.resrec.rdata = (RData*)&m->rec.r.rdatastorage;
+	m->rec.r.resrec.rdata = (RData*)&m->rec.r.smallrdatastorage;
 	m->rec.r.resrec.rdata->MaxRDLength = m->rec.r.resrec.rdlength;
 
 	m->rec.r.NextInKAList       = mDNSNULL;
