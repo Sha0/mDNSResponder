@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.391  2008/11/04 02:29:55  cheshire
+Clear interface list before sleeping
+
 Revision 1.390  2008/11/02 21:22:05  cheshire
 Changed mallocL size parameter back to "unsigned int"
 
@@ -2674,6 +2677,7 @@ mDNSlocal void * KQueueLoop(void *m_param)
 					}
 
 				m->SleepState = SleepState_Sleeping;
+				mDNSMacOSXNetworkChanged(m);	// Clear our interface list to empty state, ready to go to sleep
 				if (result == kIOReturnSuccess) IOAllowPowerChange (m->p->PowerConnection, m->p->SleepCookie);
 				else                            IOCancelPowerChange(m->p->PowerConnection, m->p->SleepCookie);
 				}
