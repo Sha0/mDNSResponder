@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.217  2008/11/04 22:13:43  cheshire
+Made RDataBody parameter to GetRRDisplayString_rdb "const"
+
 Revision 1.216  2008/11/04 20:06:19  cheshire
 <rdar://problem/6186231> Change MAX_DOMAIN_NAME to 256
 
@@ -584,7 +587,7 @@ mDNSexport char *DNSTypeName(mDNSu16 rrtype)
 // Note slight bug: this code uses the rdlength from the ResourceRecord object, to display
 // the rdata from the RDataBody object. Sometimes this could be the wrong length -- but as
 // long as this routine is only used for debugging messages, it probably isn't a big problem.
-mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *rr, RDataBody *rd, char *buffer)
+mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *rr, const RDataBody *rd, char *buffer)
 	{
 	#define Max (MaxMsg-1)
 	char *ptr = buffer;
