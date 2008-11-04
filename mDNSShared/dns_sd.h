@@ -1902,11 +1902,11 @@ DNSServiceErrorType DNSSD_API DNSServiceNATPortMappingCreate
  * domain:          The domain name, e.g. "apple.com.". Literal dots or backslashes,
  *                  if any, must be escaped, e.g. "1st\. Floor.apple.com."
  *
- * return value:    Returns 0 on success, -1 on error.
+ * return value:    Returns kDNSServiceErr_NoError (0) on success, kDNSServiceErr_BadParam on error.
  *
  */
 
-int DNSSD_API DNSServiceConstructFullName
+DNSServiceErrorType DNSSD_API DNSServiceConstructFullName
     (
     char                            *fullName,
     const char                      *service,      /* may be NULL */
