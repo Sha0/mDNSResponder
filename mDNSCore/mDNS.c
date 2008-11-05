@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.848  2008/11/05 02:40:28  mkrochma
+Change mDNS_SetFQDN syslog mesage to debugf
+
 Revision 1.847  2008/11/04 23:06:50  cheshire
 Split RDataBody union definition into RDataBody and RDataBody2, and removed
 SOA from the normal RDataBody union definition, saving 270 bytes per AuthRecord
@@ -6827,7 +6830,7 @@ mDNSexport void mDNS_SetFQDN(mDNS *const m)
 
 	mDNS_Lock(m);
 
-	if (SameDomainNameCS(&m->MulticastHostname, &newmname)) LogMsg("mDNS_SetFQDN - hostname unchanged");
+	if (SameDomainNameCS(&m->MulticastHostname, &newmname)) debugf("mDNS_SetFQDN - hostname unchanged");
 	else
 		{
 		AssignDomainName(&m->MulticastHostname, &newmname);
