@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.576  2008/11/05 21:55:21  cheshire
+Fixed mistake in BPF filter generation
+
 Revision 1.575  2008/11/04 23:54:09  cheshire
 Added routine mDNSSetARP(), used to replace an SPS client's entry in our ARP cache with
 a dummy one, so that IP traffic to the SPS client initiated by the SPS machine can be
@@ -2068,9 +2071,11 @@ mDNSexport void mDNSPlatformSendRawPacket(const void *const msg, const mDNSu8 *c
 
 mDNSlocal void CloseBPF(NetworkInterfaceInfoOSX *const i)
 	{
+	LogOperation("%s closing BPF fd %d", i->ifinfo.ifname, i->BPF_fd);
+
 	// Note: MUST NOT close() the underlying native BSD sockets.
-	// CFSocketInvalidate() will do that for us, in its own good time, which may not necessarily be immediately,
-	// because it first has to unhook the sockets from its select() call, before it can safely close them.
+	// CFSocketInvalidate() will do that for us, in its own good time, which may not necessarily be immediately, because
+	// it first has to unhook the sockets from its select() call on its other thread, before it can safely close them.
 	CFRunLoopRemoveSource(i->m->p->CFRunLoop, i->BPF_rls, kCFRunLoopDefaultMode);
 	CFRelease(i->BPF_rls);
 	CFSocketInvalidate(i->BPF_cfs);
@@ -2110,7 +2115,20 @@ mDNSlocal void bpf_callback(const CFSocketRef cfs, const CFSocketCallBackType Ca
 
 mDNSlocal void SetFilterProgram(mDNS *const m, NetworkInterfaceInfoOSX *const x)
 	{
+	LogOperation("SetFilterProgram: %d %4s MAC  %.6a", x->BPF_fd, x->ifinfo.ifname, &x->ifinfo.MAC);
+
 	#define MAX_BPF_ADDRS 50
+	int numv4 = 0;
+	NetworkInterfaceInfo *i;
+	for (i = m->HostInterfaces; i; i = i->next)
+		if (i->ip.type == mDNSAddrType_IPv4 && i->InterfaceID == x->ifinfo.InterfaceID)
+			{
+			LogOperation("SetFilterProgram: %d %4s IP%2d %.4a", x->BPF_fd, x->ifinfo.ifname, numv4, &i->ip.ip.v4);
+			if (numv4 < MAX_BPF_ADDRS) numv4++;
+			}
+
+	// Caution: This is a static structure, so we need to be cautious that any modifications we make
+	// to it are done in such a way that they work correctly when SetFilterProgram is called multiple times
 	static struct bpf_insn filter[15 + MAX_BPF_ADDRS] =
 		{
 		BPF_STMT(BPF_LD  + BPF_H   + BPF_ABS, 12),				// 0 Read Ethertype (bytes 12,13)
@@ -2127,24 +2145,14 @@ mDNSlocal void SetFilterProgram(mDNS *const m, NetworkInterfaceInfoOSX *const x)
 		BPF_STMT(BPF_LD  + BPF_W   + BPF_ABS, 30),				// 9 Read IP Dst (bytes 30,31,32,33)
 		};
 
-	struct bpf_insn *pc = &filter[10];
+	struct bpf_insn *pc   = &filter[10];
+	struct bpf_insn *fail = &filter[14 + numv4];
 
-	static const struct bpf_insn i0 = BPF_STMT(BPF_LDX + BPF_B   + BPF_MSH, 14);	// 10 Get IP Header length (normally 20)
-	static const struct bpf_insn i1 = BPF_STMT(BPF_LD  + BPF_IMM,           34);	// 11 A = 34 (14-byte Ethernet plus 20-byte TCP)
-	static const struct bpf_insn i2 = BPF_STMT(BPF_ALU + BPF_ADD + BPF_X,    0);	// 12 A += IP Header length
-	static const struct bpf_insn i3 = BPF_STMT(BPF_RET + BPF_A, 0);					// 13 Success: Return Ethernet + IP + TCP
-	static const struct bpf_insn i4 = BPF_STMT(BPF_RET + BPF_K, 0);					// 14 No match: Return nothing
-
-	LogOperation("SetFilterProgram: %d %4s MAC  %.6a", x->BPF_fd, x->ifinfo.ifname, &x->ifinfo.MAC);
-
-	int numv4 = 0;
-	NetworkInterfaceInfo *i;
-	for (i = m->HostInterfaces; i; i = i->next)
-		if (i->ip.type == mDNSAddrType_IPv4 && i->InterfaceID == x->ifinfo.InterfaceID)
-			{
-			LogOperation("SetFilterProgram: %d %4s IP%2d %.4a", x->BPF_fd, x->ifinfo.ifname, numv4, &i->ip.ip.v4);
-			if (numv4 < MAX_BPF_ADDRS) numv4++;
-			}
+	static const struct bpf_insn i0 = BPF_STMT(BPF_LDX + BPF_B   + BPF_MSH, 14);	// 10+ Get IP Header length (normally 20)
+	static const struct bpf_insn i1 = BPF_STMT(BPF_LD  + BPF_IMM,           34);	// 11+ A = 34 (14-byte Ethernet plus 20-byte TCP)
+	static const struct bpf_insn i2 = BPF_STMT(BPF_ALU + BPF_ADD + BPF_X,    0);	// 12+ A += IP Header length
+	static const struct bpf_insn i3 = BPF_STMT(BPF_RET + BPF_A, 0);					// 13+ Success: Return Ethernet + IP + TCP
+	static const struct bpf_insn i4 = BPF_STMT(BPF_RET + BPF_K, 0);					// 14+ No match: Return nothing
 
 	// BPF Byte-Order Note
 	// The BPF API designers apparently thought that programmers would not be smart enough to use htons
@@ -2158,11 +2166,12 @@ mDNSlocal void SetFilterProgram(mDNS *const m, NetworkInterfaceInfoOSX *const x)
 	// In summary, if we byte-swap all the non-numeric fields that shouldn't be swapped, and we *don't*
 	// swap any of the numeric values that *should* be byte-swapped, then the filter will work correctly.
 
-	filter[6].k  = (bpf_u_int32)x->ifinfo.MAC.b[0] << 24 | (bpf_u_int32)x->ifinfo.MAC.b[1] << 16 | (bpf_u_int32)x->ifinfo.MAC.b[2] << 8 | (bpf_u_int32)x->ifinfo.MAC.b[3];
+	filter[6].k  = (bpf_u_int32)x->ifinfo.MAC.b[0] << 24 | (bpf_u_int32)x->ifinfo.MAC.b[1] << 16 |
+	               (bpf_u_int32)x->ifinfo.MAC.b[2] <<  8 | (bpf_u_int32)x->ifinfo.MAC.b[3];
 	filter[8].k  = (bpf_u_int32)x->ifinfo.MAC.b[4] <<  8 | (bpf_u_int32)x->ifinfo.MAC.b[5];
-	filter[3].jf += numv4;
-	filter[6].jf += numv4;
-	filter[8].jf += numv4;
+	filter[3].jf = fail - 1 - &filter[3];	// Compute offset from next instruction to the final failure return instruction
+	filter[6].jf = fail - 1 - &filter[6];
+	filter[8].jf = fail - 1 - &filter[8];
 
 	for (i = m->HostInterfaces; i; i = i->next)
 		if (i->ip.type == mDNSAddrType_IPv4 && i->InterfaceID == x->ifinfo.InterfaceID && numv4)
@@ -2186,7 +2195,7 @@ mDNSlocal void SetFilterProgram(mDNS *const m, NetworkInterfaceInfoOSX *const x)
 		LogOperation("SetFilterProgram: %2d { 0x%02x, %d, %d, 0x%08x },", q, prog.bf_insns[q].code, prog.bf_insns[q].jt, prog.bf_insns[q].jf, prog.bf_insns[q].k);
 #endif
 
-	if (ioctl(x->BPF_fd, BIOCSETF, &prog) < 0) LogMsg("mDNSPlatformSetBPF: BIOCSETF(%d) failed %d (%s)", prog.bf_len, errno, strerror(errno));
+	if (ioctl(x->BPF_fd, BIOCSETF, &prog) < 0) LogMsg("SetFilterProgram: BIOCSETF(%d) failed %d (%s)", prog.bf_len, errno, strerror(errno));
 	}
 
 mDNSexport void mDNSPlatformSetBPF(mDNS *const m, int fd)
@@ -2195,7 +2204,7 @@ mDNSexport void mDNSPlatformSetBPF(mDNS *const m, int fd)
 	for (i = m->p->InterfaceList; i; i = i->next) if (i->BPF_fd == -2) break;
 	if (!i) { LogOperation("mDNSPlatformSetBPF: No Interfaces awaiting BPF fd %d; closing", fd); close(fd); return; }
 
-	LogOperation("mDNSPlatformSetBPF: %s got BPF fd %d", i->ifinfo.ifname, fd);
+	LogOperation("%s using   BPF fd %d", i->ifinfo.ifname, fd);
 
 	struct bpf_version v;
 	if (ioctl(fd, BIOCVERSION, &v) < 0)
