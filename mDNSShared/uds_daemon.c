@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.411  2008/11/05 21:41:39  cheshire
+Updated LogOperation message
+
 Revision 1.410  2008/11/04 20:06:20  cheshire
 <rdar://problem/6186231> Change MAX_DOMAIN_NAME to 256
 
@@ -3282,7 +3285,7 @@ mDNSlocal void read_msg(request_state *req)
 			if (req->hdr.op == send_bpf)
 				{
 				dnssd_sock_t x = *(dnssd_sock_t *)CMSG_DATA(cmsg);
-				LogOperation("%3d: Got BPF %d data %d of %d %p", req->sd, x, req->data_bytes, req->hdr.datalen, req->terminate);
+				LogOperation("%3d: Got BPF %d", req->sd, x);
 				mDNSPlatformSetBPF(&mDNSStorage, x);
 				}
 			else
