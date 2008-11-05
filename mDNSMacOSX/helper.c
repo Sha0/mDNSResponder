@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.44  2008/11/05 18:41:14  cheshire
+Log errors from read() call in do_mDNSSetARP()
+
 Revision 1.43  2008/11/04 23:54:09  cheshire
 Added routine mDNSSetARP(), used to replace an SPS client's entry in our ARP cache with
 a dummy one, so that IP traffic to the SPS client initiated by the SPS machine can be
@@ -376,7 +379,8 @@ kern_return_t do_mDNSSetARP(__unused mach_port_t port, int ifindex, v4addr_t v4,
 
 		//helplog(ASL_LEVEL_ERR, "write %d %d", rtmsg.hdr.rtm_msglen, write(s, (char *)&rtmsg, rtmsg.hdr.rtm_msglen));
 		int len = read(s, (char *)&rtmsg, sizeof(rtmsg));
-		//helplog(ASL_LEVEL_ERR, "read %d", len);
+		if (len < 0)
+			helplog(ASL_LEVEL_ERR, "read %d", len);
 		close(s);
 		*err = 0;
 		}
