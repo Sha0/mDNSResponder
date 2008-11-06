@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.578  2008/11/06 23:41:57  cheshire
+Refinement: Only need to create local ARP entry when sending ARP packet to broadcast address or to ourselves
+
 Revision 1.577  2008/11/06 01:15:47  mcguire
 Fix compile error that occurs when LogOperation is disabled
 
@@ -2063,13 +2066,16 @@ mDNSexport void mDNSPlatformSendRawPacket(const void *const msg, const mDNSu8 *c
 		else
 			{
 			const mDNSu8 *const b = (mDNSu8 *)msg;
+			// If we're sending an ARP packet, to the broadcast address or to ourselves, then
+			// we need to manually inject an equivalent dummy entry into our local ARP cache.
+			// (The kernel only pays attention to incoming ARP packets, not outgoing.)
 			if (b[0xC] == 0x08 && b[0xD] == 0x06)
-				{
-				int result = mDNSSetARP(info->scope_id, b+0x1C);
-				if (result)
-					LogMsg       ("Set local ARP entry for %d %.4a failed: %d", info->scope_id, b+0x1C, result);
-				else LogOperation("Set local ARP entry for %d %.4a",            info->scope_id, b+0x1C, result);
-				}
+				if (mDNSPlatformMemSame(b, onesEthAddr.b, 6) || mDNSPlatformMemSame(b, info->ifinfo.MAC.b, 6))
+					{
+					int result = mDNSSetARP(info->scope_id, b+0x1C);
+					if (result) LogMsg("Set local ARP entry for %d %.4a failed: %d", info->scope_id, b+0x1C, result);
+					else LogOperation ("Set local ARP entry for %d %.4a",            info->scope_id, b+0x1C);
+					}
 			}
 		}
 	}
@@ -4395,10 +4401,10 @@ mDNSlocal void SetSPS(mDNS *const m)
 	SCPreferencesSynchronize(m->p->SCPrefs);
 	CFDictionaryRef dict = SCPreferencesGetValue(m->p->SCPrefs, CFSTR("NAT"));
 	mDNSBool natenabled = (dict && (CFGetTypeID(dict) == CFDictionaryGetTypeID()) && DictionaryIsEnabled(dict));
-	mDNSu32 sps = natenabled ? 40 : (GetSystemSleepTimerSetting() == 0) ? 60 : 0;
+	mDNSu8 sps = natenabled ? 50 : (GetSystemSleepTimerSetting() == 0) ? 70 : 0;
 
 	// For now, don't act as SPS just because the computer is set to never sleep
-	if (sps == 60) sps = 0;
+	if (sps == 70) sps = 0;
 	// Also, when we enable this, we need to only act as SPS when running on AC power, not on battery
 
 	LogOperation("Sleep Proxy Server %d %s", sps, sps ? "starting" : "stopping");
