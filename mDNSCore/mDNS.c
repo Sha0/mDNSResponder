@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.849  2008/11/06 23:50:43  cheshire
+Allow plain (non-SYN) ssh data packets to wake sleeping host
+
 Revision 1.848  2008/11/05 02:40:28  mkrochma
 Change mDNS_SetFQDN syslog mesage to debugf
 
@@ -7784,10 +7787,17 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 				#define XX wake ? "Received" : "Ignoring", end-p
 				case  1:	LogMsg("%s %d-byte ICMP from %.4a to %.4a", XX, &ip->src, &ip->dst);
 							break;
+
 				case  6:	{
+							#define SSH_AsNumber 22
+							static const mDNSIPPort SSH = { { SSH_AsNumber >> 8, SSH_AsNumber & 0xFF } };
 							const TCPHeader *const tcp = (const TCPHeader *)trans;
 							wake = (!(tcp->flags & 4) && (tcp->flags & 3) != 1);
-							if (!(tcp->flags & 2)) wake = mDNSfalse;		// For now, to reduce spurious wakeups, we wake only for TCP SYN
+
+							// For now, to reduce spurious wakeups, we wake only for TCP SYN,
+							// except for ssh connections, where we'll wake for plain data packets too
+							if (!mDNSSameIPPort(tcp->dst, SSH) && !(tcp->flags & 2)) wake = mDNSfalse;
+
 							LogMsg("%s %d-byte TCP from %.4a:%d to %.4a:%d%s%s%s", XX,
 								&ip->src, mDNSVal16(tcp->src), &ip->dst, mDNSVal16(tcp->dst),
 								(tcp->flags & 2) ? " SYN" : "",
@@ -7795,6 +7805,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 								(tcp->flags & 4) ? " RST" : "");
 							}
 							break;
+
 				case 17:	{
 							#define IPSEC_AsNumber 4500
 							static const mDNSIPPort IPSEC = { { IPSEC_AsNumber >> 8, IPSEC_AsNumber & 0xFF } };
@@ -7802,11 +7813,12 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 							mDNSu16 len = (mDNSu16)((mDNSu16)trans[4] << 8 | trans[5]);
 							// Normally we ignore UDP packets, but for Back to My Mac, we wake for UDP port 4500 (IPSEC) packets
 							// unless they're just NAT keepalive packets
-							if (mDNSSameIPPort(udp->dst,IPSEC))
+							if (mDNSSameIPPort(udp->dst, IPSEC))
 								wake = (len != 9 || end < trans + 9 || trans[8] != 0xFF);
 							LogMsg("%s %d-byte UDP from %.4a:%d to %.4a:%d", XX, &ip->src, mDNSVal16(udp->src), &ip->dst, mDNSVal16(udp->dst));
 							}
 							break;
+
 				default:	LogMsg("%s %d-byte IP packet unknown protocol %d from %.4a to %.4a", XX, ip->protocol, &ip->src, &ip->dst);
 							break;
 				}
@@ -7863,7 +7875,7 @@ mDNSlocal void SleepProxyServerCallback(mDNS *const m, ServiceRecordSet *const s
 		}
 	}
 
-mDNSexport void mDNSCoreBeSleepProxyServer(mDNS *const m, mDNSu32 sps)
+mDNSexport void mDNSCoreBeSleepProxyServer(mDNS *const m, mDNSu8 sps)
 	{
 	m->SleepProxyServerType = sps;
 	if (sps)
@@ -8043,6 +8055,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->UPnPSOAPURL              = mDNSNULL;
 	m->UPnPRouterAddressString  = mDNSNULL;
 	m->UPnPSOAPAddressString    = mDNSNULL;
+	m->SleepProxyServerType     = 0;
 	m->SleepProxyServerState    = 0;
 	m->SleepProxyServerSocket   = mDNSNULL;
 
