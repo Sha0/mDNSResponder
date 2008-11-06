@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.510  2008/11/06 23:48:32  cheshire
+Changed SleepProxyServerType to mDNSu8
+
 Revision 1.509  2008/11/04 23:06:50  cheshire
 Split RDataBody union definition into RDataBody and RDataBody2, and removed
 SOA from the normal RDataBody union definition, saving 270 bytes per AuthRecord
@@ -2297,7 +2300,7 @@ struct mDNS_struct
 	mDNSu8           *UPnPRouterAddressString;	// holds both the router's address and port
 	mDNSu8           *UPnPSOAPAddressString;	// holds both address and port for SOAP messages
 
-	mDNSu32           SleepProxyServerType;
+	mDNSu8            SleepProxyServerType;		// 0 = off, 10-99 encodes desirability metric
 	mDNSu8            SleepProxyServerState;	// 0 = off, 1 = running, 2 = shutting down, 3 = suspended during sleep
 	UDPSocket        *SleepProxyServerSocket;
 	ServiceRecordSet  SleepProxyServerSRS;
@@ -2982,8 +2985,8 @@ extern void     mDNSCoreReceive(mDNS *const m, void *const msg, const mDNSu8 *co
 								const mDNSAddr *const dstaddr, const mDNSIPPort dstport, const mDNSInterfaceID InterfaceID);
 extern void     mDNSCoreMachineSleep(mDNS *const m, mDNSBool wake);
 
-extern void     mDNSCoreBeSleepProxyServer(mDNS *const m, mDNSu32 sps);
-extern void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, const mDNSu8 *const end, const mDNSInterfaceID InterfaceID);
+extern void     mDNSCoreBeSleepProxyServer(mDNS *const m, mDNSu8 sps);
+extern void     mDNSCoreReceiveRawPacket  (mDNS *const m, const mDNSu8 *const p, const mDNSu8 *const end, const mDNSInterfaceID InterfaceID);
 
 extern mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip);
 
