@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.45  2008/11/06 23:35:38  cheshire
+Refinements to the do_mDNSSetARP() routine
+
 Revision 1.44  2008/11/05 18:41:14  cheshire
 Log errors from read() call in do_mDNSSetARP()
 
@@ -326,62 +329,65 @@ fin:
 
 kern_return_t do_mDNSSetARP(__unused mach_port_t port, int ifindex, v4addr_t v4, int *err, audit_token_t token)
 	{
+	//helplog(ASL_LEVEL_ERR, "do_mDNSSetARP %d %d.%d.%d.%d", ifindex, v4[0], v4[1], v4[2], v4[3]);
+
 	*err = -1;
 	if (!authorized(&token)) { *err = kmDNSHelperNotAuthorized; goto fin; }
 
-	//helplog(ASL_LEVEL_ERR, "do_mDNSSetARP %d %d.%d.%d.%d", ifindex, v4[0], v4[1], v4[2], v4[3]);
+	static int s = -1, seq = 0;
+	if (s < 0)
+		{
+		s = socket(PF_ROUTE, SOCK_RAW, 0);
+		if (s < 0) helplog(ASL_LEVEL_ERR, "do_mDNSSetARP: socket(PF_ROUTE, SOCK_RAW, 0) failed %d (%s)", errno, strerror(errno));
+		}
 
-	int s = socket(PF_ROUTE, SOCK_RAW, 0);
 	if (s >= 0)
 		{
-		struct { struct rt_msghdr hdr; char data[512]; } rtmsg;
-		char *cp = rtmsg.data;
-		struct sockaddr_inarp dst;
-		struct sockaddr_dl sdl;
-
-		bzero(&rtmsg, sizeof(rtmsg));
-		rtmsg.hdr.rtm_version = RTM_VERSION;
-		rtmsg.hdr.rtm_type    = RTM_ADD;
-		rtmsg.hdr.rtm_index   = 0;
-		rtmsg.hdr.rtm_flags   = RTF_HOST | RTF_STATIC;
-		rtmsg.hdr.rtm_addrs   = RTA_DST | RTA_GATEWAY;
-		rtmsg.hdr.rtm_pid     = 0;
-		rtmsg.hdr.rtm_seq     = 0;
-		rtmsg.hdr.rtm_errno   = 0;
-		rtmsg.hdr.rtm_use     = 0;
-		rtmsg.hdr.rtm_inits   = RTV_EXPIRE;
 		struct timeval tv;
 		gettimeofday(&tv, 0);
+
+		struct { struct rt_msghdr hdr; struct sockaddr_inarp dst; struct sockaddr_dl sdl; } rtmsg;
+		bzero(&rtmsg, sizeof(rtmsg));
+
+		rtmsg.hdr.rtm_msglen         = sizeof(rtmsg);
+		rtmsg.hdr.rtm_version        = RTM_VERSION;
+		rtmsg.hdr.rtm_type           = RTM_ADD;
+		rtmsg.hdr.rtm_index          = 0;
+		rtmsg.hdr.rtm_flags          = RTF_HOST | RTF_STATIC;
+		rtmsg.hdr.rtm_addrs          = RTA_DST | RTA_GATEWAY;
+		rtmsg.hdr.rtm_pid            = 0;
+		rtmsg.hdr.rtm_seq            = seq++;
+		rtmsg.hdr.rtm_errno          = 0;
+		rtmsg.hdr.rtm_use            = 0;
+		rtmsg.hdr.rtm_inits          = RTV_EXPIRE;
 		rtmsg.hdr.rtm_rmx.rmx_expire = tv.tv_sec + 30;
-		
-		dst.sin_len            = sizeof(dst);
-		dst.sin_family         = AF_INET;
-		dst.sin_port           = 0;
-		dst.sin_addr.s_addr    = *(in_addr_t*)v4;
-		dst.sin_srcaddr.s_addr = 0;
-		dst.sin_tos            = 0;
-		dst.sin_other          = 0;
 
-		sdl.sdl_len            = sizeof(sdl);
-		sdl.sdl_family         = AF_LINK;
-		sdl.sdl_index          = ifindex;
-		sdl.sdl_type           = IFT_ETHER;
-		sdl.sdl_nlen           = 0;
-		sdl.sdl_alen           = ETHER_ADDR_LEN;
-		sdl.sdl_slen           = 0;
+		rtmsg.dst.sin_len            = sizeof(struct sockaddr_inarp);
+		rtmsg.dst.sin_family         = AF_INET;
+		rtmsg.dst.sin_port           = 0;
+		rtmsg.dst.sin_addr.s_addr    = *(in_addr_t*)v4;
+		rtmsg.dst.sin_srcaddr.s_addr = 0;
+		rtmsg.dst.sin_tos            = 0;
+		rtmsg.dst.sin_other          = 0;
 
-		struct ether_addr *ea = (struct ether_addr *)LLADDR(&sdl);
-		bzero(ea, sizeof(*ea));
+		rtmsg.sdl.sdl_len            = sizeof(struct sockaddr_dl);
+		rtmsg.sdl.sdl_family         = AF_LINK;
+		rtmsg.sdl.sdl_index          = ifindex;
+		rtmsg.sdl.sdl_type           = IFT_ETHER;
+		rtmsg.sdl.sdl_nlen           = 0;
+		rtmsg.sdl.sdl_alen           = ETHER_ADDR_LEN;
+		rtmsg.sdl.sdl_slen           = 0;
 
-		bcopy(&dst, cp, sizeof(dst)); cp += dst.sin_len;
-		bcopy(&sdl, cp, sizeof(sdl)); cp += sdl.sdl_len;
-		rtmsg.hdr.rtm_msglen = cp - (char *)&rtmsg;
+		// Target MAC address goes in rtmsg.sdl.sdl_data[0..5]; (See LLADDR() in /usr/include/net/if_dl.h)
+		// For now we use zero as the target MAC address, and since our structure is already zero'd, there's nothing more
+		// we need to do. If we later decide to use a different dummy target MAC address, we'll need to set those bytes.
 
-		//helplog(ASL_LEVEL_ERR, "write %d %d", rtmsg.hdr.rtm_msglen, write(s, (char *)&rtmsg, rtmsg.hdr.rtm_msglen));
-		int len = read(s, (char *)&rtmsg, sizeof(rtmsg));
-		if (len < 0)
-			helplog(ASL_LEVEL_ERR, "read %d", len);
-		close(s);
+		int len = write(s, (char *)&rtmsg, sizeof(rtmsg));
+		if (len < 0) helplog(ASL_LEVEL_ERR, "write(%d) seq %d %d", sizeof(rtmsg), rtmsg.hdr.rtm_seq, len);
+
+		len = read(s, (char *)&rtmsg, sizeof(rtmsg));
+		if (len < 0) helplog(ASL_LEVEL_ERR, "read(%d) seq %d %d", sizeof(rtmsg), rtmsg.hdr.rtm_seq, len);
+
 		*err = 0;
 		}
 
