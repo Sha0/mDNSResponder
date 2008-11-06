@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.577  2008/11/06 01:15:47  mcguire
+Fix compile error that occurs when LogOperation is disabled
+
 Revision 1.576  2008/11/05 21:55:21  cheshire
 Fixed mistake in BPF filter generation
 
@@ -2063,7 +2066,9 @@ mDNSexport void mDNSPlatformSendRawPacket(const void *const msg, const mDNSu8 *c
 			if (b[0xC] == 0x08 && b[0xD] == 0x06)
 				{
 				int result = mDNSSetARP(info->scope_id, b+0x1C);
-				LogOperation("Set local ARP entry for %d %.4a: %d", info->scope_id, b+0x1C, result);
+				if (result)
+					LogMsg       ("Set local ARP entry for %d %.4a failed: %d", info->scope_id, b+0x1C, result);
+				else LogOperation("Set local ARP entry for %d %.4a",            info->scope_id, b+0x1C, result);
 				}
 			}
 		}
