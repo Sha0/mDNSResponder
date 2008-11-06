@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.220  2008/11/06 01:08:11  mcguire
+Fix compiler warning about discarding const
+
 Revision 1.219  2008/11/04 23:06:50  cheshire
 Split RDataBody union definition into RDataBody and RDataBody2, and removed
 SOA from the normal RDataBody union definition, saving 270 bytes per AuthRecord
@@ -618,7 +621,7 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *const rr, const RD
 
 		case kDNSType_HINFO:// Display this the same as TXT (show all constituent strings)
 		case kDNSType_TXT:  {
-							mDNSu8 *t = rd->txt.c;
+							const mDNSu8 *t = rd->txt.c;
 							while (t < rd->txt.c + rr->rdlength)
 								{
 								length += mDNS_snprintf(buffer+length, Max-length, "%s%#s", t > rd->txt.c ? "¦" : "", t);
