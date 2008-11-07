@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.579  2008/11/07 00:18:01  mcguire
+<rdar://problem/6351068> uDNS: Supress reverse DNS query until required
+
 Revision 1.578  2008/11/04 22:21:46  cheshire
 Changed zone field of AuthRecord_struct from domainname to pointer, saving 252 bytes per AuthRecord
 
@@ -2346,6 +2349,9 @@ mDNSexport void startLLQHandshake(mDNS *m, DNSQuestion *q)
 		}
 	}
 
+// forward declaration so GetServiceTarget can do reverse lookup if needed
+mDNSlocal void GetStaticHostname(mDNS *m);
+
 mDNSexport const domainname *GetServiceTarget(mDNS *m, AuthRecord *const rr)
 	{
 	LogOperation("GetServiceTarget %##s", rr->resrec.name->c);
@@ -2384,6 +2390,7 @@ mDNSexport const domainname *GetServiceTarget(mDNS *m, AuthRecord *const rr)
 			if (besthi) return(&besthi->fqdn);
 			}
 		if (m->StaticHostname.c[0]) return(&m->StaticHostname);
+		else GetStaticHostname(m); // asynchronously do reverse lookup for primary IPv4 address
 		return(mDNSNULL);
 		}
 	}
@@ -3149,10 +3156,9 @@ mDNSlocal void GetStaticHostname(mDNS *m)
 	mDNSu8 *ip = m->AdvertisedV4.ip.v4.b;
 	mStatus err;
 
-	if (m->ReverseMap.ThisQInterval != -1) mDNS_StopQuery_internal(m, q);
-
-	m->StaticHostname.c[0] = 0;
+	if (m->ReverseMap.ThisQInterval != -1) return; // already running
 	if (mDNSIPv4AddressIsZero(m->AdvertisedV4.ip.v4)) return;
+
 	mDNSPlatformMemZero(q, sizeof(*q));
 	// Note: This is reverse order compared to a normal dotted-decimal IP address, so we can't use our customary "%.4a" format code
 	mDNS_snprintf(buf, sizeof(buf), "%d.%d.%d.%d.in-addr.arpa.", ip[3], ip[2], ip[1], ip[0]);
@@ -3290,8 +3296,11 @@ mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr, co
 			ClearUPnPState(m);
 			}
 
-		UpdateSRVRecords(m);
-		GetStaticHostname(m);	// look up reverse map record to find any static hostnames for our IP address
+		if (m->ReverseMap.ThisQInterval != -1) mDNS_StopQuery_internal(m, &m->ReverseMap);
+		m->StaticHostname.c[0] = 0;
+		
+		UpdateSRVRecords(m); // Will call GetStaticHostname if needed
+		
 #if APPLE_OSX_mDNSResponder
 		UpdateAutoTunnelDomainStatuses(m);
 #endif
