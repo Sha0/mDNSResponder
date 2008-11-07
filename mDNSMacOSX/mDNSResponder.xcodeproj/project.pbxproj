@@ -1740,6 +1740,7 @@
 				MVERS = "\"(Engineering Build)\"";
 				OTHER_CFLAGS = "-DUSE_SYSTEMCONFIGURATION_PRIVATE_HEADERS";
 				PREBINDING = NO;
+				STRIP_STYLE = debugging;
 				WARNING_CFLAGS = (
 					"-W",
 					"-Wall",
@@ -1784,7 +1785,6 @@
 					__text,
 					mDNSResponder.order,
 				);
-				STRIPFLAGS = "-S";
 			};
 			name = Development;
 		};
@@ -1824,7 +1824,6 @@
 					__text,
 					mDNSResponder.order,
 				);
-				STRIPFLAGS = "-S";
 			};
 			name = Development;
 		};
@@ -1844,7 +1843,6 @@
 				PRODUCT_NAME = mDNS;
 				REZ_EXECUTABLE = YES;
 				SECTORDER_FLAGS = "";
-				STRIPFLAGS = "-S";
 			};
 			name = Development;
 		};
@@ -1865,7 +1863,6 @@
 				PRODUCT_NAME = "dns-sd";
 				REZ_EXECUTABLE = YES;
 				SECTORDER_FLAGS = "";
-				STRIPFLAGS = "-S";
 			};
 			name = Development;
 		};
@@ -1896,7 +1893,6 @@
 				PRODUCT_NAME = libjdns_sd;
 				REZ_EXECUTABLE = YES;
 				SECTORDER_FLAGS = "";
-				STRIPFLAGS = "-S";
 			};
 			name = Development;
 		};
@@ -1928,7 +1924,6 @@
 				PRODUCT_NAME = dnsextd;
 				REZ_EXECUTABLE = YES;
 				SECTORDER_FLAGS = "";
-				STRIPFLAGS = "-S";
 				YACC = "/usr/bin/bison -y";
 			};
 			name = Development;
@@ -1949,7 +1944,6 @@
 				PRODUCT_NAME = ddnswriteconfig;
 				REZ_EXECUTABLE = YES;
 				SECTORDER_FLAGS = "";
-				STRIPFLAGS = "-S";
 			};
 			name = Development;
 		};
@@ -1971,7 +1965,6 @@
 				OTHER_REZFLAGS = "";
 				PRODUCT_NAME = Bonjour;
 				SECTORDER_FLAGS = "";
-				STRIPFLAGS = "-S";
 				WRAPPER_EXTENSION = prefPane;
 			};
 			name = Development;
