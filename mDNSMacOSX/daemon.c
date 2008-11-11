@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.392  2008/11/11 01:55:16  cheshire
+Improved comments; minium requested sleep is 60 seconds
+
 Revision 1.391  2008/11/04 02:29:55  cheshire
 Clear interface list before sleeping
 
@@ -2651,10 +2654,15 @@ mDNSlocal void * KQueueLoop(void *m_param)
 					// someone to go to the machine in person to wake it up again, which would be unacceptable.
 					if (!ready && interval > 3600 * mDNSPlatformOneSecond) interval = 3600 * mDNSPlatformOneSecond;
 
-					// For testing
-					// interval = 20 * mDNSPlatformOneSecond;
+					// If we wake within +/- 30 seconds of our requested time we'll assume the system woke for us,
+					// so we should put it back to sleep. To avoid frustrating the user, we always request at least
+					// 60 seconds sleep, so if they immediately re-wake the system within seconds of it going to sleep,
+					// we then shouldn't hit our 30-second window, and we won't attempt to re-sleep the machine.
+					if (interval < mDNSPlatformOneSecond * 60) interval = mDNSPlatformOneSecond * 60;
 
-					if (interval < mDNSPlatformOneSecond) interval = mDNSPlatformOneSecond;
+					// For testing
+					// interval = 60 * mDNSPlatformOneSecond;
+
 					result = mDNSPowerRequest(1, interval / mDNSPlatformOneSecond);
 
 					if (result == kIOReturnNotReady)
