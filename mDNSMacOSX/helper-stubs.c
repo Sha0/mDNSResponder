@@ -16,6 +16,9 @@
     Change History (most recent first):
 
 $Log: helper-stubs.c,v $
+Revision 1.12  2008/11/11 00:46:37  cheshire
+Don't just show "<unknown error>"; show the actual numeric error code too, so we can see what the unknown error was
+
 Revision 1.11  2008/11/04 23:54:09  cheshire
 Added routine mDNSSetARP(), used to replace an SPS client's entry in our ARP cache with
 a dummy one, so that IP traffic to the SPS client initiated by the SPS machine can be
@@ -88,10 +91,12 @@ const char *mDNSHelperError(int err)
 	}
 
 /* Ugly but handy. */
-#define MACHRETRYLOOP_BEGIN(kr, retry, err, fin) for (;;) {
-
 // We don't bother reporting kIOReturnNotReady because that error code occurs in "normal" operation
 // and doesn't indicate anything unexpected that needs to be investigated
+
+#define MACHRETRYLOOP_BEGIN(kr, retry, err, fin)                                            \
+	for (;;)                                                                                \
+		{
 #define MACHRETRYLOOP_END(kr, retry, err, fin)												\
 		if (KERN_SUCCESS == (kr)) break;													\
 		else if (MACH_SEND_INVALID_DEST == (kr) && 0 == (retry)++) continue;				\
@@ -102,7 +107,8 @@ const char *mDNSHelperError(int err)
 			goto fin;																		\
 			}																				\
 		}																					\
-	if (0 != (err) && kIOReturnNotReady != (err)) { LogMsg("%s: %s", __func__, mDNSHelperError((err))); goto fin; }
+	if (0 != (err) && kIOReturnNotReady != (err))											\
+		{ LogMsg("%s: %d 0x%X (%s)", __func__, (err), (err), mDNSHelperError(err)); goto fin; }
 
 int mDNSPreferencesSetName(int key, domainlabel* old, domainlabel* new)
 	{
