@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.850  2008/11/11 01:56:57  cheshire
+Improved name conflict log messages
+
 Revision 1.849  2008/11/06 23:50:43  cheshire
 Allow plain (non-SYN) ssh data packets to wake sleeping host
 
@@ -4476,14 +4479,13 @@ mDNSlocal void ResolveSimultaneousProbe(mDNS *const m, const DNSMessage *const q
 				int result          = (int)our->resrec.rrclass - (int)m->rec.r.resrec.rrclass;
 				if (!result) result = (int)our->resrec.rrtype  - (int)m->rec.r.resrec.rrtype;
 				if (!result) result = CompareRData(our, &m->rec.r);
-				if (result > 0)
-					LogOperation("ResolveSimultaneousProbe: %##s (%s): We won",  our->resrec.name->c, DNSTypeName(our->resrec.rrtype));
-				else if (result < 0)
+				if (result)
 					{
-					LogOperation("ResolveSimultaneousProbe: %##s (%s): We lost", our->resrec.name->c, DNSTypeName(our->resrec.rrtype));
-					mDNS_Deregister_internal(m, our, mDNS_Dereg_conflict);
-					goto exit;
+					LogOperation("ResolveSimultaneousProbe: Pkt Record:      %08lX %s", m->rec.r.resrec.rdatahash, CRDisplayString(m, &m->rec.r));
+					LogOperation("ResolveSimultaneousProbe: Our Record %s %08lX %s",
+						(result < 0) ? "lost:" : "won: ", our->resrec.rdatahash, ARDisplayString(m, our));
 					}
+				if (result < 0) { mDNS_Deregister_internal(m, our, mDNS_Dereg_conflict); goto exit; }
 				}
 			}
 		m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
@@ -5291,20 +5293,26 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					// else, the packet RR has different type or different rdata -- check to see if this is a conflict
 					else if (m->rec.r.resrec.rroriginalttl > 0 && PacketRRConflict(m, rr, &m->rec.r))
 						{
-						LogOperation("mDNSCoreReceiveResponse: Our Record: %08lX %s", rr->     resrec.rdatahash, ARDisplayString(m, rr));
 						LogOperation("mDNSCoreReceiveResponse: Pkt Record: %08lX %s", m->rec.r.resrec.rdatahash, CRDisplayString(m, &m->rec.r));
+						LogOperation("mDNSCoreReceiveResponse: Our Record: %08lX %s", rr->     resrec.rdatahash, ARDisplayString(m, rr));
 	
 						// If this record is marked DependentOn another record for conflict detection purposes,
 						// then *that* record has to be bumped back to probing state to resolve the conflict
-						while (rr->DependentOn) rr = rr->DependentOn;
+						if (rr->DependentOn)
+							{
+							while (rr->DependentOn) rr = rr->DependentOn;
+							LogOperation("mDNSCoreReceiveResponse: Dep Record: %08lX %s", rr->     resrec.rdatahash, ARDisplayString(m, rr));
+							}
 	
 						// If we've just whacked this record's ProbeCount, don't need to do it again
-						if (rr->ProbeCount <= DefaultProbeCountForTypeUnique)
+						if (rr->ProbeCount > DefaultProbeCountForTypeUnique)
+							LogOperation("mDNSCoreReceiveResponse: Already reset to Probing: %s", ARDisplayString(m, rr));
+						else
 							{
 							// If we'd previously verified this record, put it back to probing state and try again
 							if (rr->resrec.RecordType == kDNSRecordTypeVerified)
 								{
-								LogOperation("mDNSCoreReceiveResponse: Reseting to Probing: %##s (%s)", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
+								LogOperation("mDNSCoreReceiveResponse: Reseting to Probing: %s", ARDisplayString(m, rr));
 								rr->resrec.RecordType     = kDNSRecordTypeUnique;
 								rr->ProbeCount     = DefaultProbeCountForTypeUnique + 1;
 								InitializeLastAPTime(m, rr, DefaultAPIntervalForRecordType(kDNSRecordTypeUnique));
@@ -5313,22 +5321,19 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 							// If we're probing for this record, we just failed
 							else if (rr->resrec.RecordType == kDNSRecordTypeUnique)
 								{
-								LogOperation("mDNSCoreReceiveResponse: Will rename %##s (%s)", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
+								LogOperation("mDNSCoreReceiveResponse: ProbeCount was %d; will rename %s", rr->ProbeCount, ARDisplayString(m, rr));
 								mDNS_Deregister_internal(m, rr, mDNS_Dereg_conflict);
 								}
-							// We assumed this record must be unique, but we were wrong.
-							// (e.g. There are two mDNSResponders on the same machine giving
-							// different answers for the reverse mapping record.)
-							// This is simply a misconfiguration, and we don't try to recover from it.
+							// We assumed this record must be unique, but we were wrong. (e.g. There are two mDNSResponders on the same machine giving
+							// different answers for the reverse mapping record.) This is simply a misconfiguration, and we don't try to recover from it.
 							else if (rr->resrec.RecordType == kDNSRecordTypeKnownUnique)
 								{
-								LogOperation("mDNSCoreReceiveResponse: Unexpected conflict on %s -- discarding our record", ARDisplayString(m, rr));
-								LogOperation("mDNSCoreReceiveResponse: Unexpected conflict pkt%s", CRDisplayString(m, &m->rec.r));
+								LogOperation("mDNSCoreReceiveResponse: Unexpected conflict pkt        %s", CRDisplayString(m, &m->rec.r));
+								LogOperation("mDNSCoreReceiveResponse: Unexpected conflict discarding %s", ARDisplayString(m, rr));
 								mDNS_Deregister_internal(m, rr, mDNS_Dereg_conflict);
 								}
 							else
-								LogOperation("mDNSCoreReceiveResponse: Unexpected record type %X %##s (%s)",
-									rr->resrec.RecordType, rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
+								LogOperation("mDNSCoreReceiveResponse: Unexpected record type %X %s", rr->resrec.RecordType, ARDisplayString(m, rr));
 							}
 						}
 					// Else, matching signature, different type or rdata, but not a considered a conflict.
