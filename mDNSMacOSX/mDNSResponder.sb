@@ -26,6 +26,9 @@
 ; SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ;
 ; $Log: mDNSResponder.sb,v $
+; Revision 1.34  2008/11/11 00:55:08  mcguire
+; <rdar://problem/6357957> sandbox: need to allow Mach port com.apple.system.DirectoryService.membership_v1
+;
 ; Revision 1.33  2008/10/24 02:03:30  cheshire
 ; So we can watch for Internet Sharing changes, allow read access to
 ; /Library/Preferences/SystemConfiguration/com.apple.nat.plist
@@ -173,6 +176,7 @@
 					"com.apple.SecurityServer"
 					"com.apple.SystemConfiguration.configd"
 					"com.apple.system.DirectoryService.libinfo_v1"
+					"com.apple.system.DirectoryService.membership_v1"
 					"com.apple.system.notification_center"
 					"com.apple.system.logger"))
 
