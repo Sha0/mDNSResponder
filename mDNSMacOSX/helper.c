@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.46  2008/11/11 02:09:42  cheshire
+Removed some unnecessary log messages
+
 Revision 1.45  2008/11/06 23:35:38  cheshire
 Refinements to the do_mDNSSetARP() routine
 
@@ -303,9 +306,13 @@ kern_return_t do_mDNSPowerRequest(__unused mach_port_t port, int key, int interv
 		CFRelease(events);
 		}
 
+	if (key < 0)			// mDNSPowerRequest(-1,-1) means "clear any stale schedules" (see above)
+		*err = 0;
 	else if (key == 0)		// mDNSPowerRequest(0, 0) means "sleep now"
 		{
-		helplog(ASL_LEVEL_ERR, "IOPMSleepSystem %d", IOPMSleepSystem(IOPMFindPowerManagement(MACH_PORT_NULL)));
+		IOReturn r = IOPMSleepSystem(IOPMFindPowerManagement(MACH_PORT_NULL));
+		if (r) { usleep(100000); helplog(ASL_LEVEL_ERR, "IOPMSleepSystem %d", r); }
+		*err = r;
 		}
 	else if (key > 0)
 		{
