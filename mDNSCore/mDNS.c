@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.851  2008/11/12 01:54:15  cheshire
+<rdar://problem/6338021> Add domain back to end of _services._dns-sd._udp PTR records
+It turns out it is beneficial to have the domain on the end, because it allows better name compression
+
 Revision 1.850  2008/11/11 01:56:57  cheshire
 Improved name conflict log messages
 
@@ -7353,9 +7357,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	AssignDomainName(&sr->RR_TXT.namestorage, sr->RR_SRV.resrec.name);
 	
 	// 1. Set up the ADV record rdata to advertise our service type
-	sr->RR_ADV.resrec.rdata->u.name.c[0] = 0;
-	AppendDomainLabel(&sr->RR_ADV.resrec.rdata->u.name, FirstLabel(&sr->RR_PTR.namestorage));
-	AppendDomainLabel(&sr->RR_ADV.resrec.rdata->u.name, SecondLabel(&sr->RR_PTR.namestorage));
+	AssignDomainName(&sr->RR_ADV.resrec.rdata->u.name, sr->RR_PTR.resrec.name);
 
 	// 2. Set up the PTR record rdata to point to our service name
 	// We set up two additionals, so when a client asks for this PTR we automatically send the SRV and the TXT too
