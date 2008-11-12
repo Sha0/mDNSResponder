@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.579  2008/11/12 23:15:37  cheshire
+Updated log messages
+
 Revision 1.578  2008/11/06 23:41:57  cheshire
 Refinement: Only need to create local ARP entry when sending ARP packet to broadcast address or to ourselves
 
@@ -2073,8 +2076,8 @@ mDNSexport void mDNSPlatformSendRawPacket(const void *const msg, const mDNSu8 *c
 				if (mDNSPlatformMemSame(b, onesEthAddr.b, 6) || mDNSPlatformMemSame(b, info->ifinfo.MAC.b, 6))
 					{
 					int result = mDNSSetARP(info->scope_id, b+0x1C);
-					if (result) LogMsg("Set local ARP entry for %d %.4a failed: %d", info->scope_id, b+0x1C, result);
-					else LogOperation ("Set local ARP entry for %d %.4a",            info->scope_id, b+0x1C);
+					if (result) LogMsg("Set local ARP entry for %s %.4a failed: %d", info->ifinfo.ifname, b+0x1C, result);
+					else LogOperation ("Set local ARP entry for %s %.4a",            info->ifinfo.ifname, b+0x1C);
 					}
 			}
 		}
@@ -4700,7 +4703,7 @@ mDNSlocal void HasPoweredOn(mDNS *const m)
 			mDNSs32 i = 20;
 			//int result = mDNSPowerRequest(0, i);
 			//if (result == kIOReturnNotReady) do i += (i<20) ? 1 : ((i+3)/4); while (mDNSPowerRequest(0, i) == kIOReturnNotReady);
-			LogMsg("PowerChanged Waking for network maintenance operations %d; re-sleeping in %d seconds", utc - m->p->WakeAtUTC, i);
+			LogMsg("PowerChanged: Waking for network maintenance operations %d; re-sleeping in %d seconds", utc - m->p->WakeAtUTC, i);
 			m->p->SleepTime = mDNS_TimeNow(m) + i * mDNSPlatformOneSecond;
 			}
 		}
