@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.852  2008/11/12 23:23:11  cheshire
+Before waking a host, check to see if it has an SRV record advertising
+a service on the port in question, and if not, don't bother waking it.
+
 Revision 1.851  2008/11/12 01:54:15  cheshire
 <rdar://problem/6338021> Add domain back to end of _services._dns-sd._udp PTR records
 It turns out it is beneficial to have the domain on the end, because it allows better name compression
@@ -4088,8 +4092,9 @@ mDNSlocal void SendSPSRegistration(mDNS *const m, const NetworkInterfaceInfo *in
 	MAC.resrec.rdlength   = sizeof(mDNSEthAddr);
 	MAC.resrec.rdestimate = sizeof(mDNSEthAddr);
 
+	// Mark our mDNS records for transfer to SPS
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
-		if (rr->resrec.RecordType & kDNSRecordTypeActiveMask)
+		if (rr->resrec.RecordType > kDNSRecordTypeDeregistering)
 			if (rr->resrec.InterfaceID == intf->InterfaceID || (!rr->resrec.InterfaceID && (rr->ForceMCast || IsLocalDomain(rr->resrec.name))))
 				rr->SendRNow = mDNSInterfaceMark;
 
@@ -7713,11 +7718,11 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 
 		// Answer ARP Requests for any IP address we're proxying for
 		hash = MakeReverseMappingDomainName(&x, arp->tpa.b);	// Target IP address
-		if (mDNSSameOpaque16(arp->op, ARP_op_request))		// ARP Request
-			if (!mDNSSameIPv4Address(arp->spa, arp->tpa))	// But not an ARP Announcement
+		if (mDNSSameOpaque16(arp->op, ARP_op_request))			// ARP Request
+			if (!mDNSSameIPv4Address(arp->spa, arp->tpa))		// But not an ARP Announcement
 				for (rr = m->ResourceRecords; rr; rr=rr->next)
 					if (rr->resrec.InterfaceID == InterfaceID &&
-						rr->resrec.rrtype == kDNSType_MAC && rr->WakeUp.l[0] &&
+						rr->resrec.rrtype == kDNSType_PTR && rr->WakeUp.l[0] &&
 						rr->resrec.namehash == hash && SameDomainName(&x, rr->resrec.name))
 						{
 						LogOperation("Answering ARP from %-15.4a for %-15.4a %s", &arp->spa, &arp->tpa, ARDisplayString(m, rr));
@@ -7734,7 +7739,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 			{
 			for (rr = m->ResourceRecords; rr; rr=rr->next)
 				if (rr->resrec.InterfaceID == InterfaceID &&
-					rr->resrec.rrtype == kDNSType_MAC && rr->WakeUp.l[0] &&
+					rr->resrec.rrtype == kDNSType_PTR && rr->WakeUp.l[0] &&
 					rr->resrec.namehash == hash && SameDomainName(&x, rr->resrec.name))
 					{
 					rr->AnnounceCount = 0;
@@ -7784,10 +7789,13 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 		const mDNSu8 *const required = trans + (ip->protocol == 1 ? 4 : ip->protocol == 6 ? 20 : ip->protocol == 17 ? 8 : 0);
 		if (end >= required)
 			{
+			#define SSH_AsNumber 22
+			#define IPSEC_AsNumber 4500
+			static const mDNSIPPort SSH   = { { SSH_AsNumber   >> 8, SSH_AsNumber   & 0xFF } };
+			static const mDNSIPPort IPSEC = { { IPSEC_AsNumber >> 8, IPSEC_AsNumber & 0xFF } };
+
 			mDNSBool wake = mDNSfalse;
-			AuthRecord *rr;
-			domainname x;
-			const mDNSu32 namehash = MakeReverseMappingDomainName(&x, ip->dst.b);
+			mDNSIPPort port = zeroIPPort;
 	
 			switch (ip->protocol)
 				{
@@ -7796,15 +7804,18 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 							break;
 
 				case  6:	{
-							#define SSH_AsNumber 22
-							static const mDNSIPPort SSH = { { SSH_AsNumber >> 8, SSH_AsNumber & 0xFF } };
 							const TCPHeader *const tcp = (const TCPHeader *)trans;
+
+							// Plan to wake if
+							// (a) RST is not set, AND
+							// (b) packet is SYN, SYN+FIN, or plain data packet (no SYN or FIN). We won't wake for FIN alone.
 							wake = (!(tcp->flags & 4) && (tcp->flags & 3) != 1);
 
 							// For now, to reduce spurious wakeups, we wake only for TCP SYN,
 							// except for ssh connections, where we'll wake for plain data packets too
 							if (!mDNSSameIPPort(tcp->dst, SSH) && !(tcp->flags & 2)) wake = mDNSfalse;
 
+							port = tcp->dst;
 							LogMsg("%s %d-byte TCP from %.4a:%d to %.4a:%d%s%s%s", XX,
 								&ip->src, mDNSVal16(tcp->src), &ip->dst, mDNSVal16(tcp->dst),
 								(tcp->flags & 2) ? " SYN" : "",
@@ -7814,14 +7825,12 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 							break;
 
 				case 17:	{
-							#define IPSEC_AsNumber 4500
-							static const mDNSIPPort IPSEC = { { IPSEC_AsNumber >> 8, IPSEC_AsNumber & 0xFF } };
 							const UDPHeader *const udp = (const UDPHeader *)trans;
 							mDNSu16 len = (mDNSu16)((mDNSu16)trans[4] << 8 | trans[5]);
-							// Normally we ignore UDP packets, but for Back to My Mac, we wake for UDP port 4500 (IPSEC) packets
-							// unless they're just NAT keepalive packets
-							if (mDNSSameIPPort(udp->dst, IPSEC))
-								wake = (len != 9 || end < trans + 9 || trans[8] != 0xFF);
+							wake = mDNStrue;
+							// For Back to My Mac UDP port 4500 (IPSEC) packets, we specially ignore NAT keepalive packets
+							if (mDNSSameIPPort(udp->dst, IPSEC)) wake = (len != 9 || end < trans + 9 || trans[8] != 0xFF);
+							port = udp->dst;
 							LogMsg("%s %d-byte UDP from %.4a:%d to %.4a:%d", XX, &ip->src, mDNSVal16(udp->src), &ip->dst, mDNSVal16(udp->dst));
 							}
 							break;
@@ -7832,16 +7841,32 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 	
 			if (wake)
 				{
+				AuthRecord *rr, *r2;
+				domainname x;
+				const mDNSu32 namehash = MakeReverseMappingDomainName(&x, ip->dst.b);
+
 				mDNS_Lock(m);
 				for (rr = m->ResourceRecords; rr; rr=rr->next)
-					if (rr->resrec.InterfaceID == InterfaceID &&
-						rr->resrec.rrtype == kDNSType_MAC && rr->WakeUp.l[0] &&
+					if (rr->resrec.InterfaceID == InterfaceID && rr->WakeUp.l[0] && rr->resrec.rrtype == kDNSType_PTR &&
 						rr->resrec.namehash == namehash && SameDomainName(&x, rr->resrec.name))
 						{
-						rr->AnnounceCount = 0;
-						LogMsg("Waking host at %s %.6a for %s",
-							InterfaceNameForID(m, rr->resrec.InterfaceID), &rr->WakeUp, ARDisplayString(m, rr));
-						SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp);
+						const mDNSu8 *const tp = (ip->protocol == 6) ? (mDNSu8 *)"\x4_tcp" : (mDNSu8 *)"\x4_udp";
+						for (r2 = m->ResourceRecords; r2; r2=r2->next)
+							if (r2->resrec.InterfaceID == InterfaceID && mDNSSameEthAddress(&r2->WakeUp, &rr->WakeUp) &&
+								r2->resrec.rrtype == kDNSType_SRV && mDNSSameIPPort(r2->resrec.rdata->u.srv.port, port) &&
+								SameDomainLabel(SkipLeadingLabels(r2->resrec.name, 2)->c, tp))
+								break;
+						if (!r2 && mDNSSameIPPort(port, IPSEC)) r2 = rr;	// So that we wake for BTMM IPSEC packets, even without a matching SRV record
+						if (r2)
+							{
+							rr->AnnounceCount = 0;
+							LogMsg("Waking host at %s %.4a %.6a for %s",
+								InterfaceNameForID(m, rr->resrec.InterfaceID), &ip->dst, &rr->WakeUp, ARDisplayString(m, r2));
+							SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp);
+							}
+						else
+							LogOperation("Sleeping host at %s %.4a %.6a has no service on %#s %d",
+								InterfaceNameForID(m, rr->resrec.InterfaceID), &ip->dst, &rr->WakeUp, tp, mDNSVal16(port));
 						}
 				mDNS_Unlock(m);
 				}
