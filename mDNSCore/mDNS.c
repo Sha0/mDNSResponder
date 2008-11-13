@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.853  2008/11/13 19:07:30  cheshire
+Added code to put OPT record, containing owner and lease lifetime, into SPS registration packet
+
 Revision 1.852  2008/11/12 23:23:11  cheshire
 Before waking a host, check to see if it has an SRV record advertising
 a service on the port in question, and if not, don't bother waking it.
@@ -1452,10 +1455,12 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr, mDNSs32
 	if (rr->resrec.RecordType == kDNSRecordTypeVerified)
 		rr->LastAPTime = m->timenow - interval;
 
-	// kDNSType_MAC is special -- we allow ten seconds for the machine in question to finish going to sleep,
-	// then we broadcast ARP Announcements claiming ownership of that IP address.
-	// For now, since we don't get IPv6 ND or data packets, we send deletions for our SPS clients' AAAA too
-	if (rr->WakeUp.l[0] && (rr->resrec.rrtype == kDNSType_MAC || rr->resrec.rrtype == kDNSType_AAAA))
+	// Reverse mapping Sleep Proxy PTR records are special -- we allow ten seconds for the machine in question
+	// to finish going to sleep, then we broadcast ARP Announcements claiming ownership of that IP address.
+	if (rr->AddressProxy.type) rr->LastAPTime = m->timenow - interval + mDNSPlatformOneSecond * 10;
+
+	// For now, since we don't get IPv6 ND or data packets, we send deletions for our SPS clients' AAAA records too
+	if (rr->WakeUp.l[0] && rr->resrec.rrtype == kDNSType_AAAA)
 		rr->LastAPTime = m->timenow - interval + mDNSPlatformOneSecond * 10;
 	
 	SetNextAnnounceProbeTime(m, rr);
@@ -2102,13 +2107,6 @@ mDNSlocal void DiscardDeregistrations(mDNS *const m)
 		}
 	}
 
-mDNSlocal mDNSBool IsV4ReverseMapDomain(const domainname *const name)
-	{
-	int skip = CountLabels(name) - 2;
-	if (skip < 0) return(mDNSfalse);
-	return(SameDomainName(SkipLeadingLabels(name, skip), (const domainname*)"\x7" "in-addr" "\x4" "arpa"));
-	}
-
 mDNSlocal mStatus GetLabelDecimalValue(const mDNSu8 *const src, mDNSu8 *dst)
 	{
 	int i, val = 0;
@@ -2121,6 +2119,24 @@ mDNSlocal mStatus GetLabelDecimalValue(const mDNSu8 *const src, mDNSu8 *dst)
 	if (val > 255) return(mStatus_Invalid);
 	*dst = val;
 	return(mStatus_NoError);
+	}
+
+mDNSlocal mStatus GetIPFromName(mDNSv4Addr *const a, const domainname *const name)
+	{
+	int skip = CountLabels(name) - 6;
+	if (skip < 0) { LogMsg("GetIPFromName: Need six labels in record name %##s", name); return(mStatus_Invalid); }
+	if (GetLabelDecimalValue(SkipLeadingLabels(name, skip+3)->c, &a->b[0]) ||
+		GetLabelDecimalValue(SkipLeadingLabels(name, skip+2)->c, &a->b[1]) ||
+		GetLabelDecimalValue(SkipLeadingLabels(name, skip+1)->c, &a->b[2]) ||
+		GetLabelDecimalValue(SkipLeadingLabels(name, skip+0)->c, &a->b[3])) return(mStatus_Invalid);
+	return(mStatus_NoError);
+	}
+
+mDNSlocal mDNSBool IsV4ReverseMapDomain(const domainname *const name)
+	{
+	int skip = CountLabels(name) - 2;
+	if (skip < 0) return(mDNSfalse);
+	return(SameDomainName(SkipLeadingLabels(name, skip), (const domainname*)"\x7" "in-addr" "\x4" "arpa"));
 	}
 
 mDNSlocal void SendARP(mDNS *const m, const mDNSu8 op, const AuthRecord *const rr,
@@ -2161,17 +2177,6 @@ mDNSlocal void SendARP(mDNS *const m, const mDNSu8 op, const AuthRecord *const r
 
 	// 0x2A Total ARP Packet length 42 bytes
 	mDNSPlatformSendRawPacket(m->omsg.data, ptr, rr->resrec.InterfaceID);
-	}
-
-mDNSlocal mStatus GetIPFromName(mDNSv4Addr *const a, const domainname *const name)
-	{
-	int skip = CountLabels(name) - 6;
-	if (skip < 0) { LogMsg("GetIPFromName: Need six labels in record name %##s", name); return(mStatus_Invalid); }
-	if (GetLabelDecimalValue(SkipLeadingLabels(name, skip+3)->c, &a->b[0]) ||
-		GetLabelDecimalValue(SkipLeadingLabels(name, skip+2)->c, &a->b[1]) ||
-		GetLabelDecimalValue(SkipLeadingLabels(name, skip+1)->c, &a->b[2]) ||
-		GetLabelDecimalValue(SkipLeadingLabels(name, skip+0)->c, &a->b[3])) return(mStatus_Invalid);
-	return(mStatus_NoError);
 	}
 
 mDNSlocal void GrantUpdateCredit(AuthRecord *rr)
@@ -2231,18 +2236,16 @@ mDNSlocal void SendResponses(mDNS *const m)
 		while (rr->NextUpdateCredit && m->timenow - rr->NextUpdateCredit >= 0) GrantUpdateCredit(rr);
 		if (TimeToAnnounceThisRecord(rr, m->timenow) && ResourceRecordIsValidAnswer(rr))
 			{
-			if (rr->resrec.rrtype == kDNSType_MAC && rr->WakeUp.l[0])
+			if (rr->AddressProxy.type)
 				{
-				mDNSv4Addr a;
 				rr->AnnounceCount--;
 				rr->ThisAPInterval *= 2;
 				rr->LastAPTime = m->timenow;
-				if (GetIPFromName(&a, rr->resrec.name))
-					LogMsg("ARP Announcement: Invalid record name %s", ARDisplayString(m,rr));
-				else
+				if (rr->AddressProxy.type == mDNSAddrType_IPv4)
 					{
-					LogOperation("ARP Announcement %##s (%s) %d", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype), rr->AnnounceCount);
-					SendARP(m, 1, rr, a.b, zeroEthAddr.b, a.b, onesEthAddr.b);
+					LogOperation("ARP Announcement %##s (%s) %d %#a",
+						rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype), rr->AnnounceCount, &rr->AddressProxy);
+					SendARP(m, 1, rr, rr->AddressProxy.ip.v4.b, zeroEthAddr.b, rr->AddressProxy.ip.v4.b, onesEthAddr.b);
 					}
 				}
 			else
@@ -2261,7 +2264,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 		if ((rr->resrec.InterfaceID && rr->ImmedAnswer) ||
 			(rr->ThisAPInterval <= maxExistingAnnounceInterval &&
 			TimeToAnnounceThisRecord(rr, m->timenow + rr->ThisAPInterval/2) &&
-			!(rr->resrec.rrtype == kDNSType_MAC && rr->WakeUp.l[0]) && // Don't include ARP Annoucements when considering which records to accelerate
+			!rr->AddressProxy.type && 					// Don't include ARP Annoucements when considering which records to accelerate
 			ResourceRecordIsValidAnswer(rr)))
 			rr->ImmedAnswer = mDNSInterfaceMark;		// Send on all interfaces
 
@@ -4065,34 +4068,11 @@ mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question, 
 #pragma mark - Power Management (Sleep/Wake)
 #endif
 
-mDNSlocal void PutSPSRec(mDNS *const m, mDNSu8 **p, AuthRecord *MAC, AuthRecord *rr)
-	{
-	const mDNSu8 *const limit = m->omsg.data + NormalMaxDNSMessageData - DNSOpt_Lease_Space;
-	mDNSu8 *newptr = *p;
-	mDNSu16 numUpdates = m->omsg.h.mDNS_numUpdates;
-	if ((rr->resrec.RecordType & kDNSRecordTypeUniqueMask) && !SameDomainName(&MAC->namestorage, rr->resrec.name))
-		{
-		AssignDomainName(&MAC->namestorage, rr->resrec.name);
-		newptr = PutResourceRecordTTLWithLimit(&m->omsg, newptr, &numUpdates, &MAC->resrec, MAC->resrec.rroriginalttl, limit);
-		}
-	if (newptr)
-		{
-		newptr = PutResourceRecordTTLWithLimit(&m->omsg, newptr, &numUpdates, &rr->resrec, rr->resrec.rroriginalttl, limit);
-		if (newptr) { rr->SendRNow = mDNSNULL; rr->updateid = m->omsg.h.id; *p = newptr; m->omsg.h.mDNS_numUpdates = numUpdates; }
-		else if (!numUpdates) { rr->SendRNow = mDNSNULL; LogOperation("PutSPSRec failed to put %s", ARDisplayString(m,rr)); }
-		}
-	}
-
 mDNSlocal void SendSPSRegistration(mDNS *const m, const NetworkInterfaceInfo *intf)
 	{
 	AuthRecord *rr;
-	AuthRecord MAC;
-	mDNS_SetupResourceRecord(&MAC, mDNSNULL, intf->InterfaceID, kDNSType_MAC, kHostNameTTL, kDNSRecordTypeUnique, mDNSNULL, mDNSNULL);
-	MAC.resrec.rdata->u.mac = intf->MAC;
-	MAC.resrec.rdlength   = sizeof(mDNSEthAddr);
-	MAC.resrec.rdestimate = sizeof(mDNSEthAddr);
 
-	// Mark our mDNS records for transfer to SPS
+	// Mark our mDNS records (not unicast records) for transfer to SPS
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		if (rr->resrec.RecordType > kDNSRecordTypeDeregistering)
 			if (rr->resrec.InterfaceID == intf->InterfaceID || (!rr->resrec.InterfaceID && (rr->ForceMCast || IsLocalDomain(rr->resrec.name))))
@@ -4106,17 +4086,36 @@ mDNSlocal void SendSPSRegistration(mDNS *const m, const NetworkInterfaceInfo *in
 		// If we decide to compress SRV records in SPS registrations in the future, we can achieve that by creating our
 		// initial DNSMessage with h.flags set to zero, and then update it to UpdateReqFlags right before sending the packet.
 		InitializeDNSMessage(&m->omsg.h, mDNS_NewMessageID(m), UpdateReqFlags);
-		MAC.namestorage.c[0] = 0;
-		// To reduce unneccessary duplication of MAC records in the packet, we put address records first, then other types.
-		// This makes best use of our logic that only puts a single MAC record for a run of records with the same name.
-		// Otherwise, the intervening reverse-mapping PTR records get in the way
-		for (rr = m->ResourceRecords; rr; rr=rr->next) if (rr->SendRNow &&  RRTypeIsAddressType(rr->resrec.rrtype)) PutSPSRec(m, &p, &MAC, rr);
-		for (rr = m->ResourceRecords; rr; rr=rr->next) if (rr->SendRNow && !RRTypeIsAddressType(rr->resrec.rrtype)) PutSPSRec(m, &p, &MAC, rr);
+
+		for (rr = m->ResourceRecords; rr; rr=rr->next)
+			if (rr->SendRNow)
+				{
+				mDNSu8 *newptr;
+				const mDNSu8 *const limit = m->omsg.data + (m->omsg.h.mDNS_numUpdates ? NormalMaxDNSMessageData : AbsoluteMaxDNSMessageData) - DNSOpt_SPS_Space;
+				if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
+					rr->resrec.rrclass |= kDNSClass_UniqueRRSet;	// Temporarily set the 'unique' bit so PutResourceRecord will set it
+				newptr = PutResourceRecordTTLWithLimit(&m->omsg, p, &m->omsg.h.mDNS_numUpdates, &rr->resrec, rr->resrec.rroriginalttl, limit);
+				rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;		// Make sure to clear 'unique' bit back to normal state
+				if (newptr) { rr->SendRNow = mDNSNULL; rr->updateid = m->omsg.h.id; p = newptr; }
+				}
 
 		if (!m->omsg.h.mDNS_numUpdates) break;
 		else
 			{
-			p = putUpdateLease(&m->omsg, p, DEFAULT_UPDATE_LEASE);
+			AuthRecord opt;
+			mDNS_SetupResourceRecord(&opt, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
+			opt.resrec.rrclass    = NormalMaxDNSMessageData;
+			opt.resrec.rdlength   = sizeof(rdataOPT) * 2;	// Two options in this OPT record
+			opt.resrec.rdestimate = sizeof(rdataOPT) * 2;
+			opt.resrec.rdata->u.opt[0].opt           = kDNSOpt_Lease;
+			opt.resrec.rdata->u.opt[0].u.updatelease = DEFAULT_UPDATE_LEASE;
+			opt.resrec.rdata->u.opt[1].opt           = kDNSOpt_Owner;
+			opt.resrec.rdata->u.opt[1].u.owner.vers  = 0;
+			opt.resrec.rdata->u.opt[1].u.owner.seq   = 0;
+			opt.resrec.rdata->u.opt[1].u.owner.MAC   = intf->MAC;
+			LogOperation("SendSPSRegistration putting %s", ARDisplayString(m, &opt));
+			p = PutResourceRecordTTLWithLimit(&m->omsg, p, &m->omsg.h.numAdditionals, &opt.resrec, opt.resrec.rroriginalttl, m->omsg.data + AbsoluteMaxDNSMessageData);
+
 			LogOperation("SendSPSRegistration: Sending Update id %5d with %d records to %#a:%d",
 				mDNSVal16(m->omsg.h.id), m->omsg.h.mDNS_numUpdates, &intf->SPSAddr, mDNSVal16(intf->SPSPort));
 			mDNSSendDNSMessage(m, &m->omsg, p, intf->InterfaceID, mDNSNULL, &intf->SPSAddr, intf->SPSPort, mDNSNULL, mDNSNULL);
@@ -5647,7 +5646,7 @@ exit:
 
 mDNSlocal void SPSRecordCallback(mDNS *const m, AuthRecord *const ar, mStatus result)
 	{
-	LogOperation("SPS Callback %d %s", result, ARDisplayString(m, ar));
+	if (result) LogOperation("SPS Callback %d %s", result, ARDisplayString(m, ar));
 	if (result == mStatus_NameConflict)
 		{
 		LogMsg("Received Conflicting mDNS -- waking %s %.6a %s",
@@ -5664,9 +5663,9 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 	const mDNSInterfaceID InterfaceID)
 	{
 	int i;
-	domainname  MACname;
-	mDNSEthAddr MACdata;
-	const mDNSu8 *ptr = LocateAuthorities(msg, end);
+	OwnerOptData owner;
+	mDNSu32 updatelease = 0;
+	const mDNSu8 *ptr;
 
 	LogOperation("Received Update from %#-15a:%-5d to %#-15a:%-5d on 0x%p with "
 		"%2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
@@ -5681,36 +5680,53 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 
 	DumpPacket(m, mStatus_NoError, mDNSfalse, "UDP", srcaddr, srcport, dstaddr, dstport, msg, end);
 
-	MACname.c[0] = 0;
+	ptr = LocateOptRR(msg, end, DNSOpt_LeaseData_Space + DNSOpt_OwnerData_Space);
+	if (ptr)
+		{
+		ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAdd, &m->rec);
+		if (ptr && m->rec.r.resrec.rrtype == kDNSType_OPT)
+			{
+			const rdataOPT *opt;
+			const rdataOPT *const e = (const rdataOPT *)&m->rec.r.resrec.rdata->u.data[m->rec.r.resrec.rdlength];
+			for (opt = &m->rec.r.resrec.rdata->u.opt[0]; opt < e; opt++)
+				{
+				if      (opt->opt == kDNSOpt_Lease)                           updatelease = opt->u.updatelease;
+				else if (opt->opt == kDNSOpt_Owner && opt->u.owner.vers == 0) owner       = opt->u.owner;
+				}
+			}
+		m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
+		}
+
+	if (!updatelease || !owner.MAC.l[0]) return;
+
+	ptr = LocateAuthorities(msg, end);
 	for (i = 0; i < msg->h.mDNS_numUpdates && ptr && ptr < end; i++)
 		{
 		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, kDNSRecordTypePacketAuth, &m->rec);
 		if (ptr)
 			{
-			if (m->rec.r.resrec.rrtype == kDNSType_MAC)
+			{
+			mDNSu16 RDLengthMem = GetRDLengthMem(&m->rec.r.resrec);
+			AuthRecord *ar = mDNSPlatformMemAllocate(sizeof(AuthRecord) - sizeof(RDataBody) + RDLengthMem);
+			if (ar)
 				{
-				AssignDomainName(&MACname, m->rec.r.resrec.name);
-				MACdata = m->rec.r.resrec.rdata->u.mac;
+				mDNSu8 RecordType = m->rec.r.resrec.RecordType & kDNSRecordTypePacketUniqueMask ? kDNSRecordTypeKnownUnique : kDNSRecordTypeShared;
+				m->rec.r.resrec.rrclass &= ~kDNSClass_UniqueRRSet;
+				mDNS_SetupResourceRecord(ar, mDNSNULL, InterfaceID, m->rec.r.resrec.rrtype, m->rec.r.resrec.rroriginalttl, RecordType, SPSRecordCallback, ar);
+				AssignDomainName(&ar->namestorage, m->rec.r.resrec.name);
+				ar->resrec.rdlength = GetRDLength(&m->rec.r.resrec, mDNSfalse);
+				ar->resrec.rdata->MaxRDLength = RDLengthMem;
+				mDNSPlatformMemCopy(ar->resrec.rdata->u.data, m->rec.r.resrec.rdata->u.data, RDLengthMem);
+				ar->WakeUp = owner.MAC;
+				if (m->rec.r.resrec.rrtype == kDNSType_PTR && IsV4ReverseMapDomain(m->rec.r.resrec.name))
+					if (GetIPFromName(&ar->AddressProxy.ip.v4, m->rec.r.resrec.name) == mStatus_NoError)
+						ar->AddressProxy.type = mDNSAddrType_IPv4;
+				mDNS_Register_internal(m, ar);
+				// For now, since we don't get IPv6 ND or data packets, we don't advertise AAAA records for our SPS clients
+				if (ar->resrec.rrtype == kDNSType_AAAA) ar->resrec.rroriginalttl = 0;
+				LogOperation("SPS Registered %X %s", RecordType, ARDisplayString(m,ar));
 				}
-			if (m->rec.r.resrec.rrtype != kDNSType_MAC || IsV4ReverseMapDomain(m->rec.r.resrec.name))
-				{
-				mDNSu16 RDLengthMem = GetRDLengthMem(&m->rec.r.resrec);
-				AuthRecord *ar = mDNSPlatformMemAllocate(sizeof(AuthRecord) - sizeof(RDataBody) + RDLengthMem);
-				if (ar)
-					{
-					mDNSu8 RecordType = SameDomainName(&MACname, m->rec.r.resrec.name) ? kDNSRecordTypeKnownUnique : kDNSRecordTypeShared;
-					mDNS_SetupResourceRecord(ar, mDNSNULL, InterfaceID, m->rec.r.resrec.rrtype, m->rec.r.resrec.rroriginalttl, RecordType, SPSRecordCallback, ar);
-					AssignDomainName(&ar->namestorage, m->rec.r.resrec.name);
-					ar->resrec.rdlength = GetRDLength(&m->rec.r.resrec, mDNSfalse);
-					ar->resrec.rdata->MaxRDLength = RDLengthMem;
-					mDNSPlatformMemCopy(ar->resrec.rdata->u.data, m->rec.r.resrec.rdata->u.data, RDLengthMem);
-					if (RecordType == kDNSRecordTypeKnownUnique) ar->WakeUp = MACdata;
-					mDNS_Register_internal(m, ar);
-					// For now, since we don't get IPv6 ND or data packets, we don't advertise AAAA records for our SPS clients
-					if (ar->resrec.rrtype == kDNSType_AAAA) ar->resrec.rroriginalttl = 0;
-					LogOperation("SPS Registered %s", ARDisplayString(m,ar));
-					}
-				}
+			}
 			}
 		m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 		}
@@ -7687,14 +7703,6 @@ mDNSexport mDNSOpaque16 mDNS_NewMessageID(mDNS * const m)
 #pragma mark - Sleep Proxy Server
 #endif
 
-mDNSlocal mDNSu32 MakeReverseMappingDomainName(domainname *const x, const mDNSu8 *const addrbytes)
-	{
-	char buffer[MAX_REVERSE_MAPPING_NAME_V4];
-	mDNS_snprintf(buffer, sizeof(buffer), "%d.%d.%d.%d.in-addr.arpa.", addrbytes[3], addrbytes[2], addrbytes[1], addrbytes[0]);
-	MakeDomainNameFromDNSNameString(x, buffer);
-	return DomainNameHashValue(x);
-	}
-
 mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, const mDNSu8 *const end, const mDNSInterfaceID InterfaceID)
 	{
 	static const mDNSOpaque16 Ethertype_IP = { { 0x08, 0x00 } };
@@ -7707,8 +7715,6 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 	if (end >= p+42 && *(mDNSu32*)(p+12) == ARP_EthIP_h0.NotAnInteger && *(mDNSu32*)(p+16) == ARP_EthIP_h1.NotAnInteger)
 		{
 		AuthRecord *rr;
-		domainname x;
-		mDNSu32 hash;
 		NetworkInterfaceInfo *intf = FirstInterfaceForID(m, InterfaceID);
 		if (!intf) return;
 
@@ -7717,13 +7723,11 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 		mDNS_Lock(m);
 
 		// Answer ARP Requests for any IP address we're proxying for
-		hash = MakeReverseMappingDomainName(&x, arp->tpa.b);	// Target IP address
 		if (mDNSSameOpaque16(arp->op, ARP_op_request))			// ARP Request
 			if (!mDNSSameIPv4Address(arp->spa, arp->tpa))		// But not an ARP Announcement
 				for (rr = m->ResourceRecords; rr; rr=rr->next)
 					if (rr->resrec.InterfaceID == InterfaceID &&
-						rr->resrec.rrtype == kDNSType_PTR && rr->WakeUp.l[0] &&
-						rr->resrec.namehash == hash && SameDomainName(&x, rr->resrec.name))
+						rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, arp->tpa))
 						{
 						LogOperation("Answering ARP from %-15.4a for %-15.4a %s", &arp->spa, &arp->tpa, ARDisplayString(m, rr));
 						SendARP(m, 2, rr, arp->tpa.b, arp->sha.b, arp->spa.b, arp->sha.b);
@@ -7734,13 +7738,11 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 		// and we need to wake the sleeping machine to handle it.
 		// If the sender hardware address *is* the original owner, then this signals that
 		// the machine has awoken, and we need to clear any records we were holding for it
-		hash = MakeReverseMappingDomainName(&x, arp->spa.b);	// Sender IP address
 		if (!mDNSSameEthAddress(&arp->sha, &intf->MAC))
 			{
 			for (rr = m->ResourceRecords; rr; rr=rr->next)
 				if (rr->resrec.InterfaceID == InterfaceID &&
-					rr->resrec.rrtype == kDNSType_PTR && rr->WakeUp.l[0] &&
-					rr->resrec.namehash == hash && SameDomainName(&x, rr->resrec.name))
+					rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, arp->spa))
 					{
 					rr->AnnounceCount = 0;
 					if (!mDNSSameEthAddress(&arp->sha, &rr->WakeUp))
@@ -7842,13 +7844,11 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 			if (wake)
 				{
 				AuthRecord *rr, *r2;
-				domainname x;
-				const mDNSu32 namehash = MakeReverseMappingDomainName(&x, ip->dst.b);
 
 				mDNS_Lock(m);
 				for (rr = m->ResourceRecords; rr; rr=rr->next)
-					if (rr->resrec.InterfaceID == InterfaceID && rr->WakeUp.l[0] && rr->resrec.rrtype == kDNSType_PTR &&
-						rr->resrec.namehash == namehash && SameDomainName(&x, rr->resrec.name))
+					if (rr->resrec.InterfaceID == InterfaceID &&
+						rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, ip->dst))
 						{
 						const mDNSu8 *const tp = (ip->protocol == 6) ? (mDNSu8 *)"\x4_tcp" : (mDNSu8 *)"\x4_udp";
 						for (r2 = m->ResourceRecords; r2; r2=r2->next)
