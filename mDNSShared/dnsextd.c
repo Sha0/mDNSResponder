@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.92  2008/11/13 19:09:36  cheshire
+Updated rdataOPT code
+
 Revision 1.91  2008/11/04 23:06:51  cheshire
 Split RDataBody union definition into RDataBody and RDataBody2, and removed
 SOA from the normal RDataBody union definition, saving 270 bytes per AuthRecord
@@ -714,7 +717,7 @@ mDNSlocal mDNSBool IsLLQRequest(PktMsg *pkt)
 		if (!ptr) { Log("Unable to read additional record"); goto end; }
 		}
 
-	if ( lcr.r.resrec.rrtype == kDNSType_OPT && lcr.r.resrec.rdlength >= LLQ_OPT_RDLEN && lcr.r.resrec.rdata->u.opt.opt == kDNSOpt_LLQ )
+	if ( lcr.r.resrec.rrtype == kDNSType_OPT && lcr.r.resrec.rdlength >= DNSOpt_LLQData_Space && lcr.r.resrec.rdata->u.opt[0].opt == kDNSOpt_LLQ )
 		{
 		result = mDNStrue;
 		}
@@ -1786,15 +1789,14 @@ mDNSlocal void FormatLLQOpt(AuthRecord *opt, int opcode, const mDNSOpaque64 *con
 	bzero(opt, sizeof(*opt));
 	mDNS_SetupResourceRecord(opt, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
 	opt->resrec.rrclass = NormalMaxDNSMessageData;
-	opt->resrec.rdlength = LLQ_OPT_RDLEN;
-	opt->resrec.rdestimate = LLQ_OPT_RDLEN;
-	opt->resrec.rdata->u.opt.opt = kDNSOpt_LLQ;
-	opt->resrec.rdata->u.opt.optlen = sizeof(LLQOptData);
-	opt->resrec.rdata->u.opt.OptData.llq.vers  = kLLQ_Vers;
-	opt->resrec.rdata->u.opt.OptData.llq.llqOp = opcode;
-	opt->resrec.rdata->u.opt.OptData.llq.err   = LLQErr_NoError;
-	opt->resrec.rdata->u.opt.OptData.llq.id    = *id;
-	opt->resrec.rdata->u.opt.OptData.llq.llqlease = lease;
+	opt->resrec.rdlength   = sizeof(rdataOPT);	// One option in this OPT record
+	opt->resrec.rdestimate = sizeof(rdataOPT);
+	opt->resrec.rdata->u.opt[0].opt = kDNSOpt_LLQ;
+	opt->resrec.rdata->u.opt[0].u.llq.vers  = kLLQ_Vers;
+	opt->resrec.rdata->u.opt[0].u.llq.llqOp = opcode;
+	opt->resrec.rdata->u.opt[0].u.llq.err   = LLQErr_NoError;
+	opt->resrec.rdata->u.opt[0].u.llq.id    = *id;
+	opt->resrec.rdata->u.opt[0].u.llq.llqlease = lease;
 	}
 
 // Calculate effective remaining lease of an LLQ
@@ -2492,14 +2494,14 @@ mDNSlocal int RecvLLQ( DaemonInfo *d, PktMsg *pkt, TCPSocket *sock )
 
 	// validate OPT
 	if (opt.r.resrec.rrtype != kDNSType_OPT) { Log("Malformatted LLQ from %s: last Additional not an OPT RR", addr); goto end; }
-	if (opt.r.resrec.rdlength < pkt->msg.h.numQuestions * LLQ_OPT_RDLEN) { Log("Malformatted LLQ from %s: OPT RR to small (%d bytes for %d questions)", addr, opt.r.resrec.rdlength, pkt->msg.h.numQuestions); }
+	if (opt.r.resrec.rdlength < pkt->msg.h.numQuestions * DNSOpt_LLQData_Space) { Log("Malformatted LLQ from %s: OPT RR to small (%d bytes for %d questions)", addr, opt.r.resrec.rdlength, pkt->msg.h.numQuestions); }
 	
 	// dispatch each question
 	for (i = 0; i < pkt->msg.h.numQuestions; i++)
 		{
 		qptr = getQuestion(&pkt->msg, qptr, end, 0, &q);
 		if (!qptr) { Log("Malformatted LLQ from %s: cannot read question %d", addr, i); goto end; }
-		llq = (LLQOptData *)&opt.r.resrec.rdata->u.opt.OptData.llq + i; // point into OptData at index i
+		llq = (LLQOptData *)&opt.r.resrec.rdata->u.opt[0].u.llq + i; // point into OptData at index i
 		if (llq->vers != kLLQ_Vers) { Log("LLQ from %s contains bad version %d (expected %d)", addr, llq->vers, kLLQ_Vers); goto end; }
 		
 		e = LookupLLQ(d, pkt->src, &q.qname, q.qtype, &llq->id);
