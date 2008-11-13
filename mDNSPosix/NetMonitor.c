@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.91  2008/11/13 22:08:07  cheshire
+Show additional records in Query packets
+
 Revision 1.90  2008/09/05 22:20:26  cheshire
 <rdar://problem/3988320> Should use randomized source ports and transaction IDs to avoid DNS cache poisoning
 Add "UDPSocket *src" parameter in mDNSPlatformSendUDP call
@@ -695,6 +698,14 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 		const mDNSu8 *ep = ptr;
 		ptr = skipResourceRecord(msg, ptr, end);
 		if (!ptr) { DisplayError(srcaddr, ep, end, "AUTHORITY"); return; }
+		}
+
+	for (i=0; i<msg->h.numAdditionals; i++)
+		{
+		const mDNSu8 *ep = ptr;
+		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, kDNSRecordTypePacketAns, &pkt);
+		if (!ptr) { DisplayError(srcaddr, ep, end, "ADDITIONAL"); return; }
+		DisplayResourceRecord(srcaddr, "    ", &pkt.r.resrec);
 		}
 
 	if (entry) AnalyseHost(m, entry, InterfaceID);
