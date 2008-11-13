@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.580  2008/11/13 19:08:45  cheshire
+Fixed code to handle rdataOPT properly
+
 Revision 1.579  2008/11/07 00:18:01  mcguire
 <rdar://problem/6351068> uDNS: Supress reverse DNS query until required
 
@@ -1801,13 +1804,12 @@ mDNSlocal mDNSu8 *putLLQ(DNSMessage *const msg, mDNSu8 *ptr, const DNSQuestion *
 	// format opt rr (fields not specified are zero-valued)
 	mDNS_SetupResourceRecord(&rr, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
 	opt->rrclass    = NormalMaxDNSMessageData;
-	opt->rdlength   = LLQ_OPT_RDLEN;
-	opt->rdestimate = LLQ_OPT_RDLEN;
+	opt->rdlength   = sizeof(rdataOPT);	// One option in this OPT record
+	opt->rdestimate = sizeof(rdataOPT);
 
-	optRD = &rr.resrec.rdata->u.opt;
+	optRD = &rr.resrec.rdata->u.opt[0];
 	optRD->opt = kDNSOpt_LLQ;
-	optRD->optlen = LLQ_OPTLEN;
-	optRD->OptData.llq = *data;
+	optRD->u.llq = *data;
 	ptr = PutResourceRecordTTLJumbo(msg, ptr, &msg->h.numAdditionals, opt, 0);
 	if (!ptr) { LogMsg("ERROR: putLLQ - PutResourceRecordTTLJumbo"); return mDNSNULL; }
 
@@ -1956,7 +1958,7 @@ mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *co
 				{
 				debugf("uDNS_recvLLQResponse found %##s (%s) %d %#a %#a %X %X %X %X %d",
 					q->qname.c, DNSTypeName(q->qtype), q->state, srcaddr, &q->servAddr,
-					opt->OptData.llq.id.l[0], opt->OptData.llq.id.l[1], q->id.l[0], q->id.l[1], opt->OptData.llq.llqOp);
+					opt->u.llq.id.l[0], opt->u.llq.id.l[1], q->id.l[0], q->id.l[1], opt->u.llq.llqOp);
 				if (q->state == LLQ_Poll) debugf("uDNS_LLQ_Events: q->state == LLQ_Poll msg->h.id %d q->TargetQID %d", mDNSVal16(msg->h.id), mDNSVal16(q->TargetQID));
 				if (q->state == LLQ_Poll && mDNSSameOpaque16(msg->h.id, q->TargetQID))
 					{
@@ -1970,12 +1972,12 @@ mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *co
 					return uDNS_LLQ_Entire;		// uDNS_LLQ_Entire means flush stale records; assume a large effective TTL
 					}
 				// Note: In LLQ Event packets, the msg->h.id does not match our q->TargetQID, because in that case the msg->h.id nonce is selected by the server
-				else if (opt && q->state == LLQ_Established && opt->OptData.llq.llqOp == kLLQOp_Event && mDNSSameOpaque64(&opt->OptData.llq.id, &q->id))
+				else if (opt && q->state == LLQ_Established && opt->u.llq.llqOp == kLLQOp_Event && mDNSSameOpaque64(&opt->u.llq.id, &q->id))
 					{
 					mDNSu8 *ackEnd;
 					//debugf("Sending LLQ ack for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 					InitializeDNSMessage(&m->omsg.h, msg->h.id, ResponseFlags);
-					ackEnd = putLLQ(&m->omsg, m->omsg.data, mDNSNULL, &opt->OptData.llq, mDNSfalse);
+					ackEnd = putLLQ(&m->omsg, m->omsg.data, mDNSNULL, &opt->u.llq, mDNSfalse);
 					if (ackEnd) mDNSSendDNSMessage(m, &m->omsg, ackEnd, mDNSInterface_Any, q->LocalSocket, srcaddr, srcport, mDNSNULL, mDNSNULL);
 					m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 					debugf("uDNS_LLQ_Events: q->state == LLQ_Established msg->h.id %d q->TargetQID %d", mDNSVal16(msg->h.id), mDNSVal16(q->TargetQID));
@@ -1983,14 +1985,14 @@ mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *co
 					}
 				if (opt && mDNSSameOpaque16(msg->h.id, q->TargetQID))
 					{
-					if (q->state == LLQ_Established && opt->OptData.llq.llqOp == kLLQOp_Refresh && mDNSSameOpaque64(&opt->OptData.llq.id, &q->id) && msg->h.numAdditionals && !msg->h.numAnswers)
+					if (q->state == LLQ_Established && opt->u.llq.llqOp == kLLQOp_Refresh && mDNSSameOpaque64(&opt->u.llq.id, &q->id) && msg->h.numAdditionals && !msg->h.numAnswers)
 						{
-						if (opt->OptData.llq.err != LLQErr_NoError) LogMsg("recvRefreshReply: received error %d from server", opt->OptData.llq.err);
+						if (opt->u.llq.err != LLQErr_NoError) LogMsg("recvRefreshReply: received error %d from server", opt->u.llq.err);
 						else
 							{
 							//LogOperation("Received refresh confirmation ntries %d for %##s (%s)", q->ntries, q->qname.c, DNSTypeName(q->qtype));
-							GrantCacheExtensions(m, q, opt->OptData.llq.llqlease);
-							SetLLQTimer(m, q, &opt->OptData.llq);
+							GrantCacheExtensions(m, q, opt->u.llq.llqlease);
+							SetLLQTimer(m, q, &opt->u.llq);
 							q->ntries = 0;
 							}
 						m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
@@ -1999,10 +2001,10 @@ mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *co
 					if (q->state < LLQ_Established && mDNSSameAddress(srcaddr, &q->servAddr))
 						{
 						LLQ_State oldstate = q->state;
-						recvSetupResponse(m, msg->h.flags.b[1] & kDNSFlag1_RC_Mask, q, &opt->OptData.llq);
+						recvSetupResponse(m, msg->h.flags.b[1] & kDNSFlag1_RC_Mask, q, &opt->u.llq);
 						m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 						// We have a protocol anomaly here in the LLQ definition.
-						// Both the challenge packet from the server and the ack+answers packet have opt->OptData.llq.llqOp == kLLQOp_Setup.
+						// Both the challenge packet from the server and the ack+answers packet have opt->u.llq.llqOp == kLLQOp_Setup.
 						// However, we need to treat them differently:
 						// The challenge packet has no answers in it, and tells us nothing about whether our cache entries
 						// are still valid, so this packet should not cause us to do anything that messes with our cache.
