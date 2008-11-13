@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.67  2008/11/13 19:05:09  cheshire
+Added definition of LocateOptRR()
+
 Revision 1.66  2008/10/22 19:56:54  cheshire
 Removed unused SameRData() macro -- it duplicates the functionality of IdenticalSameNameRecord()
 
@@ -337,9 +340,8 @@ extern const mDNSu8 *getQuestion(const DNSMessage *msg, const mDNSu8 *ptr, const
 extern const mDNSu8 *LocateAnswers(const DNSMessage *const msg, const mDNSu8 *const end);
 extern const mDNSu8 *LocateAuthorities(const DNSMessage *const msg, const mDNSu8 *const end);
 extern const mDNSu8 *LocateAdditionals(const DNSMessage *const msg, const mDNSu8 *const end);
-extern const mDNSu8 *LocateLLQOptData(const DNSMessage *const msg, const mDNSu8 *const end);
+extern const mDNSu8 *LocateOptRR(const DNSMessage *const msg, const mDNSu8 *const end, int minsize);
 extern const rdataOPT *GetLLQOptData(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end);
-extern const mDNSu8 *LocateLeaseOptData(const DNSMessage *const msg, const mDNSu8 *const end);
 extern mDNSu32 GetPktLease(mDNS *m, DNSMessage *msg, const mDNSu8 *end);
 extern void DumpPacket(mDNS *const m, mStatus status, mDNSBool sent, char *transport,
 	const mDNSAddr *srcaddr, mDNSIPPort srcport,
