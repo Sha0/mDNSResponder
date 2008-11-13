@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.511  2008/11/13 19:04:44  cheshire
+Added definition of OwnerOptData
+
 Revision 1.510  2008/11/06 23:48:32  cheshire
 Changed SleepProxyServerType to mDNSu8
 
@@ -917,7 +920,7 @@ typedef enum				// From RFC 1035
 
 	kDNSType_HIP = 55,		// 55 Host Identity Protocol
 
-	kDNSType_MAC = 90,		// Temporary placeholder value
+	kDNSType_MAC = 90,		// Temporary placeholder -- may not actually be needed
 
 	kDNSType_SPF = 99,		// 99 Sender Policy Framework for E-Mail
 	kDNSType_UINFO,			// 100 IANA-Reserved
@@ -1337,34 +1340,57 @@ typedef packedstruct
 	mDNSu32 min;		// Nominally the minimum record TTL for this zone, in seconds; also used for negative caching.
 	} rdataSOA;
 
-typedef packedstruct
+// EDNS Option Code registrations are recorded in the "DNS EDNS0 Options" section of
+// <http://www.iana.org/assignments/dns-parameters>
+
+#define kDNSOpt_LLQ   1
+#define kDNSOpt_Lease 2
+#define kDNSOpt_NSID  3
+#define kDNSOpt_Owner 4
+
+typedef struct
 	{
 	mDNSu16      vers;
 	mDNSu16      llqOp;
 	mDNSu16      err;	// Or UDP reply port, in setup request
+	// Note: In the in-memory form, there's typically a two-byte space here, so that the following 64-bit id is word-aligned
 	mDNSOpaque64 id;
 	mDNSu32      llqlease;
 	} LLQOptData;
 
-// Windows adds pad bytes to sizeof(LLQOptData).
-// Use this macro when setting length fields or validating option rdata from off the wire.
-// Use sizeof(LLQOptData) when dealing with structures (e.g. memcpy).
-// Never memcpy between on-the-wire representation and a structure.
-
-#define LLQ_OPTLEN ((3 * sizeof(mDNSu16)) + 8 + sizeof(mDNSu32))
+typedef struct
+	{
+	mDNSu8       vers;
+	mDNSs8       seq;
+	mDNSEthAddr  MAC;
+	} OwnerOptData;
 
 // Note: rdataOPT format may be repeated an arbitrary number of times in a single resource record
 typedef packedstruct
 	{
 	mDNSu16 opt;
 	mDNSu16 optlen;
-	union { LLQOptData llq; mDNSu32 updatelease; } OptData;
+	union { LLQOptData llq; mDNSu32 updatelease; OwnerOptData owner; } u;
 	} rdataOPT;
 
-#define DNSOpt_Lease_Space 19
-// Space needed to put a DNS Lease Option into a packet:
-// 11 bytes header (name, type, class, TTL, length)
-//  8 bytes rdata (opt, len, lease)
+// Space needed to put OPT records into a packet:
+// Header      11 bytes (name 1, type 2, class 2, TTL 4, length 2)
+// LLQ rdata   18 bytes (opt 2, len 2, vers 2, op 2, err 2, id 8, lease 4)
+// Lease rdata  8 bytes (opt 2, len 2, lease 4)
+// Owner rdata 12 bytes (opt 2, len 2, owner 8)
+
+#define DNSOpt_Header_Space    11
+#define DNSOpt_LLQData_Space   18
+#define DNSOpt_LeaseData_Space  8
+#define DNSOpt_OwnerData_Space 12
+
+// Space needed to put a Sleep Proxy Server lease-and-owner option into a packet:
+#define DNSOpt_SPS_Space (DNSOpt_Header_Space + DNSOpt_LeaseData_Space + DNSOpt_OwnerData_Space)
+
+#define DNSOpt_Data_Space(X) (                             \
+	(X) == kDNSOpt_LLQ   ? DNSOpt_LLQData_Space   :        \
+	(X) == kDNSOpt_Lease ? DNSOpt_LeaseData_Space :        \
+	(X) == kDNSOpt_Owner ? DNSOpt_OwnerData_Space : 0x10000)
 
 // StandardAuthRDSize is 264 (256+8), which is large enough to hold a maximum-sized SRV record (6 + 256 bytes)
 // MaximumRDSize is 8K the absolute maximum we support (at least for now)
@@ -1397,7 +1423,7 @@ typedef union
 	rdataMX     mx;
 	mDNSv6Addr  ipv6;		// For 'AAAA' record
 	rdataSRV    srv;
-	rdataOPT    opt;		// For EDNS0 OPT record; RDataBody may contain multiple variable-length rdataOPT objects packed together
+	rdataOPT    opt[2];		// For EDNS0 OPT record; RDataBody may contain multiple variable-length rdataOPT objects packed together
 	mDNSEthAddr mac;
 	} RDataBody;
 
@@ -1414,7 +1440,7 @@ typedef union
 	rdataPX     px;
 	mDNSv6Addr  ipv6;		// For 'AAAA' record
 	rdataSRV    srv;
-	rdataOPT    opt;		// For EDNS0 OPT record; RDataBody may contain multiple variable-length rdataOPT objects packed together
+	rdataOPT    opt[2];		// For EDNS0 OPT record; RDataBody may contain multiple variable-length rdataOPT objects packed together
 	mDNSEthAddr mac;
 	} RDataBody2;
 
@@ -1644,7 +1670,8 @@ struct AuthRecord_struct
 	AuthRecord     *RRSet;				// This unique record is part of an RRSet
 	mDNSRecordCallback *RecordCallback;	// Callback function to call for state changes, and to free memory asynchronously on deregistration
 	void           *RecordContext;		// Context parameter for the callback function
-	mDNSEthAddr     WakeUp;				// Non-zero if we may need to generate a wakeup packet for this record
+	mDNSAddr        AddressProxy;		// For reverse-mapping Sleep Proxy PTR records, address in question
+	mDNSEthAddr     WakeUp;				// Fpr Sleep Proxy records, MAC address of original owner (so we can wake it)
 	mDNSu8          AutoTarget;			// Set if the target of this record (PTR, CNAME, SRV, etc.) is our host name
 	mDNSu8          AllowRemoteQuery;	// Set if we allow hosts not on the local link to query this record
 	mDNSu8          ForceMCast;			// Set by client to advertise solely via multicast, even for apparently unicast names
@@ -1905,8 +1932,6 @@ typedef enum
 	} LLQ_State;
 
 // LLQ constants
-#define kDNSOpt_LLQ	   1
-#define kDNSOpt_Lease  2
 #define kLLQ_Vers      1
 #define kLLQ_DefLease  7200 // 2 hours
 #define kLLQ_MAX_TRIES 3    // retry an operation 3 times max
@@ -1915,9 +1940,6 @@ typedef enum
 #define kLLQOp_Setup     1
 #define kLLQOp_Refresh   2
 #define kLLQOp_Event     3
-
-#define LLQ_OPT_RDLEN   ((2 * sizeof(mDNSu16)) + LLQ_OPTLEN     )
-#define LEASE_OPT_RDLEN ((2 * sizeof(mDNSu16)) + sizeof(mDNSs32))
 
 // LLQ Errror Codes
 enum
