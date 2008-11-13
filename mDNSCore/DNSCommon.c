@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.221  2008/11/13 19:06:02  cheshire
+Added code to put, get, and display rdataOPT properly
+
 Revision 1.220  2008/11/06 01:08:11  mcguire
 Fix compiler warning about discarding const
 
@@ -632,20 +635,36 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *const rr, const RD
 		case kDNSType_AAAA:	mDNS_snprintf(buffer+length, Max-length, "%.16a", &rd->ipv6);       break;
 		case kDNSType_SRV:	mDNS_snprintf(buffer+length, Max-length, "%u %u %u %##s",
 								rd->srv.priority, rd->srv.weight, mDNSVal16(rd->srv.port), rd->srv.target.c); break;
-		case kDNSType_OPT:  length += mDNS_snprintf(buffer+length, Max-length, "%d Len %d ", rd->opt.opt, rd->opt.optlen);
-							length += mDNS_snprintf(buffer+length, Max-length, "Max UDP %d ", rr->rrclass);
-							if (rd->opt.opt == kDNSOpt_LLQ)
+
+		case kDNSType_OPT:  {
+							const rdataOPT *opt;
+							const rdataOPT *const end = (const rdataOPT *)&rd->data[rr->rdlength];
+							length += mDNS_snprintf(buffer+length, Max-length, "Max %d", rr->rrclass);
+							for (opt = &rd->opt[0]; opt < end; opt++)
 								{
-								length += mDNS_snprintf(buffer+length, Max-length, "Vers %d ",     rd->opt.OptData.llq.vers);
-								length += mDNS_snprintf(buffer+length, Max-length, "Op %d ",       rd->opt.OptData.llq.llqOp);
-								length += mDNS_snprintf(buffer+length, Max-length, "Err/Port %d ", rd->opt.OptData.llq.err);
-								length += mDNS_snprintf(buffer+length, Max-length, "ID %08X%08X ", rd->opt.OptData.llq.id.l[0], rd->opt.OptData.llq.id.l[1]);
-								length += mDNS_snprintf(buffer+length, Max-length, "Lease %d",     rd->opt.OptData.llq.llqlease);
+								switch(opt->opt)
+									{
+									case kDNSOpt_LLQ:
+										length += mDNS_snprintf(buffer+length, Max-length, " Vers %d",     opt->u.llq.vers);
+										length += mDNS_snprintf(buffer+length, Max-length, " Op %d",       opt->u.llq.llqOp);
+										length += mDNS_snprintf(buffer+length, Max-length, " Err/Port %d", opt->u.llq.err);
+										length += mDNS_snprintf(buffer+length, Max-length, " ID %08X%08X", opt->u.llq.id.l[0], opt->u.llq.id.l[1]);
+										length += mDNS_snprintf(buffer+length, Max-length, " Lease %d",    opt->u.llq.llqlease);
+										break;
+									case kDNSOpt_Lease:
+										length += mDNS_snprintf(buffer+length, Max-length, " Lease %d",    opt->u.updatelease);
+										break;
+									case kDNSOpt_Owner:
+										length += mDNS_snprintf(buffer+length, Max-length, " Vers %d",     opt->u.owner.vers);
+										length += mDNS_snprintf(buffer+length, Max-length, " Seq %d",      opt->u.owner.seq);
+										length += mDNS_snprintf(buffer+length, Max-length, " MAC %.6a",    opt->u.owner.MAC.b);
+										break;
+									default:
+										length += mDNS_snprintf(buffer+length, Max-length, " Unknown %d",  opt->opt);
+										break;
+									}
 								}
-							else if (rd->opt.opt == kDNSOpt_Lease)
-								length += mDNS_snprintf(buffer+length, Max-length, "kDNSOpt_Lease Lease %d", rd->opt.OptData.updatelease);
-							else
-								length += mDNS_snprintf(buffer+length, Max-length, "Unknown opt %d", rd->opt.opt);
+							}
 							break;
 
 		case kDNSType_MAC:	mDNS_snprintf(buffer+length, Max-length, "%.6a", &rd->mac);          break;
@@ -1388,6 +1407,7 @@ mDNSexport void mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mD
 	rr->AutoTarget        = Target_Manual;
 	rr->AllowRemoteQuery  = mDNSfalse;
 	rr->ForceMCast        = mDNSfalse;
+	rr->AddressProxy      = zeroAddr;
 	rr->WakeUp            = zeroEthAddr;
 
 	// Field Group 3: Transient state for Authoritative Records (set in mDNS_Register_internal)
@@ -1461,7 +1481,7 @@ mDNSexport mDNSu32 RDataHashValue(const ResourceRecord *const rr)
 
 		case kDNSType_SRV:	 return DomainNameHashValue(&rdb->srv.target);
 
-		case kDNSType_OPT:	// Okay to use blind memory sum because there are no 'holes' in the in-memory representation
+		case kDNSType_OPT:	 return 0;	// OPT is a pseudo-RR container structure; makes no sense to compare
 
 		default:
 			{
@@ -1520,7 +1540,7 @@ mDNSexport mDNSBool SameRDataBody(const ResourceRecord *const r1, const RDataBod
 												mDNSSameIPPort(b1->srv.port, b2->srv.port) &&
 												SameDomainName(&b1->srv.target, &b2->srv.target));
 
-		case kDNSType_OPT:	// Okay to use blind memory compare because there are no 'holes' in the in-memory representation
+		case kDNSType_OPT:	return mDNSfalse;	// OPT is a pseudo-RR container structure; makes no sense to compare
 
 		default:			return(mDNSPlatformMemSame(b1->data, b2->data, r1->rdlength));
 		}
@@ -1798,102 +1818,6 @@ mDNSlocal mDNSu8 *putVal32(mDNSu8 *ptr, mDNSu32 val)
 	return ptr + sizeof(mDNSu32);
 	}
 
-mDNSlocal mDNSu8 *putOptRData(mDNSu8 *ptr, const mDNSu8 *limit, const ResourceRecord *const rr)
-	{
-	int nput = 0;
-	rdataOPT *opt;
-	
-	while (nput < rr->rdlength)
-		{
-		// check if space for opt/optlen
-		if (ptr + (2 * sizeof(mDNSu16)) > limit) goto space_err;
-		opt = (rdataOPT *)(rr->rdata->u.data + nput);
-		ptr = putVal16(ptr, opt->opt);
-		ptr = putVal16(ptr, opt->optlen);
-		nput += 2 * sizeof(mDNSu16);
-		if (opt->opt == kDNSOpt_LLQ)
-			{
-			if (ptr + LLQ_OPTLEN > limit) goto space_err;
-			ptr = putVal16(ptr, opt->OptData.llq.vers);
-			ptr = putVal16(ptr, opt->OptData.llq.llqOp);
-			ptr = putVal16(ptr, opt->OptData.llq.err);
-			mDNSPlatformMemCopy(ptr, opt->OptData.llq.id.b, 8);  // 8-byte id
-			ptr += 8;
-			ptr = putVal32(ptr, opt->OptData.llq.llqlease);
-			nput += LLQ_OPTLEN;
-			}
-		else if (opt->opt == kDNSOpt_Lease)
-			{
-			if (ptr + sizeof(mDNSs32) > limit) goto space_err;
-			ptr = putVal32(ptr, opt->OptData.updatelease);
-			nput += sizeof(mDNSs32);
-			}
-		else { LogMsg("putOptRData - unknown option %d", opt->opt); return mDNSNULL; }
-		}
-	
-	return ptr;
-
-	space_err:
-	LogMsg("ERROR: putOptRData - out of space");
-	return mDNSNULL;
-	}
-
-mDNSlocal mDNSu16 getVal16(const mDNSu8 **ptr)
-	{
-	mDNSu16 val = (mDNSu16)(((mDNSu16)(*ptr)[0]) << 8 | (*ptr)[1]);
-	*ptr += sizeof(mDNSOpaque16);
-	return val;
-	}
-
-mDNSlocal const mDNSu8 *getOptRdata(const mDNSu8 *ptr, const mDNSu8 *const limit, LargeCacheRecord *const cr, mDNSu16 pktRDLen)
-	{
-	int nread = 0;
-	ResourceRecord *const rr = &cr->r.resrec;
-	rdataOPT *opt = (rdataOPT *)rr->rdata->u.data;
-
-	while (nread < pktRDLen && (mDNSu8 *)opt < rr->rdata->u.data + MaximumRDSize - sizeof(rdataOPT))
-		{
-		// space for opt + optlen
-		if (nread + (2 * sizeof(mDNSu16)) > rr->rdata->MaxRDLength) goto space_err;
-		opt->opt = getVal16(&ptr);
-		opt->optlen = getVal16(&ptr);
-		nread += 2 * sizeof(mDNSu16);
-		if (opt->opt == kDNSOpt_LLQ)
-			{
-			if ((unsigned)(limit - ptr) < LLQ_OPTLEN) goto space_err;
-			opt->OptData.llq.vers = getVal16(&ptr);
-			opt->OptData.llq.llqOp = getVal16(&ptr);
-			opt->OptData.llq.err = getVal16(&ptr);
-			mDNSPlatformMemCopy(opt->OptData.llq.id.b, ptr, 8);
-			ptr += 8;
-			opt->OptData.llq.llqlease = (mDNSu32) ((mDNSu32)ptr[0] << 24 | (mDNSu32)ptr[1] << 16 | (mDNSu32)ptr[2] << 8 | ptr[3]);
-			if (opt->OptData.llq.llqlease > 0x70000000UL / mDNSPlatformOneSecond)
-				opt->OptData.llq.llqlease = 0x70000000UL / mDNSPlatformOneSecond;
-			ptr += sizeof(mDNSOpaque32);
-			nread += LLQ_OPTLEN;
-			}
-		else if (opt->opt == kDNSOpt_Lease)
-			{
-			if ((unsigned)(limit - ptr) < sizeof(mDNSs32)) goto space_err;
-
-			opt->OptData.updatelease = (mDNSu32) ((mDNSu32)ptr[0] << 24 | (mDNSu32)ptr[1] << 16 | (mDNSu32)ptr[2] << 8 | ptr[3]);
-			if (opt->OptData.updatelease > 0x70000000UL / mDNSPlatformOneSecond)
-				opt->OptData.updatelease = 0x70000000UL / mDNSPlatformOneSecond;
-			ptr += sizeof(mDNSs32);
-			nread += sizeof(mDNSs32);
-			}
-		else { LogMsg("ERROR: getOptRdata - unknown opt %d", opt->opt); return mDNSNULL; }
-		opt++;  // increment pointer into rdatabody
-		}
-	
-	rr->rdlength = pktRDLen;
-	return ptr;
-
-	space_err:
-	LogMsg("ERROR: getLLQRdata - out of space");
-	return mDNSNULL;
-	}
-
 // msg points to the message we're building (pass mDNSNULL if we don't want to use compression pointers)
 mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, const ResourceRecord *const rr)
 	{
@@ -1970,8 +1894,41 @@ mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNS
 							*ptr++ = rdb->srv.port.b[1];
 							return(putDomainNameAsLabels(msg, ptr, limit, &rdb->srv.target));
 
-		case kDNSType_OPT:	return putOptRData(ptr, limit, rr);
-							
+		case kDNSType_OPT:	{
+							int len = 0;
+							const rdataOPT *opt;
+							const rdataOPT *const end = (const rdataOPT *)&rr->rdata->u.data[rr->rdlength];
+							for (opt = &rr->rdata->u.opt[0]; opt < end; opt++) len += DNSOpt_Data_Space(opt->opt);
+							if (ptr + len > limit) { LogMsg("ERROR: putOptRData - out of space"); return mDNSNULL; }
+						
+							for (opt = &rr->rdata->u.opt[0]; opt < end; opt++)
+								{
+								ptr = putVal16(ptr, opt->opt);
+								ptr = putVal16(ptr, DNSOpt_Data_Space(opt->opt) - 4);
+								switch(opt->opt)
+									{
+									case kDNSOpt_LLQ:
+										ptr = putVal16(ptr, opt->u.llq.vers);
+										ptr = putVal16(ptr, opt->u.llq.llqOp);
+										ptr = putVal16(ptr, opt->u.llq.err);
+										mDNSPlatformMemCopy(ptr, opt->u.llq.id.b, 8);  // 8-byte id
+										ptr += 8;
+										ptr = putVal32(ptr, opt->u.llq.llqlease);
+										break;
+									case kDNSOpt_Lease:
+										ptr = putVal32(ptr, opt->u.updatelease);
+										break;
+									case kDNSOpt_Owner:
+										*ptr++ = opt->u.owner.vers;
+										*ptr++ = opt->u.owner.seq;
+										mDNSPlatformMemCopy(ptr, opt->u.owner.MAC.b, 6);  // 6-byte MAC address
+										ptr += 6;
+										break;
+									}
+								}
+							return ptr;
+							}
+
 		case kDNSType_MAC:	if (rr->rdlength != 6)
 								{ debugf("putRData: Illegal length %d for kDNSType_MAC", rr->rdlength); return(mDNSNULL); }
 							if (ptr + 6 > limit) return(mDNSNULL);
@@ -2114,10 +2071,10 @@ mDNSexport mDNSu8 *putDeleteAllRRSets(DNSMessage *msg, mDNSu8 *ptr, const domain
 	
 	ptr = putDomainNameAsLabels(msg, ptr, limit, name);
 	if (!ptr || ptr + 10 >= limit) return mDNSNULL;	// If we're out-of-space, return mDNSNULL
-	ptr[0] = (mDNSu8)(rrtype  >> 8);
-	ptr[1] = (mDNSu8)(rrtype  &  0xFF);
-	ptr[2] = (mDNSu8)(class >> 8);
-	ptr[3] = (mDNSu8)(class &  0xFF);
+	ptr[0] = (mDNSu8)(rrtype >> 8);
+	ptr[1] = (mDNSu8)(rrtype &  0xFF);
+	ptr[2] = (mDNSu8)(class  >> 8);
+	ptr[3] = (mDNSu8)(class  &  0xFF);
 	ptr[4] = ptr[5] = ptr[6] = ptr[7] = 0; // zero ttl
 	ptr[8] = ptr[9] = 0; // zero rdlength/rdata
 
@@ -2131,11 +2088,10 @@ mDNSexport mDNSu8 *putUpdateLease(DNSMessage *msg, mDNSu8 *end, mDNSu32 lease)
 	AuthRecord rr;
 	mDNS_SetupResourceRecord(&rr, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
 	rr.resrec.rrclass    = NormalMaxDNSMessageData;
-	rr.resrec.rdlength   = LEASE_OPT_RDLEN;
-	rr.resrec.rdestimate = LEASE_OPT_RDLEN;
-	rr.resrec.rdata->u.opt.opt           = kDNSOpt_Lease;
-	rr.resrec.rdata->u.opt.optlen        = sizeof(mDNSs32);
-	rr.resrec.rdata->u.opt.OptData.updatelease = lease;
+	rr.resrec.rdlength   = sizeof(rdataOPT);	// One option in this OPT record
+	rr.resrec.rdestimate = sizeof(rdataOPT);
+	rr.resrec.rdata->u.opt[0].opt           = kDNSOpt_Lease;
+	rr.resrec.rdata->u.opt[0].u.updatelease = lease;
 	end = PutResourceRecordTTLJumbo(msg, end, &msg->h.numAdditionals, &rr.resrec, 0);
 	if (!end) { LogMsg("ERROR: putUpdateLease - PutResourceRecordTTL"); return mDNSNULL; }
 	return end;
@@ -2295,6 +2251,13 @@ mDNSexport const mDNSu8 *skipResourceRecord(const DNSMessage *msg, const mDNSu8 
 	return(ptr + pktrdlength);
 	}
 
+mDNSlocal mDNSu16 getVal16(const mDNSu8 **ptr)
+	{
+	mDNSu16 val = (mDNSu16)(((mDNSu16)(*ptr)[0]) << 8 | (*ptr)[1]);
+	*ptr += sizeof(mDNSOpaque16);
+	return val;
+	}
+
 mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *ptr,
     const mDNSu8 *end, const mDNSInterfaceID InterfaceID, mDNSu8 RecordType, LargeCacheRecord *largecr)
 	{
@@ -2442,8 +2405,48 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 							//debugf("%##s SRV %##s rdlen %d", rr->resrec.name.c, rdb->srv.target.c, pktrdlength);
 							break;
 
-		case kDNSType_OPT:  ptr = getOptRdata(ptr, end, largecr, pktrdlength); break;
+		case kDNSType_OPT:	{
+							rdataOPT *opt = rr->resrec.rdata->u.opt;
+							rr->resrec.rdlength = 0;
+							while (ptr < end && (mDNSu8 *)(opt+1) < &rr->resrec.rdata->u.data[MaximumRDSize])
+								{
+								if (ptr + 4 > end)                              { LogMsg("GetLargeResourceRecord: OPT RDATA ptr + 4 > end"); return(mDNSNULL); }
+								opt->opt    = getVal16(&ptr);
+								opt->optlen = getVal16(&ptr);
+								if (opt->optlen != DNSOpt_Data_Space(opt->opt) - 4) { LogMsg("GetLargeResourceRecord: optlen wrong %d %d", opt->optlen, DNSOpt_Data_Space(opt->opt) - 4);            return(mDNSNULL); }
+								if (ptr + opt->optlen > end)                    { LogMsg("GetLargeResourceRecord: ptr + opt->optlen > end"); return(mDNSNULL); }
+								switch(opt->opt)
+									{
+									case kDNSOpt_LLQ:
+										opt->u.llq.vers  = getVal16(&ptr);
+										opt->u.llq.llqOp = getVal16(&ptr);
+										opt->u.llq.err   = getVal16(&ptr);
+										mDNSPlatformMemCopy(opt->u.llq.id.b, ptr, 8);
+										ptr += 8;
+										opt->u.llq.llqlease = (mDNSu32) ((mDNSu32)ptr[0] << 24 | (mDNSu32)ptr[1] << 16 | (mDNSu32)ptr[2] << 8 | ptr[3]);
+										if (opt->u.llq.llqlease > 0x70000000UL / mDNSPlatformOneSecond)
+											opt->u.llq.llqlease = 0x70000000UL / mDNSPlatformOneSecond;
+										ptr += sizeof(mDNSOpaque32);
+										break;
+									case kDNSOpt_Lease:
+										opt->u.updatelease = (mDNSu32) ((mDNSu32)ptr[0] << 24 | (mDNSu32)ptr[1] << 16 | (mDNSu32)ptr[2] << 8 | ptr[3]);
+										if (opt->u.updatelease > 0x70000000UL / mDNSPlatformOneSecond)
+											opt->u.updatelease = 0x70000000UL / mDNSPlatformOneSecond;
+										ptr += sizeof(mDNSs32);
+										break;
+									case kDNSOpt_Owner:
+										opt->u.owner.vers = ptr[0];
+										opt->u.owner.seq  = ptr[1];
+										mDNSPlatformMemCopy(opt->u.owner.MAC.b, ptr+2, 6);  // 6-byte MAC address
+										ptr += 8;
+										break;
+									}
+								opt++;  // increment pointer into rdatabody
+								}
+							rr->resrec.rdlength = (mDNSu8*)opt - rr->resrec.rdata->u.data;
 							if (ptr != end) { LogMsg("GetLargeResourceRecord: Malformed OptRdata"); return(mDNSNULL); }
+							break;
+							}
 
 		case kDNSType_MAC:	if (pktrdlength != sizeof(mDNSEthAddr)) return(mDNSNULL);
 							mDNSPlatformMemCopy(rdb->data, ptr, sizeof(mDNSEthAddr));
@@ -2522,7 +2525,7 @@ mDNSexport const mDNSu8 *LocateAdditionals(const DNSMessage *const msg, const mD
 	return (ptr);
 	}
 
-mDNSexport const mDNSu8 *LocateLLQOptData(const DNSMessage *const msg, const mDNSu8 *const end)
+mDNSexport const mDNSu8 *LocateOptRR(const DNSMessage *const msg, const mDNSu8 *const end, int minsize)
 	{
 	int i;
 	const mDNSu8 *ptr = LocateAdditionals(msg, end);
@@ -2533,11 +2536,11 @@ mDNSexport const mDNSu8 *LocateLLQOptData(const DNSMessage *const msg, const mDN
 	// but not necessarily the *last* entry in the Additional Section.
 	for (i = 0; ptr && i < msg->h.numAdditionals; i++)
 		{
-		if (ptr + 10 + LLQ_OPT_RDLEN <= end   &&		// Make sure we have 10+22 bytes of data
-			ptr[0] == 0                       &&		// Name must be root label
-			ptr[1] == (kDNSType_OPT >> 8  )   &&		// rrtype OPT
-			ptr[2] == (kDNSType_OPT & 0xFF)   &&
-			((mDNSu16)ptr[9] << 8 | (mDNSu16)ptr[10]) >= (mDNSu16)LLQ_OPT_RDLEN)
+		if (ptr + DNSOpt_Header_Space + minsize <= end &&	// Make sure we have 11+minsize bytes of data
+			ptr[0] == 0                                &&	// Name must be root label
+			ptr[1] == (kDNSType_OPT >> 8  )            &&	// rrtype OPT
+			ptr[2] == (kDNSType_OPT & 0xFF)            &&
+			((mDNSu16)ptr[9] << 8 | (mDNSu16)ptr[10]) >= (mDNSu16)minsize)
 			return(ptr);
 		else
 			ptr = skipResourceRecord(msg, ptr, end);
@@ -2546,39 +2549,16 @@ mDNSexport const mDNSu8 *LocateLLQOptData(const DNSMessage *const msg, const mDN
 	}
 
 // On success, GetLLQOptData returns pointer to storage within shared "m->rec";
-// it is callers responsibilty to clear m->rec.r.resrec.RecordType after use
+// it is caller's responsibilty to clear m->rec.r.resrec.RecordType after use
 // Note: An OPT RDataBody actually contains one or more variable-length rdataOPT objects packed together
 // The code that currently calls this assumes there's only one, instead of iterating through the set
 mDNSexport const rdataOPT *GetLLQOptData(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end)
 	{
-	const mDNSu8 *ptr = LocateLLQOptData(msg, end);
+	const mDNSu8 *ptr = LocateOptRR(msg, end, DNSOpt_LLQData_Space);
 	if (ptr)
 		{
 		ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAdd, &m->rec);
-		if (ptr) return(&m->rec.r.resrec.rdata->u.opt);
-		}
-	return(mDNSNULL);
-	}
-
-mDNSexport const mDNSu8 *LocateLeaseOptData(const DNSMessage *const msg, const mDNSu8 *const end)
-	{
-	int i;
-	const mDNSu8 *ptr = LocateAdditionals(msg, end);
-
-	// Locate the OPT record.
-	// According to RFC 2671, "One OPT pseudo-RR can be added to the additional data section of either a request or a response."
-	// This implies that there may be *at most* one OPT record per DNS message, in the Additional Section,
-	// but not necessarily the *last* entry in the Additional Section.
-	for (i = 0; ptr && i < msg->h.numAdditionals; i++)
-		{
-		if (ptr + 10 + LEASE_OPT_RDLEN <= end &&		// Make sure we have 10+8 bytes of data
-			ptr[0] == 0                       &&		// Name must be root label
-			ptr[1] == (kDNSType_OPT >> 8  )   &&		// rrtype OPT
-			ptr[2] == (kDNSType_OPT & 0xFF)   &&
-			((mDNSu16)ptr[9] << 8 | (mDNSu16)ptr[10]) >= (mDNSu16)LEASE_OPT_RDLEN)
-			return(ptr);
-		else
-			ptr = skipResourceRecord(msg, ptr, end);
+		if (ptr) return(&m->rec.r.resrec.rdata->u.opt[0]);
 		}
 	return(mDNSNULL);
 	}
@@ -2588,10 +2568,10 @@ mDNSexport const mDNSu8 *LocateLeaseOptData(const DNSMessage *const msg, const m
 mDNSexport mDNSu32 GetPktLease(mDNS *m, DNSMessage *msg, const mDNSu8 *end)
 	{
 	mDNSu32 result = 0;
-	const mDNSu8 *ptr = LocateLeaseOptData(msg, end);
+	const mDNSu8 *ptr = LocateOptRR(msg, end, DNSOpt_LeaseData_Space);
 	if (ptr) ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAdd, &m->rec);
-	if (ptr && m->rec.r.resrec.rdlength >= LEASE_OPT_RDLEN && m->rec.r.resrec.rdata->u.opt.opt == kDNSOpt_Lease)
-		result = m->rec.r.resrec.rdata->u.opt.OptData.updatelease;
+	if (ptr && m->rec.r.resrec.rdlength >= DNSOpt_LeaseData_Space && m->rec.r.resrec.rdata->u.opt[0].opt == kDNSOpt_Lease)
+		result = m->rec.r.resrec.rdata->u.opt[0].u.updatelease;
 	m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 	return(result);
 	}
