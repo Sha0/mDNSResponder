@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.393  2008/11/14 01:22:38  cheshire
+Include SPS-registered records when computing the next required wakeup time
+
 Revision 1.392  2008/11/11 01:55:16  cheshire
 Improved comments; minium requested sleep is 60 seconds
 
@@ -2526,12 +2529,7 @@ mDNSlocal mDNSs32 ComputeWakeTime(mDNS *const m, mDNSs32 now)
 	// For testing right now we assume 2 hours; in reality we need to interrogate DHCP client to get the real value
 	mDNSs32 dhcp = now + 7200 * mDNSPlatformOneSecond;
 
-	// When we implement SPS leases, we need to use the real SPS lease values here
-	mDNSs32 sps = now + 7200 * mDNSPlatformOneSecond;
-
 	if (e - dhcp > 0) e = dhcp;
-
-	if (e - sps  > 0) e = sps;
 
 	NATTraversalInfo *nat;
 	for (nat = m->NATTraversals; nat; nat=nat->next)
@@ -2550,7 +2548,7 @@ mDNSlocal mDNSs32 ComputeWakeTime(mDNS *const m, mDNSs32 now)
 
 	AuthRecord *ar;
 	for (ar = m->ResourceRecords; ar; ar = ar->next)
-		if (ar->state == regState_Registered && ar->expire && ar->expire - now > mDNSPlatformOneSecond*4)
+		if (ar->expire && ar->expire - now > mDNSPlatformOneSecond*4)
 			{
 			mDNSs32 t = ar->expire - (ar->expire - now) / 4;
 			if (e - t > 0) e = t;
