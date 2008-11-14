@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.580  2008/11/14 02:16:15  cheshire
+Clean up NetworkChanged handling
+
 Revision 1.579  2008/11/12 23:15:37  cheshire
 Updated log messages
 
@@ -4532,7 +4535,8 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 	int c1 = (CFArrayContainsValue(changedKeys, range, NetworkChangedKey_Hostnames   ) != 0);
 	int c2 = (CFArrayContainsValue(changedKeys, range, NetworkChangedKey_Computername) != 0);
 	int c3 = (CFArrayContainsValue(changedKeys, range, NetworkChangedKey_DynamicDNS  ) != 0);
-	if (c && c - c1 - c2 - c3 == 0) delay = mDNSPlatformOneSecond/10;	// If these were the only changes, shorten delay
+	int c4 = (CFArrayContainsValue(changedKeys, range, NetworkChangedKey_DNS         ) != 0);
+	if (c && c - c1 - c2 - c3 - c4 == 0) delay = mDNSPlatformOneSecond/10;	// If these were the only changes, shorten delay
 	
 #if LogAllOperations
 	int i;
@@ -4553,9 +4557,6 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 	if (!m->p->NetworkChanged ||
 		m->p->NetworkChanged - NonZeroTime(m->timenow + delay) < 0)
 		m->p->NetworkChanged = NonZeroTime(m->timenow + delay);
-
-	// If we have a global DNS change, then disregard delay and reconfigure immediately
-	if (CFArrayContainsValue(changedKeys, range, NetworkChangedKey_DNS) != 0) m->p->NetworkChanged = NonZeroTime(m->timenow);
 
 	// KeyChain frequently fails to notify clients of change events. To work around this
 	// we set a timer and periodically poll to detect if any changes have occurred.
