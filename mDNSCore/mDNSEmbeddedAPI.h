@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.512  2008/11/14 00:00:53  cheshire
+After client machine wakes up, Sleep Proxy machine need to remove any records
+it was temporarily holding as proxy for that client
+
 Revision 1.511  2008/11/13 19:04:44  cheshire
 Added definition of OwnerOptData
 
@@ -1671,7 +1675,7 @@ struct AuthRecord_struct
 	mDNSRecordCallback *RecordCallback;	// Callback function to call for state changes, and to free memory asynchronously on deregistration
 	void           *RecordContext;		// Context parameter for the callback function
 	mDNSAddr        AddressProxy;		// For reverse-mapping Sleep Proxy PTR records, address in question
-	mDNSEthAddr     WakeUp;				// Fpr Sleep Proxy records, MAC address of original owner (so we can wake it)
+	OwnerOptData    WakeUp;				// Fpr Sleep Proxy records, MAC address of original owner (so we can wake it)
 	mDNSu8          AutoTarget;			// Set if the target of this record (PTR, CNAME, SRV, etc.) is our host name
 	mDNSu8          AllowRemoteQuery;	// Set if we allow hosts not on the local link to query this record
 	mDNSu8          ForceMCast;			// Set by client to advertise solely via multicast, even for apparently unicast names
@@ -2241,6 +2245,7 @@ struct mDNS_struct
 	mDNSu32  RandomReconfirmDelay;		// For de-synchronization of reconfirmation queries on the wire
 	mDNSs32  PktNum;					// Unique sequence number assigned to each received packet
 	mDNSu8   SleepState;				// Set if we're sleeping
+	mDNSu8   SleepSeqNum;				// "Epoch number" of our current period of wakefulness
 
 	// These fields only required for mDNS Searcher...
 	DNSQuestion *Questions;				// List of all registered questions, active and inactive
@@ -2356,6 +2361,8 @@ extern const mDNSv4Addr      onesIPv4Addr;
 extern const mDNSv6Addr      onesIPv6Addr;
 extern const mDNSEthAddr     onesEthAddr;
 extern const mDNSAddr        zeroAddr;
+
+extern const OwnerOptData    zeroOwner;
 
 extern const mDNSInterfaceID mDNSInterface_Any;				// Zero
 extern const mDNSInterfaceID mDNSInterface_LocalOnly;		// Special value

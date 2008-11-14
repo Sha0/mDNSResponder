@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.222  2008/11/14 00:00:53  cheshire
+After client machine wakes up, Sleep Proxy machine need to remove any records
+it was temporarily holding as proxy for that client
+
 Revision 1.221  2008/11/13 19:06:02  cheshire
 Added code to put, get, and display rdataOPT properly
 
@@ -483,6 +487,8 @@ mDNSexport const mDNSv4Addr      onesIPv4Addr      = { { 255, 255, 255, 255 } };
 mDNSexport const mDNSv6Addr      onesIPv6Addr      = { { 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255 } };
 mDNSexport const mDNSAddr        zeroAddr          = { mDNSAddrType_None, {{{ 0 }}} };
 mDNSexport const mDNSEthAddr     onesEthAddr       = { { 255, 255, 255, 255, 255, 255 } };
+
+mDNSexport const OwnerOptData    zeroOwner         = { 0, 0, { { 0 } } };
 
 mDNSexport const mDNSInterfaceID mDNSInterface_Any       = 0;
 mDNSexport const mDNSInterfaceID mDNSInterface_LocalOnly = (mDNSInterfaceID)1;
@@ -1408,7 +1414,7 @@ mDNSexport void mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mD
 	rr->AllowRemoteQuery  = mDNSfalse;
 	rr->ForceMCast        = mDNSfalse;
 	rr->AddressProxy      = zeroAddr;
-	rr->WakeUp            = zeroEthAddr;
+	rr->WakeUp            = zeroOwner;
 
 	// Field Group 3: Transient state for Authoritative Records (set in mDNS_Register_internal)
 	// Field Group 4: Transient uDNS state for Authoritative Records (set in mDNS_Register_internal)

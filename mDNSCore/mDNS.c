@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.854  2008/11/14 00:00:53  cheshire
+After client machine wakes up, Sleep Proxy machine need to remove any records
+it was temporarily holding as proxy for that client
+
 Revision 1.853  2008/11/13 19:07:30  cheshire
 Added code to put OPT record, containing owner and lease lifetime, into SPS registration packet
 
@@ -1361,7 +1365,7 @@ mDNSlocal mDNSBool PacketRRMatchesSignature(const CacheRecord *const pktrr, cons
 	if (pktrr->resrec.InterfaceID &&
 		authrr->resrec.InterfaceID &&
 		pktrr->resrec.InterfaceID != authrr->resrec.InterfaceID) return(mDNSfalse);
-	if (!(authrr->resrec.RecordType & kDNSRecordTypeUniqueMask) || authrr->WakeUp.l[0])
+	if (!(authrr->resrec.RecordType & kDNSRecordTypeUniqueMask) || authrr->WakeUp.MAC.l[0])
 		if (pktrr->resrec.rrtype != authrr->resrec.rrtype) return(mDNSfalse);
 	return(mDNSBool)(
 		pktrr->resrec.rrclass == authrr->resrec.rrclass &&
@@ -1460,7 +1464,7 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr, mDNSs32
 	if (rr->AddressProxy.type) rr->LastAPTime = m->timenow - interval + mDNSPlatformOneSecond * 10;
 
 	// For now, since we don't get IPv6 ND or data packets, we send deletions for our SPS clients' AAAA records too
-	if (rr->WakeUp.l[0] && rr->resrec.rrtype == kDNSType_AAAA)
+	if (rr->WakeUp.MAC.l[0] && rr->resrec.rrtype == kDNSType_AAAA)
 		rr->LastAPTime = m->timenow - interval + mDNSPlatformOneSecond * 10;
 	
 	SetNextAnnounceProbeTime(m, rr);
@@ -1635,6 +1639,10 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	rr->UpdateCredits     = kMaxUpdateCredits;
 	rr->NextUpdateCredit  = 0;
 	rr->UpdateBlocked     = 0;
+
+	// We don't need to announce records we're holding as proxy,
+	// except for AddressProxy records, for which we need to generate ARP announcements
+	if (rr->WakeUp.MAC.l[0] && !rr->AddressProxy.type) rr->AnnounceCount = 0;
 
 	// Field Group 4: Transient uDNS state for Authoritative Records
 	rr->state             = regState_Zero;
@@ -2989,7 +2997,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 				else if (rr->ProbeCount)
 					{
 					// Mark for sending. (If no active interfaces, then don't even try.)
-					rr->SendRNow   = !intf ? mDNSNULL : (rr->resrec.InterfaceID) ? rr->resrec.InterfaceID : intf->InterfaceID;
+					rr->SendRNow   = (!intf || rr->WakeUp.MAC.l[0]) ? mDNSNULL : rr->resrec.InterfaceID ? rr->resrec.InterfaceID : intf->InterfaceID;
 					rr->LastAPTime = m->timenow;
 					rr->ProbeCount--;
 					SetNextAnnounceProbeTime(m, rr);
@@ -3039,7 +3047,9 @@ mDNSlocal void SendQueries(mDNS *const m)
 	while (intf)
 		{
 		AuthRecord *rr;
+		mDNSBool AddOwnerRecord = mDNSfalse;
 		mDNSu8 *queryptr = m->omsg.data;
+		mDNSu8 *limit    = m->omsg.data + AbsoluteMaxDNSMessageData;
 		InitializeDNSMessage(&m->omsg.h, zeroID, QueryFlags);
 		if (KnownAnswerList) verbosedebugf("SendQueries:   KnownAnswerList set... Will continue from previous packet");
 		if (!KnownAnswerList)
@@ -3059,24 +3069,26 @@ mDNSlocal void SendQueries(mDNS *const m)
 					// If we're suppressing this question, or we successfully put it, update its SendQNow state
 					if (SuppressOnThisInterface(q->DupSuppress, intf) ||
 						BuildQuestion(m, &m->omsg, &queryptr, q, &kalistptr, &answerforecast))
-							q->SendQNow = (q->InterfaceID || !q->SendOnAll) ? mDNSNULL : GetNextActiveInterfaceID(intf);
+						q->SendQNow = (q->InterfaceID || !q->SendOnAll) ? mDNSNULL : GetNextActiveInterfaceID(intf);
 					}
 				}
 
 			// Put probe questions in this packet
+			if (m->omsg.h.numQuestions) limit = m->omsg.data + NormalMaxDNSMessageData;
 			for (rr = m->ResourceRecords; rr; rr=rr->next)
 				if (rr->SendRNow == intf->InterfaceID)
 					{
 					mDNSBool ucast = (rr->ProbeCount >= DefaultProbeCountForTypeUnique-1) && m->CanReceiveUnicastOn5353;
 					mDNSu16 ucbit = (mDNSu16)(ucast ? kDNSQClass_UnicastResponse : 0);
-					const mDNSu8 *const limit = m->omsg.data + ((m->omsg.h.numQuestions) ? NormalMaxDNSMessageData : AbsoluteMaxDNSMessageData);
 					mDNSu8 *newptr = putQuestion(&m->omsg, queryptr, limit, rr->resrec.name, kDNSQType_ANY, (mDNSu16)(rr->resrec.rrclass | ucbit));
 					// We forecast: compressed name (2) type (2) class (2) TTL (4) rdlength (2) rdata (n)
 					mDNSu32 forecast = answerforecast + 12 + rr->resrec.rdestimate;
-					if (newptr && newptr + forecast < limit)
+					if (newptr && newptr + forecast + DNSOpt_Header_Space + DNSOpt_OwnerData_Space < limit)
 						{
 						queryptr       = newptr;
+						limit          = m->omsg.data + NormalMaxDNSMessageData;
 						answerforecast = forecast;
+						AddOwnerRecord = mDNStrue;
 						rr->SendRNow = (rr->resrec.InterfaceID) ? mDNSNULL : GetNextActiveInterfaceID(intf);
 						rr->IncludeInProbe = mDNStrue;
 						verbosedebugf("SendQueries:   Put Question %##s (%s) probecount %d",
@@ -3084,24 +3096,26 @@ mDNSlocal void SendQueries(mDNS *const m)
 						}
 					else
 						{
-						verbosedebugf("SendQueries:   Retracting Question %##s (%s)",
-							rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
+						verbosedebugf("SendQueries:   Retracting Question %##s (%s)", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
 						m->omsg.h.numQuestions--;
 						}
 					}
-				}
+			}
+
+		if (AddOwnerRecord) limit = m->omsg.data + NormalMaxDNSMessageData - (DNSOpt_Header_Space + DNSOpt_OwnerData_Space);
 
 		// Put our known answer list (either new one from this question or questions, or remainder of old one from last time)
 		while (KnownAnswerList)
 			{
 			CacheRecord *ka = KnownAnswerList;
 			mDNSu32 SecsSinceRcvd = ((mDNSu32)(m->timenow - ka->TimeRcvd)) / mDNSPlatformOneSecond;
-			mDNSu8 *newptr = PutResourceRecordTTL(&m->omsg, queryptr, &m->omsg.h.numAnswers, &ka->resrec, ka->resrec.rroriginalttl - SecsSinceRcvd);
+			mDNSu8 *newptr = PutResourceRecordTTLWithLimit(&m->omsg, queryptr, &m->omsg.h.numAnswers, &ka->resrec, ka->resrec.rroriginalttl - SecsSinceRcvd, limit);
 			if (newptr)
 				{
 				verbosedebugf("SendQueries:   Put %##s (%s) at %d - %d",
 					ka->resrec.name->c, DNSTypeName(ka->resrec.rrtype), queryptr - m->omsg.data, newptr - m->omsg.data);
 				queryptr = newptr;
+				limit = m->omsg.data + NormalMaxDNSMessageData - (AddOwnerRecord ? (DNSOpt_Header_Space + DNSOpt_OwnerData_Space) : 0);
 				KnownAnswerList = ka->NextInKAList;
 				ka->NextInKAList = mDNSNULL;
 				}
@@ -3122,10 +3136,28 @@ mDNSlocal void SendQueries(mDNS *const m)
 				mDNSu8 *newptr = PutResourceRecord(&m->omsg, queryptr, &m->omsg.h.numAuthorities, &rr->resrec);
 				rr->IncludeInProbe = mDNSfalse;
 				if (newptr) queryptr = newptr;
-				else LogMsg("SendQueries:   How did we fail to have space for the Update record %##s (%s)?",
-					rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
+				else LogMsg("SendQueries:   How did we fail to have space for the Update record %s", ARDisplayString(m,rr));
 				}
-		
+
+		if (AddOwnerRecord)
+			{
+			AuthRecord opt;
+			mDNS_SetupResourceRecord(&opt, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
+			opt.resrec.rrclass    = NormalMaxDNSMessageData;
+			opt.resrec.rdlength   = sizeof(rdataOPT);	// One option in this OPT record
+			opt.resrec.rdestimate = sizeof(rdataOPT);
+			opt.resrec.rdata->u.opt[0].opt           = kDNSOpt_Owner;
+			opt.resrec.rdata->u.opt[0].u.owner.vers  = 0;
+			opt.resrec.rdata->u.opt[0].u.owner.seq   = m->SleepSeqNum;
+			opt.resrec.rdata->u.opt[0].u.owner.MAC   = intf->MAC;
+			LogOperation("SendQueries putting %s", ARDisplayString(m, &opt));
+			queryptr = PutResourceRecordTTLWithLimit(&m->omsg, queryptr, &m->omsg.h.numAdditionals,
+				&opt.resrec, opt.resrec.rroriginalttl, m->omsg.data + AbsoluteMaxDNSMessageData);
+			if (!queryptr)
+				LogMsg("SendQueries: How did we fail to have space for the OPT record (%d/%d/%d/%d) %s",
+					m->omsg.h.numQuestions, m->omsg.h.numAnswers, m->omsg.h.numAuthorities, m->omsg.h.numAdditionals, ARDisplayString(m, &opt));
+			}
+
 		if (queryptr > m->omsg.data)
 			{
 			if ((m->omsg.h.flags.b[0] & kDNSFlag0_TC) && m->omsg.h.numQuestions > 1)
@@ -4111,14 +4143,18 @@ mDNSlocal void SendSPSRegistration(mDNS *const m, const NetworkInterfaceInfo *in
 			opt.resrec.rdata->u.opt[0].u.updatelease = DEFAULT_UPDATE_LEASE;
 			opt.resrec.rdata->u.opt[1].opt           = kDNSOpt_Owner;
 			opt.resrec.rdata->u.opt[1].u.owner.vers  = 0;
-			opt.resrec.rdata->u.opt[1].u.owner.seq   = 0;
+			opt.resrec.rdata->u.opt[1].u.owner.seq   = m->SleepSeqNum;
 			opt.resrec.rdata->u.opt[1].u.owner.MAC   = intf->MAC;
 			LogOperation("SendSPSRegistration putting %s", ARDisplayString(m, &opt));
 			p = PutResourceRecordTTLWithLimit(&m->omsg, p, &m->omsg.h.numAdditionals, &opt.resrec, opt.resrec.rroriginalttl, m->omsg.data + AbsoluteMaxDNSMessageData);
-
-			LogOperation("SendSPSRegistration: Sending Update id %5d with %d records to %#a:%d",
-				mDNSVal16(m->omsg.h.id), m->omsg.h.mDNS_numUpdates, &intf->SPSAddr, mDNSVal16(intf->SPSPort));
-			mDNSSendDNSMessage(m, &m->omsg, p, intf->InterfaceID, mDNSNULL, &intf->SPSAddr, intf->SPSPort, mDNSNULL, mDNSNULL);
+			if (p)
+				{
+				LogOperation("SendSPSRegistration: Sending Update id %5d with %d records to %#a:%d",
+					mDNSVal16(m->omsg.h.id), m->omsg.h.mDNS_numUpdates, &intf->SPSAddr, mDNSVal16(intf->SPSPort));
+				mDNSSendDNSMessage(m, &m->omsg, p, intf->InterfaceID, mDNSNULL, &intf->SPSAddr, intf->SPSPort, mDNSNULL, mDNSNULL);
+				}
+			else
+				LogMsg("SendSPSRegistration: Failed to put OPT record (%d updates) %s", m->omsg.h.mDNS_numUpdates, ARDisplayString(m, &opt));
 			}
 		}
 	}
@@ -4218,8 +4254,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 					rr->ImmedAnswer = mDNSInterfaceMark;
 			SendResponses(m);
 			}
-
-		LogOperation("m->SleepState %d", m->SleepState);
+		LogOperation("m->SleepState %d seq %d", m->SleepState, m->SleepSeqNum);
 		}
 	else if (!sleep)
 		{
@@ -4228,7 +4263,12 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 		CacheGroup *cg;
 		CacheRecord *cr;
 
-		m->SleepState = SleepState_Awake;
+		// If we were previously sleeping, but now we're not, increment m->SleepSeqNum to indicate that we're entering a new period of wakefulness
+		if (m->SleepState != SleepState_Awake)
+			{
+			m->SleepState = SleepState_Awake;
+			m->SleepSeqNum++;
+			}
 
 		if (m->SleepProxyServerState == 3)
 			{
@@ -4450,16 +4490,23 @@ mDNSlocal const AuthRecord *FindRRSet(const mDNS *const m, const CacheRecord *co
 //    are members of the same RRSet, then this is not a conflict.
 mDNSlocal mDNSBool PacketRRConflict(const mDNS *const m, const AuthRecord *const our, const CacheRecord *const pktrr)
 	{
-	const AuthRecord *ourset = our->RRSet ? our->RRSet : our;
-
 	// If not supposed to be unique, not a conflict
 	if (!(our->resrec.RecordType & kDNSRecordTypeUniqueMask)) return(mDNSfalse);
 
 	// If a dependent record, not a conflict
 	if (our->DependentOn || MatchDependentOn(m, pktrr, our)) return(mDNSfalse);
+	else
+		{
+		// If the pktrr matches a member of ourset, not a conflict
+		const AuthRecord *ourset = our->RRSet ? our->RRSet : our;
+		const AuthRecord *pktset = FindRRSet(m, pktrr);
+		if (pktset == ourset) return(mDNSfalse);
 
-	// If the pktrr matches a member of ourset, not a conflict
-	if (FindRRSet(m, pktrr) == ourset) return(mDNSfalse);
+		// For records we're proxying, where we don't know the full
+		// relationship between the records, having any matching record
+		// in our AuthRecords list is sufficient evidence of non-conflict
+		if (our->WakeUp.MAC.l[0] && pktset) return(mDNSfalse);
+		}
 
 	// Okay, this is a conflict
 	return(mDNStrue);
@@ -4528,14 +4575,48 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	DNSQuestion **dqp                = &DupQuestions;
 	mDNSs32       delayresponse      = 0;
 	mDNSBool      SendLegacyResponse = mDNSfalse;
-	const mDNSu8 *ptr                = query->data;
+	const mDNSu8 *ptr;
 	mDNSu8       *responseptr        = mDNSNULL;
 	AuthRecord   *rr;
 	int i;
 
 	// ***
-	// *** 1. Parse Question Section and mark potential answers
+	// *** 1. Look in Additional Section for an OPT record
 	// ***
+	ptr = LocateOptRR(query, end, DNSOpt_OwnerData_Space);
+	if (ptr)
+		{
+		ptr = GetLargeResourceRecord(m, query, ptr, end, InterfaceID, kDNSRecordTypePacketAdd, &m->rec);
+		if (m->rec.r.resrec.rrtype == kDNSType_OPT)
+			{
+			const rdataOPT *opt;
+			const rdataOPT *const e = (const rdataOPT *)&m->rec.r.resrec.rdata->u.data[m->rec.r.resrec.rdlength];
+			for (opt = &m->rec.r.resrec.rdata->u.opt[0]; opt < e; opt++)
+				if (opt->opt == kDNSOpt_Owner && opt->u.owner.vers == 0)
+					{
+					m->CurrentRecord = m->ResourceRecords;
+					while (m->CurrentRecord)
+						{
+						rr = m->CurrentRecord;
+						if (mDNSSameEthAddress(&opt->u.owner.MAC, &rr->WakeUp.MAC) && opt->u.owner.seq - rr->WakeUp.seq > 0)
+							{
+							LogOperation("Removing %.6a %d %d %s", &rr->WakeUp, opt->u.owner.seq, rr->WakeUp.seq, ARDisplayString(m, rr));
+							mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
+							}
+						// Mustn't advance m->CurrentRecord until *after* mDNS_Deregister_internal,
+						// because the list may have been changed in that call.
+						if (m->CurrentRecord == rr) // If m->CurrentRecord was not advanced for us, do it now
+							m->CurrentRecord = rr->next;
+						}
+					}
+			}
+		m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
+		}
+
+	// ***
+	// *** 2. Parse Question Section and mark potential answers
+	// ***
+	ptr = query->data;
 	for (i=0; i<query->h.numQuestions; i++)						// For each question...
 		{
 		mDNSBool QuestionNeedsMulticastResponse;
@@ -4649,19 +4730,19 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		}
 
 	// ***
-	// *** 2. Now we can safely build the list of marked answers
+	// *** 3. Now we can safely build the list of marked answers
 	// ***
 	for (rr = m->ResourceRecords; rr; rr=rr->next)				// Now build our list of potential answers
 		if (rr->NR_AnswerTo)									// If we marked the record...
 			AddRecordToResponseList(&nrp, rr, mDNSNULL);		// ... add it to the list
 
 	// ***
-	// *** 3. Add additional records
+	// *** 4. Add additional records
 	// ***
 	AddAdditionalsToResponseList(m, ResponseRecords, &nrp, InterfaceID);
 
 	// ***
-	// *** 4. Parse Answer Section and cancel any records disallowed by Known-Answer list
+	// *** 5. Parse Answer Section and cancel any records disallowed by Known-Answer list
 	// ***
 	for (i=0; i<query->h.numAnswers; i++)						// For each record in the query's answer section...
 		{
@@ -4737,14 +4818,14 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		}
 
 	// ***
-	// *** 5. Cancel any additionals that were added because of now-deleted records
+	// *** 6. Cancel any additionals that were added because of now-deleted records
 	// ***
 	for (rr=ResponseRecords; rr; rr=rr->NextResponse)
 		if (rr->NR_AdditionalTo && !MustSendRecord(rr->NR_AdditionalTo))
 			{ rr->NR_AnswerTo = mDNSNULL; rr->NR_AdditionalTo = mDNSNULL; }
 
 	// ***
-	// *** 6. Mark the send flags on the records we plan to send
+	// *** 7. Mark the send flags on the records we plan to send
 	// ***
 	for (rr=ResponseRecords; rr; rr=rr->NextResponse)
 		{
@@ -4812,7 +4893,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		}
 
 	// ***
-	// *** 7. If we think other machines are likely to answer these questions, set our packet suppression timer
+	// *** 8. If we think other machines are likely to answer these questions, set our packet suppression timer
 	// ***
 	if (delayresponse && (!m->SuppressSending || (m->SuppressSending - m->timenow) < (delayresponse + 49) / 50))
 		{
@@ -4843,7 +4924,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		}
 
 	// ***
-	// *** 8. If query is from a legacy client, or from a new client requesting a unicast reply, then generate a unicast response too
+	// *** 9. If query is from a legacy client, or from a new client requesting a unicast reply, then generate a unicast response too
 	// ***
 	if (SendLegacyResponse)
 		responseptr = GenerateUnicastResponse(query, end, InterfaceID, LegacyQuery, response, ResponseRecords);
@@ -4852,7 +4933,7 @@ exit:
 	m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 	
 	// ***
-	// *** 9. Finally, clear our link chains ready for use next time
+	// *** 10. Finally, clear our link chains ready for use next time
 	// ***
 	while (ResponseRecords)
 		{
@@ -5646,12 +5727,13 @@ exit:
 
 mDNSlocal void SPSRecordCallback(mDNS *const m, AuthRecord *const ar, mStatus result)
 	{
-	if (result) LogOperation("SPS Callback %d %s", result, ARDisplayString(m, ar));
+	if (result && result != mStatus_MemFree)
+		LogOperation("SPS Callback %d %s", result, ARDisplayString(m, ar));
 	if (result == mStatus_NameConflict)
 		{
 		LogMsg("Received Conflicting mDNS -- waking %s %.6a %s",
 			InterfaceNameForID(m, ar->resrec.InterfaceID), &ar->WakeUp, ARDisplayString(m, ar));
-		SendWakeup(m, ar->resrec.InterfaceID, &ar->WakeUp);
+		SendWakeup(m, ar->resrec.InterfaceID, &ar->WakeUp.MAC);
 		}
 	else if (result == mStatus_MemFree)
 		mDNSPlatformMemFree(ar);
@@ -5678,7 +5760,8 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 	if (!m->SleepProxyServerSocket) return;
 	if (!mDNSSameIPPort(dstport, m->SleepProxyServerSocket->port)) return;
 
-	DumpPacket(m, mStatus_NoError, mDNSfalse, "UDP", srcaddr, srcport, dstaddr, dstport, msg, end);
+	if (mDNS_LogLevel >= MDNS_LOG_VERBOSE_DEBUG || LogAllOperations)
+		DumpPacket(m, mStatus_NoError, mDNSfalse, "UDP", srcaddr, srcport, dstaddr, dstport, msg, end);
 
 	ptr = LocateOptRR(msg, end, DNSOpt_LeaseData_Space + DNSOpt_OwnerData_Space);
 	if (ptr)
@@ -5710,14 +5793,14 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 			AuthRecord *ar = mDNSPlatformMemAllocate(sizeof(AuthRecord) - sizeof(RDataBody) + RDLengthMem);
 			if (ar)
 				{
-				mDNSu8 RecordType = m->rec.r.resrec.RecordType & kDNSRecordTypePacketUniqueMask ? kDNSRecordTypeKnownUnique : kDNSRecordTypeShared;
+				mDNSu8 RecordType = m->rec.r.resrec.RecordType & kDNSRecordTypePacketUniqueMask ? kDNSRecordTypeUnique : kDNSRecordTypeShared;
 				m->rec.r.resrec.rrclass &= ~kDNSClass_UniqueRRSet;
 				mDNS_SetupResourceRecord(ar, mDNSNULL, InterfaceID, m->rec.r.resrec.rrtype, m->rec.r.resrec.rroriginalttl, RecordType, SPSRecordCallback, ar);
 				AssignDomainName(&ar->namestorage, m->rec.r.resrec.name);
 				ar->resrec.rdlength = GetRDLength(&m->rec.r.resrec, mDNSfalse);
 				ar->resrec.rdata->MaxRDLength = RDLengthMem;
 				mDNSPlatformMemCopy(ar->resrec.rdata->u.data, m->rec.r.resrec.rdata->u.data, RDLengthMem);
-				ar->WakeUp = owner.MAC;
+				ar->WakeUp = owner;
 				if (m->rec.r.resrec.rrtype == kDNSType_PTR && IsV4ReverseMapDomain(m->rec.r.resrec.name))
 					if (GetIPFromName(&ar->AddressProxy.ip.v4, m->rec.r.resrec.name) == mStatus_NoError)
 						ar->AddressProxy.type = mDNSAddrType_IPv4;
@@ -7729,59 +7812,48 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 					if (rr->resrec.InterfaceID == InterfaceID &&
 						rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, arp->tpa))
 						{
-						LogOperation("Answering ARP from %-15.4a for %-15.4a %s", &arp->spa, &arp->tpa, ARDisplayString(m, rr));
-						SendARP(m, 2, rr, arp->tpa.b, arp->sha.b, arp->spa.b, arp->sha.b);
+						if (rr->ProbeCount)
+							LogOperation("Ignoring  ARP from %-15.4a for %-15.4a %s", &arp->spa, &arp->tpa, ARDisplayString(m, rr));
+						else
+							{
+							LogOperation("Answering ARP from %-15.4a for %-15.4a %s", &arp->spa, &arp->tpa, ARDisplayString(m, rr));
+							SendARP(m, 2, rr, arp->tpa.b, arp->sha.b, arp->spa.b, arp->sha.b);
+							}
 						}
 
 		// Check for conflicting ARP packets (Sender MAC address is not our MAC address)
 		// If the sender hardware address is *not* the original owner, then this is a conflct,
 		// and we need to wake the sleeping machine to handle it.
-		// If the sender hardware address *is* the original owner, then this signals that
-		// the machine has awoken, and we need to clear any records we were holding for it
-		if (!mDNSSameEthAddress(&arp->sha, &intf->MAC))
+		if (mDNSSameEthAddress(&arp->sha, &intf->MAC))
+			debugf("ARP from self for %.4a", &arp->tpa);
+		else
 			{
 			for (rr = m->ResourceRecords; rr; rr=rr->next)
 				if (rr->resrec.InterfaceID == InterfaceID &&
 					rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, arp->spa))
 					{
-					rr->AnnounceCount = 0;
-					if (!mDNSSameEthAddress(&arp->sha, &rr->WakeUp))
+					// We reset ProbeCount, so we'll suppress our own answers for a while, to avoid generating ARP conflicts with a waking machine.
+					// If the machine does wake properly then we'll discard our records when we see the first new mDNS probe from that machine.
+					// If it does not wake (perhaps we just picked up a stray delayed packet sent before it went to sleep) then we'll transition
+					// out of probing state and start answering ARPs again.
+					rr->resrec.RecordType = kDNSRecordTypeUnique;
+					rr->ProbeCount    = DefaultProbeCountForTypeUnique;
+					rr->AnnounceCount = InitialAnnounceCount;
+					InitializeLastAPTime(m, rr, DefaultProbeIntervalForTypeUnique);
+					if (!mDNSSameEthAddress(&arp->sha, &rr->WakeUp.MAC))
 						{
 						LogMsg("Received Conflicting ARP -- waking %s %.6a %s",
-							InterfaceNameForID(m, rr->resrec.InterfaceID), &rr->WakeUp, ARDisplayString(m, rr));
-						SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp);
+							InterfaceNameForID(m, rr->resrec.InterfaceID), &rr->WakeUp.MAC, ARDisplayString(m, rr));
+						SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.MAC);
 						}
 					else
 						{
-						mDNSEthAddr w = rr->WakeUp;
-						if (mDNSSameIPv4Address(arp->spa, arp->tpa))
-							LogOperation("Received ARP Announcement from owner %.4a -- removing %.6a %s",
-								&arp->spa, &w, ARDisplayString(m, rr));
-						else
-							LogOperation("Received ARP Request from owner %.4a for %.4a -- removing %.6a %s",
-								&arp->spa, &arp->tpa, &w, ARDisplayString(m, rr));
-
-						m->CurrentRecord = m->ResourceRecords;
-						while (m->CurrentRecord)
-							{
-							rr = m->CurrentRecord;
-							if (mDNSSameEthAddress(&w, &rr->WakeUp))
-								{
-								LogOperation("Removing %.6a %s", &rr->WakeUp, ARDisplayString(m, rr));
-								mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
-								}
-							// Mustn't advance m->CurrentRecord until *after* mDNS_Deregister_internal,
-							// because the list may have been changed in that call.
-							if (m->CurrentRecord == rr) // If m->CurrentRecord was not advanced for us, do it now
-								m->CurrentRecord = rr->next;
-							}
-						// We may have modified our ResourceRecords list, so reset rr back to the start and scan again
-						rr = m->ResourceRecords;
+						LogOperation("Received  ARP %s owner %.4a for %.4a -- %.6a %s",
+							mDNSSameIPv4Address(arp->spa, arp->tpa) ? "Announcement" : "Request from",
+							&arp->spa, &arp->tpa, &rr->WakeUp.MAC, ARDisplayString(m, rr));
 						}
 					}
 			}
-		else
-			LogOperation("ARP from self for %.4a", &arp->tpa);
 
 		mDNS_Unlock(m);
 		}
@@ -7852,7 +7924,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 						{
 						const mDNSu8 *const tp = (ip->protocol == 6) ? (mDNSu8 *)"\x4_tcp" : (mDNSu8 *)"\x4_udp";
 						for (r2 = m->ResourceRecords; r2; r2=r2->next)
-							if (r2->resrec.InterfaceID == InterfaceID && mDNSSameEthAddress(&r2->WakeUp, &rr->WakeUp) &&
+							if (r2->resrec.InterfaceID == InterfaceID && mDNSSameEthAddress(&r2->WakeUp.MAC, &rr->WakeUp.MAC) &&
 								r2->resrec.rrtype == kDNSType_SRV && mDNSSameIPPort(r2->resrec.rdata->u.srv.port, port) &&
 								SameDomainLabel(SkipLeadingLabels(r2->resrec.name, 2)->c, tp))
 								break;
@@ -7861,12 +7933,12 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 							{
 							rr->AnnounceCount = 0;
 							LogMsg("Waking host at %s %.4a %.6a for %s",
-								InterfaceNameForID(m, rr->resrec.InterfaceID), &ip->dst, &rr->WakeUp, ARDisplayString(m, r2));
-							SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp);
+								InterfaceNameForID(m, rr->resrec.InterfaceID), &ip->dst, &rr->WakeUp.MAC, ARDisplayString(m, r2));
+							SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.MAC);
 							}
 						else
 							LogOperation("Sleeping host at %s %.4a %.6a has no service on %#s %d",
-								InterfaceNameForID(m, rr->resrec.InterfaceID), &ip->dst, &rr->WakeUp, tp, mDNSVal16(port));
+								InterfaceNameForID(m, rr->resrec.InterfaceID), &ip->dst, &rr->WakeUp.MAC, tp, mDNSVal16(port));
 						}
 				mDNS_Unlock(m);
 				}
@@ -8010,6 +8082,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->RandomReconfirmDelay    = 0;
 	m->PktNum                  = 0;
 	m->SleepState              = SleepState_Awake;
+	m->SleepSeqNum             = 0;
 
 	// These fields only required for mDNS Searcher...
 	m->Questions               = mDNSNULL;
