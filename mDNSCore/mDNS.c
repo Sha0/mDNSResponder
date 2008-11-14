@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.856  2008/11/14 21:08:28  cheshire
+Only put owner option in query packet if we have a non-zero MAC address to put
+Only process owner options in received query packets if the MAC address in the option is non-zero
+
 Revision 1.855  2008/11/14 02:29:54  cheshire
 If Sleep Proxy client fails to renew proxy records before they expire, remove them from our m->ResourceRecords list
 
@@ -3091,7 +3095,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 						queryptr       = newptr;
 						limit          = m->omsg.data + NormalMaxDNSMessageData;
 						answerforecast = forecast;
-						AddOwnerRecord = mDNStrue;
+						if (!mDNSEthAddressIsZero(intf->MAC)) AddOwnerRecord = mDNStrue;
 						rr->SendRNow = (rr->resrec.InterfaceID) ? mDNSNULL : GetNextActiveInterfaceID(intf);
 						rr->IncludeInProbe = mDNStrue;
 						verbosedebugf("SendQueries:   Put Question %##s (%s) probecount %d",
@@ -4622,7 +4626,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 			const rdataOPT *opt;
 			const rdataOPT *const e = (const rdataOPT *)&m->rec.r.resrec.rdata->u.data[m->rec.r.resrec.rdlength];
 			for (opt = &m->rec.r.resrec.rdata->u.opt[0]; opt < e; opt++)
-				if (opt->opt == kDNSOpt_Owner && opt->u.owner.vers == 0)
+				if (opt->opt == kDNSOpt_Owner && opt->u.owner.vers == 0 && !mDNSEthAddressIsZero(opt->u.owner.MAC))
 					{
 					m->CurrentRecord = m->ResourceRecords;
 					while (m->CurrentRecord)
