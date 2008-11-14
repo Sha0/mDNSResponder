@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.581  2008/11/14 21:01:26  cheshire
+Log a warning if we fail to get a MAC address for an interface
+
 Revision 1.580  2008/11/14 02:16:15  cheshire
 Clean up NetworkChanged handling
 
@@ -2541,6 +2544,8 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 	i->ifinfo.McastTxRx   = mDNSfalse; // For now; will be set up later at the end of UpdateInterfaceList
 	i->ifinfo.NetWake     = OSXVers >= 10 || (SystemNetWake && !bssid.l[0]);
 	GetMAC(&i->ifinfo.MAC, scope_id);
+	if (mDNSEthAddressIsZero(i->ifinfo.MAC) && !(ifa->ifa_flags & IFF_LOOPBACK))
+		LogMsg("AddInterfaceToList: MAC address for %d %s %#a is zero", scope_id, i->ifinfo.ifname, &ip);
 
 	i->next            = mDNSNULL;
 	i->m               = m;
