@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.515  2008/11/14 20:59:41  cheshire
+Added mDNSEthAddressIsZero(A) macro
+
 Revision 1.514  2008/11/14 02:17:41  cheshire
 Added NextScheduledSPS task scheduling variable
 
@@ -2744,11 +2747,12 @@ extern mDNSBool mDNSv4AddrIsRFC1918(mDNSv4Addr *addr);  // returns true for RFC1
 #define mDNSSameIPv6Address(A,B) ((A).l[0] == (B).l[0] && (A).l[1] == (B).l[1] && (A).l[2] == (B).l[2] && (A).l[3] == (B).l[3])
 #define mDNSSameEthAddress(A,B)  ((A)->w[0] == (B)->w[0] && (A)->w[1] == (B)->w[1] && (A)->w[2] == (B)->w[2])
 
-#define mDNSIPPortIsZero(A)      ((A).NotAnInteger == 0)
-#define mDNSOpaque16IsZero(A)    ((A).NotAnInteger == 0)
-#define mDNSOpaque64IsZero(A)    (((A)->l[0] | (A)->l[1]) == 0)
-#define mDNSIPv4AddressIsZero(A) ((A).NotAnInteger == 0)
+#define mDNSIPPortIsZero(A)      ((A).NotAnInteger                            == 0)
+#define mDNSOpaque16IsZero(A)    ((A).NotAnInteger                            == 0)
+#define mDNSOpaque64IsZero(A)    (((A)->l[0] | (A)->l[1]                    ) == 0)
+#define mDNSIPv4AddressIsZero(A) ((A).NotAnInteger                            == 0)
 #define mDNSIPv6AddressIsZero(A) (((A).l[0] | (A).l[1] | (A).l[2] | (A).l[3]) == 0)
+#define mDNSEthAddressIsZero(A)  (((A).w[0] | (A).w[1] | (A).w[2]           ) == 0)
 
 #define mDNSIPv4AddressIsOnes(A) ((A).NotAnInteger == 0xFFFFFFFF)
 #define mDNSIPv6AddressIsOnes(A) (((A).l[0] & (A).l[1] & (A).l[2] & (A).l[3]) == 0xFFFFFFFF)
