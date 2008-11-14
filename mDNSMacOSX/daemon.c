@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.394  2008/11/14 02:20:03  cheshire
+Include m->NextScheduledSPS in task scheduling calculations
+
 Revision 1.393  2008/11/14 01:22:38  cheshire
 Include SPS-registered records when computing the next required wakeup time
 
@@ -2466,6 +2469,8 @@ mDNSlocal void ShowTaskSchedulingError(mDNS *const m)
 		LogMsg("Task Scheduling Error: m->NextScheduledResponse %d", m->timenow - m->NextScheduledResponse);
 	if (m->timenow - m->NextScheduledNATOp >= 0)
 		LogMsg("Task Scheduling Error: m->NextScheduledNATOp %d",    m->timenow - m->NextScheduledNATOp);
+	if (m->timenow - m->NextScheduledSPS >= 0)
+		LogMsg("Task Scheduling Error: m->NextScheduledSPS %d",      m->timenow - m->NextScheduledSPS);
 
 	mDNS_Unlock(&mDNSStorage);
 	}

@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.224  2008/11/14 02:20:03  cheshire
+Include m->NextScheduledSPS in task scheduling calculations
+
 Revision 1.223  2008/11/14 01:19:03  cheshire
 Initialize TimeRcvd and TimeExpire fields in AuthRecord_struct
 
@@ -2812,6 +2815,7 @@ mDNSlocal mDNSs32 GetNextScheduledEvent(const mDNS *const m)
 	if (e - m->NextScheduledNATOp    > 0) e = m->NextScheduledNATOp;
 #endif
 	if (e - m->NextCacheCheck        > 0) e = m->NextCacheCheck;
+	if (e - m->NextScheduledSPS      > 0) e = m->NextScheduledSPS;
 
 	if (m->SuppressSending)
 		{
