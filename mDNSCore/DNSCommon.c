@@ -17,9 +17,12 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.223  2008/11/14 01:19:03  cheshire
+Initialize TimeRcvd and TimeExpire fields in AuthRecord_struct
+
 Revision 1.222  2008/11/14 00:00:53  cheshire
 After client machine wakes up, Sleep Proxy machine need to remove any records
-it was temporarily holding as proxy for that client
+it was temporarily holding as proxy that client
 
 Revision 1.221  2008/11/13 19:06:02  cheshire
 Added code to put, get, and display rdataOPT properly
@@ -1413,8 +1416,11 @@ mDNSexport void mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mD
 	rr->AutoTarget        = Target_Manual;
 	rr->AllowRemoteQuery  = mDNSfalse;
 	rr->ForceMCast        = mDNSfalse;
-	rr->AddressProxy      = zeroAddr;
+
 	rr->WakeUp            = zeroOwner;
+	rr->AddressProxy      = zeroAddr;
+	rr->TimeRcvd          = 0;
+	rr->TimeExpire        = 0;
 
 	// Field Group 3: Transient state for Authoritative Records (set in mDNS_Register_internal)
 	// Field Group 4: Transient uDNS state for Authoritative Records (set in mDNS_Register_internal)
