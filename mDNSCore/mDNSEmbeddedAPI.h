@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.514  2008/11/14 02:17:41  cheshire
+Added NextScheduledSPS task scheduling variable
+
 Revision 1.513  2008/11/14 00:47:19  cheshire
 Added TimeRcvd and TimeExpire fields to AuthRecord_struct
 
@@ -2241,13 +2244,14 @@ struct mDNS_struct
 	mDNSs32  timenow;					// The time that this particular activation of the mDNS code started
 	mDNSs32  timenow_last;				// The time the last time we ran
 	mDNSs32  NextScheduledEvent;		// Derived from values below
-	mDNSs32  ShutdownTime;				// Set when we're shutting down, allows us to skip some unnecessary steps
+	mDNSs32  ShutdownTime;				// Set when we're shutting down; allows us to skip some unnecessary steps
 	mDNSs32  SuppressSending;			// Don't send *any* packets during this time
 	mDNSs32  NextCacheCheck;			// Next time to refresh cache record before it expires
 	mDNSs32  NextScheduledQuery;		// Next time to send query in its exponential backoff sequence
 	mDNSs32  NextScheduledProbe;		// Next time to probe for new authoritative record
 	mDNSs32  NextScheduledResponse;		// Next time to send authoritative record(s) in responses
 	mDNSs32  NextScheduledNATOp;		// Next time to send NAT-traversal packets
+	mDNSs32  NextScheduledSPS;			// Next time to purge expiring Sleep Proxy records
 	mDNSs32  RandomQueryDelay;			// For de-synchronization of query packets on the wire
 	mDNSu32  RandomReconfirmDelay;		// For de-synchronization of reconfirmation queries on the wire
 	mDNSs32  PktNum;					// Unique sequence number assigned to each received packet
