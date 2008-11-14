@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.225  2008/11/14 21:56:31  cheshire
+Moved debugging routine ShowTaskSchedulingError() from daemon.c into DNSCommon.c
+
 Revision 1.224  2008/11/14 02:20:03  cheshire
 Include m->NextScheduledSPS in task scheduling calculations
 
@@ -25,7 +28,7 @@ Initialize TimeRcvd and TimeExpire fields in AuthRecord_struct
 
 Revision 1.222  2008/11/14 00:00:53  cheshire
 After client machine wakes up, Sleep Proxy machine need to remove any records
-it was temporarily holding as proxy that client
+it was temporarily holding as proxy for that client
 
 Revision 1.221  2008/11/13 19:06:02  cheshire
 Added code to put, get, and display rdataOPT properly
@@ -2817,18 +2820,64 @@ mDNSlocal mDNSs32 GetNextScheduledEvent(const mDNS *const m)
 	if (e - m->NextCacheCheck        > 0) e = m->NextCacheCheck;
 	if (e - m->NextScheduledSPS      > 0) e = m->NextScheduledSPS;
 
-	if (m->SuppressSending)
+	if (m->SleepState != SleepState_Sleeping)
 		{
-		if (e - m->SuppressSending       > 0) e = m->SuppressSending;
-		}
-	else
-		{
-		if (e - m->NextScheduledQuery    > 0) e = m->NextScheduledQuery;
-		if (e - m->NextScheduledProbe    > 0) e = m->NextScheduledProbe;
-		if (e - m->NextScheduledResponse > 0) e = m->NextScheduledResponse;
+		if (m->SuppressSending)
+			{
+			if (e - m->SuppressSending       > 0) e = m->SuppressSending;
+			}
+		else
+			{
+			if (e - m->NextScheduledQuery    > 0) e = m->NextScheduledQuery;
+			if (e - m->NextScheduledProbe    > 0) e = m->NextScheduledProbe;
+			if (e - m->NextScheduledResponse > 0) e = m->NextScheduledResponse;
+			}
 		}
 
 	return(e);
+	}
+
+mDNSexport void ShowTaskSchedulingError(mDNS *const m)
+	{
+	mDNS_Lock(m);
+
+	LogMsg("Task Scheduling Error: Continuously busy for more than a second");
+	
+	// Note: To accurately diagnose *why* we're busy, the debugging code here needs to mirror the logic in GetNextScheduledEvent above
+
+	if (m->NewQuestions && (!m->NewQuestions->DelayAnswering || m->timenow - m->NewQuestions->DelayAnswering >= 0))
+		LogMsg("Task Scheduling Error: NewQuestion %##s (%s)",
+			m->NewQuestions->qname.c, DNSTypeName(m->NewQuestions->qtype));
+
+	if (m->NewLocalOnlyQuestions)
+		LogMsg("Task Scheduling Error: NewLocalOnlyQuestions %##s (%s)",
+			m->NewLocalOnlyQuestions->qname.c, DNSTypeName(m->NewLocalOnlyQuestions->qtype));
+
+	if (m->NewLocalRecords && LocalRecordReady(m->NewLocalRecords))
+		LogMsg("Task Scheduling Error: NewLocalRecords %s", ARDisplayString(m, m->NewLocalRecords));
+
+	if (m->timenow - m->NextScheduledEvent    >= 0)
+		LogMsg("Task Scheduling Error: m->NextScheduledEvent %d",    m->timenow - m->NextScheduledEvent);
+	if (m->SuppressSending && m->timenow - m->SuppressSending >= 0)
+		LogMsg("Task Scheduling Error: m->SuppressSending %d",       m->timenow - m->SuppressSending);
+	if (m->timenow - m->NextCacheCheck        >= 0)
+		LogMsg("Task Scheduling Error: m->NextCacheCheck %d",        m->timenow - m->NextCacheCheck);
+	if (m->timenow - m->NextScheduledQuery    >= 0)
+		LogMsg("Task Scheduling Error: m->NextScheduledQuery %d",    m->timenow - m->NextScheduledQuery);
+	if (m->timenow - m->NextScheduledProbe    >= 0)
+		LogMsg("Task Scheduling Error: m->NextScheduledProbe %d",    m->timenow - m->NextScheduledProbe);
+	if (m->timenow - m->NextScheduledResponse >= 0)
+		LogMsg("Task Scheduling Error: m->NextScheduledResponse %d", m->timenow - m->NextScheduledResponse);
+	if (m->timenow - m->NextScheduledNATOp    >= 0)
+		LogMsg("Task Scheduling Error: m->NextScheduledNATOp %d",    m->timenow - m->NextScheduledNATOp);
+	if (m->timenow - m->NextScheduledSPS      >= 0)
+		LogMsg("Task Scheduling Error: m->NextScheduledSPS %d",      m->timenow - m->NextScheduledSPS);
+#ifndef UNICAST_DISABLED
+	if (m->timenow - m->NextuDNSEvent         >= 0)
+		LogMsg("Task Scheduling Error: NextuDNSEvent %d",            m->timenow - m->NextuDNSEvent);
+#endif
+
+	mDNS_Unlock(m);
 	}
 
 mDNSexport void mDNS_Unlock_(mDNS *const m)

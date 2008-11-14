@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.68  2008/11/14 21:56:31  cheshire
+Moved debugging routine ShowTaskSchedulingError() from daemon.c into DNSCommon.c
+
 Revision 1.67  2008/11/13 19:05:09  cheshire
 Added definition of LocateOptRR()
 
@@ -362,6 +365,7 @@ extern mStatus mDNSSendDNSMessage(mDNS *const m, DNSMessage *const msg, mDNSu8 *
 #pragma mark - RR List Management & Task Management
 #endif
 
+extern void ShowTaskSchedulingError(mDNS *const m);
 extern void mDNS_Lock_(mDNS *const m);
 extern void mDNS_Unlock_(mDNS *const m);
 

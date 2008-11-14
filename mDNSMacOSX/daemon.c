@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.395  2008/11/14 21:56:31  cheshire
+Moved debugging routine ShowTaskSchedulingError() from daemon.c into DNSCommon.c
+
 Revision 1.394  2008/11/14 02:20:03  cheshire
 Include m->NextScheduledSPS in task scheduling calculations
 
@@ -2437,44 +2440,6 @@ mDNSlocal mDNSs32 mDNSDaemonIdle(mDNS *const m)
 	return(nextevent);
 	}
 
-mDNSlocal void ShowTaskSchedulingError(mDNS *const m)
-	{
-	mDNS_Lock(m);
-
-	LogMsg("Task Scheduling Error: Continuously busy for more than a second");
-	
-	// Note: To accurately diagnose *why* we're busy, the debugging code here needs to mirror the logic in GetNextScheduledEvent
-
-	if (m->NewQuestions && (!m->NewQuestions->DelayAnswering || m->timenow - m->NewQuestions->DelayAnswering >= 0))
-		LogMsg("Task Scheduling Error: NewQuestion %##s (%s)",
-			m->NewQuestions->qname.c, DNSTypeName(m->NewQuestions->qtype));
-	if (m->NewLocalOnlyQuestions)
-		LogMsg("Task Scheduling Error: NewLocalOnlyQuestions %##s (%s)",
-			m->NewLocalOnlyQuestions->qname.c, DNSTypeName(m->NewLocalOnlyQuestions->qtype));
-	if (m->NewLocalRecords && LocalRecordReady(m->NewLocalRecords))
-		LogMsg("Task Scheduling Error: NewLocalRecords %s", ARDisplayString(m, m->NewLocalRecords));
-	if (m->SuppressSending && m->timenow - m->SuppressSending >= 0)
-		LogMsg("Task Scheduling Error: m->SuppressSending %d",       m->timenow - m->SuppressSending);
-#ifndef UNICAST_DISABLED
-	if (m->timenow - m->NextuDNSEvent         >= 0)
-		LogMsg("Task Scheduling Error: NextuDNSEvent %d",            m->timenow - m->NextuDNSEvent);
-#endif
-	if (m->timenow - m->NextCacheCheck        >= 0)
-		LogMsg("Task Scheduling Error: m->NextCacheCheck %d",        m->timenow - m->NextCacheCheck);
-	if (m->timenow - m->NextScheduledQuery    >= 0)
-		LogMsg("Task Scheduling Error: m->NextScheduledQuery %d",    m->timenow - m->NextScheduledQuery);
-	if (m->timenow - m->NextScheduledProbe    >= 0)
-		LogMsg("Task Scheduling Error: m->NextScheduledProbe %d",    m->timenow - m->NextScheduledProbe);
-	if (m->timenow - m->NextScheduledResponse >= 0)
-		LogMsg("Task Scheduling Error: m->NextScheduledResponse %d", m->timenow - m->NextScheduledResponse);
-	if (m->timenow - m->NextScheduledNATOp >= 0)
-		LogMsg("Task Scheduling Error: m->NextScheduledNATOp %d",    m->timenow - m->NextScheduledNATOp);
-	if (m->timenow - m->NextScheduledSPS >= 0)
-		LogMsg("Task Scheduling Error: m->NextScheduledSPS %d",      m->timenow - m->NextScheduledSPS);
-
-	mDNS_Unlock(&mDNSStorage);
-	}
-
 mDNSlocal mDNSBool ReadyForSleep(mDNS *m)
 	{
 	(void)m;
@@ -2638,8 +2603,6 @@ mDNSlocal void * KQueueLoop(void *m_param)
 			if (ready || now - m->p->SleepLimit >= 0)
 				{
 				int result = kIOReturnSuccess;
-				LogOperation("IOAllowPowerChange(%lX) %s at %ld (%d ticks remaining)", m->p->SleepCookie,
-					ready ? "ready for sleep" : "giving up", now, m->p->SleepLimit - now);
 				m->p->SleepLimit = 0;
 
 				// First check if any of our interfaces support wakeup
@@ -2679,16 +2642,25 @@ mDNSlocal void * KQueueLoop(void *m_param)
 						// Additionally, if our power request is deemed "too soon" for the machine to get to
 						// sleep and wake back up again, we attempt to cancel the sleep request, since the
 						// implication is that the system won't manage to be awake again at the time we need it.
-						do interval += (interval < mDNSPlatformOneSecond*20) ? mDNSPlatformOneSecond : ((interval+3) / 4);
-						while (mDNSPowerRequest(1, interval / mDNSPlatformOneSecond) == kIOReturnNotReady);
+						do
+							{
+							interval += (interval < mDNSPlatformOneSecond*20) ? mDNSPlatformOneSecond : ((interval+3) / 4);
+							result = mDNSPowerRequest(1, interval / mDNSPlatformOneSecond);
+							}
+						while (result == kIOReturnNotReady);
 						}
 
-					LogMsg("Requested wakeup in %d seconds", interval / mDNSPlatformOneSecond);
+					if (result) LogMsg("Requested wakeup in %d seconds unsuccessful: %d %X", result, result);
 					m->p->WakeAtUTC = mDNSPlatformUTC() + interval / mDNSPlatformOneSecond;
 					}
 
 				m->SleepState = SleepState_Sleeping;
 				mDNSMacOSXNetworkChanged(m);	// Clear our interface list to empty state, ready to go to sleep
+
+				LogOperation("%s(%lX) %s at %ld (%d ticks remaining)",
+					(result == kIOReturnSuccess) ? "IOAllowPowerChange" : "IOCancelPowerChange",
+					m->p->SleepCookie, ready ? "ready for sleep" : "giving up", now, m->p->SleepLimit - now);
+
 				if (result == kIOReturnSuccess) IOAllowPowerChange (m->p->PowerConnection, m->p->SleepCookie);
 				else                            IOCancelPowerChange(m->p->PowerConnection, m->p->SleepCookie);
 				}
