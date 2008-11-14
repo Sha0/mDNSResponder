@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.582  2008/11/14 22:59:09  cheshire
+When on a network with more than one subnet overlayed on a single physical link, don't make local ARP
+entries for hosts that are on our physical link but not on our logical subnet -- it confuses the kernel
+
 Revision 1.581  2008/11/14 21:01:26  cheshire
 Log a warning if we fail to get a MAC address for an interface
 
@@ -2081,9 +2085,24 @@ mDNSexport void mDNSPlatformSendRawPacket(const void *const msg, const mDNSu8 *c
 			if (b[0xC] == 0x08 && b[0xD] == 0x06)
 				if (mDNSPlatformMemSame(b, onesEthAddr.b, 6) || mDNSPlatformMemSame(b, info->ifinfo.MAC.b, 6))
 					{
-					int result = mDNSSetARP(info->scope_id, b+0x1C);
-					if (result) LogMsg("Set local ARP entry for %s %.4a failed: %d", info->ifinfo.ifname, b+0x1C, result);
-					else LogOperation ("Set local ARP entry for %s %.4a",            info->ifinfo.ifname, b+0x1C);
+					mDNSv4Addr addr = { { b[0x1C], b[0x1D], b[0x1E], b[0x1F] } };
+					mDNSBool makearp = mDNSv4AddressIsLinkLocal(&addr);
+					if (!makearp)
+						{
+						NetworkInterfaceInfoOSX *i;
+						for (i = info->m->p->InterfaceList; i; i = i->next)
+							if (i->Exists && i->ifinfo.InterfaceID == InterfaceID && i->ifinfo.ip.type == mDNSAddrType_IPv4)
+								if (((i->ifinfo.ip.ip.v4.NotAnInteger ^ addr.NotAnInteger) & i->ifinfo.mask.ip.v4.NotAnInteger) == 0)
+									makearp = mDNStrue;
+						}
+					if (!makearp)
+						LogOperation ("Don't need ARP entry for %s %.4a",            info->ifinfo.ifname, b+0x1C);
+					else
+						{
+						int result = mDNSSetARP(info->scope_id, b+0x1C);
+						if (result) LogMsg("Set  local ARP entry for %s %.4a failed: %d", info->ifinfo.ifname, b+0x1C, result);
+						else LogOperation ("Set  local ARP entry for %s %.4a",            info->ifinfo.ifname, b+0x1C);
+						}
 					}
 			}
 		}
