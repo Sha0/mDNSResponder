@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.857  2008/11/14 22:55:18  cheshire
+Fixed log messages
+
 Revision 1.856  2008/11/14 21:08:28  cheshire
 Only put owner option in query packet if we have a non-zero MAC address to put
 Only process owner options in received query packets if the MAC address in the option is non-zero
@@ -47,7 +50,7 @@ If Sleep Proxy client fails to renew proxy records before they expire, remove th
 
 Revision 1.854  2008/11/14 00:00:53  cheshire
 After client machine wakes up, Sleep Proxy machine need to remove any records
-it was temporarily holding as proxy that client
+it was temporarily holding as proxy for that client
 
 Revision 1.853  2008/11/13 19:07:30  cheshire
 Added code to put OPT record, containing owner and lease lifetime, into SPS registration packet
@@ -3972,7 +3975,7 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 						}
 					else										// else proxy record expired, so remove it
 						{
-						LogOperation("mDNS_Execute: Removing %.6a %s", &rr->WakeUp, ARDisplayString(m, rr));
+						LogOperation("mDNS_Execute: Removing %.6a %s", &rr->WakeUp.MAC, ARDisplayString(m, rr));
 						mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
 						}
 					}
@@ -4635,7 +4638,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 						if (mDNSSameEthAddress(&opt->u.owner.MAC, &rr->WakeUp.MAC))
 							if (opt->u.owner.seq != rr->WakeUp.seq || m->timenow - rr->TimeRcvd > mDNSPlatformOneSecond * 60)
 								{
-								LogOperation("ProcessQuery: Removing %.6a %d %d %s", &rr->WakeUp, opt->u.owner.seq, rr->WakeUp.seq, ARDisplayString(m, rr));
+								LogOperation("ProcessQuery: Removing %.6a %d %d %s", &rr->WakeUp.MAC, opt->u.owner.seq, rr->WakeUp.seq, ARDisplayString(m, rr));
 								mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
 								}
 						// Mustn't advance m->CurrentRecord until *after* mDNS_Deregister_internal,
