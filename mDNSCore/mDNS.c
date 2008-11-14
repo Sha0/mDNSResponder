@@ -38,9 +38,12 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.855  2008/11/14 02:29:54  cheshire
+If Sleep Proxy client fails to renew proxy records before they expire, remove them from our m->ResourceRecords list
+
 Revision 1.854  2008/11/14 00:00:53  cheshire
 After client machine wakes up, Sleep Proxy machine need to remove any records
-it was temporarily holding as proxy for that client
+it was temporarily holding as proxy that client
 
 Revision 1.853  2008/11/13 19:07:30  cheshire
 Added code to put OPT record, containing owner and lease lifetime, into SPS registration packet
@@ -3949,6 +3952,33 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 				}
 			}
 	
+		if (m->timenow - m->NextScheduledSPS >= 0)
+			{
+			m->NextScheduledSPS = m->timenow + 0x3FFFFFFF;
+			m->CurrentRecord = m->ResourceRecords;
+			while (m->CurrentRecord)
+				{
+				AuthRecord *rr = m->CurrentRecord;
+				if (rr->WakeUp.MAC.l[0])
+					{
+					if (m->timenow - rr->TimeExpire < 0)		// If proxy record not expired yet, update m->NextScheduledSPS
+						{
+						if (m->NextScheduledSPS - rr->TimeExpire > 0)
+							m->NextScheduledSPS = rr->TimeExpire;
+						}
+					else										// else proxy record expired, so remove it
+						{
+						LogOperation("mDNS_Execute: Removing %.6a %s", &rr->WakeUp, ARDisplayString(m, rr));
+						mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
+						}
+					}
+				// Mustn't advance m->CurrentRecord until *after* mDNS_Deregister_internal,
+				// because the list may have been changed in that call.
+				if (m->CurrentRecord == rr) // If m->CurrentRecord was not advanced for us, do it now
+					m->CurrentRecord = rr->next;
+				}
+			}
+
 		// 4. See if we can answer any of our new local questions from the cache
 		for (i=0; m->NewQuestions && i<1000; i++)
 			{
@@ -4598,11 +4628,12 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 					while (m->CurrentRecord)
 						{
 						rr = m->CurrentRecord;
-						if (mDNSSameEthAddress(&opt->u.owner.MAC, &rr->WakeUp.MAC) && opt->u.owner.seq - rr->WakeUp.seq > 0)
-							{
-							LogOperation("Removing %.6a %d %d %s", &rr->WakeUp, opt->u.owner.seq, rr->WakeUp.seq, ARDisplayString(m, rr));
-							mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
-							}
+						if (mDNSSameEthAddress(&opt->u.owner.MAC, &rr->WakeUp.MAC))
+							if (opt->u.owner.seq != rr->WakeUp.seq || m->timenow - rr->TimeRcvd > mDNSPlatformOneSecond * 60)
+								{
+								LogOperation("ProcessQuery: Removing %.6a %d %d %s", &rr->WakeUp, opt->u.owner.seq, rr->WakeUp.seq, ARDisplayString(m, rr));
+								mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
+								}
 						// Mustn't advance m->CurrentRecord until *after* mDNS_Deregister_internal,
 						// because the list may have been changed in that call.
 						if (m->CurrentRecord == rr) // If m->CurrentRecord was not advanced for us, do it now
@@ -5745,6 +5776,8 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 	const mDNSInterfaceID InterfaceID)
 	{
 	int i;
+	AuthRecord opt;
+	mDNSu8 *p;
 	OwnerOptData owner;
 	mDNSu32 updatelease = 0;
 	const mDNSu8 *ptr;
@@ -5769,12 +5802,12 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 		ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAdd, &m->rec);
 		if (ptr && m->rec.r.resrec.rrtype == kDNSType_OPT)
 			{
-			const rdataOPT *opt;
+			const rdataOPT *o;
 			const rdataOPT *const e = (const rdataOPT *)&m->rec.r.resrec.rdata->u.data[m->rec.r.resrec.rdlength];
-			for (opt = &m->rec.r.resrec.rdata->u.opt[0]; opt < e; opt++)
+			for (o = &m->rec.r.resrec.rdata->u.opt[0]; o < e; o++)
 				{
-				if      (opt->opt == kDNSOpt_Lease)                           updatelease = opt->u.updatelease;
-				else if (opt->opt == kDNSOpt_Owner && opt->u.owner.vers == 0) owner       = opt->u.owner;
+				if      (o->opt == kDNSOpt_Lease)                         updatelease = o->u.updatelease;
+				else if (o->opt == kDNSOpt_Owner && o->u.owner.vers == 0) owner       = o->u.owner;
 				}
 			}
 		m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
@@ -5782,12 +5815,17 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 
 	if (!updatelease || !owner.MAC.l[0]) return;
 
+	if (updatelease > 24 * 60 * 60)
+		updatelease = 24 * 60 * 60;
+
+	if (updatelease > 0x40000000UL / mDNSPlatformOneSecond)
+		updatelease = 0x40000000UL / mDNSPlatformOneSecond;
+
 	ptr = LocateAuthorities(msg, end);
 	for (i = 0; i < msg->h.mDNS_numUpdates && ptr && ptr < end; i++)
 		{
 		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, kDNSRecordTypePacketAuth, &m->rec);
 		if (ptr)
-			{
 			{
 			mDNSu16 RDLengthMem = GetRDLengthMem(&m->rec.r.resrec);
 			AuthRecord *ar = mDNSPlatformMemAllocate(sizeof(AuthRecord) - sizeof(RDataBody) + RDLengthMem);
@@ -5804,28 +5842,62 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 				if (m->rec.r.resrec.rrtype == kDNSType_PTR && IsV4ReverseMapDomain(m->rec.r.resrec.name))
 					if (GetIPFromName(&ar->AddressProxy.ip.v4, m->rec.r.resrec.name) == mStatus_NoError)
 						ar->AddressProxy.type = mDNSAddrType_IPv4;
+				ar->TimeRcvd   = m->timenow;
+				ar->TimeExpire = m->timenow + updatelease * mDNSPlatformOneSecond;
+				if (m->NextScheduledSPS - ar->TimeExpire > 0)
+					m->NextScheduledSPS = ar->TimeExpire;
 				mDNS_Register_internal(m, ar);
 				// For now, since we don't get IPv6 ND or data packets, we don't advertise AAAA records for our SPS clients
 				if (ar->resrec.rrtype == kDNSType_AAAA) ar->resrec.rroriginalttl = 0;
 				LogOperation("SPS Registered %X %s", RecordType, ARDisplayString(m,ar));
 				}
 			}
-			}
 		m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 		}
 	
 	InitializeDNSMessage(&m->omsg.h, msg->h.id, UpdateRespFlags);
-	mDNSSendDNSMessage(m, &m->omsg, m->omsg.data, InterfaceID, m->SleepProxyServerSocket, srcaddr, srcport, mDNSNULL, mDNSNULL);
+	mDNS_SetupResourceRecord(&opt, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
+	opt.resrec.rrclass    = NormalMaxDNSMessageData;
+	opt.resrec.rdlength   = sizeof(rdataOPT);	// One option in this OPT record
+	opt.resrec.rdestimate = sizeof(rdataOPT);
+	opt.resrec.rdata->u.opt[0].opt           = kDNSOpt_Lease;
+	opt.resrec.rdata->u.opt[0].u.updatelease = updatelease;
+	p = PutResourceRecordTTLWithLimit(&m->omsg, m->omsg.data, &m->omsg.h.numAdditionals, &opt.resrec, opt.resrec.rroriginalttl, m->omsg.data + AbsoluteMaxDNSMessageData);
+	if (p) mDNSSendDNSMessage(m, &m->omsg, p, InterfaceID, m->SleepProxyServerSocket, srcaddr, srcport, mDNSNULL, mDNSNULL);
 	}
 
-mDNSlocal void mDNSCoreReceiveUpdateR(mDNS *const m, const DNSMessage *const msg, const mDNSInterfaceID InterfaceID)
+mDNSlocal void mDNSCoreReceiveUpdateR(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *end, const mDNSInterfaceID InterfaceID)
 	{
-	AuthRecord *rr;
 	if (InterfaceID)
+		{
+		AuthRecord *rr;
+		mDNSu32 updatelease = 60 * 60;		// If SPS fails to indicate lease time, assume one hour
+		const mDNSu8 *ptr = LocateOptRR(msg, end, DNSOpt_LeaseData_Space);
+		if (ptr)
+			{
+			ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAdd, &m->rec);
+			if (ptr && m->rec.r.resrec.rrtype == kDNSType_OPT)
+				{
+				const rdataOPT *o;
+				const rdataOPT *const e = (const rdataOPT *)&m->rec.r.resrec.rdata->u.data[m->rec.r.resrec.rdlength];
+				for (o = &m->rec.r.resrec.rdata->u.opt[0]; o < e; o++)
+					if (o->opt == kDNSOpt_Lease)
+						{
+						updatelease = o->u.updatelease;
+						LogOperation("mDNSCoreReceiveUpdateR: Update received lease time %d", updatelease);
+						}
+				}
+			m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
+			}
+
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
 			if (rr->resrec.InterfaceID == InterfaceID || (!rr->resrec.InterfaceID && (rr->ForceMCast || IsLocalDomain(rr->resrec.name))))
 				if (mDNSSameOpaque16(rr->updateid, msg->h.id))
+					{
 					rr->updateid = zeroID;
+					rr->expire   = NonZeroTime(m->timenow + updatelease * mDNSPlatformOneSecond);
+					}
+		}
 	}
 
 mDNSexport void MakeNegativeCacheRecord(mDNS *const m, const domainname *const name, const mDNSu32 namehash, const mDNSu16 rrtype, const mDNSu16 rrclass, mDNSu32 ttl_seconds)
@@ -5926,7 +5998,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 	if      (QR_OP == StdQ) mDNSCoreReceiveQuery   (m, msg, end, srcaddr, srcport, dstaddr, dstport, ifid);
 	else if (QR_OP == StdR) mDNSCoreReceiveResponse(m, msg, end, srcaddr, srcport, dstaddr, dstport, ifid);
 	else if (QR_OP == UpdQ) mDNSCoreReceiveUpdate  (m, msg, end, srcaddr, srcport, dstaddr, dstport, InterfaceID);
-	else if (QR_OP == UpdR) mDNSCoreReceiveUpdateR (m, msg,                                          InterfaceID);
+	else if (QR_OP == UpdR) mDNSCoreReceiveUpdateR (m, msg, end,                                     InterfaceID);
 	else
 		{
 		LogMsg("Unknown DNS packet type %02X%02X from %#-15a:%-5d to %#-15a:%-5d on %p (ignored)",
@@ -8078,6 +8150,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->NextScheduledProbe      = timenow + 0x78000000;
 	m->NextScheduledResponse   = timenow + 0x78000000;
 	m->NextScheduledNATOp      = timenow + 0x78000000;
+	m->NextScheduledSPS        = timenow + 0x78000000;
 	m->RandomQueryDelay        = 0;
 	m->RandomReconfirmDelay    = 0;
 	m->PktNum                  = 0;
