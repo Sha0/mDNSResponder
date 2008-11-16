@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.516  2008/11/16 16:49:25  cheshire
+<rdar://problem/6375808> LLQs broken in mDNSResponder-184
+DNSOpt_LLQData_Space was incorrectly defined to be 18 instead of 22
+
 Revision 1.515  2008/11/14 20:59:41  cheshire
 Added mDNSEthAddressIsZero(A) macro
 
@@ -1393,9 +1397,9 @@ typedef packedstruct
 // Owner rdata 12 bytes (opt 2, len 2, owner 8)
 
 #define DNSOpt_Header_Space    11
-#define DNSOpt_LLQData_Space   18
-#define DNSOpt_LeaseData_Space  8
-#define DNSOpt_OwnerData_Space 12
+#define DNSOpt_LLQData_Space   (4 + 18)
+#define DNSOpt_LeaseData_Space (4 +  4)
+#define DNSOpt_OwnerData_Space (4 +  8)
 
 // Space needed to put a Sleep Proxy Server lease-and-owner option into a packet:
 #define DNSOpt_SPS_Space (DNSOpt_Header_Space + DNSOpt_LeaseData_Space + DNSOpt_OwnerData_Space)
