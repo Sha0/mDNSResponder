@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.226  2008/11/16 16:55:51  cheshire
+Updated debugging messages
+
 Revision 1.225  2008/11/14 21:56:31  cheshire
 Moved debugging routine ShowTaskSchedulingError() from daemon.c into DNSCommon.c
 
@@ -2428,11 +2431,12 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 							rr->resrec.rdlength = 0;
 							while (ptr < end && (mDNSu8 *)(opt+1) < &rr->resrec.rdata->u.data[MaximumRDSize])
 								{
-								if (ptr + 4 > end)                              { LogMsg("GetLargeResourceRecord: OPT RDATA ptr + 4 > end"); return(mDNSNULL); }
+								if (ptr + 4 > end) { LogMsg("GetLargeResourceRecord: OPT RDATA ptr + 4 > end"); return(mDNSNULL); }
 								opt->opt    = getVal16(&ptr);
 								opt->optlen = getVal16(&ptr);
-								if (opt->optlen != DNSOpt_Data_Space(opt->opt) - 4) { LogMsg("GetLargeResourceRecord: optlen wrong %d %d", opt->optlen, DNSOpt_Data_Space(opt->opt) - 4);            return(mDNSNULL); }
-								if (ptr + opt->optlen > end)                    { LogMsg("GetLargeResourceRecord: ptr + opt->optlen > end"); return(mDNSNULL); }
+								if (opt->optlen != DNSOpt_Data_Space(opt->opt) - 4)
+									{ LogMsg("GetLargeResourceRecord: optlen %d should be %d", opt->optlen, DNSOpt_Data_Space(opt->opt) - 4); return(mDNSNULL); }
+								if (ptr + opt->optlen > end) { LogMsg("GetLargeResourceRecord: ptr + opt->optlen > end"); return(mDNSNULL); }
 								switch(opt->opt)
 									{
 									case kDNSOpt_LLQ:
