@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.582  2008/11/20 02:23:37  mcguire
+<rdar://problem/6041208> need to handle URLBase
+
 Revision 1.581  2008/11/20 01:51:19  cheshire
 Exported RecreateNATMappings so it's callable from other files
 
@@ -1567,7 +1570,7 @@ mDNSlocal mStatus uDNS_SendNATMsg(mDNS *m, NATTraversalInfo *info)
 		err = mDNSPlatformSendUDP(m, (mDNSu8 *)&u, end, 0, mDNSNULL, &m->Router, NATPMPPort);
 
 #ifdef _LEGACY_NAT_TRAVERSAL_
-		if (mDNSIPPortIsZero(m->UPnPSOAPPort)) LNT_SendDiscoveryMsg(m);
+		if (mDNSIPPortIsZero(m->UPnPRouterPort) || mDNSIPPortIsZero(m->UPnPSOAPPort)) LNT_SendDiscoveryMsg(m);
 		else if (info) err = LNT_MapPort(m, info);
 		else err = LNT_GetExternalAddress(m);
 #endif // _LEGACY_NAT_TRAVERSAL_

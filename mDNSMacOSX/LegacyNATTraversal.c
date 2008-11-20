@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.51  2008/11/20 02:23:38  mcguire
+<rdar://problem/6041208> need to handle URLBase
+
 Revision 1.50  2008/09/20 00:34:22  mcguire
 <rdar://problem/6129039> BTMM: Add support for WANPPPConnection
 
@@ -268,7 +271,7 @@ mDNSlocal mStatus ParseHttpUrl(char* ptr, char* end, mDNSu8** addressAndPort, mD
 		
 	// ptr should now point to the first character we haven't yet processed
 	// everything that remains is the path
-	if (ptr < end)
+	if (path && ptr < end)
 		{
 		if ((*path = (mDNSu8 *)mDNSPlatformMemAllocate(end - ptr + 1)) == mDNSNULL) { LogMsg("ParseHttpUrl: can't mDNSPlatformMemAllocate path"); return mStatus_NoMemoryErr; }
 		strncpy((char *)*path, ptr, end - ptr);
@@ -286,6 +289,8 @@ mDNSlocal void handleLNTDeviceDescriptionResponse(tcpLNTInfo *tcpInfo)
 	char    *ptr  = (char *)tcpInfo->Reply;
 	char    *end  = (char *)tcpInfo->Reply + tcpInfo->nread;
 	char    *stop = mDNSNULL;
+	
+	if (!mDNSIPPortIsZero(m->UPnPSOAPPort)) return; // already have the info we need
 
 	// Always reset our flag to use WANIPConnection.  We'll use WANPPPConnection if we find it and don't find WANIPConnection.
 	m->UPnPWANPPPConnection = mDNSfalse;
@@ -342,7 +347,32 @@ mDNSlocal void handleLNTDeviceDescriptionResponse(tcpLNTInfo *tcpInfo)
 	if (ParseHttpUrl(ptr, end, &m->UPnPSOAPAddressString, &m->UPnPSOAPPort, &m->UPnPSOAPURL) != mStatus_NoError) return;
 	// the SOAPURL should look something like "/uuid:0013-108c-4b3f0000f3dc"
 
-	if (m->UPnPSOAPAddressString == mDNSNULL) AllocAndCopy(&m->UPnPSOAPAddressString, m->UPnPRouterAddressString);
+	if (m->UPnPSOAPAddressString == mDNSNULL)
+		{
+		mDNSBool foundURLBase = mDNSfalse;
+		ptr = (char *)tcpInfo->Reply;
+		while (ptr && ptr != end)
+			{
+			if (*ptr == 'U' && (strncasecmp(ptr, "URLBase", 7) == 0))
+				{
+				foundURLBase = mDNStrue;
+				break;
+				}
+			ptr++;
+			}
+		if (!foundURLBase) AllocAndCopy(&m->UPnPSOAPAddressString, m->UPnPRouterAddressString);
+		else
+			{
+			LogOperation("handleLNTDeviceDescriptionResponse: found URLBase");			
+			ptr += 8; // skip over "URLBase>"
+			// find the end of the URLBase element
+			for (stop = ptr; stop != end; stop++) { if (*stop == '<') { end = stop; break; } }
+			if (ParseHttpUrl(ptr, end, &m->UPnPSOAPAddressString, &m->UPnPSOAPPort, mDNSNULL) != mStatus_NoError)
+				{
+				LogOperation("handleLNTDeviceDescriptionResponse: failed to parse URLBase");
+				}
+			}
+		}
 	if (m->UPnPSOAPAddressString == mDNSNULL) LogMsg("handleLNTDeviceDescriptionResponse: UPnPSOAPAddressString is NULL");
 	else LogOperation("handleLNTDeviceDescriptionResponse: SOAP address string [%s]", m->UPnPSOAPAddressString);
 
@@ -766,6 +796,8 @@ mDNSlocal mStatus GetDeviceDescription(mDNS *m, tcpLNTInfo *info)
 		"Connection: close\r\n"
 		"\r\n";
 
+	if (!mDNSIPPortIsZero(m->UPnPSOAPPort)) return mStatus_NoError; // already have the info we need
+	
 	if (m->UPnPRouterURL == mDNSNULL || m->UPnPRouterAddressString == mDNSNULL)     { LogOperation("GetDeviceDescription: no router URL or address string!"); return (mStatus_Invalid); }
 
 	// build message
@@ -784,6 +816,8 @@ mDNSexport void LNT_ConfigureRouterInfo(mDNS *m, const mDNSInterfaceID Interface
 	char *ptr = (char *)data;
 	char *end = (char *)data + len;
 	char *stop = ptr;
+	
+	if (!mDNSIPPortIsZero(m->UPnPRouterPort)) return; // already have the info we need
 
 	// The formatting of the HTTP header is not always the same when it comes to the placement of
 	// the service and location strings, so we just look for each of them from the beginning for every response
@@ -868,6 +902,13 @@ mDNSexport void LNT_SendDiscoveryMsg(mDNS *m)
 	
 	mDNSu8* buf = (mDNSu8*)&m->omsg; //m->omsg is 8952 bytes, which is plenty
 	unsigned int bufLen;
+	
+	if (!mDNSIPPortIsZero(m->UPnPRouterPort))
+		{
+		if (m->SSDPSocket) { LogOperation("LNT_SendDiscoveryMsg destroying SSDPSocket %p", &m->SSDPSocket); mDNSPlatformUDPClose(m->SSDPSocket); m->SSDPSocket = mDNSNULL; }
+		if (mDNSIPPortIsZero(m->UPnPSOAPPort) && !m->tcpDeviceInfo.sock) GetDeviceDescription(m, &m->tcpDeviceInfo);
+		return;
+		}
 
 	// Always query for WANIPConnection in the first SSDP packet
 	if (m->retryIntervalGetAddr <= NATMAP_INIT_RETRY) m->SSDPWANPPPConnection = mDNSfalse;
