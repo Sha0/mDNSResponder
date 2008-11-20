@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.859  2008/11/20 02:07:56  cheshire
+<rdar://problem/6387470> Refresh our NAT mappings on wake from sleep
+
 Revision 1.858  2008/11/20 01:38:36  cheshire
 For consistency with other parts of the code, changed code to only check
 that the first 4 bytes of MAC address are zero, not the whole 6 bytes.
@@ -4365,6 +4368,13 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 				rr->AnnounceCount  = InitialAnnounceCount;
 				InitializeLastAPTime(m, rr, DefaultAPIntervalForRecordType(rr->resrec.RecordType));
 				}
+
+		// 4. Refresh NAT mappings
+		// We don't want to have to assume that all hardware can necessarily keep accurate
+		// track of passage of time while asleep, so on wake we refresh our NAT mappings
+		m->retryIntervalGetAddr = NATMAP_INIT_RETRY;
+		m->retryGetAddr         = m->timenow;
+		RecreateNATMappings(m);
 		}
 
 	mDNS_Unlock(m);
