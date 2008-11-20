@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.517  2008/11/20 01:51:19  cheshire
+Exported RecreateNATMappings so it's callable from other files
+
 Revision 1.516  2008/11/16 16:49:25  cheshire
 <rdar://problem/6375808> LLQs broken in mDNSResponder-184
 DNSOpt_LLQData_Space was incorrectly defined to be 18 instead of 22
@@ -327,7 +330,7 @@ Add new symbol "NATPMPAnnouncementPort" (5350)
 
 Revision 1.428  2007/09/05 21:48:01  cheshire
 <rdar://problem/5385864> BTMM: mDNSResponder flushes wide-area Bonjour records after an hour for a zone.
-Now that we're respecting the TTL of uDNS records in the cache, the LLQ maintenance cod needs
+Now that we're respecting the TTL of uDNS records in the cache, the LLQ maintenance code needs
 to update the cache lifetimes of all relevant records every time it successfully renews an LLQ,
 otherwise those records will expire and vanish from the cache.
 
@@ -922,7 +925,7 @@ typedef enum				// From RFC 1035
 	kDNSType_CERT,			// 37 Certification record
 	kDNSType_A6,			// 38 IPv6 Address (deprecated)
 	kDNSType_DNAME,			// 39 Non-terminal DNAME (for IPv6)
-	kDNSType_SINK,			// 40 Kitchen sink (experimentatl)
+	kDNSType_SINK,			// 40 Kitchen sink (experimental)
 	kDNSType_OPT,			// 41 EDNS0 option (meta-RR)
 	kDNSType_APL,			// 42 Address Prefix List
 	kDNSType_DS,			// 43 Delegation Signer
@@ -2805,6 +2808,8 @@ extern mDNSBool mDNSv4AddrIsRFC1918(mDNSv4Addr *addr);  // returns true for RFC1
 
 extern mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 	const domainname *domain, const domainname *keyname, const char *b64keydata, mDNSBool AutoTunnel);
+
+extern void RecreateNATMappings(mDNS *const m);
 
 // Hostname/Unicast Interface Configuration
 

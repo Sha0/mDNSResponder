@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.581  2008/11/20 01:51:19  cheshire
+Exported RecreateNATMappings so it's callable from other files
+
 Revision 1.580  2008/11/13 19:08:45  cheshire
 Fixed code to handle rdataOPT properly
 
@@ -432,7 +435,7 @@ Fixed minor error introduced in 1.379 (an "if" statement was deleted but the "el
 
 Revision 1.457  2007/09/05 21:48:01  cheshire
 <rdar://problem/5385864> BTMM: mDNSResponder flushes wide-area Bonjour records after an hour for a zone.
-Now that we're respecting the TTL of uDNS records in the cache, the LLQ maintenance cod needs
+Now that we're respecting the TTL of uDNS records in the cache, the LLQ maintenance code needs
 to update the cache lifetimes of all relevant records every time it successfully renews an LLQ,
 otherwise those records will expire and vanish from the cache.
 
@@ -1572,7 +1575,7 @@ mDNSlocal mStatus uDNS_SendNATMsg(mDNS *m, NATTraversalInfo *info)
 	return(err);
 	}
 
-mDNSlocal void RecreateNATMappings(mDNS *const m)
+mDNSexport void RecreateNATMappings(mDNS *const m)
 	{
 	NATTraversalInfo *n;
 	for (n = m->NATTraversals; n; n=n->next)
