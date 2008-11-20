@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.583  2008/11/20 01:42:31  cheshire
+For consistency with other parts of the code, changed code to only check
+that the first 4 bytes of MAC address are zero, not the whole 6 bytes.
+
 Revision 1.582  2008/11/14 22:59:09  cheshire
 When on a network with more than one subnet overlayed on a single physical link, don't make local ARP
 entries for hosts that are on our physical link but not on our logical subnet -- it confuses the kernel
@@ -2563,8 +2567,8 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 	i->ifinfo.McastTxRx   = mDNSfalse; // For now; will be set up later at the end of UpdateInterfaceList
 	i->ifinfo.NetWake     = OSXVers >= 10 || (SystemNetWake && !bssid.l[0]);
 	GetMAC(&i->ifinfo.MAC, scope_id);
-	if (mDNSEthAddressIsZero(i->ifinfo.MAC) && !(ifa->ifa_flags & IFF_LOOPBACK))
-		LogMsg("AddInterfaceToList: MAC address for %d %s %#a is zero", scope_id, i->ifinfo.ifname, &ip);
+	if (!i->ifinfo.MAC.l[0] && !(ifa->ifa_flags & IFF_LOOPBACK))
+		LogMsg("AddInterfaceToList: Bad MAC address %.6a for %d %s %#a", &i->ifinfo.MAC, scope_id, i->ifinfo.ifname, &ip);
 
 	i->next            = mDNSNULL;
 	i->m               = m;

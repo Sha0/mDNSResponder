@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.858  2008/11/20 01:38:36  cheshire
+For consistency with other parts of the code, changed code to only check
+that the first 4 bytes of MAC address are zero, not the whole 6 bytes.
+
 Revision 1.857  2008/11/14 22:55:18  cheshire
 Fixed log messages
 
@@ -591,7 +595,7 @@ Revision 1.691  2007/09/05 22:25:01  vazquez
 
 Revision 1.690  2007/09/05 21:48:01  cheshire
 <rdar://problem/5385864> BTMM: mDNSResponder flushes wide-area Bonjour records after an hour for a zone.
-Now that we're respecting the TTL of uDNS records in the cache, the LLQ maintenance cod needs
+Now that we're respecting the TTL of uDNS records in the cache, the LLQ maintenance code needs
 to update the cache lifetimes of all relevant records every time it successfully renews an LLQ,
 otherwise those records will expire and vanish from the cache.
 
@@ -3098,7 +3102,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 						queryptr       = newptr;
 						limit          = m->omsg.data + NormalMaxDNSMessageData;
 						answerforecast = forecast;
-						if (!mDNSEthAddressIsZero(intf->MAC)) AddOwnerRecord = mDNStrue;
+						if (intf->MAC.l[0]) AddOwnerRecord = mDNStrue;
 						rr->SendRNow = (rr->resrec.InterfaceID) ? mDNSNULL : GetNextActiveInterfaceID(intf);
 						rr->IncludeInProbe = mDNStrue;
 						verbosedebugf("SendQueries:   Put Question %##s (%s) probecount %d",
@@ -4330,6 +4334,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 		m->NextSRVUpdate = NonZeroTime(m->timenow + mDNSPlatformOneSecond);
 		LogOperation("WakeServiceRegistrations %d %d", m->timenow, m->NextSRVUpdate);
 #endif
+
         // 1. Retrigger all our mDNS questions
 		for (q = m->Questions; q; q=q->next)				// Scan our list of questions
 			if (mDNSOpaque16IsZero(q->TargetQID) && ActiveQuestion(q))
@@ -4628,8 +4633,10 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 			{
 			const rdataOPT *opt;
 			const rdataOPT *const e = (const rdataOPT *)&m->rec.r.resrec.rdata->u.data[m->rec.r.resrec.rdlength];
+			// Find owner sub-option(s). We verify that the MAC is non-zero, otherwise we could inadvertently
+			// delete all our own AuthRecords (which are identified by having zero MAC tags on them).
 			for (opt = &m->rec.r.resrec.rdata->u.opt[0]; opt < e; opt++)
-				if (opt->opt == kDNSOpt_Owner && opt->u.owner.vers == 0 && !mDNSEthAddressIsZero(opt->u.owner.MAC))
+				if (opt->opt == kDNSOpt_Owner && opt->u.owner.vers == 0 && opt->u.owner.MAC.l[0])
 					{
 					m->CurrentRecord = m->ResourceRecords;
 					while (m->CurrentRecord)
