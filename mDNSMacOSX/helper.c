@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.47  2008/11/21 02:28:55  mcguire
+<rdar://problem/6354979> send racoon a SIGUSR1 instead of SIGHUP
+
 Revision 1.46  2008/11/11 02:09:42  cheshire
 Removed some unnecessary log messages
 
@@ -1250,7 +1253,7 @@ CF_EXPORT const CFStringRef _kCFSystemVersionBuildVersionKey;
 // Major version  8 is 10.4.x (Tiger)
 // Major version  9 is 10.5.x (Leopard)
 // Major version 10 is 10.6.x (SnowLeopard)
-static int MacOSXSystemBuildNumber()
+static int MacOSXSystemBuildNumber(char* letter_out, int* minor_out)
 	{
 	int major = 0, minor = 0;
 	char letter = 0, buildver[256]="<Unknown>";
@@ -1265,15 +1268,37 @@ static int MacOSXSystemBuildNumber()
 	else
 		helplog(ASL_LEVEL_NOTICE, "_CFCopySystemVersionDictionary failed");
 	
-	if (!major) { major=10; helplog(ASL_LEVEL_NOTICE, "Note: No Major Build Version number found; assuming 10"); }
+	if (!major) { major=10; letter = 'A'; minor = 190; helplog(ASL_LEVEL_NOTICE, "Note: No Major Build Version number found; assuming 10A190"); }
+	if (letter_out) *letter_out = letter;
+	if (minor_out) *minor_out = minor;
 	return(major);
 	}
 	
+static int g_oldRacoon = -1;
+static int g_racoonSignal = SIGUSR1;
+
+static void DetermineRacoonVersion()
+	{
+	if (g_oldRacoon == -1)
+		{
+		char letter = 0;
+		int minor = 0;
+		g_oldRacoon = (MacOSXSystemBuildNumber(&letter, &minor) < 10);
+		if (g_oldRacoon || (letter == 'A' && minor < 218)) g_racoonSignal = SIGHUP;
+		debug("%s, signal=%d", g_oldRacoon?"old":"new", g_racoonSignal);
+		}
+	}
+
 static int UseOldRacoon()
 	{
-	static int ret = -1;
-	if (ret == -1) ret = (MacOSXSystemBuildNumber() < 10);
-	return ret;
+	DetermineRacoonVersion();
+	return g_oldRacoon;
+	}
+	
+static int RacoonSignal()
+	{
+	DetermineRacoonVersion();
+	return g_racoonSignal;
 	}
 	
 static const char* GetRacoonConfigDir()
@@ -1548,12 +1573,12 @@ notifyRacoon(void)
 		debug("refusing to kill PID %lu", m);
 		return kmDNSHelperRacoonNotificationFailed;
 		}
-	if (0 != kill(m, SIGHUP))
+	if (0 != kill(m, RacoonSignal()))
 		{
 		debug("Could not signal racoon (%lu): %s", m, strerror(errno));
 		return kmDNSHelperRacoonNotificationFailed;
 		}
-	debug("Sent SIGHUP to racoon (%lu)", m);
+	debug("Sent racoon (%lu) signal %d", m, RacoonSignal());
 	return 0;
 	}
 
