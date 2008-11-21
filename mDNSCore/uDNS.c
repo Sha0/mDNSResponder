@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.583  2008/11/21 00:34:58  cheshire
+<rdar://problem/6380477> mDNS_StopNATOperation doesn't handle duplicate NAT mapping requests properly
+
 Revision 1.582  2008/11/20 02:23:37  mcguire
 <rdar://problem/6041208> need to handle URLBase
 
@@ -1683,9 +1686,16 @@ mDNSexport mStatus mDNS_StartNATOperation_internal(mDNS *const m, NATTraversalIn
 		traversal->Protocol, mDNSVal16(traversal->IntPort), mDNSVal16(traversal->RequestedPort), traversal->NATLease);
 
 	// Note: It important that new traversal requests are appended at the *end* of the list, not prepended at the start
-	n = &m->NATTraversals;
-	while (*n && *n != traversal) n=&(*n)->next;
-	if (*n) { LogMsg("Error! Tried to add a NAT traversal that's already in the active list"); return(mStatus_AlreadyRegistered); }
+	for (n = &m->NATTraversals; *n; n=&(*n)->next)
+		{
+		if (traversal == *n)
+			{ LogMsg("Error! Tried to add a NAT traversal that's already in the active list"); return(mStatus_AlreadyRegistered); }
+		if (traversal->Protocol && traversal->Protocol == (*n)->Protocol && mDNSSameIPPort(traversal->IntPort, (*n)->IntPort))
+			LogMsg("Warning: Created port mapping request %p Prot %d Int %d TTL %d "
+				"duplicates existing port mapping request %p Prot %d Int %d TTL %d",
+				traversal, traversal->Protocol, mDNSVal16(traversal->IntPort), traversal->NATLease,
+				*n,        (*n)     ->Protocol, mDNSVal16((*n)     ->IntPort), (*n)     ->NATLease);
+		}
 
 	// Initialize necessary fields
 	traversal->next            = mDNSNULL;
@@ -1721,8 +1731,10 @@ mDNSexport mStatus mDNS_StartNATOperation_internal(mDNS *const m, NATTraversalIn
 // Must be called with the mDNS_Lock held
 mDNSexport mStatus mDNS_StopNATOperation_internal(mDNS *m, NATTraversalInfo *traversal)
 	{
+	mDNSBool unmap = mDNStrue;
+	NATTraversalInfo *p;
 	NATTraversalInfo **ptr = &m->NATTraversals;
-	
+
 	while (*ptr && *ptr != traversal) ptr=&(*ptr)->next;
 	if (*ptr) *ptr = (*ptr)->next;		// If we found it, cut this NATTraversalInfo struct from our list
 	else
@@ -1737,12 +1749,24 @@ mDNSexport mStatus mDNS_StopNATOperation_internal(mDNS *m, NATTraversalInfo *tra
 	if (m->CurrentNATTraversal == traversal)
 		m->CurrentNATTraversal = m->CurrentNATTraversal->next;
 
-	if (traversal->ExpiryTime)
+	if (traversal->Protocol)
+		for (p = m->NATTraversals; p; p=p->next)
+			if (traversal->Protocol == p->Protocol && mDNSSameIPPort(traversal->IntPort, p->IntPort))
+				{
+				LogMsg("Warning: Removed port mapping request %p Prot %d Int %d TTL %d "
+					"duplicates existing port mapping request %p Prot %d Int %d TTL %d",
+					traversal, traversal->Protocol, mDNSVal16(traversal->IntPort), traversal->NATLease,
+					p,         p        ->Protocol, mDNSVal16(p        ->IntPort), p        ->NATLease);
+				unmap = mDNSfalse;
+				}
+
+	if (traversal->ExpiryTime && unmap)
 		{
 		traversal->NATLease = 0;
 		traversal->retryInterval = 0;
 		uDNS_SendNATMsg(m, traversal);
 		}
+
 	// Even if we DIDN'T make a successful UPnP mapping yet, we might still have a partially-open TCP connection we need to clean up
 	#ifdef _LEGACY_NAT_TRAVERSAL_
 		{
@@ -1750,6 +1774,7 @@ mDNSexport mStatus mDNS_StopNATOperation_internal(mDNS *m, NATTraversalInfo *tra
 		if (err) LogMsg("Legacy NAT Traversal - unmap request failed with error %ld", err);
 		}
 	#endif // _LEGACY_NAT_TRAVERSAL_
+
 	return(mStatus_NoError);
 	}
 
