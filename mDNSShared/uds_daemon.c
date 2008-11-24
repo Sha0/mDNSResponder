@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.412  2008/11/24 23:05:43  cheshire
+Additional checking in uds_validatelists()
+
 Revision 1.411  2008/11/05 21:41:39  cheshire
 Updated LogOperation message
 
@@ -815,8 +818,8 @@ typedef struct browser_t
 struct request_state
 	{
 	request_state *next;
-	request_state *primary;			// If this operation is on a shared socket, pointer to
-									// primary request_state for the original DNSServiceConnect() operation
+	request_state *primary;			// If this operation is on a shared socket, pointer to primary
+									// request_state for the original DNSServiceConnect() operation
 	dnssd_sock_t sd;
 	dnssd_sock_t errsd;
 	mDNSu32 uid;
@@ -3933,11 +3936,17 @@ mDNSexport void udsserver_info(mDNS *const m)
 #if APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING
 mDNSexport void uds_validatelists(void)
 	{
-	request_state *req;
+	const request_state *req, *p;
 	for (req = all_requests; req; req=req->next)
 		{
 		if (req->next == (request_state *)~0 || (req->sd < 0 && req->sd != -2))
 			LogMemCorruption("UDS request list: %p is garbage (%d)", req, req->sd);
+
+		p = req->primary;
+		if ((long)p & 3)
+			LogMemCorruption("UDS request list: req %p primary %p is misaligned (%d)", req, p, req->sd);
+		else if (p && (p->next == (request_state *)~0 || (p->sd < 0 && p->sd != -2)))
+			LogMemCorruption("UDS request list: req %p primary %p is garbage (%d)", req, p, p->sd);
 
 		reply_state *rep;
 		for (rep = req->replies; rep; rep=rep->next)
@@ -3946,24 +3955,24 @@ mDNSexport void uds_validatelists(void)
 
 		if (req->terminate == connection_termination)
 			{
-			registered_record_entry *p;
-			for (p = req->u.reg_recs; p; p=p->next)
-				if (p->next == (registered_record_entry *)~0)
-					LogMemCorruption("UDS req->u.reg_recs: %p is garbage", p);
+			registered_record_entry *r;
+			for (r = req->u.reg_recs; r; r=r->next)
+				if (r->next == (registered_record_entry *)~0)
+					LogMemCorruption("UDS req->u.reg_recs: %p is garbage", r);
 			}
 		else if (req->terminate == regservice_termination_callback)
 			{
-			service_instance *p;
-			for (p = req->u.servicereg.instances; p; p=p->next)
-				if (p->next == (service_instance *)~0)
-					LogMemCorruption("UDS req->u.servicereg.instances: %p is garbage", p);
+			service_instance *s;
+			for (s = req->u.servicereg.instances; s; s=s->next)
+				if (s->next == (service_instance *)~0)
+					LogMemCorruption("UDS req->u.servicereg.instances: %p is garbage", s);
 			}
 		else if (req->terminate == browse_termination_callback)
 			{
-			browser_t *p;
-			for (p = req->u.browser.browsers; p; p=p->next)
-				if (p->next == (browser_t *)~0)
-					LogMemCorruption("UDS req->u.browser.browsers: %p is garbage", p);
+			browser_t *b;
+			for (b = req->u.browser.browsers; b; b=b->next)
+				if (b->next == (browser_t *)~0)
+					LogMemCorruption("UDS req->u.browser.browsers: %p is garbage", b);
 			}
 		}
 
