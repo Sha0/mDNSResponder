@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.584  2008/11/24 19:46:40  cheshire
+When sending query over TCP, don't include LLQ option when we're talking to a conventional DNS server or cache
+
 Revision 1.583  2008/11/21 00:34:58  cheshire
 <rdar://problem/6380477> mDNS_StopNATOperation doesn't handle duplicate NAT mapping requests properly
 
@@ -2096,7 +2099,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			{
 			end = ((mDNSu8*) &tcpInfo->request) + tcpInfo->requestLen;
 			}
-		else if (q && q->LongLived && q->state != LLQ_Poll && !mDNSIPPortIsZero(m->LLQNAT.ExternalPort))
+		else if (q && q->LongLived && q->state != LLQ_Poll && !mDNSIPPortIsZero(m->LLQNAT.ExternalPort) && !mDNSIPPortIsZero(q->servPort))
 			{
 			// Notes:
 			// If we have a NAT port mapping, ExternalPort is the external port
@@ -2320,7 +2323,7 @@ mDNSexport void startLLQHandshake(mDNS *m, DNSQuestion *q)
 		q->LastQTime     = m->timenow;
 		SetNextQueryTime(m, q);
 		q->servAddr = zeroAddr;
-		q->servPort = zeroIPPort;
+		// We know q->servPort is zero because of check above
 		if (q->nta) CancelGetZoneData(m, q->nta);
 		q->nta = StartGetZoneData(m, &q->qname, ZoneServiceLLQ, LLQGotZoneData, q);
 		return;
