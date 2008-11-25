@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.586  2008/11/25 23:43:07  cheshire
+<rdar://problem/5745355> Crashes at ServiceRegistrationGotZoneData + 397
+Made code more defensive to guard against ServiceRegistrationGotZoneData being called with invalid ServiceRecordSet object
+
 Revision 1.585  2008/11/25 22:46:30  cheshire
 For ease of code searching, renamed ZoneData field of ServiceRecordSet_struct from "nta" to "srs_nta"
 
@@ -2795,6 +2799,9 @@ mDNSexport void ServiceRegistrationGotZoneData(mDNS *const m, mStatus err, const
 
 	if (m->mDNS_busy != m->mDNS_reentrancy)
 		LogMsg("ServiceRegistrationGotZoneData: mDNS_busy (%ld) != mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
+
+	if (!srs->RR_SRV.resrec.rdata)
+		{ LogMsg("ServiceRegistrationGotZoneData: ERROR: srs->RR_SRV.resrec.rdata is NULL"); return; }
 
 	srs->srs_nta = mDNSNULL;
 

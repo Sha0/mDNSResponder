@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.862  2008/11/25 23:43:07  cheshire
+<rdar://problem/5745355> Crashes at ServiceRegistrationGotZoneData + 397
+Made code more defensive to guard against ServiceRegistrationGotZoneData being called with invalid ServiceRecordSet object
+
 Revision 1.861  2008/11/25 22:46:30  cheshire
 For ease of code searching, renamed ZoneData field of ServiceRecordSet_struct from "nta" to "srs_nta"
 
@@ -7438,6 +7442,13 @@ mDNSlocal void ServiceCallback(mDNS *const m, AuthRecord *const rr, mStatus resu
 		// If this ServiceRecordSet was forcibly deregistered, and now its memory is ready for reuse,
 		// then we can now report the NameConflict to the client
 		if (sr->Conflict) result = mStatus_NameConflict;
+
+		if (sr->srs_nta)
+			{
+			LogMsg("ServiceCallback ERROR Got mStatus_MemFree with srs_nta still set for %s", ARDisplayString(m, &sr->RR_SRV));
+			CancelGetZoneData(m, sr->srs_nta);
+			sr->srs_nta = mDNSNULL;
+			}
 		}
 
 	// CAUTION: MUST NOT do anything more with sr after calling sr->Callback(), because the client's callback
