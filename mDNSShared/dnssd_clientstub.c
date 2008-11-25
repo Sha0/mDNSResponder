@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.112  2008/11/25 22:56:54  cheshire
+<rdar://problem/6377257> Make library code more defensive when client calls DNSServiceProcessResult with bad DNSServiceRef repeatedly
+
 Revision 1.111  2008/10/28 17:58:44  cheshire
 If client code keeps calling DNSServiceProcessResult repeatedly after an error, rate-limit the
 "DNSServiceProcessResult called with DNSServiceRef with no ProcessReply function" log messages
@@ -859,8 +862,9 @@ DNSServiceErrorType DNSSD_API DNSServiceProcessResult(DNSServiceRef sdRef)
 
 	if (!sdRef->ProcessReply)
 		{
-		syslog(LOG_WARNING, "dnssd_clientstub DNSServiceProcessResult called with DNSServiceRef with no ProcessReply function");
-		sleep(1);
+		static int num_logs = 0;
+		if (num_logs < 10) syslog(LOG_WARNING, "dnssd_clientstub DNSServiceProcessResult called with DNSServiceRef with no ProcessReply function");
+		if (num_logs < 1000) num_logs++; else sleep(1);
 		return kDNSServiceErr_BadReference;
 		}
 
