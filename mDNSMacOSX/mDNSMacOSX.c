@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.585  2008/11/25 20:53:35  cheshire
+Updated portability metrics; added Xserve and PowerBook to list
+
 Revision 1.584  2008/11/25 05:07:16  cheshire
 <rdar://problem/6374328> Advertise Sleep Proxy metrics in service name
 
@@ -4426,7 +4429,7 @@ mDNSlocal void SetSPS(mDNS *const m)
 	mDNSu8 sps = natenabled ? 50 : (GetSystemSleepTimerSetting() == 0) ? 70 : 0;
 
 	// For devices that are not running NAT, but are set to never sleep, we may choose to act
-	// as a Sleep Proxy, but only for non-portable Macs (Portability > 35 means approx weight > 3kg)
+	// as a Sleep Proxy, but only for non-portable Macs (Portability > 35 means nominal weight > 3kg)
 	if (sps > 50 && SPMetricPortability > 35) sps = 0;
 
 	// If we decide to let laptops act as Sleep Proxy, we should do it only when running on AC power, not on battery
@@ -4960,12 +4963,16 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 #endif /* NO_IOPOWER */
 
 #if APPLE_OSX_mDNSResponder
-	if      (!strncasecmp(HINFO_HWstring, "RackMac",  7)) { SPMetricPortability = 30 /* 10kg */; SPMetricMarginalPower = 84 /* 250W */; SPMetricTotalPower = 85 /* 300W */; }
-	else if (!strncasecmp(HINFO_HWstring, "MacPro",   6)) { SPMetricPortability = 31 /*  8kg */; SPMetricMarginalPower = 84 /* 250W */; SPMetricTotalPower = 85 /* 300W */; }
-	else if (!strncasecmp(HINFO_HWstring, "PowerMac", 8)) { SPMetricPortability = 32 /*  6kg */; SPMetricMarginalPower = 82 /* 160W */; SPMetricTotalPower = 83 /* 200W */; }
-	else if (!strncasecmp(HINFO_HWstring, "iMac",     4)) { SPMetricPortability = 33 /*  4kg */; SPMetricMarginalPower = 77 /*  50W */; SPMetricTotalPower = 78 /*  60W */; }
-	else if (!strncasecmp(HINFO_HWstring, "Macmini",  7)) { SPMetricPortability = 35 /*  3kg */; SPMetricMarginalPower = 73 /*  20W */; SPMetricTotalPower = 74 /*  25W */; }
+	// Note: We use SPMetricPortability > 35 to indicate a laptop of some kind
+	// SPMetricPortability <= 35 means nominally a non-portable machine (i.e. Mac mini or better)
+	if      (!strncasecmp(HINFO_HWstring, "Xserve",   6)) { SPMetricPortability = 25 /* 30kg */; SPMetricMarginalPower = 84 /* 250W */; SPMetricTotalPower = 85 /* 300W */; }
+	else if (!strncasecmp(HINFO_HWstring, "RackMac",  7)) { SPMetricPortability = 25 /* 30kg */; SPMetricMarginalPower = 84 /* 250W */; SPMetricTotalPower = 85 /* 300W */; }
+	else if (!strncasecmp(HINFO_HWstring, "MacPro",   6)) { SPMetricPortability = 27 /* 20kg */; SPMetricMarginalPower = 84 /* 250W */; SPMetricTotalPower = 85 /* 300W */; }
+	else if (!strncasecmp(HINFO_HWstring, "PowerMac", 8)) { SPMetricPortability = 27 /* 20kg */; SPMetricMarginalPower = 82 /* 160W */; SPMetricTotalPower = 83 /* 200W */; }
+	else if (!strncasecmp(HINFO_HWstring, "iMac",     4)) { SPMetricPortability = 30 /* 10kg */; SPMetricMarginalPower = 77 /*  50W */; SPMetricTotalPower = 78 /*  60W */; }
+	else if (!strncasecmp(HINFO_HWstring, "Macmini",  7)) { SPMetricPortability = 33 /*  5kg */; SPMetricMarginalPower = 73 /*  20W */; SPMetricTotalPower = 74 /*  25W */; }
 	else if (!strncasecmp(HINFO_HWstring, "MacBook",  7)) { SPMetricPortability = 37 /*  2kg */; SPMetricMarginalPower = 71 /*  13W */; SPMetricTotalPower = 72 /*  15W */; }
+	else if (!strncasecmp(HINFO_HWstring, "PowerBook",9)) { SPMetricPortability = 37 /*  2kg */; SPMetricMarginalPower = 71 /*  13W */; SPMetricTotalPower = 72 /*  15W */; }
 	LogMsg("HW_MODEL: %.*s (%s) Portability %d Marginal Power %d Total Power %d",
 		HINFO_HWstring_prefixlen, HINFO_HWstring, HINFO_HWstring, SPMetricPortability, SPMetricMarginalPower, SPMetricTotalPower);
 
