@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.413  2008/11/25 04:48:58  cheshire
+Added logging to show whether Sleep Proxy Service is active
+
 Revision 1.412  2008/11/24 23:05:43  cheshire
 Additional checking in uds_validatelists()
 
@@ -3931,6 +3934,10 @@ mDNSexport void udsserver_info(mDNS *const m)
 				c->dstname.c, &c->loc_inner, &c->loc_outer, &c->rmt_inner, &c->rmt_outer, mDNSVal16(c->rmt_outer_port), c->q.ThisQInterval);
 		}
 	#endif
+
+	LogMsgNoIdent("------ Sleep Proxy Service ------");
+	if (!m->SPSSocket) LogMsgNoIdent("<None>");
+	else LogMsgNoIdent("%#s", m->SPSRecords.RR_SRV.resrec.name->c);
 	}
 
 #if APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING
