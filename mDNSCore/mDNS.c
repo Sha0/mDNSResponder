@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.861  2008/11/25 22:46:30  cheshire
+For ease of code searching, renamed ZoneData field of ServiceRecordSet_struct from "nta" to "srs_nta"
+
 Revision 1.860  2008/11/25 05:07:15  cheshire
 <rdar://problem/6374328> Advertise Sleep Proxy metrics in service name
 
@@ -7253,8 +7256,8 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	for (s = m->ServiceRegistrations; s; s = s->uDNS_next)
 		{
 		LogOperation("mDNS_RegisterInterface: StartGetZoneData for %##s", s->RR_SRV.resrec.name->c);
-		if (s->nta) CancelGetZoneData(m, s->nta);
-		s->nta = StartGetZoneData(m, s->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationGotZoneData, s);
+		if (s->srs_nta) CancelGetZoneData(m, s->srs_nta);
+		s->srs_nta = StartGetZoneData(m, s->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationGotZoneData, s);
 		}
 
 	mDNS_Unlock(m);
@@ -7481,14 +7484,12 @@ mDNSlocal mStatus uDNS_RegisterService(mDNS *const m, ServiceRecordSet *srs)
 		{
 		// defer registration until we've got a target
 		LogOperation("uDNS_RegisterService - no target for %##s", srs->RR_SRV.resrec.name->c);
-		srs->state = regState_NoTarget;
-		srs->nta   = mDNSNULL;
+		srs->state   = regState_NoTarget;
 		return mStatus_NoError;
 		}
 
 	ActivateUnicastRegistration(m, &srs->RR_SRV);
 	srs->state = regState_FetchingZoneData;
-	srs->nta   = mDNSNULL;
 	return mStatus_NoError;
 	}
 #endif
@@ -7603,6 +7604,8 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 		mDNSPlatformMemCopy(sr->RR_TXT.resrec.rdata->u.txt.c, txtinfo, txtlen);
 		}
 	sr->RR_TXT.DependentOn = &sr->RR_SRV;
+
+	sr->srs_nta = mDNSNULL;
 
 #if !defined(UNICAST_DISABLED) && USE_SEPARATE_UDNS_SERVICE_LIST
 	// If the client has specified an explicit InterfaceID,

@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.585  2008/11/25 22:46:30  cheshire
+For ease of code searching, renamed ZoneData field of ServiceRecordSet_struct from "nta" to "srs_nta"
+
 Revision 1.584  2008/11/24 19:46:40  cheshire
 When sending query over TCP, don't include LLQ option when we're talking to a conventional DNS server or cache
 
@@ -2762,8 +2765,8 @@ mDNSlocal void CompleteSRVNatMap(mDNS *m, NATTraversalInfo *n)
 		// SHOULD NEVER HAPPEN!
 		LogOperation("ERROR: CompleteSRVNatMap called but srs->SRSUpdateServer.ip.v4 is zero!");
 		srs->state = regState_FetchingZoneData;
-		if (srs->nta) CancelGetZoneData(m, srs->nta); // Make sure we cancel old one before we start a new one
-		srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationGotZoneData, srs);
+		if (srs->srs_nta) CancelGetZoneData(m, srs->srs_nta); // Make sure we cancel old one before we start a new one
+		srs->srs_nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationGotZoneData, srs);
 		}
 	mDNS_Unlock(m);
 	}
@@ -2793,7 +2796,7 @@ mDNSexport void ServiceRegistrationGotZoneData(mDNS *const m, mStatus err, const
 	if (m->mDNS_busy != m->mDNS_reentrancy)
 		LogMsg("ServiceRegistrationGotZoneData: mDNS_busy (%ld) != mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
-	srs->nta = mDNSNULL;
+	srs->srs_nta = mDNSNULL;
 
 	// Start off assuming we're going to use a lease
 	// If we get an error from the server, and the update port as given in the SRV record is 53, then we'll retry without the lease option
@@ -2959,8 +2962,8 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 				if (!HaveZoneData)
 					{
 					srs->state = regState_FetchingZoneData;
-					if (srs->nta) CancelGetZoneData(m, srs->nta); // Make sure we cancel old one before we start a new one
-					srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationGotZoneData, srs);
+					if (srs->srs_nta) CancelGetZoneData(m, srs->srs_nta); // Make sure we cancel old one before we start a new one
+					srs->srs_nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationGotZoneData, srs);
 					}
 				else
 					{
@@ -4400,7 +4403,7 @@ mDNSexport mStatus uDNS_DeregisterService(mDNS *const m, ServiceRecordSet *srs)
 	// don't re-register with a new target following deregistration
 	srs->SRVChanged = srs->SRVUpdateDeferred = mDNSfalse;
 
-	if (srs->nta) { CancelGetZoneData(m, srs->nta); srs->nta = mDNSNULL; }
+	if (srs->srs_nta) { CancelGetZoneData(m, srs->srs_nta); srs->srs_nta = mDNSNULL; }
 
 	if (srs->NATinfo.clientContext)
 		{
@@ -4824,8 +4827,8 @@ mDNSlocal mDNSs32 CheckServiceRegistrations(mDNS *m)
 				if (srs->tcp) { DisposeTCPConn(srs->tcp); srs->tcp = mDNSNULL; }
 				if (srs->state == regState_FetchingZoneData)
 					{
-					if (srs->nta) CancelGetZoneData(m, srs->nta);
-					srs->nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationGotZoneData, srs);
+					if (srs->srs_nta) CancelGetZoneData(m, srs->srs_nta);
+					srs->srs_nta = StartGetZoneData(m, srs->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationGotZoneData, srs);
 					SetRecordRetry(m, &srs->RR_SRV, mStatus_NoError);
 					}
 				else if (srs->state == regState_DeregPending) SendServiceDeregistration(m, srs);
@@ -4890,7 +4893,7 @@ mDNSexport void SleepServiceRegistrations(mDNS *m)
 	while (srs)
 		{
 		LogOperation("SleepServiceRegistrations: state %d %s", srs->state, ARDisplayString(m, &srs->RR_SRV));
-		if (srs->nta) { CancelGetZoneData(m, srs->nta); srs->nta = mDNSNULL; }
+		if (srs->srs_nta) { CancelGetZoneData(m, srs->srs_nta); srs->srs_nta = mDNSNULL; }
 
 		if (srs->NATinfo.clientContext)
 			{

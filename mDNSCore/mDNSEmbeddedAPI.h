@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.519  2008/11/25 22:46:30  cheshire
+For ease of code searching, renamed ZoneData field of ServiceRecordSet_struct from "nta" to "srs_nta"
+
 Revision 1.518  2008/11/25 05:07:15  cheshire
 <rdar://problem/6374328> Advertise Sleep Proxy metrics in service name
 
@@ -1902,7 +1905,7 @@ struct ServiceRecordSet_struct
 	mDNSBool          srs_uselease;				// dynamic update contains (should contain) lease option
 	mDNSBool          TestForSelfConflict;		// on name conflict, check if we're just seeing our own orphaned records
 	mDNSBool          Private;					// If zone is private, DNS updates may have to be encrypted to prevent eavesdropping
-	ZoneData         *nta;
+	ZoneData         *srs_nta;
 	mDNSOpaque16      id;
 	domainname        zone;						// the zone that is updated
 	mDNSAddr          SRSUpdateServer;			// primary name server for the record's zone  !!!KRS not technically correct to cache longer than TTL
