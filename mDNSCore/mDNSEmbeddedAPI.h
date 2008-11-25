@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.518  2008/11/25 05:07:15  cheshire
+<rdar://problem/6374328> Advertise Sleep Proxy metrics in service name
+
 Revision 1.517  2008/11/20 01:51:19  cheshire
 Exported RecreateNATMappings so it's callable from other files
 
@@ -72,7 +75,7 @@ Added TimeRcvd and TimeExpire fields to AuthRecord_struct
 
 Revision 1.512  2008/11/14 00:00:53  cheshire
 After client machine wakes up, Sleep Proxy machine need to remove any records
-it was temporarily holding as proxy that client
+it was temporarily holding as proxy for that client
 
 Revision 1.511  2008/11/13 19:04:44  cheshire
 Added definition of OwnerOptData
@@ -2348,10 +2351,13 @@ struct mDNS_struct
 	mDNSu8           *UPnPRouterAddressString;	// holds both the router's address and port
 	mDNSu8           *UPnPSOAPAddressString;	// holds both address and port for SOAP messages
 
-	mDNSu8            SleepProxyServerType;		// 0 = off, 10-99 encodes desirability metric
-	mDNSu8            SleepProxyServerState;	// 0 = off, 1 = running, 2 = shutting down, 3 = suspended during sleep
-	UDPSocket        *SleepProxyServerSocket;
-	ServiceRecordSet  SleepProxyServerSRS;
+	mDNSu8            SPSType;					// 0 = off, 10-99 encodes desirability metric
+	mDNSu8            SPSPortability;			// 10-99
+	mDNSu8            SPSMarginalPower;			// 10-99
+	mDNSu8            SPSTotalPower;			// 10-99
+	mDNSu8            SPSState;					// 0 = off, 1 = running, 2 = shutting down, 3 = suspended during sleep
+	UDPSocket        *SPSSocket;
+	ServiceRecordSet  SPSRecords;
 
 #if APPLE_OSX_mDNSResponder
 	ClientTunnel     *TunnelClients;
@@ -3038,7 +3044,7 @@ extern void     mDNSCoreReceive(mDNS *const m, void *const msg, const mDNSu8 *co
 								const mDNSAddr *const dstaddr, const mDNSIPPort dstport, const mDNSInterfaceID InterfaceID);
 extern void     mDNSCoreMachineSleep(mDNS *const m, mDNSBool wake);
 
-extern void     mDNSCoreBeSleepProxyServer(mDNS *const m, mDNSu8 sps);
+extern void     mDNSCoreBeSleepProxyServer(mDNS *const m, mDNSu8 sps, mDNSu8 port, mDNSu8 marginalpower, mDNSu8 totpower);
 extern void     mDNSCoreReceiveRawPacket  (mDNS *const m, const mDNSu8 *const p, const mDNSu8 *const end, const mDNSInterfaceID InterfaceID);
 
 extern mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip);

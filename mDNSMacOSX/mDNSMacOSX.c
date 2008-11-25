@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.584  2008/11/25 05:07:16  cheshire
+<rdar://problem/6374328> Advertise Sleep Proxy metrics in service name
+
 Revision 1.583  2008/11/20 01:42:31  cheshire
 For consistency with other parts of the code, changed code to only check
 that the first 4 bytes of MAC address are zero, not the whole 6 bytes.
@@ -999,13 +1002,23 @@ static CFArrayRef ServerCerts;
 
 #define DYNDNS_KEYCHAIN_SERVICE "DynDNS Shared Secret"
 
-CFStringRef NetworkChangedKey_IPv4;
-CFStringRef NetworkChangedKey_IPv6;
-CFStringRef NetworkChangedKey_Hostnames;
-CFStringRef NetworkChangedKey_Computername;
-CFStringRef NetworkChangedKey_DNS;
-CFStringRef NetworkChangedKey_DynamicDNS  = CFSTR("Setup:/Network/DynamicDNS");
-CFStringRef NetworkChangedKey_BackToMyMac = CFSTR("Setup:/Network/BackToMyMac");
+static CFStringRef NetworkChangedKey_IPv4;
+static CFStringRef NetworkChangedKey_IPv6;
+static CFStringRef NetworkChangedKey_Hostnames;
+static CFStringRef NetworkChangedKey_Computername;
+static CFStringRef NetworkChangedKey_DNS;
+static CFStringRef NetworkChangedKey_DynamicDNS  = CFSTR("Setup:/Network/DynamicDNS");
+static CFStringRef NetworkChangedKey_BackToMyMac = CFSTR("Setup:/Network/BackToMyMac");
+
+static char  HINFO_HWstring_buffer[32];
+static char *HINFO_HWstring = "Device";
+static int   HINFO_HWstring_prefixlen = 6;
+
+#if APPLE_OSX_mDNSResponder
+static mDNSu8 SPMetricPortability   = 99;
+static mDNSu8 SPMetricMarginalPower = 99;
+static mDNSu8 SPMetricTotalPower    = 99;
+#endif APPLE_OSX_mDNSResponder
 
 // ***************************************************************************
 // Functions
@@ -3247,32 +3260,6 @@ mDNSexport void AddNewClientTunnel(mDNS *const m, DNSQuestion *const q)
 #pragma mark - Power State & Configuration Change Management
 #endif
 
-mDNSlocal void GenerateDefaultName(const mDNSEthAddr PrimaryMAC, char *buffer, mDNSu32 length)
-{
-	char	hwName[32];
-	size_t	hwNameLen = sizeof(hwName);
-	
-	hwName[0] = 0;
-	if (sysctlbyname("hw.model", &hwName, &hwNameLen, NULL, 0) == 0)
-		{
-		// hw.model contains a number like iMac6,1. We want the "iMac" part.
-		hwName[sizeof(hwName) - 1] = 0;
-		char	*ptr;
-		for (ptr = hwName; *ptr != 0; ptr++)
-			{
-			if (*ptr >= '0' && *ptr <= '9') *ptr = 0;
-			if (*ptr == ',') break;
-			}
-		// Prototype model names do not contain commas, do not use prototype names
-		if (*ptr != ',') hwName[0] = 0;
-		}
-	
-	if (hwName[0] == 0) strlcpy(hwName, "Device", sizeof(hwName));
-	
-	mDNS_snprintf(buffer, length, "%s-%02X%02X%02X%02X%02X%02X", hwName,
-		PrimaryMAC.b[0], PrimaryMAC.b[1], PrimaryMAC.b[2], PrimaryMAC.b[3], PrimaryMAC.b[4], PrimaryMAC.b[5]);
-}
-
 mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 	{
 	mDNSBool foundav4           = mDNSfalse;
@@ -3432,7 +3419,8 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 		LogOperation("m->AutoTunnelLabel %#s", m->AutoTunnelLabel.c);
 		}
 	
-	GenerateDefaultName(PrimaryMAC, defaultname, sizeof(defaultname));
+	mDNS_snprintf(defaultname, sizeof(defaultname), "%.*s-%02X%02X%02X%02X%02X%02X", HINFO_HWstring_prefixlen, HINFO_HWstring,
+		PrimaryMAC.b[0], PrimaryMAC.b[1], PrimaryMAC.b[2], PrimaryMAC.b[3], PrimaryMAC.b[4], PrimaryMAC.b[5]);
 
 	// Set up the nice label
 	domainlabel nicelabel;
@@ -4437,12 +4425,15 @@ mDNSlocal void SetSPS(mDNS *const m)
 	mDNSBool natenabled = (dict && (CFGetTypeID(dict) == CFDictionaryGetTypeID()) && DictionaryIsEnabled(dict));
 	mDNSu8 sps = natenabled ? 50 : (GetSystemSleepTimerSetting() == 0) ? 70 : 0;
 
-	// For now, don't act as SPS just because the computer is set to never sleep
-	if (sps == 70) sps = 0;
-	// Also, when we enable this, we need to only act as SPS when running on AC power, not on battery
+	// For devices that are not running NAT, but are set to never sleep, we may choose to act
+	// as a Sleep Proxy, but only for non-portable Macs (Portability > 35 means approx weight > 3kg)
+	if (sps > 50 && SPMetricPortability > 35) sps = 0;
 
-	LogOperation("Sleep Proxy Server %d %s", sps, sps ? "starting" : "stopping");
-	mDNSCoreBeSleepProxyServer(m, sps);
+	// If we decide to let laptops act as Sleep Proxy, we should do it only when running on AC power, not on battery
+
+	LogOperation("Sleep Proxy Server %d %d %d %d %s", sps, SPMetricPortability, SPMetricMarginalPower, SPMetricTotalPower,
+		sps ? "starting" : "stopping");
+	mDNSCoreBeSleepProxyServer(m, sps, SPMetricPortability, SPMetricMarginalPower, SPMetricTotalPower);
 	}
 
 mDNSlocal void InternetSharingChanged(SCPreferencesRef prefs, SCPreferencesNotification notificationType, void *context)
@@ -4527,7 +4518,7 @@ mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 	NetworkInterfaceInfoOSX *i;
 	for (i = m->p->InterfaceList; i; i = i->next)
 		{
-		if (!m->SleepProxyServerSocket)		// Not being Sleep Proxy Server; close any open BPF fds
+		if (!m->SPSSocket)		// Not being Sleep Proxy Server; close any open BPF fds
 			{
 			if (i->BPF_fd >= 0) CloseBPF(i);
 			}
@@ -4874,12 +4865,12 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 
 	m->hostlabel.c[0]        = 0;
 
-	char *HINFO_HWstring = "Macintosh";
-	char HINFO_HWstring_buffer[256];
 	int    get_model[2] = { CTL_HW, HW_MODEL };
 	size_t len_model = sizeof(HINFO_HWstring_buffer);
-	if (sysctl(get_model, 2, HINFO_HWstring_buffer, &len_model, NULL, 0) == 0)
+	// Names that contain no commas are prototype model names, so we ignore those
+	if (sysctl(get_model, 2, HINFO_HWstring_buffer, &len_model, NULL, 0) == 0 && strchr(HINFO_HWstring_buffer, ','))
 		HINFO_HWstring = HINFO_HWstring_buffer;
+	HINFO_HWstring_prefixlen = strcspn(HINFO_HWstring, "0123456789");
 
 	char HINFO_SWstring[256] = "";
 	if (mDNSMacOSXSystemBuildNumber(HINFO_SWstring) < 7) m->KnownBugs |= mDNS_KnownBug_PhantomInterfaces;
@@ -4969,6 +4960,15 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 #endif /* NO_IOPOWER */
 
 #if APPLE_OSX_mDNSResponder
+	if      (!strncasecmp(HINFO_HWstring, "RackMac",  7)) { SPMetricPortability = 30 /* 10kg */; SPMetricMarginalPower = 84 /* 250W */; SPMetricTotalPower = 85 /* 300W */; }
+	else if (!strncasecmp(HINFO_HWstring, "MacPro",   6)) { SPMetricPortability = 31 /*  8kg */; SPMetricMarginalPower = 84 /* 250W */; SPMetricTotalPower = 85 /* 300W */; }
+	else if (!strncasecmp(HINFO_HWstring, "PowerMac", 8)) { SPMetricPortability = 32 /*  6kg */; SPMetricMarginalPower = 82 /* 160W */; SPMetricTotalPower = 83 /* 200W */; }
+	else if (!strncasecmp(HINFO_HWstring, "iMac",     4)) { SPMetricPortability = 33 /*  4kg */; SPMetricMarginalPower = 77 /*  50W */; SPMetricTotalPower = 78 /*  60W */; }
+	else if (!strncasecmp(HINFO_HWstring, "Macmini",  7)) { SPMetricPortability = 35 /*  3kg */; SPMetricMarginalPower = 73 /*  20W */; SPMetricTotalPower = 74 /*  25W */; }
+	else if (!strncasecmp(HINFO_HWstring, "MacBook",  7)) { SPMetricPortability = 37 /*  2kg */; SPMetricMarginalPower = 71 /*  13W */; SPMetricTotalPower = 72 /*  15W */; }
+	LogMsg("HW_MODEL: %.*s (%s) Portability %d Marginal Power %d Total Power %d",
+		HINFO_HWstring_prefixlen, HINFO_HWstring, HINFO_HWstring, SPMetricPortability, SPMetricMarginalPower, SPMetricTotalPower);
+
 	err = WatchForInternetSharingChanges(m);
 	if (err) { LogMsg("WatchForInternetSharingChanges failed %d", err); return(err); }
 #endif APPLE_OSX_mDNSResponder

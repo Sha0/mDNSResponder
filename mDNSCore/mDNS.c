@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.860  2008/11/25 05:07:15  cheshire
+<rdar://problem/6374328> Advertise Sleep Proxy metrics in service name
+
 Revision 1.859  2008/11/20 02:07:56  cheshire
 <rdar://problem/6387470> Refresh our NAT mappings on wake from sleep
 
@@ -2753,7 +2756,7 @@ mDNSexport const CacheRecord *FindSPSInCache(mDNS *const m, const DNSQuestion *c
 	const CacheRecord *cr;
 	for (cr = cg ? cg->members : mDNSNULL; cr; cr=cr->next)
 		if (SameNameRecordAnswersQuestion(&cr->resrec, q))
-			if (!IdenticalSameNameRecord(&cr->resrec, &m->SleepProxyServerSRS.RR_PTR.resrec))
+			if (!IdenticalSameNameRecord(&cr->resrec, &m->SPSRecords.RR_PTR.resrec))
 				return(cr);
 	return(mDNSNULL);
 	}
@@ -4254,12 +4257,12 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 		NetworkInterfaceInfo *intf = GetFirstActiveInterface(m->HostInterfaces);
 
 		// If we're going to sleep, need to stop advertising that we're a Sleep Proxy Server
-		if (m->SleepProxyServerSocket)
+		if (m->SPSSocket)
 			{
-			mDNSu8 oldstate = m->SleepProxyServerState;
+			mDNSu8 oldstate = m->SPSState;
 			mDNS_DropLockBeforeCallback();		// mDNS_DeregisterService expects to be called without the lock held, so we emulate that here
-			m->SleepProxyServerState = 2;
-			if (oldstate == 1) mDNS_DeregisterService(m, &m->SleepProxyServerSRS);
+			m->SPSState = 2;
+			if (oldstate == 1) mDNS_DeregisterService(m, &m->SPSRecords);
 			mDNS_ReclaimLockAfterCallback();
 			}
 
@@ -4314,11 +4317,11 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 			m->SleepSeqNum++;
 			}
 
-		if (m->SleepProxyServerState == 3)
+		if (m->SPSState == 3)
 			{
 			mDNS_DropLockBeforeCallback();		// mDNS_DeregisterService expects to be called without the lock held, so we emulate that here
-			m->SleepProxyServerState = 0;
-			mDNSCoreBeSleepProxyServer(m, m->SleepProxyServerType);
+			m->SPSState = 0;
+			mDNSCoreBeSleepProxyServer(m, m->SPSType, m->SPSPortability, m->SPSMarginalPower, m->SPSTotalPower);
 			mDNS_ReclaimLockAfterCallback();
 			}
 
@@ -5814,8 +5817,8 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 		msg->h.numAuthorities, msg->h.numAuthorities == 1 ? "y,  " : "ies,",
 		msg->h.numAdditionals, msg->h.numAdditionals == 1 ? "" : "s");
 
-	if (!m->SleepProxyServerSocket) return;
-	if (!mDNSSameIPPort(dstport, m->SleepProxyServerSocket->port)) return;
+	if (!m->SPSSocket) return;
+	if (!mDNSSameIPPort(dstport, m->SPSSocket->port)) return;
 
 	if (mDNS_LogLevel >= MDNS_LOG_VERBOSE_DEBUG || LogAllOperations)
 		DumpPacket(m, mStatus_NoError, mDNSfalse, "UDP", srcaddr, srcport, dstaddr, dstport, msg, end);
@@ -5887,7 +5890,7 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 	opt.resrec.rdata->u.opt[0].opt           = kDNSOpt_Lease;
 	opt.resrec.rdata->u.opt[0].u.updatelease = updatelease;
 	p = PutResourceRecordTTLWithLimit(&m->omsg, m->omsg.data, &m->omsg.h.numAdditionals, &opt.resrec, opt.resrec.rroriginalttl, m->omsg.data + AbsoluteMaxDNSMessageData);
-	if (p) mDNSSendDNSMessage(m, &m->omsg, p, InterfaceID, m->SleepProxyServerSocket, srcaddr, srcport, mDNSNULL, mDNSNULL);
+	if (p) mDNSSendDNSMessage(m, &m->omsg, p, InterfaceID, m->SPSSocket, srcaddr, srcport, mDNSNULL, mDNSNULL);
 	}
 
 mDNSlocal void mDNSCoreReceiveUpdateR(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *end, const mDNSInterfaceID InterfaceID)
@@ -7944,7 +7947,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 						}
 					else
 						{
-						LogOperation("Received  ARP %s owner %.4a for %.4a -- %.6a %s",
+						LogOperation("Ignoring  ARP %s owner %.4a for %.4a -- %.6a %s",
 							mDNSSameIPv4Address(arp->spa, arp->tpa) ? "Announcement" : "Request from",
 							&arp->spa, &arp->tpa, &rr->WakeUp.MAC, ARDisplayString(m, rr));
 						}
@@ -8044,7 +8047,8 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 
 mDNSlocal void ConstructSleepProxyServerName(mDNS *const m, domainlabel *name)
 	{
-	name->c[0] = mDNS_snprintf((char*)name->c+1, 62, "%d %d %d %d %#s", m->SleepProxyServerType, 10, 60, 70, &m->nicelabel);
+	name->c[0] = mDNS_snprintf((char*)name->c+1, 62, "%d-%d-%d-%d %#s",
+		m->SPSType, m->SPSPortability, m->SPSMarginalPower, m->SPSTotalPower, &m->nicelabel);
 	}
 
 mDNSlocal void SleepProxyServerCallback(mDNS *const m, ServiceRecordSet *const srs, mStatus result)
@@ -8054,18 +8058,18 @@ mDNSlocal void SleepProxyServerCallback(mDNS *const m, ServiceRecordSet *const s
 	else if (result == mStatus_MemFree)
 		{
 		if (m->SleepState)
-			m->SleepProxyServerState = 3;
+			m->SPSState = 3;
 		else
 			{
-			m->SleepProxyServerState = (m->SleepProxyServerSocket != mDNSNULL);
-			if (m->SleepProxyServerState)
+			m->SPSState = (m->SPSSocket != mDNSNULL);
+			if (m->SPSState)
 				{
 				domainlabel name;
 				ConstructSleepProxyServerName(m, &name);
 				LogOperation("Sleep Proxy Server %#s starting", name.c);
 				mDNS_RegisterService(m, srs,
 					&name, (const domainname *)"\xC_sleep-proxy\x4_udp", (const domainname *)"\x5local",
-					mDNSNULL, m->SleepProxyServerSocket->port,	// Host, port
+					mDNSNULL, m->SPSSocket->port,				// Host, port
 					(mDNSu8 *)"", 1,							// TXT data, length
 					mDNSNULL, 0,								// Subtypes (none)
 					mDNSInterface_Any,							// Interface ID
@@ -8075,32 +8079,25 @@ mDNSlocal void SleepProxyServerCallback(mDNS *const m, ServiceRecordSet *const s
 		}
 	}
 
-mDNSexport void mDNSCoreBeSleepProxyServer(mDNS *const m, mDNSu8 sps)
+mDNSexport void mDNSCoreBeSleepProxyServer(mDNS *const m, mDNSu8 sps, mDNSu8 port, mDNSu8 marginalpower, mDNSu8 totpower)
 	{
-	m->SleepProxyServerType = sps;
+	m->SPSType          = sps;
+	m->SPSPortability   = port;
+	m->SPSMarginalPower = marginalpower;
+	m->SPSTotalPower    = totpower;
 	if (sps)
 		{
-		if (!m->SleepProxyServerSocket)
+		if (!m->SPSSocket)
 			{
-			m->SleepProxyServerSocket = mDNSPlatformUDPSocket(m, zeroIPPort);
-			if (!m->SleepProxyServerSocket)
-				{ LogMsg("mDNSCoreBeSleepProxyServer: Failed to allocate SleepProxyServerSocket"); return; }
+			m->SPSSocket = mDNSPlatformUDPSocket(m, zeroIPPort);
+			if (!m->SPSSocket) { LogMsg("mDNSCoreBeSleepProxyServer: Failed to allocate SPSSocket"); return; }
 			}
-		if (m->SleepProxyServerState == 0)
-			SleepProxyServerCallback(m, &m->SleepProxyServerSRS, mStatus_MemFree);
+		if (m->SPSState == 0) SleepProxyServerCallback(m, &m->SPSRecords, mStatus_MemFree);
 		}
 	else
 		{
-		if (m->SleepProxyServerSocket)
-			{
-			mDNSPlatformUDPClose(m->SleepProxyServerSocket);
-			m->SleepProxyServerSocket = mDNSNULL;
-			}
-		if (m->SleepProxyServerState == 1)
-			{
-			m->SleepProxyServerState = 2;
-			mDNS_DeregisterService(m, &m->SleepProxyServerSRS);
-			}
+		if (m->SPSSocket) { mDNSPlatformUDPClose(m->SPSSocket); m->SPSSocket = mDNSNULL; }
+		if (m->SPSState == 1) { m->SPSState = 2; mDNS_DeregisterService(m, &m->SPSRecords); }
 		}
 	}
 
@@ -8257,9 +8254,12 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->UPnPSOAPURL              = mDNSNULL;
 	m->UPnPRouterAddressString  = mDNSNULL;
 	m->UPnPSOAPAddressString    = mDNSNULL;
-	m->SleepProxyServerType     = 0;
-	m->SleepProxyServerState    = 0;
-	m->SleepProxyServerSocket   = mDNSNULL;
+	m->SPSType                  = 0;
+	m->SPSPortability           = 0;
+	m->SPSMarginalPower         = 0;
+	m->SPSTotalPower            = 0;
+	m->SPSState                 = 0;
+	m->SPSSocket                = mDNSNULL;
 
 #endif
 
@@ -8280,19 +8280,19 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 
 mDNSexport void mDNS_ConfigChanged(mDNS *const m)
 	{
-	if (m->SleepProxyServerState == 1)
+	if (m->SPSState == 1)
 		{
 		domainlabel name, newname;
 		domainname type, domain;
-		DeconstructServiceName(m->SleepProxyServerSRS.RR_SRV.resrec.name, &name, &type, &domain);
+		DeconstructServiceName(m->SPSRecords.RR_SRV.resrec.name, &name, &type, &domain);
 		ConstructSleepProxyServerName(m, &newname);
 		if (!SameDomainLabelCS(name.c, newname.c))
 			{
 			LogOperation("Renaming SPS from “%#s” to “%#s”", name.c, newname.c);
 			// When SleepProxyServerCallback gets the mStatus_MemFree message,
 			// it will reregister the service under the new name
-			m->SleepProxyServerState = 2;
-			mDNS_DeregisterService(m, &m->SleepProxyServerSRS);
+			m->SPSState = 2;
+			mDNS_DeregisterService(m, &m->SPSRecords);
 			}
 		}
 	
@@ -8475,7 +8475,7 @@ mDNSexport void mDNS_StartExit(mDNS *const m)
 	m->ShutdownTime = NonZeroTime(m->timenow + mDNSPlatformOneSecond * 5);
 
 	mDNS_DropLockBeforeCallback();		// mDNSCoreBeSleepProxyServer expects to be called without the lock held, so we emulate that here
-	mDNSCoreBeSleepProxyServer(m, 0);
+	mDNSCoreBeSleepProxyServer(m, 0, 0, 0, 0);
 	mDNS_ReclaimLockAfterCallback();
 
 #ifndef UNICAST_DISABLED
