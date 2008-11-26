@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.396  2008/11/26 23:37:44  cheshire
+Use SCDynamicStoreCopyDHCPInfo to compute desired wakeup time for our next DHCP lease renewal
+
 Revision 1.395  2008/11/14 21:56:31  cheshire
 Moved debugging routine ShowTaskSchedulingError() from daemon.c into DNSCommon.c
 
@@ -488,6 +491,7 @@ Revision 1.261  2006/01/06 01:22:28  cheshire
 #include <pthread.h>
 #include <sandbox.h>
 #include <SystemConfiguration/SCPreferencesSetSpecific.h>
+#include <SystemConfiguration/SCDynamicStoreCopyDHCPInfo.h>
 
 #if TARGET_OS_EMBEDDED
 #include <bootstrap_priv.h>
@@ -2484,6 +2488,74 @@ mDNSlocal mDNSBool ReadyForSleep(mDNS *m)
 	return(mDNStrue);
 	}
 
+mDNSlocal mDNSu32 DHCPWakeTime(void)
+	{
+	mDNSu32 e = 24 * 3600;		// Maximum maintenance wake interval is 24 hours
+	const CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+	if (!now) LogMsg("DHCPWakeTime: CFAbsoluteTimeGetCurrent failed");
+	else
+		{
+		const SCPreferencesRef prefs = SCPreferencesCreate(NULL, CFSTR("mDNSResponder:DHCPWakeTime"), NULL);
+		if (!prefs) LogMsg("DHCPWakeTime: SCPreferencesCreate failed");
+		else
+			{
+			const SCNetworkSetRef currentset = SCNetworkSetCopyCurrent(prefs);
+			if (!currentset) LogMsg("DHCPWakeTime: SCNetworkSetCopyCurrent failed");
+			else
+				{
+				const CFArrayRef services = SCNetworkSetCopyServices(currentset);
+				if (!services) LogMsg("DHCPWakeTime: SCNetworkSetCopyServices failed");
+				else
+					{
+					int i;
+					for (i = 0; i < CFArrayGetCount(services); i++)
+						{
+						const SCNetworkServiceRef service = CFArrayGetValueAtIndex(services, i);
+						if (!service) LogMsg("DHCPWakeTime: CFArrayGetValueAtIndex %d failed", i);
+						else
+							{
+							const CFStringRef serviceid = SCNetworkServiceGetServiceID(service);
+							if (!serviceid) LogMsg("DHCPWakeTime: SCNetworkServiceGetServiceID %d failed", i);
+							else
+								{
+								// Note: It's normal for this call to return NULL, for interfaces not using DHCP
+								const CFDictionaryRef dhcp = SCDynamicStoreCopyDHCPInfo(NULL, serviceid);
+								if (dhcp)
+									{
+									const CFDateRef start = DHCPInfoGetLeaseStartTime(dhcp);
+									const CFDataRef lease = DHCPInfoGetOptionData(dhcp, 51);	// Option 51 = IP Address Lease Time
+									if (!start || !lease || CFDataGetLength(lease) < 4)
+										LogMsg("DHCPWakeTime: SCDynamicStoreCopyDHCPInfo %d failed %p %p %d",
+											i, start, lease, lease ? CFDataGetLength(lease) : 0);
+									else
+										{
+										const UInt8 *d = CFDataGetBytePtr(lease);
+										if (!d) LogMsg("DHCPWakeTime: CFDataGetBytePtr %d failed", i);
+										else
+											{
+											const mDNSu32 elapsed   = now - CFDateGetAbsoluteTime(start);
+											const mDNSu32 lifetime  = (mDNSs32) ((mDNSs32)d[0] << 24 | (mDNSs32)d[1] << 16 | (mDNSs32)d[2] << 8 | d[3]);
+											const mDNSu32 remaining = lifetime - elapsed;
+											const mDNSu32 wake      = remaining > 60 ? remaining - remaining/4 : 45;
+											LogOperation("DHCP Address Lease Elapsed %6u Lifetime %6u Remaining %6u Wake %6u", elapsed, lifetime, remaining, wake);
+											if (e > wake) e = wake;
+											}
+										}
+									CFRelease(dhcp);
+									}
+								}
+							}
+						}
+					CFRelease(services);
+					}
+				CFRelease(currentset);
+				}
+			CFRelease(prefs);
+			}
+		}
+	return(e);
+	}
+
 // We deliberately schedule our wakeup for halfway between when we'd *like* it and when we *need* it.
 // For example, if our DHCP lease expires in two hours, we'll typically renew it at the halfway point, after one hour.
 // If we scheduled our wakeup for the one-hour renewal time, that might be just seconds from now, and sleeping
@@ -2496,9 +2568,8 @@ mDNSlocal mDNSs32 ComputeWakeTime(mDNS *const m, mDNSs32 now)
 	{
 	mDNSs32 e = now + 0x78000000;
 
-	// For testing right now we assume 2 hours; in reality we need to interrogate DHCP client to get the real value
-	mDNSs32 dhcp = now + 7200 * mDNSPlatformOneSecond;
-
+	mDNSs32 dhcp = now + DHCPWakeTime() * mDNSPlatformOneSecond;
+	LogOperation("ComputeWakeTime: DHCP Wake %d", (dhcp - now) / mDNSPlatformOneSecond);
 	if (e - dhcp > 0) e = dhcp;
 
 	NATTraversalInfo *nat;
