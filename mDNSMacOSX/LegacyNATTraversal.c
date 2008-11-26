@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.53  2008/11/26 20:34:04  cheshire
+Changed "destroying SSDPSocket" LogOperation debugging messages to debugf
+
 Revision 1.52  2008/11/26 19:54:03  cheshire
 Changed some "LogOperation" debugging messages to "debugf"
 
@@ -887,7 +890,7 @@ mDNSexport void LNT_ConfigureRouterInfo(mDNS *m, const mDNSInterfaceID Interface
 	LogOperation("LNT_ConfigureRouterInfo: Router interface %d", m->UPnPInterfaceID);
 
 	// Don't need the SSDP socket anymore
-	if (m->SSDPSocket) { LogOperation("LNT_ConfigureRouterInfo destroying SSDPSocket %p", &m->SSDPSocket); mDNSPlatformUDPClose(m->SSDPSocket); m->SSDPSocket = mDNSNULL; }
+	if (m->SSDPSocket) { debugf("LNT_ConfigureRouterInfo destroying SSDPSocket %p", &m->SSDPSocket); mDNSPlatformUDPClose(m->SSDPSocket); m->SSDPSocket = mDNSNULL; }
 
 	// now send message to get the device description
 	GetDeviceDescription(m, &m->tcpDeviceInfo);
@@ -908,7 +911,7 @@ mDNSexport void LNT_SendDiscoveryMsg(mDNS *m)
 	
 	if (!mDNSIPPortIsZero(m->UPnPRouterPort))
 		{
-		if (m->SSDPSocket) { LogOperation("LNT_SendDiscoveryMsg destroying SSDPSocket %p", &m->SSDPSocket); mDNSPlatformUDPClose(m->SSDPSocket); m->SSDPSocket = mDNSNULL; }
+		if (m->SSDPSocket) { debugf("LNT_SendDiscoveryMsg destroying SSDPSocket %p", &m->SSDPSocket); mDNSPlatformUDPClose(m->SSDPSocket); m->SSDPSocket = mDNSNULL; }
 		if (mDNSIPPortIsZero(m->UPnPSOAPPort) && !m->tcpDeviceInfo.sock) GetDeviceDescription(m, &m->tcpDeviceInfo);
 		return;
 		}
