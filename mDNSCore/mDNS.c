@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.864  2008/11/26 19:02:37  cheshire
+Don't answer ARP Probes from owner machine as it wakes up and rejoins the network
+
 Revision 1.863  2008/11/26 03:59:03  cheshire
 Wait 30 seconds before starting ARP Announcements
 
@@ -7925,52 +7928,53 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 
 		mDNS_Lock(m);
 
-		// Answer ARP Requests for any IP address we're proxying for
-		if (mDNSSameOpaque16(arp->op, ARP_op_request))			// ARP Request
-			if (!mDNSSameIPv4Address(arp->spa, arp->tpa))		// But not an ARP Announcement
-				for (rr = m->ResourceRecords; rr; rr=rr->next)
-					if (rr->resrec.InterfaceID == InterfaceID &&
-						rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, arp->tpa))
-						{
-						if (rr->ProbeCount)
-							LogOperation("Ignoring  ARP from %-15.4a for %-15.4a %s", &arp->spa, &arp->tpa, ARDisplayString(m, rr));
-						else
-							{
-							LogOperation("Answering ARP from %-15.4a for %-15.4a %s", &arp->spa, &arp->tpa, ARDisplayString(m, rr));
-							SendARP(m, 2, rr, arp->tpa.b, arp->sha.b, arp->spa.b, arp->sha.b);
-							}
-						}
+		// Pass 1:
+		// Process ARP Requests and Probes (but not Announcements), and generate an ARP Reply if necessary.
+		// We also process and answer ARPs from our own kernel (no special treatment for localhost).
+		// We ignore ARP Announcements here -- Announcements are not questions, they're assertions, so we don't need to answer them.
+		// The only time we might need to respond to an ARP Announcement is if it's a conflict -- and we check for that in Pass 2 below.
+		if (mDNSSameOpaque16(arp->op, ARP_op_request) && !mDNSSameIPv4Address(arp->spa, arp->tpa))
+			for (rr = m->ResourceRecords; rr; rr=rr->next)
+				if (rr->resrec.InterfaceID == InterfaceID && rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, arp->tpa))
+					{
+					static const char msg1[] = "Ignoring  ARP Request from owner %.6a %.4a for %.4a -- %.6a %s";
+					static const char msg2[] = "Ignoring  ARP Request from       %.6a %.4a for %.4a -- %.6a %s";
+					static const char msg3[] = "Answering ARP Request from       %.6a %.4a for %.4a -- %.6a %s";
+					const char *const msg = mDNSSameEthAddress(&arp->sha, &rr->WakeUp.MAC) ? msg1 : rr->ProbeCount ? msg2 : msg3;
+					LogOperation(msg, &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.MAC, ARDisplayString(m, rr));
+					if (msg == msg3) SendARP(m, 2, rr, arp->tpa.b, arp->sha.b, arp->spa.b, arp->sha.b);
+					}
 
-		// Check for conflicting ARP packets (Sender MAC address is not our MAC address)
-		// If the sender hardware address is *not* the original owner, then this is a conflct,
-		// and we need to wake the sleeping machine to handle it.
+		// Pass 2:
+		// For all types of ARP packet we check the Sender IP address to make sure it doesn't conflict with any AddressProxy record we're holding.
+		// (Strictly speaking we're only checking Announcement/Request/Reply packets, since ARP Probes have zero Sender IP address,
+		// so by definition (and by design) they can never conflict with any real (i.e. non-zero) IP address).
+		// We ignore ARPs we sent ourselves (Sender MAC address is our MAC address) because our own proxy ARPs do not constitute a conflict that we need to handle.
+		// If we see an apparently conflicting ARP, we check the sender hardware address:
+		//   If the sender hardware address is the original owner this is benign, so we just suppress our own proxy answering for a while longer.
+		//   If the sender hardware address is *not* the original owner, then this is a conflict, and we need to wake the sleeping machine to handle it.
 		if (mDNSSameEthAddress(&arp->sha, &intf->MAC))
 			debugf("ARP from self for %.4a", &arp->tpa);
 		else
 			{
 			for (rr = m->ResourceRecords; rr; rr=rr->next)
-				if (rr->resrec.InterfaceID == InterfaceID &&
-					rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, arp->spa))
+				if (rr->resrec.InterfaceID == InterfaceID && rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, arp->spa))
 					{
 					// We reset ProbeCount, so we'll suppress our own answers for a while, to avoid generating ARP conflicts with a waking machine.
 					// If the machine does wake properly then we'll discard our records when we see the first new mDNS probe from that machine.
 					// If it does not wake (perhaps we just picked up a stray delayed packet sent before it went to sleep) then we'll transition
 					// out of probing state and start answering ARPs again.
 					rr->resrec.RecordType = kDNSRecordTypeUnique;
-					rr->ProbeCount    = DefaultProbeCountForTypeUnique;
-					rr->AnnounceCount = InitialAnnounceCount;
+					rr->ProbeCount        = DefaultProbeCountForTypeUnique;
+					rr->AnnounceCount     = InitialAnnounceCount;
 					InitializeLastAPTime(m, rr, DefaultProbeIntervalForTypeUnique);
-					if (!mDNSSameEthAddress(&arp->sha, &rr->WakeUp.MAC))
-						{
-						LogMsg("Received Conflicting ARP -- waking %s %.6a %s",
-							InterfaceNameForID(m, rr->resrec.InterfaceID), &rr->WakeUp.MAC, ARDisplayString(m, rr));
-						SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.MAC);
-						}
+					if (mDNSSameEthAddress(&arp->sha, &rr->WakeUp.MAC))
+						LogOperation("Ignoring  ARP %s owner %.4a for %.4a -- %.6a %s",
+							mDNSSameIPv4Address(arp->spa, arp->tpa) ? "Announcement" : "Request from", &arp->spa, &arp->tpa, &rr->WakeUp.MAC, ARDisplayString(m, rr));
 					else
 						{
-						LogOperation("Ignoring  ARP %s owner %.4a for %.4a -- %.6a %s",
-							mDNSSameIPv4Address(arp->spa, arp->tpa) ? "Announcement" : "Request from",
-							&arp->spa, &arp->tpa, &rr->WakeUp.MAC, ARDisplayString(m, rr));
+						LogMsg("Received Conflicting ARP -- waking %s %.6a %s", InterfaceNameForID(m, rr->resrec.InterfaceID), &rr->WakeUp.MAC, ARDisplayString(m, rr));
+						SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.MAC);
 						}
 					}
 			}
