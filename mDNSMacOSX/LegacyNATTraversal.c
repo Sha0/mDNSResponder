@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.54  2008/11/26 20:57:37  cheshire
+For consistency with other similar macros, renamed mdnsIsDigit/mdnsIsLetter/mdnsValidHostChar
+to mDNSIsDigit/mDNSIsLetter/mDNSValidHostChar
+
 Revision 1.53  2008/11/26 20:34:04  cheshire
 Changed "destroying SSDPSocket" LogOperation debugging messages to debugf
 
@@ -405,7 +409,7 @@ mDNSlocal void handleLNTGetExternalAddressResponse(tcpLNTInfo *tcpInfo)
 	ptr += 1;									// Skip over ">"
 	// Find the end of the address and terminate the string so inet_pton() can convert it
 	addrend = ptr;
-	while (addrend < end && (mdnsIsDigit(*addrend) || *addrend == '.')) addrend++;
+	while (addrend < end && (mDNSIsDigit(*addrend) || *addrend == '.')) addrend++;
 	if (addrend >= end) return;
 	*addrend = 0;
 

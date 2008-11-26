@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.228  2008/11/26 20:57:37  cheshire
+For consistency with other similar macros, renamed mdnsIsDigit/mdnsIsLetter/mdnsValidHostChar
+to mDNSIsDigit/mDNSIsLetter/mDNSValidHostChar
+
 Revision 1.227  2008/11/26 20:28:05  cheshire
 Added new SSHPort constant
 
@@ -942,7 +946,7 @@ mDNSexport mDNSu8 *AppendDNSNameString(domainname *const name, const char *cstri
 			if (c == '\\')											// If escape character, check next character
 				{
 				c = (mDNSu8)*cstr++;								// Assume we'll just take the next character
-				if (mdnsIsDigit(cstr[-1]) && mdnsIsDigit(cstr[0]) && mdnsIsDigit(cstr[1]))
+				if (mDNSIsDigit(cstr[-1]) && mDNSIsDigit(cstr[0]) && mDNSIsDigit(cstr[1]))
 					{												// If three decimal digits,
 					int v0 = cstr[-1] - '0';						// then interpret as three-digit decimal
 					int v1 = cstr[ 0] - '0';
@@ -1096,7 +1100,7 @@ mDNSexport void ConvertUTF8PstringToRFC1034HostLabel(const mDNSu8 UTF8Name[], do
 			{ src += 3; continue; }	// Unicode curly apostrophe
 		if (ptr < lim)
 			{
-			if (mdnsValidHostChar(*src, (ptr > &hostlabel->c[1]), (src < end-1))) *ptr++ = *src;
+			if (mDNSValidHostChar(*src, (ptr > &hostlabel->c[1]), (src < end-1))) *ptr++ = *src;
 			else if (ptr > &hostlabel->c[1] && ptr[-1] != '-') *ptr++ = '-';
 			}
 		src++;
@@ -1167,7 +1171,7 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 	for (i=2; i<=len; i++)
 		{
 		// Letters and digits are allowed anywhere
-		if (mdnsIsLetter(src[i]) || mdnsIsDigit(src[i])) continue;
+		if (mDNSIsLetter(src[i]) || mDNSIsDigit(src[i])) continue;
 		// Hyphens are only allowed as interior characters
 		// Underscores are not supposed to be allowed at all, but for backwards compatibility with some old products we do allow them,
 		// with the same rule as hyphens
@@ -1292,17 +1296,17 @@ mDNSexport mDNSBool LabelContainsSuffix(const domainlabel *const name, const mDN
 		{
 		if (l < 4) return mDNSfalse;							// Need at least " (2)"
 		if (name->c[l--] != ')') return mDNSfalse;				// Last char must be ')'
-		if (!mdnsIsDigit(name->c[l])) return mDNSfalse;			// Preceeded by a digit
+		if (!mDNSIsDigit(name->c[l])) return mDNSfalse;			// Preceeded by a digit
 		l--;
-		while (l > 2 && mdnsIsDigit(name->c[l])) l--;			// Strip off digits
+		while (l > 2 && mDNSIsDigit(name->c[l])) l--;			// Strip off digits
 		return (name->c[l] == '(' && name->c[l - 1] == ' ');
 		}
 	else
 		{
 		if (l < 2) return mDNSfalse;							// Need at least "-2"
-		if (!mdnsIsDigit(name->c[l])) return mDNSfalse;			// Last char must be a digit
+		if (!mDNSIsDigit(name->c[l])) return mDNSfalse;			// Last char must be a digit
 		l--;
-		while (l > 2 && mdnsIsDigit(name->c[l])) l--;			// Strip off digits
+		while (l > 2 && mDNSIsDigit(name->c[l])) l--;			// Strip off digits
 		return (name->c[l] == '-');
 		}
 	}
@@ -1318,7 +1322,7 @@ mDNSexport mDNSu32 RemoveLabelSuffix(domainlabel *name, mDNSBool RichText)
 	if (RichText && name->c[0] >= 1 && name->c[name->c[0]] == ')') name->c[0]--;
 
 	// Get any existing numerical suffix off the name
-	while (mdnsIsDigit(name->c[name->c[0]]))
+	while (mDNSIsDigit(name->c[name->c[0]]))
 		{ val += (name->c[name->c[0]] - '0') * multiplier; multiplier *= 10; name->c[0]--; }
 
 	// Chop opening parentheses or dash from suffix

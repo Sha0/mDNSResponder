@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.69  2008/11/26 20:57:37  cheshire
+For consistency with other similar macros, renamed mdnsIsDigit/mdnsIsLetter/mdnsValidHostChar
+to mDNSIsDigit/mDNSIsLetter/mDNSValidHostChar
+
 Revision 1.68  2008/11/14 21:56:31  cheshire
 Moved debugging routine ShowTaskSchedulingError() from daemon.c into DNSCommon.c
 
@@ -223,12 +227,12 @@ extern mDNSu32 mDNSRandomFromFixedSeed(mDNSu32 seed, mDNSu32 max);
 #pragma mark - Domain Name Utility Functions
 #endif
 
-#define mdnsIsDigit(X)     ((X) >= '0' && (X) <= '9')
+#define mDNSIsDigit(X)     ((X) >= '0' && (X) <= '9')
 #define mDNSIsUpperCase(X) ((X) >= 'A' && (X) <= 'Z')
 #define mDNSIsLowerCase(X) ((X) >= 'a' && (X) <= 'z')
-#define mdnsIsLetter(X)    (mDNSIsUpperCase(X) || mDNSIsLowerCase(X))
+#define mDNSIsLetter(X)    (mDNSIsUpperCase(X) || mDNSIsLowerCase(X))
 
-#define mdnsValidHostChar(X, notfirst, notlast) (mdnsIsLetter(X) || mdnsIsDigit(X) || ((notfirst) && (notlast) && (X) == '-') )
+#define mDNSValidHostChar(X, notfirst, notlast) (mDNSIsLetter(X) || mDNSIsDigit(X) || ((notfirst) && (notlast) && (X) == '-') )
 
 extern mDNSu16 CompressedDomainNameLength(const domainname *const name, const domainname *parent);
 extern int CountLabels(const domainname *d);

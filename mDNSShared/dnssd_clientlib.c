@@ -28,6 +28,10 @@
    Change History (most recent first):
 
 $Log: dnssd_clientlib.c,v $
+Revision 1.20  2008/11/26 20:57:37  cheshire
+For consistency with other similar macros, renamed mdnsIsDigit/mdnsIsLetter/mdnsValidHostChar
+to mDNSIsDigit/mDNSIsLetter/mDNSValidHostChar
+
 Revision 1.19  2008/11/04 21:15:18  cheshire
 <rdar://problem/5969564> Potential buffer overflows in DNSServiceConstructFullName
 
@@ -112,7 +116,7 @@ like Muse Research who want to be able to use mDNS/DNS-SD from GPL-licensed code
  *
  *********************************************************************************************/
 
-#define mdnsIsDigit(X)     ((X) >= '0' && (X) <= '9')
+#define mDNSIsDigit(X)     ((X) >= '0' && (X) <= '9')
 
 // DomainEndsInDot returns 1 if name ends with a dot, 0 otherwise
 // (DNSServiceConstructFullName depends this returning 1 for true, rather than any non-zero value meaning true)
@@ -123,7 +127,7 @@ static int DomainEndsInDot(const char *dom)
 		{
 		if (dom[0] == '\\') // advance past escaped byte sequence
 			{
-			if (mdnsIsDigit(dom[1]) && mdnsIsDigit(dom[2]) && mdnsIsDigit(dom[3]))
+			if (mDNSIsDigit(dom[1]) && mDNSIsDigit(dom[2]) && mDNSIsDigit(dom[3]))
 				dom += 4;			// If "\ddd"    then skip four
 			else dom += 2;			// else if "\x" then skip two
 			}
