@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.52  2008/11/26 19:54:03  cheshire
+Changed some "LogOperation" debugging messages to "debugf"
+
 Revision 1.51  2008/11/20 02:23:38  mcguire
 <rdar://problem/6041208> need to handle URLBase
 
@@ -916,11 +919,11 @@ mDNSexport void LNT_SendDiscoveryMsg(mDNS *m)
 	// Create message
 	bufLen = mDNS_snprintf((char*)buf, sizeof(m->omsg), msg, m->SSDPWANPPPConnection ? "PPP" : "IP");
 
-	LogOperation("LNT_SendDiscoveryMsg Router %.4a Current External Address %.4a", &m->Router.ip.v4, &m->ExternalAddress);
+	debugf("LNT_SendDiscoveryMsg Router %.4a Current External Address %.4a", &m->Router.ip.v4, &m->ExternalAddress);
 
 	if (!mDNSIPv4AddressIsZero(m->Router.ip.v4) && mDNSIPv4AddressIsZero(m->ExternalAddress))
 		{
-		if (!m->SSDPSocket) { m->SSDPSocket = mDNSPlatformUDPSocket(m, zeroIPPort); LogOperation("LNT_SendDiscoveryMsg created SSDPSocket %p", &m->SSDPSocket); }
+		if (!m->SSDPSocket) { m->SSDPSocket = mDNSPlatformUDPSocket(m, zeroIPPort); debugf("LNT_SendDiscoveryMsg created SSDPSocket %p", &m->SSDPSocket); }
 		mDNSPlatformSendUDP(m, buf, buf + bufLen, 0, m->SSDPSocket, &m->Router,     SSDPPort);
 		mDNSPlatformSendUDP(m, buf, buf + bufLen, 0, m->SSDPSocket, &multicastDest, SSDPPort);
 		}
