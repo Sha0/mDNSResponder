@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.587  2008/11/26 19:53:26  cheshire
+Don't overwrite srs->NATinfo.IntPort in StartSRVNatMap()
+
 Revision 1.586  2008/11/25 23:43:07  cheshire
 <rdar://problem/5745355> Crashes at ServiceRegistrationGotZoneData + 397
 Made code more defensive to guard against ServiceRegistrationGotZoneData being called with invalid ServiceRecordSet object
@@ -1692,7 +1695,7 @@ mDNSexport mStatus mDNS_StartNATOperation_internal(mDNS *const m, NATTraversalIn
 	{
 	NATTraversalInfo **n;
 	
-	LogOperation("mDNS_StartNATOperation_internal %d %d %d %d",
+	LogOperation("mDNS_StartNATOperation_internal Protocol %d IntPort %d RequestedPort %d NATLease %d",
 		traversal->Protocol, mDNSVal16(traversal->IntPort), mDNSVal16(traversal->RequestedPort), traversal->NATLease);
 
 	// Note: It important that new traversal requests are appended at the *end* of the list, not prepended at the start
@@ -2397,7 +2400,7 @@ mDNSlocal void GetStaticHostname(mDNS *m);
 
 mDNSexport const domainname *GetServiceTarget(mDNS *m, AuthRecord *const rr)
 	{
-	LogOperation("GetServiceTarget %##s", rr->resrec.name->c);
+	debugf("GetServiceTarget %##s", rr->resrec.name->c);
 
 	if (!rr->AutoTarget)		// If not automatically tracking this host's current name, just return the existing target
 		return(&rr->resrec.rdata->u.srv.target);
@@ -2685,7 +2688,7 @@ mDNSlocal mStatus GetZoneData_StartQuery(mDNS *const m, ZoneData *zd, mDNSu16 qt
 		{
 		AssignDomainName(&zd->question.qname, ZoneDataSRV(zd));
 		AppendDomainName(&zd->question.qname, &zd->ZoneName);
-		LogOperation("lookupDNSPort %##s", zd->question.qname.c);
+		debugf("lookupDNSPort %##s", zd->question.qname.c);
 		}
 
 	zd->question.ThisQInterval       = -1;		// So that GetZoneData_QuestionCallback() knows whether to cancel this question (Is this necessary?)
@@ -2756,7 +2759,7 @@ mDNSexport DomainAuthInfo *GetAuthInfoForQuestion(mDNS *m, const DNSQuestion *co
 mDNSlocal void CompleteSRVNatMap(mDNS *m, NATTraversalInfo *n)
 	{
 	ServiceRecordSet *srs = (ServiceRecordSet *)n->clientContext;
-	LogOperation("SRVNatMap complete %.4a %u %u TTL %u", &n->ExternalAddress, mDNSVal16(n->IntPort), mDNSVal16(n->ExternalPort), n->NATLease);
+	LogOperation("SRVNatMap complete %.4a IntPort %u ExternalPort %u NATLease %u", &n->ExternalAddress, mDNSVal16(n->IntPort), mDNSVal16(n->ExternalPort), n->NATLease);
 
 	if (!srs) { LogMsg("CompleteSRVNatMap called with unknown ServiceRecordSet object"); return; }
 	if (!n->NATLease) return;
@@ -2784,7 +2787,9 @@ mDNSlocal void StartSRVNatMap(mDNS *m, ServiceRecordSet *srs)
 	else { LogMsg("StartSRVNatMap: could not determine transport protocol of service %##s", srs->RR_SRV.resrec.name->c); return; }
 	
 	if (srs->NATinfo.clientContext) mDNS_StopNATOperation_internal(m, &srs->NATinfo);
-	srs->NATinfo.IntPort        = srs->RR_SRV.resrec.rdata->u.srv.port;
+	// Don't try to set IntPort here --
+	// SendServiceRegistration overwrites srs->RR_SRV.resrec.rdata->u.srv.port with external (mapped) port number
+	//srs->NATinfo.IntPort      = srs->RR_SRV.resrec.rdata->u.srv.port;
 	srs->NATinfo.RequestedPort  = srs->RR_SRV.resrec.rdata->u.srv.port;
 	srs->NATinfo.NATLease       = 0;		// Request default lease
 	srs->NATinfo.clientCallback = CompleteSRVNatMap;
@@ -2828,6 +2833,10 @@ mDNSexport void ServiceRegistrationGotZoneData(mDNS *const m, mStatus err, const
 		&srs->SRSUpdateServer, mDNSVal16(srs->SRSUpdatePort), mDNSAddrIsRFC1918(&srs->SRSUpdateServer) ? " (RFC1918)" : "",
 		srs->RR_SRV.resrec.name->c);
 
+	// If we have non-zero service port (always?)
+	// and a private address, and update server is non-private
+	// and this service is AutoTarget
+	// then initiate a NAT mapping request. On completion it will do SendServiceRegistration() for us
 	if (!mDNSIPPortIsZero(srs->RR_SRV.resrec.rdata->u.srv.port) &&
 		mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) && !mDNSAddrIsRFC1918(&srs->SRSUpdateServer) &&
 		srs->RR_SRV.AutoTarget == Target_AutoHostAndNATMAP)
@@ -3554,7 +3563,7 @@ mDNSlocal void hndlServiceUpdateReply(mDNS *const m, ServiceRecordSet *srs,  mSt
 	if (m->mDNS_busy != m->mDNS_reentrancy+1)
 		LogMsg("hndlServiceUpdateReply: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
-	LogOperation("hndlServiceUpdateReply: err %d state %d %##s", err, srs->state, srs->RR_SRV.resrec.name->c);
+	debugf("hndlServiceUpdateReply: err %d state %d %##s", err, srs->state, srs->RR_SRV.resrec.name->c);
 
 	SetRecordRetry(m, &srs->RR_SRV, mStatus_NoError);
 
@@ -3665,7 +3674,7 @@ mDNSlocal void hndlServiceUpdateReply(mDNS *const m, ServiceRecordSet *srs,  mSt
 
 	if ((srs->SRVChanged || srs->SRVUpdateDeferred) && (srs->state == regState_NoTarget || srs->state == regState_Registered))
 		{
-		LogOperation("hndlServiceUpdateReply: SRVChanged %d SRVUpdateDeferred %d state %d", srs->SRVChanged, srs->SRVUpdateDeferred, srs->state);
+		debugf("hndlServiceUpdateReply: SRVChanged %d SRVUpdateDeferred %d state %d", srs->SRVChanged, srs->SRVUpdateDeferred, srs->state);
 		if (InvokeCallback)
 			{
 			srs->ClientCallbackDeferred = mDNStrue;
@@ -4196,7 +4205,7 @@ mDNSexport void LLQGotZoneData(mDNS *const m, mStatus err, const ZoneData *zoneI
 		q->servPort = zoneInfo->Port;
 		q->AuthInfo = zoneInfo->ZonePrivate ? GetAuthInfoForName_internal(m, &q->qname) : mDNSNULL;
 		q->ntries = 0;
-		LogOperation("LLQGotZoneData %#a:%d", &q->servAddr, mDNSVal16(q->servPort));
+		debugf("LLQGotZoneData %#a:%d", &q->servAddr, mDNSVal16(q->servPort));
 		startLLQHandshake(m, q);
 		}
 	else
