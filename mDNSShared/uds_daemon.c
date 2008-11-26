@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.414  2008/11/26 00:02:25  cheshire
+Improved SIGINFO output to list AutoBrowseDomains and AutoRegistrationDomains
+
 Revision 1.413  2008/11/25 04:48:58  cheshire
 Added logging to show whether Sleep Proxy Service is active
 
@@ -1818,7 +1821,11 @@ mDNSlocal mStatus register_service_instance(request_state *request, const domain
 	for (ptr = &request->u.servicereg.instances; *ptr; ptr = &(*ptr)->next)
 		{
 		if (SameDomainName(&(*ptr)->domain, domain))
-			{ LogMsg("register_service_instance: domain %##s already registered", domain->c); return mStatus_AlreadyRegistered; }
+			{
+			LogMsg("register_service_instance: domain %##s already registered for %#s.%##s",
+				domain->c, &request->u.servicereg.name, &request->u.servicereg.type);
+			return mStatus_AlreadyRegistered;
+			}
 		}
 
 	// Special-case hack: We don't advertise SMB service in AutoTunnel domains, because AutoTunnel
@@ -3787,6 +3794,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 	mDNSu32 slot;
 	const CacheGroup *cg;
 	const CacheRecord *cr;
+	DNameListElem *d;
 
 	LogMsgNoIdent("Timenow 0x%08lX (%ld)", (mDNSu32)now, now);
 	LogMsgNoIdent("------------ Cache -------------");
@@ -3924,7 +3932,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 		}
 
 	#if APPLE_OSX_mDNSResponder
-	LogMsgNoIdent("--------- TunnelClients ---------");
+	LogMsgNoIdent("--------- TunnelClients --------");
 	if (!m->TunnelClients) LogMsgNoIdent("<None>");
 	else
 		{
@@ -3935,9 +3943,17 @@ mDNSexport void udsserver_info(mDNS *const m)
 		}
 	#endif
 
-	LogMsgNoIdent("------ Sleep Proxy Service ------");
+	LogMsgNoIdent("------ Sleep Proxy Service -----");
 	if (!m->SPSSocket) LogMsgNoIdent("<None>");
 	else LogMsgNoIdent("%#s", m->SPSRecords.RR_SRV.resrec.name->c);
+
+	LogMsgNoIdent("------ Auto Browse Domains -----");
+	if (!AutoBrowseDomains) LogMsgNoIdent("<None>");
+	else for (d=AutoBrowseDomains; d; d=d->next) LogMsgNoIdent("%##s", d->name.c);
+
+	LogMsgNoIdent("--- Auto Registration Domains --");
+	if (!AutoRegistrationDomains) LogMsgNoIdent("<None>");
+	else for (d=AutoRegistrationDomains; d; d=d->next) LogMsgNoIdent("%##s", d->name.c);
 	}
 
 #if APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING
