@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.867  2008/11/26 21:19:36  cheshire
+<rdar://problem/6374334> Sleeping Server should choose the best Sleep Proxy by using advertised metrics
+
 Revision 1.866  2008/11/26 20:32:46  cheshire
 <rdar://problem/6374328> Sleep Proxy: Advertise BSP metrics in service name
 Update advertised name when Sleep Proxy "intent" metric changes
@@ -2774,15 +2777,23 @@ mDNSlocal const CacheRecord *CacheHasAddressTypeForName(mDNS *const m, const dom
 	return(cr);
 	}
 
+#define ValidSPSName(X) ((X)[0] >= 5 && mDNSIsDigit((X)[1]) && mDNSIsDigit((X)[2]) && mDNSIsDigit((X)[4]) && mDNSIsDigit((X)[5]))
+#define SPSMetric(X) (ValidSPSName(X) ? ((X)[1]-'0') * 1000 + ((X)[2]-'0') * 100 + ((X)[4]-'0') * 10 + ((X)[5]-'0') : 9999)
+
 mDNSexport const CacheRecord *FindSPSInCache(mDNS *const m, const DNSQuestion *const q)
 	{
 	CacheGroup *const cg = CacheGroupForName(m, HashSlot(&q->qname), q->qnamehash, &q->qname);
-	const CacheRecord *cr;
+	const CacheRecord *cr, *bestcr = mDNSNULL;
+	mDNSu32 bestmetric = 10000;
 	for (cr = cg ? cg->members : mDNSNULL; cr; cr=cr->next)
 		if (SameNameRecordAnswersQuestion(&cr->resrec, q))
 			if (!IdenticalSameNameRecord(&cr->resrec, &m->SPSRecords.RR_PTR.resrec))
-				return(cr);
-	return(mDNSNULL);
+				if (cr->resrec.rrtype == kDNSType_PTR && cr->resrec.rdlength >= 6)
+					{
+					mDNSu32 metric = SPSMetric(cr->resrec.rdata->u.name.c);
+					if (bestmetric > metric) { bestmetric = metric; bestcr = cr; }
+					}
+	return(bestcr);
 	}
 
 // Only DupSuppressInfos newer than the specified 'time' are allowed to remain active
