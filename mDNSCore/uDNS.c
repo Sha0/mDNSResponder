@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.588  2008/11/26 20:38:08  cheshire
+Changed some "LogOperation" debugging messages to "debugf"
+
 Revision 1.587  2008/11/26 19:53:26  cheshire
 Don't overwrite srs->NATinfo.IntPort in StartSRVNatMap()
 
@@ -1336,10 +1339,8 @@ mDNSlocal void SetRecordRetry(mDNS *const m, AuthRecord *rr, mStatus SendErr)
 		{
 		mDNSs32 remaining = rr->expire - m->timenow;
 		rr->ThisAPInterval = remaining/2 + mDNSRandom(remaining/10);
-		LogOperation("SetRecordRetry refresh in %4d of %4d for %s",
-			rr->ThisAPInterval / mDNSPlatformOneSecond,
-			(rr->expire - m->timenow) / mDNSPlatformOneSecond,
-			ARDisplayString(m, rr));
+		debugf("SetRecordRetry refresh in %4d of %4d for %s",
+			rr->ThisAPInterval / mDNSPlatformOneSecond, (rr->expire - m->timenow) / mDNSPlatformOneSecond, ARDisplayString(m, rr));
 		return;
 		}
 
@@ -1662,7 +1663,7 @@ mDNSexport void natTraversalHandlePortMapReply(mDNS *const m, NATTraversalInfo *
 	n->NewResult = err;
 	if (err || lease == 0 || mDNSIPPortIsZero(extport))
 		{
-		LogOperation("natTraversalHandlePortMapReply: received error making port mapping error %d port %d", err, mDNSVal16(extport));
+		LogOperation("natTraversalHandlePortMapReply: Received error making port mapping: error %d port %d lease %d", err, mDNSVal16(extport), lease);
 		n->retryInterval = NATMAP_MAX_RETRY_INTERVAL;
 		n->retryPortMap = m->timenow + NATMAP_MAX_RETRY_INTERVAL;
 		// No need to set m->NextScheduledNATOp here, since we're only ever extending the m->retryPortMap time
@@ -1681,7 +1682,7 @@ mDNSexport void natTraversalHandlePortMapReply(mDNS *const m, NATTraversalInfo *
 		n->InterfaceID   = InterfaceID;
 		n->RequestedPort = extport;
 	
-		LogOperation("natTraversalHandlePortMapReply %p %s Internal Port %d External Port %d", n,
+		LogOperation("natTraversalHandlePortMapReply: %p %s Internal Port %d External Port %d", n,
 			n->Protocol == NATOp_MapUDP ? "UDP Response" :
 			n->Protocol == NATOp_MapTCP ? "TCP Response" : "?", mDNSVal16(n->IntPort), mDNSVal16(n->RequestedPort));
 	
@@ -1703,7 +1704,8 @@ mDNSexport mStatus mDNS_StartNATOperation_internal(mDNS *const m, NATTraversalIn
 		{
 		if (traversal == *n)
 			{ LogMsg("Error! Tried to add a NAT traversal that's already in the active list"); return(mStatus_AlreadyRegistered); }
-		if (traversal->Protocol && traversal->Protocol == (*n)->Protocol && mDNSSameIPPort(traversal->IntPort, (*n)->IntPort))
+		if (traversal->Protocol && traversal->Protocol == (*n)->Protocol && mDNSSameIPPort(traversal->IntPort, (*n)->IntPort) &&
+			!mDNSSameIPPort(traversal->IntPort, SSHPort))
 			LogMsg("Warning: Created port mapping request %p Prot %d Int %d TTL %d "
 				"duplicates existing port mapping request %p Prot %d Int %d TTL %d",
 				traversal, traversal->Protocol, mDNSVal16(traversal->IntPort), traversal->NATLease,
@@ -1764,7 +1766,8 @@ mDNSexport mStatus mDNS_StopNATOperation_internal(mDNS *m, NATTraversalInfo *tra
 
 	if (traversal->Protocol)
 		for (p = m->NATTraversals; p; p=p->next)
-			if (traversal->Protocol == p->Protocol && mDNSSameIPPort(traversal->IntPort, p->IntPort))
+			if (traversal->Protocol == p->Protocol && mDNSSameIPPort(traversal->IntPort, p->IntPort) &&
+				!mDNSSameIPPort(traversal->IntPort, SSHPort))
 				{
 				LogMsg("Warning: Removed port mapping request %p Prot %d Int %d TTL %d "
 					"duplicates existing port mapping request %p Prot %d Int %d TTL %d",
@@ -1818,7 +1821,7 @@ mDNSexport mStatus mDNS_StopNATOperation(mDNS *m, NATTraversalInfo *traversal)
 // Lock must be held -- otherwise m->timenow is undefined
 mDNSlocal void StartLLQPolling(mDNS *const m, DNSQuestion *q)
 	{
-	LogOperation("StartLLQPolling: %##s", q->qname.c);
+	debugf("StartLLQPolling: %##s", q->qname.c);
 	q->state = LLQ_Poll;
 	q->ThisQInterval = INIT_UCAST_POLL_INTERVAL;
 	// We want to send our poll query ASAP, but the "+ 1" is because if we set the time to now,
@@ -2007,7 +2010,7 @@ mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *co
 				if (q->state == LLQ_Poll && mDNSSameOpaque16(msg->h.id, q->TargetQID))
 					{
 					m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
-					LogOperation("uDNS_recvLLQResponse got poll response; moving to LLQ_InitialRequest for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+					debugf("uDNS_recvLLQResponse got poll response; moving to LLQ_InitialRequest for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 					q->state         = LLQ_InitialRequest;
 					q->servPort      = zeroIPPort;		// Clear servPort so that startLLQHandshake will retry the GetZoneData processing
 					q->ThisQInterval = LLQ_POLL_INTERVAL + mDNSRandom(LLQ_POLL_INTERVAL/10);	// Retry LLQ setup in approx 15 minutes
@@ -2328,7 +2331,7 @@ mDNSexport void startLLQHandshake(mDNS *m, DNSQuestion *q)
 
 	if (mDNSIPPortIsZero(q->servPort))
 		{
-		LogOperation("startLLQHandshake: StartGetZoneData for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+		debugf("startLLQHandshake: StartGetZoneData for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 		q->ThisQInterval = LLQ_POLL_INTERVAL + mDNSRandom(LLQ_POLL_INTERVAL/10);	// Retry in approx 15 minutes
 		q->LastQTime     = m->timenow;
 		SetNextQueryTime(m, q);
@@ -2357,7 +2360,7 @@ mDNSexport void startLLQHandshake(mDNS *m, DNSQuestion *q)
 		}
 	else
 		{
-		LogOperation("startLLQHandshake m->AdvertisedV4 %#a%s Server %#a:%d%s %##s (%s)",
+		debugf("startLLQHandshake: m->AdvertisedV4 %#a%s Server %#a:%d%s %##s (%s)",
 			&m->AdvertisedV4,                     mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) ? " (RFC 1918)" : "",
 			&q->servAddr, mDNSVal16(q->servPort), mDNSAddrIsRFC1918(&q->servAddr)             ? " (RFC 1918)" : "",
 			q->qname.c, DNSTypeName(q->qtype));
@@ -2521,7 +2524,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	target = GetServiceTarget(m, &srs->RR_SRV);
 	if (!target || target->c[0] == 0)
 		{
-		LogOperation("SendServiceRegistration - no target for %##s", srs->RR_SRV.resrec.name->c);
+		debugf("SendServiceRegistration - no target for %##s", srs->RR_SRV.resrec.name->c);
 		srs->state = regState_NoTarget;
 		return;
 		}
@@ -2759,7 +2762,7 @@ mDNSexport DomainAuthInfo *GetAuthInfoForQuestion(mDNS *m, const DNSQuestion *co
 mDNSlocal void CompleteSRVNatMap(mDNS *m, NATTraversalInfo *n)
 	{
 	ServiceRecordSet *srs = (ServiceRecordSet *)n->clientContext;
-	LogOperation("SRVNatMap complete %.4a IntPort %u ExternalPort %u NATLease %u", &n->ExternalAddress, mDNSVal16(n->IntPort), mDNSVal16(n->ExternalPort), n->NATLease);
+	debugf("SRVNatMap complete %.4a IntPort %u ExternalPort %u NATLease %u", &n->ExternalAddress, mDNSVal16(n->IntPort), mDNSVal16(n->ExternalPort), n->NATLease);
 
 	if (!srs) { LogMsg("CompleteSRVNatMap called with unknown ServiceRecordSet object"); return; }
 	if (!n->NATLease) return;
@@ -2828,7 +2831,7 @@ mDNSexport void ServiceRegistrationGotZoneData(mDNS *const m, mStatus err, const
 	srs->RR_SRV.LastAPTime     = m->timenow;
 	srs->RR_SRV.ThisAPInterval = 0;
 
-	LogOperation("ServiceRegistrationGotZoneData My IPv4 %#a%s Server %#a:%d%s for %##s",
+	debugf("ServiceRegistrationGotZoneData My IPv4 %#a%s Server %#a:%d%s for %##s",
 		&m->AdvertisedV4, mDNSv4AddrIsRFC1918(&m->AdvertisedV4.ip.v4) ? " (RFC1918)" : "",
 		&srs->SRSUpdateServer, mDNSVal16(srs->SRSUpdatePort), mDNSAddrIsRFC1918(&srs->SRSUpdateServer) ? " (RFC1918)" : "",
 		srs->RR_SRV.resrec.name->c);
@@ -2842,7 +2845,7 @@ mDNSexport void ServiceRegistrationGotZoneData(mDNS *const m, mStatus err, const
 		srs->RR_SRV.AutoTarget == Target_AutoHostAndNATMAP)
 		{
 		srs->state = regState_NATMap;
-		LogOperation("ServiceRegistrationGotZoneData StartSRVNatMap");
+		debugf("ServiceRegistrationGotZoneData StartSRVNatMap");
 		StartSRVNatMap(m, srs);
 		}
 	else
@@ -2939,7 +2942,7 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 	mDNSBool PortWasMapped = (srs->NATinfo.clientContext && !mDNSSameIPPort(srs->NATinfo.RequestedPort, port));		// I think this is always false -- SC Sept 07
 	mDNSBool NATChanged    = (!WereBehindNAT && NowNeedNATMAP) || (!NowNeedNATMAP && PortWasMapped);
 
-	LogOperation("UpdateSRV %##s newtarget %##s TargetChanged %d HaveZoneData %d port %d NowNeedNATMAP %d WereBehindNAT %d PortWasMapped %d NATChanged %d",
+	debugf("UpdateSRV %##s newtarget %##s TargetChanged %d HaveZoneData %d port %d NowNeedNATMAP %d WereBehindNAT %d PortWasMapped %d NATChanged %d",
 		srs->RR_SRV.resrec.name->c, newtarget,
 		TargetChanged, HaveZoneData, mDNSVal16(port), NowNeedNATMAP, WereBehindNAT, PortWasMapped, NATChanged);
 
@@ -3010,7 +3013,7 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 // Called with lock held
 mDNSlocal void UpdateSRVRecords(mDNS *m)
 	{
-	LogOperation("UpdateSRVRecords%s", m->SleepState ? " (ignored due to SleepState)" : "");
+	debugf("UpdateSRVRecords%s", m->SleepState ? " (ignored due to SleepState)" : "");
 	if (m->SleepState) return;
 
 	if (CurrentServiceRecordSet)
@@ -3862,7 +3865,7 @@ mDNSexport void uDNS_ReceiveNATPMPPacket(mDNS *m, const mDNSInterfaceID Interfac
 
 	nat_elapsed = AddrReply->upseconds - m->LastNATupseconds;
 	our_elapsed = (m->timenow - m->LastNATReplyLocalTime) / mDNSPlatformOneSecond;
-	LogOperation("uDNS_ReceiveNATPMPPacket %X upseconds %u nat_elapsed %d our_elapsed %d", AddrReply->opcode, AddrReply->upseconds, nat_elapsed, our_elapsed);
+	debugf("uDNS_ReceiveNATPMPPacket %X upseconds %u nat_elapsed %d our_elapsed %d", AddrReply->opcode, AddrReply->upseconds, nat_elapsed, our_elapsed);
 
 	// We compute a conservative estimate of how much the NAT gateways's clock should have advanced
 	// 1. We subtract 12.5% from our own measured elapsed time, to allow for NAT gateways that have an inacurate clock that runs slowly
@@ -3899,7 +3902,7 @@ mDNSexport void uDNS_ReceiveNATPMPPacket(mDNS *m, const mDNSInterfaceID Interfac
 	else { LogMsg("Received NAT Traversal response with version unknown opcode 0x%X", AddrReply->opcode); return; }
 
 	// Don't need an SSDP socket if we get a NAT-PMP packet
-	if (m->SSDPSocket) { LogOperation("uDNS_ReceiveNATPMPPacket destroying SSDPSocket %p", &m->SSDPSocket); mDNSPlatformUDPClose(m->SSDPSocket); m->SSDPSocket = mDNSNULL; }
+	if (m->SSDPSocket) { debugf("uDNS_ReceiveNATPMPPacket destroying SSDPSocket %p", &m->SSDPSocket); mDNSPlatformUDPClose(m->SSDPSocket); m->SSDPSocket = mDNSNULL; }
 	}
 
 // <rdar://problem/3925163> Shorten DNS-SD queries to avoid NAT bugs
@@ -4693,7 +4696,7 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 	else										// else, we don't want to listen for announcements, so close them if they're open
 		{
 		if (m->NATMcastRecvskt) { mDNSPlatformUDPClose(m->NATMcastRecvskt); m->NATMcastRecvskt = mDNSNULL; }
-		if (m->SSDPSocket)      { LogOperation("CheckNATMappings destroying SSDPSocket %p", &m->SSDPSocket); mDNSPlatformUDPClose(m->SSDPSocket); m->SSDPSocket = mDNSNULL; }
+		if (m->SSDPSocket)      { debugf("CheckNATMappings destroying SSDPSocket %p", &m->SSDPSocket); mDNSPlatformUDPClose(m->SSDPSocket); m->SSDPSocket = mDNSNULL; }
 		}
 
 	if (m->NATTraversals)

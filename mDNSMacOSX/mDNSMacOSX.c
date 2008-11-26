@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.586  2008/11/26 20:34:55  cheshire
+Changed some "LogOperation" debugging messages to "debugf"
+
 Revision 1.585  2008/11/25 20:53:35  cheshire
 Updated portability metrics; added Xserve and PowerBook to list
 
@@ -2834,7 +2837,7 @@ mDNSlocal void UpdateAutoTunnelDomainStatus(const mDNS *const m, const DomainAut
 	CFRelease(domain);
 	CFRelease(dict);
 
-	LogOperation("UpdateAutoTunnelDomainStatus: %s", buffer);
+	debugf("UpdateAutoTunnelDomainStatus: %s", buffer);
 #endif // def NO_SECURITYFRAMEWORK
 	}
 
@@ -3705,7 +3708,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 	if (RegDomains   ) *RegDomains     = NULL;
 	if (BrowseDomains) *BrowseDomains  = NULL;
 
-	LogOperation("mDNSPlatformSetDNSConfig%s%s%s%s%s",
+	debugf("mDNSPlatformSetDNSConfig:%s%s%s%s%s",
 		setservers    ? " setservers"    : "",
 		setsearch     ? " setsearch"     : "",
 		fqdn          ? " fqdn"          : "",
@@ -3757,7 +3760,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 			}
 		else
 			{
-			LogOperation("mDNSPlatformSetDNSConfig: config->n_resolver = %d", config->n_resolver);
+			debugf("mDNSPlatformSetDNSConfig: config->n_resolver = %d", config->n_resolver);
 			if (setservers)
 				{
 				for (i = 0; i < config->n_resolver; i++)
@@ -4434,8 +4437,9 @@ mDNSlocal void SetSPS(mDNS *const m)
 
 	// If we decide to let laptops act as Sleep Proxy, we should do it only when running on AC power, not on battery
 
-	LogOperation("Sleep Proxy Server %d %d %d %d %s", sps, SPMetricPortability, SPMetricMarginalPower, SPMetricTotalPower,
-		sps ? "starting" : "stopping");
+	if (sps != m->SPSType)
+		LogOperation("Sleep Proxy Server %d %d %d %d %s", sps, SPMetricPortability, SPMetricMarginalPower, SPMetricTotalPower,
+			sps ? "starting" : "stopping");
 	mDNSCoreBeSleepProxyServer(m, sps, SPMetricPortability, SPMetricMarginalPower, SPMetricTotalPower);
 	}
 

@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.415  2008/11/26 20:35:59  cheshire
+Changed some "LogOperation" debugging messages to "debugf"
+
 Revision 1.414  2008/11/26 00:02:25  cheshire
 Improved SIGINFO output to list AutoBrowseDomains and AutoRegistrationDomains
 
@@ -2251,7 +2254,7 @@ mDNSlocal void RegisterLocalOnlyDomainEnumPTR(mDNS *m, const domainname *d, int 
 	mStatus err;
 	ARListElem *ptr = mDNSPlatformMemAllocate(sizeof(*ptr));
 
-	LogOperation("Incrementing %s refcount for %##s",
+	debugf("Incrementing %s refcount for %##s",
 		(type == mDNS_DomainTypeBrowse         ) ? "browse domain   " :
 		(type == mDNS_DomainTypeRegistration   ) ? "registration dom" :
 		(type == mDNS_DomainTypeBrowseAutomatic) ? "automatic browse" : "?", d->c);
@@ -2278,7 +2281,7 @@ mDNSlocal void DeregisterLocalOnlyDomainEnumPTR(mDNS *m, const domainname *d, in
 	ARListElem **ptr = &LocalDomainEnumRecords;
 	domainname lhs; // left-hand side of PTR, for comparison
 
-	LogOperation("Decrementing %s refcount for %##s",
+	debugf("Decrementing %s refcount for %##s",
 		(type == mDNS_DomainTypeBrowse         ) ? "browse domain   " :
 		(type == mDNS_DomainTypeRegistration   ) ? "registration dom" :
 		(type == mDNS_DomainTypeBrowseAutomatic) ? "automatic browse" : "?", d->c);
@@ -3753,7 +3756,8 @@ mDNSlocal void LogClientInfo(mDNS *const m, request_state *req)
 		{
 		service_instance *ptr;
 		for (ptr = req->u.servicereg.instances; ptr; ptr = ptr->next)
-			LogMsgNoIdent("%3d: DNSServiceRegister         %##s %u", req->sd, ptr->srs.RR_SRV.resrec.name->c, SRS_PORT(&ptr->srs));
+			LogMsgNoIdent("%3d: DNSServiceRegister         %##s %u/%u",
+				req->sd, ptr->srs.RR_SRV.resrec.name->c, mDNSVal16(req->u.servicereg.port), SRS_PORT(&ptr->srs));
 		}
 	else if (req->terminate == browse_termination_callback)
 		{
@@ -3916,7 +3920,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 					nat->retryInterval / mDNSPlatformOneSecond,
 					nat->ExpiryTime ? (nat->ExpiryTime - now) / mDNSPlatformOneSecond : 0);
 			else
-				LogMsgNoIdent("%p Address Request Retry %d Interval %d", nat,
+				LogMsgNoIdent("%p Address Request               Retry %d Interval %d", nat,
 					(m->retryGetAddr - now) / mDNSPlatformOneSecond,
 					m->retryIntervalGetAddr / mDNSPlatformOneSecond);
 			}
