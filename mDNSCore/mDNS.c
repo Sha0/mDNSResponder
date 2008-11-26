@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.863  2008/11/26 03:59:03  cheshire
+Wait 30 seconds before starting ARP Announcements
+
 Revision 1.862  2008/11/25 23:43:07  cheshire
 <rdar://problem/5745355> Crashes at ServiceRegistrationGotZoneData + 397
 Made code more defensive to guard against ServiceRegistrationGotZoneData being called with invalid ServiceRecordSet object
@@ -1486,9 +1489,13 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr, mDNSs32
 	if (rr->resrec.RecordType == kDNSRecordTypeVerified)
 		rr->LastAPTime = m->timenow - interval;
 
-	// Reverse mapping Sleep Proxy PTR records are special -- we allow ten seconds for the machine in question
+	// Reverse mapping Sleep Proxy PTR records are special -- we allow thirty seconds for the machine in question
 	// to finish going to sleep, then we broadcast ARP Announcements claiming ownership of that IP address.
-	if (rr->AddressProxy.type) rr->LastAPTime = m->timenow - interval + mDNSPlatformOneSecond * 10;
+	// (We previously allowed ten seconds, but that turned out to be insufficient time for the machine to reliably
+	// go to sleep, and then when it saw our ARP Announcement it thought it was a conflict and changed its IP address.
+	// Perhaps we need to ARP the machine once per second to see if it's still responding, and then when it stops
+	// responding to ARPs, we can begin our ARP Announcements five seconds after that.)
+	if (rr->AddressProxy.type) rr->LastAPTime = m->timenow - interval + mDNSPlatformOneSecond * 30;
 
 	// For now, since we don't get IPv6 ND or data packets, we send deletions for our SPS clients' AAAA records too
 	if (rr->WakeUp.MAC.l[0] && rr->resrec.rrtype == kDNSType_AAAA)
