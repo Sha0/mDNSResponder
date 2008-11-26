@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.865  2008/11/26 19:49:25  cheshire
+Record originally-requested port in sr->NATinfo.IntPort
+
 Revision 1.864  2008/11/26 19:02:37  cheshire
 Don't answer ARP Probes from owner machine as it wakes up and rejoins the network
 
@@ -6365,7 +6368,7 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 // CancelGetZoneData is an internal routine (i.e. must be called with the lock already held)
 mDNSexport void CancelGetZoneData(mDNS *const m, ZoneData *nta)
 	{
-	LogOperation("CancelGetZoneData %##s (%s)", nta->question.qname.c, DNSTypeName(nta->question.qtype));
+	debugf("CancelGetZoneData %##s (%s)", nta->question.qname.c, DNSTypeName(nta->question.qtype));
 	mDNS_StopQuery_internal(m, &nta->question);
 	mDNSPlatformMemFree(nta);
 	}
@@ -7262,14 +7265,14 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		if (AuthRecord_uDNS(rr))
 			{
-			LogOperation("mDNS_RegisterInterface: StartGetZoneData for %##s", rr->resrec.name->c);
+			debugf("mDNS_RegisterInterface: StartGetZoneData for %##s", rr->resrec.name->c);
 			if (rr->nta) CancelGetZoneData(m, rr->nta);
 			rr->nta = StartGetZoneData(m, rr->resrec.name, ZoneServiceUpdate, RecordRegistrationGotZoneData, rr);
 			}
 
 	for (s = m->ServiceRegistrations; s; s = s->uDNS_next)
 		{
-		LogOperation("mDNS_RegisterInterface: StartGetZoneData for %##s", s->RR_SRV.resrec.name->c);
+		debugf("mDNS_RegisterInterface: StartGetZoneData for %##s", s->RR_SRV.resrec.name->c);
 		if (s->srs_nta) CancelGetZoneData(m, s->srs_nta);
 		s->srs_nta = StartGetZoneData(m, s->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationGotZoneData, s);
 		}
@@ -7542,6 +7545,7 @@ mDNSexport mStatus mDNS_RegisterService(mDNS *const m, ServiceRecordSet *sr,
 	sr->SRSUpdateServer        = zeroAddr;
 	sr->SRSUpdatePort          = zeroIPPort;
 	mDNSPlatformMemZero(&sr->NATinfo, sizeof(sr->NATinfo));
+	sr->NATinfo.IntPort        = port;		// Record originally-requested port
 	sr->ClientCallbackDeferred = 0;
 	sr->DeferredStatus         = 0;
 	sr->SRVUpdateDeferred      = 0;
