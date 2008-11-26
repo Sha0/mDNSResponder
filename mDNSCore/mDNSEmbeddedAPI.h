@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.520  2008/11/26 20:28:05  cheshire
+Added new SSHPort constant
+
 Revision 1.519  2008/11/25 22:46:30  cheshire
 For ease of code searching, renamed ZoneData field of ServiceRecordSet_struct from "nta" to "srs_nta"
 
@@ -2398,16 +2401,15 @@ extern const mDNSInterfaceID mDNSInterface_Any;				// Zero
 extern const mDNSInterfaceID mDNSInterface_LocalOnly;		// Special value
 extern const mDNSInterfaceID mDNSInterface_Unicast;			// Special value
 
-extern const mDNSIPPort   SSDPPort;
-
+extern const mDNSIPPort   SSHPort;
 extern const mDNSIPPort   UnicastDNSPort;
+extern const mDNSIPPort   SSDPPort;
+extern const mDNSIPPort   NSIPCPort;
 extern const mDNSIPPort   NATPMPAnnouncementPort;
 extern const mDNSIPPort   NATPMPPort;
 extern const mDNSIPPort   DNSEXTPort;
 extern const mDNSIPPort   MulticastDNSPort;
 extern const mDNSIPPort   LoopbackIPCPort;
-
-extern const mDNSIPPort   NSIPCPort;
 extern const mDNSIPPort   PrivateDNSPort;
 
 extern const mDNSv4Addr   AllDNSAdminGroup;
