@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.866  2008/11/26 20:32:46  cheshire
+<rdar://problem/6374328> Sleep Proxy: Advertise BSP metrics in service name
+Update advertised name when Sleep Proxy "intent" metric changes
+
 Revision 1.865  2008/11/26 19:49:25  cheshire
 Record originally-requested port in sr->NATinfo.IntPort
 
@@ -5782,7 +5786,7 @@ exit:
 				// If we already had a negative cache entry just update it, else make one or more new negative cache entries
 				if (neg)
 					{
-					LogOperation("Renewing negative TTL from %d to %d %s", neg->resrec.rroriginalttl, negttl, CRDisplayString(m, neg));
+					debugf("Renewing negative TTL from %d to %d %s", neg->resrec.rroriginalttl, negttl, CRDisplayString(m, neg));
 					RefreshCacheRecord(m, neg, negttl);
 					}
 				else while (1)
@@ -5931,7 +5935,7 @@ mDNSlocal void mDNSCoreReceiveUpdateR(mDNS *const m, const DNSMessage *const msg
 					if (o->opt == kDNSOpt_Lease)
 						{
 						updatelease = o->u.updatelease;
-						LogOperation("mDNSCoreReceiveUpdateR: Update received lease time %d", updatelease);
+						debugf("mDNSCoreReceiveUpdateR: Update received lease time %d", updatelease);
 						}
 				}
 			m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
@@ -8110,10 +8114,21 @@ mDNSlocal void SleepProxyServerCallback(mDNS *const m, ServiceRecordSet *const s
 
 mDNSexport void mDNSCoreBeSleepProxyServer(mDNS *const m, mDNSu8 sps, mDNSu8 port, mDNSu8 marginalpower, mDNSu8 totpower)
 	{
+	// If turning off SPS, close our socket
+	// (Do this first, BEFORE calling mDNS_DeregisterService below)
+	if (!sps && m->SPSSocket) { mDNSPlatformUDPClose(m->SPSSocket); m->SPSSocket = mDNSNULL; }
+
+	// If turning off, or changing type, deregister old name
+	if (m->SPSState == 1 && sps != m->SPSType)
+		{ m->SPSState = 2; mDNS_DeregisterService(m, &m->SPSRecords); }
+
+	// Record our new SPS parameters
 	m->SPSType          = sps;
 	m->SPSPortability   = port;
 	m->SPSMarginalPower = marginalpower;
 	m->SPSTotalPower    = totpower;
+
+	// If turning on, open socket and advertise service
 	if (sps)
 		{
 		if (!m->SPSSocket)
@@ -8122,11 +8137,6 @@ mDNSexport void mDNSCoreBeSleepProxyServer(mDNS *const m, mDNSu8 sps, mDNSu8 por
 			if (!m->SPSSocket) { LogMsg("mDNSCoreBeSleepProxyServer: Failed to allocate SPSSocket"); return; }
 			}
 		if (m->SPSState == 0) SleepProxyServerCallback(m, &m->SPSRecords, mStatus_MemFree);
-		}
-	else
-		{
-		if (m->SPSSocket) { mDNSPlatformUDPClose(m->SPSSocket); m->SPSSocket = mDNSNULL; }
-		if (m->SPSState == 1) { m->SPSState = 2; mDNS_DeregisterService(m, &m->SPSRecords); }
 		}
 	}
 
