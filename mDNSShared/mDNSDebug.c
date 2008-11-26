@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.c,v $
+Revision 1.14  2008/11/26 00:01:08  cheshire
+Get rid of "Unknown" tag in SIGINFO output on Leopard
+
 Revision 1.13  2007/12/01 00:40:30  cheshire
 Fixes from Bob Bradley for building on EFI
 
@@ -146,7 +149,7 @@ mDNSexport void LogMsgNoIdent(const char *format, ...)
 	va_start(ptr,format);
 	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
 	va_end(ptr);
-	mDNSPlatformWriteLogMsg("", buffer, 0);
+	mDNSPlatformWriteLogMsg(" ", buffer, 0);
 	}
 
 mDNSlocal const char *CStringForLogLevel(LogLevel_t level)
