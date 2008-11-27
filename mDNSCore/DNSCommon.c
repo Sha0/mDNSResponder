@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.229  2008/11/27 01:28:45  cheshire
+For display purposes, show sleep sequence number as unsigned
+
 Revision 1.228  2008/11/26 20:57:37  cheshire
 For consistency with other similar macros, renamed mdnsIsDigit/mdnsIsLetter/mdnsValidHostChar
 to mDNSIsDigit/mDNSIsLetter/mDNSValidHostChar
@@ -679,7 +682,7 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *const rr, const RD
 										break;
 									case kDNSOpt_Owner:
 										length += mDNS_snprintf(buffer+length, Max-length, " Vers %d",     opt->u.owner.vers);
-										length += mDNS_snprintf(buffer+length, Max-length, " Seq %d",      opt->u.owner.seq);
+										length += mDNS_snprintf(buffer+length, Max-length, " Seq %3d", (mDNSu8)opt->u.owner.seq);	// Display as unsigned
 										length += mDNS_snprintf(buffer+length, Max-length, " MAC %.6a",    opt->u.owner.MAC.b);
 										break;
 									default:
