@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.55  2008/12/01 19:43:48  mcguire
+<rdar://problem/6404766> UPnP: Handle errorCode 718 as a conflict when requesting a port mapping
+
 Revision 1.54  2008/11/26 20:57:37  cheshire
 For consistency with other similar macros, renamed mdnsIsDigit/mdnsIsLetter/mdnsValidHostChar
 to mDNSIsDigit/mDNSIsLetter/mDNSValidHostChar
@@ -447,7 +450,7 @@ mDNSlocal void handleLNTPortMappingResponse(tcpLNTInfo *tcpInfo)
 				// now check to see if this was a port mapping conflict
 				while (ptr && ptr != end)
 					{
-					if ((*ptr == 'c' || *ptr == 'C') && strncasecmp(ptr, "Conflict", 8) == 0)
+					if (((*ptr == 'c' || *ptr == 'C') && end - ptr >= 8 && strncasecmp(ptr, "Conflict", 8) == 0) || (*ptr == '>' && end - ptr >= 15 && strncasecmp(ptr, ">718</errorCode", 15) == 0))
 						{
 						if (tcpInfo->retries < 100)
 							{ tcpInfo->retries++; SendPortMapRequest(tcpInfo->m, natInfo); }
