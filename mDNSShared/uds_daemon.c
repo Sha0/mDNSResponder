@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.416  2008/12/02 22:02:12  cheshire
+<rdar://problem/6320621> Adding domains after TXT record updates registers stale TXT record data
+
 Revision 1.415  2008/11/26 20:35:59  cheshire
 Changed some "LogOperation" debugging messages to "debugf"
 
@@ -1651,6 +1654,21 @@ mDNSlocal mStatus handle_update_request(request_state *request)
 			}
 		result = mStatus_BadReferenceErr;
 		goto end;
+		}
+
+	// update the saved off TXT data for the service
+	if (request->hdr.reg_index == TXT_RECORD_INDEX)
+		{
+		if (request->u.servicereg.txtdata)
+			{ freeL("service_info txtdata", request->u.servicereg.txtdata); request->u.servicereg.txtdata = NULL; }
+		if (rdlen > 0)
+			{
+			request->u.servicereg.txtdata = mallocL("service_info txtdata", rdlen);
+			if (!request->u.servicereg.txtdata) FatalError("ERROR: handle_update_request - malloc");
+			mDNSPlatformMemCopy(request->u.servicereg.txtdata, rdata, rdlen);
+			}
+		else
+			request->u.servicereg.txtdata = NULL;
 		}
 
 	// update a record from a service record set
