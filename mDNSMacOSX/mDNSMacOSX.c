@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.587  2008/12/04 02:17:47  cheshire
+Additional sleep/wake debugging messages
+
 Revision 1.586  2008/11/26 20:34:55  cheshire
 Changed some "LogOperation" debugging messages to "debugf"
 
@@ -4744,20 +4747,20 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 	debugf("PowerChanged %X %lX", messageType, messageArgument);
 	switch(messageType)
 		{
-		case kIOMessageCanSystemPowerOff:		debugf      ("PowerChanged kIOMessageCanSystemPowerOff (no action)");				break;	// E0000240
+		case kIOMessageCanSystemPowerOff:		LogOperation("PowerChanged kIOMessageCanSystemPowerOff (no action)");				break;	// E0000240
 		case kIOMessageSystemWillPowerOff:		LogOperation("PowerChanged kIOMessageSystemWillPowerOff");									// E0000250
 												mDNSCoreMachineSleep(m, true);
 												if (m->SleepState == SleepState_Sleeping) mDNSMacOSXNetworkChanged(m);
 												break;
-		case kIOMessageSystemWillNotPowerOff:	debugf      ("PowerChanged kIOMessageSystemWillNotPowerOff (no action)");			break;	// E0000260
-		case kIOMessageCanSystemSleep:			debugf      ("PowerChanged kIOMessageCanSystemSleep (no action)");					break;	// E0000270
+		case kIOMessageSystemWillNotPowerOff:	LogOperation("PowerChanged kIOMessageSystemWillNotPowerOff (no action)");			break;	// E0000260
+		case kIOMessageCanSystemSleep:			LogOperation("PowerChanged kIOMessageCanSystemSleep (no action)");					break;	// E0000270
 		case kIOMessageSystemWillSleep:			LogOperation("PowerChanged kIOMessageSystemWillSleep");										// E0000280
 												mDNSCoreMachineSleep(m, true);
 												if (m->SleepState == SleepState_Sleeping) mDNSMacOSXNetworkChanged(m);
 												break;
-		case kIOMessageSystemWillNotSleep:		debugf      ("PowerChanged kIOMessageSystemWillNotSleep (no action)");				break;	// E0000290
+		case kIOMessageSystemWillNotSleep:		LogOperation("PowerChanged kIOMessageSystemWillNotSleep (no action)");				break;	// E0000290
 		case kIOMessageSystemHasPoweredOn:		LogOperation("PowerChanged kIOMessageSystemHasPoweredOn"); HasPoweredOn(m);			break;	// E0000300
-		case kIOMessageSystemWillRestart:		debugf      ("PowerChanged kIOMessageSystemWillRestart (no action)");				break;	// E0000310
+		case kIOMessageSystemWillRestart:		LogOperation("PowerChanged kIOMessageSystemWillRestart (no action)");				break;	// E0000310
 		case kIOMessageSystemWillPowerOn:		LogOperation("PowerChanged kIOMessageSystemWillPowerOn");									// E0000320
 												// Make sure our interface list is cleared to the empty state, then tell mDNSCore to wake
 												if (m->SleepState != SleepState_Sleeping)
