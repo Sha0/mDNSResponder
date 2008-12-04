@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.521  2008/12/04 02:19:24  cheshire
+Updated comment
+
 Revision 1.520  2008/11/26 20:28:05  cheshire
 Added new SSHPort constant
 
@@ -1626,7 +1629,7 @@ struct NATTraversalInfo_struct
 	// Client API fields: The client must set up these fields *before* making any NAT traversal API calls
 	mDNSu8                      Protocol;			// NATOp_MapUDP or NATOp_MapTCP, or zero if just requesting the external IP address
 	mDNSIPPort                  IntPort;			// Client's internal port number (doesn't change)
-	mDNSIPPort                  RequestedPort;		// Requested public port mapping; may be updated with actual value assigned by gateway
+	mDNSIPPort                  RequestedPort;		// Requested external port; may be updated with actual value assigned by gateway
 	mDNSu32                     NATLease;			// Requested lifetime in seconds (doesn't change)
 	NATTraversalClientCallback  clientCallback;
 	void                       *clientContext;
