@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.590  2008/12/04 20:57:36  mcguire
+fix build
+
 Revision 1.589  2008/12/04 02:24:09  cheshire
 Improved NAT-PMP debugging messages
 
@@ -1664,6 +1667,7 @@ mDNSlocal void NATSetNextRenewalTime(mDNS *const m, NATTraversalInfo *n)
 mDNSexport void natTraversalHandlePortMapReply(mDNS *const m, NATTraversalInfo *n, const mDNSInterfaceID InterfaceID, mDNSu16 err, mDNSIPPort extport, mDNSu32 lease)
 	{
 	const char *prot = n->Protocol == NATOp_MapUDP ? "UDP" : n->Protocol == NATOp_MapTCP ? "TCP" : "?";
+	(void)prot;
 	n->NewResult = err;
 	if (err || lease == 0 || mDNSIPPortIsZero(extport))
 		{
