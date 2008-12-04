@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.113  2008/12/04 03:23:05  cheshire
+Preincrement UID counter before we use it -- it helps with debugging if we know the all-zeroes ID should never appear
+
 Revision 1.112  2008/11/25 22:56:54  cheshire
 <rdar://problem/6377257> Make library code more defensive when client calls DNSServiceProcessResult with bad DNSServiceRef repeatedly
 
@@ -538,11 +541,12 @@ static DNSServiceErrorType ConnectToServer(DNSServiceRef *ref, DNSServiceFlags f
 		DNSServiceOp **p = &(*ref)->next;		// Append ourselves to end of primary's list
 		while (*p) p = &(*p)->next;
 		*p = sdr;
+		// Preincrement counter before we use it -- it helps with debugging if we know the all-zeroes ID should never appear
+		if (++(*ref)->uid.u32[0] == 0) ++(*ref)->uid.u32[1];	// In parent DNSServiceOp increment UID counter
 		sdr->primary    = *ref;					// Set our primary pointer
 		sdr->sockfd     = (*ref)->sockfd;		// Inherit primary's socket
 		sdr->validator  = (*ref)->validator;
 		sdr->uid        = (*ref)->uid;
-		if (++(*ref)->uid.u32[0] == 0) ++(*ref)->uid.u32[1];	// In parent DNSServiceOp increment UID counter
 		//printf("ConnectToServer sharing socket %d\n", sdr->sockfd);
 		}
 	else
