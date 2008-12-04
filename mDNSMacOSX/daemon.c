@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.397  2008/12/04 02:18:50  cheshire
+Improved sleep/wake debugging messages
+
 Revision 1.396  2008/11/26 23:37:44  cheshire
 Use SCDynamicStoreCopyDHCPInfo to compute desired wakeup time for our next DHCP lease renewal
 
@@ -2674,7 +2677,6 @@ mDNSlocal void * KQueueLoop(void *m_param)
 			if (ready || now - m->p->SleepLimit >= 0)
 				{
 				int result = kIOReturnSuccess;
-				m->p->SleepLimit = 0;
 
 				// First check if any of our interfaces support wakeup
 				NetworkInterfaceInfo *intf = GetFirstActiveInterface(m->HostInterfaces);
@@ -2721,7 +2723,8 @@ mDNSlocal void * KQueueLoop(void *m_param)
 						while (result == kIOReturnNotReady);
 						}
 
-					if (result) LogMsg("Requested wakeup in %d seconds unsuccessful: %d %X", result, result);
+					if (result) LogMsg("Requested wakeup in %d seconds unsuccessful: %d %X", interval / mDNSPlatformOneSecond, result, result);
+					else LogOperation("Requested wakeup in %d seconds", interval / mDNSPlatformOneSecond);
 					m->p->WakeAtUTC = mDNSPlatformUTC() + interval / mDNSPlatformOneSecond;
 					}
 
@@ -2731,6 +2734,8 @@ mDNSlocal void * KQueueLoop(void *m_param)
 				LogOperation("%s(%lX) %s at %ld (%d ticks remaining)",
 					(result == kIOReturnSuccess) ? "IOAllowPowerChange" : "IOCancelPowerChange",
 					m->p->SleepCookie, ready ? "ready for sleep" : "giving up", now, m->p->SleepLimit - now);
+
+				m->p->SleepLimit = 0;	// Don't clear m->p->SleepLimit until after we've logged it above
 
 				if (result == kIOReturnSuccess) IOAllowPowerChange (m->p->PowerConnection, m->p->SleepCookie);
 				else                            IOCancelPowerChange(m->p->PowerConnection, m->p->SleepCookie);
