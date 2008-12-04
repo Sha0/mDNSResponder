@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.868  2008/12/04 21:08:51  mcguire
+<rdar://problem/6116863> mDNS: Provide mechanism to disable Multicast advertisements
+
 Revision 1.867  2008/11/26 21:19:36  cheshire
 <rdar://problem/6374334> Sleeping Server should choose the best Sleep Proxy by using advertised metrics
 
@@ -1603,6 +1606,19 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 
 	if (m->ShutdownTime)
 		{ LogMsg("mDNS_Register_internal: Shutting down, can't register %s", ARDisplayString(m, rr)); return(mStatus_ServiceNotRunning); }
+	
+	if (m->DivertMulticastAdvertisements && !AuthRecord_uDNS(rr))
+		{
+		mDNSInterfaceID previousID = rr->resrec.InterfaceID;
+		if (rr->resrec.InterfaceID == mDNSInterface_Any) rr->resrec.InterfaceID = mDNSInterface_LocalOnly;
+		if (rr->resrec.InterfaceID != mDNSInterface_LocalOnly)
+			{
+			NetworkInterfaceInfo *intf = FirstInterfaceForID(m, rr->resrec.InterfaceID);
+			if (intf && !intf->Advertise) rr->resrec.InterfaceID = mDNSInterface_LocalOnly;
+			}
+		if (rr->resrec.InterfaceID != previousID)
+			LogOperation("mDNS_Register_internal: Diverting record to local-only %s", ARDisplayString(m, rr));
+		}
 
 	while (*p && *p != rr) p=&(*p)->next;
 	while (*d && *d != rr) d=&(*d)->next;
@@ -8187,16 +8203,17 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	
 	if (!rrcachestorage) rrcachesize = 0;
 	
-	m->p                       = p;
-	m->KnownBugs               = 0;
-	m->CanReceiveUnicastOn5353 = mDNSfalse; // Assume we can't receive unicasts on 5353, unless platform layer tells us otherwise
-	m->AdvertiseLocalAddresses = AdvertiseLocalAddresses;
-	m->mDNSPlatformStatus      = mStatus_Waiting;
-	m->UnicastPort4            = zeroIPPort;
-	m->UnicastPort6            = zeroIPPort;
-	m->MainCallback            = Callback;
-	m->MainContext             = Context;
-	m->rec.r.resrec.RecordType = 0;
+	m->p                             = p;
+	m->KnownBugs                     = 0;
+	m->CanReceiveUnicastOn5353       = mDNSfalse; // Assume we can't receive unicasts on 5353, unless platform layer tells us otherwise
+	m->AdvertiseLocalAddresses       = AdvertiseLocalAddresses;
+	m->DivertMulticastAdvertisements = mDNSfalse;
+	m->mDNSPlatformStatus            = mStatus_Waiting;
+	m->UnicastPort4                  = zeroIPPort;
+	m->UnicastPort6                  = zeroIPPort;
+	m->MainCallback                  = Callback;
+	m->MainContext                   = Context;
+	m->rec.r.resrec.RecordType       = 0;
 
 	// For debugging: To catch and report locking failures
 	m->mDNS_busy               = 0;

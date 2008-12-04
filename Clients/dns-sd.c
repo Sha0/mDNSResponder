@@ -369,7 +369,7 @@ static void DNSSD_API resolve_reply(DNSServiceRef sdref, const DNSServiceFlags f
 	if (errorCode) printf("Error code %d\n", errorCode);
 	else
 		{
-		printf("%s can be reached at %s:%u", fullname, hosttarget, PortAsNumber);
+		printf("%s can be reached at %s:%u (interface %d)", fullname, hosttarget, PortAsNumber, ifIndex);
 		if (flags) printf(" Flags: %X", flags);
 		// Don't show degenerate TXT records containing nothing but a single empty string
 		if (txtLen > 1) { printf("\n"); ShowTXTRecord(txtLen, txtRecord); }

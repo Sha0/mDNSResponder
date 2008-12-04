@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.588  2008/12/04 21:08:52  mcguire
+<rdar://problem/6116863> mDNS: Provide mechanism to disable Multicast advertisements
+
 Revision 1.587  2008/12/04 02:17:47  cheshire
 Additional sleep/wake debugging messages
 
@@ -2585,7 +2588,9 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 	i->ifinfo.mask        = mask;
 	strlcpy(i->ifinfo.ifname, ifa->ifa_name, sizeof(i->ifinfo.ifname));
 	i->ifinfo.ifname[sizeof(i->ifinfo.ifname)-1] = 0;
-	i->ifinfo.Advertise   = m->AdvertiseLocalAddresses;
+	// We can be configured to disable multicast advertisement, but we want to to support
+	// local-only services, which need a loopback address record.
+	i->ifinfo.Advertise   = m->DivertMulticastAdvertisements ? ((ifa->ifa_flags & IFF_LOOPBACK) ? mDNStrue : mDNSfalse) : m->AdvertiseLocalAddresses;
 	i->ifinfo.McastTxRx   = mDNSfalse; // For now; will be set up later at the end of UpdateInterfaceList
 	i->ifinfo.NetWake     = OSXVers >= 10 || (SystemNetWake && !bssid.l[0]);
 	GetMAC(&i->ifinfo.MAC, scope_id);
@@ -3367,7 +3372,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 						else
 							{
 							NetworkInterfaceInfoOSX *i = AddInterfaceToList(m, ifa, utc);
-							if (i && MulticastInterface(i))
+							if (i && MulticastInterface(i) && i->ifinfo.Advertise)
 								{
 								if (ifa->ifa_addr->sa_family == AF_INET) foundav4 = mDNStrue;
 								else                                     foundav6 = mDNStrue;
@@ -3379,7 +3384,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 		ifa = ifa->ifa_next;
 		}
 
-	// For efficiency, we don't register a loopback interface when other interfaces of that family are available
+	// For efficiency, we don't register a loopback interface when other interfaces of that family are available and advertising
 	if (!foundav4 && v4Loopback) AddInterfaceToList(m, v4Loopback, utc);
 	if (!foundav6 && v6Loopback) AddInterfaceToList(m, v6Loopback, utc);
 
@@ -4996,6 +5001,8 @@ mDNSexport mStatus mDNSPlatformInit(mDNS *const m)
 	LogMsg("Note: Compiled without Apple-specific Split-DNS support");
 #endif
 
+	// Adding interfaces will use this flag, so set it now.
+	m->DivertMulticastAdvertisements = !m->AdvertiseLocalAddresses;
 	mStatus result = mDNSPlatformInit_setup(m);
 
 	// We don't do asynchronous initialization on OS X, so by the time we get here the setup will already

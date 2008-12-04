@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.522  2008/12/04 21:08:51  mcguire
+<rdar://problem/6116863> mDNS: Provide mechanism to disable Multicast advertisements
+
 Revision 1.521  2008/12/04 02:19:24  cheshire
 Updated comment
 
@@ -2246,6 +2249,7 @@ struct mDNS_struct
 	mDNSu32  KnownBugs;
 	mDNSBool CanReceiveUnicastOn5353;
 	mDNSBool AdvertiseLocalAddresses;
+	mDNSBool DivertMulticastAdvertisements; // from interfaces that do not advertise local addresses to local-only
 	mStatus mDNSPlatformStatus;
 	mDNSIPPort UnicastPort4;
 	mDNSIPPort UnicastPort6;
@@ -2498,6 +2502,10 @@ mDNSinline mDNSOpaque16 mDNSOpaque16fromIntVal(mDNSu16 v)
 //    the appropriate steps to manually create the correct address records for those other machines.
 // In principle, a proxy-like registration service could manually create address records for its own machine too,
 // but this would be pointless extra effort when using mDNS_Init_AdvertiseLocalAddresses does that for you.
+//
+// Note that a client-only device that wishes to prohibit multicast advertisements (e.g. from
+// higher-layer API calls) must also set DivertMulticastAdvertisements in the mDNS structure and
+// advertise local address(es) on a loopback interface.
 //
 // When mDNS has finished setting up the client's callback is called
 // A client can also spin and poll the mDNSPlatformStatus field to see when it changes from mStatus_Waiting to mStatus_NoError

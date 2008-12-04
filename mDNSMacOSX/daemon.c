@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.398  2008/12/04 21:08:51  mcguire
+<rdar://problem/6116863> mDNS: Provide mechanism to disable Multicast advertisements
+
 Revision 1.397  2008/12/04 02:18:50  cheshire
 Improved sleep/wake debugging messages
 
@@ -546,6 +549,7 @@ static dnssd_sock_t launchd_fd = dnssd_InvalidSocket;
 
 static int restarting_via_mach_init = 0;	// Used on Jaguar/Panther when daemon is started via mach_init mechanism
 static int started_via_launchdaemon = 0;	// Indicates we're running on Tiger or later, where daemon is managed by launchd
+static mDNSBool advertise = mDNS_Init_AdvertiseLocalAddresses; // By default, advertise addresses (& other records) via multicast
 
 //*************************************************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -2304,7 +2308,7 @@ mDNSlocal kern_return_t mDNSDaemonInitialize(void)
 
 	err = mDNS_Init(&mDNSStorage, &PlatformStorage,
 		rrcachestorage, RR_CACHE_SIZE,
-		mDNS_Init_AdvertiseLocalAddresses,
+		advertise,
 		mDNS_StatusCallback, mDNS_Init_NoInitCallbackContext);
 
 	if (err) { LogMsg("Daemon start: mDNS_Init failed %ld", err); return(err); }
@@ -2932,7 +2936,11 @@ mDNSexport int main(int argc, char **argv)
 		if (!strcasecmp(argv[i], "-d"           )) mDNS_DebugMode = mDNStrue;
 		if (!strcasecmp(argv[i], "-launchd"     )) started_via_launchdaemon = mDNStrue;
 		if (!strcasecmp(argv[i], "-launchdaemon")) started_via_launchdaemon = mDNStrue;
+		if (!strcasecmp(argv[i], "-nomulticastadvertisements" )) advertise = mDNS_Init_DontAdvertiseLocalAddresses;
 		}
+	
+	// Note that mDNSPlatformInit will set DivertMulticastAdvertisements in the mDNS structure
+	if (!advertise) LogMsg("Administratively prohibiting multicast advertisements");
 
 	signal(SIGHUP,  HandleSIG);		// (Debugging) Purge the cache to check for cache handling bugs
 	signal(SIGINT,  HandleSIG);		// Ctrl-C: Detach from Mach BootstrapService and exit cleanly
