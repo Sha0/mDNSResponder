@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.589  2008/12/04 02:24:09  cheshire
+Improved NAT-PMP debugging messages
+
 Revision 1.588  2008/11/26 20:38:08  cheshire
 Changed some "LogOperation" debugging messages to "debugf"
 
@@ -1660,10 +1663,12 @@ mDNSlocal void NATSetNextRenewalTime(mDNS *const m, NATTraversalInfo *n)
 // Note: When called from handleLNTPortMappingResponse() only pkt->err, pkt->extport and pkt->NATRep_lease fields are filled in
 mDNSexport void natTraversalHandlePortMapReply(mDNS *const m, NATTraversalInfo *n, const mDNSInterfaceID InterfaceID, mDNSu16 err, mDNSIPPort extport, mDNSu32 lease)
 	{
+	const char *prot = n->Protocol == NATOp_MapUDP ? "UDP" : n->Protocol == NATOp_MapTCP ? "TCP" : "?";
 	n->NewResult = err;
 	if (err || lease == 0 || mDNSIPPortIsZero(extport))
 		{
-		LogOperation("natTraversalHandlePortMapReply: Received error making port mapping: error %d port %d lease %d", err, mDNSVal16(extport), lease);
+		LogOperation("natTraversalHandlePortMapReply: %p Response %s Port %5d External Port %5d lease %d error %d",
+			n, prot, mDNSVal16(n->IntPort), mDNSVal16(extport), lease, err);
 		n->retryInterval = NATMAP_MAX_RETRY_INTERVAL;
 		n->retryPortMap = m->timenow + NATMAP_MAX_RETRY_INTERVAL;
 		// No need to set m->NextScheduledNATOp here, since we're only ever extending the m->retryPortMap time
@@ -1677,14 +1682,14 @@ mDNSexport void natTraversalHandlePortMapReply(mDNS *const m, NATTraversalInfo *
 		n->ExpiryTime = NonZeroTime(m->timenow + lease * mDNSPlatformOneSecond);
 	
 		if (!mDNSSameIPPort(n->RequestedPort, extport))
-			LogOperation("natTraversalHandlePortMapReply: public port changed from %d to %d", mDNSVal16(n->RequestedPort), mDNSVal16(extport));
+			LogOperation("natTraversalHandlePortMapReply: %p Response %s Port %5d External Port %5d changed to %5d",
+				n, prot, mDNSVal16(n->IntPort), mDNSVal16(n->RequestedPort), mDNSVal16(extport));
 
 		n->InterfaceID   = InterfaceID;
 		n->RequestedPort = extport;
 	
-		LogOperation("natTraversalHandlePortMapReply: %p %s Internal Port %d External Port %d", n,
-			n->Protocol == NATOp_MapUDP ? "UDP Response" :
-			n->Protocol == NATOp_MapTCP ? "TCP Response" : "?", mDNSVal16(n->IntPort), mDNSVal16(n->RequestedPort));
+		LogOperation("natTraversalHandlePortMapReply: %p Response %s Port %5d External Port %5d lease %d",
+			n, prot, mDNSVal16(n->IntPort), mDNSVal16(extport), lease);
 	
 		NATSetNextRenewalTime(m, n);			// Got our port mapping; now set timer to renew it at halfway point
 		m->NextScheduledNATOp = m->timenow;		// May need to invoke client callback immediately
@@ -2933,7 +2938,7 @@ mDNSlocal void UpdateSRV(mDNS *m, ServiceRecordSet *srs)
 
 	// Nat state change if:
 	// We were behind a NAT, and now we are behind a new NAT, or
-	// We're not behind a NAT but our port was previously mapped to a different public port
+	// We're not behind a NAT but our port was previously mapped to a different external port
 	// We were not behind a NAT and now we are
 
 	mDNSIPPort port        = srs->RR_SRV.resrec.rdata->u.srv.port;
@@ -3233,6 +3238,7 @@ mDNSlocal void GetStaticHostname(mDNS *m)
 	q->QuestionCallback = FoundStaticHostname;
 	q->QuestionContext  = mDNSNULL;
 
+	LogOperation("GetStaticHostname: %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 	err = mDNS_StartQuery_internal(m, q);
 	if (err) LogMsg("Error: GetStaticHostname - StartQuery returned error %d", err);
 	}
