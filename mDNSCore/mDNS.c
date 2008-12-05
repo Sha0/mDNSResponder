@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.869  2008/12/05 02:35:24  mcguire
+<rdar://problem/6107390> Write to the DynamicStore when a Sleep Proxy server is available on the network
+
 Revision 1.868  2008/12/04 21:08:51  mcguire
 <rdar://problem/6116863> mDNS: Provide mechanism to disable Multicast advertisements
 
@@ -2792,9 +2795,6 @@ mDNSlocal const CacheRecord *CacheHasAddressTypeForName(mDNS *const m, const dom
 	while (cr && !RRTypeIsAddressType(cr->resrec.rrtype)) cr=cr->next;
 	return(cr);
 	}
-
-#define ValidSPSName(X) ((X)[0] >= 5 && mDNSIsDigit((X)[1]) && mDNSIsDigit((X)[2]) && mDNSIsDigit((X)[4]) && mDNSIsDigit((X)[5]))
-#define SPSMetric(X) (ValidSPSName(X) ? ((X)[1]-'0') * 1000 + ((X)[2]-'0') * 100 + ((X)[4]-'0') * 10 + ((X)[5]-'0') : 9999)
 
 mDNSexport const CacheRecord *FindSPSInCache(mDNS *const m, const DNSQuestion *const q)
 	{
@@ -7234,7 +7234,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	
 	if (set->InterfaceActive && set->NetWake)
 		mDNS_StartBrowse_internal(m, &set->NetWakeBrowse, (const domainname *)"\xC_sleep-proxy\x4_udp", (const domainname *)"\x5local",
-			set->InterfaceID, mDNSfalse, mDNSNULL, mDNSNULL);
+			set->InterfaceID, mDNSfalse, m->SPSBrowseCallback, set);
 
 	// In early versions of OS X the IPv6 address remains on an interface even when the interface is turned off,
 	// giving the false impression that there's an active representative of this interface when there really isn't.
@@ -7360,7 +7360,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 
 			if (intf->NetWake)
 				mDNS_StartBrowse_internal(m, &intf->NetWakeBrowse, (const domainname *)"\xC_sleep-proxy\x4_udp", (const domainname *)"\x5local",
-					intf->InterfaceID, mDNSfalse, mDNSNULL, mDNSNULL);
+					intf->InterfaceID, mDNSfalse, m->SPSBrowseCallback, intf);
 			
 			// See if another representative *of the same type* exists. If not, we mave have gone from
 			// dual-stack to v6-only (or v4-only) so we need to reconfirm which records are still valid.
@@ -8327,6 +8327,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->SPSTotalPower            = 0;
 	m->SPSState                 = 0;
 	m->SPSSocket                = mDNSNULL;
+	m->SPSBrowseCallback        = mDNSNULL;
 
 #endif
 

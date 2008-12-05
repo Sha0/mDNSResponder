@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.h,v $
+Revision 1.11  2008/12/05 02:35:24  mcguire
+<rdar://problem/6107390> Write to the DynamicStore when a Sleep Proxy server is available on the network
+
 Revision 1.10  2008/11/04 23:54:09  cheshire
 Added routine mDNSSetARP(), used to replace an SPS client's entry in our ARP cache with
 a dummy one, so that IP traffic to the SPS client initiated by the SPS machine can be
@@ -58,7 +61,8 @@ enum mDNSDynamicStoreSetConfigKey
 	kmDNSMulticastConfig = 1,
 	kmDNSDynamicConfig,
 	kmDNSPrivateConfig,
-	kmDNSBackToMyMacConfig
+	kmDNSBackToMyMacConfig,
+	kmDNSBonjourSleepProxyState
 	};
 
 enum mDNSPreferencesSetNameKey

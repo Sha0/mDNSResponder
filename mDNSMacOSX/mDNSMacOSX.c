@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.589  2008/12/05 02:35:25  mcguire
+<rdar://problem/6107390> Write to the DynamicStore when a Sleep Proxy server is available on the network
+
 Revision 1.588  2008/12/04 21:08:52  mcguire
 <rdar://problem/6116863> mDNS: Provide mechanism to disable Multicast advertisements
 
@@ -4412,6 +4415,116 @@ mDNSlocal void SetLocalDomains(void)
 
 #if APPLE_OSX_mDNSResponder
 
+static CFMutableDictionaryRef spsStatusDict = NULL;
+static const CFStringRef kMetricRef = CFSTR("Metric");
+
+mDNSlocal void SPSStatusPutNumber(CFMutableDictionaryRef dict, const mDNSu8* const ptr, CFStringRef key)
+	{
+	mDNSu8 tmp = (ptr[0] - '0') * 10 + ptr[1] - '0';
+	CFNumberRef num = CFNumberCreate(NULL, kCFNumberSInt8Type, &tmp);
+	if (!num)
+		LogMsg("SPSStatusPutNumber: Could not create CFNumber");
+	else
+		{
+		CFDictionarySetValue(dict, key, num);
+		CFRelease(num);
+		}
+	}
+
+mDNSlocal void SPSAddToArray(CFMutableArrayRef array, const mDNSu8* const ptr)
+	{
+	CFMutableDictionaryRef dict = CFDictionaryCreateMutable(NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+	if (!dict) { LogMsg("SPSAddToArray: Could not create CFDictionary dict"); return; }
+	
+	char buffer[1024];
+	buffer[mDNS_snprintf(buffer, sizeof(buffer), "%##s", ptr) - 1] = 0;
+	CFStringRef spsname = CFStringCreateWithCString(NULL, buffer, kCFStringEncodingUTF8);
+	if (!spsname) { LogMsg("SPSAddToArray: Could not create CFString spsname full"); return; }
+	else
+		{
+		CFDictionarySetValue(dict, CFSTR("FullName"), spsname);
+		CFRelease(spsname);
+		}
+
+	if (ptr[0] >=  2) SPSStatusPutNumber(dict, ptr + 1, CFSTR("Type"));
+	if (ptr[0] >=  5) SPSStatusPutNumber(dict, ptr + 4, CFSTR("Portability"));
+	if (ptr[0] >=  8) SPSStatusPutNumber(dict, ptr + 7, CFSTR("MarginalPower"));
+	if (ptr[0] >= 11) SPSStatusPutNumber(dict, ptr +10, CFSTR("TotalPower"));
+
+	mDNSu32 tmp = SPSMetric(ptr);
+	CFNumberRef num = CFNumberCreate(NULL, kCFNumberSInt32Type, &tmp);
+	if (!num)
+		LogMsg("SPSAddToArray: Could not create CFNumber");
+	else
+		{
+		CFDictionarySetValue(dict, kMetricRef, num);
+		CFRelease(num);
+		}
+
+	if (ptr[0] >= 12)
+		{
+		memcpy(buffer, ptr + 13, ptr[0] - 12);
+		buffer[ptr[0] - 12] = 0;
+		spsname = CFStringCreateWithCString(NULL, buffer, kCFStringEncodingUTF8);
+		if (!spsname) { LogMsg("UpdateSPSStatus: Could not create CFString spsname"); return; }
+		else
+			{
+			CFDictionarySetValue(dict, CFSTR("PrettyName"), spsname);
+			CFRelease(spsname);
+			}
+		}
+		
+	CFArrayAppendValue(array, dict);
+	CFRelease(dict);
+	}
+	
+mDNSlocal CFComparisonResult SortSPSEntries(const void *val1, const void *val2, void *context)
+	{
+	(void)context;
+	return CFNumberCompare((CFNumberRef)CFDictionaryGetValue((CFDictionaryRef)val1, kMetricRef),
+						   (CFNumberRef)CFDictionaryGetValue((CFDictionaryRef)val2, kMetricRef),
+						   NULL);
+	}
+
+mDNSlocal void UpdateSPSStatus(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
+	{
+	NetworkInterfaceInfo* info = (NetworkInterfaceInfo*)question->QuestionContext;
+	(void)answer;
+	(void)AddRecord;
+	debugf("UpdateSPSStatus: %s %##s %s %s", info->ifname, question->qname.c, AddRecord ? "Add" : "Rmv", RRDisplayString(m, answer));
+	
+	if (!spsStatusDict)
+		{
+		spsStatusDict = CFDictionaryCreateMutable(NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+		if (!spsStatusDict) { LogMsg("UpdateSPSStatus: Could not create CFDictionary spsStatusDict"); return; }
+		}
+	
+	CFMutableArrayRef array = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
+	if (!array) { LogMsg("UpdateSPSStatus: Could not create CFMutableArray"); return; }
+
+	CacheGroup *const cg = CacheGroupForName(m, HashSlot(&question->qname), question->qnamehash, &question->qname);
+	const CacheRecord *cr;
+	for (cr = cg ? cg->members : mDNSNULL; cr; cr=cr->next)
+		if (SameNameRecordAnswersQuestion(&cr->resrec, question))
+			if (!IdenticalSameNameRecord(&cr->resrec, &m->SPSRecords.RR_PTR.resrec))
+				if (cr->resrec.rrtype == kDNSType_PTR && cr->resrec.rdlength >= 6)
+					SPSAddToArray(array, cr->resrec.rdata->u.name.c);
+
+	CFArraySortValues(array, CFRangeMake(0, CFArrayGetCount(array)), SortSPSEntries, NULL);
+
+	CFStringRef ifname = CFStringCreateWithCString(NULL, info->ifname, kCFStringEncodingUTF8);
+	if (!ifname) { LogMsg("UpdateSPSStatus: Could not create CFString ifname"); return; }
+	if (!CFDictionaryContainsKey(spsStatusDict, ifname) ||
+	    !CFEqual(array, (CFMutableDictionaryRef)CFDictionaryGetValue(spsStatusDict, ifname)))
+	    {
+		CFDictionarySetValue(spsStatusDict, ifname, array);
+		mDNSDynamicStoreSetConfig(kmDNSBonjourSleepProxyState, spsStatusDict);
+		}
+	
+	CFRelease(ifname);
+	CFRelease(array);
+	}
+
 mDNSlocal mDNSs32 GetSystemSleepTimerSetting(void)
 	{
 	mDNSs32 val = -1;
@@ -5003,6 +5116,11 @@ mDNSexport mStatus mDNSPlatformInit(mDNS *const m)
 
 	// Adding interfaces will use this flag, so set it now.
 	m->DivertMulticastAdvertisements = !m->AdvertiseLocalAddresses;
+	
+#if APPLE_OSX_mDNSResponder
+	m->SPSBrowseCallback = UpdateSPSStatus;
+#endif
+
 	mStatus result = mDNSPlatformInit_setup(m);
 
 	// We don't do asynchronous initialization on OS X, so by the time we get here the setup will already

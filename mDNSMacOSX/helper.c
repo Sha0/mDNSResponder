@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.48  2008/12/05 02:35:24  mcguire
+<rdar://problem/6107390> Write to the DynamicStore when a Sleep Proxy server is available on the network
+
 Revision 1.47  2008/11/21 02:28:55  mcguire
 <rdar://problem/6354979> send racoon a SIGUSR1 instead of SIGHUP
 
@@ -437,6 +440,9 @@ do_mDNSDynamicStoreSetConfig(__unused mach_port_t port, int key,
 			break;
 		case kmDNSBackToMyMacConfig:
 			sckey = CFSTR("State:/Network/BackToMyMac");
+			break;
+		case kmDNSBonjourSleepProxyState:
+			sckey = CFSTR("State:/Network/BonjourSleepProxy/DiscoveredServers");
 			break;
 		default:
 			debug("unrecognized key %d", key);

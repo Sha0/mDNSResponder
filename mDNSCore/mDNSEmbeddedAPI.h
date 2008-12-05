@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.523  2008/12/05 02:35:24  mcguire
+<rdar://problem/6107390> Write to the DynamicStore when a Sleep Proxy server is available on the network
+
 Revision 1.522  2008/12/04 21:08:51  mcguire
 <rdar://problem/6116863> mDNS: Provide mechanism to disable Multicast advertisements
 
@@ -2371,6 +2374,7 @@ struct mDNS_struct
 	mDNSu8            SPSState;					// 0 = off, 1 = running, 2 = shutting down, 3 = suspended during sleep
 	UDPSocket        *SPSSocket;
 	ServiceRecordSet  SPSRecords;
+	mDNSQuestionCallback *SPSBrowseCallback;    // So the platform layer can do something useful with SPS browse results
 
 #if APPLE_OSX_mDNSResponder
 	ClientTunnel     *TunnelClients;
@@ -3070,6 +3074,8 @@ extern void GrantCacheExtensions(mDNS *const m, DNSQuestion *q, mDNSu32 lease);
 extern void MakeNegativeCacheRecord(mDNS *const m, const domainname *const name, const mDNSu32 namehash, const mDNSu16 rrtype, const mDNSu16 rrclass, mDNSu32 ttl_seconds);
 extern void CompleteDeregistration(mDNS *const m, AuthRecord *rr);
 extern const CacheRecord *FindSPSInCache(mDNS *const m, const DNSQuestion *const q);
+#define ValidSPSName(X) ((X)[0] >= 5 && mDNSIsDigit((X)[1]) && mDNSIsDigit((X)[2]) && mDNSIsDigit((X)[4]) && mDNSIsDigit((X)[5]))
+#define SPSMetric(X) (ValidSPSName(X) ? ((X)[1]-'0') * 1000 + ((X)[2]-'0') * 100 + ((X)[4]-'0') * 10 + ((X)[5]-'0') : 9999)
 extern void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheRecord *const rr, const QC_result AddRecord);
 
 // For now this AutoTunnel stuff is specific to Mac OS X.
