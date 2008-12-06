@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.56  2008/12/06 01:42:57  mcguire
+<rdar://problem/6418958> Need to exponentially back-off after failure to get public address
+
 Revision 1.55  2008/12/01 19:43:48  mcguire
 <rdar://problem/6404766> UPnP: Handle errorCode 718 as a conflict when requesting a port mapping
 
@@ -417,7 +420,11 @@ mDNSlocal void handleLNTGetExternalAddressResponse(tcpLNTInfo *tcpInfo)
 	*addrend = 0;
 
 	if (inet_pton(AF_INET, ptr, &ExtAddr) <= 0)
-		{ LogMsg("handleLNTGetExternalAddressResponse: Router returned bad address %s", ptr); err = NATErr_NetFail; }
+		{
+		LogMsg("handleLNTGetExternalAddressResponse: Router returned bad address %s", ptr);
+		err = NATErr_NetFail;
+		ExtAddr = zerov4Addr;
+		}
 	if (!err) LogOperation("handleLNTGetExternalAddressResponse: External IP address is %.4a", &ExtAddr);
 
 	natTraversalHandleAddressReply(m, err, ExtAddr);

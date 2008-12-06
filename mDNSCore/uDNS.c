@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.592  2008/12/06 01:42:55  mcguire
+<rdar://problem/6418958> Need to exponentially back-off after failure to get public address
+
 Revision 1.591  2008/12/06 00:17:11  cheshire
 <rdar://problem/6380477> mDNS_StopNATOperation doesn't handle duplicate NAT mapping requests properly
 Refinement: For duplicate ssh mappings we want to suppress the syslog warning message, but not the "unmap = mDNSfalse"
@@ -1634,22 +1637,33 @@ mDNSlocal void ClearUPnPState(mDNS *const m)
 
 mDNSexport void natTraversalHandleAddressReply(mDNS *const m, mDNSu16 err, mDNSv4Addr ExtAddr)
 	{
-	static mDNSu16 last_err;
+	static mDNSu16 last_err = 0;
+	
 	if (err)
 		{
 		if (err != last_err) LogMsg("Error getting external address %d", err);
+		ExtAddr = zerov4Addr;
 		}
-	else if (!mDNSSameIPv4Address(m->ExternalAddress, ExtAddr))
+	else
 		{
 		LogOperation("Received external IP address %.4a from NAT", &ExtAddr);
 		if (mDNSv4AddrIsRFC1918(&ExtAddr))
 			LogMsg("Double NAT (external NAT gateway address %.4a is also a private RFC 1918 address)", &ExtAddr);
+		if (mDNSIPv4AddressIsZero(ExtAddr))
+			err = NATErr_NetFail; // fake error to handle routers that pathologically report success with the zero address
+		}
+		
+	if (!mDNSSameIPv4Address(m->ExternalAddress, ExtAddr))
+		{
 		m->ExternalAddress = ExtAddr;
 		RecreateNATMappings(m);		// Also sets NextScheduledNATOp for us
 		}
 
-	if (err || mDNSIPv4AddressIsZero(ExtAddr)) m->retryIntervalGetAddr = NATMAP_INIT_RETRY * 32;		// 8 seconds
-	else                                       m->retryIntervalGetAddr = NATMAP_MAX_RETRY_INTERVAL;
+	if (!err) // Success, back-off to maximum interval
+		m->retryIntervalGetAddr = NATMAP_MAX_RETRY_INTERVAL;
+	else if (!last_err) // Failure after success, retry quickly (then back-off exponentially)
+		m->retryIntervalGetAddr = NATMAP_INIT_RETRY;
+	// else back-off normally in case of pathological failures
 
 	m->retryGetAddr = m->timenow + m->retryIntervalGetAddr;
 	if (m->NextScheduledNATOp - m->retryIntervalGetAddr > 0)
