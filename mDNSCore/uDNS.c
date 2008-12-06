@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.591  2008/12/06 00:17:11  cheshire
+<rdar://problem/6380477> mDNS_StopNATOperation doesn't handle duplicate NAT mapping requests properly
+Refinement: For duplicate ssh mappings we want to suppress the syslog warning message, but not the "unmap = mDNSfalse"
+
 Revision 1.590  2008/12/04 20:57:36  mcguire
 fix build
 
@@ -1775,13 +1779,13 @@ mDNSexport mStatus mDNS_StopNATOperation_internal(mDNS *m, NATTraversalInfo *tra
 
 	if (traversal->Protocol)
 		for (p = m->NATTraversals; p; p=p->next)
-			if (traversal->Protocol == p->Protocol && mDNSSameIPPort(traversal->IntPort, p->IntPort) &&
-				!mDNSSameIPPort(traversal->IntPort, SSHPort))
+			if (traversal->Protocol == p->Protocol && mDNSSameIPPort(traversal->IntPort, p->IntPort))
 				{
-				LogMsg("Warning: Removed port mapping request %p Prot %d Int %d TTL %d "
-					"duplicates existing port mapping request %p Prot %d Int %d TTL %d",
-					traversal, traversal->Protocol, mDNSVal16(traversal->IntPort), traversal->NATLease,
-					p,         p        ->Protocol, mDNSVal16(p        ->IntPort), p        ->NATLease);
+				if (!mDNSSameIPPort(traversal->IntPort, SSHPort))
+					LogMsg("Warning: Removed port mapping request %p Prot %d Int %d TTL %d "
+						"duplicates existing port mapping request %p Prot %d Int %d TTL %d",
+						traversal, traversal->Protocol, mDNSVal16(traversal->IntPort), traversal->NATLease,
+						p,         p        ->Protocol, mDNSVal16(p        ->IntPort), p        ->NATLease);
 				unmap = mDNSfalse;
 				}
 
