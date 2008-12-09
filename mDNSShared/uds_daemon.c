@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.418  2008/12/09 05:12:53  cheshire
+Updated debugging messages
+
 Revision 1.417  2008/12/04 03:38:12  cheshire
 Miscellaneous defensive coding changes and improvements to debugging log messages
 
@@ -3416,7 +3419,7 @@ mDNSlocal void read_msg(request_state *req)
 				}
 	
 got_errfd:
-			LogOperation("%3d: error socket %d created %08X %08X", req->sd, req->errsd, req->hdr.client_context.u32[1], req->hdr.client_context.u32[0]);
+			LogOperation("%3d: Error socket %d created %08X %08X", req->sd, req->errsd, req->hdr.client_context.u32[1], req->hdr.client_context.u32[0]);
 #if defined(_WIN32)
 			if (ioctlsocket(req->errsd, FIONBIO, &opt) != 0)
 #else
@@ -3559,7 +3562,7 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 		send_all(req->errsd, (const char *)&err_netorder, sizeof(err_netorder));
 		if (req->errsd != req->sd)
 			{
-			LogOperation("%3d: error socket %d closed  %08X %08X (%d)",
+			LogOperation("%3d: Error socket %d closed  %08X %08X (%d)",
 				req->sd, req->errsd, req->hdr.client_context.u32[1], req->hdr.client_context.u32[0], err);
 			dnssd_close(req->errsd);
 			req->errsd = req->sd;
