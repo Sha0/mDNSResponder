@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.593  2008/12/09 23:08:55  mcguire
+<rdar://problem/6430877> should use IP_BOUND_IF
+additional cleanup
+
 Revision 1.592  2008/12/09 19:58:44  mcguire
 <rdar://problem/6430877> should use IP_BOUND_IF
 
@@ -1226,20 +1230,17 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 			if (!mDNSAddrIsDNSMulticast(dst))
 				{
 				#ifdef IP_BOUND_IF
-					const mDNSu32 ifindex = if_nametoindex(ifa_name);
-					if (ifindex == 0)
-						LogOperation("IP_BOUND_IF socket option cannot be set -- if_nametoindex(%s) returned 0", ifa_name);
+					if (info->scope_id == 0)
+						LogOperation("IP_BOUND_IF socket option not set -- info %p (%s) scope_id is zero", info, ifa_name);
 					else
-						setsockopt(s, IPPROTO_IP, IP_BOUND_IF, &ifindex, sizeof(ifindex));
-				#elif defined(IP_FORCE_OUT_IFP)
-					setsockopt(s, IPPROTO_IP, IP_FORCE_OUT_IFP, ifa_name, strlen(ifa_name) + 1);
+						setsockopt(s, IPPROTO_IP, IP_BOUND_IF, &info->scope_id, sizeof(info->scope_id));
 				#else
 					{
 					static int displayed = 0;
 					if (displayed < 1000)
 						{
 						displayed++;
-						LogOperation("Neither IP_BOUND_IF nor IP_FORCE_OUT_IFP socket option defined -- cannot specify interface for unicast packets");
+						LogOperation("IP_BOUND_IF socket option not defined -- cannot specify interface for unicast packets");
 						}
 					}
 				#endif
@@ -1318,15 +1319,11 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 		result = mStatus_UnknownErr;
 		}
 
-#if defined(IP_BOUND_IF) || defined(IP_FORCE_OUT_IFP)
+#ifdef IP_BOUND_IF
 	if (dst->type == mDNSAddrType_IPv4 && info && !mDNSAddrIsDNSMulticast(dst))
 		{
-		#ifdef IP_BOUND_IF
-			static const mDNSu32 ifindex = 0;
-			setsockopt(s, IPPROTO_IP, IP_BOUND_IF, &ifindex, sizeof(ifindex));
-		#else // defined(IP_FORCE_OUT_IFP)
-			setsockopt(s, IPPROTO_IP, IP_FORCE_OUT_IFP, "", 1);
-		#endif
+		static const mDNSu32 ifindex = 0;
+		setsockopt(s, IPPROTO_IP, IP_BOUND_IF, &ifindex, sizeof(ifindex));
 		}
 #endif
 
