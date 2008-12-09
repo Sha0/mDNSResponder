@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.591  2008/12/09 15:39:05  cheshire
+Workaround for bug on Leopard and earlier where Ethernet drivers report wrong link state immediately after wake from sleep
+
 Revision 1.590  2008/12/09 05:21:54  cheshire
 Should key sleep/wake handling off kIOMessageSystemWillPowerOn message -- the kIOMessageSystemHasPoweredOn
 message is delayed by some seemingly-random amount in the range 0-15 seconds.
@@ -4886,6 +4889,15 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 												break;
 		case kIOMessageSystemWillRestart:		LogOperation("PowerChanged kIOMessageSystemWillRestart     (no action)");	break;	// E0000310
 		case kIOMessageSystemWillPowerOn:		LogOperation("PowerChanged kIOMessageSystemWillPowerOn");							// E0000320
+
+												// On Leopard and earlier, on wake from sleep, instead of reporting link state down, Apple
+												// Ethernet drivers report "hardware incapable of detecting link state", which the kernel
+												// interprets as "should assume we have networking", which results in the first 4-5 seconds
+												// of packets vanishing into a black hole. To work around this, on wake from sleep,
+												// we block for five seconds to let Ethernet come up, and then resume normal operation.
+												if (OSXVers < 10) LogOperation("PowerChanged kIOMessageSystemWillPowerOn sleep(5);");
+												if (OSXVers < 10) sleep(5);
+
 												// Make sure our interface list is cleared to the empty state, then tell mDNSCore to wake
 												if (m->SleepState != SleepState_Sleeping)
 													{
@@ -4984,6 +4996,8 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	{
 	mStatus err;
 	m->p->CFRunLoop = CFRunLoopGetCurrent();
+
+	if (!OSXVers) OSXVers = mDNSMacOSXSystemBuildNumber(NULL);		// Make sure OSXVers is set up
 
 	// In 10.4, mDNSResponder is launched very early in the boot process, while other subsystems are still in the process of starting up.
 	// If we can't read the user's preferences, then we sleep a bit and try again, for up to five seconds before we give up.
