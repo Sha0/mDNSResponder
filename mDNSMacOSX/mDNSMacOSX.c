@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.592  2008/12/09 19:58:44  mcguire
+<rdar://problem/6430877> should use IP_BOUND_IF
+
 Revision 1.591  2008/12/09 15:39:05  cheshire
 Workaround for bug on Leopard and earlier where Ethernet drivers report wrong link state immediately after wake from sleep
 
@@ -1222,7 +1225,13 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 			{
 			if (!mDNSAddrIsDNSMulticast(dst))
 				{
-				#ifdef IP_FORCE_OUT_IFP
+				#ifdef IP_BOUND_IF
+					const mDNSu32 ifindex = if_nametoindex(ifa_name);
+					if (ifindex == 0)
+						LogOperation("IP_BOUND_IF socket option cannot be set -- if_nametoindex(%s) returned 0", ifa_name);
+					else
+						setsockopt(s, IPPROTO_IP, IP_BOUND_IF, &ifindex, sizeof(ifindex));
+				#elif defined(IP_FORCE_OUT_IFP)
 					setsockopt(s, IPPROTO_IP, IP_FORCE_OUT_IFP, ifa_name, strlen(ifa_name) + 1);
 				#else
 					{
@@ -1230,7 +1239,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 					if (displayed < 1000)
 						{
 						displayed++;
-						LogOperation("IP_FORCE_OUT_IFP Socket option not defined -- cannot specify interface for unicast packets");
+						LogOperation("Neither IP_BOUND_IF nor IP_FORCE_OUT_IFP socket option defined -- cannot specify interface for unicast packets");
 						}
 					}
 				#endif
@@ -1309,9 +1318,16 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 		result = mStatus_UnknownErr;
 		}
 
-#ifdef IP_FORCE_OUT_IFP
+#if defined(IP_BOUND_IF) || defined(IP_FORCE_OUT_IFP)
 	if (dst->type == mDNSAddrType_IPv4 && info && !mDNSAddrIsDNSMulticast(dst))
-		setsockopt(s, IPPROTO_IP, IP_FORCE_OUT_IFP, "", 1);
+		{
+		#ifdef IP_BOUND_IF
+			static const mDNSu32 ifindex = 0;
+			setsockopt(s, IPPROTO_IP, IP_BOUND_IF, &ifindex, sizeof(ifindex));
+		#else // defined(IP_FORCE_OUT_IFP)
+			setsockopt(s, IPPROTO_IP, IP_FORCE_OUT_IFP, "", 1);
+		#endif
+		}
 #endif
 
 	return(result);
