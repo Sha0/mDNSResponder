@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.590  2008/12/09 05:21:54  cheshire
+Should key sleep/wake handling off kIOMessageSystemWillPowerOn message -- the kIOMessageSystemHasPoweredOn
+message is delayed by some seemingly-random amount in the range 0-15 seconds.
+
 Revision 1.589  2008/12/05 02:35:25  mcguire
 <rdar://problem/6107390> Write to the DynamicStore when a Sleep Proxy server is available on the network
 
@@ -3112,7 +3116,7 @@ mDNSlocal void ReissueBlockedQuestionWithType(mDNS *const m, domainname *d, mDNS
 			mDNS_StartQuery(m, q);
 			q->QuestionCallback = tmp;					// Restore QuestionCallback back to the real value
 			if (!success) q->NoAnswer = NoAnswer_Fail;
-			// When we call mDNS_StopQuery, it's possible for other subbordinate questions like the GetZoneData query to be cancelled too.
+			// When we call mDNS_StopQuery, it's possible for other subordinate questions like the GetZoneData query to be cancelled too.
 			// In general we have to assume that the question list might have changed in arbitrary ways.
 			// This code is itself called from a question callback, so the m->CurrentQuestion mechanism is
 			// already in use. The safest solution is just to go back to the start of the list and start again.
@@ -4820,38 +4824,24 @@ mDNSlocal OSStatus KeychainChanged(SecKeychainEvent keychainEvent, SecKeychainCa
 #endif
 
 #ifndef NO_IOPOWER
-mDNSlocal void HasPoweredOn(mDNS *const m)
+mDNSlocal void PowerOn(mDNS *const m)
 	{
 	// Need to explicitly clear any previous power requests -- they're not cleared automatically on wake
 	mDNSPowerRequest(-1,-1);
 
-	// If still sleeping (didn't get 'WillPowerOn' message for some reason?) wake now
-	if (m->SleepState)
-		{
-		LogMsg("kIOMessageSystemHasPoweredOn: ERROR m->SleepState %d", m->SleepState);
-		mDNSCoreMachineSleep(m, false);
-		}
-
-	// Just to be safe, schedule a mDNSMacOSXNetworkChanged(), in case we never received
-	// the System Configuration Framework "network changed" event that we expect
-	// to receive some time shortly after the kIOMessageSystemWillPowerOn message
-	mDNS_Lock(m);
-	if (!m->p->NetworkChanged ||
-		m->p->NetworkChanged - NonZeroTime(m->timenow + mDNSPlatformOneSecond * 2) < 0)
-		m->p->NetworkChanged = NonZeroTime(m->timenow + mDNSPlatformOneSecond * 2);
-	mDNS_Unlock(m);
+	mDNSCoreMachineSleep(m, false);
 
 	if (m->p->WakeAtUTC)
 		{
 		long utc = mDNSPlatformUTC();
-		if      (m->p->WakeAtUTC - utc > 30) LogOperation("PowerChanged kIOMessageSystemHasPoweredOn %d seconds early, assuming not maintenance wake", m->p->WakeAtUTC - utc);
-		else if (utc - m->p->WakeAtUTC > 30) LogOperation("PowerChanged kIOMessageSystemHasPoweredOn %d seconds late, assuming not maintenance wake", utc - m->p->WakeAtUTC);
+		if      (m->p->WakeAtUTC - utc > 30) LogOperation("PowerChanged PowerOn %d seconds early, assuming not maintenance wake", m->p->WakeAtUTC - utc);
+		else if (utc - m->p->WakeAtUTC > 30) LogOperation("PowerChanged PowerOn %d seconds late, assuming not maintenance wake", utc - m->p->WakeAtUTC);
 		else
 			{
 			mDNSs32 i = 20;
 			//int result = mDNSPowerRequest(0, i);
 			//if (result == kIOReturnNotReady) do i += (i<20) ? 1 : ((i+3)/4); while (mDNSPowerRequest(0, i) == kIOReturnNotReady);
-			LogMsg("PowerChanged: Waking for network maintenance operations %d; re-sleeping in %d seconds", utc - m->p->WakeAtUTC, i);
+			LogMsg("PowerChanged: Waking for network maintenance operations %d seconds early; re-sleeping in %d seconds", m->p->WakeAtUTC - utc, i);
 			m->p->SleepTime = mDNS_TimeNow(m) + i * mDNSPlatformOneSecond;
 			}
 		}
@@ -4865,21 +4855,37 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 	debugf("PowerChanged %X %lX", messageType, messageArgument);
 	switch(messageType)
 		{
-		case kIOMessageCanSystemPowerOff:		LogOperation("PowerChanged kIOMessageCanSystemPowerOff (no action)");				break;	// E0000240
-		case kIOMessageSystemWillPowerOff:		LogOperation("PowerChanged kIOMessageSystemWillPowerOff");									// E0000250
+		case kIOMessageCanSystemPowerOff:		LogOperation("PowerChanged kIOMessageCanSystemPowerOff     (no action)");	break;	// E0000240
+		case kIOMessageSystemWillPowerOff:		LogOperation("PowerChanged kIOMessageSystemWillPowerOff");							// E0000250
 												mDNSCoreMachineSleep(m, true);
 												if (m->SleepState == SleepState_Sleeping) mDNSMacOSXNetworkChanged(m);
 												break;
-		case kIOMessageSystemWillNotPowerOff:	LogOperation("PowerChanged kIOMessageSystemWillNotPowerOff (no action)");			break;	// E0000260
-		case kIOMessageCanSystemSleep:			LogOperation("PowerChanged kIOMessageCanSystemSleep (no action)");					break;	// E0000270
-		case kIOMessageSystemWillSleep:			LogOperation("PowerChanged kIOMessageSystemWillSleep");										// E0000280
+		case kIOMessageSystemWillNotPowerOff:	LogOperation("PowerChanged kIOMessageSystemWillNotPowerOff (no action)");	break;	// E0000260
+		case kIOMessageCanSystemSleep:			LogOperation("PowerChanged kIOMessageCanSystemSleep        (no action)");	break;	// E0000270
+		case kIOMessageSystemWillSleep:			LogOperation("PowerChanged kIOMessageSystemWillSleep");								// E0000280
 												mDNSCoreMachineSleep(m, true);
 												if (m->SleepState == SleepState_Sleeping) mDNSMacOSXNetworkChanged(m);
 												break;
-		case kIOMessageSystemWillNotSleep:		LogOperation("PowerChanged kIOMessageSystemWillNotSleep (no action)");				break;	// E0000290
-		case kIOMessageSystemHasPoweredOn:		LogOperation("PowerChanged kIOMessageSystemHasPoweredOn"); HasPoweredOn(m);			break;	// E0000300
-		case kIOMessageSystemWillRestart:		LogOperation("PowerChanged kIOMessageSystemWillRestart (no action)");				break;	// E0000310
-		case kIOMessageSystemWillPowerOn:		LogOperation("PowerChanged kIOMessageSystemWillPowerOn");									// E0000320
+		case kIOMessageSystemWillNotSleep:		LogOperation("PowerChanged kIOMessageSystemWillNotSleep    (no action)");	break;	// E0000290
+		case kIOMessageSystemHasPoweredOn:		LogOperation("PowerChanged kIOMessageSystemHasPoweredOn");							// E0000300
+												// If still sleeping (didn't get 'WillPowerOn' message for some reason?) wake now
+												if (m->SleepState)
+													{
+													LogMsg("PowerChanged kIOMessageSystemHasPoweredOn: ERROR m->SleepState %d", m->SleepState);
+													PowerOn(m);
+													}
+												// Just to be safe, schedule a mDNSMacOSXNetworkChanged(), in case we never received
+												// the System Configuration Framework "network changed" event that we expect
+												// to receive some time shortly after the kIOMessageSystemWillPowerOn message
+												mDNS_Lock(m);
+												if (!m->p->NetworkChanged ||
+													m->p->NetworkChanged - NonZeroTime(m->timenow + mDNSPlatformOneSecond * 2) < 0)
+													m->p->NetworkChanged = NonZeroTime(m->timenow + mDNSPlatformOneSecond * 2);
+												mDNS_Unlock(m);
+											
+												break;
+		case kIOMessageSystemWillRestart:		LogOperation("PowerChanged kIOMessageSystemWillRestart     (no action)");	break;	// E0000310
+		case kIOMessageSystemWillPowerOn:		LogOperation("PowerChanged kIOMessageSystemWillPowerOn");							// E0000320
 												// Make sure our interface list is cleared to the empty state, then tell mDNSCore to wake
 												if (m->SleepState != SleepState_Sleeping)
 													{
@@ -4887,9 +4893,9 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 													m->SleepState = SleepState_Sleeping;
 													mDNSMacOSXNetworkChanged(m);
 													}
-												mDNSCoreMachineSleep(m, false);
+												PowerOn(m);
 												break;
-		default:								LogOperation("PowerChanged unknown message %X", messageType);						break;
+		default:								LogOperation("PowerChanged unknown message %X", messageType);				break;
 		}
 
 	if (!m->p->SleepLimit && messageType == kIOMessageSystemWillSleep)
