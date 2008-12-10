@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.230  2008/12/10 01:55:54  cheshire
+Renamed "Max" macro to avoid conflict with another "Max" macro on ARMv5
+
 Revision 1.229  2008/11/27 01:28:45  cheshire
 For display purposes, show sleep sequence number as unsigned
 
@@ -629,21 +632,21 @@ mDNSexport char *DNSTypeName(mDNSu16 rrtype)
 mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *const rr, const RDataBody *const rd1, char *const buffer)
 	{
 	const RDataBody2 *const rd = (RDataBody2 *)rd1;
-	#define Max (MaxMsg-1)
+	#define RemSpc (MaxMsg-1-length)
 	char *ptr = buffer;
-	mDNSu32 length = mDNS_snprintf(buffer, Max, "%4d %##s %s ", rr->rdlength, rr->name->c, DNSTypeName(rr->rrtype));
+	mDNSu32 length = mDNS_snprintf(buffer, MaxMsg-1, "%4d %##s %s ", rr->rdlength, rr->name->c, DNSTypeName(rr->rrtype));
 	if (rr->RecordType == kDNSRecordTypePacketNegative) return(buffer);
-	if (!rr->rdlength) { mDNS_snprintf(buffer+length, Max-length, "<< ZERO RDATA LENGTH >>"); return(buffer); }
+	if (!rr->rdlength) { mDNS_snprintf(buffer+length, RemSpc, "<< ZERO RDATA LENGTH >>"); return(buffer); }
 	
 	switch (rr->rrtype)
 		{
-		case kDNSType_A:	mDNS_snprintf(buffer+length, Max-length, "%.4a", &rd->ipv4);          break;
+		case kDNSType_A:	mDNS_snprintf(buffer+length, RemSpc, "%.4a", &rd->ipv4);          break;
 
 		case kDNSType_NS:	// Same as PTR
 		case kDNSType_CNAME:// Same as PTR
-		case kDNSType_PTR:	mDNS_snprintf(buffer+length, Max-length, "%##s", rd->name.c);       break;
+		case kDNSType_PTR:	mDNS_snprintf(buffer+length, RemSpc, "%##s", rd->name.c);       break;
 
-		case kDNSType_SOA:  mDNS_snprintf(buffer+length, Max-length, "%##s %##s %d %d %d %d %d",
+		case kDNSType_SOA:  mDNS_snprintf(buffer+length, RemSpc, "%##s %##s %d %d %d %d %d",
 								rd->soa.mname.c, rd->soa.rname.c,
 								rd->soa.serial, rd->soa.refresh, rd->soa.retry, rd->soa.expire, rd->soa.min);
 							break;
@@ -653,49 +656,49 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *const rr, const RD
 							const mDNSu8 *t = rd->txt.c;
 							while (t < rd->txt.c + rr->rdlength)
 								{
-								length += mDNS_snprintf(buffer+length, Max-length, "%s%#s", t > rd->txt.c ? "¦" : "", t);
+								length += mDNS_snprintf(buffer+length, RemSpc, "%s%#s", t > rd->txt.c ? "¦" : "", t);
 								t += 1 + t[0];
 								}
 							} break;
 
-		case kDNSType_AAAA:	mDNS_snprintf(buffer+length, Max-length, "%.16a", &rd->ipv6);       break;
-		case kDNSType_SRV:	mDNS_snprintf(buffer+length, Max-length, "%u %u %u %##s",
+		case kDNSType_AAAA:	mDNS_snprintf(buffer+length, RemSpc, "%.16a", &rd->ipv6);       break;
+		case kDNSType_SRV:	mDNS_snprintf(buffer+length, RemSpc, "%u %u %u %##s",
 								rd->srv.priority, rd->srv.weight, mDNSVal16(rd->srv.port), rd->srv.target.c); break;
 
 		case kDNSType_OPT:  {
 							const rdataOPT *opt;
 							const rdataOPT *const end = (const rdataOPT *)&rd->data[rr->rdlength];
-							length += mDNS_snprintf(buffer+length, Max-length, "Max %d", rr->rrclass);
+							length += mDNS_snprintf(buffer+length, RemSpc, "Max %d", rr->rrclass);
 							for (opt = &rd->opt[0]; opt < end; opt++)
 								{
 								switch(opt->opt)
 									{
 									case kDNSOpt_LLQ:
-										length += mDNS_snprintf(buffer+length, Max-length, " Vers %d",     opt->u.llq.vers);
-										length += mDNS_snprintf(buffer+length, Max-length, " Op %d",       opt->u.llq.llqOp);
-										length += mDNS_snprintf(buffer+length, Max-length, " Err/Port %d", opt->u.llq.err);
-										length += mDNS_snprintf(buffer+length, Max-length, " ID %08X%08X", opt->u.llq.id.l[0], opt->u.llq.id.l[1]);
-										length += mDNS_snprintf(buffer+length, Max-length, " Lease %d",    opt->u.llq.llqlease);
+										length += mDNS_snprintf(buffer+length, RemSpc, " Vers %d",     opt->u.llq.vers);
+										length += mDNS_snprintf(buffer+length, RemSpc, " Op %d",       opt->u.llq.llqOp);
+										length += mDNS_snprintf(buffer+length, RemSpc, " Err/Port %d", opt->u.llq.err);
+										length += mDNS_snprintf(buffer+length, RemSpc, " ID %08X%08X", opt->u.llq.id.l[0], opt->u.llq.id.l[1]);
+										length += mDNS_snprintf(buffer+length, RemSpc, " Lease %d",    opt->u.llq.llqlease);
 										break;
 									case kDNSOpt_Lease:
-										length += mDNS_snprintf(buffer+length, Max-length, " Lease %d",    opt->u.updatelease);
+										length += mDNS_snprintf(buffer+length, RemSpc, " Lease %d",    opt->u.updatelease);
 										break;
 									case kDNSOpt_Owner:
-										length += mDNS_snprintf(buffer+length, Max-length, " Vers %d",     opt->u.owner.vers);
-										length += mDNS_snprintf(buffer+length, Max-length, " Seq %3d", (mDNSu8)opt->u.owner.seq);	// Display as unsigned
-										length += mDNS_snprintf(buffer+length, Max-length, " MAC %.6a",    opt->u.owner.MAC.b);
+										length += mDNS_snprintf(buffer+length, RemSpc, " Vers %d",     opt->u.owner.vers);
+										length += mDNS_snprintf(buffer+length, RemSpc, " Seq %3d", (mDNSu8)opt->u.owner.seq);	// Display as unsigned
+										length += mDNS_snprintf(buffer+length, RemSpc, " MAC %.6a",    opt->u.owner.MAC.b);
 										break;
 									default:
-										length += mDNS_snprintf(buffer+length, Max-length, " Unknown %d",  opt->opt);
+										length += mDNS_snprintf(buffer+length, RemSpc, " Unknown %d",  opt->opt);
 										break;
 									}
 								}
 							}
 							break;
 
-		case kDNSType_MAC:	mDNS_snprintf(buffer+length, Max-length, "%.6a", &rd->mac);          break;
+		case kDNSType_MAC:	mDNS_snprintf(buffer+length, RemSpc, "%.6a", &rd->mac);          break;
 
-		default:			mDNS_snprintf(buffer+length, Max-length, "RDLen %d: %s", rr->rdlength, rd->data);
+		default:			mDNS_snprintf(buffer+length, RemSpc, "RDLen %d: %s", rr->rdlength, rd->data);
 							// Really should scan buffer to check if text is valid UTF-8 and only replace with dots if not
 							for (ptr = buffer; *ptr; ptr++) if (*ptr < ' ') *ptr = '.';
 							break;
