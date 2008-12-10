@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.596  2008/12/10 19:34:30  cheshire
+Use symbolic OS version names instead of literal integers
+
 Revision 1.595  2008/12/10 02:25:31  cheshire
 Minor fixes to use of LogAllOperations symbol
 
@@ -2595,7 +2598,7 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 		if (scope_id == (*p)->scope_id &&
 			mDNSSameAddress(&ip, &(*p)->ifinfo.ip) &&
 			mDNSSameEthAddress(&bssid, &(*p)->BSSID) &&
-			(OSXVers >= 10 || (SystemNetWake && !(*p)->BSSID.l[0])) == (*p)->ifinfo.NetWake)
+			(OSXVers >= OSXVers_10_6_SnowLeopard || (SystemNetWake && !(*p)->BSSID.l[0])) == (*p)->ifinfo.NetWake)
 			{
 			debugf("AddInterfaceToList: Found existing interface %lu %.6a with address %#a at %p", scope_id, &bssid, &ip, *p);
 			(*p)->Exists = mDNStrue;
@@ -2621,7 +2624,7 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 	// local-only services, which need a loopback address record.
 	i->ifinfo.Advertise   = m->DivertMulticastAdvertisements ? ((ifa->ifa_flags & IFF_LOOPBACK) ? mDNStrue : mDNSfalse) : m->AdvertiseLocalAddresses;
 	i->ifinfo.McastTxRx   = mDNSfalse; // For now; will be set up later at the end of UpdateInterfaceList
-	i->ifinfo.NetWake     = OSXVers >= 10 || (SystemNetWake && !bssid.l[0]);
+	i->ifinfo.NetWake     = OSXVers >= OSXVers_10_6_SnowLeopard || (SystemNetWake && !bssid.l[0]);
 	GetMAC(&i->ifinfo.MAC, scope_id);
 	if (!i->ifinfo.MAC.l[0] && !(ifa->ifa_flags & IFF_LOOPBACK))
 		LogMsg("AddInterfaceToList: Bad MAC address %.6a for %d %s %#a", &i->ifinfo.MAC, scope_id, i->ifinfo.ifname, &ip);
@@ -3792,7 +3795,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 			// Apparently this is expected behaviour -- "not a bug".
 			// Accordingly, we suppress syslog messages for the first three minutes after boot.
 			// If we are still getting failures after three minutes, then we log them.
-			if (mDNSMacOSXSystemBuildNumber(NULL) > 7 && (mDNSu32)mDNSPlatformRawTime() > (mDNSu32)(mDNSPlatformOneSecond * 180))
+			if (OSXVers > OSXVers_10_3_Panther && (mDNSu32)mDNSPlatformRawTime() > (mDNSu32)(mDNSPlatformOneSecond * 180))
 				LogMsg("GetDNSConfig: Error: dns_configuration_copy returned NULL");
 			}
 		else
@@ -4914,8 +4917,11 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 												// interprets as "should assume we have networking", which results in the first 4-5 seconds
 												// of packets vanishing into a black hole. To work around this, on wake from sleep,
 												// we block for five seconds to let Ethernet come up, and then resume normal operation.
-												if (OSXVers < 10) LogOperation("PowerChanged kIOMessageSystemWillPowerOn sleep(5);");
-												if (OSXVers < 10) sleep(5);
+												if (OSXVers < OSXVers_10_6_SnowLeopard)
+													{
+													sleep(5);
+													LogOperation("PowerChanged kIOMessageSystemWillPowerOn did sleep(5);");
+													}
 
 												// Make sure our interface list is cleared to the empty state, then tell mDNSCore to wake
 												if (m->SleepState != SleepState_Sleeping)
@@ -5016,7 +5022,8 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	mStatus err;
 	m->p->CFRunLoop = CFRunLoopGetCurrent();
 
-	if (!OSXVers) OSXVers = mDNSMacOSXSystemBuildNumber(NULL);		// Make sure OSXVers is set up
+	char HINFO_SWstring[256] = "";
+	OSXVers = mDNSMacOSXSystemBuildNumber(HINFO_SWstring);
 
 	// In 10.4, mDNSResponder is launched very early in the boot process, while other subsystems are still in the process of starting up.
 	// If we can't read the user's preferences, then we sleep a bit and try again, for up to five seconds before we give up.
@@ -5039,9 +5046,8 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 		HINFO_HWstring = HINFO_HWstring_buffer;
 	HINFO_HWstring_prefixlen = strcspn(HINFO_HWstring, "0123456789");
 
-	char HINFO_SWstring[256] = "";
-	if (mDNSMacOSXSystemBuildNumber(HINFO_SWstring) < 7) m->KnownBugs |= mDNS_KnownBug_PhantomInterfaces;
-	if (mDNSPlatformInit_CanReceiveUnicast())            m->CanReceiveUnicastOn5353 = mDNStrue;
+	if (OSXVers < OSXVers_10_3_Panther      ) m->KnownBugs |= mDNS_KnownBug_PhantomInterfaces;
+	if (mDNSPlatformInit_CanReceiveUnicast()) m->CanReceiveUnicastOn5353 = mDNStrue;
 
 	mDNSu32 hlen = mDNSPlatformStrLen(HINFO_HWstring);
 	mDNSu32 slen = mDNSPlatformStrLen(HINFO_SWstring);
@@ -5281,7 +5287,7 @@ mDNSexport mDNSs32 mDNSPlatformRawTime(void)
 		last_mach_absolute_time = this_mach_absolute_time;
 		// Only show "mach_absolute_time went backwards" notice on 10.4 (build 8xyyy) or later.
 		// (This bug happens all the time on 10.3, and we know that's not going to be fixed.)
-		if (mDNSMacOSXSystemBuildNumber(NULL) >= 8)
+		if (OSXVers >= OSXVers_10_4_Tiger)
 			NotifyOfElusiveBug("mach_absolute_time went backwards!",
 				"This error occurs from time to time, often on newly released hardware, "
 				"and usually the exact cause is different in each instance.\r\r"
