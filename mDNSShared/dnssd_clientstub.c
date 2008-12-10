@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.114  2008/12/10 02:11:43  cheshire
+ARMv5 compiler doesn't like uncommented stuff after #endif
+
 Revision 1.113  2008/12/04 03:23:05  cheshire
 Preincrement UID counter before we use it -- it helps with debugging if we know the all-zeroes ID should never appear
 
@@ -350,7 +353,7 @@ static int write_all(dnssd_sock_t sd, char *buf, int len)
 			{
 			// Should never happen. If it does, it indicates some OS bug,
 			// or that the mDNSResponder daemon crashed (which should never happen).
-			syslog(LOG_WARNING, "dnssd_clientstub write_all(%d) failed %d/%d %d %s", sd, num_written, len,
+			syslog(LOG_WARNING, "dnssd_clientstub write_all(%d) failed %d/%d %d %s", sd, (int)num_written, len,
 				(num_written < 0) ? dnssd_errno                 : 0,
 				(num_written < 0) ? dnssd_strerror(dnssd_errno) : "");
 			return -1;
@@ -374,7 +377,7 @@ static int read_all(dnssd_sock_t sd, char *buf, int len)
 			{
 			// Should never happen. If it does, it indicates some OS bug,
 			// or that the mDNSResponder daemon crashed (which should never happen).
-			syslog(LOG_WARNING, "dnssd_clientstub read_all(%d) failed %d/%d %d %s", sd, num_read, len,
+			syslog(LOG_WARNING, "dnssd_clientstub read_all(%d) failed %d/%d %d %s", sd, (int)num_read, len,
 				(num_read < 0) ? dnssd_errno                 : 0,
 				(num_read < 0) ? dnssd_strerror(dnssd_errno) : "");
 			return -1;
@@ -775,7 +778,7 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 			sizeof(struct cmsghdr) + sizeof(dnssd_sock_t),
 			CMSG_LEN(sizeof(dnssd_sock_t)), (long)CMSG_SPACE(sizeof(dnssd_sock_t)),
 			(long)((char*)CMSG_DATA(cmsg) + 4 - cbuf));
-#endif DEBUG_64BIT_SCM_RIGHTS
+#endif // DEBUG_64BIT_SCM_RIGHTS
 
 		if (sendmsg(sdr->sockfd, &msg, 0) < 0)
 			{
@@ -787,7 +790,7 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 
 #if DEBUG_64BIT_SCM_RIGHTS
 		syslog(LOG_WARNING, "dnssd_clientstub sendmsg read sd=%d write sd=%d okay", errsd, listenfd);
-#endif DEBUG_64BIT_SCM_RIGHTS
+#endif // DEBUG_64BIT_SCM_RIGHTS
 
 #endif
 		// Close our end of the socketpair *before* blocking in read_all to get the four-byte error code.

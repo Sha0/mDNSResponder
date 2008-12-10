@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.870  2008/12/10 02:11:41  cheshire
+ARMv5 compiler doesn't like uncommented stuff after #endif
+
 Revision 1.869  2008/12/05 02:35:24  mcguire
 <rdar://problem/6107390> Write to the DynamicStore when a Sleep Proxy server is available on the network
 
@@ -1944,7 +1947,7 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 		// process and will complete asynchronously. Either way we don't need to do anything more here.
 		return(mStatus_NoError);
 		}
-#endif UNICAST_DISABLED
+#endif // UNICAST_DISABLED
 
 	if (RecordType == kDNSRecordTypeShared && (rr->RequireGoodbye || rr->AnsweredLOQ))
 		{
@@ -3393,7 +3396,7 @@ mDNSexport void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheReco
 		{
 		const mDNSu32 c = q->CNAMEReferrals + 1;
 		// Right now we just stop and re-use the existing query. If we really wanted to be 100% perfect,
-		// and track CNAMEs coming and going, we should really create a subbordinate query here,
+		// and track CNAMEs coming and going, we should really create a subordinate query here,
 		// which we would subsequently cancel and retract if the CNAME referral record were removed.
 		// In reality this is such a corner case we'll ignore it until someone actually needs it.
 		LogOperation("AnswerCurrentQuestionWithResourceRecord: following CNAME referral for %s", CRDisplayString(m, rr));

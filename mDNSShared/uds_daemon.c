@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.419  2008/12/10 02:11:44  cheshire
+ARMv5 compiler doesn't like uncommented stuff after #endif
+
 Revision 1.418  2008/12/09 05:12:53  cheshire
 Updated debugging messages
 
@@ -3337,7 +3340,7 @@ mDNSlocal void read_msg(request_state *req)
 #if DEBUG_64BIT_SCM_RIGHTS
 		LogMsg("%3d: Expecting %d %d %d %d", req->sd, sizeof(cbuf),       sizeof(cbuf),   SOL_SOCKET,       SCM_RIGHTS);
 		LogMsg("%3d: Got       %d %d %d %d", req->sd, msg.msg_controllen, cmsg->cmsg_len, cmsg->cmsg_level, cmsg->cmsg_type);
-#endif DEBUG_64BIT_SCM_RIGHTS
+#endif // DEBUG_64BIT_SCM_RIGHTS
 		if (msg.msg_controllen == sizeof(cbuf) &&
 			cmsg->cmsg_len     == sizeof(cbuf) &&
 			cmsg->cmsg_level   == SOL_SOCKET   &&
@@ -3354,11 +3357,11 @@ mDNSlocal void read_msg(request_state *req)
 				mDNSPlatformSetBPF(&mDNSStorage, x);
 				}
 			else
-#endif APPLE_OSX_mDNSResponder
+#endif // APPLE_OSX_mDNSResponder
 				req->errsd = *(dnssd_sock_t *)CMSG_DATA(cmsg);
 #if DEBUG_64BIT_SCM_RIGHTS
 			LogMsg("%3d: read req->errsd %d", req->sd, req->errsd);
-#endif DEBUG_64BIT_SCM_RIGHTS
+#endif // DEBUG_64BIT_SCM_RIGHTS
 			if (req->data_bytes < req->hdr.datalen)
 				{
 				LogMsg("%3d: Client sent error socket %d via SCM_RIGHTS with req->data_bytes %d < req->hdr.datalen %d",
@@ -3626,7 +3629,7 @@ mDNSlocal void connect_callback(int fd, short filter, void *info)
 		if (getsockopt(sd, 0, LOCAL_PEERCRED, &x, &xucredlen) >= 0 && x.cr_version == XUCRED_VERSION) request->uid = x.cr_uid;
 		else my_perror("ERROR: getsockopt, LOCAL_PEERCRED");
 		debugf("LOCAL_PEERCRED %d %u %u %d", xucredlen, x.cr_version, x.cr_uid, x.cr_ngroups);
-#endif APPLE_OSX_mDNSResponder
+#endif // APPLE_OSX_mDNSResponder
 		LogOperation("%3d: Adding FD for uid %u", request->sd, request->uid);
 		udsSupportAddFDToEventLoop(sd, request_callback, request);
 		}
@@ -3851,7 +3854,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 	LogMsgNoIdent("Timenow 0x%08lX (%ld)", (mDNSu32)now, now);
 	LogMsgNoIdent("------------ Cache -------------");
 
-	LogMsgNoIdent("Slt Q     TTL if    U Type rdlen");
+	LogMsgNoIdent("Slt Q     TTL if     U Type rdlen");
 	for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 		for (cg = m->rrcache_hash[slot]; cg; cg=cg->next)
 			{
@@ -3862,7 +3865,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 				NetworkInterfaceInfo *info = (NetworkInterfaceInfo *)cr->resrec.InterfaceID;
 				CacheUsed++;
 				if (cr->CRActiveQuestion) CacheActive++;
-				LogMsgNoIdent("%3d %s%8ld %-6s%s %-6s%s",
+				LogMsgNoIdent("%3d %s%8ld %-7s%s %-6s%s",
 					slot,
 					cr->CRActiveQuestion ? "*" : " ",
 					remain,
@@ -3924,7 +3927,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 		DNSQuestion *q;
 		CacheUsed = 0;
 		CacheActive = 0;
-		LogMsgNoIdent("   Int  Next if    T  NumAns Type  Name");
+		LogMsgNoIdent("   Int  Next if     T  NumAns Type  Name");
 		for (q = m->Questions; q; q=q->next)
 			{
 			mDNSs32 i = q->ThisQInterval / mDNSPlatformOneSecond;
@@ -3932,7 +3935,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 			NetworkInterfaceInfo *info = (NetworkInterfaceInfo *)q->InterfaceID;
 			CacheUsed++;
 			if (q->ThisQInterval) CacheActive++;
-			LogMsgNoIdent("%6d%6d %-6s%s%s %5d  %-6s%##s%s",
+			LogMsgNoIdent("%6d%6d %-7s%s%s %5d  %-6s%##s%s",
 				i, n,
 				info ? info->ifname : mDNSOpaque16IsZero(q->TargetQID) ? "" : "-U-",
 				mDNSOpaque16IsZero(q->TargetQID) ? (q->LongLived ? "l" : " ") : (q->LongLived ? "L" : "O"),

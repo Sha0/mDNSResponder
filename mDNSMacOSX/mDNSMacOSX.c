@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.594  2008/12/10 02:11:45  cheshire
+ARMv5 compiler doesn't like uncommented stuff after #endif
+
 Revision 1.593  2008/12/09 23:08:55  mcguire
 <rdar://problem/6430877> should use IP_BOUND_IF
 additional cleanup
@@ -1047,7 +1050,7 @@ static int   HINFO_HWstring_prefixlen = 6;
 static mDNSu8 SPMetricPortability   = 99;
 static mDNSu8 SPMetricMarginalPower = 99;
 static mDNSu8 SPMetricTotalPower    = 99;
-#endif APPLE_OSX_mDNSResponder
+#endif // APPLE_OSX_mDNSResponder
 
 // ***************************************************************************
 // Functions
@@ -2335,7 +2338,7 @@ mDNSexport void mDNSPlatformSetBPF(mDNS *const m, int fd)
 		}
 	}
 
-#endif APPLE_OSX_mDNSResponder
+#endif // APPLE_OSX_mDNSResponder
 
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
@@ -3290,7 +3293,7 @@ mDNSexport void AddNewClientTunnel(mDNS *const m, DNSQuestion *const q)
 	mDNS_StartQuery_internal(m, &p->q);
 	}
 
-#endif APPLE_OSX_mDNSResponder
+#endif // APPLE_OSX_mDNSResponder
 
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
@@ -3512,7 +3515,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 			if (info->AutoTunnelNAT.clientContext && !mDNSIPv4AddressIsOnes(info->AutoTunnelNAT.ExternalAddress))
 				AutoTunnelNATCallback(m, &info->AutoTunnelNAT);
 		}
-#endif APPLE_OSX_mDNSResponder
+#endif // APPLE_OSX_mDNSResponder
 
 	return(mStatus_NoError);
 	}
@@ -3704,7 +3707,7 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m, mDNSs32 utc)
 				if (i->ifa_name) freeL("NetworkInterfaceInfoOSX name", i->ifa_name);
 #if APPLE_OSX_mDNSResponder
 				if (i->BPF_fd >= 0) CloseBPF(i);
-#endif APPLE_OSX_mDNSResponder
+#endif // APPLE_OSX_mDNSResponder
 				freeL("NetworkInterfaceInfoOSX", i);
 				continue;	// After deleting this object, don't want to do the "p = &i->next;" thing at the end of the loop
 				}
@@ -4221,7 +4224,7 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 		client->MarkedForDeletion = mDNStrue;
 		}
 	}
-#endif APPLE_OSX_mDNSResponder
+#endif // APPLE_OSX_mDNSResponder
 
 	// String Array used to write list of private domains to Dynamic Store
 	CFMutableArrayRef sa = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
@@ -4305,7 +4308,7 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 
 			mDNSBool keyChanged = FoundInList && FoundInList->AutoTunnel ? strncmp(stringbuf, FoundInList->b64keydata, sizeof(FoundInList->b64keydata)) : mDNSfalse;
 
-#endif APPLE_OSX_mDNSResponder
+#endif // APPLE_OSX_mDNSResponder
 
 			// Uncomment the line below to view the keys as they're read out of the system keychain
 			// DO NOT SHIP CODE THIS WAY OR YOU'LL LEAK SECRET DATA INTO A PUBLICLY READABLE FILE!
@@ -4335,7 +4338,7 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 				}
 				
 			if (ptr->AutoTunnel) UpdateAutoTunnelDomainStatus(m, ptr);
-#endif APPLE_OSX_mDNSResponder
+#endif // APPLE_OSX_mDNSResponder
 
 			ConvertDomainNameToCString(&domain, stringbuf);
 			CFStringRef cfs = CFStringCreateWithCString(NULL, stringbuf, kCFStringEncodingUTF8);
@@ -4412,7 +4415,7 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 			if (TunnelClients(m) || TunnelServers(m))
 				SetupLocalAutoTunnelInterface_internal(m);
 		}
-#endif APPLE_OSX_mDNSResponder
+#endif // APPLE_OSX_mDNSResponder
 
 #endif /* NO_SECURITYFRAMEWORK */
 	}
@@ -4617,7 +4620,7 @@ mDNSlocal mStatus WatchForInternetSharingChanges(mDNS *const m)
 	return(mStatus_NoError);
 	}
 
-#endif APPLE_OSX_mDNSResponder
+#endif // APPLE_OSX_mDNSResponder
 
 mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 	{
@@ -4682,7 +4685,7 @@ mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 			}
 		}
 
-#endif APPLE_OSX_mDNSResponder
+#endif // APPLE_OSX_mDNSResponder
 
 	uDNS_SetupDNSConfig(m);
 	mDNS_ConfigChanged(m);
@@ -5136,7 +5139,7 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 
 	err = WatchForInternetSharingChanges(m);
 	if (err) { LogMsg("WatchForInternetSharingChanges failed %d", err); return(err); }
-#endif APPLE_OSX_mDNSResponder
+#endif // APPLE_OSX_mDNSResponder
 
 	return(mStatus_NoError);
 	}

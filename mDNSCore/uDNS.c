@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.593  2008/12/10 02:11:42  cheshire
+ARMv5 compiler doesn't like uncommented stuff after #endif
+
 Revision 1.592  2008/12/06 01:42:55  mcguire
 <rdar://problem/6418958> Need to exponentially back-off after failure to get public address
 
@@ -1755,7 +1758,7 @@ mDNSexport mStatus mDNS_StartNATOperation_internal(mDNS *const m, NATTraversalIn
 
 #ifdef _LEGACY_NAT_TRAVERSAL_
 	mDNSPlatformMemZero(&traversal->tcpInfo, sizeof(traversal->tcpInfo));
-#endif _LEGACY_NAT_TRAVERSAL_
+#endif // _LEGACY_NAT_TRAVERSAL_
 
 	if (!m->NATTraversals)		// If this is our first NAT request, kick off an address request too
 		{
@@ -2448,7 +2451,7 @@ mDNSexport const domainname *GetServiceTarget(mDNS *m, AuthRecord *const rr)
 			return(&AuthInfo->AutoTunnelHostRecord.namestorage);
 			}
 		else
-#endif APPLE_OSX_mDNSResponder
+#endif // APPLE_OSX_mDNSResponder
 			{
 			const int srvcount = CountLabels(rr->resrec.name);
 			HostnameInfo *besthi = mDNSNULL, *hi;
