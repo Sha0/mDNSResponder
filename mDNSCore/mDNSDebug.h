@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.43  2008/12/10 02:27:14  cheshire
+Commented out definitions of LogAllOperations, LogTimeStamps, ForceAlerts and MACOSX_MDNS_MALLOC_DEBUGGING
+to allow overriding values to be easily defined in a Makefile or similar build environment
+
 Revision 1.42  2008/11/02 21:22:05  cheshire
 Changed mallocL size parameter back to "unsigned int"
 
@@ -166,11 +170,11 @@ typedef enum
 
 // Set this symbol to 1 to do extra debug checks on malloc() and free()
 // Set this symbol to 2 to write a log message for every malloc() and free()
-#define MACOSX_MDNS_MALLOC_DEBUGGING 0
+//#define MACOSX_MDNS_MALLOC_DEBUGGING 1
 
-#define LogAllOperations 0
-#define LogTimeStamps 0
-#define ForceAlerts 0
+//#define LogAllOperations 1
+//#define LogTimeStamps 1
+//#define ForceAlerts 1
 
 #define USE_SEPARATE_UDNS_SERVICE_LIST 1
 
