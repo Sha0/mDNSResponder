@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.597  2008/12/10 20:37:05  cheshire
+Don't mark interfaces like PPP as being WakeonLAN-capable
+
 Revision 1.596  2008/12/10 19:34:30  cheshire
 Use symbolic OS version names instead of literal integers
 
@@ -1072,7 +1075,7 @@ static mDNSu8 SPMetricTotalPower    = 99;
 // Typically point-to-point interfaces are modems (including mobile-phone pseudo-modems), and we don't want
 // to run up the user's bill sending multicast traffic over a link where there's only a single device at the
 // other end, and that device (e.g. a modem bank) is probably not answering Multicast DNS queries anyway.
-#define MulticastInterface(i) ((i->ifa_flags & IFF_MULTICAST) && !(i->ifa_flags & IFF_POINTOPOINT))
+#define MulticastInterface(i) (((i)->ifa_flags & IFF_MULTICAST) && !((i)->ifa_flags & IFF_POINTOPOINT))
 
 mDNSexport void NotifyOfElusiveBug(const char *title, const char *msg)	// Both strings are UTF-8 text
 	{
@@ -2161,8 +2164,8 @@ mDNSexport void mDNSPlatformSendRawPacket(const void *const msg, const mDNSu8 *c
 					else
 						{
 						int result = mDNSSetARP(info->scope_id, b+0x1C);
-						if (result) LogMsg("Set  local ARP entry for %s %.4a failed: %d", info->ifinfo.ifname, b+0x1C, result);
-						else LogOperation ("Set  local ARP entry for %s %.4a",            info->ifinfo.ifname, b+0x1C);
+						if (result) LogMsg("Set local ARP entry for %s %.4a failed: %d", info->ifinfo.ifname, b+0x1C, result);
+						else debugf       ("Set local ARP entry for %s %.4a",            info->ifinfo.ifname, b+0x1C);
 						}
 					}
 			}
@@ -2579,6 +2582,12 @@ mDNSlocal int GetMAC(mDNSEthAddr *eth, u_short ifindex)
 	return -1;
 	}
 
+// For now we assume all interfaces are WoL-capable on SnowLeopard
+// Also, because MacBook Air doesn't even have a preference setting to enable WoL, we ignore that setting too
+// Once the WoL System preference is available on MacBook Air on SnowLeopard we'll revert to honouring that setting
+#define NetWakeInterface(i) (MulticastInterface(i) && !(ifa->ifa_flags & IFF_LOOPBACK) && \
+	(OSXVers >= OSXVers_10_6_SnowLeopard || (SystemNetWake && !(i)->BSSID.l[0])))
+
 // Returns pointer to newly created NetworkInterfaceInfoOSX object, or
 // pointer to already-existing NetworkInterfaceInfoOSX object found in list, or
 // may return NULL if out of memory (unlikely) or parameters are invalid for some reason
@@ -2598,7 +2607,7 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 		if (scope_id == (*p)->scope_id &&
 			mDNSSameAddress(&ip, &(*p)->ifinfo.ip) &&
 			mDNSSameEthAddress(&bssid, &(*p)->BSSID) &&
-			(OSXVers >= OSXVers_10_6_SnowLeopard || (SystemNetWake && !(*p)->BSSID.l[0])) == (*p)->ifinfo.NetWake)
+			NetWakeInterface(*p) == (*p)->ifinfo.NetWake)
 			{
 			debugf("AddInterfaceToList: Found existing interface %lu %.6a with address %#a at %p", scope_id, &bssid, &ip, *p);
 			(*p)->Exists = mDNStrue;
@@ -2624,10 +2633,6 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 	// local-only services, which need a loopback address record.
 	i->ifinfo.Advertise   = m->DivertMulticastAdvertisements ? ((ifa->ifa_flags & IFF_LOOPBACK) ? mDNStrue : mDNSfalse) : m->AdvertiseLocalAddresses;
 	i->ifinfo.McastTxRx   = mDNSfalse; // For now; will be set up later at the end of UpdateInterfaceList
-	i->ifinfo.NetWake     = OSXVers >= OSXVers_10_6_SnowLeopard || (SystemNetWake && !bssid.l[0]);
-	GetMAC(&i->ifinfo.MAC, scope_id);
-	if (!i->ifinfo.MAC.l[0] && !(ifa->ifa_flags & IFF_LOOPBACK))
-		LogMsg("AddInterfaceToList: Bad MAC address %.6a for %d %s %#a", &i->ifinfo.MAC, scope_id, i->ifinfo.ifname, &ip);
 
 	i->next            = mDNSNULL;
 	i->m               = m;
@@ -2642,6 +2647,12 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 	i->sa_family       = ifa->ifa_addr->sa_family;
 	i->BPF_fd          = -1;
 	i->BPF_len         = 0;
+
+	// Do this AFTER i->BSSID has been set up
+	i->ifinfo.NetWake  = NetWakeInterface(i);
+	GetMAC(&i->ifinfo.MAC, scope_id);
+	if (i->ifinfo.NetWake && !i->ifinfo.MAC.l[0])
+		LogMsg("AddInterfaceToList: Bad MAC address %.6a for %d %s %#a", &i->ifinfo.MAC, scope_id, i->ifinfo.ifname, &ip);
 
 	*p = i;
 	return(i);
