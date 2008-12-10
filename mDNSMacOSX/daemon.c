@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.399  2008/12/10 02:13:04  cheshire
+Fix alignment of SIGINFO output for longer interface names like "bridge0"
+
 Revision 1.398  2008/12/04 21:08:51  mcguire
 <rdar://problem/6116863> mDNS: Provide mechanism to disable Multicast advertisements
 
@@ -2190,12 +2193,12 @@ mDNSlocal void INFOCallback(void)
 			{
 			// Allow six characters for interface name, for names like "vmnet8"
 			if (!i->Exists)
-				LogMsgNoIdent("%p %s %6s(%lu) %.6a %.6a %#a dormant for %d seconds",
+				LogMsgNoIdent("%p %s %7s(%lu) %.6a %.6a %#a dormant for %d seconds",
 					i->ifinfo.InterfaceID,
 					i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id, &i->ifinfo.MAC, &i->BSSID,
 					&i->ifinfo.ip, utc - i->LastSeen);
 			else
-				LogMsgNoIdent("%p %s %6s(%lu) %.6a %.6a %s %s %-15.4a %s %s %s %s %#a",
+				LogMsgNoIdent("%p %s %7s(%lu) %.6a %.6a %s %s %-15.4a %s %s %s %s %#a",
 					i->ifinfo.InterfaceID,
 					i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id, &i->ifinfo.MAC, &i->BSSID,
 					i->ifinfo.InterfaceActive ? "Active" : "      ",
