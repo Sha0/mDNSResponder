@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.525  2008/12/10 02:18:31  cheshire
+Increased MaxMsg to 160 for showing longer TXT records in SIGINFO output
+
 Revision 1.524  2008/12/10 01:49:39  cheshire
 Fixes for alignment issues on ARMv5
 
@@ -2279,7 +2282,9 @@ struct mDNS_struct
 	mDNSu8  lock_rrcache;				// For debugging: Set at times when these lists may not be modified
 	mDNSu8  lock_Questions;
 	mDNSu8  lock_Records;
-	#define MaxMsg 120
+#ifndef MaxMsg
+	#define MaxMsg 160
+#endif
 	char MsgBuffer[MaxMsg];				// Temp storage used while building error log messages
 
 	// Task Scheduling variables
