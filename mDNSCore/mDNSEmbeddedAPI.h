@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.524  2008/12/10 01:49:39  cheshire
+Fixes for alignment issues on ARMv5
+
 Revision 1.523  2008/12/05 02:35:24  mcguire
 <rdar://problem/6107390> Write to the DynamicStore when a Sleep Proxy server is available on the network
 
@@ -1022,11 +1025,11 @@ typedef struct mDNSInterfaceID_dummystruct { void *dummy; } *mDNSInterfaceID;
 // less than, add, multiply, increment, decrement, etc., are undefined for opaque identifiers,
 // and if you make the mistake of trying to do those using the NotAnInteger field, then you'll
 // find you get code that doesn't work consistently on big-endian and little-endian machines.
-typedef packedunion { mDNSu8 b[ 2]; mDNSu16 NotAnInteger; } mDNSOpaque16;
-typedef packedunion { mDNSu8 b[ 4]; mDNSu32 NotAnInteger; } mDNSOpaque32;
-typedef packedunion { mDNSu8 b[ 6]; mDNSu16 w[3]; mDNSu32 l[1]; } mDNSOpaque48;
-typedef packedunion { mDNSu8 b[ 8]; mDNSu16 w[4]; mDNSu32 l[2]; } mDNSOpaque64;
-typedef packedunion { mDNSu8 b[16]; mDNSu16 w[8]; mDNSu32 l[4]; } mDNSOpaque128;
+typedef union { mDNSu8 b[ 2]; mDNSu16 NotAnInteger; } mDNSOpaque16;
+typedef union { mDNSu8 b[ 4]; mDNSu32 NotAnInteger; } mDNSOpaque32;
+typedef union { mDNSu8 b[ 6]; mDNSu16 w[3]; mDNSu32 l[1]; } mDNSOpaque48;
+typedef union { mDNSu8 b[ 8]; mDNSu16 w[4]; mDNSu32 l[2]; } mDNSOpaque64;
+typedef union { mDNSu8 b[16]; mDNSu16 w[8]; mDNSu32 l[4]; } mDNSOpaque128;
 
 typedef mDNSOpaque16  mDNSIPPort;		// An IP port is a two-byte opaque identifier (not an integer)
 typedef mDNSOpaque32  mDNSv4Addr;		// An IP address is a four-byte opaque identifier (not an integer)
@@ -1485,9 +1488,20 @@ typedef union
 typedef struct
 	{
 	mDNSu16    MaxRDLength;	// Amount of storage allocated for rdata (usually sizeof(RDataBody))
+	mDNSu16    padding;		// So that RDataBody is aligned on 32-bit boundary
 	RDataBody  u;
 	} RData;
+
+// sizeofRDataHeader should be 4 bytes
 #define sizeofRDataHeader (sizeof(RData) - sizeof(RDataBody))
+
+// RData_small is a smaller version of the RData object, used for inline data storage embedded in a CacheRecord_struct
+typedef struct
+	{
+	mDNSu16    MaxRDLength;	// Storage allocated for data (may be greater than InlineCacheRDSize if additional storage follows this object)
+	mDNSu16    padding;		// So that data is aligned on 32-bit boundary
+	mDNSu8     data[InlineCacheRDSize];
+	} RData_small;
 
 // Note: Within an mDNSRecordCallback mDNS all API calls are legal except mDNS_Init(), mDNS_Exit(), mDNS_Execute()
 typedef void mDNSRecordCallback(mDNS *const m, AuthRecord *const rr, mStatus result);
@@ -1822,7 +1836,7 @@ struct CacheRecord_struct
 	mDNSBool        MPExpectingKA;		// Multi-packet query handling: Set when we increment MPUnansweredQ; allows one KA
 	CacheRecord    *NextInCFList;		// Set if this is in the list of records we just received with the cache flush bit set
 
-	struct { mDNSu16 MaxRDLength; mDNSu8 data[InlineCacheRDSize]; } smallrdatastorage;	// Storage for small records is right here
+	RData_small     smallrdatastorage;	// Storage for small records is right here
 	};
 
 // Storage sufficient to hold either a CacheGroup header or a CacheRecord
@@ -2381,7 +2395,8 @@ struct mDNS_struct
 #endif
 
 	// Fixed storage, to avoid creating large objects on the stack
-	DNSMessage        imsg;                 // Incoming message received from wire
+	// The imsg is declared as a union with a pointer type to enforce CPU-appropriate alignment
+	union { DNSMessage m; void *p; } imsg;  // Incoming message received from wire
 	DNSMessage        omsg;                 // Outgoing message we're building
 	LargeCacheRecord  rec;                  // Resource Record extracted from received message
 	};
