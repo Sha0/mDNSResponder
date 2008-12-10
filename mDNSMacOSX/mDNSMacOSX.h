@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.93  2008/12/10 19:30:01  cheshire
+Added symbolic names for the various OS X versions
+
 Revision 1.92  2008/10/31 23:49:38  mkrochma
 Increased sizecheck limit
 
@@ -252,6 +255,12 @@ struct mDNS_PlatformSupport_struct
 	};
 
 extern int OSXVers;
+#define OSXVers_10_2_Jaguar       6
+#define OSXVers_10_3_Panther      7
+#define OSXVers_10_4_Tiger        8
+#define OSXVers_10_5_Leopard      9
+#define OSXVers_10_6_SnowLeopard 10
+
 extern int KQueueFD;
 
 extern void NotifyOfElusiveBug(const char *title, const char *msg);	// Both strings are UTF-8 text
