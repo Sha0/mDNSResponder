@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.400  2008/12/10 19:30:57  cheshire
+Use symbolic name OSXVers_10_3_Panther in version check instead of literal integer "7"
+
 Revision 1.399  2008/12/10 02:13:04  cheshire
 Fix alignment of SIGINFO output for longer interface names like "bridge0"
 
@@ -2290,7 +2293,7 @@ mDNSlocal kern_return_t mDNSDaemonInitialize(void)
 		{
 		s_port = CFMachPortCreate(NULL, DNSserverCallback, NULL, NULL);
 		m_port = CFMachPortGetPort(s_port);
-		char *MachServerName = OSXVers < 7 ? "DNSServiceDiscoveryServer" : "com.apple.mDNSResponder";
+		char *MachServerName = OSXVers < OSXVers_10_3_Panther ? "DNSServiceDiscoveryServer" : "com.apple.mDNSResponder";
 		kern_return_t status = bootstrap_register(bootstrap_port, MachServerName, m_port);
 	
 		if (status)
