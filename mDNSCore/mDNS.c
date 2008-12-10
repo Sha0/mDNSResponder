@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.871  2008/12/10 02:25:31  cheshire
+Minor fixes to use of LogAllOperations symbol
+
 Revision 1.870  2008/12/10 02:11:41  cheshire
 ARMv5 compiler doesn't like uncommented stuff after #endif
 
@@ -5874,7 +5877,7 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 	if (!m->SPSSocket) return;
 	if (!mDNSSameIPPort(dstport, m->SPSSocket->port)) return;
 
-	if (mDNS_LogLevel >= MDNS_LOG_VERBOSE_DEBUG || LogAllOperations)
+	if (mDNS_LogLevel >= MDNS_LOG_VERBOSE_DEBUG)
 		DumpPacket(m, mStatus_NoError, mDNSfalse, "UDP", srcaddr, srcport, dstaddr, dstport, msg, end);
 
 	ptr = LocateOptRR(msg, end, DNSOpt_LeaseData_Space + DNSOpt_OwnerData_Space);

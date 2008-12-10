@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.595  2008/12/10 02:25:31  cheshire
+Minor fixes to use of LogAllOperations symbol
+
 Revision 1.594  2008/12/10 02:11:45  cheshire
 ARMv5 compiler doesn't like uncommented stuff after #endif
 
@@ -3601,14 +3604,14 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 							{
 							LogOperation("SetupActiveInterfaces: %5s(%lu) Doing precautionary IP_DROP_MEMBERSHIP for %.4a on %.4a", i->ifa_name, i->scope_id, &imr.imr_multiaddr, &imr.imr_interface);
 							mStatus err = setsockopt(m->p->permanentsockets.sktv4, IPPROTO_IP, IP_DROP_MEMBERSHIP, &imr, sizeof(imr));
-							if (err < 0 && (errno != EADDRNOTAVAIL || LogAllOperations))
+							if (err < 0 && (errno != EADDRNOTAVAIL))
 								LogMsg("setsockopt - IP_DROP_MEMBERSHIP error %ld errno %d (%s)", err, errno, strerror(errno));
 							}
 	
 						LogOperation("SetupActiveInterfaces: %5s(%lu) joining IPv4 mcast group %.4a on %.4a", i->ifa_name, i->scope_id, &imr.imr_multiaddr, &imr.imr_interface);
 						mStatus err = setsockopt(m->p->permanentsockets.sktv4, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imr, sizeof(imr));
 						// Joining same group twice can give "Address already in use" error -- no need to report that
-						if (err < 0 && (errno != EADDRINUSE || LogAllOperations))
+						if (err < 0 && (errno != EADDRINUSE))
 							LogMsg("setsockopt - IP_ADD_MEMBERSHIP error %ld errno %d (%s) group %.4a on %.4a", err, errno, strerror(errno), &imr.imr_multiaddr, &imr.imr_interface);
 						}
 #ifndef NO_IPV6
@@ -3622,14 +3625,14 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 							{
 							LogOperation("SetupActiveInterfaces: %5s(%lu) Doing precautionary IPV6_LEAVE_GROUP for %.16a on %u", i->ifa_name, i->scope_id, &i6mr.ipv6mr_multiaddr, i6mr.ipv6mr_interface);
 							mStatus err = setsockopt(m->p->permanentsockets.sktv6, IPPROTO_IPV6, IPV6_LEAVE_GROUP, &i6mr, sizeof(i6mr));
-							if (err < 0 && (errno != EADDRNOTAVAIL || LogAllOperations))
+							if (err < 0 && (errno != EADDRNOTAVAIL))
 								LogMsg("setsockopt - IPV6_LEAVE_GROUP error %ld errno %d (%s) group %.16a on %u", err, errno, strerror(errno), &i6mr.ipv6mr_multiaddr, i6mr.ipv6mr_interface);
 							}
 	
 						LogOperation("SetupActiveInterfaces: %5s(%lu) joining IPv6 mcast group %.16a on %u", i->ifa_name, i->scope_id, &i6mr.ipv6mr_multiaddr, i6mr.ipv6mr_interface);
 						mStatus err = setsockopt(m->p->permanentsockets.sktv6, IPPROTO_IPV6, IPV6_JOIN_GROUP, &i6mr, sizeof(i6mr));
 						// Joining same group twice can give "Address already in use" error -- no need to report that
-						if (err < 0 && (errno != EADDRINUSE || LogAllOperations))
+						if (err < 0 && (errno != EADDRINUSE))
 							LogMsg("setsockopt - IPV6_JOIN_GROUP error %ld errno %d (%s) group %.16a on %u", err, errno, strerror(errno), &i6mr.ipv6mr_multiaddr, i6mr.ipv6mr_interface);
 						}
 #endif

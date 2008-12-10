@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.594  2008/12/10 02:25:31  cheshire
+Minor fixes to use of LogAllOperations symbol
+
 Revision 1.593  2008/12/10 02:11:42  cheshire
 ARMv5 compiler doesn't like uncommented stuff after #endif
 
@@ -1532,8 +1535,12 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 
 	if (DNSDigest_ConstructHMACKeyfromBase64(info, b64keydata) < 0)
 		{
-		LogMsg("mDNS_SetSecretForDomain: ERROR: Could not convert shared secret from base64: domain %##s key %##s %s",
-			domain->c, keyname->c, LogAllOperations ? b64keydata : "");
+		LogMsg("mDNS_SetSecretForDomain: ERROR: Could not convert shared secret from base64: domain %##s key %##s %s", domain->c, keyname->c,
+			#if LogAllOperations
+				b64keydata);
+			#else
+				"");
+			#endif
 		return(mStatus_BadParamErr);
 		}
 
