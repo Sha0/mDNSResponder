@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.527  2008/12/12 01:23:19  cheshire
+Added m->SPSProxyListChanged state variable to flag when we need to update our BPF filter program
+
 Revision 1.526  2008/12/12 00:51:14  cheshire
 Added structure definitions for IPv6Header, etc.
 
@@ -2413,6 +2416,7 @@ struct mDNS_struct
 	mDNSu8            SPSMarginalPower;			// 10-99
 	mDNSu8            SPSTotalPower;			// 10-99
 	mDNSu8            SPSState;					// 0 = off, 1 = running, 2 = shutting down, 3 = suspended during sleep
+	mDNSInterfaceID   SPSProxyListChanged;
 	UDPSocket        *SPSSocket;
 	ServiceRecordSet  SPSRecords;
 	mDNSQuestionCallback *SPSBrowseCallback;    // So the platform layer can do something useful with SPS browse results
