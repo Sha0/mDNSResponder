@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.872  2008/12/12 01:30:40  cheshire
+Update platform-layer BPF filters when we add or remove AddressProxy records
+
 Revision 1.871  2008/12/10 02:25:31  cheshire
 Minor fixes to use of LogAllOperations symbol
 
@@ -2201,22 +2204,59 @@ mDNSlocal mStatus GetLabelDecimalValue(const mDNSu8 *const src, mDNSu8 *dst)
 	return(mStatus_NoError);
 	}
 
-mDNSlocal mStatus GetIPFromName(mDNSv4Addr *const a, const domainname *const name)
+mDNSlocal mStatus GetIPv4FromName(mDNSAddr *const a, const domainname *const name)
 	{
 	int skip = CountLabels(name) - 6;
-	if (skip < 0) { LogMsg("GetIPFromName: Need six labels in record name %##s", name); return(mStatus_Invalid); }
-	if (GetLabelDecimalValue(SkipLeadingLabels(name, skip+3)->c, &a->b[0]) ||
-		GetLabelDecimalValue(SkipLeadingLabels(name, skip+2)->c, &a->b[1]) ||
-		GetLabelDecimalValue(SkipLeadingLabels(name, skip+1)->c, &a->b[2]) ||
-		GetLabelDecimalValue(SkipLeadingLabels(name, skip+0)->c, &a->b[3])) return(mStatus_Invalid);
+	if (skip < 0) { LogMsg("GetIPFromName: Need six labels in IPv4 reverse mapping name %##s", name); return mStatus_Invalid; }
+	if (GetLabelDecimalValue(SkipLeadingLabels(name, skip+3)->c, &a->ip.v4.b[0]) ||
+		GetLabelDecimalValue(SkipLeadingLabels(name, skip+2)->c, &a->ip.v4.b[1]) ||
+		GetLabelDecimalValue(SkipLeadingLabels(name, skip+1)->c, &a->ip.v4.b[2]) ||
+		GetLabelDecimalValue(SkipLeadingLabels(name, skip+0)->c, &a->ip.v4.b[3])) return mStatus_Invalid;
+	a->type = mDNSAddrType_IPv4;
 	return(mStatus_NoError);
 	}
 
-mDNSlocal mDNSBool IsV4ReverseMapDomain(const domainname *const name)
+#define HexVal(X) ( ((X) >= '0' && (X) <= '9') ? ((X) - '0'     ) :   \
+					((X) >= 'A' && (X) <= 'F') ? ((X) - 'A' + 10) :   \
+					((X) >= 'a' && (X) <= 'f') ? ((X) - 'a' + 10) : -1)
+
+mDNSlocal mStatus GetIPv6FromName(mDNSAddr *const a, const domainname *const name)
+	{
+	int i, h, l;
+	const domainname *n;
+
+	int skip = CountLabels(name) - 34;
+	if (skip < 0) { LogMsg("GetIPFromName: Need 34 labels in IPv6 reverse mapping name %##s", name); return mStatus_Invalid; }
+
+	n = SkipLeadingLabels(name, skip);
+	for (i=0; i<16; i++)
+		{
+		if (n->c[0] != 1) return mStatus_Invalid;
+		l = HexVal(n->c[1]);
+		n = (const domainname *)(n->c + 2);
+
+		if (n->c[0] != 1) return mStatus_Invalid;
+		h = HexVal(n->c[1]);
+		n = (const domainname *)(n->c + 2);
+
+		if (l<0 || h<0) return mStatus_Invalid;
+		a->ip.v6.b[15-i] = (h << 4) | l;
+		}
+
+	a->type = mDNSAddrType_IPv6;
+	return(mStatus_NoError);
+	}
+
+mDNSlocal mDNSs32 ReverseMapDomainType(const domainname *const name)
 	{
 	int skip = CountLabels(name) - 2;
-	if (skip < 0) return(mDNSfalse);
-	return(SameDomainName(SkipLeadingLabels(name, skip), (const domainname*)"\x7" "in-addr" "\x4" "arpa"));
+	if (skip >= 0)
+		{
+		const domainname *suffix = SkipLeadingLabels(name, skip);
+		if (SameDomainName(suffix, (const domainname*)"\x7" "in-addr" "\x4" "arpa")) return mDNSAddrType_IPv4;
+		if (SameDomainName(suffix, (const domainname*)"\x3" "ip6"     "\x4" "arpa")) return mDNSAddrType_IPv6;
+		}
+	return(mDNSAddrType_None);
 	}
 
 mDNSlocal void SendARP(mDNS *const m, const mDNSu8 op, const AuthRecord *const rr,
@@ -2326,6 +2366,12 @@ mDNSlocal void SendResponses(mDNS *const m)
 					LogOperation("ARP Announcement %##s (%s) %d %#a",
 						rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype), rr->AnnounceCount, &rr->AddressProxy);
 					SendARP(m, 1, rr, rr->AddressProxy.ip.v4.b, zeroEthAddr.b, rr->AddressProxy.ip.v4.b, onesEthAddr.b);
+					}
+				else if (rr->AddressProxy.type == mDNSAddrType_IPv6)
+					{
+					LogOperation("NDP Announcement %##s (%s) %d %#a",
+						rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype), rr->AnnounceCount, &rr->AddressProxy);
+					//SendARP(m, 1, rr, rr->AddressProxy.ip.v4.b, zeroEthAddr.b, rr->AddressProxy.ip.v4.b, onesEthAddr.b);
 					}
 				}
 			else
@@ -3991,6 +4037,10 @@ mDNSexport mDNSs32 mDNS_TimeNow(const mDNS *const m)
 	return(time);
 	}
 
+#define SetSPSProxyListChanged(X) do { \
+	if (m->SPSProxyListChanged && m->SPSProxyListChanged != (X)) mDNSPlatformUpdateProxyList(m, m->SPSProxyListChanged); \
+	m->SPSProxyListChanged = (X); } while(0)
+
 mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 	{
 	mDNS_Lock(m);	// Must grab lock before trying to read m->timenow
@@ -4044,6 +4094,7 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 						{
 						LogOperation("mDNS_Execute: Removing %.6a %s", &rr->WakeUp.MAC, ARDisplayString(m, rr));
 						mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
+						SetSPSProxyListChanged(rr->resrec.InterfaceID);
 						}
 					}
 				// Mustn't advance m->CurrentRecord until *after* mDNS_Deregister_internal,
@@ -4052,6 +4103,8 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 					m->CurrentRecord = rr->next;
 				}
 			}
+
+		SetSPSProxyListChanged(mDNSNULL);
 
 		// 4. See if we can answer any of our new local questions from the cache
 		for (i=0; m->NewQuestions && i<1000; i++)
@@ -4712,11 +4765,12 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 					while (m->CurrentRecord)
 						{
 						rr = m->CurrentRecord;
-						if (mDNSSameEthAddress(&opt->u.owner.MAC, &rr->WakeUp.MAC))
+						if (InterfaceID == rr->resrec.InterfaceID && mDNSSameEthAddress(&opt->u.owner.MAC, &rr->WakeUp.MAC))
 							if (opt->u.owner.seq != rr->WakeUp.seq || m->timenow - rr->TimeRcvd > mDNSPlatformOneSecond * 60)
 								{
 								LogOperation("ProcessQuery: Removing %.6a %d %d %s", &rr->WakeUp.MAC, opt->u.owner.seq, rr->WakeUp.seq, ARDisplayString(m, rr));
 								mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
+								SetSPSProxyListChanged(InterfaceID);
 								}
 						// Mustn't advance m->CurrentRecord until *after* mDNS_Deregister_internal,
 						// because the list may have been changed in that call.
@@ -5874,8 +5928,7 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 		msg->h.numAuthorities, msg->h.numAuthorities == 1 ? "y,  " : "ies,",
 		msg->h.numAdditionals, msg->h.numAdditionals == 1 ? "" : "s");
 
-	if (!m->SPSSocket) return;
-	if (!mDNSSameIPPort(dstport, m->SPSSocket->port)) return;
+	if (!InterfaceID || !m->SPSSocket || !mDNSSameIPPort(dstport, m->SPSSocket->port)) return;
 
 	if (mDNS_LogLevel >= MDNS_LOG_VERBOSE_DEBUG)
 		DumpPacket(m, mStatus_NoError, mDNSfalse, "UDP", srcaddr, srcport, dstaddr, dstport, msg, end);
@@ -5923,9 +5976,14 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 				ar->resrec.rdata->MaxRDLength = RDLengthMem;
 				mDNSPlatformMemCopy(ar->resrec.rdata->u.data, m->rec.r.resrec.rdata->u.data, RDLengthMem);
 				ar->WakeUp = owner;
-				if (m->rec.r.resrec.rrtype == kDNSType_PTR && IsV4ReverseMapDomain(m->rec.r.resrec.name))
-					if (GetIPFromName(&ar->AddressProxy.ip.v4, m->rec.r.resrec.name) == mStatus_NoError)
-						ar->AddressProxy.type = mDNSAddrType_IPv4;
+				if (m->rec.r.resrec.rrtype == kDNSType_PTR)
+					{
+					mDNSs32 t = ReverseMapDomainType(m->rec.r.resrec.name);
+					if      (t == mDNSAddrType_IPv4) GetIPv4FromName(&ar->AddressProxy, m->rec.r.resrec.name);
+					else if (t == mDNSAddrType_IPv6) GetIPv6FromName(&ar->AddressProxy, m->rec.r.resrec.name);
+					debugf("mDNSCoreReceiveUpdate: PTR %d %d %#a %s", t, ar->AddressProxy.type, &ar->AddressProxy, ARDisplayString(m, ar));
+					if (ar->AddressProxy.type) SetSPSProxyListChanged(InterfaceID);
+					}
 				ar->TimeRcvd   = m->timenow;
 				ar->TimeExpire = m->timenow + updatelease * mDNSPlatformOneSecond;
 				if (m->NextScheduledSPS - ar->TimeExpire > 0)
@@ -7958,7 +8016,8 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 	static const mDNSOpaque16 ARP_op_request = { { 0, 1 } };
 	const EthernetHeader *const eth = (const EthernetHeader *)p;
 	const ARP_EthIP      *const arp = (const ARP_EthIP      *)(eth+1);
-	const IPHeader       *const ip  = (const IPHeader       *)(eth+1);
+	const IPv4Header     *const v4  = (const IPv4Header     *)(eth+1);
+	const IPv6Header     *const v6  = (const IPv6Header     *)(eth+1);
 	if (end >= p+42 && *(mDNSu32*)(p+12) == ARP_EthIP_h0.NotAnInteger && *(mDNSu32*)(p+16) == ARP_EthIP_h1.NotAnInteger)
 		{
 		AuthRecord *rr;
@@ -8022,10 +8081,11 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 
 		mDNS_Unlock(m);
 		}
-	else if (end >= p+34 && mDNSSameOpaque16(eth->ethertype, Ethertype_IP) && (ip->flagsfrags.b[0] & 0x1F) == 0 && ip->flagsfrags.b[1] == 0)
+	else if (end >= p+34 && mDNSSameOpaque16(eth->ethertype, Ethertype_IP) && (v4->flagsfrags.b[0] & 0x1F) == 0 && v4->flagsfrags.b[1] == 0)
 		{
-		const mDNSu8 *const trans = p + 14 + (ip->vlen & 0xF) * 4;
-		const mDNSu8 *const required = trans + (ip->protocol == 1 ? 4 : ip->protocol == 6 ? 20 : ip->protocol == 17 ? 8 : 0);
+		const mDNSu8 *const trans = p + 14 + (v4->vlen & 0xF) * 4;
+		const mDNSu8 *const required = trans + (v4->protocol == 1 ? 4 : v4->protocol == 6 ? 20 : v4->protocol == 17 ? 8 : 0);
+		debugf("Got IPv4 from %.4a to %.4a", &v4->src, &v4->dst);
 		if (end >= required)
 			{
 			#define SSH_AsNumber 22
@@ -8036,10 +8096,10 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 			mDNSBool wake = mDNSfalse;
 			mDNSIPPort port = zeroIPPort;
 	
-			switch (ip->protocol)
+			switch (v4->protocol)
 				{
 				#define XX wake ? "Received" : "Ignoring", end-p
-				case  1:	LogMsg("%s %d-byte ICMP from %.4a to %.4a", XX, &ip->src, &ip->dst);
+				case  1:	LogMsg("%s %d-byte ICMP from %.4a to %.4a", XX, &v4->src, &v4->dst);
 							break;
 
 				case  6:	{
@@ -8056,7 +8116,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 
 							port = tcp->dst;
 							LogMsg("%s %d-byte TCP from %.4a:%d to %.4a:%d%s%s%s", XX,
-								&ip->src, mDNSVal16(tcp->src), &ip->dst, mDNSVal16(tcp->dst),
+								&v4->src, mDNSVal16(tcp->src), &v4->dst, mDNSVal16(tcp->dst),
 								(tcp->flags & 2) ? " SYN" : "",
 								(tcp->flags & 1) ? " FIN" : "",
 								(tcp->flags & 4) ? " RST" : "");
@@ -8070,11 +8130,11 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 							// For Back to My Mac UDP port 4500 (IPSEC) packets, we specially ignore NAT keepalive packets
 							if (mDNSSameIPPort(udp->dst, IPSEC)) wake = (len != 9 || end < trans + 9 || trans[8] != 0xFF);
 							port = udp->dst;
-							LogMsg("%s %d-byte UDP from %.4a:%d to %.4a:%d", XX, &ip->src, mDNSVal16(udp->src), &ip->dst, mDNSVal16(udp->dst));
+							LogMsg("%s %d-byte UDP from %.4a:%d to %.4a:%d", XX, &v4->src, mDNSVal16(udp->src), &v4->dst, mDNSVal16(udp->dst));
 							}
 							break;
 
-				default:	LogMsg("%s %d-byte IP packet unknown protocol %d from %.4a to %.4a", XX, ip->protocol, &ip->src, &ip->dst);
+				default:	LogMsg("%s %d-byte IP packet unknown protocol %d from %.4a to %.4a", XX, v4->protocol, &v4->src, &v4->dst);
 							break;
 				}
 	
@@ -8085,9 +8145,9 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 				mDNS_Lock(m);
 				for (rr = m->ResourceRecords; rr; rr=rr->next)
 					if (rr->resrec.InterfaceID == InterfaceID &&
-						rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, ip->dst))
+						rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, v4->dst))
 						{
-						const mDNSu8 *const tp = (ip->protocol == 6) ? (mDNSu8 *)"\x4_tcp" : (mDNSu8 *)"\x4_udp";
+						const mDNSu8 *const tp = (v4->protocol == 6) ? (mDNSu8 *)"\x4_tcp" : (mDNSu8 *)"\x4_udp";
 						for (r2 = m->ResourceRecords; r2; r2=r2->next)
 							if (r2->resrec.InterfaceID == InterfaceID && mDNSSameEthAddress(&r2->WakeUp.MAC, &rr->WakeUp.MAC) &&
 								r2->resrec.rrtype == kDNSType_SRV && mDNSSameIPPort(r2->resrec.rdata->u.srv.port, port) &&
@@ -8098,16 +8158,21 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 							{
 							rr->AnnounceCount = 0;
 							LogMsg("Waking host at %s %.4a %.6a for %s",
-								InterfaceNameForID(m, rr->resrec.InterfaceID), &ip->dst, &rr->WakeUp.MAC, ARDisplayString(m, r2));
+								InterfaceNameForID(m, rr->resrec.InterfaceID), &v4->dst, &rr->WakeUp.MAC, ARDisplayString(m, r2));
 							SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.MAC);
 							}
 						else
 							LogOperation("Sleeping host at %s %.4a %.6a has no service on %#s %d",
-								InterfaceNameForID(m, rr->resrec.InterfaceID), &ip->dst, &rr->WakeUp.MAC, tp, mDNSVal16(port));
+								InterfaceNameForID(m, rr->resrec.InterfaceID), &v4->dst, &rr->WakeUp.MAC, tp, mDNSVal16(port));
 						}
 				mDNS_Unlock(m);
 				}
 			}
+		}
+	else if (end >= p+34 && mDNSSameOpaque16(eth->ethertype, Ethertype_IP) && (v4->flagsfrags.b[0] & 0x1F) == 0 && v4->flagsfrags.b[1] == 0)
+		{
+		debugf("Got IPv6 from %.16a to %.16a", &v4->src, &v6->dst);
+		(void)v6;
 		}
 	}
 
@@ -8332,6 +8397,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->SPSMarginalPower         = 0;
 	m->SPSTotalPower            = 0;
 	m->SPSState                 = 0;
+	m->SPSProxyListChanged      = mDNSNULL;
 	m->SPSSocket                = mDNSNULL;
 	m->SPSBrowseCallback        = mDNSNULL;
 
