@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.600  2008/12/12 21:30:14  cheshire
+Additional defensive coding -- make sure InterfaceID is found in our list before using it
+
 Revision 1.599  2008/12/12 04:36:26  cheshire
 Make sure we don't overflow our BPF filter buffer
 Only add addresses for records where the InterfaceID matches
@@ -2228,16 +2231,26 @@ mDNSlocal void bpf_callback(const CFSocketRef cfs, const CFSocketCallBackType Ca
 
 mDNSexport void mDNSPlatformUpdateProxyList(mDNS *const m, const mDNSInterfaceID InterfaceID)
 	{
-	NetworkInterfaceInfoOSX *const x = (NetworkInterfaceInfoOSX *)InterfaceID;
+	NetworkInterfaceInfoOSX *x;
+	for (x = m->p->InterfaceList; x; x = x->next) if (x == (NetworkInterfaceInfoOSX *)InterfaceID) break;
+	if (!x) { LogMsg("mDNSPlatformUpdateProxyList: ERROR InterfaceID %p not found", InterfaceID); return; }
 
 	#define MAX_BPF_ADDRS 250
 	int numv4 = 0, numv6 = 0;
 
 	AuthRecord *rr;
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
-		if (rr->resrec.InterfaceID == InterfaceID && rr->AddressProxy.type == mDNSAddrType_IPv4) numv4++;
+		if (rr->resrec.InterfaceID == InterfaceID && rr->AddressProxy.type == mDNSAddrType_IPv4)
+			{
+			LogOperation("mDNSPlatformUpdateProxyList: fd %d %-7s IP%2d %.4a", x->BPF_fd, x->ifinfo.ifname, numv4, &rr->AddressProxy.ip.v4);
+			numv4++;
+			}
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
-		if (rr->resrec.InterfaceID == InterfaceID && rr->AddressProxy.type == mDNSAddrType_IPv6) numv6++;
+		if (rr->resrec.InterfaceID == InterfaceID && rr->AddressProxy.type == mDNSAddrType_IPv6)
+			{
+			LogOperation("mDNSPlatformUpdateProxyList: fd %d %-7s IP%2d %.16a", x->BPF_fd, x->ifinfo.ifname, numv6, &rr->AddressProxy.ip.v6);
+			numv6++;
+			}
 
 	if (numv4 + numv6 > MAX_BPF_ADDRS)
 		{
@@ -2246,7 +2259,7 @@ mDNSexport void mDNSPlatformUpdateProxyList(mDNS *const m, const mDNSInterfaceID
 		numv6 = MAX_BPF_ADDRS - numv4;
 		}
 
-	LogOperation("mDNSPlatformUpdateProxyList: fd %d %-7s MAC %.6a %d v4 %d v6", x->BPF_fd, x->ifinfo.ifname, &x->ifinfo.MAC, numv4, numv6);
+	LogOperation("mDNSPlatformUpdateProxyList: fd %d %-7s MAC  %.6a %d v4 %d v6", x->BPF_fd, x->ifinfo.ifname, &x->ifinfo.MAC, numv4, numv6);
 
 	// Caution: This is a static structure, so we need to be careful that any modifications we make to it
 	// are done in such a way that they work correctly when mDNSPlatformUpdateProxyList is called multiple times
