@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.598  2008/12/12 00:57:51  cheshire
+Updated BPF filter generation to explicitly match addresses we're proxying for,
+rather than just matching any unknown IP address
+
 Revision 1.597  2008/12/10 20:37:05  cheshire
 Don't mark interfaces like PPP as being WakeonLAN-capable
 
@@ -2216,46 +2220,63 @@ mDNSlocal void bpf_callback(const CFSocketRef cfs, const CFSocketCallBackType Ca
 	KQueueUnlock(info->m, "bpf_callback");
 	}
 
-mDNSlocal void SetFilterProgram(mDNS *const m, NetworkInterfaceInfoOSX *const x)
+#define BPF_SetOffset(from, cond, to) (from)->cond = (to) - 1 - (from)
+
+mDNSexport void mDNSPlatformUpdateProxyList(mDNS *const m, const mDNSInterfaceID InterfaceID)
 	{
-	LogOperation("SetFilterProgram: %d %4s MAC  %.6a", x->BPF_fd, x->ifinfo.ifname, &x->ifinfo.MAC);
+	NetworkInterfaceInfoOSX *const x = (NetworkInterfaceInfoOSX *)InterfaceID;
 
-	#define MAX_BPF_ADDRS 50
-	int numv4 = 0;
-	NetworkInterfaceInfo *i;
-	for (i = m->HostInterfaces; i; i = i->next)
-		if (i->ip.type == mDNSAddrType_IPv4 && i->InterfaceID == x->ifinfo.InterfaceID)
-			{
-			LogOperation("SetFilterProgram: %d %4s IP%2d %.4a", x->BPF_fd, x->ifinfo.ifname, numv4, &i->ip.ip.v4);
-			if (numv4 < MAX_BPF_ADDRS) numv4++;
-			}
+	#define MAX_BPF_ADDRS 250
+	int numv4 = 0, numv6 = 0;
 
-	// Caution: This is a static structure, so we need to be cautious that any modifications we make
-	// to it are done in such a way that they work correctly when SetFilterProgram is called multiple times
+	AuthRecord *rr;
+	for (rr = m->ResourceRecords; rr; rr=rr->next)
+		{
+		if      (rr->AddressProxy.type == mDNSAddrType_IPv4) numv4++;
+		else if (rr->AddressProxy.type == mDNSAddrType_IPv6) numv6++;
+		}
+
+	LogOperation("mDNSPlatformUpdateProxyList: fd %d %-7s MAC %.6a %d v4 %d v6", x->BPF_fd, x->ifinfo.ifname, &x->ifinfo.MAC, numv4, numv6);
+
+	// Caution: This is a static structure, so we need to be careful that any modifications we make to it
+	// are done in such a way that they work correctly when mDNSPlatformUpdateProxyList is called multiple times
 	static struct bpf_insn filter[15 + MAX_BPF_ADDRS] =
 		{
 		BPF_STMT(BPF_LD  + BPF_H   + BPF_ABS, 12),				// 0 Read Ethertype (bytes 12,13)
+
 		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0x0806, 0, 1),		// 1 If Ethertype == ARP goto next, else 3
-		BPF_STMT(BPF_RET + BPF_K, 42),							// 2 Return 42 byte-ARP
-		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0x0800, 0, 10),		// 3 If Ethertype == IP goto next, else 14 (exit)
-		// Is IP packet; check it's addressed to our MAC address
-		BPF_STMT(BPF_LD  + BPF_W   + BPF_ABS, 0),				// 4 Read Ether Dst (bytes 0,1,2,3)
-		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0,      3, 0),		// 5 If zero (special) goto 9, else next
-		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0,      0, 7),		// 6 If matches our MAC goto next, else 14 (exit)
-		BPF_STMT(BPF_LD  + BPF_H   + BPF_ABS, 4),				// 7 Read Ether Dst (bytes 4,5)
-		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0,      0, 5),		// 8 If matches our MAC goto next, else 14 (exit)
-		// Is IP packet addressed to our MAC address; check it's not to any of our IP addresses
-		BPF_STMT(BPF_LD  + BPF_W   + BPF_ABS, 30),				// 9 Read IP Dst (bytes 30,31,32,33)
+		BPF_STMT(BPF_RET + BPF_K,             42),				// 2 Return 42-byte ARP
+
+		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0x0800, 4, 0),		// 3 If Ethertype == IPv4 goto 8 (IPv4 address list check) else next
+
+		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0x86DD, 0, 9),		// 4 If Ethertype == IPv6 goto next, else exit
+		BPF_STMT(BPF_LD  + BPF_H   + BPF_ABS, 20),				// 5 Read Protocol and Hop Limit (bytes 20,21)
+		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0x3AFF, 0, 9),		// 6 If (Prot,TTL) == (3A,FF) goto next, else IPv6 address list check
+		BPF_STMT(BPF_RET + BPF_K,             78),				// 7 Return 78-byte ND
+
+		// Is IPv4 packet; check if it's addressed to any IPv4 address we're proxying for
+		BPF_STMT(BPF_LD  + BPF_W   + BPF_ABS, 30),				// 8 Read IPv4 Dst (bytes 30,31,32,33)
 		};
 
-	struct bpf_insn *pc   = &filter[10];
-	struct bpf_insn *fail = &filter[14 + numv4];
+	struct bpf_insn *pc   = &filter[9];
+	struct bpf_insn *chk6 = pc   + numv4 + 1;	// numv4 address checks, plus a "return 0"
+	struct bpf_insn *fail = chk6 + 1 + numv6;	// Get v6 Dst LSW, plus numv6 address checks
+	struct bpf_insn *ret4 = fail + 1;
+	struct bpf_insn *ret6 = ret4 + 4;
 
-	static const struct bpf_insn i0 = BPF_STMT(BPF_LDX + BPF_B   + BPF_MSH, 14);	// 10+ Get IP Header length (normally 20)
-	static const struct bpf_insn i1 = BPF_STMT(BPF_LD  + BPF_IMM,           34);	// 11+ A = 34 (14-byte Ethernet plus 20-byte TCP)
-	static const struct bpf_insn i2 = BPF_STMT(BPF_ALU + BPF_ADD + BPF_X,    0);	// 12+ A += IP Header length
-	static const struct bpf_insn i3 = BPF_STMT(BPF_RET + BPF_A, 0);					// 13+ Success: Return Ethernet + IP + TCP
-	static const struct bpf_insn i4 = BPF_STMT(BPF_RET + BPF_K, 0);					// 14+ No match: Return nothing
+	static const struct bpf_insn rf  = BPF_STMT(BPF_RET + BPF_K, 0);				// No match: Return nothing
+
+	static const struct bpf_insn g6  = BPF_STMT(BPF_LD  + BPF_W   + BPF_ABS, 50);	// Read IPv6 Dst LSW (bytes 50,51,52,53)
+
+	static const struct bpf_insn r4a = BPF_STMT(BPF_LDX + BPF_B   + BPF_MSH, 14);	// Get IP Header length (normally 20)
+	static const struct bpf_insn r4b = BPF_STMT(BPF_LD  + BPF_IMM,           34);	// A = 34 (14-byte Ethernet plus 20-byte TCP)
+	static const struct bpf_insn r4c = BPF_STMT(BPF_ALU + BPF_ADD + BPF_X,    0);	// A += IP Header length
+	static const struct bpf_insn r4d = BPF_STMT(BPF_RET + BPF_A, 0);				// Success: Return Ethernet + IP + TCP
+
+	static const struct bpf_insn r6a = BPF_STMT(BPF_RET + BPF_K, 94);				// Success: Return Eth + IPv6 + TCP + 20 bytes spare
+
+	BPF_SetOffset(&filter[4], jf, fail);	// If Ethertype not ARP, IPv4, or IPv6, fail
+	BPF_SetOffset(&filter[6], jf, chk6);	// If IPv6 but not ICMPv6, go to IPv6 address list check
 
 	// BPF Byte-Order Note
 	// The BPF API designers apparently thought that programmers would not be smart enough to use htons
@@ -2269,73 +2290,98 @@ mDNSlocal void SetFilterProgram(mDNS *const m, NetworkInterfaceInfoOSX *const x)
 	// In summary, if we byte-swap all the non-numeric fields that shouldn't be swapped, and we *don't*
 	// swap any of the numeric values that *should* be byte-swapped, then the filter will work correctly.
 
-	filter[6].k  = (bpf_u_int32)x->ifinfo.MAC.b[0] << 24 | (bpf_u_int32)x->ifinfo.MAC.b[1] << 16 |
-	               (bpf_u_int32)x->ifinfo.MAC.b[2] <<  8 | (bpf_u_int32)x->ifinfo.MAC.b[3];
-	filter[8].k  = (bpf_u_int32)x->ifinfo.MAC.b[4] <<  8 | (bpf_u_int32)x->ifinfo.MAC.b[5];
-	filter[3].jf = fail - 1 - &filter[3];	// Compute offset from next instruction to the final failure return instruction
-	filter[6].jf = fail - 1 - &filter[6];
-	filter[8].jf = fail - 1 - &filter[8];
-
-	for (i = m->HostInterfaces; i; i = i->next)
-		if (i->ip.type == mDNSAddrType_IPv4 && i->InterfaceID == x->ifinfo.InterfaceID && numv4)
+	for (rr = m->ResourceRecords; rr; rr=rr->next)
+		if (rr->AddressProxy.type == mDNSAddrType_IPv4)
 			{
-			// See "BPF Byte-Order Note" above
-			numv4--;
+			mDNSv4Addr a = rr->AddressProxy.ip.v4;
 			pc->code = BPF_JMP + BPF_JEQ + BPF_K;
-			pc->jt   = numv4 + 4;
+			BPF_SetOffset(pc, jt, ret4);
 			pc->jf   = 0;
-			pc->k    = (bpf_u_int32)i->ip.ip.v4.b[0] << 24 | (bpf_u_int32)i->ip.ip.v4.b[1] << 16 | (bpf_u_int32)i->ip.ip.v4.b[2] << 8 | (bpf_u_int32)i->ip.ip.v4.b[3];
+			pc->k    = (bpf_u_int32)a.b[0] << 24 | (bpf_u_int32)a.b[1] << 16 | (bpf_u_int32)a.b[2] << 8 | (bpf_u_int32)a.b[3];
+			pc++;
+			}
+	*pc++ = rf;
+	
+	if (pc != chk6) LogMsg("mDNSPlatformUpdateProxyList: pc %p != chk6 %p", pc, chk6);
+	*pc++ = g6;	// chk6 points here
+	
+	for (rr = m->ResourceRecords; rr; rr=rr->next)
+		if (rr->AddressProxy.type == mDNSAddrType_IPv6)
+			{
+			mDNSv6Addr a = rr->AddressProxy.ip.v6;
+			pc->code = BPF_JMP + BPF_JEQ + BPF_K;
+			BPF_SetOffset(pc, jt, ret6);
+			pc->jf   = 0;
+			pc->k    = (bpf_u_int32)a.b[12] << 24 | (bpf_u_int32)a.b[13] << 16 | (bpf_u_int32)a.b[14] << 8 | (bpf_u_int32)a.b[15];
 			pc++;
 			}
 
-	*pc++ = i0; *pc++ = i1; *pc++ = i2; *pc++ = i3; *pc++ = i4;
+	if (pc != fail) LogMsg("mDNSPlatformUpdateProxyList: pc %p != fail %p", pc, fail);
+	*pc++ = rf;	// fail points here
+
+	if (pc != ret4) LogMsg("mDNSPlatformUpdateProxyList: pc %p != ret4 %p", pc, ret4);
+	*pc++ = r4a;	// ret4 points here
+	*pc++ = r4b;
+	*pc++ = r4c;
+	*pc++ = r4d;
+
+	if (pc != ret6) LogMsg("mDNSPlatformUpdateProxyList: pc %p != ret6 %p", pc, ret6);
+	*pc++ = r6a;	// ret6 points here
+
 	struct bpf_program prog = { pc - filter, filter };
 
 #if 0
 	// For debugging BPF filter program
 	unsigned int q;
 	for (q=0; q<prog.bf_len; q++)
-		LogOperation("SetFilterProgram: %2d { 0x%02x, %d, %d, 0x%08x },", q, prog.bf_insns[q].code, prog.bf_insns[q].jt, prog.bf_insns[q].jf, prog.bf_insns[q].k);
+		LogOperation("mDNSPlatformUpdateProxyList: %2d { 0x%02x, %d, %d, 0x%08x },", q, prog.bf_insns[q].code, prog.bf_insns[q].jt, prog.bf_insns[q].jf, prog.bf_insns[q].k);
 #endif
 
-	if (ioctl(x->BPF_fd, BIOCSETF, &prog) < 0) LogMsg("SetFilterProgram: BIOCSETF(%d) failed %d (%s)", prog.bf_len, errno, strerror(errno));
+	if (!numv4 && !numv6)
+		{
+		LogOperation("mDNSPlatformUpdateProxyList: No need for filter");
+		// prog.bf_len = 0; This seems to panic the kernel
+		}
+
+	if (ioctl(x->BPF_fd, BIOCSETF, &prog) < 0) LogMsg("mDNSPlatformUpdateProxyList: BIOCSETF(%d) failed %d (%s)", prog.bf_len, errno, strerror(errno));
+	else LogOperation("mDNSPlatformUpdateProxyList: BIOCSETF(%d) successful", prog.bf_len);
 	}
 
-mDNSexport void mDNSPlatformSetBPF(mDNS *const m, int fd)
+mDNSexport void mDNSPlatformReceiveBPF_fd(mDNS *const m, int fd)
 	{
 	NetworkInterfaceInfoOSX *i;
 	for (i = m->p->InterfaceList; i; i = i->next) if (i->BPF_fd == -2) break;
-	if (!i) { LogOperation("mDNSPlatformSetBPF: No Interfaces awaiting BPF fd %d; closing", fd); close(fd); return; }
+	if (!i) { LogOperation("mDNSPlatformReceiveBPF_fd: No Interfaces awaiting BPF fd %d; closing", fd); close(fd); return; }
 
 	LogOperation("%s using   BPF fd %d", i->ifinfo.ifname, fd);
 
 	struct bpf_version v;
 	if (ioctl(fd, BIOCVERSION, &v) < 0)
-		LogMsg("mDNSPlatformSetBPF: %d %s BIOCVERSION failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno));
+		LogMsg("mDNSPlatformReceiveBPF_fd: %d %s BIOCVERSION failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno));
 	else if (BPF_MAJOR_VERSION != v.bv_major || BPF_MINOR_VERSION != v.bv_minor)
-		LogMsg("mDNSPlatformSetBPF: %d %s BIOCVERSION header %d.%d kernel %d.%d",
+		LogMsg("mDNSPlatformReceiveBPF_fd: %d %s BIOCVERSION header %d.%d kernel %d.%d",
 			fd, i->ifinfo.ifname, BPF_MAJOR_VERSION, BPF_MINOR_VERSION, v.bv_major, v.bv_minor);
 
 	if (ioctl(fd, BIOCGBLEN, &i->BPF_len) < 0)
-		LogMsg("mDNSPlatformSetBPF: %d %s BIOCGBLEN failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno));
+		LogMsg("mDNSPlatformReceiveBPF_fd: %d %s BIOCGBLEN failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno));
 
 	if (i->BPF_len > sizeof(m->imsg))
 		{
 		i->BPF_len = sizeof(m->imsg);
 		if (ioctl(fd, BIOCSBLEN, &i->BPF_len) < 0)
-			LogMsg("mDNSPlatformSetBPF: %d %s BIOCSBLEN failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno));
-		else LogOperation("mDNSPlatformSetBPF: %d %s BIOCSBLEN %d", i->BPF_len);
+			LogMsg("mDNSPlatformReceiveBPF_fd: %d %s BIOCSBLEN failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno));
+		else LogOperation("mDNSPlatformReceiveBPF_fd: %d %s BIOCSBLEN %d", i->BPF_len);
 		}
 
 	static const u_int opt_immediate = 1;
 	if (ioctl(fd, BIOCIMMEDIATE, &opt_immediate) < 0)
-		LogMsg("mDNSPlatformSetBPF: %d %s BIOCIMMEDIATE failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno));
+		LogMsg("mDNSPlatformReceiveBPF_fd: %d %s BIOCIMMEDIATE failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno));
 
 	struct ifreq ifr;
 	bzero(&ifr, sizeof(ifr));
 	strlcpy(ifr.ifr_name, i->ifinfo.ifname, sizeof(ifr.ifr_name));
 	if (ioctl(fd, BIOCSETIF, &ifr) < 0)
-		{ LogMsg("mDNSPlatformSetBPF: %d %s BIOCSETIF failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno)); i->BPF_fd = -3; }
+		{ LogMsg("mDNSPlatformReceiveBPF_fd: %d %s BIOCSETIF failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno)); i->BPF_fd = -3; }
 	else
 		{
 		CFSocketContext myCFSocketContext = { 0, i, NULL, NULL, NULL };
@@ -2343,7 +2389,7 @@ mDNSexport void mDNSPlatformSetBPF(mDNS *const m, int fd)
 		i->BPF_cfs = CFSocketCreateWithNative(kCFAllocatorDefault, fd, kCFSocketReadCallBack, bpf_callback, &myCFSocketContext);
 		i->BPF_rls = CFSocketCreateRunLoopSource(kCFAllocatorDefault, i->BPF_cfs, 0);
 		CFRunLoopAddSource(i->m->p->CFRunLoop, i->BPF_rls, kCFRunLoopDefaultMode);
-		SetFilterProgram(m, i);
+		mDNSPlatformUpdateProxyList(m, (mDNSInterfaceID)i);
 		}
 	}
 
@@ -4696,8 +4742,9 @@ mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 				{
 				// Even if we've previously set up our BPF filter, we need to redo it,
 				// in case we've added, removed, or changed IPv4 addresses on this interface
+				// (actually not any more -- if the new design works properly, we can remove the above comment)
 				if (i->BPF_fd == -1) { LogOperation("%s requesting BPF", i->ifinfo.ifname); i->BPF_fd = -2; mDNSRequestBPF(); }
-				else if (i->BPF_fd >= 0) SetFilterProgram(m, i);
+				//else if (i->BPF_fd >= 0) mDNSPlatformUpdateProxyList(m, i);	// Not needed any more
 				}
 			}
 		}
