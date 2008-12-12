@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.49  2008/12/12 00:37:42  mcguire
+<rdar://problem/6417648> BTMM outbound fails if /var/run/racoon doesn't exist
+
 Revision 1.48  2008/12/05 02:35:24  mcguire
 <rdar://problem/6107390> Write to the DynamicStore when a Sleep Proxy server is available on the network
 
@@ -1433,6 +1436,42 @@ moveAsideAnonymousRacoonConfiguration(const char* dir)
 	}
 
 static int
+ensureExistenceOfRacoonConfigDir(const char* const racoon_config_dir)
+	{
+	struct stat s;
+	int ret = stat(racoon_config_dir, &s);
+	if (ret != 0)
+		{
+		if (errno != ENOENT)
+			{
+			helplog(ASL_LEVEL_ERR, "stat of \"%s\" failed (%d): %s",
+				racoon_config_dir, ret, strerror(errno));
+			return -1;
+			}
+		else
+			{
+			ret = mkdir(racoon_config_dir, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
+			if (ret != 0)
+				{
+				helplog(ASL_LEVEL_ERR, "mkdir \"%s\" failed: %s",
+					racoon_config_dir, strerror(errno));
+				return -1;
+				}
+			else
+				helplog(ASL_LEVEL_INFO, "created directory \"%s\"", racoon_config_dir);
+			}
+		}
+	else if (!(s.st_mode & S_IFDIR))
+		{
+		helplog(ASL_LEVEL_ERR, "\"%s\" is not a directory!",
+			racoon_config_dir);
+		return -1;
+		}
+	
+	return 0;
+	}
+
+static int
 createAnonymousRacoonConfiguration(const char *keydata)
 	{
 	static const char config1[] =
@@ -1470,40 +1509,12 @@ createAnonymousRacoonConfiguration(const char *keydata)
 	char racoon_config_path[64];
 	const char* const racoon_config_dir = GetRacoonConfigDir();
 	const char* const racoon_config_dir_old = GetOldRacoonConfigDir();
-	int ret = 0;
-	struct stat s;
 	int fd = -1;
 	
 	debug("entry");
 	
-	ret = stat(racoon_config_dir, &s);
-	if (ret != 0)
-		{
-		if (errno != ENOENT)
-			{
-			helplog(ASL_LEVEL_ERR, "stat of \"%s\" failed (%d): %s",
-				racoon_config_dir, ret, strerror(errno));
-			return -1;
-			}
-		else
-			{
-			ret = mkdir(racoon_config_dir, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
-			if (ret != 0)
-				{
-				helplog(ASL_LEVEL_ERR, "mkdir \"%s\" failed: %s",
-					racoon_config_dir, strerror(errno));
-				return -1;
-				}
-			else
-				helplog(ASL_LEVEL_INFO, "created directory \"%s\"", racoon_config_dir);
-			}
-		}
-	else if (!(s.st_mode & S_IFDIR))
-		{
-		helplog(ASL_LEVEL_ERR, "\"%s\" is not a directory!",
-			racoon_config_dir);
+	if (0 > ensureExistenceOfRacoonConfigDir(racoon_config_dir))
 		return -1;
-		}
 
 	strlcpy(tmp_config_path, racoon_config_dir, sizeof(tmp_config_path));
 	strlcat(tmp_config_path, "tmp.XXXXXX", sizeof(tmp_config_path));
@@ -2263,6 +2274,11 @@ do_mDNSAutoTunnelSetKeys(__unused mach_port_t port, int replacedelete,
 		}
 	if (kmDNSAutoTunnelSetKeysReplace == replacedelete)
 		{
+		if (0 > ensureExistenceOfRacoonConfigDir(GetRacoonConfigDir()))
+			{
+			*err = kmDNSHelperRacoonConfigCreationFailed;
+			goto fin;
+			}
 		if ((int)sizeof(tmp_path) <=
 		    snprintf(tmp_path, sizeof(tmp_path), "%s.XXXXXX", path))
 			{
@@ -2271,7 +2287,7 @@ do_mDNSAutoTunnelSetKeys(__unused mach_port_t port, int replacedelete,
 			}       
 		if (0 > (fd = mkstemp(tmp_path)))
 			{
-			helplog(ASL_LEVEL_ERR, "mktemp \"%s\" failed: %s",
+			helplog(ASL_LEVEL_ERR, "mkstemp \"%s\" failed: %s",
 			    tmp_path, strerror(errno));
 			*err = kmDNSHelperRacoonConfigCreationFailed;
 			goto fin;
