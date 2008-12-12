@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.526  2008/12/12 00:51:14  cheshire
+Added structure definitions for IPv6Header, etc.
+
 Revision 1.525  2008/12/10 02:18:31  cheshire
 Increased MaxMsg to 160 for showing longer TXT records in SIGINFO output
 
@@ -1028,11 +1031,11 @@ typedef struct mDNSInterfaceID_dummystruct { void *dummy; } *mDNSInterfaceID;
 // less than, add, multiply, increment, decrement, etc., are undefined for opaque identifiers,
 // and if you make the mistake of trying to do those using the NotAnInteger field, then you'll
 // find you get code that doesn't work consistently on big-endian and little-endian machines.
-typedef union { mDNSu8 b[ 2]; mDNSu16 NotAnInteger; } mDNSOpaque16;
-typedef union { mDNSu8 b[ 4]; mDNSu32 NotAnInteger; } mDNSOpaque32;
-typedef union { mDNSu8 b[ 6]; mDNSu16 w[3]; mDNSu32 l[1]; } mDNSOpaque48;
-typedef union { mDNSu8 b[ 8]; mDNSu16 w[4]; mDNSu32 l[2]; } mDNSOpaque64;
-typedef union { mDNSu8 b[16]; mDNSu16 w[8]; mDNSu32 l[4]; } mDNSOpaque128;
+typedef       union { mDNSu8 b[ 2]; mDNSu16 NotAnInteger; } mDNSOpaque16;
+typedef       union { mDNSu8 b[ 4]; mDNSu32 NotAnInteger; } mDNSOpaque32;
+typedef packedunion { mDNSu8 b[ 6]; mDNSu16 w[3]; mDNSu32 l[1]; } mDNSOpaque48;
+typedef       union { mDNSu8 b[ 8]; mDNSu16 w[4]; mDNSu32 l[2]; } mDNSOpaque64;
+typedef       union { mDNSu8 b[16]; mDNSu16 w[8]; mDNSu32 l[4]; } mDNSOpaque128;
 
 typedef mDNSOpaque16  mDNSIPPort;		// An IP port is a two-byte opaque identifier (not an integer)
 typedef mDNSOpaque32  mDNSv4Addr;		// An IP address is a four-byte opaque identifier (not an integer)
@@ -1231,7 +1234,7 @@ typedef packedstruct
 	mDNSEthAddr  dst;
 	mDNSEthAddr  src;
 	mDNSOpaque16 ethertype;
-	} EthernetHeader;
+	} EthernetHeader;		// 14 bytes
 
 typedef packedstruct
 	{
@@ -1244,7 +1247,7 @@ typedef packedstruct
 	mDNSv4Addr   spa;
 	mDNSEthAddr  tha;
 	mDNSv4Addr   tpa;
-	} ARP_EthIP;
+	} ARP_EthIP;			// 28 bytes
 
 typedef packedstruct
 	{
@@ -1258,7 +1261,26 @@ typedef packedstruct
 	mDNSu16      checksum;
 	mDNSv4Addr   src;
 	mDNSv4Addr   dst;
-	} IPHeader;
+	} IPv4Header;			// 20 bytes
+
+typedef packedstruct
+	{
+	mDNSu32      vcf;		// Version, Traffic Class, Flow Label
+	mDNSu16      len;		// Payload Length
+	mDNSu8       protocol;	// Type of next header: 0x06 = TCP, 0x11 = UDP, 0x3A = ICMPv6
+	mDNSu8       ttl;		// Hop Limit
+	mDNSv6Addr   src;
+	mDNSv6Addr   dst;
+	} IPv6Header;			// 40 bytes
+
+typedef packedstruct
+	{
+	mDNSu8       type;		// 0x87 == Neighbor Solicitation, 0x88 == Neighbor Advertisement
+	mDNSu8       code;
+	mDNSu16      checksum;
+	mDNSu32      reserved;
+	mDNSv6Addr   target;
+	} IPv6ND;				// 24 bytes
 
 typedef packedstruct
 	{
@@ -1266,7 +1288,7 @@ typedef packedstruct
 	mDNSIPPort   dst;
 	mDNSu16      len; 
 	mDNSu16      checksum;
-	} UDPHeader;
+	} UDPHeader;			// 8 bytes
 
 typedef packedstruct
 	{
@@ -1279,7 +1301,7 @@ typedef packedstruct
 	mDNSu16      window;
 	mDNSu16      checksum;
 	mDNSu16      urgent;
-	} TCPHeader;
+	} TCPHeader;			// 20 bytes
 
 // ***************************************************************************
 #if 0
@@ -3016,7 +3038,8 @@ extern long       mDNSPlatformReadTCP(TCPSocket *sock, void *buf, unsigned long 
 extern long       mDNSPlatformWriteTCP(TCPSocket *sock, const char *msg, unsigned long len);
 extern UDPSocket *mDNSPlatformUDPSocket(mDNS *const m, const mDNSIPPort requestedport);
 extern void       mDNSPlatformUDPClose(UDPSocket *sock);
-extern void       mDNSPlatformSetBPF(mDNS *const m, int fd);
+extern void       mDNSPlatformReceiveBPF_fd(mDNS *const m, int fd);
+extern void       mDNSPlatformUpdateProxyList(mDNS *const m, const mDNSInterfaceID InterfaceID);
 extern void       mDNSPlatformSendRawPacket(const void *const msg, const mDNSu8 *const end, mDNSInterfaceID InterfaceID);
 extern void       mDNSPlatformSourceAddrForDest(mDNSAddr *const src, const mDNSAddr *const dst);
 
@@ -3138,6 +3161,13 @@ struct CompileTimeAssertionChecks_mDNS
 	char assertC[(sizeof(CacheRecord  )    >=  sizeof(CacheGroup)          ) ? 1 : -1];
 	char assertD[(sizeof(int)              >=  4                           ) ? 1 : -1];
 	char assertE[(StandardAuthRDSize       >=  256                         ) ? 1 : -1];
+	char assertF[(sizeof(EthernetHeader)   ==   14                         ) ? 1 : -1];
+	char assertG[(sizeof(ARP_EthIP     )   ==   28                         ) ? 1 : -1];
+	char assertH[(sizeof(IPv4Header    )   ==   20                         ) ? 1 : -1];
+	char assertI[(sizeof(IPv6Header    )   ==   40                         ) ? 1 : -1];
+	char assertJ[(sizeof(IPv6ND        )   ==   24                         ) ? 1 : -1];
+	char assertK[(sizeof(UDPHeader     )   ==    8                         ) ? 1 : -1];
+	char assertL[(sizeof(TCPHeader     )   ==   20                         ) ? 1 : -1];
 
 	// Check our structures are reasonable sizes. Including overly-large buffers, or embedding
 	// other overly-large structures instead of having a pointer to them, can inadvertently
