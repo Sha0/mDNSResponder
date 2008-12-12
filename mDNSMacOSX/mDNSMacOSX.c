@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.599  2008/12/12 04:36:26  cheshire
+Make sure we don't overflow our BPF filter buffer
+Only add addresses for records where the InterfaceID matches
+
 Revision 1.598  2008/12/12 00:57:51  cheshire
 Updated BPF filter generation to explicitly match addresses we're proxying for,
 rather than just matching any unknown IP address
@@ -2231,16 +2235,22 @@ mDNSexport void mDNSPlatformUpdateProxyList(mDNS *const m, const mDNSInterfaceID
 
 	AuthRecord *rr;
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
+		if (rr->resrec.InterfaceID == InterfaceID && rr->AddressProxy.type == mDNSAddrType_IPv4) numv4++;
+	for (rr = m->ResourceRecords; rr; rr=rr->next)
+		if (rr->resrec.InterfaceID == InterfaceID && rr->AddressProxy.type == mDNSAddrType_IPv6) numv6++;
+
+	if (numv4 + numv6 > MAX_BPF_ADDRS)
 		{
-		if      (rr->AddressProxy.type == mDNSAddrType_IPv4) numv4++;
-		else if (rr->AddressProxy.type == mDNSAddrType_IPv6) numv6++;
+		LogMsg("mDNSPlatformUpdateProxyList: ERROR Too many address proxy records v4 %d v6 %d", numv4, numv6);
+		if (numv4 > MAX_BPF_ADDRS) numv4 = MAX_BPF_ADDRS;
+		numv6 = MAX_BPF_ADDRS - numv4;
 		}
 
 	LogOperation("mDNSPlatformUpdateProxyList: fd %d %-7s MAC %.6a %d v4 %d v6", x->BPF_fd, x->ifinfo.ifname, &x->ifinfo.MAC, numv4, numv6);
 
 	// Caution: This is a static structure, so we need to be careful that any modifications we make to it
 	// are done in such a way that they work correctly when mDNSPlatformUpdateProxyList is called multiple times
-	static struct bpf_insn filter[15 + MAX_BPF_ADDRS] =
+	static struct bpf_insn filter[17 + MAX_BPF_ADDRS] =
 		{
 		BPF_STMT(BPF_LD  + BPF_H   + BPF_ABS, 12),				// 0 Read Ethertype (bytes 12,13)
 
@@ -2291,7 +2301,7 @@ mDNSexport void mDNSPlatformUpdateProxyList(mDNS *const m, const mDNSInterfaceID
 	// swap any of the numeric values that *should* be byte-swapped, then the filter will work correctly.
 
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
-		if (rr->AddressProxy.type == mDNSAddrType_IPv4)
+		if (rr->resrec.InterfaceID == InterfaceID && rr->AddressProxy.type == mDNSAddrType_IPv4)
 			{
 			mDNSv4Addr a = rr->AddressProxy.ip.v4;
 			pc->code = BPF_JMP + BPF_JEQ + BPF_K;
@@ -2301,12 +2311,12 @@ mDNSexport void mDNSPlatformUpdateProxyList(mDNS *const m, const mDNSInterfaceID
 			pc++;
 			}
 	*pc++ = rf;
-	
+
 	if (pc != chk6) LogMsg("mDNSPlatformUpdateProxyList: pc %p != chk6 %p", pc, chk6);
 	*pc++ = g6;	// chk6 points here
-	
+
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
-		if (rr->AddressProxy.type == mDNSAddrType_IPv6)
+		if (rr->resrec.InterfaceID == InterfaceID && rr->AddressProxy.type == mDNSAddrType_IPv6)
 			{
 			mDNSv6Addr a = rr->AddressProxy.ip.v6;
 			pc->code = BPF_JMP + BPF_JEQ + BPF_K;
