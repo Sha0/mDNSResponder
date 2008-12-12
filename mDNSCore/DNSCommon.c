@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.231  2008/12/12 01:24:06  cheshire
+Updated GetNextScheduledEvent() to pay attention to m->SPSProxyListChanged
+
 Revision 1.230  2008/12/10 01:55:54  cheshire
 Renamed "Max" macro to avoid conflict with another "Max" macro on ARMv5
 
@@ -2828,6 +2831,7 @@ mDNSlocal mDNSs32 GetNextScheduledEvent(const mDNS *const m)
 		}
 	if (m->NewLocalOnlyQuestions)                                   return(m->timenow);
 	if (m->NewLocalRecords && LocalRecordReady(m->NewLocalRecords)) return(m->timenow);
+	if (m->SPSProxyListChanged)                                     return(m->timenow);
 #ifndef UNICAST_DISABLED
 	if (e - m->NextuDNSEvent         > 0) e = m->NextuDNSEvent;
 	if (e - m->NextScheduledNATOp    > 0) e = m->NextScheduledNATOp;
