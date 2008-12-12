@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.420  2008/12/12 00:52:05  cheshire
+mDNSPlatformSetBPF is now called mDNSPlatformReceiveBPF_fd
+
 Revision 1.419  2008/12/10 02:11:44  cheshire
 ARMv5 compiler doesn't like uncommented stuff after #endif
 
@@ -3354,7 +3357,7 @@ mDNSlocal void read_msg(request_state *req)
 				{
 				dnssd_sock_t x = *(dnssd_sock_t *)CMSG_DATA(cmsg);
 				LogOperation("%3d: Got BPF %d", req->sd, x);
-				mDNSPlatformSetBPF(&mDNSStorage, x);
+				mDNSPlatformReceiveBPF_fd(&mDNSStorage, x);
 				}
 			else
 #endif // APPLE_OSX_mDNSResponder
