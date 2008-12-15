@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.601  2008/12/15 19:51:56  mcguire
+<rdar://problem/6443067> Retry UDP socket creation only when randomizing ports
+
 Revision 1.600  2008/12/12 21:30:14  cheshire
 Additional defensive coding -- make sure InterfaceID is found in our list before using it
 
@@ -2077,9 +2080,10 @@ mDNSlocal mStatus SetupSocket(KQSocketSet *cp, const mDNSIPPort port, u_short sa
 
 mDNSexport UDPSocket *mDNSPlatformUDPSocket(mDNS *const m, const mDNSIPPort requestedport)
 	{
-	int i;
 	mStatus err;
 	mDNSIPPort port = requestedport;
+	mDNSBool randomizePort = mDNSIPPortIsZero(requestedport);
+	int i = 10000; // Try at most 10000 times to get a unique random port
 	UDPSocket *p = mallocL("UDPSocket", sizeof(UDPSocket));
 	if (!p) { LogMsg("mDNSPlatformUDPSocket: memory exhausted"); return(mDNSNULL); }
 	memset(p, 0, sizeof(UDPSocket));
@@ -2088,18 +2092,19 @@ mDNSexport UDPSocket *mDNSPlatformUDPSocket(mDNS *const m, const mDNSIPPort requ
 	p->ss.sktv4 = -1;
 	p->ss.sktv6 = -1;
 
-	for (i=0; i<10000; i++)	// Try at most 10000 times to get a unique random port
+	do
 		{
 		// The kernel doesn't do cryptographically strong random port allocation, so we do it ourselves here
-		if (mDNSIPPortIsZero(requestedport)) port = mDNSOpaque16fromIntVal(0xC000 + mDNSRandom(0x3FFF));
+		if (randomizePort) port = mDNSOpaque16fromIntVal(0xC000 + mDNSRandom(0x3FFF));
 		err = SetupSocket(&p->ss, port, AF_INET, &p->ss.port);
 		if (!err)
 			{
 			err = SetupSocket(&p->ss, port, AF_INET6, &p->ss.port);
 			if (err) { close(p->ss.sktv4); p->ss.sktv4 = -1; }
 			}
-		if (!err) break;
-		}
+		i--;
+		} while (err && randomizePort && i);
+
 	if (err)
 		{
 		// In customer builds we don't want to log failures with port 5351, because this is a known issue
