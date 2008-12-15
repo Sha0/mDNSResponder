@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.50  2008/12/15 18:40:41  mcguire
+<rdar://problem/6444440> Socket leak in helper's doTunnelPolicy
+
 Revision 1.49  2008/12/12 00:37:42  mcguire
 <rdar://problem/6417648> BTMM outbound fails if /var/run/racoon doesn't exist
 
@@ -2177,8 +2180,8 @@ doTunnelPolicy(mDNSTunnelPolicyWhich which,
 	debug("succeeded");
 
 fin:
-	if (0 >= s)
-		close(s);
+	if (s >= 0)
+		pfkey_close(s);
 	if (NULL != policy)
 		free(policy);
 	return err;
