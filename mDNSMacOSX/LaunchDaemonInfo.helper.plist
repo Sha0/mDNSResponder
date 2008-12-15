@@ -15,7 +15,5 @@
     <key>com.apple.mDNSResponderHelper</key>
     <true/>
   </dict>
-  <key>ServiceIPC</key>
-  <true/>
 </dict>
 </plist>
