@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.93  2008/12/17 05:06:53  cheshire
+Increased maximum DNS Update lifetime from 20 minutes to 2 hours -- now that we have Sleep Proxy,
+having clients wake every fifteen minutes to renew their record registrations is no longer reasonable.
+
 Revision 1.92  2008/11/13 19:09:36  cheshire
 Updated rdataOPT code
 
@@ -1682,8 +1686,8 @@ HandleRequest
 			InitializeDNSMessage(&reply->msg.h, request->msg.h.id, UpdateRefused);
 			return(reply);
 			}
-		if (lease > 1200)	// Don't allow lease greater than 20 minutes
-			lease = 1200;
+		if (lease > 7200)	// Don't allow lease greater than two hours; typically 90-minute renewal period
+			lease = 7200;
 		}
 	// Send msg to server, read reply
 
