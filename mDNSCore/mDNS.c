@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.873  2008/12/17 00:18:59  mkrochma
+Change some LogMsg to LogOperation before submitting
+
 Revision 1.872  2008/12/12 01:30:40  cheshire
 Update platform-layer BPF filters when we add or remove AddressProxy records
 
@@ -8099,7 +8102,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 			switch (v4->protocol)
 				{
 				#define XX wake ? "Received" : "Ignoring", end-p
-				case  1:	LogMsg("%s %d-byte ICMP from %.4a to %.4a", XX, &v4->src, &v4->dst);
+				case  1:	LogOperation("%s %d-byte ICMP from %.4a to %.4a", XX, &v4->src, &v4->dst);
 							break;
 
 				case  6:	{
@@ -8115,7 +8118,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 							if (!mDNSSameIPPort(tcp->dst, SSH) && !(tcp->flags & 2)) wake = mDNSfalse;
 
 							port = tcp->dst;
-							LogMsg("%s %d-byte TCP from %.4a:%d to %.4a:%d%s%s%s", XX,
+							LogOperation("%s %d-byte TCP from %.4a:%d to %.4a:%d%s%s%s", XX,
 								&v4->src, mDNSVal16(tcp->src), &v4->dst, mDNSVal16(tcp->dst),
 								(tcp->flags & 2) ? " SYN" : "",
 								(tcp->flags & 1) ? " FIN" : "",
@@ -8130,11 +8133,11 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 							// For Back to My Mac UDP port 4500 (IPSEC) packets, we specially ignore NAT keepalive packets
 							if (mDNSSameIPPort(udp->dst, IPSEC)) wake = (len != 9 || end < trans + 9 || trans[8] != 0xFF);
 							port = udp->dst;
-							LogMsg("%s %d-byte UDP from %.4a:%d to %.4a:%d", XX, &v4->src, mDNSVal16(udp->src), &v4->dst, mDNSVal16(udp->dst));
+							LogOperation("%s %d-byte UDP from %.4a:%d to %.4a:%d", XX, &v4->src, mDNSVal16(udp->src), &v4->dst, mDNSVal16(udp->dst));
 							}
 							break;
 
-				default:	LogMsg("%s %d-byte IP packet unknown protocol %d from %.4a to %.4a", XX, v4->protocol, &v4->src, &v4->dst);
+				default:	LogOperation("%s %d-byte IP packet unknown protocol %d from %.4a to %.4a", XX, v4->protocol, &v4->src, &v4->dst);
 							break;
 				}
 	
