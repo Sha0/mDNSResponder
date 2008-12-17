@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.421  2008/12/17 05:05:26  cheshire
+Fixed alignment of NAT mapping syslog messages
+
 Revision 1.420  2008/12/12 00:52:05  cheshire
 mDNSPlatformSetBPF is now called mDNSPlatformReceiveBPF_fd
 
@@ -3967,14 +3970,14 @@ mDNSexport void udsserver_info(mDNS *const m)
 		for (nat = m->NATTraversals; nat; nat=nat->next)
 			{
 			if (nat->Protocol)
-				LogMsgNoIdent("%p %s Int %5d Ext %5d Err %d Retry %d Interval %d Expire %d",
+				LogMsgNoIdent("%p %s Int %5d Ext %5d Err %d Retry %5d Interval %5d Expire %5d",
 					nat, nat->Protocol == NATOp_MapTCP ? "TCP" : "UDP",
 					mDNSVal16(nat->IntPort), mDNSVal16(nat->ExternalPort), nat->Result,
 					nat->retryPortMap ? (nat->retryPortMap - now) / mDNSPlatformOneSecond : 0,
 					nat->retryInterval / mDNSPlatformOneSecond,
 					nat->ExpiryTime ? (nat->ExpiryTime - now) / mDNSPlatformOneSecond : 0);
 			else
-				LogMsgNoIdent("%p Address Request               Retry %d Interval %d", nat,
+				LogMsgNoIdent("%p Address Request               Retry %5d Interval %5d", nat,
 					(m->retryGetAddr - now) / mDNSPlatformOneSecond,
 					m->retryIntervalGetAddr / mDNSPlatformOneSecond);
 			}

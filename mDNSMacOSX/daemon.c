@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.401  2008/12/17 05:05:26  cheshire
+Fixed alignment of NAT mapping syslog messages
+
 Revision 1.400  2008/12/10 19:30:57  cheshire
 Use symbolic name OSXVers_10_3_Panther in version check instead of literal integer "7"
 
@@ -2591,7 +2594,7 @@ mDNSlocal mDNSs32 ComputeWakeTime(mDNS *const m, mDNSs32 now)
 			{
 			mDNSs32 t = nat->ExpiryTime - (nat->ExpiryTime - now) / 4;
 			if (e - t > 0) e = t;
-			LogOperation("ComputeWakeTime: %p %s Int %5d Ext %5d Err %d Retry %d Interval %d Expire %d Wake %d",
+			LogOperation("ComputeWakeTime: %p %s Int %5d Ext %5d Err %d Retry %5d Interval %5d Expire %5d Wake %5d",
 				nat, nat->Protocol == NATOp_MapTCP ? "TCP" : "UDP",
 				mDNSVal16(nat->IntPort), mDNSVal16(nat->ExternalPort), nat->Result,
 				nat->retryPortMap ? (nat->retryPortMap - now) / mDNSPlatformOneSecond : 0,
