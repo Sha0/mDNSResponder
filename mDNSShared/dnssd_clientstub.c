@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.115  2008/12/18 00:19:11  mcguire
+<rdar://problem/6452199> Stuck in "Examining available disks"
+
 Revision 1.114  2008/12/10 02:11:43  cheshire
 ARMv5 compiler doesn't like uncommented stuff after #endif
 
@@ -544,12 +547,11 @@ static DNSServiceErrorType ConnectToServer(DNSServiceRef *ref, DNSServiceFlags f
 		DNSServiceOp **p = &(*ref)->next;		// Append ourselves to end of primary's list
 		while (*p) p = &(*p)->next;
 		*p = sdr;
-		// Preincrement counter before we use it -- it helps with debugging if we know the all-zeroes ID should never appear
-		if (++(*ref)->uid.u32[0] == 0) ++(*ref)->uid.u32[1];	// In parent DNSServiceOp increment UID counter
 		sdr->primary    = *ref;					// Set our primary pointer
 		sdr->sockfd     = (*ref)->sockfd;		// Inherit primary's socket
 		sdr->validator  = (*ref)->validator;
 		sdr->uid        = (*ref)->uid;
+		if (++(*ref)->uid.u32[0] == 0) ++(*ref)->uid.u32[1];	// In parent DNSServiceOp increment UID counter
 		//printf("ConnectToServer sharing socket %d\n", sdr->sockfd);
 		}
 	else
