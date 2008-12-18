@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.595  2008/12/18 23:32:19  mcguire
+<rdar://problem/6019470> BTMM: Include the question in the LLQ notification acknowledgment
+
 Revision 1.594  2008/12/10 02:25:31  cheshire
 Minor fixes to use of LogAllOperations symbol
 
@@ -1870,18 +1873,16 @@ mDNSlocal void StartLLQPolling(mDNS *const m, DNSQuestion *q)
 #endif
 	}
 
-mDNSlocal mDNSu8 *putLLQ(DNSMessage *const msg, mDNSu8 *ptr, const DNSQuestion *const question, const LLQOptData *const data, mDNSBool includeQuestion)
+mDNSlocal mDNSu8 *putLLQ(DNSMessage *const msg, mDNSu8 *ptr, const DNSQuestion *const question, const LLQOptData *const data)
 	{
 	AuthRecord rr;
 	ResourceRecord *opt = &rr.resrec;
 	rdataOPT *optRD;
 
 	//!!!KRS when we implement multiple llqs per message, we'll need to memmove anything past the question section
-	if (includeQuestion)
-		{
-		ptr = putQuestion(msg, ptr, msg->data + AbsoluteMaxDNSMessageData, &question->qname, question->qtype, question->qclass);
-		if (!ptr) { LogMsg("ERROR: putLLQ - putQuestion"); return mDNSNULL; }
-		}
+	ptr = putQuestion(msg, ptr, msg->data + AbsoluteMaxDNSMessageData, &question->qname, question->qtype, question->qclass);
+	if (!ptr) { LogMsg("ERROR: putLLQ - putQuestion"); return mDNSNULL; }
+
 	// locate OptRR if it exists, set pointer to end
 	// !!!KRS implement me
 
@@ -1948,8 +1949,7 @@ mDNSlocal void sendChallengeResponse(mDNS *const m, DNSQuestion *const q, const 
 	//if (q->ntries == 1) return;
 
 	InitializeDNSMessage(&m->omsg.h, q->TargetQID, uQueryFlags);
-	responsePtr = putQuestion(&m->omsg, responsePtr, m->omsg.data + AbsoluteMaxDNSMessageData, &q->qname, q->qtype, q->qclass);
-	if (responsePtr) responsePtr = putLLQ(&m->omsg, responsePtr, q, llq, mDNSfalse);
+	responsePtr = putLLQ(&m->omsg, responsePtr, q, llq);
 	if (responsePtr)
 		{
 		mStatus err = mDNSSendDNSMessage(m, &m->omsg, responsePtr, mDNSInterface_Any, q->LocalSocket, &q->servAddr, q->servPort, q->tcp ? q->tcp->sock : mDNSNULL, q->AuthInfo);
@@ -2061,7 +2061,7 @@ mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *co
 					mDNSu8 *ackEnd;
 					//debugf("Sending LLQ ack for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 					InitializeDNSMessage(&m->omsg.h, msg->h.id, ResponseFlags);
-					ackEnd = putLLQ(&m->omsg, m->omsg.data, mDNSNULL, &opt->u.llq, mDNSfalse);
+					ackEnd = putLLQ(&m->omsg, m->omsg.data, q, &opt->u.llq);
 					if (ackEnd) mDNSSendDNSMessage(m, &m->omsg, ackEnd, mDNSInterface_Any, q->LocalSocket, srcaddr, srcport, mDNSNULL, mDNSNULL);
 					m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 					debugf("uDNS_LLQ_Events: q->state == LLQ_Established msg->h.id %d q->TargetQID %d", mDNSVal16(msg->h.id), mDNSVal16(q->TargetQID));
@@ -2163,7 +2163,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			llqData.id    = zeroOpaque64;
 			llqData.llqlease = kLLQ_DefLease;
 			InitializeDNSMessage(&tcpInfo->request.h, q->TargetQID, uQueryFlags);
-			end = putLLQ(&tcpInfo->request, tcpInfo->request.data, q, &llqData, mDNStrue);
+			end = putLLQ(&tcpInfo->request, tcpInfo->request.data, q, &llqData);
 			if (!end) { LogMsg("ERROR: tcpCallback - putLLQ"); err = mStatus_UnknownErr; goto exit; }
 			AuthInfo = q->AuthInfo;		// Need to add TSIG to this message
 			}
@@ -2420,7 +2420,7 @@ mDNSexport void startLLQHandshake(mDNS *m, DNSQuestion *q)
 			llqData.llqlease = kLLQ_DefLease;
 	
 			InitializeDNSMessage(&m->omsg.h, q->TargetQID, uQueryFlags);
-			end = putLLQ(&m->omsg, m->omsg.data, q, &llqData, mDNStrue);
+			end = putLLQ(&m->omsg, m->omsg.data, q, &llqData);
 			if (!end) { LogMsg("ERROR: startLLQHandshake - putLLQ"); StartLLQPolling(m,q); return; }
 	
 			mDNSSendDNSMessage(m, &m->omsg, end, mDNSInterface_Any, q->LocalSocket, &q->servAddr, q->servPort, mDNSNULL, mDNSNULL);
@@ -4190,7 +4190,7 @@ mDNSexport void sendLLQRefresh(mDNS *m, DNSQuestion *q)
 	llq.llqlease = q->ReqLease;
 
 	InitializeDNSMessage(&m->omsg.h, q->TargetQID, uQueryFlags);
-	end = putLLQ(&m->omsg, m->omsg.data, q, &llq, mDNStrue);
+	end = putLLQ(&m->omsg, m->omsg.data, q, &llq);
 	if (!end) { LogMsg("sendLLQRefresh: putLLQ failed %##s (%s)", q->qname.c, DNSTypeName(q->qtype)); return; }
 
 	// Note that we (conditionally) add HINFO and TSIG here, since the question might be going away,
