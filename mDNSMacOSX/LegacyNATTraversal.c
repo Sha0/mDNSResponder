@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.57  2008/12/19 21:09:22  mcguire
+<rdar://problem/6431147> UPnP: error messages when canceling seemingly unrelated browse
+
 Revision 1.56  2008/12/06 01:42:57  mcguire
 <rdar://problem/6418958> Need to exponentially back-off after failure to get public address
 
@@ -645,8 +648,8 @@ mDNSlocal mStatus SendSOAPMsgControlAction(mDNS *m, tcpLNTInfo *info, char *Acti
 	char   *body = (char *)&m->omsg;			// Typically requires 1110-1122 bytes; m->omsg is 8952 bytes, which is plenty
 	int     bodyLen;
 
-	if (m->UPnPSOAPURL == mDNSNULL || m->UPnPSOAPAddressString == mDNSNULL)	// if no SOAP URL or address exists get out here
-		{ LogOperation("SendSOAPMsgControlAction: no SOAP URL or address string"); return mStatus_Invalid; }
+	if (mDNSIPPortIsZero(m->UPnPSOAPPort) || m->UPnPSOAPURL == mDNSNULL || m->UPnPSOAPAddressString == mDNSNULL)	// if no SOAP URL or address exists get out here
+		{ LogOperation("SendSOAPMsgControlAction: no SOAP port, URL or address string"); return mStatus_Invalid; }
 
 	// Create body
 	bodyLen  = mDNS_snprintf   (body,           sizeof(m->omsg),           body1,   Action,   m->UPnPWANPPPConnection ? "PPP" : "IP");
@@ -762,7 +765,7 @@ mDNSexport mStatus LNT_UnmapPort(mDNS *m, NATTraversalInfo *n)
 	mStatus     err;
 
 	// If no NAT gateway to talk to, no need to do all this work for nothing
-	if (!m->UPnPSOAPURL || !m->UPnPSOAPAddressString) return mStatus_NoError;
+	if (mDNSIPPortIsZero(m->UPnPSOAPPort) || !m->UPnPSOAPURL || !m->UPnPSOAPAddressString) return mStatus_NoError;
 
 	mDNS_snprintf(externalPort, sizeof(externalPort), "%u", mDNSVal16(mDNSIPPortIsZero(n->RequestedPort) ? n->IntPort : n->RequestedPort));
 
