@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.602  2008/12/19 20:23:34  mcguire
+<rdar://problem/6459269> Lots of duplicate log messages about failure to bind to NAT-PMP Announcement port
+
 Revision 1.601  2008/12/15 19:51:56  mcguire
 <rdar://problem/6443067> Retry UDP socket creation only when randomizing ports
 
@@ -2109,7 +2112,9 @@ mDNSexport UDPSocket *mDNSPlatformUDPSocket(mDNS *const m, const mDNSIPPort requ
 		{
 		// In customer builds we don't want to log failures with port 5351, because this is a known issue
 		// of failing to bind to this port when Internet Sharing has already bound to it
-		if (mDNSSameIPPort(requestedport, NATPMPPort))
+		// We also don't want to log about port 5350, due to a known bug when some other
+		// process is bound to it.
+		if (mDNSSameIPPort(requestedport, NATPMPPort) || mDNSSameIPPort(requestedport, NATPMPAnnouncementPort))
 			LogOperation("mDNSPlatformUDPSocket: SetupSocket %d failed error %ld errno %d (%s)", mDNSVal16(requestedport), err, errno, strerror(errno));
 		else LogMsg     ("mDNSPlatformUDPSocket: SetupSocket %d failed error %ld errno %d (%s)", mDNSVal16(requestedport), err, errno, strerror(errno));
 		freeL("UDPSocket", p);

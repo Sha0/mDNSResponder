@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.596  2008/12/19 20:23:33  mcguire
+<rdar://problem/6459269> Lots of duplicate log messages about failure to bind to NAT-PMP Announcement port
+
 Revision 1.595  2008/12/18 23:32:19  mcguire
 <rdar://problem/6019470> BTMM: Include the question in the LLQ notification acknowledgment
 
@@ -4727,8 +4730,19 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 		{
 		if (m->NATMcastRecvskt == mDNSNULL)		// If we are behind a NAT and the socket hasn't been opened yet, open it
 			{
+			// we need to log a message if we can't get our socket, but only the first time (after success)
+			static mDNSBool needLog = mDNStrue;
 			m->NATMcastRecvskt = mDNSPlatformUDPSocket(m, NATPMPAnnouncementPort);
-			if (!m->NATMcastRecvskt) LogMsg("CheckNATMappings: Failed to allocate port 5350 UDP multicast socket for NAT-PMP announcements");
+			if (!m->NATMcastRecvskt)
+				{
+				if (needLog)
+					{
+					LogMsg("CheckNATMappings: Failed to allocate port 5350 UDP multicast socket for NAT-PMP announcements");
+					needLog = mDNSfalse;
+					}
+				}
+			else
+				needLog = mDNStrue;				
 			}
 		}
 	else										// else, we don't want to listen for announcements, so close them if they're open
