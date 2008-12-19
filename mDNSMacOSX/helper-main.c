@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper-main.c,v $
+Revision 1.22  2008/12/19 01:56:47  mcguire
+<rdar://problem/6181947> crashes in mDNSResponderHelper
+
 Revision 1.21  2008/09/15 23:52:30  cheshire
 <rdar://problem/6218902> mDNSResponder-177 fails to compile on Linux with .desc pseudo-op
 Made __crashreporter_info__ symbol conditional, so we only use it for OS X build
@@ -229,7 +232,7 @@ static void *idletimer(void *context)
 	return NULL;
 	}
 
-static void initialize_timer()
+static int initialize_timer()
 	{
 	gTimer = CFRunLoopTimerCreate(kCFAllocatorDefault, CFAbsoluteTimeGetCurrent() + actualidle, actualidle, 0, 0, diediedie, NULL);
 	int err = 0;
@@ -237,6 +240,8 @@ static void initialize_timer()
 	debug("entry");
 	if (0 != (err = pthread_create(&idletimer_thread, NULL, idletimer, NULL)))
 		helplog(ASL_LEVEL_ERR, "Could not start idletimer thread: %s", strerror(err));
+
+	return err;
 	}
 
 static mach_port_t checkin(char *service_name)
@@ -339,9 +344,16 @@ int main(int ac, char *av[])
 		}
 
 	if (maxidle) actualidle = maxidle;
-	initialize_timer();
 
 	signal(SIGTERM, handle_sigterm);
+
+	if (initialize_timer()) exit(EXIT_FAILURE);
+	for (n=0; n<100000; n++) if (!gRunLoop) usleep(100);
+	if (!gRunLoop)
+		{
+		helplog(ASL_LEVEL_ERR, "gRunLoop not set after waiting");
+		exit(EXIT_FAILURE);
+		}
 
 	kr = mach_msg_server(helper_server, MAX_MSG_SIZE, gPort,
 		MACH_RCV_TRAILER_ELEMENTS(MACH_RCV_TRAILER_AUDIT) | MACH_RCV_TRAILER_TYPE(MACH_MSG_TRAILER_FORMAT_0));
