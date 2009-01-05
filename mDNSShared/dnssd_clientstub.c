@@ -28,6 +28,11 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.116  2009/01/05 16:55:24  cheshire
+<rdar://problem/6452199> Stuck in "Examining available disks"
+ConnectionResponse handler was accidentally matching the parent DNSServiceRef before
+finding the appropriate subordinate DNSServiceRef for the operation in question.
+
 Revision 1.115  2008/12/18 00:19:11  mcguire
 <rdar://problem/6452199> Stuck in "Examining available disks"
 
@@ -547,11 +552,12 @@ static DNSServiceErrorType ConnectToServer(DNSServiceRef *ref, DNSServiceFlags f
 		DNSServiceOp **p = &(*ref)->next;		// Append ourselves to end of primary's list
 		while (*p) p = &(*p)->next;
 		*p = sdr;
+		// Preincrement counter before we use it -- it helps with debugging if we know the all-zeroes ID should never appear
+		if (++(*ref)->uid.u32[0] == 0) ++(*ref)->uid.u32[1];	// In parent DNSServiceOp increment UID counter
 		sdr->primary    = *ref;					// Set our primary pointer
 		sdr->sockfd     = (*ref)->sockfd;		// Inherit primary's socket
 		sdr->validator  = (*ref)->validator;
 		sdr->uid        = (*ref)->uid;
-		if (++(*ref)->uid.u32[0] == 0) ++(*ref)->uid.u32[1];	// In parent DNSServiceOp increment UID counter
 		//printf("ConnectToServer sharing socket %d\n", sdr->sockfd);
 		}
 	else
@@ -1427,7 +1433,7 @@ DNSServiceErrorType DNSSD_API DNSServiceEnumerateDomains
 	return err;
 	}
 
-static void ConnectionResponse(DNSServiceOp *sdr, CallbackHeader *cbh, char *data, char *end)
+static void ConnectionResponse(DNSServiceOp *const sdr, CallbackHeader *const cbh, char *const data, char *const end)
 	{
 	DNSRecordRef rref = cbh->ipc_hdr.client_context.context;
 	(void)data; // Unused
@@ -1436,13 +1442,15 @@ static void ConnectionResponse(DNSServiceOp *sdr, CallbackHeader *cbh, char *dat
 	if (cbh->ipc_hdr.op != reg_record_reply_op)
 		{
 		// When using kDNSServiceFlagsShareConnection, need to search the list of associated DNSServiceOps
-		// to find the one this response is intended for, and then call through to its ProcessReply handler
-		while (sdr && (sdr->uid.u32[0] != cbh->ipc_hdr.client_context.u32[0] || sdr->uid.u32[1] != cbh->ipc_hdr.client_context.u32[1]))
-			sdr = sdr->next;
+		// to find the one this response is intended for, and then call through to its ProcessReply handler.
+		// We start with our first subordinate DNSServiceRef -- don't want to accidentally match the parent DNSServiceRef.
+		DNSServiceOp *op = sdr->next;
+		while (op && (op->uid.u32[0] != cbh->ipc_hdr.client_context.u32[0] || op->uid.u32[1] != cbh->ipc_hdr.client_context.u32[1]))
+			op = op->next;
 		// Note: We may sometimes not find a matching DNSServiceOp, in the case where the client has
 		// cancelled the subordinate DNSServiceOp, but there are still messages in the pipeline from the daemon
-		if (sdr && sdr->ProcessReply) sdr->ProcessReply(sdr, cbh, data, end);
-		// WARNING: Don't touch sdr after this -- client may have called DNSServiceRefDeallocate
+		if (op && op->ProcessReply) op->ProcessReply(op, cbh, data, end);
+		// WARNING: Don't touch op or sdr after this -- client may have called DNSServiceRefDeallocate
 		return;
 		}
 
@@ -1450,7 +1458,7 @@ static void ConnectionResponse(DNSServiceOp *sdr, CallbackHeader *cbh, char *dat
 		rref->AppCallback(rref->sdr, rref, cbh->cb_flags, cbh->cb_err, rref->AppContext);
 	else
 		{
-		syslog(LOG_WARNING, "dnssd_clientstub handle_regrecord_response: sdr->op != connection_request");
+		syslog(LOG_WARNING, "dnssd_clientstub ConnectionResponse: sdr->op != connection_request");
 		rref->AppCallback(rref->sdr, rref, 0, kDNSServiceErr_Unknown, rref->AppContext);
 		}
 	// MUST NOT touch sdr after invoking AppCallback -- client is allowed to dispose it from within callback function
