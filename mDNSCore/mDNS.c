@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.874  2009/01/07 23:07:24  cheshire
+<rdar://problem/6479416> SPS Client not canceling outstanding resolve call before sleeping
+
 Revision 1.873  2008/12/17 00:18:59  mkrochma
 Change some LogMsg to LogOperation before submitting
 
@@ -4389,6 +4392,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 					LogOperation("mDNSCoreMachineSleep: %s TTL %d %s", intf->ifname, cr->resrec.rroriginalttl, CRDisplayString(m, cr));
 					m->SleepState = SleepState_Transferring;
 					intf->SPSAddr.type = mDNSAddrType_None;
+					if (intf->NetWakeResolve.ThisQInterval >= 0) mDNS_StopQuery(m, &intf->NetWakeResolve);
 					mDNS_SetupQuestion(&intf->NetWakeResolve, intf->InterfaceID, &cr->resrec.rdata->u.name, kDNSType_SRV, NetWakeResolve, intf);
 					mDNS_StartQuery_internal(m, &intf->NetWakeResolve);
 					}
@@ -4414,7 +4418,9 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 					rr->ImmedAnswer = mDNSInterfaceMark;
 			SendResponses(m);
 			}
-		LogOperation("m->SleepState %d seq %d", m->SleepState, m->SleepSeqNum);
+		LogOperation("m->SleepState %d %s seq %d", m->SleepState,
+			m->SleepState == SleepState_Transferring ? "(Transferring)" : 
+			m->SleepState == SleepState_Sleeping     ? "(Sleeping)" : "(?)", m->SleepSeqNum);
 		}
 	else if (!sleep)
 		{
@@ -7264,6 +7270,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	set->InterfaceActive = mDNStrue;
 	set->IPv4Available   = (set->ip.type == mDNSAddrType_IPv4 && set->McastTxRx);
 	set->IPv6Available   = (set->ip.type == mDNSAddrType_IPv6 && set->McastTxRx);
+	set->NetWakeBrowse .ThisQInterval = -1;
 	set->NetWakeResolve.ThisQInterval = -1;
 
 	// Scan list to see if this InterfaceID is already represented
@@ -7398,8 +7405,8 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 	while (*p && *p != set) p=&(*p)->next;
 	if (!*p) { debugf("mDNS_DeregisterInterface: NetworkInterfaceInfo not found in list"); mDNS_Unlock(m); return; }
 
-	if (set->InterfaceActive && set->NetWake)
-		mDNS_StopQuery_internal(m, &set->NetWakeBrowse);
+	if (set->NetWakeBrowse. ThisQInterval >= 0) mDNS_StopQuery_internal(m, &set->NetWakeBrowse);
+	if (set->NetWakeResolve.ThisQInterval >= 0) mDNS_StopQuery_internal(m, &set->NetWakeResolve);
 
 	// Unlink this record from our list
 	*p = (*p)->next;
