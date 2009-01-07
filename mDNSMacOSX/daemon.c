@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.402  2009/01/07 23:08:18  cheshire
+Updated debugging messages and comments
+
 Revision 1.401  2008/12/17 05:05:26  cheshire
 Fixed alignment of NAT mapping syslog messages
 
@@ -2475,7 +2478,7 @@ mDNSlocal mDNSBool ReadyForSleep(mDNS *m)
 		{
 		if (intf->NetWake && intf->NetWakeResolve.ThisQInterval >= 0)
 			{
-			LogOperation("ReadyForSleep waiting for %##s (%s)", intf->NetWakeResolve.qname.c, DNSTypeName(intf->NetWakeResolve.qtype));
+			LogOperation("ReadyForSleep waiting for SPS Resolve %s %##s (%s)", intf->ifname, intf->NetWakeResolve.qname.c, DNSTypeName(intf->NetWakeResolve.qtype));
 			return(mDNSfalse);
 			}
 		intf = GetFirstActiveInterface(intf->next);
@@ -2491,7 +2494,7 @@ mDNSlocal mDNSBool ReadyForSleep(mDNS *m)
 			}
 		else
 			{
-			if (!mDNSOpaque16IsZero(rr->updateid)) LogOperation("ReadyForSleep waiting for ID %d %s", mDNSVal16(rr->updateid), ARDisplayString(m,rr));
+			if (!mDNSOpaque16IsZero(rr->updateid)) LogOperation("ReadyForSleep waiting for SPS Update ID %d %s", mDNSVal16(rr->updateid), ARDisplayString(m,rr));
 			if (!mDNSOpaque16IsZero(rr->updateid)) return(mDNSfalse);
 			}
 		}
@@ -2741,8 +2744,10 @@ mDNSlocal void * KQueueLoop(void *m_param)
 					m->p->WakeAtUTC = mDNSPlatformUTC() + interval / mDNSPlatformOneSecond;
 					}
 
+				// Clear our interface list to empty state, ready to go to sleep
+				// As a side effect of doing this, we'll also cancel any outstanding SPS Resolve calls that didn't complete
 				m->SleepState = SleepState_Sleeping;
-				mDNSMacOSXNetworkChanged(m);	// Clear our interface list to empty state, ready to go to sleep
+				mDNSMacOSXNetworkChanged(m);
 
 				LogOperation("%s(%lX) %s at %ld (%d ticks remaining)",
 					(result == kIOReturnSuccess) ? "IOAllowPowerChange" : "IOCancelPowerChange",
