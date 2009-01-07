@@ -30,6 +30,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.107  2009/01/07 08:25:03  mkrochma
+Added skeleton definition of mDNSPlatformUpdateProxyList
+
 Revision 1.106  2008/10/22 17:19:57  cheshire
 Don't need to define BPF_fd any more (it's now per-interface, not global)
 
@@ -488,6 +491,12 @@ mDNSexport UDPSocket *mDNSPlatformUDPSocket(mDNS * const m, mDNSIPPort port)
 mDNSexport void           mDNSPlatformUDPClose(UDPSocket *sock)
 	{
 	(void)sock;			// Unused
+	}
+	
+mDNSexport void mDNSPlatformUpdateProxyList(mDNS *const m, const mDNSInterfaceID InterfaceID)
+	{
+	(void)m;			// Unused
+	(void)InterfaceID;			// Unused
 	}
 
 mDNSexport void mDNSPlatformSendRawPacket(const void *const msg, const mDNSu8 *const end, mDNSInterfaceID InterfaceID)
