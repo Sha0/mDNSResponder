@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.876  2009/01/09 22:56:06  cheshire
+Don't touch rr after calling mDNS_Deregister_internal -- the memory may have been free'd
+
 Revision 1.875  2009/01/09 22:54:46  cheshire
 When tranferring record from DuplicateRecords list to ResourceRecords list,
 need to copy across state of 'Answered Local-Only-Questions' flag
@@ -4105,8 +4108,9 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 					else										// else proxy record expired, so remove it
 						{
 						LogOperation("mDNS_Execute: Removing %.6a %s", &rr->WakeUp.MAC, ARDisplayString(m, rr));
-						mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
 						SetSPSProxyListChanged(rr->resrec.InterfaceID);
+						mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
+						// Don't touch rr after this -- memory may have been free'd
 						}
 					}
 				// Mustn't advance m->CurrentRecord until *after* mDNS_Deregister_internal,
