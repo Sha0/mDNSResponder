@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.875  2009/01/09 22:54:46  cheshire
+When tranferring record from DuplicateRecords list to ResourceRecords list,
+need to copy across state of 'Answered Local-Only-Questions' flag
+
 Revision 1.874  2009/01/07 23:07:24  cheshire
 <rdar://problem/6479416> SPS Client not canceling outstanding resolve call before sleeping
 
@@ -1900,6 +1904,7 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 				dup->ProbeCount      = rr->ProbeCount;
 				dup->AnnounceCount   = rr->AnnounceCount;
 				dup->RequireGoodbye  = rr->RequireGoodbye;
+				dup->AnsweredLOQ     = rr->AnsweredLOQ;
 				dup->ImmedAnswer     = rr->ImmedAnswer;
 				dup->ImmedUnicast    = rr->ImmedUnicast;
 				dup->ImmedAdditional = rr->ImmedAdditional;
@@ -1910,6 +1915,7 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 				dup->LastMCTime      = rr->LastMCTime;
 				dup->LastMCInterface = rr->LastMCInterface;
 				rr->RequireGoodbye = mDNSfalse;
+				rr->AnsweredLOQ    = mDNSfalse;
 				}
 			}
 		}
