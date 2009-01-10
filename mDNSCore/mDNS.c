@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.877  2009/01/10 01:36:08  cheshire
+Changed misleading function name 'AnswerLocalOnlyQuestions' to more informative 'AnswerAllLocalQuestionsWithLocalAuthRecord'
+
 Revision 1.876  2009/01/09 22:56:06  cheshire
 Don't touch rr after calling mDNS_Deregister_internal -- the memory may have been free'd
 
@@ -1314,7 +1317,7 @@ mDNSlocal char *InterfaceNameForID(mDNS *const m, const mDNSInterfaceID Interfac
 	}
 
 // For a single given DNSQuestion, deliver an add/remove result for the single given AuthRecord
-// Used by AnswerLocalQuestions() and AnswerNewLocalOnlyQuestion()
+// Used by AnswerAllLocalQuestionsWithLocalAuthRecord() and AnswerNewLocalOnlyQuestion()
 mDNSlocal void AnswerLocalOnlyQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, AuthRecord *rr, QC_result AddRecord)
 	{
 	// Indicate that we've given at least one positive answer for this record, so we should be prepared to send a goodbye for it
@@ -1325,14 +1328,15 @@ mDNSlocal void AnswerLocalOnlyQuestionWithResourceRecord(mDNS *const m, DNSQuest
 	mDNS_ReclaimLockAfterCallback();	// Decrement mDNS_reentrancy to block mDNS API calls again
 	}
 
-// When a new local AuthRecord is created or deleted, AnswerLocalQuestions() runs though our LocalOnlyQuestions delivering answers
-// to each, stopping if it reaches a NewLocalOnlyQuestion -- brand-new questions are handled by AnswerNewLocalOnlyQuestion().
+// When a new local AuthRecord is created or deleted, AnswerAllLocalQuestionsWithLocalAuthRecord() runs though
+// all our local questions (both LocalOnlyQuestions and mDNSInterface_Any questions) delivering answers to each,
+// stopping if it reaches a NewLocalOnlyQuestion -- brand-new questions are handled by AnswerNewLocalOnlyQuestion().
 // If the AuthRecord is marked mDNSInterface_LocalOnly, then we also deliver it to any other questions we have using mDNSInterface_Any.
 // Used by AnswerForNewLocalRecords() and mDNS_Deregister_internal()
-mDNSlocal void AnswerLocalOnlyQuestions(mDNS *const m, AuthRecord *rr, QC_result AddRecord)
+mDNSlocal void AnswerAllLocalQuestionsWithLocalAuthRecord(mDNS *const m, AuthRecord *rr, QC_result AddRecord)
 	{
 	if (m->CurrentQuestion)
-		LogMsg("AnswerLocalOnlyQuestions ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
+		LogMsg("AnswerAllLocalQuestionsWithLocalAuthRecord ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
 
 	m->CurrentQuestion = m->LocalOnlyQuestions;
 	while (m->CurrentQuestion && m->CurrentQuestion != m->NewLocalOnlyQuestions)
@@ -1946,8 +1950,8 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 	// we need to retract that announcement before we delete the record
 
 	// If this is a record (including mDNSInterface_LocalOnly records) for which we've given local-only answers then
-	// it's tempting to just do "AnswerLocalOnlyQuestions(m, rr, mDNSfalse)" here, but that would not not be safe.
-	// The AnswerLocalOnlyQuestions routine walks the question list invoking client callbacks, using the "m->CurrentQuestion"
+	// it's tempting to just do "AnswerAllLocalQuestionsWithLocalAuthRecord(m, rr, mDNSfalse)" here, but that would not not be safe.
+	// The AnswerAllLocalQuestionsWithLocalAuthRecord routine walks the question list invoking client callbacks, using the "m->CurrentQuestion"
 	// mechanism to cope with the client callback modifying the question list while that's happening.
 	// However, mDNS_Deregister could have been called from a client callback (e.g. from the domain enumeration callback FoundDomain)
 	// which means that the "m->CurrentQuestion" mechanism is already in use to protect that list, so we can't use it twice.
@@ -2182,7 +2186,7 @@ mDNSexport void CompleteDeregistration(mDNS *const m, AuthRecord *rr)
 	// it should go ahead and immediately dispose of this registration
 	rr->resrec.RecordType = kDNSRecordTypeShared;
 	rr->RequireGoodbye    = mDNSfalse;
-	if (rr->AnsweredLOQ) { AnswerLocalOnlyQuestions(m, rr, mDNSfalse); rr->AnsweredLOQ = mDNSfalse; }
+	if (rr->AnsweredLOQ) { AnswerAllLocalQuestionsWithLocalAuthRecord(m, rr, mDNSfalse); rr->AnsweredLOQ = mDNSfalse; }
 	mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);		// Don't touch rr after this
 	}
 
@@ -3859,7 +3863,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 	}
 
 // When a NewLocalOnlyQuestion is created, AnswerNewLocalOnlyQuestion runs though our ResourceRecords delivering any
-// appropriate answers, stopping if it reaches a NewLocalRecord -- these will be handled by AnswerLocalOnlyQuestions
+// appropriate answers, stopping if it reaches a NewLocalRecord -- these will be handled by AnswerAllLocalQuestionsWithLocalAuthRecord
 mDNSlocal void AnswerNewLocalOnlyQuestion(mDNS *const m)
 	{
 	DNSQuestion *q = m->NewLocalOnlyQuestions;		// Grab the question we're going to answer
@@ -4137,7 +4141,7 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 			{
 			AuthRecord *rr = m->NewLocalRecords;
 			m->NewLocalRecords = m->NewLocalRecords->next;
-			AnswerLocalOnlyQuestions(m, rr, mDNStrue);
+			AnswerAllLocalQuestionsWithLocalAuthRecord(m, rr, mDNStrue);
 			}
 		if (i >= 1000) LogMsg("mDNS_Execute: AnswerForNewLocalRecords exceeded loop limit");
 
