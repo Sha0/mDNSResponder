@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: CommonServices.h,v $
+Revision 1.9  2009/01/10 22:03:43  mkrochma
+<rdar://problem/5797507> dnsextd fails to build on Linux
+
 Revision 1.8  2007/01/17 19:16:59  cheshire
 Only define ssize_t if it's not already defined
 
@@ -196,7 +199,11 @@ Common Services and portability support for various platforms.
 	
 #elif( TARGET_OS_LINUX )
 	
-	// Linux (no special includes yet).
+	// Linux
+	
+	#include	<stdint.h>
+	#include	<arpa/inet.h>
+
 
 #elif( TARGET_OS_PALM )
 	

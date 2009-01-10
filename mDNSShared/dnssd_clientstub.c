@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.117  2009/01/10 22:03:43  mkrochma
+<rdar://problem/5797507> dnsextd fails to build on Linux
+
 Revision 1.116  2009/01/05 16:55:24  cheshire
 <rdar://problem/6452199> Stuck in "Examining available disks"
 ConnectionResponse handler was accidentally matching the parent DNSServiceRef before
@@ -361,7 +364,7 @@ static int write_all(dnssd_sock_t sd, char *buf, int len)
 			{
 			// Should never happen. If it does, it indicates some OS bug,
 			// or that the mDNSResponder daemon crashed (which should never happen).
-			syslog(LOG_WARNING, "dnssd_clientstub write_all(%d) failed %d/%d %d %s", sd, (int)num_written, len,
+			syslog(LOG_WARNING, "dnssd_clientstub write_all(%d) failed %ld/%d %d %s", sd, (int)num_written, len,
 				(num_written < 0) ? dnssd_errno                 : 0,
 				(num_written < 0) ? dnssd_strerror(dnssd_errno) : "");
 			return -1;
@@ -385,7 +388,7 @@ static int read_all(dnssd_sock_t sd, char *buf, int len)
 			{
 			// Should never happen. If it does, it indicates some OS bug,
 			// or that the mDNSResponder daemon crashed (which should never happen).
-			syslog(LOG_WARNING, "dnssd_clientstub read_all(%d) failed %d/%d %d %s", sd, (int)num_read, len,
+			syslog(LOG_WARNING, "dnssd_clientstub read_all(%d) failed %ld/%d %d %s", sd, (int)num_read, len,
 				(num_read < 0) ? dnssd_errno                 : 0,
 				(num_read < 0) ? dnssd_strerror(dnssd_errno) : "");
 			return -1;
