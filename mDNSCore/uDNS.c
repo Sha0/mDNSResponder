@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.597  2009/01/10 01:55:49  cheshire
+Added LogOperation message showing when domains are added and removed in FoundDomain
+
 Revision 1.596  2008/12/19 20:23:33  mcguire
 <rdar://problem/6459269> Lots of duplicate log messages about failure to bind to NAT-PMP Announcement port
 
@@ -5030,23 +5033,25 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 	{
 	SearchListElem *slElem = question->QuestionContext;
 	mStatus err;
+	const char *name;
 
 	if (answer->rrtype != kDNSType_PTR) return;
 	if (answer->RecordType == kDNSRecordTypePacketNegative) return;
 
+	if      (question == &slElem->BrowseQ)          name = mDNS_DomainTypeNames[mDNS_DomainTypeBrowse];
+	else if (question == &slElem->DefBrowseQ)       name = mDNS_DomainTypeNames[mDNS_DomainTypeBrowseDefault];
+	else if (question == &slElem->AutomaticBrowseQ) name = mDNS_DomainTypeNames[mDNS_DomainTypeBrowseAutomatic];
+	else if (question == &slElem->RegisterQ)        name = mDNS_DomainTypeNames[mDNS_DomainTypeRegistration];
+	else if (question == &slElem->DefRegisterQ)     name = mDNS_DomainTypeNames[mDNS_DomainTypeRegistrationDefault];
+	else { LogMsg("FoundDomain - unknown question"); return; }
+
+	LogOperation("FoundDomain: %s %s Q %##s A %s", AddRecord ? "Add" : "Rmv", name, question->qname.c, RRDisplayString(m, answer));
+
 	if (AddRecord)
 		{
-		const char *name;
 		ARListElem *arElem = mDNSPlatformMemAllocate(sizeof(ARListElem));
-		if (!arElem) { LogMsg("ERROR: malloc"); return; }
+		if (!arElem) { LogMsg("ERROR: FoundDomain out of memory"); return; }
 		mDNS_SetupResourceRecord(&arElem->ar, mDNSNULL, mDNSInterface_LocalOnly, kDNSType_PTR, 7200, kDNSRecordTypeShared, FreeARElemCallback, arElem);
-		if      (question == &slElem->BrowseQ)          name = mDNS_DomainTypeNames[mDNS_DomainTypeBrowse];
-		else if (question == &slElem->DefBrowseQ)       name = mDNS_DomainTypeNames[mDNS_DomainTypeBrowseDefault];
-		else if (question == &slElem->AutomaticBrowseQ) name = mDNS_DomainTypeNames[mDNS_DomainTypeBrowseAutomatic];
-		else if (question == &slElem->RegisterQ)        name = mDNS_DomainTypeNames[mDNS_DomainTypeRegistration];
-		else if (question == &slElem->DefRegisterQ)     name = mDNS_DomainTypeNames[mDNS_DomainTypeRegistrationDefault];
-		else { LogMsg("FoundDomain - unknown question"); mDNSPlatformMemFree(arElem); return; }
-
 		MakeDomainNameFromDNSNameString(&arElem->ar.namestorage, name);
 		AppendDNSNameString            (&arElem->ar.namestorage, "local");
 		AssignDomainName(&arElem->ar.resrec.rdata->u.name, &answer->rdata->u.name);
