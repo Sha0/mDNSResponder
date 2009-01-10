@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.422  2009/01/10 01:52:48  cheshire
+Include DuplicateRecords and LocalOnlyQuestions in SIGINFO output
+
 Revision 1.421  2008/12/17 05:05:26  cheshire
 Fixed alignment of NAT mapping syslog messages
 
@@ -3850,12 +3853,14 @@ mDNSlocal void LogClientInfo(mDNS *const m, request_state *req)
 
 mDNSexport void udsserver_info(mDNS *const m)
 	{
-	mDNSs32 now = mDNS_TimeNow(m);
+	const mDNSs32 now = mDNS_TimeNow(m);
 	mDNSu32 CacheUsed = 0, CacheActive = 0;
 	mDNSu32 slot;
 	const CacheGroup *cg;
 	const CacheRecord *cr;
-	DNameListElem *d;
+	const AuthRecord *ar;
+	const DNSQuestion *q;
+	const DNameListElem *d;
 
 	LogMsgNoIdent("Timenow 0x%08lX (%ld)", (mDNSu32)now, now);
 	LogMsgNoIdent("------------ Cache -------------");
@@ -3894,7 +3899,6 @@ mDNSexport void udsserver_info(mDNS *const m)
 	if (!m->ResourceRecords) LogMsgNoIdent("<None>");
 	else
 		{
-		AuthRecord *ar;
 		LogMsgNoIdent("    Int    Next  Expire   State");
 		for (ar = m->ResourceRecords; ar; ar=ar->next)
 			if (AuthRecord_uDNS(ar))
@@ -3911,6 +3915,11 @@ mDNSexport void udsserver_info(mDNS *const m)
 			else
 				LogMsgNoIdent("                             LO %s", ARDisplayString(m, ar));
 		}
+
+	LogMsgNoIdent("------ Duplicate Records -------");
+	if (!m->DuplicateRecords) LogMsgNoIdent("<None>");
+	else for (ar = m->DuplicateRecords; ar; ar=ar->next)
+		LogMsgNoIdent("                                %s", ARDisplayString(m, ar));
 
 	LogMsgNoIdent("----- ServiceRegistrations -----");
 	if (!m->ServiceRegistrations) LogMsgNoIdent("<None>");
@@ -3930,7 +3939,6 @@ mDNSexport void udsserver_info(mDNS *const m)
 	if (!m->Questions) LogMsgNoIdent("<None>");
 	else
 		{
-		DNSQuestion *q;
 		CacheUsed = 0;
 		CacheActive = 0;
 		LogMsgNoIdent("   Int  Next if     T  NumAns Type  Name");
@@ -3952,6 +3960,12 @@ mDNSexport void udsserver_info(mDNS *const m)
 			}
 		LogMsgNoIdent("%lu question%s; %lu active", CacheUsed, CacheUsed > 1 ? "s" : "", CacheActive);
 		}
+
+	LogMsgNoIdent("----- Local-Only Questions -----");
+	if (!m->LocalOnlyQuestions) LogMsgNoIdent("<None>");
+	else for (q = m->LocalOnlyQuestions; q; q=q->next)
+		LogMsgNoIdent("                       %5d  %-6s%##s%s",
+			q->CurrentAnswers, DNSTypeName(q->qtype), q->qname.c, q->DuplicateOf ? " (dup)" : "");
 
 	LogMsgNoIdent("---- Active Client Requests ----");
 	if (!all_requests) LogMsgNoIdent("<None>");
