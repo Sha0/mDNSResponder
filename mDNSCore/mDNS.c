@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.878  2009/01/10 01:38:10  cheshire
+Changed misleading function name 'AnswerLocalOnlyQuestionWithResourceRecord' to more informative 'AnswerLocalQuestionWithLocalAuthRecord'
+
 Revision 1.877  2009/01/10 01:36:08  cheshire
 Changed misleading function name 'AnswerLocalOnlyQuestions' to more informative 'AnswerAllLocalQuestionsWithLocalAuthRecord'
 
@@ -1318,7 +1321,7 @@ mDNSlocal char *InterfaceNameForID(mDNS *const m, const mDNSInterfaceID Interfac
 
 // For a single given DNSQuestion, deliver an add/remove result for the single given AuthRecord
 // Used by AnswerAllLocalQuestionsWithLocalAuthRecord() and AnswerNewLocalOnlyQuestion()
-mDNSlocal void AnswerLocalOnlyQuestionWithResourceRecord(mDNS *const m, DNSQuestion *q, AuthRecord *rr, QC_result AddRecord)
+mDNSlocal void AnswerLocalQuestionWithLocalAuthRecord(mDNS *const m, DNSQuestion *q, AuthRecord *rr, QC_result AddRecord)
 	{
 	// Indicate that we've given at least one positive answer for this record, so we should be prepared to send a goodbye for it
 	if (AddRecord) rr->AnsweredLOQ = mDNStrue;
@@ -1344,7 +1347,7 @@ mDNSlocal void AnswerAllLocalQuestionsWithLocalAuthRecord(mDNS *const m, AuthRec
 		DNSQuestion *q = m->CurrentQuestion;
 		m->CurrentQuestion = q->next;
 		if (ResourceRecordAnswersQuestion(&rr->resrec, q))
-			AnswerLocalOnlyQuestionWithResourceRecord(m, q, rr, AddRecord);			// MUST NOT dereference q again
+			AnswerLocalQuestionWithLocalAuthRecord(m, q, rr, AddRecord);			// MUST NOT dereference q again
 		}
 
 	// If this AuthRecord is marked LocalOnly, then we want to deliver it to all local 'mDNSInterface_Any' questions
@@ -1356,7 +1359,7 @@ mDNSlocal void AnswerAllLocalQuestionsWithLocalAuthRecord(mDNS *const m, AuthRec
 			DNSQuestion *q = m->CurrentQuestion;
 			m->CurrentQuestion = q->next;
 			if (ResourceRecordAnswersQuestion(&rr->resrec, q))
-				AnswerLocalOnlyQuestionWithResourceRecord(m, q, rr, AddRecord);		// MUST NOT dereference q again
+				AnswerLocalQuestionWithLocalAuthRecord(m, q, rr, AddRecord);		// MUST NOT dereference q again
 			}
 		}
 
@@ -3800,7 +3803,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 			if (rr->resrec.InterfaceID == mDNSInterface_LocalOnly)
 				if (ResourceRecordAnswersQuestion(&rr->resrec, q))
 					{
-					AnswerLocalOnlyQuestionWithResourceRecord(m, q, rr, mDNStrue);
+					AnswerLocalQuestionWithLocalAuthRecord(m, q, rr, mDNStrue);
 					if (m->CurrentQuestion != q) break;		// If callback deleted q, then we're finished here
 					}
 			}
@@ -3885,7 +3888,7 @@ mDNSlocal void AnswerNewLocalOnlyQuestion(mDNS *const m)
 		m->CurrentRecord = rr->next;
 		if (ResourceRecordAnswersQuestion(&rr->resrec, q))
 			{
-			AnswerLocalOnlyQuestionWithResourceRecord(m, q, rr, mDNStrue);
+			AnswerLocalQuestionWithLocalAuthRecord(m, q, rr, mDNStrue);
 			if (m->CurrentQuestion != q) break;		// If callback deleted q, then we're finished here
 			}
 		}
