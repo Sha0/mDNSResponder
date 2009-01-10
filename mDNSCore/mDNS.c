@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.880  2009/01/10 01:51:19  cheshire
+q->CurrentAnswers not being incremented/decremented when answering a question with a local AuthRecord
+
 Revision 1.879  2009/01/10 01:43:52  cheshire
 Changed misleading function name 'AnsweredLOQ' to more informative 'AnsweredLocalQ'
 
@@ -1330,7 +1333,10 @@ mDNSlocal void AnswerLocalQuestionWithLocalAuthRecord(mDNS *const m, DNSQuestion
 	if (AddRecord) rr->AnsweredLocalQ = mDNStrue;
 	mDNS_DropLockBeforeCallback();		// Allow client to legally make mDNS API calls from the callback
 	if (q->QuestionCallback && !q->NoAnswer)
+		{
+		q->CurrentAnswers += AddRecord ? 1 : -1;
 		q->QuestionCallback(m, q, &rr->resrec, AddRecord);
+		}
 	mDNS_ReclaimLockAfterCallback();	// Decrement mDNS_reentrancy to block mDNS API calls again
 	}
 
