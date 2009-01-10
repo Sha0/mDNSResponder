@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.38  2009/01/10 22:54:42  mkrochma
+<rdar://problem/5797544> Fixes from Igor Seleznev to get mdnsd working on Linux
+
 Revision 1.37  2008/10/23 22:33:24  cheshire
 Changed "NOTE:" to "Note:" so that BBEdit 9 stops putting those comment lines into the funtion popup menu
 
@@ -676,6 +679,11 @@ struct in_pktinfo
             strncpy(pktp->ipi_ifname, sdl->sdl_data, nameLen);
 #endif
             pktp->ipi_ifindex = sdl->sdl_index;
+#ifdef HAVE_BROKEN_RECVIF_NAME
+			if (sdl->sdl_index == 0) {
+				pktp->ipi_ifindex = *(uint_t*)sdl;
+			}
+#endif            
             assert(pktp->ipi_ifname[IFI_NAME - 1] == 0);
             // null terminated because of memset above
             continue;

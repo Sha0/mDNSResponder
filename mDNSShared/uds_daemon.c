@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.423  2009/01/10 22:54:42  mkrochma
+<rdar://problem/5797544> Fixes from Igor Seleznev to get mdnsd working on Linux
+
 Revision 1.422  2009/01/10 01:52:48  cheshire
 Include DuplicateRecords and LocalOnlyQuestions in SIGINFO output
 
@@ -2436,8 +2439,8 @@ mDNSexport void udsserver_handle_configchange(mDNS *const m)
 	{
 	request_state *req;
 	service_instance *ptr;
-	DNameListElem *RegDomains;
-	DNameListElem *BrowseDomains;
+	DNameListElem *RegDomains = NULL;
+	DNameListElem *BrowseDomains = NULL;
 	DNameListElem *p;
 
 	UpdateDeviceInfoRecord(m);
