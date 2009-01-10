@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.879  2009/01/10 01:43:52  cheshire
+Changed misleading function name 'AnsweredLOQ' to more informative 'AnsweredLocalQ'
+
 Revision 1.878  2009/01/10 01:38:10  cheshire
 Changed misleading function name 'AnswerLocalOnlyQuestionWithResourceRecord' to more informative 'AnswerLocalQuestionWithLocalAuthRecord'
 
@@ -1324,7 +1327,7 @@ mDNSlocal char *InterfaceNameForID(mDNS *const m, const mDNSInterfaceID Interfac
 mDNSlocal void AnswerLocalQuestionWithLocalAuthRecord(mDNS *const m, DNSQuestion *q, AuthRecord *rr, QC_result AddRecord)
 	{
 	// Indicate that we've given at least one positive answer for this record, so we should be prepared to send a goodbye for it
-	if (AddRecord) rr->AnsweredLOQ = mDNStrue;
+	if (AddRecord) rr->AnsweredLocalQ = mDNStrue;
 	mDNS_DropLockBeforeCallback();		// Allow client to legally make mDNS API calls from the callback
 	if (q->QuestionCallback && !q->NoAnswer)
 		q->QuestionCallback(m, q, &rr->resrec, AddRecord);
@@ -1713,7 +1716,7 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	rr->ProbeCount        = DefaultProbeCountForRecordType(rr->resrec.RecordType);
 	rr->AnnounceCount     = InitialAnnounceCount;
 	rr->RequireGoodbye    = mDNSfalse;
-	rr->AnsweredLOQ       = mDNSfalse;
+	rr->AnsweredLocalQ    = mDNSfalse;
 	rr->IncludeInProbe    = mDNSfalse;
 	rr->ImmedAnswer       = mDNSNULL;
 	rr->ImmedUnicast      = mDNSfalse;
@@ -1914,7 +1917,7 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 				dup->ProbeCount      = rr->ProbeCount;
 				dup->AnnounceCount   = rr->AnnounceCount;
 				dup->RequireGoodbye  = rr->RequireGoodbye;
-				dup->AnsweredLOQ     = rr->AnsweredLOQ;
+				dup->AnsweredLocalQ  = rr->AnsweredLocalQ;
 				dup->ImmedAnswer     = rr->ImmedAnswer;
 				dup->ImmedUnicast    = rr->ImmedUnicast;
 				dup->ImmedAdditional = rr->ImmedAdditional;
@@ -1925,7 +1928,7 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 				dup->LastMCTime      = rr->LastMCTime;
 				dup->LastMCInterface = rr->LastMCInterface;
 				rr->RequireGoodbye = mDNSfalse;
-				rr->AnsweredLOQ    = mDNSfalse;
+				rr->AnsweredLocalQ = mDNSfalse;
 				}
 			}
 		}
@@ -1977,7 +1980,7 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 		}
 #endif // UNICAST_DISABLED
 
-	if (RecordType == kDNSRecordTypeShared && (rr->RequireGoodbye || rr->AnsweredLOQ))
+	if (RecordType == kDNSRecordTypeShared && (rr->RequireGoodbye || rr->AnsweredLocalQ))
 		{
 		verbosedebugf("mDNS_Deregister_internal: Sending deregister for %s", ARDisplayString(m, rr));
 		rr->resrec.RecordType    = kDNSRecordTypeDeregistering;
@@ -2189,7 +2192,7 @@ mDNSexport void CompleteDeregistration(mDNS *const m, AuthRecord *rr)
 	// it should go ahead and immediately dispose of this registration
 	rr->resrec.RecordType = kDNSRecordTypeShared;
 	rr->RequireGoodbye    = mDNSfalse;
-	if (rr->AnsweredLOQ) { AnswerAllLocalQuestionsWithLocalAuthRecord(m, rr, mDNSfalse); rr->AnsweredLOQ = mDNSfalse; }
+	if (rr->AnsweredLocalQ) { AnswerAllLocalQuestionsWithLocalAuthRecord(m, rr, mDNSfalse); rr->AnsweredLocalQ = mDNSfalse; }
 	mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);		// Don't touch rr after this
 	}
 

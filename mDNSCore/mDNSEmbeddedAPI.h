@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.528  2009/01/10 01:43:52  cheshire
+Changed misleading function name 'AnsweredLOQ' to more informative 'AnsweredLocalQ'
+
 Revision 1.527  2008/12/12 01:23:19  cheshire
 Added m->SPSProxyListChanged state variable to flag when we need to update our BPF filter program
 
@@ -1765,7 +1768,7 @@ struct AuthRecord_struct
 	mDNSu8          ProbeCount;			// Number of probes remaining before this record is valid (kDNSRecordTypeUnique)
 	mDNSu8          AnnounceCount;		// Number of announcements remaining (kDNSRecordTypeShared)
 	mDNSu8          RequireGoodbye;		// Set if this RR has been announced on the wire and will require a goodbye packet
-	mDNSu8          AnsweredLOQ;		// Set if this RR has been delivered to LocalOnly questions
+	mDNSu8          AnsweredLocalQ;		// Set if this AuthRecord has been delivered to any local question (LocalOnly or mDNSInterface_Any)
 	mDNSu8          IncludeInProbe;		// Set if this RR is being put into a probe right now
 	mDNSInterfaceID ImmedAnswer;		// Someone on this interface issued a query we need to answer (all-ones for all interfaces)
 	mDNSu8          ImmedUnicast;		// Set if we may send our response directly via unicast to the requester
