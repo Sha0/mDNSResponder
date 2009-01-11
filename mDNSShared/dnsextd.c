@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.94  2009/01/11 03:20:06  mkrochma
+<rdar://problem/5797526> Fixes from Igor Seleznev to get mdnsd working on Solaris
+
 Revision 1.93  2008/12/17 05:06:53  cheshire
 Increased maximum DNS Update lifetime from 20 minutes to 2 hours -- now that we have Sleep Proxy,
 having clients wake every fifteen minutes to renew their record registrations is no longer reasonable.
@@ -193,6 +196,7 @@ Revision 1.42  2006/07/05 22:48:19  cheshire
 #include "../mDNSShared/dnssd_ipc.h"
 #include "../mDNSCore/uDNS.h"
 #include "../mDNSShared/DebugServices.h"
+#include "mDNSUNP.h"		// For daemon()
 #include <signal.h>
 #include <pthread.h>
 #include <stdlib.h>
@@ -204,6 +208,7 @@ Revision 1.42  2006/07/05 22:48:19  cheshire
 #include <stdio.h>
 #include <syslog.h>
 #include <string.h>
+#include <strings.h>		// For bzero()
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <time.h>

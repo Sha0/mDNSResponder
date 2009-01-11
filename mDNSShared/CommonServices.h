@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: CommonServices.h,v $
+Revision 1.10  2009/01/11 03:20:06  mkrochma
+<rdar://problem/5797526> Fixes from Igor Seleznev to get mdnsd working on Solaris
+
 Revision 1.9  2009/01/10 22:03:43  mkrochma
 <rdar://problem/5797507> dnsextd fails to build on Linux
 
@@ -95,6 +98,16 @@ Common Services and portability support for various platforms.
 	#endif
 #endif
 
+// Solaris
+
+#if( !defined( TARGET_OS_SOLARIS ) )
+	#if( defined(solaris) || (defined(__SVR4) && defined(sun)) )
+		#define	TARGET_OS_SOLARIS		1
+	#else
+		#define	TARGET_OS_SOLARIS		0
+	#endif
+#endif
+
 // Palm
 
 #if( !defined( TARGET_OS_PALM ) )
@@ -111,7 +124,7 @@ Common Services and portability support for various platforms.
 	
 	// No predefined macro for VxWorks so just assume VxWorks if nothing else is set.
 	
-	#if( !macintosh && !__MACH__  && !defined( __linux__ ) && !defined( __PALMOS_TRAPS__ ) && !defined( __PALMOS_ARMLET__ ) && !defined( _WIN32 ) )
+	#if( !macintosh && !__MACH__  && !defined( __linux__ ) && !defined ( __SVR4 ) && !defined ( __sun ) && !defined( __PALMOS_TRAPS__ ) && !defined( __PALMOS_ARMLET__ ) && !defined( _WIN32 ) )
 		#define	TARGET_OS_VXWORKS		1
 	#else
 		#define	TARGET_OS_VXWORKS		0
@@ -203,7 +216,22 @@ Common Services and portability support for various platforms.
 	
 	#include	<stdint.h>
 	#include	<arpa/inet.h>
+	
+#elif( TARGET_OS_SOLARIS )
+	
+	// Solaris
 
+	#include	<stdint.h>
+
+	#include	<arpa/inet.h>
+	#include	<arpa/nameser.h>
+
+	#if ( defined( BYTE_ORDER ) && defined( LITTLE_ENDIAN ) && ( BYTE_ORDER == LITTLE_ENDIAN ) )
+		#define TARGET_RT_LITTLE_ENDIAN		1
+	#endif
+	#if ( defined( BYTE_ORDER ) && defined( BIG_ENDIAN ) && ( BYTE_ORDER == BIG_ENDIAN ) )
+		#define TARGET_RT_BIG_ENDIAN		1
+	#endif
 
 #elif( TARGET_OS_PALM )
 	

@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.92  2009/01/11 03:20:06  mkrochma
+<rdar://problem/5797526> Fixes from Igor Seleznev to get mdnsd working on Solaris
+
 Revision 1.91  2008/11/13 22:08:07  cheshire
 Show additional records in Query packets
 
@@ -103,6 +106,7 @@ Use IFNAMSIZ (more portable) instead of IF_NAMESIZE
 #include <stdio.h>			// For printf()
 #include <stdlib.h>			// For malloc()
 #include <string.h>			// For bcopy()
+#include <strings.h>		// For bzero()
 #include <time.h>			// For "struct tm" etc.
 #include <signal.h>			// For SIGINT, SIGTERM
 #include <netdb.h>			// For gethostbyname()

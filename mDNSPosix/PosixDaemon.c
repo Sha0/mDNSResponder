@@ -21,6 +21,9 @@
 	Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.47  2009/01/11 03:20:06  mkrochma
+<rdar://problem/5797526> Fixes from Igor Seleznev to get mdnsd working on Solaris
+
 Revision 1.46  2008/11/03 23:09:15  cheshire
 Don't need to include mDNSDebug.h as well as mDNSEmbeddedAPI.h
 
@@ -90,6 +93,7 @@ Only use mallocL/freeL debugging routines when building mDNSResponder, not dnsex
 
 #include "mDNSEmbeddedAPI.h"
 #include "mDNSPosix.h"
+#include "mDNSUNP.h"		// For daemon()
 #include "uds_daemon.h"
 #include "PlatformCommon.h"
 

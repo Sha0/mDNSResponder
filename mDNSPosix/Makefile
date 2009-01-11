@@ -31,6 +31,9 @@
 # then try typing "gmake os=xxx" instead.
 #
 # $Log: Makefile,v $
+# Revision 1.81  2009/01/11 03:20:06  mkrochma
+# <rdar://problem/5797526> Fixes from Igor Seleznev to get mdnsd working on Solaris
+#
 # Revision 1.80  2008/11/03 23:27:51  cheshire
 # Defined __MAC_OS_X_VERSION_MIN_REQUIRED=__MAC_OS_X_VERSION_10_4 to stop build failures on Leopard
 #
@@ -332,8 +335,9 @@ endif
 
 # Configure per-OS peculiarities
 ifeq ($(os),solaris)
+CFLAGS_DEBUG = -O0 -DMDNS_DEBUGMSGS=0
 CFLAGS_OS = -DNOT_HAVE_DAEMON -DNOT_HAVE_SA_LEN -DNOT_HAVE_SOCKLEN_T -DNOT_HAVE_IF_NAMETOINDEX \
-	 -DLOG_PERROR=0 -D_XPG4_2 -D__EXTENSIONS__ -DHAVE_BROKEN_RECVIF_NAME
+	 -DLOG_PERROR=0 -D_XPG4_2 -D__EXTENSIONS__ -DHAVE_BROKEN_RECVIF_NAME -DTARGET_OS_SOLARIS
 CC = gcc
 LD = gcc -shared
 LINKOPTS = -lsocket -lnsl -lresolv

@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.118  2009/01/11 03:20:06  mkrochma
+<rdar://problem/5797526> Fixes from Igor Seleznev to get mdnsd working on Solaris
+
 Revision 1.117  2009/01/10 22:03:43  mkrochma
 <rdar://problem/5797507> dnsextd fails to build on Linux
 
@@ -259,6 +262,7 @@ Minor textual tidying
 
 #include <errno.h>
 #include <stdlib.h>
+#include <strings.h>		// For bzero()
 #include <sys/fcntl.h>		// For O_RDWR etc.
 
 #include "dnssd_ipc.h"

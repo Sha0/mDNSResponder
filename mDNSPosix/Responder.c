@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: Responder.c,v $
+Revision 1.34  2009/01/11 03:20:06  mkrochma
+<rdar://problem/5797526> Fixes from Igor Seleznev to get mdnsd working on Solaris
+
 Revision 1.33  2007/04/16 20:49:39  cheshire
 Fix compile errors for mDNSPosix build
 
@@ -126,6 +129,7 @@ First checkin
 
 #include "mDNSEmbeddedAPI.h"// Defines the interface to the client layer above
 #include "mDNSPosix.h"    // Defines the specific types needed to run mDNS on this platform
+#include "mDNSUNP.h"		// For daemon()
 
 #include <assert.h>
 #include <stdio.h>			// For printf()

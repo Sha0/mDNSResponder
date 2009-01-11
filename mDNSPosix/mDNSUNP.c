@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.39  2009/01/11 03:20:06  mkrochma
+<rdar://problem/5797526> Fixes from Igor Seleznev to get mdnsd working on Solaris
+
 Revision 1.38  2009/01/10 22:54:42  mkrochma
 <rdar://problem/5797544> Fixes from Igor Seleznev to get mdnsd working on Linux
 
@@ -151,6 +154,7 @@ First checkin
 #include <stdlib.h>
 #include <sys/uio.h>
 #include <sys/ioctl.h>
+#include <signal.h>
 #include <unistd.h>
 #include <stdio.h>
 
