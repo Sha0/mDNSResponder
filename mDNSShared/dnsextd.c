@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.95  2009/01/12 22:47:13  cheshire
+Only include "mDNSUNP.h" when building on a system that requires the "daemon()" definition (currently only Solaris)
+
 Revision 1.94  2009/01/11 03:20:06  mkrochma
 <rdar://problem/5797526> Fixes from Igor Seleznev to get mdnsd working on Solaris
 
@@ -196,7 +199,6 @@ Revision 1.42  2006/07/05 22:48:19  cheshire
 #include "../mDNSShared/dnssd_ipc.h"
 #include "../mDNSCore/uDNS.h"
 #include "../mDNSShared/DebugServices.h"
-#include "mDNSUNP.h"		// For daemon()
 #include <signal.h>
 #include <pthread.h>
 #include <stdlib.h>
@@ -213,6 +215,11 @@ Revision 1.42  2006/07/05 22:48:19  cheshire
 #include <sys/resource.h>
 #include <time.h>
 #include <errno.h>
+
+// Solaris doesn't have daemon(), so we define it here
+//#ifdef NOT_HAVE_DAEMON
+#include "../mDNSPosix/mDNSUNP.h"		// For daemon()
+//#endif // NOT_HAVE_DAEMON
 
 // Compatibility workaround
 #ifndef AF_LOCAL
