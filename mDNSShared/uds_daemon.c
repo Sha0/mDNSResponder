@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.424  2009/01/12 22:43:50  cheshire
+Fixed "unused variable" warning when SO_NOSIGPIPE is not defined
+
 Revision 1.423  2009/01/10 22:54:42  mkrochma
 <rdar://problem/5797544> Fixes from Igor Seleznev to get mdnsd working on Linux
 
@@ -3601,7 +3604,9 @@ mDNSlocal void connect_callback(int fd, short filter, void *info)
 	dnssd_sockaddr_t cliaddr;
 	dnssd_socklen_t len = (dnssd_socklen_t) sizeof(cliaddr);
 	dnssd_sock_t sd = accept(listenfd, (struct sockaddr*) &cliaddr, &len);
+#if defined(SO_NOSIGPIPE) || defined(_WIN32)
 	const unsigned long optval = 1;
+#endif
 
 	(void)fd; // Unused
 	(void)filter; // Unused
