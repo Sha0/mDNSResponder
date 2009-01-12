@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.h,v $
+Revision 1.12  2009/01/12 22:26:13  mkrochma
+Change DynamicStore location from BonjourSleepProxy/DiscoveredServers to SleepProxyServers
+
 Revision 1.11  2008/12/05 02:35:24  mcguire
 <rdar://problem/6107390> Write to the DynamicStore when a Sleep Proxy server is available on the network
 
@@ -62,7 +65,7 @@ enum mDNSDynamicStoreSetConfigKey
 	kmDNSDynamicConfig,
 	kmDNSPrivateConfig,
 	kmDNSBackToMyMacConfig,
-	kmDNSBonjourSleepProxyState
+	kmDNSSleepProxyServersState
 	};
 
 enum mDNSPreferencesSetNameKey

@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.603  2009/01/12 22:26:13  mkrochma
+Change DynamicStore location from BonjourSleepProxy/DiscoveredServers to SleepProxyServers
+
 Revision 1.602  2008/12/19 20:23:34  mcguire
 <rdar://problem/6459269> Lots of duplicate log messages about failure to bind to NAT-PMP Announcement port
 
@@ -4637,7 +4640,7 @@ mDNSlocal void UpdateSPSStatus(mDNS *const m, DNSQuestion *question, const Resou
 	    !CFEqual(array, (CFMutableDictionaryRef)CFDictionaryGetValue(spsStatusDict, ifname)))
 	    {
 		CFDictionarySetValue(spsStatusDict, ifname, array);
-		mDNSDynamicStoreSetConfig(kmDNSBonjourSleepProxyState, spsStatusDict);
+		mDNSDynamicStoreSetConfig(kmDNSSleepProxyServersState, spsStatusDict);
 		}
 	
 	CFRelease(ifname);

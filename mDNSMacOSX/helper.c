@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.51  2009/01/12 22:26:12  mkrochma
+Change DynamicStore location from BonjourSleepProxy/DiscoveredServers to SleepProxyServers
+
 Revision 1.50  2008/12/15 18:40:41  mcguire
 <rdar://problem/6444440> Socket leak in helper's doTunnelPolicy
 
@@ -447,8 +450,8 @@ do_mDNSDynamicStoreSetConfig(__unused mach_port_t port, int key,
 		case kmDNSBackToMyMacConfig:
 			sckey = CFSTR("State:/Network/BackToMyMac");
 			break;
-		case kmDNSBonjourSleepProxyState:
-			sckey = CFSTR("State:/Network/BonjourSleepProxy/DiscoveredServers");
+		case kmDNSSleepProxyServersState:
+			sckey = CFSTR("State:/Network/SleepProxyServers");
 			break;
 		default:
 			debug("unrecognized key %d", key);
