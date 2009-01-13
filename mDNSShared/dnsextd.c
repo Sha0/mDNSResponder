@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.96  2009/01/13 00:45:41  cheshire
+Uncommented "#ifdef NOT_HAVE_DAEMON" check
+
 Revision 1.95  2009/01/12 22:47:13  cheshire
 Only include "mDNSUNP.h" when building on a system that requires the "daemon()" definition (currently only Solaris)
 
@@ -217,9 +220,9 @@ Revision 1.42  2006/07/05 22:48:19  cheshire
 #include <errno.h>
 
 // Solaris doesn't have daemon(), so we define it here
-//#ifdef NOT_HAVE_DAEMON
+#ifdef NOT_HAVE_DAEMON
 #include "../mDNSPosix/mDNSUNP.h"		// For daemon()
-//#endif // NOT_HAVE_DAEMON
+#endif // NOT_HAVE_DAEMON
 
 // Compatibility workaround
 #ifndef AF_LOCAL
