@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.529  2009/01/13 00:31:44  cheshire
+Fixed off-by-one error in computing the implicit limit pointer in the "DomainNameLength(name)" macro
+
 Revision 1.528  2009/01/10 01:43:52  cheshire
 Changed misleading function name 'AnsweredLOQ' to more informative 'AnsweredLocalQ'
 
@@ -2743,7 +2746,7 @@ extern mDNSBool IsLocalDomain(const domainname *d);     // returns true for doma
 // Get total length of domain name, in native DNS format, including terminal root label
 //   (e.g. length of "com." is 5 (length byte, three data bytes, final zero)
 extern mDNSu16  DomainNameLengthLimit(const domainname *const name, const mDNSu8 *limit);
-#define DomainNameLength(name) DomainNameLengthLimit((name), (name)->c + MAX_DOMAIN_NAME + 1)
+#define DomainNameLength(name) DomainNameLengthLimit((name), (name)->c + MAX_DOMAIN_NAME)
 
 // Append functions to append one or more labels to an existing native format domain name:
 //   AppendLiteralLabelString adds a single label from a literal C string, with no escape character interpretation.
