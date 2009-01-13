@@ -802,6 +802,10 @@ int main(int argc, char **argv)
 	const char *a0 = strrchr(argv[0], kFilePathSep) + 1;
 	if (a0 == (const char *)1) a0 = argv[0];
 
+#if TEST_NEW_CLIENTSTUB
+	printf("Using embedded copy of dnssd_clientstub instead of system library\n");
+#endif
+
 	if (sizeof(argv) == 8) printf("Running in 64-bit mode\n");
 
 	// Test code for TXTRecord functions
