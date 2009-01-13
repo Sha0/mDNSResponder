@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.43  2009/01/13 05:31:35  mkrochma
+<rdar://problem/6491367> Replace bzero, bcopy with mDNSPlatformMemZero, mDNSPlatformMemCopy, memset, memcpy
+
 Revision 1.42  2007/02/14 01:58:19  cheshire
 <rdar://problem/4995831> Don't delete Unix Domain Socket on exit if we didn't create it on startup
 
@@ -1237,8 +1240,8 @@ static OSStatus	ServiceSpecificInitialize( int argc, LPTSTR argv[] )
 	DEBUG_UNUSED( argc );
 	DEBUG_UNUSED( argv );
 	
-	memset( &gMDNSRecord, 0, sizeof gMDNSRecord);
-	memset( &gPlatformStorage, 0, sizeof gPlatformStorage);
+	mDNSPlatformMemZero( &gMDNSRecord, sizeof gMDNSRecord);
+	mDNSPlatformMemZero( &gPlatformStorage, sizeof gPlatformStorage);
 
 	gPlatformStorage.idleThreadCallback = udsIdle;
 	gPlatformStorage.hostDescriptionChangedCallback = HostDescriptionChanged;
@@ -1525,7 +1528,7 @@ udsSupportAddFDToEventLoop( SocketRef fd, udsEventCallback callback, void *conte
 
 	newSource = malloc(sizeof(Win32EventSource));
 	require_action( newSource, exit, err = mStatus_NoMemoryErr );
-	memset(newSource, 0, sizeof(Win32EventSource));
+	mDNSPlatformMemZero(newSource, sizeof(Win32EventSource));
 
 	newSource->flags	= 0;
 	newSource->sock		= (SOCKET) fd;

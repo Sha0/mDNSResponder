@@ -115,7 +115,6 @@ typedef INT32       int32_t;
 #elif defined(_WIN32)
 #include <windows.h>
 #define _UNUSED
-#define bzero(a, b) memset(a, 0, b)
 #ifndef _MSL_STDINT_H
 typedef UINT8       uint8_t;
 typedef INT8        int8_t;
@@ -2132,13 +2131,13 @@ const void * DNSSD_API TXTRecordGetBytesPtr
  * val1ptr = TXTRecordGetValuePtr(txtLen, txtRecord, "key1", &len1);
  * val2ptr = TXTRecordGetValuePtr(txtLen, txtRecord, "key2", &len2);
  * ...
- * bcopy(val1ptr, myval1, len1);
- * bcopy(val2ptr, myval2, len2);
+ * memcpy(myval1, val1ptr, len1);
+ * memcpy(myval2, val2ptr, len2);
  * ...
  * return;
  *
  * If you wish to retain the values after return from the DNSServiceResolve()
- * callback, then you need to copy the data to your own storage using bcopy()
+ * callback, then you need to copy the data to your own storage using memcpy()
  * or similar, as shown in the example above.
  *
  * If for some reason you need to parse a TXT record you built yourself

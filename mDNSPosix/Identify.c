@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: Identify.c,v $
+Revision 1.44  2009/01/13 05:31:34  mkrochma
+<rdar://problem/6491367> Replace bzero, bcopy with mDNSPlatformMemZero, mDNSPlatformMemCopy, memset, memcpy
+
 Revision 1.43  2008/09/05 22:51:21  cheshire
 Minor cleanup to bring code in sync with TOT, and make "_services" metaquery work again
 
@@ -356,7 +359,7 @@ mDNSexport int main(int argc, char **argv)
 				}
 			mDNS_snprintf(&buffer[64], sizeof(buffer)-64, "ip6.arpa.");
 			target.type = mDNSAddrType_IPv6;
-			bcopy(&s6, &target.ip.v6, sizeof(target.ip.v6));
+			mDNSPlatformMemCopy(&target.ip.v6, &s6, sizeof(target.ip.v6));
 			DoQuery(&q, buffer, kDNSType_PTR, &target, NameCallback);
 			if (StopNow == 2) break;
 			}

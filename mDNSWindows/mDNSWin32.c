@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.135  2009/01/13 05:31:35  mkrochma
+<rdar://problem/6491367> Replace bzero, bcopy with mDNSPlatformMemZero, mDNSPlatformMemCopy, memset, memcpy
+
 Revision 1.134  2008/10/23 22:33:25  cheshire
 Changed "NOTE:" to "Note:" so that BBEdit 9 stops putting those comment lines into the funtion popup menu
 
@@ -343,7 +346,7 @@ mDNSexport mStatus	mDNSPlatformInit( mDNS * const inMDNS )
 	// Initialize variables. If the PlatformSupport pointer is not null then just assume that a non-Apple client is 
 	// calling mDNS_Init and wants to provide its own storage for the platform-specific data so do not overwrite it.
 	
-	memset( &gMDNSPlatformSupport, 0, sizeof( gMDNSPlatformSupport ) );
+	mDNSPlatformMemZero( &gMDNSPlatformSupport, sizeof( gMDNSPlatformSupport ) );
 	if( !inMDNS->p ) inMDNS->p				= &gMDNSPlatformSupport;
 	inMDNS->p->interfaceListChangedSocket	= kInvalidSocketRef;
 	mDNSPlatformOneSecond 					= 1000;		// Use milliseconds as the quantum of time
@@ -977,12 +980,12 @@ mDNSPlatformTCPSocket
 
 	sock = (TCPSocket *) malloc( sizeof( TCPSocket ) );
 	require_action( sock, exit, err = mStatus_NoMemoryErr );
-	memset( sock, 0, sizeof( TCPSocket ) );
+	mDNSPlatformMemZero( sock, sizeof( TCPSocket ) );
 
 	sock->fd		= INVALID_SOCKET;
 	sock->flags		= flags;
 
-	bzero(&saddr, sizeof(saddr));
+	mDNSPlatformMemZero(&saddr, sizeof(saddr));
 	saddr.sin_family		= AF_INET;
 	saddr.sin_addr.s_addr	= htonl( INADDR_ANY );
 	saddr.sin_port			= port->NotAnInteger;
@@ -1001,7 +1004,7 @@ mDNSPlatformTCPSocket
 
 	// Get port number
 
-	memset( &saddr, 0, sizeof( saddr ) );
+	mDNSPlatformMemZero( &saddr, sizeof( saddr ) );
 	len = sizeof( saddr );
 
 	err = getsockname( sock->fd, ( struct sockaddr* ) &saddr, &len );
@@ -1052,7 +1055,7 @@ mDNSPlatformTCPConnect
 	sock->callback = inCallback;
 	sock->context = inContext;
 
-	bzero(&saddr, sizeof(saddr));
+	mDNSPlatformMemZero(&saddr, sizeof(saddr));
 	saddr.sin_family	= AF_INET;
 	saddr.sin_port		= inDstPort.NotAnInteger;
 	memcpy(&saddr.sin_addr, &inDstIP->ip.v4.NotAnInteger, sizeof(saddr.sin_addr));
@@ -1100,7 +1103,7 @@ mDNSexport TCPSocket *mDNSPlatformTCPAccept( TCPSocketFlags flags, int fd )
 	sock = malloc( sizeof( TCPSocket ) );
 	require_action( sock, exit, err = mStatus_NoMemoryErr );
 	
-	memset( sock, 0, sizeof( *sock ) );
+	mDNSPlatformMemZero( sock, sizeof( *sock ) );
 
 	sock->fd	= fd;
 	sock->flags = flags;
@@ -2737,7 +2740,7 @@ mDNSlocal mStatus	SetupSocket( mDNS * const inMDNS, const struct sockaddr *inAdd
 		// Bind the socket to the desired port
 		
 		ipv4.NotAnInteger 	= ( (const struct sockaddr_in *) inAddr )->sin_addr.s_addr;
-		memset( &sa4, 0, sizeof( sa4 ) );
+		mDNSPlatformMemZero( &sa4, sizeof( sa4 ) );
 		sa4.sin_family 		= AF_INET;
 		sa4.sin_port 		= port.NotAnInteger;
 		sa4.sin_addr.s_addr	= ipv4.NotAnInteger;
@@ -2796,7 +2799,7 @@ mDNSlocal mStatus	SetupSocket( mDNS * const inMDNS, const struct sockaddr *inAdd
 		
 		// Bind the socket to the desired port
 		
-		memset( &sa6, 0, sizeof( sa6 ) );
+		mDNSPlatformMemZero( &sa6, sizeof( sa6 ) );
 		sa6.sin6_family		= AF_INET6;
 		sa6.sin6_port		= port.NotAnInteger;
 		sa6.sin6_flowinfo	= 0;
@@ -4610,7 +4613,7 @@ mDNSlocal mDNSBool	CanReceiveUnicast( void )
 	ok = IsValidSocket( sock );
 	if( ok )
 	{
-		memset( &addr, 0, sizeof( addr ) );
+		mDNSPlatformMemZero( &addr, sizeof( addr ) );
 		addr.sin_family			= AF_INET;
 		addr.sin_port			= MulticastDNSPort.NotAnInteger;
 		addr.sin_addr.s_addr	= htonl( INADDR_ANY );

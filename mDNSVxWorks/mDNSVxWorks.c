@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSVxWorks.c,v $
+Revision 1.35  2009/01/13 05:31:35  mkrochma
+<rdar://problem/6491367> Replace bzero, bcopy with mDNSPlatformMemZero, mDNSPlatformMemCopy, memset, memcpy
+
 Revision 1.34  2008/10/03 18:25:18  cheshire
 Instead of calling "m->MainCallback" function pointer directly, call mDNSCore routine "mDNS_ConfigChanged(m);"
 
@@ -254,7 +257,7 @@ mStatus	mDNSPlatformInit( mDNS * const inMDNS )
 	
 	// Do minimal initialization to get the task started and so we can cleanup safely if an error occurs.
 	
-	memset( &gMDNSPlatformSupport, 0, sizeof( gMDNSPlatformSupport ) );
+	mDNSPlatformMemZero( &gMDNSPlatformSupport, sizeof( gMDNSPlatformSupport ) );
 	if( !inMDNS->p ) inMDNS->p	= &gMDNSPlatformSupport;
 	inMDNS->p->unicastSS.info	= NULL;
 	inMDNS->p->unicastSS.sockV4	= kInvalidSocketRef;
@@ -899,7 +902,7 @@ mDNSlocal mStatus	UpdateInterfaceList( mDNS *const inMDNS, mDNSs32 inUTC )
 			struct in6_ifreq			ifr6;
 			
 			sa6 = (struct sockaddr_in6 *) ifa->ifa_addr;
-			memset( &ifr6, 0, sizeof( ifr6 ) );
+			mDNSPlatformMemZero( &ifr6, sizeof( ifr6 ) );
 			strcpy( ifr6.ifr_name, ifa->ifa_name );
 			ifr6.ifr_addr = *sa6;
 			if( ioctl( infoSock, SIOCGIFAFLAG_IN6, (int) &ifr6 ) != -1 )
@@ -1377,7 +1380,7 @@ mDNSlocal mStatus	SetupSocket( mDNS *const inMDNS, const mDNSAddr *inAddr, mDNSB
 		
 		// Start listening for packets.
 		
-		memset( &sa4, 0, sizeof( sa4 ) );
+		mDNSPlatformMemZero( &sa4, sizeof( sa4 ) );
 		sa4.sin_len			= sizeof( sa4 );
 		sa4.sin_family		= AF_INET;
 		sa4.sin_port		= port.NotAnInteger;
@@ -1434,7 +1437,7 @@ mDNSlocal mStatus	SetupSocket( mDNS *const inMDNS, const mDNSAddr *inAddr, mDNSB
 		
 		// Start listening for packets.
 		
-		memset( &sa6, 0, sizeof( sa6 ) );
+		mDNSPlatformMemZero( &sa6, sizeof( sa6 ) );
 		sa6.sin6_len		= sizeof( sa6 );
 		sa6.sin6_family		= AF_INET6;
 		sa6.sin6_port		= port.NotAnInteger;

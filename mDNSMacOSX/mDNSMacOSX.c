@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.604  2009/01/13 05:31:34  mkrochma
+<rdar://problem/6491367> Replace bzero, bcopy with mDNSPlatformMemZero, mDNSPlatformMemCopy, memset, memcpy
+
 Revision 1.603  2009/01/12 22:26:13  mkrochma
 Change DynamicStore location from BonjourSleepProxy/DiscoveredServers to SleepProxyServers
 
@@ -1719,7 +1722,7 @@ mDNSexport TCPSocket *mDNSPlatformTCPSocket(mDNS *const m, TCPSocketFlags flags,
 
 	// Bind it
 	struct sockaddr_in addr;
-	memset(&addr, 0, sizeof(addr));
+	mDNSPlatformMemZero(&addr, sizeof(addr));
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	addr.sin_port = port->NotAnInteger;
@@ -1731,7 +1734,7 @@ mDNSexport TCPSocket *mDNSPlatformTCPSocket(mDNS *const m, TCPSocketFlags flags,
 	if (setsockopt(sock->fd, IPPROTO_IP, IP_RECVIF, &on, sizeof(on)) < 0)
 		{ LogMsg("setsockopt IP_RECVIF - %s", strerror(errno)); goto error; }
 
-	memset(&addr, 0, sizeof(addr));
+	mDNSPlatformMemZero(&addr, sizeof(addr));
 	socklen_t len = sizeof(addr);
 	if (getsockname(sock->fd, (struct sockaddr*) &addr, &len) < 0)
 		{ LogMsg("getsockname - %s", strerror(errno)); goto error; }
@@ -1827,7 +1830,7 @@ mDNSexport TCPSocket *mDNSPlatformTCPAccept(TCPSocketFlags flags, int fd)
 	TCPSocket *sock = mallocL("TCPSocket/mDNSPlatformTCPAccept", sizeof(TCPSocket));
 	if (!sock) return(mDNSNULL);
 
-	memset(sock, 0, sizeof(*sock));
+	mDNSPlatformMemZero(sock, sizeof(*sock));
 	sock->fd = fd;
 	sock->flags = flags;
 
@@ -2092,7 +2095,7 @@ mDNSexport UDPSocket *mDNSPlatformUDPSocket(mDNS *const m, const mDNSIPPort requ
 	int i = 10000; // Try at most 10000 times to get a unique random port
 	UDPSocket *p = mallocL("UDPSocket", sizeof(UDPSocket));
 	if (!p) { LogMsg("mDNSPlatformUDPSocket: memory exhausted"); return(mDNSNULL); }
-	memset(p, 0, sizeof(UDPSocket));
+	mDNSPlatformMemZero(p, sizeof(UDPSocket));
 	p->ss.port  = zeroIPPort;
 	p->ss.m     = m;
 	p->ss.sktv4 = -1;
@@ -2414,7 +2417,7 @@ mDNSexport void mDNSPlatformReceiveBPF_fd(mDNS *const m, int fd)
 		LogMsg("mDNSPlatformReceiveBPF_fd: %d %s BIOCIMMEDIATE failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno));
 
 	struct ifreq ifr;
-	bzero(&ifr, sizeof(ifr));
+	mDNSPlatformMemZero(&ifr, sizeof(ifr));
 	strlcpy(ifr.ifr_name, i->ifinfo.ifname, sizeof(ifr.ifr_name));
 	if (ioctl(fd, BIOCSETIF, &ifr) < 0)
 		{ LogMsg("mDNSPlatformReceiveBPF_fd: %d %s BIOCSETIF failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno)); i->BPF_fd = -3; }
@@ -4500,7 +4503,7 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 			LogOperation("SetDomainSecrets: Bringing tunnel interface DOWN");
 			m->AutoTunnelHostAddrActive = mDNSfalse;
 			(void)mDNSAutoTunnelInterfaceUpDown(kmDNSDown, m->AutoTunnelHostAddr.b);
-			memset(m->AutoTunnelHostAddr.b, 0, sizeof(m->AutoTunnelHostAddr.b));
+			mDNSPlatformMemZero(m->AutoTunnelHostAddr.b, sizeof(m->AutoTunnelHostAddr.b));
 			}
 
 		if (!haveAutoTunnels && AnonymousRacoonConfig)
@@ -5405,7 +5408,7 @@ mDNSexport void     mDNSPlatformStrCopy(      void *dst, const void *src)       
 mDNSexport mDNSu32  mDNSPlatformStrLen (                 const void *src)              { return(strlen((char*)src)); }
 mDNSexport void     mDNSPlatformMemCopy(      void *dst, const void *src, mDNSu32 len) { memcpy(dst, src, len); }
 mDNSexport mDNSBool mDNSPlatformMemSame(const void *dst, const void *src, mDNSu32 len) { return(memcmp(dst, src, len) == 0); }
-mDNSexport void     mDNSPlatformMemZero(      void *dst,                  mDNSu32 len) { bzero(dst, len); }
+mDNSexport void     mDNSPlatformMemZero(      void *dst,                  mDNSu32 len) { memset(dst, 0, len); }
 #if !(APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING)
 mDNSexport void *   mDNSPlatformMemAllocate(mDNSu32 len) { return(mallocL("mDNSPlatformMemAllocate", len)); }
 #endif

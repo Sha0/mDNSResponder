@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.52  2009/01/13 05:31:34  mkrochma
+<rdar://problem/6491367> Replace bzero, bcopy with mDNSPlatformMemZero, mDNSPlatformMemCopy, memset, memcpy
+
 Revision 1.51  2009/01/12 22:26:12  mkrochma
 Change DynamicStore location from BonjourSleepProxy/DiscoveredServers to SleepProxyServers
 
@@ -369,7 +372,7 @@ kern_return_t do_mDNSSetARP(__unused mach_port_t port, int ifindex, v4addr_t v4,
 		gettimeofday(&tv, 0);
 
 		struct { struct rt_msghdr hdr; struct sockaddr_inarp dst; struct sockaddr_dl sdl; } rtmsg;
-		bzero(&rtmsg, sizeof(rtmsg));
+		memset(&rtmsg, 0, sizeof(rtmsg));
 
 		rtmsg.hdr.rtm_msglen         = sizeof(rtmsg);
 		rtmsg.hdr.rtm_version        = RTM_VERSION;
@@ -1142,7 +1145,7 @@ aliasTunnelAddress(v6addr_t address)
 		err = kmDNSHelperDatagramSocketCreationFailed;
 		goto fin;
 		}
-	bzero(&ifra_in6, sizeof(ifra_in6));
+	memset(&ifra_in6, 0, sizeof(ifra_in6));
 	strlcpy(ifra_in6.ifra_name, kTunnelAddressInterface,
 	    sizeof(ifra_in6.ifra_name));
 	ifra_in6.ifra_lifetime.ia6t_vltime = ND6_INFINITE_LIFETIME;
@@ -1192,7 +1195,7 @@ unaliasTunnelAddress(v6addr_t address)
 		err = kmDNSHelperDatagramSocketCreationFailed;
 		goto fin;
 		}
-	bzero(&ifr, sizeof(ifr));
+	memset(&ifr, 0, sizeof(ifr));
 	strlcpy(ifr.ifr_name, kTunnelAddressInterface, sizeof(ifr.ifr_name));
 	ifr.ifr_ifru.ifru_addr.sin6_family = AF_INET6;
 	ifr.ifr_ifru.ifru_addr.sin6_len = sizeof(struct sockaddr_in6);

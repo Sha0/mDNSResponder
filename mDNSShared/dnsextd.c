@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: dnsextd.c,v $
+Revision 1.97  2009/01/13 05:31:34  mkrochma
+<rdar://problem/6491367> Replace bzero, bcopy with mDNSPlatformMemZero, mDNSPlatformMemCopy, memset, memcpy
+
 Revision 1.96  2009/01/13 00:45:41  cheshire
 Uncommented "#ifdef NOT_HAVE_DAEMON" check
 
@@ -213,7 +216,6 @@ Revision 1.42  2006/07/05 22:48:19  cheshire
 #include <stdio.h>
 #include <syslog.h>
 #include <string.h>
-#include <strings.h>		// For bzero()
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <time.h>
@@ -624,7 +626,7 @@ RecvPacket
 
 		pkt = malloc(allocsize);
 		require_action_quiet( pkt, exit, err = mStatus_NoMemoryErr; LogErr( "RecvPacket", "malloc" ) );
-		bzero( pkt, sizeof( *pkt ) );
+		mDNSPlatformMemZero( pkt, sizeof( *pkt ) );
 		}
 	
 	pkt->len = msglen;
@@ -633,7 +635,7 @@ RecvPacket
 	if ( getpeername( fd, ( struct sockaddr* ) &pkt->src, &srclen ) || ( srclen != sizeof( pkt->src ) ) )
 		{
 		LogErr("RecvPacket", "getpeername");
-		bzero(&pkt->src, sizeof(pkt->src));
+		mDNSPlatformMemZero(&pkt->src, sizeof(pkt->src));
 		}
 
 	nread = my_recv(sock, &pkt->msg, msglen, closed );
@@ -980,7 +982,7 @@ mDNSlocal void RehashTable(DaemonInfo *d)
 	VLog("Rehashing lease table (new size %d buckets)", newnbuckets);
 	new = malloc(sizeof(RRTableElem *) * newnbuckets);
 	if (!new) { LogErr("RehashTable", "malloc");  return; }
-	bzero(new, newnbuckets * sizeof(RRTableElem *));
+	mDNSPlatformMemZero(new, newnbuckets * sizeof(RRTableElem *));
 
 	for (i = 0; i < d->nbuckets; i++)
 		{
@@ -1041,7 +1043,7 @@ mDNSlocal mDNSu8 *putRRSetDeletion(DNSMessage *msg, mDNSu8 *ptr, mDNSu8 *limit, 
 	ptr[1] = (mDNSu8)(rr->rrtype  &  0xFF);
 	ptr[2] = (mDNSu8)((mDNSu16)kDNSQClass_ANY >> 8);
 	ptr[3] = (mDNSu8)((mDNSu16)kDNSQClass_ANY &  0xFF);
-	bzero(ptr+4, sizeof(rr->rroriginalttl) + sizeof(rr->rdlength)); // zero ttl/rdata
+	mDNSPlatformMemZero(ptr+4, sizeof(rr->rroriginalttl) + sizeof(rr->rdlength)); // zero ttl/rdata
 	msg->h.mDNS_numUpdates++;
 	return ptr + 10;
 	}
@@ -1241,7 +1243,7 @@ mDNSlocal int ProcessArgs(int argc, char *argv[], DaemonInfo *d)
 
 	// setup our sockaddr
 
-	bzero( &d->addr, sizeof( d->addr ) );
+	mDNSPlatformMemZero( &d->addr, sizeof( d->addr ) );
 	d->addr.sin_addr.s_addr	= zerov4Addr.NotAnInteger;
 	d->addr.sin_port		= UnicastDNSPort.NotAnInteger;
 	d->addr.sin_family		= AF_INET;
@@ -1251,7 +1253,7 @@ mDNSlocal int ProcessArgs(int argc, char *argv[], DaemonInfo *d)
 
 	// setup nameserver's sockaddr
 
-	bzero(&d->ns_addr, sizeof(d->ns_addr));
+	mDNSPlatformMemZero(&d->ns_addr, sizeof(d->ns_addr));
 	d->ns_addr.sin_family	= AF_INET;
 	inet_pton( AF_INET, LOOPBACK, &d->ns_addr.sin_addr );
 	d->ns_addr.sin_port		= NSIPCPort.NotAnInteger;
@@ -1314,7 +1316,7 @@ mDNSlocal int InitLeaseTable(DaemonInfo *d)
 	d->nelems = 0;
 	d->table = malloc(sizeof(RRTableElem *) * LEASETABLE_INIT_NBUCKETS);
 	if (!d->table) { LogErr("InitLeaseTable", "malloc"); return -1; }
-	bzero(d->table, sizeof(RRTableElem *) * LEASETABLE_INIT_NBUCKETS);
+	mDNSPlatformMemZero(d->table, sizeof(RRTableElem *) * LEASETABLE_INIT_NBUCKETS);
 	return 0;
 	}
 
@@ -1361,7 +1363,7 @@ SetupSockets
 
 	// set up sockets on which we receive llq requests
 
-	bzero(&self->llq_addr, sizeof(self->llq_addr));
+	mDNSPlatformMemZero(&self->llq_addr, sizeof(self->llq_addr));
 	self->llq_addr.sin_family		= AF_INET;
 	self->llq_addr.sin_addr.s_addr	= zerov4Addr.NotAnInteger;
 	self->llq_addr.sin_port			= ( self->llq_port.NotAnInteger ) ? self->llq_port.NotAnInteger : DNSEXTPort.NotAnInteger;
@@ -1403,7 +1405,7 @@ SetupSockets
 
 	self->llq_tcpsd = socket( AF_INET, SOCK_STREAM, 0 );
 	require_action( dnssd_SocketValid(self->tlssd), exit, err = mStatus_UnknownErr; LogErr( "SetupSockets", "socket" ) );
-	bzero(&daddr, sizeof(daddr));
+	mDNSPlatformMemZero(&daddr, sizeof(daddr));
 	daddr.sin_family		= AF_INET;
 	daddr.sin_addr.s_addr	= zerov4Addr.NotAnInteger;
 	daddr.sin_port			= ( self->private_port.NotAnInteger ) ? self->private_port.NotAnInteger : PrivateDNSPort.NotAnInteger;
@@ -1694,7 +1696,7 @@ HandleRequest
 			static const mDNSOpaque16 UpdateRefused = { { kDNSFlag0_QR_Response | kDNSFlag0_OP_Update, kDNSFlag1_RC_Refused } };
 			Log("Rejecting Update Request with %d additions but no lease", adds);
 			reply = malloc(sizeof(*reply));
-			bzero(&reply->src, sizeof(reply->src));
+			mDNSPlatformMemZero(&reply->src, sizeof(reply->src));
 			reply->len = sizeof(DNSMessageHeader);
 			reply->zone = NULL;
 			reply->isZonePublic = 0;
@@ -1805,7 +1807,7 @@ exit:
 // Set fields of an LLQ OPT Resource Record
 mDNSlocal void FormatLLQOpt(AuthRecord *opt, int opcode, const mDNSOpaque64 *const id, mDNSs32 lease)
 	{
-	bzero(opt, sizeof(*opt));
+	mDNSPlatformMemZero(opt, sizeof(*opt));
 	mDNS_SetupResourceRecord(opt, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
 	opt->resrec.rrclass = NormalMaxDNSMessageData;
 	opt->resrec.rdlength   = sizeof(rdataOPT);	// One option in this OPT record
@@ -2734,7 +2736,7 @@ RecvUDPMessage
 	context = malloc( sizeof( UDPContext ) );
 	require_action( context, exit, err = mStatus_NoMemoryErr ; LogErr( "RecvUDPMessage", "malloc" ) );
 
-	bzero( context, sizeof( *context ) );
+	mDNSPlatformMemZero( context, sizeof( *context ) );
 	context->d = self;
 	context->sd = sd;
 
@@ -2972,7 +2974,7 @@ AcceptTCPConnection
 	
 	context = ( TCPContext* ) malloc( sizeof( TCPContext ) );
 	require_action( context, exit, err = mStatus_NoMemoryErr; LogErr( "AcceptTCPConnection", "malloc" ) );
-	bzero( context, sizeof( sizeof( TCPContext ) ) );
+	mDNSPlatformMemZero( context, sizeof( sizeof( TCPContext ) ) );
 	context->d		 = self;
 	newSock = accept( sd, ( struct sockaddr* ) &context->cliaddr, &clilen );
 	require_action( newSock != -1, exit, err = mStatus_UnknownErr; LogErr( "AcceptTCPConnection", "accept" ) );
@@ -3190,7 +3192,7 @@ int main(int argc, char *argv[])
 
 	d = malloc(sizeof(*d));
 	if (!d) { LogErr("main", "malloc"); exit(1); }
-	bzero(d, sizeof(DaemonInfo));
+	mDNSPlatformMemZero(d, sizeof(DaemonInfo));
 
 	// Setup the public SRV record names
 

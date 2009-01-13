@@ -21,6 +21,9 @@
 	Change History (most recent first):
 
 $Log: mDNSVxWorksIPv4Only.c,v $
+Revision 1.34  2009/01/13 05:31:35  mkrochma
+<rdar://problem/6491367> Replace bzero, bcopy with mDNSPlatformMemZero, mDNSPlatformMemCopy, memset, memcpy
+
 Revision 1.33  2008/11/04 19:51:13  cheshire
 Updated comment about MAX_ESCAPED_DOMAIN_NAME size (should be 1009, not 1005)
 
@@ -416,7 +419,7 @@ mStatus	mDNSPlatformInit( mDNS * const inMDNS )
 	
 	// Initialize variables.
 
-	memset( &gMDNSPlatformSupport, 0, sizeof( gMDNSPlatformSupport ) );
+	mDNSPlatformMemZero( &gMDNSPlatformSupport, sizeof( gMDNSPlatformSupport ) );
 	inMDNS->p							= &gMDNSPlatformSupport;
 	inMDNS->p->commandPipe				= ERROR;
 	inMDNS->p->task						= ERROR;
@@ -555,7 +558,7 @@ mStatus
 	item = (MDNSInterfaceItem *) inInterfaceID;
 	check( item->sendingSocketRef != kInvalidSocketRef );
 	
-	memset( &addr, 0, sizeof( addr ) );
+	mDNSPlatformMemZero( &addr, sizeof( addr ) );
 	addr.sin_family 		= AF_INET;
 	addr.sin_port 			= inDstPort.NotAnInteger;
 	addr.sin_addr.s_addr 	= inDstIP->ip.v4.NotAnInteger;
@@ -1243,7 +1246,7 @@ mDNSlocal mStatus
 		
 		// Bind to the multicast DNS address and port 5353.
 		
-		memset( &addr, 0, sizeof( addr ) );
+		mDNSPlatformMemZero( &addr, sizeof( addr ) );
 		addr.sin_family 		= AF_INET;
 		addr.sin_port 			= inPort.NotAnInteger;
 		addr.sin_addr.s_addr 	= AllDNSLinkGroup_v4.ip.v4.NotAnInteger;
@@ -1258,7 +1261,7 @@ mDNSlocal mStatus
 		// Bind to the interface address and multicast DNS port.
 		
 		ip.NotAnInteger 		= ipv4->sin_addr.s_addr;
-		memset( &addr, 0, sizeof( addr ) );
+		mDNSPlatformMemZero( &addr, sizeof( addr ) );
 		addr.sin_family 		= AF_INET;
 		addr.sin_port 			= MulticastDNSPort.NotAnInteger;
 		addr.sin_addr.s_addr 	= ip.NotAnInteger;

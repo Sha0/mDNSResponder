@@ -73,7 +73,7 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT ws2_32.lib ..\mDNSWindows\DLL\Rele
 #include <ctype.h>
 #include <stdio.h>			// For stdout, stderr
 #include <stdlib.h>			// For exit()
-#include <string.h>			// For strlen(), strcpy(), bzero()
+#include <string.h>			// For strlen(), strcpy()
 #include <errno.h>			// For errno, EINTR
 #include <time.h>
 #include <sys/types.h>		// For u_char

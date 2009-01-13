@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSUNP.c,v $
+Revision 1.40  2009/01/13 05:31:34  mkrochma
+<rdar://problem/6491367> Replace bzero, bcopy with mDNSPlatformMemZero, mDNSPlatformMemCopy, memset, memcpy
+
 Revision 1.39  2009/01/11 03:20:06  mkrochma
 <rdar://problem/5797526> Fixes from Igor Seleznev to get mdnsd working on Solaris
 
@@ -513,7 +516,7 @@ struct ifi_info *get_ifi_info(int family, int doaliases)
 				struct in6_ifreq ifr6;
 				if (sockf6 == -1)
 					sockf6 = socket(AF_INET6, SOCK_DGRAM, 0);
-				bzero(&ifr6, sizeof(ifr6));
+				memset(&ifr6, 0, sizeof(ifr6));
 				memcpy(&ifr6.ifr_name,           &ifr->ifr_name, sizeof(ifr6.ifr_name          ));
 				memcpy(&ifr6.ifr_ifru.ifru_addr, &ifr->ifr_addr, sizeof(ifr6.ifr_ifru.ifru_addr));
 				if (ioctl(sockf6, SIOCGIFNETMASK_IN6, &ifr6) < 0) goto gotError;

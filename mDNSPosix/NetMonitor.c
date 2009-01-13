@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.93  2009/01/13 05:31:34  mkrochma
+<rdar://problem/6491367> Replace bzero, bcopy with mDNSPlatformMemZero, mDNSPlatformMemCopy, memset, memcpy
+
 Revision 1.92  2009/01/11 03:20:06  mkrochma
 <rdar://problem/5797526> Fixes from Igor Seleznev to get mdnsd working on Solaris
 
@@ -105,8 +108,7 @@ Use IFNAMSIZ (more portable) instead of IF_NAMESIZE
 
 #include <stdio.h>			// For printf()
 #include <stdlib.h>			// For malloc()
-#include <string.h>			// For bcopy()
-#include <strings.h>		// For bzero()
+#include <string.h>			// For strrchr(), strcmp()
 #include <time.h>			// For "struct tm" etc.
 #include <signal.h>			// For SIGINT, SIGTERM
 #include <netdb.h>			// For gethostbyname()
@@ -962,7 +964,7 @@ mDNSexport int main(int argc, char **argv)
 			else if (inet_pton(AF_INET6, argv[i], &s6) == 1)
 				{
 				a.type = mDNSAddrType_IPv6;
-				bcopy(&s6, &a.ip.v6, sizeof(a.ip.v6));
+				mDNSPlatformMemCopy(&a.ip.v6, &s6, sizeof(a.ip.v6));
 				}
 			else
 				{

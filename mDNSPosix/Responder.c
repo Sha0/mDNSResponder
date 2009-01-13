@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: Responder.c,v $
+Revision 1.35  2009/01/13 05:31:34  mkrochma
+<rdar://problem/6491367> Replace bzero, bcopy with mDNSPlatformMemZero, mDNSPlatformMemCopy, memset, memcpy
+
 Revision 1.34  2009/01/11 03:20:06  mkrochma
 <rdar://problem/5797526> Fixes from Igor Seleznev to get mdnsd working on Solaris
 
@@ -408,7 +411,7 @@ static void ParseArguments(int argc, char **argv)
                 	while (optind < argc)
                 		{
                 		gServiceText[gServiceTextLen] = strlen(argv[optind]);
-                		memcpy(gServiceText+gServiceTextLen+1, argv[optind], gServiceText[gServiceTextLen]);
+                		mDNSPlatformMemCopy(gServiceText+gServiceTextLen+1, argv[optind], gServiceText[gServiceTextLen]);
                 		gServiceTextLen += 1 + gServiceText[gServiceTextLen];
                 		optind++;
                 		}
@@ -640,7 +643,7 @@ static mStatus RegisterServicesInFile(const char *filePath)
 						unsigned int newlen = textLen + 1 + len;
 						if (len == 0 || newlen >= sizeof(text)) break;
 						text[textLen] = len;
-						memcpy(text + textLen + 1, rawText, len);
+						mDNSPlatformMemCopy(text + textLen + 1, rawText, len);
 						textLen = newlen;
 						}
 					else

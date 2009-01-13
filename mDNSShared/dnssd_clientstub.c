@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.120  2009/01/13 05:31:35  mkrochma
+<rdar://problem/6491367> Replace bzero, bcopy with mDNSPlatformMemZero, mDNSPlatformMemCopy, memset, memcpy
+
 Revision 1.119  2009/01/11 03:45:08  mkrochma
 Stop type casting num_written and num_read to int
 
@@ -265,7 +268,6 @@ Minor textual tidying
 
 #include <errno.h>
 #include <stdlib.h>
-#include <strings.h>		// For bzero()
 #include <sys/fcntl.h>		// For O_RDWR etc.
 
 #include "dnssd_ipc.h"
@@ -458,7 +460,7 @@ static ipc_msg_hdr *create_hdr(uint32_t op, size_t *len, char **data_start, int 
 	msg = malloc(*len);
 	if (!msg) { syslog(LOG_WARNING, "dnssd_clientstub create_hdr: malloc failed"); return NULL; }
 
-	bzero(msg, *len);
+	memset(msg, 0, *len);
 	hdr = (ipc_msg_hdr *)msg;
 	hdr->version                = VERSION;
 	hdr->datalen                = datalen;
@@ -1193,7 +1195,7 @@ static void handle_addrinfo_response(DNSServiceOp *sdr, CallbackHeader *cbh, cha
 		const struct sockaddr *const sa = (rrtype == kDNSServiceType_A) ? (struct sockaddr*)&sa4 : (struct sockaddr*)&sa6;
 		if (rrtype == kDNSServiceType_A)
 			{
-			bzero(&sa4, sizeof(sa4));
+			memset(&sa4, 0, sizeof(sa4));
 			#ifndef NOT_HAVE_SA_LEN
 			sa4.sin_len = sizeof(struct sockaddr_in);
 			#endif
@@ -1203,7 +1205,7 @@ static void handle_addrinfo_response(DNSServiceOp *sdr, CallbackHeader *cbh, cha
 			}
 		else
 			{
-			bzero(&sa6, sizeof(sa6));
+			memset(&sa6, 0, sizeof(sa6));
 			#ifndef NOT_HAVE_SA_LEN
 			sa6.sin6_len = sizeof(struct sockaddr_in6);
 			#endif
