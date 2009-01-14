@@ -16,6 +16,9 @@
     Change History (most recent first):
 
 $Log: helper-stubs.c,v $
+Revision 1.13  2009/01/14 01:28:17  mcguire
+removed unused variable
+
 Revision 1.12  2008/11/11 00:46:37  cheshire
 Don't just show "<unknown error>"; show the actual numeric error code too, so we can see what the unknown error was
 
@@ -270,10 +273,7 @@ int mDNSAutoTunnelSetKeys(int replacedelete, v6addr_t local_inner,
     v4addr_t remote_outer, short remote_port, const char *keydata)
 	{
 	kern_return_t kr = KERN_SUCCESS;
-	const char *p = NULL;
 	int retry = 0, err = 0;
-	if (kmDNSAutoTunnelSetKeysReplace == replacedelete) p = keydata;
-	else p = "";
 	MACHRETRYLOOP_BEGIN(kr, retry, err, fin);
 	kr = proxy_mDNSAutoTunnelSetKeys(getHelperPort(retry), replacedelete, local_inner, local_outer, local_port, remote_inner, remote_outer, remote_port, keydata, &err);
 	MACHRETRYLOOP_END(kr, retry, err, fin);
