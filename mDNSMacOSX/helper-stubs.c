@@ -16,6 +16,9 @@
     Change History (most recent first):
 
 $Log: helper-stubs.c,v $
+Revision 1.14  2009/01/14 01:38:42  mcguire
+<rdar://problem/6492710> Write out DynamicStore per-interface SleepProxyServer info
+
 Revision 1.13  2009/01/14 01:28:17  mcguire
 removed unused variable
 
@@ -131,7 +134,7 @@ fin:
 	return err;
 	}
 
-int mDNSDynamicStoreSetConfig(int key, CFPropertyListRef value)
+int mDNSDynamicStoreSetConfig(int key, const char *subkey, CFPropertyListRef value)
 	{
 	CFWriteStreamRef stream = NULL;
 	CFDataRef bytes = NULL;
@@ -162,7 +165,7 @@ int mDNSDynamicStoreSetConfig(int key, CFPropertyListRef value)
 	CFRelease(stream);
 	stream = NULL;
 	MACHRETRYLOOP_BEGIN(kr, retry, err, fin);
-	kr = proxy_mDNSDynamicStoreSetConfig(getHelperPort(retry), key, (vm_offset_t)CFDataGetBytePtr(bytes), CFDataGetLength(bytes), &err);
+	kr = proxy_mDNSDynamicStoreSetConfig(getHelperPort(retry), key, subkey ? subkey : "", (vm_offset_t)CFDataGetBytePtr(bytes), CFDataGetLength(bytes), &err);
 	MACHRETRYLOOP_END(kr, retry, err, fin);
 
 fin:

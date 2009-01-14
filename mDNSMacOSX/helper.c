@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.53  2009/01/14 01:38:42  mcguire
+<rdar://problem/6492710> Write out DynamicStore per-interface SleepProxyServer info
+
 Revision 1.52  2009/01/13 05:31:34  mkrochma
 <rdar://problem/6491367> Replace bzero, bcopy with mDNSPlatformMemZero, mDNSPlatformMemCopy, memset, memcpy
 
@@ -423,10 +426,11 @@ fin:
 
 kern_return_t
 do_mDNSDynamicStoreSetConfig(__unused mach_port_t port, int key,
-    vm_offset_t value, mach_msg_type_number_t valueCnt, int *err,
+    const char* subkey, vm_offset_t value, mach_msg_type_number_t valueCnt, int *err,
     audit_token_t token)
 	{
 	CFStringRef sckey = NULL;
+	Boolean release_sckey = FALSE;
 	CFDataRef bytes = NULL;
 	CFPropertyListRef plist = NULL;
 	SCDynamicStoreRef store = NULL;
@@ -454,8 +458,16 @@ do_mDNSDynamicStoreSetConfig(__unused mach_port_t port, int key,
 			sckey = CFSTR("State:/Network/BackToMyMac");
 			break;
 		case kmDNSSleepProxyServersState:
-			sckey = CFSTR("State:/Network/SleepProxyServers");
+			{
+			CFMutableStringRef tmp = CFStringCreateMutable(kCFAllocatorDefault, 0);
+			CFStringAppend(tmp, CFSTR("State:/Network/Interface/"));
+			CFStringAppendCString(tmp, subkey, kCFStringEncodingUTF8);
+			CFStringAppend(tmp, CFSTR("/SleepProxyServers"));
+			sckey = CFStringCreateCopy(kCFAllocatorDefault, tmp);
+			release_sckey = TRUE;
+			CFRelease(tmp);
 			break;
+			}
 		default:
 			debug("unrecognized key %d", key);
 			*err = kmDNSHelperInvalidConfigKey;
@@ -497,6 +509,8 @@ fin:
 		CFRelease(plist);
 	if (NULL != store)
 		CFRelease(store);
+	if (release_sckey && sckey)
+		CFRelease(sckey);
 	vm_deallocate(mach_task_self(), value, valueCnt);
 	update_idle_timer();
 	return KERN_SUCCESS;

@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.881  2009/01/14 01:38:38  mcguire
+<rdar://problem/6492710> Write out DynamicStore per-interface SleepProxyServer info
+
 Revision 1.880  2009/01/10 01:51:19  cheshire
 q->CurrentAnswers not being incremented/decremented when answering a question with a local AuthRecord
 
@@ -7431,7 +7434,12 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 	while (*p && *p != set) p=&(*p)->next;
 	if (!*p) { debugf("mDNS_DeregisterInterface: NetworkInterfaceInfo not found in list"); mDNS_Unlock(m); return; }
 
-	if (set->NetWakeBrowse. ThisQInterval >= 0) mDNS_StopQuery_internal(m, &set->NetWakeBrowse);
+	if (set->NetWakeBrowse. ThisQInterval >= 0)
+		{
+		mDNS_StopQuery_internal(m, &set->NetWakeBrowse);
+		// Make special call to the browse callback to let it know it can to remove all records for this interface
+		if (m->SPSBrowseCallback) m->SPSBrowseCallback(m, &set->NetWakeBrowse, mDNSNULL, mDNSfalse);
+		}
 	if (set->NetWakeResolve.ThisQInterval >= 0) mDNS_StopQuery_internal(m, &set->NetWakeResolve);
 
 	// Unlink this record from our list

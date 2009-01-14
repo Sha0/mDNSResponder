@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.605  2009/01/14 01:38:43  mcguire
+<rdar://problem/6492710> Write out DynamicStore per-interface SleepProxyServer info
+
 Revision 1.604  2009/01/13 05:31:34  mkrochma
 <rdar://problem/6491367> Replace bzero, bcopy with mDNSPlatformMemZero, mDNSPlatformMemCopy, memset, memcpy
 
@@ -2787,7 +2790,7 @@ mDNSlocal void RemoveAutoTunnelDomainStatus(const DomainAuthInfo *const info)
 	if (CFDictionaryContainsKey(domainStatusDict, domain))
 		{
 		CFDictionaryRemoveValue(domainStatusDict, domain);
-		mDNSDynamicStoreSetConfig(kmDNSBackToMyMacConfig, domainStatusDict);
+		mDNSDynamicStoreSetConfig(kmDNSBackToMyMacConfig, mDNSNULL, domainStatusDict);
 		}
 	CFRelease(domain);
 	}
@@ -2967,7 +2970,7 @@ mDNSlocal void UpdateAutoTunnelDomainStatus(const mDNS *const m, const DomainAut
 	    !CFEqual(dict, (CFMutableDictionaryRef)CFDictionaryGetValue(domainStatusDict, domain)))
 	    {
 		CFDictionarySetValue(domainStatusDict, domain, dict);
-		mDNSDynamicStoreSetConfig(kmDNSBackToMyMacConfig, domainStatusDict);
+		mDNSDynamicStoreSetConfig(kmDNSBackToMyMacConfig, mDNSNULL, domainStatusDict);
 		}
 		
 	CFRelease(domain);
@@ -4283,7 +4286,7 @@ mDNSexport void mDNSPlatformDynDNSHostNameStatusChanged(const domainname *const 
 					CFDictionaryRef StateDict = CFDictionaryCreate(NULL, (void*)StateKeys, (void*)StateVals, 1, NULL, NULL);
 					if (StateDict)
 						{
-						mDNSDynamicStoreSetConfig(kmDNSDynamicConfig, StateDict);
+						mDNSDynamicStoreSetConfig(kmDNSDynamicConfig, mDNSNULL, StateDict);
 						CFRelease(StateDict);
 						}
 					CFRelease(StateVals[0]);
@@ -4448,7 +4451,7 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 			}
 		CFRelease(secrets);
 		}
-	mDNSDynamicStoreSetConfig(kmDNSPrivateConfig, sa);
+	mDNSDynamicStoreSetConfig(kmDNSPrivateConfig, mDNSNULL, sa);
 	CFRelease(sa);
 
 #if APPLE_OSX_mDNSResponder
@@ -4534,7 +4537,7 @@ mDNSlocal void SetLocalDomains(void)
 	CFArrayAppendValue(sa, CFSTR("a.e.f.ip6.arpa"));
 	CFArrayAppendValue(sa, CFSTR("b.e.f.ip6.arpa"));
 
-	mDNSDynamicStoreSetConfig(kmDNSMulticastConfig, sa);
+	mDNSDynamicStoreSetConfig(kmDNSMulticastConfig, mDNSNULL, sa);
 	CFRelease(sa);
 	}
 
@@ -4556,20 +4559,17 @@ mDNSlocal void SPSStatusPutNumber(CFMutableDictionaryRef dict, const mDNSu8* con
 		}
 	}
 
-mDNSlocal void SPSAddToArray(CFMutableArrayRef array, const mDNSu8* const ptr)
+mDNSlocal CFMutableDictionaryRef SPSCreateDict(const mDNSu8* const ptr)
 	{
 	CFMutableDictionaryRef dict = CFDictionaryCreateMutable(NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-	if (!dict) { LogMsg("SPSAddToArray: Could not create CFDictionary dict"); return; }
+	if (!dict) { LogMsg("SPSCreateDict: Could not create CFDictionary dict"); return dict; }
 	
 	char buffer[1024];
 	buffer[mDNS_snprintf(buffer, sizeof(buffer), "%##s", ptr) - 1] = 0;
 	CFStringRef spsname = CFStringCreateWithCString(NULL, buffer, kCFStringEncodingUTF8);
-	if (!spsname) { LogMsg("SPSAddToArray: Could not create CFString spsname full"); return; }
-	else
-		{
-		CFDictionarySetValue(dict, CFSTR("FullName"), spsname);
-		CFRelease(spsname);
-		}
+	if (!spsname) { LogMsg("SPSCreateDict: Could not create CFString spsname full"); CFRelease(dict); return NULL; }
+	CFDictionarySetValue(dict, CFSTR("FullName"), spsname);
+	CFRelease(spsname);
 
 	if (ptr[0] >=  2) SPSStatusPutNumber(dict, ptr + 1, CFSTR("Type"));
 	if (ptr[0] >=  5) SPSStatusPutNumber(dict, ptr + 4, CFSTR("Portability"));
@@ -4579,7 +4579,7 @@ mDNSlocal void SPSAddToArray(CFMutableArrayRef array, const mDNSu8* const ptr)
 	mDNSu32 tmp = SPSMetric(ptr);
 	CFNumberRef num = CFNumberCreate(NULL, kCFNumberSInt32Type, &tmp);
 	if (!num)
-		LogMsg("SPSAddToArray: Could not create CFNumber");
+		LogMsg("SPSCreateDict: Could not create CFNumber");
 	else
 		{
 		CFDictionarySetValue(dict, kMetricRef, num);
@@ -4591,19 +4591,18 @@ mDNSlocal void SPSAddToArray(CFMutableArrayRef array, const mDNSu8* const ptr)
 		memcpy(buffer, ptr + 13, ptr[0] - 12);
 		buffer[ptr[0] - 12] = 0;
 		spsname = CFStringCreateWithCString(NULL, buffer, kCFStringEncodingUTF8);
-		if (!spsname) { LogMsg("UpdateSPSStatus: Could not create CFString spsname"); return; }
+		if (!spsname) { LogMsg("SPSCreateDict: Could not create CFString spsname"); CFRelease(dict); return NULL; }
 		else
 			{
 			CFDictionarySetValue(dict, CFSTR("PrettyName"), spsname);
 			CFRelease(spsname);
 			}
 		}
-		
-	CFArrayAppendValue(array, dict);
-	CFRelease(dict);
+	
+	return dict;
 	}
 	
-mDNSlocal CFComparisonResult SortSPSEntries(const void *val1, const void *val2, void *context)
+mDNSlocal CFComparisonResult CompareSPSEntries(const void *val1, const void *val2, void *context)
 	{
 	(void)context;
 	return CFNumberCompare((CFNumberRef)CFDictionaryGetValue((CFDictionaryRef)val1, kMetricRef),
@@ -4613,10 +4612,9 @@ mDNSlocal CFComparisonResult SortSPSEntries(const void *val1, const void *val2, 
 
 mDNSlocal void UpdateSPSStatus(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
+	(void)m;
 	NetworkInterfaceInfo* info = (NetworkInterfaceInfo*)question->QuestionContext;
-	(void)answer;
-	(void)AddRecord;
-	debugf("UpdateSPSStatus: %s %##s %s %s", info->ifname, question->qname.c, AddRecord ? "Add" : "Rmv", RRDisplayString(m, answer));
+	debugf("UpdateSPSStatus: %s %##s %s %s", info->ifname, question->qname.c, AddRecord ? "Add" : "Rmv", answer ? RRDisplayString(m, answer) : "<null>");
 	
 	if (!spsStatusDict)
 		{
@@ -4624,30 +4622,53 @@ mDNSlocal void UpdateSPSStatus(mDNS *const m, DNSQuestion *question, const Resou
 		if (!spsStatusDict) { LogMsg("UpdateSPSStatus: Could not create CFDictionary spsStatusDict"); return; }
 		}
 	
-	CFMutableArrayRef array = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
-	if (!array) { LogMsg("UpdateSPSStatus: Could not create CFMutableArray"); return; }
-
-	CacheGroup *const cg = CacheGroupForName(m, HashSlot(&question->qname), question->qnamehash, &question->qname);
-	const CacheRecord *cr;
-	for (cr = cg ? cg->members : mDNSNULL; cr; cr=cr->next)
-		if (SameNameRecordAnswersQuestion(&cr->resrec, question))
-			if (!IdenticalSameNameRecord(&cr->resrec, &m->SPSRecords.RR_PTR.resrec))
-				if (cr->resrec.rrtype == kDNSType_PTR && cr->resrec.rdlength >= 6)
-					SPSAddToArray(array, cr->resrec.rdata->u.name.c);
-
-	CFArraySortValues(array, CFRangeMake(0, CFArrayGetCount(array)), SortSPSEntries, NULL);
-
 	CFStringRef ifname = CFStringCreateWithCString(NULL, info->ifname, kCFStringEncodingUTF8);
 	if (!ifname) { LogMsg("UpdateSPSStatus: Could not create CFString ifname"); return; }
-	if (!CFDictionaryContainsKey(spsStatusDict, ifname) ||
-	    !CFEqual(array, (CFMutableDictionaryRef)CFDictionaryGetValue(spsStatusDict, ifname)))
-	    {
+	
+	CFMutableArrayRef array = NULL;
+	
+	if (!CFDictionaryGetValueIfPresent(spsStatusDict, ifname, (const void**) &array))
+		{
+		array = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
+		if (!array) { LogMsg("UpdateSPSStatus: Could not create CFMutableArray"); CFRelease(ifname); return; }
 		CFDictionarySetValue(spsStatusDict, ifname, array);
-		mDNSDynamicStoreSetConfig(kmDNSSleepProxyServersState, spsStatusDict);
+		CFRelease(array); // let go of our reference, now that the dict has one
 		}
+	else
+		if (!array) { LogMsg("UpdateSPSStatus: Could not get CFMutableArray for %s", info->ifname); CFRelease(ifname); return; }
+	
+	if (!answer) // special call that means the question has been stopped (because the interface is going away)
+		CFArrayRemoveAllValues(array);
+	else
+		{
+		CFMutableDictionaryRef dict = SPSCreateDict(answer->rdata->u.name.c);
+		if (!dict) { CFRelease(ifname); return; }
+		
+		if (AddRecord)
+			{
+			if (!CFArrayContainsValue(array, CFRangeMake(0, CFArrayGetCount(array)), dict))
+				{
+				int i=0;
+				for (i=0; i<CFArrayGetCount(array); i++)
+					if (CompareSPSEntries(CFArrayGetValueAtIndex(array, i), dict, NULL) != kCFCompareLessThan)
+						break;
+				CFArrayInsertValueAtIndex(array, i, dict);
+				}
+			else LogMsg("UpdateSPSStatus: %s array already contains %##s", info->ifname, answer->rdata->u.name.c);
+			}
+		else
+			{
+			CFIndex i = CFArrayGetFirstIndexOfValue(array, CFRangeMake(0, CFArrayGetCount(array)), dict);
+			if (i != -1) CFArrayRemoveValueAtIndex(array, i);
+			else LogMsg("UpdateSPSStatus: %s array does not contain %##s", info->ifname, answer->rdata->u.name.c);
+			}
+			
+		CFRelease(dict);
+		}
+
+	mDNSDynamicStoreSetConfig(kmDNSSleepProxyServersState, info->ifname, array);
 	
 	CFRelease(ifname);
-	CFRelease(array);
 	}
 
 mDNSlocal mDNSs32 GetSystemSleepTimerSetting(void)

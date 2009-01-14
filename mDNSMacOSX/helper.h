@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.h,v $
+Revision 1.13  2009/01/14 01:38:43  mcguire
+<rdar://problem/6492710> Write out DynamicStore per-interface SleepProxyServer info
+
 Revision 1.12  2009/01/12 22:26:13  mkrochma
 Change DynamicStore location from BonjourSleepProxy/DiscoveredServers to SleepProxyServers
 
@@ -103,7 +106,7 @@ extern const char *mDNSHelperError(int errornum);
 extern void mDNSRequestBPF(void);
 extern int  mDNSPowerRequest(int key, int interval);
 extern int  mDNSSetARP(int ifindex, const v4addr_t ip);
-extern int  mDNSDynamicStoreSetConfig(int key, CFPropertyListRef value);
+extern int  mDNSDynamicStoreSetConfig(int key, const char *subkey, CFPropertyListRef value);
 extern int  mDNSPreferencesSetName(int key, domainlabel* old, domainlabel* new);
 extern int  mDNSKeychainGetSecrets(CFArrayRef *secrets);
 extern int  mDNSAutoTunnelInterfaceUpDown(int updown, v6addr_t addr);

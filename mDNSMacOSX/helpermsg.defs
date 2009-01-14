@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helpermsg.defs,v $
+Revision 1.12  2009/01/14 01:38:43  mcguire
+<rdar://problem/6492710> Write out DynamicStore per-interface SleepProxyServer info
+
 Revision 1.11  2008/11/04 23:54:09  cheshire
 Added routine mDNSSetARP(), used to replace an SPS client's entry in our ARP cache with
 a dummy one, so that IP traffic to the SPS client initiated by the SPS machine can be
@@ -88,6 +91,7 @@ routine mDNSSetARP(				port			: mach_port_t;
 routine mDNSDynamicStoreSetConfig(
 								port			: mach_port_t;
 								key				: int;
+								subkey			: string_t;
 								value			: pointer_t;
 		out						err				: int;
 		ServerAuditToken		token			: audit_token_t);
