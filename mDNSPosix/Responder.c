@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: Responder.c,v $
+Revision 1.36  2009/01/15 03:39:08  mkrochma
+Fix warning about ignoring return value of daemon
+
 Revision 1.35  2009/01/13 05:31:34  mkrochma
 <rdar://problem/6491367> Replace bzero, bcopy with mDNSPlatformMemZero, mDNSPlatformMemCopy, memset, memcpy
 
@@ -733,11 +736,12 @@ int main(int argc, char **argv)
     // because printf has no format specified for pid_t.
     
     if (gDaemon) {
+    	int result;
         if (gMDNSPlatformPosixVerboseLevel > 0) {
             fprintf(stderr, "%s: Starting in daemon mode\n", gProgramName);
         }
-        daemon(0,0);
-        {
+        result = daemon(0,0);
+        if (result == 0) {
             FILE *fp;
             int  junk;
             
@@ -747,6 +751,9 @@ int main(int argc, char **argv)
                 junk = fclose(fp);
                 assert(junk == 0);
             }
+        } else {
+            fprintf(stderr, "%s: Could not run as daemon - exiting\n", gProgramName);
+            exit(result);
         }
     } else {
         if (gMDNSPlatformPosixVerboseLevel > 0) {
