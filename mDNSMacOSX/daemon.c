@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.403  2009/01/15 21:58:18  cheshire
+Stop using ifa_name field of NetworkInterfaceInfoOSX structure, because it will be going away
+
 Revision 1.402  2009/01/07 23:08:18  cheshire
 Updated debugging messages and comments
 
@@ -773,8 +776,8 @@ mDNSlocal void validatelists(mDNS *const m)
 	// Check platform-layer lists
 	NetworkInterfaceInfoOSX     *i;
 	for (i = m->p->InterfaceList; i; i = i->next)
-		if (i->next == (NetworkInterfaceInfoOSX *)~0 || !i->ifa_name || i->ifa_name == (char *)~0)
-			LogMemCorruption("m->p->InterfaceList: %p is garbage (%p)", i, i->ifa_name);
+		if (i->next == (NetworkInterfaceInfoOSX *)~0 || !i->m || i->m == (mDNS *)~0)
+			LogMemCorruption("m->p->InterfaceList: %p is garbage (%p)", i, i->ifinfo.ifname);
 
 	ClientTunnel *t;
 	for (t = m->TunnelClients; t; t=t->next)
@@ -2204,12 +2207,12 @@ mDNSlocal void INFOCallback(void)
 			if (!i->Exists)
 				LogMsgNoIdent("%p %s %7s(%lu) %.6a %.6a %#a dormant for %d seconds",
 					i->ifinfo.InterfaceID,
-					i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id, &i->ifinfo.MAC, &i->BSSID,
+					i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifinfo.ifname, i->scope_id, &i->ifinfo.MAC, &i->BSSID,
 					&i->ifinfo.ip, utc - i->LastSeen);
 			else
 				LogMsgNoIdent("%p %s %7s(%lu) %.6a %.6a %s %s %-15.4a %s %s %s %s %#a",
 					i->ifinfo.InterfaceID,
-					i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifa_name, i->scope_id, &i->ifinfo.MAC, &i->BSSID,
+					i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifinfo.ifname, i->scope_id, &i->ifinfo.MAC, &i->BSSID,
 					i->ifinfo.InterfaceActive ? "Active" : "      ",
 					i->ifinfo.IPv4Available ? "v4" : "  ",
 					i->ifinfo.IPv4Available ? (mDNSv4Addr*)&i->ifa_v4addr : &zerov4Addr,
@@ -2230,7 +2233,7 @@ mDNSlocal void INFOCallback(void)
 			{
 			NetworkInterfaceInfoOSX *ifx = (NetworkInterfaceInfoOSX *)s->interface;
 			LogMsgNoIdent("DNS Server %##s %s%s%#a:%d %s",
-				s->domain.c, ifx ? ifx->ifa_name : "", ifx ? " " : "", &s->addr, mDNSVal16(s->port),
+				s->domain.c, ifx ? ifx->ifinfo.ifname : "", ifx ? " " : "", &s->addr, mDNSVal16(s->port),
 				s->teststate == DNSServer_Untested ? "(Untested)" :
 				s->teststate == DNSServer_Passed   ? ""           :
 				s->teststate == DNSServer_Failed   ? "(Failed)"   :
