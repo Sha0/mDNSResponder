@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.607  2009/01/15 22:24:01  cheshire
+Get rid of unnecessary ifa_name field in NetworkInterfaceInfoOSX (it just duplicates the content of ifinfo.ifname)
+This also eliminates an unnecessary malloc, memory copy, and free
+
 Revision 1.606  2009/01/15 00:22:49  mcguire
 <rdar://problem/6437092> NAT-PMP: mDNSResponder needs to listen on 224.0.0.1:5350/UDP with REUSEPORT
 
@@ -1163,7 +1167,7 @@ mDNSlocal NetworkInterfaceInfoOSX *SearchForInterfaceByName(mDNS *const m, const
 	{
 	NetworkInterfaceInfoOSX *i;
 	for (i = m->p->InterfaceList; i; i = i->next)
-		if (i->Exists && !strcmp(i->ifa_name, ifname) &&
+		if (i->Exists && !strcmp(i->ifinfo.ifname, ifname) &&
 			((type == AF_UNSPEC                                         ) ||
 			 (type == AF_INET  && i->ifinfo.ip.type == mDNSAddrType_IPv4) ||
 			 (type == AF_INET6 && i->ifinfo.ip.type == mDNSAddrType_IPv6))) return(i);
@@ -1250,7 +1254,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 	// to the NetworkInterfaceInfoOSX structure that holds the active sockets. The mDNSCore code
 	// doesn't know that and doesn't need to know that -- it just treats InterfaceIDs as opaque identifiers.
 	NetworkInterfaceInfoOSX *info = (NetworkInterfaceInfoOSX *)InterfaceID;
-	char *ifa_name = info ? info->ifa_name : "unicast";
+	char *ifa_name = info ? info->ifinfo.ifname : "unicast";
 	struct sockaddr_storage to;
 	int s = -1, err;
 	mStatus result = mStatus_NoError;
@@ -1512,7 +1516,7 @@ mDNSlocal void myKQSocketCallBack(int s1, short filter, void *context)
 		else if (mDNSAddrIsDNSMulticast(&destAddr)) continue;
 
 //		LogMsg("myKQSocketCallBack got packet from %#a to %#a on interface %#a/%s",
-//			&senderAddr, &destAddr, &ss->info->ifinfo.ip, ss->info->ifa_name);
+//			&senderAddr, &destAddr, &ss->info->ifinfo.ip, ss->info->ifinfo.ifname);
 
 		// mDNSCoreReceive may close the socket we're reading from.  We must break out of our
 		// loop when that happens, or we may try to read from an invalid FD.  We do this by
@@ -2714,10 +2718,6 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 	debugf("AddInterfaceToList: Making   new   interface %lu %.6a with address %#a at %p", scope_id, &bssid, &ip, i);
 	if (!i) return(mDNSNULL);
 	mDNSPlatformMemZero(i, sizeof(NetworkInterfaceInfoOSX));
-	i->ifa_name        = (char *)mallocL("NetworkInterfaceInfoOSX name", strlen(ifa->ifa_name) + 1);
-	if (!i->ifa_name) { freeL("NetworkInterfaceInfoOSX", i); return(mDNSNULL); }
-	strcpy(i->ifa_name, ifa->ifa_name);		// This is safe because we know we allocated i->ifa_name with sufficient space
-
 	i->ifinfo.InterfaceID = mDNSNULL;
 	i->ifinfo.ip          = ip;
 	i->ifinfo.mask        = mask;
@@ -3658,8 +3658,8 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 		if (i->Exists)
 			{
 			NetworkInterfaceInfo *const n = &i->ifinfo;
-			NetworkInterfaceInfoOSX *primary = SearchForInterfaceByName(m, i->ifa_name, AAAA_OVER_V4 ? AF_UNSPEC : i->sa_family);
-			if (!primary) LogMsg("SetupActiveInterfaces ERROR! SearchForInterfaceByName didn't find %s", i->ifa_name);
+			NetworkInterfaceInfoOSX *primary = SearchForInterfaceByName(m, i->ifinfo.ifname, AAAA_OVER_V4 ? AF_UNSPEC : i->sa_family);
+			if (!primary) LogMsg("SetupActiveInterfaces ERROR! SearchForInterfaceByName didn't find %s", i->ifinfo.ifname);
 
 			if (n->InterfaceID && n->InterfaceID != (mDNSInterfaceID)primary)	// Sanity check
 				{
@@ -3682,13 +3682,13 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 				mDNS_RegisterInterface(m, n, i->Flashing && i->Occulting);
 				if (!mDNSAddressIsLinkLocal(&n->ip)) count++;
 				LogOperation("SetupActiveInterfaces:   Registered    %5s(%lu) %.6a InterfaceID %p %#a/%d%s%s%s",
-					i->ifa_name, i->scope_id, &i->BSSID, primary, &n->ip, CountMaskBits(&n->mask),
+					i->ifinfo.ifname, i->scope_id, &i->BSSID, primary, &n->ip, CountMaskBits(&n->mask),
 					i->Flashing        ? " (Flashing)"  : "",
 					i->Occulting       ? " (Occulting)" : "",
 					n->InterfaceActive ? " (Primary)"   : "");
 
 				if (!n->McastTxRx)
-					debugf("SetupActiveInterfaces:   No Tx/Rx on   %5s(%lu) %.6a InterfaceID %p %#a", i->ifa_name, i->scope_id, &i->BSSID, primary, &n->ip);
+					debugf("SetupActiveInterfaces:   No Tx/Rx on   %5s(%lu) %.6a InterfaceID %p %#a", i->ifinfo.ifname, i->scope_id, &i->BSSID, primary, &n->ip);
 				else
 					{
 					if (i->sa_family == AF_INET)
@@ -3708,15 +3708,15 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 						// because by the time we get the configuration change notification, the interface is already gone,
 						// so attempts to unsubscribe fail with EADDRNOTAVAIL (errno 49 "Can't assign requested address").
 						// <rdar://problem/5585972> IP_ADD_MEMBERSHIP fails for previously-connected removable interfaces
-						if (SearchForInterfaceByName(m, i->ifa_name, AF_INET) == i)
+						if (SearchForInterfaceByName(m, i->ifinfo.ifname, AF_INET) == i)
 							{
-							LogOperation("SetupActiveInterfaces: %5s(%lu) Doing precautionary IP_DROP_MEMBERSHIP for %.4a on %.4a", i->ifa_name, i->scope_id, &imr.imr_multiaddr, &imr.imr_interface);
+							LogOperation("SetupActiveInterfaces: %5s(%lu) Doing precautionary IP_DROP_MEMBERSHIP for %.4a on %.4a", i->ifinfo.ifname, i->scope_id, &imr.imr_multiaddr, &imr.imr_interface);
 							mStatus err = setsockopt(m->p->permanentsockets.sktv4, IPPROTO_IP, IP_DROP_MEMBERSHIP, &imr, sizeof(imr));
 							if (err < 0 && (errno != EADDRNOTAVAIL))
 								LogMsg("setsockopt - IP_DROP_MEMBERSHIP error %ld errno %d (%s)", err, errno, strerror(errno));
 							}
 	
-						LogOperation("SetupActiveInterfaces: %5s(%lu) joining IPv4 mcast group %.4a on %.4a", i->ifa_name, i->scope_id, &imr.imr_multiaddr, &imr.imr_interface);
+						LogOperation("SetupActiveInterfaces: %5s(%lu) joining IPv4 mcast group %.4a on %.4a", i->ifinfo.ifname, i->scope_id, &imr.imr_multiaddr, &imr.imr_interface);
 						mStatus err = setsockopt(m->p->permanentsockets.sktv4, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imr, sizeof(imr));
 						// Joining same group twice can give "Address already in use" error -- no need to report that
 						if (err < 0 && (errno != EADDRINUSE))
@@ -3729,15 +3729,15 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 						i6mr.ipv6mr_interface = primary->scope_id;
 						i6mr.ipv6mr_multiaddr = *(struct in6_addr*)&AllDNSLinkGroup_v6.ip.v6;
 	
-						if (SearchForInterfaceByName(m, i->ifa_name, AF_INET6) == i)
+						if (SearchForInterfaceByName(m, i->ifinfo.ifname, AF_INET6) == i)
 							{
-							LogOperation("SetupActiveInterfaces: %5s(%lu) Doing precautionary IPV6_LEAVE_GROUP for %.16a on %u", i->ifa_name, i->scope_id, &i6mr.ipv6mr_multiaddr, i6mr.ipv6mr_interface);
+							LogOperation("SetupActiveInterfaces: %5s(%lu) Doing precautionary IPV6_LEAVE_GROUP for %.16a on %u", i->ifinfo.ifname, i->scope_id, &i6mr.ipv6mr_multiaddr, i6mr.ipv6mr_interface);
 							mStatus err = setsockopt(m->p->permanentsockets.sktv6, IPPROTO_IPV6, IPV6_LEAVE_GROUP, &i6mr, sizeof(i6mr));
 							if (err < 0 && (errno != EADDRNOTAVAIL))
 								LogMsg("setsockopt - IPV6_LEAVE_GROUP error %ld errno %d (%s) group %.16a on %u", err, errno, strerror(errno), &i6mr.ipv6mr_multiaddr, i6mr.ipv6mr_interface);
 							}
 	
-						LogOperation("SetupActiveInterfaces: %5s(%lu) joining IPv6 mcast group %.16a on %u", i->ifa_name, i->scope_id, &i6mr.ipv6mr_multiaddr, i6mr.ipv6mr_interface);
+						LogOperation("SetupActiveInterfaces: %5s(%lu) joining IPv6 mcast group %.16a on %u", i->ifinfo.ifname, i->scope_id, &i6mr.ipv6mr_multiaddr, i6mr.ipv6mr_interface);
 						mStatus err = setsockopt(m->p->permanentsockets.sktv6, IPPROTO_IPV6, IPV6_JOIN_GROUP, &i6mr, sizeof(i6mr));
 						// Joining same group twice can give "Address already in use" error -- no need to report that
 						if (err < 0 && (errno != EADDRINUSE))
@@ -3774,13 +3774,13 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m, mDNSs32 utc)
 	for (i = m->p->InterfaceList; i; i = i->next)
 		{
 		// If this interface is no longer active, or its InterfaceID is changing, deregister it
-		NetworkInterfaceInfoOSX *primary = SearchForInterfaceByName(m, i->ifa_name, AAAA_OVER_V4 ? AF_UNSPEC : i->sa_family);
+		NetworkInterfaceInfoOSX *primary = SearchForInterfaceByName(m, i->ifinfo.ifname, AAAA_OVER_V4 ? AF_UNSPEC : i->sa_family);
 		if (i->ifinfo.InterfaceID)
 			if (i->Exists == 0 || i->Exists == 2 || i->ifinfo.InterfaceID != (mDNSInterfaceID)primary)
 				{
 				i->Flashing = !(i->ifa_flags & IFF_LOOPBACK) && (utc - i->AppearanceTime < 60);
 				LogOperation("ClearInactiveInterfaces: Deregistering %5s(%lu) %.6a InterfaceID %p %#a/%d%s%s%s",
-					i->ifa_name, i->scope_id, &i->BSSID, i->ifinfo.InterfaceID,
+					i->ifinfo.ifname, i->scope_id, &i->BSSID, i->ifinfo.InterfaceID,
 					&i->ifinfo.ip, CountMaskBits(&i->ifinfo.mask),
 					i->Flashing               ? " (Flashing)"  : "",
 					i->Occulting              ? " (Occulting)" : "",
@@ -3809,13 +3809,12 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m, mDNSs32 utc)
 			if (i->LastSeen == utc) i->LastSeen = utc - 1;
 			mDNSBool delete = (NumCacheRecordsForInterfaceID(m, (mDNSInterfaceID)i) == 0) && (utc - i->LastSeen >= 60);
 			LogOperation("ClearInactiveInterfaces: %-13s %5s(%lu) %.6a InterfaceID %p %#a/%d Age %d%s", delete ? "Deleting" : "Holding",
-				i->ifa_name, i->scope_id, &i->BSSID, i->ifinfo.InterfaceID,
+				i->ifinfo.ifname, i->scope_id, &i->BSSID, i->ifinfo.InterfaceID,
 				&i->ifinfo.ip, CountMaskBits(&i->ifinfo.mask), utc - i->LastSeen,
 				i->ifinfo.InterfaceActive ? " (Primary)" : "");
 			if (delete)
 				{
 				*p = i->next;
-				if (i->ifa_name) freeL("NetworkInterfaceInfoOSX name", i->ifa_name);
 #if APPLE_OSX_mDNSResponder
 				if (i->BPF_fd >= 0) CloseBPF(i);
 #endif // APPLE_OSX_mDNSResponder
