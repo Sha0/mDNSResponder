@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.232  2009/01/15 00:22:48  mcguire
+<rdar://problem/6437092> NAT-PMP: mDNSResponder needs to listen on 224.0.0.1:5350/UDP with REUSEPORT
+
 Revision 1.231  2008/12/12 01:24:06  cheshire
 Updated GetNextScheduledEvent() to pay attention to m->SPSProxyListChanged
 
@@ -553,6 +556,7 @@ mDNSexport const mDNSIPPort LoopbackIPCPort        = { { LoopbackIPCPortAsNumber
 mDNSexport const mDNSIPPort PrivateDNSPort         = { { PrivateDNSPortAsNumber         >> 8, PrivateDNSPortAsNumber         & 0xFF } };
 
 mDNSexport const mDNSv4Addr AllDNSAdminGroup   = { { 239, 255, 255, 251 } };
+mDNSexport const mDNSv4Addr AllSystemsMcast    = { { 224,   0,   0,   1 } }; // For NAT-PMP Annoucements
 mDNSexport const mDNSAddr   AllDNSLinkGroup_v4 = { mDNSAddrType_IPv4, { { { 224,   0,   0, 251 } } } };
 //mDNSexport const mDNSAddr AllDNSLinkGroup_v4 = { mDNSAddrType_IPv4, { { { 224,   0,   0, 252 } } } }; // LLMNR
 mDNSexport const mDNSAddr   AllDNSLinkGroup_v6 = { mDNSAddrType_IPv6, { { { 0xFF,0x02,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0xFB } } } };

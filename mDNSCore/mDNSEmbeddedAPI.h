@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.530  2009/01/15 00:22:49  mcguire
+<rdar://problem/6437092> NAT-PMP: mDNSResponder needs to listen on 224.0.0.1:5350/UDP with REUSEPORT
+
 Revision 1.529  2009/01/13 00:31:44  cheshire
 Fixed off-by-one error in computing the implicit limit pointer in the "DomainNameLength(name)" macro
 
@@ -2476,6 +2479,7 @@ extern const mDNSIPPort   LoopbackIPCPort;
 extern const mDNSIPPort   PrivateDNSPort;
 
 extern const mDNSv4Addr   AllDNSAdminGroup;
+extern const mDNSv4Addr   AllSystemsMcast;
 extern const mDNSAddr     AllDNSLinkGroup_v4;
 extern const mDNSAddr     AllDNSLinkGroup_v6;
 

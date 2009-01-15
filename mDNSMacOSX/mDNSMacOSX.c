@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.606  2009/01/15 00:22:49  mcguire
+<rdar://problem/6437092> NAT-PMP: mDNSResponder needs to listen on 224.0.0.1:5350/UDP with REUSEPORT
+
 Revision 1.605  2009/01/14 01:38:43  mcguire
 <rdar://problem/6492710> Write out DynamicStore per-interface SleepProxyServer info
 
@@ -1988,7 +1991,7 @@ mDNSlocal mStatus SetupSocket(KQSocketSet *cp, const mDNSIPPort port, u_short sa
 	if (skt < 3) { if (errno != EAFNOSUPPORT) LogMsg("SetupSocket: socket error %d errno %d (%s)", skt, errno, strerror(errno)); return(skt); }
 
 	// ... with a shared UDP port, if it's for multicast receiving
-	if (mDNSSameIPPort(port, MulticastDNSPort)) err = setsockopt(skt, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
+	if (mDNSSameIPPort(port, MulticastDNSPort) || mDNSSameIPPort(port, NATPMPAnnouncementPort)) err = setsockopt(skt, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
 	if (err < 0) { errstr = "setsockopt - SO_REUSEPORT"; goto fail; }
 
 	if (sa_family == AF_INET)
@@ -2017,13 +2020,16 @@ mDNSlocal mStatus SetupSocket(KQSocketSet *cp, const mDNSIPPort port, u_short sa
 		struct sockaddr_in listening_sockaddr;
 		listening_sockaddr.sin_family      = AF_INET;
 		listening_sockaddr.sin_port        = port.NotAnInteger;		// Pass in opaque ID without any byte swapping
-		listening_sockaddr.sin_addr.s_addr = 0; // Want to receive multicasts AND unicasts on this socket
+		listening_sockaddr.sin_addr.s_addr = mDNSSameIPPort(port, NATPMPAnnouncementPort) ? AllSystemsMcast.NotAnInteger : 0;
 		err = bind(skt, (struct sockaddr *) &listening_sockaddr, sizeof(listening_sockaddr));
 		if (err) { errstr = "bind"; goto fail; }
 		if (outport) outport->NotAnInteger = listening_sockaddr.sin_port;
 		}
 	else if (sa_family == AF_INET6)
 		{
+		// NAT-PMP Announcements make no sense on IPv6, so bail early w/o error
+		if (mDNSSameIPPort(port, NATPMPAnnouncementPort)) { if (outport) *outport = zeroIPPort; return mStatus_NoError; }
+		
 		// We want to receive destination addresses and receive interface identifiers
 		err = setsockopt(skt, IPPROTO_IPV6, IPV6_PKTINFO, &on, sizeof(on));
 		if (err < 0) { errstr = "setsockopt - IPV6_PKTINFO"; goto fail; }
