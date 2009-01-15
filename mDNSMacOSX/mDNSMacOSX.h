@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.94  2009/01/15 22:24:53  cheshire
+Removed unused ifa_name field from NetworkInterfaceInfoOSX_struct
+
 Revision 1.93  2008/12/10 19:30:01  cheshire
 Added symbolic names for the various OS X versions
 
@@ -209,7 +212,6 @@ struct NetworkInterfaceInfoOSX_struct
 												// If an interface goes away temporarily and then comes back then
 												// AppearanceTime is updated to the time of the most recent appearance.
 	mDNSs32                  LastSeen;			// If Exists==0, last time this interface appeared in getifaddrs list
-	char                    *ifa_name;			// Memory for this is allocated using malloc
 	unsigned int             ifa_flags;
 	struct in_addr           ifa_v4addr;
 	mDNSu32                  scope_id;			// interface index / IPv6 scope ID
