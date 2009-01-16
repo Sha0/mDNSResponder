@@ -17,6 +17,11 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.609  2009/01/16 03:08:13  cheshire
+Use kernel event notifications to track KEV_DL_WAKEFLAGS_CHANGED
+(indicates when SIOCGIFWAKEFLAGS changes for an interface, e.g. when AirPort
+switches from a base-station that's WakeOnLAN-capable to one that isn't)
+
 Revision 1.608  2009/01/16 01:27:03  cheshire
 Initial work to adopt SIOCGIFWAKEFLAGS ioctl to determine whether an interface is WakeOnLAN-capable
 
@@ -2707,7 +2712,7 @@ mDNSlocal mDNSBool NetWakeInterface(NetworkInterfaceInfoOSX *i)
 	strlcpy(ifr.ifr_name, i->ifinfo.ifname, sizeof(ifr.ifr_name));
 	if (ioctl(s, SIOCGIFWAKEFLAGS, &ifr) < 0)
 		{
-		if (errno != EOPNOTSUPP)
+		if (errno != 102)		// 102 is "Operation not supported on socket", which is the expected result on Leopard and earlier
 			LogMsg("NetWakeInterface SIOCGIFWAKEFLAGS %s errno %d (%s)", i->ifinfo.ifname, errno, strerror(errno));
 		// If on Leopard or earlier, we get EOPNOTSUPP, so in that case
 		// we enable WOL if this interface is not AirPort and "Wake for Network access" is turned on.
@@ -4963,6 +4968,84 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	return(err);
 	}
 
+#ifndef KEV_DL_WAKEFLAGS_CHANGED
+#define KEV_DL_WAKEFLAGS_CHANGED 17
+#endif
+
+mDNSlocal void SysEventCallBack(int s1, short __unused filter, void *context)
+	{
+	mDNS *const m = (mDNS *const)context;
+
+	mDNS_Lock(m);
+
+	struct { struct kern_event_msg k; char extra[256]; } msg;
+	int bytes = recv(s1, &msg, sizeof(msg), 0);
+	if (bytes < 0)
+		LogMsg("SysEventCallBack: recv error %d errno %d (%s)", bytes, errno, strerror(errno));
+	else
+		{
+		LogOperation("SysEventCallBack got %d bytes size %d %X %s %X %s %X %s id %d code %d %s",
+			bytes, msg.k.total_size,
+			msg.k.vendor_code , msg.k.vendor_code  == KEV_VENDOR_APPLE  ? "KEV_VENDOR_APPLE"  : "?",
+			msg.k.kev_class   , msg.k.kev_class    == KEV_NETWORK_CLASS ? "KEV_NETWORK_CLASS" : "?",
+			msg.k.kev_subclass, msg.k.kev_subclass == KEV_DL_SUBCLASS   ? "KEV_DL_SUBCLASS"   : "?",
+			msg.k.id, msg.k.event_code,
+			msg.k.event_code == KEV_DL_SIFFLAGS             ? "KEV_DL_SIFFLAGS"             :
+			msg.k.event_code == KEV_DL_SIFMETRICS           ? "KEV_DL_SIFMETRICS"           :
+			msg.k.event_code == KEV_DL_SIFMTU               ? "KEV_DL_SIFMTU"               :
+			msg.k.event_code == KEV_DL_SIFPHYS              ? "KEV_DL_SIFPHYS"              :
+			msg.k.event_code == KEV_DL_SIFMEDIA             ? "KEV_DL_SIFMEDIA"             :
+			msg.k.event_code == KEV_DL_SIFGENERIC           ? "KEV_DL_SIFGENERIC"           :
+			msg.k.event_code == KEV_DL_ADDMULTI             ? "KEV_DL_ADDMULTI"             :
+			msg.k.event_code == KEV_DL_DELMULTI             ? "KEV_DL_DELMULTI"             :
+			msg.k.event_code == KEV_DL_IF_ATTACHED          ? "KEV_DL_IF_ATTACHED"          :
+			msg.k.event_code == KEV_DL_IF_DETACHING         ? "KEV_DL_IF_DETACHING"         :
+			msg.k.event_code == KEV_DL_IF_DETACHED          ? "KEV_DL_IF_DETACHED"          :
+			msg.k.event_code == KEV_DL_LINK_OFF             ? "KEV_DL_LINK_OFF"             :
+			msg.k.event_code == KEV_DL_LINK_ON              ? "KEV_DL_LINK_ON"              :
+			msg.k.event_code == KEV_DL_PROTO_ATTACHED       ? "KEV_DL_PROTO_ATTACHED"       :
+			msg.k.event_code == KEV_DL_PROTO_DETACHED       ? "KEV_DL_PROTO_DETACHED"       :
+			msg.k.event_code == KEV_DL_LINK_ADDRESS_CHANGED ? "KEV_DL_LINK_ADDRESS_CHANGED" :
+			msg.k.event_code == KEV_DL_WAKEFLAGS_CHANGED    ? "KEV_DL_WAKEFLAGS_CHANGED"    : "?");
+
+		// The DHCP code has a four-second delay before it processes the link change,
+		// so we should wait at least that long before doing anything
+		if (!m->p->NetworkChanged)
+			m->p->NetworkChanged = NonZeroTime(m->timenow + mDNSPlatformOneSecond * 5);
+
+		// If we're getting a flurry of event notifications, we should make sure that at least
+		// a second has passed without any new notifications before we go ahead and reconfigure
+		if (m->p->NetworkChanged - NonZeroTime(m->timenow + mDNSPlatformOneSecond) < 0)
+			m->p->NetworkChanged = NonZeroTime(m->timenow + mDNSPlatformOneSecond);
+		}
+
+	mDNS_Unlock(m);
+	}
+
+mDNSlocal mStatus WatchForSysEvents(mDNS *const m)
+	{
+	m->p->SysEventNotifier = socket(PF_SYSTEM, SOCK_RAW, SYSPROTO_EVENT);
+	if (m->p->SysEventNotifier < 0)
+		{ LogMsg("WatchForNetworkChanges: socket failed %s errno %d (%s)", errno, strerror(errno)); return(mStatus_NoMemoryErr); }
+
+	struct kev_request kev_req = { KEV_VENDOR_APPLE, KEV_NETWORK_CLASS, KEV_DL_SUBCLASS };
+	int err = ioctl(m->p->SysEventNotifier, SIOCSKEVFILT, &kev_req);
+	if (err < 0)
+		{
+		LogMsg("WatchForNetworkChanges: SIOCSKEVFILT failed %s errno %d (%s)", errno, strerror(errno));
+		close(m->p->SysEventNotifier);
+		m->p->SysEventNotifier = -1;
+		return(mStatus_UnknownErr);
+		}
+
+	m->p->SysEventKQueue.KQcallback = SysEventCallBack;
+	m->p->SysEventKQueue.KQcontext  = m;
+	m->p->SysEventKQueue.KQtask     = "System Event Notifier";
+	KQueueSet(m->p->SysEventNotifier, EV_ADD, EVFILT_READ, &m->p->SysEventKQueue);
+
+	return(mStatus_NoError);
+	}
+
 #ifndef NO_SECURITYFRAMEWORK
 mDNSlocal OSStatus KeychainChanged(SecKeychainEvent keychainEvent, SecKeychainCallbackInfo *info, void *context)
 	{
@@ -5270,6 +5353,9 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	err = WatchForNetworkChanges(m);
 	if (err) { LogMsg("mDNSPlatformInit_setup: WatchForNetworkChanges failed %d", err); return(err); }
 
+	err = WatchForSysEvents(m);
+	if (err) { LogMsg("mDNSPlatformInit_setup: WatchForSysEvents failed %d", err); return(err); }
+
 	mDNSs32 utc = mDNSPlatformUTC();
 	UpdateInterfaceList(m, utc);
 	SetupActiveInterfaces(m, utc);
@@ -5361,6 +5447,8 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 		m->p->Store    = NULL;
 		m->p->StoreRLS = NULL;
 		}
+
+	if (m->p->SysEventNotifier >= 0) { close(m->p->SysEventNotifier); m->p->SysEventNotifier = -1; }
 
 	mDNSs32 utc = mDNSPlatformUTC();
 	MarkAllInterfacesInactive(m, utc);
