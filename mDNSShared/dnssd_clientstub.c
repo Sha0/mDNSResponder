@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.121  2009/01/16 23:34:37  cheshire
+<rdar://problem/6504143> Uninitialized error code variable in error handling path in deliver_request
+
 Revision 1.120  2009/01/13 05:31:35  mkrochma
 <rdar://problem/6491367> Replace bzero, bcopy with mDNSPlatformMemZero, mDNSPlatformMemCopy, memset, memcpy
 
@@ -619,6 +622,9 @@ static DNSServiceErrorType ConnectToServer(DNSServiceRef *ref, DNSServiceFlags f
 	return kDNSServiceErr_NoError;
 	}
 
+#define deliver_request_bailout(MSG) \
+	do { syslog(LOG_WARNING, "dnssd_clientstub deliver_request: %s failed %d (%s)", (MSG), dnssd_errno, dnssd_strerror(dnssd_errno)); goto cleanup; } while(0)
+
 static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 	{
 	uint32_t datalen = hdr->datalen;	// We take a copy here because we're going to convert hdr->datalen to network byte order
@@ -626,7 +632,7 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 	char *const data = (char *)hdr + sizeof(ipc_msg_hdr);
 	#endif
 	dnssd_sock_t listenfd = dnssd_InvalidSocket, errsd = dnssd_InvalidSocket;
-	DNSServiceErrorType err;
+	DNSServiceErrorType err = kDNSServiceErr_Unknown;	// Default for the "goto cleanup" cases
 	int MakeSeparateReturnSocket = 0;
 
 	// Note: need to check hdr->op, not sdr->op.
@@ -653,14 +659,14 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 			dnssd_sockaddr_t caddr;
 			dnssd_socklen_t len = (dnssd_socklen_t) sizeof(caddr);
 			listenfd = socket(AF_DNSSD, SOCK_STREAM, 0);
-			if (!dnssd_SocketValid(listenfd)) goto cleanup;
+			if (!dnssd_SocketValid(listenfd)) deliver_request_bailout("TCP socket");
 
 			caddr.sin_family      = AF_INET;
 			caddr.sin_port        = 0;
 			caddr.sin_addr.s_addr = inet_addr(MDNS_TCP_SERVERADDR);
-			if (bind(listenfd, (struct sockaddr*) &caddr, sizeof(caddr)) < 0) goto cleanup;
-			if (getsockname(listenfd, (struct sockaddr*) &caddr, &len) < 0) goto cleanup;
-			listen(listenfd, 1);
+			if (bind(listenfd, (struct sockaddr*) &caddr, sizeof(caddr)) < 0) deliver_request_bailout("TCP bind");
+			if (getsockname(listenfd, (struct sockaddr*) &caddr, &len)   < 0) deliver_request_bailout("TCP getsockname");
+			if (listen(listenfd, 1)                                      < 0) deliver_request_bailout("TCP listen");
 			port.s = caddr.sin_port;
 			data[0] = port.b[0];  // don't switch the byte order, as the
 			data[1] = port.b[1];  // daemon expects it in network byte order
@@ -671,7 +677,7 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 			int bindresult;
 			dnssd_sockaddr_t caddr;
 			listenfd = socket(AF_DNSSD, SOCK_STREAM, 0);
-			if (!dnssd_SocketValid(listenfd)) goto cleanup;
+			if (!dnssd_SocketValid(listenfd)) deliver_request_bailout("USE_NAMED_ERROR_RETURN_SOCKET socket");
 
 			caddr.sun_family = AF_LOCAL;
 			// According to Stevens (section 3.2), there is no portable way to
@@ -683,16 +689,13 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 			mask = umask(0);
 			bindresult = bind(listenfd, (struct sockaddr *)&caddr, sizeof(caddr));
 			umask(mask);
-			if (bindresult < 0) goto cleanup;
-			listen(listenfd, 1);
+			if (bindresult          < 0) deliver_request_bailout("USE_NAMED_ERROR_RETURN_SOCKET bind");
+			if (listen(listenfd, 1) < 0) deliver_request_bailout("USE_NAMED_ERROR_RETURN_SOCKET listen");
 			}
 		#else
 			{
 			dnssd_sock_t sp[2];
-			//if (pipe(sp) < 0)
-			//	syslog(LOG_WARNING, "dnssd_clientstub ERROR: pipe() failed errno %d (%s)", dnssd_errno, dnssd_strerror(dnssd_errno));
-			if (socketpair(AF_DNSSD, SOCK_STREAM, 0, sp) < 0)
-				syslog(LOG_WARNING, "dnssd_clientstub ERROR: socketpair() failed errno %d (%s)", dnssd_errno, dnssd_strerror(dnssd_errno));
+			if (socketpair(AF_DNSSD, SOCK_STREAM, 0, sp) < 0) deliver_request_bailout("socketpair");
 			else
 				{
 				errsd    = sp[0];	// We'll read our four-byte error code from sp[0]
@@ -720,12 +723,18 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 	unsigned int i;
 	for (i=0; i<datalen + sizeof(ipc_msg_hdr); i++)
 		{
-		syslog(LOG_WARNING, "dnssd_clientstub writing %d", i);
-		if (write_all(sdr->sockfd, ((char *)hdr)+i, 1) < 0) goto cleanup;
+		syslog(LOG_WARNING, "dnssd_clientstub deliver_request writing %d", i);
+		if (write_all(sdr->sockfd, ((char *)hdr)+i, 1) < 0)
+			{ syslog(LOG_WARNING, "write_all (byte %d) failed %d (%s)", i, dnssd_errno, dnssd_strerror(dnssd_errno)); goto cleanup; }
 		usleep(10000);
 		}
 #else
-	if (write_all(sdr->sockfd, (char *)hdr, datalen + sizeof(ipc_msg_hdr)) < 0) goto cleanup;
+	if (write_all(sdr->sockfd, (char *)hdr, datalen + sizeof(ipc_msg_hdr)) < 0)
+		{
+		syslog(LOG_WARNING, "dnssd_clientstub deliver_request ERROR: write_all(%d) failed %d (%s)",
+			datalen + sizeof(ipc_msg_hdr), dnssd_errno, dnssd_strerror(dnssd_errno));
+		goto cleanup;
+		}
 #endif
 
 	if (!MakeSeparateReturnSocket) errsd = sdr->sockfd;
@@ -737,7 +746,7 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 		dnssd_sockaddr_t daddr;
 		dnssd_socklen_t len = sizeof(daddr);
 		errsd = accept(listenfd, (struct sockaddr *)&daddr, &len);
-		if (!dnssd_SocketValid(errsd)) goto cleanup;
+		if (!dnssd_SocketValid(errsd)) deliver_request_bailout("accept");
 #else
 
 #if APPLE_OSX_mDNSResponder
@@ -802,7 +811,7 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 
 		if (sendmsg(sdr->sockfd, &msg, 0) < 0)
 			{
-			syslog(LOG_WARNING, "dnssd_clientstub ERROR: sendmsg failed read sd=%d write sd=%d errno %d (%s)",
+			syslog(LOG_WARNING, "dnssd_clientstub deliver_request ERROR: sendmsg failed read sd=%d write sd=%d errno %d (%s)",
 				errsd, listenfd, dnssd_errno, dnssd_strerror(dnssd_errno));
 			err = kDNSServiceErr_Incompatible;
 			goto cleanup;
@@ -843,6 +852,7 @@ cleanup:
 		// else syslog(LOG_WARNING, "dnssd_clientstub deliver_request: removed UDS: %s", data);
 #endif
 		}
+
 	free(hdr);
 	return err;
 	}
