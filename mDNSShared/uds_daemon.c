@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.426  2009/01/16 21:07:08  cheshire
+In SIGINFO "Duplicate Records" list, show expiry time for Sleep Proxy records
+
 Revision 1.425  2009/01/16 20:53:16  cheshire
 Include information about Sleep Proxy records in SIGINFO output
 
@@ -3942,7 +3945,9 @@ mDNSexport void udsserver_info(mDNS *const m)
 			{
 			if (!mDNSSameEthAddress(&owner, &ar->WakeUp.MAC))
 				{ owner = ar->WakeUp.MAC; LogMsgNoIdent("Proxying for %.6a", &owner); }
-			LogMsgNoIdent("                                %s", ARDisplayString(m, ar));
+			LogMsgNoIdent("                %7d         %s",
+				ar->TimeExpire    ? (ar->TimeExpire                      - now) / mDNSPlatformOneSecond : 0,
+				ARDisplayString(m, ar));
 			}
 		}
 
