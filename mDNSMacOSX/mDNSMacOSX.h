@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.95  2009/01/16 02:32:55  cheshire
+Added SysEventNotifier and SysEventKQueue in mDNS_PlatformSupport_struct
+
 Revision 1.94  2009/01/15 22:24:53  cheshire
 Removed unused ifa_name field from NetworkInterfaceInfoOSX_struct
 
@@ -243,6 +246,8 @@ struct mDNS_PlatformSupport_struct
 	CFRunLoopRef             CFRunLoop;
 	SCDynamicStoreRef        Store;
 	CFRunLoopSourceRef       StoreRLS;
+	int                      SysEventNotifier;
+	KQueueEntry              SysEventKQueue;
 	IONotificationPortRef    PowerPortRef;
 	io_connect_t             PowerConnection;
 	io_object_t              PowerNotifier;
