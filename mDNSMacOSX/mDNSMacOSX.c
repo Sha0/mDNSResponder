@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.610  2009/01/16 20:37:30  cheshire
+Fixed incorrect value of EOPNOTSUPP
+
 Revision 1.609  2009/01/16 03:08:13  cheshire
 Use kernel event notifications to track KEV_DL_WAKEFLAGS_CHANGED
 (indicates when SIOCGIFWAKEFLAGS changes for an interface, e.g. when AirPort
@@ -2712,11 +2715,15 @@ mDNSlocal mDNSBool NetWakeInterface(NetworkInterfaceInfoOSX *i)
 	strlcpy(ifr.ifr_name, i->ifinfo.ifname, sizeof(ifr.ifr_name));
 	if (ioctl(s, SIOCGIFWAKEFLAGS, &ifr) < 0)
 		{
-		if (errno != 102)		// 102 is "Operation not supported on socket", which is the expected result on Leopard and earlier
+		// For some strange reason, in /usr/include/sys/errno.h, EOPNOTSUPP is defined to be
+		// 102 when compiling kernel code, and 45 when compiling user-level code. Since this
+		// error code is being returned from the kernel, we need to use the kernel version.
+		#define KERNEL_EOPNOTSUPP 102
+		if (errno != KERNEL_EOPNOTSUPP)	// "Operation not supported on socket", the expected result on Leopard and earlier
 			LogMsg("NetWakeInterface SIOCGIFWAKEFLAGS %s errno %d (%s)", i->ifinfo.ifname, errno, strerror(errno));
 		// If on Leopard or earlier, we get EOPNOTSUPP, so in that case
 		// we enable WOL if this interface is not AirPort and "Wake for Network access" is turned on.
-		ifr.ifr_wake_flags = (errno == EOPNOTSUPP && !(i)->BSSID.l[0] && GetNetWakeSetting());
+		ifr.ifr_wake_flags = (errno == KERNEL_EOPNOTSUPP && !(i)->BSSID.l[0] && GetNetWakeSetting());
 		}
 	else
 		{
