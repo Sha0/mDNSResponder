@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.884  2009/01/16 21:43:52  cheshire
+Let InitializeLastAPTime compute the correct interval, instead of having it passed in as a parameter
+
 Revision 1.883  2009/01/16 21:11:18  cheshire
 When purging expired Sleep Proxy records, need to check DuplicateRecords list too
 
@@ -1508,9 +1511,9 @@ mDNSlocal void SetNextAnnounceProbeTime(mDNS *const m, const AuthRecord *const r
 		}
 	}
 
-mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr, mDNSs32 interval)
+mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr)
 	{
-	rr->ThisAPInterval = interval;
+	rr->ThisAPInterval = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
 
 	// To allow us to aggregate probes when a group of services are registered together,
 	// the first probe is delayed 1/4 second. This means the common-case behaviour is:
@@ -1534,7 +1537,7 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr, mDNSs32
 			}
 		}
 
-	rr->LastAPTime      = m->SuppressProbes - interval;
+	rr->LastAPTime      = m->SuppressProbes - rr->ThisAPInterval;
 	// Set LastMCTime to now, to inhibit multicast responses
 	// (no need to send additional multicast responses when we're announcing anyway)
 	rr->LastMCTime      = m->timenow;
@@ -1548,12 +1551,12 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr, mDNSs32
 	// When the probing is complete and those records begin to announce, these records will also be picked up and accelerated,
 	// because they will meet the criterion of being at least half-way to their scheduled announcement time.
 	if (rr->resrec.RecordType != kDNSRecordTypeUnique)
-		rr->LastAPTime += DefaultProbeIntervalForTypeUnique * DefaultProbeCountForTypeUnique + interval / 2;
+		rr->LastAPTime += DefaultProbeIntervalForTypeUnique * DefaultProbeCountForTypeUnique + rr->ThisAPInterval / 2;
 
 	// The exception is unique records that have already been verified and are just being updated
 	// via mDNS_Update() -- for these we want to announce the new value immediately, without delay.
 	if (rr->resrec.RecordType == kDNSRecordTypeVerified)
-		rr->LastAPTime = m->timenow - interval;
+		rr->LastAPTime = m->timenow - rr->ThisAPInterval;
 
 	// Reverse mapping Sleep Proxy PTR records are special -- we allow thirty seconds for the machine in question
 	// to finish going to sleep, then we broadcast ARP Announcements claiming ownership of that IP address.
@@ -1561,11 +1564,11 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr, mDNSs32
 	// go to sleep, and then when it saw our ARP Announcement it thought it was a conflict and changed its IP address.
 	// Perhaps we need to ARP the machine once per second to see if it's still responding, and then when it stops
 	// responding to ARPs, we can begin our ARP Announcements five seconds after that.)
-	if (rr->AddressProxy.type) rr->LastAPTime = m->timenow - interval + mDNSPlatformOneSecond * 30;
+	if (rr->AddressProxy.type) rr->LastAPTime = m->timenow - rr->ThisAPInterval + mDNSPlatformOneSecond * 30;
 
 	// For now, since we don't get IPv6 ND or data packets, we send deletions for our SPS clients' AAAA records too
 	if (rr->WakeUp.MAC.l[0] && rr->resrec.rrtype == kDNSType_AAAA)
-		rr->LastAPTime = m->timenow - interval + mDNSPlatformOneSecond * 10;
+		rr->LastAPTime = m->timenow - rr->ThisAPInterval + mDNSPlatformOneSecond * 10;
 	
 	SetNextAnnounceProbeTime(m, rr);
 	}
@@ -1607,7 +1610,7 @@ mDNSlocal void SetTargetToHostName(mDNS *const m, AuthRecord *const rr)
 
 		rr->AnnounceCount  = InitialAnnounceCount;
 		rr->RequireGoodbye = mDNSfalse;
-		InitializeLastAPTime(m, rr, DefaultAPIntervalForRecordType(rr->resrec.RecordType));
+		InitializeLastAPTime(m, rr);
 		}
 	}
 
@@ -1742,7 +1745,7 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	rr->NextResponse      = mDNSNULL;
 	rr->NR_AnswerTo       = mDNSNULL;
 	rr->NR_AdditionalTo   = mDNSNULL;
-	if (!rr->AutoTarget) InitializeLastAPTime(m, rr, DefaultAPIntervalForRecordType(rr->resrec.RecordType));
+	if (!rr->AutoTarget) InitializeLastAPTime(m, rr);
 //	rr->LastAPTime        = Set for us in InitializeLastAPTime()
 //	rr->LastMCTime        = Set for us in InitializeLastAPTime()
 //	rr->LastMCInterface   = Set for us in InitializeLastAPTime()
@@ -4529,7 +4532,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 				if (rr->resrec.RecordType == kDNSRecordTypeVerified && !rr->DependentOn) rr->resrec.RecordType = kDNSRecordTypeUnique;
 				rr->ProbeCount     = DefaultProbeCountForRecordType(rr->resrec.RecordType);
 				rr->AnnounceCount  = InitialAnnounceCount;
-				InitializeLastAPTime(m, rr, DefaultAPIntervalForRecordType(rr->resrec.RecordType));
+				InitializeLastAPTime(m, rr);
 				}
 
 		// 4. Refresh NAT mappings
@@ -5623,7 +5626,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 								LogOperation("mDNSCoreReceiveResponse: Reseting to Probing: %s", ARDisplayString(m, rr));
 								rr->resrec.RecordType     = kDNSRecordTypeUnique;
 								rr->ProbeCount     = DefaultProbeCountForTypeUnique + 1;
-								InitializeLastAPTime(m, rr, DefaultAPIntervalForRecordType(kDNSRecordTypeUnique));
+								InitializeLastAPTime(m, rr);
 								RecordProbeFailure(m, rr);	// Repeated late conflicts also cause us to back off to the slower probing rate
 								}
 							// If we're probing for this record, we just failed
@@ -7064,7 +7067,7 @@ mDNSexport mStatus mDNS_Update(mDNS *const m, AuthRecord *const rr, mDNSu32 newt
 		// even though there's no actual semantic change, so the mDNSPlatformMemSame() check doesn't help us.
 		// To work around this, we simply unilaterally limit all legacy _ichat-type updates to a single announcement.
 		if (SameDomainLabel(type.c, (mDNSu8*)"\x6_ichat")) rr->AnnounceCount = 1;
-		InitializeLastAPTime(m, rr, DefaultAPIntervalForRecordType(rr->resrec.RecordType));
+		InitializeLastAPTime(m, rr);
 		while (rr->NextUpdateCredit && m->timenow - rr->NextUpdateCredit >= 0) GrantUpdateCredit(rr);
 		if (!rr->UpdateBlocked && rr->UpdateCredits) rr->UpdateCredits--;
 		if (!rr->NextUpdateCredit) rr->NextUpdateCredit = NonZeroTime(m->timenow + kUpdateCreditRefreshInterval);
@@ -7404,7 +7407,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 					if (rr->resrec.RecordType == kDNSRecordTypeVerified && !rr->DependentOn) rr->resrec.RecordType = kDNSRecordTypeUnique;
 					rr->ProbeCount     = DefaultProbeCountForRecordType(rr->resrec.RecordType);
 					if (rr->AnnounceCount < announce) rr->AnnounceCount  = announce;
-					InitializeLastAPTime(m, rr, DefaultAPIntervalForRecordType(rr->resrec.RecordType));
+					InitializeLastAPTime(m, rr);
 					}
 		}
 
@@ -8123,7 +8126,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 					rr->resrec.RecordType = kDNSRecordTypeUnique;
 					rr->ProbeCount        = DefaultProbeCountForTypeUnique;
 					rr->AnnounceCount     = InitialAnnounceCount;
-					InitializeLastAPTime(m, rr, DefaultProbeIntervalForTypeUnique);
+					InitializeLastAPTime(m, rr);
 					if (mDNSSameEthAddress(&arp->sha, &rr->WakeUp.MAC))
 						LogOperation("Ignoring  ARP %s owner %.4a for %.4a -- %.6a %s",
 							mDNSSameIPv4Address(arp->spa, arp->tpa) ? "Announcement" : "Request from", &arp->spa, &arp->tpa, &rr->WakeUp.MAC, ARDisplayString(m, rr));
