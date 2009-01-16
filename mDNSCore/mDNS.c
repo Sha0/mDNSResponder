@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.885  2009/01/16 22:44:18  cheshire
+<rdar://problem/6402123> Sleep Proxy: Begin ARP Announcements sooner
+
 Revision 1.884  2009/01/16 21:43:52  cheshire
 Let InitializeLastAPTime compute the correct interval, instead of having it passed in as a parameter
 
@@ -1513,7 +1516,8 @@ mDNSlocal void SetNextAnnounceProbeTime(mDNS *const m, const AuthRecord *const r
 
 mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr)
 	{
-	rr->ThisAPInterval = DefaultAPIntervalForRecordType(rr->resrec.RecordType);
+	// For reverse-mapping Sleep Proxy PTR records, probe interval is one second
+	rr->ThisAPInterval = rr->AddressProxy.type ? mDNSPlatformOneSecond : DefaultAPIntervalForRecordType(rr->resrec.RecordType);
 
 	// To allow us to aggregate probes when a group of services are registered together,
 	// the first probe is delayed 1/4 second. This means the common-case behaviour is:
@@ -1558,15 +1562,15 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr)
 	if (rr->resrec.RecordType == kDNSRecordTypeVerified)
 		rr->LastAPTime = m->timenow - rr->ThisAPInterval;
 
-	// Reverse mapping Sleep Proxy PTR records are special -- we allow thirty seconds for the machine in question
-	// to finish going to sleep, then we broadcast ARP Announcements claiming ownership of that IP address.
-	// (We previously allowed ten seconds, but that turned out to be insufficient time for the machine to reliably
-	// go to sleep, and then when it saw our ARP Announcement it thought it was a conflict and changed its IP address.
-	// Perhaps we need to ARP the machine once per second to see if it's still responding, and then when it stops
-	// responding to ARPs, we can begin our ARP Announcements five seconds after that.)
-	if (rr->AddressProxy.type) rr->LastAPTime = m->timenow - rr->ThisAPInterval + mDNSPlatformOneSecond * 30;
+	// For reverse-mapping Sleep Proxy PTR records we don't want to start probing instantly --
+	// we wait one second to give the client a chance to go to sleep, and then start our ARP/NDP probing.
+	// After three probes one second apart with no answer, we conclude the client is now sleeping
+	// and we can begin broadcasting our announcements to take over ownership of that IP address.
+	// If we don't wait for the client to go to sleep, then when the client sees our ARP Announcements there's a risk
+	// (depending on the OS and networking stack it's using) that it might interpret it as a conflict and change its IP address.
+	if (rr->AddressProxy.type) rr->LastAPTime = m->timenow;
 
-	// For now, since we don't get IPv6 ND or data packets, we send deletions for our SPS clients' AAAA records too
+	// For now, since we don't yet handle IPv6 ND or data packets, we send deletions for our SPS clients' AAAA records
 	if (rr->WakeUp.MAC.l[0] && rr->resrec.rrtype == kDNSType_AAAA)
 		rr->LastAPTime = m->timenow - rr->ThisAPInterval + mDNSPlatformOneSecond * 10;
 	
@@ -1756,9 +1760,8 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	rr->NextUpdateCredit  = 0;
 	rr->UpdateBlocked     = 0;
 
-	// We don't need to announce records we're holding as proxy,
-	// except for AddressProxy records, for which we need to generate ARP announcements
-	if (rr->WakeUp.MAC.l[0] && !rr->AddressProxy.type) rr->AnnounceCount = 0;
+	// For records we're holding as proxy (except reverse-mapping PTR records) two announcements is sufficient
+	if (rr->WakeUp.MAC.l[0] && !rr->AddressProxy.type) rr->AnnounceCount = 2;
 
 	// Field Group 4: Transient uDNS state for Authoritative Records
 	rr->state             = regState_Zero;
@@ -2406,14 +2409,12 @@ mDNSlocal void SendResponses(mDNS *const m)
 				rr->LastAPTime = m->timenow;
 				if (rr->AddressProxy.type == mDNSAddrType_IPv4)
 					{
-					LogOperation("ARP Announcement %##s (%s) %d %#a",
-						rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype), rr->AnnounceCount, &rr->AddressProxy);
+					LogOperation("ARP Announcement %d %s", rr->AnnounceCount, ARDisplayString(m,rr));
 					SendARP(m, 1, rr, rr->AddressProxy.ip.v4.b, zeroEthAddr.b, rr->AddressProxy.ip.v4.b, onesEthAddr.b);
 					}
 				else if (rr->AddressProxy.type == mDNSAddrType_IPv6)
 					{
-					LogOperation("NDP Announcement %##s (%s) %d %#a",
-						rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype), rr->AnnounceCount, &rr->AddressProxy);
+					LogOperation("NDP Announcement %d %s", rr->AnnounceCount, ARDisplayString(m,rr));
 					//SendARP(m, 1, rr, rr->AddressProxy.ip.v4.b, zeroEthAddr.b, rr->AddressProxy.ip.v4.b, onesEthAddr.b);
 					}
 				}
@@ -3162,6 +3163,16 @@ mDNSlocal void SendQueries(mDNS *const m)
 				// 2. else, if it has reached its probe time, mark it for sending and then update m->NextScheduledProbe correctly
 				else if (rr->ProbeCount)
 					{
+					if (rr->AddressProxy.type == mDNSAddrType_IPv4)
+						{
+						LogOperation("SendQueries ARP Probe %d %s", rr->ProbeCount, ARDisplayString(m,rr));
+						SendARP(m, 1, rr, zerov4Addr.b, zeroEthAddr.b, rr->AddressProxy.ip.v4.b, rr->WakeUp.MAC.b);
+						}
+					else if (rr->AddressProxy.type == mDNSAddrType_IPv6)
+						{
+						LogOperation("SendQueries NDP Probe %d %s", rr->ProbeCount, ARDisplayString(m,rr));
+						//SendARP(m, 1, rr, rr->AddressProxy.ip.v4.b, zeroEthAddr.b, rr->AddressProxy.ip.v4.b, onesEthAddr.b);
+						}
 					// Mark for sending. (If no active interfaces, then don't even try.)
 					rr->SendRNow   = (!intf || rr->WakeUp.MAC.l[0]) ? mDNSNULL : rr->resrec.InterfaceID ? rr->resrec.InterfaceID : intf->InterfaceID;
 					rr->LastAPTime = m->timenow;
