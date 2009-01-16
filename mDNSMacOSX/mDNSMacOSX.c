@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.608  2009/01/16 01:27:03  cheshire
+Initial work to adopt SIOCGIFWAKEFLAGS ioctl to determine whether an interface is WakeOnLAN-capable
+
 Revision 1.607  2009/01/15 22:24:01  cheshire
 Get rid of unnecessary ifa_name field in NetworkInterfaceInfoOSX (it just duplicates the content of ifinfo.ifname)
 This also eliminates an unnecessary malloc, memory copy, and free
@@ -2680,11 +2683,49 @@ mDNSlocal int GetMAC(mDNSEthAddr *eth, u_short ifindex)
 	return -1;
 	}
 
-// For now we assume all interfaces are WoL-capable on SnowLeopard
-// Also, because MacBook Air doesn't even have a preference setting to enable WoL, we ignore that setting too
-// Once the WoL System preference is available on MacBook Air on SnowLeopard we'll revert to honouring that setting
-#define NetWakeInterface(i) (MulticastInterface(i) && !(ifa->ifa_flags & IFF_LOOPBACK) && \
-	(OSXVers >= OSXVers_10_6_SnowLeopard || (SystemNetWake && !(i)->BSSID.l[0])))
+#ifndef SIOCGIFWAKEFLAGS
+#define SIOCGIFWAKEFLAGS _IOWR('i', 136, struct ifreq) /* get interface wake property flags */
+#endif
+
+#ifndef IF_WAKE_ON_MAGIC_PACKET
+#define IF_WAKE_ON_MAGIC_PACKET 0x01
+#endif
+
+#ifndef ifr_wake_flags
+#define ifr_wake_flags ifr_ifru.ifru_intval
+#endif
+
+mDNSlocal mDNSBool NetWakeInterface(NetworkInterfaceInfoOSX *i)
+	{
+	if (!MulticastInterface(i)     ) return(mDNSfalse);	// We only use Sleep Proxy Service on multicast-capable interfaces
+	if (i->ifa_flags & IFF_LOOPBACK) return(mDNSfalse);	// except loopback
+
+	int s = socket(AF_INET, SOCK_DGRAM, 0);
+	if (s < 0) { LogMsg("NetWakeInterface %s socket failed %s errno %d (%s)", i->ifinfo.ifname, errno, strerror(errno)); return(mDNSfalse); }
+
+	struct ifreq ifr;
+	strlcpy(ifr.ifr_name, i->ifinfo.ifname, sizeof(ifr.ifr_name));
+	if (ioctl(s, SIOCGIFWAKEFLAGS, &ifr) < 0)
+		{
+		if (errno != EOPNOTSUPP)
+			LogMsg("NetWakeInterface SIOCGIFWAKEFLAGS %s errno %d (%s)", i->ifinfo.ifname, errno, strerror(errno));
+		// If on Leopard or earlier, we get EOPNOTSUPP, so in that case
+		// we enable WOL if this interface is not AirPort and "Wake for Network access" is turned on.
+		ifr.ifr_wake_flags = (errno == EOPNOTSUPP && !(i)->BSSID.l[0] && GetNetWakeSetting());
+		}
+	else
+		{
+		// Call succeeded.
+		// However, on SnowLeopard, it currently indicates incorrectly that AirPort is incapable of Wake-on-LAN.
+		// Therefore, for AirPort interfaces, we just track the system-wide Wake-on-LAN setting.
+		if ((i)->BSSID.l[0]) ifr.ifr_wake_flags = GetNetWakeSetting();
+		}
+	close(s);
+
+	LogOperation("%s %d %s WOMP", i->ifinfo.ifname, ifr.ifr_ifru.ifru_intval, (ifr.ifr_wake_flags & IF_WAKE_ON_MAGIC_PACKET) ? "supports" : "no");
+
+	return((ifr.ifr_wake_flags & IF_WAKE_ON_MAGIC_PACKET) != 0);
+	}
 
 // Returns pointer to newly created NetworkInterfaceInfoOSX object, or
 // pointer to already-existing NetworkInterfaceInfoOSX object found in list, or
@@ -2694,7 +2735,6 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 	{
 	mDNSu32 scope_id  = if_nametoindex(ifa->ifa_name);
 	mDNSEthAddr bssid = GetBSSID(ifa->ifa_name);
-	mDNSBool SystemNetWake = GetNetWakeSetting();
 
 	mDNSAddr ip, mask;
 	if (SetupAddr(&ip,   ifa->ifa_addr   ) != mStatus_NoError) return(NULL);
