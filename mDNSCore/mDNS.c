@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.882  2009/01/16 19:54:28  cheshire
+Use symbols "SleepProxyServiceType" and "localdomain" instead of literal strings
+
 Revision 1.881  2009/01/14 01:38:38  mcguire
 <rdar://problem/6492710> Write out DynamicStore per-interface SleepProxyServer info
 
@@ -1770,7 +1773,7 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	rr->QueuedRDLen       = 0;
 
 //	rr->resrec.interface         = already set in mDNS_SetupResourceRecord
-//	rr->resrec.name->c            = MUST be set by client
+//	rr->resrec.name->c           = MUST be set by client
 //	rr->resrec.rrtype            = already set in mDNS_SetupResourceRecord
 //	rr->resrec.rrclass           = already set in mDNS_SetupResourceRecord
 //	rr->resrec.rroriginalttl     = already set in mDNS_SetupResourceRecord
@@ -7336,7 +7339,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 			"already represented in list; marking inactive for now");
 	
 	if (set->InterfaceActive && set->NetWake)
-		mDNS_StartBrowse_internal(m, &set->NetWakeBrowse, (const domainname *)"\xC_sleep-proxy\x4_udp", (const domainname *)"\x5local",
+		mDNS_StartBrowse_internal(m, &set->NetWakeBrowse, &SleepProxyServiceType, &localdomain,
 			set->InterfaceID, mDNSfalse, m->SPSBrowseCallback, set);
 
 	// In early versions of OS X the IPv6 address remains on an interface even when the interface is turned off,
@@ -7467,7 +7470,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 			UpdateInterfaceProtocols(m, intf);
 
 			if (intf->NetWake)
-				mDNS_StartBrowse_internal(m, &intf->NetWakeBrowse, (const domainname *)"\xC_sleep-proxy\x4_udp", (const domainname *)"\x5local",
+				mDNS_StartBrowse_internal(m, &intf->NetWakeBrowse, &SleepProxyServiceType, &localdomain,
 					intf->InterfaceID, mDNSfalse, m->SPSBrowseCallback, intf);
 			
 			// See if another representative *of the same type* exists. If not, we mave have gone from
@@ -8106,8 +8109,8 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 					{
 					// We reset ProbeCount, so we'll suppress our own answers for a while, to avoid generating ARP conflicts with a waking machine.
 					// If the machine does wake properly then we'll discard our records when we see the first new mDNS probe from that machine.
-					// If it does not wake (perhaps we just picked up a stray delayed packet sent before it went to sleep) then we'll transition
-					// out of probing state and start answering ARPs again.
+					// If it does not wake (perhaps we just picked up a stray delayed packet sent before it went to sleep)
+					// then we'll transition out of probing state and start answering ARPs again.
 					rr->resrec.RecordType = kDNSRecordTypeUnique;
 					rr->ProbeCount        = DefaultProbeCountForTypeUnique;
 					rr->AnnounceCount     = InitialAnnounceCount;
@@ -8243,7 +8246,7 @@ mDNSlocal void SleepProxyServerCallback(mDNS *const m, ServiceRecordSet *const s
 				ConstructSleepProxyServerName(m, &name);
 				LogOperation("Sleep Proxy Server %#s starting", name.c);
 				mDNS_RegisterService(m, srs,
-					&name, (const domainname *)"\xC_sleep-proxy\x4_udp", (const domainname *)"\x5local",
+					&name, &SleepProxyServiceType, &localdomain,
 					mDNSNULL, m->SPSSocket->port,				// Host, port
 					(mDNSu8 *)"", 1,							// TXT data, length
 					mDNSNULL, 0,								// Subtypes (none)
