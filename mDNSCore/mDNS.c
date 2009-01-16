@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.883  2009/01/16 21:11:18  cheshire
+When purging expired Sleep Proxy records, need to check DuplicateRecords list too
+
 Revision 1.882  2009/01/16 19:54:28  cheshire
 Use symbols "SleepProxyServiceType" and "localdomain" instead of literal strings
 
@@ -4078,6 +4081,34 @@ mDNSexport mDNSs32 mDNS_TimeNow(const mDNS *const m)
 	if (m->SPSProxyListChanged && m->SPSProxyListChanged != (X)) mDNSPlatformUpdateProxyList(m, m->SPSProxyListChanged); \
 	m->SPSProxyListChanged = (X); } while(0)
 
+mDNSlocal void CheckProxyRecords(mDNS *const m, AuthRecord *list)
+	{
+	m->CurrentRecord = list;
+	while (m->CurrentRecord)
+		{
+		AuthRecord *rr = m->CurrentRecord;
+		if (rr->WakeUp.MAC.l[0])
+			{
+			if (m->timenow - rr->TimeExpire < 0)		// If proxy record not expired yet, update m->NextScheduledSPS
+				{
+				if (m->NextScheduledSPS - rr->TimeExpire > 0)
+					m->NextScheduledSPS = rr->TimeExpire;
+				}
+			else										// else proxy record expired, so remove it
+				{
+				LogOperation("mDNS_Execute: Removing %.6a %s", &rr->WakeUp.MAC, ARDisplayString(m, rr));
+				SetSPSProxyListChanged(rr->resrec.InterfaceID);
+				mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
+				// Don't touch rr after this -- memory may have been free'd
+				}
+			}
+		// Mustn't advance m->CurrentRecord until *after* mDNS_Deregister_internal,
+		// because the list may have been changed in that call.
+		if (m->CurrentRecord == rr) // If m->CurrentRecord was not advanced for us, do it now
+			m->CurrentRecord = rr->next;
+		}
+	}
+
 mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 	{
 	mDNS_Lock(m);	// Must grab lock before trying to read m->timenow
@@ -4116,30 +4147,8 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 		if (m->timenow - m->NextScheduledSPS >= 0)
 			{
 			m->NextScheduledSPS = m->timenow + 0x3FFFFFFF;
-			m->CurrentRecord = m->ResourceRecords;
-			while (m->CurrentRecord)
-				{
-				AuthRecord *rr = m->CurrentRecord;
-				if (rr->WakeUp.MAC.l[0])
-					{
-					if (m->timenow - rr->TimeExpire < 0)		// If proxy record not expired yet, update m->NextScheduledSPS
-						{
-						if (m->NextScheduledSPS - rr->TimeExpire > 0)
-							m->NextScheduledSPS = rr->TimeExpire;
-						}
-					else										// else proxy record expired, so remove it
-						{
-						LogOperation("mDNS_Execute: Removing %.6a %s", &rr->WakeUp.MAC, ARDisplayString(m, rr));
-						SetSPSProxyListChanged(rr->resrec.InterfaceID);
-						mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
-						// Don't touch rr after this -- memory may have been free'd
-						}
-					}
-				// Mustn't advance m->CurrentRecord until *after* mDNS_Deregister_internal,
-				// because the list may have been changed in that call.
-				if (m->CurrentRecord == rr) // If m->CurrentRecord was not advanced for us, do it now
-					m->CurrentRecord = rr->next;
-				}
+			CheckProxyRecords(m, m->ResourceRecords);
+			CheckProxyRecords(m, m->DuplicateRecords);
 			}
 
 		SetSPSProxyListChanged(mDNSNULL);
