@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.425  2009/01/16 20:53:16  cheshire
+Include information about Sleep Proxy records in SIGINFO output
+
 Revision 1.424  2009/01/12 22:43:50  cheshire
 Fixed "unused variable" warning when SO_NOSIGPIPE is not defined
 
@@ -3907,8 +3910,12 @@ mDNSexport void udsserver_info(mDNS *const m)
 	if (!m->ResourceRecords) LogMsgNoIdent("<None>");
 	else
 		{
+		mDNSEthAddr owner = zeroEthAddr;
 		LogMsgNoIdent("    Int    Next  Expire   State");
 		for (ar = m->ResourceRecords; ar; ar=ar->next)
+			{
+			if (!mDNSSameEthAddress(&owner, &ar->WakeUp.MAC))
+				{ owner = ar->WakeUp.MAC; LogMsgNoIdent("Proxying for %.6a", &owner); }
 			if (AuthRecord_uDNS(ar))
 				LogMsgNoIdent("%7d %7d %7d %7d %s",
 					ar->ThisAPInterval / mDNSPlatformOneSecond,
@@ -3916,18 +3923,28 @@ mDNSexport void udsserver_info(mDNS *const m)
 					ar->expire ? (ar->expire - now) / mDNSPlatformOneSecond : 0,
 					ar->state, ARDisplayString(m, ar));
 			else if (ar->resrec.InterfaceID != mDNSInterface_LocalOnly)
-				LogMsgNoIdent("%7d %7d               M %s",
+				LogMsgNoIdent("%7d %7d %7d       M %s",
 					ar->ThisAPInterval / mDNSPlatformOneSecond,
 					ar->AnnounceCount ? (ar->LastAPTime + ar->ThisAPInterval - now) / mDNSPlatformOneSecond : 0,
+					ar->TimeExpire    ? (ar->TimeExpire                      - now) / mDNSPlatformOneSecond : 0,
 					ARDisplayString(m, ar));
 			else
 				LogMsgNoIdent("                             LO %s", ARDisplayString(m, ar));
+			}
 		}
 
 	LogMsgNoIdent("------ Duplicate Records -------");
 	if (!m->DuplicateRecords) LogMsgNoIdent("<None>");
-	else for (ar = m->DuplicateRecords; ar; ar=ar->next)
-		LogMsgNoIdent("                                %s", ARDisplayString(m, ar));
+	else
+		{
+		mDNSEthAddr owner = zeroEthAddr;
+		for (ar = m->DuplicateRecords; ar; ar=ar->next)
+			{
+			if (!mDNSSameEthAddress(&owner, &ar->WakeUp.MAC))
+				{ owner = ar->WakeUp.MAC; LogMsgNoIdent("Proxying for %.6a", &owner); }
+			LogMsgNoIdent("                                %s", ARDisplayString(m, ar));
+			}
+		}
 
 	LogMsgNoIdent("----- ServiceRegistrations -----");
 	if (!m->ServiceRegistrations) LogMsgNoIdent("<None>");
