@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.531  2009/01/16 19:48:09  cheshire
+Added definition of SleepProxyServiceType
+
 Revision 1.530  2009/01/15 00:22:49  mcguire
 <rdar://problem/6437092> NAT-PMP: mDNSResponder needs to listen on 224.0.0.1:5350/UDP with REUSEPORT
 
@@ -2492,8 +2495,9 @@ extern const mDNSOpaque16 UpdateRespFlags;
 
 extern const mDNSOpaque64 zeroOpaque64;
 
-#define localdomain (*(const domainname *)"\x5" "local")
-#define DeviceInfoName (*(const domainname *)"\xC" "_device-info" "\x4" "_tcp")
+#define localdomain           (*(const domainname *)"\x5" "local")
+#define DeviceInfoName        (*(const domainname *)"\xC" "_device-info" "\x4" "_tcp")
+#define SleepProxyServiceType (*(const domainname *)"\xC" "_device-info" "\x4" "_tcp")
 
 // ***************************************************************************
 #if 0
