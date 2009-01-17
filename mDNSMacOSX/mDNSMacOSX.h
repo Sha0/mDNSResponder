@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.96  2009/01/17 04:13:57  cheshire
+Added version symbols for Cheetah and Puma
+
 Revision 1.95  2009/01/16 02:32:55  cheshire
 Added SysEventNotifier and SysEventKQueue in mDNS_PlatformSupport_struct
 
@@ -262,6 +265,9 @@ struct mDNS_PlatformSupport_struct
 	};
 
 extern int OSXVers;
+#define OSXVers_Base              4
+#define OSXVers_10_0_Cheetah      4
+#define OSXVers_10_1_Puma         5
 #define OSXVers_10_2_Jaguar       6
 #define OSXVers_10_3_Panther      7
 #define OSXVers_10_4_Tiger        8
