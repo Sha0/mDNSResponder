@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.887  2009/01/17 05:14:37  cheshire
+Convert SendQueries Probe messages to LogSPS messages
+
 Revision 1.886  2009/01/17 03:43:09  cheshire
 Added SPSLogging switch to facilitate Sleep Proxy Server debugging
 
@@ -3176,12 +3179,12 @@ mDNSlocal void SendQueries(mDNS *const m)
 					{
 					if (rr->AddressProxy.type == mDNSAddrType_IPv4)
 						{
-						LogOperation("SendQueries ARP Probe %d %s", rr->ProbeCount, ARDisplayString(m,rr));
+						LogSPS("SendQueries ARP Probe %d %s", rr->ProbeCount, ARDisplayString(m,rr));
 						SendARP(m, 1, rr, zerov4Addr.b, zeroEthAddr.b, rr->AddressProxy.ip.v4.b, rr->WakeUp.MAC.b);
 						}
 					else if (rr->AddressProxy.type == mDNSAddrType_IPv6)
 						{
-						LogOperation("SendQueries NDP Probe %d %s", rr->ProbeCount, ARDisplayString(m,rr));
+						//LogSPS("SendQueries NDP Probe %d %s", rr->ProbeCount, ARDisplayString(m,rr));
 						//SendARP(m, 1, rr, rr->AddressProxy.ip.v4.b, zeroEthAddr.b, rr->AddressProxy.ip.v4.b, onesEthAddr.b);
 						}
 					// Mark for sending. (If no active interfaces, then don't even try.)
