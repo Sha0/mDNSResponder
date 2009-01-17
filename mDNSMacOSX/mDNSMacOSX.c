@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.611  2009/01/17 04:15:40  cheshire
+Updated "did sleep(5)" debugging message
+
 Revision 1.610  2009/01/16 20:37:30  cheshire
 Fixed incorrect value of EOPNOTSUPP
 
@@ -5173,7 +5176,8 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 												if (OSXVers < OSXVers_10_6_SnowLeopard)
 													{
 													sleep(5);
-													LogOperation("PowerChanged kIOMessageSystemWillPowerOn did sleep(5);");
+													LogMsg("Running on Mac OS X version 10.%d earler than 10.6; "
+														"PowerChanged did sleep(5) to wait for Ethernet hardware", OSXVers - OSXVers_Base);
 													}
 
 												// Make sure our interface list is cleared to the empty state, then tell mDNSCore to wake
