@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.886  2009/01/17 03:43:09  cheshire
+Added SPSLogging switch to facilitate Sleep Proxy Server debugging
+
 Revision 1.885  2009/01/16 22:44:18  cheshire
 <rdar://problem/6402123> Sleep Proxy: Begin ARP Announcements sooner
 
@@ -1230,6 +1233,14 @@ Fixes to avoid code generation warning/error on FreeBSD 7
 #pragma mark - Program Constants
 #endif
 
+//#define SPSLogging 1
+
+#if SPSLogging
+#define LogSPS LogMsg
+#else
+#define LogSPS LogOperation
+#endif
+
 #define NO_HINFO 1
 
 mDNSlocal const mDNSInterfaceID mDNSInterfaceMark = (mDNSInterfaceID)~0;
@@ -1562,8 +1573,8 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr)
 	if (rr->resrec.RecordType == kDNSRecordTypeVerified)
 		rr->LastAPTime = m->timenow - rr->ThisAPInterval;
 
-	// For reverse-mapping Sleep Proxy PTR records we don't want to start probing instantly --
-	// we wait one second to give the client a chance to go to sleep, and then start our ARP/NDP probing.
+	// For reverse-mapping Sleep Proxy PTR records we don't want to start probing instantly -- we
+	// wait one second to give the client a chance to go to sleep, and then start our ARP/NDP probing.
 	// After three probes one second apart with no answer, we conclude the client is now sleeping
 	// and we can begin broadcasting our announcements to take over ownership of that IP address.
 	// If we don't wait for the client to go to sleep, then when the client sees our ARP Announcements there's a risk
@@ -2409,12 +2420,12 @@ mDNSlocal void SendResponses(mDNS *const m)
 				rr->LastAPTime = m->timenow;
 				if (rr->AddressProxy.type == mDNSAddrType_IPv4)
 					{
-					LogOperation("ARP Announcement %d %s", rr->AnnounceCount, ARDisplayString(m,rr));
+					LogSPS("ARP Announcement %d %s", rr->AnnounceCount, ARDisplayString(m,rr));
 					SendARP(m, 1, rr, rr->AddressProxy.ip.v4.b, zeroEthAddr.b, rr->AddressProxy.ip.v4.b, onesEthAddr.b);
 					}
 				else if (rr->AddressProxy.type == mDNSAddrType_IPv6)
 					{
-					LogOperation("NDP Announcement %d %s", rr->AnnounceCount, ARDisplayString(m,rr));
+					//LogSPS("NDP Announcement %d %s", rr->AnnounceCount, ARDisplayString(m,rr));
 					//SendARP(m, 1, rr, rr->AddressProxy.ip.v4.b, zeroEthAddr.b, rr->AddressProxy.ip.v4.b, onesEthAddr.b);
 					}
 				}
@@ -3327,7 +3338,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 			opt.resrec.rdata->u.opt[0].u.owner.vers  = 0;
 			opt.resrec.rdata->u.opt[0].u.owner.seq   = m->SleepSeqNum;
 			opt.resrec.rdata->u.opt[0].u.owner.MAC   = intf->MAC;
-			LogOperation("SendQueries putting %s", ARDisplayString(m, &opt));
+			LogSPS("SendQueries putting %s", ARDisplayString(m, &opt));
 			queryptr = PutResourceRecordTTLWithLimit(&m->omsg, queryptr, &m->omsg.h.numAdditionals,
 				&opt.resrec, opt.resrec.rroriginalttl, m->omsg.data + AbsoluteMaxDNSMessageData);
 			if (!queryptr)
@@ -4110,7 +4121,7 @@ mDNSlocal void CheckProxyRecords(mDNS *const m, AuthRecord *list)
 				}
 			else										// else proxy record expired, so remove it
 				{
-				LogOperation("mDNS_Execute: Removing %.6a %s", &rr->WakeUp.MAC, ARDisplayString(m, rr));
+				LogSPS("mDNS_Execute: Removing %.6a %s", &rr->WakeUp.MAC, ARDisplayString(m, rr));
 				SetSPSProxyListChanged(rr->resrec.InterfaceID);
 				mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
 				// Don't touch rr after this -- memory may have been free'd
@@ -4363,11 +4374,11 @@ mDNSlocal void SendSPSRegistration(mDNS *const m, const NetworkInterfaceInfo *in
 			opt.resrec.rdata->u.opt[1].u.owner.vers  = 0;
 			opt.resrec.rdata->u.opt[1].u.owner.seq   = m->SleepSeqNum;
 			opt.resrec.rdata->u.opt[1].u.owner.MAC   = intf->MAC;
-			LogOperation("SendSPSRegistration putting %s", ARDisplayString(m, &opt));
+			LogSPS("SendSPSRegistration putting %s", ARDisplayString(m, &opt));
 			p = PutResourceRecordTTLWithLimit(&m->omsg, p, &m->omsg.h.numAdditionals, &opt.resrec, opt.resrec.rroriginalttl, m->omsg.data + AbsoluteMaxDNSMessageData);
 			if (p)
 				{
-				LogOperation("SendSPSRegistration: Sending Update id %5d with %d records to %#a:%d",
+				LogSPS("SendSPSRegistration: Sending Update id %5d with %d records to %#a:%d",
 					mDNSVal16(m->omsg.h.id), m->omsg.h.mDNS_numUpdates, &intf->SPSAddr, mDNSVal16(intf->SPSPort));
 				mDNSSendDNSMessage(m, &m->omsg, p, intf->InterfaceID, mDNSNULL, &intf->SPSAddr, intf->SPSPort, mDNSNULL, mDNSNULL);
 				}
@@ -4381,7 +4392,7 @@ mDNSlocal void NetWakeResolve(mDNS *const m, DNSQuestion *question, const Resour
 	{
 	NetworkInterfaceInfo *intf = (NetworkInterfaceInfo *)question->QuestionContext;
 	(void)m;			// Unused
-	LogOperation("NetWakeResolve: %d %s", AddRecord, RRDisplayString(m, answer));
+	LogSPS("NetWakeResolve: %d %s", AddRecord, RRDisplayString(m, answer));
 
 	if (!AddRecord) return;												// Don't care about REMOVE events
 	if (answer->rrtype != question->qtype) return;						// Don't care about CNAMEs
@@ -4421,7 +4432,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 
 	mDNS_Lock(m);
 
-	LogOperation("%s (%d) at %ld", sleep ? "Sleeping" : "Waking", m->SleepState, m->timenow);
+	LogSPS("%s (%d) at %ld", sleep ? "Sleeping" : "Waking", m->SleepState, m->timenow);
 
 	if (sleep && !m->SleepState)
 		{
@@ -4444,7 +4455,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 				const CacheRecord *cr = FindSPSInCache(m, &intf->NetWakeBrowse);
 				if (cr)
 					{
-					LogOperation("mDNSCoreMachineSleep: %s TTL %d %s", intf->ifname, cr->resrec.rroriginalttl, CRDisplayString(m, cr));
+					LogSPS("mDNSCoreMachineSleep: %s TTL %d %s", intf->ifname, cr->resrec.rroriginalttl, CRDisplayString(m, cr));
 					m->SleepState = SleepState_Transferring;
 					intf->SPSAddr.type = mDNSAddrType_None;
 					if (intf->NetWakeResolve.ThisQInterval >= 0) mDNS_StopQuery(m, &intf->NetWakeResolve);
@@ -4473,7 +4484,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 					rr->ImmedAnswer = mDNSInterfaceMark;
 			SendResponses(m);
 			}
-		LogOperation("m->SleepState %d %s seq %d", m->SleepState,
+		LogSPS("m->SleepState %d %s seq %d", m->SleepState,
 			m->SleepState == SleepState_Transferring ? "(Transferring)" : 
 			m->SleepState == SleepState_Sleeping     ? "(Sleeping)" : "(?)", m->SleepSeqNum);
 		}
@@ -4832,7 +4843,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 						if (InterfaceID == rr->resrec.InterfaceID && mDNSSameEthAddress(&opt->u.owner.MAC, &rr->WakeUp.MAC))
 							if (opt->u.owner.seq != rr->WakeUp.seq || m->timenow - rr->TimeRcvd > mDNSPlatformOneSecond * 60)
 								{
-								LogOperation("ProcessQuery: Removing %.6a %d %d %s", &rr->WakeUp.MAC, opt->u.owner.seq, rr->WakeUp.seq, ARDisplayString(m, rr));
+								LogSPS("ProcessQuery: Removing %.6a %d %d %s", &rr->WakeUp.MAC, opt->u.owner.seq, rr->WakeUp.seq, ARDisplayString(m, rr));
 								mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
 								SetSPSProxyListChanged(InterfaceID);
 								}
@@ -5984,7 +5995,7 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 	mDNSu32 updatelease = 0;
 	const mDNSu8 *ptr;
 
-	LogOperation("Received Update from %#-15a:%-5d to %#-15a:%-5d on 0x%p with "
+	LogSPS("Received Update from %#-15a:%-5d to %#-15a:%-5d on 0x%p with "
 		"%2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
 		srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), InterfaceID,
 		msg->h.numQuestions,   msg->h.numQuestions   == 1 ? ", " : "s,",
@@ -6055,7 +6066,7 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 				mDNS_Register_internal(m, ar);
 				// For now, since we don't get IPv6 ND or data packets, we don't advertise AAAA records for our SPS clients
 				if (ar->resrec.rrtype == kDNSType_AAAA) ar->resrec.rroriginalttl = 0;
-				LogOperation("SPS Registered %X %s", RecordType, ARDisplayString(m,ar));
+				LogSPS("SPS Registered %X %s", RecordType, ARDisplayString(m,ar));
 				}
 			}
 		m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
@@ -8111,7 +8122,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 					static const char msg2[] = "Ignoring  ARP Request from       %.6a %.4a for %.4a -- %.6a %s";
 					static const char msg3[] = "Answering ARP Request from       %.6a %.4a for %.4a -- %.6a %s";
 					const char *const msg = mDNSSameEthAddress(&arp->sha, &rr->WakeUp.MAC) ? msg1 : rr->ProbeCount ? msg2 : msg3;
-					LogOperation(msg, &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.MAC, ARDisplayString(m, rr));
+					LogSPS(msg, &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.MAC, ARDisplayString(m, rr));
 					if (msg == msg3) SendARP(m, 2, rr, arp->tpa.b, arp->sha.b, arp->spa.b, arp->sha.b);
 					}
 
@@ -8139,7 +8150,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 					rr->AnnounceCount     = InitialAnnounceCount;
 					InitializeLastAPTime(m, rr);
 					if (mDNSSameEthAddress(&arp->sha, &rr->WakeUp.MAC))
-						LogOperation("Ignoring  ARP %s owner %.4a for %.4a -- %.6a %s",
+						LogSPS("Ignoring  ARP %s owner %.4a for %.4a -- %.6a %s",
 							mDNSSameIPv4Address(arp->spa, arp->tpa) ? "Announcement" : "Request from", &arp->spa, &arp->tpa, &rr->WakeUp.MAC, ARDisplayString(m, rr));
 					else
 						{
@@ -8232,7 +8243,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 							SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.MAC);
 							}
 						else
-							LogOperation("Sleeping host at %s %.4a %.6a has no service on %#s %d",
+							LogSPS("Sleeping host at %s %.4a %.6a has no service on %#s %d",
 								InterfaceNameForID(m, rr->resrec.InterfaceID), &v4->dst, &rr->WakeUp.MAC, tp, mDNSVal16(port));
 						}
 				mDNS_Unlock(m);
@@ -8267,7 +8278,7 @@ mDNSlocal void SleepProxyServerCallback(mDNS *const m, ServiceRecordSet *const s
 				{
 				domainlabel name;
 				ConstructSleepProxyServerName(m, &name);
-				LogOperation("Sleep Proxy Server %#s starting", name.c);
+				LogSPS("Sleep Proxy Server %#s starting", name.c);
 				mDNS_RegisterService(m, srs,
 					&name, &SleepProxyServiceType, &localdomain,
 					mDNSNULL, m->SPSSocket->port,				// Host, port
@@ -8498,7 +8509,7 @@ mDNSexport void mDNS_ConfigChanged(mDNS *const m)
 		ConstructSleepProxyServerName(m, &newname);
 		if (!SameDomainLabelCS(name.c, newname.c))
 			{
-			LogOperation("Renaming SPS from “%#s” to “%#s”", name.c, newname.c);
+			LogSPS("Renaming SPS from “%#s” to “%#s”", name.c, newname.c);
 			// When SleepProxyServerCallback gets the mStatus_MemFree message,
 			// it will reregister the service under the new name
 			m->SPSState = 2;
