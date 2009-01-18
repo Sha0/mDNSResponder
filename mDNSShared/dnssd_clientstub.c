@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.122  2009/01/18 03:51:37  mkrochma
+Fix warning in deliver_request on Linux
+
 Revision 1.121  2009/01/16 23:34:37  cheshire
 <rdar://problem/6504143> Uninitialized error code variable in error handling path in deliver_request
 
@@ -731,7 +734,7 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 #else
 	if (write_all(sdr->sockfd, (char *)hdr, datalen + sizeof(ipc_msg_hdr)) < 0)
 		{
-		syslog(LOG_WARNING, "dnssd_clientstub deliver_request ERROR: write_all(%d) failed %d (%s)",
+		syslog(LOG_WARNING, "dnssd_clientstub deliver_request ERROR: write_all(%ld) failed %d (%s)",
 			datalen + sizeof(ipc_msg_hdr), dnssd_errno, dnssd_strerror(dnssd_errno));
 		goto cleanup;
 		}
