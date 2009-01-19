@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.123  2009/01/19 00:49:21  mkrochma
+Type cast size_t values to unsigned long
+
 Revision 1.122  2009/01/18 03:51:37  mkrochma
 Fix warning in deliver_request on Linux
 
@@ -720,7 +723,7 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 
 	// At this point, our listening socket is set up and waiting, if necessary, for the daemon to connect back to
 	ConvertHeaderBytes(hdr);
-	//syslog(LOG_WARNING, "dnssd_clientstub deliver_request writing %ld bytes", datalen + sizeof(ipc_msg_hdr));
+	//syslog(LOG_WARNING, "dnssd_clientstub deliver_request writing %lu bytes", (unsigned long)(datalen + sizeof(ipc_msg_hdr)));
 	//if (MakeSeparateReturnSocket) syslog(LOG_WARNING, "dnssd_clientstub deliver_request name is %s", data);
 #if TEST_SENDING_ONE_BYTE_AT_A_TIME
 	unsigned int i;
@@ -728,14 +731,14 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 		{
 		syslog(LOG_WARNING, "dnssd_clientstub deliver_request writing %d", i);
 		if (write_all(sdr->sockfd, ((char *)hdr)+i, 1) < 0)
-			{ syslog(LOG_WARNING, "write_all (byte %d) failed %d (%s)", i, dnssd_errno, dnssd_strerror(dnssd_errno)); goto cleanup; }
+			{ syslog(LOG_WARNING, "write_all (byte %u) failed %d (%s)", i, dnssd_errno, dnssd_strerror(dnssd_errno)); goto cleanup; }
 		usleep(10000);
 		}
 #else
 	if (write_all(sdr->sockfd, (char *)hdr, datalen + sizeof(ipc_msg_hdr)) < 0)
 		{
-		syslog(LOG_WARNING, "dnssd_clientstub deliver_request ERROR: write_all(%ld) failed %d (%s)",
-			datalen + sizeof(ipc_msg_hdr), dnssd_errno, dnssd_strerror(dnssd_errno));
+		syslog(LOG_WARNING, "dnssd_clientstub deliver_request ERROR: write_all(%lu) failed %d (%s)",
+			(unsigned long)(datalen + sizeof(ipc_msg_hdr)), dnssd_errno, dnssd_strerror(dnssd_errno));
 		goto cleanup;
 		}
 #endif
