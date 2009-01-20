@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.54  2009/01/20 02:35:15  mcguire
+mDNSMacOSX/mDNSMacOSX.c
+
 Revision 1.53  2009/01/14 01:38:42  mcguire
 <rdar://problem/6492710> Write out DynamicStore per-interface SleepProxyServer info
 
@@ -473,6 +476,9 @@ do_mDNSDynamicStoreSetConfig(__unused mach_port_t port, int key,
 			*err = kmDNSHelperInvalidConfigKey;
 			goto fin;
 		}
+	char tmp[1024];
+	CFStringGetCString(sckey, tmp, 1024, kCFStringEncodingUTF8);
+	debug("key: %s", tmp);
 	if (NULL == (bytes = CFDataCreateWithBytesNoCopy(NULL, (void *)value,
 	    valueCnt, kCFAllocatorNull)))
 		{

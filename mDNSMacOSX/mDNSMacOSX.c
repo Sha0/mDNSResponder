@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.612  2009/01/20 02:35:15  mcguire
+mDNSMacOSX/mDNSMacOSX.c
+
 Revision 1.611  2009/01/17 04:15:40  cheshire
 Updated "did sleep(5)" debugging message
 
@@ -2835,7 +2838,7 @@ static mDNSBool AnonymousRacoonConfig = mDNSfalse;
 static CFMutableDictionaryRef domainStatusDict = NULL;
 
 // MUST be called with lock held
-mDNSlocal void RemoveAutoTunnelDomainStatus(const DomainAuthInfo *const info)
+mDNSlocal void RemoveAutoTunnelDomainStatus(const mDNS *const m, const DomainAuthInfo *const info)
 	{
 	char buffer[1024];
 	CFStringRef domain;
@@ -2851,7 +2854,7 @@ mDNSlocal void RemoveAutoTunnelDomainStatus(const DomainAuthInfo *const info)
 	if (CFDictionaryContainsKey(domainStatusDict, domain))
 		{
 		CFDictionaryRemoveValue(domainStatusDict, domain);
-		mDNSDynamicStoreSetConfig(kmDNSBackToMyMacConfig, mDNSNULL, domainStatusDict);
+		if (!m->ShutdownTime) mDNSDynamicStoreSetConfig(kmDNSBackToMyMacConfig, mDNSNULL, domainStatusDict);
 		}
 	CFRelease(domain);
 	}
@@ -3031,7 +3034,7 @@ mDNSlocal void UpdateAutoTunnelDomainStatus(const mDNS *const m, const DomainAut
 	    !CFEqual(dict, (CFMutableDictionaryRef)CFDictionaryGetValue(domainStatusDict, domain)))
 	    {
 		CFDictionarySetValue(domainStatusDict, domain, dict);
-		mDNSDynamicStoreSetConfig(kmDNSBackToMyMacConfig, mDNSNULL, domainStatusDict);
+		if (!m->ShutdownTime) mDNSDynamicStoreSetConfig(kmDNSBackToMyMacConfig, mDNSNULL, domainStatusDict);
 		}
 		
 	CFRelease(domain);
@@ -4555,7 +4558,7 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 						}
 					info->AutoTunnelNAT.clientContext = mDNSNULL;
 					}
-				RemoveAutoTunnelDomainStatus(info);
+				RemoveAutoTunnelDomainStatus(m, info);
 				}
 			info = info->next;
 			}
@@ -4726,7 +4729,7 @@ mDNSlocal void UpdateSPSStatus(mDNS *const m, DNSQuestion *question, const Resou
 		CFRelease(dict);
 		}
 
-	mDNSDynamicStoreSetConfig(kmDNSSleepProxyServersState, info->ifname, array);
+	if (!m->ShutdownTime) mDNSDynamicStoreSetConfig(kmDNSSleepProxyServersState, info->ifname, array);
 	
 	CFRelease(ifname);
 	}
