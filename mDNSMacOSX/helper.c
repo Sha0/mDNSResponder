@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.56  2009/01/20 21:03:22  cheshire
+Improved debugging messages
+
 Revision 1.55  2009/01/20 02:37:26  mcguire
 revert previous erroneous commit
 
@@ -417,10 +420,13 @@ kern_return_t do_mDNSSetARP(__unused mach_port_t port, int ifindex, v4addr_t v4,
 		// we need to do. If we later decide to use a different dummy target MAC address, we'll need to set those bytes.
 
 		int len = write(s, (char *)&rtmsg, sizeof(rtmsg));
-		if (len < 0) helplog(ASL_LEVEL_ERR, "write(%d) seq %d %d", sizeof(rtmsg), rtmsg.hdr.rtm_seq, len);
-
+		if (len < 0)
+			helplog(ASL_LEVEL_ERR, "do_mDNSSetARP: write(%d) interface %d address %d.%d.%d.%d seq %d result %d errno %d (%s)",
+				sizeof(rtmsg), ifindex, v4[0], v4[1], v4[2], v4[3], rtmsg.hdr.rtm_seq, len, errno, strerror(errno));
 		len = read(s, (char *)&rtmsg, sizeof(rtmsg));
-		if (len < 0) helplog(ASL_LEVEL_ERR, "read(%d) seq %d %d", sizeof(rtmsg), rtmsg.hdr.rtm_seq, len);
+		if (len < 0)
+			helplog(ASL_LEVEL_ERR, "do_mDNSSetARP: read (%d) interface %d address %d.%d.%d.%d seq %d result %d errno %d (%s)",
+				sizeof(rtmsg), ifindex, v4[0], v4[1], v4[2], v4[3], rtmsg.hdr.rtm_seq, len, errno, strerror(errno));
 
 		*err = 0;
 		}
