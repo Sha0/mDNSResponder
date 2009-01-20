@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.888  2009/01/20 00:27:43  mcguire
+<rdar://problem/6305725> when removing a uDNS record, if a dup exists, copy information to it
+
 Revision 1.887  2009/01/17 05:14:37  cheshire
 Convert SendQueries Probe messages to LogSPS messages
 
@@ -1962,6 +1965,10 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 				dup->LastAPTime      = rr->LastAPTime;
 				dup->LastMCTime      = rr->LastMCTime;
 				dup->LastMCInterface = rr->LastMCInterface;
+				dup->UpdateServer    = rr->UpdateServer;
+				dup->UpdatePort      = rr->UpdatePort;
+				dup->Private         = rr->Private;
+				dup->state           = rr->state;
 				rr->RequireGoodbye = mDNSfalse;
 				rr->AnsweredLocalQ = mDNSfalse;
 				}
