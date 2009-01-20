@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.55  2009/01/20 02:37:26  mcguire
+revert previous erroneous commit
+
 Revision 1.54  2009/01/20 02:35:15  mcguire
 mDNSMacOSX/mDNSMacOSX.c
 
@@ -476,9 +479,6 @@ do_mDNSDynamicStoreSetConfig(__unused mach_port_t port, int key,
 			*err = kmDNSHelperInvalidConfigKey;
 			goto fin;
 		}
-	char tmp[1024];
-	CFStringGetCString(sckey, tmp, 1024, kCFStringEncodingUTF8);
-	debug("key: %s", tmp);
 	if (NULL == (bytes = CFDataCreateWithBytesNoCopy(NULL, (void *)value,
 	    valueCnt, kCFAllocatorNull)))
 		{
