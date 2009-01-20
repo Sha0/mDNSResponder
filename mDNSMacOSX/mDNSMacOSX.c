@@ -17,8 +17,11 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.613  2009/01/20 02:38:41  mcguire
+fix previous checkin comment
+
 Revision 1.612  2009/01/20 02:35:15  mcguire
-mDNSMacOSX/mDNSMacOSX.c
+<rdar://problem/6508974> don't update BTMM & SleepProxyServers status at shutdown time
 
 Revision 1.611  2009/01/17 04:15:40  cheshire
 Updated "did sleep(5)" debugging message
