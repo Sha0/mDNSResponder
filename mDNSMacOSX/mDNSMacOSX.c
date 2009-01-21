@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.614  2009/01/21 03:43:57  mcguire
+<rdar://problem/6511765> BTMM: Add support for setting kDNSServiceErr_NATPortMappingDisabled in DynamicStore
+
 Revision 1.613  2009/01/20 02:38:41  mcguire
 fix previous checkin comment
 
@@ -2963,6 +2966,19 @@ mDNSlocal void UpdateAutoTunnelDomainStatus(const mDNS *const m, const DomainAut
 				}
 			}
 		}
+	if (tun || llq)
+		{
+		mDNSu32 code = m->LastNATMapResultCode;
+		
+		num = CFNumberCreate(NULL, kCFNumberSInt32Type, &code);
+		if (!num)
+			LogMsg("UpdateAutoTunnelDomainStatus: Could not create CFNumber LastNATMapResultCode");
+		else
+			{
+			CFDictionarySetValue(dict, CFSTR("LastNATMapResultCode"), num);
+			CFRelease(num);
+			}
+		}
 	
 	if (!llq && !tun)
 		{
@@ -2973,6 +2989,12 @@ mDNSlocal void UpdateAutoTunnelDomainStatus(const mDNS *const m, const DomainAut
 		{
 		status = mStatus_DoubleNAT;
 		mDNS_snprintf(buffer, sizeof(buffer), "Double NAT: Router is reporting an external address");
+		}
+	else if ((llq && llq->Result == mStatus_NATPortMappingDisabled) || (tun && tun->Result == mStatus_NATPortMappingDisabled) ||
+	         (m->LastNATMapResultCode == NATErr_Refused && ((llq && !llq->Result && mDNSIPPortIsZero(llq->ExternalPort)) || (tun && !tun->Result && mDNSIPPortIsZero(tun->ExternalPort)))))
+		{
+		status = mStatus_NATPortMappingDisabled;
+		mDNS_snprintf(buffer, sizeof(buffer), "NAT-PMP is disabled on the router");
 		}
 	else if ((llq && llq->Result) || (tun && tun->Result))
 		{

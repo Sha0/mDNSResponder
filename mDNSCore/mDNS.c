@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.889  2009/01/21 03:43:56  mcguire
+<rdar://problem/6511765> BTMM: Add support for setting kDNSServiceErr_NATPortMappingDisabled in DynamicStore
+
 Revision 1.888  2009/01/20 00:27:43  mcguire
 <rdar://problem/6305725> when removing a uDNS record, if a dup exists, copy information to it
 
@@ -8472,6 +8475,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->NATMcastRecvskt          = mDNSNULL;
 	m->LastNATupseconds         = 0;
 	m->LastNATReplyLocalTime    = timenow;
+	m->LastNATMapResultCode     = NATErr_None;
 
 	m->UPnPInterfaceID          = 0;
 	m->SSDPSocket               = mDNSNULL;

@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.598  2009/01/21 03:43:57  mcguire
+<rdar://problem/6511765> BTMM: Add support for setting kDNSServiceErr_NATPortMappingDisabled in DynamicStore
+
 Revision 1.597  2009/01/10 01:55:49  cheshire
 Added LogOperation message showing when domains are added and removed in FoundDomain
 
@@ -3395,6 +3398,7 @@ mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr, co
 			m->retryIntervalGetAddr = NATMAP_INIT_RETRY;
 			m->retryGetAddr         = m->timenow;
 			m->NextScheduledNATOp   = m->timenow;
+			m->LastNATMapResultCode = NATErr_None;
 			ClearUPnPState(m);
 			}
 
@@ -3939,6 +3943,11 @@ mDNSexport void uDNS_ReceiveNATPMPPacket(mDNS *m, const mDNSInterfaceID Interfac
 			PortMapReply->NATRep_lease = (mDNSu32) ((mDNSu32)pkt[12] << 24 | (mDNSu32)pkt[13] << 16 | (mDNSu32)pkt[14] << 8 | pkt[15]);
 			}
 
+		// Since some NAT-PMP server implementations don't return the requested internal port in
+		// the reply, we can't associate this reply with a particular NATTraversalInfo structure.
+		// We globally keep track of the most recent error code for mappings.
+		m->LastNATMapResultCode = PortMapReply->err;
+		
 		for (ptr = m->NATTraversals; ptr; ptr=ptr->next)
 			if (ptr->Protocol == Protocol && mDNSSameIPPort(ptr->IntPort, PortMapReply->intport))
 				natTraversalHandlePortMapReply(m, ptr, InterfaceID, PortMapReply->err, PortMapReply->extport, PortMapReply->NATRep_lease);

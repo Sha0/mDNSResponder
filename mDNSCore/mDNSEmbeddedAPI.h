@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.533  2009/01/21 03:43:57  mcguire
+<rdar://problem/6511765> BTMM: Add support for setting kDNSServiceErr_NATPortMappingDisabled in DynamicStore
+
 Revision 1.532  2009/01/16 19:50:36  cheshire
 Oops. Fixed definition of SleepProxyServiceType.
 
@@ -2411,6 +2414,7 @@ struct mDNS_struct
 	UDPSocket        *NATMcastRecvskt;			// For receiving NAT-PMP AddrReply multicasts from router on port 5350
 	mDNSu32           LastNATupseconds;			// NAT engine uptime in seconds, from most recent NAT packet
 	mDNSs32           LastNATReplyLocalTime;	// Local time in ticks when most recent NAT packet was received
+	mDNSu16           LastNATMapResultCode;		// Most recent error code for mappings
 
 	tcpLNTInfo        tcpAddrInfo;				// legacy NAT traversal TCP connection info for external address
 	tcpLNTInfo        tcpDeviceInfo;			// legacy NAT traversal TCP connection info for device info
