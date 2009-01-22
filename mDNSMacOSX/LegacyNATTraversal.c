@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.58  2009/01/22 01:15:58  mcguire
+<rdar://problem/6446934> BTMM: pref pane reports enabled but negotiation failed
+
 Revision 1.57  2008/12/19 21:09:22  mcguire
 <rdar://problem/6431147> UPnP: error messages when canceling seemingly unrelated browse
 
@@ -433,60 +436,98 @@ mDNSlocal void handleLNTGetExternalAddressResponse(tcpLNTInfo *tcpInfo)
 	natTraversalHandleAddressReply(m, err, ExtAddr);
 	}
 
+enum
+	{
+	HTTPCode_NeedMoreData = -1, // No code found in stream
+	HTTPCode_Other        = -2, // Valid code other than those below found in stream
+	HTTPCode_Bad          = -3,
+	HTTPCode_200          = 200,
+	HTTPCode_404          = 404,
+	HTTPCode_500          = 500,
+	};
+	
+mDNSlocal mDNSs16 ParseHTTPResponseCode(mDNSu8** data, mDNSu8* end)
+	{
+	mDNSu8* ptr = *data;
+	
+	if (end - ptr < 5) return HTTPCode_NeedMoreData;
+	if (strncasecmp((char*)ptr, "HTTP/", 5) != 0) return HTTPCode_Bad;
+	ptr += 5;
+	// should we care about the HTTP protocol version?
+	
+	// look for first space, which must come before first LF
+	while (ptr && ptr != end)
+		{
+		if (*ptr == '\n') return HTTPCode_Bad;
+		if (*ptr == ' ') break;
+		ptr++;
+		}
+	if (ptr == end) return HTTPCode_NeedMoreData;
+	ptr++;
+	
+	if (end - ptr < 3) return HTTPCode_NeedMoreData;
+	
+	char* code = (char*)ptr;
+	ptr += 3;
+	while (ptr && ptr != end)
+		{
+		if (*ptr == '\n') break;
+		ptr++;
+		}
+	if (ptr == end) return HTTPCode_NeedMoreData;
+	*data = ptr;
+	
+	if (memcmp(code, "200", 3) == 0) return HTTPCode_200;
+	if (memcmp(code, "404", 3) == 0) return HTTPCode_404;
+	if (memcmp(code, "500", 3) == 0) return HTTPCode_500;
+	
+	LogOperation("ParseHTTPResponseCode found unexpected result code: %c%c%c", code[0], code[1], code[2]);
+	return HTTPCode_Other;
+	}
+
 mDNSlocal void handleLNTPortMappingResponse(tcpLNTInfo *tcpInfo)
 	{
 	mDNS             *m       = tcpInfo->m;
 	mDNSIPPort        extport = zeroIPPort;
-	char             *ptr     = (char *)tcpInfo->Reply;
-	char             *end     = (char *)tcpInfo->Reply + tcpInfo->nread;
+	mDNSu8           *ptr     = (mDNSu8*)tcpInfo->Reply;
+	mDNSu8           *end     = (mDNSu8*)tcpInfo->Reply + tcpInfo->nread;
 	NATTraversalInfo *natInfo;
 
 	for (natInfo = m->NATTraversals; natInfo; natInfo=natInfo->next) { if (natInfo == tcpInfo->parentNATInfo) break; }
 
 	if (!natInfo) { LogOperation("handleLNTPortMappingResponse: can't find matching tcpInfo in NATTraversals!"); return; }
 
-	// start from the beginning of the HTTP header; find "200 OK" status message; if the first characters after the
-	// space are not "200" then this is an error message or invalid in some other way
-	// if the error is "500" this is an internal server error
-	while (ptr && ptr != end)
+	mDNSs16 http_result = ParseHTTPResponseCode(&ptr, end); // Note: modifies ptr
+	if (http_result == HTTPCode_200)
 		{
-		if (*ptr == ' ')
-			{
-			ptr++;
-			if (ptr == end) { LogOperation("handleLNTPortMappingResponse: past end of buffer!"); return; }
-			if      (strncasecmp(ptr, "200", 3) == 0) break;
-			else if (strncasecmp(ptr, "500", 3) == 0)
-				{
-				// now check to see if this was a port mapping conflict
-				while (ptr && ptr != end)
-					{
-					if (((*ptr == 'c' || *ptr == 'C') && end - ptr >= 8 && strncasecmp(ptr, "Conflict", 8) == 0) || (*ptr == '>' && end - ptr >= 15 && strncasecmp(ptr, ">718</errorCode", 15) == 0))
-						{
-						if (tcpInfo->retries < 100)
-							{ tcpInfo->retries++; SendPortMapRequest(tcpInfo->m, natInfo); }
-						else
-							{
-							LogMsg("handleLNTPortMappingResponse too many conflict retries %d %d", mDNSVal16(natInfo->IntPort), mDNSVal16(natInfo->RequestedPort));
-							natTraversalHandlePortMapReply(m, natInfo, m->UPnPInterfaceID, NATErr_Refused, zeroIPPort, 0);
-							}
-						return;
-						}
-					ptr++;
-					}
-				break;	// out of HTTP status search
-				}
-			}
-		ptr++;
-		}
-	if (ptr == mDNSNULL || ptr == end) return;
+		LogOperation("handleLNTPortMappingResponse: got a valid response, sending reply to natTraversalHandlePortMapReply(internal %d external %d retries %d)",
+			mDNSVal16(natInfo->IntPort), RequestedPortNum(natInfo), tcpInfo->retries);
 	
-	LogOperation("handleLNTPortMappingResponse: got a valid response, sending reply to natTraversalHandlePortMapReply(internal %d external %d retries %d)",
-		mDNSVal16(natInfo->IntPort), RequestedPortNum(natInfo), tcpInfo->retries);
-
-	// Make sure to compute extport *before* we zero tcpInfo->retries
-	extport = mDNSOpaque16fromIntVal(RequestedPortNum(natInfo));
-	tcpInfo->retries = 0;
-	natTraversalHandlePortMapReply(m, natInfo, m->UPnPInterfaceID, mStatus_NoError, extport, NATMAP_DEFAULT_LEASE);
+		// Make sure to compute extport *before* we zero tcpInfo->retries
+		extport = mDNSOpaque16fromIntVal(RequestedPortNum(natInfo));
+		tcpInfo->retries = 0;
+		natTraversalHandlePortMapReply(m, natInfo, m->UPnPInterfaceID, mStatus_NoError, extport, NATMAP_DEFAULT_LEASE);
+		}
+	else if (http_result == HTTPCode_500)
+		{
+		while (ptr && ptr != end)
+			{
+			if (((*ptr == 'c' || *ptr == 'C') && end - ptr >= 8 && strncasecmp((char*)ptr, "Conflict", 8) == 0) || (*ptr == '>' && end - ptr >= 15 && strncasecmp((char*)ptr, ">718</errorCode", 15) == 0))
+				{
+				if (tcpInfo->retries < 100)
+					{ tcpInfo->retries++; SendPortMapRequest(tcpInfo->m, natInfo); }
+				else
+					{
+					LogMsg("handleLNTPortMappingResponse too many conflict retries %d %d", mDNSVal16(natInfo->IntPort), mDNSVal16(natInfo->RequestedPort));
+					natTraversalHandlePortMapReply(m, natInfo, m->UPnPInterfaceID, NATErr_Refused, zeroIPPort, 0);
+					}
+				return;
+				}
+			ptr++;
+			}
+		}
+	else if (http_result == HTTPCode_Bad) LogMsg("handleLNTPortMappingResponse got data that was not a valid HTTP response");
+	else if (http_result == HTTPCode_Other) LogMsg("handleLNTPortMappingResponse got unexpected response code");
 	}
 
 mDNSlocal void DisposeInfoFromUnmapList(mDNS *m, tcpLNTInfo *tcpInfo)
