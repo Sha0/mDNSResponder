@@ -16,6 +16,9 @@
     Change History (most recent first):
 
 $Log: helper-stubs.c,v $
+Revision 1.15  2009/01/22 02:14:27  cheshire
+<rdar://problem/6515626> Sleep Proxy: Set correct target MAC address, instead of all zeroes
+
 Revision 1.14  2009/01/14 01:38:42  mcguire
 <rdar://problem/6492710> Write out DynamicStore per-interface SleepProxyServer info
 
@@ -196,12 +199,12 @@ fin:
 	return err;
 	}
 
-int mDNSSetARP(int ifindex, const v4addr_t ip)
+int mDNSSetARP(int ifindex, const v4addr_t ip, const ethaddr_t eth)
 	{
 	kern_return_t kr = KERN_FAILURE;
 	int retry = 0, err = 0;
 	MACHRETRYLOOP_BEGIN(kr, retry, err, fin);
-	kr = proxy_mDNSSetARP(getHelperPort(retry), ifindex, (uint8_t*)ip, &err);
+	kr = proxy_mDNSSetARP(getHelperPort(retry), ifindex, (uint8_t*)ip, (uint8_t*)eth, &err);
 	MACHRETRYLOOP_END(kr, retry, err, fin);
 fin:
 	return err;

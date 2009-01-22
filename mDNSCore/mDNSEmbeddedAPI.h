@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.534  2009/01/22 02:14:25  cheshire
+<rdar://problem/6515626> Sleep Proxy: Set correct target MAC address, instead of all zeroes
+
 Revision 1.533  2009/01/21 03:43:57  mcguire
 <rdar://problem/6511765> BTMM: Add support for setting kDNSServiceErr_NATPortMappingDisabled in DynamicStore
 
@@ -3066,6 +3069,7 @@ extern void       mDNSPlatformUDPClose(UDPSocket *sock);
 extern void       mDNSPlatformReceiveBPF_fd(mDNS *const m, int fd);
 extern void       mDNSPlatformUpdateProxyList(mDNS *const m, const mDNSInterfaceID InterfaceID);
 extern void       mDNSPlatformSendRawPacket(const void *const msg, const mDNSu8 *const end, mDNSInterfaceID InterfaceID);
+extern void       mDNSPlatformSetLocalARP(const mDNSv4Addr *const tpa, const mDNSEthAddr *const tha, mDNSInterfaceID InterfaceID);
 extern void       mDNSPlatformSourceAddrForDest(mDNSAddr *const src, const mDNSAddr *const dst);
 
 // mDNSPlatformTLSSetupCerts/mDNSPlatformTLSTearDownCerts used by dnsextd

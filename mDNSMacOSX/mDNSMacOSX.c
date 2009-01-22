@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.615  2009/01/22 02:14:26  cheshire
+<rdar://problem/6515626> Sleep Proxy: Set correct target MAC address, instead of all zeroes
+
 Revision 1.614  2009/01/21 03:43:57  mcguire
 <rdar://problem/6511765> BTMM: Add support for setting kDNSServiceErr_NATPortMappingDisabled in DynamicStore
 
@@ -2203,35 +2206,31 @@ mDNSexport void mDNSPlatformSendRawPacket(const void *const msg, const mDNSu8 *c
 		{
 		if (write(info->BPF_fd, msg, end - (mDNSu8 *)msg) < 0)
 			LogMsg("mDNSPlatformSendRawPacket: BPF write(%d) failed %d (%s)", info->BPF_fd, errno, strerror(errno));
-		else
-			{
-			const mDNSu8 *const b = (mDNSu8 *)msg;
-			// If we're sending an ARP packet, to the broadcast address or to ourselves, then
-			// we need to manually inject an equivalent dummy entry into our local ARP cache.
-			// (The kernel only pays attention to incoming ARP packets, not outgoing.)
-			if (b[0xC] == 0x08 && b[0xD] == 0x06)
-				if (mDNSPlatformMemSame(b, onesEthAddr.b, 6) || mDNSPlatformMemSame(b, info->ifinfo.MAC.b, 6))
-					{
-					mDNSv4Addr addr = { { b[0x1C], b[0x1D], b[0x1E], b[0x1F] } };
-					mDNSBool makearp = mDNSv4AddressIsLinkLocal(&addr);
-					if (!makearp)
-						{
-						NetworkInterfaceInfoOSX *i;
-						for (i = info->m->p->InterfaceList; i; i = i->next)
-							if (i->Exists && i->ifinfo.InterfaceID == InterfaceID && i->ifinfo.ip.type == mDNSAddrType_IPv4)
-								if (((i->ifinfo.ip.ip.v4.NotAnInteger ^ addr.NotAnInteger) & i->ifinfo.mask.ip.v4.NotAnInteger) == 0)
-									makearp = mDNStrue;
-						}
-					if (!makearp)
-						LogOperation ("Don't need ARP entry for %s %.4a",            info->ifinfo.ifname, b+0x1C);
-					else
-						{
-						int result = mDNSSetARP(info->scope_id, b+0x1C);
-						if (result) LogMsg("Set local ARP entry for %s %.4a failed: %d", info->ifinfo.ifname, b+0x1C, result);
-						else debugf       ("Set local ARP entry for %s %.4a",            info->ifinfo.ifname, b+0x1C);
-						}
-					}
-			}
+		}
+	}
+
+mDNSexport void mDNSPlatformSetLocalARP(const mDNSv4Addr *const tpa, const mDNSEthAddr *const tha, mDNSInterfaceID InterfaceID)
+	{
+	if (!InterfaceID) { LogMsg("mDNSPlatformSetLocalARP: No InterfaceID specified"); return; }
+	NetworkInterfaceInfoOSX *info = (NetworkInterfaceInfoOSX *)InterfaceID;
+	// Manually inject an entry into our local ARP cache.
+	// (We can't do this by sending an ARP broadcast, because the kernel only pays attention to incoming ARP packets, not outgoing.)
+	mDNSBool makearp = mDNSv4AddressIsLinkLocal(tpa);
+	if (!makearp)
+		{
+		NetworkInterfaceInfoOSX *i;
+		for (i = info->m->p->InterfaceList; i; i = i->next)
+			if (i->Exists && i->ifinfo.InterfaceID == InterfaceID && i->ifinfo.ip.type == mDNSAddrType_IPv4)
+				if (((i->ifinfo.ip.ip.v4.NotAnInteger ^ tpa->NotAnInteger) & i->ifinfo.mask.ip.v4.NotAnInteger) == 0)
+					makearp = mDNStrue;
+		}
+	if (!makearp)
+		LogOperation ("Don't need ARP entry for %s %.4a %.6a",            info->ifinfo.ifname, tpa, tha);
+	else
+		{
+		int result = mDNSSetARP(info->scope_id, tpa->b, tha->b);
+		if (result) LogMsg("Set local ARP entry for %s %.4a %.6a failed: %d", info->ifinfo.ifname, tpa, tha, result);
+		else debugf       ("Set local ARP entry for %s %.4a %.6a",            info->ifinfo.ifname, tpa, tha);
 		}
 	}
 

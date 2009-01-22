@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.57  2009/01/22 02:14:27  cheshire
+<rdar://problem/6515626> Sleep Proxy: Set correct target MAC address, instead of all zeroes
+
 Revision 1.56  2009/01/20 21:03:22  cheshire
 Improved debugging messages
 
@@ -364,9 +367,10 @@ fin:
 	return KERN_SUCCESS;
 	}
 
-kern_return_t do_mDNSSetARP(__unused mach_port_t port, int ifindex, v4addr_t v4, int *err, audit_token_t token)
+kern_return_t do_mDNSSetARP(__unused mach_port_t port, int ifindex, v4addr_t v4, ethaddr_t eth, int *err, audit_token_t token)
 	{
-	//helplog(ASL_LEVEL_ERR, "do_mDNSSetARP %d %d.%d.%d.%d", ifindex, v4[0], v4[1], v4[2], v4[3]);
+	//helplog(ASL_LEVEL_ERR, "do_mDNSSetARP %d %d.%d.%d.%d %02X:%02X:%02X:%02X:%02X:%02X",
+	//	ifindex, v4[0], v4[1], v4[2], v4[3], eth[0], eth[1], eth[2], eth[3], eth[4], eth[5]);
 
 	*err = -1;
 	if (!authorized(&token)) { *err = kmDNSHelperNotAuthorized; goto fin; }
@@ -416,8 +420,7 @@ kern_return_t do_mDNSSetARP(__unused mach_port_t port, int ifindex, v4addr_t v4,
 		rtmsg.sdl.sdl_slen           = 0;
 
 		// Target MAC address goes in rtmsg.sdl.sdl_data[0..5]; (See LLADDR() in /usr/include/net/if_dl.h)
-		// For now we use zero as the target MAC address, and since our structure is already zero'd, there's nothing more
-		// we need to do. If we later decide to use a different dummy target MAC address, we'll need to set those bytes.
+		memcpy(rtmsg.sdl.sdl_data, eth, sizeof(ethaddr_t));
 
 		int len = write(s, (char *)&rtmsg, sizeof(rtmsg));
 		if (len < 0)

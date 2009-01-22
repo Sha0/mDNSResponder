@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helpermsg.defs,v $
+Revision 1.13  2009/01/22 02:14:26  cheshire
+<rdar://problem/6515626> Sleep Proxy: Set correct target MAC address, instead of all zeroes
+
 Revision 1.12  2009/01/14 01:38:43  mcguire
 <rdar://problem/6492710> Write out DynamicStore per-interface SleepProxyServer info
 
@@ -62,8 +65,9 @@ Revision 1.1  2007/08/08 22:34:58  mcguire
 
 import "helpermsg-types.h";
 
-type v6addr_t = array [16] of uint8_t;
-type v4addr_t = array [4] of uint8_t;
+type v4addr_t  = array [ 4] of uint8_t;
+type ethaddr_t = array [ 6] of uint8_t;
+type v6addr_t  = array [16] of uint8_t;
 type string_t = c_string[*:1024];
 
 subsystem helper 1833193043;
@@ -85,6 +89,7 @@ routine mDNSPowerRequest(		port			: mach_port_t;
 routine mDNSSetARP(				port			: mach_port_t;
 								ifindex			: int;
 								ip				: v4addr_t;
+								eth				: ethaddr_t;
 		out						err				: int;
 		ServerAuditToken		token			: audit_token_t);
 

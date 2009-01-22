@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.891  2009/01/22 02:14:25  cheshire
+<rdar://problem/6515626> Sleep Proxy: Set correct target MAC address, instead of all zeroes
+
 Revision 1.890  2009/01/22 00:45:02  cheshire
 Improved SPS debugging log messages; we are eligible to start answering ARP requests
 after we send our first announcement, not after we send our last probe
@@ -2437,7 +2440,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 				rr->LastAPTime = m->timenow;
 				if (rr->AddressProxy.type == mDNSAddrType_IPv4)
 					{
-					LogSPS("ARP Announcement %d %s", rr->AnnounceCount, ARDisplayString(m,rr));
+					LogSPS("ARP Announcement %d Capturing traffic for %.6a %s", rr->AnnounceCount, &rr->WakeUp.MAC, ARDisplayString(m,rr));
 					SendARP(m, 1, rr, rr->AddressProxy.ip.v4.b, zeroEthAddr.b, rr->AddressProxy.ip.v4.b, onesEthAddr.b);
 					}
 				else if (rr->AddressProxy.type == mDNSAddrType_IPv6)
@@ -5993,7 +5996,7 @@ mDNSlocal void SPSRecordCallback(mDNS *const m, AuthRecord *const ar, mStatus re
 	if (result == mStatus_NameConflict)
 		{
 		LogMsg("Received Conflicting mDNS -- waking %s %.6a %s",
-			InterfaceNameForID(m, ar->resrec.InterfaceID), &ar->WakeUp, ARDisplayString(m, ar));
+			InterfaceNameForID(m, ar->resrec.InterfaceID), &ar->WakeUp.MAC, ARDisplayString(m, ar));
 		SendWakeup(m, ar->resrec.InterfaceID, &ar->WakeUp.MAC);
 		}
 	else if (result == mStatus_MemFree)
@@ -8137,12 +8140,15 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 					{
 					static const char msg1[] = "Ignoring  ARP Request from owner";
 					static const char msg2[] = "Ignoring  ARP Request from      ";
-					static const char msg3[] = "Answering ARP Request from      ";
+					static const char msg3[] = "Creating Local ARP Cache entry  ";
+					static const char msg4[] = "Answering ARP Request from      ";
 					const char *const msg = mDNSSameEthAddress(&arp->sha, &rr->WakeUp.MAC) ? msg1 :
-											(rr->AnnounceCount == InitialAnnounceCount) ? msg2 : msg3;
+											(rr->AnnounceCount == InitialAnnounceCount)    ? msg2 :
+											mDNSSameEthAddress(&arp->sha, &intf->MAC)      ? msg3 : msg4;
 					LogSPS("%-7s %s %.6a %.4a for %.4a -- %.6a %s",
 						InterfaceNameForID(m, InterfaceID), msg, &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.MAC, ARDisplayString(m, rr));
-					if (msg == msg3) SendARP(m, 2, rr, arp->tpa.b, arp->sha.b, arp->spa.b, arp->sha.b);
+					if      (msg == msg3) mDNSPlatformSetLocalARP(&arp->tpa, &rr->WakeUp.MAC, InterfaceID);
+					else if (msg == msg4) SendARP(m, 2, rr, arp->tpa.b, arp->sha.b, arp->spa.b, arp->sha.b);
 					}
 
 		// Pass 2:
