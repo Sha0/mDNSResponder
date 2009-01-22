@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.59  2009/01/22 20:32:17  mcguire
+<rdar://problem/6446934> BTMM: pref pane reports enabled but negotiation failed
+Make sure we push the pointer out past the LF if we read it.
+
 Revision 1.58  2009/01/22 01:15:58  mcguire
 <rdar://problem/6446934> BTMM: pref pane reports enabled but negotiation failed
 
@@ -475,7 +479,7 @@ mDNSlocal mDNSs16 ParseHTTPResponseCode(mDNSu8** data, mDNSu8* end)
 		ptr++;
 		}
 	if (ptr == end) return HTTPCode_NeedMoreData;
-	*data = ptr;
+	*data = ++ptr;
 	
 	if (memcmp(code, "200", 3) == 0) return HTTPCode_200;
 	if (memcmp(code, "404", 3) == 0) return HTTPCode_404;
