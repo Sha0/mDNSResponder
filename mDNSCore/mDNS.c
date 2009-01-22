@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.890  2009/01/22 00:45:02  cheshire
+Improved SPS debugging log messages; we are eligible to start answering ARP requests
+after we send our first announcement, not after we send our last probe
+
 Revision 1.889  2009/01/21 03:43:56  mcguire
 <rdar://problem/6511765> BTMM: Add support for setting kDNSServiceErr_NATPortMappingDisabled in DynamicStore
 
@@ -3189,7 +3193,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 					{
 					if (rr->AddressProxy.type == mDNSAddrType_IPv4)
 						{
-						LogSPS("SendQueries ARP Probe %d %s", rr->ProbeCount, ARDisplayString(m,rr));
+						LogSPS("SendQueries ARP Probe %d %s %s", rr->ProbeCount, InterfaceNameForID(m, rr->resrec.InterfaceID), ARDisplayString(m,rr));
 						SendARP(m, 1, rr, zerov4Addr.b, zeroEthAddr.b, rr->AddressProxy.ip.v4.b, rr->WakeUp.MAC.b);
 						}
 					else if (rr->AddressProxy.type == mDNSAddrType_IPv6)
@@ -8131,11 +8135,13 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 			for (rr = m->ResourceRecords; rr; rr=rr->next)
 				if (rr->resrec.InterfaceID == InterfaceID && rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, arp->tpa))
 					{
-					static const char msg1[] = "Ignoring  ARP Request from owner %.6a %.4a for %.4a -- %.6a %s";
-					static const char msg2[] = "Ignoring  ARP Request from       %.6a %.4a for %.4a -- %.6a %s";
-					static const char msg3[] = "Answering ARP Request from       %.6a %.4a for %.4a -- %.6a %s";
-					const char *const msg = mDNSSameEthAddress(&arp->sha, &rr->WakeUp.MAC) ? msg1 : rr->ProbeCount ? msg2 : msg3;
-					LogSPS(msg, &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.MAC, ARDisplayString(m, rr));
+					static const char msg1[] = "Ignoring  ARP Request from owner";
+					static const char msg2[] = "Ignoring  ARP Request from      ";
+					static const char msg3[] = "Answering ARP Request from      ";
+					const char *const msg = mDNSSameEthAddress(&arp->sha, &rr->WakeUp.MAC) ? msg1 :
+											(rr->AnnounceCount == InitialAnnounceCount) ? msg2 : msg3;
+					LogSPS("%-7s %s %.6a %.4a for %.4a -- %.6a %s",
+						InterfaceNameForID(m, InterfaceID), msg, &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.MAC, ARDisplayString(m, rr));
 					if (msg == msg3) SendARP(m, 2, rr, arp->tpa.b, arp->sha.b, arp->spa.b, arp->sha.b);
 					}
 
@@ -8163,11 +8169,14 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 					rr->AnnounceCount     = InitialAnnounceCount;
 					InitializeLastAPTime(m, rr);
 					if (mDNSSameEthAddress(&arp->sha, &rr->WakeUp.MAC))
-						LogSPS("Ignoring  ARP %s owner %.4a for %.4a -- %.6a %s",
-							mDNSSameIPv4Address(arp->spa, arp->tpa) ? "Announcement" : "Request from", &arp->spa, &arp->tpa, &rr->WakeUp.MAC, ARDisplayString(m, rr));
+						LogSPS("%-7s ARP %s from owner %.6a %.4a for %.4a -- re-starting probing for %s",
+							InterfaceNameForID(m, InterfaceID),
+							mDNSSameIPv4Address(arp->spa, arp->tpa) ? "Announcement" : "Request     ",
+							&arp->sha, &arp->spa, &arp->tpa, ARDisplayString(m, rr));
 					else
 						{
-						LogMsg("Received Conflicting ARP -- waking %s %.6a %s", InterfaceNameForID(m, rr->resrec.InterfaceID), &rr->WakeUp.MAC, ARDisplayString(m, rr));
+						LogMsg("%-7s Conflicting ARP from %.6a %.4a for %.4a -- waking %.6a %s",
+							InterfaceNameForID(m, InterfaceID), &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.MAC, ARDisplayString(m, rr));
 						SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.MAC);
 						}
 					}
