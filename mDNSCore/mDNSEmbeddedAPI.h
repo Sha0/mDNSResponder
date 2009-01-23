@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.535  2009/01/23 00:38:36  mcguire
+<rdar://problem/5570906> BTMM: Doesn't work with Linksys WRT54GS firmware 4.71.1
+
 Revision 1.534  2009/01/22 02:14:25  cheshire
 <rdar://problem/6515626> Sleep Proxy: Set correct target MAC address, instead of all zeroes
 
@@ -3090,6 +3093,7 @@ extern void     LNT_ConfigureRouterInfo(mDNS *m, const mDNSInterfaceID Interface
 extern mStatus  LNT_GetExternalAddress(mDNS *m);
 extern mStatus  LNT_MapPort(mDNS *m, NATTraversalInfo *n);
 extern mStatus  LNT_UnmapPort(mDNS *m, NATTraversalInfo *n);
+extern void     LNT_ClearState(mDNS *const m);
 #endif // _LEGACY_NAT_TRAVERSAL_
 
 // The core mDNS code provides these functions, for the platform support code to call at appropriate times

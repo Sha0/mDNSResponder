@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.599  2009/01/23 00:38:36  mcguire
+<rdar://problem/5570906> BTMM: Doesn't work with Linksys WRT54GS firmware 4.71.1
+
 Revision 1.598  2009/01/21 03:43:57  mcguire
 <rdar://problem/6511765> BTMM: Add support for setting kDNSServiceErr_NATPortMappingDisabled in DynamicStore
 
@@ -1645,17 +1648,6 @@ mDNSexport void RecreateNATMappings(mDNS *const m)
 
 	m->NextScheduledNATOp = m->timenow;		// Need to send packets immediately
 	}
-
-#ifdef _LEGACY_NAT_TRAVERSAL_
-mDNSlocal void ClearUPnPState(mDNS *const m)
-	{
-	if (m->tcpAddrInfo.sock)   { mDNSPlatformTCPCloseConnection(m->tcpAddrInfo.sock);   m->tcpAddrInfo.sock   = mDNSNULL; }
-	if (m->tcpDeviceInfo.sock) { mDNSPlatformTCPCloseConnection(m->tcpDeviceInfo.sock); m->tcpDeviceInfo.sock = mDNSNULL; }
-	m->UPnPSOAPPort = m->UPnPRouterPort = zeroIPPort;	// Reset UPnP ports
-	}
-#else
-#define ClearUPnPState(X)
-#endif // _LEGACY_NAT_TRAVERSAL_
 
 mDNSexport void natTraversalHandleAddressReply(mDNS *const m, mDNSu16 err, mDNSv4Addr ExtAddr)
 	{
@@ -3399,7 +3391,9 @@ mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr, co
 			m->retryGetAddr         = m->timenow;
 			m->NextScheduledNATOp   = m->timenow;
 			m->LastNATMapResultCode = NATErr_None;
-			ClearUPnPState(m);
+#ifdef _LEGACY_NAT_TRAVERSAL_
+			LNT_ClearState(m);
+#endif // _LEGACY_NAT_TRAVERSAL_
 			}
 
 		if (m->ReverseMap.ThisQInterval != -1) mDNS_StopQuery_internal(m, &m->ReverseMap);
@@ -3927,7 +3921,9 @@ mDNSexport void uDNS_ReceiveNATPMPPacket(mDNS *m, const mDNSInterfaceID Interfac
 
 	m->LastNATupseconds      = AddrReply->upseconds;
 	m->LastNATReplyLocalTime = m->timenow;
-	ClearUPnPState(m);		// We know this is a NAT-PMP base station, so discard any prior UPnP state
+#ifdef _LEGACY_NAT_TRAVERSAL_
+	LNT_ClearState(m);
+#endif // _LEGACY_NAT_TRAVERSAL_
 
 	if (AddrReply->opcode == NATOp_AddrResponse)
 		{

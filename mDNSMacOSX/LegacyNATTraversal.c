@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.60  2009/01/23 00:38:36  mcguire
+<rdar://problem/5570906> BTMM: Doesn't work with Linksys WRT54GS firmware 4.71.1
+
 Revision 1.59  2009/01/22 20:32:17  mcguire
 <rdar://problem/6446934> BTMM: pref pane reports enabled but negotiation failed
 Make sure we push the pointer out past the LF if we read it.
@@ -307,6 +310,55 @@ mDNSlocal mStatus ParseHttpUrl(char* ptr, char* end, mDNSu8** addressAndPort, mD
 	return mStatus_NoError;
 	}
 
+enum
+	{
+	HTTPCode_NeedMoreData = -1, // No code found in stream
+	HTTPCode_Other        = -2, // Valid code other than those below found in stream
+	HTTPCode_Bad          = -3,
+	HTTPCode_200          = 200,
+	HTTPCode_404          = 404,
+	HTTPCode_500          = 500,
+	};
+	
+mDNSlocal mDNSs16 ParseHTTPResponseCode(mDNSu8** data, mDNSu8* end)
+	{
+	mDNSu8* ptr = *data;
+	
+	if (end - ptr < 5) return HTTPCode_NeedMoreData;
+	if (strncasecmp((char*)ptr, "HTTP/", 5) != 0) return HTTPCode_Bad;
+	ptr += 5;
+	// should we care about the HTTP protocol version?
+	
+	// look for first space, which must come before first LF
+	while (ptr && ptr != end)
+		{
+		if (*ptr == '\n') return HTTPCode_Bad;
+		if (*ptr == ' ') break;
+		ptr++;
+		}
+	if (ptr == end) return HTTPCode_NeedMoreData;
+	ptr++;
+	
+	if (end - ptr < 3) return HTTPCode_NeedMoreData;
+	
+	char* code = (char*)ptr;
+	ptr += 3;
+	while (ptr && ptr != end)
+		{
+		if (*ptr == '\n') break;
+		ptr++;
+		}
+	if (ptr == end) return HTTPCode_NeedMoreData;
+	*data = ++ptr;
+	
+	if (memcmp(code, "200", 3) == 0) return HTTPCode_200;
+	if (memcmp(code, "404", 3) == 0) return HTTPCode_404;
+	if (memcmp(code, "500", 3) == 0) return HTTPCode_500;
+	
+	LogOperation("ParseHTTPResponseCode found unexpected result code: %c%c%c", code[0], code[1], code[2]);
+	return HTTPCode_Other;
+	}
+
 // This function parses the xml body of the device description response from the router. Basically, we look to make sure this is a response
 // referencing a service we care about (WANIPConnection or WANPPPConnection), look for the "controlURL" header immediately following, and copy the addressing and URL info we need
 mDNSlocal void handleLNTDeviceDescriptionResponse(tcpLNTInfo *tcpInfo)
@@ -317,6 +369,10 @@ mDNSlocal void handleLNTDeviceDescriptionResponse(tcpLNTInfo *tcpInfo)
 	char    *stop = mDNSNULL;
 	
 	if (!mDNSIPPortIsZero(m->UPnPSOAPPort)) return; // already have the info we need
+
+	mDNSs16 http_result = ParseHTTPResponseCode((mDNSu8**)&ptr, (mDNSu8*)end); // Note: modifies ptr
+	if (http_result == HTTPCode_404) LNT_ClearState(m);
+	if (http_result != HTTPCode_200) return;
 
 	// Always reset our flag to use WANIPConnection.  We'll use WANPPPConnection if we find it and don't find WANIPConnection.
 	m->UPnPWANPPPConnection = mDNSfalse;
@@ -412,14 +468,19 @@ mDNSlocal void handleLNTGetExternalAddressResponse(tcpLNTInfo *tcpInfo)
 	mDNS       *m = tcpInfo->m;
 	mDNSu16     err = NATErr_None;
 	mDNSv4Addr  ExtAddr;
-	char       *ptr = (char *)tcpInfo->Reply;
-	char       *end = (char *)tcpInfo->Reply + tcpInfo->nread;
-	char       *addrend;
+	mDNSu8     *ptr = (mDNSu8*)tcpInfo->Reply;
+	mDNSu8     *end = (mDNSu8*)tcpInfo->Reply + tcpInfo->nread;
+	mDNSu8     *addrend;
 	static char tagname[20] = "NewExternalIPAddress";		// Array NOT including a terminating nul
 
 //	LogOperation("handleLNTGetExternalAddressResponse: %s", ptr);
 
-	while (ptr < end && strncasecmp(ptr, tagname, sizeof(tagname))) ptr++;
+	mDNSs16 http_result = ParseHTTPResponseCode(&ptr, end); // Note: modifies ptr
+	if (http_result == HTTPCode_404) LNT_ClearState(m);
+	if (http_result != HTTPCode_200) return;
+
+	
+	while (ptr < end && strncasecmp((char*)ptr, tagname, sizeof(tagname))) ptr++;
 	ptr += sizeof(tagname);						// Skip over "NewExternalIPAddress"
 	while (ptr < end && *ptr != '>') ptr++;
 	ptr += 1;									// Skip over ">"
@@ -429,7 +490,7 @@ mDNSlocal void handleLNTGetExternalAddressResponse(tcpLNTInfo *tcpInfo)
 	if (addrend >= end) return;
 	*addrend = 0;
 
-	if (inet_pton(AF_INET, ptr, &ExtAddr) <= 0)
+	if (inet_pton(AF_INET, (char*)ptr, &ExtAddr) <= 0)
 		{
 		LogMsg("handleLNTGetExternalAddressResponse: Router returned bad address %s", ptr);
 		err = NATErr_NetFail;
@@ -438,55 +499,6 @@ mDNSlocal void handleLNTGetExternalAddressResponse(tcpLNTInfo *tcpInfo)
 	if (!err) LogOperation("handleLNTGetExternalAddressResponse: External IP address is %.4a", &ExtAddr);
 
 	natTraversalHandleAddressReply(m, err, ExtAddr);
-	}
-
-enum
-	{
-	HTTPCode_NeedMoreData = -1, // No code found in stream
-	HTTPCode_Other        = -2, // Valid code other than those below found in stream
-	HTTPCode_Bad          = -3,
-	HTTPCode_200          = 200,
-	HTTPCode_404          = 404,
-	HTTPCode_500          = 500,
-	};
-	
-mDNSlocal mDNSs16 ParseHTTPResponseCode(mDNSu8** data, mDNSu8* end)
-	{
-	mDNSu8* ptr = *data;
-	
-	if (end - ptr < 5) return HTTPCode_NeedMoreData;
-	if (strncasecmp((char*)ptr, "HTTP/", 5) != 0) return HTTPCode_Bad;
-	ptr += 5;
-	// should we care about the HTTP protocol version?
-	
-	// look for first space, which must come before first LF
-	while (ptr && ptr != end)
-		{
-		if (*ptr == '\n') return HTTPCode_Bad;
-		if (*ptr == ' ') break;
-		ptr++;
-		}
-	if (ptr == end) return HTTPCode_NeedMoreData;
-	ptr++;
-	
-	if (end - ptr < 3) return HTTPCode_NeedMoreData;
-	
-	char* code = (char*)ptr;
-	ptr += 3;
-	while (ptr && ptr != end)
-		{
-		if (*ptr == '\n') break;
-		ptr++;
-		}
-	if (ptr == end) return HTTPCode_NeedMoreData;
-	*data = ++ptr;
-	
-	if (memcmp(code, "200", 3) == 0) return HTTPCode_200;
-	if (memcmp(code, "404", 3) == 0) return HTTPCode_404;
-	if (memcmp(code, "500", 3) == 0) return HTTPCode_500;
-	
-	LogOperation("ParseHTTPResponseCode found unexpected result code: %c%c%c", code[0], code[1], code[2]);
-	return HTTPCode_Other;
 	}
 
 mDNSlocal void handleLNTPortMappingResponse(tcpLNTInfo *tcpInfo)
@@ -532,6 +544,7 @@ mDNSlocal void handleLNTPortMappingResponse(tcpLNTInfo *tcpInfo)
 		}
 	else if (http_result == HTTPCode_Bad) LogMsg("handleLNTPortMappingResponse got data that was not a valid HTTP response");
 	else if (http_result == HTTPCode_Other) LogMsg("handleLNTPortMappingResponse got unexpected response code");
+	else if (http_result == HTTPCode_404) LNT_ClearState(m);
 	}
 
 mDNSlocal void DisposeInfoFromUnmapList(mDNS *m, tcpLNTInfo *tcpInfo)
@@ -986,7 +999,7 @@ mDNSexport void LNT_SendDiscoveryMsg(mDNS *m)
 
 	debugf("LNT_SendDiscoveryMsg Router %.4a Current External Address %.4a", &m->Router.ip.v4, &m->ExternalAddress);
 
-	if (!mDNSIPv4AddressIsZero(m->Router.ip.v4) && mDNSIPv4AddressIsZero(m->ExternalAddress))
+	if (!mDNSIPv4AddressIsZero(m->Router.ip.v4))
 		{
 		if (!m->SSDPSocket) { m->SSDPSocket = mDNSPlatformUDPSocket(m, zeroIPPort); debugf("LNT_SendDiscoveryMsg created SSDPSocket %p", &m->SSDPSocket); }
 		mDNSPlatformSendUDP(m, buf, buf + bufLen, 0, m->SSDPSocket, &m->Router,     SSDPPort);
@@ -994,6 +1007,13 @@ mDNSexport void LNT_SendDiscoveryMsg(mDNS *m)
 		}
 		
 	m->SSDPWANPPPConnection = !m->SSDPWANPPPConnection;
+	}
+
+mDNSexport void LNT_ClearState(mDNS *const m)
+	{
+	if (m->tcpAddrInfo.sock)   { mDNSPlatformTCPCloseConnection(m->tcpAddrInfo.sock);   m->tcpAddrInfo.sock   = mDNSNULL; }
+	if (m->tcpDeviceInfo.sock) { mDNSPlatformTCPCloseConnection(m->tcpDeviceInfo.sock); m->tcpDeviceInfo.sock = mDNSNULL; }
+	m->UPnPSOAPPort = m->UPnPRouterPort = zeroIPPort;	// Reset UPnP ports
 	}
 
 #endif /* _LEGACY_NAT_TRAVERSAL_ */
