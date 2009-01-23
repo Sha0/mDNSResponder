@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.61  2009/01/23 19:25:43  mcguire
+<rdar://problem/6514439> UPnP: Should not use NATErr_Refused when too many conflict retries
+
 Revision 1.60  2009/01/23 00:38:36  mcguire
 <rdar://problem/5570906> BTMM: Doesn't work with Linksys WRT54GS firmware 4.71.1
 
@@ -535,7 +538,7 @@ mDNSlocal void handleLNTPortMappingResponse(tcpLNTInfo *tcpInfo)
 				else
 					{
 					LogMsg("handleLNTPortMappingResponse too many conflict retries %d %d", mDNSVal16(natInfo->IntPort), mDNSVal16(natInfo->RequestedPort));
-					natTraversalHandlePortMapReply(m, natInfo, m->UPnPInterfaceID, NATErr_Refused, zeroIPPort, 0);
+					natTraversalHandlePortMapReply(m, natInfo, m->UPnPInterfaceID, NATErr_Res, zeroIPPort, 0);
 					}
 				return;
 				}
@@ -761,7 +764,7 @@ mDNSlocal mStatus SendPortMapRequest(mDNS *m, NATTraversalInfo *n)
 				}
 			else
 				{
-				natTraversalHandlePortMapReply(m, n, m->UPnPInterfaceID, NATErr_Refused, zeroIPPort, 0);
+				natTraversalHandlePortMapReply(m, n, m->UPnPInterfaceID, NATErr_Res, zeroIPPort, 0);
 				return mStatus_NoError;
 				}
 			}
