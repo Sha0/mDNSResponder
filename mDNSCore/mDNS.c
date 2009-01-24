@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.892  2009/01/24 01:38:23  cheshire
+Fixed error in logic for targeted queries
+
 Revision 1.891  2009/01/22 02:14:25  cheshire
 <rdar://problem/6515626> Sleep Proxy: Set correct target MAC address, instead of all zeroes
 
@@ -6397,15 +6400,12 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 		question->Target.type = mDNSAddrType_None;
 		}
 
-	if (!question->Target.type)		// No question->Target specified, so clear TargetPort and TargetQID
-		{
-		question->TargetPort = zeroIPPort;
-		question->TargetQID  = zeroID;
-		}
+	if (!question->Target.type) question->TargetPort = zeroIPPort;	// If question->Target specified clear TargetPort
 
 	question->TargetQID =
 #ifndef UNICAST_DISABLED
-		(question->InterfaceID != mDNSInterface_LocalOnly && !question->ForceMCast && !IsLocalDomain(&question->qname)) ? mDNS_NewMessageID(m) :
+		(question->Target.type || (question->InterfaceID != mDNSInterface_LocalOnly && !question->ForceMCast && !IsLocalDomain(&question->qname)))
+		? mDNS_NewMessageID(m) :
 #endif // UNICAST_DISABLED
 		zeroID;
 
