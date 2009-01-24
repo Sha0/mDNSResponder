@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.427  2009/01/24 01:48:43  cheshire
+<rdar://problem/4786302> Implement logic to determine when to send dot-local lookups via Unicast
+
 Revision 1.426  2009/01/16 21:07:08  cheshire
 In SIGINFO "Duplicate Records" list, show expiry time for Sleep Proxy records
 
@@ -932,6 +935,7 @@ struct request_state
 		struct
 			{
 			DNSQuestion q;
+			DNSQuestion q2;
 			} queryrecord;
 		struct
 			{
@@ -2823,6 +2827,7 @@ mDNSlocal void queryrecord_termination_callback(request_state *request)
 	LogOperation("%3d: DNSServiceQueryRecord(%##s, %s) STOP",
 		request->sd, request->u.queryrecord.q.qname.c, DNSTypeName(request->u.queryrecord.q.qtype));
 	mDNS_StopQuery(&mDNSStorage, &request->u.queryrecord.q);  // no need to error check
+	if (request->u.queryrecord.q2.QuestionCallback) mDNS_StopQuery(&mDNSStorage, &request->u.queryrecord.q2);
 	}
 
 mDNSlocal mStatus handle_queryrecord_request(request_state *request)
@@ -2843,7 +2848,7 @@ mDNSlocal mStatus handle_queryrecord_request(request_state *request)
 	if (!request->msgptr)
 		{ LogMsg("%3d: DNSServiceQueryRecord(unreadable parameters)", request->sd); return(mStatus_BadParamErr); }
 
-	mDNSPlatformMemZero(&request->u.queryrecord.q, sizeof(request->u.queryrecord.q));
+	mDNSPlatformMemZero(&request->u.queryrecord, sizeof(request->u.queryrecord));
 
 	request->u.queryrecord.q.InterfaceID      = InterfaceID;
 	request->u.queryrecord.q.Target           = zeroAddr;
@@ -2862,6 +2867,26 @@ mDNSlocal mStatus handle_queryrecord_request(request_state *request)
 	err = mDNS_StartQuery(&mDNSStorage, &request->u.queryrecord.q);
 	if (err) LogMsg("ERROR: mDNS_StartQuery: %d", (int)err);
 	else request->terminate = queryrecord_termination_callback;
+
+#if APPLE_OSX_mDNSResponder
+	// Workaround for networks using Microsoft Active Directory using "local" as a private internal top-level domain
+	extern domainname ActiveDirectoryPrimaryDomain;
+	extern int        ActiveDirectoryPrimaryDomainLabelCount;
+	extern mDNSAddr   ActiveDirectoryPrimaryDomainServer;
+	if (!request->u.queryrecord.q.ForceMCast && ActiveDirectoryPrimaryDomainLabelCount)
+		{
+		int skip = CountLabels(&request->u.queryrecord.q.qname) - ActiveDirectoryPrimaryDomainLabelCount;
+		if (skip >= 0 && SameDomainName(SkipLeadingLabels(&request->u.queryrecord.q.qname, skip), &ActiveDirectoryPrimaryDomain))
+			{
+			request->u.queryrecord.q2            = request->u.queryrecord.q;
+			request->u.queryrecord.q2.Target     = ActiveDirectoryPrimaryDomainServer;
+			request->u.queryrecord.q2.TargetPort = UnicastDNSPort;
+			LogOperation("%3d: DNSServiceQueryRecord(%##s, %s, %X) unicast to %#a",
+				request->sd, request->u.queryrecord.q.qname.c, DNSTypeName(request->u.queryrecord.q.qtype), flags, &ActiveDirectoryPrimaryDomainServer);
+			err = mDNS_StartQuery(&mDNSStorage, &request->u.queryrecord.q2);
+			}
+		}
+#endif
 
 	return(err);
 	}

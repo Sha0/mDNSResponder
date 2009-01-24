@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.617  2009/01/24 01:48:42  cheshire
+<rdar://problem/4786302> Implement logic to determine when to send dot-local lookups via Unicast
+
 Revision 1.616  2009/01/24 00:28:43  cheshire
 Updated comments
 
@@ -1119,6 +1122,9 @@ static int   HINFO_HWstring_prefixlen = 6;
 static mDNSu8 SPMetricPortability   = 99;
 static mDNSu8 SPMetricMarginalPower = 99;
 static mDNSu8 SPMetricTotalPower    = 99;
+mDNSexport domainname ActiveDirectoryPrimaryDomain;
+mDNSexport int        ActiveDirectoryPrimaryDomainLabelCount;
+mDNSexport mDNSAddr   ActiveDirectoryPrimaryDomainServer;
 #endif // APPLE_OSX_mDNSResponder
 
 // ***************************************************************************
@@ -4070,6 +4076,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 						}
 					}
 				}
+
 			if (setsearch)
 				{
 				// Due to the vagaries of Apple's SystemConfiguration and dnsinfo.h APIs, if there are no search domains
@@ -4082,6 +4089,21 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 				if (config->resolver[0]->n_search == 0) mDNS_AddSearchDomain_CString(config->resolver[0]->domain);
 				else for (i = 0; i < config->resolver[0]->n_search; i++) mDNS_AddSearchDomain_CString(config->resolver[0]->search[i]);
 				}
+
+#if APPLE_OSX_mDNSResponder
+				// Record the so-called "primary" domain, which we use as a hint to tell if the user is on a network set up
+				// by someone using Microsoft Active Directory using "local" as a private internal top-level domain
+				MakeDomainNameFromDNSNameString(&ActiveDirectoryPrimaryDomain, config->resolver[0]->domain);
+				//MakeDomainNameFromDNSNameString(&ActiveDirectoryPrimaryDomain, "test.local");
+				ActiveDirectoryPrimaryDomainLabelCount = CountLabels(&ActiveDirectoryPrimaryDomain);
+				SetupAddr(&ActiveDirectoryPrimaryDomainServer, config->resolver[0]->nameserver[0]);
+				if (!SameDomainName(SkipLeadingLabels(&ActiveDirectoryPrimaryDomain, ActiveDirectoryPrimaryDomainLabelCount - 1), &localdomain))
+					{
+					AssignDomainName(&ActiveDirectoryPrimaryDomain, (const domainname *)"");
+					ActiveDirectoryPrimaryDomainLabelCount = 0;
+					}
+#endif
+
 			dns_configuration_free(config);
 			setservers = mDNSfalse;  // Done these now -- no need to fetch the same data from SCDynamicStore
 			setsearch  = mDNSfalse;
