@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.619  2009/01/24 02:11:58  cheshire
+Handle case where config->resolver[0]->nameserver[0] is NULL
+
 Revision 1.618  2009/01/24 01:55:51  cheshire
 Handle case where config->resolver[0]->domain is NULL
 
@@ -4096,15 +4099,18 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 #if APPLE_OSX_mDNSResponder
 				// Record the so-called "primary" domain, which we use as a hint to tell if the user is on a network set up
 				// by someone using Microsoft Active Directory using "local" as a private internal top-level domain
-				if (!config->resolver[0]->domain) ActiveDirectoryPrimaryDomain.c[0] = 0;
-				else MakeDomainNameFromDNSNameString(&ActiveDirectoryPrimaryDomain, config->resolver[0]->domain);
+				if (config->resolver[0]->domain && config->resolver[0]->nameserver[0])
+					MakeDomainNameFromDNSNameString(&ActiveDirectoryPrimaryDomain, config->resolver[0]->domain);
+				else ActiveDirectoryPrimaryDomain.c[0] = 0;
 				//MakeDomainNameFromDNSNameString(&ActiveDirectoryPrimaryDomain, "test.local");
 				ActiveDirectoryPrimaryDomainLabelCount = CountLabels(&ActiveDirectoryPrimaryDomain);
-				SetupAddr(&ActiveDirectoryPrimaryDomainServer, config->resolver[0]->nameserver[0]);
-				if (!SameDomainName(SkipLeadingLabels(&ActiveDirectoryPrimaryDomain, ActiveDirectoryPrimaryDomainLabelCount - 1), &localdomain))
+				if (SameDomainName(SkipLeadingLabels(&ActiveDirectoryPrimaryDomain, ActiveDirectoryPrimaryDomainLabelCount - 1), &localdomain))
+					SetupAddr(&ActiveDirectoryPrimaryDomainServer, config->resolver[0]->nameserver[0]);
+				else
 					{
 					AssignDomainName(&ActiveDirectoryPrimaryDomain, (const domainname *)"");
 					ActiveDirectoryPrimaryDomainLabelCount = 0;
+					ActiveDirectoryPrimaryDomainServer = zeroAddr;
 					}
 #endif
 
