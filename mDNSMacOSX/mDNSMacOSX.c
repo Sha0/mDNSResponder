@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.616  2009/01/24 00:28:43  cheshire
+Updated comments
+
 Revision 1.615  2009/01/22 02:14:26  cheshire
 <rdar://problem/6515626> Sleep Proxy: Set correct target MAC address, instead of all zeroes
 
@@ -1099,8 +1102,6 @@ mDNSexport int KQueueFD;
 #ifndef NO_SECURITYFRAMEWORK
 static CFArrayRef ServerCerts;
 #endif /* NO_SECURITYFRAMEWORK */
-
-#define DYNDNS_KEYCHAIN_SERVICE "DynDNS Shared Secret"
 
 static CFStringRef NetworkChangedKey_IPv4;
 static CFStringRef NetworkChangedKey_IPv6;
@@ -3997,7 +3998,11 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 					// Note: Unlike the BSD Sockets APIs (where TCP and UDP port numbers are universally in network byte order)
 					// in Apple's "dnsinfo.h" API the port number is declared to be a "uint16_t in host byte order"
 					if (r->port == 5353) continue;
-					if (r->search_order == DEFAULT_SEARCH_ORDER || !r->domain || !*r->domain) d.c[0] = 0; // we ignore domain for "default" resolver
+					// For the "default" resolver ("resolver #1") the "domain" value is bogus and we need to ignore it.
+					// e.g. the default resolver's "domain" value might say "apple.com", which indicates that this resolver
+					// is only for names that fall under "apple.com", but that's not correct. Actually the default resolver is
+					// for all names not covered by a more specific resolver (i.e. its domain should be ".", is the root domain).
+					if (r->search_order == DEFAULT_SEARCH_ORDER || !r->domain || !*r->domain) d.c[0] = 0;	// Default resolver applies to *all* names
 					else if (!MakeDomainNameFromDNSNameString(&d, r->domain)) { LogMsg("RegisterSplitDNS: bad domain %s", r->domain); continue; }
 
 					for (j = 0; j < config->n_resolver; j++)  // check if this is the lowest-weighted server for the domain
@@ -4007,7 +4012,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 						if (p->search_order <= r->search_order)
 							{
 							domainname tmp;
-							if (p->search_order == DEFAULT_SEARCH_ORDER || !p->domain || !*p->domain) tmp.c[0] = '\0';
+							if (p->search_order == DEFAULT_SEARCH_ORDER || !p->domain || !*p->domain) tmp.c[0] = '\0';	// Default resolver applies to *all* names
 							else if (!MakeDomainNameFromDNSNameString(&tmp, p->domain)) { LogMsg("RegisterSplitDNS: bad domain %s", p->domain); continue; }
 							if (SameDomainName(&d, &tmp))
 								if (p->search_order < r->search_order || j < i) break;  // if equal weights, pick first in list, otherwise pick lower-weight (p)
@@ -4019,7 +4024,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 						{
 						mDNSInterfaceID interface = mDNSInterface_Any;
 						int disabled  = 0;
-						
+
 						// DNS server option parsing
 						if (r->options != NULL)
 							{
@@ -4048,6 +4053,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 									}
 								}
 							}
+
 						for (n = 0; n < r->n_nameserver; n++)
 							if (r->nameserver[n]->sa_family == AF_INET && (interface || disabled || !AddrRequiresPPPConnection(r->nameserver[n])))
 								{
