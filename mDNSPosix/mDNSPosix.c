@@ -30,6 +30,9 @@
 	Change History (most recent first):
 
 $Log: mDNSPosix.c,v $
+Revision 1.108  2009/01/25 03:16:46  mkrochma
+Added skeleton definition of mDNSPlatformSetLocalARP
+
 Revision 1.107  2009/01/07 08:25:03  mkrochma
 Added skeleton definition of mDNSPlatformUpdateProxyList
 
@@ -505,6 +508,13 @@ mDNSexport void mDNSPlatformSendRawPacket(const void *const msg, const mDNSu8 *c
 	(void)end;			// Unused
 	(void)InterfaceID;			// Unused
 	}
+	
+mDNSexport void mDNSPlatformSetLocalARP(const mDNSv4Addr *const tpa, const mDNSEthAddr *const tha, mDNSInterfaceID InterfaceID)
+	{
+	(void)tpa;			// Unused
+	(void)tha;			// Unused
+	(void)InterfaceID;			// Unused
+	}	
 
 mDNSexport mStatus mDNSPlatformTLSSetupCerts(void)
 	{
