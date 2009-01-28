@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper-main.c,v $
+Revision 1.23  2009/01/28 03:17:19  mcguire
+<rdar://problem/5858535> helper: Adopt vproc_transaction API
+
 Revision 1.22  2008/12/19 01:56:47  mcguire
 <rdar://problem/6181947> crashes in mDNSResponderHelper
 
@@ -109,6 +112,7 @@ Revision 1.1  2007/08/08 22:34:58  mcguire
 #include <time.h>
 #include <unistd.h>
 #include <Security/Security.h>
+#include <vproc.h>
 #include "helper.h"
 #include "helper-server.h"
 #include "helpermsg.h"
@@ -132,6 +136,16 @@ union max_msg_size
 	union __RequestUnion__proxy_helper_subsystem req;
 	union __ReplyUnion__proxy_helper_subsystem rep;
 	};
+
+#ifdef VPROC_HAS_TRANSACTIONS
+typedef struct __transaction_s
+	{
+	struct __transaction_s* next;
+	vproc_transaction_t vt;
+	} transaction_t;
+	
+static transaction_t* transactions = NULL;
+#endif
 
 static const mach_msg_size_t MAX_MSG_SIZE = sizeof(union max_msg_size) + MAX_TRAILER_SIZE;
 static aslclient logclient = NULL;
@@ -158,6 +172,45 @@ void helplog(int level, const char *fmt, ...)
 	va_start(ap, fmt);
 	helplogv(level, fmt, ap);
 	va_end(ap);
+	}
+
+void safe_vproc_transaction_begin(void)
+	{
+#ifdef VPROC_HAS_TRANSACTIONS
+	if (vproc_transaction_begin)
+		{
+		transaction_t* t = malloc(sizeof(transaction_t));
+		t->next = transactions;
+		transactions = t;
+		t->vt = vproc_transaction_begin(NULL);
+		helplog(ASL_LEVEL_NOTICE, "vproc_transaction_begin %p %p %p", t, t->vt, t->next);
+		}
+	else
+		helplog(ASL_LEVEL_NOTICE, "vproc_transaction support unavailable");
+#else
+	helplog(ASL_LEVEL_NOTICE, "Compiled without vproc_transaction support");
+#endif
+	}
+	
+void safe_vproc_transaction_end(void)
+	{
+#ifdef VPROC_HAS_TRANSACTIONS
+	if (vproc_transaction_end)
+		{
+		if (transactions)
+			{
+			transaction_t* t = transactions;
+			transactions = t->next;
+			vproc_transaction_end(NULL, t->vt);
+			helplog(ASL_LEVEL_NOTICE, "vproc_transaction_end %p %p %p", t, t->vt, t->next);
+			free(t);
+			}
+		else
+			helplog(ASL_LEVEL_ERR, "No transactions in list");
+		}
+	else
+		assert(transactions == NULL);
+#endif
 	}
 
 static void handle_sigterm(int sig)
@@ -308,6 +361,7 @@ int main(int ac, char *av[])
 	kern_return_t kr = KERN_FAILURE;
 	long n;
 	int ch;
+	mach_msg_header_t hdr;
 
 	while ((ch = getopt(ac, av, "dt:")) != -1)
 		switch (ch)
@@ -355,10 +409,25 @@ int main(int ac, char *av[])
 		exit(EXIT_FAILURE);
 		}
 
-	kr = mach_msg_server(helper_server, MAX_MSG_SIZE, gPort,
-		MACH_RCV_TRAILER_ELEMENTS(MACH_RCV_TRAILER_AUDIT) | MACH_RCV_TRAILER_TYPE(MACH_MSG_TRAILER_FORMAT_0));
-	if (KERN_SUCCESS != kr)
-		{ helplog(ASL_LEVEL_ERR, "mach_msg_server: %s\n", mach_error_string(kr)); exit(EXIT_FAILURE); }
+	for(;;)
+		{
+		hdr.msgh_bits = 0;
+		hdr.msgh_local_port = gPort;
+		hdr.msgh_remote_port = MACH_PORT_NULL;
+		hdr.msgh_size = sizeof(hdr);
+		hdr.msgh_id = 0;
+		kr = mach_msg(&hdr, MACH_RCV_LARGE | MACH_RCV_MSG, 0, hdr.msgh_size, gPort, 0, 0);
+		if (MACH_RCV_TOO_LARGE != kr) helplog(ASL_LEVEL_ERR, "kr: %d: %s", kr, mach_error_string(kr));
+		
+		safe_vproc_transaction_begin();
+		
+		kr = mach_msg_server_once(helper_server, MAX_MSG_SIZE, gPort,
+			MACH_RCV_TRAILER_ELEMENTS(MACH_RCV_TRAILER_AUDIT) | MACH_RCV_TRAILER_TYPE(MACH_MSG_TRAILER_FORMAT_0));
+		if (KERN_SUCCESS != kr)
+			{ helplog(ASL_LEVEL_ERR, "mach_msg_server: %s\n", mach_error_string(kr)); exit(EXIT_FAILURE); }
+		
+		safe_vproc_transaction_end();
+		}
 	exit(EXIT_SUCCESS);
 	}
 

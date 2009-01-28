@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper-server.h,v $
+Revision 1.4  2009/01/28 03:17:19  mcguire
+<rdar://problem/5858535> helper: Adopt vproc_transaction API
+
 Revision 1.3  2007/09/07 22:44:03  mcguire
 <rdar://problem/5448420> Move CFUserNotification code to mDNSResponderHelper
 
@@ -39,5 +42,7 @@ extern uid_t mDNSResponderGID;
 extern CFRunLoopRef gRunLoop;
 #define debug(...) debug_(__func__, __VA_ARGS__)
 extern void debug_(const char *func, const char *fmt, ...);
+extern void safe_vproc_transaction_begin(void);
+extern void safe_vproc_transaction_end(void);
 
 #endif /* H_HELPER_SERVER_H */
