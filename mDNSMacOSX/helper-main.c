@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper-main.c,v $
+Revision 1.24  2009/01/28 17:20:46  mcguire
+changed incorrect notice level log to debug
+
 Revision 1.23  2009/01/28 03:17:19  mcguire
 <rdar://problem/5858535> helper: Adopt vproc_transaction API
 
@@ -183,7 +186,7 @@ void safe_vproc_transaction_begin(void)
 		t->next = transactions;
 		transactions = t;
 		t->vt = vproc_transaction_begin(NULL);
-		helplog(ASL_LEVEL_NOTICE, "vproc_transaction_begin %p %p %p", t, t->vt, t->next);
+		debug("vproc_transaction_begin %p %p %p", t, t->vt, t->next);
 		}
 	else
 		helplog(ASL_LEVEL_NOTICE, "vproc_transaction support unavailable");
@@ -202,7 +205,7 @@ void safe_vproc_transaction_end(void)
 			transaction_t* t = transactions;
 			transactions = t->next;
 			vproc_transaction_end(NULL, t->vt);
-			helplog(ASL_LEVEL_NOTICE, "vproc_transaction_end %p %p %p", t, t->vt, t->next);
+			debug("vproc_transaction_end %p %p %p", t, t->vt, t->next);
 			free(t);
 			}
 		else
