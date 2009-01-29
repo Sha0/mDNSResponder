@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.893  2009/01/29 22:27:03  mcguire
+<rdar://problem/6407429> Cleanup: Logs about Unknown DNS packet type 5450
+
 Revision 1.892  2009/01/24 01:38:23  cheshire
 Fixed error in logic for targeted queries
 
@@ -6206,6 +6209,10 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 			return;
 			}
 		}
+#ifdef _LEGACY_NAT_TRAVERSAL_
+	else if (m->SSDPSocket && mDNSSameIPPort(dstport, m->SSDPSocket->port)) { debugf("Ignoring SSDP response from %#a:%d", srcaddr, mDNSVal16(srcport)); return; }
+#endif
+
 #endif
 	if ((unsigned)(end - (mDNSu8 *)pkt) < sizeof(DNSMessageHeader)) { LogMsg("DNS Message too short"); return; }
 	QR_OP = (mDNSu8)(msg->h.flags.b[0] & kDNSFlag0_QROP_Mask);
