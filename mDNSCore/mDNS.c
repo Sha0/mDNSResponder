@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.895  2009/01/30 17:46:39  cheshire
+Improved debugging messages for working out why spurious name conflicts are happening
+
 Revision 1.894  2009/01/30 00:22:09  cheshire
 <rdar://problem/6540743> No announcement after probing & no conflict notice
 
@@ -4809,9 +4812,9 @@ mDNSlocal void ResolveSimultaneousProbe(mDNS *const m, const DNSMessage *const q
 				if (!result) result = CompareRData(our, &m->rec.r);
 				if (result)
 					{
-					LogOperation("ResolveSimultaneousProbe: Pkt Record:      %08lX %s", m->rec.r.resrec.rdatahash, CRDisplayString(m, &m->rec.r));
-					LogOperation("ResolveSimultaneousProbe: Our Record %s %08lX %s",
-						(result < 0) ? "lost:" : "won: ", our->resrec.rdatahash, ARDisplayString(m, our));
+					const char *const msg = (result < 0) ? "lost:" : "won: ";
+					LogMsg("ResolveSimultaneousProbe: Pkt Record:      %08lX %s", m->rec.r.resrec.rdatahash, CRDisplayString(m, &m->rec.r));
+					LogMsg("ResolveSimultaneousProbe: Our Record %s %08lX %s", msg,   our->resrec.rdatahash, ARDisplayString(m, our));
 					}
 				if (result < 0) { mDNS_Deregister_internal(m, our, mDNS_Dereg_conflict); goto exit; }
 				}
@@ -5544,10 +5547,6 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	int totalrecords    = firstadditional + response->h.numAdditionals;
 	const mDNSu8 *ptr   = response->data;
 
-	// Currently used only for display in debugging message
-	(void)srcport;
-	(void)dstport;
-
 	debugf("Received Response from %#-15a addressed to %#-15a on %p with "
 		"%2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s LLQType %d",
 		srcaddr, dstaddr, InterfaceID,
@@ -5675,10 +5674,11 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 							LogOperation("mDNSCoreReceiveResponse: Already reset to Probing: %s", ARDisplayString(m, rr));
 						else
 							{
+							LogMsg("mDNSCoreReceiveResponse: Received from %#a:%d %s", srcaddr, mDNSVal16(srcport), CRDisplayString(m, &m->rec.r));
 							// If we'd previously verified this record, put it back to probing state and try again
 							if (rr->resrec.RecordType == kDNSRecordTypeVerified)
 								{
-								LogOperation("mDNSCoreReceiveResponse: Reseting to Probing: %s", ARDisplayString(m, rr));
+								LogMsg("mDNSCoreReceiveResponse: Reseting to Probing: %s", ARDisplayString(m, rr));
 								rr->resrec.RecordType     = kDNSRecordTypeUnique;
 								// We set ProbeCount to one more than the usual value so we know we've already touched this record.
 								// This is because our single probe for "example-name.local" could yield a response with (say) two A records and
@@ -5692,19 +5692,18 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 							// If we're probing for this record, we just failed
 							else if (rr->resrec.RecordType == kDNSRecordTypeUnique)
 								{
-								LogOperation("mDNSCoreReceiveResponse: ProbeCount was %d; will rename %s", rr->ProbeCount, ARDisplayString(m, rr));
+								LogMsg("mDNSCoreReceiveResponse: ProbeCount %d; will rename %s", rr->ProbeCount, ARDisplayString(m, rr));
 								mDNS_Deregister_internal(m, rr, mDNS_Dereg_conflict);
 								}
 							// We assumed this record must be unique, but we were wrong. (e.g. There are two mDNSResponders on the same machine giving
 							// different answers for the reverse mapping record.) This is simply a misconfiguration, and we don't try to recover from it.
 							else if (rr->resrec.RecordType == kDNSRecordTypeKnownUnique)
 								{
-								LogOperation("mDNSCoreReceiveResponse: Unexpected conflict pkt        %s", CRDisplayString(m, &m->rec.r));
-								LogOperation("mDNSCoreReceiveResponse: Unexpected conflict discarding %s", ARDisplayString(m, rr));
+								LogMsg("mDNSCoreReceiveResponse: Unexpected conflict discarding %s", ARDisplayString(m, rr));
 								mDNS_Deregister_internal(m, rr, mDNS_Dereg_conflict);
 								}
 							else
-								LogOperation("mDNSCoreReceiveResponse: Unexpected record type %X %s", rr->resrec.RecordType, ARDisplayString(m, rr));
+								LogMsg("mDNSCoreReceiveResponse: Unexpected record type %X %s", rr->resrec.RecordType, ARDisplayString(m, rr));
 							}
 						}
 					// Else, matching signature, different type or rdata, but not a considered a conflict.
