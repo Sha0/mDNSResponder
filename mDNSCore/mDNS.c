@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.897  2009/01/30 22:04:49  cheshire
+Workaround to reduce load on root name servers when caching the SOA record for "."
+
 Revision 1.896  2009/01/30 22:00:05  cheshire
 Made mDNS_StartQuery_internal pay attention to mDNSInterface_Unicast
 
@@ -5949,8 +5952,12 @@ exit:
 					if (ptr && m->rec.r.resrec.rrtype == kDNSType_SOA)
 						{
 						const rdataSOA *const soa = (const rdataSOA *)m->rec.r.resrec.rdata->u.data;
-						mDNSu32 ttl_s = m->rec.r.resrec.rroriginalttl < soa->min ?
-										m->rec.r.resrec.rroriginalttl : soa->min;
+						mDNSu32 ttl_s = soa->min;
+						// We use the lesser of the SOA.MIN field and the SOA record's TTL, *except*
+						// for the SOA record for ".", where the record is reported as non-cacheable
+						// (TTL zero) for some reason, so in this case we just take the SOA record's TTL as-is
+						if (ttl_s > m->rec.r.resrec.rroriginalttl && m->rec.r.resrec.name->c[0])
+							ttl_s = m->rec.r.resrec.rroriginalttl;
 						if (negttl < ttl_s) negttl = ttl_s;
 	
 						// Special check for SOA queries: If we queried for a.b.c.d.com, and got no answer,
