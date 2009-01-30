@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.428  2009/01/30 19:52:31  cheshire
+Eliminated unnecessary duplicated "dnssd_sock_t sd" fields in service_instance and reply_state structures
+
 Revision 1.427  2009/01/24 01:48:43  cheshire
 <rdar://problem/4786302> Implement logic to determine when to send dot-local lookups via Unicast
 
@@ -843,7 +846,6 @@ typedef struct service_instance
 	{
 	struct service_instance *next;
 	request_state *request;
-	dnssd_sock_t sd;
 	AuthRecord *subtypes;
 	mDNSBool renameonmemfree;  		// Set on config change when we deregister original name
     mDNSBool clientnotified;		// Has client been notified of successful registration yet?
@@ -959,7 +961,6 @@ typedef struct
 
 typedef struct reply_state
 	{
-	dnssd_sock_t sd;
 	transfer_state ts;
 	mDNSu32 nwriten;
 	mDNSu32 len;
@@ -1092,7 +1093,6 @@ mDNSlocal reply_state *create_reply(const reply_op_t op, const size_t datalen, r
 	if (!reply) FatalError("ERROR: malloc");
 	mDNSPlatformMemZero(reply, sizeof(reply_state));
 	reply->ts      = t_morecoming;
-	reply->sd      = request->sd;
 	reply->request = request;
 	reply->len     = totallen;
 	reply->msgbuf  = mallocL("reply_state msgbuf", totallen);
@@ -1372,7 +1372,7 @@ mDNSlocal void SendServiceRemovalNotification(ServiceRecordSet *const srs)
 	reply_state *rep;
 	service_instance *instance = srs->ServiceContext;
 	if (GenerateNTDResponse(srs->RR_SRV.resrec.name, srs->RR_SRV.resrec.InterfaceID, instance->request, &rep, reg_service_reply_op, 0, mStatus_NoError) != mStatus_NoError)
-		LogMsg("%3d: SendServiceRemovalNotification: %##s is not valid DNS-SD SRV name", instance->sd, srs->RR_SRV.resrec.name->c);
+		LogMsg("%3d: SendServiceRemovalNotification: %##s is not valid DNS-SD SRV name", instance->request->sd, srs->RR_SRV.resrec.name->c);
 	else { append_reply(instance->request, rep); instance->clientnotified = mDNSfalse; }
 	}
 
@@ -1400,7 +1400,8 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 		!instance->default_local)
 		SuppressError = mDNStrue;
 
-	LogOperation(fmt, instance->sd, srs->RR_SRV.resrec.name->c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port), SuppressError ? "suppressed error" : "CALLBACK", result);
+	LogOperation(fmt, instance->request ? instance->request->sd : -99,
+		srs->RR_SRV.resrec.name->c, mDNSVal16(srs->RR_SRV.resrec.rdata->u.srv.port), SuppressError ? "suppressed error" : "CALLBACK", result);
 
 	if (!instance->request && result != mStatus_MemFree) { LogMsg("regservice_callback: instance->request is NULL %d", result); return; }
 
@@ -1417,7 +1418,7 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 			}
 
 		if (GenerateNTDResponse(srs->RR_SRV.resrec.name, srs->RR_SRV.resrec.InterfaceID, instance->request, &rep, reg_service_reply_op, kDNSServiceFlagsAdd, result) != mStatus_NoError)
-			LogMsg("%3d: regservice_callback: %##s is not valid DNS-SD SRV name", instance->sd, srs->RR_SRV.resrec.name->c);
+			LogMsg("%3d: regservice_callback: %##s is not valid DNS-SD SRV name", instance->request->sd, srs->RR_SRV.resrec.name->c);
 		else { append_reply(instance->request, rep); instance->clientnotified = mDNStrue; }
 
 		if (instance->request->u.servicereg.autoname && CountPeerRegistrations(m, srs) == 0)
@@ -1456,7 +1457,7 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 			if (!SuppressError) 
 				{
 				if (GenerateNTDResponse(srs->RR_SRV.resrec.name, srs->RR_SRV.resrec.InterfaceID, instance->request, &rep, reg_service_reply_op, kDNSServiceFlagsAdd, result) != mStatus_NoError)
-					LogMsg("%3d: regservice_callback: %##s is not valid DNS-SD SRV name", instance->sd, srs->RR_SRV.resrec.name->c);
+					LogMsg("%3d: regservice_callback: %##s is not valid DNS-SD SRV name", instance->request->sd, srs->RR_SRV.resrec.name->c);
 				else { append_reply(instance->request, rep); instance->clientnotified = mDNStrue; }
 				}
 			unlink_and_free_service_instance(instance);
@@ -1467,7 +1468,7 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 		if (!SuppressError) 
 			{
 			if (GenerateNTDResponse(srs->RR_SRV.resrec.name, srs->RR_SRV.resrec.InterfaceID, instance->request, &rep, reg_service_reply_op, kDNSServiceFlagsAdd, result) != mStatus_NoError)
-				LogMsg("%3d: regservice_callback: %##s is not valid DNS-SD SRV name", instance->sd, srs->RR_SRV.resrec.name->c);
+				LogMsg("%3d: regservice_callback: %##s is not valid DNS-SD SRV name", instance->request->sd, srs->RR_SRV.resrec.name->c);
 			else { append_reply(instance->request, rep); instance->clientnotified = mDNStrue; }
 			}
 		}
@@ -1906,7 +1907,6 @@ mDNSlocal mStatus register_service_instance(request_state *request, const domain
 
 	instance->next            = mDNSNULL;
 	instance->request         = request;
-	instance->sd              = request->sd;
 	instance->subtypes        = AllocateSubTypes(request->u.servicereg.num_subtypes, request->u.servicereg.type_as_string);
 	instance->renameonmemfree = 0;
 	instance->clientnotified  = mDNSfalse;
@@ -1928,7 +1928,7 @@ mDNSlocal mStatus register_service_instance(request_state *request, const domain
 		{
 		*ptr = instance;		// Append this to the end of our request->u.servicereg.instances list
 		LogOperation("%3d: DNSServiceRegister(%##s, %u) ADDED",
-			instance->sd, instance->srs.RR_SRV.resrec.name->c, mDNSVal16(request->u.servicereg.port));
+			instance->request->sd, instance->srs.RR_SRV.resrec.name->c, mDNSVal16(request->u.servicereg.port));
 		}
 	else
 		{
@@ -4163,7 +4163,7 @@ mDNSlocal int send_msg(reply_state *rep)
 	if (rep->request->no_reply) { freeL("reply_state msgbuf (no_reply)", rep->msgbuf); return(rep->ts = t_complete); }
 
 	ConvertHeaderBytes(rep->mhdr);
-	nwriten = send(rep->sd, rep->msgbuf + rep->nwriten, rep->len - rep->nwriten, 0);
+	nwriten = send(rep->request->sd, rep->msgbuf + rep->nwriten, rep->len - rep->nwriten, 0);
 	ConvertHeaderBytes(rep->mhdr);
 
 	if (nwriten < 0)
@@ -4178,7 +4178,7 @@ mDNSlocal int send_msg(reply_state *rep)
 #endif
 				{
 				LogMsg("send_msg ERROR: failed to write %d of %d bytes to fd %d errno %d (%s)",
-					rep->len - rep->nwriten, rep->len, rep->sd, dnssd_errno, dnssd_strerror(dnssd_errno));
+					rep->len - rep->nwriten, rep->len, rep->request->sd, dnssd_errno, dnssd_strerror(dnssd_errno));
 				return(rep->ts = t_error);
 				}
 			}
