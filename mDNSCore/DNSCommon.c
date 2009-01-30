@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.233  2009/01/30 23:50:31  cheshire
+Added LastLabel() routine to get the last label of a domainname
+
 Revision 1.232  2009/01/15 00:22:48  mcguire
 <rdar://problem/6437092> NAT-PMP: mDNSResponder needs to listen on 224.0.0.1:5350/UDP with REUSEPORT
 
@@ -856,6 +859,17 @@ mDNSexport mDNSBool IsLocalDomain(const domainname *d)
 	if (d5 && SameDomainName(d5, nA)) return(mDNStrue);
 	if (d5 && SameDomainName(d5, nB)) return(mDNStrue);
 	return(mDNSfalse);
+	}
+
+mDNSexport const mDNSu8 *LastLabel(const domainname *d)
+	{
+	const mDNSu8 *p = d->c;
+	while (d->c[0])
+		{
+		p = d->c;
+		d = (const domainname*)(d->c + 1 + d->c[0]);
+		}
+	return(p);
 	}
 
 // Returns length of a domain name INCLUDING the byte for the final null label

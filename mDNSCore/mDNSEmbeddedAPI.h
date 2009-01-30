@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.536  2009/01/30 23:50:31  cheshire
+Added LastLabel() routine to get the last label of a domainname
+
 Revision 1.535  2009/01/23 00:38:36  mcguire
 <rdar://problem/5570906> BTMM: Doesn't work with Linksys WRT54GS firmware 4.71.1
 
@@ -2764,6 +2767,10 @@ extern mDNSBool SameDomainName(const domainname *const d1, const domainname *con
 extern mDNSBool SameDomainNameCS(const domainname *const d1, const domainname *const d2);
 extern mDNSBool IsLocalDomain(const domainname *d);     // returns true for domains that by default should be looked up using link-local multicast
 
+#define FirstLabel(X)  ((const domainlabel *)(X))
+#define SecondLabel(X) ((const domainlabel *)&(X)->c[1 + (X)->c[0]])
+extern const mDNSu8 *LastLabel(const domainname *d);
+
 // Get total length of domain name, in native DNS format, including terminal root label
 //   (e.g. length of "com." is 5 (length byte, three data bytes, final zero)
 extern mDNSu16  DomainNameLengthLimit(const domainname *const name, const mDNSu8 *limit);
@@ -2778,9 +2785,6 @@ extern mDNSu8  *AppendLiteralLabelString(domainname *const name, const char *cst
 extern mDNSu8  *AppendDNSNameString     (domainname *const name, const char *cstr);
 extern mDNSu8  *AppendDomainLabel       (domainname *const name, const domainlabel *const label);
 extern mDNSu8  *AppendDomainName        (domainname *const name, const domainname *const append);
-
-#define FirstLabel(X)  ((const domainlabel *)(X))
-#define SecondLabel(X) ((const domainlabel *)&(X)->c[1 + (X)->c[0]])
 
 // Convert from null-terminated string to native DNS format:
 //   The DomainLabel form makes a single label from a literal C string, with no escape character interpretation.
