@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.896  2009/01/30 22:00:05  cheshire
+Made mDNS_StartQuery_internal pay attention to mDNSInterface_Unicast
+
 Revision 1.895  2009/01/30 17:46:39  cheshire
 Improved debugging messages for working out why spurious name conflicts are happening
 
@@ -6422,7 +6425,8 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 
 	question->TargetQID =
 #ifndef UNICAST_DISABLED
-		(question->Target.type || (question->InterfaceID != mDNSInterface_LocalOnly && !question->ForceMCast && !IsLocalDomain(&question->qname)))
+		(question->Target.type || (question->InterfaceID == mDNSInterface_Unicast) ||
+		(question->InterfaceID != mDNSInterface_LocalOnly && !question->ForceMCast && !IsLocalDomain(&question->qname)))
 		? mDNS_NewMessageID(m) :
 #endif // UNICAST_DISABLED
 		zeroID;
