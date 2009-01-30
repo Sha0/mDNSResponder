@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.894  2009/01/30 00:22:09  cheshire
+<rdar://problem/6540743> No announcement after probing & no conflict notice
+
 Revision 1.893  2009/01/29 22:27:03  mcguire
 <rdar://problem/6407429> Cleanup: Logs about Unknown DNS packet type 5450
 
@@ -3213,6 +3216,10 @@ mDNSlocal void SendQueries(mDNS *const m)
 					// Mark for sending. (If no active interfaces, then don't even try.)
 					rr->SendRNow   = (!intf || rr->WakeUp.MAC.l[0]) ? mDNSNULL : rr->resrec.InterfaceID ? rr->resrec.InterfaceID : intf->InterfaceID;
 					rr->LastAPTime = m->timenow;
+					// When we have a late conflict that resets a record to probing state we use a special marker value greater
+					// than DefaultProbeCountForTypeUnique. Here we detect that state and reset rr->ProbeCount back to the right value.
+					if (rr->ProbeCount > DefaultProbeCountForTypeUnique)
+						rr->ProbeCount = DefaultProbeCountForTypeUnique;
 					rr->ProbeCount--;
 					SetNextAnnounceProbeTime(m, rr);
 					if (rr->ProbeCount == 0)
@@ -5673,7 +5680,12 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 								{
 								LogOperation("mDNSCoreReceiveResponse: Reseting to Probing: %s", ARDisplayString(m, rr));
 								rr->resrec.RecordType     = kDNSRecordTypeUnique;
+								// We set ProbeCount to one more than the usual value so we know we've already touched this record.
+								// This is because our single probe for "example-name.local" could yield a response with (say) two A records and
+								// three AAAA records in it, and we don't want to call RecordProbeFailure() five times and count that as five conflicts.
+								// This special value is recognised and reset to DefaultProbeCountForTypeUnique in SendQueries().
 								rr->ProbeCount     = DefaultProbeCountForTypeUnique + 1;
+								rr->AnnounceCount  = InitialAnnounceCount;
 								InitializeLastAPTime(m, rr);
 								RecordProbeFailure(m, rr);	// Repeated late conflicts also cause us to back off to the slower probing rate
 								}
