@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.898  2009/01/30 23:49:20  cheshire
+Exclude mDNSInterface_Unicast from "InterfaceID ... not currently found" test
+
 Revision 1.897  2009/01/30 22:04:49  cheshire
 Workaround to reduce load on root name servers when caching the SOA record for "."
 
@@ -6468,7 +6471,7 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 		*q = question;
 
 		// If this question is referencing a specific interface, verify it exists
-		if (question->InterfaceID && question->InterfaceID != mDNSInterface_LocalOnly)
+		if (question->InterfaceID && question->InterfaceID != mDNSInterface_LocalOnly && question->InterfaceID != mDNSInterface_Unicast)
 			{
 			NetworkInterfaceInfo *intf = FirstInterfaceForID(m, question->InterfaceID);
 			if (!intf)
