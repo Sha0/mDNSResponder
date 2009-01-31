@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.899  2009/01/31 00:37:50  cheshire
+When marking cache records for deletion in response to a uDNS response,
+make sure InterfaceID matches (i.e. it should be NULL for a uDNS cache record)
+
 Revision 1.898  2009/01/30 23:49:20  cheshire
 Exclude mDNSInterface_Unicast from "InterfaceID ... not currently found" test
 
@@ -5594,9 +5598,10 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 				const mDNSu32 slot = HashSlot(&q.qname);
 				CacheGroup *cg = CacheGroupForName(m, slot, q.qnamehash, &q.qname);
 				for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
-					if (SameNameRecordAnswersQuestion(&rr->resrec, &q))
+					if (q.InterfaceID == rr->resrec.InterfaceID && SameNameRecordAnswersQuestion(&rr->resrec, &q))
 						{
-						//LogMsg("uDNS marking %s", CRDisplayString(m, rr));
+						debugf("uDNS marking %p %##s (%s) %p %s", q.InterfaceID, q.qname.c, DNSTypeName(q.qtype),
+							rr->resrec.InterfaceID, CRDisplayString(m, rr));
 						// Don't want to disturb rroriginalttl here, because code below might need it for the exponential backoff doubling algorithm
 						rr->TimeRcvd          = m->timenow - TicksTTL(rr) - 1;
 						rr->UnansweredQueries = MaxUnansweredQueries;
