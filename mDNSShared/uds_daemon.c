@@ -17,6 +17,10 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.430  2009/01/31 21:58:05  cheshire
+<rdar://problem/4786302> Implement logic to determine when to send dot-local lookups via Unicast
+Only want to do unicast dot-local lookups for address queries and conventional (RFC 2782) SRV queries
+
 Revision 1.429  2009/01/31 00:45:26  cheshire
 <rdar://problem/4786302> Implement logic to determine when to send dot-local lookups via Unicast
 Further refinements
@@ -2791,7 +2795,7 @@ mDNSlocal void queryrecord_result_callback(mDNS *const m, DNSQuestion *question,
 			}
 		return;
 		}
-#endif
+#endif // APPLE_OSX_mDNSResponder
 
 	LogOperation("%3d: %s(%##s, %s) %s %s", req->sd,
 		req->hdr.op == query_request ? "DNSServiceQueryRecord" : "DNSServiceGetAddrInfo",
@@ -2896,34 +2900,38 @@ mDNSlocal mStatus handle_queryrecord_request(request_state *request)
 #if APPLE_OSX_mDNSResponder
 	// Workaround for networks using Microsoft Active Directory using "local" as a private internal top-level domain
 	extern domainname ActiveDirectoryPrimaryDomain;
-	if (!q->ForceMCast && SameDomainLabel(LastLabel(&q->qname), (const mDNSu8 *)&localdomain))
-		{
-		int labels = CountLabels(&q->qname);
-		DNSQuestion *const q2 = &request->u.queryrecord.q2;
-		*q2              = *q;
-		q2->InterfaceID  = mDNSInterface_Unicast;
-		q2->ExpectUnique = mDNStrue;
+	#define VALID_MSAD_SRV_TRANSPORT(T) (SameDomainLabel((T)->c, (const mDNSu8 *)"\x4_tcp") || SameDomainLabel((T)->c, (const mDNSu8 *)"\x4_udp"))
+	#define VALID_MSAD_SRV(Q) ((Q)->qtype == kDNSType_SRV && VALID_MSAD_SRV_TRANSPORT(SecondLabel(&(Q)->qname)))
 
-		// For names of the form "<one-or-more-labels>.bar.local." we always do a second unicast query in parallel.
-		// For names of the form "<one-label>.local." it's less clear whether we should do a unicast query.
-		// If the name being queried is exactly the same as the name in the DHCP "domain" option (e.g. the DHCP
-		// "domain" is my-small-company.local, and the user types "my-small-company.local" into their web browser)
-		// then that's a hint that it's worth doing a unicast query. Otherwise, we first check to see if the
-		// site's DNS server claims there's an SOA record for "local", and if so, that's also a hint that queries
-		// for names in the "local" domain will be safely answered privately before they hit the root name servers.
-		if (labels == 2 && !SameDomainName(&q->qname, &ActiveDirectoryPrimaryDomain))
+	if (!q->ForceMCast && SameDomainLabel(LastLabel(&q->qname), (const mDNSu8 *)&localdomain))
+		if (q->qtype == kDNSType_A || q->qtype == kDNSType_AAAA || VALID_MSAD_SRV(q))
 			{
-			AssignDomainName(&q2->qname, &localdomain);
-			q2->qtype          = kDNSType_SOA;
-			q2->LongLived      = mDNSfalse;
-			q2->ForceMCast     = mDNSfalse;
-			q2->ReturnIntermed = mDNStrue;
+			int labels = CountLabels(&q->qname);
+			DNSQuestion *const q2 = &request->u.queryrecord.q2;
+			*q2              = *q;
+			q2->InterfaceID  = mDNSInterface_Unicast;
+			q2->ExpectUnique = mDNStrue;
+	
+			// For names of the form "<one-or-more-labels>.bar.local." we always do a second unicast query in parallel.
+			// For names of the form "<one-label>.local." it's less clear whether we should do a unicast query.
+			// If the name being queried is exactly the same as the name in the DHCP "domain" option (e.g. the DHCP
+			// "domain" is my-small-company.local, and the user types "my-small-company.local" into their web browser)
+			// then that's a hint that it's worth doing a unicast query. Otherwise, we first check to see if the
+			// site's DNS server claims there's an SOA record for "local", and if so, that's also a hint that queries
+			// for names in the "local" domain will be safely answered privately before they hit the root name servers.
+			if (labels == 2 && !SameDomainName(&q->qname, &ActiveDirectoryPrimaryDomain))
+				{
+				AssignDomainName(&q2->qname, &localdomain);
+				q2->qtype          = kDNSType_SOA;
+				q2->LongLived      = mDNSfalse;
+				q2->ForceMCast     = mDNSfalse;
+				q2->ReturnIntermed = mDNStrue;
+				}
+			err = mDNS_StartQuery(&mDNSStorage, q2);
+			if (!err) LogOperation("%3d: DNSServiceQueryRecord(%##s, %s) unicast", request->sd, q2->qname.c, DNSTypeName(q2->qtype));
+			else LogMsg("%3d: ERROR: DNSServiceQueryRecord %##s %s mDNS_StartQuery: %d", request->sd, q2->qname.c, DNSTypeName(q2->qtype), (int)err);
 			}
-		err = mDNS_StartQuery(&mDNSStorage, q2);
-		if (!err) LogOperation("%3d: DNSServiceQueryRecord(%##s, %s) unicast", request->sd, q2->qname.c, DNSTypeName(q2->qtype));
-		else LogMsg("%3d: ERROR: DNSServiceQueryRecord %##s %s mDNS_StartQuery: %d", request->sd, q2->qname.c, DNSTypeName(q2->qtype), (int)err);
-		}
-#endif
+#endif // APPLE_OSX_mDNSResponder
 
 	return(err);
 	}
@@ -4108,7 +4116,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 			LogMsgNoIdent("%##s local %.16a %.4a remote %.16a %.4a %5d interval %d",
 				c->dstname.c, &c->loc_inner, &c->loc_outer, &c->rmt_inner, &c->rmt_outer, mDNSVal16(c->rmt_outer_port), c->q.ThisQInterval);
 		}
-	#endif
+	#endif // APPLE_OSX_mDNSResponder
 
 	LogMsgNoIdent("------ Sleep Proxy Service -----");
 	if (!m->SPSSocket) LogMsgNoIdent("<None>");
@@ -4191,7 +4199,7 @@ mDNSexport void uds_validatelists(void)
 		if (d->next == (DNameListElem *)~0 || d->name.c[0] > 63)
 			LogMemCorruption("AutoRegistrationDomains: %p is garbage (%d)", d, d->name.c[0]);
 	}
-#endif
+#endif // APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING
 
 mDNSlocal int send_msg(reply_state *rep)
 	{
