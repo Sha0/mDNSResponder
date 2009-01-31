@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.600  2009/01/31 21:05:12  cheshire
+Improved "Failed to obtain NAT port mapping" debugging log message
+
 Revision 1.599  2009/01/23 00:38:36  mcguire
 <rdar://problem/5570906> BTMM: Doesn't work with Linksys WRT54GS firmware 4.71.1
 
@@ -4836,8 +4839,8 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 					{
 					//LogMsg("NAT callback %d %d %d", cur->Protocol, cur->ExpiryTime, cur->retryInterval);
 					if (cur->Protocol && mDNSIPPortIsZero(ExternalPort) && !mDNSIPv4AddressIsZero(m->Router.ip.v4))
-						LogMsg("Failed to obtain NAT port mapping %p from router %#a external address %.4a internal port %d error %d",
-							cur, &m->Router, &m->ExternalAddress, mDNSVal16(cur->IntPort), EffectiveResult);
+						LogMsg("Failed to obtain NAT port mapping %p from router %#a external address %.4a internal port %5d interval %d error %d",
+							cur, &m->Router, &m->ExternalAddress, mDNSVal16(cur->IntPort), cur->retryInterval, EffectiveResult);
 
 					cur->ExternalAddress = m->ExternalAddress;
 					cur->ExternalPort    = ExternalPort;
