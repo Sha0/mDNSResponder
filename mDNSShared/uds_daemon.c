@@ -17,6 +17,10 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.429  2009/01/31 00:45:26  cheshire
+<rdar://problem/4786302> Implement logic to determine when to send dot-local lookups via Unicast
+Further refinements
+
 Revision 1.428  2009/01/30 19:52:31  cheshire
 Eliminated unnecessary duplicated "dnssd_sock_t sd" fields in service_instance and reply_state structures
 
@@ -2768,6 +2772,27 @@ mDNSlocal void queryrecord_result_callback(mDNS *const m, DNSQuestion *question,
 	DNSServiceErrorType error = kDNSServiceErr_NoError;
 	(void)m; // Unused
 
+#if APPLE_OSX_mDNSResponder
+	if (question == &req->u.queryrecord.q2)
+		{
+		mDNS_StopQuery(&mDNSStorage, question);
+		// If we got a non-negative answer for our "local SOA" test query, start an additional parallel unicast query
+		if (answer->RecordType == kDNSRecordTypePacketNegative ||
+			(question->qtype == req->u.queryrecord.q.qtype && SameDomainName(&question->qname, &req->u.queryrecord.q.qname)))
+			question->QuestionCallback = mDNSNULL;
+		else
+			{
+			*question              = req->u.queryrecord.q;
+			question->InterfaceID  = mDNSInterface_Unicast;
+			question->ExpectUnique = mDNStrue;
+			mStatus err = mDNS_StartQuery(&mDNSStorage, question);
+			if (!err) LogOperation("%3d: DNSServiceQueryRecord(%##s, %s) unicast", req->sd, question->qname.c, DNSTypeName(question->qtype));
+			else LogMsg("%3d: ERROR: queryrecord_result_callback %##s %s mDNS_StartQuery: %d", req->sd, question->qname.c, DNSTypeName(question->qtype), (int)err);
+			}
+		return;
+		}
+#endif
+
 	LogOperation("%3d: %s(%##s, %s) %s %s", req->sd,
 		req->hdr.op == query_request ? "DNSServiceQueryRecord" : "DNSServiceGetAddrInfo",
 		question->qname.c, DNSTypeName(question->qtype), AddRecord ? "ADD" : "RMV", RRDisplayString(m, answer));
@@ -2832,6 +2857,7 @@ mDNSlocal void queryrecord_termination_callback(request_state *request)
 
 mDNSlocal mStatus handle_queryrecord_request(request_state *request)
 	{
+	DNSQuestion *const q = &request->u.queryrecord.q;
 	char name[256];
 	mDNSu16 rrtype, rrclass;
 	mStatus err;
@@ -2850,41 +2876,52 @@ mDNSlocal mStatus handle_queryrecord_request(request_state *request)
 
 	mDNSPlatformMemZero(&request->u.queryrecord, sizeof(request->u.queryrecord));
 
-	request->u.queryrecord.q.InterfaceID      = InterfaceID;
-	request->u.queryrecord.q.Target           = zeroAddr;
-	if (!MakeDomainNameFromDNSNameString(&request->u.queryrecord.q.qname, name)) return(mStatus_BadParamErr);
-	request->u.queryrecord.q.qtype            = rrtype;
-	request->u.queryrecord.q.qclass           = rrclass;
-	request->u.queryrecord.q.LongLived        = (flags & kDNSServiceFlagsLongLivedQuery     ) != 0;
-	request->u.queryrecord.q.ExpectUnique     = mDNSfalse;
-	request->u.queryrecord.q.ForceMCast       = (flags & kDNSServiceFlagsForceMulticast     ) != 0;
-	request->u.queryrecord.q.ReturnIntermed   = (flags & kDNSServiceFlagsReturnIntermediates) != 0;
-	request->u.queryrecord.q.QuestionCallback = queryrecord_result_callback;
-	request->u.queryrecord.q.QuestionContext  = request;
+	q->InterfaceID      = InterfaceID;
+	q->Target           = zeroAddr;
+	if (!MakeDomainNameFromDNSNameString(&q->qname, name)) return(mStatus_BadParamErr);
+	q->qtype            = rrtype;
+	q->qclass           = rrclass;
+	q->LongLived        = (flags & kDNSServiceFlagsLongLivedQuery     ) != 0;
+	q->ExpectUnique     = mDNSfalse;
+	q->ForceMCast       = (flags & kDNSServiceFlagsForceMulticast     ) != 0;
+	q->ReturnIntermed   = (flags & kDNSServiceFlagsReturnIntermediates) != 0;
+	q->QuestionCallback = queryrecord_result_callback;
+	q->QuestionContext  = request;
 
-	LogOperation("%3d: DNSServiceQueryRecord(%##s, %s, %X) START",
-		request->sd, request->u.queryrecord.q.qname.c, DNSTypeName(request->u.queryrecord.q.qtype), flags);
-	err = mDNS_StartQuery(&mDNSStorage, &request->u.queryrecord.q);
-	if (err) LogMsg("ERROR: mDNS_StartQuery: %d", (int)err);
+	LogOperation("%3d: DNSServiceQueryRecord(%##s, %s, %X) START", request->sd, q->qname.c, DNSTypeName(q->qtype), flags);
+	err = mDNS_StartQuery(&mDNSStorage, q);
+	if (err) LogMsg("%3d: ERROR: DNSServiceQueryRecord %##s %s mDNS_StartQuery: %d", request->sd, q->qname.c, DNSTypeName(q->qtype), (int)err);
 	else request->terminate = queryrecord_termination_callback;
 
 #if APPLE_OSX_mDNSResponder
 	// Workaround for networks using Microsoft Active Directory using "local" as a private internal top-level domain
 	extern domainname ActiveDirectoryPrimaryDomain;
-	extern int        ActiveDirectoryPrimaryDomainLabelCount;
-	extern mDNSAddr   ActiveDirectoryPrimaryDomainServer;
-	if (!request->u.queryrecord.q.ForceMCast && ActiveDirectoryPrimaryDomainLabelCount)
+	if (!q->ForceMCast && SameDomainLabel(LastLabel(&q->qname), (const mDNSu8 *)&localdomain))
 		{
-		int skip = CountLabels(&request->u.queryrecord.q.qname) - ActiveDirectoryPrimaryDomainLabelCount;
-		if (skip >= 0 && SameDomainName(SkipLeadingLabels(&request->u.queryrecord.q.qname, skip), &ActiveDirectoryPrimaryDomain))
+		int labels = CountLabels(&q->qname);
+		DNSQuestion *const q2 = &request->u.queryrecord.q2;
+		*q2              = *q;
+		q2->InterfaceID  = mDNSInterface_Unicast;
+		q2->ExpectUnique = mDNStrue;
+
+		// For names of the form "<one-or-more-labels>.bar.local." we always do a second unicast query in parallel.
+		// For names of the form "<one-label>.local." it's less clear whether we should do a unicast query.
+		// If the name being queried is exactly the same as the name in the DHCP "domain" option (e.g. the DHCP
+		// "domain" is my-small-company.local, and the user types "my-small-company.local" into their web browser)
+		// then that's a hint that it's worth doing a unicast query. Otherwise, we first check to see if the
+		// site's DNS server claims there's an SOA record for "local", and if so, that's also a hint that queries
+		// for names in the "local" domain will be safely answered privately before they hit the root name servers.
+		if (labels == 2 && !SameDomainName(&q->qname, &ActiveDirectoryPrimaryDomain))
 			{
-			request->u.queryrecord.q2            = request->u.queryrecord.q;
-			request->u.queryrecord.q2.Target     = ActiveDirectoryPrimaryDomainServer;
-			request->u.queryrecord.q2.TargetPort = UnicastDNSPort;
-			LogOperation("%3d: DNSServiceQueryRecord(%##s, %s, %X) unicast to %#a",
-				request->sd, request->u.queryrecord.q.qname.c, DNSTypeName(request->u.queryrecord.q.qtype), flags, &ActiveDirectoryPrimaryDomainServer);
-			err = mDNS_StartQuery(&mDNSStorage, &request->u.queryrecord.q2);
+			AssignDomainName(&q2->qname, &localdomain);
+			q2->qtype          = kDNSType_SOA;
+			q2->LongLived      = mDNSfalse;
+			q2->ForceMCast     = mDNSfalse;
+			q2->ReturnIntermed = mDNStrue;
 			}
+		err = mDNS_StartQuery(&mDNSStorage, q2);
+		if (!err) LogOperation("%3d: DNSServiceQueryRecord(%##s, %s) unicast", request->sd, q2->qname.c, DNSTypeName(q2->qtype));
+		else LogMsg("%3d: ERROR: DNSServiceQueryRecord %##s %s mDNS_StartQuery: %d", request->sd, q2->qname.c, DNSTypeName(q2->qtype), (int)err);
 		}
 #endif
 
@@ -2911,7 +2948,7 @@ mDNSlocal reply_state *format_enumeration_reply(request_state *request,
 
 	reply = create_reply(enumeration_reply_op, len, request);
 	reply->rhdr->flags = dnssd_htonl(flags);
-	reply->rhdr->ifi = dnssd_htonl(ifi);
+	reply->rhdr->ifi   = dnssd_htonl(ifi);
 	reply->rhdr->error = dnssd_htonl(err);
 	data = reply->sdata;
 	put_string(domain, &data);
