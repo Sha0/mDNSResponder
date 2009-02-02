@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.404  2009/02/02 22:18:32  cheshire
+If we wake up and find no wireless network, don't just give up and go back to sleep and never try again
+
 Revision 1.403  2009/01/15 21:58:18  cheshire
 Stop using ifa_name field of NetworkInterfaceInfoOSX structure, because it will be going away
 
@@ -2510,6 +2513,11 @@ mDNSlocal mDNSBool ReadyForSleep(mDNS *m)
 	return(mDNStrue);
 	}
 
+// Right now we consider *ALL* of our DHCP leases
+// It might make sense to be a bit more selective and only consider the leases on interfaces
+// (a) that are capable and enabled for wake-on-LAN, and
+// (b) where we have found (and successfully registered with) a Sleep Proxy
+// If we can't be woken for traffic on a given interface, then why keep waking to renew its lease?
 mDNSlocal mDNSu32 DHCPWakeTime(void)
 	{
 	mDNSu32 e = 24 * 3600;		// Maximum maintenance wake interval is 24 hours
@@ -2588,7 +2596,11 @@ mDNSlocal mDNSu32 DHCPWakeTime(void)
 
 mDNSlocal mDNSs32 ComputeWakeTime(mDNS *const m, mDNSs32 now)
 	{
-	mDNSs32 e = now + 0x78000000;
+	// Even when we have no wake-on-LAN-capable interfaces, or we failed to find a sleep proxy, or we have other
+	// failure scenarios, we still want to wake up in at most 90 minutes, to see if the network environment has changed.
+	// E.g. we might wake up and find no wireless network because the base station got rebooted just at that moment,
+	// and if that happens we don't want to just give up and go back to sleep and never try again.
+	mDNSs32 e = now + (90 * 60 * mDNSPlatformOneSecond);		// Sleep for at most 90 minutes
 
 	mDNSs32 dhcp = now + DHCPWakeTime() * mDNSPlatformOneSecond;
 	LogOperation("ComputeWakeTime: DHCP Wake %d", (dhcp - now) / mDNSPlatformOneSecond);
@@ -2609,6 +2621,8 @@ mDNSlocal mDNSs32 ComputeWakeTime(mDNS *const m, mDNSs32 now)
 				(t - now) / mDNSPlatformOneSecond);
 			}
 
+	// This loop checks both the time we need to renew wide-area registrations,
+	// and the time we need to renew Sleep Proxy registrations
 	AuthRecord *ar;
 	for (ar = m->ResourceRecords; ar; ar = ar->next)
 		if (ar->expire && ar->expire - now > mDNSPlatformOneSecond*4)
@@ -2697,10 +2711,7 @@ mDNSlocal void * KQueueLoop(void *m_param)
 				{
 				int result = kIOReturnSuccess;
 
-				// First check if any of our interfaces support wakeup
-				NetworkInterfaceInfo *intf = GetFirstActiveInterface(m->HostInterfaces);
-				while (intf && !intf->NetWake) intf = GetFirstActiveInterface(intf->next);
-				if (!intf)
+				if (!m->p->SystemWakeForNetworkAccessEnabled)
 					m->p->WakeAtUTC = 0;
 				else
 					{
