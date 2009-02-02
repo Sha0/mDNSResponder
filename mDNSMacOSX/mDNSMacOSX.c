@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.620  2009/02/02 22:14:11  cheshire
+Instead of repeatedly checking the Dynamic Store, use m->p->SystemWakeForNetworkAccessEnabled variable
+
 Revision 1.619  2009/01/24 02:11:58  cheshire
 Handle case where config->resolver[0]->nameserver[0] is NULL
 
@@ -2681,26 +2684,6 @@ mDNSlocal mDNSEthAddr GetBSSID(char *ifa_name)
 	return(eth);
 	}
 
-mDNSlocal mDNSBool GetNetWakeSetting(void)
-	{
-	mDNSs32 val = 0;
-	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:GetNetWakeSetting"), NULL, NULL);
-	if (!store)
-		LogMsg("GetNetWakeSetting: SCDynamicStoreCreate failed: %s", SCErrorString(SCError()));
-	else
-		{
-		CFDictionaryRef dict = SCDynamicStoreCopyValue(store, CFSTR("State:/IOKit/PowerManagement/CurrentSettings"));
-		if (dict)
-			{
-			CFNumberRef number = CFDictionaryGetValue(dict, CFSTR("Wake On LAN"));
-			if (number) CFNumberGetValue(number, kCFNumberSInt32Type, &val);
-			CFRelease(dict);
-			}
-		CFRelease(store);
-		}
-	return val ? mDNStrue : mDNSfalse;
-	}
-
 mDNSlocal int GetMAC(mDNSEthAddr *eth, u_short ifindex)
 	{
 	struct ifaddrs *ifa;
@@ -2747,14 +2730,14 @@ mDNSlocal mDNSBool NetWakeInterface(NetworkInterfaceInfoOSX *i)
 			LogMsg("NetWakeInterface SIOCGIFWAKEFLAGS %s errno %d (%s)", i->ifinfo.ifname, errno, strerror(errno));
 		// If on Leopard or earlier, we get EOPNOTSUPP, so in that case
 		// we enable WOL if this interface is not AirPort and "Wake for Network access" is turned on.
-		ifr.ifr_wake_flags = (errno == KERNEL_EOPNOTSUPP && !(i)->BSSID.l[0] && GetNetWakeSetting());
+		ifr.ifr_wake_flags = (errno == KERNEL_EOPNOTSUPP && !(i)->BSSID.l[0] && i->m->p->SystemWakeForNetworkAccessEnabled);
 		}
 	else
 		{
 		// Call succeeded.
 		// However, on SnowLeopard, it currently indicates incorrectly that AirPort is incapable of Wake-on-LAN.
 		// Therefore, for AirPort interfaces, we just track the system-wide Wake-on-LAN setting.
-		if ((i)->BSSID.l[0]) ifr.ifr_wake_flags = GetNetWakeSetting();
+		if ((i)->BSSID.l[0]) ifr.ifr_wake_flags = i->m->p->SystemWakeForNetworkAccessEnabled;
 		}
 	close(s);
 
@@ -4870,6 +4853,26 @@ mDNSlocal mStatus WatchForInternetSharingChanges(mDNS *const m)
 
 #endif // APPLE_OSX_mDNSResponder
 
+mDNSlocal mDNSBool SystemWakeForNetworkAccess(void)
+	{
+	mDNSs32 val = 0;
+	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:SystemWakeForNetworkAccess"), NULL, NULL);
+	if (!store)
+		LogMsg("SystemWakeForNetworkAccess: SCDynamicStoreCreate failed: %s", SCErrorString(SCError()));
+	else
+		{
+		CFDictionaryRef dict = SCDynamicStoreCopyValue(store, CFSTR("State:/IOKit/PowerManagement/CurrentSettings"));
+		if (dict)
+			{
+			CFNumberRef number = CFDictionaryGetValue(dict, CFSTR("Wake On LAN"));
+			if (number) CFNumberGetValue(number, kCFNumberSInt32Type, &val);
+			CFRelease(dict);
+			}
+		CFRelease(store);
+		}
+	return val ? mDNStrue : mDNSfalse;
+	}
+
 mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 	{
 	LogOperation("***   Network Configuration Change   ***  (%d)%s",
@@ -4877,6 +4880,7 @@ mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 		m->p->NetworkChanged ? "" : " (no scheduled configuration change)");
 	m->p->NetworkChanged = 0;		// If we received a network change event and deferred processing, we're now dealing with it
 	mDNSs32 utc = mDNSPlatformUTC();
+	m->p->SystemWakeForNetworkAccessEnabled = SystemWakeForNetworkAccess();
 	MarkAllInterfacesInactive(m, utc);
 	UpdateInterfaceList(m, utc);
 	ClearInactiveInterfaces(m, utc);
