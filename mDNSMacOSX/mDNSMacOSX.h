@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.97  2009/02/02 22:13:01  cheshire
+Added SystemWakeForNetworkAccessEnabled setting
+
 Revision 1.96  2009/01/17 04:13:57  cheshire
 Added version symbols for Cheetah and Puma
 
@@ -238,6 +241,7 @@ struct mDNS_PlatformSupport_struct
 	mDNSs32                  NotifyUser;
 	mDNSs32                  HostNameConflict;	// Time we experienced conflict on our link-local host name
 	mDNSs32                  NetworkChanged;
+	mDNSBool                 SystemWakeForNetworkAccessEnabled;
 	
 	// KeyChain frequently fails to notify clients of change events. To work around this
 	// we set a timer and periodically poll to detect if any changes have occurred.
