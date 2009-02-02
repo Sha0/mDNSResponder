@@ -38,6 +38,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.900  2009/02/02 21:29:24  cheshire
+<rdar://problem/4786302> Implement logic to determine when to send dot-local lookups via Unicast
+If Negative response for our special Microsoft Active Directory "local SOA" check has no
+SOA record in the authority section, assume we should cache the negative result for 24 hours
+
 Revision 1.899  2009/01/31 00:37:50  cheshire
 When marking cache records for deletion in response to a uDNS response,
 make sure InterfaceID matches (i.e. it should be NULL for a uDNS cache record)
@@ -5952,6 +5957,14 @@ exit:
 				int repeat = 0;
 				const domainname *name = &q.qname;
 				mDNSu32           hash = q.qnamehash;
+
+				// Special case for our special Microsoft Active Directory "local SOA" check.
+				// Some cheap home gateways don't include an SOA record in the authority section when
+				// they send negative responses, so we don't know how long to cache the negative result.
+				// Because we don't want to keep hitting the root name servers with our query to find
+				// if we're on a network using Microsoft Active Directory using "local" as a private
+				// internal top-level domain, we make sure to cache the negative result for at least one day.
+				if (q.qtype == kDNSType_SOA && SameDomainName(&q.qname, &localdomain)) negttl = 60 * 60 * 24;
 
 				// If we're going to make (or update) a negative entry, then look for the appropriate TTL from the SOA record
 				if (response->h.numAuthorities && (ptr = LocateAuthorities(response, end)) != mDNSNULL)
