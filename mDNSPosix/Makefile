@@ -31,6 +31,17 @@
 # then try typing "gmake os=xxx" instead.
 #
 # $Log: Makefile,v $
+# Revision 1.83  2009/02/02 19:44:06  cheshire
+# Use "-fwrapv" option to tell compiler that the code is written assuming that
+# signed arithmetic is implemented using the twos-complement representation
+# (this is pretty much universally true on today's processors).
+# <http://gcc.gnu.org/onlinedocs/gcc-4.2.1/gcc/Code-Gen-Options.html>
+# Without this option, gcc may decide that because the C language
+# does not require processors to use twos-complement representation, that means
+# gcc is free to do some "creative" optimizations that don't preserve the overflow
+# behaviour of twos-complement arithmetic. See also "-fstrict-overflow":
+# <http://gcc.gnu.org/onlinedocs/gcc-4.2.1/gcc/Optimize-Options.html>
+#
 # Revision 1.82  2009/01/12 22:48:00  cheshire
 # Don't need to include "." in the "#include" search path
 #
@@ -312,7 +323,7 @@ LD = ld -shared
 CP = cp
 RM = rm
 LN = ln -s -f
-CFLAGS_COMMON = -I$(COREDIR) -I$(SHAREDDIR) -I$(OBJDIR) -W -Wall -DPID_FILE=\"/var/run/mdnsd.pid\" -DMDNS_UDS_SERVERPATH=\"/var/run/mdnsd\"
+CFLAGS_COMMON = -I$(COREDIR) -I$(SHAREDDIR) -I$(OBJDIR) -fwrapv -W -Wall -DPID_FILE=\"/var/run/mdnsd.pid\" -DMDNS_UDS_SERVERPATH=\"/var/run/mdnsd\"
 CFLAGS_PTHREAD =
 LINKOPTS =
 LINKOPTS_PTHREAD = -lpthread
