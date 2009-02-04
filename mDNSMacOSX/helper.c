@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.58  2009/02/04 22:23:04  cheshire
+Simplified do_mDNSPowerRequest --
+code was checking for CFAbsoluteTimeGetCurrent() returning NULL, which makes no sense
+
 Revision 1.57  2009/01/22 02:14:27  cheshire
 <rdar://problem/6515626> Sleep Proxy: Set correct target MAC address, instead of all zeroes
 
@@ -349,17 +353,13 @@ kern_return_t do_mDNSPowerRequest(__unused mach_port_t port, int key, int interv
 		}
 	else if (key > 0)
 		{
-		CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
-		if (now)
+		CFDateRef w = CFDateCreate(NULL, CFAbsoluteTimeGetCurrent() + interval);
+		if (w)
 			{
-			CFDateRef w = CFDateCreate(NULL, now + interval);
-			if (w)
-				{
-				IOReturn r = IOPMSchedulePowerEvent(w, CFSTR("mDNSResponderHelper"), key ? CFSTR(kIOPMAutoWake) : CFSTR(kIOPMAutoSleep));
-				if (r) { usleep(100000); helplog(ASL_LEVEL_ERR, "IOPMSchedulePowerEvent(%d) %d %x", interval, r, r); }
-				*err = r;
-				CFRelease(w);
-				}
+			IOReturn r = IOPMSchedulePowerEvent(w, CFSTR("mDNSResponderHelper"), key ? CFSTR(kIOPMAutoWake) : CFSTR(kIOPMAutoSleep));
+			if (r) { usleep(100000); helplog(ASL_LEVEL_ERR, "IOPMSchedulePowerEvent(%d) %d %x", interval, r, r); }
+			*err = r;
+			CFRelease(w);
 			}
 		}
 fin:
