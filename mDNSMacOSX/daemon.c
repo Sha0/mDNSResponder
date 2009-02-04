@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.405  2009/02/04 23:00:28  cheshire
+Move logic for deciding when to next wake up into a subroutine called AllowSleepNow
+
 Revision 1.404  2009/02/02 22:18:32  cheshire
 If we wake up and find no wireless network, don't just give up and go back to sleep and never try again
 
@@ -2639,6 +2642,76 @@ mDNSlocal mDNSs32 ComputeWakeTime(mDNS *const m, mDNSs32 now)
 	return(e - now);
 	}
 
+mDNSlocal mDNSBool AllowSleepNow(mDNS *const m, mDNSs32 now)
+	{
+	mDNSBool ready = ReadyForSleep(m);
+	if (!ready && now - m->p->SleepLimit < 0) return(mDNSfalse);
+
+	m->p->WakeAtUTC = 0;
+	int result = kIOReturnSuccess;
+
+	if (m->p->SystemWakeForNetworkAccessEnabled)
+		{
+		mDNSs32 interval = ComputeWakeTime(m, now);
+
+		// If we're not ready to sleep (failed to register with Sleep Proxy, maybe because of
+		// transient network problem) then schedule a wakeup in one hour to try again. Otherwise,
+		// a single SPS failure could result in a remote machine falling permanently asleep, requiring
+		// someone to go to the machine in person to wake it up again, which would be unacceptable.
+		if (!ready && interval > 3600 * mDNSPlatformOneSecond) interval = 3600 * mDNSPlatformOneSecond;
+
+		// If we wake within +/- 30 seconds of our requested time we'll assume the system woke for us,
+		// so we should put it back to sleep. To avoid frustrating the user, we always request at least
+		// 60 seconds sleep, so if they immediately re-wake the system within seconds of it going to sleep,
+		// we then shouldn't hit our 30-second window, and we won't attempt to re-sleep the machine.
+		if (interval < mDNSPlatformOneSecond * 60) interval = mDNSPlatformOneSecond * 60;
+
+		// For testing
+		// interval = 60 * mDNSPlatformOneSecond;
+
+		result = mDNSPowerRequest(1, interval / mDNSPlatformOneSecond);
+
+		if (result == kIOReturnNotReady)
+			{
+			LogMsg("Requested wakeup in %d seconds unsuccessful; retrying with longer intervals",
+				interval / mDNSPlatformOneSecond);
+			// IOPMSchedulePowerEvent fails with kIOReturnNotReady (-536870184/0xe00002d8) if the
+			// requested wake time is "too soon", but there's no API to find out what constitutes
+			// "too soon" on any given OS/hardware combination, so if we get kIOReturnNotReady
+			// we just have to iterate with successively longer intervals until it doesn't fail.
+			// Additionally, if our power request is deemed "too soon" for the machine to get to
+			// sleep and wake back up again, we attempt to cancel the sleep request, since the
+			// implication is that the system won't manage to be awake again at the time we need it.
+			do
+				{
+				interval += (interval < mDNSPlatformOneSecond*20) ? mDNSPlatformOneSecond : ((interval+3) / 4);
+				result = mDNSPowerRequest(1, interval / mDNSPlatformOneSecond);
+				}
+			while (result == kIOReturnNotReady);
+			}
+
+		if (result) LogMsg("Requested wakeup in %d seconds unsuccessful: %d %X", interval / mDNSPlatformOneSecond, result, result);
+		else LogOperation("Requested wakeup in %d seconds", interval / mDNSPlatformOneSecond);
+		m->p->WakeAtUTC = mDNSPlatformUTC() + interval / mDNSPlatformOneSecond;
+		}
+
+	// Clear our interface list to empty state, ready to go to sleep
+	// As a side effect of doing this, we'll also cancel any outstanding SPS Resolve calls that didn't complete
+	m->SleepState = SleepState_Sleeping;
+	mDNSMacOSXNetworkChanged(m);
+
+	LogOperation("%s(%lX) %s at %ld (%d ticks remaining)",
+		(result == kIOReturnSuccess) ? "IOAllowPowerChange" : "IOCancelPowerChange",
+		m->p->SleepCookie, ready ? "ready for sleep" : "giving up", now, m->p->SleepLimit - now);
+
+	m->p->SleepLimit = 0;	// Don't clear m->p->SleepLimit until after we've logged it above
+
+	if (result == kIOReturnSuccess) IOAllowPowerChange (m->p->PowerConnection, m->p->SleepCookie);
+	else                            IOCancelPowerChange(m->p->PowerConnection, m->p->SleepCookie);
+
+	return(mDNStrue);
+	}
+
 mDNSlocal void KQWokenFlushBytes(int fd, __unused short filter, __unused void *context)
 	{
 	// Read all of the bytes so we won't wake again.
@@ -2705,77 +2778,9 @@ mDNSlocal void * KQueueLoop(void *m_param)
 			}
 
 		if (m->p->SleepLimit)
-			{
-			mDNSBool ready = ReadyForSleep(m);
-			if (ready || now - m->p->SleepLimit >= 0)
-				{
-				int result = kIOReturnSuccess;
-
-				if (!m->p->SystemWakeForNetworkAccessEnabled)
-					m->p->WakeAtUTC = 0;
-				else
-					{
-					mDNSs32 interval = ComputeWakeTime(m, now);
-
-					// If we're not ready to sleep (failed to register with Sleep Proxy, maybe because of
-					// transient network problem) then schedule a wakeup in one hour to try again. Otherwise,
-					// a single SPS failure could result in a remote machine falling permanently asleep, requiring
-					// someone to go to the machine in person to wake it up again, which would be unacceptable.
-					if (!ready && interval > 3600 * mDNSPlatformOneSecond) interval = 3600 * mDNSPlatformOneSecond;
-
-					// If we wake within +/- 30 seconds of our requested time we'll assume the system woke for us,
-					// so we should put it back to sleep. To avoid frustrating the user, we always request at least
-					// 60 seconds sleep, so if they immediately re-wake the system within seconds of it going to sleep,
-					// we then shouldn't hit our 30-second window, and we won't attempt to re-sleep the machine.
-					if (interval < mDNSPlatformOneSecond * 60) interval = mDNSPlatformOneSecond * 60;
-
-					// For testing
-					// interval = 60 * mDNSPlatformOneSecond;
-
-					result = mDNSPowerRequest(1, interval / mDNSPlatformOneSecond);
-
-					if (result == kIOReturnNotReady)
-						{
-						LogMsg("Requested wakeup in %d seconds unsuccessful; retrying with longer intervals",
-							interval / mDNSPlatformOneSecond);
-						// IOPMSchedulePowerEvent fails with kIOReturnNotReady (-536870184/0xe00002d8) if the
-						// requested wake time is "too soon", but there's no API to find out what constitutes
-						// "too soon" on any given OS/hardware combination, so if we get kIOReturnNotReady
-						// we just have to iterate with successively longer intervals until it doesn't fail.
-						// Additionally, if our power request is deemed "too soon" for the machine to get to
-						// sleep and wake back up again, we attempt to cancel the sleep request, since the
-						// implication is that the system won't manage to be awake again at the time we need it.
-						do
-							{
-							interval += (interval < mDNSPlatformOneSecond*20) ? mDNSPlatformOneSecond : ((interval+3) / 4);
-							result = mDNSPowerRequest(1, interval / mDNSPlatformOneSecond);
-							}
-						while (result == kIOReturnNotReady);
-						}
-
-					if (result) LogMsg("Requested wakeup in %d seconds unsuccessful: %d %X", interval / mDNSPlatformOneSecond, result, result);
-					else LogOperation("Requested wakeup in %d seconds", interval / mDNSPlatformOneSecond);
-					m->p->WakeAtUTC = mDNSPlatformUTC() + interval / mDNSPlatformOneSecond;
-					}
-
-				// Clear our interface list to empty state, ready to go to sleep
-				// As a side effect of doing this, we'll also cancel any outstanding SPS Resolve calls that didn't complete
-				m->SleepState = SleepState_Sleeping;
-				mDNSMacOSXNetworkChanged(m);
-
-				LogOperation("%s(%lX) %s at %ld (%d ticks remaining)",
-					(result == kIOReturnSuccess) ? "IOAllowPowerChange" : "IOCancelPowerChange",
-					m->p->SleepCookie, ready ? "ready for sleep" : "giving up", now, m->p->SleepLimit - now);
-
-				m->p->SleepLimit = 0;	// Don't clear m->p->SleepLimit until after we've logged it above
-
-				if (result == kIOReturnSuccess) IOAllowPowerChange (m->p->PowerConnection, m->p->SleepCookie);
-				else                            IOCancelPowerChange(m->p->PowerConnection, m->p->SleepCookie);
-				}
-			else
+			if (!AllowSleepNow(m, now))
 				if (nextTimerEvent - m->p->SleepLimit >= 0)
 					nextTimerEvent = m->p->SleepLimit;
-			}
 
 		// Convert absolute wakeup time to a relative time from now
 		mDNSs32 ticks = nextTimerEvent - now;
