@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.406  2009/02/06 03:06:49  mcguire
+<rdar://problem/5858533> Adopt vproc_transaction API in mDNSResponder
+
 Revision 1.405  2009/02/04 23:00:28  cheshire
 Move logic for deciding when to next wake up into a subroutine called AllowSleepNow
 
@@ -537,6 +540,7 @@ Revision 1.261  2006/01/06 01:22:28  cheshire
 
 #include <DNSServiceDiscovery/DNSServiceDiscovery.h>
 #include "helper.h"
+#include "safe_vproc.h"
 
 //*************************************************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -2768,6 +2772,8 @@ mDNSlocal void * KQueueLoop(void *m_param)
 #endif
 			if (mDNS_ExitNow(m, now))
 				{
+				if (!mDNSStorage.ResourceRecords && !mDNSStorage.ServiceRegistrations)
+					safe_vproc_transaction_end();
 				LogOperation("mDNS_FinalExit");
 				mDNS_FinalExit(&mDNSStorage);
 				usleep(1000);		// Little 1ms pause before exiting, so we don't lose our final syslog messages
@@ -2961,6 +2967,8 @@ mDNSexport int main(int argc, char **argv)
 	pthread_t KQueueThread;
 
 	LogMsgIdent(mDNSResponderVersionString, "starting");
+	
+	safe_vproc_transaction_begin();
 
 	if (0 == geteuid()) DropPrivileges();
 

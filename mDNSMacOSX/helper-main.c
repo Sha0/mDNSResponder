@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper-main.c,v $
+Revision 1.25  2009/02/06 03:06:49  mcguire
+<rdar://problem/5858533> Adopt vproc_transaction API in mDNSResponder
+
 Revision 1.24  2009/01/28 17:20:46  mcguire
 changed incorrect notice level log to debug
 
@@ -115,11 +118,11 @@ Revision 1.1  2007/08/08 22:34:58  mcguire
 #include <time.h>
 #include <unistd.h>
 #include <Security/Security.h>
-#include <vproc.h>
 #include "helper.h"
 #include "helper-server.h"
 #include "helpermsg.h"
 #include "helpermsgServer.h"
+#include "safe_vproc.h"
 
 #if TARGET_OS_EMBEDDED
 #include <bootstrap_priv.h>
@@ -176,45 +179,15 @@ void helplog(int level, const char *fmt, ...)
 	helplogv(level, fmt, ap);
 	va_end(ap);
 	}
-
-void safe_vproc_transaction_begin(void)
-	{
-#ifdef VPROC_HAS_TRANSACTIONS
-	if (vproc_transaction_begin)
-		{
-		transaction_t* t = malloc(sizeof(transaction_t));
-		t->next = transactions;
-		transactions = t;
-		t->vt = vproc_transaction_begin(NULL);
-		debug("vproc_transaction_begin %p %p %p", t, t->vt, t->next);
-		}
-	else
-		helplog(ASL_LEVEL_NOTICE, "vproc_transaction support unavailable");
-#else
-	helplog(ASL_LEVEL_NOTICE, "Compiled without vproc_transaction support");
-#endif
-	}
 	
-void safe_vproc_transaction_end(void)
+// for safe_vproc
+void LogMsg(const char *fmt, ...)
 	{
-#ifdef VPROC_HAS_TRANSACTIONS
-	if (vproc_transaction_end)
-		{
-		if (transactions)
-			{
-			transaction_t* t = transactions;
-			transactions = t->next;
-			vproc_transaction_end(NULL, t->vt);
-			debug("vproc_transaction_end %p %p %p", t, t->vt, t->next);
-			free(t);
-			}
-		else
-			helplog(ASL_LEVEL_ERR, "No transactions in list");
-		}
-	else
-		assert(transactions == NULL);
-#endif
-	}
+	va_list ap;
+	va_start(ap, fmt);
+	helplogv(ASL_LEVEL_ERR, fmt, ap);
+	va_end(ap);
+	}	
 
 static void handle_sigterm(int sig)
 	{

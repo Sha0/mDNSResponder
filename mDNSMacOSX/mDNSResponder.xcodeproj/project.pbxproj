@@ -98,6 +98,12 @@
 		2EDC5E750C39EA640092701B /* helper-server.h in Headers */ = {isa = PBXBuildFile; fileRef = 2EDC5E720C39EA640092701B /* helper-server.h */; };
 		4A8202650C56C4C900DDFD48 /* pfkey.c in Sources */ = {isa = PBXBuildFile; fileRef = 4A8202530C56C36600DDFD48 /* pfkey.c */; };
 		4AAE0C9A0C68EA81003882A5 /* mDNSResponderHelper.8 in CopyFiles */ = {isa = PBXBuildFile; fileRef = 4AAE0C7A0C68E97F003882A5 /* mDNSResponderHelper.8 */; };
+		4AE9B04B0F39448B0080B59D /* safe_vproc.c in Sources */ = {isa = PBXBuildFile; fileRef = 4AE9B0480F39448B0080B59D /* safe_vproc.c */; };
+		4AE9B04C0F39448B0080B59D /* safe_vproc.h in Headers */ = {isa = PBXBuildFile; fileRef = 4AE9B0490F39448B0080B59D /* safe_vproc.h */; };
+		4AE9B0920F3A52A10080B59D /* safe_vproc.c in Sources */ = {isa = PBXBuildFile; fileRef = 4AE9B0480F39448B0080B59D /* safe_vproc.c */; };
+		4AE9B0930F3A52A20080B59D /* safe_vproc.c in Sources */ = {isa = PBXBuildFile; fileRef = 4AE9B0480F39448B0080B59D /* safe_vproc.c */; };
+		4AE9B0940F3A52AE0080B59D /* safe_vproc.h in Headers */ = {isa = PBXBuildFile; fileRef = 4AE9B0490F39448B0080B59D /* safe_vproc.h */; };
+		4AE9B0950F3A52AE0080B59D /* safe_vproc.h in Headers */ = {isa = PBXBuildFile; fileRef = 4AE9B0490F39448B0080B59D /* safe_vproc.h */; };
 		D284BE530ADD80740027CCDF /* DNSServiceDiscoveryDefines.h in Headers */ = {isa = PBXBuildFile; fileRef = 6575FBFF022EAFBA00000109 /* DNSServiceDiscoveryDefines.h */; };
 		D284BE540ADD80740027CCDF /* dnssd_ipc.h in Headers */ = {isa = PBXBuildFile; fileRef = F5E11B5B04A28126019798ED /* dnssd_ipc.h */; };
 		D284BE560ADD80740027CCDF /* DNSServiceDiscoveryReply.defs in Sources */ = {isa = PBXBuildFile; fileRef = 6575FC00022EAFBA00000109 /* DNSServiceDiscoveryReply.defs */; settings = {ATTRIBUTES = (Client, ); }; };
@@ -454,6 +460,8 @@
 		4A8202520C56C36500DDFD48 /* libpfkey.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = libpfkey.h; sourceTree = "<group>"; };
 		4A8202530C56C36600DDFD48 /* pfkey.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = pfkey.c; sourceTree = "<group>"; };
 		4AAE0C7A0C68E97F003882A5 /* mDNSResponderHelper.8 */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = mDNSResponderHelper.8; sourceTree = SOURCE_ROOT; };
+		4AE9B0480F39448B0080B59D /* safe_vproc.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = safe_vproc.c; sourceTree = "<group>"; };
+		4AE9B0490F39448B0080B59D /* safe_vproc.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = safe_vproc.h; sourceTree = "<group>"; };
 		654BE64F02B63B93000001D1 /* mDNSEmbeddedAPI.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = mDNSEmbeddedAPI.h; path = ../mDNSCore/mDNSEmbeddedAPI.h; sourceTree = "<group>"; };
 		654BE65002B63B93000001D1 /* mDNSDebug.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = mDNSDebug.h; path = ../mDNSCore/mDNSDebug.h; sourceTree = "<group>"; };
 		65713D46025A293200000109 /* SystemConfiguration.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SystemConfiguration.framework; path = /System/Library/Frameworks/SystemConfiguration.framework; sourceTree = "<absolute>"; };
@@ -678,6 +686,8 @@
 		08FB7795FE84155DC02AAC07 /* mDNS Server Sources */ = {
 			isa = PBXGroup;
 			children = (
+				4AE9B0480F39448B0080B59D /* safe_vproc.c */,
+				4AE9B0490F39448B0080B59D /* safe_vproc.h */,
 				4AAE0C7A0C68E97F003882A5 /* mDNSResponderHelper.8 */,
 				2ECC11A50C4FEC3800CB1885 /* helpermsg-types.h */,
 				2E35528F0C3A95C100CA1CB7 /* helper-error.h */,
@@ -851,6 +861,7 @@
 				2ECC11A80C4FEC3800CB1885 /* helpermsg-types.h in Headers */,
 				2E8165E80C5980E300485EB2 /* libpfkey.h in Headers */,
 				2E8165EA0C5980F700485EB2 /* ipsec_strerror.h in Headers */,
+				4AE9B04C0F39448B0080B59D /* safe_vproc.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -864,6 +875,7 @@
 				2EDC5E750C39EA640092701B /* helper-server.h in Headers */,
 				2E3552900C3A95C100CA1CB7 /* helper-error.h in Headers */,
 				2ECC11A60C4FEC3800CB1885 /* helpermsg-types.h in Headers */,
+				4AE9B0950F3A52AE0080B59D /* safe_vproc.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -880,6 +892,7 @@
 				2EDC5E740C39EA640092701B /* helper-server.h in Headers */,
 				2E3552910C3A95C100CA1CB7 /* helper-error.h in Headers */,
 				2ECC11A70C4FEC3800CB1885 /* helpermsg-types.h in Headers */,
+				4AE9B0940F3A52AE0080B59D /* safe_vproc.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1214,6 +1227,7 @@
 		08FB7793FE84155DC02AAC07 /* Project object */ = {
 			isa = PBXProject;
 			buildConfigurationList = D284BE2B0ADD78180027CCDF /* Build configuration list for PBXProject "mDNSResponder" */;
+			compatibilityVersion = "Xcode 2.4";
 			hasScannedForEncodings = 1;
 			mainGroup = 08FB7794FE84155DC02AAC07 /* mDNSResponder */;
 			projectDirPath = "";
@@ -1409,6 +1423,7 @@
 				2E0405F60C31961100F13B59 /* helpermsg.defs in Sources */,
 				2E96A51D0C39BDAC0087C4D2 /* helper-main.c in Sources */,
 				2E8165E90C5980EE00485EB2 /* pfkey.c in Sources */,
+				4AE9B04B0F39448B0080B59D /* safe_vproc.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1431,6 +1446,7 @@
 				D284BE630ADD80740027CCDF /* daemon.c in Sources */,
 				2E04061F0C3198B700F13B59 /* helpermsg.defs in Sources */,
 				2E96A5320C39C1A50087C4D2 /* helper-stubs.c in Sources */,
+				4AE9B0930F3A52A20080B59D /* safe_vproc.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1453,6 +1469,7 @@
 				D284BE8B0ADD80800027CCDF /* daemon.c in Sources */,
 				2E0406200C3198B700F13B59 /* helpermsg.defs in Sources */,
 				2E96A5300C39C1A50087C4D2 /* helper-stubs.c in Sources */,
+				4AE9B0920F3A52A10080B59D /* safe_vproc.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
