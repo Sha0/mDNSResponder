@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.621  2009/02/06 03:18:12  mcguire
+<rdar://problem/6534643> BTMM: State not cleaned up on SIGTERM w/o reboot
+
 Revision 1.620  2009/02/02 22:14:11  cheshire
 Instead of repeatedly checking the Dynamic Store, use m->p->SystemWakeForNetworkAccessEnabled variable
 
@@ -5535,8 +5538,7 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 	ClearInactiveInterfaces(m, utc);
 	CloseSocketSet(&m->p->permanentsockets);
 
-	// Temporarily disable cleanup for now.  See bug <rdar://problem/5895642>
-#if 0 && APPLE_OSX_mDNSResponder
+#if APPLE_OSX_mDNSResponder
 	// clean up tunnels
 	while (m->TunnelClients)
 		{
