@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.622  2009/02/07 02:57:32  cheshire
+<rdar://problem/6084043> Sleep Proxy: Need to adopt IOPMConnection
+
 Revision 1.621  2009/02/06 03:18:12  mcguire
 <rdar://problem/6534643> BTMM: State not cleaned up on SIGTERM w/o reboot
 
@@ -2744,7 +2747,7 @@ mDNSlocal mDNSBool NetWakeInterface(NetworkInterfaceInfoOSX *i)
 		}
 	close(s);
 
-	LogOperation("%s %d %s WOMP", i->ifinfo.ifname, ifr.ifr_ifru.ifru_intval, (ifr.ifr_wake_flags & IF_WAKE_ON_MAGIC_PACKET) ? "supports" : "no");
+	LogOperation("%s %#a %s WOMP", i->ifinfo.ifname, &i->ifinfo.ip, (ifr.ifr_wake_flags & IF_WAKE_ON_MAGIC_PACKET) ? "supports" : "no");
 
 	return((ifr.ifr_wake_flags & IF_WAKE_ON_MAGIC_PACKET) != 0);
 	}
@@ -4388,13 +4391,13 @@ mDNSexport void mDNSPlatformDynDNSHostNameStatusChanged(const domainname *const 
 		if (!StatusVals[0]) LogMsg("SetDDNSNameStatus: CFNumberCreate(%ld) failed", status);
 		else
 			{
-			const CFDictionaryRef HostVals[1] = { CFDictionaryCreate(NULL, (void*)StatusKeys, (void*)StatusVals, 1, NULL, NULL) };
+			const CFDictionaryRef HostVals[1] = { CFDictionaryCreate(NULL, (void*)StatusKeys, (void*)StatusVals, 1, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks) };
 			if (HostVals[0])
 				{
-				const CFDictionaryRef StateVals[1] = { CFDictionaryCreate(NULL, (void*)HostKeys, (void*)HostVals, 1, NULL, NULL) };
+				const CFDictionaryRef StateVals[1] = { CFDictionaryCreate(NULL, (void*)HostKeys, (void*)HostVals, 1, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks) };
 				if (StateVals[0])
 					{
-					CFDictionaryRef StateDict = CFDictionaryCreate(NULL, (void*)StateKeys, (void*)StateVals, 1, NULL, NULL);
+					CFDictionaryRef StateDict = CFDictionaryCreate(NULL, (void*)StateKeys, (void*)StateVals, 1, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
 					if (StateDict)
 						{
 						mDNSDynamicStoreSetConfig(kmDNSDynamicConfig, mDNSNULL, StateDict);
@@ -5179,14 +5182,11 @@ mDNSlocal OSStatus KeychainChanged(SecKeychainEvent keychainEvent, SecKeychainCa
 #ifndef NO_IOPOWER
 mDNSlocal void PowerOn(mDNS *const m)
 	{
-	// Need to explicitly clear any previous power requests -- they're not cleared automatically on wake
-	mDNSPowerRequest(-1,-1);
-
 	mDNSCoreMachineSleep(m, false);
-
 	if (m->p->WakeAtUTC)
 		{
 		long utc = mDNSPlatformUTC();
+		mDNSPowerRequest(-1,-1);		// Need to explicitly clear any previous power requests -- they're not cleared automatically on wake
 		if      (m->p->WakeAtUTC - utc > 30) LogOperation("PowerChanged PowerOn %d seconds early, assuming not maintenance wake", m->p->WakeAtUTC - utc);
 		else if (utc - m->p->WakeAtUTC > 30) LogOperation("PowerChanged PowerOn %d seconds late, assuming not maintenance wake", utc - m->p->WakeAtUTC);
 		else
@@ -5195,7 +5195,7 @@ mDNSlocal void PowerOn(mDNS *const m)
 			//int result = mDNSPowerRequest(0, i);
 			//if (result == kIOReturnNotReady) do i += (i<20) ? 1 : ((i+3)/4); while (mDNSPowerRequest(0, i) == kIOReturnNotReady);
 			LogMsg("PowerChanged: Waking for network maintenance operations %d seconds early; re-sleeping in %d seconds", m->p->WakeAtUTC - utc, i);
-			m->p->SleepTime = mDNS_TimeNow(m) + i * mDNSPlatformOneSecond;
+			m->p->RequestReSleep = mDNS_TimeNow(m) + i * mDNSPlatformOneSecond;
 			}
 		}
 	}
@@ -5217,7 +5217,6 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 		case kIOMessageCanSystemSleep:			LogOperation("PowerChanged kIOMessageCanSystemSleep        (no action)");	break;	// E0000270
 		case kIOMessageSystemWillSleep:			LogOperation("PowerChanged kIOMessageSystemWillSleep");								// E0000280
 												mDNSCoreMachineSleep(m, true);
-												if (m->SleepState == SleepState_Sleeping) mDNSMacOSXNetworkChanged(m);
 												break;
 		case kIOMessageSystemWillNotSleep:		LogOperation("PowerChanged kIOMessageSystemWillNotSleep    (no action)");	break;	// E0000290
 		case kIOMessageSystemHasPoweredOn:		LogOperation("PowerChanged kIOMessageSystemHasPoweredOn");							// E0000300
@@ -5264,16 +5263,46 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 		default:								LogOperation("PowerChanged unknown message %X", messageType);				break;
 		}
 
-	if (!m->p->SleepLimit && messageType == kIOMessageSystemWillSleep)
+	if (messageType == kIOMessageSystemWillSleep) m->p->SleepCookie = (long)messageArgument;
+	else IOAllowPowerChange(m->p->PowerConnection, (long)messageArgument);
+
+	KQueueUnlock(m, "PowerChanged Sleep/Wake");
+	}
+
+#ifdef kIOPMAcknowledgmentOptionSystemCapabilityRequirements
+mDNSlocal void SnowLeopardPowerChanged(void *refcon, IOPMConnection connection, IOPMConnectionMessageToken token, IOPMSystemPowerStateCapabilities eventDescriptor)
+	{
+	mDNS *const m = (mDNS *const)refcon;
+	KQueueLock(m);
+	LogOperation("SnowLeopardPowerChanged %X %X %X%s%s%s%s%s",
+		connection, token, eventDescriptor,
+		eventDescriptor & kIOPMSystemPowerStateCapabilityCPU     ? " CPU"     : "",
+		eventDescriptor & kIOPMSystemPowerStateCapabilityVideo   ? " Video"   : "",
+		eventDescriptor & kIOPMSystemPowerStateCapabilityAudio   ? " Audio"   : "",
+		eventDescriptor & kIOPMSystemPowerStateCapabilityNetwork ? " Network" : "",
+		eventDescriptor & kIOPMSystemPowerStateCapabilityDisk    ? " Disk"    : "");
+
+	if (eventDescriptor & kIOPMSystemPowerStateCapabilityCPU)
 		{
-		m->p->SleepLimit  = NonZeroTime(mDNS_TimeNow(m) + mDNSPlatformOneSecond * 10);
-		m->p->SleepCookie = (long)messageArgument;
+		// Waking up
+		if (m->SleepState != SleepState_Sleeping) LogMsg("SnowLeopardPowerChanged: wake ERROR m->SleepState %d", m->SleepState);
+		PowerOn(m);
 		}
 	else
-		IOAllowPowerChange(m->p->PowerConnection, (long)messageArgument);
+		{
+		// Going to sleep
+		if (m->SleepState) LogMsg("SnowLeopardPowerChanged: sleep ERROR m->SleepState %d", m->SleepState);
+		//sleep(5);
+		//mDNSMacOSXNetworkChanged(m);
+		mDNSCoreMachineSleep(m, true);
+		//if (m->SleepState == SleepState_Sleeping) mDNSMacOSXNetworkChanged(m);
+		m->p->SleepCookie = token;
+		}
 
-	KQueueUnlock(m, "Sleep/Wake");
+	KQueueUnlock(m, "SnowLeopardPowerChanged Sleep/Wake");
 	}
+#endif
+
 #endif /* NO_IOPOWER */
 
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -5419,9 +5448,8 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	m->p->usernicelabel.c[0] = 0;
 	m->p->NotifyUser         = 0;
 	m->p->KeyChainBugTimer   = 0;
-	m->p->SleepLimit         = 0;
 	m->p->WakeAtUTC          = 0;
-	m->p->SleepTime          = 0;
+	m->p->RequestReSleep     = 0;
 
 	m->AutoTunnelHostAddr.b[0] = 0;		// Zero out AutoTunnelHostAddr so UpdateInterfaceList() know it has to set it up
 
@@ -5459,9 +5487,31 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 #endif
 
 #ifndef NO_IOPOWER
-	m->p->PowerConnection = IORegisterForSystemPower(m, &m->p->PowerPortRef, PowerChanged, &m->p->PowerNotifier);
-	if (!m->p->PowerConnection) { LogMsg("mDNSPlatformInit_setup: IORegisterForSystemPower failed"); return(-1); }
-	else CFRunLoopAddSource(CFRunLoopGetCurrent(), IONotificationPortGetRunLoopSource(m->p->PowerPortRef), kCFRunLoopDefaultMode);
+
+#ifndef kIOPMAcknowledgmentOptionSystemCapabilityRequirements
+	LogMsg("Note: Compiled without SnowLeopard Fine-Grained Power Management support");
+#else
+	IOPMConnection c;
+	IOReturn iopmerr = IOPMConnectionCreate(CFSTR("mDNSResponder"), kIOPMSystemPowerStateCapabilityCPU, &c);
+	if (iopmerr) LogMsg("IOPMConnectionCreate failed %d", iopmerr);
+	else
+		{
+		iopmerr = IOPMConnectionSetNotification(c, m, SnowLeopardPowerChanged);
+		if (iopmerr) LogMsg("IOPMConnectionSetNotification failed %d", iopmerr);
+		else
+			{
+			iopmerr = IOPMConnectionScheduleWithRunLoop(c, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
+			if (iopmerr) LogMsg("IOPMConnectionScheduleWithRunLoop failed %d", iopmerr);
+			}
+		}
+	m->p->IOPMConnection = iopmerr ? mDNSNULL : c;
+	if (iopmerr) // If IOPMConnectionCreate unavailable or failed, proceed with old-style power notification code below
+#endif // kIOPMAcknowledgmentOptionSystemCapabilityRequirements
+		{
+		m->p->PowerConnection = IORegisterForSystemPower(m, &m->p->PowerPortRef, PowerChanged, &m->p->PowerNotifier);
+		if (!m->p->PowerConnection) { LogMsg("mDNSPlatformInit_setup: IORegisterForSystemPower failed"); return(-1); }
+		else CFRunLoopAddSource(CFRunLoopGetCurrent(), IONotificationPortGetRunLoopSource(m->p->PowerPortRef), kCFRunLoopDefaultMode);
+		}
 #endif /* NO_IOPOWER */
 
 #if APPLE_OSX_mDNSResponder
