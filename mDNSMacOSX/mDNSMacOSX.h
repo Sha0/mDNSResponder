@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.98  2009/02/07 02:52:19  cheshire
+<rdar://problem/6084043> Sleep Proxy: Need to adopt IOPMConnection
+
 Revision 1.97  2009/02/02 22:13:01  cheshire
 Added SystemWakeForNetworkAccessEnabled setting
 
@@ -176,6 +179,7 @@ Revision 1.52  2006/01/05 21:41:49  cheshire
 
 #include <SystemConfiguration/SystemConfiguration.h>
 #include <IOKit/pwr_mgt/IOPMLib.h>
+#include <IOKit/pwr_mgt/IOPMLibPrivate.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include "mDNSEmbeddedAPI.h"  // for domain name structure
@@ -258,11 +262,13 @@ struct mDNS_PlatformSupport_struct
 	IONotificationPortRef    PowerPortRef;
 	io_connect_t             PowerConnection;
 	io_object_t              PowerNotifier;
+#ifdef kIOPMAcknowledgmentOptionSystemCapabilityRequirements
+	IOPMConnection           IOPMConnection;
+#endif
 	SCPreferencesRef         SCPrefs;
-	mDNSs32                  SleepLimit;		// Set when we get kIOMessageSystemWillSleep notification
 	long                     SleepCookie;		// Cookie we need to pass to IOAllowPowerChange()
 	long                     WakeAtUTC;
-	mDNSs32                  SleepTime;
+	mDNSs32                  RequestReSleep;
 	pthread_mutex_t          BigMutex;
 	mDNSs32                  BigMutexStartTime;
 	int						 WakeKQueueLoopFD;
