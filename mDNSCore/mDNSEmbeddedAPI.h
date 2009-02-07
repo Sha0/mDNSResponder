@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.537  2009/02/07 02:51:48  cheshire
+<rdar://problem/6084043> Sleep Proxy: Need to adopt IOPMConnection
+Added new functions and timing variables
+
 Revision 1.536  2009/01/30 23:50:31  cheshire
 Added LastLabel() routine to get the last label of a domainname
 
@@ -2357,6 +2361,9 @@ struct mDNS_struct
 	mDNSs32  PktNum;					// Unique sequence number assigned to each received packet
 	mDNSu8   SleepState;				// Set if we're sleeping
 	mDNSu8   SleepSeqNum;				// "Epoch number" of our current period of wakefulness
+	mDNSs32  DelaySleep;				// To inhibit re-sleeping too quickly right after wake
+	mDNSs32  SleepLimit;				// Time window to allow deregistrations, etc.,
+										// during which underying platform layer should inhibit system sleep
 
 	// These fields only required for mDNS Searcher...
 	DNSQuestion *Questions;				// List of all registered questions, active and inactive
@@ -3143,6 +3150,8 @@ extern void     mDNSCoreReceive(mDNS *const m, void *const msg, const mDNSu8 *co
 								const mDNSAddr *const srcaddr, const mDNSIPPort srcport,
 								const mDNSAddr *const dstaddr, const mDNSIPPort dstport, const mDNSInterfaceID InterfaceID);
 extern void     mDNSCoreMachineSleep(mDNS *const m, mDNSBool wake);
+extern mDNSBool mDNSCoreReadyForSleep(mDNS *m);
+extern mDNSs32  mDNSCoreIntervalToNextWake(mDNS *const m, mDNSs32 now);
 
 extern void     mDNSCoreBeSleepProxyServer(mDNS *const m, mDNSu8 sps, mDNSu8 port, mDNSu8 marginalpower, mDNSu8 totpower);
 extern void     mDNSCoreReceiveRawPacket  (mDNS *const m, const mDNSu8 *const p, const mDNSu8 *const end, const mDNSInterfaceID InterfaceID);
