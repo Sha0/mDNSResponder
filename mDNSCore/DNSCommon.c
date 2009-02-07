@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.235  2009/02/07 05:55:44  cheshire
+Only pay attention to m->DelaySleep when it's nonzero
+
 Revision 1.234  2009/02/07 02:52:52  cheshire
 <rdar://problem/6084043> Sleep Proxy: Need to adopt IOPMConnection
 Pay attention to m->DelaySleep when computing next task time
@@ -2860,7 +2863,7 @@ mDNSlocal mDNSs32 GetNextScheduledEvent(const mDNS *const m)
 #endif
 	if (e - m->NextCacheCheck        > 0) e = m->NextCacheCheck;
 	if (e - m->NextScheduledSPS      > 0) e = m->NextScheduledSPS;
-	if (e - m->DelaySleep            > 0) e = m->DelaySleep;
+	if (m->DelaySleep && e - m->DelaySleep > 0) e = m->DelaySleep;
 
 	if (m->SleepState != SleepState_Sleeping)
 		{
@@ -2914,7 +2917,7 @@ mDNSexport void ShowTaskSchedulingError(mDNS *const m)
 		LogMsg("Task Scheduling Error: m->NextScheduledNATOp %d",    m->timenow - m->NextScheduledNATOp);
 	if (m->timenow - m->NextScheduledSPS      >= 0)
 		LogMsg("Task Scheduling Error: m->NextScheduledSPS %d",      m->timenow - m->NextScheduledSPS);
-	if (m->timenow - m->DelaySleep            >= 0)
+	if (m->DelaySleep && m->timenow - m->DelaySleep >= 0)
 		LogMsg("Task Scheduling Error: m->DelaySleep %d",            m->timenow - m->DelaySleep);
 #ifndef UNICAST_DISABLED
 	if (m->timenow - m->NextuDNSEvent         >= 0)
