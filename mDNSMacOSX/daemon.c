@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.408  2009/02/07 06:08:44  cheshire
+Commented out testing code
+
 Revision 1.407  2009/02/07 02:57:31  cheshire
 <rdar://problem/6084043> Sleep Proxy: Need to adopt IOPMConnection
 
@@ -2582,7 +2585,7 @@ mDNSlocal mDNSBool AllowSleepNow(mDNS *const m, mDNSs32 now)
 		// someone to go to the machine in person to wake it up again, which would be unacceptable.
 		if (!ready && interval > 3600) interval = 3600;
 
-		interval = 48; // For testing
+		//interval = 48; // For testing
 
 #ifdef kIOPMAcknowledgmentOptionSystemCapabilityRequirements
 		if (m->p->IOPMConnection)	// If lightweight-wake capability is available, use that
