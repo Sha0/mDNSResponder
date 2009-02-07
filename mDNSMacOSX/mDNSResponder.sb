@@ -26,6 +26,10 @@
 ; SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ;
 ; $Log: mDNSResponder.sb,v $
+; Revision 1.35  2009/02/07 02:51:10  cheshire
+; <rdar://problem/6084043> Sleep Proxy: Need to adopt IOPMConnection
+; Allow mDNSResponder to access IOPMConnection API
+;
 ; Revision 1.34  2008/11/11 00:55:08  mcguire
 ; <rdar://problem/6357957> sandbox: need to allow Mach port com.apple.system.DirectoryService.membership_v1
 ;
@@ -172,6 +176,7 @@
 					"com.apple.bsd.dirhelper"
 					"com.apple.distributed_notifications.2"
 					"com.apple.ocspd"
+					"com.apple.PowerManagement.control"
 					"com.apple.mDNSResponderHelper"
 					"com.apple.SecurityServer"
 					"com.apple.SystemConfiguration.configd"
