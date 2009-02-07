@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.431  2009/02/07 01:48:55  cheshire
+In SIGINFO output include sequence number for proxied records
+
 Revision 1.430  2009/01/31 21:58:05  cheshire
 <rdar://problem/4786302> Implement logic to determine when to send dot-local lookups via Unicast
 Only want to do unicast dot-local lookups for address queries and conventional (RFC 2782) SRV queries
@@ -3988,7 +3991,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 		for (ar = m->ResourceRecords; ar; ar=ar->next)
 			{
 			if (!mDNSSameEthAddress(&owner, &ar->WakeUp.MAC))
-				{ owner = ar->WakeUp.MAC; LogMsgNoIdent("Proxying for %.6a", &owner); }
+				{ owner = ar->WakeUp.MAC; LogMsgNoIdent("Proxying for %.6a seq %d", &owner, ar->WakeUp.seq); }
 			if (AuthRecord_uDNS(ar))
 				LogMsgNoIdent("%7d %7d %7d %7d %s",
 					ar->ThisAPInterval / mDNSPlatformOneSecond,
@@ -4014,7 +4017,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 		for (ar = m->DuplicateRecords; ar; ar=ar->next)
 			{
 			if (!mDNSSameEthAddress(&owner, &ar->WakeUp.MAC))
-				{ owner = ar->WakeUp.MAC; LogMsgNoIdent("Proxying for %.6a", &owner); }
+				{ owner = ar->WakeUp.MAC; LogMsgNoIdent("Proxying for %.6a seq %d", &owner, ar->WakeUp.seq); }
 			LogMsgNoIdent("                %7d         %s",
 				ar->TimeExpire    ? (ar->TimeExpire                      - now) / mDNSPlatformOneSecond : 0,
 				ARDisplayString(m, ar));
