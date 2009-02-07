@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.902  2009/02/07 05:57:01  cheshire
+Fixed debugging log message
+
 Revision 1.901  2009/02/07 02:57:31  cheshire
 <rdar://problem/6084043> Sleep Proxy: Need to adopt IOPMConnection
 
@@ -4350,8 +4353,11 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 		if (m->DelaySleep && m->timenow - m->DelaySleep >= 0)
 			{
 			m->DelaySleep = 0;
-			LogSPS("Re-sleep delay passed; now checking for Sleep Proxy Servers");
-			if (m->SleepState == SleepState_Transferring) StartSleepProxyRegistrations(m);
+			if (m->SleepState == SleepState_Transferring)
+				{
+				LogSPS("Re-sleep delay passed; now checking for Sleep Proxy Servers");
+				StartSleepProxyRegistrations(m);
+				}
 			}
 
 		// 4. See if we can answer any of our new local questions from the cache
