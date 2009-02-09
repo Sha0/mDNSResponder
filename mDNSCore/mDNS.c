@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.903  2009/02/09 23:34:31  cheshire
+Additional logging for debugging unknown packets
+
 Revision 1.902  2009/02/07 05:57:01  cheshire
 Fixed debugging log message
 
@@ -6410,8 +6413,20 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 	else if (QR_OP == UpdR) mDNSCoreReceiveUpdateR (m, msg, end,                                     InterfaceID);
 	else
 		{
-		LogMsg("Unknown DNS packet type %02X%02X from %#-15a:%-5d to %#-15a:%-5d on %p (ignored)",
-			msg->h.flags.b[0], msg->h.flags.b[1], srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), InterfaceID);
+		LogMsg("%3d: Unknown DNS packet type %02X%02X from %#-15a:%-5d to %#-15a:%-5d length %d on %p (ignored)",
+			msg->h.flags.b[0], msg->h.flags.b[1], srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), end-(mDNSu8 *)pkt, InterfaceID);
+		#if LogAllOperations
+			{
+			int i = 0;
+			while (i<end-(mDNSu8 *)pkt)
+				{
+				char buffer[128];
+				char *p = buffer + mDNS_snprintf(buffer, sizeof(buffer), "%04X", i);
+				do if (i<end-(mDNSu8 *)pkt) p += mDNS_snprintf(p, sizeof(buffer), " %02X", ((mDNSu8 *)pkt)[i]); while (++i & 15);
+				LogOperation("%s", buffer);
+				}
+			}
+		#endif
 		}
 	// Packet reception often causes a change to the task list:
 	// 1. Inbound queries can cause us to need to send responses
