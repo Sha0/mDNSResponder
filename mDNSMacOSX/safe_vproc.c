@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: safe_vproc.c,v $
+Revision 1.2  2009/02/09 21:16:17  mcguire
+<rdar://problem/5858533> Adopt vproc_transaction API in mDNSResponder
+additional cleanup: don't alloc memory since we currently only expect to have one transaction
+
 Revision 1.1  2009/02/06 03:06:49  mcguire
 <rdar://problem/5858533> Adopt vproc_transaction API in mDNSResponder
 
@@ -29,13 +33,7 @@ Revision 1.1  2009/02/06 03:06:49  mcguire
 #include "mDNSDebug.h"
 
 #ifdef VPROC_HAS_TRANSACTIONS
-typedef struct __transaction_s
-	{
-	struct __transaction_s* next;
-	vproc_transaction_t vt;
-	} transaction_t;
-	
-static transaction_t* transactions = NULL;
+static vproc_transaction_t transaction = NULL;
 #endif
 
 void safe_vproc_transaction_begin(void)
@@ -43,10 +41,8 @@ void safe_vproc_transaction_begin(void)
 #ifdef VPROC_HAS_TRANSACTIONS
 	if (vproc_transaction_begin)
 		{
-		transaction_t* t = malloc(sizeof(transaction_t));
-		t->next = transactions;
-		transactions = t;
-		t->vt = vproc_transaction_begin(NULL);
+		if (transaction) { LogMsg("safe_vproc_transaction_begin: Already have a transaction"); }
+		else transaction = vproc_transaction_begin(NULL);
 		}
 	else
 		LogMsg("vproc_transaction support unavailable");
@@ -60,17 +56,10 @@ void safe_vproc_transaction_end(void)
 #ifdef VPROC_HAS_TRANSACTIONS
 	if (vproc_transaction_end)
 		{
-		if (transactions)
-			{
-			transaction_t* t = transactions;
-			transactions = t->next;
-			vproc_transaction_end(NULL, t->vt);
-			free(t);
-			}
-		else
-			LogMsg("No transactions in list");
+		if (transaction) { vproc_transaction_end(NULL, transaction); transaction = NULL; }
+		else LogMsg("safe_vproc_transaction_end: No current transaction");
 		}
 	else
-		assert(transactions == NULL);
+		assert(transaction == NULL);
 #endif
 	}
