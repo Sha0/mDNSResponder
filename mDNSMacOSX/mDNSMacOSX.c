@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.624  2009/02/09 21:11:43  cheshire
+Need to acknowledge kIOPMSystemPowerStateCapabilityCPU message
+
 Revision 1.623  2009/02/09 06:20:42  cheshire
 Upon receiving system power change notification, make sure our m->p->SystemWakeForNetworkAccessEnabled value
 correctly reflects the current system setting
@@ -5298,6 +5301,7 @@ mDNSlocal void SnowLeopardPowerChanged(void *refcon, IOPMConnection connection, 
 		// Waking up
 		if (m->SleepState != SleepState_Sleeping) LogMsg("SnowLeopardPowerChanged: wake ERROR m->SleepState %d", m->SleepState);
 		PowerOn(m);
+		IOPMConnectionAcknowledgeEvent(connection, token);
 		}
 	else
 		{
