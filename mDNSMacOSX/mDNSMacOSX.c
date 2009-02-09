@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.625  2009/02/09 21:24:25  cheshire
+Set correct bit in ifr.ifr_wake_flags (was coincidentally working because IF_WAKE_ON_MAGIC_PACKET happens to have the value 1)
+
 Revision 1.624  2009/02/09 21:11:43  cheshire
 Need to acknowledge kIOPMSystemPowerStateCapabilityCPU message
 
@@ -2743,14 +2746,14 @@ mDNSlocal mDNSBool NetWakeInterface(NetworkInterfaceInfoOSX *i)
 			LogMsg("NetWakeInterface SIOCGIFWAKEFLAGS %s errno %d (%s)", i->ifinfo.ifname, errno, strerror(errno));
 		// If on Leopard or earlier, we get EOPNOTSUPP, so in that case
 		// we enable WOL if this interface is not AirPort and "Wake for Network access" is turned on.
-		ifr.ifr_wake_flags = (errno == KERNEL_EOPNOTSUPP && !(i)->BSSID.l[0] && i->m->p->SystemWakeForNetworkAccessEnabled);
+		ifr.ifr_wake_flags = (errno == KERNEL_EOPNOTSUPP && !(i)->BSSID.l[0] && i->m->p->SystemWakeForNetworkAccessEnabled) ? IF_WAKE_ON_MAGIC_PACKET : 0;
 		}
 	else
 		{
 		// Call succeeded.
 		// However, on SnowLeopard, it currently indicates incorrectly that AirPort is incapable of Wake-on-LAN.
 		// Therefore, for AirPort interfaces, we just track the system-wide Wake-on-LAN setting.
-		if ((i)->BSSID.l[0]) ifr.ifr_wake_flags = i->m->p->SystemWakeForNetworkAccessEnabled;
+		if ((i)->BSSID.l[0]) ifr.ifr_wake_flags = i->m->p->SystemWakeForNetworkAccessEnabled ? IF_WAKE_ON_MAGIC_PACKET : 0;
 		}
 	close(s);
 
