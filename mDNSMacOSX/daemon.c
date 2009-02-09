@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.409  2009/02/09 21:16:14  cheshire
+Improved debugging messages
+
 Revision 1.408  2009/02/07 06:08:44  cheshire
 Commented out testing code
 
@@ -2607,6 +2610,7 @@ mDNSlocal mDNSBool AllowSleepNow(mDNS *const m, mDNSs32 now)
 					}
 				CFRelease(WakeDate);
 				}
+			LogOperation("AllowSleepNow: Will request lightweight wakeup in %d seconds", interval);
 			}
 		else 						// else schedule the wakeup using the old API instead to
 #endif
@@ -2637,8 +2641,8 @@ mDNSlocal mDNSBool AllowSleepNow(mDNS *const m, mDNSs32 now)
 				while (result == kIOReturnNotReady);
 				}
 
-			if (result) LogMsg("Requested wakeup in %d seconds unsuccessful: %d %X", interval, result, result);
-			else LogOperation("Requested wakeup in %d seconds", interval);
+			if (result) LogMsg("AllowSleepNow: Requested wakeup in %d seconds unsuccessful: %d %X", interval, result, result);
+			else LogOperation("AllowSleepNow: Requested wakeup in %d seconds", interval);
 			m->p->WakeAtUTC = mDNSPlatformUTC() + interval;
 			}
 		}
@@ -2648,12 +2652,12 @@ mDNSlocal mDNSBool AllowSleepNow(mDNS *const m, mDNSs32 now)
 	m->SleepState = SleepState_Sleeping;
 	mDNSMacOSXNetworkChanged(m);
 
-	LogOperation("%s(%lX) %s at %ld (%d ticks remaining) next wake in %d seconds",
+	LogOperation("AllowSleepNow: %s(%lX) %s at %ld (%d ticks remaining)",
 #ifdef kIOPMAcknowledgmentOptionSystemCapabilityRequirements
 		(m->p->IOPMConnection) ? "IOPMConnectionAcknowledgeEventWithOptions" :
 #endif
 		(result == kIOReturnSuccess) ? "IOAllowPowerChange" : "IOCancelPowerChange",
-		m->p->SleepCookie, ready ? "ready for sleep" : "giving up", now, m->SleepLimit - now, interval);
+		m->p->SleepCookie, ready ? "ready for sleep" : "giving up", now, m->SleepLimit - now);
 
 	m->SleepLimit = 0;	// Don't clear m->SleepLimit until after we've logged it above
 
