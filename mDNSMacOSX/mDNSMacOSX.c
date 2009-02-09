@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.623  2009/02/09 06:20:42  cheshire
+Upon receiving system power change notification, make sure our m->p->SystemWakeForNetworkAccessEnabled value
+correctly reflects the current system setting
+
 Revision 1.622  2009/02/07 02:57:32  cheshire
 <rdar://problem/6084043> Sleep Proxy: Need to adopt IOPMConnection
 
@@ -5206,6 +5210,10 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 	KQueueLock(m);
 	(void)service;    // Parameter not used
 	debugf("PowerChanged %X %lX", messageType, messageArgument);
+
+	// Make sure our m->p->SystemWakeForNetworkAccessEnabled value correctly reflects the current system setting
+	m->p->SystemWakeForNetworkAccessEnabled = SystemWakeForNetworkAccess();
+
 	switch(messageType)
 		{
 		case kIOMessageCanSystemPowerOff:		LogOperation("PowerChanged kIOMessageCanSystemPowerOff     (no action)");	break;	// E0000240
@@ -5281,6 +5289,9 @@ mDNSlocal void SnowLeopardPowerChanged(void *refcon, IOPMConnection connection, 
 		eventDescriptor & kIOPMSystemPowerStateCapabilityAudio   ? " Audio"   : "",
 		eventDescriptor & kIOPMSystemPowerStateCapabilityNetwork ? " Network" : "",
 		eventDescriptor & kIOPMSystemPowerStateCapabilityDisk    ? " Disk"    : "");
+
+	// Make sure our m->p->SystemWakeForNetworkAccessEnabled value correctly reflects the current system setting
+	m->p->SystemWakeForNetworkAccessEnabled = SystemWakeForNetworkAccess();
 
 	if (eventDescriptor & kIOPMSystemPowerStateCapabilityCPU)
 		{
