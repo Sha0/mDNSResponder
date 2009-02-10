@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.124  2009/02/10 01:44:39  cheshire
+<rdar://problem/6553729> DNSServiceUpdateRecord fails with kDNSServiceErr_BadReference for otherwise valid reference
+
 Revision 1.123  2009/01/19 00:49:21  mkrochma
 Type cast size_t values to unsigned long
 
@@ -1632,7 +1635,6 @@ DNSServiceErrorType DNSSD_API DNSServiceAddRecord
 	rref->record_index = sdRef->max_index++;
 	rref->sdr = sdRef;
 	*RecordRef = rref;
-	hdr->client_context.context = rref;
 	hdr->reg_index = rref->record_index;
 
 	return deliver_request(hdr, sdRef);		// Will free hdr for us

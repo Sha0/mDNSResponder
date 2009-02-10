@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.433  2009/02/10 01:44:39  cheshire
+<rdar://problem/6553729> DNSServiceUpdateRecord fails with kDNSServiceErr_BadReference for otherwise valid reference
+
 Revision 1.432  2009/02/10 01:38:56  cheshire
 Move regservice_termination_callback() earlier in file in preparation for subsequent work
 
@@ -1636,6 +1639,16 @@ mDNSlocal void regservice_termination_callback(request_state *request)
 		}
 	}
 
+mDNSlocal request_state *LocateSubordinateRequest(request_state *request)
+	{
+	request_state *req;
+	for (req = all_requests; req; req = req->next)
+		if (req->primary == request &&
+			req->hdr.client_context.u32[0] == request->hdr.client_context.u32[0] &&
+			req->hdr.client_context.u32[1] == request->hdr.client_context.u32[1]) return(req);
+	return(request);
+	}
+
 mDNSlocal mStatus add_record_to_service(request_state *request, service_instance *instance, mDNSu16 rrtype, mDNSu16 rdlen, char *rdata, mDNSu32 ttl)
 	{
 	ServiceRecordSet *srs = &instance->srs;
@@ -1670,6 +1683,12 @@ mDNSlocal mStatus handle_add_request(request_state *request)
 	(void)flags; // Unused
 
 	if (!request->msgptr) { LogMsg("%3d: DNSServiceAddRecord(unreadable parameters)", request->sd); return(mStatus_BadParamErr); }
+
+	// If this is a shared connection, check if the operation actually applies to a subordinate request_state object
+	if (request->terminate == connection_termination) request = LocateSubordinateRequest(request);
+
+	if (request->terminate != regservice_termination_callback)
+		{ LogMsg("%3d: DNSServiceAddRecord(not a registered service ref)", request->sd); return(mStatus_BadParamErr); }
 
 	LogOperation("%3d: DNSServiceAddRecord(%##s, %s, %d)", request->sd,
 		(request->u.servicereg.instances) ? request->u.servicereg.instances->srs.RR_SRV.resrec.name->c : NULL, DNSTypeName(rrtype), rdlen);
@@ -1729,6 +1748,9 @@ mDNSlocal mStatus handle_update_request(request_state *request)
 
 	if (!request->msgptr) { LogMsg("%3d: DNSServiceUpdateRecord(unreadable parameters)", request->sd); return(mStatus_BadParamErr); }
 
+	// If this is a shared connection, check if the operation actually applies to a subordinate request_state object
+	if (request->terminate == connection_termination) request = LocateSubordinateRequest(request);
+
 	if (request->terminate == connection_termination)
 		{
 		// update an individually registered record
@@ -1744,6 +1766,9 @@ mDNSlocal mStatus handle_update_request(request_state *request)
 		result = mStatus_BadReferenceErr;
 		goto end;
 		}
+
+	if (request->terminate != regservice_termination_callback)
+		{ LogMsg("%3d: DNSServiceUpdateRecord(not a registered service ref)", request->sd); return(mStatus_BadParamErr); }
 
 	// update the saved off TXT data for the service
 	if (hdr->reg_index == TXT_RECORD_INDEX)
@@ -1778,9 +1803,10 @@ mDNSlocal mStatus handle_update_request(request_state *request)
 		}
 
 end:
-	LogOperation("%3d: DNSServiceUpdateRecord(%##s, %s)", request->sd,
-		(request->u.servicereg.instances) ? request->u.servicereg.instances->srs.RR_SRV.resrec.name->c : NULL,
-		rr ? DNSTypeName(rr->resrec.rrtype) : "<NONE>");
+	if (request->terminate == regservice_termination_callback)
+		LogOperation("%3d: DNSServiceUpdateRecord(%##s, %s)", request->sd,
+			(request->u.servicereg.instances) ? request->u.servicereg.instances->srs.RR_SRV.resrec.name->c : NULL,
+			rr ? DNSTypeName(rr->resrec.rrtype) : "<NONE>");
 
 	return(result);
 	}
@@ -1831,8 +1857,13 @@ mDNSlocal mStatus handle_removerecord_request(request_state *request)
 
 	if (!request->msgptr) { LogMsg("%3d: DNSServiceRemoveRecord(unreadable parameters)", request->sd); return(mStatus_BadParamErr); }
 
+	// If this is a shared connection, check if the operation actually applies to a subordinate request_state object
+	if (request->terminate == connection_termination) request = LocateSubordinateRequest(request);
+
 	if (request->terminate == connection_termination)
 		err = remove_record(request);  // remove individually registered record
+	else if (request->terminate != regservice_termination_callback)
+		{ LogMsg("%3d: DNSServiceRemoveRecord(not a registered service ref)", request->sd); return(mStatus_BadParamErr); }
 	else
 		{
 		service_instance *i;
