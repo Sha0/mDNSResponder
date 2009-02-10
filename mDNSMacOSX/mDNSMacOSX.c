@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.626  2009/02/10 00:15:38  cheshire
+<rdar://problem/6551529> Sleep Proxy: "Unknown DNS packet type 8849" logs
+
 Revision 1.625  2009/02/09 21:24:25  cheshire
 Set correct bit in ifr.ifr_wake_flags (was coincidentally working because IF_WAKE_ON_MAGIC_PACKET happens to have the value 1)
 
@@ -2286,7 +2289,10 @@ mDNSlocal void bpf_callback(const CFSocketRef cfs, const CFSocketCallBackType Ca
 	(void)CallBackType;
 	(void)address;
 	(void)data;
+
 	NetworkInterfaceInfoOSX *const info = (NetworkInterfaceInfoOSX *)context;
+	KQueueLock(info->m);
+
 	ssize_t n = read(info->BPF_fd, &info->m->imsg, info->BPF_len);
 	const mDNSu8 *ptr = (const mDNSu8 *)&info->m->imsg;
 	const mDNSu8 *end = (const mDNSu8 *)&info->m->imsg + n;
@@ -2296,17 +2302,17 @@ mDNSlocal void bpf_callback(const CFSocketRef cfs, const CFSocketCallBackType Ca
 		{
 		LogOperation("Closing %s BPF fd %d due to error %d (%s)", info->ifinfo.ifname, info->BPF_fd, errno, strerror(errno));
 		CloseBPF(info);
-		return;
+		goto exit;
 		}
 
-	KQueueLock(info->m);
 	while (ptr < end)
 		{
 		const struct bpf_hdr *bh = (const struct bpf_hdr *)ptr;
-		debugf("%3d: bpf_callback bh_caplen %4d bh_datalen %4d left %x", info->BPF_fd, bh->bh_caplen, bh->bh_datalen, end - (ptr + BPF_WORDALIGN(bh->bh_hdrlen + bh->bh_caplen)));
+		debugf("%3d: bpf_callback bh_caplen %4d bh_datalen %4d remaining %4d", info->BPF_fd, bh->bh_caplen, bh->bh_datalen, end - (ptr + BPF_WORDALIGN(bh->bh_hdrlen + bh->bh_caplen)));
 		mDNSCoreReceiveRawPacket(info->m, ptr + bh->bh_hdrlen, ptr + bh->bh_hdrlen + bh->bh_caplen, info->ifinfo.InterfaceID);
 		ptr += BPF_WORDALIGN(bh->bh_hdrlen + bh->bh_caplen);
 		}
+exit:
 	KQueueUnlock(info->m, "bpf_callback");
 	}
 
