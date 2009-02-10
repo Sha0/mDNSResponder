@@ -993,6 +993,18 @@ int main(int argc, char **argv)
 						"_http._tcp", "local", NULL, registerPort.NotAnInteger, 0, NULL, reg_reply, NULL);
 					if (err) { fprintf(stderr, "SharedConnection DNSServiceRegister failed %ld\n", (long int)err); return (-1); }
 
+					unsigned char txtrec[16] = "\xF" "/path=test.html";
+					err = DNSServiceUpdateRecord(sc3, NULL, 0, sizeof(txtrec), txtrec, 0);
+					if (err) { fprintf(stderr, "SharedConnection DNSServiceUpdateRecord failed %ld\n", (long int)err); return (-1); }
+
+					DNSRecordRef rec;
+					unsigned char nulrec[4] = "1234";
+					err = DNSServiceAddRecord(sc3, &rec, 0, kDNSServiceType_NULL, sizeof(nulrec), nulrec, 0);
+					if (err) { fprintf(stderr, "SharedConnection DNSServiceAddRecord failed %ld\n", (long int)err); return (-1); }
+
+					err = DNSServiceRemoveRecord(sc3, rec, 0);
+					if (err) { fprintf(stderr, "SharedConnection DNSServiceRemoveRecord failed %ld\n", (long int)err); return (-1); }
+
 					break;
 					}
 
