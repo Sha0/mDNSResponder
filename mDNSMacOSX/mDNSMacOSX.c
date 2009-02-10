@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.627  2009/02/10 00:19:17  cheshire
+<rdar://problem/6107426> Sleep Proxy: Adopt SIOCGIFWAKEFLAGS ioctl to determine interface WOMP-ability
+
 Revision 1.626  2009/02/10 00:15:38  cheshire
 <rdar://problem/6551529> Sleep Proxy: "Unknown DNS packet type 8849" logs
 
@@ -2754,6 +2757,7 @@ mDNSlocal mDNSBool NetWakeInterface(NetworkInterfaceInfoOSX *i)
 		// we enable WOL if this interface is not AirPort and "Wake for Network access" is turned on.
 		ifr.ifr_wake_flags = (errno == KERNEL_EOPNOTSUPP && !(i)->BSSID.l[0] && i->m->p->SystemWakeForNetworkAccessEnabled) ? IF_WAKE_ON_MAGIC_PACKET : 0;
 		}
+#if ASSUME_SNOWLEOPARD_INCORRECTLY_REPORTS_AIRPORT_INCAPABLE_OF_WAKE_ON_LAN
 	else
 		{
 		// Call succeeded.
@@ -2761,6 +2765,8 @@ mDNSlocal mDNSBool NetWakeInterface(NetworkInterfaceInfoOSX *i)
 		// Therefore, for AirPort interfaces, we just track the system-wide Wake-on-LAN setting.
 		if ((i)->BSSID.l[0]) ifr.ifr_wake_flags = i->m->p->SystemWakeForNetworkAccessEnabled ? IF_WAKE_ON_MAGIC_PACKET : 0;
 		}
+#endif
+
 	close(s);
 
 	LogOperation("%s %#a %s WOMP", i->ifinfo.ifname, &i->ifinfo.ip, (ifr.ifr_wake_flags & IF_WAKE_ON_MAGIC_PACKET) ? "supports" : "no");
