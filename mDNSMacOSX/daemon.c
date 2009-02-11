@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.410  2009/02/11 02:32:18  cheshire
+m->p->SystemWakeForNetworkAccessEnabled renamed to m->SystemWakeOnLANEnabled
+
 Revision 1.409  2009/02/09 21:16:14  cheshire
 Improved debugging messages
 
@@ -2575,7 +2578,7 @@ mDNSlocal mDNSBool AllowSleepNow(mDNS *const m, mDNSs32 now)
 	int result = kIOReturnSuccess;
 	CFDictionaryRef opts = NULL;
 
-	if (m->p->SystemWakeForNetworkAccessEnabled)
+	if (m->SystemWakeOnLANEnabled)
 		{
 		mDNSs32 dhcp = DHCPWakeTime();
 		LogOperation("ComputeWakeTime: DHCP Wake %d", dhcp);

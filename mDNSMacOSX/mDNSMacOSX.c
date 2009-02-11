@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.628  2009/02/11 02:34:45  cheshire
+m->p->SystemWakeForNetworkAccessEnabled renamed to m->SystemWakeOnLANEnabled
+
 Revision 1.627  2009/02/10 00:19:17  cheshire
 <rdar://problem/6107426> Sleep Proxy: Adopt SIOCGIFWAKEFLAGS ioctl to determine interface WOMP-ability
 
@@ -2755,7 +2758,7 @@ mDNSlocal mDNSBool NetWakeInterface(NetworkInterfaceInfoOSX *i)
 			LogMsg("NetWakeInterface SIOCGIFWAKEFLAGS %s errno %d (%s)", i->ifinfo.ifname, errno, strerror(errno));
 		// If on Leopard or earlier, we get EOPNOTSUPP, so in that case
 		// we enable WOL if this interface is not AirPort and "Wake for Network access" is turned on.
-		ifr.ifr_wake_flags = (errno == KERNEL_EOPNOTSUPP && !(i)->BSSID.l[0] && i->m->p->SystemWakeForNetworkAccessEnabled) ? IF_WAKE_ON_MAGIC_PACKET : 0;
+		ifr.ifr_wake_flags = (errno == KERNEL_EOPNOTSUPP && !(i)->BSSID.l[0] && i->m->SystemWakeOnLANEnabled) ? IF_WAKE_ON_MAGIC_PACKET : 0;
 		}
 #if ASSUME_SNOWLEOPARD_INCORRECTLY_REPORTS_AIRPORT_INCAPABLE_OF_WAKE_ON_LAN
 	else
@@ -2763,7 +2766,7 @@ mDNSlocal mDNSBool NetWakeInterface(NetworkInterfaceInfoOSX *i)
 		// Call succeeded.
 		// However, on SnowLeopard, it currently indicates incorrectly that AirPort is incapable of Wake-on-LAN.
 		// Therefore, for AirPort interfaces, we just track the system-wide Wake-on-LAN setting.
-		if ((i)->BSSID.l[0]) ifr.ifr_wake_flags = i->m->p->SystemWakeForNetworkAccessEnabled ? IF_WAKE_ON_MAGIC_PACKET : 0;
+		if ((i)->BSSID.l[0]) ifr.ifr_wake_flags = i->m->SystemWakeOnLANEnabled ? IF_WAKE_ON_MAGIC_PACKET : 0;
 		}
 #endif
 
@@ -4908,7 +4911,7 @@ mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 		m->p->NetworkChanged ? "" : " (no scheduled configuration change)");
 	m->p->NetworkChanged = 0;		// If we received a network change event and deferred processing, we're now dealing with it
 	mDNSs32 utc = mDNSPlatformUTC();
-	m->p->SystemWakeForNetworkAccessEnabled = SystemWakeForNetworkAccess();
+	m->SystemWakeOnLANEnabled = SystemWakeForNetworkAccess();
 	MarkAllInterfacesInactive(m, utc);
 	UpdateInterfaceList(m, utc);
 	ClearInactiveInterfaces(m, utc);
@@ -5229,8 +5232,8 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 	(void)service;    // Parameter not used
 	debugf("PowerChanged %X %lX", messageType, messageArgument);
 
-	// Make sure our m->p->SystemWakeForNetworkAccessEnabled value correctly reflects the current system setting
-	m->p->SystemWakeForNetworkAccessEnabled = SystemWakeForNetworkAccess();
+	// Make sure our m->SystemWakeOnLANEnabled value correctly reflects the current system setting
+	m->SystemWakeOnLANEnabled = SystemWakeForNetworkAccess();
 
 	switch(messageType)
 		{
@@ -5308,8 +5311,8 @@ mDNSlocal void SnowLeopardPowerChanged(void *refcon, IOPMConnection connection, 
 		eventDescriptor & kIOPMSystemPowerStateCapabilityNetwork ? " Network" : "",
 		eventDescriptor & kIOPMSystemPowerStateCapabilityDisk    ? " Disk"    : "");
 
-	// Make sure our m->p->SystemWakeForNetworkAccessEnabled value correctly reflects the current system setting
-	m->p->SystemWakeForNetworkAccessEnabled = SystemWakeForNetworkAccess();
+	// Make sure our m->SystemWakeOnLANEnabled value correctly reflects the current system setting
+	m->SystemWakeOnLANEnabled = SystemWakeForNetworkAccess();
 
 	if (eventDescriptor & kIOPMSystemPowerStateCapabilityCPU)
 		{
