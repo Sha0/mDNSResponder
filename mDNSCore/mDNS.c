@@ -38,6 +38,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.904  2009/02/11 02:37:29  cheshire
+m->p->SystemWakeForNetworkAccessEnabled renamed to m->SystemWakeOnLANEnabled
+Moved code to send goodbye packets from mDNSCoreMachineSleep into BeginSleepProcessing,
+so that it happens correctly even when we delay re-sleep due to a very short wakeup.
+
 Revision 1.903  2009/02/09 23:34:31  cheshire
 Additional logging for debugging unknown packets
 
@@ -4283,22 +4288,21 @@ mDNSlocal void NetWakeResolve(mDNS *const m, DNSQuestion *question, const Resour
 		}
 	}
 
-mDNSlocal void StartSleepProxyRegistrations(mDNS *const m)
+mDNSlocal void BeginSleepProcessing(mDNS *const m)
 	{
+	mDNSBool FoundSPS = mDNSfalse;
 	NetworkInterfaceInfo *intf = GetFirstActiveInterface(m->HostInterfaces);
 	while (intf)
 		{
-		if (!intf->NetWake)
-			LogSPS("mDNSCoreMachineSleep: %s not capable of magic packet wakeup", intf->ifname);
+		if (!intf->NetWake) LogSPS("mDNSCoreMachineSleep: %s not capable of magic packet wakeup", intf->ifname);
 		else
 			{
 			const CacheRecord *cr = FindSPSInCache(m, &intf->NetWakeBrowse);
-			if (!cr)
-				LogSPS("mDNSCoreMachineSleep: %s %#a No Sleep Proxy Server found %d", intf->ifname, &intf->ip, intf->NetWakeBrowse.ThisQInterval);
+			if (!cr) LogSPS("mDNSCoreMachineSleep: %s %#a No Sleep Proxy Server found %d", intf->ifname, &intf->ip, intf->NetWakeBrowse.ThisQInterval);
 			else
 				{
 				LogSPS("mDNSCoreMachineSleep: %s Found Sleep Proxy Server TTL %d %s", intf->ifname, cr->resrec.rroriginalttl, CRDisplayString(m, cr));
-				m->SleepState = SleepState_Transferring;
+				FoundSPS = mDNStrue;
 				intf->SPSAddr.type = mDNSAddrType_None;
 				if (intf->NetWakeResolve.ThisQInterval >= 0) mDNS_StopQuery(m, &intf->NetWakeResolve);
 				mDNS_SetupQuestion(&intf->NetWakeResolve, intf->InterfaceID, &cr->resrec.rdata->u.name, kDNSType_SRV, NetWakeResolve, intf);
@@ -4306,6 +4310,23 @@ mDNSlocal void StartSleepProxyRegistrations(mDNS *const m)
 				}
 			}
 		intf = GetFirstActiveInterface(intf->next);
+		}
+
+	if (!FoundSPS)
+		{
+		AuthRecord *rr;
+		m->SleepState = SleepState_Sleeping;
+
+#ifndef UNICAST_DISABLED
+		SleepServiceRegistrations(m);
+		SleepRecordRegistrations(m);	// If we have no SPS, need to deregister our uDNS records
+#endif
+
+		// Mark all the records we need to deregister and send them
+		for (rr = m->ResourceRecords; rr; rr=rr->next)
+			if (rr->resrec.RecordType == kDNSRecordTypeShared && rr->RequireGoodbye)
+				rr->ImmedAnswer = mDNSInterfaceMark;
+		SendResponses(m);
 		}
 	}
 
@@ -4359,7 +4380,7 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 			if (m->SleepState == SleepState_Transferring)
 				{
 				LogSPS("Re-sleep delay passed; now checking for Sleep Proxy Servers");
-				StartSleepProxyRegistrations(m);
+				BeginSleepProcessing(m);
 				}
 			}
 
@@ -4537,36 +4558,23 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 			mDNS_ReclaimLockAfterCallback();
 			}
 
-		if (m->DelaySleep)
+		m->SleepState = SleepState_Transferring;
+		if (m->SystemWakeOnLANEnabled && m->DelaySleep)
 			{
+			// If we just woke up moments ago, allow ten seconds for networking to stabilize before going back to sleep
 			LogSPS("mDNSCoreMachineSleep: Re-sleeping immediately after waking; will delay for %d ticks", m->DelaySleep - m->timenow);
 			m->SleepLimit = m->DelaySleep + mDNSPlatformOneSecond * 10;
-			m->SleepState = SleepState_Transferring;
 			}
 		else
 			{
+			m->DelaySleep = 0;
 			m->SleepLimit = m->timenow + mDNSPlatformOneSecond * 10;
-			StartSleepProxyRegistrations(m);
+			BeginSleepProcessing(m);
 			}
 
 #ifndef UNICAST_DISABLED
 		SuspendLLQs(m);
-		if (!m->SleepState)
-			{
-			SleepServiceRegistrations(m);
-			SleepRecordRegistrations(m);	// If we have no SPS, need to deregister our uDNS records
-			}
 #endif
-
-		if (!m->SleepState)
-			{
-			m->SleepState = SleepState_Sleeping;
-			// Mark all the records we need to deregister and send them
-			for (rr = m->ResourceRecords; rr; rr=rr->next)
-				if (rr->resrec.RecordType == kDNSRecordTypeShared && rr->RequireGoodbye)
-					rr->ImmedAnswer = mDNSInterfaceMark;
-			SendResponses(m);
-			}
 		LogSPS("mDNSCoreMachineSleep: m->SleepState %d %s seq %d", m->SleepState,
 			m->SleepState == SleepState_Transferring ? "(Transferring)" : 
 			m->SleepState == SleepState_Sleeping     ? "(Sleeping)" : "(?)", m->SleepSeqNum);
@@ -8609,6 +8617,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->PktNum                  = 0;
 	m->SleepState              = SleepState_Awake;
 	m->SleepSeqNum             = 0;
+	m->SystemWakeOnLANEnabled  = mDNSfalse;
 	m->DelaySleep              = 0;
 	m->SleepLimit              = 0;
 
