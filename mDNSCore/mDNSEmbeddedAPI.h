@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.538  2009/02/11 02:31:57  cheshire
+Moved SystemWakeOnLANEnabled from mDNSMacOSX.h, so it's accessible to mDNSCore routines
+
 Revision 1.537  2009/02/07 02:51:48  cheshire
 <rdar://problem/6084043> Sleep Proxy: Need to adopt IOPMConnection
 Added new functions and timing variables
@@ -2361,6 +2364,7 @@ struct mDNS_struct
 	mDNSs32  PktNum;					// Unique sequence number assigned to each received packet
 	mDNSu8   SleepState;				// Set if we're sleeping
 	mDNSu8   SleepSeqNum;				// "Epoch number" of our current period of wakefulness
+	mDNSu8   SystemWakeOnLANEnabled;	// Set if we want to register with a Sleep Proxy before going to sleep
 	mDNSs32  DelaySleep;				// To inhibit re-sleeping too quickly right after wake
 	mDNSs32  SleepLimit;				// Time window to allow deregistrations, etc.,
 										// during which underying platform layer should inhibit system sleep
