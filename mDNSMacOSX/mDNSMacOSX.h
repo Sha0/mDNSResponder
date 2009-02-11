@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.99  2009/02/11 02:31:05  cheshire
+Move SystemWakeForNetworkAccessEnabled into mDNS structure so it's accessible to mDNSCore routines
+
 Revision 1.98  2009/02/07 02:52:19  cheshire
 <rdar://problem/6084043> Sleep Proxy: Need to adopt IOPMConnection
 
@@ -245,7 +248,6 @@ struct mDNS_PlatformSupport_struct
 	mDNSs32                  NotifyUser;
 	mDNSs32                  HostNameConflict;	// Time we experienced conflict on our link-local host name
 	mDNSs32                  NetworkChanged;
-	mDNSBool                 SystemWakeForNetworkAccessEnabled;
 	
 	// KeyChain frequently fails to notify clients of change events. To work around this
 	// we set a timer and periodically poll to detect if any changes have occurred.
