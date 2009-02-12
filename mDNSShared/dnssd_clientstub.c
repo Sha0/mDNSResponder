@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.126  2009/02/12 21:02:22  cheshire
+Commented out BPF "Sending fd" debugging message
+
 Revision 1.125  2009/02/12 20:28:32  cheshire
 Added some missing "const" declarations
 
@@ -786,10 +789,7 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 				{
 				snprintf(p, sizeof(p), "/dev/bpf%d", i);
 				listenfd = open(p, O_RDWR, 0);
-#if LogAllOperations
-				if (dnssd_SocketValid(listenfd))
-					syslog(LOG_WARNING, "Sending fd %d for %s", listenfd, p);
-#endif
+				//if (dnssd_SocketValid(listenfd)) syslog(LOG_WARNING, "Sending fd %d for %s", listenfd, p);
 				if (!dnssd_SocketValid(listenfd) && dnssd_errno != EBUSY)
 					syslog(LOG_WARNING, "Error opening %s %d (%s)", p, dnssd_errno, dnssd_strerror(dnssd_errno));
 				if (dnssd_SocketValid(listenfd) || dnssd_errno != EBUSY) break;
