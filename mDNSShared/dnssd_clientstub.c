@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.125  2009/02/12 20:28:32  cheshire
+Added some missing "const" declarations
+
 Revision 1.124  2009/02/10 01:44:39  cheshire
 <rdar://problem/6553729> DNSServiceUpdateRecord fails with kDNSServiceErr_BadReference for otherwise valid reference
 
@@ -339,7 +342,7 @@ typedef struct _DNSServiceRef_t DNSServiceOp;
 typedef struct _DNSRecordRef_t DNSRecord;
 
 // client stub callback to process message from server and deliver results to client application
-typedef void (*ProcessReplyFn)(DNSServiceOp *sdr, CallbackHeader *cbh, char *msg, char *end);
+typedef void (*ProcessReplyFn)(DNSServiceOp *const sdr, const CallbackHeader *const cbh, const char *msg, const char *const end);
 
 #define ValidatorBits 0x12345678
 #define DNSServiceRefValid(X) (dnssd_SocketValid((X)->sockfd) && (((X)->sockfd ^ (X)->validator) == ValidatorBits))
@@ -958,7 +961,7 @@ DNSServiceErrorType DNSSD_API DNSServiceProcessResult(DNSServiceRef sdRef)
 			}
 		else
 			{
-			char *ptr = data;
+			const char *ptr = data;
 			cbh.cb_flags     = get_flags     (&ptr, data + cbh.ipc_hdr.datalen);
 			cbh.cb_interface = get_uint32    (&ptr, data + cbh.ipc_hdr.datalen);
 			cbh.cb_err       = get_error_code(&ptr, data + cbh.ipc_hdr.datalen);
@@ -1062,7 +1065,7 @@ DNSServiceErrorType DNSSD_API DNSServiceGetProperty(const char *property, void *
 	return kDNSServiceErr_NoError;
 	}
 
-static void handle_resolve_response(DNSServiceOp *sdr, CallbackHeader *cbh, char *data, char *end)
+static void handle_resolve_response(DNSServiceOp *const sdr, const CallbackHeader *const cbh, const char *data, const char *end)
 	{
 	char fullname[kDNSServiceMaxDomainName];
 	char target[kDNSServiceMaxDomainName];
@@ -1129,12 +1132,12 @@ DNSServiceErrorType DNSSD_API DNSServiceResolve
 	return err;
 	}
 
-static void handle_query_response(DNSServiceOp *sdr, CallbackHeader *cbh, char *data, char *end)
+static void handle_query_response(DNSServiceOp *const sdr, const CallbackHeader *const cbh, const char *data, const char *const end)
 	{
 	uint32_t ttl;
 	char name[kDNSServiceMaxDomainName];
 	uint16_t rrtype, rrclass, rdlen;
-	char *rdata;
+	const char *rdata;
 
 	get_string(&data, end, name, kDNSServiceMaxDomainName);
 	rrtype  = get_uint16(&data, end);
@@ -1188,11 +1191,11 @@ DNSServiceErrorType DNSSD_API DNSServiceQueryRecord
 	return err;
 	}
 
-static void handle_addrinfo_response(DNSServiceOp *sdr, CallbackHeader *cbh, char *data, char *end)
+static void handle_addrinfo_response(DNSServiceOp *const sdr, const CallbackHeader *const cbh, const char *data, const char *const end)
 	{
 	char hostname[kDNSServiceMaxDomainName];
 	uint16_t rrtype, rrclass, rdlen;
-	char *rdata;
+	const char *rdata;
 	uint32_t ttl;
 
 	get_string(&data, end, hostname, kDNSServiceMaxDomainName);
@@ -1283,7 +1286,7 @@ DNSServiceErrorType DNSSD_API DNSServiceGetAddrInfo
 	return err;
 	}
 	
-static void handle_browse_response(DNSServiceOp *sdr, CallbackHeader *cbh, char *data, char *end)
+static void handle_browse_response(DNSServiceOp *const sdr, const CallbackHeader *const cbh, const char *data, const char *const end)
 	{
 	char replyName[256], replyType[kDNSServiceMaxDomainName], replyDomain[kDNSServiceMaxDomainName];
 	get_string(&data, end, replyName, 256);
@@ -1349,7 +1352,7 @@ DNSServiceErrorType DNSSD_API DNSServiceSetDefaultDomainForUser(DNSServiceFlags 
 	return err;
 	}
 
-static void handle_regservice_response(DNSServiceOp *sdr, CallbackHeader *cbh, char *data, char *end)
+static void handle_regservice_response(DNSServiceOp *const sdr, const CallbackHeader *const cbh, const char *data, const char *const end)
 	{
 	char name[256], regtype[kDNSServiceMaxDomainName], domain[kDNSServiceMaxDomainName];
 	get_string(&data, end, name, 256);
@@ -1420,7 +1423,7 @@ DNSServiceErrorType DNSSD_API DNSServiceRegister
 	return err;
 	}
 
-static void handle_enumeration_response(DNSServiceOp *sdr, CallbackHeader *cbh, char *data, char *end)
+static void handle_enumeration_response(DNSServiceOp *const sdr, const CallbackHeader *const cbh, const char *data, const char *const end)
 	{
 	char domain[kDNSServiceMaxDomainName];
 	get_string(&data, end, domain, kDNSServiceMaxDomainName);
@@ -1464,7 +1467,7 @@ DNSServiceErrorType DNSSD_API DNSServiceEnumerateDomains
 	return err;
 	}
 
-static void ConnectionResponse(DNSServiceOp *const sdr, CallbackHeader *const cbh, char *const data, char *const end)
+static void ConnectionResponse(DNSServiceOp *const sdr, const CallbackHeader *const cbh, const char *const data, const char *const end)
 	{
 	DNSRecordRef rref = cbh->ipc_hdr.client_context.context;
 	(void)data; // Unused
@@ -1752,7 +1755,7 @@ DNSServiceErrorType DNSSD_API DNSServiceReconfirmRecord
 	return err;
 	}
 
-static void handle_port_mapping_response(DNSServiceOp *sdr, CallbackHeader *cbh, char *data, char *end)
+static void handle_port_mapping_response(DNSServiceOp *const sdr, const CallbackHeader *const cbh, const char *data, const char *const end)
 	{
 	union { uint32_t l; u_char b[4]; } addr;
 	uint8_t protocol = 0;

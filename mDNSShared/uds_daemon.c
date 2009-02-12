@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.434  2009/02/12 20:28:31  cheshire
+Added some missing "const" declarations
+
 Revision 1.433  2009/02/10 01:44:39  cheshire
 <rdar://problem/6553729> DNSServiceUpdateRecord fails with kDNSServiceErr_BadReference for otherwise valid reference
 
@@ -892,12 +895,12 @@ struct request_state
 	// for each new request. This is because, until we've read the ipc_msg_hdr to find out what the
 	// operation is, we don't know if we're going to need to allocate a new request_state or not.
 	transfer_state ts;
-	mDNSu32 hdr_bytes;				// bytes of header already read
-	ipc_msg_hdr hdr;
-	mDNSu32 data_bytes;				// bytes of message data already read
-	char *msgbuf;					// pointer to data storage to pass to free()
-	char *msgptr;					// pointer to data to be read from (may be modified)
-	char *msgend;					// pointer to byte after last byte of message
+	mDNSu32        hdr_bytes;		// bytes of header already read
+	ipc_msg_hdr    hdr;
+	mDNSu32        data_bytes;		// bytes of message data already read
+	char          *msgbuf;			// pointer to data storage to pass to free()
+	const char    *msgptr;			// pointer to data to be read from (may be modified)
+	char          *msgend;			// pointer to byte after last byte of message
 
 	// reply, termination, error, and client context info
 	int no_reply;					// don't send asynchronous replies to client
@@ -1233,11 +1236,11 @@ mDNSlocal AuthRecord *read_rr_from_ipc_msg(request_state *request, int GetTTL, i
 	DNSServiceFlags flags  = get_flags(&request->msgptr, request->msgend);
 	mDNSu32 interfaceIndex = get_uint32(&request->msgptr, request->msgend);
 	char name[256];
-	int str_err   = get_string(&request->msgptr, request->msgend, name, sizeof(name));
-	mDNSu16 type  = get_uint16(&request->msgptr, request->msgend);
-	mDNSu16 class = get_uint16(&request->msgptr, request->msgend);
-	mDNSu16 rdlen = get_uint16(&request->msgptr, request->msgend);
-	char *rdata   = get_rdata(&request->msgptr, request->msgend, rdlen);
+	int         str_err = get_string(&request->msgptr, request->msgend, name, sizeof(name));
+	mDNSu16     type    = get_uint16(&request->msgptr, request->msgend);
+	mDNSu16     class   = get_uint16(&request->msgptr, request->msgend);
+	mDNSu16     rdlen   = get_uint16(&request->msgptr, request->msgend);
+	const char *rdata   = get_rdata (&request->msgptr, request->msgend, rdlen);
 	mDNSu32 ttl   = GetTTL ? get_uint32(&request->msgptr, request->msgend) : 0;
 	int storage_size = rdlen > sizeof(RDataBody) ? rdlen : sizeof(RDataBody);
 	AuthRecord *rr;
@@ -1649,7 +1652,7 @@ mDNSlocal request_state *LocateSubordinateRequest(request_state *request)
 	return(request);
 	}
 
-mDNSlocal mStatus add_record_to_service(request_state *request, service_instance *instance, mDNSu16 rrtype, mDNSu16 rdlen, char *rdata, mDNSu32 ttl)
+mDNSlocal mStatus add_record_to_service(request_state *request, service_instance *instance, mDNSu16 rrtype, mDNSu16 rdlen, const char *rdata, mDNSu32 ttl)
 	{
 	ServiceRecordSet *srs = &instance->srs;
 	mStatus result;
@@ -1674,11 +1677,11 @@ mDNSlocal mStatus handle_add_request(request_state *request)
 	{
 	service_instance *i;
 	mStatus result = mStatus_UnknownErr;
-	DNSServiceFlags flags = get_flags (&request->msgptr, request->msgend);
-	mDNSu16        rrtype = get_uint16(&request->msgptr, request->msgend);
-	mDNSu16        rdlen  = get_uint16(&request->msgptr, request->msgend);
-	char           *rdata = get_rdata (&request->msgptr, request->msgend, rdlen);
-	mDNSu32        ttl    = get_uint32(&request->msgptr, request->msgend);
+	DNSServiceFlags flags  = get_flags (&request->msgptr, request->msgend);
+	mDNSu16         rrtype = get_uint16(&request->msgptr, request->msgend);
+	mDNSu16         rdlen  = get_uint16(&request->msgptr, request->msgend);
+	const char     *rdata  = get_rdata (&request->msgptr, request->msgend, rdlen);
+	mDNSu32         ttl    = get_uint32(&request->msgptr, request->msgend);
 	if (!ttl) ttl = DefaultTTLforRRType(rrtype);
 	(void)flags; // Unused
 
@@ -1709,7 +1712,7 @@ mDNSlocal void update_callback(mDNS *const m, AuthRecord *const rr, RData *oldrd
 	if (oldrd != &rr->rdatastorage) freeL("RData/update_callback", oldrd);
 	}
 
-mDNSlocal mStatus update_record(AuthRecord *rr, mDNSu16 rdlen, char *rdata, mDNSu32 ttl)
+mDNSlocal mStatus update_record(AuthRecord *rr, mDNSu16 rdlen, const char *rdata, mDNSu32 ttl)
 	{
 	int rdsize;
 	RData *newrd;
@@ -1740,10 +1743,10 @@ mDNSlocal mStatus handle_update_request(request_state *request)
 	AuthRecord *rr = NULL;
 
 	// get the message data
-	DNSServiceFlags flags = get_flags(&request->msgptr, request->msgend);	// flags unused
-	mDNSu16 rdlen = get_uint16(&request->msgptr, request->msgend);
-	char *rdata = get_rdata(&request->msgptr, request->msgend, rdlen);
-	mDNSu32 ttl = get_uint32(&request->msgptr, request->msgend);
+	DNSServiceFlags flags = get_flags (&request->msgptr, request->msgend);	// flags unused
+	mDNSu16         rdlen = get_uint16(&request->msgptr, request->msgend);
+	const char     *rdata = get_rdata (&request->msgptr, request->msgend, rdlen);
+	mDNSu32         ttl   = get_uint32(&request->msgptr, request->msgend);
 	(void)flags; // Unused
 
 	if (!request->msgptr) { LogMsg("%3d: DNSServiceUpdateRecord(unreadable parameters)", request->sd); return(mStatus_BadParamErr); }

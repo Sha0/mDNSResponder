@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.44  2009/02/12 20:28:31  cheshire
+Added some missing "const" declarations
+
 Revision 1.43  2008/10/23 23:21:31  cheshire
 Moved definition of dnssd_strerror() to be with the definition of dnssd_errno, in dnssd_ipc.h
 
@@ -301,10 +304,10 @@ typedef packedstruct
 // it is advanced to point to the next field, or the end of the message
 
 void put_uint32(const uint32_t l, char **ptr);
-uint32_t get_uint32(char **ptr, char *end);
+uint32_t get_uint32(const char **ptr, const char *end);
 
 void put_uint16(uint16_t s, char **ptr);
-uint16_t get_uint16(char **ptr, char *end);
+uint16_t get_uint16(const char **ptr, const char *end);
 
 #define put_flags put_uint32
 #define get_flags get_uint32
@@ -313,10 +316,10 @@ uint16_t get_uint16(char **ptr, char *end);
 #define get_error_code get_uint32
 
 int put_string(const char *str, char **ptr);
-int get_string(char **ptr, char *end, char *buffer, int buflen);
+int get_string(const char **ptr, const char *const end, char *buffer, int buflen);
 
 void put_rdata(const int rdlen, const unsigned char *rdata, char **ptr);
-char *get_rdata(char **ptr, char *end, int rdlen);  // return value is rdata pointed to by *ptr -
+const char *get_rdata(const char **ptr, const char *end, int rdlen);  // return value is rdata pointed to by *ptr -
                                          // rdata is not copied from buffer.
 
 void ConvertHeaderBytes(ipc_msg_hdr *hdr);
