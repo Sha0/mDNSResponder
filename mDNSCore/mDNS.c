@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.905  2009/02/12 20:57:24  cheshire
+Renamed 'LogAllOperation' switch to 'LogClientOperations'; added new 'LogSleepProxyActions' switch
+
 Revision 1.904  2009/02/11 02:37:29  cheshire
 m->p->SystemWakeForNetworkAccessEnabled renamed to m->SystemWakeOnLANEnabled
 Moved code to send goodbye packets from mDNSCoreMachineSleep into BeginSleepProcessing,
@@ -145,7 +148,7 @@ Revision 1.872  2008/12/12 01:30:40  cheshire
 Update platform-layer BPF filters when we add or remove AddressProxy records
 
 Revision 1.871  2008/12/10 02:25:31  cheshire
-Minor fixes to use of LogAllOperations symbol
+Minor fixes to use of LogClientOperations symbol
 
 Revision 1.870  2008/12/10 02:11:41  cheshire
 ARMv5 compiler doesn't like uncommented stuff after #endif
@@ -1025,7 +1028,7 @@ Revision 1.609  2007/04/20 21:17:24  cheshire
 For naming consistency, kDNSRecordTypeNegative should be kDNSRecordTypePacketNegative
 
 Revision 1.608  2007/04/20 19:45:31  cheshire
-In LogAllOperations mode, dump out unknown DNS packets in their entirety
+In LogClientOperations mode, dump out unknown DNS packets in their entirety
 
 Revision 1.607  2007/04/19 23:56:25  cheshire
 Don't do cache-flush processing for LLQ answers
@@ -1291,14 +1294,6 @@ Fixes to avoid code generation warning/error on FreeBSD 7
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark - Program Constants
-#endif
-
-//#define SPSLogging 1
-
-#if SPSLogging
-#define LogSPS LogMsg
-#else
-#define LogSPS LogOperation
 #endif
 
 #define NO_HINFO 1
@@ -4042,7 +4037,7 @@ mDNSlocal CacheEntity *GetCacheEntity(mDNS *const m, const CacheGroup *const Pre
 	// Enumerating the entire cache is moderately expensive, so when we do it, we reclaim all the records we can in one pass.
 	if (!m->rrcache_free)
 		{
-		#if LogAllOperations || MDNS_DEBUGMSGS
+		#if LogClientOperations || MDNS_DEBUGMSGS
 		mDNSu32 oldtotalused = m->rrcache_totalused;
 		#endif
 		mDNSu32 slot;
@@ -6423,7 +6418,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 		{
 		LogMsg("%3d: Unknown DNS packet type %02X%02X from %#-15a:%-5d to %#-15a:%-5d length %d on %p (ignored)",
 			msg->h.flags.b[0], msg->h.flags.b[1], srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), end-(mDNSu8 *)pkt, InterfaceID);
-		#if LogAllOperations
+		#if LogClientOperations
 			{
 			int i = 0;
 			while (i<end-(mDNSu8 *)pkt)

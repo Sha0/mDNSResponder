@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.601  2009/02/12 20:57:25  cheshire
+Renamed 'LogAllOperation' switch to 'LogClientOperations'; added new 'LogSleepProxyActions' switch
+
 Revision 1.600  2009/01/31 21:05:12  cheshire
 Improved "Failed to obtain NAT port mapping" debugging log message
 
@@ -41,7 +44,7 @@ Revision 1.595  2008/12/18 23:32:19  mcguire
 <rdar://problem/6019470> BTMM: Include the question in the LLQ notification acknowledgment
 
 Revision 1.594  2008/12/10 02:25:31  cheshire
-Minor fixes to use of LogAllOperations symbol
+Minor fixes to use of LogClientOperations symbol
 
 Revision 1.593  2008/12/10 02:11:42  cheshire
 ARMv5 compiler doesn't like uncommented stuff after #endif
@@ -1554,7 +1557,7 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 	if (DNSDigest_ConstructHMACKeyfromBase64(info, b64keydata) < 0)
 		{
 		LogMsg("mDNS_SetSecretForDomain: ERROR: Could not convert shared secret from base64: domain %##s key %##s %s", domain->c, keyname->c,
-			#if LogAllOperations
+			#if LogClientOperations
 				b64keydata);
 			#else
 				"");
@@ -4625,7 +4628,7 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 			{
 			DNSServer *orig = q->qDNSServer;
 			
-#if LogAllOperations || MDNS_DEBUGMSGS
+#if LogClientOperations || MDNS_DEBUGMSGS
 			char buffer[1024];
 			mDNS_snprintf(buffer, sizeof(buffer), orig ? "%#a:%d (%##s)" : "null", &orig->addr, mDNSVal16(orig->port), orig->domain.c);
 			debugf("Sent %d unanswered queries for %##s (%s) to %s", q->unansweredQueries, q->qname.c, DNSTypeName(q->qtype), buffer);
@@ -4636,7 +4639,7 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 
 			if (q->qDNSServer != orig)
 				{
-#if LogAllOperations || MDNS_DEBUGMSGS
+#if LogClientOperations || MDNS_DEBUGMSGS
 				mDNS_snprintf(buffer, sizeof(buffer), q->qDNSServer ? "%#a:%d (%##s)" : "null", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qDNSServer->domain.c);
 				debugf("Server for %##s (%s) changed to %s", q->qname.c, DNSTypeName(q->qtype), buffer);
 #endif

@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.411  2009/02/12 20:57:26  cheshire
+Renamed 'LogAllOperation' switch to 'LogClientOperations'; added new 'LogSleepProxyActions' switch
+
 Revision 1.410  2009/02/11 02:32:18  cheshire
 m->p->SystemWakeForNetworkAccessEnabled renamed to m->SystemWakeOnLANEnabled
 
@@ -257,7 +260,7 @@ Revision 1.340  2007/09/07 22:44:03  mcguire
 <rdar://problem/5448420> Move CFUserNotification code to mDNSResponderHelper
 
 Revision 1.339  2007/09/06 19:08:29  cheshire
-LogAllOperations check needs to be "#if LogAllOperations || MDNS_DEBUGMSGS"
+LogClientOperations check needs to be "#if LogClientOperations || MDNS_DEBUGMSGS"
 
 Revision 1.338  2007/09/05 23:34:27  mcguire
 Revert logging change
@@ -2720,7 +2723,7 @@ mDNSlocal void * KQueueLoop(void *m_param)
 
 		if (m->ShutdownTime)
 			{
-#if LogAllOperations || MDNS_DEBUGMSGS
+#if LogClientOperations || MDNS_DEBUGMSGS
 			if (mDNSStorage.ResourceRecords)
 				{
 				LogMsg("Cannot exit yet; Resource Record still exists: %s", ARDisplayString(m, mDNSStorage.ResourceRecords));
@@ -2814,7 +2817,7 @@ mDNSlocal void * KQueueLoop(void *m_param)
 				{
 				const KQueueEntry *const kqentry = new_events[i].udata;
 				mDNSs32 stime = mDNSPlatformRawTime();
-#if LogAllOperations || MDNS_DEBUGMSGS
+#if LogClientOperations || MDNS_DEBUGMSGS
 				const char *const KQtask = kqentry->KQtask;	// Grab a copy in case KQcallback deletes the task
 #endif
 				kqentry->KQcallback(new_events[i].ident, new_events[i].filter, kqentry->KQcontext);

@@ -17,8 +17,11 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.44  2009/02/12 20:57:25  cheshire
+Renamed 'LogAllOperation' switch to 'LogClientOperations'; added new 'LogSleepProxyActions' switch
+
 Revision 1.43  2008/12/10 02:27:14  cheshire
-Commented out definitions of LogAllOperations, LogTimeStamps, ForceAlerts and MACOSX_MDNS_MALLOC_DEBUGGING
+Commented out definitions of LogClientOperations, LogTimeStamps, ForceAlerts and MACOSX_MDNS_MALLOC_DEBUGGING
 to allow overriding values to be easily defined in a Makefile or similar build environment
 
 Revision 1.42  2008/11/02 21:22:05  cheshire
@@ -172,9 +175,10 @@ typedef enum
 // Set this symbol to 2 to write a log message for every malloc() and free()
 //#define MACOSX_MDNS_MALLOC_DEBUGGING 1
 
-//#define LogAllOperations 1
-//#define LogTimeStamps 1
 //#define ForceAlerts 1
+//#define LogTimeStamps 1
+//#define LogClientOperations 1
+//#define LogSleepProxyActions 1
 
 #define USE_SEPARATE_UDNS_SERVICE_LIST 1
 
@@ -262,10 +266,16 @@ extern void udns_validatelists(void *const v);
 #define freeL(X,Y) free(Y)
 #endif
 
-#if LogAllOperations
+#if LogClientOperations
 #define LogOperation LogMsg
 #else
 #define	LogOperation debugf
+#endif
+
+#if LogSleepProxyActions
+#define LogSPS LogMsg
+#else
+#define LogSPS LogOperation
 #endif
 
 #ifdef	__cplusplus

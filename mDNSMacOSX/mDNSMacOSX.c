@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.629  2009/02/12 20:57:26  cheshire
+Renamed 'LogAllOperation' switch to 'LogClientOperations'; added new 'LogSleepProxyActions' switch
+
 Revision 1.628  2009/02/11 02:34:45  cheshire
 m->p->SystemWakeForNetworkAccessEnabled renamed to m->SystemWakeOnLANEnabled
 
@@ -123,7 +126,7 @@ Revision 1.596  2008/12/10 19:34:30  cheshire
 Use symbolic OS version names instead of literal integers
 
 Revision 1.595  2008/12/10 02:25:31  cheshire
-Minor fixes to use of LogAllOperations symbol
+Minor fixes to use of LogClientOperations symbol
 
 Revision 1.594  2008/12/10 02:11:45  cheshire
 ARMv5 compiler doesn't like uncommented stuff after #endif
@@ -236,7 +239,7 @@ Revision 1.561  2008/10/22 17:18:57  cheshire
 Need to open and close BPF fds when turning Sleep Proxy Server on and off
 
 Revision 1.560  2008/10/22 01:09:36  cheshire
-Fixed build warning when not using LogAllOperations
+Fixed build warning when not using LogClientOperations
 
 Revision 1.559  2008/10/21 01:05:30  cheshire
 Added code to receive raw packets using Berkeley Packet Filter (BPF)
@@ -3740,7 +3743,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 	return(mStatus_NoError);
 	}
 
-#if LogAllOperations || MDNS_DEBUGMSGS
+#if LogClientOperations || MDNS_DEBUGMSGS
 // Returns number of leading one-bits in mask: 0-32 for IPv4, 0-128 for IPv6
 // Returns -1 if all the one-bits are not contiguous
 mDNSlocal int CountMaskBits(mDNSAddr *mask)
@@ -4992,7 +4995,7 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 	int c4 = (CFArrayContainsValue(changedKeys, range, NetworkChangedKey_DNS         ) != 0);
 	if (c && c - c1 - c2 - c3 - c4 == 0) delay = mDNSPlatformOneSecond/10;	// If these were the only changes, shorten delay
 	
-#if LogAllOperations
+#if LogClientOperations
 	int i;
 	for (i=0; i<c; i++)
 		{

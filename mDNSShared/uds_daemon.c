@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.435  2009/02/12 20:57:26  cheshire
+Renamed 'LogAllOperation' switch to 'LogClientOperations'; added new 'LogSleepProxyActions' switch
+
 Revision 1.434  2009/02/12 20:28:31  cheshire
 Added some missing "const" declarations
 
@@ -196,7 +199,7 @@ Revision 1.377  2007/10/30 23:48:20  cheshire
 Improved SIGINFO listing of question state
 
 Revision 1.376  2007/10/30 20:43:54  cheshire
-Fixed compiler warning when LogAllOperations is turned off
+Fixed compiler warning when LogClientOperations is turned off
 
 Revision 1.375  2007/10/26 22:51:38  cheshire
 Improved SIGINFO output to show timers for AuthRecords and ServiceRegistrations
@@ -1404,7 +1407,7 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 	mDNSBool SuppressError = mDNSfalse;
 	service_instance *instance = srs->ServiceContext;
 	reply_state         *rep;
-#if LogAllOperations || MDNS_DEBUGMSGS
+#if LogClientOperations || MDNS_DEBUGMSGS
 	char *fmt = (result == mStatus_NoError)      ? "%3d: DNSServiceRegister(%##s, %u) REGISTERED"    :
 				(result == mStatus_MemFree)      ? "%3d: DNSServiceRegister(%##s, %u) DEREGISTERED"  :
 				(result == mStatus_NameConflict) ? "%3d: DNSServiceRegister(%##s, %u) NAME CONFLICT" :

@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.100  2009/02/12 20:57:26  cheshire
+Renamed 'LogAllOperation' switch to 'LogClientOperations'; added new 'LogSleepProxyActions' switch
+
 Revision 1.99  2009/02/11 02:31:05  cheshire
 Move SystemWakeForNetworkAccessEnabled into mDNS structure so it's accessible to mDNSCore routines
 
@@ -318,7 +321,7 @@ extern mDNSBool DictionaryIsEnabled(CFDictionaryRef dict);
 // what's causing the problem, we may need to subdivide some categories into finer-grained
 // sub-categories (e.g. "Idle task processing" covers a pretty broad range of sub-tasks).
 
-#if LogAllOperations
+#if LogClientOperations
 #define WatchDogReportingThreshold 50
 #else
 #define WatchDogReportingThreshold 250
