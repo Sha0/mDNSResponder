@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.907  2009/02/13 18:16:05  cheshire
+Fixed some compile warnings
+
 Revision 1.906  2009/02/13 06:10:17  cheshire
 Convert LogOperation messages to LogInfo
 
@@ -4040,7 +4043,7 @@ mDNSlocal CacheEntity *GetCacheEntity(mDNS *const m, const CacheGroup *const Pre
 	// Enumerating the entire cache is moderately expensive, so when we do it, we reclaim all the records we can in one pass.
 	if (!m->rrcache_free)
 		{
-		#if LogClientOperations || MDNS_DEBUGMSGS
+		#if LogInfoMessages || MDNS_DEBUGMSGS
 		mDNSu32 oldtotalused = m->rrcache_totalused;
 		#endif
 		mDNSu32 slot;

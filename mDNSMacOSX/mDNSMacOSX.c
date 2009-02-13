@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.631  2009/02/13 18:16:05  cheshire
+Fixed some compile warnings
+
 Revision 1.630  2009/02/13 06:32:43  cheshire
 Converted LogOperation messages to LogInfo or LogSPS
 
@@ -3746,7 +3749,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 	return(mStatus_NoError);
 	}
 
-#if LogClientOperations || MDNS_DEBUGMSGS
+#if LogInfoMessages || MDNS_DEBUGMSGS
 // Returns number of leading one-bits in mask: 0-32 for IPv4, 0-128 for IPv6
 // Returns -1 if all the one-bits are not contiguous
 mDNSlocal int CountMaskBits(mDNSAddr *mask)

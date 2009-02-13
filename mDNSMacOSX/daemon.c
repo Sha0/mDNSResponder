@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.413  2009/02/13 18:16:05  cheshire
+Fixed some compile warnings
+
 Revision 1.412  2009/02/13 06:34:41  cheshire
 Converted LogOperation messages to LogInfo or LogSPS
 
@@ -2820,7 +2823,7 @@ mDNSlocal void * KQueueLoop(void *m_param)
 				{
 				const KQueueEntry *const kqentry = new_events[i].udata;
 				mDNSs32 stime = mDNSPlatformRawTime();
-#if LogClientOperations || MDNS_DEBUGMSGS
+#if LogInfoMessages || MDNS_DEBUGMSGS
 				const char *const KQtask = kqentry->KQtask;	// Grab a copy in case KQcallback deletes the task
 #endif
 				kqentry->KQcallback(new_events[i].ident, new_events[i].filter, kqentry->KQcontext);
