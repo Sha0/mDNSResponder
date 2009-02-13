@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.45  2009/02/13 06:03:12  cheshire
+Added LogInfo for informational message logging
+
 Revision 1.44  2009/02/12 20:57:25  cheshire
 Renamed 'LogAllOperation' switch to 'LogClientOperations'; added new 'LogSleepProxyActions' switch
 
@@ -178,6 +181,7 @@ typedef enum
 //#define ForceAlerts 1
 //#define LogTimeStamps 1
 //#define LogClientOperations 1
+//#define LogInfoMessages 1
 //#define LogSleepProxyActions 1
 
 #define USE_SEPARATE_UDNS_SERVICE_LIST 1
@@ -270,6 +274,12 @@ extern void udns_validatelists(void *const v);
 #define LogOperation LogMsg
 #else
 #define	LogOperation debugf
+#endif
+
+#if LogInfoMessages
+#define LogInfo LogMsg
+#else
+#define	LogInfo debugf
 #endif
 
 #if LogSleepProxyActions
