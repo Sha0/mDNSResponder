@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.908  2009/02/13 19:40:07  cheshire
+Improved alignment of LogSPS messages
+
 Revision 1.907  2009/02/13 18:16:05  cheshire
 Fixed some compile warnings
 
@@ -4295,14 +4298,14 @@ mDNSlocal void BeginSleepProcessing(mDNS *const m)
 	NetworkInterfaceInfo *intf = GetFirstActiveInterface(m->HostInterfaces);
 	while (intf)
 		{
-		if (!intf->NetWake) LogSPS("mDNSCoreMachineSleep: %s not capable of magic packet wakeup", intf->ifname);
+		if (!intf->NetWake) LogSPS("mDNSCoreMachineSleep: %6s not capable of magic packet wakeup", intf->ifname);
 		else
 			{
 			const CacheRecord *cr = FindSPSInCache(m, &intf->NetWakeBrowse);
-			if (!cr) LogSPS("mDNSCoreMachineSleep: %s %#a No Sleep Proxy Server found %d", intf->ifname, &intf->ip, intf->NetWakeBrowse.ThisQInterval);
+			if (!cr) LogSPS("mDNSCoreMachineSleep: %6s %#a No Sleep Proxy Server found %d", intf->ifname, &intf->ip, intf->NetWakeBrowse.ThisQInterval);
 			else
 				{
-				LogSPS("mDNSCoreMachineSleep: %s Found Sleep Proxy Server TTL %d %s", intf->ifname, cr->resrec.rroriginalttl, CRDisplayString(m, cr));
+				LogSPS("mDNSCoreMachineSleep: %6s Found Sleep Proxy Server TTL %d %s", intf->ifname, cr->resrec.rroriginalttl, CRDisplayString(m, cr));
 				FoundSPS = mDNStrue;
 				intf->SPSAddr.type = mDNSAddrType_None;
 				if (intf->NetWakeResolve.ThisQInterval >= 0) mDNS_StopQuery(m, &intf->NetWakeResolve);

@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.632  2009/02/13 19:40:07  cheshire
+Improved alignment of LogSPS messages
+
 Revision 1.631  2009/02/13 18:16:05  cheshire
 Fixed some compile warnings
 
@@ -2781,7 +2784,7 @@ mDNSlocal mDNSBool NetWakeInterface(NetworkInterfaceInfoOSX *i)
 
 	close(s);
 
-	LogSPS("%s %#a %s WOMP", i->ifinfo.ifname, &i->ifinfo.ip, (ifr.ifr_wake_flags & IF_WAKE_ON_MAGIC_PACKET) ? "supports" : "no");
+	LogSPS("%6s %#a %s WOMP", i->ifinfo.ifname, &i->ifinfo.ip, (ifr.ifr_wake_flags & IF_WAKE_ON_MAGIC_PACKET) ? "supports" : "no");
 
 	return((ifr.ifr_wake_flags & IF_WAKE_ON_MAGIC_PACKET) != 0);
 	}
