@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.46  2009/02/13 06:36:50  cheshire
+Update LogSPS definition
+
 Revision 1.45  2009/02/13 06:03:12  cheshire
 Added LogInfo for informational message logging
 
@@ -194,7 +197,7 @@ typedef enum
 #define IS_A_PRINTF_STYLE_FUNCTION(F,A)
 #endif
 
-#ifdef	__cplusplus
+#ifdef __cplusplus
 	extern "C" {
 #endif
 
@@ -202,25 +205,25 @@ typedef enum
 
 #if (defined(__GNUC__))
 	#if ((__GNUC__ > 3) || ((__GNUC__ == 3) && (__GNUC_MINOR__ >= 2)))
-		#define	MDNS_C99_VA_ARGS		1
-		#define	MDNS_GNU_VA_ARGS		0
+		#define MDNS_C99_VA_ARGS        1
+		#define MDNS_GNU_VA_ARGS        0
 	#else
-		#define	MDNS_C99_VA_ARGS		0
-		#define	MDNS_GNU_VA_ARGS		1
+		#define MDNS_C99_VA_ARGS        0
+		#define MDNS_GNU_VA_ARGS        1
 	#endif
-	#define	MDNS_HAS_VA_ARG_MACROS		1
+	#define MDNS_HAS_VA_ARG_MACROS      1
 #elif (_MSC_VER >= 1400) // Visual Studio 2005 and later
-	#define	MDNS_C99_VA_ARGS			1
-	#define	MDNS_GNU_VA_ARGS			0
-	#define	MDNS_HAS_VA_ARG_MACROS		1
+	#define MDNS_C99_VA_ARGS            1
+	#define MDNS_GNU_VA_ARGS            0
+	#define MDNS_HAS_VA_ARG_MACROS      1
 #elif (defined(__MWERKS__))
-	#define	MDNS_C99_VA_ARGS			1
-	#define	MDNS_GNU_VA_ARGS			0
-	#define	MDNS_HAS_VA_ARG_MACROS		1
+	#define MDNS_C99_VA_ARGS            1
+	#define MDNS_GNU_VA_ARGS            0
+	#define MDNS_HAS_VA_ARG_MACROS      1
 #else
-	#define	MDNS_C99_VA_ARGS			0
-	#define	MDNS_GNU_VA_ARGS			0
-	#define	MDNS_HAS_VA_ARG_MACROS		0
+	#define MDNS_C99_VA_ARGS            0
+	#define MDNS_GNU_VA_ARGS            0
+	#define MDNS_HAS_VA_ARG_MACROS      0
 #endif
 
 #if MDNS_DEBUGMSGS
@@ -228,7 +231,7 @@ typedef enum
 extern void debugf_(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
 #else // If debug breaks are off, use a preprocessor trick to optimize those calls out of the code
 	#if (MDNS_C99_VA_ARGS)
-		#define	debugf( ... ) ((void)0)
+		#define debugf( ... ) ((void)0)
 	#elif (MDNS_GNU_VA_ARGS)
 		#define	debugf( ARGS... ) ((void)0)
 	#else
@@ -241,9 +244,9 @@ extern void debugf_(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
 extern void verbosedebugf_(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
 #else
 	#if (MDNS_C99_VA_ARGS)
-		#define	verbosedebugf( ... ) ((void)0)
+		#define verbosedebugf( ... ) ((void)0)
 	#elif (MDNS_GNU_VA_ARGS)
-		#define	verbosedebugf( ARGS... ) ((void)0)
+		#define verbosedebugf( ARGS... ) ((void)0)
 	#else
 		#define verbosedebugf 1 ? ((void)0) : (void)
 	#endif
@@ -273,22 +276,22 @@ extern void udns_validatelists(void *const v);
 #if LogClientOperations
 #define LogOperation LogMsg
 #else
-#define	LogOperation debugf
+#define LogOperation debugf
 #endif
 
 #if LogInfoMessages
 #define LogInfo LogMsg
 #else
-#define	LogInfo debugf
+#define LogInfo debugf
 #endif
 
 #if LogSleepProxyActions
 #define LogSPS LogMsg
 #else
-#define LogSPS LogOperation
+#define LogSPS debugf
 #endif
 
-#ifdef	__cplusplus
+#ifdef __cplusplus
 	}
 #endif
 
