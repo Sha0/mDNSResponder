@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.436  2009/02/13 06:28:02  cheshire
+Converted LogOperation messages to LogInfo
+
 Revision 1.435  2009/02/12 20:57:26  cheshire
 Renamed 'LogAllOperation' switch to 'LogClientOperations'; added new 'LogSleepProxyActions' switch
 
@@ -1066,8 +1069,8 @@ mDNSlocal void abort_request(request_state *req)
 	// Now, if this request_state is not subordinate to some other primary, close file descriptor and discard replies
 	if (!req->primary)
 		{
-		if (req->errsd != req->sd) LogOperation("%3d: Removing FD and closing errsd %d", req->sd, req->errsd);
-		else                       LogOperation("%3d: Removing FD", req->sd);
+		if (req->errsd != req->sd) LogInfo("%3d: Removing FD and closing errsd %d", req->sd, req->errsd);
+		else                       LogInfo("%3d: Removing FD", req->sd);
 		udsSupportRemoveFDFromEventLoop(req->sd);		// Note: This also closes file descriptor req->sd for us
 		if (req->errsd != req->sd) { dnssd_close(req->errsd); req->errsd = req->sd; }
 
@@ -1319,7 +1322,7 @@ mDNSexport void FreeExtraRR(mDNS *const m, AuthRecord *const rr, mStatus result)
 
 	if (result != mStatus_MemFree) { LogMsg("Error: FreeExtraRR invoked with unexpected error %d", result); return; }
 
-	LogOperation("     FreeExtraRR %s", RRDisplayString(m, &rr->resrec));
+	LogInfo("     FreeExtraRR %s", RRDisplayString(m, &rr->resrec));
 
 	if (rr->resrec.rdata != &rr->rdatastorage)
 		freeL("Extra RData", rr->resrec.rdata);
@@ -3700,7 +3703,7 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 		send_all(req->errsd, (const char *)&err_netorder, sizeof(err_netorder));
 		if (req->errsd != req->sd)
 			{
-			LogOperation("%3d: Error socket %d closed  %08X %08X (%d)",
+			LogInfo("%3d: Error socket %d closed  %08X %08X (%d)",
 				req->sd, req->errsd, req->hdr.client_context.u32[1], req->hdr.client_context.u32[0], err);
 			dnssd_close(req->errsd);
 			req->errsd = req->sd;
@@ -3780,7 +3783,7 @@ mDNSexport int udsserver_init(dnssd_sock_t skt)
 	u_long opt = 1;
 #endif
 
-	LogOperation("udsserver_init");
+	LogInfo("udsserver_init");
 
 	// If a particular platform wants to opt out of having a PID file, define PID_FILE to be ""
 	if (PID_FILE[0])
