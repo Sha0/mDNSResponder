@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.630  2009/02/13 06:32:43  cheshire
+Converted LogOperation messages to LogInfo or LogSPS
+
 Revision 1.629  2009/02/12 20:57:26  cheshire
 Renamed 'LogAllOperation' switch to 'LogClientOperations'; added new 'LogSleepProxyActions' switch
 
@@ -1265,7 +1268,7 @@ mDNSexport mDNSInterfaceID mDNSPlatformInterfaceIDfromInterfaceIndex(mDNS *const
 		if (i->ifinfo.InterfaceID && i->scope_id == ifindex) return(i->ifinfo.InterfaceID);
 
 	// Not found. Make sure our interface list is up to date, then try again.
-	LogOperation("InterfaceID for interface index %d not found; Updating interface list", ifindex);
+	LogInfo("InterfaceID for interface index %d not found; Updating interface list", ifindex);
 	mDNSMacOSXNetworkChanged(m);
 	for (i = m->p->InterfaceList; i; i = i->next)
 		if (i->ifinfo.InterfaceID && i->scope_id == ifindex) return(i->ifinfo.InterfaceID);
@@ -1284,7 +1287,7 @@ mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(mDNS *const m, mDNS
 		if ((mDNSInterfaceID)i == id) return(i->scope_id);
 
 	// Not found. Make sure our interface list is up to date, then try again.
-	LogOperation("Interface index for InterfaceID %p not found; Updating interface list", id);
+	LogInfo("Interface index for InterfaceID %p not found; Updating interface list", id);
 	mDNSMacOSXNetworkChanged(m);
 	for (i = m->p->InterfaceList; i; i = i->next)
 		if ((mDNSInterfaceID)i == id) return(i->scope_id);
@@ -1346,7 +1349,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 				{
 				#ifdef IP_BOUND_IF
 					if (info->scope_id == 0)
-						LogOperation("IP_BOUND_IF socket option not set -- info %p (%s) scope_id is zero", info, ifa_name);
+						LogInfo("IP_BOUND_IF socket option not set -- info %p (%s) scope_id is zero", info, ifa_name);
 					else
 						setsockopt(s, IPPROTO_IP, IP_BOUND_IF, &info->scope_id, sizeof(info->scope_id));
 				#else
@@ -1355,7 +1358,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 					if (displayed < 1000)
 						{
 						displayed++;
-						LogOperation("IP_BOUND_IF socket option not defined -- cannot specify interface for unicast packets");
+						LogInfo("IP_BOUND_IF socket option not defined -- cannot specify interface for unicast packets");
 						}
 					}
 				#endif
@@ -1557,7 +1560,7 @@ mDNSlocal void myKQSocketCallBack(int s1, short filter, void *context)
 			senderAddr.type = mDNSAddrType_IPv4;
 			senderAddr.ip.v4.NotAnInteger = s->sin_addr.s_addr;
 			senderPort.NotAnInteger = s->sin_port;
-			//LogOperation("myKQSocketCallBack received IPv4 packet from %#-15a to %#-15a on skt %d %s", &senderAddr, &destAddr, s1, packetifname);
+			//LogInfo("myKQSocketCallBack received IPv4 packet from %#-15a to %#-15a on skt %d %s", &senderAddr, &destAddr, s1, packetifname);
 			}
 		else if (from.ss_family == AF_INET6)
 			{
@@ -1565,7 +1568,7 @@ mDNSlocal void myKQSocketCallBack(int s1, short filter, void *context)
 			senderAddr.type = mDNSAddrType_IPv6;
 			senderAddr.ip.v6 = *(mDNSv6Addr*)&sin6->sin6_addr;
 			senderPort.NotAnInteger = sin6->sin6_port;
-			//LogOperation("myKQSocketCallBack received IPv6 packet from %#-15a to %#-15a on skt %d %s", &senderAddr, &destAddr, s1, packetifname);
+			//LogInfo("myKQSocketCallBack received IPv6 packet from %#-15a to %#-15a on skt %d %s", &senderAddr, &destAddr, s1, packetifname);
 			}
 		else
 			{
@@ -1765,7 +1768,7 @@ mDNSexport void KQueueUnlock(mDNS *const m, const char const *task)
 	mDNSs32 end = mDNSPlatformRawTime();
 	(void)task;
 	if (end - m->p->BigMutexStartTime >= WatchDogReportingThreshold)
-		LogOperation("WARNING: %s took %dms to complete", task, end - m->p->BigMutexStartTime);
+		LogInfo("WARNING: %s took %dms to complete", task, end - m->p->BigMutexStartTime);
 
 	pthread_mutex_unlock(&m->p->BigMutex);
 
@@ -2204,8 +2207,8 @@ mDNSexport UDPSocket *mDNSPlatformUDPSocket(mDNS *const m, const mDNSIPPort requ
 		// We also don't want to log about port 5350, due to a known bug when some other
 		// process is bound to it.
 		if (mDNSSameIPPort(requestedport, NATPMPPort) || mDNSSameIPPort(requestedport, NATPMPAnnouncementPort))
-			LogOperation("mDNSPlatformUDPSocket: SetupSocket %d failed error %ld errno %d (%s)", mDNSVal16(requestedport), err, errno, strerror(errno));
-		else LogMsg     ("mDNSPlatformUDPSocket: SetupSocket %d failed error %ld errno %d (%s)", mDNSVal16(requestedport), err, errno, strerror(errno));
+			LogInfo("mDNSPlatformUDPSocket: SetupSocket %d failed error %ld errno %d (%s)", mDNSVal16(requestedport), err, errno, strerror(errno));
+		else LogMsg("mDNSPlatformUDPSocket: SetupSocket %d failed error %ld errno %d (%s)", mDNSVal16(requestedport), err, errno, strerror(errno));
 		freeL("UDPSocket", p);
 		return(mDNSNULL);
 		}
@@ -2269,7 +2272,7 @@ mDNSexport void mDNSPlatformSetLocalARP(const mDNSv4Addr *const tpa, const mDNSE
 					makearp = mDNStrue;
 		}
 	if (!makearp)
-		LogOperation ("Don't need ARP entry for %s %.4a %.6a",            info->ifinfo.ifname, tpa, tha);
+		LogInfo("Don't need ARP entry for %s %.4a %.6a",            info->ifinfo.ifname, tpa, tha);
 	else
 		{
 		int result = mDNSSetARP(info->scope_id, tpa->b, tha->b);
@@ -2280,7 +2283,7 @@ mDNSexport void mDNSPlatformSetLocalARP(const mDNSv4Addr *const tpa, const mDNSE
 
 mDNSlocal void CloseBPF(NetworkInterfaceInfoOSX *const i)
 	{
-	LogOperation("%s closing BPF fd %d", i->ifinfo.ifname, i->BPF_fd);
+	LogInfo("%s closing BPF fd %d", i->ifinfo.ifname, i->BPF_fd);
 
 	// Note: MUST NOT close() the underlying native BSD sockets.
 	// CFSocketInvalidate() will do that for us, in its own good time, which may not necessarily be immediately, because
@@ -2309,7 +2312,7 @@ mDNSlocal void bpf_callback(const CFSocketRef cfs, const CFSocketCallBackType Ca
 
 	if (n<0)
 		{
-		LogOperation("Closing %s BPF fd %d due to error %d (%s)", info->ifinfo.ifname, info->BPF_fd, errno, strerror(errno));
+		LogInfo("Closing %s BPF fd %d due to error %d (%s)", info->ifinfo.ifname, info->BPF_fd, errno, strerror(errno));
 		CloseBPF(info);
 		goto exit;
 		}
@@ -2340,13 +2343,13 @@ mDNSexport void mDNSPlatformUpdateProxyList(mDNS *const m, const mDNSInterfaceID
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		if (rr->resrec.InterfaceID == InterfaceID && rr->AddressProxy.type == mDNSAddrType_IPv4)
 			{
-			LogOperation("mDNSPlatformUpdateProxyList: fd %d %-7s IP%2d %.4a", x->BPF_fd, x->ifinfo.ifname, numv4, &rr->AddressProxy.ip.v4);
+			LogSPS("mDNSPlatformUpdateProxyList: fd %d %-7s IP%2d %.4a", x->BPF_fd, x->ifinfo.ifname, numv4, &rr->AddressProxy.ip.v4);
 			numv4++;
 			}
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		if (rr->resrec.InterfaceID == InterfaceID && rr->AddressProxy.type == mDNSAddrType_IPv6)
 			{
-			LogOperation("mDNSPlatformUpdateProxyList: fd %d %-7s IP%2d %.16a", x->BPF_fd, x->ifinfo.ifname, numv6, &rr->AddressProxy.ip.v6);
+			LogSPS("mDNSPlatformUpdateProxyList: fd %d %-7s IP%2d %.16a", x->BPF_fd, x->ifinfo.ifname, numv6, &rr->AddressProxy.ip.v6);
 			numv6++;
 			}
 
@@ -2357,7 +2360,7 @@ mDNSexport void mDNSPlatformUpdateProxyList(mDNS *const m, const mDNSInterfaceID
 		numv6 = MAX_BPF_ADDRS - numv4;
 		}
 
-	LogOperation("mDNSPlatformUpdateProxyList: fd %d %-7s MAC  %.6a %d v4 %d v6", x->BPF_fd, x->ifinfo.ifname, &x->ifinfo.MAC, numv4, numv6);
+	LogSPS("mDNSPlatformUpdateProxyList: fd %d %-7s MAC  %.6a %d v4 %d v6", x->BPF_fd, x->ifinfo.ifname, &x->ifinfo.MAC, numv4, numv6);
 
 	// Caution: This is a static structure, so we need to be careful that any modifications we make to it
 	// are done in such a way that they work correctly when mDNSPlatformUpdateProxyList is called multiple times
@@ -2455,26 +2458,26 @@ mDNSexport void mDNSPlatformUpdateProxyList(mDNS *const m, const mDNSInterfaceID
 	// For debugging BPF filter program
 	unsigned int q;
 	for (q=0; q<prog.bf_len; q++)
-		LogOperation("mDNSPlatformUpdateProxyList: %2d { 0x%02x, %d, %d, 0x%08x },", q, prog.bf_insns[q].code, prog.bf_insns[q].jt, prog.bf_insns[q].jf, prog.bf_insns[q].k);
+		LogSPS("mDNSPlatformUpdateProxyList: %2d { 0x%02x, %d, %d, 0x%08x },", q, prog.bf_insns[q].code, prog.bf_insns[q].jt, prog.bf_insns[q].jf, prog.bf_insns[q].k);
 #endif
 
 	if (!numv4 && !numv6)
 		{
-		LogOperation("mDNSPlatformUpdateProxyList: No need for filter");
+		LogSPS("mDNSPlatformUpdateProxyList: No need for filter");
 		// prog.bf_len = 0; This seems to panic the kernel
 		}
 
 	if (ioctl(x->BPF_fd, BIOCSETF, &prog) < 0) LogMsg("mDNSPlatformUpdateProxyList: BIOCSETF(%d) failed %d (%s)", prog.bf_len, errno, strerror(errno));
-	else LogOperation("mDNSPlatformUpdateProxyList: BIOCSETF(%d) successful", prog.bf_len);
+	else LogSPS("mDNSPlatformUpdateProxyList: BIOCSETF(%d) successful", prog.bf_len);
 	}
 
 mDNSexport void mDNSPlatformReceiveBPF_fd(mDNS *const m, int fd)
 	{
 	NetworkInterfaceInfoOSX *i;
 	for (i = m->p->InterfaceList; i; i = i->next) if (i->BPF_fd == -2) break;
-	if (!i) { LogOperation("mDNSPlatformReceiveBPF_fd: No Interfaces awaiting BPF fd %d; closing", fd); close(fd); return; }
+	if (!i) { LogSPS("mDNSPlatformReceiveBPF_fd: No Interfaces awaiting BPF fd %d; closing", fd); close(fd); return; }
 
-	LogOperation("%s using   BPF fd %d", i->ifinfo.ifname, fd);
+	LogSPS("%s using   BPF fd %d", i->ifinfo.ifname, fd);
 
 	struct bpf_version v;
 	if (ioctl(fd, BIOCVERSION, &v) < 0)
@@ -2491,7 +2494,7 @@ mDNSexport void mDNSPlatformReceiveBPF_fd(mDNS *const m, int fd)
 		i->BPF_len = sizeof(m->imsg);
 		if (ioctl(fd, BIOCSBLEN, &i->BPF_len) < 0)
 			LogMsg("mDNSPlatformReceiveBPF_fd: %d %s BIOCSBLEN failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno));
-		else LogOperation("mDNSPlatformReceiveBPF_fd: %d %s BIOCSBLEN %d", i->BPF_len);
+		else LogSPS("mDNSPlatformReceiveBPF_fd: %d %s BIOCSBLEN %d", i->BPF_len);
 		}
 
 	static const u_int opt_immediate = 1;
@@ -2775,7 +2778,7 @@ mDNSlocal mDNSBool NetWakeInterface(NetworkInterfaceInfoOSX *i)
 
 	close(s);
 
-	LogOperation("%s %#a %s WOMP", i->ifinfo.ifname, &i->ifinfo.ip, (ifr.ifr_wake_flags & IF_WAKE_ON_MAGIC_PACKET) ? "supports" : "no");
+	LogSPS("%s %#a %s WOMP", i->ifinfo.ifname, &i->ifinfo.ip, (ifr.ifr_wake_flags & IF_WAKE_ON_MAGIC_PACKET) ? "supports" : "no");
 
 	return((ifr.ifr_wake_flags & IF_WAKE_ON_MAGIC_PACKET) != 0);
 	}
@@ -2878,7 +2881,7 @@ mDNSlocal void RemoveAutoTunnelDomainStatus(const mDNS *const m, const DomainAut
 	char buffer[1024];
 	CFStringRef domain;
 
-	LogOperation("RemoveAutoTunnelDomainStatus: %##s", info->domain.c);
+	LogInfo("RemoveAutoTunnelDomainStatus: %##s", info->domain.c);
 
 	if (!domainStatusDict) { LogMsg("RemoveAutoTunnelDomainStatus: No domainStatusDict"); return; }
 	
@@ -3147,7 +3150,7 @@ mDNSlocal void RegisterAutoTunnelRecords(mDNS *m, DomainAuthInfo *info)
 	if (info->AutoTunnelNAT.clientContext && !info->AutoTunnelNAT.Result && !mDNSIPPortIsZero(info->AutoTunnelNAT.ExternalPort) && AutoTunnelUnregistered(info))
 		{
 		mStatus err;
-		LogOperation("RegisterAutoTunnelRecords %##s (%#s)", info->domain.c, m->hostlabel.c);
+		LogInfo("RegisterAutoTunnelRecords %##s (%#s)", info->domain.c, m->hostlabel.c);
 
 		// 1. Set up our address record for the internal tunnel address
 		// (User-visible user-friendly host name, used as target in AutoTunnel SRV records)
@@ -3193,7 +3196,7 @@ mDNSlocal void RegisterAutoTunnelRecords(mDNS *m, DomainAuthInfo *info)
 		err = mDNS_Register(m, &info->AutoTunnelService);
 		if (err) LogMsg("RegisterAutoTunnelRecords error %d registering AutoTunnelService %##s", err, info->AutoTunnelService.namestorage.c);
 
-		LogOperation("AutoTunnel server listening for connections on %##s[%.4a]:%d:%##s[%.16a]",
+		LogInfo("AutoTunnel server listening for connections on %##s[%.4a]:%d:%##s[%.16a]",
 			info->AutoTunnelTarget.namestorage.c,     &m->AdvertisedV4.ip.v4, mDNSVal16(info->AutoTunnelNAT.IntPort),
 			info->AutoTunnelHostRecord.namestorage.c, &m->AutoTunnelHostAddr);
 		}
@@ -3201,7 +3204,7 @@ mDNSlocal void RegisterAutoTunnelRecords(mDNS *m, DomainAuthInfo *info)
 
 mDNSlocal void DeregisterAutoTunnelRecords(mDNS *m, DomainAuthInfo *info)
 	{
-	LogOperation("DeregisterAutoTunnelRecords %##s", info->domain.c);
+	LogInfo("DeregisterAutoTunnelRecords %##s", info->domain.c);
 	if (info->AutoTunnelService.resrec.RecordType > kDNSRecordTypeDeregistering)
 		{
 		mStatus err = mDNS_Deregister(m, &info->AutoTunnelService);
@@ -3242,7 +3245,7 @@ mDNSlocal void AutoTunnelRecordCallback(mDNS *const m, AuthRecord *const rr, mSt
 	DomainAuthInfo *info = (DomainAuthInfo *)rr->RecordContext;
 	if (result == mStatus_MemFree)
 		{
-		LogOperation("AutoTunnelRecordCallback MemFree %s", ARDisplayString(m, rr));
+		LogInfo("AutoTunnelRecordCallback MemFree %s", ARDisplayString(m, rr));
 		// Reset the host record namestorage to force high-level PTR/SRV/TXT to deregister
 		if (rr == &info->AutoTunnelHostRecord)
 			{
@@ -3256,7 +3259,7 @@ mDNSlocal void AutoTunnelRecordCallback(mDNS *const m, AuthRecord *const rr, mSt
 mDNSlocal void AutoTunnelNATCallback(mDNS *m, NATTraversalInfo *n)
 	{
 	DomainAuthInfo *info = (DomainAuthInfo *)n->clientContext;
-	LogOperation("AutoTunnelNATCallback Result %d %.4a Internal %d External %d %#s.%##s",
+	LogInfo("AutoTunnelNATCallback Result %d %.4a Internal %d External %d %#s.%##s",
 		n->Result, &n->ExternalAddress, mDNSVal16(n->IntPort), mDNSVal16(n->ExternalPort), m->hostlabel.c, info->domain.c);
 
 	m->NextSRVUpdate = NonZeroTime(m->timenow);
@@ -3282,7 +3285,7 @@ mDNSlocal void AbortDeregistration(mDNS *const m, AuthRecord *rr)
 	{
 	if (rr->resrec.RecordType == kDNSRecordTypeDeregistering)
 		{
-		LogOperation("Aborting deregistration of %s", ARDisplayString(m, rr));
+		LogInfo("Aborting deregistration of %s", ARDisplayString(m, rr));
 		CompleteDeregistration(m, rr);
 		}
 	else if (rr->resrec.RecordType != kDNSRecordTypeUnregistered)
@@ -3294,13 +3297,13 @@ mDNSlocal void AbortDeregistration(mDNS *const m, AuthRecord *rr)
 // Must be called with the lock held
 mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 	{
-	LogOperation("SetupLocalAutoTunnelInterface");
+	LogInfo("SetupLocalAutoTunnelInterface");
 
 	// 1. Configure the local IPv6 address
 	if (!m->AutoTunnelHostAddrActive)
 		{
 		m->AutoTunnelHostAddrActive = mDNStrue;
-		LogOperation("Setting up AutoTunnel address %.16a", &m->AutoTunnelHostAddr);
+		LogInfo("Setting up AutoTunnel address %.16a", &m->AutoTunnelHostAddr);
 		(void)mDNSAutoTunnelInterfaceUpDown(kmDNSUp, m->AutoTunnelHostAddr.b);
 		}
 
@@ -3351,7 +3354,7 @@ mDNSlocal void ReissueBlockedQuestionWithType(mDNS *const m, domainname *d, mDNS
 		{
 		if (q->NoAnswer == NoAnswer_Suspended && q->qtype == qtype && q->AuthInfo && q->AuthInfo->AutoTunnel && SameDomainName(&q->qname, d))
 			{
-			LogOperation("Restart %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+			LogInfo("Restart %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 			mDNSQuestionCallback *tmp = q->QuestionCallback;
 			q->QuestionCallback = AutoTunnelCallback;	// Set QuestionCallback to suppress another call back to AddNewClientTunnel
 			mDNS_StopQuery(m, q);
@@ -3388,21 +3391,21 @@ mDNSlocal void UnlinkAndReissueBlockedQuestions(mDNS *const m, ClientTunnel *tun
 	while (*p != tun && *p) p = &(*p)->next;
 	if (*p) *p = tun->next;
 	ReissueBlockedQuestions(m, &tun->dstname, success);
-	LogOperation("UnlinkAndReissueBlockedQuestions: Disposing ClientTunnel %p", tun);
+	LogInfo("UnlinkAndReissueBlockedQuestions: Disposing ClientTunnel %p", tun);
 	freeL("ClientTunnel", tun);
 	}
 
 mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
 	ClientTunnel *tun = (ClientTunnel *)question->QuestionContext;
-	LogOperation("AutoTunnelCallback tun %p AddRecord %d rdlength %d qtype %d", tun, AddRecord, answer->rdlength, question->qtype);
+	LogInfo("AutoTunnelCallback tun %p AddRecord %d rdlength %d qtype %d", tun, AddRecord, answer->rdlength, question->qtype);
 
 	if (!AddRecord) return;
 	mDNS_StopQuery(m, question);
 
 	if (!answer->rdlength)
 		{
-		LogOperation("AutoTunnelCallback NXDOMAIN %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
+		LogInfo("AutoTunnelCallback NXDOMAIN %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
 		UnlinkAndReissueBlockedQuestions(m, tun, mDNSfalse);
 		return;
 		}
@@ -3411,13 +3414,13 @@ mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const R
 		{
 		if (mDNSSameIPv6Address(answer->rdata->u.ipv6, m->AutoTunnelHostAddr))
 			{
-			LogOperation("AutoTunnelCallback: suppressing tunnel to self %.16a", &answer->rdata->u.ipv6);
+			LogInfo("AutoTunnelCallback: suppressing tunnel to self %.16a", &answer->rdata->u.ipv6);
 			UnlinkAndReissueBlockedQuestions(m, tun, mDNStrue);
 			return;
 			}
 
 		tun->rmt_inner = answer->rdata->u.ipv6;
-		LogOperation("AutoTunnelCallback: dst host %.16a", &tun->rmt_inner);
+		LogInfo("AutoTunnelCallback: dst host %.16a", &tun->rmt_inner);
 		AssignDomainName(&question->qname, (const domainname*) "\x0B" "_autotunnel" "\x04" "_udp");
 		AppendDomainName(&question->qname, &tun->dstname);
 		question->qtype = kDNSType_SRV;
@@ -3425,7 +3428,7 @@ mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const R
 		}
 	else if (question->qtype == kDNSType_SRV)
 		{
-		LogOperation("AutoTunnelCallback: SRV target name %##s", answer->rdata->u.srv.target.c);
+		LogInfo("AutoTunnelCallback: SRV target name %##s", answer->rdata->u.srv.target.c);
 		AssignDomainName(&tun->q.qname, &answer->rdata->u.srv.target);
 		tun->rmt_outer_port = answer->rdata->u.srv.port;
 		question->qtype = kDNSType_A;
@@ -3434,7 +3437,7 @@ mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const R
 	else if (question->qtype == kDNSType_A)
 		{
 		ClientTunnel *old = mDNSNULL;
-		LogOperation("AutoTunnelCallback: SRV target addr %.4a", &answer->rdata->u.ipv4);
+		LogInfo("AutoTunnelCallback: SRV target addr %.4a", &answer->rdata->u.ipv4);
 		question->ThisQInterval = -1;		// So we know this tunnel setup has completed
 		tun->rmt_outer = answer->rdata->u.ipv4;
 		tun->loc_inner = m->AutoTunnelHostAddr;
@@ -3452,7 +3455,7 @@ mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const R
 			if (!mDNSSameClientTunnel(&(*p)->rmt_inner, &tun->rmt_inner)) p = &(*p)->next;
 			else
 				{
-				LogOperation("Found existing AutoTunnel for %##s %.16a", tun->dstname.c, &tun->rmt_inner);
+				LogInfo("Found existing AutoTunnel for %##s %.16a", tun->dstname.c, &tun->rmt_inner);
 				old = *p;
 				*p = old->next;
 				if (old->q.ThisQInterval >= 0) mDNS_StopQuery(m, &old->q);
@@ -3462,17 +3465,17 @@ mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const R
 						 !mDNSSameIPv4Address(old->rmt_outer, tun->rmt_outer) ||
 						 !mDNSSameIPPort(old->rmt_outer_port, tun->rmt_outer_port))
 					{
-					LogOperation("Deleting existing AutoTunnel for %##s %.16a", tun->dstname.c, &tun->rmt_inner);
+					LogInfo("Deleting existing AutoTunnel for %##s %.16a", tun->dstname.c, &tun->rmt_inner);
 					AutoTunnelSetKeys(old, mDNSfalse);
 					}
 				else needSetKeys = mDNSfalse;
 
-				LogOperation("AutoTunnelCallback: Disposing ClientTunnel %p", tun);
+				LogInfo("AutoTunnelCallback: Disposing ClientTunnel %p", tun);
 				freeL("ClientTunnel", old);
 				}
 			}
 
-		if (needSetKeys) LogOperation("New AutoTunnel for %##s %.16a", tun->dstname.c, &tun->rmt_inner);
+		if (needSetKeys) LogInfo("New AutoTunnel for %##s %.16a", tun->dstname.c, &tun->rmt_inner);
 
 		if (m->AutoTunnelHostAddr.b[0]) { mDNS_Lock(m); SetupLocalAutoTunnelInterface_internal(m); mDNS_Unlock(m); };
 
@@ -3512,7 +3515,7 @@ mDNSexport void AddNewClientTunnel(mDNS *const m, DNSQuestion *const q)
 	p->q.QuestionCallback = AutoTunnelCallback;
 	p->q.QuestionContext  = p;
 
-	LogOperation("AddNewClientTunnel start tun %p %##s (%s)%s", p, &q->qname.c, DNSTypeName(q->qtype), q->LongLived ? " LongLived" : "");
+	LogInfo("AddNewClientTunnel start tun %p %##s (%s)%s", p, &q->qname.c, DNSTypeName(q->qtype), q->LongLived ? " LongLived" : "");
 	mDNS_StartQuery_internal(m, &p->q);
 	}
 
@@ -3679,7 +3682,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 		m->AutoTunnelLabel.c[0] = mDNS_snprintf((char*)m->AutoTunnelLabel.c+1, 254, "AutoTunnel-%02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X",
 			m->AutoTunnelHostAddr.b[0x8], m->AutoTunnelHostAddr.b[0x9], m->AutoTunnelHostAddr.b[0xA], m->AutoTunnelHostAddr.b[0xB],
 			m->AutoTunnelHostAddr.b[0xC], m->AutoTunnelHostAddr.b[0xD], m->AutoTunnelHostAddr.b[0xE], m->AutoTunnelHostAddr.b[0xF]);
-		LogOperation("m->AutoTunnelLabel %#s", m->AutoTunnelLabel.c);
+		LogInfo("m->AutoTunnelLabel %#s", m->AutoTunnelLabel.c);
 		}
 	
 	mDNS_snprintf(defaultname, sizeof(defaultname), "%.*s-%02X%02X%02X%02X%02X%02X", HINFO_HWstring_prefixlen, HINFO_HWstring,
@@ -3793,7 +3796,7 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 
 				mDNS_RegisterInterface(m, n, i->Flashing && i->Occulting);
 				if (!mDNSAddressIsLinkLocal(&n->ip)) count++;
-				LogOperation("SetupActiveInterfaces:   Registered    %5s(%lu) %.6a InterfaceID %p %#a/%d%s%s%s",
+				LogInfo("SetupActiveInterfaces:   Registered    %5s(%lu) %.6a InterfaceID %p %#a/%d%s%s%s",
 					i->ifinfo.ifname, i->scope_id, &i->BSSID, primary, &n->ip, CountMaskBits(&n->mask),
 					i->Flashing        ? " (Flashing)"  : "",
 					i->Occulting       ? " (Occulting)" : "",
@@ -3822,13 +3825,13 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 						// <rdar://problem/5585972> IP_ADD_MEMBERSHIP fails for previously-connected removable interfaces
 						if (SearchForInterfaceByName(m, i->ifinfo.ifname, AF_INET) == i)
 							{
-							LogOperation("SetupActiveInterfaces: %5s(%lu) Doing precautionary IP_DROP_MEMBERSHIP for %.4a on %.4a", i->ifinfo.ifname, i->scope_id, &imr.imr_multiaddr, &imr.imr_interface);
+							LogInfo("SetupActiveInterfaces: %5s(%lu) Doing precautionary IP_DROP_MEMBERSHIP for %.4a on %.4a", i->ifinfo.ifname, i->scope_id, &imr.imr_multiaddr, &imr.imr_interface);
 							mStatus err = setsockopt(m->p->permanentsockets.sktv4, IPPROTO_IP, IP_DROP_MEMBERSHIP, &imr, sizeof(imr));
 							if (err < 0 && (errno != EADDRNOTAVAIL))
 								LogMsg("setsockopt - IP_DROP_MEMBERSHIP error %ld errno %d (%s)", err, errno, strerror(errno));
 							}
 	
-						LogOperation("SetupActiveInterfaces: %5s(%lu) joining IPv4 mcast group %.4a on %.4a", i->ifinfo.ifname, i->scope_id, &imr.imr_multiaddr, &imr.imr_interface);
+						LogInfo("SetupActiveInterfaces: %5s(%lu) joining IPv4 mcast group %.4a on %.4a", i->ifinfo.ifname, i->scope_id, &imr.imr_multiaddr, &imr.imr_interface);
 						mStatus err = setsockopt(m->p->permanentsockets.sktv4, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imr, sizeof(imr));
 						// Joining same group twice can give "Address already in use" error -- no need to report that
 						if (err < 0 && (errno != EADDRINUSE))
@@ -3843,13 +3846,13 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 	
 						if (SearchForInterfaceByName(m, i->ifinfo.ifname, AF_INET6) == i)
 							{
-							LogOperation("SetupActiveInterfaces: %5s(%lu) Doing precautionary IPV6_LEAVE_GROUP for %.16a on %u", i->ifinfo.ifname, i->scope_id, &i6mr.ipv6mr_multiaddr, i6mr.ipv6mr_interface);
+							LogInfo("SetupActiveInterfaces: %5s(%lu) Doing precautionary IPV6_LEAVE_GROUP for %.16a on %u", i->ifinfo.ifname, i->scope_id, &i6mr.ipv6mr_multiaddr, i6mr.ipv6mr_interface);
 							mStatus err = setsockopt(m->p->permanentsockets.sktv6, IPPROTO_IPV6, IPV6_LEAVE_GROUP, &i6mr, sizeof(i6mr));
 							if (err < 0 && (errno != EADDRNOTAVAIL))
 								LogMsg("setsockopt - IPV6_LEAVE_GROUP error %ld errno %d (%s) group %.16a on %u", err, errno, strerror(errno), &i6mr.ipv6mr_multiaddr, i6mr.ipv6mr_interface);
 							}
 	
-						LogOperation("SetupActiveInterfaces: %5s(%lu) joining IPv6 mcast group %.16a on %u", i->ifinfo.ifname, i->scope_id, &i6mr.ipv6mr_multiaddr, i6mr.ipv6mr_interface);
+						LogInfo("SetupActiveInterfaces: %5s(%lu) joining IPv6 mcast group %.16a on %u", i->ifinfo.ifname, i->scope_id, &i6mr.ipv6mr_multiaddr, i6mr.ipv6mr_interface);
 						mStatus err = setsockopt(m->p->permanentsockets.sktv6, IPPROTO_IPV6, IPV6_JOIN_GROUP, &i6mr, sizeof(i6mr));
 						// Joining same group twice can give "Address already in use" error -- no need to report that
 						if (err < 0 && (errno != EADDRINUSE))
@@ -3891,7 +3894,7 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m, mDNSs32 utc)
 			if (i->Exists == 0 || i->Exists == 2 || i->ifinfo.InterfaceID != (mDNSInterfaceID)primary)
 				{
 				i->Flashing = !(i->ifa_flags & IFF_LOOPBACK) && (utc - i->AppearanceTime < 60);
-				LogOperation("ClearInactiveInterfaces: Deregistering %5s(%lu) %.6a InterfaceID %p %#a/%d%s%s%s",
+				LogInfo("ClearInactiveInterfaces: Deregistering %5s(%lu) %.6a InterfaceID %p %#a/%d%s%s%s",
 					i->ifinfo.ifname, i->scope_id, &i->BSSID, i->ifinfo.InterfaceID,
 					&i->ifinfo.ip, CountMaskBits(&i->ifinfo.mask),
 					i->Flashing               ? " (Flashing)"  : "",
@@ -3920,7 +3923,7 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m, mDNSs32 utc)
 			{
 			if (i->LastSeen == utc) i->LastSeen = utc - 1;
 			mDNSBool delete = (NumCacheRecordsForInterfaceID(m, (mDNSInterfaceID)i) == 0) && (utc - i->LastSeen >= 60);
-			LogOperation("ClearInactiveInterfaces: %-13s %5s(%lu) %.6a InterfaceID %p %#a/%d Age %d%s", delete ? "Deleting" : "Holding",
+			LogInfo("ClearInactiveInterfaces: %-13s %5s(%lu) %.6a InterfaceID %p %#a/%d Age %d%s", delete ? "Deleting" : "Holding",
 				i->ifinfo.ifname, i->scope_id, &i->BSSID, i->ifinfo.InterfaceID,
 				&i->ifinfo.ip, CountMaskBits(&i->ifinfo.mask), utc - i->LastSeen,
 				i->ifinfo.InterfaceActive ? " (Primary)" : "");
@@ -4072,7 +4075,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 									strlcpy(ifname, currentOption + sizeof(kInterfaceSpecificOption)-1, sizeof(ifname));
 									ifindex = if_nametoindex(ifname);
 									if (ifindex == 0) { disabled = 1; LogMsg("RegisterSplitDNS: interfaceSpecific - interface %s not found", ifname); continue; }
-									LogOperation("%s: Interface-specific entry: %s on %s (%d)", __FUNCTION__, r->domain, ifname, ifindex);
+									LogInfo("%s: Interface-specific entry: %s on %s (%d)", __FUNCTION__, r->domain, ifname, ifindex);
 									// Find the interface, can't use mDNSPlatformInterfaceIDFromInterfaceIndex
 									// because that will call mDNSMacOSXNetworkChanged if the interface doesn't exist
 									for (ni = m->p->InterfaceList; ni; ni = ni->next)
@@ -4231,7 +4234,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 				CFDictionaryGetKeysAndValues(btmm, key, val);
 				for (i = 0; i < size; i++)
 					{
-					LogOperation("BackToMyMac %d", i);
+					LogInfo("BackToMyMac %d", i);
 					if (!CFStringGetCString(key[i], buf, sizeof(buf), kCFStringEncodingUTF8))
 						LogMsg("Can't read BackToMyMac %d key %s", i, buf);
 					else
@@ -4241,7 +4244,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 							LogMsg("Can't read BackToMyMac %d val %s", i, buf);
 						else if (MakeDomainNameFromDNSNameString(&d, buf) && d.c[0])
 							{
-							LogOperation("BackToMyMac %d %d %##s", i, uid, d.c);
+							LogInfo("BackToMyMac %d %d %##s", i, uid, d.c);
 							AppendDNameListElem(&RegDomains, uid, &d);
 							}
 						}
@@ -4389,7 +4392,7 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS *const m, mDNSAddr *v4, 
 
 mDNSexport void mDNSPlatformDynDNSHostNameStatusChanged(const domainname *const dname, const mStatus status)
 	{
-	LogOperation("mDNSPlatformDynDNSHostNameStatusChanged %d %##s", status, dname->c);
+	LogInfo("mDNSPlatformDynDNSHostNameStatusChanged %d %##s", status, dname->c);
 	char uname[MAX_ESCAPED_DOMAIN_NAME];	// Max legal C-string name, including terminating NUL
 	ConvertDomainNameToCString(dname, uname);
 
@@ -4450,7 +4453,7 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 #else
 	mDNSBool	haveAutoTunnels = mDNSfalse;
 
-	LogOperation("SetDomainSecrets");
+	LogInfo("SetDomainSecrets");
 
 	// Rather than immediately deleting all keys now, we mark them for deletion in ten seconds.
 	// In the case where the user simultaneously removes their DDNS host name and the key
@@ -4467,7 +4470,7 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 	ClientTunnel *client;
 	for (client = m->TunnelClients; client; client = client->next)
 		{
-		LogOperation("SetDomainSecrets: tunnel to %##s marked for deletion", client->dstname.c);
+		LogInfo("SetDomainSecrets: tunnel to %##s marked for deletion", client->dstname.c);
 		client->MarkedForDeletion = mDNStrue;
 		}
 	}
@@ -4539,13 +4542,13 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 				for (client = m->TunnelClients; client; client = client->next)
 					if (FoundInList == GetAuthInfoForName_internal(m, &client->dstname))
 					{
-					LogOperation("SetDomainSecrets: tunnel to %##s no longer marked for deletion", client->dstname.c);
+					LogInfo("SetDomainSecrets: tunnel to %##s no longer marked for deletion", client->dstname.c);
 					client->MarkedForDeletion = mDNSfalse;
 					// If the key has changed, reconfigure the tunnel
 					if (strncmp(stringbuf, client->b64keydata, sizeof(client->b64keydata)))
 						{
 						mDNSBool queryNotInProgress = client->q.ThisQInterval < 0;
-						LogOperation("SetDomainSecrets: secret changed for tunnel %##s %s", client->dstname.c, queryNotInProgress ? "reconfiguring" : "query in progress");
+						LogInfo("SetDomainSecrets: secret changed for tunnel %##s %s", client->dstname.c, queryNotInProgress ? "reconfiguring" : "query in progress");
 						if (queryNotInProgress) AutoTunnelSetKeys(client, mDNSfalse);
 						mDNS_snprintf(client->b64keydata, sizeof(client->b64keydata), "%s", stringbuf);
 						if (queryNotInProgress) AutoTunnelSetKeys(client, mDNStrue);
@@ -4559,7 +4562,7 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 
 			// Uncomment the line below to view the keys as they're read out of the system keychain
 			// DO NOT SHIP CODE THIS WAY OR YOU'LL LEAK SECRET DATA INTO A PUBLICLY READABLE FILE!
-			//LogOperation("SetDomainSecrets: %##s %##s %s", &domain.c, &keyname.c, stringbuf);
+			//LogInfo("SetDomainSecrets: %##s %##s %s", &domain.c, &keyname.c, stringbuf);
 
 			// If didn't find desired domain in the list, make a new entry
 			ptr = FoundInList;
@@ -4570,7 +4573,7 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 				if (!ptr) { LogMsg("SetDomainSecrets: No memory"); continue; }
 				}
 
-			LogOperation("SetDomainSecrets: %d of %d %##s", i, ArrayCount, &domain);
+			LogInfo("SetDomainSecrets: %d of %d %##s", i, ArrayCount, &domain);
 			if (mDNS_SetSecretForDomain(m, ptr, &domain, &keyname, stringbuf, IsTunnelModeDomain(&domain)) == mStatus_BadParamErr)
 				{
 				if (!FoundInList) mDNSPlatformMemFree(ptr);		// If we made a new DomainAuthInfo here, and it turned out bad, dispose it immediately
@@ -4580,7 +4583,7 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 #if APPLE_OSX_mDNSResponder
 			if (keyChanged && AnonymousRacoonConfig)
 				{
-				LogOperation("SetDomainSecrets: secret changed for %##s", &domain);
+				LogInfo("SetDomainSecrets: secret changed for %##s", &domain);
 				(void)mDNSConfigureServer(kmDNSUp, stringbuf);
 				}
 				
@@ -4605,7 +4608,7 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 			if ((*pp)->MarkedForDeletion)
 				{
 				ClientTunnel *cur = *pp;
-				LogOperation("SetDomainSecrets: removing client %p %##s from list", cur, cur->dstname.c);
+				LogInfo("SetDomainSecrets: removing client %p %##s from list", cur, cur->dstname.c);
 				if (cur->q.ThisQInterval >= 0) mDNS_StopQuery(m, &cur->q);
 				AutoTunnelSetKeys(cur, mDNSfalse);
 				*pp = cur->next;
@@ -4645,7 +4648,7 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 		if (!haveAutoTunnels && !m->TunnelClients && m->AutoTunnelHostAddrActive)
 			{
 			// remove interface if no autotunnel servers and no more client tunnels
-			LogOperation("SetDomainSecrets: Bringing tunnel interface DOWN");
+			LogInfo("SetDomainSecrets: Bringing tunnel interface DOWN");
 			m->AutoTunnelHostAddrActive = mDNSfalse;
 			(void)mDNSAutoTunnelInterfaceUpDown(kmDNSDown, m->AutoTunnelHostAddr.b);
 			mDNSPlatformMemZero(m->AutoTunnelHostAddr.b, sizeof(m->AutoTunnelHostAddr.b));
@@ -4847,7 +4850,7 @@ mDNSlocal void SetSPS(mDNS *const m)
 	// If we decide to let laptops act as Sleep Proxy, we should do it only when running on AC power, not on battery
 
 	if (sps != m->SPSType)
-		LogOperation("Sleep Proxy Server %d %d %d %d %s", sps, SPMetricPortability, SPMetricMarginalPower, SPMetricTotalPower,
+		LogInfo("Sleep Proxy Server %d %d %d %d %s", sps, SPMetricPortability, SPMetricMarginalPower, SPMetricTotalPower,
 			sps ? "starting" : "stopping");
 	mDNSCoreBeSleepProxyServer(m, sps, SPMetricPortability, SPMetricMarginalPower, SPMetricTotalPower);
 	}
@@ -4909,7 +4912,7 @@ mDNSlocal mDNSBool SystemWakeForNetworkAccess(void)
 
 mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 	{
-	LogOperation("***   Network Configuration Change   ***  (%d)%s",
+	LogInfo("***   Network Configuration Change   ***  (%d)%s",
 		m->p->NetworkChanged ? mDNS_TimeNow(m) - m->p->NetworkChanged : 0,
 		m->p->NetworkChanged ? "" : " (no scheduled configuration change)");
 	m->p->NetworkChanged = 0;		// If we received a network change event and deferred processing, we're now dealing with it
@@ -4966,7 +4969,7 @@ mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 				// Even if we've previously set up our BPF filter, we need to redo it,
 				// in case we've added, removed, or changed IPv4 addresses on this interface
 				// (actually not any more -- if the new design works properly, we can remove the above comment)
-				if (i->BPF_fd == -1) { LogOperation("%s requesting BPF", i->ifinfo.ifname); i->BPF_fd = -2; mDNSRequestBPF(); }
+				if (i->BPF_fd == -1) { LogSPS("%s requesting BPF", i->ifinfo.ifname); i->BPF_fd = -2; mDNSRequestBPF(); }
 				//else if (i->BPF_fd >= 0) mDNSPlatformUpdateProxyList(m, i);	// Not needed any more
 				}
 			}
@@ -5001,9 +5004,9 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 		{
 		char buf[256];
 		if (!CFStringGetCString(CFArrayGetValueAtIndex(changedKeys, i), buf, sizeof(buf), kCFStringEncodingUTF8)) buf[0] = 0;
-		LogOperation("***   NetworkChanged SC key: %s", buf);
+		LogInfo("***   NetworkChanged SC key: %s", buf);
 		}
-	LogOperation("***   NetworkChanged   *** %d change%s %s%s%sdelay %d",
+	LogInfo("***   NetworkChanged   *** %d change%s %s%s%sdelay %d",
 		c, c>1?"s":"",
 		c1 ? "(Local Hostname) " : "",
 		c2 ? "(Computer Name) "  : "",
@@ -5021,7 +5024,7 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 	// See <rdar://problem/5124399> Not getting Keychain Changed events when enabling BTMM
 	if (c3 || CFArrayContainsValue(changedKeys, range, NetworkChangedKey_BackToMyMac))
 		{
-		LogOperation("***   NetworkChanged   *** starting KeyChainBugTimer");
+		LogInfo("***   NetworkChanged   *** starting KeyChainBugTimer");
 		m->p->KeyChainBugTimer    = NonZeroTime(m->timenow + delay);
 		m->p->KeyChainBugInterval = mDNSPlatformOneSecond;
 		}
@@ -5097,7 +5100,7 @@ mDNSlocal void SysEventCallBack(int s1, short __unused filter, void *context)
 		LogMsg("SysEventCallBack: recv error %d errno %d (%s)", bytes, errno, strerror(errno));
 	else
 		{
-		LogOperation("SysEventCallBack got %d bytes size %d %X %s %X %s %X %s id %d code %d %s",
+		LogInfo("SysEventCallBack got %d bytes size %d %X %s %X %s %X %s id %d code %d %s",
 			bytes, msg.k.total_size,
 			msg.k.vendor_code , msg.k.vendor_code  == KEV_VENDOR_APPLE  ? "KEV_VENDOR_APPLE"  : "?",
 			msg.k.kev_class   , msg.k.kev_class    == KEV_NETWORK_CLASS ? "KEV_NETWORK_CLASS" : "?",
@@ -5162,7 +5165,7 @@ mDNSlocal mStatus WatchForSysEvents(mDNS *const m)
 #ifndef NO_SECURITYFRAMEWORK
 mDNSlocal OSStatus KeychainChanged(SecKeychainEvent keychainEvent, SecKeychainCallbackInfo *info, void *context)
 	{
-	LogOperation("***   Keychain Changed   ***");
+	LogInfo("***   Keychain Changed   ***");
 	mDNS *const m = (mDNS *const)context;
 	SecKeychainRef skc;
 	OSStatus err = SecKeychainCopyDefault(&skc);
@@ -5215,8 +5218,8 @@ mDNSlocal void PowerOn(mDNS *const m)
 		{
 		long utc = mDNSPlatformUTC();
 		mDNSPowerRequest(-1,-1);		// Need to explicitly clear any previous power requests -- they're not cleared automatically on wake
-		if      (m->p->WakeAtUTC - utc > 30) LogOperation("PowerChanged PowerOn %d seconds early, assuming not maintenance wake", m->p->WakeAtUTC - utc);
-		else if (utc - m->p->WakeAtUTC > 30) LogOperation("PowerChanged PowerOn %d seconds late, assuming not maintenance wake", utc - m->p->WakeAtUTC);
+		if      (m->p->WakeAtUTC - utc > 30) LogInfo("PowerChanged PowerOn %d seconds early, assuming not maintenance wake", m->p->WakeAtUTC - utc);
+		else if (utc - m->p->WakeAtUTC > 30) LogInfo("PowerChanged PowerOn %d seconds late, assuming not maintenance wake", utc - m->p->WakeAtUTC);
 		else
 			{
 			mDNSs32 i = 20;
@@ -5240,18 +5243,18 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 
 	switch(messageType)
 		{
-		case kIOMessageCanSystemPowerOff:		LogOperation("PowerChanged kIOMessageCanSystemPowerOff     (no action)");	break;	// E0000240
-		case kIOMessageSystemWillPowerOff:		LogOperation("PowerChanged kIOMessageSystemWillPowerOff");							// E0000250
+		case kIOMessageCanSystemPowerOff:		LogInfo("PowerChanged kIOMessageCanSystemPowerOff     (no action)");	break;	// E0000240
+		case kIOMessageSystemWillPowerOff:		LogInfo("PowerChanged kIOMessageSystemWillPowerOff");							// E0000250
 												mDNSCoreMachineSleep(m, true);
 												if (m->SleepState == SleepState_Sleeping) mDNSMacOSXNetworkChanged(m);
 												break;
-		case kIOMessageSystemWillNotPowerOff:	LogOperation("PowerChanged kIOMessageSystemWillNotPowerOff (no action)");	break;	// E0000260
-		case kIOMessageCanSystemSleep:			LogOperation("PowerChanged kIOMessageCanSystemSleep        (no action)");	break;	// E0000270
-		case kIOMessageSystemWillSleep:			LogOperation("PowerChanged kIOMessageSystemWillSleep");								// E0000280
+		case kIOMessageSystemWillNotPowerOff:	LogInfo("PowerChanged kIOMessageSystemWillNotPowerOff (no action)");	break;	// E0000260
+		case kIOMessageCanSystemSleep:			LogInfo("PowerChanged kIOMessageCanSystemSleep        (no action)");	break;	// E0000270
+		case kIOMessageSystemWillSleep:			LogInfo("PowerChanged kIOMessageSystemWillSleep");								// E0000280
 												mDNSCoreMachineSleep(m, true);
 												break;
-		case kIOMessageSystemWillNotSleep:		LogOperation("PowerChanged kIOMessageSystemWillNotSleep    (no action)");	break;	// E0000290
-		case kIOMessageSystemHasPoweredOn:		LogOperation("PowerChanged kIOMessageSystemHasPoweredOn");							// E0000300
+		case kIOMessageSystemWillNotSleep:		LogInfo("PowerChanged kIOMessageSystemWillNotSleep    (no action)");	break;	// E0000290
+		case kIOMessageSystemHasPoweredOn:		LogInfo("PowerChanged kIOMessageSystemHasPoweredOn");							// E0000300
 												// If still sleeping (didn't get 'WillPowerOn' message for some reason?) wake now
 												if (m->SleepState)
 													{
@@ -5268,8 +5271,8 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 												mDNS_Unlock(m);
 											
 												break;
-		case kIOMessageSystemWillRestart:		LogOperation("PowerChanged kIOMessageSystemWillRestart     (no action)");	break;	// E0000310
-		case kIOMessageSystemWillPowerOn:		LogOperation("PowerChanged kIOMessageSystemWillPowerOn");							// E0000320
+		case kIOMessageSystemWillRestart:		LogInfo("PowerChanged kIOMessageSystemWillRestart     (no action)");	break;	// E0000310
+		case kIOMessageSystemWillPowerOn:		LogInfo("PowerChanged kIOMessageSystemWillPowerOn");							// E0000320
 
 												// On Leopard and earlier, on wake from sleep, instead of reporting link state down, Apple
 												// Ethernet drivers report "hardware incapable of detecting link state", which the kernel
@@ -5292,7 +5295,7 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 													}
 												PowerOn(m);
 												break;
-		default:								LogOperation("PowerChanged unknown message %X", messageType);				break;
+		default:								LogInfo("PowerChanged unknown message %X", messageType);				break;
 		}
 
 	if (messageType == kIOMessageSystemWillSleep) m->p->SleepCookie = (long)messageArgument;
@@ -5306,7 +5309,7 @@ mDNSlocal void SnowLeopardPowerChanged(void *refcon, IOPMConnection connection, 
 	{
 	mDNS *const m = (mDNS *const)refcon;
 	KQueueLock(m);
-	LogOperation("SnowLeopardPowerChanged %X %X %X%s%s%s%s%s",
+	LogInfo("SnowLeopardPowerChanged %X %X %X%s%s%s%s%s",
 		connection, token, eventDescriptor,
 		eventDescriptor & kIOPMSystemPowerStateCapabilityCPU     ? " CPU"     : "",
 		eventDescriptor & kIOPMSystemPowerStateCapabilityVideo   ? " Video"   : "",
@@ -5629,7 +5632,7 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 	while (m->TunnelClients)
 		{
 		ClientTunnel *cur = m->TunnelClients;
-		LogOperation("mDNSPlatformClose: removing client tunnel %p %##s from list", cur, cur->dstname.c);
+		LogInfo("mDNSPlatformClose: removing client tunnel %p %##s from list", cur, cur->dstname.c);
 		if (cur->q.ThisQInterval >= 0) mDNS_StopQuery(m, &cur->q);
 		AutoTunnelSetKeys(cur, mDNSfalse);
 		m->TunnelClients = cur->next;
@@ -5639,14 +5642,14 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 	if (AnonymousRacoonConfig)
 		{
 		AnonymousRacoonConfig = mDNSfalse;
-		LogOperation("mDNSPlatformClose: Deconfiguring autotunnel");
+		LogInfo("mDNSPlatformClose: Deconfiguring autotunnel");
 		(void)mDNSConfigureServer(kmDNSDown, "");
 		}
 
 	if (m->AutoTunnelHostAddrActive && m->AutoTunnelHostAddr.b[0])
 		{
 		m->AutoTunnelHostAddrActive = mDNSfalse;
-		LogOperation("mDNSPlatformClose: Removing AutoTunnel address %.16a", &m->AutoTunnelHostAddr);
+		LogInfo("mDNSPlatformClose: Removing AutoTunnel address %.16a", &m->AutoTunnelHostAddr);
 		(void)mDNSAutoTunnelInterfaceUpDown(kmDNSDown, m->AutoTunnelHostAddr.b);
 		}
 #endif // APPLE_OSX_mDNSResponder

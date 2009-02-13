@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.412  2009/02/13 06:34:41  cheshire
+Converted LogOperation messages to LogInfo or LogSPS
+
 Revision 1.411  2009/02/12 20:57:26  cheshire
 Renamed 'LogAllOperation' switch to 'LogClientOperations'; added new 'LogSleepProxyActions' switch
 
@@ -1711,13 +1714,13 @@ mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 	if (result == mStatus_NoError)
 		{
 		if (!SameDomainLabelCS(m->p->userhostlabel.c, m->hostlabel.c))
-			LogOperation("Local Hostname changed from \"%#s.local\" to \"%#s.local\"", m->p->userhostlabel.c, m->hostlabel.c);
+			LogInfo("Local Hostname changed from \"%#s.local\" to \"%#s.local\"", m->p->userhostlabel.c, m->hostlabel.c);
 		// One second pause in case we get a Computer Name update too -- don't want to alert the user twice
 		RecordUpdatedNiceLabel(m, mDNSPlatformOneSecond);
 		}
 	else if (result == mStatus_NameConflict)
 		{
-		LogOperation("Local Hostname conflict for \"%#s.local\"", m->hostlabel.c);
+		LogInfo("Local Hostname conflict for \"%#s.local\"", m->hostlabel.c);
 		if (!m->p->HostNameConflict) m->p->HostNameConflict = NonZeroTime(m->timenow);
 		else if (m->timenow - m->p->HostNameConflict > 60 * mDNSPlatformOneSecond)
 			{
@@ -1729,7 +1732,7 @@ mDNSlocal void mDNS_StatusCallback(mDNS *const m, mStatus result)
 		{
 		// Allocate another chunk of cache storage
 		CacheEntity *storage = mallocL("mStatus_GrowCache", sizeof(CacheEntity) * RR_CACHE_SIZE);
-		//LogOperation("GrowCache %d * %d = %d", sizeof(CacheEntity), RR_CACHE_SIZE, sizeof(CacheEntity) * RR_CACHE_SIZE);
+		//LogInfo("GrowCache %d * %d = %d", sizeof(CacheEntity), RR_CACHE_SIZE, sizeof(CacheEntity) * RR_CACHE_SIZE);
 		if (storage) mDNS_GrowCache(m, storage, RR_CACHE_SIZE);
 		}
 	else if (result == mStatus_ConfigChanged)
@@ -2544,7 +2547,7 @@ mDNSlocal mDNSu32 DHCPWakeTime(void)
 											const mDNSu32 lifetime  = (mDNSs32) ((mDNSs32)d[0] << 24 | (mDNSs32)d[1] << 16 | (mDNSs32)d[2] << 8 | d[3]);
 											const mDNSu32 remaining = lifetime - elapsed;
 											const mDNSu32 wake      = remaining > 60 ? remaining - remaining/4 : 45;
-											LogOperation("DHCP Address Lease Elapsed %6u Lifetime %6u Remaining %6u Wake %6u", elapsed, lifetime, remaining, wake);
+											LogSPS("DHCP Address Lease Elapsed %6u Lifetime %6u Remaining %6u Wake %6u", elapsed, lifetime, remaining, wake);
 											if (e > wake) e = wake;
 											}
 										}
@@ -2584,7 +2587,7 @@ mDNSlocal mDNSBool AllowSleepNow(mDNS *const m, mDNSs32 now)
 	if (m->SystemWakeOnLANEnabled)
 		{
 		mDNSs32 dhcp = DHCPWakeTime();
-		LogOperation("ComputeWakeTime: DHCP Wake %d", dhcp);
+		LogSPS("ComputeWakeTime: DHCP Wake %d", dhcp);
 		interval = mDNSCoreIntervalToNextWake(m, now) / mDNSPlatformOneSecond;
 		if (interval > dhcp) interval = dhcp;
 
@@ -2616,7 +2619,7 @@ mDNSlocal mDNSBool AllowSleepNow(mDNS *const m, mDNSs32 now)
 					}
 				CFRelease(WakeDate);
 				}
-			LogOperation("AllowSleepNow: Will request lightweight wakeup in %d seconds", interval);
+			LogSPS("AllowSleepNow: Will request lightweight wakeup in %d seconds", interval);
 			}
 		else 						// else schedule the wakeup using the old API instead to
 #endif
@@ -2648,7 +2651,7 @@ mDNSlocal mDNSBool AllowSleepNow(mDNS *const m, mDNSs32 now)
 				}
 
 			if (result) LogMsg("AllowSleepNow: Requested wakeup in %d seconds unsuccessful: %d %X", interval, result, result);
-			else LogOperation("AllowSleepNow: Requested wakeup in %d seconds", interval);
+			else LogSPS("AllowSleepNow: Requested wakeup in %d seconds", interval);
 			m->p->WakeAtUTC = mDNSPlatformUTC() + interval;
 			}
 		}
@@ -2658,7 +2661,7 @@ mDNSlocal mDNSBool AllowSleepNow(mDNS *const m, mDNSs32 now)
 	m->SleepState = SleepState_Sleeping;
 	mDNSMacOSXNetworkChanged(m);
 
-	LogOperation("AllowSleepNow: %s(%lX) %s at %ld (%d ticks remaining)",
+	LogSPS("AllowSleepNow: %s(%lX) %s at %ld (%d ticks remaining)",
 #ifdef kIOPMAcknowledgmentOptionSystemCapabilityRequirements
 		(m->p->IOPMConnection) ? "IOPMConnectionAcknowledgeEventWithOptions" :
 #endif
@@ -2699,7 +2702,7 @@ mDNSlocal void * KQueueLoop(void *m_param)
 #endif
 	
 	pthread_mutex_lock(&PlatformStorage.BigMutex);
-	LogOperation("Starting time value 0x%08lX (%ld)", (mDNSu32)mDNSStorage.timenow_last, mDNSStorage.timenow_last);
+	LogInfo("Starting time value 0x%08lX (%ld)", (mDNSu32)mDNSStorage.timenow_last, mDNSStorage.timenow_last);
 	
 	// This is the main work loop:
 	// (1) First we give mDNSCore a chance to finish off any of its deferred work and calculate the next sleep time
@@ -2717,7 +2720,7 @@ mDNSlocal void * KQueueLoop(void *m_param)
 		mDNSs32 nextTimerEvent = udsserver_idle(mDNSDaemonIdle(m));
 		mDNSs32 end            = mDNSPlatformRawTime();
 		if (end - start >= WatchDogReportingThreshold)
-			LogOperation("WARNING: Idle task took %dms to complete", end - start);
+			LogInfo("WARNING: Idle task took %dms to complete", end - start);
 
 		mDNSs32 now = mDNS_TimeNow(m);
 
@@ -2730,13 +2733,13 @@ mDNSlocal void * KQueueLoop(void *m_param)
 				usleep(10000);		// Sleep 10ms so that we don't flood syslog with too many messages
 				}
 			if (mDNSStorage.ServiceRegistrations)
-				LogOperation("Cannot exit yet; ServiceRegistrations still exists: %s", ARDisplayString(m, &mDNSStorage.ServiceRegistrations->RR_SRV));
+				LogInfo("Cannot exit yet; ServiceRegistrations still exists: %s", ARDisplayString(m, &mDNSStorage.ServiceRegistrations->RR_SRV));
 #endif
 			if (mDNS_ExitNow(m, now))
 				{
 				if (!mDNSStorage.ResourceRecords && !mDNSStorage.ServiceRegistrations)
 					safe_vproc_transaction_end();
-				LogOperation("mDNS_FinalExit");
+				LogInfo("mDNS_FinalExit");
 				mDNS_FinalExit(&mDNSStorage);
 				usleep(1000);		// Little 1ms pause before exiting, so we don't lose our final syslog messages
 				exit(0);
@@ -2823,7 +2826,7 @@ mDNSlocal void * KQueueLoop(void *m_param)
 				kqentry->KQcallback(new_events[i].ident, new_events[i].filter, kqentry->KQcontext);
 				mDNSs32 etime = mDNSPlatformRawTime();
 				if (etime - stime >= WatchDogReportingThreshold)
-					LogOperation("WARNING: %s took %dms to complete", KQtask, etime - stime);
+					LogInfo("WARNING: %s took %dms to complete", KQtask, etime - stime);
 				}
 			}
 		}
@@ -2843,7 +2846,7 @@ mDNSlocal void LaunchdCheckin(void)
 		int err = launch_data_get_errno(resp);
 		// When running on Tiger with "ServiceIPC = false", we get "err == EACCES" to tell us there's no launchdata to fetch
 		if (err != EACCES) LogMsg("launch_msg returned %d", err);
-		else LogOperation("Launchd provided no launchdata; will open Mach port and Unix Domain Socket explicitly...", err);
+		else LogInfo("Launchd provided no launchdata; will open Mach port and Unix Domain Socket explicitly...", err);
 		}
 	else
 		{
@@ -2860,7 +2863,7 @@ mDNSlocal void LaunchdCheckin(void)
 				else
 					{
 					launchd_fd = launch_data_get_fd(s);
-					LogOperation("Launchd Unix Domain Socket: %d", launchd_fd);
+					LogInfo("Launchd Unix Domain Socket: %d", launchd_fd);
 					// In some early versions of 10.4.x, the permissions on the UDS were not set correctly, so we fix them here
 					chmod(MDNS_UDS_SERVERPATH, S_IRUSR|S_IWUSR | S_IRGRP|S_IWGRP | S_IROTH|S_IWOTH);
 					}
@@ -2872,11 +2875,11 @@ mDNSlocal void LaunchdCheckin(void)
 		else
 			{
 			launch_data_t p = launch_data_dict_lookup(ports, "com.apple.mDNSResponder");
-			if (!p) LogOperation("launch_data_array_get_index(ports, 0) returned NULL");
+			if (!p) LogInfo("launch_data_array_get_index(ports, 0) returned NULL");
 			else
 				{
 				m_port = launch_data_get_fd(p);
-				LogOperation("Launchd Mach Port: %d", m_port);
+				LogInfo("Launchd Mach Port: %d", m_port);
 				if (m_port == ~0U) m_port = MACH_PORT_NULL;
 				}
 			}
@@ -2910,7 +2913,7 @@ mDNSlocal void DropPrivileges(void)
 				*p = '/';
 				if (unlink(path) < 0 && errno != ENOENT) LogMsg("DropPrivileges: Could not unlink \"%s\": (%d) %s", path, errno, strerror(errno));
 				else if (symlink(path, MDNS_UDS_SERVERPATH) < 0) LogMsg("DropPrivileges: Could not symlink \"%s\" -> \"%s\": (%d) %s", MDNS_UDS_SERVERPATH, path, errno, strerror(errno));
-				else LogOperation("DropPrivileges: Created subdirectory and symlink");
+				else LogInfo("DropPrivileges: Created subdirectory and symlink");
 				}
 			}
 
@@ -3003,7 +3006,7 @@ mDNSexport int main(int argc, char **argv)
 		char *sandbox_msg;
 		int sandbox_err = sandbox_init("mDNSResponder", SANDBOX_NAMED, &sandbox_msg);
 		if (sandbox_err) { LogMsg("WARNING: sandbox_init error %s", sandbox_msg); sandbox_free_error(sandbox_msg); }
-		else LogOperation("Now running under Apple Sandbox restrictions");
+		else LogInfo("Now running under Apple Sandbox restrictions");
 		}
 #endif
 
