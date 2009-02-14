@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.633  2009/02/14 00:07:11  cheshire
+Need to set up m->SystemWakeOnLANEnabled before calling UpdateInterfaceList(m, utc);
+
 Revision 1.632  2009/02/13 19:40:07  cheshire
 Improved alignment of LogSPS messages
 
@@ -2784,7 +2787,7 @@ mDNSlocal mDNSBool NetWakeInterface(NetworkInterfaceInfoOSX *i)
 
 	close(s);
 
-	LogSPS("%6s %#a %s WOMP", i->ifinfo.ifname, &i->ifinfo.ip, (ifr.ifr_wake_flags & IF_WAKE_ON_MAGIC_PACKET) ? "supports" : "no");
+	LogSPS("%-6s %#-14a %s WOMP", i->ifinfo.ifname, &i->ifinfo.ip, (ifr.ifr_wake_flags & IF_WAKE_ON_MAGIC_PACKET) ? "supports" : "no");
 
 	return((ifr.ifr_wake_flags & IF_WAKE_ON_MAGIC_PACKET) != 0);
 	}
@@ -5377,8 +5380,8 @@ mDNSexport int mDNSMacOSXSystemBuildNumber(char *HINFO_SWstring)
 		CFStringRef cfbuildver = CFDictionaryGetValue(vers, _kCFSystemVersionBuildVersionKey);
 		if (cfprodname) CFStringGetCString(cfprodname, prodname, sizeof(prodname), kCFStringEncodingUTF8);
 		if (cfprodvers) CFStringGetCString(cfprodvers, prodvers, sizeof(prodvers), kCFStringEncodingUTF8);
-		if (cfbuildver) CFStringGetCString(cfbuildver, buildver, sizeof(buildver), kCFStringEncodingUTF8);
-		sscanf(buildver, "%d%c%d", &major, &letter, &minor);
+		if (cfbuildver && CFStringGetCString(cfbuildver, buildver, sizeof(buildver), kCFStringEncodingUTF8))
+			sscanf(buildver, "%d%c%d", &major, &letter, &minor);
 		CFRelease(vers);
 		}
 	if (!major) { major=8; LogMsg("Note: No Major Build Version number found; assuming 8"); }
@@ -5513,6 +5516,7 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	if (err) { LogMsg("mDNSPlatformInit_setup: WatchForSysEvents failed %d", err); return(err); }
 
 	mDNSs32 utc = mDNSPlatformUTC();
+	m->SystemWakeOnLANEnabled = SystemWakeForNetworkAccess();
 	UpdateInterfaceList(m, utc);
 	SetupActiveInterfaces(m, utc);
 
