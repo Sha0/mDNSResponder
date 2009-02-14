@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.634  2009/02/14 00:29:17  mcguire
+fixed typo
+
 Revision 1.633  2009/02/14 00:07:11  cheshire
 Need to set up m->SystemWakeOnLANEnabled before calling UpdateInterfaceList(m, utc);
 
@@ -5291,7 +5294,7 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 												if (OSXVers < OSXVers_10_6_SnowLeopard)
 													{
 													sleep(5);
-													LogMsg("Running on Mac OS X version 10.%d earler than 10.6; "
+													LogMsg("Running on Mac OS X version 10.%d earlier than 10.6; "
 														"PowerChanged did sleep(5) to wait for Ethernet hardware", OSXVers - OSXVers_Base);
 													}
 

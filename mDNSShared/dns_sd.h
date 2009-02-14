@@ -70,7 +70,7 @@
  * checking, so that C code building with earlier versions of the header file
  * can avoid compile errors trying to use functions that aren't even defined
  * in those earlier versions. Similar checks may also be performed at run-time:
- *  => weak linking -- to avoid link failures if run with an earler
+ *  => weak linking -- to avoid link failures if run with an earlier
  *     version of the library that's missing some desired symbol, or
  *  => DNSServiceGetProperty(DaemonVersion) -- to verify whether the running daemon
  *     ("system service" on Windows) meets some required minimum functionality level.
