@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.59  2009/02/17 23:33:45  cheshire
+<rdar://problem/6514947> Sleep Proxy: PF_ROUTE command to set ARP entry returns errno 17 (EEXIST)
+
 Revision 1.58  2009/02/04 22:23:04  cheshire
 Simplified do_mDNSPowerRequest --
 code was checking for CFAbsoluteTimeGetCurrent() returning NULL, which makes no sense
@@ -241,6 +244,10 @@ Revision 1.1  2007/08/08 22:34:58  mcguire
 #include "helper-server.h"
 #include "ipsec_options.h"
 
+#ifndef RTF_IFSCOPE
+#define RTF_IFSCOPE 0x1000000
+#endif
+
 #if TARGET_OS_EMBEDDED
 #define NO_CFUSERNOTIFICATION 1
 #define NO_SECURITYFRAMEWORK 1
@@ -394,7 +401,7 @@ kern_return_t do_mDNSSetARP(__unused mach_port_t port, int ifindex, v4addr_t v4,
 		rtmsg.hdr.rtm_version        = RTM_VERSION;
 		rtmsg.hdr.rtm_type           = RTM_ADD;
 		rtmsg.hdr.rtm_index          = 0;
-		rtmsg.hdr.rtm_flags          = RTF_HOST | RTF_STATIC;
+		rtmsg.hdr.rtm_flags          = RTF_HOST | RTF_STATIC | RTF_IFSCOPE;
 		rtmsg.hdr.rtm_addrs          = RTA_DST | RTA_GATEWAY;
 		rtmsg.hdr.rtm_pid            = 0;
 		rtmsg.hdr.rtm_seq            = seq++;
