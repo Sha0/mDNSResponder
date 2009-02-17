@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.635  2009/02/17 23:29:03  cheshire
+Throttle logging to a slower rate when running on SnowLeopard
+
 Revision 1.634  2009/02/14 00:29:17  mcguire
 fixed typo
 
@@ -5455,7 +5458,8 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 		HINFO_HWstring = HINFO_HWstring_buffer;
 	HINFO_HWstring_prefixlen = strcspn(HINFO_HWstring, "0123456789");
 
-	if (OSXVers < OSXVers_10_3_Panther      ) m->KnownBugs |= mDNS_KnownBug_PhantomInterfaces;
+	if (OSXVers <  OSXVers_10_3_Panther     ) m->KnownBugs |= mDNS_KnownBug_PhantomInterfaces;
+	if (OSXVers >= OSXVers_10_6_SnowLeopard ) m->KnownBugs |= mDNS_KnownBug_LossySyslog;
 	if (mDNSPlatformInit_CanReceiveUnicast()) m->CanReceiveUnicastOn5353 = mDNStrue;
 
 	mDNSu32 hlen = mDNSPlatformStrLen(HINFO_HWstring);

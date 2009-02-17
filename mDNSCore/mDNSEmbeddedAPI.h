@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.539  2009/02/17 23:29:01  cheshire
+Throttle logging to a slower rate when running on SnowLeopard
+
 Revision 1.538  2009/02/11 02:31:57  cheshire
 Moved SystemWakeOnLANEnabled from mDNSMacOSX.h, so it's accessible to mDNSCore routines
 
@@ -2307,7 +2310,8 @@ typedef void mDNSCallback(mDNS *const m, mStatus result);
 
 enum
 	{
-	mDNS_KnownBug_PhantomInterfaces = 1
+	mDNS_KnownBug_PhantomInterfaces = 1,
+	mDNS_KnownBug_LossySyslog       = 2		// <rdar://problem/6561888>
 	};
 
 enum

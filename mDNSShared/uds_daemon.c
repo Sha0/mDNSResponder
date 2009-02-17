@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.437  2009/02/17 23:29:05  cheshire
+Throttle logging to a slower rate when running on SnowLeopard
+
 Revision 1.436  2009/02/13 06:28:02  cheshire
 Converted LogOperation messages to LogInfo
 
@@ -4016,7 +4019,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 					(cr->resrec.RecordType & kDNSRecordTypePacketUniqueMask) ? " " : "+",
 					DNSTypeName(cr->resrec.rrtype),
 					CRDisplayString(m, cr));
-				usleep(1000);	// Limit rate a little so we don't flood syslog too fast
+				usleep((m->KnownBugs & mDNS_KnownBug_LossySyslog) ? 3333 : 1000);
 				}
 			}
 
@@ -4050,6 +4053,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 					ARDisplayString(m, ar));
 			else
 				LogMsgNoIdent("                             LO %s", ARDisplayString(m, ar));
+			usleep((m->KnownBugs & mDNS_KnownBug_LossySyslog) ? 3333 : 1000);
 			}
 		}
 
@@ -4065,6 +4069,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 			LogMsgNoIdent("                %7d         %s",
 				ar->TimeExpire    ? (ar->TimeExpire                      - now) / mDNSPlatformOneSecond : 0,
 				ARDisplayString(m, ar));
+			usleep((m->KnownBugs & mDNS_KnownBug_LossySyslog) ? 3333 : 1000);
 			}
 		}
 
@@ -4103,7 +4108,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 				q->AuthInfo    ? "P" : " ",
 				q->CurrentAnswers,
 				DNSTypeName(q->qtype), q->qname.c, q->DuplicateOf ? " (dup)" : "");
-			usleep(1000);	// Limit rate a little so we don't flood syslog too fast
+			usleep((m->KnownBugs & mDNS_KnownBug_LossySyslog) ? 3333 : 1000);
 			}
 		LogMsgNoIdent("%lu question%s; %lu active", CacheUsed, CacheUsed > 1 ? "s" : "", CacheActive);
 		}
@@ -4121,6 +4126,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 		request_state *req;
 		for (req = all_requests; req; req=req->next)
 			LogClientInfo(m, req);
+		usleep((m->KnownBugs & mDNS_KnownBug_LossySyslog) ? 3333 : 1000);
 		}
 
 	LogMsgNoIdent("-------- NAT Traversals --------");
@@ -4141,6 +4147,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 				LogMsgNoIdent("%p Address Request               Retry %5d Interval %5d", nat,
 					(m->retryGetAddr - now) / mDNSPlatformOneSecond,
 					m->retryIntervalGetAddr / mDNSPlatformOneSecond);
+			usleep((m->KnownBugs & mDNS_KnownBug_LossySyslog) ? 3333 : 1000);
 			}
 		}
 
