@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.60  2009/02/18 02:09:10  cheshire
+<rdar://problem/6514947> Sleep Proxy: PF_ROUTE command to set ARP entry returns errno 17 (EEXIST)
+Also need to set rtmsg.hdr.rtm_index
+
 Revision 1.59  2009/02/17 23:33:45  cheshire
 <rdar://problem/6514947> Sleep Proxy: PF_ROUTE command to set ARP entry returns errno 17 (EEXIST)
 
@@ -400,7 +404,7 @@ kern_return_t do_mDNSSetARP(__unused mach_port_t port, int ifindex, v4addr_t v4,
 		rtmsg.hdr.rtm_msglen         = sizeof(rtmsg);
 		rtmsg.hdr.rtm_version        = RTM_VERSION;
 		rtmsg.hdr.rtm_type           = RTM_ADD;
-		rtmsg.hdr.rtm_index          = 0;
+		rtmsg.hdr.rtm_index          = ifindex;
 		rtmsg.hdr.rtm_flags          = RTF_HOST | RTF_STATIC | RTF_IFSCOPE;
 		rtmsg.hdr.rtm_addrs          = RTA_DST | RTA_GATEWAY;
 		rtmsg.hdr.rtm_pid            = 0;
