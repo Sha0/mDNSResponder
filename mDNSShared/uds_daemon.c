@@ -17,6 +17,10 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.439  2009/02/18 23:38:44  cheshire
+<rdar://problem/6600780> Could not write data to client 13 - aborting connection
+Eliminated unnecessary "request_state *request" field from the reply_state structure.
+
 Revision 1.438  2009/02/18 23:23:14  cheshire
 Cleaned up debugging log messages
 
@@ -994,14 +998,10 @@ typedef struct
 typedef struct reply_state
 	{
 	struct reply_state *next;		// If there are multiple unsent replies
-	transfer_state ts;
 	mDNSu32 totallen;
 	mDNSu32 nwriten;
-	request_state *request;		// the request that this answers
-	char *msgbuf;				// pointer to malloc'd buffer
-	ipc_msg_hdr *mhdr;			// pointer into message buffer - allows fields to be changed after message is formatted
-	reply_hdr *rhdr;
-	char *sdata;				// pointer to start of call-specific data
+	ipc_msg_hdr mhdr[1];
+	reply_hdr rhdr[1];
 	} reply_state;
 
 // ***************************************************************************
@@ -1084,7 +1084,6 @@ mDNSlocal void abort_request(request_state *req)
 			{
 			reply_state *ptr = req->replies;
 			req->replies = req->replies->next;
-			if (ptr->msgbuf) freeL("reply_state msgbuf (abort)", ptr->msgbuf);
 			freeL("reply_state (abort)", ptr);
 			}
 		}
@@ -1113,7 +1112,6 @@ mDNSlocal void AbortUnlinkAndFree(request_state *req)
 mDNSlocal reply_state *create_reply(const reply_op_t op, const size_t datalen, request_state *const request)
 	{
 	reply_state *reply;
-	int totallen = (int) (datalen + sizeof(ipc_msg_hdr));
 
 	if ((unsigned)datalen < sizeof(reply_hdr))
 		{
@@ -1121,20 +1119,12 @@ mDNSlocal reply_state *create_reply(const reply_op_t op, const size_t datalen, r
 		return NULL;
 		}
 
-	reply = mallocL("reply_state", sizeof(reply_state));
+	reply = mallocL("reply_state", sizeof(reply_state) + datalen - sizeof(reply_hdr));
 	if (!reply) FatalError("ERROR: malloc");
-	mDNSPlatformMemZero(reply, sizeof(reply_state));
+	
 	reply->next     = mDNSNULL;
-	reply->ts       = t_morecoming;
-	reply->request  = request;
-	reply->totallen = totallen;
+	reply->totallen = datalen + sizeof(ipc_msg_hdr);
 	reply->nwriten  = 0;
-	reply->msgbuf   = mallocL("reply_state msgbuf", totallen);
-	if (!reply->msgbuf) FatalError("ERROR: malloc");
-	mDNSPlatformMemZero(reply->msgbuf, totallen);
-	reply->mhdr    = (ipc_msg_hdr *)reply->msgbuf;
-	reply->rhdr    = (reply_hdr *)(reply->msgbuf + sizeof(ipc_msg_hdr));
-	reply->sdata   = reply->msgbuf + sizeof(ipc_msg_hdr) + sizeof(reply_hdr);
 
 	reply->mhdr->version        = VERSION;
 	reply->mhdr->datalen        = datalen;
@@ -1195,7 +1185,7 @@ mDNSlocal mStatus GenerateNTDResponse(const domainname *const servicename, const
 		(*rep)->rhdr->error = dnssd_htonl(err);
 
 		// Build reply body
-		data = (*rep)->sdata;
+		data = (char *)&(*rep)->rhdr[1];
 		put_string(namestr, &data);
 		put_string(typestr, &data);
 		put_string(domstr, &data);
@@ -1238,7 +1228,7 @@ mDNSlocal void GenerateBonjourBrowserResponse(const domainname *const servicenam
 	(*rep)->rhdr->error = dnssd_htonl(err);
 
 	// Build reply body
-	data = (*rep)->sdata;
+	data = (char *)&(*rep)->rhdr[1];
 	put_string(namestr, &data);
 	put_string(typestr, &data);
 	put_string(domstr, &data);
@@ -2728,7 +2718,7 @@ mDNSlocal void resolve_result_callback(mDNS *const m, DNSQuestion *question, con
 	rep->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(m, answer->InterfaceID));
 	rep->rhdr->error = dnssd_htonl(kDNSServiceErr_NoError);
 
-	data = rep->sdata;
+	data = (char *)&rep->rhdr[1];
 
 	// write reply data to message
 	put_string(fullname, &data);
@@ -2881,7 +2871,7 @@ mDNSlocal void queryrecord_result_callback(mDNS *const m, DNSQuestion *question,
 	rep->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(m, answer->InterfaceID));
 	rep->rhdr->error = dnssd_htonl(error);
 
-	data = rep->sdata;
+	data = (char *)&rep->rhdr[1];
 
 	put_string(name, &data);
 
@@ -3015,7 +3005,7 @@ mDNSlocal reply_state *format_enumeration_reply(request_state *request,
 	reply->rhdr->flags = dnssd_htonl(flags);
 	reply->rhdr->ifi   = dnssd_htonl(ifi);
 	reply->rhdr->error = dnssd_htonl(err);
-	data = reply->sdata;
+	data = (char *)&reply->rhdr[1];
 	put_string(domain, &data);
 	return reply;
 	}
@@ -3202,7 +3192,7 @@ mDNSlocal void port_mapping_create_request_callback(mDNS *m, NATTraversalInfo *n
 	rep->rhdr->ifi   = dnssd_htonl(mDNSPlatformInterfaceIndexfromInterfaceID(m, n->InterfaceID));
 	rep->rhdr->error = dnssd_htonl(n->Result);
 
-	data = rep->sdata;
+	data = (char *)&rep->rhdr[1];
 
 	*data++ = request->u.pm.NATinfo.ExternalAddress.b[0];
 	*data++ = request->u.pm.NATinfo.ExternalAddress.b[1];
@@ -4262,14 +4252,14 @@ mDNSexport void uds_validatelists(void)
 	}
 #endif // APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING
 
-mDNSlocal int send_msg(reply_state *rep)
+mDNSlocal int send_msg(request_state *const req)
 	{
+	reply_state *const rep = req->replies;		// Send the first waiting reply
 	ssize_t nwriten;
-	if (!rep->msgbuf) { LogMsg("ERROR: send_msg called with NULL message buffer"); return(rep->ts = t_error); }
-	if (rep->request->no_reply) { freeL("reply_state msgbuf (no_reply)", rep->msgbuf); return(rep->ts = t_complete); }
+	if (req->no_reply) return(t_complete);
 
 	ConvertHeaderBytes(rep->mhdr);
-	nwriten = send(rep->request->sd, rep->msgbuf + rep->nwriten, rep->totallen - rep->nwriten, 0);
+	nwriten = send(req->sd, (char *)&rep->mhdr + rep->nwriten, rep->totallen - rep->nwriten, 0);
 	ConvertHeaderBytes(rep->mhdr);
 
 	if (nwriten < 0)
@@ -4279,19 +4269,18 @@ mDNSlocal int send_msg(reply_state *rep)
 			{
 #if !defined(PLATFORM_NO_EPIPE)
 			if (dnssd_errno == EPIPE)
-				return(rep->request->ts = rep->ts = t_terminated);
+				return(req->ts = t_terminated);
 			else
 #endif
 				{
 				LogMsg("send_msg ERROR: failed to write %d of %d bytes to fd %d errno %d (%s)",
-					rep->totallen - rep->nwriten, rep->totallen, rep->request->sd, dnssd_errno, dnssd_strerror(dnssd_errno));
-				return(rep->ts = t_error);
+					rep->totallen - rep->nwriten, rep->totallen, req->sd, dnssd_errno, dnssd_strerror(dnssd_errno));
+				return(t_error);
 				}
 			}
 		}
 	rep->nwriten += nwriten;
-	if (rep->nwriten == rep->totallen) { freeL("reply_state msgbuf (t_complete)", rep->msgbuf); rep->ts = t_complete; }
-	return rep->ts;
+	return (rep->nwriten == rep->totallen) ? t_complete : t_morecoming;
 	}
 
 mDNSexport mDNSs32 udsserver_idle(mDNSs32 nextevent)
@@ -4316,7 +4305,7 @@ mDNSexport mDNSs32 udsserver_idle(mDNSs32 nextevent)
 			{
 			transfer_state result;
 			if (r->replies->next) r->replies->rhdr->flags |= dnssd_htonl(kDNSServiceFlagsMoreComing);
-			result = send_msg(r->replies);	// Returns t_morecoming if buffer full because client is not reading
+			result = send_msg(r);	// Returns t_morecoming if buffer full because client is not reading
 			if (result == t_complete)
 				{
 				reply_state *fptr = r->replies;
