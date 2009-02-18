@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.438  2009/02/18 23:23:14  cheshire
+Cleaned up debugging log messages
+
 Revision 1.437  2009/02/17 23:29:05  cheshire
 Throttle logging to a slower rate when running on SnowLeopard
 
@@ -990,11 +993,11 @@ typedef struct
 
 typedef struct reply_state
 	{
+	struct reply_state *next;		// If there are multiple unsent replies
 	transfer_state ts;
+	mDNSu32 totallen;
 	mDNSu32 nwriten;
-	mDNSu32 len;
 	request_state *request;		// the request that this answers
-	struct reply_state *next;	// if there are multiple unsent replies
 	char *msgbuf;				// pointer to malloc'd buffer
 	ipc_msg_hdr *mhdr;			// pointer into message buffer - allows fields to be changed after message is formatted
 	reply_hdr *rhdr;
@@ -1114,28 +1117,32 @@ mDNSlocal reply_state *create_reply(const reply_op_t op, const size_t datalen, r
 
 	if ((unsigned)datalen < sizeof(reply_hdr))
 		{
-		LogMsg("ERROR: create_reply - data length less than lenght of required fields");
+		LogMsg("ERROR: create_reply - data length less than length of required fields");
 		return NULL;
 		}
 
 	reply = mallocL("reply_state", sizeof(reply_state));
 	if (!reply) FatalError("ERROR: malloc");
 	mDNSPlatformMemZero(reply, sizeof(reply_state));
-	reply->ts      = t_morecoming;
-	reply->request = request;
-	reply->len     = totallen;
-	reply->msgbuf  = mallocL("reply_state msgbuf", totallen);
+	reply->next     = mDNSNULL;
+	reply->ts       = t_morecoming;
+	reply->request  = request;
+	reply->totallen = totallen;
+	reply->nwriten  = 0;
+	reply->msgbuf   = mallocL("reply_state msgbuf", totallen);
 	if (!reply->msgbuf) FatalError("ERROR: malloc");
 	mDNSPlatformMemZero(reply->msgbuf, totallen);
 	reply->mhdr    = (ipc_msg_hdr *)reply->msgbuf;
 	reply->rhdr    = (reply_hdr *)(reply->msgbuf + sizeof(ipc_msg_hdr));
 	reply->sdata   = reply->msgbuf + sizeof(ipc_msg_hdr) + sizeof(reply_hdr);
-	reply->mhdr->version   = VERSION;
-	reply->mhdr->datalen   = datalen;
-	reply->mhdr->ipc_flags = 0;
-	reply->mhdr->op        = op;
+
+	reply->mhdr->version        = VERSION;
+	reply->mhdr->datalen        = datalen;
+	reply->mhdr->ipc_flags      = 0;
+	reply->mhdr->op             = op;
 	reply->mhdr->client_context = request->hdr.client_context;
-	reply->mhdr->reg_index = 0;
+	reply->mhdr->reg_index      = 0;
+
 	return reply;
 	}
 
@@ -4262,7 +4269,7 @@ mDNSlocal int send_msg(reply_state *rep)
 	if (rep->request->no_reply) { freeL("reply_state msgbuf (no_reply)", rep->msgbuf); return(rep->ts = t_complete); }
 
 	ConvertHeaderBytes(rep->mhdr);
-	nwriten = send(rep->request->sd, rep->msgbuf + rep->nwriten, rep->len - rep->nwriten, 0);
+	nwriten = send(rep->request->sd, rep->msgbuf + rep->nwriten, rep->totallen - rep->nwriten, 0);
 	ConvertHeaderBytes(rep->mhdr);
 
 	if (nwriten < 0)
@@ -4277,13 +4284,13 @@ mDNSlocal int send_msg(reply_state *rep)
 #endif
 				{
 				LogMsg("send_msg ERROR: failed to write %d of %d bytes to fd %d errno %d (%s)",
-					rep->len - rep->nwriten, rep->len, rep->request->sd, dnssd_errno, dnssd_strerror(dnssd_errno));
+					rep->totallen - rep->nwriten, rep->totallen, rep->request->sd, dnssd_errno, dnssd_strerror(dnssd_errno));
 				return(rep->ts = t_error);
 				}
 			}
 		}
 	rep->nwriten += nwriten;
-	if (rep->nwriten == rep->len) { freeL("reply_state msgbuf (t_complete)", rep->msgbuf); rep->ts = t_complete; }
+	if (rep->nwriten == rep->totallen) { freeL("reply_state msgbuf (t_complete)", rep->msgbuf); rep->ts = t_complete; }
 	return rep->ts;
 	}
 
@@ -4320,7 +4327,7 @@ mDNSexport mDNSs32 udsserver_idle(mDNSs32 nextevent)
 				}
 			else if (result == t_terminated || result == t_error)
 				{
-				LogMsg("Could not write data to client %d - aborting connection", r->sd);
+				LogMsg("%3d: Could not write data to client because of error - aborting connection", r->sd);
 				LogClientInfo(&mDNSStorage, r);
 				abort_request(r);
 				}
@@ -4332,8 +4339,8 @@ mDNSexport mDNSs32 udsserver_idle(mDNSs32 nextevent)
 			if (!r->time_blocked) r->time_blocked = NonZeroTime(now);
 			if (now - r->time_blocked >= 60 * mDNSPlatformOneSecond)
 				{
-				LogMsg("Could not write data to client %d after %ld seconds - aborting connection",
-					r->sd, (now - r->time_blocked) / mDNSPlatformOneSecond);
+				LogMsg("%3d: Could not write data to client after %ld seconds - aborting connection", r->sd,
+					(now - r->time_blocked) / mDNSPlatformOneSecond);
 				LogClientInfo(&mDNSStorage, r);
 				abort_request(r);
 				}
