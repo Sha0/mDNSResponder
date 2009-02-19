@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.910  2009/02/19 01:50:53  cheshire
+Converted some LogInfo messages to LogSPS
+
 Revision 1.909  2009/02/14 00:04:59  cheshire
 Left-justify interface names
 
@@ -4684,7 +4687,7 @@ mDNSexport mDNSBool mDNSCoreReadyForSleep(mDNS *m)
 		{
 		if (intf->NetWake && intf->NetWakeResolve.ThisQInterval >= 0)
 			{
-			LogInfo("ReadyForSleep waiting for SPS Resolve %s %##s (%s)", intf->ifname, intf->NetWakeResolve.qname.c, DNSTypeName(intf->NetWakeResolve.qtype));
+			LogSPS("ReadyForSleep waiting for SPS Resolve %s %##s (%s)", intf->ifname, intf->NetWakeResolve.qname.c, DNSTypeName(intf->NetWakeResolve.qtype));
 			return(mDNSfalse);
 			}
 		intf = GetFirstActiveInterface(intf->next);
@@ -4700,7 +4703,7 @@ mDNSexport mDNSBool mDNSCoreReadyForSleep(mDNS *m)
 			}
 		else
 			{
-			if (!mDNSOpaque16IsZero(rr->updateid)) LogInfo("ReadyForSleep waiting for SPS Update ID %d %s", mDNSVal16(rr->updateid), ARDisplayString(m,rr));
+			if (!mDNSOpaque16IsZero(rr->updateid)) LogSPS("ReadyForSleep waiting for SPS Update ID %d %s", mDNSVal16(rr->updateid), ARDisplayString(m,rr));
 			if (!mDNSOpaque16IsZero(rr->updateid)) return(mDNSfalse);
 			}
 		}
@@ -4727,7 +4730,7 @@ mDNSexport mDNSs32 mDNSCoreIntervalToNextWake(mDNS *const m, mDNSs32 now)
 			{
 			mDNSs32 t = nat->ExpiryTime - (nat->ExpiryTime - now) / 4;
 			if (e - t > 0) e = t;
-			LogInfo("ComputeWakeTime: %p %s Int %5d Ext %5d Err %d Retry %5d Interval %5d Expire %5d Wake %5d",
+			LogSPS("ComputeWakeTime: %p %s Int %5d Ext %5d Err %d Retry %5d Interval %5d Expire %5d Wake %5d",
 				nat, nat->Protocol == NATOp_MapTCP ? "TCP" : "UDP",
 				mDNSVal16(nat->IntPort), mDNSVal16(nat->ExternalPort), nat->Result,
 				nat->retryPortMap ? (nat->retryPortMap - now) / mDNSPlatformOneSecond : 0,
@@ -4744,7 +4747,7 @@ mDNSexport mDNSs32 mDNSCoreIntervalToNextWake(mDNS *const m, mDNSs32 now)
 			{
 			mDNSs32 t = ar->expire - (ar->expire - now) / 4;
 			if (e - t > 0) e = t;
-			LogInfo("ComputeWakeTime: %p Int %7d Next %7d Expire %7d Wake %7d %s",
+			LogSPS("ComputeWakeTime: %p Int %7d Next %7d Expire %7d Wake %7d %s",
 				ar, ar->ThisAPInterval / mDNSPlatformOneSecond,
 				(ar->LastAPTime + ar->ThisAPInterval - now) / mDNSPlatformOneSecond,
 				ar->expire ? (ar->expire - now) / mDNSPlatformOneSecond : 0,
@@ -6307,7 +6310,7 @@ mDNSlocal void mDNSCoreReceiveUpdateR(mDNS *const m, const DNSMessage *const msg
 					if (o->opt == kDNSOpt_Lease)
 						{
 						updatelease = o->u.updatelease;
-						debugf("mDNSCoreReceiveUpdateR: Update received lease time %d", updatelease);
+						LogSPS("Sleep Proxy granted lease time %4d seconds", updatelease);
 						}
 				}
 			m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
@@ -6319,6 +6322,7 @@ mDNSlocal void mDNSCoreReceiveUpdateR(mDNS *const m, const DNSMessage *const msg
 					{
 					rr->updateid = zeroID;
 					rr->expire   = NonZeroTime(m->timenow + updatelease * mDNSPlatformOneSecond);
+					LogSPS("Sleep Proxy registered record %5d %s", updatelease, ARDisplayString(m,rr));
 					}
 		}
 	}
