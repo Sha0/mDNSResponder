@@ -804,9 +804,8 @@ int main(int argc, char **argv)
 
 #if TEST_NEW_CLIENTSTUB
 	printf("Using embedded copy of dnssd_clientstub instead of system library\n");
-#endif
-
 	if (sizeof(argv) == 8) printf("Running in 64-bit mode\n");
+#endif
 
 	// Test code for TXTRecord functions
 	//TXTRecordRef txtRecord;
