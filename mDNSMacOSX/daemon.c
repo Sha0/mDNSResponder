@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.415  2009/02/21 01:45:33  cheshire
+Move declaration of "mDNSs32 interval"
+
 Revision 1.414  2009/02/14 00:05:32  cheshire
 Left-justify interface names
 
@@ -2582,7 +2585,6 @@ mDNSlocal mDNSu32 DHCPWakeTime(void)
 
 mDNSlocal mDNSBool AllowSleepNow(mDNS *const m, mDNSs32 now)
 	{
-	mDNSs32 interval = 0;
 	mDNSBool ready = mDNSCoreReadyForSleep(m);
 	if (!ready && now - m->SleepLimit < 0) return(mDNSfalse);
 
@@ -2594,7 +2596,7 @@ mDNSlocal mDNSBool AllowSleepNow(mDNS *const m, mDNSs32 now)
 		{
 		mDNSs32 dhcp = DHCPWakeTime();
 		LogSPS("ComputeWakeTime: DHCP Wake %d", dhcp);
-		interval = mDNSCoreIntervalToNextWake(m, now) / mDNSPlatformOneSecond;
+		mDNSs32 interval = mDNSCoreIntervalToNextWake(m, now) / mDNSPlatformOneSecond;
 		if (interval > dhcp) interval = dhcp;
 
 		// If we're not ready to sleep (failed to register with Sleep Proxy, maybe because of
