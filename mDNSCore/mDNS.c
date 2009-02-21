@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.911  2009/02/21 01:42:11  cheshire
+Updated log messages
+
 Revision 1.910  2009/02/19 01:50:53  cheshire
 Converted some LogInfo messages to LogSPS
 
@@ -4585,9 +4588,9 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 #ifndef UNICAST_DISABLED
 		SuspendLLQs(m);
 #endif
-		LogSPS("mDNSCoreMachineSleep: m->SleepState %d %s seq %d", m->SleepState,
-			m->SleepState == SleepState_Transferring ? "(Transferring)" : 
-			m->SleepState == SleepState_Sleeping     ? "(Sleeping)" : "(?)", m->SleepSeqNum);
+		LogSPS("mDNSCoreMachineSleep: m->SleepState %d (%s) seq %d", m->SleepState,
+			m->SleepState == SleepState_Transferring ? "Transferring" : 
+			m->SleepState == SleepState_Sleeping     ? "Sleeping"     : "?", m->SleepSeqNum);
 		}
 	else if (!sleep)		// Waking up
 		{
