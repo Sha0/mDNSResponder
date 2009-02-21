@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.440  2009/02/21 01:38:08  cheshire
+Added report of m->SleepState value in SIGINFO output
+
 Revision 1.439  2009/02/18 23:38:44  cheshire
 <rdar://problem/6600780> Could not write data to client 13 - aborting connection
 Eliminated unnecessary "request_state *request" field from the reply_state structure.
@@ -4169,9 +4172,17 @@ mDNSexport void udsserver_info(mDNS *const m)
 		}
 	#endif // APPLE_OSX_mDNSResponder
 
-	LogMsgNoIdent("------ Sleep Proxy Service -----");
-	if (!m->SPSSocket) LogMsgNoIdent("<None>");
-	else LogMsgNoIdent("%#s", m->SPSRecords.RR_SRV.resrec.name->c);
+	LogMsgNoIdent("---------- Sleep State ---------");
+	LogMsgNoIdent("m->SleepState %d (%s) seq %d",
+		m->SleepState,
+		m->SleepState == SleepState_Awake        ? "Awake"        :
+		m->SleepState == SleepState_Transferring ? "Transferring" : 
+		m->SleepState == SleepState_Sleeping     ? "Sleeping"     : "?",
+		m->SleepSeqNum);
+
+	if (!m->SPSSocket) LogMsgNoIdent("Not offering Sleep Proxy Service");
+	else LogMsgNoIdent("Offering Sleep Proxy Service: %#s", m->SPSRecords.RR_SRV.resrec.name->c);
+	
 
 	LogMsgNoIdent("------ Auto Browse Domains -----");
 	if (!AutoBrowseDomains) LogMsgNoIdent("<None>");
