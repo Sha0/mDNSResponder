@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.636  2009/02/21 01:38:39  cheshire
+Added comment: mDNSCoreMachineSleep(m, false); // Will set m->SleepState = SleepState_Awake;
+
 Revision 1.635  2009/02/17 23:29:03  cheshire
 Throttle logging to a slower rate when running on SnowLeopard
 
@@ -5228,7 +5231,7 @@ mDNSlocal OSStatus KeychainChanged(SecKeychainEvent keychainEvent, SecKeychainCa
 #ifndef NO_IOPOWER
 mDNSlocal void PowerOn(mDNS *const m)
 	{
-	mDNSCoreMachineSleep(m, false);
+	mDNSCoreMachineSleep(m, false);		// Will set m->SleepState = SleepState_Awake;
 	if (m->p->WakeAtUTC)
 		{
 		long utc = mDNSPlatformUTC();
