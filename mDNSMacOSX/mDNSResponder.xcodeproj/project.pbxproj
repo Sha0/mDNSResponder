@@ -1746,6 +1746,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CONFIGURATION_BUILD_DIR = "$(BUILD_DIR)";
+				DEAD_CODE_STRIPPING = YES;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"APPLE_OSX_mDNSResponder=1",
 					"__MigTypeCheck=1",
@@ -1791,6 +1792,7 @@
 				INSTALL_PATH = /usr/sbin;
 				LIBRARY_SEARCH_PATHS = "\"${CONFIGURATION_TEMP_DIR}\"";
 				MACOSX_DEPLOYMENT_TARGET = 10.4;
+				ORDER_FILE = "${SRCROOT}/mDNSResponder.order";
 				OTHER_CFLAGS = (
 					"$(inherited)",
 					"-no-cpp-precomp",
@@ -1799,12 +1801,6 @@
 				OTHER_REZFLAGS = "";
 				PRODUCT_NAME = mDNSResponder;
 				REZ_EXECUTABLE = YES;
-				SECTORDER_FLAGS = (
-					"-sectorder",
-					__TEXT,
-					__text,
-					mDNSResponder.order,
-				);
 			};
 			name = Development;
 		};
