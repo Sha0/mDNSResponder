@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.441  2009/02/24 22:18:59  cheshire
+Include interface name for interface-specific AuthRecords
+
 Revision 1.440  2009/02/21 01:38:08  cheshire
 Added report of m->SleepState value in SIGINFO output
 
@@ -4037,6 +4040,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 		LogMsgNoIdent("    Int    Next  Expire   State");
 		for (ar = m->ResourceRecords; ar; ar=ar->next)
 			{
+			NetworkInterfaceInfo *info = (NetworkInterfaceInfo *)ar->resrec.InterfaceID;
 			if (!mDNSSameEthAddress(&owner, &ar->WakeUp.MAC))
 				{ owner = ar->WakeUp.MAC; LogMsgNoIdent("Proxying for %.6a seq %d", &owner, ar->WakeUp.seq); }
 			if (AuthRecord_uDNS(ar))
@@ -4046,10 +4050,11 @@ mDNSexport void udsserver_info(mDNS *const m)
 					ar->expire ? (ar->expire - now) / mDNSPlatformOneSecond : 0,
 					ar->state, ARDisplayString(m, ar));
 			else if (ar->resrec.InterfaceID != mDNSInterface_LocalOnly)
-				LogMsgNoIdent("%7d %7d %7d       M %s",
+				LogMsgNoIdent("%7d %7d %7d %7s %s",
 					ar->ThisAPInterval / mDNSPlatformOneSecond,
 					ar->AnnounceCount ? (ar->LastAPTime + ar->ThisAPInterval - now) / mDNSPlatformOneSecond : 0,
 					ar->TimeExpire    ? (ar->TimeExpire                      - now) / mDNSPlatformOneSecond : 0,
+					info ? info->ifname : "ALL",
 					ARDisplayString(m, ar));
 			else
 				LogMsgNoIdent("                             LO %s", ARDisplayString(m, ar));
