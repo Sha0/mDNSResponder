@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.637  2009/02/26 22:58:47  cheshire
+<rdar://problem/6616335> Crash in mDNSResponder at mDNSResponder • CloseBPF + 75
+Fixed race condition between the kqueue thread and the CFRunLoop thread.
+
 Revision 1.636  2009/02/21 01:38:39  cheshire
 Added comment: mDNSCoreMachineSleep(m, false); // Will set m->SleepState = SleepState_Awake;
 
@@ -2323,6 +2327,10 @@ mDNSlocal void bpf_callback(const CFSocketRef cfs, const CFSocketCallBackType Ca
 	NetworkInterfaceInfoOSX *const info = (NetworkInterfaceInfoOSX *)context;
 	KQueueLock(info->m);
 
+	// Now we've got the lock, make sure the kqueue thread didn't close the fd out from under us (will not be a problem once the OS X
+	// kernel has a mechanism for dispatching all events to a single thread, but for now we have to guard against this race condition).
+	if (info->BPF_fd < 0) goto exit;
+
 	ssize_t n = read(info->BPF_fd, &info->m->imsg, info->BPF_len);
 	const mDNSu8 *ptr = (const mDNSu8 *)&info->m->imsg;
 	const mDNSu8 *end = (const mDNSu8 *)&info->m->imsg + n;
@@ -2330,7 +2338,7 @@ mDNSlocal void bpf_callback(const CFSocketRef cfs, const CFSocketCallBackType Ca
 
 	if (n<0)
 		{
-		LogInfo("Closing %s BPF fd %d due to error %d (%s)", info->ifinfo.ifname, info->BPF_fd, errno, strerror(errno));
+		LogMsg("Closing %s BPF fd %d due to error %d (%s)", info->ifinfo.ifname, info->BPF_fd, errno, strerror(errno));
 		CloseBPF(info);
 		goto exit;
 		}
@@ -3945,12 +3953,12 @@ mDNSlocal int ClearInactiveInterfaces(mDNS *const m, mDNSs32 utc)
 				i->ifinfo.ifname, i->scope_id, &i->BSSID, i->ifinfo.InterfaceID,
 				&i->ifinfo.ip, CountMaskBits(&i->ifinfo.mask), utc - i->LastSeen,
 				i->ifinfo.InterfaceActive ? " (Primary)" : "");
+#if APPLE_OSX_mDNSResponder
+			if (i->BPF_fd >= 0) CloseBPF(i);
+#endif // APPLE_OSX_mDNSResponder
 			if (delete)
 				{
 				*p = i->next;
-#if APPLE_OSX_mDNSResponder
-				if (i->BPF_fd >= 0) CloseBPF(i);
-#endif // APPLE_OSX_mDNSResponder
 				freeL("NetworkInterfaceInfoOSX", i);
 				continue;	// After deleting this object, don't want to do the "p = &i->next;" thing at the end of the loop
 				}
