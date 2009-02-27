@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.604  2009/02/27 03:08:47  cheshire
+<rdar://problem/6547720> Crash while shutting down when "local" is in the user's DNS searchlist
+
 Revision 1.603  2009/02/27 02:56:57  cheshire
 Moved struct SearchListElem definition from uDNS.c into mDNSEmbeddedAPI.h
 
@@ -5041,6 +5044,7 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 
 	if (answer->rrtype != kDNSType_PTR) return;
 	if (answer->RecordType == kDNSRecordTypePacketNegative) return;
+	if (answer->InterfaceID == mDNSInterface_LocalOnly) return;
 
 	if      (question == &slElem->BrowseQ)          name = mDNS_DomainTypeNames[mDNS_DomainTypeBrowse];
 	else if (question == &slElem->DefBrowseQ)       name = mDNS_DomainTypeNames[mDNS_DomainTypeBrowseDefault];
@@ -5150,11 +5154,15 @@ mDNSexport mStatus uDNS_RegisterSearchDomains(mDNS *const m)
 			ptr->AuthRecs = mDNSNULL;
 			*p = ptr->next;
 
-			mDNS_StopGetDomains(m, &ptr->BrowseQ);
-			mDNS_StopGetDomains(m, &ptr->RegisterQ);
-			mDNS_StopGetDomains(m, &ptr->DefBrowseQ);
-			mDNS_StopGetDomains(m, &ptr->DefRegisterQ);
-			mDNS_StopGetDomains(m, &ptr->AutomaticBrowseQ);
+			// If the user has "local" in their DNS searchlist, we ignore that for the purposes of domain enumeration queries
+			if (!SameDomainName(&ptr->domain, &localdomain))
+				{
+				mDNS_StopGetDomains(m, &ptr->BrowseQ);
+				mDNS_StopGetDomains(m, &ptr->RegisterQ);
+				mDNS_StopGetDomains(m, &ptr->DefBrowseQ);
+				mDNS_StopGetDomains(m, &ptr->DefRegisterQ);
+				mDNS_StopGetDomains(m, &ptr->AutomaticBrowseQ);
+				}
 			mDNSPlatformMemFree(ptr);
 
 	        // deregister records generated from answers to the query
@@ -5172,20 +5180,24 @@ mDNSexport mStatus uDNS_RegisterSearchDomains(mDNS *const m)
 
 		if (ptr->flag == 1)	// add
 			{
-			mStatus err1, err2, err3, err4, err5;
-			err1 = mDNS_GetDomains(m, &ptr->BrowseQ,          mDNS_DomainTypeBrowse,              &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
-			err2 = mDNS_GetDomains(m, &ptr->DefBrowseQ,       mDNS_DomainTypeBrowseDefault,       &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
-			err3 = mDNS_GetDomains(m, &ptr->RegisterQ,        mDNS_DomainTypeRegistration,        &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
-			err4 = mDNS_GetDomains(m, &ptr->DefRegisterQ,     mDNS_DomainTypeRegistrationDefault, &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
-			err5 = mDNS_GetDomains(m, &ptr->AutomaticBrowseQ, mDNS_DomainTypeBrowseAutomatic,     &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
-			if (err1 || err2 || err3 || err4 || err5)
-				LogMsg("GetDomains for domain %##s returned error(s):\n"
-					   "%d (mDNS_DomainTypeBrowse)\n"
-					   "%d (mDNS_DomainTypeBrowseDefault)\n"
-					   "%d (mDNS_DomainTypeRegistration)\n"
-					   "%d (mDNS_DomainTypeRegistrationDefault)"
-					   "%d (mDNS_DomainTypeBrowseAutomatic)\n",
-					   ptr->domain.c, err1, err2, err3, err4, err5);
+			// If the user has "local" in their DNS searchlist, we ignore that for the purposes of domain enumeration queries
+			if (!SameDomainName(&ptr->domain, &localdomain))
+				{
+				mStatus err1, err2, err3, err4, err5;
+				err1 = mDNS_GetDomains(m, &ptr->BrowseQ,          mDNS_DomainTypeBrowse,              &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
+				err2 = mDNS_GetDomains(m, &ptr->DefBrowseQ,       mDNS_DomainTypeBrowseDefault,       &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
+				err3 = mDNS_GetDomains(m, &ptr->RegisterQ,        mDNS_DomainTypeRegistration,        &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
+				err4 = mDNS_GetDomains(m, &ptr->DefRegisterQ,     mDNS_DomainTypeRegistrationDefault, &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
+				err5 = mDNS_GetDomains(m, &ptr->AutomaticBrowseQ, mDNS_DomainTypeBrowseAutomatic,     &ptr->domain, mDNSInterface_Any, FoundDomain, ptr);
+				if (err1 || err2 || err3 || err4 || err5)
+					LogMsg("GetDomains for domain %##s returned error(s):\n"
+						   "%d (mDNS_DomainTypeBrowse)\n"
+						   "%d (mDNS_DomainTypeBrowseDefault)\n"
+						   "%d (mDNS_DomainTypeRegistration)\n"
+						   "%d (mDNS_DomainTypeRegistrationDefault)"
+						   "%d (mDNS_DomainTypeBrowseAutomatic)\n",
+						   ptr->domain.c, err1, err2, err3, err4, err5);
+				}
 			ptr->flag = 0;
 			}
 

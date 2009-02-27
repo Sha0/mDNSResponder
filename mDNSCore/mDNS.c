@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.913  2009/02/27 03:08:47  cheshire
+<rdar://problem/6547720> Crash while shutting down when "local" is in the user's DNS searchlist
+
 Revision 1.912  2009/02/27 02:31:28  cheshire
 Improved "Record not found in list" debugging message
 
@@ -8941,10 +8944,24 @@ mDNSexport void mDNS_StartExit(mDNS *const m)
 	mDNS_ReclaimLockAfterCallback();
 
 #ifndef UNICAST_DISABLED
+	{
+	SearchListElem *s;
 	SuspendLLQs(m);
 	// Don't need to do SleepRecordRegistrations() or SleepServiceRegistrations() here,
 	// because we deregister all records and services later in this routine
 	while (m->Hostnames) mDNS_RemoveDynDNSHostName(m, &m->Hostnames->fqdn);
+
+	// For each member of our SearchList, deregister any records it may have created, and cut them from the list.
+	// Otherwise they'll be forcibly deregistered for us (without being cut them from the appropriate list)
+	// and we may crash because the list still contains dangling pointers.
+	for (s = SearchList; s; s = s->next)
+		while (s->AuthRecs)
+			{
+			ARListElem *dereg = s->AuthRecs;
+			s->AuthRecs = s->AuthRecs->next;
+			mDNS_Deregister_internal(m, &dereg->ar, mDNS_Dereg_normal);	// Memory will be freed in the FreeARElemCallback
+			}
+	}
 #endif
 
 	for (intf = m->HostInterfaces; intf; intf = intf->next)
