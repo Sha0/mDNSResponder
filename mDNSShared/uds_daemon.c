@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.442  2009/02/27 00:58:17  cheshire
+Improved detail of SIGINFO logging for m->DuplicateRecords
+
 Revision 1.441  2009/02/24 22:18:59  cheshire
 Include interface name for interface-specific AuthRecords
 
@@ -3988,6 +3991,38 @@ mDNSlocal void LogClientInfo(mDNS *const m, request_state *req)
 		LogMsgNoIdent("%3d: Unrecognized operation %p", req->sd, req->terminate);
 	}
 
+mDNSlocal void LogAuthRecords(mDNS *const m, const mDNSs32 now, AuthRecord *ResourceRecords)
+	{
+	if (!ResourceRecords) LogMsgNoIdent("<None>");
+	else
+		{
+		mDNSEthAddr owner = zeroEthAddr;
+		LogMsgNoIdent("    Int    Next  Expire   State");
+		for (ar = ResourceRecords; ar; ar=ar->next)
+			{
+			NetworkInterfaceInfo *info = (NetworkInterfaceInfo *)ar->resrec.InterfaceID;
+			if (!mDNSSameEthAddress(&owner, &ar->WakeUp.MAC))
+				{ owner = ar->WakeUp.MAC; LogMsgNoIdent("Proxying for %.6a seq %d", &owner, ar->WakeUp.seq); }
+			if (AuthRecord_uDNS(ar))
+				LogMsgNoIdent("%7d %7d %7d %7d %s",
+					ar->ThisAPInterval / mDNSPlatformOneSecond,
+					(ar->LastAPTime + ar->ThisAPInterval - now) / mDNSPlatformOneSecond,
+					ar->expire ? (ar->expire - now) / mDNSPlatformOneSecond : 0,
+					ar->state, ARDisplayString(m, ar));
+			else if (ar->resrec.InterfaceID != mDNSInterface_LocalOnly)
+				LogMsgNoIdent("%7d %7d %7d %7s %s",
+					ar->ThisAPInterval / mDNSPlatformOneSecond,
+					ar->AnnounceCount ? (ar->LastAPTime + ar->ThisAPInterval - now) / mDNSPlatformOneSecond : 0,
+					ar->TimeExpire    ? (ar->TimeExpire                      - now) / mDNSPlatformOneSecond : 0,
+					info ? info->ifname : "ALL",
+					ARDisplayString(m, ar));
+			else
+				LogMsgNoIdent("                             LO %s", ARDisplayString(m, ar));
+			usleep((m->KnownBugs & mDNS_KnownBug_LossySyslog) ? 3333 : 1000);
+			}
+		}
+	}
+
 mDNSexport void udsserver_info(mDNS *const m)
 	{
 	const mDNSs32 now = mDNS_TimeNow(m);
@@ -3995,7 +4030,6 @@ mDNSexport void udsserver_info(mDNS *const m)
 	mDNSu32 slot;
 	const CacheGroup *cg;
 	const CacheRecord *cr;
-	const AuthRecord *ar;
 	const DNSQuestion *q;
 	const DNameListElem *d;
 
@@ -4033,50 +4067,10 @@ mDNSexport void udsserver_info(mDNS *const m)
 	LogMsgNoIdent("Cache currently contains %lu entities; %lu referenced by active questions", CacheUsed, CacheActive);
 
 	LogMsgNoIdent("--------- Auth Records ---------");
-	if (!m->ResourceRecords) LogMsgNoIdent("<None>");
-	else
-		{
-		mDNSEthAddr owner = zeroEthAddr;
-		LogMsgNoIdent("    Int    Next  Expire   State");
-		for (ar = m->ResourceRecords; ar; ar=ar->next)
-			{
-			NetworkInterfaceInfo *info = (NetworkInterfaceInfo *)ar->resrec.InterfaceID;
-			if (!mDNSSameEthAddress(&owner, &ar->WakeUp.MAC))
-				{ owner = ar->WakeUp.MAC; LogMsgNoIdent("Proxying for %.6a seq %d", &owner, ar->WakeUp.seq); }
-			if (AuthRecord_uDNS(ar))
-				LogMsgNoIdent("%7d %7d %7d %7d %s",
-					ar->ThisAPInterval / mDNSPlatformOneSecond,
-					(ar->LastAPTime + ar->ThisAPInterval - now) / mDNSPlatformOneSecond,
-					ar->expire ? (ar->expire - now) / mDNSPlatformOneSecond : 0,
-					ar->state, ARDisplayString(m, ar));
-			else if (ar->resrec.InterfaceID != mDNSInterface_LocalOnly)
-				LogMsgNoIdent("%7d %7d %7d %7s %s",
-					ar->ThisAPInterval / mDNSPlatformOneSecond,
-					ar->AnnounceCount ? (ar->LastAPTime + ar->ThisAPInterval - now) / mDNSPlatformOneSecond : 0,
-					ar->TimeExpire    ? (ar->TimeExpire                      - now) / mDNSPlatformOneSecond : 0,
-					info ? info->ifname : "ALL",
-					ARDisplayString(m, ar));
-			else
-				LogMsgNoIdent("                             LO %s", ARDisplayString(m, ar));
-			usleep((m->KnownBugs & mDNS_KnownBug_LossySyslog) ? 3333 : 1000);
-			}
-		}
+	LogAuthRecords(m, now, m->ResourceRecords);
 
 	LogMsgNoIdent("------ Duplicate Records -------");
-	if (!m->DuplicateRecords) LogMsgNoIdent("<None>");
-	else
-		{
-		mDNSEthAddr owner = zeroEthAddr;
-		for (ar = m->DuplicateRecords; ar; ar=ar->next)
-			{
-			if (!mDNSSameEthAddress(&owner, &ar->WakeUp.MAC))
-				{ owner = ar->WakeUp.MAC; LogMsgNoIdent("Proxying for %.6a seq %d", &owner, ar->WakeUp.seq); }
-			LogMsgNoIdent("                %7d         %s",
-				ar->TimeExpire    ? (ar->TimeExpire                      - now) / mDNSPlatformOneSecond : 0,
-				ARDisplayString(m, ar));
-			usleep((m->KnownBugs & mDNS_KnownBug_LossySyslog) ? 3333 : 1000);
-			}
-		}
+	LogAuthRecords(m, now, m->DuplicateRecords);
 
 	LogMsgNoIdent("----- ServiceRegistrations -----");
 	if (!m->ServiceRegistrations) LogMsgNoIdent("<None>");
