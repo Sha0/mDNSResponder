@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.912  2009/02/27 02:31:28  cheshire
+Improved "Record not found in list" debugging message
+
 Revision 1.911  2009/02/21 01:42:11  cheshire
 Updated log messages
 
@@ -2056,8 +2059,7 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 		{
 		// No need to log an error message if we already know this is a potentially repeated deregistration
 		if (drt != mDNS_Dereg_repeat)
-			LogMsg("mDNS_Deregister_internal: Record %p %##s (%s) not found in list",
-				rr, rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
+			LogMsg("mDNS_Deregister_internal: Record %p not found in list %s", rr, ARDisplayString(m,rr));
 		return(mStatus_BadReferenceErr);
 		}
 
