@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.443  2009/02/27 02:28:41  cheshire
+Need to declare "const AuthRecord *ar;"
+
 Revision 1.442  2009/02/27 00:58:17  cheshire
 Improved detail of SIGINFO logging for m->DuplicateRecords
 
@@ -3996,6 +3999,7 @@ mDNSlocal void LogAuthRecords(mDNS *const m, const mDNSs32 now, AuthRecord *Reso
 	if (!ResourceRecords) LogMsgNoIdent("<None>");
 	else
 		{
+		const AuthRecord *ar;
 		mDNSEthAddr owner = zeroEthAddr;
 		LogMsgNoIdent("    Int    Next  Expire   State");
 		for (ar = ResourceRecords; ar; ar=ar->next)
