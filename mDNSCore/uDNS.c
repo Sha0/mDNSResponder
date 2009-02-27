@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.603  2009/02/27 02:56:57  cheshire
+Moved struct SearchListElem definition from uDNS.c into mDNSEmbeddedAPI.h
+
 Revision 1.602  2009/02/13 06:29:54  cheshire
 Converted LogOperation messages to LogInfo
 
@@ -1283,25 +1286,12 @@ Revision 1.227  2006/01/09 20:47:05  cheshire
 	#pragma warning(disable:4706)
 #endif
 
-typedef struct SearchListElem
-	{
-	struct SearchListElem *next;
-	domainname domain;
-	int flag;		// -1 means delete, 0 means unchanged, +1 means newly added
-	DNSQuestion BrowseQ;
-	DNSQuestion DefBrowseQ;
-	DNSQuestion AutomaticBrowseQ;
-	DNSQuestion RegisterQ;
-	DNSQuestion DefRegisterQ;
-	ARListElem *AuthRecs;
-	} SearchListElem;
-
 // For domain enumeration and automatic browsing
 // This is the user's DNS search list.
 // In each of these domains we search for our special pointer records (lb._dns-sd._udp.<domain>, etc.)
 // to discover recommended domains for domain enumeration (browse, default browse, registration,
 // default registration) and possibly one or more recommended automatic browsing domains.
-static SearchListElem *SearchList = mDNSNULL;
+mDNSexport SearchListElem *SearchList = mDNSNULL;
 
 // Temporary workaround to make ServiceRecordSet list management safe.
 // Ideally a ServiceRecordSet shouldn't be a special entity that's given special treatment by the uDNS code
@@ -5059,7 +5049,7 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 	else if (question == &slElem->DefRegisterQ)     name = mDNS_DomainTypeNames[mDNS_DomainTypeRegistrationDefault];
 	else { LogMsg("FoundDomain - unknown question"); return; }
 
-	LogInfo("FoundDomain: %s %s Q %##s A %s", AddRecord ? "Add" : "Rmv", name, question->qname.c, RRDisplayString(m, answer));
+	LogInfo("FoundDomain: %p %s %s Q %##s A %s", answer->InterfaceID, AddRecord ? "Add" : "Rmv", name, question->qname.c, RRDisplayString(m, answer));
 
 	if (AddRecord)
 		{
@@ -5069,6 +5059,7 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 		MakeDomainNameFromDNSNameString(&arElem->ar.namestorage, name);
 		AppendDNSNameString            (&arElem->ar.namestorage, "local");
 		AssignDomainName(&arElem->ar.resrec.rdata->u.name, &answer->rdata->u.name);
+		LogInfo("FoundDomain: Registering %s", ARDisplayString(m, &arElem->ar));
 		err = mDNS_Register(m, &arElem->ar);
 		if (err) { LogMsg("ERROR: FoundDomain - mDNS_Register returned %d", err); mDNSPlatformMemFree(arElem); return; }
 		arElem->next = slElem->AuthRecs;
@@ -5083,7 +5074,7 @@ mDNSlocal void FoundDomain(mDNS *const m, DNSQuestion *question, const ResourceR
 				{
 				ARListElem *dereg = *ptr;
 				*ptr = (*ptr)->next;
-				debugf("Deregistering PTR %##s -> %##s", dereg->ar.resrec.name->c, dereg->ar.resrec.rdata->u.name.c);
+				LogInfo("FoundDomain: Deregistering %s", ARDisplayString(m, &dereg->ar));
 				err = mDNS_Deregister(m, &dereg->ar);
 				if (err) LogMsg("ERROR: FoundDomain - mDNS_Deregister returned %d", err);
 				// Memory will be freed in the FreeARElemCallback
@@ -5152,7 +5143,7 @@ mDNSexport mStatus uDNS_RegisterSearchDomains(mDNS *const m)
 	while (*p)
 		{
 		ptr = *p;
-		debugf("RegisterSearchDomains %d %p %##s", ptr->flag, ptr->AuthRecs, ptr->domain.c);
+		LogInfo("RegisterSearchDomains %d %p %##s", ptr->flag, ptr->AuthRecs, ptr->domain.c);
 		if (ptr->flag == -1)	// remove
 			{
 			ARListElem *arList = ptr->AuthRecs;

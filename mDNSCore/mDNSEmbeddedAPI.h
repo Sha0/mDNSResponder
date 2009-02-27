@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.540  2009/02/27 02:56:57  cheshire
+Moved struct SearchListElem definition from uDNS.c into mDNSEmbeddedAPI.h
+
 Revision 1.539  2009/02/17 23:29:01  cheshire
 Throttle logging to a slower rate when running on SnowLeopard
 
@@ -2297,6 +2300,26 @@ struct NetworkInterfaceInfo_struct
 	mDNSu8          McastTxRx;			// Send/Receive multicast on this { InterfaceID, address family } ?
 	mDNSu8          NetWake;			// Set if Wake-On-Magic-Packet is enabled on this interface
 	};
+
+typedef struct SearchListElem
+	{
+	struct SearchListElem *next;
+	domainname domain;
+	int flag;		// -1 means delete, 0 means unchanged, +1 means newly added
+	DNSQuestion BrowseQ;
+	DNSQuestion DefBrowseQ;
+	DNSQuestion AutomaticBrowseQ;
+	DNSQuestion RegisterQ;
+	DNSQuestion DefRegisterQ;
+	ARListElem *AuthRecs;
+	} SearchListElem;
+
+// For domain enumeration and automatic browsing
+// This is the user's DNS search list.
+// In each of these domains we search for our special pointer records (lb._dns-sd._udp.<domain>, etc.)
+// to discover recommended domains for domain enumeration (browse, default browse, registration,
+// default registration) and possibly one or more recommended automatic browsing domains.
+extern SearchListElem *SearchList;		// This really ought to be part of mDNS_struct -- SC
 
 // ***************************************************************************
 #if 0
