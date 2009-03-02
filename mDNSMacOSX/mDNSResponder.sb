@@ -26,6 +26,9 @@
 ; SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ;
 ; $Log: mDNSResponder.sb,v $
+; Revision 1.36  2009/03/02 01:32:20  mcguire
+; <rdar://problem/6623264> Seatbelt: Add rule to allow raw sockets
+;
 ; Revision 1.35  2009/02/07 02:51:10  cheshire
 ; <rdar://problem/6084043> Sleep Proxy: Need to adopt IOPMConnection
 ; Allow mDNSResponder to access IOPMConnection API
@@ -188,6 +191,8 @@
 ; Rules to allow the operations mDNSResponder needs start here
 
 (allow network*)			; Allow networking, including Unix Domain Sockets
+(if (defined? 'system-socket)
+    (allow system-socket))  ; To create raw sockets
 (allow sysctl-read)			; To get hardware model information
 (allow file-read-metadata)	; Needed for dyld to work
 (allow ipc-posix-shm)		; Needed for POSIX shared memory
