@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.915  2009/03/03 22:51:53  cheshire
+<rdar://problem/6504236> Sleep Proxy: Waking on same network but different interface will cause conflicts
+
 Revision 1.914  2009/03/03 00:46:09  cheshire
 Additional debugging information in ResolveSimultaneousProbe
 
@@ -2505,7 +2508,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 				rr->LastAPTime = m->timenow;
 				if (rr->AddressProxy.type == mDNSAddrType_IPv4)
 					{
-					LogSPS("ARP Announcement %d Capturing traffic for %.6a %s", rr->AnnounceCount, &rr->WakeUp.MAC, ARDisplayString(m,rr));
+					LogSPS("ARP Announcement %d Capturing traffic for H-MAC %.6a I-MAC %.6a %s", rr->AnnounceCount, &rr->WakeUp.MAC, &rr->WakeUp.IMAC, ARDisplayString(m,rr));
 					SendARP(m, 1, rr, rr->AddressProxy.ip.v4.b, zeroEthAddr.b, rr->AddressProxy.ip.v4.b, onesEthAddr.b);
 					}
 				else if (rr->AddressProxy.type == mDNSAddrType_IPv6)
@@ -3262,7 +3265,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 					if (rr->AddressProxy.type == mDNSAddrType_IPv4)
 						{
 						LogSPS("SendQueries ARP Probe %d %s %s", rr->ProbeCount, InterfaceNameForID(m, rr->resrec.InterfaceID), ARDisplayString(m,rr));
-						SendARP(m, 1, rr, zerov4Addr.b, zeroEthAddr.b, rr->AddressProxy.ip.v4.b, rr->WakeUp.MAC.b);
+						SendARP(m, 1, rr, zerov4Addr.b, zeroEthAddr.b, rr->AddressProxy.ip.v4.b, rr->WakeUp.IMAC.b);
 						}
 					else if (rr->AddressProxy.type == mDNSAddrType_IPv6)
 						{
@@ -3323,8 +3326,9 @@ mDNSlocal void SendQueries(mDNS *const m)
 	// go through our interface list sending the appropriate queries on each interface
 	while (intf)
 		{
+		const int os = !intf->MAC.l[0] ? 0 : DNSOpt_Header_Space + mDNSSameEthAddress(&m->PrimaryMAC, &intf->MAC) ? DNSOpt_OwnerData_ID_Space : DNSOpt_OwnerData_ID_Wake_Space;
+		int OwnerRecordSpace = 0;
 		AuthRecord *rr;
-		mDNSBool AddOwnerRecord = mDNSfalse;
 		mDNSu8 *queryptr = m->omsg.data;
 		mDNSu8 *limit    = m->omsg.data + AbsoluteMaxDNSMessageData;
 		InitializeDNSMessage(&m->omsg.h, zeroID, QueryFlags);
@@ -3348,11 +3352,13 @@ mDNSlocal void SendQueries(mDNS *const m)
 					if (SuppressOnThisInterface(q->DupSuppress, intf) ||
 						BuildQuestion(m, &m->omsg, &queryptr, q, &kalistptr, &answerforecast))
 						q->SendQNow = (q->InterfaceID || !q->SendOnAll) ? mDNSNULL : GetNextActiveInterfaceID(intf);
+
+					// Once we've put at least one question, cut back our limit to the normal single-packet size
+					if (m->omsg.h.numQuestions) limit = m->omsg.data + NormalMaxDNSMessageData;
 					}
 				}
 
 			// Put probe questions in this packet
-			if (m->omsg.h.numQuestions) limit = m->omsg.data + NormalMaxDNSMessageData;
 			for (rr = m->ResourceRecords; rr; rr=rr->next)
 				if (rr->SendRNow == intf->InterfaceID)
 					{
@@ -3361,12 +3367,12 @@ mDNSlocal void SendQueries(mDNS *const m)
 					mDNSu8 *newptr = putQuestion(&m->omsg, queryptr, limit, rr->resrec.name, kDNSQType_ANY, (mDNSu16)(rr->resrec.rrclass | ucbit));
 					// We forecast: compressed name (2) type (2) class (2) TTL (4) rdlength (2) rdata (n)
 					mDNSu32 forecast = answerforecast + 12 + rr->resrec.rdestimate;
-					if (newptr && newptr + forecast + DNSOpt_Header_Space + DNSOpt_OwnerData_Space < limit)
+					if (newptr && newptr + forecast + os < limit)
 						{
-						queryptr       = newptr;
-						limit          = m->omsg.data + NormalMaxDNSMessageData;
-						answerforecast = forecast;
-						if (intf->MAC.l[0]) AddOwnerRecord = mDNStrue;
+						queryptr         = newptr;
+						limit            = m->omsg.data + NormalMaxDNSMessageData;
+						answerforecast   = forecast;
+						OwnerRecordSpace = os;
 						rr->SendRNow = (rr->resrec.InterfaceID) ? mDNSNULL : GetNextActiveInterfaceID(intf);
 						rr->IncludeInProbe = mDNStrue;
 						verbosedebugf("SendQueries:   Put Question %##s (%s) probecount %d",
@@ -3380,7 +3386,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 					}
 			}
 
-		if (AddOwnerRecord) limit = m->omsg.data + NormalMaxDNSMessageData - (DNSOpt_Header_Space + DNSOpt_OwnerData_Space);
+		if (m->omsg.h.numQuestions) limit = m->omsg.data + NormalMaxDNSMessageData - OwnerRecordSpace;
 
 		// Put our known answer list (either new one from this question or questions, or remainder of old one from last time)
 		while (KnownAnswerList)
@@ -3393,7 +3399,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 				verbosedebugf("SendQueries:   Put %##s (%s) at %d - %d",
 					ka->resrec.name->c, DNSTypeName(ka->resrec.rrtype), queryptr - m->omsg.data, newptr - m->omsg.data);
 				queryptr = newptr;
-				limit = m->omsg.data + NormalMaxDNSMessageData - (AddOwnerRecord ? (DNSOpt_Header_Space + DNSOpt_OwnerData_Space) : 0);
+				limit = m->omsg.data + NormalMaxDNSMessageData - OwnerRecordSpace;
 				KnownAnswerList = ka->NextInKAList;
 				ka->NextInKAList = mDNSNULL;
 				}
@@ -3417,17 +3423,20 @@ mDNSlocal void SendQueries(mDNS *const m)
 				else LogMsg("SendQueries:   How did we fail to have space for the Update record %s", ARDisplayString(m,rr));
 				}
 
-		if (AddOwnerRecord)
+		if (OwnerRecordSpace)
 			{
 			AuthRecord opt;
 			mDNS_SetupResourceRecord(&opt, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
 			opt.resrec.rrclass    = NormalMaxDNSMessageData;
 			opt.resrec.rdlength   = sizeof(rdataOPT);	// One option in this OPT record
 			opt.resrec.rdestimate = sizeof(rdataOPT);
-			opt.resrec.rdata->u.opt[0].opt           = kDNSOpt_Owner;
-			opt.resrec.rdata->u.opt[0].u.owner.vers  = 0;
-			opt.resrec.rdata->u.opt[0].u.owner.seq   = m->SleepSeqNum;
-			opt.resrec.rdata->u.opt[0].u.owner.MAC   = intf->MAC;
+			opt.resrec.rdata->u.opt[0].opt              = kDNSOpt_Owner;
+			opt.resrec.rdata->u.opt[0].optlen           = DNSOpt_Owner_Space(&opt.resrec.rdata->u.opt[0]) - 4;
+			opt.resrec.rdata->u.opt[0].u.owner.vers     = 0;
+			opt.resrec.rdata->u.opt[0].u.owner.seq      = m->SleepSeqNum;
+			opt.resrec.rdata->u.opt[0].u.owner.MAC      = m->PrimaryMAC;
+			opt.resrec.rdata->u.opt[0].u.owner.IMAC     = intf->MAC;
+			opt.resrec.rdata->u.opt[0].u.owner.password = zeroEthAddr;
 			LogSPS("SendQueries putting %s", ARDisplayString(m, &opt));
 			queryptr = PutResourceRecordTTLWithLimit(&m->omsg, queryptr, &m->omsg.h.numAdditionals,
 				&opt.resrec, opt.resrec.rroriginalttl, m->omsg.data + AbsoluteMaxDNSMessageData);
@@ -3498,7 +3507,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 			}
 	}
 
-mDNSlocal void SendWakeup(mDNS *const m, mDNSInterfaceID InterfaceID, mDNSEthAddr *EthAddr)
+mDNSlocal void SendWakeup(mDNS *const m, mDNSInterfaceID InterfaceID, mDNSEthAddr *EthAddr, mDNSOpaque48 *password)
 	{
 	int i, j;
 	mDNSu8 *ptr = m->omsg.data;
@@ -3520,6 +3529,9 @@ mDNSlocal void SendWakeup(mDNS *const m, mDNSInterfaceID InterfaceID, mDNSEthAdd
 
 	// 0x14 Wakeup data
 	for (j=0; j<16; j++) for (i=0; i<6; i++) *ptr++ = EthAddr->b[i];
+
+	// 0x74 Password
+	for (i=0; i<6; i++) *ptr++ = password->b[i];
 
 	mDNSPlatformSendRawPacket(m->omsg.data, ptr, InterfaceID);
 
@@ -4226,6 +4238,8 @@ mDNSlocal void CheckProxyRecords(mDNS *const m, AuthRecord *list)
 
 mDNSlocal void SendSPSRegistration(mDNS *const m, const NetworkInterfaceInfo *intf)
 	{
+	const int ownerspace = mDNSSameEthAddress(&m->PrimaryMAC, &intf->MAC) ? DNSOpt_OwnerData_ID_Space : DNSOpt_OwnerData_ID_Wake_Space;
+	const int optspace = DNSOpt_Header_Space + DNSOpt_LeaseData_Space + ownerspace;
 	AuthRecord *rr;
 
 	// Mark our mDNS records (not unicast records) for transfer to SPS
@@ -4247,7 +4261,7 @@ mDNSlocal void SendSPSRegistration(mDNS *const m, const NetworkInterfaceInfo *in
 			if (rr->SendRNow)
 				{
 				mDNSu8 *newptr;
-				const mDNSu8 *const limit = m->omsg.data + (m->omsg.h.mDNS_numUpdates ? NormalMaxDNSMessageData : AbsoluteMaxDNSMessageData) - DNSOpt_SPS_Space;
+				const mDNSu8 *const limit = m->omsg.data + (m->omsg.h.mDNS_numUpdates ? NormalMaxDNSMessageData : AbsoluteMaxDNSMessageData) - optspace;
 				if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
 					rr->resrec.rrclass |= kDNSClass_UniqueRRSet;	// Temporarily set the 'unique' bit so PutResourceRecord will set it
 				newptr = PutResourceRecordTTLWithLimit(&m->omsg, p, &m->omsg.h.mDNS_numUpdates, &rr->resrec, rr->resrec.rroriginalttl, limit);
@@ -4263,12 +4277,16 @@ mDNSlocal void SendSPSRegistration(mDNS *const m, const NetworkInterfaceInfo *in
 			opt.resrec.rrclass    = NormalMaxDNSMessageData;
 			opt.resrec.rdlength   = sizeof(rdataOPT) * 2;	// Two options in this OPT record
 			opt.resrec.rdestimate = sizeof(rdataOPT) * 2;
-			opt.resrec.rdata->u.opt[0].opt           = kDNSOpt_Lease;
-			opt.resrec.rdata->u.opt[0].u.updatelease = DEFAULT_UPDATE_LEASE;
-			opt.resrec.rdata->u.opt[1].opt           = kDNSOpt_Owner;
-			opt.resrec.rdata->u.opt[1].u.owner.vers  = 0;
-			opt.resrec.rdata->u.opt[1].u.owner.seq   = m->SleepSeqNum;
-			opt.resrec.rdata->u.opt[1].u.owner.MAC   = intf->MAC;
+			opt.resrec.rdata->u.opt[0].opt              = kDNSOpt_Lease;
+			opt.resrec.rdata->u.opt[0].optlen           = DNSOpt_LeaseData_Space - 4;
+			opt.resrec.rdata->u.opt[0].u.updatelease    = DEFAULT_UPDATE_LEASE;
+			opt.resrec.rdata->u.opt[1].opt              = kDNSOpt_Owner;
+			opt.resrec.rdata->u.opt[1].optlen           = DNSOpt_Owner_Space(&opt.resrec.rdata->u.opt[1]);
+			opt.resrec.rdata->u.opt[1].u.owner.vers     = 0;
+			opt.resrec.rdata->u.opt[1].u.owner.seq      = m->SleepSeqNum;
+			opt.resrec.rdata->u.opt[1].u.owner.MAC      = m->PrimaryMAC;
+			opt.resrec.rdata->u.opt[1].u.owner.IMAC     = intf->MAC;
+			opt.resrec.rdata->u.opt[1].u.owner.password = zeroEthAddr;
 			LogSPS("SendSPSRegistration putting %s", ARDisplayString(m, &opt));
 			p = PutResourceRecordTTLWithLimit(&m->omsg, p, &m->omsg.h.numAdditionals, &opt.resrec, opt.resrec.rroriginalttl, m->omsg.data + AbsoluteMaxDNSMessageData);
 			if (p)
@@ -5051,7 +5069,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	// ***
 	// *** 1. Look in Additional Section for an OPT record
 	// ***
-	ptr = LocateOptRR(query, end, DNSOpt_OwnerData_Space);
+	ptr = LocateOptRR(query, end, DNSOpt_OwnerData_ID_Space);
 	if (ptr)
 		{
 		ptr = GetLargeResourceRecord(m, query, ptr, end, InterfaceID, kDNSRecordTypePacketAdd, &m->rec);
@@ -6205,7 +6223,7 @@ mDNSlocal void SPSRecordCallback(mDNS *const m, AuthRecord *const ar, mStatus re
 		{
 		LogMsg("Received Conflicting mDNS -- waking %s %.6a %s",
 			InterfaceNameForID(m, ar->resrec.InterfaceID), &ar->WakeUp.MAC, ARDisplayString(m, ar));
-		SendWakeup(m, ar->resrec.InterfaceID, &ar->WakeUp.MAC);
+		SendWakeup(m, ar->resrec.InterfaceID, &ar->WakeUp.IMAC, &ar->WakeUp.password);
 		}
 	else if (result == mStatus_MemFree)
 		mDNSPlatformMemFree(ar);
@@ -6236,7 +6254,7 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 	if (mDNS_LogLevel >= MDNS_LOG_VERBOSE_DEBUG)
 		DumpPacket(m, mStatus_NoError, mDNSfalse, "UDP", srcaddr, srcport, dstaddr, dstport, msg, end);
 
-	ptr = LocateOptRR(msg, end, DNSOpt_LeaseData_Space + DNSOpt_OwnerData_Space);
+	ptr = LocateOptRR(msg, end, DNSOpt_LeaseData_Space + DNSOpt_OwnerData_ID_Space);
 	if (ptr)
 		{
 		ptr = GetLargeResourceRecord(m, msg, ptr, end, 0, kDNSRecordTypePacketAdd, &m->rec);
@@ -6260,6 +6278,8 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 
 	if (updatelease > 0x40000000UL / mDNSPlatformOneSecond)
 		updatelease = 0x40000000UL / mDNSPlatformOneSecond;
+
+	LogSPS("Received Update for H-MAC %.6a I-MAC %.6a Password %.6a seq %d", &owner.MAC, &owner.IMAC, &owner.password, owner.seq);
 
 	ptr = LocateAuthorities(msg, end);
 	for (i = 0; i < msg->h.mDNS_numUpdates && ptr && ptr < end; i++)
@@ -8365,12 +8385,12 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 					static const char msg2[] = "Ignoring  ARP Request from      ";
 					static const char msg3[] = "Creating Local ARP Cache entry  ";
 					static const char msg4[] = "Answering ARP Request from      ";
-					const char *const msg = mDNSSameEthAddress(&arp->sha, &rr->WakeUp.MAC) ? msg1 :
-											(rr->AnnounceCount == InitialAnnounceCount)    ? msg2 :
-											mDNSSameEthAddress(&arp->sha, &intf->MAC)      ? msg3 : msg4;
-					LogSPS("%-7s %s %.6a %.4a for %.4a -- %.6a %s",
-						InterfaceNameForID(m, InterfaceID), msg, &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.MAC, ARDisplayString(m, rr));
-					if      (msg == msg3) mDNSPlatformSetLocalARP(&arp->tpa, &rr->WakeUp.MAC, InterfaceID);
+					const char *const msg = mDNSSameEthAddress(&arp->sha, &rr->WakeUp.IMAC) ? msg1 :
+											(rr->AnnounceCount == InitialAnnounceCount)     ? msg2 :
+											mDNSSameEthAddress(&arp->sha, &intf->MAC)       ? msg3 : msg4;
+					LogSPS("%-7s %s %.6a %.4a for %.4a -- H-MAC %.6a I-MAC %.6a %s",
+						InterfaceNameForID(m, InterfaceID), msg, &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.MAC, &rr->WakeUp.IMAC, ARDisplayString(m, rr));
+					if      (msg == msg3) mDNSPlatformSetLocalARP(&arp->tpa, &rr->WakeUp.IMAC, InterfaceID);
 					else if (msg == msg4) SendARP(m, 2, rr, arp->tpa.b, arp->sha.b, arp->spa.b, arp->sha.b);
 					}
 
@@ -8397,16 +8417,16 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 					rr->ProbeCount        = DefaultProbeCountForTypeUnique;
 					rr->AnnounceCount     = InitialAnnounceCount;
 					InitializeLastAPTime(m, rr);
-					if (mDNSSameEthAddress(&arp->sha, &rr->WakeUp.MAC))
+					if (mDNSSameEthAddress(&arp->sha, &rr->WakeUp.IMAC))
 						LogSPS("%-7s ARP %s from owner %.6a %.4a for %-14.4a -- re-starting probing for %s",
 							InterfaceNameForID(m, InterfaceID),
 							mDNSSameIPv4Address(arp->spa, arp->tpa) ? "Announcement" : "Request     ",
 							&arp->sha, &arp->spa, &arp->tpa, ARDisplayString(m, rr));
 					else
 						{
-						LogMsg("%-7s Conflicting ARP from %.6a %.4a for %.4a -- waking %.6a %s",
-							InterfaceNameForID(m, InterfaceID), &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.MAC, ARDisplayString(m, rr));
-						SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.MAC);
+						LogMsg("%-7s Conflicting ARP from %.6a %.4a for %.4a -- waking H-MAC %.6a I-MAC %.6a %s",
+							InterfaceNameForID(m, InterfaceID), &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.MAC, &rr->WakeUp.IMAC, ARDisplayString(m, rr));
+						SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.IMAC, &rr->WakeUp.password);
 						}
 					}
 			}
@@ -8489,9 +8509,9 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 						if (r2)
 							{
 							rr->AnnounceCount = 0;
-							LogMsg("Waking host at %s %.4a %.6a for %s",
-								InterfaceNameForID(m, rr->resrec.InterfaceID), &v4->dst, &rr->WakeUp.MAC, ARDisplayString(m, r2));
-							SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.MAC);
+							LogMsg("Waking host at %s %.4a H-MAC %.6a I-MAC %.6a for %s",
+								InterfaceNameForID(m, rr->resrec.InterfaceID), &v4->dst, &rr->WakeUp.MAC, &rr->WakeUp.IMAC, ARDisplayString(m, r2));
+							SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.IMAC, &rr->WakeUp.password);
 							}
 						else
 							LogSPS("Sleeping host at %s %.4a %.6a has no service on %#s %d",

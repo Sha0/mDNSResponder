@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.236  2009/03/03 22:51:53  cheshire
+<rdar://problem/6504236> Sleep Proxy: Waking on same network but different interface will cause conflicts
+
 Revision 1.235  2009/02/07 05:55:44  cheshire
 Only pay attention to m->DelaySleep when it's nonzero
 
@@ -529,7 +532,7 @@ mDNSexport const mDNSv6Addr      onesIPv6Addr      = { { 255, 255, 255, 255, 255
 mDNSexport const mDNSAddr        zeroAddr          = { mDNSAddrType_None, {{{ 0 }}} };
 mDNSexport const mDNSEthAddr     onesEthAddr       = { { 255, 255, 255, 255, 255, 255 } };
 
-mDNSexport const OwnerOptData    zeroOwner         = { 0, 0, { { 0 } } };
+mDNSexport const OwnerOptData    zeroOwner         = { 0, 0, { { 0 } }, { { 0 } }, { { 0 } } };
 
 mDNSexport const mDNSInterfaceID mDNSInterface_Any       = 0;
 mDNSexport const mDNSInterfaceID mDNSInterface_LocalOnly = (mDNSInterfaceID)1;
@@ -704,6 +707,12 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *const rr, const RD
 										length += mDNS_snprintf(buffer+length, RemSpc, " Vers %d",     opt->u.owner.vers);
 										length += mDNS_snprintf(buffer+length, RemSpc, " Seq %3d", (mDNSu8)opt->u.owner.seq);	// Display as unsigned
 										length += mDNS_snprintf(buffer+length, RemSpc, " MAC %.6a",    opt->u.owner.MAC.b);
+										if (opt->optlen >= DNSOpt_OwnerData_ID_Wake_Space-4)
+											{
+											length += mDNS_snprintf(buffer+length, RemSpc, " I-MAC %.6a", opt->u.owner.IMAC.b);
+											if (opt->optlen > DNSOpt_OwnerData_ID_Wake_Space-4)
+												length += mDNS_snprintf(buffer+length, RemSpc, " Password %.6a", opt->u.owner.password.b);
+											}
 										break;
 									default:
 										length += mDNS_snprintf(buffer+length, RemSpc, " Unknown %d",  opt->opt);
@@ -1958,14 +1967,15 @@ mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNS
 							int len = 0;
 							const rdataOPT *opt;
 							const rdataOPT *const end = (const rdataOPT *)&rr->rdata->u.data[rr->rdlength];
-							for (opt = &rr->rdata->u.opt[0]; opt < end; opt++) len += DNSOpt_Data_Space(opt->opt);
+							for (opt = &rr->rdata->u.opt[0]; opt < end; opt++) len += DNSOpt_Data_Space(opt);
 							if (ptr + len > limit) { LogMsg("ERROR: putOptRData - out of space"); return mDNSNULL; }
 						
 							for (opt = &rr->rdata->u.opt[0]; opt < end; opt++)
 								{
+								const int space = DNSOpt_Data_Space(opt);
 								ptr = putVal16(ptr, opt->opt);
-								ptr = putVal16(ptr, DNSOpt_Data_Space(opt->opt) - 4);
-								switch(opt->opt)
+								ptr = putVal16(ptr, space - 4);
+								switch (opt->opt)
 									{
 									case kDNSOpt_LLQ:
 										ptr = putVal16(ptr, opt->u.llq.vers);
@@ -1983,6 +1993,16 @@ mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNS
 										*ptr++ = opt->u.owner.seq;
 										mDNSPlatformMemCopy(ptr, opt->u.owner.MAC.b, 6);  // 6-byte MAC address
 										ptr += 6;
+										if (space >= DNSOpt_OwnerData_ID_Wake_Space)
+											{
+											mDNSPlatformMemCopy(ptr, opt->u.owner.IMAC.b, 6);
+											ptr += 6;
+											if (space > DNSOpt_OwnerData_ID_Wake_Space)
+												{
+												mDNSPlatformMemCopy(ptr, opt->u.owner.password.b, space - DNSOpt_OwnerData_ID_Wake_Space);
+												ptr += space - DNSOpt_OwnerData_ID_Wake_Space;
+												}
+											}
 										break;
 									}
 								}
@@ -2473,8 +2493,7 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 								if (ptr + 4 > end) { LogMsg("GetLargeResourceRecord: OPT RDATA ptr + 4 > end"); return(mDNSNULL); }
 								opt->opt    = getVal16(&ptr);
 								opt->optlen = getVal16(&ptr);
-								if (opt->optlen != DNSOpt_Data_Space(opt->opt) - 4)
-									{ LogMsg("GetLargeResourceRecord: optlen %d should be %d", opt->optlen, DNSOpt_Data_Space(opt->opt) - 4); return(mDNSNULL); }
+								if (!ValidDNSOpt(opt)) { LogMsg("GetLargeResourceRecord: opt %d optlen %d wrong", opt->opt, opt->optlen); return(mDNSNULL); }
 								if (ptr + opt->optlen > end) { LogMsg("GetLargeResourceRecord: ptr + opt->optlen > end"); return(mDNSNULL); }
 								switch(opt->opt)
 									{
@@ -2498,8 +2517,16 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 									case kDNSOpt_Owner:
 										opt->u.owner.vers = ptr[0];
 										opt->u.owner.seq  = ptr[1];
-										mDNSPlatformMemCopy(opt->u.owner.MAC.b, ptr+2, 6);  // 6-byte MAC address
-										ptr += 8;
+										mDNSPlatformMemCopy(opt->u.owner.MAC .b, ptr+2, 6);		// 6-byte MAC address
+										mDNSPlatformMemCopy(opt->u.owner.IMAC.b, ptr+2, 6);		// 6-byte MAC address
+										opt->u.owner.password = zeroEthAddr;
+										if (opt->optlen >= DNSOpt_OwnerData_ID_Wake_Space-4)
+											{
+											mDNSPlatformMemCopy(opt->u.owner.IMAC.b, ptr+8, 6);	// 6-byte MAC address
+											if (opt->optlen > DNSOpt_OwnerData_ID_Wake_Space-4)
+												mDNSPlatformMemCopy(opt->u.owner.password.b, ptr+14, opt->optlen - (DNSOpt_OwnerData_ID_Wake_Space-4));
+											}
+										ptr += opt->optlen;
 										break;
 									}
 								opt++;  // increment pointer into rdatabody

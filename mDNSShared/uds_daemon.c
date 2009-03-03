@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.444  2009/03/03 22:51:55  cheshire
+<rdar://problem/6504236> Sleep Proxy: Waking on same network but different interface will cause conflicts
+
 Revision 1.443  2009/02/27 02:28:41  cheshire
 Need to declare "const AuthRecord *ar;"
 
@@ -4006,7 +4009,15 @@ mDNSlocal void LogAuthRecords(mDNS *const m, const mDNSs32 now, AuthRecord *Reso
 			{
 			NetworkInterfaceInfo *info = (NetworkInterfaceInfo *)ar->resrec.InterfaceID;
 			if (!mDNSSameEthAddress(&owner, &ar->WakeUp.MAC))
-				{ owner = ar->WakeUp.MAC; LogMsgNoIdent("Proxying for %.6a seq %d", &owner, ar->WakeUp.seq); }
+				{
+				owner = ar->WakeUp.MAC;
+				if (ar->WakeUp.password.l[0])
+					LogMsgNoIdent("Proxying for H-MAC %.6a I-MAC %.6a Password %.6a seq %d", &ar->WakeUp.MAC, &ar->WakeUp.IMAC, &ar->WakeUp.password, ar->WakeUp.seq);
+				else if (!mDNSSameEthAddress(&ar->WakeUp.MAC, &ar->WakeUp.IMAC) || 1)
+					LogMsgNoIdent("Proxying for H-MAC %.6a I-MAC %.6a seq %d",               &ar->WakeUp.MAC, &ar->WakeUp.IMAC,                       ar->WakeUp.seq);
+				else
+					LogMsgNoIdent("Proxying for %.6a seq %d",                                &ar->WakeUp.MAC,                                         ar->WakeUp.seq);
+				}
 			if (AuthRecord_uDNS(ar))
 				LogMsgNoIdent("%7d %7d %7d %7d %s",
 					ar->ThisAPInterval / mDNSPlatformOneSecond,
@@ -4185,7 +4196,9 @@ mDNSexport void udsserver_info(mDNS *const m)
 
 	if (!m->SPSSocket) LogMsgNoIdent("Not offering Sleep Proxy Service");
 	else LogMsgNoIdent("Offering Sleep Proxy Service: %#s", m->SPSRecords.RR_SRV.resrec.name->c);
-	
+
+	LogMsgNoIdent("---------- Misc State ----------");
+	LogMsgNoIdent("PrimaryMAC %.6a", &m->PrimaryMAC);
 
 	LogMsgNoIdent("------ Auto Browse Domains -----");
 	if (!AutoBrowseDomains) LogMsgNoIdent("<None>");

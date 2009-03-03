@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.542  2009/03/03 22:51:53  cheshire
+<rdar://problem/6504236> Sleep Proxy: Waking on same network but different interface will cause conflicts
+
 Revision 1.541  2009/03/03 00:45:19  cheshire
 Added m->PrimaryMAC field
 
@@ -1472,9 +1475,11 @@ typedef struct
 
 typedef struct
 	{
-	mDNSu8       vers;
-	mDNSs8       seq;
-	mDNSEthAddr  MAC;
+	mDNSu8       vers;		// Version number of this Owner OPT record
+	mDNSs8       seq;		// Sleep/wake epoch
+	mDNSEthAddr  MAC;		// Host's primary identifier (e.g. MAC of on-board Ethernet)
+	mDNSEthAddr  IMAC;		// Interface's MAC address (if different to primary MAC)
+	mDNSOpaque48 password;	// Optional password
 	} OwnerOptData;
 
 // Note: rdataOPT format may be repeated an arbitrary number of times in a single resource record
@@ -1489,20 +1494,31 @@ typedef packedstruct
 // Header      11 bytes (name 1, type 2, class 2, TTL 4, length 2)
 // LLQ rdata   18 bytes (opt 2, len 2, vers 2, op 2, err 2, id 8, lease 4)
 // Lease rdata  8 bytes (opt 2, len 2, lease 4)
-// Owner rdata 12 bytes (opt 2, len 2, owner 8)
+// Owner rdata 12-24    (opt 2, len 2, owner 8-20)
 
-#define DNSOpt_Header_Space    11
-#define DNSOpt_LLQData_Space   (4 + 18)
-#define DNSOpt_LeaseData_Space (4 +  4)
-#define DNSOpt_OwnerData_Space (4 +  8)
+#define DNSOpt_Header_Space                 11
+#define DNSOpt_LLQData_Space               (4 + 2 + 2 + 2 + 8 + 4)
+#define DNSOpt_LeaseData_Space             (4 + 4)
+#define DNSOpt_OwnerData_ID_Space          (4 + 2 + 6)
+#define DNSOpt_OwnerData_ID_Wake_Space     (4 + 2 + 6 + 6)
+#define DNSOpt_OwnerData_ID_Wake_PW4_Space (4 + 2 + 6 + 6 + 4)
+#define DNSOpt_OwnerData_ID_Wake_PW6_Space (4 + 2 + 6 + 6 + 6)
 
-// Space needed to put a Sleep Proxy Server lease-and-owner option into a packet:
-#define DNSOpt_SPS_Space (DNSOpt_Header_Space + DNSOpt_LeaseData_Space + DNSOpt_OwnerData_Space)
+#define ValidOwnerLength(X) (	(X) == DNSOpt_OwnerData_ID_Space          - 4 || \
+								(X) == DNSOpt_OwnerData_ID_Wake_Space     - 4 || \
+								(X) == DNSOpt_OwnerData_ID_Wake_PW4_Space - 4 || \
+								(X) == DNSOpt_OwnerData_ID_Wake_PW6_Space - 4    )
 
-#define DNSOpt_Data_Space(X) (                             \
-	(X) == kDNSOpt_LLQ   ? DNSOpt_LLQData_Space   :        \
-	(X) == kDNSOpt_Lease ? DNSOpt_LeaseData_Space :        \
-	(X) == kDNSOpt_Owner ? DNSOpt_OwnerData_Space : 0x10000)
+#define ValidDNSOpt(O) (((O)->opt == kDNSOpt_LLQ   && (O)->optlen == DNSOpt_LLQData_Space   - 4) || \
+						((O)->opt == kDNSOpt_Lease && (O)->optlen == DNSOpt_LeaseData_Space - 4) || \
+						((O)->opt == kDNSOpt_Owner && ValidOwnerLength((O)->optlen)            )    )
+
+#define DNSOpt_Owner_Space(O) (mDNSSameEthAddress(&(O)->u.owner.MAC, &(O)->u.owner.IMAC) ? DNSOpt_OwnerData_ID_Space : DNSOpt_OwnerData_ID_Wake_Space)
+
+#define DNSOpt_Data_Space(O) (                                  \
+	(O)->opt == kDNSOpt_LLQ   ? DNSOpt_LLQData_Space   :        \
+	(O)->opt == kDNSOpt_Lease ? DNSOpt_LeaseData_Space :        \
+	(O)->opt == kDNSOpt_Owner ? DNSOpt_Owner_Space(O)  : 0x10000)
 
 // StandardAuthRDSize is 264 (256+8), which is large enough to hold a maximum-sized SRV record (6 + 256 bytes)
 // MaximumRDSize is 8K the absolute maximum we support (at least for now)

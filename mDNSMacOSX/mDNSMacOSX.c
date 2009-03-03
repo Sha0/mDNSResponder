@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.638  2009/03/03 22:51:54  cheshire
+<rdar://problem/6504236> Sleep Proxy: Waking on same network but different interface will cause conflicts
+
 Revision 1.637  2009/02/26 22:58:47  cheshire
 <rdar://problem/6616335> Crash in mDNSResponder at mDNSResponder • CloseBPF + 75
 Fixed race condition between the kqueue thread and the CFRunLoop thread.
@@ -3559,7 +3562,6 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 	struct ifaddrs *ifa         = myGetIfAddrs(1);
 	struct ifaddrs *v4Loopback  = NULL;
 	struct ifaddrs *v6Loopback  = NULL;
-	mDNSEthAddr PrimaryMAC      = zeroEthAddr;
 	char defaultname[64];
 #ifndef NO_IPV6
 	int InfoSocket              = socket(AF_INET6, SOCK_DGRAM, 0);
@@ -3596,8 +3598,8 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 		if (ifa->ifa_addr->sa_family == AF_LINK)
 			{
 			struct sockaddr_dl *sdl = (struct sockaddr_dl *)ifa->ifa_addr;
-			if (sdl->sdl_type == IFT_ETHER && sdl->sdl_alen == sizeof(PrimaryMAC) && mDNSSameEthAddress(&PrimaryMAC, &zeroEthAddr))
-				mDNSPlatformMemCopy(PrimaryMAC.b, sdl->sdl_data + sdl->sdl_nlen, 6);
+			if (sdl->sdl_type == IFT_ETHER && sdl->sdl_alen == sizeof(m->PrimaryMAC) && mDNSSameEthAddress(&m->PrimaryMAC, &zeroEthAddr))
+				mDNSPlatformMemCopy(m->PrimaryMAC.b, sdl->sdl_data + sdl->sdl_nlen, 6);
 			}
 
 		if (ifa->ifa_flags & IFF_UP && ifa->ifa_addr)
@@ -3687,7 +3689,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 #endif
 
 	// If we haven't set up AutoTunnelHostAddr yet, do it now
-	if (!mDNSSameEthAddress(&PrimaryMAC, &zeroEthAddr) && m->AutoTunnelHostAddr.b[0] == 0)
+	if (!mDNSSameEthAddress(&m->PrimaryMAC, &zeroEthAddr) && m->AutoTunnelHostAddr.b[0] == 0)
 		{
 		m->AutoTunnelHostAddr.b[0x0] = 0xFD;		// Required prefix for "locally assigned" ULA (See RFC 4193)
 		m->AutoTunnelHostAddr.b[0x1] = mDNSRandom(255);
@@ -3697,14 +3699,14 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 		m->AutoTunnelHostAddr.b[0x5] = mDNSRandom(255);
 		m->AutoTunnelHostAddr.b[0x6] = mDNSRandom(255);
 		m->AutoTunnelHostAddr.b[0x7] = mDNSRandom(255);
-		m->AutoTunnelHostAddr.b[0x8] = PrimaryMAC.b[0] ^ 0x02;	// See RFC 3513, Appendix A for explanation
-		m->AutoTunnelHostAddr.b[0x9] = PrimaryMAC.b[1];
-		m->AutoTunnelHostAddr.b[0xA] = PrimaryMAC.b[2];
+		m->AutoTunnelHostAddr.b[0x8] = m->PrimaryMAC.b[0] ^ 0x02;	// See RFC 3513, Appendix A for explanation
+		m->AutoTunnelHostAddr.b[0x9] = m->PrimaryMAC.b[1];
+		m->AutoTunnelHostAddr.b[0xA] = m->PrimaryMAC.b[2];
 		m->AutoTunnelHostAddr.b[0xB] = 0xFF;
 		m->AutoTunnelHostAddr.b[0xC] = 0xFE;
-		m->AutoTunnelHostAddr.b[0xD] = PrimaryMAC.b[3];
-		m->AutoTunnelHostAddr.b[0xE] = PrimaryMAC.b[4];
-		m->AutoTunnelHostAddr.b[0xF] = PrimaryMAC.b[5];
+		m->AutoTunnelHostAddr.b[0xD] = m->PrimaryMAC.b[3];
+		m->AutoTunnelHostAddr.b[0xE] = m->PrimaryMAC.b[4];
+		m->AutoTunnelHostAddr.b[0xF] = m->PrimaryMAC.b[5];
 		m->AutoTunnelLabel.c[0] = mDNS_snprintf((char*)m->AutoTunnelLabel.c+1, 254, "AutoTunnel-%02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X",
 			m->AutoTunnelHostAddr.b[0x8], m->AutoTunnelHostAddr.b[0x9], m->AutoTunnelHostAddr.b[0xA], m->AutoTunnelHostAddr.b[0xB],
 			m->AutoTunnelHostAddr.b[0xC], m->AutoTunnelHostAddr.b[0xD], m->AutoTunnelHostAddr.b[0xE], m->AutoTunnelHostAddr.b[0xF]);
@@ -3712,7 +3714,7 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 		}
 	
 	mDNS_snprintf(defaultname, sizeof(defaultname), "%.*s-%02X%02X%02X%02X%02X%02X", HINFO_HWstring_prefixlen, HINFO_HWstring,
-		PrimaryMAC.b[0], PrimaryMAC.b[1], PrimaryMAC.b[2], PrimaryMAC.b[3], PrimaryMAC.b[4], PrimaryMAC.b[5]);
+		m->PrimaryMAC.b[0], m->PrimaryMAC.b[1], m->PrimaryMAC.b[2], m->PrimaryMAC.b[3], m->PrimaryMAC.b[4], m->PrimaryMAC.b[5]);
 
 	// Set up the nice label
 	domainlabel nicelabel;
