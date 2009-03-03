@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.917  2009/03/03 23:14:25  cheshire
+Got rid of code duplication by making subroutine "SetupOwnerOpt"
+
 Revision 1.916  2009/03/03 23:04:43  cheshire
 For clarity, renamed "MAC" field to "HMAC" (Host MAC, as opposed to Interface MAC)
 
@@ -2447,6 +2450,19 @@ mDNSlocal void SendARP(mDNS *const m, const mDNSu8 op, const AuthRecord *const r
 	mDNSPlatformSendRawPacket(m->omsg.data, ptr, rr->resrec.InterfaceID);
 	}
 
+mDNSlocal void SetupOwnerOpt(const mDNS *const m, const NetworkInterfaceInfo *const intf, rdataOPT *const owner)
+	{
+	owner->u.owner.vers     = 0;
+	owner->u.owner.seq      = m->SleepSeqNum;
+	owner->u.owner.HMAC     = m->PrimaryMAC;
+	owner->u.owner.IMAC     = intf->MAC;
+	owner->u.owner.password = zeroEthAddr;
+
+	// Don't try to compute the optlen until *after* we've set up the data fields
+	owner->opt              = kDNSOpt_Owner;
+	owner->optlen           = DNSOpt_Owner_Space(owner) - 4;
+	}
+
 mDNSlocal void GrantUpdateCredit(AuthRecord *rr)
 	{
 	if (++rr->UpdateCredits >= kMaxUpdateCredits) rr->NextUpdateCredit = 0;
@@ -3433,13 +3449,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 			opt.resrec.rrclass    = NormalMaxDNSMessageData;
 			opt.resrec.rdlength   = sizeof(rdataOPT);	// One option in this OPT record
 			opt.resrec.rdestimate = sizeof(rdataOPT);
-			opt.resrec.rdata->u.opt[0].opt              = kDNSOpt_Owner;
-			opt.resrec.rdata->u.opt[0].optlen           = DNSOpt_Owner_Space(&opt.resrec.rdata->u.opt[0]) - 4;
-			opt.resrec.rdata->u.opt[0].u.owner.vers     = 0;
-			opt.resrec.rdata->u.opt[0].u.owner.seq      = m->SleepSeqNum;
-			opt.resrec.rdata->u.opt[0].u.owner.HMAC     = m->PrimaryMAC;
-			opt.resrec.rdata->u.opt[0].u.owner.IMAC     = intf->MAC;
-			opt.resrec.rdata->u.opt[0].u.owner.password = zeroEthAddr;
+			SetupOwnerOpt(m, intf, &opt.resrec.rdata->u.opt[0]);
 			LogSPS("SendQueries putting %s", ARDisplayString(m, &opt));
 			queryptr = PutResourceRecordTTLWithLimit(&m->omsg, queryptr, &m->omsg.h.numAdditionals,
 				&opt.resrec, opt.resrec.rroriginalttl, m->omsg.data + AbsoluteMaxDNSMessageData);
@@ -4283,13 +4293,7 @@ mDNSlocal void SendSPSRegistration(mDNS *const m, const NetworkInterfaceInfo *in
 			opt.resrec.rdata->u.opt[0].opt              = kDNSOpt_Lease;
 			opt.resrec.rdata->u.opt[0].optlen           = DNSOpt_LeaseData_Space - 4;
 			opt.resrec.rdata->u.opt[0].u.updatelease    = DEFAULT_UPDATE_LEASE;
-			opt.resrec.rdata->u.opt[1].opt              = kDNSOpt_Owner;
-			opt.resrec.rdata->u.opt[1].optlen           = DNSOpt_Owner_Space(&opt.resrec.rdata->u.opt[1]) - 4;
-			opt.resrec.rdata->u.opt[1].u.owner.vers     = 0;
-			opt.resrec.rdata->u.opt[1].u.owner.seq      = m->SleepSeqNum;
-			opt.resrec.rdata->u.opt[1].u.owner.HMAC     = m->PrimaryMAC;
-			opt.resrec.rdata->u.opt[1].u.owner.IMAC     = intf->MAC;
-			opt.resrec.rdata->u.opt[1].u.owner.password = zeroEthAddr;
+			SetupOwnerOpt(m, intf, &opt.resrec.rdata->u.opt[1]);
 			LogSPS("SendSPSRegistration putting %s", ARDisplayString(m, &opt));
 			p = PutResourceRecordTTLWithLimit(&m->omsg, p, &m->omsg.h.numAdditionals, &opt.resrec, opt.resrec.rroriginalttl, m->omsg.data + AbsoluteMaxDNSMessageData);
 			if (p)
