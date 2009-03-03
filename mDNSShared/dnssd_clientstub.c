@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.127  2009/03/03 21:38:19  cheshire
+Improved "deliver_request ERROR" message
+
 Revision 1.126  2009/02/12 21:02:22  cheshire
 Commented out BPF "Sending fd" debugging message
 
@@ -746,8 +749,8 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 #else
 	if (write_all(sdr->sockfd, (char *)hdr, datalen + sizeof(ipc_msg_hdr)) < 0)
 		{
-		syslog(LOG_WARNING, "dnssd_clientstub deliver_request ERROR: write_all(%lu) failed %d (%s)",
-			(unsigned long)(datalen + sizeof(ipc_msg_hdr)), dnssd_errno, dnssd_strerror(dnssd_errno));
+		syslog(LOG_WARNING, "dnssd_clientstub deliver_request ERROR: write_all(%d, %lu bytes) failed %d (%s)",
+			sdr->sockfd, (unsigned long)(datalen + sizeof(ipc_msg_hdr)), dnssd_errno, dnssd_strerror(dnssd_errno));
 		goto cleanup;
 		}
 #endif
