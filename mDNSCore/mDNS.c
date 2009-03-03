@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.914  2009/03/03 00:46:09  cheshire
+Additional debugging information in ResolveSimultaneousProbe
+
 Revision 1.913  2009/02/27 03:08:47  cheshire
 <rdar://problem/6547720> Crash while shutting down when "local" is in the user's DNS searchlist
 
@@ -3340,6 +3343,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 					debugf("SendQueries: %s question for %##s (%s) at %d forecast total %d",
 						SuppressOnThisInterface(q->DupSuppress, intf) ? "Suppressing" : "Putting    ",
 						q->qname.c, DNSTypeName(q->qtype), queryptr - m->omsg.data, queryptr + answerforecast - m->omsg.data);
+
 					// If we're suppressing this question, or we successfully put it, update its SendQNow state
 					if (SuppressOnThisInterface(q->DupSuppress, intf) ||
 						BuildQuestion(m, &m->omsg, &queryptr, q, &kalistptr, &answerforecast))
@@ -4973,12 +4977,19 @@ mDNSlocal void ResolveSimultaneousProbe(mDNS *const m, const DNSMessage *const q
 				if (!result) result = CompareRData(our, &m->rec.r);
 				if (result)
 					{
-					const char *const msg = (result < 0) ? "lost:" : "won: ";
+					const char *const msg = (result < 0) ? "lost:" : (result > 0) ? "won: " : "tie: ";
 					LogMsg("ResolveSimultaneousProbe: Pkt Record:      %08lX %s", m->rec.r.resrec.rdatahash, CRDisplayString(m, &m->rec.r));
 					LogMsg("ResolveSimultaneousProbe: Our Record %s %08lX %s", msg,   our->resrec.rdatahash, ARDisplayString(m, our));
 					}
 				if (result < 0) { mDNS_Deregister_internal(m, our, mDNS_Dereg_conflict); goto exit; }
 				}
+#if 0
+			else
+				{
+				LogMsg("ResolveSimultaneousProbe: Pkt Record:      %08lX %s", m->rec.r.resrec.rdatahash, CRDisplayString(m, &m->rec.r));
+				LogMsg("ResolveSimultaneousProbe: Our Record ign:  %08lX %s", our->resrec.rdatahash,     ARDisplayString(m, our));
+				}
+#endif
 			}
 		m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 		}
@@ -8603,6 +8614,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->mDNSPlatformStatus            = mStatus_Waiting;
 	m->UnicastPort4                  = zeroIPPort;
 	m->UnicastPort6                  = zeroIPPort;
+	m->PrimaryMAC                    = zeroEthAddr;
 	m->MainCallback                  = Callback;
 	m->MainContext                   = Context;
 	m->rec.r.resrec.RecordType       = 0;
