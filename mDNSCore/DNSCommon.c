@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.237  2009/03/03 23:04:43  cheshire
+For clarity, renamed "MAC" field to "HMAC" (Host MAC, as opposed to Interface MAC)
+
 Revision 1.236  2009/03/03 22:51:53  cheshire
 <rdar://problem/6504236> Sleep Proxy: Waking on same network but different interface will cause conflicts
 
@@ -706,7 +709,7 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *const rr, const RD
 									case kDNSOpt_Owner:
 										length += mDNS_snprintf(buffer+length, RemSpc, " Vers %d",     opt->u.owner.vers);
 										length += mDNS_snprintf(buffer+length, RemSpc, " Seq %3d", (mDNSu8)opt->u.owner.seq);	// Display as unsigned
-										length += mDNS_snprintf(buffer+length, RemSpc, " MAC %.6a",    opt->u.owner.MAC.b);
+										length += mDNS_snprintf(buffer+length, RemSpc, " MAC %.6a",    opt->u.owner.HMAC.b);
 										if (opt->optlen >= DNSOpt_OwnerData_ID_Wake_Space-4)
 											{
 											length += mDNS_snprintf(buffer+length, RemSpc, " I-MAC %.6a", opt->u.owner.IMAC.b);
@@ -1991,11 +1994,11 @@ mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNS
 									case kDNSOpt_Owner:
 										*ptr++ = opt->u.owner.vers;
 										*ptr++ = opt->u.owner.seq;
-										mDNSPlatformMemCopy(ptr, opt->u.owner.MAC.b, 6);  // 6-byte MAC address
+										mDNSPlatformMemCopy(ptr, opt->u.owner.HMAC.b, 6);  // 6-byte Host identifier
 										ptr += 6;
 										if (space >= DNSOpt_OwnerData_ID_Wake_Space)
 											{
-											mDNSPlatformMemCopy(ptr, opt->u.owner.IMAC.b, 6);
+											mDNSPlatformMemCopy(ptr, opt->u.owner.IMAC.b, 6);	// 6-byte interface MAC
 											ptr += 6;
 											if (space > DNSOpt_OwnerData_ID_Wake_Space)
 												{
@@ -2517,7 +2520,7 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 									case kDNSOpt_Owner:
 										opt->u.owner.vers = ptr[0];
 										opt->u.owner.seq  = ptr[1];
-										mDNSPlatformMemCopy(opt->u.owner.MAC .b, ptr+2, 6);		// 6-byte MAC address
+										mDNSPlatformMemCopy(opt->u.owner.HMAC.b, ptr+2, 6);		// 6-byte MAC address
 										mDNSPlatformMemCopy(opt->u.owner.IMAC.b, ptr+2, 6);		// 6-byte MAC address
 										opt->u.owner.password = zeroEthAddr;
 										if (opt->optlen >= DNSOpt_OwnerData_ID_Wake_Space-4)

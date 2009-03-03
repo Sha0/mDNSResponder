@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.916  2009/03/03 23:04:43  cheshire
+For clarity, renamed "MAC" field to "HMAC" (Host MAC, as opposed to Interface MAC)
+
 Revision 1.915  2009/03/03 22:51:53  cheshire
 <rdar://problem/6504236> Sleep Proxy: Waking on same network but different interface will cause conflicts
 
@@ -1563,7 +1566,7 @@ mDNSlocal mDNSBool PacketRRMatchesSignature(const CacheRecord *const pktrr, cons
 	if (pktrr->resrec.InterfaceID &&
 		authrr->resrec.InterfaceID &&
 		pktrr->resrec.InterfaceID != authrr->resrec.InterfaceID) return(mDNSfalse);
-	if (!(authrr->resrec.RecordType & kDNSRecordTypeUniqueMask) || authrr->WakeUp.MAC.l[0])
+	if (!(authrr->resrec.RecordType & kDNSRecordTypeUniqueMask) || authrr->WakeUp.HMAC.l[0])
 		if (pktrr->resrec.rrtype != authrr->resrec.rrtype) return(mDNSfalse);
 	return(mDNSBool)(
 		pktrr->resrec.rrclass == authrr->resrec.rrclass &&
@@ -1667,7 +1670,7 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr)
 	if (rr->AddressProxy.type) rr->LastAPTime = m->timenow;
 
 	// For now, since we don't yet handle IPv6 ND or data packets, we send deletions for our SPS clients' AAAA records
-	if (rr->WakeUp.MAC.l[0] && rr->resrec.rrtype == kDNSType_AAAA)
+	if (rr->WakeUp.HMAC.l[0] && rr->resrec.rrtype == kDNSType_AAAA)
 		rr->LastAPTime = m->timenow - rr->ThisAPInterval + mDNSPlatformOneSecond * 10;
 	
 	SetNextAnnounceProbeTime(m, rr);
@@ -1857,7 +1860,7 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	rr->UpdateBlocked     = 0;
 
 	// For records we're holding as proxy (except reverse-mapping PTR records) two announcements is sufficient
-	if (rr->WakeUp.MAC.l[0] && !rr->AddressProxy.type) rr->AnnounceCount = 2;
+	if (rr->WakeUp.HMAC.l[0] && !rr->AddressProxy.type) rr->AnnounceCount = 2;
 
 	// Field Group 4: Transient uDNS state for Authoritative Records
 	rr->state             = regState_Zero;
@@ -2508,7 +2511,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 				rr->LastAPTime = m->timenow;
 				if (rr->AddressProxy.type == mDNSAddrType_IPv4)
 					{
-					LogSPS("ARP Announcement %d Capturing traffic for H-MAC %.6a I-MAC %.6a %s", rr->AnnounceCount, &rr->WakeUp.MAC, &rr->WakeUp.IMAC, ARDisplayString(m,rr));
+					LogSPS("ARP Announcement %d Capturing traffic for H-MAC %.6a I-MAC %.6a %s", rr->AnnounceCount, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m,rr));
 					SendARP(m, 1, rr, rr->AddressProxy.ip.v4.b, zeroEthAddr.b, rr->AddressProxy.ip.v4.b, onesEthAddr.b);
 					}
 				else if (rr->AddressProxy.type == mDNSAddrType_IPv6)
@@ -3273,7 +3276,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 						//SendARP(m, 1, rr, rr->AddressProxy.ip.v4.b, zeroEthAddr.b, rr->AddressProxy.ip.v4.b, onesEthAddr.b);
 						}
 					// Mark for sending. (If no active interfaces, then don't even try.)
-					rr->SendRNow   = (!intf || rr->WakeUp.MAC.l[0]) ? mDNSNULL : rr->resrec.InterfaceID ? rr->resrec.InterfaceID : intf->InterfaceID;
+					rr->SendRNow   = (!intf || rr->WakeUp.HMAC.l[0]) ? mDNSNULL : rr->resrec.InterfaceID ? rr->resrec.InterfaceID : intf->InterfaceID;
 					rr->LastAPTime = m->timenow;
 					// When we have a late conflict that resets a record to probing state we use a special marker value greater
 					// than DefaultProbeCountForTypeUnique. Here we detect that state and reset rr->ProbeCount back to the right value.
@@ -3434,7 +3437,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 			opt.resrec.rdata->u.opt[0].optlen           = DNSOpt_Owner_Space(&opt.resrec.rdata->u.opt[0]) - 4;
 			opt.resrec.rdata->u.opt[0].u.owner.vers     = 0;
 			opt.resrec.rdata->u.opt[0].u.owner.seq      = m->SleepSeqNum;
-			opt.resrec.rdata->u.opt[0].u.owner.MAC      = m->PrimaryMAC;
+			opt.resrec.rdata->u.opt[0].u.owner.HMAC     = m->PrimaryMAC;
 			opt.resrec.rdata->u.opt[0].u.owner.IMAC     = intf->MAC;
 			opt.resrec.rdata->u.opt[0].u.owner.password = zeroEthAddr;
 			LogSPS("SendQueries putting %s", ARDisplayString(m, &opt));
@@ -4214,7 +4217,7 @@ mDNSlocal void CheckProxyRecords(mDNS *const m, AuthRecord *list)
 	while (m->CurrentRecord)
 		{
 		AuthRecord *rr = m->CurrentRecord;
-		if (rr->WakeUp.MAC.l[0])
+		if (rr->WakeUp.HMAC.l[0])
 			{
 			if (m->timenow - rr->TimeExpire < 0)		// If proxy record not expired yet, update m->NextScheduledSPS
 				{
@@ -4223,7 +4226,7 @@ mDNSlocal void CheckProxyRecords(mDNS *const m, AuthRecord *list)
 				}
 			else										// else proxy record expired, so remove it
 				{
-				LogSPS("mDNS_Execute: Removing %.6a %s", &rr->WakeUp.MAC, ARDisplayString(m, rr));
+				LogSPS("mDNS_Execute: Removing %.6a %s", &rr->WakeUp.HMAC, ARDisplayString(m, rr));
 				SetSPSProxyListChanged(rr->resrec.InterfaceID);
 				mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
 				// Don't touch rr after this -- memory may have been free'd
@@ -4281,10 +4284,10 @@ mDNSlocal void SendSPSRegistration(mDNS *const m, const NetworkInterfaceInfo *in
 			opt.resrec.rdata->u.opt[0].optlen           = DNSOpt_LeaseData_Space - 4;
 			opt.resrec.rdata->u.opt[0].u.updatelease    = DEFAULT_UPDATE_LEASE;
 			opt.resrec.rdata->u.opt[1].opt              = kDNSOpt_Owner;
-			opt.resrec.rdata->u.opt[1].optlen           = DNSOpt_Owner_Space(&opt.resrec.rdata->u.opt[1]);
+			opt.resrec.rdata->u.opt[1].optlen           = DNSOpt_Owner_Space(&opt.resrec.rdata->u.opt[1]) - 4;
 			opt.resrec.rdata->u.opt[1].u.owner.vers     = 0;
 			opt.resrec.rdata->u.opt[1].u.owner.seq      = m->SleepSeqNum;
-			opt.resrec.rdata->u.opt[1].u.owner.MAC      = m->PrimaryMAC;
+			opt.resrec.rdata->u.opt[1].u.owner.HMAC     = m->PrimaryMAC;
 			opt.resrec.rdata->u.opt[1].u.owner.IMAC     = intf->MAC;
 			opt.resrec.rdata->u.opt[1].u.owner.password = zeroEthAddr;
 			LogSPS("SendSPSRegistration putting %s", ARDisplayString(m, &opt));
@@ -4964,7 +4967,7 @@ mDNSlocal mDNSBool PacketRRConflict(const mDNS *const m, const AuthRecord *const
 		// For records we're proxying, where we don't know the full
 		// relationship between the records, having any matching record
 		// in our AuthRecords list is sufficient evidence of non-conflict
-		if (our->WakeUp.MAC.l[0] && pktset) return(mDNSfalse);
+		if (our->WakeUp.HMAC.l[0] && pktset) return(mDNSfalse);
 		}
 
 	// Okay, this is a conflict
@@ -5033,10 +5036,10 @@ mDNSlocal void ClearProxyRecords(mDNS *const m, const rdataOPT *opt, AuthRecord 
 	while (m->CurrentRecord)
 		{
 		rr = m->CurrentRecord;
-		if (m->rec.r.resrec.InterfaceID == rr->resrec.InterfaceID && mDNSSameEthAddress(&opt->u.owner.MAC, &rr->WakeUp.MAC))
+		if (m->rec.r.resrec.InterfaceID == rr->resrec.InterfaceID && mDNSSameEthAddress(&opt->u.owner.HMAC, &rr->WakeUp.HMAC))
 			if (opt->u.owner.seq != rr->WakeUp.seq || m->timenow - rr->TimeRcvd > mDNSPlatformOneSecond * 60)
 				{
-				LogSPS("ProcessQuery: Removing %.6a %d %d %s", &rr->WakeUp.MAC, opt->u.owner.seq, rr->WakeUp.seq, ARDisplayString(m, rr));
+				LogSPS("ProcessQuery: Removing H-MAC %.6a I-MAC %.6a %d %d %s", &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, opt->u.owner.seq, rr->WakeUp.seq, ARDisplayString(m, rr));
 				mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
 				SetSPSProxyListChanged(m->rec.r.resrec.InterfaceID);
 				}
@@ -5080,7 +5083,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 			// Find owner sub-option(s). We verify that the MAC is non-zero, otherwise we could inadvertently
 			// delete all our own AuthRecords (which are identified by having zero MAC tags on them).
 			for (opt = &m->rec.r.resrec.rdata->u.opt[0]; opt < e; opt++)
-				if (opt->opt == kDNSOpt_Owner && opt->u.owner.vers == 0 && opt->u.owner.MAC.l[0])
+				if (opt->opt == kDNSOpt_Owner && opt->u.owner.vers == 0 && opt->u.owner.HMAC.l[0])
 					{
 					ClearProxyRecords(m, opt, m->ResourceRecords);
 					ClearProxyRecords(m, opt, m->DuplicateRecords);
@@ -6222,7 +6225,7 @@ mDNSlocal void SPSRecordCallback(mDNS *const m, AuthRecord *const ar, mStatus re
 	if (result == mStatus_NameConflict)
 		{
 		LogMsg("Received Conflicting mDNS -- waking %s %.6a %s",
-			InterfaceNameForID(m, ar->resrec.InterfaceID), &ar->WakeUp.MAC, ARDisplayString(m, ar));
+			InterfaceNameForID(m, ar->resrec.InterfaceID), &ar->WakeUp.HMAC, ARDisplayString(m, ar));
 		SendWakeup(m, ar->resrec.InterfaceID, &ar->WakeUp.IMAC, &ar->WakeUp.password);
 		}
 	else if (result == mStatus_MemFree)
@@ -6271,7 +6274,7 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 		m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 		}
 
-	if (!updatelease || !owner.MAC.l[0]) return;
+	if (!updatelease || !owner.HMAC.l[0]) return;
 
 	if (updatelease > 24 * 60 * 60)
 		updatelease = 24 * 60 * 60;
@@ -6279,7 +6282,7 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 	if (updatelease > 0x40000000UL / mDNSPlatformOneSecond)
 		updatelease = 0x40000000UL / mDNSPlatformOneSecond;
 
-	LogSPS("Received Update for H-MAC %.6a I-MAC %.6a Password %.6a seq %d", &owner.MAC, &owner.IMAC, &owner.password, owner.seq);
+	LogSPS("Received Update for H-MAC %.6a I-MAC %.6a Password %.6a seq %d", &owner.HMAC, &owner.IMAC, &owner.password, owner.seq);
 
 	ptr = LocateAuthorities(msg, end);
 	for (i = 0; i < msg->h.mDNS_numUpdates && ptr && ptr < end; i++)
@@ -8389,7 +8392,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 											(rr->AnnounceCount == InitialAnnounceCount)     ? msg2 :
 											mDNSSameEthAddress(&arp->sha, &intf->MAC)       ? msg3 : msg4;
 					LogSPS("%-7s %s %.6a %.4a for %.4a -- H-MAC %.6a I-MAC %.6a %s",
-						InterfaceNameForID(m, InterfaceID), msg, &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.MAC, &rr->WakeUp.IMAC, ARDisplayString(m, rr));
+						InterfaceNameForID(m, InterfaceID), msg, &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m, rr));
 					if      (msg == msg3) mDNSPlatformSetLocalARP(&arp->tpa, &rr->WakeUp.IMAC, InterfaceID);
 					else if (msg == msg4) SendARP(m, 2, rr, arp->tpa.b, arp->sha.b, arp->spa.b, arp->sha.b);
 					}
@@ -8425,7 +8428,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 					else
 						{
 						LogMsg("%-7s Conflicting ARP from %.6a %.4a for %.4a -- waking H-MAC %.6a I-MAC %.6a %s",
-							InterfaceNameForID(m, InterfaceID), &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.MAC, &rr->WakeUp.IMAC, ARDisplayString(m, rr));
+							InterfaceNameForID(m, InterfaceID), &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m, rr));
 						SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.IMAC, &rr->WakeUp.password);
 						}
 					}
@@ -8501,7 +8504,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 						{
 						const mDNSu8 *const tp = (v4->protocol == 6) ? (mDNSu8 *)"\x4_tcp" : (mDNSu8 *)"\x4_udp";
 						for (r2 = m->ResourceRecords; r2; r2=r2->next)
-							if (r2->resrec.InterfaceID == InterfaceID && mDNSSameEthAddress(&r2->WakeUp.MAC, &rr->WakeUp.MAC) &&
+							if (r2->resrec.InterfaceID == InterfaceID && mDNSSameEthAddress(&r2->WakeUp.HMAC, &rr->WakeUp.HMAC) &&
 								r2->resrec.rrtype == kDNSType_SRV && mDNSSameIPPort(r2->resrec.rdata->u.srv.port, port) &&
 								SameDomainLabel(SkipLeadingLabels(r2->resrec.name, 2)->c, tp))
 								break;
@@ -8510,12 +8513,12 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 							{
 							rr->AnnounceCount = 0;
 							LogMsg("Waking host at %s %.4a H-MAC %.6a I-MAC %.6a for %s",
-								InterfaceNameForID(m, rr->resrec.InterfaceID), &v4->dst, &rr->WakeUp.MAC, &rr->WakeUp.IMAC, ARDisplayString(m, r2));
+								InterfaceNameForID(m, rr->resrec.InterfaceID), &v4->dst, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m, r2));
 							SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.IMAC, &rr->WakeUp.password);
 							}
 						else
 							LogSPS("Sleeping host at %s %.4a %.6a has no service on %#s %d",
-								InterfaceNameForID(m, rr->resrec.InterfaceID), &v4->dst, &rr->WakeUp.MAC, tp, mDNSVal16(port));
+								InterfaceNameForID(m, rr->resrec.InterfaceID), &v4->dst, &rr->WakeUp.HMAC, tp, mDNSVal16(port));
 						}
 				mDNS_Unlock(m);
 				}

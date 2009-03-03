@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.543  2009/03/03 23:04:43  cheshire
+For clarity, renamed "MAC" field to "HMAC" (Host MAC, as opposed to Interface MAC)
+
 Revision 1.542  2009/03/03 22:51:53  cheshire
 <rdar://problem/6504236> Sleep Proxy: Waking on same network but different interface will cause conflicts
 
@@ -1477,7 +1480,7 @@ typedef struct
 	{
 	mDNSu8       vers;		// Version number of this Owner OPT record
 	mDNSs8       seq;		// Sleep/wake epoch
-	mDNSEthAddr  MAC;		// Host's primary identifier (e.g. MAC of on-board Ethernet)
+	mDNSEthAddr  HMAC;		// Host's primary identifier (e.g. MAC of on-board Ethernet)
 	mDNSEthAddr  IMAC;		// Interface's MAC address (if different to primary MAC)
 	mDNSOpaque48 password;	// Optional password
 	} OwnerOptData;
@@ -1513,7 +1516,7 @@ typedef packedstruct
 						((O)->opt == kDNSOpt_Lease && (O)->optlen == DNSOpt_LeaseData_Space - 4) || \
 						((O)->opt == kDNSOpt_Owner && ValidOwnerLength((O)->optlen)            )    )
 
-#define DNSOpt_Owner_Space(O) (mDNSSameEthAddress(&(O)->u.owner.MAC, &(O)->u.owner.IMAC) ? DNSOpt_OwnerData_ID_Space : DNSOpt_OwnerData_ID_Wake_Space)
+#define DNSOpt_Owner_Space(O) (mDNSSameEthAddress(&(O)->u.owner.HMAC, &(O)->u.owner.IMAC) ? DNSOpt_OwnerData_ID_Space : DNSOpt_OwnerData_ID_Wake_Space)
 
 #define DNSOpt_Data_Space(O) (                                  \
 	(O)->opt == kDNSOpt_LLQ   ? DNSOpt_LLQData_Space   :        \

@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.445  2009/03/03 23:04:44  cheshire
+For clarity, renamed "MAC" field to "HMAC" (Host MAC, as opposed to Interface MAC)
+
 Revision 1.444  2009/03/03 22:51:55  cheshire
 <rdar://problem/6504236> Sleep Proxy: Waking on same network but different interface will cause conflicts
 
@@ -4008,15 +4011,15 @@ mDNSlocal void LogAuthRecords(mDNS *const m, const mDNSs32 now, AuthRecord *Reso
 		for (ar = ResourceRecords; ar; ar=ar->next)
 			{
 			NetworkInterfaceInfo *info = (NetworkInterfaceInfo *)ar->resrec.InterfaceID;
-			if (!mDNSSameEthAddress(&owner, &ar->WakeUp.MAC))
+			if (!mDNSSameEthAddress(&owner, &ar->WakeUp.HMAC))
 				{
-				owner = ar->WakeUp.MAC;
+				owner = ar->WakeUp.HMAC;
 				if (ar->WakeUp.password.l[0])
-					LogMsgNoIdent("Proxying for H-MAC %.6a I-MAC %.6a Password %.6a seq %d", &ar->WakeUp.MAC, &ar->WakeUp.IMAC, &ar->WakeUp.password, ar->WakeUp.seq);
-				else if (!mDNSSameEthAddress(&ar->WakeUp.MAC, &ar->WakeUp.IMAC) || 1)
-					LogMsgNoIdent("Proxying for H-MAC %.6a I-MAC %.6a seq %d",               &ar->WakeUp.MAC, &ar->WakeUp.IMAC,                       ar->WakeUp.seq);
+					LogMsgNoIdent("Proxying for H-MAC %.6a I-MAC %.6a Password %.6a seq %d", &ar->WakeUp.HMAC, &ar->WakeUp.IMAC, &ar->WakeUp.password, ar->WakeUp.seq);
+				else if (!mDNSSameEthAddress(&ar->WakeUp.HMAC, &ar->WakeUp.IMAC) || 1)
+					LogMsgNoIdent("Proxying for H-MAC %.6a I-MAC %.6a seq %d",               &ar->WakeUp.HMAC, &ar->WakeUp.IMAC,                       ar->WakeUp.seq);
 				else
-					LogMsgNoIdent("Proxying for %.6a seq %d",                                &ar->WakeUp.MAC,                                         ar->WakeUp.seq);
+					LogMsgNoIdent("Proxying for %.6a seq %d",                                &ar->WakeUp.HMAC,                                         ar->WakeUp.seq);
 				}
 			if (AuthRecord_uDNS(ar))
 				LogMsgNoIdent("%7d %7d %7d %7d %s",
