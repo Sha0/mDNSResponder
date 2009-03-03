@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.541  2009/03/03 00:45:19  cheshire
+Added m->PrimaryMAC field
+
 Revision 1.540  2009/02/27 02:56:57  cheshire
 Moved struct SearchListElem definition from uDNS.c into mDNSEmbeddedAPI.h
 
@@ -2359,6 +2362,7 @@ struct mDNS_struct
 	mStatus mDNSPlatformStatus;
 	mDNSIPPort UnicastPort4;
 	mDNSIPPort UnicastPort6;
+	mDNSEthAddr PrimaryMAC;				// Used as unique host ID
 	mDNSCallback *MainCallback;
 	void         *MainContext;
 
