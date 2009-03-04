@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.918  2009/03/04 01:37:14  cheshire
+<rdar://problem/6601428> Limit maximum number of records that a Sleep Proxy Server will accept
+
 Revision 1.917  2009/03/03 23:14:25  cheshire
 Got rid of code duplication by making subroutine "SetupOwnerOpt"
 
@@ -4236,7 +4239,8 @@ mDNSlocal void CheckProxyRecords(mDNS *const m, AuthRecord *list)
 				}
 			else										// else proxy record expired, so remove it
 				{
-				LogSPS("mDNS_Execute: Removing %.6a %s", &rr->WakeUp.HMAC, ARDisplayString(m, rr));
+				LogSPS("mDNS_Execute: Removing %d H-MAC %.6a I-MAC %.6a %d %s",
+					m->ProxyRecords, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, rr->WakeUp.seq, ARDisplayString(m, rr));
 				SetSPSProxyListChanged(rr->resrec.InterfaceID);
 				mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
 				// Don't touch rr after this -- memory may have been free'd
@@ -5043,7 +5047,8 @@ mDNSlocal void ClearProxyRecords(mDNS *const m, const rdataOPT *opt, AuthRecord 
 		if (m->rec.r.resrec.InterfaceID == rr->resrec.InterfaceID && mDNSSameEthAddress(&opt->u.owner.HMAC, &rr->WakeUp.HMAC))
 			if (opt->u.owner.seq != rr->WakeUp.seq || m->timenow - rr->TimeRcvd > mDNSPlatformOneSecond * 60)
 				{
-				LogSPS("ProcessQuery: Removing H-MAC %.6a I-MAC %.6a %d %d %s", &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, opt->u.owner.seq, rr->WakeUp.seq, ARDisplayString(m, rr));
+				LogSPS("ProcessQuery: Removing %d H-MAC %.6a I-MAC %.6a %d %d %s",
+					m->ProxyRecords, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, opt->u.owner.seq, rr->WakeUp.seq, ARDisplayString(m, rr));
 				mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
 				SetSPSProxyListChanged(m->rec.r.resrec.InterfaceID);
 				}
@@ -6226,6 +6231,7 @@ mDNSlocal void SPSRecordCallback(mDNS *const m, AuthRecord *const ar, mStatus re
 	{
 	if (result && result != mStatus_MemFree)
 		LogInfo("SPS Callback %d %s", result, ARDisplayString(m, ar));
+
 	if (result == mStatus_NameConflict)
 		{
 		LogMsg("Received Conflicting mDNS -- waking %s %.6a %s",
@@ -6233,7 +6239,10 @@ mDNSlocal void SPSRecordCallback(mDNS *const m, AuthRecord *const ar, mStatus re
 		SendWakeup(m, ar->resrec.InterfaceID, &ar->WakeUp.IMAC, &ar->WakeUp.password);
 		}
 	else if (result == mStatus_MemFree)
+		{
+		m->ProxyRecords--;
 		mDNSPlatformMemFree(ar);
+		}
 	}
 
 mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
@@ -6243,7 +6252,7 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 	{
 	int i;
 	AuthRecord opt;
-	mDNSu8 *p;
+	mDNSu8 *p = m->omsg.data;
 	OwnerOptData owner;
 	mDNSu32 updatelease = 0;
 	const mDNSu8 *ptr;
@@ -6288,53 +6297,71 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 
 	LogSPS("Received Update for H-MAC %.6a I-MAC %.6a Password %.6a seq %d", &owner.HMAC, &owner.IMAC, &owner.password, owner.seq);
 
-	ptr = LocateAuthorities(msg, end);
-	for (i = 0; i < msg->h.mDNS_numUpdates && ptr && ptr < end; i++)
-		{
-		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, kDNSRecordTypePacketAuth, &m->rec);
-		if (ptr)
-			{
-			mDNSu16 RDLengthMem = GetRDLengthMem(&m->rec.r.resrec);
-			AuthRecord *ar = mDNSPlatformMemAllocate(sizeof(AuthRecord) - sizeof(RDataBody) + RDLengthMem);
-			if (ar)
-				{
-				mDNSu8 RecordType = m->rec.r.resrec.RecordType & kDNSRecordTypePacketUniqueMask ? kDNSRecordTypeUnique : kDNSRecordTypeShared;
-				m->rec.r.resrec.rrclass &= ~kDNSClass_UniqueRRSet;
-				mDNS_SetupResourceRecord(ar, mDNSNULL, InterfaceID, m->rec.r.resrec.rrtype, m->rec.r.resrec.rroriginalttl, RecordType, SPSRecordCallback, ar);
-				AssignDomainName(&ar->namestorage, m->rec.r.resrec.name);
-				ar->resrec.rdlength = GetRDLength(&m->rec.r.resrec, mDNSfalse);
-				ar->resrec.rdata->MaxRDLength = RDLengthMem;
-				mDNSPlatformMemCopy(ar->resrec.rdata->u.data, m->rec.r.resrec.rdata->u.data, RDLengthMem);
-				ar->WakeUp = owner;
-				if (m->rec.r.resrec.rrtype == kDNSType_PTR)
-					{
-					mDNSs32 t = ReverseMapDomainType(m->rec.r.resrec.name);
-					if      (t == mDNSAddrType_IPv4) GetIPv4FromName(&ar->AddressProxy, m->rec.r.resrec.name);
-					else if (t == mDNSAddrType_IPv6) GetIPv6FromName(&ar->AddressProxy, m->rec.r.resrec.name);
-					debugf("mDNSCoreReceiveUpdate: PTR %d %d %#a %s", t, ar->AddressProxy.type, &ar->AddressProxy, ARDisplayString(m, ar));
-					if (ar->AddressProxy.type) SetSPSProxyListChanged(InterfaceID);
-					}
-				ar->TimeRcvd   = m->timenow;
-				ar->TimeExpire = m->timenow + updatelease * mDNSPlatformOneSecond;
-				if (m->NextScheduledSPS - ar->TimeExpire > 0)
-					m->NextScheduledSPS = ar->TimeExpire;
-				mDNS_Register_internal(m, ar);
-				// For now, since we don't get IPv6 ND or data packets, we don't advertise AAAA records for our SPS clients
-				if (ar->resrec.rrtype == kDNSType_AAAA) ar->resrec.rroriginalttl = 0;
-				LogSPS("SPS Registered %X %s", RecordType, ARDisplayString(m,ar));
-				}
-			}
-		m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
-		}
-	
 	InitializeDNSMessage(&m->omsg.h, msg->h.id, UpdateRespFlags);
-	mDNS_SetupResourceRecord(&opt, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
-	opt.resrec.rrclass    = NormalMaxDNSMessageData;
-	opt.resrec.rdlength   = sizeof(rdataOPT);	// One option in this OPT record
-	opt.resrec.rdestimate = sizeof(rdataOPT);
-	opt.resrec.rdata->u.opt[0].opt           = kDNSOpt_Lease;
-	opt.resrec.rdata->u.opt[0].u.updatelease = updatelease;
-	p = PutResourceRecordTTLWithLimit(&m->omsg, m->omsg.data, &m->omsg.h.numAdditionals, &opt.resrec, opt.resrec.rroriginalttl, m->omsg.data + AbsoluteMaxDNSMessageData);
+
+	if (m->ProxyRecords + msg->h.mDNS_numUpdates > MAX_PROXY_RECORDS)
+		{
+		static int msgs = 0;
+		if (msgs < 100)
+			{
+			msgs++;
+			LogMsg("Refusing sleep proxy registration: Too many records %d + %d = %d > %d",
+				m->ProxyRecords, msg->h.mDNS_numUpdates, m->ProxyRecords + msg->h.mDNS_numUpdates, MAX_PROXY_RECORDS);
+			}
+
+		m->omsg.h.flags.b[1] |= kDNSFlag1_RC_Refused;
+		}
+	else
+		{
+		ptr = LocateAuthorities(msg, end);
+		for (i = 0; i < msg->h.mDNS_numUpdates && ptr && ptr < end; i++)
+			{
+			ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, kDNSRecordTypePacketAuth, &m->rec);
+			if (ptr)
+				{
+				mDNSu16 RDLengthMem = GetRDLengthMem(&m->rec.r.resrec);
+				AuthRecord *ar = mDNSPlatformMemAllocate(sizeof(AuthRecord) - sizeof(RDataBody) + RDLengthMem);
+				if (ar)
+					{
+					mDNSu8 RecordType = m->rec.r.resrec.RecordType & kDNSRecordTypePacketUniqueMask ? kDNSRecordTypeUnique : kDNSRecordTypeShared;
+					m->rec.r.resrec.rrclass &= ~kDNSClass_UniqueRRSet;
+					mDNS_SetupResourceRecord(ar, mDNSNULL, InterfaceID, m->rec.r.resrec.rrtype, m->rec.r.resrec.rroriginalttl, RecordType, SPSRecordCallback, ar);
+					AssignDomainName(&ar->namestorage, m->rec.r.resrec.name);
+					ar->resrec.rdlength = GetRDLength(&m->rec.r.resrec, mDNSfalse);
+					ar->resrec.rdata->MaxRDLength = RDLengthMem;
+					mDNSPlatformMemCopy(ar->resrec.rdata->u.data, m->rec.r.resrec.rdata->u.data, RDLengthMem);
+					ar->WakeUp = owner;
+					if (m->rec.r.resrec.rrtype == kDNSType_PTR)
+						{
+						mDNSs32 t = ReverseMapDomainType(m->rec.r.resrec.name);
+						if      (t == mDNSAddrType_IPv4) GetIPv4FromName(&ar->AddressProxy, m->rec.r.resrec.name);
+						else if (t == mDNSAddrType_IPv6) GetIPv6FromName(&ar->AddressProxy, m->rec.r.resrec.name);
+						debugf("mDNSCoreReceiveUpdate: PTR %d %d %#a %s", t, ar->AddressProxy.type, &ar->AddressProxy, ARDisplayString(m, ar));
+						if (ar->AddressProxy.type) SetSPSProxyListChanged(InterfaceID);
+						}
+					ar->TimeRcvd   = m->timenow;
+					ar->TimeExpire = m->timenow + updatelease * mDNSPlatformOneSecond;
+					if (m->NextScheduledSPS - ar->TimeExpire > 0)
+						m->NextScheduledSPS = ar->TimeExpire;
+					mDNS_Register_internal(m, ar);
+					// For now, since we don't get IPv6 ND or data packets, we don't advertise AAAA records for our SPS clients
+					if (ar->resrec.rrtype == kDNSType_AAAA) ar->resrec.rroriginalttl = 0;
+					m->ProxyRecords++;
+					LogSPS("SPS Registered %4d %X %s", m->ProxyRecords, RecordType, ARDisplayString(m,ar));
+					}
+				}
+			m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
+			}
+		
+		mDNS_SetupResourceRecord(&opt, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
+		opt.resrec.rrclass    = NormalMaxDNSMessageData;
+		opt.resrec.rdlength   = sizeof(rdataOPT);	// One option in this OPT record
+		opt.resrec.rdestimate = sizeof(rdataOPT);
+		opt.resrec.rdata->u.opt[0].opt           = kDNSOpt_Lease;
+		opt.resrec.rdata->u.opt[0].u.updatelease = updatelease;
+		p = PutResourceRecordTTLWithLimit(&m->omsg, p, &m->omsg.h.numAdditionals, &opt.resrec, opt.resrec.rroriginalttl, m->omsg.data + AbsoluteMaxDNSMessageData);
+		}
+
 	if (p) mDNSSendDNSMessage(m, &m->omsg, p, InterfaceID, m->SPSSocket, srcaddr, srcport, mDNSNULL, mDNSNULL);
 	}
 
@@ -8764,6 +8791,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->SPSProxyListChanged      = mDNSNULL;
 	m->SPSSocket                = mDNSNULL;
 	m->SPSBrowseCallback        = mDNSNULL;
+	m->ProxyRecords             = 0;
 
 #endif
 
