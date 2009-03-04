@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.605  2009/03/04 00:40:14  cheshire
+Updated DNS server error codes to be more consistent with definitions at
+<http://www.iana.org/assignments/dns-parameters>
+
 Revision 1.604  2009/02/27 03:08:47  cheshire
 <rdar://problem/6547720> Crash while shutting down when "local" is in the user's DNS searchlist
 
@@ -3486,7 +3490,7 @@ mDNSlocal mStatus checkUpdateResult(mDNS *const m, const domainname *const displ
 		}
 	else if (rcode == kDNSFlag1_RC_NotAuth)
 		{
-		// TSIG errors should come with FmtErr as per RFC 2845, but BIND 9 sends them with NotAuth so we look here too
+		// TSIG errors should come with FormErr as per RFC 2845, but BIND 9 sends them with NotAuth so we look here too
 		mStatus tsigerr = ParseTSIGError(m, msg, end, displayname);
 		if (!tsigerr)
 			{
@@ -3495,7 +3499,7 @@ mDNSlocal mStatus checkUpdateResult(mDNS *const m, const domainname *const displ
 			}
 		else return tsigerr;
 		}
-	else if (rcode == kDNSFlag1_RC_FmtErr)
+	else if (rcode == kDNSFlag1_RC_FormErr)
 		{
 		mStatus tsigerr = ParseTSIGError(m, msg, end, displayname);
 		if (!tsigerr)
@@ -4133,7 +4137,7 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 		mDNSu32 lease = GetPktLease(m, msg, end);
 		mDNSs32 expire = m->timenow + (mDNSs32)lease * mDNSPlatformOneSecond;
 
-		//rcode = kDNSFlag1_RC_SrvErr;	// Simulate server failure (rcode 2)
+		//rcode = kDNSFlag1_RC_ServFail;	// Simulate server failure (rcode 2)
 
 		if (CurrentServiceRecordSet)
 			LogMsg("uDNS_ReceiveMsg ERROR CurrentServiceRecordSet already set");

@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.238  2009/03/04 00:40:13  cheshire
+Updated DNS server error codes to be more consistent with definitions at
+<http://www.iana.org/assignments/dns-parameters>
+
 Revision 1.237  2009/03/03 23:04:43  cheshire
 For clarity, renamed "MAC" field to "HMAC" (Host MAC, as opposed to Interface MAC)
 
@@ -2694,8 +2698,8 @@ mDNSlocal const mDNSu8 *DumpRecords(mDNS *const m, const DNSMessage *const msg, 
 
 #define DNS_RC_Name(X) (                             \
 	(X) == kDNSFlag1_RC_NoErr    ? "NoErr"    :      \
-	(X) == kDNSFlag1_RC_FmtErr   ? "FmtErr"   :      \
-	(X) == kDNSFlag1_RC_SrvErr   ? "SrvErr"   :      \
+	(X) == kDNSFlag1_RC_FormErr  ? "FormErr"  :      \
+	(X) == kDNSFlag1_RC_ServFail ? "ServFail" :      \
 	(X) == kDNSFlag1_RC_NXDomain ? "NXDomain" :      \
 	(X) == kDNSFlag1_RC_NotImpl  ? "NotImpl"  :      \
 	(X) == kDNSFlag1_RC_Refused  ? "Refused"  :      \

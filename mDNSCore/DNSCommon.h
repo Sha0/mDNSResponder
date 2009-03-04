@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.70  2009/03/04 00:40:12  cheshire
+Updated DNS server error codes to be more consistent with definitions at
+<http://www.iana.org/assignments/dns-parameters>
+
 Revision 1.69  2008/11/26 20:57:37  cheshire
 For consistency with other similar macros, renamed mdnsIsDigit/mdnsIsLetter/mdnsValidHostChar
 to mDNSIsDigit/mDNSIsLetter/mDNSValidHostChar
@@ -190,8 +194,8 @@ typedef enum
 
 	kDNSFlag1_RC_Mask     = 0x0F,		// Response code
 	kDNSFlag1_RC_NoErr    = 0x00,
-	kDNSFlag1_RC_FmtErr   = 0x01,
-	kDNSFlag1_RC_SrvErr   = 0x02,
+	kDNSFlag1_RC_FormErr  = 0x01,
+	kDNSFlag1_RC_ServFail = 0x02,
 	kDNSFlag1_RC_NXDomain = 0x03,
 	kDNSFlag1_RC_NotImpl  = 0x04,
 	kDNSFlag1_RC_Refused  = 0x05,
