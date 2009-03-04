@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.446  2009/03/04 01:47:35  cheshire
+Include m->ProxyRecords in SIGINFO output
+
 Revision 1.445  2009/03/03 23:04:44  cheshire
 For clarity, renamed "MAC" field to "HMAC" (Host MAC, as opposed to Interface MAC)
 
@@ -4000,7 +4003,7 @@ mDNSlocal void LogClientInfo(mDNS *const m, request_state *req)
 		LogMsgNoIdent("%3d: Unrecognized operation %p", req->sd, req->terminate);
 	}
 
-mDNSlocal void LogAuthRecords(mDNS *const m, const mDNSs32 now, AuthRecord *ResourceRecords)
+mDNSlocal void LogAuthRecords(mDNS *const m, const mDNSs32 now, AuthRecord *ResourceRecords, int *proxy)
 	{
 	if (!ResourceRecords) LogMsgNoIdent("<None>");
 	else
@@ -4011,12 +4014,13 @@ mDNSlocal void LogAuthRecords(mDNS *const m, const mDNSs32 now, AuthRecord *Reso
 		for (ar = ResourceRecords; ar; ar=ar->next)
 			{
 			NetworkInterfaceInfo *info = (NetworkInterfaceInfo *)ar->resrec.InterfaceID;
+			if (ar->WakeUp.HMAC.l[0]) (*proxy)++;
 			if (!mDNSSameEthAddress(&owner, &ar->WakeUp.HMAC))
 				{
 				owner = ar->WakeUp.HMAC;
 				if (ar->WakeUp.password.l[0])
 					LogMsgNoIdent("Proxying for H-MAC %.6a I-MAC %.6a Password %.6a seq %d", &ar->WakeUp.HMAC, &ar->WakeUp.IMAC, &ar->WakeUp.password, ar->WakeUp.seq);
-				else if (!mDNSSameEthAddress(&ar->WakeUp.HMAC, &ar->WakeUp.IMAC) || 1)
+				else if (!mDNSSameEthAddress(&ar->WakeUp.HMAC, &ar->WakeUp.IMAC))
 					LogMsgNoIdent("Proxying for H-MAC %.6a I-MAC %.6a seq %d",               &ar->WakeUp.HMAC, &ar->WakeUp.IMAC,                       ar->WakeUp.seq);
 				else
 					LogMsgNoIdent("Proxying for %.6a seq %d",                                &ar->WakeUp.HMAC,                                         ar->WakeUp.seq);
@@ -4044,8 +4048,8 @@ mDNSlocal void LogAuthRecords(mDNS *const m, const mDNSs32 now, AuthRecord *Reso
 mDNSexport void udsserver_info(mDNS *const m)
 	{
 	const mDNSs32 now = mDNS_TimeNow(m);
-	mDNSu32 CacheUsed = 0, CacheActive = 0;
-	mDNSu32 slot;
+	mDNSu32 CacheUsed = 0, CacheActive = 0, slot;
+	int ProxyA = 0, ProxyD = 0;
 	const CacheGroup *cg;
 	const CacheRecord *cr;
 	const DNSQuestion *q;
@@ -4085,10 +4089,10 @@ mDNSexport void udsserver_info(mDNS *const m)
 	LogMsgNoIdent("Cache currently contains %lu entities; %lu referenced by active questions", CacheUsed, CacheActive);
 
 	LogMsgNoIdent("--------- Auth Records ---------");
-	LogAuthRecords(m, now, m->ResourceRecords);
+	LogAuthRecords(m, now, m->ResourceRecords, &ProxyA);
 
 	LogMsgNoIdent("------ Duplicate Records -------");
-	LogAuthRecords(m, now, m->DuplicateRecords);
+	LogAuthRecords(m, now, m->DuplicateRecords, &ProxyD);
 
 	LogMsgNoIdent("----- ServiceRegistrations -----");
 	if (!m->ServiceRegistrations) LogMsgNoIdent("<None>");
@@ -4189,7 +4193,10 @@ mDNSexport void udsserver_info(mDNS *const m)
 		}
 	#endif // APPLE_OSX_mDNSResponder
 
-	LogMsgNoIdent("---------- Sleep State ---------");
+	LogMsgNoIdent("---------- Misc State ----------");
+
+	LogMsgNoIdent("PrimaryMAC:   %.6a", &m->PrimaryMAC);
+
 	LogMsgNoIdent("m->SleepState %d (%s) seq %d",
 		m->SleepState,
 		m->SleepState == SleepState_Awake        ? "Awake"        :
@@ -4200,8 +4207,8 @@ mDNSexport void udsserver_info(mDNS *const m)
 	if (!m->SPSSocket) LogMsgNoIdent("Not offering Sleep Proxy Service");
 	else LogMsgNoIdent("Offering Sleep Proxy Service: %#s", m->SPSRecords.RR_SRV.resrec.name->c);
 
-	LogMsgNoIdent("---------- Misc State ----------");
-	LogMsgNoIdent("PrimaryMAC %.6a", &m->PrimaryMAC);
+	if (m->ProxyRecords == ProxyA + ProxyD) LogMsgNoIdent("ProxyRecords: %d + %d = %d", ProxyA, ProxyD, ProxyA + ProxyD);
+	else LogMsgNoIdent("ProxyRecords: MISMATCH %d + %d = %d ≠ %d", ProxyA, ProxyD, ProxyA + ProxyD, m->ProxyRecords);
 
 	LogMsgNoIdent("------ Auto Browse Domains -----");
 	if (!AutoBrowseDomains) LogMsgNoIdent("<None>");
