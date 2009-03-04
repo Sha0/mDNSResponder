@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.544  2009/03/04 01:33:30  cheshire
+Add m->ProxyRecords counter
+
 Revision 1.543  2009/03/03 23:04:43  cheshire
 For clarity, renamed "MAC" field to "HMAC" (Host MAC, as opposed to Interface MAC)
 
@@ -2448,7 +2451,7 @@ struct mDNS_struct
 	mDNSu32 NumFailedProbes;
 	mDNSs32 SuppressProbes;
 
-	// unicast-specific data
+	// Unicast-specific data
 	mDNSs32           NextuDNSEvent;		// uDNS next event
 	mDNSs32           NextSRVUpdate;        // Time to perform delayed update
 	mDNSs32 SuppressStdPort53Queries;       // Wait before allowing the next standard unicast query to the user's configured DNS server
@@ -2473,7 +2476,7 @@ struct mDNS_struct
 
 	mDNSBool          RegisterSearchDomains;
 
-	// NAT traversal fields
+	// NAT-Traversal fields
 	NATTraversalInfo  LLQNAT;					// Single shared NAT Traversal to receive inbound LLQ notifications
 	NATTraversalInfo *NATTraversals;
 	NATTraversalInfo *CurrentNATTraversal;
@@ -2500,6 +2503,7 @@ struct mDNS_struct
 	mDNSu8           *UPnPRouterAddressString;	// holds both the router's address and port
 	mDNSu8           *UPnPSOAPAddressString;	// holds both address and port for SOAP messages
 
+	// Sleep Proxy Server fields
 	mDNSu8            SPSType;					// 0 = off, 10-99 encodes desirability metric
 	mDNSu8            SPSPortability;			// 10-99
 	mDNSu8            SPSMarginalPower;			// 10-99
@@ -2509,6 +2513,8 @@ struct mDNS_struct
 	UDPSocket        *SPSSocket;
 	ServiceRecordSet  SPSRecords;
 	mDNSQuestionCallback *SPSBrowseCallback;    // So the platform layer can do something useful with SPS browse results
+	int               ProxyRecords;				// Total number of records we're holding as proxy
+	#define           MAX_PROXY_RECORDS 10000	/* DOS protection: 400 machines at 25 records each */
 
 #if APPLE_OSX_mDNSResponder
 	ClientTunnel     *TunnelClients;
