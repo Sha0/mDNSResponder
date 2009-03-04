@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.639  2009/03/04 01:45:01  cheshire
+HW_MODEL information should be LogSPS, not LogMsg
+
 Revision 1.638  2009/03/03 22:51:54  cheshire
 <rdar://problem/6504236> Sleep Proxy: Waking on same network but different interface will cause conflicts
 
@@ -5594,7 +5597,7 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	else if (!strncasecmp(HINFO_HWstring, "Macmini",  7)) { SPMetricPortability = 33 /*  5kg */; SPMetricMarginalPower = 73 /*  20W */; SPMetricTotalPower = 74 /*  25W */; }
 	else if (!strncasecmp(HINFO_HWstring, "MacBook",  7)) { SPMetricPortability = 37 /*  2kg */; SPMetricMarginalPower = 71 /*  13W */; SPMetricTotalPower = 72 /*  15W */; }
 	else if (!strncasecmp(HINFO_HWstring, "PowerBook",9)) { SPMetricPortability = 37 /*  2kg */; SPMetricMarginalPower = 71 /*  13W */; SPMetricTotalPower = 72 /*  15W */; }
-	LogMsg("HW_MODEL: %.*s (%s) Portability %d Marginal Power %d Total Power %d",
+	LogSPS("HW_MODEL: %.*s (%s) Portability %d Marginal Power %d Total Power %d",
 		HINFO_HWstring_prefixlen, HINFO_HWstring, HINFO_HWstring, SPMetricPortability, SPMetricMarginalPower, SPMetricTotalPower);
 
 	err = WatchForInternetSharingChanges(m);
