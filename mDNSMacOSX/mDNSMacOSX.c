@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.640  2009/03/05 21:57:13  cheshire
+Don't close BPF fd until we have no more records we're proxying for on that interface
+
 Revision 1.639  2009/03/04 01:45:01  cheshire
 HW_MODEL information should be LogSPS, not LogMsg
 
@@ -2279,6 +2282,7 @@ mDNSexport void mDNSPlatformSendRawPacket(const void *const msg, const mDNSu8 *c
 		LogMsg("mDNSPlatformSendRawPacket: %s BPF_fd %d not ready", info->ifinfo.ifname, info->BPF_fd);
 	else
 		{
+		//LogMsg("mDNSPlatformSendRawPacket %d bytes on %s", end - (mDNSu8 *)msg, info->ifinfo.ifname);
 		if (write(info->BPF_fd, msg, end - (mDNSu8 *)msg) < 0)
 			LogMsg("mDNSPlatformSendRawPacket: BPF write(%d) failed %d (%s)", info->BPF_fd, errno, strerror(errno));
 		}
@@ -2311,7 +2315,7 @@ mDNSexport void mDNSPlatformSetLocalARP(const mDNSv4Addr *const tpa, const mDNSE
 
 mDNSlocal void CloseBPF(NetworkInterfaceInfoOSX *const i)
 	{
-	LogInfo("%s closing BPF fd %d", i->ifinfo.ifname, i->BPF_fd);
+	LogSPS("%s closing BPF fd %d", i->ifinfo.ifname, i->BPF_fd);
 
 	// Note: MUST NOT close() the underlying native BSD sockets.
 	// CFSocketInvalidate() will do that for us, in its own good time, which may not necessarily be immediately, because
@@ -2362,6 +2366,30 @@ exit:
 
 #define BPF_SetOffset(from, cond, to) (from)->cond = (to) - 1 - (from)
 
+mDNSlocal int CountProxyTargets(mDNS *const m, NetworkInterfaceInfoOSX *x, int *p4, int *p6)
+	{
+	int numv4 = 0, numv6 = 0;
+	AuthRecord *rr;
+
+	for (rr = m->ResourceRecords; rr; rr=rr->next)
+		if (rr->resrec.InterfaceID == (mDNSInterfaceID)x && rr->AddressProxy.type == mDNSAddrType_IPv4)
+			{
+			if (p4) LogSPS("mDNSPlatformUpdateProxyList: fd %d %-7s IP%2d %.4a", x->BPF_fd, x->ifinfo.ifname, numv4, &rr->AddressProxy.ip.v4);
+			numv4++;
+			}
+
+	for (rr = m->ResourceRecords; rr; rr=rr->next)
+		if (rr->resrec.InterfaceID == (mDNSInterfaceID)x && rr->AddressProxy.type == mDNSAddrType_IPv6)
+			{
+			if (p6) LogSPS("mDNSPlatformUpdateProxyList: fd %d %-7s IP%2d %.16a", x->BPF_fd, x->ifinfo.ifname, numv6, &rr->AddressProxy.ip.v6);
+			numv6++;
+			}
+
+	if (p4) *p4 = numv4;
+	if (p6) *p6 = numv6;
+	return(numv4 + numv6);
+	}
+
 mDNSexport void mDNSPlatformUpdateProxyList(mDNS *const m, const mDNSInterfaceID InterfaceID)
 	{
 	NetworkInterfaceInfoOSX *x;
@@ -2371,21 +2399,7 @@ mDNSexport void mDNSPlatformUpdateProxyList(mDNS *const m, const mDNSInterfaceID
 	#define MAX_BPF_ADDRS 250
 	int numv4 = 0, numv6 = 0;
 
-	AuthRecord *rr;
-	for (rr = m->ResourceRecords; rr; rr=rr->next)
-		if (rr->resrec.InterfaceID == InterfaceID && rr->AddressProxy.type == mDNSAddrType_IPv4)
-			{
-			LogSPS("mDNSPlatformUpdateProxyList: fd %d %-7s IP%2d %.4a", x->BPF_fd, x->ifinfo.ifname, numv4, &rr->AddressProxy.ip.v4);
-			numv4++;
-			}
-	for (rr = m->ResourceRecords; rr; rr=rr->next)
-		if (rr->resrec.InterfaceID == InterfaceID && rr->AddressProxy.type == mDNSAddrType_IPv6)
-			{
-			LogSPS("mDNSPlatformUpdateProxyList: fd %d %-7s IP%2d %.16a", x->BPF_fd, x->ifinfo.ifname, numv6, &rr->AddressProxy.ip.v6);
-			numv6++;
-			}
-
-	if (numv4 + numv6 > MAX_BPF_ADDRS)
+	if (CountProxyTargets(m, x, &numv4, &numv6) > MAX_BPF_ADDRS)
 		{
 		LogMsg("mDNSPlatformUpdateProxyList: ERROR Too many address proxy records v4 %d v6 %d", numv4, numv6);
 		if (numv4 > MAX_BPF_ADDRS) numv4 = MAX_BPF_ADDRS;
@@ -2446,6 +2460,7 @@ mDNSexport void mDNSPlatformUpdateProxyList(mDNS *const m, const mDNSInterfaceID
 	// In summary, if we byte-swap all the non-numeric fields that shouldn't be swapped, and we *don't*
 	// swap any of the numeric values that *should* be byte-swapped, then the filter will work correctly.
 
+	AuthRecord *rr;
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		if (rr->resrec.InterfaceID == InterfaceID && rr->AddressProxy.type == mDNSAddrType_IPv4)
 			{
@@ -2496,6 +2511,8 @@ mDNSexport void mDNSPlatformUpdateProxyList(mDNS *const m, const mDNSInterfaceID
 	if (!numv4 && !numv6)
 		{
 		LogSPS("mDNSPlatformUpdateProxyList: No need for filter");
+		// Schedule check to see if we can close this BPF_fd now
+		if (!m->p->NetworkChanged) m->p->NetworkChanged = NonZeroTime(m->timenow + mDNSPlatformOneSecond * 2);
 		// prog.bf_len = 0; This seems to panic the kernel
 		}
 
@@ -4880,9 +4897,6 @@ mDNSlocal void SetSPS(mDNS *const m)
 
 	// If we decide to let laptops act as Sleep Proxy, we should do it only when running on AC power, not on battery
 
-	if (sps != m->SPSType)
-		LogInfo("Sleep Proxy Server %d %d %d %d %s", sps, SPMetricPortability, SPMetricMarginalPower, SPMetricTotalPower,
-			sps ? "starting" : "stopping");
 	mDNSCoreBeSleepProxyServer(m, sps, SPMetricPortability, SPMetricMarginalPower, SPMetricTotalPower);
 	}
 
@@ -4991,7 +5005,7 @@ mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 		{
 		if (!m->SPSSocket)		// Not being Sleep Proxy Server; close any open BPF fds
 			{
-			if (i->BPF_fd >= 0) CloseBPF(i);
+			if (i->BPF_fd >= 0 && CountProxyTargets(m, i, mDNSNULL, mDNSNULL) == 0) CloseBPF(i);
 			}
 		else								// else, we're Sleep Proxy Server; open BPF fds
 			{
