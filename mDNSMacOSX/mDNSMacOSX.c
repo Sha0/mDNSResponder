@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.641  2009/03/05 23:53:34  cheshire
+Removed spurious "SnowLeopardPowerChanged: wake ERROR" syslog message
+
 Revision 1.640  2009/03/05 21:57:13  cheshire
 Don't close BPF fd until we have no more records we're proxying for on that interface
 
@@ -5354,7 +5357,7 @@ mDNSlocal void SnowLeopardPowerChanged(void *refcon, IOPMConnection connection, 
 	{
 	mDNS *const m = (mDNS *const)refcon;
 	KQueueLock(m);
-	LogInfo("SnowLeopardPowerChanged %X %X %X%s%s%s%s%s",
+	LogSPS("SnowLeopardPowerChanged %X %X %X%s%s%s%s%s",
 		connection, token, eventDescriptor,
 		eventDescriptor & kIOPMSystemPowerStateCapabilityCPU     ? " CPU"     : "",
 		eventDescriptor & kIOPMSystemPowerStateCapabilityVideo   ? " Video"   : "",
@@ -5367,15 +5370,15 @@ mDNSlocal void SnowLeopardPowerChanged(void *refcon, IOPMConnection connection, 
 
 	if (eventDescriptor & kIOPMSystemPowerStateCapabilityCPU)
 		{
-		// Waking up
-		if (m->SleepState != SleepState_Sleeping) LogMsg("SnowLeopardPowerChanged: wake ERROR m->SleepState %d", m->SleepState);
-		PowerOn(m);
+		// CPU Waking. Note: Can get this message repeatedly, as other subsystems power up or down.
+		if (m->SleepState == SleepState_Sleeping) PowerOn(m);
 		IOPMConnectionAcknowledgeEvent(connection, token);
 		}
 	else
 		{
-		// Going to sleep
-		if (m->SleepState) LogMsg("SnowLeopardPowerChanged: sleep ERROR m->SleepState %d", m->SleepState);
+		// CPU sleeping. Should not get this repeatedly -- once we're told that the CPU is halting
+		// we should hear nothing more until we're told that the CPU has started executing again.
+		if (m->SleepState) LogMsg("SnowLeopardPowerChanged: Sleep Error %X m->SleepState %d", eventDescriptor, m->SleepState);
 		//sleep(5);
 		//mDNSMacOSXNetworkChanged(m);
 		mDNSCoreMachineSleep(m, true);
