@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper-main.c,v $
+Revision 1.26  2009/03/05 23:08:12  cheshire
+<rdar://problem/6648751> mDNSResponderHelper deadlocked — Can't use syslog from within a signal handler
+
 Revision 1.25  2009/02/06 03:06:49  mcguire
 <rdar://problem/5858533> Adopt vproc_transaction API in mDNSResponder
 
@@ -191,7 +194,7 @@ void LogMsg(const char *fmt, ...)
 
 static void handle_sigterm(int sig)
 	{
-	debug("entry sig=%d", sig);
+	// debug("entry sig=%d", sig);	Can't use syslog from within a signal handler
 	assert(sig == SIGTERM);
 	(void)proxy_mDNSExit(gPort);
 	}
