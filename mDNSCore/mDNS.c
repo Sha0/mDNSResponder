@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.919  2009/03/05 21:54:43  cheshire
+Improved "Sleep Proxy Server started / stopped" message
+
 Revision 1.918  2009/03/04 01:37:14  cheshire
 <rdar://problem/6601428> Limit maximum number of records that a Sleep Proxy Server will accept
 
@@ -8583,7 +8586,6 @@ mDNSlocal void SleepProxyServerCallback(mDNS *const m, ServiceRecordSet *const s
 				{
 				domainlabel name;
 				ConstructSleepProxyServerName(m, &name);
-				LogSPS("Sleep Proxy Server %#s starting", name.c);
 				mDNS_RegisterService(m, srs,
 					&name, &SleepProxyServiceType, &localdomain,
 					mDNSNULL, m->SPSSocket->port,				// Host, port
@@ -8592,6 +8594,7 @@ mDNSlocal void SleepProxyServerCallback(mDNS *const m, ServiceRecordSet *const s
 					mDNSInterface_Any,							// Interface ID
 					SleepProxyServerCallback, mDNSNULL);		// Callback and context
 				}
+			LogSPS("Sleep Proxy Server %#s %s", srs->RR_SRV.resrec.name->c, m->SPSState ? "started" : "stopped");
 			}
 		}
 	}
