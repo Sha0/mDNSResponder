@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.921  2009/03/06 22:53:31  cheshire
+Don't bother registering with Sleep Proxy if we have no advertised services
+
 Revision 1.920  2009/03/06 20:08:55  cheshire
 <rdar://problem/6601429> Sleep Proxy: Return error responses to clients
 
@@ -4348,30 +4351,40 @@ mDNSlocal void NetWakeResolve(mDNS *const m, DNSQuestion *question, const Resour
 mDNSlocal void BeginSleepProcessing(mDNS *const m)
 	{
 	mDNSBool FoundSPS = mDNSfalse;
-	NetworkInterfaceInfo *intf = GetFirstActiveInterface(m->HostInterfaces);
-	while (intf)
+
+	AuthRecord *rr;
+	for (rr = m->ResourceRecords; rr; rr=rr->next)
+		if (rr->resrec.rrtype == kDNSType_SRV && !mDNSSameIPPort(rr->resrec.rdata->u.srv.port, DiscardPort))
+			break;
+
+	if (!rr)		// If we have at least one advertised service
+		LogSPS("mDNSCoreMachineSleep: No advertised services");
+	else
 		{
-		if (!intf->NetWake) LogSPS("mDNSCoreMachineSleep: %-6s not capable of magic packet wakeup", intf->ifname);
-		else
+		NetworkInterfaceInfo *intf = GetFirstActiveInterface(m->HostInterfaces);
+		while (intf)
 			{
-			const CacheRecord *cr = FindSPSInCache(m, &intf->NetWakeBrowse);
-			if (!cr) LogSPS("mDNSCoreMachineSleep: %-6s %#a No Sleep Proxy Server found %d", intf->ifname, &intf->ip, intf->NetWakeBrowse.ThisQInterval);
+			if (!intf->NetWake) LogSPS("mDNSCoreMachineSleep: %-6s not capable of magic packet wakeup", intf->ifname);
 			else
 				{
-				LogSPS("mDNSCoreMachineSleep: %-6s Found Sleep Proxy Server TTL %d %s", intf->ifname, cr->resrec.rroriginalttl, CRDisplayString(m, cr));
-				FoundSPS = mDNStrue;
-				intf->SPSAddr.type = mDNSAddrType_None;
-				if (intf->NetWakeResolve.ThisQInterval >= 0) mDNS_StopQuery(m, &intf->NetWakeResolve);
-				mDNS_SetupQuestion(&intf->NetWakeResolve, intf->InterfaceID, &cr->resrec.rdata->u.name, kDNSType_SRV, NetWakeResolve, intf);
-				mDNS_StartQuery_internal(m, &intf->NetWakeResolve);
+				const CacheRecord *cr = FindSPSInCache(m, &intf->NetWakeBrowse);
+				if (!cr) LogSPS("mDNSCoreMachineSleep: %-6s %#a No Sleep Proxy Server found %d", intf->ifname, &intf->ip, intf->NetWakeBrowse.ThisQInterval);
+				else
+					{
+					LogSPS("mDNSCoreMachineSleep: %-6s Found Sleep Proxy Server TTL %d %s", intf->ifname, cr->resrec.rroriginalttl, CRDisplayString(m, cr));
+					FoundSPS = mDNStrue;
+					intf->SPSAddr.type = mDNSAddrType_None;
+					if (intf->NetWakeResolve.ThisQInterval >= 0) mDNS_StopQuery(m, &intf->NetWakeResolve);
+					mDNS_SetupQuestion(&intf->NetWakeResolve, intf->InterfaceID, &cr->resrec.rdata->u.name, kDNSType_SRV, NetWakeResolve, intf);
+					mDNS_StartQuery_internal(m, &intf->NetWakeResolve);
+					}
 				}
+			intf = GetFirstActiveInterface(intf->next);
 			}
-		intf = GetFirstActiveInterface(intf->next);
 		}
 
 	if (!FoundSPS)
 		{
-		AuthRecord *rr;
 		m->SleepState = SleepState_Sleeping;
 
 #ifndef UNICAST_DISABLED
