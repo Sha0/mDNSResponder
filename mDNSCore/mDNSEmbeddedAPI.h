@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.546  2009/03/06 23:51:51  mcguire
+Fix broken build by defining DiscardPort
+
 Revision 1.545  2009/03/06 22:39:23  cheshire
 <rdar://problem/6655850> Ignore prototype base stations when picking Sleep Proxy to register with
 
@@ -2556,6 +2559,7 @@ extern const mDNSInterfaceID mDNSInterface_Any;				// Zero
 extern const mDNSInterfaceID mDNSInterface_LocalOnly;		// Special value
 extern const mDNSInterfaceID mDNSInterface_Unicast;			// Special value
 
+extern const mDNSIPPort   DiscardPort;
 extern const mDNSIPPort   SSHPort;
 extern const mDNSIPPort   UnicastDNSPort;
 extern const mDNSIPPort   SSDPPort;

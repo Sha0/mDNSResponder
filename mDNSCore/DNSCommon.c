@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.239  2009/03/06 23:51:50  mcguire
+Fix broken build by defining DiscardPort
+
 Revision 1.238  2009/03/04 00:40:13  cheshire
 Updated DNS server error codes to be more consistent with definitions at
 <http://www.iana.org/assignments/dns-parameters>
@@ -552,6 +555,7 @@ mDNSexport const mDNSInterfaceID mDNSInterface_Unicast   = (mDNSInterfaceID)2;
 // Uncomment the appropriate lines below to build a special Multicast DNS responder for testing interoperability
 // with Microsoft's LLMNR client code.
 
+#define   DiscardPortAsNumber               9
 #define   SSHPortAsNumber                  22
 #define   UnicastDNSPortAsNumber           53
 #define   SSDPPortAsNumber               1900
@@ -564,6 +568,7 @@ mDNSexport const mDNSInterfaceID mDNSInterface_Unicast   = (mDNSInterfaceID)2;
 //#define MulticastDNSPortAsNumber       5355		// LLMNR
 #define   PrivateDNSPortAsNumber         5533
 
+mDNSexport const mDNSIPPort DiscardPort            = { { DiscardPortAsNumber            >> 8, DiscardPortAsNumber            & 0xFF } };
 mDNSexport const mDNSIPPort SSHPort                = { { SSHPortAsNumber                >> 8, SSHPortAsNumber                & 0xFF } };
 mDNSexport const mDNSIPPort UnicastDNSPort         = { { UnicastDNSPortAsNumber         >> 8, UnicastDNSPortAsNumber         & 0xFF } };
 mDNSexport const mDNSIPPort SSDPPort               = { { SSDPPortAsNumber               >> 8, SSDPPortAsNumber               & 0xFF } };
