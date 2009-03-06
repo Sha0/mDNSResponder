@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.920  2009/03/06 20:08:55  cheshire
+<rdar://problem/6601429> Sleep Proxy: Return error responses to clients
+
 Revision 1.919  2009/03/05 21:54:43  cheshire
 Improved "Sleep Proxy Server started / stopped" message
 
@@ -5041,17 +5044,17 @@ mDNSlocal CacheRecord *FindIdenticalRecordInCache(const mDNS *const m, const Res
 	return(rr);
 	}
 
-mDNSlocal void ClearProxyRecords(mDNS *const m, const rdataOPT *opt, AuthRecord *rr)
+mDNSlocal void ClearProxyRecords(mDNS *const m, const OwnerOptData *const owner, AuthRecord *const thelist)
 	{
-	m->CurrentRecord = rr;
+	m->CurrentRecord = thelist;
 	while (m->CurrentRecord)
 		{
-		rr = m->CurrentRecord;
-		if (m->rec.r.resrec.InterfaceID == rr->resrec.InterfaceID && mDNSSameEthAddress(&opt->u.owner.HMAC, &rr->WakeUp.HMAC))
-			if (opt->u.owner.seq != rr->WakeUp.seq || m->timenow - rr->TimeRcvd > mDNSPlatformOneSecond * 60)
+		AuthRecord *const rr = m->CurrentRecord;
+		if (m->rec.r.resrec.InterfaceID == rr->resrec.InterfaceID && mDNSSameEthAddress(&owner->HMAC, &rr->WakeUp.HMAC))
+			if (owner->seq != rr->WakeUp.seq || m->timenow - rr->TimeRcvd > mDNSPlatformOneSecond * 60)
 				{
-				LogSPS("ProcessQuery: Removing %d H-MAC %.6a I-MAC %.6a %d %d %s",
-					m->ProxyRecords, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, opt->u.owner.seq, rr->WakeUp.seq, ARDisplayString(m, rr));
+				LogSPS("ClearProxyRecords: Removing %d H-MAC %.6a I-MAC %.6a %d %d %s",
+					m->ProxyRecords, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, owner->seq, rr->WakeUp.seq, ARDisplayString(m, rr));
 				mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
 				SetSPSProxyListChanged(m->rec.r.resrec.InterfaceID);
 				}
@@ -5097,8 +5100,8 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 			for (opt = &m->rec.r.resrec.rdata->u.opt[0]; opt < e; opt++)
 				if (opt->opt == kDNSOpt_Owner && opt->u.owner.vers == 0 && opt->u.owner.HMAC.l[0])
 					{
-					ClearProxyRecords(m, opt, m->ResourceRecords);
-					ClearProxyRecords(m, opt, m->DuplicateRecords);
+					ClearProxyRecords(m, &opt->u.owner, m->DuplicateRecords);
+					ClearProxyRecords(m, &opt->u.owner, m->ResourceRecords);
 					}
 			}
 		m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
@@ -6290,32 +6293,40 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 		m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 		}
 
-	if (!updatelease || !owner.HMAC.l[0]) return;
-
-	if (updatelease > 24 * 60 * 60)
-		updatelease = 24 * 60 * 60;
-
-	if (updatelease > 0x40000000UL / mDNSPlatformOneSecond)
-		updatelease = 0x40000000UL / mDNSPlatformOneSecond;
-
-	LogSPS("Received Update for H-MAC %.6a I-MAC %.6a Password %.6a seq %d", &owner.HMAC, &owner.IMAC, &owner.password, owner.seq);
-
 	InitializeDNSMessage(&m->omsg.h, msg->h.id, UpdateRespFlags);
 
-	if (m->ProxyRecords + msg->h.mDNS_numUpdates > MAX_PROXY_RECORDS)
+	if (!updatelease || !owner.HMAC.l[0])
 		{
 		static int msgs = 0;
 		if (msgs < 100)
 			{
 			msgs++;
-			LogMsg("Refusing sleep proxy registration: Too many records %d + %d = %d > %d",
+			LogMsg("Refusing sleep proxy registration from %#a:%d:%s%s", srcaddr, mDNSVal16(srcport),
+				!updatelease ? " No lease" : "", !owner.HMAC.l[0] ? " No owner" : "");
+			}
+		m->omsg.h.flags.b[1] |= kDNSFlag1_RC_FormErr;
+		}
+	else if (m->ProxyRecords + msg->h.mDNS_numUpdates > MAX_PROXY_RECORDS)
+		{
+		static int msgs = 0;
+		if (msgs < 100)
+			{
+			msgs++;
+			LogMsg("Refusing sleep proxy registration from %#a:%d: Too many records %d + %d = %d > %d", srcaddr, mDNSVal16(srcport),
 				m->ProxyRecords, msg->h.mDNS_numUpdates, m->ProxyRecords + msg->h.mDNS_numUpdates, MAX_PROXY_RECORDS);
 			}
-
 		m->omsg.h.flags.b[1] |= kDNSFlag1_RC_Refused;
 		}
 	else
 		{
+		LogSPS("Received Update for H-MAC %.6a I-MAC %.6a Password %.6a seq %d", &owner.HMAC, &owner.IMAC, &owner.password, owner.seq);
+	
+		if (updatelease > 24 * 60 * 60)
+			updatelease = 24 * 60 * 60;
+	
+		if (updatelease > 0x40000000UL / mDNSPlatformOneSecond)
+			updatelease = 0x40000000UL / mDNSPlatformOneSecond;
+	
 		ptr = LocateAuthorities(msg, end);
 		for (i = 0; i < msg->h.mDNS_numUpdates && ptr && ptr < end; i++)
 			{
@@ -6324,7 +6335,8 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 				{
 				mDNSu16 RDLengthMem = GetRDLengthMem(&m->rec.r.resrec);
 				AuthRecord *ar = mDNSPlatformMemAllocate(sizeof(AuthRecord) - sizeof(RDataBody) + RDLengthMem);
-				if (ar)
+				if (!ar) { m->omsg.h.flags.b[1] |= kDNSFlag1_RC_Refused; break; }
+				else
 					{
 					mDNSu8 RecordType = m->rec.r.resrec.RecordType & kDNSRecordTypePacketUniqueMask ? kDNSRecordTypeUnique : kDNSRecordTypeShared;
 					m->rec.r.resrec.rrclass &= ~kDNSClass_UniqueRRSet;
@@ -6355,14 +6367,23 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 				}
 			m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 			}
-		
-		mDNS_SetupResourceRecord(&opt, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
-		opt.resrec.rrclass    = NormalMaxDNSMessageData;
-		opt.resrec.rdlength   = sizeof(rdataOPT);	// One option in this OPT record
-		opt.resrec.rdestimate = sizeof(rdataOPT);
-		opt.resrec.rdata->u.opt[0].opt           = kDNSOpt_Lease;
-		opt.resrec.rdata->u.opt[0].u.updatelease = updatelease;
-		p = PutResourceRecordTTLWithLimit(&m->omsg, p, &m->omsg.h.numAdditionals, &opt.resrec, opt.resrec.rroriginalttl, m->omsg.data + AbsoluteMaxDNSMessageData);
+
+		if (m->omsg.h.flags.b[1] & kDNSFlag1_RC_Mask)
+			{
+			LogMsg("Refusing sleep proxy registration from %#a:%d: Out of memory", srcaddr, mDNSVal16(srcport));
+			ClearProxyRecords(m, &owner, m->DuplicateRecords);
+			ClearProxyRecords(m, &owner, m->ResourceRecords);
+			}
+		else
+			{
+			mDNS_SetupResourceRecord(&opt, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
+			opt.resrec.rrclass    = NormalMaxDNSMessageData;
+			opt.resrec.rdlength   = sizeof(rdataOPT);	// One option in this OPT record
+			opt.resrec.rdestimate = sizeof(rdataOPT);
+			opt.resrec.rdata->u.opt[0].opt           = kDNSOpt_Lease;
+			opt.resrec.rdata->u.opt[0].u.updatelease = updatelease;
+			p = PutResourceRecordTTLWithLimit(&m->omsg, p, &m->omsg.h.numAdditionals, &opt.resrec, opt.resrec.rroriginalttl, m->omsg.data + AbsoluteMaxDNSMessageData);
+			}
 		}
 
 	if (p) mDNSSendDNSMessage(m, &m->omsg, p, InterfaceID, m->SPSSocket, srcaddr, srcport, mDNSNULL, mDNSNULL);
