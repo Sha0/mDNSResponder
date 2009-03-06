@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.545  2009/03/06 22:39:23  cheshire
+<rdar://problem/6655850> Ignore prototype base stations when picking Sleep Proxy to register with
+
 Revision 1.544  2009/03/04 01:33:30  cheshire
 Add m->ProxyRecords counter
 
@@ -3223,8 +3226,11 @@ extern void GrantCacheExtensions(mDNS *const m, DNSQuestion *q, mDNSu32 lease);
 extern void MakeNegativeCacheRecord(mDNS *const m, const domainname *const name, const mDNSu32 namehash, const mDNSu16 rrtype, const mDNSu16 rrclass, mDNSu32 ttl_seconds);
 extern void CompleteDeregistration(mDNS *const m, AuthRecord *rr);
 extern const CacheRecord *FindSPSInCache(mDNS *const m, const DNSQuestion *const q);
+#define PrototypeSPSName(X) ((X)[0] >= 11 && (X)[3] == '-' && (X)[ 4] == '9' && (X)[ 5] == '9' && \
+                                             (X)[6] == '-' && (X)[ 7] == '9' && (X)[ 8] == '9' && \
+                                             (X)[9] == '-' && (X)[10] == '9' && (X)[11] == '9'    )
 #define ValidSPSName(X) ((X)[0] >= 5 && mDNSIsDigit((X)[1]) && mDNSIsDigit((X)[2]) && mDNSIsDigit((X)[4]) && mDNSIsDigit((X)[5]))
-#define SPSMetric(X) (ValidSPSName(X) ? ((X)[1]-'0') * 1000 + ((X)[2]-'0') * 100 + ((X)[4]-'0') * 10 + ((X)[5]-'0') : 9999)
+#define SPSMetric(X) (ValidSPSName(X) && !PrototypeSPSName(X) ? ((X)[1]-'0') * 1000 + ((X)[2]-'0') * 100 + ((X)[4]-'0') * 10 + ((X)[5]-'0') : 9999)
 extern void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheRecord *const rr, const QC_result AddRecord);
 
 // For now this AutoTunnel stuff is specific to Mac OS X.
