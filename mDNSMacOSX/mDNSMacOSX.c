@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.642  2009/03/08 04:46:51  mkrochma
+Change Keychain LogMsg to LogInfo
+
 Revision 1.641  2009/03/05 23:53:34  cheshire
 Removed spurious "SnowLeopardPowerChanged: wake ERROR" syslog message
 
@@ -5238,7 +5241,7 @@ mDNSlocal OSStatus KeychainChanged(SecKeychainEvent keychainEvent, SecKeychainCa
 				}
 			if (relevant)
 				{
-				LogMsg("***   Keychain Changed   *** KeychainEvent=%d %s",
+				LogInfo("***   Keychain Changed   *** KeychainEvent=%d %s",
 					keychainEvent,
 					keychainEvent == kSecAddEvent    ? "kSecAddEvent"    :
 					keychainEvent == kSecDeleteEvent ? "kSecDeleteEvent" :
