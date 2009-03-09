@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.922  2009/03/09 21:30:17  cheshire
+Improved some LogSPS messages; made RestartProbing() subroutine
+
 Revision 1.921  2009/03/06 22:53:31  cheshire
 Don't bother registering with Sleep Proxy if we have no advertised services
 
@@ -5066,7 +5069,7 @@ mDNSlocal void ClearProxyRecords(mDNS *const m, const OwnerOptData *const owner,
 		if (m->rec.r.resrec.InterfaceID == rr->resrec.InterfaceID && mDNSSameEthAddress(&owner->HMAC, &rr->WakeUp.HMAC))
 			if (owner->seq != rr->WakeUp.seq || m->timenow - rr->TimeRcvd > mDNSPlatformOneSecond * 60)
 				{
-				LogSPS("ClearProxyRecords: Removing %d H-MAC %.6a I-MAC %.6a %d %d %s",
+				LogSPS("ClearProxyRecords: Removing %3d H-MAC %.6a I-MAC %.6a %d %d %s",
 					m->ProxyRecords, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, owner->seq, rr->WakeUp.seq, ARDisplayString(m, rr));
 				mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
 				SetSPSProxyListChanged(m->rec.r.resrec.InterfaceID);
@@ -8423,6 +8426,18 @@ mDNSexport mDNSOpaque16 mDNS_NewMessageID(mDNS * const m)
 #pragma mark - Sleep Proxy Server
 #endif
 
+mDNSlocal void RestartProbing(mDNS *const m, AuthRecord *const rr)
+	{
+	// We reset ProbeCount, so we'll suppress our own answers for a while, to avoid generating ARP conflicts with a waking machine.
+	// If the machine does wake properly then we'll discard our records when we see the first new mDNS probe from that machine.
+	// If it does not wake (perhaps we just picked up a stray delayed packet sent before it went to sleep)
+	// then we'll transition out of probing state and start answering ARPs again.
+	rr->resrec.RecordType = kDNSRecordTypeUnique;
+	rr->ProbeCount        = DefaultProbeCountForTypeUnique;
+	rr->AnnounceCount     = InitialAnnounceCount;
+	InitializeLastAPTime(m, rr);
+	}
+
 mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, const mDNSu8 *const end, const mDNSInterfaceID InterfaceID)
 	{
 	static const mDNSOpaque16 Ethertype_IP = { { 0x08, 0x00 } };
@@ -8477,29 +8492,23 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 			debugf("ARP from self for %.4a", &arp->tpa);
 		else
 			{
-			for (rr = m->ResourceRecords; rr; rr=rr->next)
-				if (rr->resrec.InterfaceID == InterfaceID && rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, arp->spa))
-					{
-					// We reset ProbeCount, so we'll suppress our own answers for a while, to avoid generating ARP conflicts with a waking machine.
-					// If the machine does wake properly then we'll discard our records when we see the first new mDNS probe from that machine.
-					// If it does not wake (perhaps we just picked up a stray delayed packet sent before it went to sleep)
-					// then we'll transition out of probing state and start answering ARPs again.
-					rr->resrec.RecordType = kDNSRecordTypeUnique;
-					rr->ProbeCount        = DefaultProbeCountForTypeUnique;
-					rr->AnnounceCount     = InitialAnnounceCount;
-					InitializeLastAPTime(m, rr);
-					if (mDNSSameEthAddress(&arp->sha, &rr->WakeUp.IMAC))
-						LogSPS("%-7s ARP %s from owner %.6a %.4a for %-14.4a -- re-starting probing for %s",
-							InterfaceNameForID(m, InterfaceID),
-							mDNSSameIPv4Address(arp->spa, arp->tpa) ? "Announcement" : "Request     ",
-							&arp->sha, &arp->spa, &arp->tpa, ARDisplayString(m, rr));
-					else
+			if (!mDNSSameIPv4Address(arp->spa, zerov4Addr))
+				for (rr = m->ResourceRecords; rr; rr=rr->next)
+					if (rr->resrec.InterfaceID == InterfaceID && rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, arp->spa))
 						{
-						LogMsg("%-7s Conflicting ARP from %.6a %.4a for %.4a -- waking H-MAC %.6a I-MAC %.6a %s",
-							InterfaceNameForID(m, InterfaceID), &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m, rr));
-						SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.IMAC, &rr->WakeUp.password);
+						RestartProbing(m, rr);
+						if (mDNSSameEthAddress(&arp->sha, &rr->WakeUp.IMAC))
+							LogSPS("%-7s ARP %s from owner %.6a %.4a for %-15.4a -- re-starting probing for %s",
+								InterfaceNameForID(m, InterfaceID),
+								mDNSSameIPv4Address(arp->spa, arp->tpa) ? "Announcement" : "Request     ",
+								&arp->sha, &arp->spa, &arp->tpa, ARDisplayString(m, rr));
+						else
+							{
+							LogMsg("%-7s Conflicting ARP from %.6a %.4a for %.4a -- waking H-MAC %.6a I-MAC %.6a %s",
+								InterfaceNameForID(m, InterfaceID), &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m, rr));
+							SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.IMAC, &rr->WakeUp.password);
+							}
 						}
-					}
 			}
 
 		mDNS_Unlock(m);
