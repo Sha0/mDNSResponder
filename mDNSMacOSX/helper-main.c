@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper-main.c,v $
+Revision 1.27  2009/03/09 19:00:26  mcguire
+<rdar://problem/6660098> temporarily don't use getpwnam
+
 Revision 1.26  2009/03/05 23:08:12  cheshire
 <rdar://problem/6648751> mDNSResponderHelper deadlocked — Can't use syslog from within a signal handler
 
@@ -209,7 +212,10 @@ static void initialize_logging(void)
 static void initialize_id(void)
 	{
 	static char login[] = "_mdnsresponder";
-	struct passwd *pwd = getpwnam(login);
+	struct passwd hardcode;
+	struct passwd *pwd = &hardcode; // getpwnam(login);
+	hardcode.pw_uid = 65;
+	hardcode.pw_gid = 65;
 
 	if (!pwd) { helplog(ASL_LEVEL_ERR, "Could not find account name `%s'.  I will only help root.", login); return; }
 	mDNSResponderUID = pwd->pw_uid;
