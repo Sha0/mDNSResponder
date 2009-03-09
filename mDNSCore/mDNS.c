@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.923  2009/03/09 21:53:02  cheshire
+<rdar://problem/6650479> Sleep Proxy: Need to stop proxying when it sees an ARP probe from the client
+
 Revision 1.922  2009/03/09 21:30:17  cheshire
 Improved some LogSPS messages; made RestartProbing() subroutine
 
@@ -8467,7 +8470,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 			for (rr = m->ResourceRecords; rr; rr=rr->next)
 				if (rr->resrec.InterfaceID == InterfaceID && rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, arp->tpa))
 					{
-					static const char msg1[] = "Ignoring  ARP Request from owner";
+					static const char msg1[] = "ARP Req from owner -- re-probing";
 					static const char msg2[] = "Ignoring  ARP Request from      ";
 					static const char msg3[] = "Creating Local ARP Cache entry  ";
 					static const char msg4[] = "Answering ARP Request from      ";
@@ -8476,7 +8479,8 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 											mDNSSameEthAddress(&arp->sha, &intf->MAC)       ? msg3 : msg4;
 					LogSPS("%-7s %s %.6a %.4a for %.4a -- H-MAC %.6a I-MAC %.6a %s",
 						InterfaceNameForID(m, InterfaceID), msg, &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m, rr));
-					if      (msg == msg3) mDNSPlatformSetLocalARP(&arp->tpa, &rr->WakeUp.IMAC, InterfaceID);
+					if      (msg == msg1) RestartProbing(m, rr);
+					else if (msg == msg3) mDNSPlatformSetLocalARP(&arp->tpa, &rr->WakeUp.IMAC, InterfaceID);
 					else if (msg == msg4) SendARP(m, 2, rr, arp->tpa.b, arp->sha.b, arp->spa.b, arp->sha.b);
 					}
 
@@ -8500,7 +8504,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 						if (mDNSSameEthAddress(&arp->sha, &rr->WakeUp.IMAC))
 							LogSPS("%-7s ARP %s from owner %.6a %.4a for %-15.4a -- re-starting probing for %s",
 								InterfaceNameForID(m, InterfaceID),
-								mDNSSameIPv4Address(arp->spa, arp->tpa) ? "Announcement" : "Request     ",
+								mDNSSameIPv4Address(arp->spa, arp->tpa) ? "Announcement" : mDNSSameOpaque16(arp->op, ARP_op_request) ? "Request     " : "Response    ",
 								&arp->sha, &arp->spa, &arp->tpa, ARDisplayString(m, rr));
 						else
 							{
