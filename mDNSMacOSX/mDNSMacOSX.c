@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.645  2009/03/10 23:48:33  cheshire
+<rdar://problem/6665739> Task scheduling failure when Sleep Proxy Server is active
+
 Revision 1.644  2009/03/10 04:17:09  cheshire
 Check for NULL answer in UpdateSPSStatus()
 
@@ -2523,6 +2526,7 @@ mDNSexport void mDNSPlatformUpdateProxyList(mDNS *const m, const mDNSInterfaceID
 	if (!numv4 && !numv6)
 		{
 		LogSPS("mDNSPlatformUpdateProxyList: No need for filter");
+		if (m->timenow == 0) LogMsg("mDNSPlatformUpdateProxyList: m->timenow == 0");
 		// Schedule check to see if we can close this BPF_fd now
 		if (!m->p->NetworkChanged) m->p->NetworkChanged = NonZeroTime(m->timenow + mDNSPlatformOneSecond * 2);
 		// prog.bf_len = 0; This seems to panic the kernel
@@ -2534,48 +2538,54 @@ mDNSexport void mDNSPlatformUpdateProxyList(mDNS *const m, const mDNSInterfaceID
 
 mDNSexport void mDNSPlatformReceiveBPF_fd(mDNS *const m, int fd)
 	{
+	mDNS_Lock(m);
+	
 	NetworkInterfaceInfoOSX *i;
 	for (i = m->p->InterfaceList; i; i = i->next) if (i->BPF_fd == -2) break;
-	if (!i) { LogSPS("mDNSPlatformReceiveBPF_fd: No Interfaces awaiting BPF fd %d; closing", fd); close(fd); return; }
-
-	LogSPS("%s using   BPF fd %d", i->ifinfo.ifname, fd);
-
-	struct bpf_version v;
-	if (ioctl(fd, BIOCVERSION, &v) < 0)
-		LogMsg("mDNSPlatformReceiveBPF_fd: %d %s BIOCVERSION failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno));
-	else if (BPF_MAJOR_VERSION != v.bv_major || BPF_MINOR_VERSION != v.bv_minor)
-		LogMsg("mDNSPlatformReceiveBPF_fd: %d %s BIOCVERSION header %d.%d kernel %d.%d",
-			fd, i->ifinfo.ifname, BPF_MAJOR_VERSION, BPF_MINOR_VERSION, v.bv_major, v.bv_minor);
-
-	if (ioctl(fd, BIOCGBLEN, &i->BPF_len) < 0)
-		LogMsg("mDNSPlatformReceiveBPF_fd: %d %s BIOCGBLEN failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno));
-
-	if (i->BPF_len > sizeof(m->imsg))
-		{
-		i->BPF_len = sizeof(m->imsg);
-		if (ioctl(fd, BIOCSBLEN, &i->BPF_len) < 0)
-			LogMsg("mDNSPlatformReceiveBPF_fd: %d %s BIOCSBLEN failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno));
-		else LogSPS("mDNSPlatformReceiveBPF_fd: %d %s BIOCSBLEN %d", i->BPF_len);
-		}
-
-	static const u_int opt_immediate = 1;
-	if (ioctl(fd, BIOCIMMEDIATE, &opt_immediate) < 0)
-		LogMsg("mDNSPlatformReceiveBPF_fd: %d %s BIOCIMMEDIATE failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno));
-
-	struct ifreq ifr;
-	mDNSPlatformMemZero(&ifr, sizeof(ifr));
-	strlcpy(ifr.ifr_name, i->ifinfo.ifname, sizeof(ifr.ifr_name));
-	if (ioctl(fd, BIOCSETIF, &ifr) < 0)
-		{ LogMsg("mDNSPlatformReceiveBPF_fd: %d %s BIOCSETIF failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno)); i->BPF_fd = -3; }
+	if (!i) { LogSPS("mDNSPlatformReceiveBPF_fd: No Interfaces awaiting BPF fd %d; closing", fd); close(fd); }
 	else
 		{
-		CFSocketContext myCFSocketContext = { 0, i, NULL, NULL, NULL };
-		i->BPF_fd  = fd;
-		i->BPF_cfs = CFSocketCreateWithNative(kCFAllocatorDefault, fd, kCFSocketReadCallBack, bpf_callback, &myCFSocketContext);
-		i->BPF_rls = CFSocketCreateRunLoopSource(kCFAllocatorDefault, i->BPF_cfs, 0);
-		CFRunLoopAddSource(i->m->p->CFRunLoop, i->BPF_rls, kCFRunLoopDefaultMode);
-		mDNSPlatformUpdateProxyList(m, (mDNSInterfaceID)i);
+		LogSPS("%s using   BPF fd %d", i->ifinfo.ifname, fd);
+	
+		struct bpf_version v;
+		if (ioctl(fd, BIOCVERSION, &v) < 0)
+			LogMsg("mDNSPlatformReceiveBPF_fd: %d %s BIOCVERSION failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno));
+		else if (BPF_MAJOR_VERSION != v.bv_major || BPF_MINOR_VERSION != v.bv_minor)
+			LogMsg("mDNSPlatformReceiveBPF_fd: %d %s BIOCVERSION header %d.%d kernel %d.%d",
+				fd, i->ifinfo.ifname, BPF_MAJOR_VERSION, BPF_MINOR_VERSION, v.bv_major, v.bv_minor);
+	
+		if (ioctl(fd, BIOCGBLEN, &i->BPF_len) < 0)
+			LogMsg("mDNSPlatformReceiveBPF_fd: %d %s BIOCGBLEN failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno));
+	
+		if (i->BPF_len > sizeof(m->imsg))
+			{
+			i->BPF_len = sizeof(m->imsg);
+			if (ioctl(fd, BIOCSBLEN, &i->BPF_len) < 0)
+				LogMsg("mDNSPlatformReceiveBPF_fd: %d %s BIOCSBLEN failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno));
+			else LogSPS("mDNSPlatformReceiveBPF_fd: %d %s BIOCSBLEN %d", i->BPF_len);
+			}
+	
+		static const u_int opt_immediate = 1;
+		if (ioctl(fd, BIOCIMMEDIATE, &opt_immediate) < 0)
+			LogMsg("mDNSPlatformReceiveBPF_fd: %d %s BIOCIMMEDIATE failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno));
+	
+		struct ifreq ifr;
+		mDNSPlatformMemZero(&ifr, sizeof(ifr));
+		strlcpy(ifr.ifr_name, i->ifinfo.ifname, sizeof(ifr.ifr_name));
+		if (ioctl(fd, BIOCSETIF, &ifr) < 0)
+			{ LogMsg("mDNSPlatformReceiveBPF_fd: %d %s BIOCSETIF failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno)); i->BPF_fd = -3; }
+		else
+			{
+			CFSocketContext myCFSocketContext = { 0, i, NULL, NULL, NULL };
+			i->BPF_fd  = fd;
+			i->BPF_cfs = CFSocketCreateWithNative(kCFAllocatorDefault, fd, kCFSocketReadCallBack, bpf_callback, &myCFSocketContext);
+			i->BPF_rls = CFSocketCreateRunLoopSource(kCFAllocatorDefault, i->BPF_cfs, 0);
+			CFRunLoopAddSource(i->m->p->CFRunLoop, i->BPF_rls, kCFRunLoopDefaultMode);
+			mDNSPlatformUpdateProxyList(m, (mDNSInterfaceID)i);
+			}
 		}
+
+	mDNS_Unlock(m);
 	}
 
 #endif // APPLE_OSX_mDNSResponder
@@ -5023,14 +5033,8 @@ mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 			}
 		else								// else, we're Sleep Proxy Server; open BPF fds
 			{
-			if (i->Exists && i->ifinfo.InterfaceID == (mDNSInterfaceID)i && !(i->ifa_flags & IFF_LOOPBACK))
-				{
-				// Even if we've previously set up our BPF filter, we need to redo it,
-				// in case we've added, removed, or changed IPv4 addresses on this interface
-				// (actually not any more -- if the new design works properly, we can remove the above comment)
-				if (i->BPF_fd == -1) { LogSPS("%s requesting BPF", i->ifinfo.ifname); i->BPF_fd = -2; mDNSRequestBPF(); }
-				//else if (i->BPF_fd >= 0) mDNSPlatformUpdateProxyList(m, i);	// Not needed any more
-				}
+			if (i->Exists && i->ifinfo.InterfaceID == (mDNSInterfaceID)i && !(i->ifa_flags & IFF_LOOPBACK) && i->BPF_fd == -1)
+				{ LogSPS("%s requesting BPF", i->ifinfo.ifname); i->BPF_fd = -2; mDNSRequestBPF(); }
 			}
 		}
 
