@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.644  2009/03/10 04:17:09  cheshire
+Check for NULL answer in UpdateSPSStatus()
+
 Revision 1.643  2009/03/10 01:15:55  cheshire
 Sleep Proxies with invalid names (score 10000) need to be ignored
 
@@ -4818,7 +4821,7 @@ mDNSlocal void UpdateSPSStatus(mDNS *const m, DNSQuestion *question, const Resou
 	NetworkInterfaceInfo* info = (NetworkInterfaceInfo*)question->QuestionContext;
 	debugf("UpdateSPSStatus: %s %##s %s %s", info->ifname, question->qname.c, AddRecord ? "Add" : "Rmv", answer ? RRDisplayString(m, answer) : "<null>");
 
-	if (SPSMetric(answer->rdata->u.name.c) > 9999) return;		// Ignore instances with invalid names
+	if (answer && SPSMetric(answer->rdata->u.name.c) > 9999) return;	// Ignore instances with invalid names
 
 	if (!spsStatusDict)
 		{
