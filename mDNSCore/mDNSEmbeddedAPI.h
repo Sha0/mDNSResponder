@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.547  2009/03/10 01:14:30  cheshire
+Sleep Proxies with invalid names need to be ignored (score 10000),
+not treated as "Sleep Proxy of last resort" (score 9999)
+
 Revision 1.546  2009/03/06 23:51:51  mcguire
 Fix broken build by defining DiscardPort
 
@@ -3234,7 +3238,7 @@ extern const CacheRecord *FindSPSInCache(mDNS *const m, const DNSQuestion *const
                                              (X)[6] == '-' && (X)[ 7] == '9' && (X)[ 8] == '9' && \
                                              (X)[9] == '-' && (X)[10] == '9' && (X)[11] == '9'    )
 #define ValidSPSName(X) ((X)[0] >= 5 && mDNSIsDigit((X)[1]) && mDNSIsDigit((X)[2]) && mDNSIsDigit((X)[4]) && mDNSIsDigit((X)[5]))
-#define SPSMetric(X) (ValidSPSName(X) && !PrototypeSPSName(X) ? ((X)[1]-'0') * 1000 + ((X)[2]-'0') * 100 + ((X)[4]-'0') * 10 + ((X)[5]-'0') : 9999)
+#define SPSMetric(X) (ValidSPSName(X) && !PrototypeSPSName(X) ? ((X)[1]-'0') * 1000 + ((X)[2]-'0') * 100 + ((X)[4]-'0') * 10 + ((X)[5]-'0') : 10000)
 extern void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheRecord *const rr, const QC_result AddRecord);
 
 // For now this AutoTunnel stuff is specific to Mac OS X.
