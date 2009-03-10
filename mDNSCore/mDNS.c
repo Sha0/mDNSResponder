@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.924  2009/03/10 23:45:20  cheshire
+Added comments explaining usage of SetSPSProxyListChanged()
+
 Revision 1.923  2009/03/09 21:53:02  cheshire
 <rdar://problem/6650479> Sleep Proxy: Need to stop proxying when it sees an ARP probe from the client
 
@@ -4235,10 +4238,14 @@ mDNSexport mDNSs32 mDNS_TimeNow(const mDNS *const m)
 	return(time);
 	}
 
+// To avoid pointless CPU thrash, we use SetSPSProxyListChanged(X) to record the last interface that
+// had its Sleep Proxy client list change, and defer to actual BPF reconfiguration to mDNS_Execute().
+// (GetNextScheduledEvent() returns "now" when m->SPSProxyListChanged is set)
 #define SetSPSProxyListChanged(X) do { \
 	if (m->SPSProxyListChanged && m->SPSProxyListChanged != (X)) mDNSPlatformUpdateProxyList(m, m->SPSProxyListChanged); \
 	m->SPSProxyListChanged = (X); } while(0)
 
+// Called from mDNS_Execute() to expire stale proxy records
 mDNSlocal void CheckProxyRecords(mDNS *const m, AuthRecord *list)
 	{
 	m->CurrentRecord = list;
@@ -4448,7 +4455,7 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 			CheckProxyRecords(m, m->ResourceRecords);
 			}
 
-		SetSPSProxyListChanged(mDNSNULL);
+		SetSPSProxyListChanged(mDNSNULL);		// Perform any deferred BPF reconfiguration now
 
 		if (m->DelaySleep && m->timenow - m->DelaySleep >= 0)
 			{
@@ -5063,6 +5070,7 @@ mDNSlocal CacheRecord *FindIdenticalRecordInCache(const mDNS *const m, const Res
 	return(rr);
 	}
 
+// Called from ProcessQuery when we get an mDNS packet with an owner record in it
 mDNSlocal void ClearProxyRecords(mDNS *const m, const OwnerOptData *const owner, AuthRecord *const thelist)
 	{
 	m->CurrentRecord = thelist;
