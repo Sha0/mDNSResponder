@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.646  2009/03/13 01:36:24  mcguire
+<rdar://problem/6657640> Reachability fixes on DNS config change
+
 Revision 1.645  2009/03/10 23:48:33  cheshire
 <rdar://problem/6665739> Task scheduling failure when Sleep Proxy Server is active
 
@@ -4935,7 +4938,10 @@ mDNSlocal void InternetSharingChanged(SCPreferencesRef prefs, SCPreferencesNotif
 	// Tell platform layer to open or close its BPF fds
 	if (!m->p->NetworkChanged ||
 		m->p->NetworkChanged - NonZeroTime(m->timenow + mDNSPlatformOneSecond * 2) < 0)
+		{
 		m->p->NetworkChanged = NonZeroTime(m->timenow + mDNSPlatformOneSecond * 2);
+		LogInfo("InternetSharingChanged: Set NetworkChanged to %d (%d)", m->p->NetworkChanged - m->timenow, m->p->NetworkChanged);
+		}
 
 	mDNS_Unlock(m);
 	KQueueUnlock(m, "InternetSharingChanged");
@@ -5069,17 +5075,21 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 		if (!CFStringGetCString(CFArrayGetValueAtIndex(changedKeys, i), buf, sizeof(buf), kCFStringEncodingUTF8)) buf[0] = 0;
 		LogInfo("***   NetworkChanged SC key: %s", buf);
 		}
-	LogInfo("***   NetworkChanged   *** %d change%s %s%s%sdelay %d",
+	LogInfo("***   NetworkChanged   *** %d change%s %s%s%s%sdelay %d",
 		c, c>1?"s":"",
 		c1 ? "(Local Hostname) " : "",
 		c2 ? "(Computer Name) "  : "",
 		c3 ? "(DynamicDNS) "     : "",
+		c4 ? "(DNS) "            : "",
 		delay);
 #endif
 
 	if (!m->p->NetworkChanged ||
 		m->p->NetworkChanged - NonZeroTime(m->timenow + delay) < 0)
+		{
 		m->p->NetworkChanged = NonZeroTime(m->timenow + delay);
+		LogInfo("NetworkChanged: setting network changed to %d (%d)", delay, m->p->NetworkChanged);
+		}
 
 	// KeyChain frequently fails to notify clients of change events. To work around this
 	// we set a timer and periodically poll to detect if any changes have occurred.
@@ -5094,9 +5104,16 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 
 	if (!m->SuppressSending ||
 		m->SuppressSending - m->p->NetworkChanged < 0)
+		{
 		m->SuppressSending = m->p->NetworkChanged;
+		LogInfo("NetworkChanged: setting SuppressSending to %d (%d)", m->SuppressSending - m->timenow, m->SuppressSending);
+		}
 
 	mDNS_Unlock(m);
+
+	// If DNS settings changed, immediately force a reconfig (esp. cache flush)
+	if (c4) mDNSMacOSXNetworkChanged(m);
+
 	KQueueUnlock(m, "NetworkChanged");
 	}
 
@@ -5190,7 +5207,10 @@ mDNSlocal void SysEventCallBack(int s1, short __unused filter, void *context)
 		// The DHCP code has a four-second delay before it processes the link change,
 		// so we should wait at least that long before doing anything
 		if (!m->p->NetworkChanged)
+			{
 			m->p->NetworkChanged = NonZeroTime(m->timenow + mDNSPlatformOneSecond * 5);
+			LogInfo("SysEventCallBack: setting network changed to %d (%d)", mDNSPlatformOneSecond * 5, m->p->NetworkChanged);
+			}
 
 		// If we're getting a flurry of event notifications, we should make sure that at least
 		// a second has passed without any new notifications before we go ahead and reconfigure

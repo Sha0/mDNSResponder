@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.925  2009/03/13 01:35:36  mcguire
+<rdar://problem/6657640> Reachability fixes on DNS config change
+
 Revision 1.924  2009/03/10 23:45:20  cheshire
 Added comments explaining usage of SetSPSProxyListChanged()
 
@@ -8908,6 +8911,8 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 	DNSServer   *ptr, **p = &m->DNSServers;
 	const DNSServer *oldServers = m->DNSServers;
 	DNSQuestion *q;
+	
+	debugf("uDNS_SetupDNSConfig: entry");
 
 	if (m->RegisterSearchDomains) uDNS_RegisterSearchDomains(m);
 
@@ -8929,7 +8934,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 			if (t != s)
 				{
 				// If DNS Server for this question has changed, reactivate it
-				debugf("Updating DNS Server from %p %#a:%d (%##s) to %p %#a:%d (%##s) for %##s (%s)",
+				debugf("uDNS_SetupDNSConfig: Updating DNS Server from %p %#a:%d (%##s) to %p %#a:%d (%##s) for %##s (%s)",
 					t, t ? &t->addr : mDNSNULL, mDNSVal16(t ? t->port : zeroIPPort), t ? t->domain.c : (mDNSu8*)"",
 					s, s ? &s->addr : mDNSNULL, mDNSVal16(s ? s->port : zeroIPPort), s ? s->domain.c : (mDNSu8*)"",
 					q->qname.c, DNSTypeName(q->qtype));
@@ -8945,10 +8950,8 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 		ptr = GetServerForName(m, cr->resrec.name);
 		if (ptr && (ptr->flags & DNSServer_FlagNew) && !cr->resrec.InterfaceID)
 			{
-			if (cr->resrec.RecordType == kDNSRecordTypePacketNegative)
-				mDNS_PurgeCacheResourceRecord(m, cr);
-			else
-				mDNS_Reconfirm_internal(m, cr, kDefaultReconfirmTimeForNoAnswer);
+			debugf("uDNS_SetupDNSConfig: purging cache record due to new server %p %#a:%d (%##s): %s", ptr, &ptr->addr, mDNSVal16(ptr->port), ptr->domain.c, CRDisplayString(m, cr));
+			mDNS_PurgeCacheResourceRecord(m, cr);
 			}
 		}
 	
@@ -8963,8 +8966,12 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 			ptr->flags &= ~DNSServer_FlagDelete;	// Clear del so GetServerForName will (temporarily) find this server again before it's finally deleted
 			FORALL_CACHERECORDS(slot, cg, cr)
 				if (!cr->resrec.InterfaceID && GetServerForName(m, cr->resrec.name) == ptr)
-					mDNS_Reconfirm_internal(m, cr, kDefaultReconfirmTimeForNoAnswer);
+					{
+					debugf("uDNS_SetupDNSConfig: purging cache record due to lame duck server %p %#a:%d (%##s): %s", ptr, &ptr->addr, mDNSVal16(ptr->port), ptr->domain.c, CRDisplayString(m, cr));
+					mDNS_PurgeCacheResourceRecord(m, cr);
+					}
 			*p = (*p)->next;
+			debugf("uDNS_SetupDNSConfig: Deleting server %p %#a:%d (%##s)", ptr, &ptr->addr, mDNSVal16(ptr->port), ptr->domain.c);
 			mDNSPlatformMemFree(ptr);
 			}
 		else
