@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.548  2009/03/14 01:42:56  mcguire
+<rdar://problem/5457116> BTMM: Fix issues with multiple .Mac accounts on the same machine
+
 Revision 1.547  2009/03/10 01:14:30  cheshire
 Sleep Proxies with invalid names need to be ignored (score 10000),
 not treated as "Sleep Proxy of last resort" (score 9999)
@@ -2285,7 +2288,6 @@ typedef struct ClientTunnel
 	mDNSv6Addr rmt_inner;
 	mDNSv4Addr rmt_outer;
 	mDNSIPPort rmt_outer_port;
-	char b64keydata[32];
 	DNSQuestion q;
 	} ClientTunnel;
 #endif

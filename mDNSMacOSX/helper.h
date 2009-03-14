@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.h,v $
+Revision 1.15  2009/03/14 01:42:56  mcguire
+<rdar://problem/5457116> BTMM: Fix issues with multiple .Mac accounts on the same machine
+
 Revision 1.14  2009/01/22 02:14:27  cheshire
 <rdar://problem/6515626> Sleep Proxy: Set correct target MAC address, instead of all zeroes
 
@@ -113,9 +116,9 @@ extern int  mDNSDynamicStoreSetConfig(int key, const char *subkey, CFPropertyLis
 extern int  mDNSPreferencesSetName(int key, domainlabel* old, domainlabel* new);
 extern int  mDNSKeychainGetSecrets(CFArrayRef *secrets);
 extern int  mDNSAutoTunnelInterfaceUpDown(int updown, v6addr_t addr);
-extern int  mDNSConfigureServer(int updown, const char *keydata);
+extern int  mDNSConfigureServer(int updown, const domainname * const fqdn);
 extern int  mDNSAutoTunnelSetKeys(int replacedelete, v6addr_t local_inner,
 				v4addr_t local_outer, short local_port, v6addr_t remote_inner,
-				v4addr_t remote_outer, short remote_port, const char *keydata);
+				v4addr_t remote_outer, short remote_port, const domainname * const fqdn);
 
 #endif /* H_HELPER_H */

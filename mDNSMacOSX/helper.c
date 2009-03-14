@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.61  2009/03/14 01:42:56  mcguire
+<rdar://problem/5457116> BTMM: Fix issues with multiple .Mac accounts on the same machine
+
 Revision 1.60  2009/02/18 02:09:10  cheshire
 <rdar://problem/6514947> Sleep Proxy: PF_ROUTE command to set ARP entry returns errno 17 (EEXIST)
 Also need to set rtmsg.hdr.rtm_index
@@ -1521,7 +1524,7 @@ ensureExistenceOfRacoonConfigDir(const char* const racoon_config_dir)
 	}
 
 static int
-createAnonymousRacoonConfiguration(const char *keydata)
+createAnonymousRacoonConfiguration(const char *fqdn)
 	{
 	static const char config1[] =
 	  "remote anonymous {\n"
@@ -1530,7 +1533,7 @@ createAnonymousRacoonConfiguration(const char *keydata)
 	  "  situation identity_only;\n"
 	  "  verify_identifier off;\n"
 	  "  generate_policy on;\n"
-	  "  shared_secret use \"";
+	  "  shared_secret keychain_by_id \"dns:";
 	static const char config2[] =
 	  "\";\n"
 	  "  nonce_size 16;\n"
@@ -1578,7 +1581,7 @@ createAnonymousRacoonConfiguration(const char *keydata)
 		}
 	write(fd, configHeader, sizeof(configHeader)-1);
 	write(fd, config1, sizeof(config1)-1);
-	write(fd, keydata, strlen(keydata));
+	write(fd, fqdn, strlen(fqdn));
 	write(fd, config2, sizeof(config2)-1);
 	close(fd);
 
@@ -1843,7 +1846,7 @@ kickRacoon(void)
 #endif /* ndef MDNS_NO_IPSEC */
 
 int
-do_mDNSConfigureServer(__unused mach_port_t port, int updown, const char *keydata, int *err, audit_token_t token)
+do_mDNSConfigureServer(__unused mach_port_t port, int updown, const char *fqdn, int *err, audit_token_t token)
 	{
 #ifndef MDNS_NO_IPSEC
 	debug("entry");
@@ -1858,7 +1861,7 @@ do_mDNSConfigureServer(__unused mach_port_t port, int updown, const char *keydat
 	switch ((enum mDNSUpDown)updown)
 		{
 		case kmDNSUp:
-			if (0 != createAnonymousRacoonConfiguration(keydata))
+			if (0 != createAnonymousRacoonConfiguration(fqdn))
 				{
 				*err = kmDNSHelperRacoonConfigCreationFailed;
 				goto fin;
@@ -1879,7 +1882,7 @@ do_mDNSConfigureServer(__unused mach_port_t port, int updown, const char *keydat
 
 fin:
 #else
-	(void)port; (void)updown; (void)keydata; (void)token;
+	(void)port; (void)updown; (void)fqdn; (void)token;
 	*err = kmDNSHelperIPsecDisabled;
 #endif
 	update_idle_timer();
@@ -2239,7 +2242,7 @@ int
 do_mDNSAutoTunnelSetKeys(__unused mach_port_t port, int replacedelete,
     v6addr_t loc_inner, v4addr_t loc_outer, uint16_t loc_port,
     v6addr_t rmt_inner, v4addr_t rmt_outer, uint16_t rmt_port,
-    const char *keydata, int *err, audit_token_t token)
+    const char *fqdn, int *err, audit_token_t token)
 	{
 #ifndef MDNS_NO_IPSEC
 	static const char config[] =
@@ -2250,7 +2253,8 @@ do_mDNSAutoTunnelSetKeys(__unused mach_port_t port, int replacedelete,
 	  "  situation identity_only;\n"
 	  "  verify_identifier off;\n"
 	  "  generate_policy on;\n"
-	  "  shared_secret use \"%s\";\n"
+	  "  my_identifier user_fqdn \"dns:%s\";\n"
+	  "  shared_secret keychain \"dns:%s\";\n"
 	  "  nonce_size 16;\n"
 	  "  lifetime time 5 min;\n"
 	  "  initial_contact on;\n"
@@ -2349,7 +2353,7 @@ do_mDNSAutoTunnelSetKeys(__unused mach_port_t port, int replacedelete,
 			goto fin;
 			}
 		fd = -1;
-		fprintf(fp, config, configHeader, ro, rmt_port, keydata, ri, li, li, ri);
+		fprintf(fp, config, configHeader, ro, rmt_port, fqdn, fqdn, ri, li, li, ri);
 		fclose(fp);
 		fp = NULL;
 		if (0 > rename(tmp_path, path))

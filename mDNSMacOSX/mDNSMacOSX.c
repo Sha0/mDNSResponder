@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.647  2009/03/14 01:42:56  mcguire
+<rdar://problem/5457116> BTMM: Fix issues with multiple .Mac accounts on the same machine
+
 Revision 1.646  2009/03/13 01:36:24  mcguire
 <rdar://problem/6657640> Reachability fixes on DNS config change
 
@@ -2943,7 +2946,7 @@ mDNSlocal NetworkInterfaceInfoOSX *FindRoutableIPv4(mDNS *const m, mDNSu32 scope
 
 #define kRacoonPort 4500
 
-static mDNSBool AnonymousRacoonConfig = mDNSfalse;
+static DomainAuthInfo* AnonymousRacoonConfig = mDNSNULL;
 
 #ifndef NO_SECURITYFRAMEWORK
 
@@ -3330,6 +3333,23 @@ mDNSlocal void AutoTunnelRecordCallback(mDNS *const m, AuthRecord *const rr, mSt
 		}
 	}
 
+// Determine whether we need racoon to accept incoming connections
+mDNSlocal void UpdateConfigureServer(mDNS *m)
+	{
+	DomainAuthInfo *info;
+	
+	for (info = m->AuthInfoList; info; info = info->next)
+		if (info->AutoTunnel && !info->deltime && !mDNSIPPortIsZero(info->AutoTunnelNAT.ExternalPort))
+			break;
+	
+	if (info != AnonymousRacoonConfig)
+		{
+		AnonymousRacoonConfig = info;
+		// Create or revert configuration file, and start (or SIGHUP) Racoon
+		(void)mDNSConfigureServer(AnonymousRacoonConfig ? kmDNSUp : kmDNSDown, AnonymousRacoonConfig ? &AnonymousRacoonConfig->domain : mDNSNULL);
+		}
+	}
+		
 mDNSlocal void AutoTunnelNATCallback(mDNS *m, NATTraversalInfo *n)
 	{
 	DomainAuthInfo *info = (DomainAuthInfo *)n->clientContext;
@@ -3339,19 +3359,9 @@ mDNSlocal void AutoTunnelNATCallback(mDNS *m, NATTraversalInfo *n)
 	m->NextSRVUpdate = NonZeroTime(m->timenow);
 	DeregisterAutoTunnelRecords(m,info);
 	RegisterAutoTunnelRecords(m,info);
+	
+	UpdateConfigureServer(m);
 
-	// Determine whether we need racoon to accept incoming connections
-	for (info = m->AuthInfoList; info; info = info->next)
-		if (info->AutoTunnel && !info->deltime && !mDNSIPPortIsZero(info->AutoTunnelNAT.ExternalPort))
-			break;
-	mDNSBool needRacoonConfig = info != mDNSNULL;
-	if (needRacoonConfig != AnonymousRacoonConfig)
-		{
-		AnonymousRacoonConfig = needRacoonConfig;
-		// Create or revert configuration file, and start (or SIGHUP) Racoon
-		(void)mDNSConfigureServer(AnonymousRacoonConfig ? kmDNSUp : kmDNSDown, info ? info->b64keydata : "");
-		}
-		
 	UpdateAutoTunnelDomainStatus(m, (DomainAuthInfo *)n->clientContext);
 	}
 
@@ -3415,7 +3425,7 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 
 mDNSlocal mStatus AutoTunnelSetKeys(ClientTunnel *tun, mDNSBool AddNew)
 	{
-	return(mDNSAutoTunnelSetKeys(AddNew ? kmDNSAutoTunnelSetKeysReplace : kmDNSAutoTunnelSetKeysDelete, tun->loc_inner.b, tun->loc_outer.b, kRacoonPort, tun->rmt_inner.b, tun->rmt_outer.b, mDNSVal16(tun->rmt_outer_port), tun->b64keydata));
+	return(mDNSAutoTunnelSetKeys(AddNew ? kmDNSAutoTunnelSetKeysReplace : kmDNSAutoTunnelSetKeysDelete, tun->loc_inner.b, tun->loc_outer.b, kRacoonPort, tun->rmt_inner.b, tun->rmt_outer.b, mDNSVal16(tun->rmt_outer_port), SkipLeadingLabels(&tun->dstname, 1)));
 	}
 
 // If the EUI-64 part of the IPv6 ULA matches, then that means the two addresses point to the same machine
@@ -3573,7 +3583,6 @@ mDNSexport void AddNewClientTunnel(mDNS *const m, DNSQuestion *const q)
 	p->rmt_inner      = zerov6Addr;
 	p->rmt_outer      = zerov4Addr;
 	p->rmt_outer_port = zeroIPPort;
-	mDNS_snprintf(p->b64keydata, sizeof(p->b64keydata), "%s", q->AuthInfo->b64keydata);
 	p->next = m->TunnelClients;
 	m->TunnelClients = p;		// We intentionally build list in reverse order
 
@@ -4617,19 +4626,8 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 					{
 					LogInfo("SetDomainSecrets: tunnel to %##s no longer marked for deletion", client->dstname.c);
 					client->MarkedForDeletion = mDNSfalse;
-					// If the key has changed, reconfigure the tunnel
-					if (strncmp(stringbuf, client->b64keydata, sizeof(client->b64keydata)))
-						{
-						mDNSBool queryNotInProgress = client->q.ThisQInterval < 0;
-						LogInfo("SetDomainSecrets: secret changed for tunnel %##s %s", client->dstname.c, queryNotInProgress ? "reconfiguring" : "query in progress");
-						if (queryNotInProgress) AutoTunnelSetKeys(client, mDNSfalse);
-						mDNS_snprintf(client->b64keydata, sizeof(client->b64keydata), "%s", stringbuf);
-						if (queryNotInProgress) AutoTunnelSetKeys(client, mDNStrue);
-						}
 					}
 				}
-
-			mDNSBool keyChanged = FoundInList && FoundInList->AutoTunnel ? strncmp(stringbuf, FoundInList->b64keydata, sizeof(FoundInList->b64keydata)) : mDNSfalse;
 
 #endif // APPLE_OSX_mDNSResponder
 
@@ -4654,12 +4652,6 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 				}
 
 #if APPLE_OSX_mDNSResponder
-			if (keyChanged && AnonymousRacoonConfig)
-				{
-				LogInfo("SetDomainSecrets: secret changed for %##s", &domain);
-				(void)mDNSConfigureServer(kmDNSUp, stringbuf);
-				}
-				
 			if (ptr->AutoTunnel) UpdateAutoTunnelDomainStatus(m, ptr);
 #endif // APPLE_OSX_mDNSResponder
 
@@ -4727,13 +4719,8 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 			mDNSPlatformMemZero(m->AutoTunnelHostAddr.b, sizeof(m->AutoTunnelHostAddr.b));
 			}
 
-		if (!haveAutoTunnels && AnonymousRacoonConfig)
-			{
-			LogMsg("SetDomainSecrets: Resetting AnonymousRacoonConfig to false");
-			AnonymousRacoonConfig = mDNSfalse;
-			(void)mDNSConfigureServer(kmDNSDown, "");
-			}
-
+		UpdateConfigureServer(m);
+		
 		if (m->AutoTunnelHostAddr.b[0])
 			if (TunnelClients(m) || TunnelServers(m))
 				SetupLocalAutoTunnelInterface_internal(m);
@@ -5726,9 +5713,9 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 
 	if (AnonymousRacoonConfig)
 		{
-		AnonymousRacoonConfig = mDNSfalse;
+		AnonymousRacoonConfig = mDNSNULL;
 		LogInfo("mDNSPlatformClose: Deconfiguring autotunnel");
-		(void)mDNSConfigureServer(kmDNSDown, "");
+		(void)mDNSConfigureServer(kmDNSDown, mDNSNULL);
 		}
 
 	if (m->AutoTunnelHostAddrActive && m->AutoTunnelHostAddr.b[0])

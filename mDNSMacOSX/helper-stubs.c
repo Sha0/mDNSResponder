@@ -16,6 +16,9 @@
     Change History (most recent first):
 
 $Log: helper-stubs.c,v $
+Revision 1.16  2009/03/14 01:42:56  mcguire
+<rdar://problem/5457116> BTMM: Fix issues with multiple .Mac accounts on the same machine
+
 Revision 1.15  2009/01/22 02:14:27  cheshire
 <rdar://problem/6515626> Sleep Proxy: Set correct target MAC address, instead of all zeroes
 
@@ -263,12 +266,19 @@ fin:
 	return err;
 	}
 
-int mDNSConfigureServer(int updown, const char *keydata)
+int mDNSConfigureServer(int updown, const domainname * const fqdn)
 	{
 	kern_return_t kr = KERN_SUCCESS;
 	int retry = 0, err = 0;
+	char fqdnStr[MAX_ESCAPED_DOMAIN_NAME] = { 0 };
+	if (fqdn && ConvertDomainNameToCString(fqdn, fqdnStr))
+		{
+		// remove the trailing dot, as that is not used in the keychain entry racoon will lookup
+		mDNSu32 fqdnEnd = mDNSPlatformStrLen(fqdnStr);
+		if (fqdnEnd) fqdnStr[fqdnEnd - 1] = 0;
+		}
 	MACHRETRYLOOP_BEGIN(kr, retry, err, fin);
-	kr = proxy_mDNSConfigureServer(getHelperPort(retry), updown, keydata, &err);
+	kr = proxy_mDNSConfigureServer(getHelperPort(retry), updown, fqdnStr, &err);
 	MACHRETRYLOOP_END(kr, retry, err, fin);
 fin:
 	return err;
@@ -276,12 +286,19 @@ fin:
 
 int mDNSAutoTunnelSetKeys(int replacedelete, v6addr_t local_inner,
     v4addr_t local_outer, short local_port, v6addr_t remote_inner,
-    v4addr_t remote_outer, short remote_port, const char *keydata)
+    v4addr_t remote_outer, short remote_port, const domainname * const fqdn)
 	{
 	kern_return_t kr = KERN_SUCCESS;
 	int retry = 0, err = 0;
+	char fqdnStr[MAX_ESCAPED_DOMAIN_NAME] = { 0 };
+	if (fqdn && ConvertDomainNameToCString(fqdn, fqdnStr))
+		{
+		// remove the trailing dot, as that is not used in the keychain entry racoon will lookup
+		mDNSu32 fqdnEnd = mDNSPlatformStrLen(fqdnStr);
+		if (fqdnEnd) fqdnStr[fqdnEnd - 1] = 0;
+		}
 	MACHRETRYLOOP_BEGIN(kr, retry, err, fin);
-	kr = proxy_mDNSAutoTunnelSetKeys(getHelperPort(retry), replacedelete, local_inner, local_outer, local_port, remote_inner, remote_outer, remote_port, keydata, &err);
+	kr = proxy_mDNSAutoTunnelSetKeys(getHelperPort(retry), replacedelete, local_inner, local_outer, local_port, remote_inner, remote_outer, remote_port, fqdnStr, &err);
 	MACHRETRYLOOP_END(kr, retry, err, fin);
 fin:
 	return err;
