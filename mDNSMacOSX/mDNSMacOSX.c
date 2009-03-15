@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.649  2009/03/15 01:30:29  mcguire
+fix log message
+
 Revision 1.648  2009/03/15 01:16:08  mcguire
 <rdar://problem/6655415> SSLHandshake deadlock issues
 
@@ -1859,7 +1862,7 @@ mDNSlocal void tcpKQSocketCallback(__unused int fd, short filter, void *context)
 		else if (sock->handshake != handshake_completed)
 			{
 			if (!sock->err) sock->err = mStatus_UnknownErr;
-			LogMsg("mDNSPlatformReadTCP called with unknown SSLHandshake status");
+			LogMsg("tcpKQSocketCallback called with unknown SSLHandshake status");
 			}
 #else
 		sock->err = mStatus_UnsupportedErr;
