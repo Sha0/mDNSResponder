@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.930  2009/03/17 23:40:45  cheshire
+For now only try the highest-ranked Sleep Proxy; fixed come compiler warnings
+
 Revision 1.929  2009/03/17 21:55:56  cheshire
 Fixed mistake in logic for decided when we're ready to go to sleep
 
@@ -4310,7 +4313,8 @@ mDNSlocal void SendSPSRegistration(mDNS *const m, const NetworkInterfaceInfo *in
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		if (rr->resrec.RecordType > kDNSRecordTypeDeregistering)
 			if (rr->resrec.InterfaceID == intf->InterfaceID || (!rr->resrec.InterfaceID && (rr->ForceMCast || IsLocalDomain(rr->resrec.name))))
-				rr->SendRNow = mDNSInterfaceMark;
+				if (!rr->updateid.NotAnInteger)			// If this record is not already in the process of being transferred to the Sleep Proxy
+					rr->SendRNow = mDNSInterfaceMark;	// mark it now
 
 	while (1)
 		{
@@ -4345,11 +4349,11 @@ mDNSlocal void SendSPSRegistration(mDNS *const m, const NetworkInterfaceInfo *in
 			opt.resrec.rdata->u.opt[0].optlen           = DNSOpt_LeaseData_Space - 4;
 			opt.resrec.rdata->u.opt[0].u.updatelease    = DEFAULT_UPDATE_LEASE;
 			SetupOwnerOpt(m, intf, &opt.resrec.rdata->u.opt[1]);
-			LogSPS("SendSPSRegistration putting %s", ARDisplayString(m, &opt));
+			LogSPS("SendSPSRegistration putting %s %d %s", intf->ifname, sps, ARDisplayString(m, &opt));
 			p = PutResourceRecordTTLWithLimit(&m->omsg, p, &m->omsg.h.numAdditionals, &opt.resrec, opt.resrec.rroriginalttl, m->omsg.data + AbsoluteMaxDNSMessageData);
 			if (p)
 				{
-				LogSPS("SendSPSRegistration: Sending Update id %5d with %d records to %#a:%d",
+				LogSPS("SendSPSRegistration: Sending Update %s %d id %5d with %d records to %#a:%d", intf->ifname, sps,
 					mDNSVal16(m->omsg.h.id), m->omsg.h.mDNS_numUpdates, &intf->SPSAddr[sps], mDNSVal16(intf->SPSPort[sps]));
 				mDNSSendDNSMessage(m, &m->omsg, p, intf->InterfaceID, mDNSNULL, &intf->SPSAddr[sps], intf->SPSPort[sps], mDNSNULL, mDNSNULL);
 				}
@@ -4383,7 +4387,7 @@ mDNSlocal void NetWakeResolve(mDNS *const m, DNSQuestion *question, const Resour
 		{
 		intf->SPSAddr[sps].type = mDNSAddrType_IPv6;
 		intf->SPSAddr[sps].ip.v6 = answer->rdata->u.ipv6;
-		SendSPSRegistration(m, intf, sps);
+		if (sps == 0) SendSPSRegistration(m, intf, sps);	// For now we only try the highest-ranked Sleep Proxy
 		}
 	else if (answer->rrtype == kDNSType_AAAA && answer->rdlength == 0)	// If negative answer for IPv6, look for IPv4 addresses instead
 		{
@@ -4394,7 +4398,7 @@ mDNSlocal void NetWakeResolve(mDNS *const m, DNSQuestion *question, const Resour
 		{
 		intf->SPSAddr[sps].type = mDNSAddrType_IPv4;
 		intf->SPSAddr[sps].ip.v4 = answer->rdata->u.ipv4;
-		SendSPSRegistration(m, intf, sps);
+		if (sps == 0) SendSPSRegistration(m, intf, sps);	// For now we only try the highest-ranked Sleep Proxy
 		}
 	}
 
@@ -4795,34 +4799,31 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 
 mDNSexport mDNSBool mDNSCoreReadyForSleep(mDNS *m)
 	{
+	int i;
+	DNSQuestion *q;
+	AuthRecord *rr;
+	ServiceRecordSet *srs;
+	NetworkInterfaceInfo *intf;
+
 	(void)m;
 
 	if (m->DelaySleep) return(mDNSfalse);
 
 	// Scan list of private LLQs, and make sure they've all completed their handshake with the server
-	DNSQuestion *q;
 	for (q = m->Questions; q; q = q->next)
 		if (!mDNSOpaque16IsZero(q->TargetQID) && q->LongLived && q->ReqLease == 0 && q->tcp) return(mDNSfalse);
 
 	// Scan list of interfaces
-	NetworkInterfaceInfo *intf = GetFirstActiveInterface(m->HostInterfaces);
-	while (intf)
-		{
-		int i;
-		for (i=0; i<3; i++)
-			{
-			if (intf->NetWake && intf->NetWakeResolve[i].ThisQInterval >= 0)
-				{
-				LogSPS("ReadyForSleep waiting for SPS Resolve %s %d %##s (%s)", intf->ifname, i, intf->NetWakeResolve[i].qname.c, DNSTypeName(intf->NetWakeResolve[i].qtype));
-				return(mDNSfalse);
-				}
-			}
-
-		intf = GetFirstActiveInterface(intf->next);
-		}
+	for (intf = GetFirstActiveInterface(m->HostInterfaces); intf; intf = GetFirstActiveInterface(intf->next))
+		if (intf->NetWake)
+			for (i=0; i<3; i++)
+				if (intf->NetWakeResolve[i].ThisQInterval >= 0)
+					{
+					LogSPS("ReadyForSleep waiting for SPS Resolve %s %d %##s (%s)", intf->ifname, i, intf->NetWakeResolve[i].qname.c, DNSTypeName(intf->NetWakeResolve[i].qtype));
+					return(mDNSfalse);
+					}
 
 	// Scan list of registered records
-	AuthRecord *rr;
 	for (rr = m->ResourceRecords; rr; rr = rr->next)
 		{
 		if (AuthRecord_uDNS(rr))
@@ -4837,7 +4838,6 @@ mDNSexport mDNSBool mDNSCoreReadyForSleep(mDNS *m)
 		}
 
 	// Scan list of registered services
-	ServiceRecordSet *srs;
 	for (srs = m->ServiceRegistrations; srs; srs = srs->uDNS_next)
 		if (srs->state == regState_NoTarget && srs->tcp) return(mDNSfalse);
 
@@ -4846,6 +4846,8 @@ mDNSexport mDNSBool mDNSCoreReadyForSleep(mDNS *m)
 
 mDNSexport mDNSs32 mDNSCoreIntervalToNextWake(mDNS *const m, mDNSs32 now)
 	{
+	AuthRecord *ar;
+
 	// Even when we have no wake-on-LAN-capable interfaces, or we failed to find a sleep proxy, or we have other
 	// failure scenarios, we still want to wake up in at most 90 minutes, to see if the network environment has changed.
 	// E.g. we might wake up and find no wireless network because the base station got rebooted just at that moment,
@@ -4869,7 +4871,6 @@ mDNSexport mDNSs32 mDNSCoreIntervalToNextWake(mDNS *const m, mDNSs32 now)
 
 	// This loop checks both the time we need to renew wide-area registrations,
 	// and the time we need to renew Sleep Proxy registrations
-	AuthRecord *ar;
 	for (ar = m->ResourceRecords; ar; ar = ar->next)
 		if (ar->expire && ar->expire - now > mDNSPlatformOneSecond*4)
 			{
@@ -8973,13 +8974,15 @@ mDNSlocal void DynDNSHostNameCallback(mDNS *const m, AuthRecord *const rr, mStat
 
 mDNSlocal void PurgeOrReconfirmCacheRecord(mDNS *const m, CacheRecord *cr, const DNSServer * const ptr, mDNSBool lameduck)
 	{
-	(void) lameduck;
-	(void) ptr;
 	mDNSBool purge = cr->resrec.RecordType == kDNSRecordTypePacketNegative ||
 					 cr->resrec.rrtype     == kDNSType_A ||
 					 cr->resrec.rrtype     == kDNSType_AAAA ||
 					 cr->resrec.rrtype     == kDNSType_SRV;
+
+	(void) lameduck;
+	(void) ptr;
 	debugf("uDNS_SetupDNSConfig: %s cache record due to %s server %p %#a:%d (%##s): %s", purge ? "purging" : "reconfirming", lameduck ? "lame duck" : "new", ptr, &ptr->addr, mDNSVal16(ptr->port), ptr->domain.c, CRDisplayString(m, cr));
+
 	if (purge) mDNS_PurgeCacheResourceRecord(m, cr);
 	else mDNS_Reconfirm_internal(m, cr, kDefaultReconfirmTimeForNoAnswer);
 	}
