@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.926  2009/03/17 01:05:07  mcguire
+<rdar://problem/6657640> Reachability fixes on DNS config change
+
 Revision 1.925  2009/03/13 01:35:36  mcguire
 <rdar://problem/6657640> Reachability fixes on DNS config change
 
@@ -8900,6 +8903,19 @@ mDNSlocal void DynDNSHostNameCallback(mDNS *const m, AuthRecord *const rr, mStat
 	mDNSPlatformDynDNSHostNameStatusChanged(rr->resrec.name, result);
 	}
 
+mDNSlocal void PurgeOrReconfirmCacheRecord(mDNS *const m, CacheRecord *cr, const DNSServer * const ptr, mDNSBool lameduck)
+	{
+	(void) lameduck;
+	(void) ptr;
+	mDNSBool purge = cr->resrec.RecordType == kDNSRecordTypePacketNegative ||
+					 cr->resrec.rrtype     == kDNSType_A ||
+					 cr->resrec.rrtype     == kDNSType_AAAA ||
+					 cr->resrec.rrtype     == kDNSType_SRV;
+	debugf("uDNS_SetupDNSConfig: %s cache record due to %s server %p %#a:%d (%##s): %s", purge ? "purging" : "reconfirming", lameduck ? "lame duck" : "new", ptr, &ptr->addr, mDNSVal16(ptr->port), ptr->domain.c, CRDisplayString(m, cr));
+	if (purge) mDNS_PurgeCacheResourceRecord(m, cr);
+	else mDNS_Reconfirm_internal(m, cr, kDefaultReconfirmTimeForNoAnswer);
+	}
+	
 mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 	{
 	mDNSu32 slot;
@@ -8949,10 +8965,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 		{
 		ptr = GetServerForName(m, cr->resrec.name);
 		if (ptr && (ptr->flags & DNSServer_FlagNew) && !cr->resrec.InterfaceID)
-			{
-			debugf("uDNS_SetupDNSConfig: purging cache record due to new server %p %#a:%d (%##s): %s", ptr, &ptr->addr, mDNSVal16(ptr->port), ptr->domain.c, CRDisplayString(m, cr));
-			mDNS_PurgeCacheResourceRecord(m, cr);
-			}
+			PurgeOrReconfirmCacheRecord(m, cr, ptr, mDNSfalse);
 		}
 	
 	while (*p)
@@ -8966,10 +8979,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 			ptr->flags &= ~DNSServer_FlagDelete;	// Clear del so GetServerForName will (temporarily) find this server again before it's finally deleted
 			FORALL_CACHERECORDS(slot, cg, cr)
 				if (!cr->resrec.InterfaceID && GetServerForName(m, cr->resrec.name) == ptr)
-					{
-					debugf("uDNS_SetupDNSConfig: purging cache record due to lame duck server %p %#a:%d (%##s): %s", ptr, &ptr->addr, mDNSVal16(ptr->port), ptr->domain.c, CRDisplayString(m, cr));
-					mDNS_PurgeCacheResourceRecord(m, cr);
-					}
+					PurgeOrReconfirmCacheRecord(m, cr, ptr, mDNStrue);
 			*p = (*p)->next;
 			debugf("uDNS_SetupDNSConfig: Deleting server %p %#a:%d (%##s)", ptr, &ptr->addr, mDNSVal16(ptr->port), ptr->domain.c);
 			mDNSPlatformMemFree(ptr);
