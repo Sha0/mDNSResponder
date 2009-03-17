@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.549  2009/03/17 01:22:56  cheshire
+<rdar://problem/6601427> Sleep Proxy: Retransmit and retry Sleep Proxy Server requests
+Initial support for resolving up to three Sleep Proxies in parallel
+
 Revision 1.548  2009/03/14 01:42:56  mcguire
 <rdar://problem/5457116> BTMM: Fix issues with multiple .Mac accounts on the same machine
 
@@ -2318,9 +2322,9 @@ struct NetworkInterfaceInfo_struct
 	mDNSu8          IPv4Available;		// If InterfaceActive, set if v4 available on this InterfaceID
 	mDNSu8          IPv6Available;		// If InterfaceActive, set if v6 available on this InterfaceID
 	DNSQuestion     NetWakeBrowse;
-	DNSQuestion     NetWakeResolve;
-	mDNSAddr        SPSAddr;
-	mDNSIPPort      SPSPort;
+	DNSQuestion     NetWakeResolve[3];	// For fault-tolerance, we try up to three Sleep Proxies
+	mDNSAddr        SPSAddr[3];
+	mDNSIPPort      SPSPort[3];
 
 	// Standard AuthRecords that every Responder host should have (one per active IP address)
 	AuthRecord RR_A;					// 'A' or 'AAAA' (address) record for our ".local" name
@@ -3235,12 +3239,13 @@ extern CacheRecord *CreateNewCacheEntry(mDNS *const m, const mDNSu32 slot, Cache
 extern void GrantCacheExtensions(mDNS *const m, DNSQuestion *q, mDNSu32 lease);
 extern void MakeNegativeCacheRecord(mDNS *const m, const domainname *const name, const mDNSu32 namehash, const mDNSu16 rrtype, const mDNSu16 rrclass, mDNSu32 ttl_seconds);
 extern void CompleteDeregistration(mDNS *const m, AuthRecord *rr);
-extern const CacheRecord *FindSPSInCache(mDNS *const m, const DNSQuestion *const q);
+extern void FindSPSInCache(mDNS *const m, const DNSQuestion *const q, const CacheRecord *sps[3]);
 #define PrototypeSPSName(X) ((X)[0] >= 11 && (X)[3] == '-' && (X)[ 4] == '9' && (X)[ 5] == '9' && \
                                              (X)[6] == '-' && (X)[ 7] == '9' && (X)[ 8] == '9' && \
                                              (X)[9] == '-' && (X)[10] == '9' && (X)[11] == '9'    )
 #define ValidSPSName(X) ((X)[0] >= 5 && mDNSIsDigit((X)[1]) && mDNSIsDigit((X)[2]) && mDNSIsDigit((X)[4]) && mDNSIsDigit((X)[5]))
-#define SPSMetric(X) (ValidSPSName(X) && !PrototypeSPSName(X) ? ((X)[1]-'0') * 1000 + ((X)[2]-'0') * 100 + ((X)[4]-'0') * 10 + ((X)[5]-'0') : 10000)
+#define SPSMetric(X) (!ValidSPSName(X) || PrototypeSPSName(X) ? 1000000 : \
+	((X)[1]-'0') * 100000 + ((X)[2]-'0') * 10000 + ((X)[4]-'0') * 1000 + ((X)[5]-'0') * 100 + ((X)[7]-'0') * 10 + ((X)[8]-'0'))
 extern void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheRecord *const rr, const QC_result AddRecord);
 
 // For now this AutoTunnel stuff is specific to Mac OS X.

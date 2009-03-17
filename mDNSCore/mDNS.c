@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.927  2009/03/17 01:22:56  cheshire
+<rdar://problem/6601427> Sleep Proxy: Retransmit and retry Sleep Proxy Server requests
+Initial support for resolving up to three Sleep Proxies in parallel
+
 Revision 1.926  2009/03/17 01:05:07  mcguire
 <rdar://problem/6657640> Reachability fixes on DNS config change
 
@@ -2716,7 +2720,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 					}
 				else
 					{
-					mDNSu8 active = (m->SleepState != SleepState_Sleeping || intf->SPSAddr.type);
+					mDNSu8 active = (m->SleepState != SleepState_Sleeping || intf->SPSAddr[0].type || intf->SPSAddr[1].type || intf->SPSAddr[2].type);
 					if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
 						rr->resrec.rrclass |= kDNSClass_UniqueRRSet;		// Temporarily set the cache flush bit so PutResourceRecord will set it
 					newptr = PutResourceRecordTTL(&m->omsg, responseptr, &m->omsg.h.numAnswers, &rr->resrec, active ? rr->resrec.rroriginalttl : 0);
@@ -3037,20 +3041,29 @@ mDNSlocal const CacheRecord *CacheHasAddressTypeForName(mDNS *const m, const dom
 	return(cr);
 	}
 
-mDNSexport const CacheRecord *FindSPSInCache(mDNS *const m, const DNSQuestion *const q)
+mDNSlocal const CacheRecord *FindSPSInCache1(mDNS *const m, const DNSQuestion *const q, const CacheRecord *const c0, const CacheRecord *const c1)
 	{
 	CacheGroup *const cg = CacheGroupForName(m, HashSlot(&q->qname), q->qnamehash, &q->qname);
 	const CacheRecord *cr, *bestcr = mDNSNULL;
-	mDNSu32 bestmetric = 10000;
+	mDNSu32 bestmetric = 1000000;
 	for (cr = cg ? cg->members : mDNSNULL; cr; cr=cr->next)
-		if (SameNameRecordAnswersQuestion(&cr->resrec, q))
-			if (!IdenticalSameNameRecord(&cr->resrec, &m->SPSRecords.RR_PTR.resrec))
-				if (cr->resrec.rrtype == kDNSType_PTR && cr->resrec.rdlength >= 6)
-					{
-					mDNSu32 metric = SPSMetric(cr->resrec.rdata->u.name.c);
-					if (bestmetric > metric) { bestmetric = metric; bestcr = cr; }
-					}
+		if (cr->resrec.rrtype == kDNSType_PTR && cr->resrec.rdlength >= 6)						// If record is PTR type, with long enough name,
+			if (cr != c0 && cr != c1)															// that's not one we've seen before,
+				if (SameNameRecordAnswersQuestion(&cr->resrec, q))								// and answers our browse query,
+					if (!IdenticalSameNameRecord(&cr->resrec, &m->SPSRecords.RR_PTR.resrec))	// and is not our own advertised service...
+						{
+						mDNSu32 metric = SPSMetric(cr->resrec.rdata->u.name.c);
+						if (bestmetric > metric) { bestmetric = metric; bestcr = cr; }
+						}
 	return(bestcr);
+	}
+
+// Finds the three best Sleep Proxies we currently have in our cache
+mDNSexport void FindSPSInCache(mDNS *const m, const DNSQuestion *const q, const CacheRecord *sps[3])
+	{
+	sps[0] =                      FindSPSInCache1(m, q, mDNSNULL, mDNSNULL);
+	sps[1] = !sps[0] ? mDNSNULL : FindSPSInCache1(m, q, sps[0],   mDNSNULL);
+	sps[2] = !sps[1] ? mDNSNULL : FindSPSInCache1(m, q, sps[0],   sps[1]);
 	}
 
 // Only DupSuppressInfos newer than the specified 'time' are allowed to remain active
@@ -4281,7 +4294,7 @@ mDNSlocal void CheckProxyRecords(mDNS *const m, AuthRecord *list)
 		}
 	}
 
-mDNSlocal void SendSPSRegistration(mDNS *const m, const NetworkInterfaceInfo *intf)
+mDNSlocal void SendSPSRegistration(mDNS *const m, const NetworkInterfaceInfo *intf, int sps)
 	{
 	const int ownerspace = mDNSSameEthAddress(&m->PrimaryMAC, &intf->MAC) ? DNSOpt_OwnerData_ID_Space : DNSOpt_OwnerData_ID_Wake_Space;
 	const int optspace = DNSOpt_Header_Space + DNSOpt_LeaseData_Space + ownerspace;
@@ -4331,8 +4344,8 @@ mDNSlocal void SendSPSRegistration(mDNS *const m, const NetworkInterfaceInfo *in
 			if (p)
 				{
 				LogSPS("SendSPSRegistration: Sending Update id %5d with %d records to %#a:%d",
-					mDNSVal16(m->omsg.h.id), m->omsg.h.mDNS_numUpdates, &intf->SPSAddr, mDNSVal16(intf->SPSPort));
-				mDNSSendDNSMessage(m, &m->omsg, p, intf->InterfaceID, mDNSNULL, &intf->SPSAddr, intf->SPSPort, mDNSNULL, mDNSNULL);
+					mDNSVal16(m->omsg.h.id), m->omsg.h.mDNS_numUpdates, &intf->SPSAddr[sps], mDNSVal16(intf->SPSPort[sps]));
+				mDNSSendDNSMessage(m, &m->omsg, p, intf->InterfaceID, mDNSNULL, &intf->SPSAddr[sps], intf->SPSPort[sps], mDNSNULL, mDNSNULL);
 				}
 			else
 				LogMsg("SendSPSRegistration: Failed to put OPT record (%d updates) %s", m->omsg.h.mDNS_numUpdates, ARDisplayString(m, &opt));
@@ -4343,27 +4356,39 @@ mDNSlocal void SendSPSRegistration(mDNS *const m, const NetworkInterfaceInfo *in
 mDNSlocal void NetWakeResolve(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
 	NetworkInterfaceInfo *intf = (NetworkInterfaceInfo *)question->QuestionContext;
+	int sps = question - intf->NetWakeResolve;
 	(void)m;			// Unused
-	LogSPS("NetWakeResolve: %d %s", AddRecord, RRDisplayString(m, answer));
+	LogSPS("NetWakeResolve: SPS: %d Add: %d %s", sps, AddRecord, RRDisplayString(m, answer));
 
 	if (!AddRecord) return;												// Don't care about REMOVE events
 	if (answer->rrtype != question->qtype) return;						// Don't care about CNAMEs
 
+	mDNS_StopQuery(m, question);
+	question->ThisQInterval = -1;
+
 	if (answer->rrtype == kDNSType_SRV)
 		{
-		mDNS_StopQuery(m, question);
-		intf->SPSPort = answer->rdata->u.srv.port;
+		intf->SPSPort[sps] = answer->rdata->u.srv.port;
 		AssignDomainName(&question->qname, &answer->rdata->u.srv.target);
 		question->qtype = kDNSType_AAAA;
 		mDNS_StartQuery(m, question);
 		}
-	else if (answer->rrtype == kDNSType_AAAA && mDNSv6AddressIsLinkLocal(&answer->rdata->u.ipv6))
+	else if (answer->rrtype == kDNSType_AAAA && answer->rdlength == sizeof(mDNSv6Addr) && mDNSv6AddressIsLinkLocal(&answer->rdata->u.ipv6))
 		{
-		mDNS_StopQuery(m, question);
-		question->ThisQInterval = -1;
-		intf->SPSAddr.type = mDNSAddrType_IPv6;
-		intf->SPSAddr.ip.v6 = answer->rdata->u.ipv6;
-		SendSPSRegistration(m, intf);
+		intf->SPSAddr[sps].type = mDNSAddrType_IPv6;
+		intf->SPSAddr[sps].ip.v6 = answer->rdata->u.ipv6;
+		SendSPSRegistration(m, intf, sps);
+		}
+	else if (answer->rrtype == kDNSType_AAAA && answer->rdlength == 0)	// If negative answer for IPv6, look for IPv4 addresses instead
+		{
+		question->qtype = kDNSType_A;
+		mDNS_StartQuery(m, question);
+		}
+	else if (answer->rrtype == kDNSType_A && answer->rdlength == sizeof(mDNSv4Addr))
+		{
+		intf->SPSAddr[sps].type = mDNSAddrType_IPv4;
+		intf->SPSAddr[sps].ip.v4 = answer->rdata->u.ipv4;
+		SendSPSRegistration(m, intf, sps);
 		}
 	}
 
@@ -4386,16 +4411,25 @@ mDNSlocal void BeginSleepProcessing(mDNS *const m)
 			if (!intf->NetWake) LogSPS("mDNSCoreMachineSleep: %-6s not capable of magic packet wakeup", intf->ifname);
 			else
 				{
-				const CacheRecord *cr = FindSPSInCache(m, &intf->NetWakeBrowse);
-				if (!cr) LogSPS("mDNSCoreMachineSleep: %-6s %#a No Sleep Proxy Server found %d", intf->ifname, &intf->ip, intf->NetWakeBrowse.ThisQInterval);
+				const CacheRecord *sps[3];
+				FindSPSInCache(m, &intf->NetWakeBrowse, sps);
+				if (!sps[0]) LogSPS("mDNSCoreMachineSleep: %-6s %#a No Sleep Proxy Server found %d", intf->ifname, &intf->ip, intf->NetWakeBrowse.ThisQInterval);
 				else
 					{
-					LogSPS("mDNSCoreMachineSleep: %-6s Found Sleep Proxy Server TTL %d %s", intf->ifname, cr->resrec.rroriginalttl, CRDisplayString(m, cr));
+					int i;
 					FoundSPS = mDNStrue;
-					intf->SPSAddr.type = mDNSAddrType_None;
-					if (intf->NetWakeResolve.ThisQInterval >= 0) mDNS_StopQuery(m, &intf->NetWakeResolve);
-					mDNS_SetupQuestion(&intf->NetWakeResolve, intf->InterfaceID, &cr->resrec.rdata->u.name, kDNSType_SRV, NetWakeResolve, intf);
-					mDNS_StartQuery_internal(m, &intf->NetWakeResolve);
+					for (i=0; i<3; i++)
+						{
+						intf->SPSAddr[i].type = mDNSAddrType_None;
+						if (intf->NetWakeResolve[i].ThisQInterval >= 0) mDNS_StopQuery(m, &intf->NetWakeResolve[i]);
+						intf->NetWakeResolve[i].ThisQInterval = -1;
+						if (sps[i])
+							{
+							LogSPS("mDNSCoreMachineSleep: %-6s Found Sleep Proxy Server %d TTL %d %s", intf->ifname, i, sps[i]->resrec.rroriginalttl, CRDisplayString(m, sps[i]));
+							mDNS_SetupQuestion(&intf->NetWakeResolve[i], intf->InterfaceID, &sps[i]->resrec.rdata->u.name, kDNSType_SRV, NetWakeResolve, intf);
+							mDNS_StartQuery_internal(m, &intf->NetWakeResolve[i]);
+							}
+						}
 					}
 				}
 			intf = GetFirstActiveInterface(intf->next);
@@ -4764,11 +4798,17 @@ mDNSexport mDNSBool mDNSCoreReadyForSleep(mDNS *m)
 	NetworkInterfaceInfo *intf = GetFirstActiveInterface(m->HostInterfaces);
 	while (intf)
 		{
-		if (intf->NetWake && intf->NetWakeResolve.ThisQInterval >= 0)
+		int i;
+		for (i=0; i<3; i++)
 			{
-			LogSPS("ReadyForSleep waiting for SPS Resolve %s %##s (%s)", intf->ifname, intf->NetWakeResolve.qname.c, DNSTypeName(intf->NetWakeResolve.qtype));
-			return(mDNSfalse);
+			if (intf->NetWake && intf->NetWakeResolve[i].ThisQInterval >= 0)
+				LogSPS("ReadyForSleep waiting for SPS Resolve %s %d %##s (%s)", intf->ifname, i, intf->NetWakeResolve[i].qname.c, DNSTypeName(intf->NetWakeResolve[i].qtype));
+			if (intf->SPSAddr[i].type)
+				LogSPS("ReadyForSleep %s %d found SPS %#a:%d %##s", intf->ifname, i, &intf->SPSAddr[i], mDNSVal16(intf->SPSPort[i]), intf->NetWakeResolve[i].qname.c);
 			}
+
+		if (!intf->SPSAddr[0].type && !intf->SPSAddr[1].type && !intf->SPSAddr[2].type) return(mDNSfalse);
+		
 		intf = GetFirstActiveInterface(intf->next);
 		}
 
@@ -7673,6 +7713,7 @@ mDNSlocal void UpdateInterfaceProtocols(mDNS *const m, NetworkInterfaceInfo *act
 
 mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *set, mDNSBool flapping)
 	{
+	int i;
 	AuthRecord *rr;
 	ServiceRecordSet *s;
 	mDNSBool FirstOfType = mDNStrue;
@@ -7690,8 +7731,13 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	set->InterfaceActive = mDNStrue;
 	set->IPv4Available   = (set->ip.type == mDNSAddrType_IPv4 && set->McastTxRx);
 	set->IPv6Available   = (set->ip.type == mDNSAddrType_IPv6 && set->McastTxRx);
-	set->NetWakeBrowse .ThisQInterval = -1;
-	set->NetWakeResolve.ThisQInterval = -1;
+	
+	set->NetWakeBrowse.ThisQInterval = -1;
+	for (i=0; i<3; i++)
+		{
+		set->NetWakeResolve[i].ThisQInterval = -1;
+		set->SPSAddr[i].type = mDNSAddrType_None;
+		}
 
 	// Scan list to see if this InterfaceID is already represented
 	while (*p)
@@ -7811,6 +7857,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *set, mDNSBool flapping)
 	{
+	int i;
 	NetworkInterfaceInfo **p = &m->HostInterfaces;
 	
 	mDNSBool revalidate = mDNSfalse;
@@ -7831,7 +7878,8 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 		// Make special call to the browse callback to let it know it can to remove all records for this interface
 		if (m->SPSBrowseCallback) m->SPSBrowseCallback(m, &set->NetWakeBrowse, mDNSNULL, mDNSfalse);
 		}
-	if (set->NetWakeResolve.ThisQInterval >= 0) mDNS_StopQuery_internal(m, &set->NetWakeResolve);
+
+	for (i=0; i<3; i++) if (set->NetWakeResolve[i].ThisQInterval >= 0) mDNS_StopQuery_internal(m, &set->NetWakeResolve[i]);
 
 	// Unlink this record from our list
 	*p = (*p)->next;
