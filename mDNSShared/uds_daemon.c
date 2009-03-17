@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.448  2009/03/17 04:53:40  cheshire
+<rdar://problem/6688927> Don't let negative unicast answers block Multicast DNS responses
+
 Revision 1.447  2009/03/17 04:41:32  cheshire
 Moved LogOperation message to after check for "if (answer->RecordType == kDNSRecordTypePacketNegative)"
 
@@ -2870,12 +2873,12 @@ mDNSlocal void queryrecord_result_callback(mDNS *const m, DNSQuestion *question,
 
 	if (answer->RecordType == kDNSRecordTypePacketNegative)
 		{
+		if (!answer->InterfaceID && IsLocalDomain(answer->name)) return;
 		error = kDNSServiceErr_NoSuchRecord;
-		ConvertDomainNameToCString(&question->qname, name);
 		AddRecord = mDNStrue;
 		}
-	else
-		ConvertDomainNameToCString(answer->name, name);
+
+	ConvertDomainNameToCString(answer->name, name);
 
 	LogOperation("%3d: %s(%##s, %s) %s %s", req->sd,
 		req->hdr.op == query_request ? "DNSServiceQueryRecord" : "DNSServiceGetAddrInfo",
@@ -2898,19 +2901,17 @@ mDNSlocal void queryrecord_result_callback(mDNS *const m, DNSQuestion *question,
 	data = (char *)&rep->rhdr[1];
 
 	put_string(name, &data);
+	put_uint16(answer->rrtype, &data);
+	put_uint16(answer->rrclass, &data);
 
 	if (answer->RecordType == kDNSRecordTypePacketNegative)
 		{
-		put_uint16(question->qtype, &data);
-		put_uint16(question->qclass, &data);
 		put_uint16(0, &data);
 		put_rdata(0, mDNSNULL, &data);
 		put_uint32(0, &data);
 		}
 	else
 		{
-		put_uint16(answer->rrtype, &data);
-		put_uint16(answer->rrclass, &data);
 		put_uint16(answer->rdlength, &data);
 		//put_rdata(answer->rdlength, answer->rdata->u.data, &data);
 		if (!putRData(mDNSNULL, (mDNSu8 *)data, (mDNSu8 *)rep->rhdr + len, answer))
