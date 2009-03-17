@@ -30,6 +30,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.417  2009/03/17 01:25:39  cheshire
+<rdar://problem/6601427> Sleep Proxy: Retransmit and retry Sleep Proxy Server requests
+In SIGINFO output, show three best Sleep Proxies
+
 Revision 1.416  2009/02/21 01:47:36  cheshire
 <rdar://problem/6600825> Race condition when sleep initiated and then immediately canceled
 
@@ -2250,6 +2254,9 @@ mDNSlocal void INFOCallback(void)
 					i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifinfo.ifname, i->scope_id, &i->ifinfo.MAC, &i->BSSID,
 					&i->ifinfo.ip, utc - i->LastSeen);
 			else
+				{
+				const CacheRecord *sps[3];
+				FindSPSInCache(&mDNSStorage, &i->ifinfo.NetWakeBrowse, sps);
 				LogMsgNoIdent("%p %s %-6s(%lu) %.6a %.6a %s %s %-15.4a %s %s %s %s %#a",
 					i->ifinfo.InterfaceID,
 					i->sa_family == AF_INET ? "v4" : i->sa_family == AF_INET6 ? "v6" : "??", i->ifinfo.ifname, i->scope_id, &i->ifinfo.MAC, &i->BSSID,
@@ -2259,9 +2266,13 @@ mDNSlocal void INFOCallback(void)
 					i->ifinfo.IPv6Available ? "v6" : "  ",
 					i->ifinfo.Advertise ? "⊙" : " ",
 					i->ifinfo.McastTxRx ? "⇆" : " ",
-					!(i->ifinfo.InterfaceActive && i->ifinfo.NetWake) ? " " :
-						!FindSPSInCache(&mDNSStorage, &i->ifinfo.NetWakeBrowse) ? "☼" : "☀",
+					!(i->ifinfo.InterfaceActive && i->ifinfo.NetWake) ? " " : !sps[0] ? "☼" : "☀",
 					&i->ifinfo.ip);
+
+				if (sps[0]) LogMsgNoIdent("  %13d %#s", SPSMetric(sps[0]->resrec.rdata->u.name.c), sps[0]->resrec.rdata->u.name.c);
+				if (sps[1]) LogMsgNoIdent("  %13d %#s", SPSMetric(sps[1]->resrec.rdata->u.name.c), sps[1]->resrec.rdata->u.name.c);
+				if (sps[2]) LogMsgNoIdent("  %13d %#s", SPSMetric(sps[2]->resrec.rdata->u.name.c), sps[2]->resrec.rdata->u.name.c);
+				}
 			}
 		}
 
