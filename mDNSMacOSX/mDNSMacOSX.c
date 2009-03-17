@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.651  2009/03/17 19:15:24  mcguire
+<rdar://problem/6655415> SSLHandshake deadlock issues
+
 Revision 1.650  2009/03/17 01:24:22  cheshire
 Updated to new Sleep Proxy metric ranges: 100000-999999; 1000000 means "do not use"
 
@@ -1712,7 +1715,8 @@ typedef enum
 	{
 	handshake_required,
 	handshake_in_progress,
-	handshake_completed
+	handshake_completed,
+	handshake_to_be_closed
 	} handshakeStatus;
 	
 struct TCPSocket_struct
@@ -1752,7 +1756,7 @@ mDNSlocal OSStatus tlsWriteSock(SSLConnectionRef connection, const void *data, s
 	if (errno == EAGAIN                      ) return(errSSLWouldBlock);
 	if (errno == ENOENT                      ) return(errSSLClosedGraceful);
 	if (errno == EPIPE || errno == ECONNRESET) return(errSSLClosedAbort);
-	LogMsg("ERROR: tlsWriteSock: error %d (%s)\n", errno, strerror(errno));
+	LogMsg("ERROR: tlsWriteSock: %d error %d (%s)\n", ((TCPSocket *)connection)->fd, errno, strerror(errno));
 	return(errSSLClosedAbort);
 	}
 
@@ -1785,30 +1789,41 @@ mDNSlocal OSStatus tlsSetupSock(TCPSocket *sock, mDNSBool server)
 
 mDNSlocal void *doSSLHandshake(void *ctx)
 	{
+	// Warning: Touching sock without the kqueue lock!
+	// We're protected because sock->handshake == handshake_in_progress
 	TCPSocket *sock = (TCPSocket*)ctx;
 	mStatus err = SSLHandshake(sock->tlsContext);
 	
 	KQueueLock(sock->m);
 	LogInfo("doSSLHandshake %p: got lock", sock); // Log *after* we get the lock
 
-	KQueueSet(sock->fd, EV_ADD, EVFILT_READ, &sock->kqEntry);
-
-	if (err == errSSLWouldBlock)
-		sock->handshake = handshake_required;
+	if (sock->handshake == handshake_to_be_closed)
+		{
+		LogInfo("SSLHandshake completed after close");
+		mDNSPlatformTCPCloseConnection(sock);
+		}
 	else
 		{
-		if (err)
+		if (sock->fd != -1) KQueueSet(sock->fd, EV_ADD, EVFILT_READ, &sock->kqEntry);
+		else LogMsg("doSSLHandshake: sock->fd is -1");
+
+		if (err == errSSLWouldBlock)
+			sock->handshake = handshake_required;
+		else
 			{
-			LogMsg("SSLHandshake failed: %d", err);
-			SSLDisposeContext(sock->tlsContext);
-			sock->tlsContext = NULL;
+			if (err)
+				{
+				LogMsg("SSLHandshake failed: %d", err);
+				SSLDisposeContext(sock->tlsContext);
+				sock->tlsContext = NULL;
+				}
+			
+			sock->err = err;
+			sock->handshake = handshake_completed;
+			
+			LogInfo("doSSLHandshake: %p calling doTcpSocketCallback", sock);
+			doTcpSocketCallback(sock);
 			}
-		
-		sock->err = err;
-		sock->handshake = handshake_completed;
-		
-		LogInfo("doSSLHandshake: %p calling doTcpSocketCallback", sock);
-		doTcpSocketCallback(sock);
 		}
 	
 	LogInfo("SSLHandshake %p: dropping lock", sock);
@@ -1819,6 +1834,7 @@ mDNSlocal void *doSSLHandshake(void *ctx)
 mDNSlocal mStatus spawnSSLHandshake(TCPSocket* sock)
 	{
 	LogInfo("spawnSSLHandshake %p: entry", sock);
+	if (sock->handshake != handshake_required) LogMsg("spawnSSLHandshake: handshake status not required: %d", sock->handshake);
 	sock->handshake = handshake_in_progress;
 	KQueueSet(sock->fd, EV_DELETE, EVFILT_READ, &sock->kqEntry);
 	mStatus err = pthread_create(&sock->handshake_thread, NULL, doSSLHandshake, sock);
@@ -1861,11 +1877,11 @@ mDNSlocal void tcpKQSocketCallback(__unused int fd, short filter, void *context)
 		if (!sock->setup) { sock->setup = mDNStrue; tlsSetupSock(sock, mDNSfalse); }
 		
 		if (sock->handshake == handshake_required) { if (spawnSSLHandshake(sock) == 0) return; }
-		else if (sock->handshake == handshake_in_progress) return;
+		else if (sock->handshake == handshake_in_progress || sock->handshake == handshake_to_be_closed) return;
 		else if (sock->handshake != handshake_completed)
 			{
 			if (!sock->err) sock->err = mStatus_UnknownErr;
-			LogMsg("tcpKQSocketCallback called with unknown SSLHandshake status");
+			LogMsg("tcpKQSocketCallback called with unexpected SSLHandshake status: %d", sock->handshake);
 			}
 #else
 		sock->err = mStatus_UnsupportedErr;
@@ -2070,10 +2086,18 @@ exit:
 mDNSexport void mDNSPlatformTCPCloseConnection(TCPSocket *sock)
 	{
 	if (sock)
-		{
+		{	
 #ifndef NO_SECURITYFRAMEWORK
 		if (sock->tlsContext)
 			{
+			if (sock->handshake == handshake_in_progress) // SSLHandshake thread using this sock (esp. tlsContext)
+				{
+				LogInfo("mDNSPlatformTCPCloseConnection: called while handshake in progress");
+				sock->handshake = handshake_to_be_closed;
+				}
+			if (sock->handshake == handshake_to_be_closed)
+				return;
+
 			SSLClose(sock->tlsContext);
 			SSLDisposeContext(sock->tlsContext);
 			sock->tlsContext = NULL;
@@ -2100,7 +2124,7 @@ mDNSexport long mDNSPlatformReadTCP(TCPSocket *sock, void *buf, unsigned long bu
 #ifndef NO_SECURITYFRAMEWORK
 		if (sock->handshake == handshake_required) { LogMsg("mDNSPlatformReadTCP called while handshake required"); return 0; }
 		else if (sock->handshake == handshake_in_progress) return 0;
-		else if (sock->handshake != handshake_completed) LogMsg("mDNSPlatformReadTCP called with unknown SSLHandshake status");
+		else if (sock->handshake != handshake_completed) LogMsg("mDNSPlatformReadTCP called with unexpected SSLHandshake status: %d", sock->handshake);
 
 		//LogMsg("Starting SSLRead %d %X", sock->fd, fcntl(sock->fd, F_GETFL, 0));
 		mStatus err = SSLRead(sock->tlsContext, buf, buflen, (size_t*)&nread);
@@ -2146,6 +2170,10 @@ mDNSexport long mDNSPlatformWriteTCP(TCPSocket *sock, const char *msg, unsigned 
 		{
 #ifndef NO_SECURITYFRAMEWORK
 		size_t	processed;
+		if (sock->handshake == handshake_required) { LogMsg("mDNSPlatformWriteTCP called while handshake required"); return 0; }
+		if (sock->handshake == handshake_in_progress) return 0;
+		else if (sock->handshake != handshake_completed) LogMsg("mDNSPlatformWriteTCP called with unexpected SSLHandshake status: %d", sock->handshake);
+		
 		mStatus	err = SSLWrite(sock->tlsContext, msg, len, &processed);
 
 		if (!err) nsent = (int) processed;
