@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.929  2009/03/17 21:55:56  cheshire
+Fixed mistake in logic for decided when we're ready to go to sleep
+
 Revision 1.928  2009/03/17 19:48:12  cheshire
 <rdar://problem/6688927> Don't cache negative unicast answers for Multicast DNS names
 
@@ -4397,7 +4400,7 @@ mDNSlocal void NetWakeResolve(mDNS *const m, DNSQuestion *question, const Resour
 
 mDNSlocal void BeginSleepProcessing(mDNS *const m)
 	{
-	mDNSBool FoundSPS = mDNSfalse;
+	const CacheRecord *sps[3] = { mDNSNULL };
 
 	AuthRecord *rr;
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
@@ -4414,15 +4417,19 @@ mDNSlocal void BeginSleepProcessing(mDNS *const m)
 			if (!intf->NetWake) LogSPS("mDNSCoreMachineSleep: %-6s not capable of magic packet wakeup", intf->ifname);
 			else
 				{
-				const CacheRecord *sps[3];
 				FindSPSInCache(m, &intf->NetWakeBrowse, sps);
 				if (!sps[0]) LogSPS("mDNSCoreMachineSleep: %-6s %#a No Sleep Proxy Server found %d", intf->ifname, &intf->ip, intf->NetWakeBrowse.ThisQInterval);
 				else
 					{
 					int i;
-					FoundSPS = mDNStrue;
 					for (i=0; i<3; i++)
 						{
+#if ForceAlerts
+						if (intf->SPSAddr[i].type)
+							{ LogMsg("%s %d intf->SPSAddr[i].type %d", intf->ifname, i, intf->SPSAddr[i].type); *(long*)0 = 0; }
+						if (intf->NetWakeResolve[i].ThisQInterval >= 0)
+							{ LogMsg("%s %d intf->NetWakeResolve[i].ThisQInterval %d", intf->ifname, i, intf->NetWakeResolve[i].ThisQInterval); *(long*)0 = 0; }
+#endif
 						intf->SPSAddr[i].type = mDNSAddrType_None;
 						if (intf->NetWakeResolve[i].ThisQInterval >= 0) mDNS_StopQuery(m, &intf->NetWakeResolve[i]);
 						intf->NetWakeResolve[i].ThisQInterval = -1;
@@ -4439,7 +4446,7 @@ mDNSlocal void BeginSleepProcessing(mDNS *const m)
 			}
 		}
 
-	if (!FoundSPS)
+	if (!sps[0])	// If we didn't find even one Sleep Proxy
 		{
 		m->SleepState = SleepState_Sleeping;
 
@@ -4805,13 +4812,12 @@ mDNSexport mDNSBool mDNSCoreReadyForSleep(mDNS *m)
 		for (i=0; i<3; i++)
 			{
 			if (intf->NetWake && intf->NetWakeResolve[i].ThisQInterval >= 0)
+				{
 				LogSPS("ReadyForSleep waiting for SPS Resolve %s %d %##s (%s)", intf->ifname, i, intf->NetWakeResolve[i].qname.c, DNSTypeName(intf->NetWakeResolve[i].qtype));
-			if (intf->SPSAddr[i].type)
-				LogSPS("ReadyForSleep %s %d found SPS %#a:%d %##s", intf->ifname, i, &intf->SPSAddr[i], mDNSVal16(intf->SPSPort[i]), intf->NetWakeResolve[i].qname.c);
+				return(mDNSfalse);
+				}
 			}
 
-		if (!intf->SPSAddr[0].type && !intf->SPSAddr[1].type && !intf->SPSAddr[2].type) return(mDNSfalse);
-		
 		intf = GetFirstActiveInterface(intf->next);
 		}
 
