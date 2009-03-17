@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.418  2009/03/17 21:32:15  cheshire
+Improved "DHCPWakeTime: SCDynamicStoreCopyDHCPInfo failed" error message
+
 Revision 1.417  2009/03/17 01:25:39  cheshire
 <rdar://problem/6601427> Sleep Proxy: Retransmit and retry Sleep Proxy Server requests
 In SIGINFO output, show three best Sleep Proxies
@@ -2558,7 +2561,8 @@ mDNSlocal mDNSu32 DHCPWakeTime(void)
 									const CFDateRef start = DHCPInfoGetLeaseStartTime(dhcp);
 									const CFDataRef lease = DHCPInfoGetOptionData(dhcp, 51);	// Option 51 = IP Address Lease Time
 									if (!start || !lease || CFDataGetLength(lease) < 4)
-										LogMsg("DHCPWakeTime: SCDynamicStoreCopyDHCPInfo %d failed %p %p %d",
+										LogMsg("DHCPWakeTime: SCDynamicStoreCopyDHCPInfo index %d failed "
+											"CFDateRef start %p CFDataRef lease %p CFDataGetLength(lease) %d",
 											i, start, lease, lease ? CFDataGetLength(lease) : 0);
 									else
 										{
