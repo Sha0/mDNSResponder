@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.447  2009/03/17 04:41:32  cheshire
+Moved LogOperation message to after check for "if (answer->RecordType == kDNSRecordTypePacketNegative)"
+
 Revision 1.446  2009/03/04 01:47:35  cheshire
 Include m->ProxyRecords in SIGINFO output
 
@@ -2865,10 +2868,6 @@ mDNSlocal void queryrecord_result_callback(mDNS *const m, DNSQuestion *question,
 		}
 #endif // APPLE_OSX_mDNSResponder
 
-	LogOperation("%3d: %s(%##s, %s) %s %s", req->sd,
-		req->hdr.op == query_request ? "DNSServiceQueryRecord" : "DNSServiceGetAddrInfo",
-		question->qname.c, DNSTypeName(question->qtype), AddRecord ? "ADD" : "RMV", RRDisplayString(m, answer));
-
 	if (answer->RecordType == kDNSRecordTypePacketNegative)
 		{
 		error = kDNSServiceErr_NoSuchRecord;
@@ -2877,6 +2876,10 @@ mDNSlocal void queryrecord_result_callback(mDNS *const m, DNSQuestion *question,
 		}
 	else
 		ConvertDomainNameToCString(answer->name, name);
+
+	LogOperation("%3d: %s(%##s, %s) %s %s", req->sd,
+		req->hdr.op == query_request ? "DNSServiceQueryRecord" : "DNSServiceGetAddrInfo",
+		question->qname.c, DNSTypeName(question->qtype), AddRecord ? "ADD" : "RMV", RRDisplayString(m, answer));
 
 	len = sizeof(DNSServiceFlags);	// calculate reply data length
 	len += sizeof(mDNSu32);		// interface index
