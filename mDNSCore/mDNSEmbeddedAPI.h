@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.550  2009/03/17 19:10:29  mcguire
+Fix sizechecks for x86_64
+
 Revision 1.549  2009/03/17 01:22:56  cheshire
 <rdar://problem/6601427> Sleep Proxy: Retransmit and retry Sleep Proxy Server requests
 Initial support for resolving up to three Sleep Proxies in parallel
@@ -3309,7 +3312,7 @@ struct CompileTimeAssertionChecks_mDNS
 	char sizecheck_NATTraversalInfo    [(sizeof(NATTraversalInfo)     <=   192) ? 1 : -1];
 	char sizecheck_HostnameInfo        [(sizeof(HostnameInfo)         <=  2800) ? 1 : -1];
 	char sizecheck_DNSServer           [(sizeof(DNSServer)            <=   312) ? 1 : -1];
-	char sizecheck_NetworkInterfaceInfo[(sizeof(NetworkInterfaceInfo) <=  5500) ? 1 : -1];
+	char sizecheck_NetworkInterfaceInfo[(sizeof(NetworkInterfaceInfo) <=  5960) ? 1 : -1];
 	char sizecheck_ServiceRecordSet    [(sizeof(ServiceRecordSet)     <=  5500) ? 1 : -1];
 	char sizecheck_DomainAuthInfo      [(sizeof(DomainAuthInfo)       <=  5500) ? 1 : -1];
 	char sizecheck_ServiceInfoQuery    [(sizeof(ServiceInfoQuery)     <=  2944) ? 1 : -1];
