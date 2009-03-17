@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.928  2009/03/17 19:48:12  cheshire
+<rdar://problem/6688927> Don't cache negative unicast answers for Multicast DNS names
+
 Revision 1.927  2009/03/17 01:22:56  cheshire
 <rdar://problem/6601427> Sleep Proxy: Retransmit and retry Sleep Proxy Server requests
 Initial support for resolving up to three Sleep Proxies in parallel
@@ -6206,100 +6209,111 @@ exit:
 		ptr = getQuestion(response, ptr, end, InterfaceID, &q);
 		if (ptr && (!dstaddr || ExpectingUnicastResponseForQuestion(m, dstport, response->h.id, &q)))
 			{
-			CacheRecord *rr, *neg = mDNSNULL;
-			mDNSu32 slot = HashSlot(&q.qname);
-			CacheGroup *cg = CacheGroupForName(m, slot, q.qnamehash, &q.qname);
-			for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
-				if (SameNameRecordAnswersQuestion(&rr->resrec, &q))
-					{
-					// 1. If we got a fresh answer to this query, then don't need to generate a negative entry
-					if (rr->TimeRcvd + TicksTTL(rr) - m->timenow > 0) break;
-					// 2. If we already had a negative entry, keep track of it so we can resurrect it instead of creating a new one
-					if (rr->resrec.RecordType == kDNSRecordTypePacketNegative) neg = rr;
-					}
-
-			if (!rr)
+			// When we're doing parallel unicast and multicast queries for dot-local names (for supporting Microsoft
+			// Active Directory sites) we don't want to waste memory making negative cache entries for all the unicast answers.
+			// Otherwise we just fill up our cache with negative entries for just about every single multicast name we ever look up
+			// (since the Microsoft Active Directory server is going to assert that pretty much every single multicast name doesn't exist).
+			// This is not only a waste of memory, but there's also the problem of those negative entries confusing us later -- e.g. we
+			// suppress sending our mDNS query packet because we think we already have a valid (negative) answer to that query in our cache.
+			if (!InterfaceID && IsLocalDomain(&q.qname))
+				LogInfo("Not generating negative cache entry for %##s (%s)", q.qname.c, DNSTypeName(q.qtype));
+			else
 				{
-				// We start off assuming a negative caching TTL of 60 seconds
-				// but then look to see if we can find an SOA authority record to tell us a better value we should be using
-				mDNSu32 negttl = 60;
-				int repeat = 0;
-				const domainname *name = &q.qname;
-				mDNSu32           hash = q.qnamehash;
-
-				// Special case for our special Microsoft Active Directory "local SOA" check.
-				// Some cheap home gateways don't include an SOA record in the authority section when
-				// they send negative responses, so we don't know how long to cache the negative result.
-				// Because we don't want to keep hitting the root name servers with our query to find
-				// if we're on a network using Microsoft Active Directory using "local" as a private
-				// internal top-level domain, we make sure to cache the negative result for at least one day.
-				if (q.qtype == kDNSType_SOA && SameDomainName(&q.qname, &localdomain)) negttl = 60 * 60 * 24;
-
-				// If we're going to make (or update) a negative entry, then look for the appropriate TTL from the SOA record
-				if (response->h.numAuthorities && (ptr = LocateAuthorities(response, end)) != mDNSNULL)
-					{
-					ptr = GetLargeResourceRecord(m, response, ptr, end, InterfaceID, kDNSRecordTypePacketAuth, &m->rec);
-					if (ptr && m->rec.r.resrec.rrtype == kDNSType_SOA)
+				CacheRecord *rr, *neg = mDNSNULL;
+				mDNSu32 slot = HashSlot(&q.qname);
+				CacheGroup *cg = CacheGroupForName(m, slot, q.qnamehash, &q.qname);
+				for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
+					if (SameNameRecordAnswersQuestion(&rr->resrec, &q))
 						{
-						const rdataSOA *const soa = (const rdataSOA *)m->rec.r.resrec.rdata->u.data;
-						mDNSu32 ttl_s = soa->min;
-						// We use the lesser of the SOA.MIN field and the SOA record's TTL, *except*
-						// for the SOA record for ".", where the record is reported as non-cacheable
-						// (TTL zero) for some reason, so in this case we just take the SOA record's TTL as-is
-						if (ttl_s > m->rec.r.resrec.rroriginalttl && m->rec.r.resrec.name->c[0])
-							ttl_s = m->rec.r.resrec.rroriginalttl;
-						if (negttl < ttl_s) negttl = ttl_s;
-	
-						// Special check for SOA queries: If we queried for a.b.c.d.com, and got no answer,
-						// with an Authority Section SOA record for d.com, then this is a hint that the authority
-						// is d.com, and consequently SOA records b.c.d.com and c.d.com don't exist either.
-						// To do this we set the repeat count so the while loop below will make a series of negative cache entries for us
-						if (q.qtype == kDNSType_SOA)
-							{
-							int qcount = CountLabels(&q.qname);
-							int scount = CountLabels(m->rec.r.resrec.name);
-							if (qcount - 1 > scount)
-								if (SameDomainName(SkipLeadingLabels(&q.qname, qcount - scount), m->rec.r.resrec.name))
-									repeat = qcount - 1 - scount;
-							}
+						// 1. If we got a fresh answer to this query, then don't need to generate a negative entry
+						if (rr->TimeRcvd + TicksTTL(rr) - m->timenow > 0) break;
+						// 2. If we already had a negative entry, keep track of it so we can resurrect it instead of creating a new one
+						if (rr->resrec.RecordType == kDNSRecordTypePacketNegative) neg = rr;
 						}
-					m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
-					}
-
-				// If we already had a negative entry in the cache, then we double our existing negative TTL. This is to avoid
-				// the case where the record doesn't exist (e.g. particularly for things like our lb._dns-sd._udp.<domain> query),
-				// and the server returns no SOA record (or an SOA record with a small MIN TTL) so we assume a TTL
-				// of 60 seconds, and we end up polling the server every minute for a record that doesn't exist.
-				// With this fix in place, when this happens, we double the effective TTL each time (up to one hour),
-				// so that we back off our polling rate and don't keep hitting the server continually.
-				if (neg)
+	
+				if (!rr)
 					{
-					if (negttl < neg->resrec.rroriginalttl * 2)
-						negttl = neg->resrec.rroriginalttl * 2;
-					if (negttl > 3600)
-						negttl = 3600;
-					}
-
-				negttl = GetEffectiveTTL(LLQType, negttl);	// Add 25% grace period if necessary
-
-				// If we already had a negative cache entry just update it, else make one or more new negative cache entries
-				if (neg)
-					{
-					debugf("Renewing negative TTL from %d to %d %s", neg->resrec.rroriginalttl, negttl, CRDisplayString(m, neg));
-					RefreshCacheRecord(m, neg, negttl);
-					}
-				else while (1)
-					{
-					debugf("mDNSCoreReceiveResponse making negative cache entry TTL %d for %##s (%s)", negttl, name->c, DNSTypeName(q.qtype));
-					MakeNegativeCacheRecord(m, name, hash, q.qtype, q.qclass, negttl);
-					CreateNewCacheEntry(m, slot, cg);
-					m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
-					if (!repeat) break;
-					repeat--;
-					name = (const domainname *)(name->c + 1 + name->c[0]);
-					hash = DomainNameHashValue(name);
-					slot = HashSlot(name);
-					cg   = CacheGroupForName(m, slot, hash, name);
+					// We start off assuming a negative caching TTL of 60 seconds
+					// but then look to see if we can find an SOA authority record to tell us a better value we should be using
+					mDNSu32 negttl = 60;
+					int repeat = 0;
+					const domainname *name = &q.qname;
+					mDNSu32           hash = q.qnamehash;
+	
+					// Special case for our special Microsoft Active Directory "local SOA" check.
+					// Some cheap home gateways don't include an SOA record in the authority section when
+					// they send negative responses, so we don't know how long to cache the negative result.
+					// Because we don't want to keep hitting the root name servers with our query to find
+					// if we're on a network using Microsoft Active Directory using "local" as a private
+					// internal top-level domain, we make sure to cache the negative result for at least one day.
+					if (q.qtype == kDNSType_SOA && SameDomainName(&q.qname, &localdomain)) negttl = 60 * 60 * 24;
+	
+					// If we're going to make (or update) a negative entry, then look for the appropriate TTL from the SOA record
+					if (response->h.numAuthorities && (ptr = LocateAuthorities(response, end)) != mDNSNULL)
+						{
+						ptr = GetLargeResourceRecord(m, response, ptr, end, InterfaceID, kDNSRecordTypePacketAuth, &m->rec);
+						if (ptr && m->rec.r.resrec.rrtype == kDNSType_SOA)
+							{
+							const rdataSOA *const soa = (const rdataSOA *)m->rec.r.resrec.rdata->u.data;
+							mDNSu32 ttl_s = soa->min;
+							// We use the lesser of the SOA.MIN field and the SOA record's TTL, *except*
+							// for the SOA record for ".", where the record is reported as non-cacheable
+							// (TTL zero) for some reason, so in this case we just take the SOA record's TTL as-is
+							if (ttl_s > m->rec.r.resrec.rroriginalttl && m->rec.r.resrec.name->c[0])
+								ttl_s = m->rec.r.resrec.rroriginalttl;
+							if (negttl < ttl_s) negttl = ttl_s;
+		
+							// Special check for SOA queries: If we queried for a.b.c.d.com, and got no answer,
+							// with an Authority Section SOA record for d.com, then this is a hint that the authority
+							// is d.com, and consequently SOA records b.c.d.com and c.d.com don't exist either.
+							// To do this we set the repeat count so the while loop below will make a series of negative cache entries for us
+							if (q.qtype == kDNSType_SOA)
+								{
+								int qcount = CountLabels(&q.qname);
+								int scount = CountLabels(m->rec.r.resrec.name);
+								if (qcount - 1 > scount)
+									if (SameDomainName(SkipLeadingLabels(&q.qname, qcount - scount), m->rec.r.resrec.name))
+										repeat = qcount - 1 - scount;
+								}
+							}
+						m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
+						}
+	
+					// If we already had a negative entry in the cache, then we double our existing negative TTL. This is to avoid
+					// the case where the record doesn't exist (e.g. particularly for things like our lb._dns-sd._udp.<domain> query),
+					// and the server returns no SOA record (or an SOA record with a small MIN TTL) so we assume a TTL
+					// of 60 seconds, and we end up polling the server every minute for a record that doesn't exist.
+					// With this fix in place, when this happens, we double the effective TTL each time (up to one hour),
+					// so that we back off our polling rate and don't keep hitting the server continually.
+					if (neg)
+						{
+						if (negttl < neg->resrec.rroriginalttl * 2)
+							negttl = neg->resrec.rroriginalttl * 2;
+						if (negttl > 3600)
+							negttl = 3600;
+						}
+	
+					negttl = GetEffectiveTTL(LLQType, negttl);	// Add 25% grace period if necessary
+	
+					// If we already had a negative cache entry just update it, else make one or more new negative cache entries
+					if (neg)
+						{
+						debugf("Renewing negative TTL from %d to %d %s", neg->resrec.rroriginalttl, negttl, CRDisplayString(m, neg));
+						RefreshCacheRecord(m, neg, negttl);
+						}
+					else while (1)
+						{
+						debugf("mDNSCoreReceiveResponse making negative cache entry TTL %d for %##s (%s)", negttl, name->c, DNSTypeName(q.qtype));
+						MakeNegativeCacheRecord(m, name, hash, q.qtype, q.qclass, negttl);
+						CreateNewCacheEntry(m, slot, cg);
+						m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
+						if (!repeat) break;
+						repeat--;
+						name = (const domainname *)(name->c + 1 + name->c[0]);
+						hash = DomainNameHashValue(name);
+						slot = HashSlot(name);
+						cg   = CacheGroupForName(m, slot, hash, name);
+						}
 					}
 				}
 			}
