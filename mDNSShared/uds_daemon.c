@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.449  2009/03/17 19:44:25  cheshire
+<rdar://problem/6688927> Don't let negative unicast answers block Multicast DNS responses
+
 Revision 1.448  2009/03/17 04:53:40  cheshire
 <rdar://problem/6688927> Don't let negative unicast answers block Multicast DNS responses
 
@@ -2873,6 +2876,10 @@ mDNSlocal void queryrecord_result_callback(mDNS *const m, DNSQuestion *question,
 
 	if (answer->RecordType == kDNSRecordTypePacketNegative)
 		{
+		// When we're doing parallel unicast and multicast queries for dot-local names (for supporting Microsoft
+		// Active Directory sites) we need to ignore negative unicast answers. Otherwise we'll generate negative
+		// answers for just about every single multicast name we ever look up, since the Microsoft Active Directory
+		// server is going to assert that pretty much every single multicast name doesn't exist.
 		if (!answer->InterfaceID && IsLocalDomain(answer->name)) return;
 		error = kDNSServiceErr_NoSuchRecord;
 		AddRecord = mDNStrue;
@@ -2900,25 +2907,17 @@ mDNSlocal void queryrecord_result_callback(mDNS *const m, DNSQuestion *question,
 
 	data = (char *)&rep->rhdr[1];
 
-	put_string(name, &data);
-	put_uint16(answer->rrtype, &data);
-	put_uint16(answer->rrclass, &data);
-
-	if (answer->RecordType == kDNSRecordTypePacketNegative)
-		{
-		put_uint16(0, &data);
-		put_rdata(0, mDNSNULL, &data);
-		put_uint32(0, &data);
-		}
-	else
-		{
-		put_uint16(answer->rdlength, &data);
-		//put_rdata(answer->rdlength, answer->rdata->u.data, &data);
+	put_string(name,             &data);
+	put_uint16(answer->rrtype,   &data);
+	put_uint16(answer->rrclass,  &data);
+	put_uint16(answer->rdlength, &data);
+	// We need to use putRData here instead of the crude put_rdata function, because the crude put_rdata
+	// function just does a blind memory copy without regard to structures that may have holes in them.
+	if (answer->rdlength)
 		if (!putRData(mDNSNULL, (mDNSu8 *)data, (mDNSu8 *)rep->rhdr + len, answer))
 			LogMsg("queryrecord_result_callback putRData failed %d", (mDNSu8 *)rep->rhdr + len - (mDNSu8 *)data);
-		data += answer->rdlength;
-		put_uint32(AddRecord ? answer->rroriginalttl : 0, &data);
-		}
+	data += answer->rdlength;
+	put_uint32(AddRecord ? answer->rroriginalttl : 0, &data);
 
 	append_reply(req, rep);
 	}
