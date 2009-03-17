@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.650  2009/03/17 01:24:22  cheshire
+Updated to new Sleep Proxy metric ranges: 100000-999999; 1000000 means "do not use"
+
 Revision 1.649  2009/03/15 01:30:29  mcguire
 fix log message
 
@@ -4888,7 +4891,7 @@ mDNSlocal void UpdateSPSStatus(mDNS *const m, DNSQuestion *question, const Resou
 	NetworkInterfaceInfo* info = (NetworkInterfaceInfo*)question->QuestionContext;
 	debugf("UpdateSPSStatus: %s %##s %s %s", info->ifname, question->qname.c, AddRecord ? "Add" : "Rmv", answer ? RRDisplayString(m, answer) : "<null>");
 
-	if (answer && SPSMetric(answer->rdata->u.name.c) > 9999) return;	// Ignore instances with invalid names
+	if (answer && SPSMetric(answer->rdata->u.name.c) > 999999) return;	// Ignore instances with invalid names
 
 	if (!spsStatusDict)
 		{
