@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.551  2009/03/18 20:41:04  cheshire
+Added definition of the all-ones mDNSOpaque16 ID
+
 Revision 1.550  2009/03/17 19:10:29  mcguire
 Fix sizechecks for x86_64
 
@@ -2590,6 +2593,7 @@ extern const mDNSAddr     AllDNSLinkGroup_v4;
 extern const mDNSAddr     AllDNSLinkGroup_v6;
 
 extern const mDNSOpaque16 zeroID;
+extern const mDNSOpaque16 onesID;
 extern const mDNSOpaque16 QueryFlags;
 extern const mDNSOpaque16 uQueryFlags;
 extern const mDNSOpaque16 ResponseFlags;
