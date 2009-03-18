@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.241  2009/03/18 20:50:08  cheshire
+<rdar://problem/6650064> uDNS: Reverse lookup of own IP address takes way too long, sometimes forever
+
 Revision 1.240  2009/03/18 20:41:04  cheshire
 Added definition of the all-ones mDNSOpaque16 ID
 
@@ -2595,6 +2598,7 @@ mDNSexport const mDNSu8 *getQuestion(const DNSMessage *msg, const mDNSu8 *ptr, c
 	{
 	mDNSPlatformMemZero(question, sizeof(*question));
 	question->InterfaceID = InterfaceID;
+	if (!InterfaceID) question->TargetQID = onesID;	// In DNSQuestions we use TargetQID as the indicator of whether it's unicast or multicast
 	ptr = getDomainName(msg, ptr, end, &question->qname);
 	if (!ptr) { debugf("Malformed domain name in DNS question section"); return(mDNSNULL); }
 	if (ptr+4 > end) { debugf("Malformed DNS question section -- no query type and class!"); return(mDNSNULL); }
