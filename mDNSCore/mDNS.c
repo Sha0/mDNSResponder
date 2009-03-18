@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.931  2009/03/18 19:08:15  cheshire
+Show old/new sleep sequence numbers in logical order
+
 Revision 1.930  2009/03/17 23:40:45  cheshire
 For now only try the highest-ranked Sleep Proxy; fixed come compiler warnings
 
@@ -5137,7 +5140,7 @@ mDNSlocal void ClearProxyRecords(mDNS *const m, const OwnerOptData *const owner,
 			if (owner->seq != rr->WakeUp.seq || m->timenow - rr->TimeRcvd > mDNSPlatformOneSecond * 60)
 				{
 				LogSPS("ClearProxyRecords: Removing %3d H-MAC %.6a I-MAC %.6a %d %d %s",
-					m->ProxyRecords, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, owner->seq, rr->WakeUp.seq, ARDisplayString(m, rr));
+					m->ProxyRecords, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, rr->WakeUp.seq, owner->seq, ARDisplayString(m, rr));
 				mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
 				SetSPSProxyListChanged(m->rec.r.resrec.InterfaceID);
 				}
