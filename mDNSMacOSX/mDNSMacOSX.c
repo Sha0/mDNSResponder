@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.652  2009/03/19 23:44:47  mcguire
+<rdar://problem/6699216> Properly handle EADDRINUSE
+
 Revision 1.651  2009/03/17 19:15:24  mcguire
 <rdar://problem/6655415> SSLHandshake deadlock issues
 
@@ -2311,13 +2314,17 @@ mDNSlocal mStatus SetupSocket(KQSocketSet *cp, const mDNSIPPort port, u_short sa
 	if (strcmp(errstr, "bind") || mDNSSameIPPort(port, MulticastDNSPort) || mDNSIPPortIsZero(port))
 		LogMsg("%s skt %d port %d error %ld errno %d (%s)", errstr, skt, mDNSVal16(port), err, errno, strerror(errno));
 
-	// If we got a "bind" failure with an EADDRINUSE error for our shared mDNS port, display error alert
-	if (!strcmp(errstr, "bind") && mDNSSameIPPort(port, MulticastDNSPort) && errno == EADDRINUSE)
-		NotifyOfElusiveBug("Setsockopt SO_REUSEPORT failed",
-			"Congratulations, you've reproduced an elusive bug.\r"
-			"Please contact the current assignee of <rdar://problem/3814904>.\r"
-			"Alternatively, you can send email to radar-3387020@group.apple.com. (Note number is different.)\r"
-			"If possible, please leave your machine undisturbed so that someone can come to investigate the problem.");
+	// If we got a "bind" failure of EADDRINUSE, inform the caller as it might need to try another random port
+	if (!strcmp(errstr, "bind") && errno == EADDRINUSE)
+		{
+		err = EADDRINUSE;
+		if (mDNSSameIPPort(port, MulticastDNSPort))
+			NotifyOfElusiveBug("Setsockopt SO_REUSEPORT failed",
+				"Congratulations, you've reproduced an elusive bug.\r"
+				"Please contact the current assignee of <rdar://problem/3814904>.\r"
+				"Alternatively, you can send email to radar-3387020@group.apple.com. (Note number is different.)\r"
+				"If possible, please leave your machine undisturbed so that someone can come to investigate the problem.");
+		}
 
 	close(skt);
 	return(err);
@@ -2348,7 +2355,7 @@ mDNSexport UDPSocket *mDNSPlatformUDPSocket(mDNS *const m, const mDNSIPPort requ
 			if (err) { close(p->ss.sktv4); p->ss.sktv4 = -1; }
 			}
 		i--;
-		} while (err && randomizePort && i);
+		} while (err == EADDRINUSE && randomizePort && i);
 
 	if (err)
 		{
