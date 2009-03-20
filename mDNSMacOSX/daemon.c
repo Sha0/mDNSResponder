@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.420  2009/03/20 23:53:03  jessic2
+<rdar://problem/6646228> SIGHUP should restart all in-progress queries
+
 Revision 1.419  2009/03/20 21:30:04  cheshire
 <rdar://problem/6705866> Crash passing invalid parameters to DNSServiceBrowserCreate()
 Do not append a new question to the browser list until *after* we verify that mDNS_StartBrowse() succeeded
@@ -2329,6 +2332,11 @@ mDNSlocal void SignalCallback(CFMachPortRef port, void *msg, CFIndex size, void 
 						LogMsg("SIGHUP: Purge cache");
 						mDNS_Lock(m);
 						FORALL_CACHERECORDS(slot, cg, rr) mDNS_PurgeCacheResourceRecord(m, rr);
+						// should we call SuspendLLQs() here? will activateUnicastQuery() request new resources 
+						// on server or reuse the existing LLQ resources?
+						//SuspendLLQs(m);
+						// Restart unicast and multicast queries
+						mDNSCoreRestartQueries(m);
 						mDNS_Unlock(m);
 						} break;
 		case SIGINT:

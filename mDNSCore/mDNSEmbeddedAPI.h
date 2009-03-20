@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.552  2009/03/20 23:53:03  jessic2
+<rdar://problem/6646228> SIGHUP should restart all in-progress queries
+
 Revision 1.551  2009/03/18 20:41:04  cheshire
 Added definition of the all-ones mDNSOpaque16 ID
 
@@ -3233,6 +3236,7 @@ extern void     mDNSCoreInitComplete(mDNS *const m, mStatus result);
 extern void     mDNSCoreReceive(mDNS *const m, void *const msg, const mDNSu8 *const end,
 								const mDNSAddr *const srcaddr, const mDNSIPPort srcport,
 								const mDNSAddr *const dstaddr, const mDNSIPPort dstport, const mDNSInterfaceID InterfaceID);
+extern void 	mDNSCoreRestartQueries(mDNS *const m);
 extern void     mDNSCoreMachineSleep(mDNS *const m, mDNSBool wake);
 extern mDNSBool mDNSCoreReadyForSleep(mDNS *m);
 extern mDNSs32  mDNSCoreIntervalToNextWake(mDNS *const m, mDNSs32 now);

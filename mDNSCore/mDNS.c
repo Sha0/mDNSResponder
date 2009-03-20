@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.932  2009/03/20 23:53:03  jessic2
+<rdar://problem/6646228> SIGHUP should restart all in-progress queries
+
 Revision 1.931  2009/03/18 19:08:15  cheshire
 Show old/new sleep sequence numbers in logical order
 
@@ -4669,6 +4672,36 @@ mDNSlocal void ActivateUnicastQuery(mDNS *const m, DNSQuestion *const question, 
 		}
 	}
 
+mDNSexport void mDNSCoreRestartQueries(mDNS *const m)
+	{
+	DNSQuestion *q;
+
+#ifndef UNICAST_DISABLED
+	// Retrigger all our uDNS questions
+	if (m->CurrentQuestion)
+		LogMsg("mDNSCoreRestartQueries: ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
+	m->CurrentQuestion = m->Questions;
+	while (m->CurrentQuestion)
+		{
+		q = m->CurrentQuestion;
+		m->CurrentQuestion = m->CurrentQuestion->next;
+		if (!mDNSOpaque16IsZero(q->TargetQID)) ActivateUnicastQuery(m, q, mDNStrue);
+		}
+#endif
+
+	// Retrigger all our mDNS questions
+	for (q = m->Questions; q; q=q->next)				// Scan our list of questions
+		if (mDNSOpaque16IsZero(q->TargetQID) && ActiveQuestion(q))
+			{
+			q->ThisQInterval    = InitialQuestionInterval;	// MUST be > zero for an active question
+			q->RequestUnicast   = 2;						// Set to 2 because is decremented once *before* we check it
+			q->LastQTime        = m->timenow - q->ThisQInterval;
+			q->RecentAnswerPkts = 0;
+			ExpireDupSuppressInfo(q->DupSuppress, m->timenow);
+			m->NextScheduledQuery = m->timenow;
+			}
+	}
+
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
@@ -4721,7 +4754,6 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 		}
 	else if (!sleep)		// Waking up
 		{
-		DNSQuestion *q;
 		mDNSu32 slot;
 		CacheGroup *cg;
 		CacheRecord *cr;
@@ -4742,33 +4774,12 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 			mDNS_ReclaimLockAfterCallback();
 			}
 
-#ifndef UNICAST_DISABLED
-		// On wake, retrigger all our uDNS questions
-		if (m->CurrentQuestion)
-			LogMsg("RestartQueries: ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
-		m->CurrentQuestion = m->Questions;
-		while (m->CurrentQuestion)
-			{
-			q = m->CurrentQuestion;
-			m->CurrentQuestion = m->CurrentQuestion->next;
-			if (!mDNSOpaque16IsZero(q->TargetQID)) ActivateUnicastQuery(m, q, mDNStrue);
-			}
+		// Restart unicast and multicast queries
+		mDNSCoreRestartQueries(m);
+
 		// and reactivtate service registrations
 		m->NextSRVUpdate = NonZeroTime(m->timenow + mDNSPlatformOneSecond);
 		LogInfo("WakeServiceRegistrations %d %d", m->timenow, m->NextSRVUpdate);
-#endif
-
-        // 1. Retrigger all our mDNS questions
-		for (q = m->Questions; q; q=q->next)				// Scan our list of questions
-			if (mDNSOpaque16IsZero(q->TargetQID) && ActiveQuestion(q))
-				{
-				q->ThisQInterval    = InitialQuestionInterval;	// MUST be > zero for an active question
-				q->RequestUnicast   = 2;						// Set to 2 because is decremented once *before* we check it
-				q->LastQTime        = m->timenow - q->ThisQInterval;
-				q->RecentAnswerPkts = 0;
-				ExpireDupSuppressInfo(q->DupSuppress, m->timenow);
-				m->NextScheduledQuery = m->timenow;
-				}
 
 		// 2. Re-validate our cache records
 		m->NextCacheCheck  = m->timenow;
