@@ -16,6 +16,10 @@
     Change History (most recent first):
 
 $Log: helper-stubs.c,v $
+Revision 1.18  2009/03/20 22:12:27  mcguire
+<rdar://problem/6703952> Support CFUserNotificationDisplayNotice in mDNSResponderHelper
+Make the call to the helper a simpleroutine: don't wait for an unused return value
+
 Revision 1.17  2009/03/20 20:52:22  cheshire
 <rdar://problem/6703952> Support CFUserNotificationDisplayNotice in mDNSResponderHelper
 
@@ -216,15 +220,15 @@ fin:
 	return err;
 	}
 
-int mDNSNotify(const char *title, const char *msg)	// Both strings are UTF-8 text
+void mDNSNotify(const char *title, const char *msg)	// Both strings are UTF-8 text
 	{
 	kern_return_t kr = KERN_FAILURE;
 	int retry = 0, err = 0;
 	MACHRETRYLOOP_BEGIN(kr, retry, err, fin);
-	kr = proxy_mDNSNotify(getHelperPort(retry), title, msg, &err);
+	kr = proxy_mDNSNotify(getHelperPort(retry), title, msg);
 	MACHRETRYLOOP_END(kr, retry, err, fin);
 fin:
-	return err;
+	(void)err;
 	}
 
 int mDNSKeychainGetSecrets(CFArrayRef *result)

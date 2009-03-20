@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.65  2009/03/20 22:12:28  mcguire
+<rdar://problem/6703952> Support CFUserNotificationDisplayNotice in mDNSResponderHelper
+Make the call to the helper a simpleroutine: don't wait for an unused return value
+
 Revision 1.64  2009/03/20 21:52:39  cheshire
 <rdar://problem/6703952> Support CFUserNotificationDisplayNotice in mDNSResponderHelper
 Need to CFRelease strings in do_mDNSNotify
@@ -464,9 +468,9 @@ fin:
 	return KERN_SUCCESS;
 	}
 
-kern_return_t do_mDNSNotify(__unused mach_port_t port, const char *title, const char *msg, int *err, audit_token_t token)
+kern_return_t do_mDNSNotify(__unused mach_port_t port, const char *title, const char *msg, audit_token_t token)
 	{
-	if (!authorized(&token)) { *err = kmDNSHelperNotAuthorized; goto fin; }
+	if (!authorized(&token)) return KERN_SUCCESS;
 
 #ifndef NO_CFUSERNOTIFICATION
 	static const char footer[] = "(Note: This message only appears on machines with 17.x.x.x IP addresses — i.e. at Apple — not on customer machines.)";
@@ -476,12 +480,12 @@ kern_return_t do_mDNSNotify(__unused mach_port_t port, const char *title, const 
 	CFStringRef alertMessage = CFStringCreateWithFormat(NULL, NULL, CFSTR("%@\r\r%@"), alertBody, alertFooter);
 	CFRelease(alertBody);
 	CFRelease(alertFooter);
-	*err = CFUserNotificationDisplayNotice(0.0, kCFUserNotificationStopAlertLevel, NULL, NULL, NULL, alertHeader, alertMessage, NULL);
+	int err = CFUserNotificationDisplayNotice(0.0, kCFUserNotificationStopAlertLevel, NULL, NULL, NULL, alertHeader, alertMessage, NULL);
+	if (err) helplog(ASL_LEVEL_ERR, "CFUserNotificationDisplayNotice returned %d", err);
 	CFRelease(alertHeader);
 	CFRelease(alertMessage);
 #endif /* NO_CFUSERNOTIFICATION */
 
-fin:
 	update_idle_timer();
 	return KERN_SUCCESS;
 	}

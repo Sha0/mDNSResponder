@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: helper.h,v $
+Revision 1.17  2009/03/20 22:12:28  mcguire
+<rdar://problem/6703952> Support CFUserNotificationDisplayNotice in mDNSResponderHelper
+Make the call to the helper a simpleroutine: don't wait for an unused return value
+
 Revision 1.16  2009/03/20 20:52:22  cheshire
 <rdar://problem/6703952> Support CFUserNotificationDisplayNotice in mDNSResponderHelper
 
@@ -115,7 +119,7 @@ extern const char *mDNSHelperError(int errornum);
 extern void mDNSRequestBPF(void);
 extern int  mDNSPowerRequest(int key, int interval);
 extern int  mDNSSetARP(int ifindex, const v4addr_t ip, const ethaddr_t eth);
-extern int  mDNSNotify(const char *title, const char *msg);		// Both strings are UTF-8 text
+extern void mDNSNotify(const char *title, const char *msg);		// Both strings are UTF-8 text
 extern int  mDNSDynamicStoreSetConfig(int key, const char *subkey, CFPropertyListRef value);
 extern int  mDNSPreferencesSetName(int key, domainlabel* old, domainlabel* new);
 extern int  mDNSKeychainGetSecrets(CFArrayRef *secrets);

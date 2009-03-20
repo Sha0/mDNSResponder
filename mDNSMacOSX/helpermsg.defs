@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: helpermsg.defs,v $
+Revision 1.16  2009/03/20 22:12:28  mcguire
+<rdar://problem/6703952> Support CFUserNotificationDisplayNotice in mDNSResponderHelper
+Make the call to the helper a simpleroutine: don't wait for an unused return value
+
 Revision 1.15  2009/03/20 20:52:22  cheshire
 <rdar://problem/6703952> Support CFUserNotificationDisplayNotice in mDNSResponderHelper
 
@@ -99,10 +103,9 @@ routine mDNSSetARP(				port			: mach_port_t;
 		out						err				: int;
 		ServerAuditToken		token			: audit_token_t);
 
-routine mDNSNotify(				port			: mach_port_t;
+simpleroutine mDNSNotify(		port			: mach_port_t;
 								title			: string_t;
 								msg				: string_t;
-		out						err				: int;
 		ServerAuditToken		token			: audit_token_t);
 
 routine mDNSDynamicStoreSetConfig(
