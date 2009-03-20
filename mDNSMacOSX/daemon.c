@@ -30,6 +30,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.419  2009/03/20 21:30:04  cheshire
+<rdar://problem/6705866> Crash passing invalid parameters to DNSServiceBrowserCreate()
+Do not append a new question to the browser list until *after* we verify that mDNS_StartBrowse() succeeded
+
 Revision 1.418  2009/03/17 21:32:15  cheshire
 Improved "DHCPWakeTime: SCDynamicStoreCopyDHCPInfo failed" error message
 
@@ -1207,10 +1211,15 @@ mDNSlocal mStatus AddDomainToBrowser(DNSServiceBrowser *browser, const domainnam
 	if (!question) { LogMsg("Error: malloc"); return mStatus_NoMemoryErr; }
 	AssignDomainName(&question->domain, d);
 	question->next = browser->qlist;
-	browser->qlist = question;
 	LogOperation("%5d: DNSServiceBrowse(%##s%##s) START", browser->ClientMachPort, browser->type.c, d->c);
 	err = mDNS_StartBrowse(&mDNSStorage, &question->q, &browser->type, d, mDNSInterface_Any, mDNSfalse, FoundInstance, browser);
-	if (err) LogMsg("Error: AddDomainToBrowser: mDNS_StartBrowse %d", err);
+	if (!err)
+		browser->qlist = question;
+	else
+		{
+		LogMsg("Error: AddDomainToBrowser: mDNS_StartBrowse %d", err);
+		freeL("DNSServiceBrowserQuestion", question);
+		}
 	return err;
 	}
 
