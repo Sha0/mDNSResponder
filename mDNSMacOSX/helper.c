@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.62  2009/03/20 20:52:22  cheshire
+<rdar://problem/6703952> Support CFUserNotificationDisplayNotice in mDNSResponderHelper
+
 Revision 1.61  2009/03/14 01:42:56  mcguire
 <rdar://problem/5457116> BTMM: Fix issues with multiple .Mac accounts on the same machine
 
@@ -447,6 +450,25 @@ kern_return_t do_mDNSSetARP(__unused mach_port_t port, int ifindex, v4addr_t v4,
 
 		*err = 0;
 		}
+
+fin:
+	update_idle_timer();
+	return KERN_SUCCESS;
+	}
+
+kern_return_t do_mDNSNotify(__unused mach_port_t port, const char *title, const char *msg, int *err, audit_token_t token)
+	{
+	*err = -1;
+	if (!authorized(&token)) { *err = kmDNSHelperNotAuthorized; goto fin; }
+
+#ifndef NO_CFUSERNOTIFICATION
+	static const char footer[] = "(Note: This message only appears on machines with 17.x.x.x IP addresses — i.e. at Apple — not on customer machines.)";
+	CFStringRef alertHeader  = CFStringCreateWithCString(NULL, title,  kCFStringEncodingUTF8);
+	CFStringRef alertBody    = CFStringCreateWithCString(NULL, msg,    kCFStringEncodingUTF8);
+	CFStringRef alertFooter  = CFStringCreateWithCString(NULL, footer, kCFStringEncodingUTF8);
+	CFStringRef alertMessage = CFStringCreateWithFormat(NULL, NULL, CFSTR("%@\r\r%@"), alertBody, alertFooter);
+	CFUserNotificationDisplayNotice(0.0, kCFUserNotificationStopAlertLevel, NULL, NULL, NULL, alertHeader, alertMessage, NULL);
+#endif /* NO_CFUSERNOTIFICATION */
 
 fin:
 	update_idle_timer();

@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.653  2009/03/20 20:52:22  cheshire
+<rdar://problem/6703952> Support CFUserNotificationDisplayNotice in mDNSResponderHelper
+
 Revision 1.652  2009/03/19 23:44:47  mcguire
 <rdar://problem/6699216> Properly handle EADDRINUSE
 
@@ -1278,12 +1281,7 @@ mDNSexport void NotifyOfElusiveBug(const char *title, const char *msg)	// Both s
 	notifyCount++;
 
 #ifndef NO_CFUSERNOTIFICATION
-	static const char footer[] = "(Note: This message only appears on machines with 17.x.x.x IP addresses — i.e. at Apple — not on customer machines.)";
-	CFStringRef alertHeader  = CFStringCreateWithCString(NULL, title,  kCFStringEncodingUTF8);
-	CFStringRef alertBody    = CFStringCreateWithCString(NULL, msg,    kCFStringEncodingUTF8);
-	CFStringRef alertFooter  = CFStringCreateWithCString(NULL, footer, kCFStringEncodingUTF8);
-	CFStringRef alertMessage = CFStringCreateWithFormat(NULL, NULL, CFSTR("%@\r\r%@"), alertBody, alertFooter);
-	CFUserNotificationDisplayNotice(0.0, kCFUserNotificationStopAlertLevel, NULL, NULL, NULL, alertHeader, alertMessage, NULL);
+	mDNSNotify(title, msg);
 #endif /* NO_CFUSERNOTIFICATION */
 	}
 

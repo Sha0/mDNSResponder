@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper.h,v $
+Revision 1.16  2009/03/20 20:52:22  cheshire
+<rdar://problem/6703952> Support CFUserNotificationDisplayNotice in mDNSResponderHelper
+
 Revision 1.15  2009/03/14 01:42:56  mcguire
 <rdar://problem/5457116> BTMM: Fix issues with multiple .Mac accounts on the same machine
 
@@ -112,6 +115,7 @@ extern const char *mDNSHelperError(int errornum);
 extern void mDNSRequestBPF(void);
 extern int  mDNSPowerRequest(int key, int interval);
 extern int  mDNSSetARP(int ifindex, const v4addr_t ip, const ethaddr_t eth);
+extern int  mDNSNotify(const char *title, const char *msg);		// Both strings are UTF-8 text
 extern int  mDNSDynamicStoreSetConfig(int key, const char *subkey, CFPropertyListRef value);
 extern int  mDNSPreferencesSetName(int key, domainlabel* old, domainlabel* new);
 extern int  mDNSKeychainGetSecrets(CFArrayRef *secrets);

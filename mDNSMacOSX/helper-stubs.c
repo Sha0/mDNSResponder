@@ -16,6 +16,9 @@
     Change History (most recent first):
 
 $Log: helper-stubs.c,v $
+Revision 1.17  2009/03/20 20:52:22  cheshire
+<rdar://problem/6703952> Support CFUserNotificationDisplayNotice in mDNSResponderHelper
+
 Revision 1.16  2009/03/14 01:42:56  mcguire
 <rdar://problem/5457116> BTMM: Fix issues with multiple .Mac accounts on the same machine
 
@@ -208,6 +211,17 @@ int mDNSSetARP(int ifindex, const v4addr_t ip, const ethaddr_t eth)
 	int retry = 0, err = 0;
 	MACHRETRYLOOP_BEGIN(kr, retry, err, fin);
 	kr = proxy_mDNSSetARP(getHelperPort(retry), ifindex, (uint8_t*)ip, (uint8_t*)eth, &err);
+	MACHRETRYLOOP_END(kr, retry, err, fin);
+fin:
+	return err;
+	}
+
+int mDNSNotify(const char *title, const char *msg)	// Both strings are UTF-8 text
+	{
+	kern_return_t kr = KERN_FAILURE;
+	int retry = 0, err = 0;
+	MACHRETRYLOOP_BEGIN(kr, retry, err, fin);
+	kr = proxy_mDNSNotify(getHelperPort(retry), title, msg, &err);
 	MACHRETRYLOOP_END(kr, retry, err, fin);
 fin:
 	return err;
