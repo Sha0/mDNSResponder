@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.654  2009/03/20 20:53:26  cheshire
+Added test code for testing with MacBook Air, using a USB dongle that doesn't actually support Wake-On-LAN
+
 Revision 1.653  2009/03/20 20:52:22  cheshire
 <rdar://problem/6703952> Support CFUserNotificationDisplayNotice in mDNSResponderHelper
 
@@ -2957,6 +2960,8 @@ mDNSlocal mDNSBool NetWakeInterface(NetworkInterfaceInfoOSX *i)
 #endif
 
 	close(s);
+
+	// ifr.ifr_wake_flags = IF_WAKE_ON_MAGIC_PACKET;	// For testing with MacBook Air, using a USB dongle that doesn't actually support Wake-On-LAN
 
 	LogSPS("%-6s %#-14a %s WOMP", i->ifinfo.ifname, &i->ifinfo.ip, (ifr.ifr_wake_flags & IF_WAKE_ON_MAGIC_PACKET) ? "supports" : "no");
 
