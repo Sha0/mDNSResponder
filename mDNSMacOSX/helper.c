@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.64  2009/03/20 21:52:39  cheshire
+<rdar://problem/6703952> Support CFUserNotificationDisplayNotice in mDNSResponderHelper
+Need to CFRelease strings in do_mDNSNotify
+
 Revision 1.63  2009/03/20 21:21:15  cheshire
 <rdar://problem/6703952> Support CFUserNotificationDisplayNotice in mDNSResponderHelper
 Need to set error code correctly in do_mDNSNotify
@@ -470,7 +474,11 @@ kern_return_t do_mDNSNotify(__unused mach_port_t port, const char *title, const 
 	CFStringRef alertBody    = CFStringCreateWithCString(NULL, msg,    kCFStringEncodingUTF8);
 	CFStringRef alertFooter  = CFStringCreateWithCString(NULL, footer, kCFStringEncodingUTF8);
 	CFStringRef alertMessage = CFStringCreateWithFormat(NULL, NULL, CFSTR("%@\r\r%@"), alertBody, alertFooter);
+	CFRelease(alertBody);
+	CFRelease(alertFooter);
 	*err = CFUserNotificationDisplayNotice(0.0, kCFUserNotificationStopAlertLevel, NULL, NULL, NULL, alertHeader, alertMessage, NULL);
+	CFRelease(alertHeader);
+	CFRelease(alertMessage);
 #endif /* NO_CFUSERNOTIFICATION */
 
 fin:
