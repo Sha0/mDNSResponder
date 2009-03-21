@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.933  2009/03/21 02:40:21  cheshire
+<rdar://problem/6704514> uDNS: Need to create negative cache entries for "local" SOA
+
 Revision 1.932  2009/03/20 23:53:03  jessic2
 <rdar://problem/6646228> SIGHUP should restart all in-progress queries
 
@@ -5834,6 +5837,9 @@ mDNSlocal mDNSu32 GetEffectiveTTL(const uDNS_LLQType LLQType, mDNSu32 ttl)		// T
 // Note: mDNSCoreReceiveResponse calls mDNS_Deregister_internal which can call a user callback, which may change
 // the record list and/or question list.
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
+// InterfaceID non-NULL tells us the interface this multicast response was received on
+// InterfaceID NULL tells us this was a unicast response
+// dstaddr NULL tells us we received this over an outgoing TCP connection we made
 mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	const DNSMessage *const response, const mDNSu8 *end,
 	const mDNSAddr *srcaddr, const mDNSIPPort srcport, const mDNSAddr *dstaddr, mDNSIPPort dstport,
@@ -6236,7 +6242,11 @@ exit:
 			// (since the Microsoft Active Directory server is going to assert that pretty much every single multicast name doesn't exist).
 			// This is not only a waste of memory, but there's also the problem of those negative entries confusing us later -- e.g. we
 			// suppress sending our mDNS query packet because we think we already have a valid (negative) answer to that query in our cache.
-			if (!InterfaceID && IsLocalDomain(&q.qname))
+			// The one exception is that we *DO* want to make a negative cache entry for "local. SOA", for the (common) case where we're
+			// *not* on a Microsoft Active Directory network, and there is no authoritative server for "local". Note that this is not
+			// in conflict with the mDNS spec, because that spec says, "Multicast DNS Zones have no SOA record," so it's okay to cache
+			// negative answers for "local. SOA" from a uDNS server, because the mDNS spec already says that such records do not exist :-)
+			if (!InterfaceID && q.qtype != kDNSType_SOA && IsLocalDomain(&q.qname))
 				LogInfo("Not generating negative cache entry for %##s (%s)", q.qname.c, DNSTypeName(q.qtype));
 			else
 				{
