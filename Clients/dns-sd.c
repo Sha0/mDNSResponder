@@ -304,6 +304,97 @@ static void DNSSD_API enum_reply(DNSServiceRef sdref, const DNSServiceFlags flag
 	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
 	}
 
+static int CopyLabels(char *dst, const char *lim, const char **srcp, int labels)
+	{
+	const char *src = *srcp;
+	while (*src != '.' || --labels > 0)
+		{
+		if (*src == '\\') *dst++ = *src++;	// Make sure "\." doesn't confuse us
+		if (!*src || dst >= lim) return -1;
+		*dst++ = *src++;
+		if (!*src || dst >= lim) return -1;
+		}
+	*dst++ = 0;
+	*srcp = src + 1;	// skip over final dot
+	return 0;
+	}
+
+static void DNSSD_API zonedata_resolve(DNSServiceRef sdref, const DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
+	const char *fullname, const char *hosttarget, uint16_t opaqueport, uint16_t txtLen, const unsigned char *txt, void *context)
+	{
+	union { uint16_t s; u_char b[2]; } port = { opaqueport };
+	uint16_t PortAsNumber = ((uint16_t)port.b[0]) << 8 | port.b[1];
+
+	const char *p = fullname;
+	char n[kDNSServiceMaxDomainName];
+	char t[kDNSServiceMaxDomainName];
+
+	const unsigned char *max = txt + txtLen;
+
+	(void)sdref;        // Unused
+	(void)ifIndex;      // Unused
+	(void)context;      // Unused
+
+	//if (!(flags & kDNSServiceFlagsAdd)) return;
+	if (errorCode) { printf("Error code %d\n", errorCode); return; }
+
+	if (CopyLabels(n, n + kDNSServiceMaxDomainName, &p, 3)) return;		// Fetch name+type
+	p = fullname;
+	if (CopyLabels(t, t + kDNSServiceMaxDomainName, &p, 1)) return;		// Skip first label
+	if (CopyLabels(t, t + kDNSServiceMaxDomainName, &p, 2)) return;		// Fetch next two labels (service type)
+
+	if (num_printed++ == 0)
+		{
+		printf("\n");
+		printf("; To direct clients to browse a different domain, substitute that domain in place of '@'\n");
+		printf("%-47s PTR     %s\n", "lb._dns-sd._udp", "@");
+		printf("\n");
+		printf("; In the list of services below, the SRV records will typically reference dot-local Multicast DNS names.\n");
+		printf("; When transferring this zone file data to your unicast DNS server, you'll need to replace those dot-local\n");
+		printf("; names with the correct fully-qualified (unicast) domain name of the target host offering the service.\n");
+		}
+
+	printf("\n");
+	printf("%-47s PTR     %s\n", t, n);
+	printf("%-47s SRV     0 0 %d %s ; Replace with unicast FQDN of target host\n", n, PortAsNumber, hosttarget);
+	printf("%-47s TXT    ", n);
+
+	while (txt < max)
+		{
+		const unsigned char *const end = txt + 1 + txt[0];
+		txt++;		// Skip over length byte
+		printf(" \"");
+		while (txt<end)
+			{
+			if (*txt == '\\' || *txt == '\"') printf("\\");
+			printf("%c", *txt++);
+			}
+		printf("\"");
+		}
+	printf("\n");
+
+	DNSServiceRefDeallocate(sdref);
+	free(context);
+
+	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
+	}
+
+static void DNSSD_API zonedata_browse(DNSServiceRef sdref, const DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
+	const char *replyName, const char *replyType, const char *replyDomain, void *context)
+	{
+	DNSServiceRef *newref;
+
+	(void)sdref;        // Unused
+	(void)context;      // Unused
+
+	if (!(flags & kDNSServiceFlagsAdd)) return;
+	if (errorCode) { printf("Error code %d\n", errorCode); return; }
+
+	newref = malloc(sizeof(*newref));
+	*newref = client;
+	DNSServiceResolve(newref, kDNSServiceFlagsShareConnection, ifIndex, replyName, replyType, replyDomain, zonedata_resolve, newref);
+	}
+
 static void DNSSD_API browse_reply(DNSServiceRef sdref, const DNSServiceFlags flags, uint32_t ifIndex, DNSServiceErrorType errorCode,
 	const char *replyName, const char *replyType, const char *replyDomain, void *context)
 	{
@@ -831,7 +922,7 @@ int main(int argc, char **argv)
 		}
 
 	if (argc < 2) goto Fail;        // Minimum command line is the command name and one argument
-	operation = getfirstoption(argc, argv, "EFBLRPQCAUNTMISV"
+	operation = getfirstoption(argc, argv, "EFBZLRPQCAUNTMISV"
 								#if HAS_NAT_PMP_API
 									"X"
 								#endif
@@ -863,6 +954,16 @@ int main(int argc, char **argv)
 					if (dom[0] == '.' && dom[1] == 0) dom[0] = 0;   // We allow '.' on the command line as a synonym for empty string
 					printf("Browsing for %s%s%s\n", typ, dom[0] ? "." : "", dom);
 					err = DNSServiceBrowse(&client, 0, opinterface, typ, dom, browse_reply, NULL);
+					break;
+
+		case 'Z':	typ = (argc < opi+1) ? "" : argv[opi+0];
+					dom = (argc < opi+2) ? "" : argv[opi+1];  // Missing domain argument is the same as empty string i.e. use system default(s)
+					typ = gettype(buffer, typ);
+					if (dom[0] == '.' && dom[1] == 0) dom[0] = 0;   // We allow '.' on the command line as a synonym for empty string
+					printf("Browsing for %s%s%s\n", typ, dom[0] ? "." : "", dom);
+					err = DNSServiceCreateConnection(&client);
+					sc1 = client;
+					err = DNSServiceBrowse(&sc1, kDNSServiceFlagsShareConnection, opinterface, typ, dom, zonedata_browse, NULL);
 					break;
 
 		case 'L':	if (argc < opi+2) goto Fail;
@@ -1034,6 +1135,7 @@ Fail:
 	fprintf(stderr, "%s -L <Name> <Type> <Domain>           (Look up a service instance)\n", a0);
 	fprintf(stderr, "%s -R <Name> <Type> <Domain> <Port> [<TXT>...] (Register a service)\n", a0);
 	fprintf(stderr, "%s -P <Name> <Type> <Domain> <Port> <Host> <IP> [<TXT>...]  (Proxy)\n", a0);
+	fprintf(stderr, "%s -Z        <Type> <Domain>   (Output results in Zone File format)\n", a0);
 	fprintf(stderr, "%s -Q <FQDN> <rrtype> <rrclass> (Generic query for any record type)\n", a0);
 	fprintf(stderr, "%s -C <FQDN> <rrtype> <rrclass>   (Query; reconfirming each result)\n", a0);
 #if HAS_NAT_PMP_API
@@ -1042,6 +1144,8 @@ Fail:
 #if HAS_ADDRINFO_API
 	fprintf(stderr, "%s -G v4/v6/v4v6 <Hostname>  (Get address information for hostname)\n", a0);
 #endif
+	fprintf(stderr, "%s -V    (Get version of currently running daemon / system service)\n", a0);
+
 	fprintf(stderr, "%s -A                      (Test Adding/Updating/Deleting a record)\n", a0);
 	fprintf(stderr, "%s -U                                  (Test updating a TXT record)\n", a0);
 	fprintf(stderr, "%s -N                             (Test adding a large NULL record)\n", a0);
@@ -1049,7 +1153,6 @@ Fail:
 	fprintf(stderr, "%s -M      (Test creating a registration with multiple TXT records)\n", a0);
 	fprintf(stderr, "%s -I   (Test registering and then immediately updating TXT record)\n", a0);
 	fprintf(stderr, "%s -S                 (Test multiple operations on a shared socket)\n", a0);
-	fprintf(stderr, "%s -V    (Get version of currently running daemon / system service)\n", a0);
 	return 0;
 	}
 
