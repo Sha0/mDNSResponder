@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.242  2009/03/26 04:01:55  jessic2
+<rdar://problem/6613786> MessageTracer: Log service types longer than 14 characters and service types with underscores
+
 Revision 1.241  2009/03/18 20:50:08  cheshire
 <rdar://problem/6650064> uDNS: Reverse lookup of own IP address takes way too long, sometimes forever
 
@@ -1182,6 +1185,10 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 	mDNSu8 *dst = fqdn->c;
 	const mDNSu8 *src;
 	const char *errormsg;
+#if APPLE_OSX_mDNSResponder
+	mDNSBool	loggedUnderscore = mDNSfalse;
+	static char typeBuf[MAX_ESCAPED_DOMAIN_NAME];
+#endif
 
 	// In the case where there is no name (and ONLY in that case),
 	// a single-label subtype is allowed as the first label of a three-part "type"
@@ -1226,8 +1233,14 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 	src = type->c;										// Put the service type into the domain name
 	len = *src;
 	if (len < 2 || len > 15)
+		{
 		LogMsg("Bad service type in %#s.%##s%##s Application protocol name must be underscore plus 1-14 characters. "
 			"See <http://www.dns-sd.org/ServiceTypes.html>", name->c, type->c, domain->c);
+#if APPLE_OSX_mDNSResponder
+		ConvertDomainNameToCString(type, typeBuf);
+		mDNSASLLog(mDNSNULL, "serviceType.nameTooLong", "noop", typeBuf, "");
+#endif
+		}
 	if (len < 2 || len >= 0x40 || (len > 15 && !SameDomainName(domain, &localdomain))) return(mDNSNULL);
 	if (src[1] != '_') { errormsg = "Application protocol name must begin with underscore"; goto fail; }
 	for (i=2; i<=len; i++)
@@ -1237,8 +1250,26 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 		// Hyphens are only allowed as interior characters
 		// Underscores are not supposed to be allowed at all, but for backwards compatibility with some old products we do allow them,
 		// with the same rule as hyphens
-		if ((src[i] == '-' || src[i] == '_') && i > 2 && i < len) continue;
-		errormsg = "Application protocol name must contain only letters, digits, and hyphens"; goto fail;
+		if ((src[i] == '-' || src[i] == '_') && i > 2 && i < len) 
+			{
+#if APPLE_OSX_mDNSResponder
+			if (src[i] == '_' && loggedUnderscore == mDNSfalse)
+				{
+				ConvertDomainNameToCString(type, typeBuf);
+				mDNSASLLog(mDNSNULL, "serviceType.nameWithUnderscore", "noop", typeBuf, "");
+				loggedUnderscore = mDNStrue;
+				}
+#endif
+			continue;
+			}
+		errormsg = "Application protocol name must contain only letters, digits, and hyphens";
+#if APPLE_OSX_mDNSResponder
+		{
+		ConvertDomainNameToCString(type, typeBuf);
+		mDNSASLLog(mDNSNULL, "serviceType.nameWithIllegalCharacters", "noop", typeBuf, "");
+		}
+#endif
+		 goto fail;
 		}
 	for (i=0; i<=len; i++) *dst++ = *src++;
 
