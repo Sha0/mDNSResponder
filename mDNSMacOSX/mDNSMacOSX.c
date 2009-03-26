@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.656  2009/03/26 05:02:48  mcguire
+fix build error in dnsextd
+
 Revision 1.655  2009/03/26 03:59:00  jessic2
 Changes for <rdar://problem/6492552&6492593&6492609&6492613&6492628&6492640&6492699>
 
@@ -1368,6 +1371,7 @@ mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(mDNS *const m, mDNS
 	return(0);
 	}
 
+#if APPLE_OSX_mDNSResponder
 mDNSexport void mDNSASLLog(uuid_t *uuid, const char *subdomain, const char *result, const char *signature, const char *fmt, ...)
 	{
 	static char		buffer[512];
@@ -1396,6 +1400,7 @@ mDNSexport void mDNSASLLog(uuid_t *uuid, const char *subdomain, const char *resu
 	asl_log(NULL, asl_msg, ASL_LEVEL_NOTICE, "%s", buffer);
 	asl_free(asl_msg);
 	}
+#endif
 
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
