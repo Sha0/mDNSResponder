@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.655  2009/03/26 03:59:00  jessic2
+Changes for <rdar://problem/6492552&6492593&6492609&6492613&6492628&6492640&6492699>
+
 Revision 1.654  2009/03/20 20:53:26  cheshire
 Added test code for testing with MacBook Air, using a USB dongle that doesn't actually support Wake-On-LAN
 
@@ -1203,6 +1206,8 @@ Add (commented out) trigger value for testing "mach_absolute_time went backwards
 #include <mach/mach_time.h>
 #include "helper.h"
 
+#include <asl.h>
+
 #define kInterfaceSpecificOption "interface="
 
 // ***************************************************************************
@@ -1361,6 +1366,35 @@ mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(mDNS *const m, mDNS
 		if ((mDNSInterfaceID)i == id) return(i->scope_id);
 
 	return(0);
+	}
+
+mDNSexport void mDNSASLLog(uuid_t *uuid, const char *subdomain, const char *result, const char *signature, const char *fmt, ...)
+	{
+	static char		buffer[512];
+	aslmsg 			asl_msg = asl_new(ASL_TYPE_MSG);
+
+	if (!asl_msg)	{ LogMsg("mDNSASLLog: asl_new failed"); return; }
+	if (uuid)
+		{
+		char		uuidStr[36];
+		uuid_unparse(*uuid, uuidStr);
+		asl_set		(asl_msg, "com.apple.message.uuid", uuidStr);
+		}
+
+	static char 	domainBase[] = "com.apple.mDNSResponder.%s";
+	mDNS_snprintf	(buffer, sizeof(buffer), domainBase, subdomain);
+	asl_set			(asl_msg, "com.apple.message.domain", buffer);
+
+	if (result)		asl_set(asl_msg, "com.apple.message.result", result);
+	if (signature)	asl_set(asl_msg, "com.apple.message.signature", signature);
+
+	va_list ptr;
+	va_start(ptr,fmt);
+	mDNS_vsnprintf(buffer, sizeof(buffer), fmt, ptr);
+	va_end(ptr);
+
+	asl_log(NULL, asl_msg, ASL_LEVEL_NOTICE, "%s", buffer);
+	asl_free(asl_msg);
 	}
 
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -3276,7 +3310,13 @@ mDNSlocal void UpdateAutoTunnelDomainStatus(const mDNS *const m, const DomainAut
 	    !CFEqual(dict, (CFMutableDictionaryRef)CFDictionaryGetValue(domainStatusDict, domain)))
 	    {
 		CFDictionarySetValue(domainStatusDict, domain, dict);
-		if (!m->ShutdownTime) mDNSDynamicStoreSetConfig(kmDNSBackToMyMacConfig, mDNSNULL, domainStatusDict);
+		if (!m->ShutdownTime) 
+			{
+			static char statusBuf[16];
+			mDNS_snprintf(statusBuf, sizeof(statusBuf), "%d", (int)status);
+			mDNSASLLog((uuid_t *)&m->asl_uuid, "autotunnel.domainstatus", status ? "failure" : "success", statusBuf, "");
+			mDNSDynamicStoreSetConfig(kmDNSBackToMyMacConfig, mDNSNULL, domainStatusDict);
+			}
 		}
 		
 	CFRelease(domain);
@@ -3598,6 +3638,9 @@ mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const R
 	if (!answer->rdlength)
 		{
 		LogInfo("AutoTunnelCallback NXDOMAIN %##s (%s)", question->qname.c, DNSTypeName(question->qtype));
+		static char msgbuf[16];
+		mDNS_snprintf(msgbuf, sizeof(msgbuf), "%s lookup", DNSTypeName(question->qtype));
+		mDNSASLLog((uuid_t *)&m->asl_uuid, "autotunnel.config", "failure", msgbuf, "");
 		UnlinkAndReissueBlockedQuestions(m, tun, mDNSfalse);
 		return;
 		}
@@ -3672,6 +3715,9 @@ mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const R
 		if (m->AutoTunnelHostAddr.b[0]) { mDNS_Lock(m); SetupLocalAutoTunnelInterface_internal(m); mDNS_Unlock(m); };
 
 		mStatus result = needSetKeys ? AutoTunnelSetKeys(tun, mDNStrue) : mStatus_NoError;
+		static char msgbuf[32];
+		mDNS_snprintf(msgbuf, sizeof(msgbuf), "Tunnel setup - %d", result);
+		mDNSASLLog((uuid_t *)&m->asl_uuid, "autotunnel.config", result ? "failure" : "success", msgbuf, "");
 		// Kick off any questions that were held pending this tunnel setup
 		ReissueBlockedQuestions(m, &tun->dstname, (result == mStatus_NoError) ? mDNStrue : mDNSfalse);
 		}

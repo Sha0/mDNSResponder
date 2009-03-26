@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.606  2009/03/26 03:59:00  jessic2
+Changes for <rdar://problem/6492552&6492593&6492609&6492613&6492628&6492640&6492699>
+
 Revision 1.605  2009/03/04 00:40:14  cheshire
 Updated DNS server error codes to be more consistent with definitions at
 <http://www.iana.org/assignments/dns-parameters>
@@ -3408,6 +3411,7 @@ mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr, co
 		UpdateSRVRecords(m); // Will call GetStaticHostname if needed
 		
 #if APPLE_OSX_mDNSResponder
+		if (RouterChanged)	uuid_generate(m->asl_uuid);
 		UpdateAutoTunnelDomainStatuses(m);
 #endif
 		}
@@ -3933,12 +3937,22 @@ mDNSexport void uDNS_ReceiveNATPMPPacket(mDNS *m, const mDNSInterfaceID Interfac
 
 	if (AddrReply->opcode == NATOp_AddrResponse)
 		{
+#if APPLE_OSX_mDNSResponder
+		static char msgbuf[16];
+		mDNS_snprintf(msgbuf, sizeof(msgbuf), "%d", AddrReply->err);
+		mDNSASLLog((uuid_t *)&m->asl_uuid, "natt.natpmp.AddressRequest", AddrReply->err ? "failure" : "success", msgbuf, "");
+#endif
 		if (!AddrReply->err && len < sizeof(NATAddrReply)) { LogMsg("NAT Traversal AddrResponse message too short (%d bytes)", len); return; }
 		natTraversalHandleAddressReply(m, AddrReply->err, AddrReply->ExtAddr);
 		}
 	else if (AddrReply->opcode == NATOp_MapUDPResponse || AddrReply->opcode == NATOp_MapTCPResponse)
 		{
 		mDNSu8 Protocol = AddrReply->opcode & 0x7F;
+#if APPLE_OSX_mDNSResponder
+		static char msgbuf[16];
+		mDNS_snprintf(msgbuf, sizeof(msgbuf), "%s - %d", AddrReply->opcode == NATOp_MapUDPResponse ? "UDP" : "TCP", PortMapReply->err);
+		mDNSASLLog((uuid_t *)&m->asl_uuid, "natt.natpmp.PortMapRequest", PortMapReply->err ? "failure" : "success", msgbuf, "");
+#endif
 		if (!PortMapReply->err)
 			{
 			if (len < sizeof(NATPortMapReply)) { LogMsg("NAT Traversal PortMapReply message too short (%d bytes)", len); return; }

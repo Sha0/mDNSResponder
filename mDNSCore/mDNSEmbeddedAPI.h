@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.553  2009/03/26 03:59:00  jessic2
+Changes for <rdar://problem/6492552&6492593&6492609&6492613&6492628&6492640&6492699>
+
 Revision 1.552  2009/03/20 23:53:03  jessic2
 <rdar://problem/6646228> SIGHUP should restart all in-progress queries
 
@@ -922,6 +925,9 @@ Fixes to avoid code generation warning/error on FreeBSD 7
 #endif
 
 #include "mDNSDebug.h"
+#if APPLE_OSX_mDNSResponder
+#include <uuid/uuid.h>
+#endif
 
 #ifdef __cplusplus
 	extern "C" {
@@ -2543,6 +2549,7 @@ struct mDNS_struct
 
 #if APPLE_OSX_mDNSResponder
 	ClientTunnel     *TunnelClients;
+	uuid_t           asl_uuid;					// uuid for ASL logging
 #endif
 
 	// Fixed storage, to avoid creating large objects on the stack
@@ -3126,6 +3133,11 @@ extern mDNSs32  mDNSPlatformUTC         (void);
 extern void	mDNSPlatformWriteDebugMsg(const char *msg);
 #endif
 extern void	mDNSPlatformWriteLogMsg(const char *ident, const char *msg, int flags);
+
+#if APPLE_OSX_mDNSResponder
+// Utility function for ASL logging
+mDNSexport void mDNSASLLog(uuid_t *uuid, const char *subdomain, const char *result, const char *signature, const char *fmt, ...);
+#endif
 
 // Platform support modules should provide the following functions to map between opaque interface IDs
 // and interface indexes in order to support the DNS-SD API. If your target platform does not support
