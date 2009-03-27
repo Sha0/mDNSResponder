@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.657  2009/03/27 17:27:13  cheshire
+<rdar://problem/6724859> Need to support querying IPv6 DNS servers
+
 Revision 1.656  2009/03/26 05:02:48  mcguire
 fix build error in dnsextd
 
@@ -1446,9 +1449,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 		sin_to->sin_family         = AF_INET;
 		sin_to->sin_port           = dstPort.NotAnInteger;
 		sin_to->sin_addr.s_addr    = dst->ip.v4.NotAnInteger;
-		s = m->p->permanentsockets.sktv4;
-
-		if (src) { s = src->ss.sktv4; debugf("mDNSPlatformSendUDP using port %d %d %d", mDNSVal16(src->ss.port), m->p->permanentsockets.sktv4, s); }
+		s = (src ? src->ss : m->p->permanentsockets).sktv4;
 
 		if (info)	// Specify outgoing interface
 			{
@@ -1486,7 +1487,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 		sin6_to->sin6_flowinfo       = 0;
 		sin6_to->sin6_addr           = *(struct in6_addr*)&dst->ip.v6;
 		sin6_to->sin6_scope_id       = info ? info->scope_id : 0;
-		s = m->p->permanentsockets.sktv6;
+		s = (src ? src->ss : m->p->permanentsockets).sktv6;
 		if (info && mDNSAddrIsDNSMulticast(dst))	// Specify outgoing interface
 			{
 			err = setsockopt(s, IPPROTO_IPV6, IPV6_MULTICAST_IF, &info->scope_id, sizeof(info->scope_id));
@@ -4328,18 +4329,19 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 							}
 
 						for (n = 0; n < r->n_nameserver; n++)
-							if (r->nameserver[n]->sa_family == AF_INET && (interface || disabled || !AddrRequiresPPPConnection(r->nameserver[n])))
-								{
-								mDNSAddr saddr;
-								// mDNSAddr saddr = { mDNSAddrType_IPv4, { { { 192, 168, 1, 1 } } } }; // for testing
-								debugf("Adding dns server from slot %d %#a for domain %##s", i, &saddr, d.c);
-								if (SetupAddr(&saddr, r->nameserver[n])) LogMsg("RegisterSplitDNS: bad IP address");
-								else
+							if (r->nameserver[n]->sa_family == AF_INET || r->nameserver[n]->sa_family == AF_INET6)
+								if (interface || disabled || !AddrRequiresPPPConnection(r->nameserver[n]))
 									{
-									DNSServer *s = mDNS_AddDNSServer(m, &d, interface, &saddr, r->port ? mDNSOpaque16fromIntVal(r->port) : UnicastDNSPort);
-									if (s && disabled) s->teststate = DNSServer_Disabled;
+									mDNSAddr saddr;
+									// mDNSAddr saddr = { mDNSAddrType_IPv4, { { { 192, 168, 1, 1 } } } }; // for testing
+									debugf("Adding dns server from slot %d %#a for domain %##s", i, &saddr, d.c);
+									if (SetupAddr(&saddr, r->nameserver[n])) LogMsg("RegisterSplitDNS: bad IP address");
+									else
+										{
+										DNSServer *s = mDNS_AddDNSServer(m, &d, interface, &saddr, r->port ? mDNSOpaque16fromIntVal(r->port) : UnicastDNSPort);
+										if (s && disabled) s->teststate = DNSServer_Disabled;
+										}
 									}
-								}
 						}
 					}
 				}
