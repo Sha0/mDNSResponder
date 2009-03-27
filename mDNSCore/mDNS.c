@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.934  2009/03/27 17:17:58  cheshire
+Improved "Ignoring suspect uDNS response" debugging message
+
 Revision 1.933  2009/03/21 02:40:21  cheshire
 <rdar://problem/6704514> uDNS: Need to create negative cache entries for "local" SOA
 
@@ -5702,8 +5705,8 @@ mDNSlocal mDNSBool ExpectingUnicastResponseForRecord(mDNS *const m, const mDNSAd
 				//	if (mDNSSameAddress(srcaddr, &q->Target))                   return(mDNStrue);
 				//	if (q->LongLived && mDNSSameAddress(srcaddr, &q->servAddr)) return(mDNStrue); Shouldn't need this now that we have LLQType checking
 				//	if (TrustedSource(m, srcaddr))                              return(mDNStrue);
-					LogInfo("WARNING: Ignoring suspect uDNS response for %##s (%s) [q->Target %#a] from %#a: %s",
-						q->qname.c, DNSTypeName(q->qtype), &q->Target, srcaddr, CRDisplayString(m, rr));
+					LogInfo("WARNING: Ignoring suspect uDNS response for %##s (%s) [q->Target %#a:%d] from %#a:%d %s",
+						q->qname.c, DNSTypeName(q->qtype), &q->Target, mDNSVal16(q->LocalSocket->port), srcaddr, mDNSVal16(port), CRDisplayString(m, rr));
 					return(mDNSfalse);
 					}
 				}
