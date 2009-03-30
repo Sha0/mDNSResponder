@@ -17,6 +17,10 @@
     Change History (most recent first):
     
 $Log: mdnsNSP.c,v $
+Revision 1.22  2009/03/30 20:34:51  herscher
+<rdar://problem/5925472> Current Bonjour code does not compile on Windows
+<rdar://problem/5914160> Eliminate use of GetNextLabel in mdnsNSP
+
 Revision 1.21  2008/07/16 01:25:10  cheshire
 <rdar://problem/5914160> Eliminate use of GetNextLabel in mdnsNSP
 
@@ -99,6 +103,7 @@ mDNS NameSpace Provider (NSP). Hooks into the Windows name resolution system to 
 #include	<stdlib.h>
 #include	<string.h>
 
+#include	"ClientCommon.h"
 #include	"CommonServices.h"
 #include	"DebugServices.h"
 
@@ -117,6 +122,8 @@ mDNS NameSpace Provider (NSP). Hooks into the Windows name resolution system to 
 #define swprintf _snwprintf
 #define snprintf _snprintf
 #endif
+
+#define MAX_LABELS 128
 
 #if 0
 #pragma mark == Structures ==
@@ -393,7 +400,7 @@ STDAPI	DllRegisterServer( void )
 
 	WSCUnInstallNameSpace( &gNSPGUID );
 
-	err = GetModuleFileNameW( gInstance, path, sizeof( path ) );
+	err = GetModuleFileNameW( gInstance, path, MAX_PATH );
 	err = translate_errno( err != 0, errno_compat(), kUnknownErr );
 	require_noerr( err, exit );
 
@@ -626,11 +633,11 @@ DEBUG_LOCAL int WSPAPI
 	// libraries. It is probably faster to do the inline compare than invoke functions to do it anyway.
 	
 	for( p = name; *p; ++p ) {}		// Find end of string
-	if( p[-1] == '.' ) --p;			// Doesn't work if name ends in escaped dot, but since we're looking for ".local" specifically that doesn't matter
 	size = (size_t)( p - name );
 	require_action_quiet( size > sizeof_string( ".local" ), exit, err = WSASERVICE_NOT_FOUND );
 	
-	p -= sizeof_string( ".local" );
+	p = name + ( size - 1 );
+	p = ( *p == '.' ) ? ( p - sizeof_string( ".local" ) ) : ( ( p - sizeof_string( ".local" ) ) + 1 );
 	if	( ( ( p[ 0 ] != '.' )						||
 		( ( p[ 1 ] != 'L' ) && ( p[ 1 ] != 'l' ) )	||
 		( ( p[ 2 ] != 'O' ) && ( p[ 2 ] != 'o' ) )	||
@@ -652,21 +659,32 @@ DEBUG_LOCAL int WSPAPI
 	}
 	else
 	{
+		const char	*	replyDomain;
 		char			translated[ kDNSServiceMaxDomainName ];
 		int				n;
+		int				labels		= 0;
+		const char	*	label[MAX_LABELS];
 		char			text[64];
-
-		// <rdar://problem/4050633> Should not issue Mutlicast query for multilabel dot-local name
-		// Skip over escaped backslashes and dots, and bail out at the first unescaped dot
-		LPCWSTR			q;
-		for( q = name; q<p; ++q )
-		{
-			if( *q == '\\' ) ++q;
-			else if( *q == '.' ) require_action( 0, exit, err = WSASERVICE_NOT_FOUND );
-		}
 
 		n = WideCharToMultiByte( CP_UTF8, 0, name, -1, translated, sizeof( translated ), NULL, NULL );
 		require_action( n > 0, exit, err = WSASERVICE_NOT_FOUND );
+
+		// <rdar://problem/4050633>
+
+		// Don't resolve multi-label name
+
+		// <rdar://problem/5914160> Eliminate use of GetNextLabel in mdnsNSP
+		// Add checks for GetNextLabel returning NULL, individual labels being greater than
+		// 64 bytes, and the number of labels being greater than MAX_LABELS
+		replyDomain = translated;
+
+		while (replyDomain && *replyDomain && labels < MAX_LABELS)
+		{
+			label[labels++]	= replyDomain;
+			replyDomain		= GetNextLabel(replyDomain, text);
+		}
+
+		require_action( labels == 2, exit, err = WSASERVICE_NOT_FOUND );
 
 		// <rdar://problem/3936771>
 		//
@@ -676,7 +694,7 @@ DEBUG_LOCAL int WSPAPI
 		require_action( InHostsTable( translated ) == FALSE, exit, err = WSASERVICE_NOT_FOUND );
 	}
 
-	// The name ends in .local ( and isn't in the hosts table ), {8,9,A,B}.E.F.ip6.arpa, or .254.169.in-addr.arpa so start the resolve operation. Lazy initialize DNS-SD if needed.
+	// The name ends in .local ( and isn't in the hosts table ), .0.8.e.f.ip6.arpa, or .254.169.in-addr.arpa so start the resolve operation. Lazy initialize DNS-SD if needed.
 		
 	NSPLock();
 	
@@ -2330,8 +2348,10 @@ IsReverseLookup( LPCWSTR name, size_t size )
 	p = name + ( size - 1 );
 	p = ( *p == '.' ) ? ( p - sizeof_string( ".0.8.e.f.ip6.arpa" ) ) : ( ( p - sizeof_string( ".0.8.e.f.ip6.arpa" ) ) + 1 );
 	
-	if	( ( p[ 2 ] != '.' ) )							||
-		( ( p[ 3 ] != '8' ) && ( p[ 3 ] != '9' ) && ( p[ 3 ] != 'a' ) && ( p[ 3 ] != 'A' ) && ( p[ 3 ] != 'b' ) && ( p[ 3 ] != 'B' ) ) ||
+	if	( ( ( p[ 0 ] != '.' )							||
+		( ( p[ 1 ] != '0' ) )							||
+		( ( p[ 2 ] != '.' ) )							||
+		( ( p[ 3 ] != '8' ) )							||
 		( ( p[ 4 ] != '.' ) )							||
 		( ( p[ 5 ] != 'E' ) && ( p[ 5 ] != 'e' ) )		||
 		( ( p[ 6 ] != '.' ) )							||
