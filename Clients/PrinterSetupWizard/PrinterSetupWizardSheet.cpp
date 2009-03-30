@@ -17,6 +17,12 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.37  2009/03/30 19:17:37  herscher
+<rdar://problem/5925472> Current Bonjour code does not compile on Windows
+<rdar://problem/6141389> Printer Wizard crashes on launch when Bonjour Service isn't running
+<rdar://problem/5258789> Buffer overflow in PrinterWizard when printer dns hostname is too long
+<rdar://problem/5187308> Move build train to Visual Studio 2005
+
 Revision 1.36  2008/10/23 22:33:23  cheshire
 Changed "NOTE:" to "Note:" so that BBEdit 9 stops putting those comment lines into the funtion popup menu
 
@@ -434,7 +440,9 @@ CPrinterSetupWizardSheet::InstallPrinterPDLAndLPR(Printer * printer, Service * s
 	// setup the port
 	//
 	ZeroMemory(&portData, sizeof(PORT_DATA_1));
-	wcscpy(portData.sztPortName, printer->portName);
+
+	require_action( wcslen(printer->portName) < sizeof_array(portData.sztPortName), exit, err = kSizeErr );
+	wcscpy_s(portData.sztPortName, printer->portName);
     	
 	portData.dwPortNumber	=	service->portNumber;
 	portData.dwVersion		=	1;
@@ -443,9 +451,11 @@ CPrinterSetupWizardSheet::InstallPrinterPDLAndLPR(Printer * printer, Service * s
 	portData.cbSize		= sizeof PORT_DATA_1;
 	portData.dwReserved	= 0L;
     	
-	wcscpy(portData.sztQueue, q->name);
-	wcscpy(portData.sztIPAddress, service->hostname); 
-	wcscpy(portData.sztHostAddress, service->hostname);
+	require_action(wcslen(q->name) < sizeof_array(portData.sztQueue), exit, err = kSizeErr );
+	wcscpy_s(portData.sztQueue, q->name);
+
+	require_action(wcslen( service->hostname ) < sizeof_array(portData.sztHostAddress), exit, err = kSizeErr );
+	wcscpy_s( portData.sztHostAddress, service->hostname );
 
 	ok = XcvData(hXcv, L"AddPort", (PBYTE) &portData, sizeof(PORT_DATA_1), pOutputData, cbInputData,  &cbOutputNeeded, &dwStatus);
 	err = translate_errno( ok, errno_compat(), kUnknownErr );
@@ -599,12 +609,14 @@ exit:
 		}
 		else
 		{
-			CPrinterSetupWizardSheet::WizardException exc;
-			
-			exc.text.LoadString( IDS_NO_MDNSRESPONDER_SERVICE_TEXT );
-			exc.caption.LoadString( IDS_ERROR_CAPTION );
-			
-			throw(exc);
+			CString text, caption;
+
+			text.LoadString( IDS_NO_MDNSRESPONDER_SERVICE_TEXT );
+			caption.LoadString( IDS_ERROR_CAPTION );
+
+			MessageBox(text, caption, MB_OK|MB_ICONEXCLAMATION);
+
+			_exit( 0 );
 		}
 	}
 
@@ -696,7 +708,7 @@ void CPrinterSetupWizardSheet::Init(void)
 }
 
 
-LONG
+LRESULT
 CPrinterSetupWizardSheet::OnSocketEvent(WPARAM inWParam, LPARAM inLParam)
 {
 	if (WSAGETSELECTERROR(inLParam) && !(HIWORD(inLParam)))
@@ -729,7 +741,7 @@ CPrinterSetupWizardSheet::OnSocketEvent(WPARAM inWParam, LPARAM inLParam)
 }
 
 
-LONG
+LRESULT
 CPrinterSetupWizardSheet::OnProcessEvent(WPARAM inWParam, LPARAM inLParam)
 {
 	DEBUG_UNUSED(inLParam);
