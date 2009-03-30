@@ -2,7 +2,6 @@
 // Microsoft Visual C++ generated include file.
 // Used by PrinterSetupWizard.rc
 //
-#define IDR_MANIFEST                    1
 #define IDM_ABOUTBOX                    0x0010
 #define IDD_ABOUTBOX                    100
 #define IDS_ABOUTBOX                    101
