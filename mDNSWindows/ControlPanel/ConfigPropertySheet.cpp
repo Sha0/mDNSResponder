@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: ConfigPropertySheet.cpp,v $
+Revision 1.6  2009/03/30 19:57:45  herscher
+<rdar://problem/5925472> Current Bonjour code does not compile on Windows
+<rdar://problem/5187308> Move build train to Visual Studio 2005
+
 Revision 1.5  2006/08/14 23:25:28  cheshire
 Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
 
@@ -125,7 +129,7 @@ CConfigPropertySheet::OnCommand(WPARAM wParam, LPARAM lParam)
 //	CConfigPropertySheet::OnDataReady
 //---------------------------------------------------------------------------------------------------------------------------
 
-LONG
+LRESULT
 CConfigPropertySheet::OnDataReady(WPARAM inWParam, LPARAM inLParam)
 {
 	if (WSAGETSELECTERROR(inLParam) && !(HIWORD(inLParam)))
@@ -154,7 +158,7 @@ CConfigPropertySheet::OnDataReady(WPARAM inWParam, LPARAM inLParam)
 //	CConfigPropertySheet::OnRegistryChanged
 //---------------------------------------------------------------------------------------------------------------------------
 
-afx_msg LONG
+afx_msg LRESULT
 CConfigPropertySheet::OnRegistryChanged( WPARAM inWParam, LPARAM inLParam )
 {
 	DEBUG_UNUSED( inWParam );
