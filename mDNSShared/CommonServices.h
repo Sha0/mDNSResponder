@@ -17,6 +17,10 @@
     Change History (most recent first):
     
 $Log: CommonServices.h,v $
+Revision 1.11  2009/03/30 19:51:29  herscher
+<rdar://problem/5925472> Current Bonjour code does not compile on Windows
+<rdar://problem/5187308> Move build train to Visual Studio 2005
+
 Revision 1.10  2009/01/11 03:20:06  mkrochma
 <rdar://problem/5797526> Fixes from Igor Seleznev to get mdnsd working on Solaris
 
@@ -164,6 +168,9 @@ Common Services and portability support for various platforms.
 //===========================================================================================================================
 
 #if( !KERNEL )
+	#if defined(WIN32) && !defined(_WSPIAPI_COUNTOF)
+		#define _WSPIAPI_COUNTOF(_Array) (sizeof(_Array) / sizeof(_Array[0]))
+	#endif
 	#include	<stddef.h>
 #endif
 	
