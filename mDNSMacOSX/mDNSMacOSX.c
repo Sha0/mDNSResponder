@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.659  2009/03/30 21:11:07  jessic2
+<rdar://problem/6728725> Need to do some polish work on MessageTracer logging
+
 Revision 1.658  2009/03/30 20:07:28  mcguire
 <rdar://problem/6736133> BTMM: SSLHandshake threads are leaking Mach ports
 
@@ -1380,6 +1383,8 @@ mDNSexport mDNSu32 mDNSPlatformInterfaceIndexfromInterfaceID(mDNS *const m, mDNS
 #if APPLE_OSX_mDNSResponder
 mDNSexport void mDNSASLLog(uuid_t *uuid, const char *subdomain, const char *result, const char *signature, const char *fmt, ...)
 	{
+	if (OSXVers < OSXVers_10_6_SnowLeopard)		return;
+
 	static char		buffer[512];
 	aslmsg 			asl_msg = asl_new(ASL_TYPE_MSG);
 
@@ -1403,7 +1408,9 @@ mDNSexport void mDNSASLLog(uuid_t *uuid, const char *subdomain, const char *resu
 	mDNS_vsnprintf(buffer, sizeof(buffer), fmt, ptr);
 	va_end(ptr);
 
-	asl_log(NULL, asl_msg, ASL_LEVEL_NOTICE, "%s", buffer);
+	int	old_filter = asl_set_filter(NULL,ASL_FILTER_MASK_UPTO(ASL_LEVEL_DEBUG));
+	asl_log(NULL, asl_msg, ASL_LEVEL_DEBUG, "%s", buffer);
+	asl_set_filter(NULL, old_filter);
 	asl_free(asl_msg);
 	}
 #endif
@@ -5728,6 +5735,10 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	m->p->KeyChainBugTimer   = 0;
 	m->p->WakeAtUTC          = 0;
 	m->p->RequestReSleep     = 0;
+	
+#if APPLE_OSX_mDNSResponder
+	uuid_generate(m->asl_uuid);
+#endif
 
 	m->AutoTunnelHostAddr.b[0] = 0;		// Zero out AutoTunnelHostAddr so UpdateInterfaceList() know it has to set it up
 
