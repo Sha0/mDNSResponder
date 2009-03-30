@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.658  2009/03/30 20:07:28  mcguire
+<rdar://problem/6736133> BTMM: SSLHandshake threads are leaking Mach ports
+
 Revision 1.657  2009/03/27 17:27:13  cheshire
 <rdar://problem/6724859> Need to support querying IPv6 DNS servers
 
@@ -1881,7 +1884,11 @@ mDNSlocal mStatus spawnSSLHandshake(TCPSocket* sock)
 	if (sock->handshake != handshake_required) LogMsg("spawnSSLHandshake: handshake status not required: %d", sock->handshake);
 	sock->handshake = handshake_in_progress;
 	KQueueSet(sock->fd, EV_DELETE, EVFILT_READ, &sock->kqEntry);
-	mStatus err = pthread_create(&sock->handshake_thread, NULL, doSSLHandshake, sock);
+	pthread_attr_t attr;
+	pthread_attr_init(&attr);
+	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+	mStatus err = pthread_create(&sock->handshake_thread, &attr, doSSLHandshake, sock);
+	pthread_attr_destroy(&attr);
 	if (err)
 		{
 		LogMsg("Could not start SSLHandshake thread: (%d) %s", err, strerror(err));
