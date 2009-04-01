@@ -81,12 +81,66 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT ws2_32.lib ..\mDNSWindows\DLL\Rele
 #ifdef _WIN32
 	#include <winsock2.h>
 	#include <ws2tcpip.h>
+	#include <Iphlpapi.h>
 	#include <process.h>
 	typedef int        pid_t;
 	#define getpid     _getpid
 	#define strcasecmp _stricmp
 	#define snprintf   _snprintf
 	static const char kFilePathSep = '\\';
+	#if !defined(IFNAMSIZ)
+	 #define IFNAMSIZ 16
+    #endif
+	#define if_nametoindex if_nametoindex_win
+	#define if_indextoname if_indextoname_win
+
+	typedef PCHAR (WINAPI * if_indextoname_funcptr_t)(ULONG index, PCHAR name);
+	typedef ULONG (WINAPI * if_nametoindex_funcptr_t)(PCSTR name);
+
+	unsigned if_nametoindex_win(const char *ifname)
+		{
+		HMODULE library;
+		unsigned index = 0;
+
+		// Try and load the IP helper library dll
+		if ((library = LoadLibrary(TEXT("Iphlpapi")) ) != NULL )
+			{
+			if_nametoindex_funcptr_t if_nametoindex_funcptr;
+
+			// On Vista and above there is a Posix like implementation of if_nametoindex
+			if ((if_nametoindex_funcptr = (if_nametoindex_funcptr_t) GetProcAddress(library, "if_nametoindex")) != NULL )
+				{
+				index = if_nametoindex_funcptr(ifname);
+				}
+
+			FreeLibrary(library);
+			}
+
+		return index;
+		}
+
+	char * if_indextoname_win( unsigned ifindex, char *ifname)
+		{
+		HMODULE library;
+		char * name = NULL;
+
+		// Try and load the IP helper library dll
+		if ((library = LoadLibrary(TEXT("Iphlpapi")) ) != NULL )
+			{
+			if_indextoname_funcptr_t if_indextoname_funcptr;
+
+			// On Vista and above there is a Posix like implementation of if_indextoname
+			if ((if_indextoname_funcptr = (if_indextoname_funcptr_t) GetProcAddress(library, "if_indextoname")) != NULL )
+				{
+				name = if_indextoname_funcptr(ifindex, ifname);
+				}
+
+			FreeLibrary(library);
+			}
+
+		return name;
+		}
+
 #else
 	#include <unistd.h>			// For getopt() and optind
 	#include <netdb.h>			// For getaddrinfo()
@@ -1077,6 +1131,10 @@ int main(int argc, char **argv)
 
 		case 'S':	{
 					Opaque16 registerPort = { { 0x23, 0x45 } };
+					unsigned char txtrec[16] = "\xF" "/path=test.html";
+					DNSRecordRef rec;
+					unsigned char nulrec[4] = "1234";
+
 					err = DNSServiceCreateConnection(&client);
 					if (err) { fprintf(stderr, "DNSServiceCreateConnection failed %ld\n", (long int)err); return (-1); }
 
@@ -1093,12 +1151,9 @@ int main(int argc, char **argv)
 						"_http._tcp", "local", NULL, registerPort.NotAnInteger, 0, NULL, reg_reply, NULL);
 					if (err) { fprintf(stderr, "SharedConnection DNSServiceRegister failed %ld\n", (long int)err); return (-1); }
 
-					unsigned char txtrec[16] = "\xF" "/path=test.html";
 					err = DNSServiceUpdateRecord(sc3, NULL, 0, sizeof(txtrec), txtrec, 0);
 					if (err) { fprintf(stderr, "SharedConnection DNSServiceUpdateRecord failed %ld\n", (long int)err); return (-1); }
 
-					DNSRecordRef rec;
-					unsigned char nulrec[4] = "1234";
 					err = DNSServiceAddRecord(sc3, &rec, 0, kDNSServiceType_NULL, sizeof(nulrec), nulrec, 0);
 					if (err) { fprintf(stderr, "SharedConnection DNSServiceAddRecord failed %ld\n", (long int)err); return (-1); }
 
