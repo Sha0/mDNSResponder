@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.128  2009/04/01 21:09:35  herscher
+<rdar://problem/5925472> Current Bonjour code does not compile on Windows.
+
 Revision 1.127  2009/03/03 21:38:19  cheshire
 Improved "deliver_request ERROR" message
 
@@ -289,15 +292,18 @@ Minor textual tidying
 
 #include <errno.h>
 #include <stdlib.h>
-#include <sys/fcntl.h>		// For O_RDWR etc.
 
 #include "dnssd_ipc.h"
 
 #if defined(_WIN32)
 
+	#define _SSIZE_T
+	#include <CommonServices.h>
+	#include <DebugServices.h>
 	#include <winsock2.h>
 	#include <ws2tcpip.h>
 	#include <windows.h>
+	#include <stdarg.h>
 	
 	#define sockaddr_mdns sockaddr_in
 	#define AF_MDNS AF_INET
@@ -313,9 +319,21 @@ Minor textual tidying
 	#define sleep(X) Sleep((X) * 1000)
 	
 	static int g_initWinsock = 0;
+	#define LOG_WARNING kDebugLevelWarning
+	static void syslog( int priority, const char * message, ...)
+		{
+		va_list args;
+		int len;
+		char * buffer;
 
+		va_start( args, message );
+		len = _vscprintf( message, args ) + 1;
+		buffer = malloc( len * sizeof(char) );
+		if ( buffer ) { vsprintf( buffer, message, args ); dlog( priority, buffer ); free( buffer ); }
+		}
 #else
 
+	#include <sys/fcntl.h>		// For O_RDWR etc.
 	#include <sys/time.h>
 	#include <sys/socket.h>
 	#include <syslog.h>

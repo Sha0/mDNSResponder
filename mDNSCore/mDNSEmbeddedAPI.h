@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.555  2009/04/01 21:12:27  herscher
+<rdar://problem/5925472> Current Bonjour code does not compile on Windows.
+
 Revision 1.554  2009/04/01 17:50:11  mcguire
 cleanup mDNSRandom
 
@@ -1121,11 +1124,17 @@ typedef struct mDNSInterfaceID_dummystruct { void *dummy; } *mDNSInterfaceID;
 // less than, add, multiply, increment, decrement, etc., are undefined for opaque identifiers,
 // and if you make the mistake of trying to do those using the NotAnInteger field, then you'll
 // find you get code that doesn't work consistently on big-endian and little-endian machines.
+#if defined(_WIN32)
+ #pragma pack(push,2)
+#endif
 typedef       union { mDNSu8 b[ 2]; mDNSu16 NotAnInteger; } mDNSOpaque16;
 typedef       union { mDNSu8 b[ 4]; mDNSu32 NotAnInteger; } mDNSOpaque32;
 typedef packedunion { mDNSu8 b[ 6]; mDNSu16 w[3]; mDNSu32 l[1]; } mDNSOpaque48;
 typedef       union { mDNSu8 b[ 8]; mDNSu16 w[4]; mDNSu32 l[2]; } mDNSOpaque64;
 typedef       union { mDNSu8 b[16]; mDNSu16 w[8]; mDNSu32 l[4]; } mDNSOpaque128;
+#if defined(_WIN32)
+ #pragma pack(pop)
+#endif
 
 typedef mDNSOpaque16  mDNSIPPort;		// An IP port is a two-byte opaque identifier (not an integer)
 typedef mDNSOpaque32  mDNSv4Addr;		// An IP address is a four-byte opaque identifier (not an integer)
