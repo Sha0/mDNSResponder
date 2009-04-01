@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.450  2009/04/01 21:11:28  herscher
+<rdar://problem/5925472> Current Bonjour code does not compile on Windows. Workaround use of recvmsg.
+
 Revision 1.449  2009/03/17 19:44:25  cheshire
 <rdar://problem/6688927> Don't let negative unicast answers block Multicast DNS responses
 
@@ -1013,7 +1016,6 @@ struct request_state
 			const ResourceRecord *srv;
 			mDNSs32 ReportTime;
 			} resolve;
-		 ;
 		} u;
 	};
 
@@ -3481,6 +3483,7 @@ mDNSlocal void read_msg(request_state *req)
 		{
 		mDNSu32 nleft = req->hdr.datalen - req->data_bytes;
 		int nread;
+#if !defined(_WIN32)
 		struct iovec vec = { req->msgbuf + req->data_bytes, nleft };	// Tell recvmsg where we want the bytes put
 		struct msghdr msg;
 		struct cmsghdr *cmsg;
@@ -3493,11 +3496,15 @@ mDNSlocal void read_msg(request_state *req)
 		msg.msg_controllen = sizeof(cbuf);
 		msg.msg_flags      = 0;
 		nread = recvmsg(req->sd, &msg, 0);
+#else
+		nread = recv(req->sd, (char *)req->msgbuf + req->data_bytes, nleft, 0);
+#endif
 		if (nread == 0) { req->ts = t_terminated; return; }
 		if (nread < 0) goto rerror;
 		req->data_bytes += nread;
 		if (req->data_bytes > req->hdr.datalen)
 			{ LogMsg("%3d: ERROR: read_msg - read too many data bytes", req->sd); req->ts = t_error; return; }
+#if !defined(_WIN32)
 		cmsg = CMSG_FIRSTHDR(&msg);
 #if DEBUG_64BIT_SCM_RIGHTS
 		LogMsg("%3d: Expecting %d %d %d %d", req->sd, sizeof(cbuf),       sizeof(cbuf),   SOL_SOCKET,       SCM_RIGHTS);
@@ -3532,6 +3539,7 @@ mDNSlocal void read_msg(request_state *req)
 				return;
 				}
 			}
+#endif
 		}
 
 	// If our header and data are both complete, see if we need to make our separate error return socket
@@ -3542,6 +3550,7 @@ mDNSlocal void read_msg(request_state *req)
 			dnssd_sockaddr_t cliaddr;
 #if defined(USE_TCP_LOOPBACK)
 			mDNSOpaque16 port;
+			int opt = 1;
 			port.b[0] = req->msgptr[0];
 			port.b[1] = req->msgptr[1];
 			req->msgptr += 2;
