@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.138  2009/04/01 19:31:54  herscher
+Remove extraneous printf
+
 Revision 1.137  2009/04/01 17:50:15  mcguire
 cleanup mDNSRandom
 
@@ -5349,7 +5352,6 @@ mDNSlocal void SetDomainSecret( mDNS * const m, const domainname * inDomain )
 	require_action( err != mStatus_BadParamErr, exit, if (!foundInList ) mDNSPlatformMemFree( ptr ) );
 
 	debugf("Setting shared secret for zone %s with key %##s", domain.m_utf8, key.m_dname.c);
-	fprintf( stderr, "setting shared secret for domain %s with key %s and secret %s\n", domain.m_utf8, key.m_utf8, secret.m_utf8 );
 
 exit:
 
