@@ -28,6 +28,9 @@
    Change History (most recent first):
 
 $Log: dnssd_clientlib.c,v $
+Revision 1.21  2009/04/01 21:10:11  herscher
+<rdar://problem/5925472> Current Bonjour code does not compile on Windows. Use _stricmp and _strnicmp.
+
 Revision 1.20  2008/11/26 20:57:37  cheshire
 For consistency with other similar macros, renamed mdnsIsDigit/mdnsIsLetter/mdnsValidHostChar
 to mDNSIsDigit/mDNSIsLetter/mDNSValidHostChar
@@ -108,6 +111,8 @@ like Muse Research who want to be able to use mDNS/DNS-SD from GPL-licensed code
 #if defined(_WIN32)
 // disable warning "conversion from <data> to uint16_t"
 #pragma warning(disable:4244)
+#define strncasecmp _strnicmp
+#define strcasecmp _stricmp 
 #endif
 
 /*********************************************************************************************
