@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.139  2009/04/01 20:06:31  herscher
+<rdar://problem/5629676> Corrupt computer name string used
+
 Revision 1.138  2009/04/01 19:31:54  herscher
 Remove extraneous printf
 
@@ -2159,14 +2162,12 @@ mDNSlocal mStatus	TearDownSynchronizationObjects( mDNS * const inMDNS )
 mDNSlocal mStatus	SetupNiceName( mDNS * const inMDNS )
 {
 	mStatus		err = 0;
-	char		tempString[ 256 ];
 	char		utf8[ 256 ];
 	
 	check( inMDNS );
 	
 	// Set up the nice name.
-	tempString[ 0 ] = '\0';
-	utf8[0]			= '\0';
+	utf8[0] = '\0';
 
 	// First try and open the registry key that contains the computer description value
 	if (inMDNS->p->descKey == NULL)
@@ -2204,16 +2205,17 @@ mDNSlocal mStatus	SetupNiceName( mDNS * const inMDNS )
 	// if we can't find it in the registry, then use the hostname of the machine
 	if ( err || ( utf8[ 0 ] == '\0' ) )
 	{
-		DWORD tempStringLen = sizeof( tempString );
+		TCHAR hostname[256];
+		DWORD hostnameLen = sizeof( hostname ) / sizeof( TCHAR );
 		BOOL  ok;
 
-		ok = GetComputerNameExA( ComputerNamePhysicalDnsHostname, tempString, &tempStringLen );
+		ok = GetComputerNameExW( ComputerNamePhysicalDnsHostname, hostname, &hostnameLen );
 		err = translate_errno( ok, (mStatus) GetLastError(), kNameErr );
 		check_noerr( err );
 		
 		if( !err )
 		{
-			err = WindowsLatin1toUTF8( tempString, utf8, sizeof( utf8 ) );
+			err = TCHARtoUTF8( hostname, utf8, sizeof( utf8 ) );
 		}
 
 		if ( err )
@@ -2238,7 +2240,6 @@ mDNSlocal mStatus	SetupNiceName( mDNS * const inMDNS )
 	
 	return( err );
 }
-
 
 //===========================================================================================================================
 //	SetupHostName
