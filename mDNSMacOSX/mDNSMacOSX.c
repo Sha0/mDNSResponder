@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.661  2009/04/01 17:50:14  mcguire
+cleanup mDNSRandom
+
 Revision 1.660  2009/04/01 01:13:10  mcguire
 <rdar://problem/6744276> Sleep Proxy: Detect lid closed
 
@@ -1166,6 +1169,7 @@ Add (commented out) trigger value for testing "mach_absolute_time went backwards
 
 #include <stdio.h>
 #include <stdarg.h>                 // For va_list support
+#include <stdlib.h>                 // For arc4random
 #include <net/if.h>
 #include <net/if_types.h>			// For IFT_ETHER
 #include <net/if_dl.h>
@@ -5938,9 +5942,9 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 #pragma mark - General Platform Support Layer functions
 #endif
 
-mDNSexport mDNSu32 mDNSPlatformRandomSeed(void)
+mDNSexport mDNSu32 mDNSPlatformRandomNumber(void)
 	{
-	return(mach_absolute_time());
+	return(arc4random());
 	}
 
 mDNSexport mDNSs32 mDNSPlatformOneSecond = 1000;

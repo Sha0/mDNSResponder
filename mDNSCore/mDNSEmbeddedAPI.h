@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.554  2009/04/01 17:50:11  mcguire
+cleanup mDNSRandom
+
 Revision 1.553  2009/03/26 03:59:00  jessic2
 Changes for <rdar://problem/6492552&6492593&6492609&6492613&6492628&6492640&6492699>
 
@@ -3123,7 +3126,19 @@ extern void     mDNSPlatformMemZero     (      void *dst,                  mDNSu
 extern void *   mDNSPlatformMemAllocate (mDNSu32 len);
 #endif
 extern void     mDNSPlatformMemFree     (void *mem);
+
+// If the platform doesn't have a strong PRNG, we define a naive multiply-and-add based on a seed
+// from the platform layer.  Long-term, we should embed an arc4 implementation, but the strength
+// will still depend on the randomness of the seed.
+#if !defined(_PLATFORM_HAS_STRONG_PRNG_) && (_BUILDING_XCODE_PROJECT_ || defined(_WIN32))
+#define _PLATFORM_HAS_STRONG_PRNG_ 1
+#endif
+#if _PLATFORM_HAS_STRONG_PRNG_
+extern mDNSu32  mDNSPlatformRandomNumber(void);
+#else
 extern mDNSu32  mDNSPlatformRandomSeed  (void);
+#endif // _PLATFORM_HAS_STRONG_PRNG_
+
 extern mStatus  mDNSPlatformTimeInit    (void);
 extern mDNSs32  mDNSPlatformRawTime     (void);
 extern mDNSs32  mDNSPlatformUTC         (void);

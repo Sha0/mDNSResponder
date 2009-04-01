@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.243  2009/04/01 17:50:10  mcguire
+cleanup mDNSRandom
+
 Revision 1.242  2009/03/26 04:01:55  jessic2
 <rdar://problem/6613786> MessageTracer: Log service types longer than 14 characters and service types with underscores
 
@@ -754,46 +757,44 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *const rr, const RD
 	return(buffer);
 	}
 
-// Long-term we need to make this cross-platform, either by using our own embedded RC4 code
-// to generate the pseudo-random sequence, or by adding another mDNSPlatformXXX() call.
-// The former would be preferable because it makes our code self-contained, so it will run anywhere.
-// The latter is less desirable because it increases the burden on people writing platform support layers
-// to now implement one more function (and an important one at that, that needs to be cryptographically strong).
-// For now, as a temporary fix, if we're building mDNSResponder for OS X we just use arc4random() directly here.
-
-#if _BUILDING_XCODE_PROJECT_
-#include <stdlib.h>
-#endif
-
-mDNSexport mDNSu32 mDNSRandom(mDNSu32 max)		// Returns pseudo-random result from zero to max inclusive
-	{
-	static mDNSu32 seed = 0;
-	mDNSu32 mask = 1;
-
-	if (!seed)
-		{
-		int i;
-		seed = mDNSPlatformRandomSeed();				// Pick an initial seed
-		for (i=0; i<100; i++) seed = seed * 21 + 1;		// And mix it up a bit
-		}
-	while (mask < max) mask = (mask << 1) | 1;
-
-#if _BUILDING_XCODE_PROJECT_
-	do seed = arc4random();
+// See comments in mDNSEmbeddedAPI.h
+#if _PLATFORM_HAS_STRONG_PRNG_
+#define mDNSRandomNumber mDNSPlatformRandomNumber
 #else
-	do seed = seed * 21 + 1;
-#endif
-	while ((seed & mask) > max);
-
-	return (seed & mask);
+mDNSlocal mDNSu32 mDNSRandomFromSeed(mDNSu32 seed)
+	{
+	return seed * 21 + 1;
 	}
 
-mDNSexport mDNSu32 mDNSRandomFromFixedSeed(mDNSu32 seed, mDNSu32 max)
+mDNSlocal mDNSu32 mDNSMixRandomSeed(mDNSu32 seed, mDNSu8 iteration)
 	{
+	return iteration ? mDNSMixRandomSeed(mDNSRandomFromSeed(seed), --iteration) : seed;
+	}
+
+mDNSlocal mDNSu32 mDNSRandomNumber()
+	{
+	static mDNSBool seeded = mDNSfalse;
+	static mDNSu32 seed = 0;
+	if (!seeded)
+		{
+		seed = mDNSMixRandomSeed(mDNSPlatformRandomSeed(), 100);
+		seeded = mDNStrue;
+		}
+	return (seed = mDNSRandomFromSeed(seed));
+	}
+#endif // ! _PLATFORM_HAS_STRONG_PRNG_
+	
+mDNSexport mDNSu32 mDNSRandom(mDNSu32 max)		// Returns pseudo-random result from zero to max inclusive
+	{
+	mDNSu32 ret = 0;
 	mDNSu32 mask = 1;
+
 	while (mask < max) mask = (mask << 1) | 1;
-	do seed = seed * 21 + 1; while ((seed & mask) > max);
-	return (seed & mask);
+
+	do ret = mDNSRandomNumber() & mask;
+	while (ret > max);
+
+	return ret;
 	}
 
 mDNSexport mDNSBool mDNSSameAddress(const mDNSAddr *ip1, const mDNSAddr *ip2)

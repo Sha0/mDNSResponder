@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.137  2009/04/01 17:50:15  mcguire
+cleanup mDNSRandom
+
 Revision 1.136  2009/03/30 20:53:10  herscher
 <rdar://problem/5925472> Current Bonjour code does not compile on Windows
 <rdar://problem/6220642> iTunes 8: Bonjour doesn't work after upgrading iTunes 8.
@@ -771,16 +774,7 @@ mDNSexport void	mDNSPlatformMemFree( void *inMem )
 }
 
 //===========================================================================================================================
-//	mDNSPlatformRandomSeed
-//===========================================================================================================================
-
-mDNSexport mDNSu32 mDNSPlatformRandomSeed(void)
-{
-	return( GetTickCount() );
-}
-
-//===========================================================================================================================
-//	mDNSPlatformRandomSeed
+//	mDNSPlatformRandomNumber
 //===========================================================================================================================
 
 mDNSexport mDNSu32 mDNSPlatformRandomNumber(void)

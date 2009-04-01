@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.935  2009/04/01 17:50:11  mcguire
+cleanup mDNSRandom
+
 Revision 1.934  2009/03/27 17:17:58  cheshire
 Improved "Ignoring suspect uDNS response" debugging message
 
@@ -2933,7 +2936,7 @@ mDNSlocal mStatus mDNS_Reconfirm_internal(mDNS *const m, CacheRecord *const rr, 
 		// For all the reconfirmations in a given batch, we want to use the same random value
 		// so that the reconfirmation questions can be grouped into a single query packet
 		if (!m->RandomReconfirmDelay) m->RandomReconfirmDelay = 1 + mDNSRandom(0x3FFFFFFF);
-		interval += mDNSRandomFromFixedSeed(m->RandomReconfirmDelay, interval/3);
+		interval += m->RandomReconfirmDelay % ((interval/3) + 1);
 		rr->TimeRcvd          = m->timenow - (mDNSs32)interval * 3;
 		rr->resrec.rroriginalttl     = (interval * 4 + mDNSPlatformOneSecond - 1) / mDNSPlatformOneSecond;
 		SetNextCacheCheckTime(m, rr);

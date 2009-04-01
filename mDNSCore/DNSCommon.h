@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.71  2009/04/01 17:50:10  mcguire
+cleanup mDNSRandom
+
 Revision 1.70  2009/03/04 00:40:12  cheshire
 Updated DNS server error codes to be more consistent with definitions at
 <http://www.iana.org/assignments/dns-parameters>
@@ -223,7 +226,6 @@ extern NetworkInterfaceInfo *GetFirstActiveInterface(NetworkInterfaceInfo *intf)
 extern mDNSInterfaceID GetNextActiveInterfaceID(const NetworkInterfaceInfo *intf);
 
 extern mDNSu32 mDNSRandom(mDNSu32 max);		// Returns pseudo-random result from zero to max inclusive
-extern mDNSu32 mDNSRandomFromFixedSeed(mDNSu32 seed, mDNSu32 max);
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
