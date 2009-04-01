@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.660  2009/04/01 01:13:10  mcguire
+<rdar://problem/6744276> Sleep Proxy: Detect lid closed
+
 Revision 1.659  2009/03/30 21:11:07  jessic2
 <rdar://problem/6728725> Need to do some polish work on MessageTracer logging
 
@@ -5127,9 +5130,13 @@ mDNSlocal mStatus WatchForInternetSharingChanges(mDNS *const m)
 
 #endif // APPLE_OSX_mDNSResponder
 
+static io_service_t g_rootdomain = MACH_PORT_NULL;
+
 mDNSlocal mDNSBool SystemWakeForNetworkAccess(void)
 	{
 	mDNSs32 val = 0;
+	CFBooleanRef clamshellStop = NULL;
+	mDNSBool retnow = mDNSfalse;
 	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:SystemWakeForNetworkAccess"), NULL, NULL);
 	if (!store)
 		LogMsg("SystemWakeForNetworkAccess: SCDynamicStoreCreate failed: %s", SCErrorString(SCError()));
@@ -5140,11 +5147,31 @@ mDNSlocal mDNSBool SystemWakeForNetworkAccess(void)
 			{
 			CFNumberRef number = CFDictionaryGetValue(dict, CFSTR("Wake On LAN"));
 			if (number) CFNumberGetValue(number, kCFNumberSInt32Type, &val);
+			else LogSPS("SystemWakeForNetworkAccess: Could not get Wake On LAN value");
 			CFRelease(dict);
 			}
+		else LogSPS("SystemWakeForNetworkAccess: Could not get IOPM CurrentSettings dict");
 		CFRelease(store);
 		}
-	return val ? mDNStrue : mDNSfalse;
+	if (!val) { LogSPS("SystemWakeForNetworkAccess: Wake On LAN disabled"); return mDNSfalse; }
+	
+	if (!g_rootdomain) g_rootdomain = IORegistryEntryFromPath(MACH_PORT_NULL, kIOPowerPlane ":/IOPowerConnection/IOPMrootDomain");
+	if (!g_rootdomain) { LogMsg("SystemWakeForNetworkAccess: IORegistryEntryFromPath failed; assuming no clamshell so can WOMP"); return mDNStrue; }
+	
+	clamshellStop = (CFBooleanRef)IORegistryEntryCreateCFProperty(g_rootdomain, CFSTR(kAppleClamshellStateKey), kCFAllocatorDefault, 0);
+	if (!clamshellStop) { LogSPS("SystemWakeForNetworkAccess: kAppleClamshellStateKey does not exist; assuming no clamshell so can WOMP"); return mDNStrue; }
+	retnow = clamshellStop == kCFBooleanFalse;
+	CFRelease(clamshellStop);
+	if (retnow) { LogSPS("SystemWakeForNetworkAccess: kAppleClamshellStateKey is false; clamshell is open so can WOMP"); return mDNStrue; }
+	
+	clamshellStop = (CFBooleanRef)IORegistryEntryCreateCFProperty(g_rootdomain, CFSTR(kAppleClamshellCausesSleepKey), kCFAllocatorDefault, 0);
+	if (!clamshellStop) { LogSPS("SystemWakeForNetworkAccess: kAppleClamshellCausesSleepKey does not exist; assuming no clamshell so can WOMP"); return mDNStrue; }
+	retnow = clamshellStop == kCFBooleanFalse;
+	CFRelease(clamshellStop);	
+	if (retnow) { LogSPS("SystemWakeForNetworkAccess: kAppleClamshellCausesSleepKey is false; clamshell is closed but can WOMP"); return mDNStrue; }
+	
+	LogSPS("SystemWakeForNetworkAccess: clamshell is closed and can't WOMP");
+	return mDNSfalse;
 	}
 
 mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
