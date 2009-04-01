@@ -94,8 +94,7 @@ SIMPLECHATMAN = SimpleChat.manifest
 $(BUILDDIR)\SimpleChat.jar: $(SIMPLECHATOBJ) $(SIMPLECHATMAN)
 	$(JAR) -cfm $@ $(SIMPLECHATMAN) -C $(SCOBJ) .
 
-BROWSERAPPOBJ =	$(BAOBJ)\SwingResolveListener.class \
-				$(BAOBJ)\BrowserApp.class 
+BROWSERAPPOBJ =	$(BAOBJ)\BrowserApp.class 
 BROWSERAPPMAN = BrowserApp.manifest
 
 $(BUILDDIR)\BrowserApp.jar: $(BROWSERAPPOBJ) $(BROWSERAPPMAN)
