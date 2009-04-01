@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.72  2009/04/01 21:12:56  herscher
+<rdar://problem/5925472> Current Bonjour code does not compile on Windows
+
 Revision 1.71  2009/04/01 17:50:10  mcguire
 cleanup mDNSRandom
 
@@ -378,6 +381,10 @@ extern mStatus mDNSSendDNSMessage(mDNS *const m, DNSMessage *const msg, mDNSu8 *
 extern void ShowTaskSchedulingError(mDNS *const m);
 extern void mDNS_Lock_(mDNS *const m);
 extern void mDNS_Unlock_(mDNS *const m);
+
+#if defined(_WIN32)
+ #define __func__ __FUNCTION__
+#endif
 
 #define mDNS_Lock(X) do { \
 	if ((X)->mDNS_busy != (X)->mDNS_reentrancy) LogMsg("%s: mDNS_Lock locking failure! mDNS_busy (%ld) != mDNS_reentrancy (%ld)", __func__, (X)->mDNS_busy, (X)->mDNS_reentrancy); \

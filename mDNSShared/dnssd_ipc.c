@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_ipc.c,v $
+Revision 1.23  2009/04/01 21:10:34  herscher
+<rdar://problem/5925472> Current Bonjour code does not compile on Windows
+
 Revision 1.22  2009/02/12 20:28:31  cheshire
 Added some missing "const" declarations
 
@@ -83,7 +86,7 @@ Update to APSL 2.0
 
 #if defined(_WIN32)
 
-mDNSlocal char *win32_strerror(int inErrorCode)
+char *win32_strerror(int inErrorCode)
 	{
 	static char buffer[1024];
 	DWORD       n;
