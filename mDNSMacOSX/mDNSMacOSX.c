@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.662  2009/04/02 01:08:15  mcguire
+<rdar://problem/6735635> Don't be a sleep proxy when set to sleep never
+
 Revision 1.661  2009/04/01 17:50:14  mcguire
 cleanup mDNSRandom
 
@@ -5060,32 +5063,12 @@ mDNSlocal void UpdateSPSStatus(mDNS *const m, DNSQuestion *question, const Resou
 	CFRelease(ifname);
 	}
 
-mDNSlocal mDNSs32 GetSystemSleepTimerSetting(void)
-	{
-	mDNSs32 val = -1;
-	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:GetSystemSleepTimerSetting"), NULL, NULL);
-	if (!store)
-		LogMsg("GetSystemSleepTimerSetting: SCDynamicStoreCreate failed: %s", SCErrorString(SCError()));
-	else
-		{
-		CFDictionaryRef dict = SCDynamicStoreCopyValue(store, CFSTR("State:/IOKit/PowerManagement/CurrentSettings"));
-		if (dict)
-			{
-			CFNumberRef number = CFDictionaryGetValue(dict, CFSTR("System Sleep Timer"));
-			if (number) CFNumberGetValue(number, kCFNumberSInt32Type, &val);
-			CFRelease(dict);
-			}
-		CFRelease(store);
-		}
-	return val;
-	}
-
 mDNSlocal void SetSPS(mDNS *const m)
 	{
 	SCPreferencesSynchronize(m->p->SCPrefs);
 	CFDictionaryRef dict = SCPreferencesGetValue(m->p->SCPrefs, CFSTR("NAT"));
 	mDNSBool natenabled = (dict && (CFGetTypeID(dict) == CFDictionaryGetTypeID()) && DictionaryIsEnabled(dict));
-	mDNSu8 sps = natenabled ? 50 : (GetSystemSleepTimerSetting() == 0) ? 70 : 0;
+	mDNSu8 sps = natenabled ? 50 : 0;
 
 	// For devices that are not running NAT, but are set to never sleep, we may choose to act
 	// as a Sleep Proxy, but only for non-portable Macs (Portability > 35 means nominal weight > 3kg)
