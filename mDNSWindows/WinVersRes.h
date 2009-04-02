@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: WinVersRes.h,v $
+Revision 1.56  2009/04/02 22:04:43  herscher
+Bump to version 2.0.0.0
+
 Revision 1.55  2007/04/27 20:34:31  herscher
 <rdar://problem/5159673> mDNS: Company name needs to be changed to Apple Inc.
 
@@ -193,12 +196,12 @@ First checked in.
 #define MASTER_COMPANY_NAME   "Apple Inc."
 
 // Define the product version for mDNSResponder on Windows
-#define MASTER_PROD_VERS		1,0,3,1
-#define MASTER_PROD_VERS_STR	"1,0,3,1"
-#define MASTER_PROD_VERS_STR2	"1.0.3.1"
-#define MASTER_PROD_VERS_STR3 "Explorer Plugin 1.0.3.1"
+#define MASTER_PROD_VERS		2,0,0,0
+#define MASTER_PROD_VERS_STR	"2,0,0,0"
+#define MASTER_PROD_VERS_STR2	"2.0.0.0"
+#define MASTER_PROD_VERS_STR3 "Explorer Plugin 2.0.0.0"
 
 // Define the legal copyright
-#define MASTER_LEGAL_COPYRIGHT "Copyright (C) 2003-2007 Apple Inc."
+#define MASTER_LEGAL_COPYRIGHT "Copyright (C) 2003-2009 Apple Inc."
 
 #endif // WINRESVERS_H
