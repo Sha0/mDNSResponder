@@ -26,6 +26,9 @@
 ; SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ;
 ; $Log: mDNSResponder.sb,v $
+; Revision 1.37  2009/04/02 22:21:17  mcguire
+; <rdar://problem/6577409> Adopt IOPM APIs
+;
 ; Revision 1.36  2009/03/02 01:32:20  mcguire
 ; <rdar://problem/6623264> Seatbelt: Add rule to allow raw sockets
 ;
@@ -218,6 +221,8 @@
 (allow file-read-data                 (regex #"^/System/Library/CoreServices/SystemVersion.*$"))
 (allow file-read-data                 (regex #"^/System/Library/Preferences/com\.apple\.security.*\.plist$"))
 (allow file-read-data                 (regex #"^/System/Library/Preferences/com\.apple\.crypto\.plist$"))
+(allow file-read-data                 (regex #"^/System/Library/SystemConfiguration/PowerManagement\.bundle(/|$)"))
+(allow file-read-data                 (regex #"^/Library/Preferences/SystemConfiguration/com\.apple\.PowerManagement\.plist$"))
 
 ; Allow access to System Keychain
 (allow file-read-data                 (regex #"^/System/Library/Security$"))

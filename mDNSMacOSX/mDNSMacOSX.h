@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.101  2009/04/02 22:21:17  mcguire
+<rdar://problem/6577409> Adopt IOPM APIs
+
 Revision 1.100  2009/02/12 20:57:26  cheshire
 Renamed 'LogAllOperation' switch to 'LogClientOperations'; added new 'LogSleepProxyActions' switch
 
@@ -262,6 +265,7 @@ struct mDNS_PlatformSupport_struct
 	CFRunLoopRef             CFRunLoop;
 	SCDynamicStoreRef        Store;
 	CFRunLoopSourceRef       StoreRLS;
+	CFRunLoopSourceRef       PMRLS;
 	int                      SysEventNotifier;
 	KQueueEntry              SysEventKQueue;
 	IONotificationPortRef    PowerPortRef;

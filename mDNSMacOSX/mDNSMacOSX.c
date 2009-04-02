@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.663  2009/04/02 22:21:16  mcguire
+<rdar://problem/6577409> Adopt IOPM APIs
+
 Revision 1.662  2009/04/02 01:08:15  mcguire
 <rdar://problem/6735635> Don't be a sleep proxy when set to sleep never
 
@@ -1223,6 +1226,8 @@ Add (commented out) trigger value for testing "mach_absolute_time went backwards
 
 #include <IOKit/IOKitLib.h>
 #include <IOKit/IOMessage.h>
+#include <IOKit/ps/IOPowerSources.h>
+#include <IOKit/ps/IOPowerSourcesPrivate.h>
 #include <mach/mach_error.h>
 #include <mach/mach_port.h>
 #include <mach/mach_time.h>
@@ -4931,6 +4936,48 @@ mDNSlocal void SetLocalDomains(void)
 	CFRelease(sa);
 	}
 
+mDNSlocal void GetCurrentPMSetting(const CFStringRef name, mDNSs32 *val)
+	{
+	CFTypeRef blob = NULL;
+	CFStringRef str = NULL;
+	CFDictionaryRef odict = NULL;
+	CFDictionaryRef idict = NULL;
+	CFNumberRef number = NULL;
+
+	blob = IOPSCopyPowerSourcesInfo();
+	if(!blob) { LogMsg("GetCurrentPMSetting: IOPSCopyPowerSourcesInfo failed!"); goto end; }
+
+	odict = IOPMCopyActivePMPreferences();
+	if (!odict) { LogMsg("GetCurrentPMSetting: IOPMCopyActivePMPreferences failed!"); goto end; }
+
+	str = IOPSGetProvidingPowerSourceType(blob);
+	if (!str) { LogMsg("GetCurrentPMSetting: IOPSGetProvidingPowerSourceType failed!"); goto end; }
+
+	idict = CFDictionaryGetValue(odict, str);
+	if (!idict)
+		{
+		char buf[256];
+		if (!CFStringGetCString(str, buf, sizeof(buf), kCFStringEncodingUTF8)) buf[0] = 0;
+		LogMsg("GetCurrentPMSetting: CFDictionaryGetValue (%s) failed!", buf);
+		goto end;
+		}
+	
+	number = CFDictionaryGetValue(idict, name);
+	if (!number || CFGetTypeID(number) != CFNumberGetTypeID() || !CFNumberGetValue(number, kCFNumberSInt32Type, val))
+		{
+		char buf[256];
+		CFStringRef str2 = CFCopyDescription(name);
+		buf[0] = 0;
+		if (str2) { CFStringGetCString(str2, buf, sizeof(buf), kCFStringEncodingUTF8); CFRelease(str2); }
+		// Not a LogMsg, as "Wake on LAN" is not in the Battery dictionary
+		LogSPS("GetCurrentPMSetting: Could not get number value (%s)", buf);
+		}
+
+end:
+	if (blob) CFRelease(blob);
+	if (odict) CFRelease(odict);
+	}
+	
 #if APPLE_OSX_mDNSResponder
 
 static CFMutableDictionaryRef spsStatusDict = NULL;
@@ -5124,23 +5171,10 @@ mDNSlocal mDNSBool SystemWakeForNetworkAccess(void)
 	mDNSs32 val = 0;
 	CFBooleanRef clamshellStop = NULL;
 	mDNSBool retnow = mDNSfalse;
-	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:SystemWakeForNetworkAccess"), NULL, NULL);
-	if (!store)
-		LogMsg("SystemWakeForNetworkAccess: SCDynamicStoreCreate failed: %s", SCErrorString(SCError()));
-	else
-		{
-		CFDictionaryRef dict = SCDynamicStoreCopyValue(store, CFSTR("State:/IOKit/PowerManagement/CurrentSettings"));
-		if (dict)
-			{
-			CFNumberRef number = CFDictionaryGetValue(dict, CFSTR("Wake On LAN"));
-			if (number) CFNumberGetValue(number, kCFNumberSInt32Type, &val);
-			else LogSPS("SystemWakeForNetworkAccess: Could not get Wake On LAN value");
-			CFRelease(dict);
-			}
-		else LogSPS("SystemWakeForNetworkAccess: Could not get IOPM CurrentSettings dict");
-		CFRelease(store);
-		}
-	if (!val) { LogSPS("SystemWakeForNetworkAccess: Wake On LAN disabled"); return mDNSfalse; }
+
+	GetCurrentPMSetting(CFSTR("Wake On LAN"), &val);
+	LogSPS("SystemWakeForNetworkAccess: Wake On LAN: %d", val);
+	if (!val) return mDNSfalse;
 	
 	if (!g_rootdomain) g_rootdomain = IORegistryEntryFromPath(MACH_PORT_NULL, kIOPowerPlane ":/IOPowerConnection/IOPMrootDomain");
 	if (!g_rootdomain) { LogMsg("SystemWakeForNetworkAccess: IORegistryEntryFromPath failed; assuming no clamshell so can WOMP"); return mDNStrue; }
@@ -5226,6 +5260,24 @@ mDNSexport void mDNSMacOSXNetworkChanged(mDNS *const m)
 	mDNS_ConfigChanged(m);
 	}
 
+// Called with KQueueLock & mDNS lock
+mDNSlocal void SetNetworkChanged(mDNS *const m, mDNSs32 delay)
+	{
+	if (!m->p->NetworkChanged || m->p->NetworkChanged - NonZeroTime(m->timenow + delay) < 0)
+		{
+		m->p->NetworkChanged = NonZeroTime(m->timenow + delay);
+		LogInfo("SetNetworkChanged: setting network changed to %d (%d)", delay, m->p->NetworkChanged);
+		}
+
+	if (!m->SuppressSending ||
+		m->SuppressSending - m->p->NetworkChanged < 0)
+		{
+		m->SuppressSending = m->p->NetworkChanged;
+		LogInfo("SetNetworkChanged: setting SuppressSending to %d (%d)", m->SuppressSending - m->timenow, m->SuppressSending);
+		}
+	}
+
+
 mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, void *context)
 	{
 	(void)store;        // Parameter not used
@@ -5260,13 +5312,8 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 		delay);
 #endif
 
-	if (!m->p->NetworkChanged ||
-		m->p->NetworkChanged - NonZeroTime(m->timenow + delay) < 0)
-		{
-		m->p->NetworkChanged = NonZeroTime(m->timenow + delay);
-		LogInfo("NetworkChanged: setting network changed to %d (%d)", delay, m->p->NetworkChanged);
-		}
-
+	SetNetworkChanged(m, delay);
+	
 	// KeyChain frequently fails to notify clients of change events. To work around this
 	// we set a timer and periodically poll to detect if any changes have occurred.
 	// Without this Back To My Mac just does't work for a large number of users.
@@ -5276,13 +5323,6 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 		LogInfo("***   NetworkChanged   *** starting KeyChainBugTimer");
 		m->p->KeyChainBugTimer    = NonZeroTime(m->timenow + delay);
 		m->p->KeyChainBugInterval = mDNSPlatformOneSecond;
-		}
-
-	if (!m->SuppressSending ||
-		m->SuppressSending - m->p->NetworkChanged < 0)
-		{
-		m->SuppressSending = m->p->NetworkChanged;
-		LogInfo("NetworkChanged: setting SuppressSending to %d (%d)", m->SuppressSending - m->timenow, m->SuppressSending);
 		}
 
 	mDNS_Unlock(m);
@@ -5313,7 +5353,7 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 	CFArrayAppendValue(keys, NetworkChangedKey_DNS);
 	CFArrayAppendValue(keys, NetworkChangedKey_DynamicDNS);
 	CFArrayAppendValue(keys, NetworkChangedKey_BackToMyMac);
-	CFArrayAppendValue(keys, CFSTR("State:/IOKit/PowerManagement/CurrentSettings"));
+	CFArrayAppendValue(keys, CFSTR("State:/IOKit/PowerManagement/CurrentSettings")); // should remove as part of <rdar://problem/6751656>
 	CFArrayAppendValue(patterns, pattern1);
 	CFArrayAppendValue(patterns, pattern2);
 	CFArrayAppendValue(patterns, CFSTR("State:/Network/Interface/[^/]+/AirPort"));
@@ -5339,6 +5379,33 @@ mDNSlocal mStatus WatchForNetworkChanges(mDNS *const m)
 
 	return(err);
 	}
+
+#if 0 // <rdar://problem/6751656>
+mDNSlocal void PMChanged(void *context)
+	{
+	mDNS *const m = (mDNS *const)context;
+
+	KQueueLock(m);
+	mDNS_Lock(m);
+	
+	LogSPS("PMChanged");
+	
+	SetNetworkChanged(m, mDNSPlatformOneSecond * 2);
+	
+	mDNS_Unlock(m);
+	KQueueUnlock(m, "PMChanged");
+	}
+
+mDNSlocal mStatus WatchForPMChanges(mDNS *const m)
+	{
+	m->p->PMRLS = IOPMPrefsNotificationCreateRunLoopSource(PMChanged, m);
+	if (!m->p->PMRLS) { LogMsg("IOPMPrefsNotificationCreateRunLoopSource failed!"); return mStatus_UnknownErr; }
+
+	CFRunLoopAddSource(CFRunLoopGetCurrent(), m->p->PMRLS, kCFRunLoopDefaultMode);
+
+	return mStatus_NoError;
+	}
+#endif
 
 #ifndef KEV_DL_WAKEFLAGS_CHANGED
 #define KEV_DL_WAKEFLAGS_CHANGED 17
@@ -5767,6 +5834,11 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 	err = WatchForNetworkChanges(m);
 	if (err) { LogMsg("mDNSPlatformInit_setup: WatchForNetworkChanges failed %d", err); return(err); }
 
+#if 0 // <rdar://problem/6751656>
+	err = WatchForPMChanges(m);
+	if (err) { LogMsg("mDNSPlatformInit_setup: WatchForPMChanges failed %d", err); return(err); }
+#endif
+
 	err = WatchForSysEvents(m);
 	if (err) { LogMsg("mDNSPlatformInit_setup: WatchForSysEvents failed %d", err); return(err); }
 
@@ -5883,6 +5955,14 @@ mDNSexport void mDNSPlatformClose(mDNS *const m)
 		CFRelease(m->p->Store);
 		m->p->Store    = NULL;
 		m->p->StoreRLS = NULL;
+		}
+	
+	if (m->p->PMRLS)
+		{
+		CFRunLoopRemoveSource(CFRunLoopGetCurrent(), m->p->PMRLS, kCFRunLoopDefaultMode);
+		CFRunLoopSourceInvalidate(m->p->PMRLS);
+		CFRelease(m->p->PMRLS);
+		m->p->PMRLS = NULL;
 		}
 
 	if (m->p->SysEventNotifier >= 0) { close(m->p->SysEventNotifier); m->p->SysEventNotifier = -1; }
