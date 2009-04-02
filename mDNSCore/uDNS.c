@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.607  2009/04/02 22:36:34  jessic2
+Fix crash when calling debugf with null opt
+
 Revision 1.606  2009/03/26 03:59:00  jessic2
 Changes for <rdar://problem/6492552&6492593&6492609&6492613&6492628&6492640&6492699>
 
@@ -2052,7 +2055,7 @@ mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *co
 				{
 				debugf("uDNS_recvLLQResponse found %##s (%s) %d %#a %#a %X %X %X %X %d",
 					q->qname.c, DNSTypeName(q->qtype), q->state, srcaddr, &q->servAddr,
-					opt->u.llq.id.l[0], opt->u.llq.id.l[1], q->id.l[0], q->id.l[1], opt->u.llq.llqOp);
+					opt ? opt->u.llq.id.l[0] : 0, opt ? opt->u.llq.id.l[1] : 0, q->id.l[0], q->id.l[1], opt ? opt->u.llq.llqOp : 0);
 				if (q->state == LLQ_Poll) debugf("uDNS_LLQ_Events: q->state == LLQ_Poll msg->h.id %d q->TargetQID %d", mDNSVal16(msg->h.id), mDNSVal16(q->TargetQID));
 				if (q->state == LLQ_Poll && mDNSSameOpaque16(msg->h.id, q->TargetQID))
 					{
