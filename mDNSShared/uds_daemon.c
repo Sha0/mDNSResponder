@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.451  2009/04/02 22:34:26  jessic2
+<rdar://problem/6305347> Race condition: If fd has already been closed, SO_NOSIGPIPE returns errno 22 (Invalid argument)
+
 Revision 1.450  2009/04/01 21:11:28  herscher
 <rdar://problem/5925472> Current Bonjour code does not compile on Windows. Workaround use of recvmsg.
 
@@ -3875,7 +3878,14 @@ mDNSexport int udsserver_init(dnssd_sock_t skt)
 			}
 		#endif
 		}
-
+#if defined(SO_NP_EXTENSIONS)
+	struct		so_np_extensions sonpx;
+	socklen_t 	optlen = sizeof(struct so_np_extensions);
+	sonpx.npx_flags = SONPX_SETOPTSHUT;
+	sonpx.npx_mask  = SONPX_SETOPTSHUT;
+	if (setsockopt(listenfd, SOL_SOCKET, SO_NP_EXTENSIONS, &sonpx, optlen) < 0)
+		my_perror("WARNING: could not set sockopt - SO_NP_EXTENSIONS");
+#endif
 #if defined(_WIN32)
 	// SEH: do we even need to do this on windows?
 	// This socket will be given to WSAEventSelect which will automatically set it to non-blocking
