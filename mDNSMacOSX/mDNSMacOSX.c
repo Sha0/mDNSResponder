@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.664  2009/04/03 19:56:26  jessic2
+<rdar://problem/6755199> MessageTracer: prepend domain to make signature field unique
+
 Revision 1.663  2009/04/02 22:21:16  mcguire
 <rdar://problem/6577409> Adopt IOPM APIs
 
@@ -1416,7 +1419,13 @@ mDNSexport void mDNSASLLog(uuid_t *uuid, const char *subdomain, const char *resu
 	asl_set			(asl_msg, "com.apple.message.domain", buffer);
 
 	if (result)		asl_set(asl_msg, "com.apple.message.result", result);
-	if (signature)	asl_set(asl_msg, "com.apple.message.signature", signature);
+	if (signature)	
+		{
+		static char sigBuf[128];
+		// here we prepend our domain to fix a problem with MT where signatures must be unique across all domains
+		mDNS_snprintf(sigBuf, sizeof(sigBuf), "%s - %s", buffer, signature);
+		asl_set(asl_msg, "com.apple.message.signature", sigBuf);
+		}
 
 	va_list ptr;
 	va_start(ptr,fmt);
