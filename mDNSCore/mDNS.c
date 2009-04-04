@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.937  2009/04/04 00:14:49  mcguire
+fix logging in BeginSleepProcessing
+
 Revision 1.936  2009/04/04 00:10:59  mcguire
 don't ignore m->SystemWakeOnLANEnabled when going to sleep
 
@@ -4432,19 +4435,21 @@ mDNSlocal void BeginSleepProcessing(mDNS *const m)
 				break;
 
 		if (!rr)		// If we have at least one advertised service
-			LogSPS("mDNSCoreMachineSleep: No advertised services");
+			LogSPS("BeginSleepProcessing: No advertised services");
 		}
-	
+	else
+		LogSPS("BeginSleepProcessing: m->SystemWakeOnLANEnabled is false");
+
 	if (rr)
 		{
 		NetworkInterfaceInfo *intf = GetFirstActiveInterface(m->HostInterfaces);
 		while (intf)
 			{
-			if (!intf->NetWake) LogSPS("mDNSCoreMachineSleep: %-6s not capable of magic packet wakeup", intf->ifname);
+			if (!intf->NetWake) LogSPS("BeginSleepProcessing: %-6s not capable of magic packet wakeup", intf->ifname);
 			else
 				{
 				FindSPSInCache(m, &intf->NetWakeBrowse, sps);
-				if (!sps[0]) LogSPS("mDNSCoreMachineSleep: %-6s %#a No Sleep Proxy Server found %d", intf->ifname, &intf->ip, intf->NetWakeBrowse.ThisQInterval);
+				if (!sps[0]) LogSPS("BeginSleepProcessing: %-6s %#a No Sleep Proxy Server found %d", intf->ifname, &intf->ip, intf->NetWakeBrowse.ThisQInterval);
 				else
 					{
 					int i;
@@ -4452,16 +4457,16 @@ mDNSlocal void BeginSleepProcessing(mDNS *const m)
 						{
 #if ForceAlerts
 						if (intf->SPSAddr[i].type)
-							{ LogMsg("%s %d intf->SPSAddr[i].type %d", intf->ifname, i, intf->SPSAddr[i].type); *(long*)0 = 0; }
+							{ LogMsg("BeginSleepProcessing: %s %d intf->SPSAddr[i].type %d", intf->ifname, i, intf->SPSAddr[i].type); *(long*)0 = 0; }
 						if (intf->NetWakeResolve[i].ThisQInterval >= 0)
-							{ LogMsg("%s %d intf->NetWakeResolve[i].ThisQInterval %d", intf->ifname, i, intf->NetWakeResolve[i].ThisQInterval); *(long*)0 = 0; }
+							{ LogMsg("BeginSleepProcessing: %s %d intf->NetWakeResolve[i].ThisQInterval %d", intf->ifname, i, intf->NetWakeResolve[i].ThisQInterval); *(long*)0 = 0; }
 #endif
 						intf->SPSAddr[i].type = mDNSAddrType_None;
 						if (intf->NetWakeResolve[i].ThisQInterval >= 0) mDNS_StopQuery(m, &intf->NetWakeResolve[i]);
 						intf->NetWakeResolve[i].ThisQInterval = -1;
 						if (sps[i])
 							{
-							LogSPS("mDNSCoreMachineSleep: %-6s Found Sleep Proxy Server %d TTL %d %s", intf->ifname, i, sps[i]->resrec.rroriginalttl, CRDisplayString(m, sps[i]));
+							LogSPS("BeginSleepProcessing: %-6s Found Sleep Proxy Server %d TTL %d %s", intf->ifname, i, sps[i]->resrec.rroriginalttl, CRDisplayString(m, sps[i]));
 							mDNS_SetupQuestion(&intf->NetWakeResolve[i], intf->InterfaceID, &sps[i]->resrec.rdata->u.name, kDNSType_SRV, NetWakeResolve, intf);
 							mDNS_StartQuery_internal(m, &intf->NetWakeResolve[i]);
 							}
@@ -4474,6 +4479,7 @@ mDNSlocal void BeginSleepProcessing(mDNS *const m)
 
 	if (!sps[0])	// If we didn't find even one Sleep Proxy
 		{
+		LogSPS("BeginSleepProcessing: Not registering with Sleep Proxy Server");
 		m->SleepState = SleepState_Sleeping;
 
 #ifndef UNICAST_DISABLED
