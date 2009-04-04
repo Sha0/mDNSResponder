@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.936  2009/04/04 00:10:59  mcguire
+don't ignore m->SystemWakeOnLANEnabled when going to sleep
+
 Revision 1.935  2009/04/01 17:50:11  mcguire
 cleanup mDNSRandom
 
@@ -4421,14 +4424,18 @@ mDNSlocal void BeginSleepProcessing(mDNS *const m)
 	{
 	const CacheRecord *sps[3] = { mDNSNULL };
 
-	AuthRecord *rr;
-	for (rr = m->ResourceRecords; rr; rr=rr->next)
-		if (rr->resrec.rrtype == kDNSType_SRV && !mDNSSameIPPort(rr->resrec.rdata->u.srv.port, DiscardPort))
-			break;
+	AuthRecord *rr = mDNSNULL;
+	if (m->SystemWakeOnLANEnabled)
+		{
+		for (rr = m->ResourceRecords; rr; rr=rr->next)
+			if (rr->resrec.rrtype == kDNSType_SRV && !mDNSSameIPPort(rr->resrec.rdata->u.srv.port, DiscardPort))
+				break;
 
-	if (!rr)		// If we have at least one advertised service
-		LogSPS("mDNSCoreMachineSleep: No advertised services");
-	else
+		if (!rr)		// If we have at least one advertised service
+			LogSPS("mDNSCoreMachineSleep: No advertised services");
+		}
+	
+	if (rr)
 		{
 		NetworkInterfaceInfo *intf = GetFirstActiveInterface(m->HostInterfaces);
 		while (intf)
