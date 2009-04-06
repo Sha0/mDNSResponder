@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.608  2009/04/06 23:44:59  cheshire
+<rdar://problem/6757838> mDNSResponder thrashing kernel lock in the UDP close path, hurting SPECweb performance
+
 Revision 1.607  2009/04/02 22:36:34  jessic2
 Fix crash when calling debugf with null opt
 
@@ -4699,7 +4702,9 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 					}
 				else
 					{
-					err = mDNSSendDNSMessage(m, &m->omsg, end, q->qDNSServer->interface, q->LocalSocket, &q->qDNSServer->addr, q->qDNSServer->port, mDNSNULL, mDNSNULL);
+					if (!q->LocalSocket) q->LocalSocket = mDNSPlatformUDPSocket(m, zeroIPPort);
+					if (!q->LocalSocket) err = mStatus_NoMemoryErr;	// If failed to make socket (should be very rare), we'll try again next time
+					else err = mDNSSendDNSMessage(m, &m->omsg, end, q->qDNSServer->interface, q->LocalSocket, &q->qDNSServer->addr, q->qDNSServer->port, mDNSNULL, mDNSNULL);
 					m->SuppressStdPort53Queries = NonZeroTime(m->timenow + (mDNSPlatformOneSecond+99)/100);
 					}
 				}

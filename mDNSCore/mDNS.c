@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.938  2009/04/06 23:44:57  cheshire
+<rdar://problem/6757838> mDNSResponder thrashing kernel lock in the UDP close path, hurting SPECweb performance
+
 Revision 1.937  2009/04/04 00:14:49  mcguire
 fix logging in BeginSleepProcessing
 
@@ -3243,10 +3246,16 @@ mDNSlocal void SendQueries(mDNS *const m)
 				{
 				mDNSu8       *qptr        = m->omsg.data;
 				const mDNSu8 *const limit = m->omsg.data + sizeof(m->omsg.data);
-				InitializeDNSMessage(&m->omsg.h, q->TargetQID, QueryFlags);
-				qptr = putQuestion(&m->omsg, qptr, limit, &q->qname, q->qtype, q->qclass);
-				mDNSSendDNSMessage(m, &m->omsg, qptr, mDNSInterface_Any, q->LocalSocket, &q->Target, q->TargetPort, mDNSNULL, mDNSNULL);
-				q->ThisQInterval    *= QuestionIntervalStep;
+
+				// If we fail to get a new on-demand socket (should only happen cases of the most extreme resource exhaustion), we'll try again next time
+				if (!q->LocalSocket) q->LocalSocket = mDNSPlatformUDPSocket(m, zeroIPPort);
+				if (q->LocalSocket)
+					{
+					InitializeDNSMessage(&m->omsg.h, q->TargetQID, QueryFlags);
+					qptr = putQuestion(&m->omsg, qptr, limit, &q->qname, q->qtype, q->qclass);
+					mDNSSendDNSMessage(m, &m->omsg, qptr, mDNSInterface_Any, q->LocalSocket, &q->Target, q->TargetPort, mDNSNULL, mDNSNULL);
+					q->ThisQInterval    *= QuestionIntervalStep;
+					}
 				if (q->ThisQInterval > MaxQuestionInterval)
 					q->ThisQInterval = MaxQuestionInterval;
 				q->LastQTime         = m->timenow;
@@ -5694,11 +5703,12 @@ mDNSlocal const DNSQuestion *ExpectingUnicastResponseForQuestion(const mDNS *con
 	{
 	DNSQuestion *q;
 	for (q = m->Questions; q; q=q->next)
-		if (mDNSSameIPPort(q->LocalSocket ? q->LocalSocket->port : MulticastDNSPort, port) &&
-			mDNSSameOpaque16(q->TargetQID,         id)         &&
-			q->qtype                  == question->qtype       &&
-			q->qclass                 == question->qclass      &&
-			q->qnamehash              == question->qnamehash   &&
+		if (q->LocalSocket &&
+			mDNSSameIPPort  (q->LocalSocket->port, port)     &&
+			mDNSSameOpaque16(q->TargetQID,         id)       &&
+			q->qtype                  == question->qtype     &&
+			q->qclass                 == question->qclass    &&
+			q->qnamehash              == question->qnamehash &&
 			SameDomainName(&q->qname, &question->qname))
 			return(q);
 	return(mDNSNULL);
@@ -5710,19 +5720,19 @@ mDNSlocal mDNSBool ExpectingUnicastResponseForRecord(mDNS *const m, const mDNSAd
 	(void)id;
 	(void)srcaddr;
 	for (q = m->Questions; q; q=q->next)
-		if (ResourceRecordAnswersQuestion(&rr->resrec, q))
+		if (!q->DuplicateOf && ResourceRecordAnswersQuestion(&rr->resrec, q))
 			{
 			if (!mDNSOpaque16IsZero(q->TargetQID))
 				{
 				debugf("ExpectingUnicastResponseForRecord msg->h.id %d q->TargetQID %d for %s", mDNSVal16(id), mDNSVal16(q->TargetQID), CRDisplayString(m, rr));
 				if (mDNSSameOpaque16(q->TargetQID, id))
 					{
-					if (mDNSSameIPPort(q->LocalSocket ? q->LocalSocket->port : MulticastDNSPort, port)) return(mDNStrue);
+					if (q->LocalSocket && mDNSSameIPPort(q->LocalSocket->port, port)) return(mDNStrue);
 				//	if (mDNSSameAddress(srcaddr, &q->Target))                   return(mDNStrue);
 				//	if (q->LongLived && mDNSSameAddress(srcaddr, &q->servAddr)) return(mDNStrue); Shouldn't need this now that we have LLQType checking
 				//	if (TrustedSource(m, srcaddr))                              return(mDNStrue);
 					LogInfo("WARNING: Ignoring suspect uDNS response for %##s (%s) [q->Target %#a:%d] from %#a:%d %s",
-						q->qname.c, DNSTypeName(q->qtype), &q->Target, mDNSVal16(q->LocalSocket->port), srcaddr, mDNSVal16(port), CRDisplayString(m, rr));
+						q->qname.c, DNSTypeName(q->qtype), &q->Target, mDNSVal16(q->LocalSocket ? q->LocalSocket->port : zeroIPPort), srcaddr, mDNSVal16(port), CRDisplayString(m, rr));
 					return(mDNSfalse);
 					}
 				}
@@ -6912,6 +6922,10 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 		question->LastQTxTime       = m->timenow;
 		question->CNAMEReferrals    = 0;
 
+		// We'll create our question->LocalSocket on demand, if needed.
+		// We won't need one for duplicate questions, or from questions answered immediately out of the cache.
+		// We also don't need one for LLQs because (when we're using NAT) we want them all to share a single
+		// NAT mapping for receiving inbound add/remove events.
 		question->LocalSocket       = mDNSNULL;
 		question->qDNSServer        = mDNSNULL;
 		question->unansweredQueries = 0;
@@ -6954,18 +6968,6 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 			// this routine with the question list data structures in an inconsistent state.
 			if (!mDNSOpaque16IsZero(question->TargetQID))
 				{
-				// We don't want to make a separate UDP socket for LLQs because (when we're using NAT)
-				// they all share a single NAT mapping for receiving inbound add/remove events.
-				if (!question->DuplicateOf && !question->LongLived)
-					{
-					question->LocalSocket = mDNSPlatformUDPSocket(m, zeroIPPort);
-					debugf("mDNS_StartQuery_internal: dup %p %##s (%s) port %d",
-						question->DuplicateOf, question->qname.c, DNSTypeName(question->qtype), question->LocalSocket ? mDNSVal16(question->LocalSocket->port) : -1);
-					// If we fail to get a new on-demand socket (should only happen cases of the most extreme resource exhaustion)
-					// then we don't fail the query; we just let it use our pre-canned permanent socket, which is okay (it should
-					// never happen in normal operation, and even if it does we still have our cryptographically strong transaction ID).
-					}
-
 				question->qDNSServer = GetServerForName(m, &question->qname);
 				ActivateUnicastQuery(m, question, mDNSfalse);
 
