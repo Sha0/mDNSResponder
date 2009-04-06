@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.102  2009/04/06 22:14:02  cheshire
+Need to include IOKit/pwr_mgt/IOPM.h to build for AppleTV
+
 Revision 1.101  2009/04/02 22:21:17  mcguire
 <rdar://problem/6577409> Adopt IOPM APIs
 
@@ -187,6 +190,7 @@ Revision 1.52  2006/01/05 21:41:49  cheshire
 #endif
 
 #include <SystemConfiguration/SystemConfiguration.h>
+#include <IOKit/pwr_mgt/IOPM.h>
 #include <IOKit/pwr_mgt/IOPMLib.h>
 #include <IOKit/pwr_mgt/IOPMLibPrivate.h>
 #include <sys/socket.h>
