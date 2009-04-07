@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.666  2009/04/07 21:57:53  cheshire
+<rdar://problem/6767122> IOPMCopyActivePMPreferences not available on Apple TV
+Put previous code back
+
 Revision 1.665  2009/04/03 21:48:44  mcguire
 Back out checkin 1.664 (<rdar://problem/6755199> MessageTracer: prepend domain to make signature field unique)
 
@@ -4941,6 +4945,7 @@ mDNSlocal void SetLocalDomains(void)
 
 mDNSlocal void GetCurrentPMSetting(const CFStringRef name, mDNSs32 *val)
 	{
+#if USE_IOPMCOPYACTIVEPMPREFERENCES
 	CFTypeRef blob = NULL;
 	CFStringRef str = NULL;
 	CFDictionaryRef odict = NULL;
@@ -4979,8 +4984,28 @@ mDNSlocal void GetCurrentPMSetting(const CFStringRef name, mDNSs32 *val)
 end:
 	if (blob) CFRelease(blob);
 	if (odict) CFRelease(odict);
-	}
+
+#else
+
+	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:GetCurrentPMSetting"), NULL, NULL);
+	if (!store) LogMsg("GetCurrentPMSetting: SCDynamicStoreCreate failed: %s", SCErrorString(SCError()));
+	else
+		{
+		CFDictionaryRef dict = SCDynamicStoreCopyValue(store, CFSTR("State:/IOKit/PowerManagement/CurrentSettings"));
+		if (!dict) LogSPS("GetCurrentPMSetting: Could not get IOPM CurrentSettings dict");
+		else
+			{
+			CFNumberRef number = CFDictionaryGetValue(dict, name);
+			if (!number || CFGetTypeID(number) != CFNumberGetTypeID() || !CFNumberGetValue(number, kCFNumberSInt32Type, val))
+				LogSPS("GetCurrentPMSetting: Could not get Wake On LAN value");
+			CFRelease(dict);
+			}
+		CFRelease(store);
+		}
 	
+#endif
+	}
+
 #if APPLE_OSX_mDNSResponder
 
 static CFMutableDictionaryRef spsStatusDict = NULL;
