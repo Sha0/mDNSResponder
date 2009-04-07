@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.452  2009/04/07 01:17:42  jessic2
+<rdar://problem/6747917> BTMM: Multiple accounts lets me see others' remote services & send packets to others' remote hosts
+
 Revision 1.451  2009/04/02 22:34:26  jessic2
 <rdar://problem/6305347> Race condition: If fd has already been closed, SO_NOSIGPIPE returns errno 22 (Invalid argument)
 
@@ -1003,6 +1006,7 @@ struct request_state
 			} pm;
 		struct
 			{
+			DNSServiceFlags flags;
 			DNSQuestion q_all;
 			DNSQuestion q_default;
 			} enumeration;
@@ -1344,6 +1348,38 @@ mDNSlocal void send_all(dnssd_sock_t s, const char *ptr, int len)
 			s, n, len, dnssd_errno, dnssd_strerror(dnssd_errno));
 	}
 
+mDNSlocal mDNSBool AuthorizedDomain(const request_state * const request, const domainname * const d, const DNameListElem * const doms)
+{
+	const 	DNameListElem 	*delem 		= mDNSNULL;
+	const 	DNameListElem 	*bestDelem 	= mDNSNULL;	// the element with the longest match
+	int 	bestDelta = -1; 						// the delta of the best match, lower is better
+	int 	dLabels = 0;
+	
+	if (SystemUID(request->uid)) return mDNStrue;
+	
+	dLabels = CountLabels(d);
+	for (delem = doms; delem; delem = delem->next)
+		{
+		if (delem->uid)
+			{
+			int	delemLabels = CountLabels(&delem->name);
+			int delta 		= dLabels - delemLabels;
+			if ((bestDelta == -1 || delta < bestDelta) && SameDomainName(&delem->name, SkipLeadingLabels(d, delta)))
+				{
+				bestDelta = delta;
+				bestDelem = delem;
+				}
+			}
+		}
+	
+	if (bestDelem && request->uid != bestDelem->uid)
+		{
+		LogOperation("Denying uid %d access to %##s", request->uid, d->c);
+		return mDNSfalse;
+		}
+	else return mDNStrue;
+}
+
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
@@ -1642,6 +1678,7 @@ mDNSlocal mStatus handle_regrecord_request(request_state *request)
 		re->next = request->u.reg_recs;
 		request->u.reg_recs = re;
 	
+		if (!AuthorizedDomain(request, rr->resrec.name, AutoRegistrationDomains))	return (mStatus_NoError);
 		if (rr->resrec.rroriginalttl == 0)
 			rr->resrec.rroriginalttl = DefaultTTLforRRType(rr->resrec.rrtype);
 	
@@ -2241,8 +2278,7 @@ mDNSlocal mStatus handle_regservice_request(request_state *request)
 	// what kind of request this is, and therefore what kind of list validation is required.
 	request->terminate = regservice_termination_callback;
 
-	err = register_service_instance(request, &d);
-
+	err = AuthorizedDomain(request, &d, AutoRegistrationDomains) ? register_service_instance(request, &d) : mStatus_NoError;
 	if (!err)
 		{
 		if (request->u.servicereg.autoname) UpdateDeviceInfoRecord(&mDNSStorage);
@@ -2681,7 +2717,7 @@ mDNSlocal mStatus handle_browse_request(request_state *request)
 	if (domain[0])
 		{
 		if (!MakeDomainNameFromDNSNameString(&d, domain)) return(mStatus_BadParamErr);
-		err = add_domain_to_browser(request, &d);
+		err = AuthorizedDomain(request, &d, AutoBrowseDomains) ? add_domain_to_browser(request, &d) : mStatus_NoError;
 		}
 	else
 		{
@@ -2824,6 +2860,8 @@ mDNSlocal mStatus handle_resolve_request(request_state *request)
 	request->u.resolve.qtxt.QuestionContext  = request;
 	request->u.resolve.ReportTime            = NonZeroTime(mDNS_TimeNow(&mDNSStorage) + 130 * mDNSPlatformOneSecond);
 
+	if (!AuthorizedDomain(request, &fqdn, AutoBrowseDomains))	return(mStatus_NoError);
+
 	// ask the questions
 	LogOperation("%3d: DNSServiceResolve(%##s) START", request->sd, request->u.resolve.qsrv.qname.c);
 	err = mDNS_StartQuery(&mDNSStorage, &request->u.resolve.qsrv);
@@ -2958,7 +2996,8 @@ mDNSlocal mStatus handle_queryrecord_request(request_state *request)
 
 	q->InterfaceID      = InterfaceID;
 	q->Target           = zeroAddr;
-	if (!MakeDomainNameFromDNSNameString(&q->qname, name)) return(mStatus_BadParamErr);
+	if (!MakeDomainNameFromDNSNameString(&q->qname, name)) 			return(mStatus_BadParamErr);
+	if (!AuthorizedDomain(request, &q->qname, AutoBrowseDomains))	return (mStatus_NoError);
 	q->qtype            = rrtype;
 	q->qclass           = rrclass;
 	q->LongLived        = (flags & kDNSServiceFlagsLongLivedQuery     ) != 0;
@@ -3055,7 +3094,9 @@ mDNSlocal void enum_result_callback(mDNS *const m,
 	(void)m; // Unused
 
 	if (answer->rrtype != kDNSType_PTR) return;
-	
+
+	if (!AuthorizedDomain(request, &answer->rdata->u.name, request->u.enumeration.flags ? AutoRegistrationDomains : AutoBrowseDomains)) return;
+
 	// We only return add/remove events for the browse and registration lists
 	// For the default browse and registration answers, we only give an "ADD" event
 	if (question == &request->u.enumeration.q_default && !AddRecord) return;
@@ -3094,6 +3135,9 @@ mDNSlocal mStatus handle_enum_request(request_state *request)
 
 	// allocate context structures
 	uDNS_RegisterSearchDomains(&mDNSStorage);
+
+	// mark which kind of enumeration we're doing so we can (de)authorize certain domains
+	request->u.enumeration.flags = reg;
 
 	// enumeration requires multiple questions, so we must link all the context pointers so that
 	// necessary context can be reached from the callbacks
@@ -3336,6 +3380,8 @@ mDNSlocal mStatus handle_addrinfo_request(request_state *request)
 
 	if (!MakeDomainNameFromDNSNameString(&d, hostname))
 		{ LogMsg("ERROR: handle_addrinfo_request: bad hostname: %s", hostname); return(mStatus_BadParamErr); }
+
+	if (!AuthorizedDomain(request, &d, AutoBrowseDomains))	return (mStatus_NoError);
 
 	if (!request->u.addrinfo.protocol)
 		{
