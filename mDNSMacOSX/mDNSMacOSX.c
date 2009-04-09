@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.667  2009/04/09 20:01:00  cheshire
+<rdar://problem/6767122> IOPMCopyActivePMPreferences not available on Apple TV
+At Rory's suggestion, removed unnecessary "Could not get Wake On LAN value" log message
+
 Revision 1.666  2009/04/07 21:57:53  cheshire
 <rdar://problem/6767122> IOPMCopyActivePMPreferences not available on Apple TV
 Put previous code back
@@ -4953,7 +4957,7 @@ mDNSlocal void GetCurrentPMSetting(const CFStringRef name, mDNSs32 *val)
 	CFNumberRef number = NULL;
 
 	blob = IOPSCopyPowerSourcesInfo();
-	if(!blob) { LogMsg("GetCurrentPMSetting: IOPSCopyPowerSourcesInfo failed!"); goto end; }
+	if (!blob) { LogMsg("GetCurrentPMSetting: IOPSCopyPowerSourcesInfo failed!"); goto end; }
 
 	odict = IOPMCopyActivePMPreferences();
 	if (!odict) { LogMsg("GetCurrentPMSetting: IOPMCopyActivePMPreferences failed!"); goto end; }
@@ -4972,15 +4976,7 @@ mDNSlocal void GetCurrentPMSetting(const CFStringRef name, mDNSs32 *val)
 	
 	number = CFDictionaryGetValue(idict, name);
 	if (!number || CFGetTypeID(number) != CFNumberGetTypeID() || !CFNumberGetValue(number, kCFNumberSInt32Type, val))
-		{
-		char buf[256];
-		CFStringRef str2 = CFCopyDescription(name);
-		buf[0] = 0;
-		if (str2) { CFStringGetCString(str2, buf, sizeof(buf), kCFStringEncodingUTF8); CFRelease(str2); }
-		// Not a LogMsg, as "Wake on LAN" is not in the Battery dictionary
-		LogSPS("GetCurrentPMSetting: Could not get number value (%s)", buf);
-		}
-
+		*val = 0;
 end:
 	if (blob) CFRelease(blob);
 	if (odict) CFRelease(odict);
@@ -4997,7 +4993,7 @@ end:
 			{
 			CFNumberRef number = CFDictionaryGetValue(dict, name);
 			if (!number || CFGetTypeID(number) != CFNumberGetTypeID() || !CFNumberGetValue(number, kCFNumberSInt32Type, val))
-				LogSPS("GetCurrentPMSetting: Could not get Wake On LAN value");
+				*val = 0;
 			CFRelease(dict);
 			}
 		CFRelease(store);
