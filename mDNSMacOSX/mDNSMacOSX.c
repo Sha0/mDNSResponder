@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.669  2009/04/11 02:02:34  mcguire
+<rdar://problem/6780046> crash in doSSLHandshake
+
 Revision 1.668  2009/04/11 00:20:08  jessic2
 <rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
 
@@ -1877,9 +1880,10 @@ mDNSlocal void *doSSLHandshake(void *ctx)
 	// Warning: Touching sock without the kqueue lock!
 	// We're protected because sock->handshake == handshake_in_progress
 	TCPSocket *sock = (TCPSocket*)ctx;
+	mDNS * const m = sock->m; // Get m now, as we may free sock if marked to be closed while we're waiting on SSLHandshake
 	mStatus err = SSLHandshake(sock->tlsContext);
 	
-	KQueueLock(sock->m);
+	KQueueLock(m);
 	LogInfo("doSSLHandshake %p: got lock", sock); // Log *after* we get the lock
 
 	if (sock->handshake == handshake_to_be_closed)
@@ -1912,7 +1916,7 @@ mDNSlocal void *doSSLHandshake(void *ctx)
 		}
 	
 	LogInfo("SSLHandshake %p: dropping lock", sock);
-	KQueueUnlock(sock->m, "doSSLHandshake");
+	KQueueUnlock(m, "doSSLHandshake");
 	return NULL;
 	}
 
