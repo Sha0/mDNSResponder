@@ -21,6 +21,9 @@
 	Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.48  2009/04/11 01:43:28  jessic2
+<rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
+
 Revision 1.47  2009/01/11 03:20:06  mkrochma
 <rdar://problem/5797526> Fixes from Igor Seleznev to get mdnsd working on Solaris
 
@@ -169,9 +172,9 @@ mDNSlocal void ParseCmdLinArgs(int argc, char **argv)
 mDNSlocal void DumpStateLog(mDNS *const m)
 // Dump a little log of what we've been up to.
 	{
-	LogMsgIdent(mDNSResponderVersionString, "---- BEGIN STATE LOG ----");
+	LogMsg("---- BEGIN STATE LOG ----");
 	udsserver_info(m);
-	LogMsgIdent(mDNSResponderVersionString, "----  END STATE LOG  ----");
+	LogMsg("----  END STATE LOG  ----");
 	}
 
 mDNSlocal mStatus MainLoop(mDNS *m) // Loop until we quit.
@@ -222,7 +225,7 @@ int main(int argc, char **argv)
 
 	ParseCmdLinArgs(argc, argv);
 
-	LogMsgIdent(mDNSResponderVersionString, "starting");
+	LogMsg("%s starting", mDNSResponderVersionString);
 
 	err = mDNS_Init(&mDNSStorage, &PlatformStorage, gRRCache, RR_CACHE_SIZE, mDNS_Init_AdvertiseLocalAddresses, 
 					mDNS_StatusCallback, mDNS_Init_NoInitCallbackContext); 
@@ -245,7 +248,7 @@ int main(int argc, char **argv)
 	if (mStatus_NoError == err)
 		err = MainLoop(&mDNSStorage);
  
-	LogMsgIdent(mDNSResponderVersionString, "stopping");
+	LogMsg("%s stopping", mDNSResponderVersionString);
 
 	mDNS_Close(&mDNSStorage);
 

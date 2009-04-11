@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.422  2009/04/11 01:43:28  jessic2
+<rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
+
 Revision 1.421  2009/04/11 00:20:06  jessic2
 <rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
 
@@ -2164,7 +2167,7 @@ mDNSlocal kern_return_t destroyBootstrapService()
 mDNSlocal void ExitCallback(int sig)
 	{
 	(void)sig; // Unused
-	LogMsgIdent(mDNSResponderVersionString, "stopping");
+	LogMsg("%s stopping", mDNSResponderVersionString);
 
 	debugf("ExitCallback");
 	if (!mDNS_DebugMode && !started_via_launchdaemon)
@@ -2217,7 +2220,7 @@ mDNSlocal void INFOCallback(void)
 	NetworkInterfaceInfoOSX     *i;
 	DNSServer *s;
 
-	LogMsgIdent(mDNSResponderVersionString, "---- BEGIN STATE LOG ----");
+	LogMsg("---- BEGIN STATE LOG ----");
 	
 	udsserver_info(&mDNSStorage);
 
@@ -2309,7 +2312,7 @@ mDNSlocal void INFOCallback(void)
 	mDNSs32 now = mDNS_TimeNow(&mDNSStorage);
 	LogMsgNoIdent("Timenow 0x%08lX (%ld)", (mDNSu32)now, now);
 
-	LogMsgIdent(mDNSResponderVersionString, "----  END STATE LOG  ----");
+	LogMsg("----  END STATE LOG  ----");
 	}
 
 mDNSlocal void SignalCallback(CFMachPortRef port, void *msg, CFIndex size, void *info)
@@ -2970,7 +2973,7 @@ mDNSexport int main(int argc, char **argv)
 	kern_return_t status;
 	pthread_t KQueueThread;
 
-	LogMsgIdent(mDNSResponderVersionString, "starting");
+	LogMsg("%s starting", mDNSResponderVersionString);
 	
 	safe_vproc_transaction_begin();
 
@@ -3069,7 +3072,7 @@ mDNSexport int main(int argc, char **argv)
 		mDNS_Close(&mDNSStorage);
 		}
 
-	LogMsgIdent(mDNSResponderVersionString, "exiting");
+	LogMsg("%s exiting", mDNSResponderVersionString);
 
 exit:
 	if (!mDNS_DebugMode && !started_via_launchdaemon) destroyBootstrapService();

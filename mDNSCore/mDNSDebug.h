@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.48  2009/04/11 01:43:27  jessic2
+<rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
+
 Revision 1.47  2009/04/11 00:19:41  jessic2
 <rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
 
@@ -270,11 +273,10 @@ extern void verbosedebugf_(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1
 extern int	      mDNS_LoggingEnabled;
 extern int	      mDNS_PacketLoggingEnabled;
 extern int        mDNS_DebugMode;	// If non-zero, LogMsg() writes to stderr instead of syslog
-extern const char ProgramName[];	// Program Name for use with LogMsgIdent
+extern const char ProgramName[];
 
 extern void LogMsgWithLevel(mDNSLogLevel_t logLevel, const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(2,3);
-extern void LogMsgIdent(const char *ident, const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(2,3);
-extern void LogMsgNoIdent(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
+#define LogMsgNoIdent LogMsg
 
 #if APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING >= 1
 extern void *mallocL(char *msg, unsigned int size);

@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.c,v $
+Revision 1.16  2009/04/11 01:43:28  jessic2
+<rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
+
 Revision 1.15  2009/04/11 00:20:26  jessic2
 <rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
 
@@ -143,25 +146,3 @@ void debugf_(const char *format, ...)      LOG_HELPER_BODY(MDNS_LOG_DEBUG)
 // Log message with default "mDNSResponder" ident string at the start
 mDNSexport void LogMsgWithLevel(mDNSLogLevel_t logLevel, const char *format, ...)
 	LOG_HELPER_BODY(logLevel)
-
-// Log message with specified ident string at the start
-mDNSexport void LogMsgIdent(const char *ident, const char *format, ...)
-	{
-	char buffer[512];
-	va_list ptr;
-	va_start(ptr,format);
-	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
-	va_end(ptr);
-	mDNSPlatformWriteLogMsg(ident, buffer, MDNS_LOG_MSG);
-	}
-
-// Log message with no ident string at the start
-mDNSexport void LogMsgNoIdent(const char *format, ...)
-	{
-	char buffer[512];
-	va_list ptr;
-	va_start(ptr,format);
-	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
-	va_end(ptr);
-	mDNSPlatformWriteLogMsg(" ", buffer, MDNS_LOG_MSG);
-	}
