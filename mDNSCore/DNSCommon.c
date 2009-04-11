@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.244  2009/04/11 00:19:30  jessic2
+<rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
+
 Revision 1.243  2009/04/01 17:50:10  mcguire
 cleanup mDNSRandom
 
@@ -2864,7 +2867,7 @@ mDNSexport mStatus mDNSSendDNSMessage(mDNS *const m, DNSMessage *const msg, mDNS
 	SwapDNSHeaderBytes(msg);
 
 	// Dump the packet with the HINFO and TSIG
-	if (mDNS_LogLevel >= MDNS_LOG_VERBOSE_DEBUG && !mDNSOpaque16IsZero(msg->h.id))
+	if (mDNS_PacketLoggingEnabled && !mDNSOpaque16IsZero(msg->h.id))
 		DumpPacket(m, status, mDNStrue, sock && (sock->flags & kTCPSocketFlags_UseTLS) ? "TLS" : sock ? "TCP" : "UDP", mDNSNULL, src ? src->port : MulticastDNSPort, dst, dstport, msg, end);
 
 	// put the number of additionals back the way it was

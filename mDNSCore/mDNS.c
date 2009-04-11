@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.939  2009/04/11 00:19:32  jessic2
+<rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
+
 Revision 1.938  2009/04/06 23:44:57  cheshire
 <rdar://problem/6757838> mDNSResponder thrashing kernel lock in the UDP close path, hurting SPECweb performance
 
@@ -4168,9 +4171,7 @@ mDNSlocal CacheEntity *GetCacheEntity(mDNS *const m, const CacheGroup *const Pre
 	// Enumerating the entire cache is moderately expensive, so when we do it, we reclaim all the records we can in one pass.
 	if (!m->rrcache_free)
 		{
-		#if LogInfoMessages || MDNS_DEBUGMSGS
 		mDNSu32 oldtotalused = m->rrcache_totalused;
-		#endif
 		mDNSu32 slot;
 		for (slot = 0; slot < CACHE_HASH_SLOTS; slot++)
 			{
@@ -6420,7 +6421,7 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 
 	if (!InterfaceID || !m->SPSSocket || !mDNSSameIPPort(dstport, m->SPSSocket->port)) return;
 
-	if (mDNS_LogLevel >= MDNS_LOG_VERBOSE_DEBUG)
+	if (mDNS_PacketLoggingEnabled)
 		DumpPacket(m, mStatus_NoError, mDNSfalse, "UDP", srcaddr, srcport, dstaddr, dstport, msg, end);
 
 	ptr = LocateOptRR(msg, end, DNSOpt_LeaseData_Space + DNSOpt_OwnerData_ID_Space);
@@ -6664,7 +6665,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 		if (!mDNSOpaque16IsZero(msg->h.id)) // uDNS_ReceiveMsg only needs to get real uDNS responses, not "QU" mDNS responses
 			{
 			ifid = mDNSInterface_Any;
-			if (mDNS_LogLevel >= MDNS_LOG_VERBOSE_DEBUG)
+			if (mDNS_PacketLoggingEnabled)
 				DumpPacket(m, mStatus_NoError, mDNSfalse, TLS ? "TLS" : !dstaddr ? "TCP" : "UDP", srcaddr, srcport, dstaddr, dstport, msg, end);
 			uDNS_ReceiveMsg(m, msg, end, srcaddr, srcport);
 			// Note: mDNSCore also needs to get access to received unicast responses
@@ -6678,7 +6679,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 		{
 		LogMsg("%3d: Unknown DNS packet type %02X%02X from %#-15a:%-5d to %#-15a:%-5d length %d on %p (ignored)",
 			msg->h.flags.b[0], msg->h.flags.b[1], srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), end-(mDNSu8 *)pkt, InterfaceID);
-		#if LogInfoMessages
+		if (mDNS_LoggingEnabled)
 			{
 			int i = 0;
 			while (i<end-(mDNSu8 *)pkt)
@@ -6689,7 +6690,6 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 				LogInfo("%s", buffer);
 				}
 			}
-		#endif
 		}
 	// Packet reception often causes a change to the task list:
 	// 1. Inbound queries can cause us to need to send responses

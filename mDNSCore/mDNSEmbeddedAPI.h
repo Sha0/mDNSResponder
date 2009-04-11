@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.556  2009/04/11 00:19:43  jessic2
+<rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
+
 Revision 1.555  2009/04/01 21:12:27  herscher
 <rdar://problem/5925472> Current Bonjour code does not compile on Windows.
 
@@ -3156,7 +3159,7 @@ extern mDNSs32  mDNSPlatformUTC         (void);
 #if MDNS_DEBUGMSGS
 extern void	mDNSPlatformWriteDebugMsg(const char *msg);
 #endif
-extern void	mDNSPlatformWriteLogMsg(const char *ident, const char *msg, int flags);
+extern void	mDNSPlatformWriteLogMsg(const char *ident, const char *msg, mDNSLogLevel_t loglevel);
 
 #if APPLE_OSX_mDNSResponder
 // Utility function for ASL logging

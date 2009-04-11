@@ -23,6 +23,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.c,v $
+Revision 1.15  2009/04/11 00:20:26  jessic2
+<rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
+
 Revision 1.14  2008/11/26 00:01:08  cheshire
 Get rid of "Unknown" tag in SIGINFO output on Leopard
 
@@ -85,7 +88,8 @@ Changes necessary to support mDNSResponder on Linux.
 
 #include "mDNSEmbeddedAPI.h"
 
-mDNSexport LogLevel_t mDNS_LogLevel = MDNS_LOG_INITIAL_LEVEL;
+mDNSexport int mDNS_LoggingEnabled = 0;
+mDNSexport int mDNS_PacketLoggingEnabled = 0;
 
 #if MDNS_DEBUGMSGS
 mDNSexport int mDNS_DebugMode = mDNStrue;
@@ -95,18 +99,6 @@ mDNSexport int mDNS_DebugMode = mDNSfalse;
 
 // Note, this uses mDNS_vsnprintf instead of standard "vsnprintf", because mDNS_vsnprintf knows
 // how to print special data types like IP addresses and length-prefixed domain names
-#if MDNS_DEBUGMSGS
-mDNSexport void debugf_(const char *format, ...)
-	{
-	char buffer[512];
-	va_list ptr;
-	va_start(ptr,format);
-	buffer[mDNS_vsnprintf(buffer, sizeof(buffer), format, ptr)] = 0;
-	va_end(ptr);
-	mDNSPlatformWriteDebugMsg(buffer);
-	}
-#endif
-
 #if MDNS_DEBUGMSGS > 1
 mDNSexport void verbosedebugf_(const char *format, ...)
 	{
@@ -120,15 +112,37 @@ mDNSexport void verbosedebugf_(const char *format, ...)
 #endif
 
 // Log message with default "mDNSResponder" ident string at the start
-mDNSexport void LogMsg(const char *format, ...)
+mDNSlocal void LogMsgWithLevelv(mDNSLogLevel_t logLevel, const char *format, va_list ptr)
 	{
 	char buffer[512];
-	va_list ptr;
-	va_start(ptr,format);
 	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
-	va_end(ptr);
-	mDNSPlatformWriteLogMsg(ProgramName, buffer, 0);
+	mDNSPlatformWriteLogMsg(ProgramName, buffer, logLevel);
 	}
+
+#define LOG_HELPER_BODY(L) \
+	{ \
+	va_list ptr; \
+	va_start(ptr,format); \
+	LogMsgWithLevelv(L, format, ptr); \
+	va_end(ptr); \
+	}
+
+// see mDNSDebug.h
+#if !MDNS_HAS_VA_ARG_MACROS
+void debug_noop(const char *format, ...)  { (void) format; }
+void LogMsg_(const char *format, ...)       LOG_HELPER_BODY(MDNS_LOG_MSG)
+void LogOperation_(const char *format, ...) LOG_HELPER_BODY(MDNS_LOG_OPERATION)
+void LogSPS_(const char *format, ...)       LOG_HELPER_BODY(MDNS_LOG_SPS)
+void LogInfo_(const char *format, ...)      LOG_HELPER_BODY(MDNS_LOG_INFO)
+#endif
+
+#if MDNS_DEBUGMSGS
+void debugf_(const char *format, ...)      LOG_HELPER_BODY(MDNS_LOG_DEBUG)
+#endif
+
+// Log message with default "mDNSResponder" ident string at the start
+mDNSexport void LogMsgWithLevel(mDNSLogLevel_t logLevel, const char *format, ...)
+	LOG_HELPER_BODY(logLevel)
 
 // Log message with specified ident string at the start
 mDNSexport void LogMsgIdent(const char *ident, const char *format, ...)
@@ -138,7 +152,7 @@ mDNSexport void LogMsgIdent(const char *ident, const char *format, ...)
 	va_start(ptr,format);
 	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
 	va_end(ptr);
-	mDNSPlatformWriteLogMsg(ident, buffer, ident && *ident ? LOG_PID : 0);
+	mDNSPlatformWriteLogMsg(ident, buffer, MDNS_LOG_MSG);
 	}
 
 // Log message with no ident string at the start
@@ -149,26 +163,5 @@ mDNSexport void LogMsgNoIdent(const char *format, ...)
 	va_start(ptr,format);
 	buffer[mDNS_vsnprintf((char *)buffer, sizeof(buffer), format, ptr)] = 0;
 	va_end(ptr);
-	mDNSPlatformWriteLogMsg(" ", buffer, 0);
-	}
-
-mDNSlocal const char *CStringForLogLevel(LogLevel_t level)
-	{
-	switch (level) 
-		{
-		case MDNS_LOG_NONE:          return "MDNS_LOG_NONE";
-//		case MDNS_LOG_ERROR:         return "MDNS_LOG_ERROR";
-//		case MDNS_LOG_WARN:          return "MDNS_LOG_WARN";
-//		case MDNS_LOG_INFO:          return "MDNS_LOG_INFO";
-//		case MDNS_LOG_DEBUG:         return "MDNS_LOG_DEBUG";
-		case MDNS_LOG_VERBOSE_DEBUG: return "MDNS_LOG_VERBOSE_DEBUG";
-		default:                     return "MDNS_LOG_UNKNOWN"; 
-		}
-	}
-
-mDNSexport void SigLogLevel(void)
-	{
-	if (mDNS_LogLevel < MDNS_LOG_VERBOSE_DEBUG) mDNS_LogLevel++;
-	else mDNS_LogLevel = MDNS_LOG_NONE;
-	LogMsg("Log Level Changed to %s", CStringForLogLevel(mDNS_LogLevel));
+	mDNSPlatformWriteLogMsg(" ", buffer, MDNS_LOG_MSG);
 	}

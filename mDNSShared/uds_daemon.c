@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.453  2009/04/11 00:20:29  jessic2
+<rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
+
 Revision 1.452  2009/04/07 01:17:42  jessic2
 <rdar://problem/6747917> BTMM: Multiple accounts lets me see others' remote services & send packets to others' remote hosts
 
@@ -1481,12 +1484,12 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 	mDNSBool SuppressError = mDNSfalse;
 	service_instance *instance = srs->ServiceContext;
 	reply_state         *rep;
-#if LogClientOperations || MDNS_DEBUGMSGS
-	char *fmt = (result == mStatus_NoError)      ? "%3d: DNSServiceRegister(%##s, %u) REGISTERED"    :
-				(result == mStatus_MemFree)      ? "%3d: DNSServiceRegister(%##s, %u) DEREGISTERED"  :
-				(result == mStatus_NameConflict) ? "%3d: DNSServiceRegister(%##s, %u) NAME CONFLICT" :
-				                                   "%3d: DNSServiceRegister(%##s, %u) %s %d";
-#endif
+	char *fmt = "";
+	if (mDNS_LoggingEnabled)
+		fmt = (result == mStatus_NoError)      ? "%3d: DNSServiceRegister(%##s, %u) REGISTERED"    :
+			  (result == mStatus_MemFree)      ? "%3d: DNSServiceRegister(%##s, %u) DEREGISTERED"  :
+			  (result == mStatus_NameConflict) ? "%3d: DNSServiceRegister(%##s, %u) NAME CONFLICT" :
+			                                     "%3d: DNSServiceRegister(%##s, %u) %s %d";
 	(void)m; // Unused
 	if (!srs)      { LogMsg("regservice_callback: srs is NULL %d",                 result); return; }
 	if (!instance) { LogMsg("regservice_callback: srs->ServiceContext is NULL %d", result); return; }

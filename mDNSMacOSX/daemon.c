@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.421  2009/04/11 00:20:06  jessic2
+<rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
+
 Revision 1.420  2009/03/20 23:53:03  jessic2
 <rdar://problem/6646228> SIGHUP should restart all in-progress queries
 
@@ -2186,8 +2189,7 @@ mDNSlocal void ExitCallback(int sig)
 // Send a mach_msg to ourselves (since that is signal safe) telling us to cleanup and exit
 mDNSlocal void HandleSIG(int sig)
 	{
-	debugf(" ");
-	debugf("HandleSIG %d", sig);
+	// WARNING: can't call syslog or fprintf from signal handler
 	mach_msg_header_t header;
 	header.msgh_bits = MACH_MSGH_BITS(MACH_MSG_TYPE_MAKE_SEND, 0);
 	header.msgh_remote_port = signal_port;
@@ -2195,10 +2197,7 @@ mDNSlocal void HandleSIG(int sig)
 	header.msgh_size = sizeof(header);
 	header.msgh_id = sig;
 	if (mach_msg_send(&header) != MACH_MSG_SUCCESS)
-		{
-		LogMsg("HandleSIG %d: mach_msg_send failed", sig);
 		if (sig == SIGTERM || sig == SIGINT) exit(-1);
-		}
 	}
 
 mDNSlocal void CatchABRT(int sig)
@@ -2332,9 +2331,6 @@ mDNSlocal void SignalCallback(CFMachPortRef port, void *msg, CFIndex size, void 
 						LogMsg("SIGHUP: Purge cache");
 						mDNS_Lock(m);
 						FORALL_CACHERECORDS(slot, cg, rr) mDNS_PurgeCacheResourceRecord(m, rr);
-						// should we call SuspendLLQs() here? will activateUnicastQuery() request new resources 
-						// on server or reuse the existing LLQ resources?
-						//SuspendLLQs(m);
 						// Restart unicast and multicast queries
 						mDNSCoreRestartQueries(m);
 						mDNS_Unlock(m);
@@ -2342,16 +2338,13 @@ mDNSlocal void SignalCallback(CFMachPortRef port, void *msg, CFIndex size, void 
 		case SIGINT:
 		case SIGTERM:	ExitCallback(msg_header->msgh_id); break;
 		case SIGINFO:	INFOCallback(); break;
-		case SIGUSR1:	LogMsg("SIGUSR1: Simulate Network Configuration Change Event");
-						mDNSMacOSXNetworkChanged(m);
-
-						// Simulate KeychainChanged
-						mDNS_Lock(m);
-						SetDomainSecrets(m);
-						mDNS_Unlock(m);
-
+		case SIGUSR1:	mDNS_LoggingEnabled = mDNS_LoggingEnabled ? 0 : 1;
+						LogMsg("SIGUSR1: Logging %s", mDNS_LoggingEnabled ? "Enabled" : "Disabled");
+						WatchDogReportingThreshold = mDNS_LoggingEnabled ? 50 : 250;
 						break;
-		case SIGUSR2:	SigLogLevel(); break;
+		case SIGUSR2:	mDNS_PacketLoggingEnabled = mDNS_PacketLoggingEnabled ? 0 : 1;
+						LogMsg("SIGUSR2: Packet Logging %s", mDNS_PacketLoggingEnabled ? "Enabled" : "Disabled");
+						break;
 		default: LogMsg("SignalCallback: Unknown signal %d", msg_header->msgh_id); break;
 		}
 	KQueueUnlock(m, "Unix Signal");
@@ -2776,15 +2769,13 @@ mDNSlocal void * KQueueLoop(void *m_param)
 
 		if (m->ShutdownTime)
 			{
-#if LogClientOperations || MDNS_DEBUGMSGS
 			if (mDNSStorage.ResourceRecords)
 				{
-				LogMsg("Cannot exit yet; Resource Record still exists: %s", ARDisplayString(m, mDNSStorage.ResourceRecords));
-				usleep(10000);		// Sleep 10ms so that we don't flood syslog with too many messages
+				LogInfo("Cannot exit yet; Resource Record still exists: %s", ARDisplayString(m, mDNSStorage.ResourceRecords));
+				if (mDNS_LoggingEnabled) usleep(10000);		// Sleep 10ms so that we don't flood syslog with too many messages
 				}
 			if (mDNSStorage.ServiceRegistrations)
 				LogInfo("Cannot exit yet; ServiceRegistrations still exists: %s", ARDisplayString(m, &mDNSStorage.ServiceRegistrations->RR_SRV));
-#endif
 			if (mDNS_ExitNow(m, now))
 				{
 				if (!mDNSStorage.ResourceRecords && !mDNSStorage.ServiceRegistrations)
@@ -2870,9 +2861,7 @@ mDNSlocal void * KQueueLoop(void *m_param)
 				{
 				const KQueueEntry *const kqentry = new_events[i].udata;
 				mDNSs32 stime = mDNSPlatformRawTime();
-#if LogInfoMessages || MDNS_DEBUGMSGS
 				const char *const KQtask = kqentry->KQtask;	// Grab a copy in case KQcallback deletes the task
-#endif
 				kqentry->KQcallback(new_events[i].ident, new_events[i].filter, kqentry->KQcontext);
 				mDNSs32 etime = mDNSPlatformRawTime();
 				if (etime - stime >= WatchDogReportingThreshold)
@@ -3004,8 +2993,8 @@ mDNSexport int main(int argc, char **argv)
 	signal(SIGPIPE, SIG_IGN  );		// Don't want SIGPIPE signals -- we'll handle EPIPE errors directly
 	signal(SIGTERM, HandleSIG);		// Machine shutting down: Detach from and exit cleanly like Ctrl-C
 	signal(SIGINFO, HandleSIG);		// (Debugging) Write state snapshot to syslog
-	signal(SIGUSR1, HandleSIG);		// (Debugging) Simulate network change notification from System Configuration Framework
-	signal(SIGUSR2, HandleSIG);		// (Debugging) Change log level
+	signal(SIGUSR1, HandleSIG);		// (Debugging) Enable Logging
+	signal(SIGUSR2, HandleSIG);		// (Debugging) Enable Packet Logging
 
 	mDNSStorage.p = &PlatformStorage;	// Make sure mDNSStorage.p is set up, because validatelists uses it
 	LaunchdCheckin();

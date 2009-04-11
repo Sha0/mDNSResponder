@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.47  2009/04/11 00:19:41  jessic2
+<rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
+
 Revision 1.46  2009/02/13 06:36:50  cheshire
 Update LogSPS definition
 
@@ -164,15 +167,12 @@ Merge in license terms from Quinn's copy, in preparation for Darwin release
 
 typedef enum
 	{
-	MDNS_LOG_NONE,
-//	MDNS_LOG_ERROR,
-//	MDNS_LOG_WARN,
-//	MDNS_LOG_INFO,
-//	MDNS_LOG_DEBUG,
-	MDNS_LOG_VERBOSE_DEBUG
-	} LogLevel_t;
-
-#define MDNS_LOG_INITIAL_LEVEL MDNS_LOG_NONE
+	MDNS_LOG_MSG,
+	MDNS_LOG_OPERATION,
+	MDNS_LOG_SPS,
+	MDNS_LOG_INFO,
+	MDNS_LOG_DEBUG,
+	} mDNSLogLevel_t;
 
 // Set this symbol to 1 to answer remote queries for our Address, reverse mapping PTR, and HINFO records
 #define ANSWER_REMOTE_HOSTNAME_QUERIES 0
@@ -183,9 +183,6 @@ typedef enum
 
 //#define ForceAlerts 1
 //#define LogTimeStamps 1
-//#define LogClientOperations 1
-//#define LogInfoMessages 1
-//#define LogSleepProxyActions 1
 
 #define USE_SEPARATE_UDNS_SERVICE_LIST 1
 
@@ -226,41 +223,58 @@ typedef enum
 	#define MDNS_HAS_VA_ARG_MACROS      0
 #endif
 
+#if (MDNS_HAS_VA_ARG_MACROS)
+	#if (MDNS_C99_VA_ARGS)
+		#define debug_noop( ... ) ((void)0)
+		#define LogMsg( ... ) LogMsgWithLevel(MDNS_LOG_MSG, __VA_ARGS__)
+		#define LogOperation( ... ) do { if (mDNS_LoggingEnabled) LogMsgWithLevel(MDNS_LOG_OPERATION, __VA_ARGS__); } while (0)
+		#define LogSPS( ... ) do { if (mDNS_LoggingEnabled) LogMsgWithLevel(MDNS_LOG_SPS, __VA_ARGS__); } while (0)
+		#define LogInfo( ... ) do { if (mDNS_LoggingEnabled) LogMsgWithLevel(MDNS_LOG_INFO, __VA_ARGS__); } while (0)
+	#elif (MDNS_GNU_VA_ARGS)
+		#define	debug_noop( ARGS... ) ((void)0)
+		#define	LogMsg( ARGS... ) LogMsgWithLevel(MDNS_LOG_MSG, ARGS)
+		#define	LogOperation( ARGS... ) do { if (mDNS_LoggingEnabled) LogMsgWithLevel(MDNS_LOG_OPERATION, ARGS); } while (0)
+		#define	LogSPS( ARGS... ) do { if (mDNS_LoggingEnabled) LogMsgWithLevel(MDNS_LOG_SPS, ARGS); } while (0)
+		#define	LogInfo( ARGS... ) do { if (mDNS_LoggingEnabled) LogMsgWithLevel(MDNS_LOG_INFO, ARGS); } while (0)
+	#else
+		#error Unknown variadic macros
+	#endif
+#else
+	// If your platform does not support variadic macros, you need to define the following variadic functions.
+	// See mDNSShared/mDNSDebug.c for sample implementation
+	extern void debug_noop(const char *format, ...);
+	#define LogMsg LogMsg_
+	#define LogOperation mDNS_LoggingEnabled == 0 ? ((void)0) : LogOperation_
+	#define LogSPS mDNS_LoggingEnabled == 0 ? ((void)0) : LogSPS_
+	#define LogInfo mDNS_LoggingEnabled == 0 ? ((void)0) : LogInfo_
+	extern void LogMsg_(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
+	extern void LogOperation_(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
+	extern void LogSPS_(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
+	extern void LogInfo_(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
+#endif
+
 #if MDNS_DEBUGMSGS
 #define debugf debugf_
 extern void debugf_(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
-#else // If debug breaks are off, use a preprocessor trick to optimize those calls out of the code
-	#if (MDNS_C99_VA_ARGS)
-		#define debugf( ... ) ((void)0)
-	#elif (MDNS_GNU_VA_ARGS)
-		#define	debugf( ARGS... ) ((void)0)
-	#else
-		#define debugf 1 ? ((void)0) : (void)
-	#endif
+#else
+#define debugf debug_noop
 #endif
 
 #if MDNS_DEBUGMSGS > 1
 #define verbosedebugf verbosedebugf_
 extern void verbosedebugf_(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
 #else
-	#if (MDNS_C99_VA_ARGS)
-		#define verbosedebugf( ... ) ((void)0)
-	#elif (MDNS_GNU_VA_ARGS)
-		#define verbosedebugf( ARGS... ) ((void)0)
-	#else
-		#define verbosedebugf 1 ? ((void)0) : (void)
-	#endif
+#define verbosedebugf debug_noop
 #endif
 
-// LogMsg is used even in shipping code, to write truly serious error messages to syslog (or equivalent)
-extern LogLevel_t mDNS_LogLevel;
+extern int	      mDNS_LoggingEnabled;
+extern int	      mDNS_PacketLoggingEnabled;
 extern int        mDNS_DebugMode;	// If non-zero, LogMsg() writes to stderr instead of syslog
 extern const char ProgramName[];	// Program Name for use with LogMsgIdent
 
-extern void LogMsg(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
+extern void LogMsgWithLevel(mDNSLogLevel_t logLevel, const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(2,3);
 extern void LogMsgIdent(const char *ident, const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(2,3);
 extern void LogMsgNoIdent(const char *format, ...) IS_A_PRINTF_STYLE_FUNCTION(1,2);
-extern void SigLogLevel(void);
 
 #if APPLE_OSX_mDNSResponder && MACOSX_MDNS_MALLOC_DEBUGGING >= 1
 extern void *mallocL(char *msg, unsigned int size);
@@ -271,24 +285,6 @@ extern void udns_validatelists(void *const v);
 #else
 #define mallocL(X,Y) malloc(Y)
 #define freeL(X,Y) free(Y)
-#endif
-
-#if LogClientOperations
-#define LogOperation LogMsg
-#else
-#define LogOperation debugf
-#endif
-
-#if LogInfoMessages
-#define LogInfo LogMsg
-#else
-#define LogInfo debugf
-#endif
-
-#if LogSleepProxyActions
-#define LogSPS LogMsg
-#else
-#define LogSPS debugf
 #endif
 
 #ifdef __cplusplus

@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: helper-main.c,v $
+Revision 1.28  2009/04/11 00:20:08  jessic2
+<rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
+
 Revision 1.27  2009/03/09 19:00:26  mcguire
 <rdar://problem/6660098> temporarily don't use getpwnam
 
@@ -187,11 +190,13 @@ void helplog(int level, const char *fmt, ...)
 	}
 	
 // for safe_vproc
-void LogMsg(const char *fmt, ...)
+void LogMsgWithLevel(mDNSLogLevel_t logLevel, const char *fmt, ...)
 	{
+	(void)logLevel;
 	va_list ap;
 	va_start(ap, fmt);
-	helplogv(ASL_LEVEL_ERR, fmt, ap);
+	// safe_vproc only calls LogMsg, so assume logLevel maps to ASL_LEVEL_ERR
+	helplog(ASL_LEVEL_ERR, fmt, ap);
 	va_end(ap);
 	}	
 

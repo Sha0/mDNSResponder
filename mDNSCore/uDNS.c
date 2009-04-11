@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.609  2009/04/11 00:19:45  jessic2
+<rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
+
 Revision 1.608  2009/04/06 23:44:59  cheshire
 <rdar://problem/6757838> mDNSResponder thrashing kernel lock in the UDP close path, hurting SPECweb performance
 
@@ -1565,12 +1568,7 @@ mDNSexport mStatus mDNS_SetSecretForDomain(mDNS *m, DomainAuthInfo *info,
 
 	if (DNSDigest_ConstructHMACKeyfromBase64(info, b64keydata) < 0)
 		{
-		LogMsg("mDNS_SetSecretForDomain: ERROR: Could not convert shared secret from base64: domain %##s key %##s %s", domain->c, keyname->c,
-			#if LogClientOperations
-				b64keydata);
-			#else
-				"");
-			#endif
+		LogMsg("mDNS_SetSecretForDomain: ERROR: Could not convert shared secret from base64: domain %##s key %##s %s", domain->c, keyname->c, mDNS_LoggingEnabled ? b64keydata : "");
 		return(mStatus_BadParamErr);
 		}
 
@@ -4648,7 +4646,7 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 			{
 			DNSServer *orig = q->qDNSServer;
 			
-#if LogClientOperations || MDNS_DEBUGMSGS
+#if MDNS_DEBUGMSGS
 			char buffer[1024];
 			mDNS_snprintf(buffer, sizeof(buffer), orig ? "%#a:%d (%##s)" : "null", &orig->addr, mDNSVal16(orig->port), orig->domain.c);
 			debugf("Sent %d unanswered queries for %##s (%s) to %s", q->unansweredQueries, q->qname.c, DNSTypeName(q->qtype), buffer);
@@ -4659,7 +4657,7 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 
 			if (q->qDNSServer != orig)
 				{
-#if LogClientOperations || MDNS_DEBUGMSGS
+#if MDNS_DEBUGMSGS
 				mDNS_snprintf(buffer, sizeof(buffer), q->qDNSServer ? "%#a:%d (%##s)" : "null", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qDNSServer->domain.c);
 				debugf("Server for %##s (%s) changed to %s", q->qname.c, DNSTypeName(q->qtype), buffer);
 #endif

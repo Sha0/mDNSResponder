@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.668  2009/04/11 00:20:08  jessic2
+<rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
+
 Revision 1.667  2009/04/09 20:01:00  cheshire
 <rdar://problem/6767122> IOPMCopyActivePMPreferences not available on Apple TV
 At Rory's suggestion, removed unnecessary "Could not get Wake On LAN value" log message
@@ -1273,6 +1276,8 @@ static CFStringRef NetworkChangedKey_BackToMyMac = CFSTR("Setup:/Network/BackToM
 static char  HINFO_HWstring_buffer[32];
 static char *HINFO_HWstring = "Device";
 static int   HINFO_HWstring_prefixlen = 6;
+
+mDNSexport int WatchDogReportingThreshold = 250;
 
 #if APPLE_OSX_mDNSResponder
 static mDNSu8 SPMetricPortability   = 99;
@@ -4028,7 +4033,6 @@ mDNSlocal mStatus UpdateInterfaceList(mDNS *const m, mDNSs32 utc)
 	return(mStatus_NoError);
 	}
 
-#if LogInfoMessages || MDNS_DEBUGMSGS
 // Returns number of leading one-bits in mask: 0-32 for IPv4, 0-128 for IPv6
 // Returns -1 if all the one-bits are not contiguous
 mDNSlocal int CountMaskBits(mDNSAddr *mask)
@@ -4044,7 +4048,6 @@ mDNSlocal int CountMaskBits(mDNSAddr *mask)
 	while (i < bytes) if (mask->ip.v6.b[i++]) return(-1);
 	return(bits);
 	}
-#endif
 
 // returns count of non-link local V4 addresses registered
 mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
@@ -5319,22 +5322,23 @@ mDNSlocal void NetworkChanged(SCDynamicStoreRef store, CFArrayRef changedKeys, v
 	int c4 = (CFArrayContainsValue(changedKeys, range, NetworkChangedKey_DNS         ) != 0);
 	if (c && c - c1 - c2 - c3 - c4 == 0) delay = mDNSPlatformOneSecond/10;	// If these were the only changes, shorten delay
 	
-#if LogClientOperations
-	int i;
-	for (i=0; i<c; i++)
+	if (mDNS_LoggingEnabled)
 		{
-		char buf[256];
-		if (!CFStringGetCString(CFArrayGetValueAtIndex(changedKeys, i), buf, sizeof(buf), kCFStringEncodingUTF8)) buf[0] = 0;
-		LogInfo("***   NetworkChanged SC key: %s", buf);
+		int i;
+		for (i=0; i<c; i++)
+			{
+			char buf[256];
+			if (!CFStringGetCString(CFArrayGetValueAtIndex(changedKeys, i), buf, sizeof(buf), kCFStringEncodingUTF8)) buf[0] = 0;
+			LogInfo("***   NetworkChanged SC key: %s", buf);
+			}
+		LogInfo("***   NetworkChanged   *** %d change%s %s%s%s%sdelay %d",
+			c, c>1?"s":"",
+			c1 ? "(Local Hostname) " : "",
+			c2 ? "(Computer Name) "  : "",
+			c3 ? "(DynamicDNS) "     : "",
+			c4 ? "(DNS) "            : "",
+			delay);
 		}
-	LogInfo("***   NetworkChanged   *** %d change%s %s%s%s%sdelay %d",
-		c, c>1?"s":"",
-		c1 ? "(Local Hostname) " : "",
-		c2 ? "(Computer Name) "  : "",
-		c3 ? "(DynamicDNS) "     : "",
-		c4 ? "(DNS) "            : "",
-		delay);
-#endif
 
 	SetNetworkChanged(m, delay);
 	

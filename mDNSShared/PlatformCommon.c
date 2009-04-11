@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: PlatformCommon.c,v $
+Revision 1.21  2009/04/11 00:20:24  jessic2
+<rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
+
 Revision 1.20  2008/10/09 22:26:05  cheshire
 Save space by not showing high-resolution timestamp in LogMsgNoIdent() lines
 
@@ -218,7 +221,7 @@ mDNSexport void mDNSPlatformWriteDebugMsg(const char *msg)
 	}
 #endif
 
-mDNSexport void mDNSPlatformWriteLogMsg(const char *ident, const char *buffer, int logoptflags)
+mDNSexport void mDNSPlatformWriteLogMsg(const char *ident, const char *buffer, mDNSLogLevel_t loglevel)
 	{
 #if APPLE_OSX_mDNSResponder && LogTimeStamps
 	extern mDNS mDNSStorage;
@@ -239,13 +242,28 @@ mDNSexport void mDNSPlatformWriteLogMsg(const char *ident, const char *buffer, i
 		}
 	else				// else, in production mode, we write to syslog
 		{
-		openlog(ident, LOG_CONS | logoptflags, LOG_DAEMON);
+		static int log_inited = 0;
+		
+		int syslog_level = LOG_ERR;
+		switch (loglevel) 
+			{
+			case MDNS_LOG_MSG:       syslog_level = LOG_ERR;     break;
+			case MDNS_LOG_OPERATION: syslog_level = LOG_WARNING; break;
+			case MDNS_LOG_SPS:       syslog_level = LOG_NOTICE;  break;
+			case MDNS_LOG_INFO:      syslog_level = LOG_INFO;    break;
+			case MDNS_LOG_DEBUG:     syslog_level = LOG_DEBUG;   break;
+			default:
+			fprintf(stderr, "Unknown loglevel %d, assuming LOG_ERR\n", loglevel);
+			fflush(stderr);
+			}
+		
+		if (!log_inited) { openlog(ident, LOG_CONS, LOG_DAEMON); log_inited++; }
+
 #if APPLE_OSX_mDNSResponder && LogTimeStamps
 		if (ident && ident[0] && mDNSPlatformClockDivisor)
-			syslog(LOG_ERR, "%8d.%03d: %s", (int)(t/1000), ms, buffer);
+			syslog(syslog_level, "%8d.%03d: %s", (int)(t/1000), ms, buffer);
 		else
 #endif
-			syslog(LOG_ERR, "%s", buffer);
-		closelog();
+			syslog(syslog_level, "%s", buffer);
 		}
 	}

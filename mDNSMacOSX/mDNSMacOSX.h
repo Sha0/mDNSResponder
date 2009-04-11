@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.103  2009/04/11 00:20:13  jessic2
+<rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
+
 Revision 1.102  2009/04/06 22:14:02  cheshire
 Need to include IOKit/pwr_mgt/IOPM.h to build for AppleTV
 
@@ -329,11 +332,7 @@ extern mDNSBool DictionaryIsEnabled(CFDictionaryRef dict);
 // what's causing the problem, we may need to subdivide some categories into finer-grained
 // sub-categories (e.g. "Idle task processing" covers a pretty broad range of sub-tasks).
 
-#if LogClientOperations
-#define WatchDogReportingThreshold 50
-#else
-#define WatchDogReportingThreshold 250
-#endif
+extern int WatchDogReportingThreshold;
 
 struct CompileTimeAssertionChecks_mDNSMacOSX
 	{
