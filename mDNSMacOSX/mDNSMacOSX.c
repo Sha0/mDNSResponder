@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.670  2009/04/15 01:10:39  jessic2
+<rdar://problem/6466541> BTMM: Add support for setting kDNSServiceErr_NoSuchRecord in DynamicStore
+
 Revision 1.669  2009/04/11 02:02:34  mcguire
 <rdar://problem/6780046> crash in doSSLHandshake
 
@@ -3173,6 +3176,21 @@ mDNSlocal void RemoveAutoTunnelDomainStatus(const mDNS *const m, const DomainAut
 
 #endif // ndef NO_SECURITYFRAMEWORK
 
+mDNSlocal mStatus CheckQuestionForStatus(const DNSQuestion *const q)
+	{
+	if (q->LongLived)
+		{
+		if (q->nta || (q->servAddr.type == mDNSAddrType_IPv4 && mDNSIPv4AddressIsOnes(q->servAddr.ip.v4)))
+			return mStatus_NoSuchRecord;
+		else if (q->state == LLQ_Poll)
+			return mStatus_PollingMode;
+		else if (q->state != LLQ_Established && !q->DuplicateOf)
+			return mStatus_TransientErr;
+		}
+	
+	return mStatus_NoError;
+}
+
 // MUST be called with lock held
 mDNSlocal void UpdateAutoTunnelDomainStatus(const mDNS *const m, const DomainAuthInfo *const info)
 	{
@@ -3324,23 +3342,20 @@ mDNSlocal void UpdateAutoTunnelDomainStatus(const mDNS *const m, const DomainAut
 		}
 	else
 		{
-		DNSQuestion* q;
+		DNSQuestion* q, *worst_q = mDNSNULL;
 		for (q = m->Questions; q; q=q->next)
-			if (q->LongLived && q->AuthInfo == info && q->state == LLQ_Poll)
+			if (q->AuthInfo == info)
 				{
-				status = mStatus_PollingMode;
-				mDNS_snprintf(buffer, sizeof(buffer), "Query polling %##s", q->qname.c);
-				break;
+				mStatus newStatus = CheckQuestionForStatus(q);
+				if 		(newStatus == mStatus_NoSuchRecord) { status = newStatus; worst_q = q; break; }
+				else if (newStatus == mStatus_PollingMode)  { status = newStatus; worst_q = q; }
+				else if (newStatus == mStatus_TransientErr && status == mStatus_NoError) { status = newStatus; worst_q = q; }
 				}
-		if (status == mStatus_NoError)
-			for (q = m->Questions; q; q=q->next)
-				if (q->LongLived && q->AuthInfo == info && q->state != LLQ_Established && !q->DuplicateOf)
-					{
-					status = mStatus_TransientErr;
-					mDNS_snprintf(buffer, sizeof(buffer), "Query not yet established %##s", q->qname.c);
-					break;
-					}
-		if (status == mStatus_NoError) mDNS_snprintf(buffer, sizeof(buffer), "Success");
+		
+		if      (status == mStatus_NoError)      mDNS_snprintf(buffer, sizeof(buffer), "Success");
+		else if (status == mStatus_NoSuchRecord) mDNS_snprintf(buffer, sizeof(buffer), "GetZoneData %s: %##s", worst_q->nta ? "not yet complete" : "failed", worst_q->qname.c);
+		else if (status == mStatus_PollingMode)  mDNS_snprintf(buffer, sizeof(buffer), "Query polling %##s", worst_q->qname.c);
+		else if (status == mStatus_TransientErr) mDNS_snprintf(buffer, sizeof(buffer), "Query not yet established %##s", worst_q->qname.c);
 		}
 	
 	num = CFNumberCreate(NULL, kCFNumberSInt32Type, &status);

@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.610  2009/04/15 01:10:39  jessic2
+<rdar://problem/6466541> BTMM: Add support for setting kDNSServiceErr_NoSuchRecord in DynamicStore
+
 Revision 1.609  2009/04/11 00:19:45  jessic2
 <rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
 
@@ -4285,7 +4288,15 @@ mDNSexport void LLQGotZoneData(mDNS *const m, mStatus err, const ZoneData *zoneI
 		startLLQHandshake(m, q);
 		}
 	else
+		{
 		StartLLQPolling(m,q);
+		if (err == mStatus_NoSuchNameErr) 
+			{
+			// this actually failed, so mark it by setting address to all ones 
+			q->servAddr.type = mDNSAddrType_IPv4; 
+			q->servAddr.ip.v4 = onesIPv4Addr; 
+			}
+		}
 
 	mDNS_Unlock(m);
 	}
