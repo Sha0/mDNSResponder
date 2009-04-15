@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.941  2009/04/15 22:22:23  mcguire
+<rdar://problem/6768947> uDNS: Treat RCODE 5 (Refused) responses as failures
+Additional fix: protect against deref of NULL
+
 Revision 1.940  2009/04/15 20:42:51  mcguire
 <rdar://problem/6768947> uDNS: Treat RCODE 5 (Refused) responses as failures
 
@@ -5951,8 +5955,11 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					}
 				else
 					{
-					LogInfo("Server %p responded with code %d to query %##s (%s)", qptr->qDNSServer, rcode, q.qname.c, DNSTypeName(q.qtype));
-					if (qptr) PushDNSServerToEnd(m, qptr);
+					if (qptr)
+						{
+						LogInfo("Server %p responded with code %d to query %##s (%s)", qptr->qDNSServer, rcode, q.qname.c, DNSTypeName(q.qtype));
+						PushDNSServerToEnd(m, qptr);
+						}
 					returnEarly = mDNStrue;
 					}
 				}
