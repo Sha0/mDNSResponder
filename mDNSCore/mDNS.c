@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.940  2009/04/15 20:42:51  mcguire
+<rdar://problem/6768947> uDNS: Treat RCODE 5 (Refused) responses as failures
+
 Revision 1.939  2009/04/11 00:19:32  jessic2
 <rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
 
@@ -5700,7 +5703,7 @@ struct UDPSocket_struct
 	mDNSIPPort port; // MUST BE FIRST FIELD -- mDNSCoreReceive expects every UDPSocket_struct to begin with mDNSIPPort port
 	};
 
-mDNSlocal const DNSQuestion *ExpectingUnicastResponseForQuestion(const mDNS *const m, const mDNSIPPort port, const mDNSOpaque16 id, const DNSQuestion *const question)
+mDNSlocal DNSQuestion *ExpectingUnicastResponseForQuestion(const mDNS *const m, const mDNSIPPort port, const mDNSOpaque16 id, const DNSQuestion *const question)
 	{
 	DNSQuestion *q;
 	for (q = m->Questions; q; q=q->next)
@@ -5916,6 +5919,9 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	// in this response packet are immediately deemed to be invalid.
 	else
 		{
+		mDNSu8 rcode = (mDNSu8)(response->h.flags.b[1] & kDNSFlag1_RC_Mask);
+		mDNSBool failure = !(rcode == kDNSFlag1_RC_NoErr || rcode == kDNSFlag1_RC_NXDomain || rcode == kDNSFlag1_RC_NotAuth);
+		mDNSBool returnEarly = mDNSfalse;
 		// We could possibly combine this with the similar loop at the end of this function --
 		// instead of tagging cache records here and then rescuing them if we find them in the answer section,
 		// we could instead use the "m->PktNum" mechanism to tag each cache record with the packet number in
@@ -5924,23 +5930,42 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		// packet number, then we deduce they are old and delete them
 		for (i = 0; i < response->h.numQuestions && ptr && ptr < end; i++)
 			{
-			DNSQuestion q;
+			DNSQuestion q, *qptr = mDNSNULL;
 			ptr = getQuestion(response, ptr, end, InterfaceID, &q);
-			if (ptr && (!dstaddr || ExpectingUnicastResponseForQuestion(m, dstport, response->h.id, &q)))
+			if (ptr && (!dstaddr || (qptr = ExpectingUnicastResponseForQuestion(m, dstport, response->h.id, &q))))
 				{
-				CacheRecord *rr;
-				const mDNSu32 slot = HashSlot(&q.qname);
-				CacheGroup *cg = CacheGroupForName(m, slot, q.qnamehash, &q.qname);
-				for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
-					if (q.InterfaceID == rr->resrec.InterfaceID && SameNameRecordAnswersQuestion(&rr->resrec, &q))
-						{
-						debugf("uDNS marking %p %##s (%s) %p %s", q.InterfaceID, q.qname.c, DNSTypeName(q.qtype),
-							rr->resrec.InterfaceID, CRDisplayString(m, rr));
-						// Don't want to disturb rroriginalttl here, because code below might need it for the exponential backoff doubling algorithm
-						rr->TimeRcvd          = m->timenow - TicksTTL(rr) - 1;
-						rr->UnansweredQueries = MaxUnansweredQueries;
-						}
+				if (!failure)
+					{
+					CacheRecord *rr;
+					const mDNSu32 slot = HashSlot(&q.qname);
+					CacheGroup *cg = CacheGroupForName(m, slot, q.qnamehash, &q.qname);
+					for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
+						if (q.InterfaceID == rr->resrec.InterfaceID && SameNameRecordAnswersQuestion(&rr->resrec, &q))
+							{
+							debugf("uDNS marking %p %##s (%s) %p %s", q.InterfaceID, q.qname.c, DNSTypeName(q.qtype),
+								rr->resrec.InterfaceID, CRDisplayString(m, rr));
+							// Don't want to disturb rroriginalttl here, because code below might need it for the exponential backoff doubling algorithm
+							rr->TimeRcvd          = m->timenow - TicksTTL(rr) - 1;
+							rr->UnansweredQueries = MaxUnansweredQueries;
+							}
+					}
+				else
+					{
+					LogInfo("Server %p responded with code %d to query %##s (%s)", qptr->qDNSServer, rcode, q.qname.c, DNSTypeName(q.qtype));
+					if (qptr) PushDNSServerToEnd(m, qptr);
+					returnEarly = mDNStrue;
+					}
 				}
+			}
+		if (returnEarly)
+			{
+			LogInfo("Ignoring %2d Answer%s %2d Authorit%s %2d Additional%s",
+				response->h.numAnswers,     response->h.numAnswers     == 1 ? ", " : "s,",
+				response->h.numAuthorities, response->h.numAuthorities == 1 ? "y,  " : "ies,",
+				response->h.numAdditionals, response->h.numAdditionals == 1 ? "" : "s");
+			// not goto exit because we won't have any CacheFlushRecords and we do not want to
+			// generate negative cache entries (we want to query the next server)
+			return;
 			}
 		}
 

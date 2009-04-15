@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.557  2009/04/15 20:42:51  mcguire
+<rdar://problem/6768947> uDNS: Treat RCODE 5 (Refused) responses as failures
+
 Revision 1.556  2009/04/11 00:19:43  jessic2
 <rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
 
@@ -3051,6 +3054,7 @@ extern void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSRecordCa
 extern void mDNS_RemoveDynDNSHostName(mDNS *m, const domainname *fqdn);
 extern void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr,  const mDNSAddr *v6addr, const mDNSAddr *router);
 extern DNSServer *mDNS_AddDNSServer(mDNS *const m, const domainname *d, const mDNSInterfaceID interface, const mDNSAddr *addr, const mDNSIPPort port);
+extern void PushDNSServerToEnd(mDNS *const m, DNSQuestion *q);
 extern void mDNS_AddSearchDomain(const domainname *const domain);
 
 // We use ((void *)0) here instead of mDNSNULL to avoid compile warnings on gcc 4.2

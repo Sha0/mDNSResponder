@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.611  2009/04/15 20:42:51  mcguire
+<rdar://problem/6768947> uDNS: Treat RCODE 5 (Refused) responses as failures
+
 Revision 1.610  2009/04/15 01:10:39  jessic2
 <rdar://problem/6466541> BTMM: Add support for setting kDNSServiceErr_NoSuchRecord in DynamicStore
 
@@ -1458,8 +1461,9 @@ mDNSexport DNSServer *mDNS_AddDNSServer(mDNS *const m, const domainname *d, cons
 	return(*p);
 	}
 
-mDNSlocal void PushDNSServerToEnd(mDNS *const m, DNSQuestion *q)
+mDNSexport void PushDNSServerToEnd(mDNS *const m, DNSQuestion *q)
 	{
+	DNSServer *orig = q->qDNSServer;
 	DNSServer **p = &m->DNSServers;
 	
 	if (m->mDNS_busy != m->mDNS_reentrancy+1)
@@ -1468,10 +1472,10 @@ mDNSlocal void PushDNSServerToEnd(mDNS *const m, DNSQuestion *q)
 	if (!q->qDNSServer)
 		{
 		LogMsg("PushDNSServerToEnd: Null DNS server for %##s (%s) %d", q->qname.c, DNSTypeName(q->qtype), q->unansweredQueries);
-		return;
+		goto end;
 		}
 
-	debugf("PushDNSServerToEnd: Pushing DNS server %#a:%d (%##s) due to %d unanswered queries for %##s (%s)",
+	LogInfo("PushDNSServerToEnd: Pushing DNS server %#a:%d (%##s) due to %d unanswered queries for %##s (%s)",
 		&q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qDNSServer->domain.c, q->unansweredQueries, q->qname.c, DNSTypeName(q->qtype));
 
 	while (*p)
@@ -1481,7 +1485,17 @@ mDNSlocal void PushDNSServerToEnd(mDNS *const m, DNSQuestion *q)
 		}
 
 	*p = q->qDNSServer;
-	q->qDNSServer->next = mDNSNULL; 
+	q->qDNSServer->next = mDNSNULL;
+
+end:
+	q->qDNSServer = GetServerForName(m, &q->qname);
+
+	if (q->qDNSServer != orig)
+		{
+		if (q->qDNSServer) LogInfo("PushDNSServerToEnd: Server for %##s (%s) changed to %#a:%d (%##s)", q->qname.c, DNSTypeName(q->qtype), &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qDNSServer->domain.c);
+		else               LogInfo("PushDNSServerToEnd: Server for %##s (%s) changed to <null>",        q->qname.c, DNSTypeName(q->qtype));
+		q->ThisQInterval = q->ThisQInterval / QuestionIntervalStep; // Decrease interval one step so we don't quickly bounce between servers for queries that will not be answered.
+		}
 	}
 
 // ***************************************************************************
@@ -4656,25 +4670,9 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 		if (q->unansweredQueries >= MAX_UCAST_UNANSWERED_QUERIES)
 			{
 			DNSServer *orig = q->qDNSServer;
-			
-#if MDNS_DEBUGMSGS
-			char buffer[1024];
-			mDNS_snprintf(buffer, sizeof(buffer), orig ? "%#a:%d (%##s)" : "null", &orig->addr, mDNSVal16(orig->port), orig->domain.c);
-			debugf("Sent %d unanswered queries for %##s (%s) to %s", q->unansweredQueries, q->qname.c, DNSTypeName(q->qtype), buffer);
-#endif
+			if (orig) LogInfo("Sent %d unanswered queries for %##s (%s) to %#a:%d (%##s)", q->unansweredQueries, q->qname.c, DNSTypeName(q->qtype), &orig->addr, mDNSVal16(orig->port), orig->domain.c);
 
 			PushDNSServerToEnd(m, q);
-			q->qDNSServer = GetServerForName(m, &q->qname);
-
-			if (q->qDNSServer != orig)
-				{
-#if MDNS_DEBUGMSGS
-				mDNS_snprintf(buffer, sizeof(buffer), q->qDNSServer ? "%#a:%d (%##s)" : "null", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qDNSServer->domain.c);
-				debugf("Server for %##s (%s) changed to %s", q->qname.c, DNSTypeName(q->qtype), buffer);
-#endif
-				q->ThisQInterval = q->ThisQInterval / QuestionIntervalStep; // Decrease interval one step so we don't quickly bounce between servers for queries that will not be answered.
-				}
-
 			q->unansweredQueries = 0;
 			}
 
