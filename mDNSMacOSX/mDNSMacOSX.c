@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.671  2009/04/15 01:14:07  mcguire
+<rdar://problem/6791775> 4 second delay in DNS response
+
 Revision 1.670  2009/04/15 01:10:39  jessic2
 <rdar://problem/6466541> BTMM: Add support for setting kDNSServiceErr_NoSuchRecord in DynamicStore
 
@@ -5313,13 +5316,6 @@ mDNSlocal void SetNetworkChanged(mDNS *const m, mDNSs32 delay)
 		{
 		m->p->NetworkChanged = NonZeroTime(m->timenow + delay);
 		LogInfo("SetNetworkChanged: setting network changed to %d (%d)", delay, m->p->NetworkChanged);
-		}
-
-	if (!m->SuppressSending ||
-		m->SuppressSending - m->p->NetworkChanged < 0)
-		{
-		m->SuppressSending = m->p->NetworkChanged;
-		LogInfo("SetNetworkChanged: setting SuppressSending to %d (%d)", m->SuppressSending - m->timenow, m->SuppressSending);
 		}
 	}
 
