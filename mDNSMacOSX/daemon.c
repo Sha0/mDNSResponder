@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.423  2009/04/16 16:03:08  mcguire
+<rdar://problem/6792024> abort() causes high CPU usage instead of crash & restart
+
 Revision 1.422  2009/04/11 01:43:28  jessic2
 <rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
 
@@ -2205,8 +2208,8 @@ mDNSlocal void HandleSIG(int sig)
 
 mDNSlocal void CatchABRT(int sig)
 	{
-	LogMsg("Received SIGABRT %d", sig);
-	sleep(1);					// Pause to make sure syslog gets the message
+	// WARNING: can't call syslog or fprintf from signal handler
+	(void)sig;
 	while(1) *(long*)0 = 0;		// Generate a CrashReporter stack trace so we can find out what library called abort();
 	}
 
@@ -2990,9 +2993,15 @@ mDNSexport int main(int argc, char **argv)
 	// Note that mDNSPlatformInit will set DivertMulticastAdvertisements in the mDNS structure
 	if (!advertise) LogMsg("Administratively prohibiting multicast advertisements");
 
+	OSXVers = mDNSMacOSXSystemBuildNumber(NULL);
+
 	signal(SIGHUP,  HandleSIG);		// (Debugging) Purge the cache to check for cache handling bugs
 	signal(SIGINT,  HandleSIG);		// Ctrl-C: Detach from Mach BootstrapService and exit cleanly
-	signal(SIGABRT, CatchABRT);		// For debugging -- SIGABRT should never happen
+	if (OSXVers <= OSXVers_10_4_Tiger)
+		{
+		LogInfo("Adding SIGABRT handler");
+		signal(SIGABRT, CatchABRT); // For debugging -- SIGABRT should never happen
+		}
 	signal(SIGPIPE, SIG_IGN  );		// Don't want SIGPIPE signals -- we'll handle EPIPE errors directly
 	signal(SIGTERM, HandleSIG);		// Machine shutting down: Detach from and exit cleanly like Ctrl-C
 	signal(SIGINFO, HandleSIG);		// (Debugging) Write state snapshot to syslog
@@ -3052,7 +3061,6 @@ mDNSexport int main(int argc, char **argv)
 		}
 #endif
 
-	OSXVers = mDNSMacOSXSystemBuildNumber(NULL);
 	status = mDNSDaemonInitialize();
 	if (status) { LogMsg("Daemon start: mDNSDaemonInitialize failed"); goto exit; }
 
