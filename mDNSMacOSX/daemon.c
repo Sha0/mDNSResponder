@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.424  2009/04/17 19:10:27  mcguire
+<rdar://problem/6802833> May still ping-pong with kernel when a framework calls abort()
+
 Revision 1.423  2009/04/16 16:03:08  mcguire
 <rdar://problem/6792024> abort() causes high CPU usage instead of crash & restart
 
@@ -2209,8 +2212,13 @@ mDNSlocal void HandleSIG(int sig)
 mDNSlocal void CatchABRT(int sig)
 	{
 	// WARNING: can't call syslog or fprintf from signal handler
+	// We want a CrashReporter stack trace so we can find out what library called abort()
+	// So that we will crash, unblock all signals (that abort() may have blocked)
+	sigset_t mask;
+	sigfillset(&mask);
+	sigprocmask(SIG_UNBLOCK, &mask, NULL);
 	(void)sig;
-	while(1) *(long*)0 = 0;		// Generate a CrashReporter stack trace so we can find out what library called abort();
+	while(1) *(long*)0 = 0;
 	}
 
 mDNSlocal void INFOCallback(void)
