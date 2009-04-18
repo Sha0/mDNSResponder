@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.454  2009/04/18 20:56:43  jessic2
+<rdar://problem/6803941> BTMM: If multiple local users are logged in to same BTMM account, all but one fail
+
 Revision 1.453  2009/04/11 00:20:29  jessic2
 <rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
 
@@ -1353,10 +1356,10 @@ mDNSlocal void send_all(dnssd_sock_t s, const char *ptr, int len)
 
 mDNSlocal mDNSBool AuthorizedDomain(const request_state * const request, const domainname * const d, const DNameListElem * const doms)
 {
-	const 	DNameListElem 	*delem 		= mDNSNULL;
-	const 	DNameListElem 	*bestDelem 	= mDNSNULL;	// the element with the longest match
-	int 	bestDelta = -1; 						// the delta of the best match, lower is better
-	int 	dLabels = 0;
+	const 		DNameListElem 	*delem = mDNSNULL;
+	int 		bestDelta 	= -1; 					// the delta of the best match, lower is better
+	int 		dLabels 	= 0;
+	mDNSBool	allow 		= mDNSfalse;
 	
 	if (SystemUID(request->uid)) return mDNStrue;
 	
@@ -1367,20 +1370,15 @@ mDNSlocal mDNSBool AuthorizedDomain(const request_state * const request, const d
 			{
 			int	delemLabels = CountLabels(&delem->name);
 			int delta 		= dLabels - delemLabels;
-			if ((bestDelta == -1 || delta < bestDelta) && SameDomainName(&delem->name, SkipLeadingLabels(d, delta)))
+			if ((bestDelta == -1 || delta <= bestDelta) && SameDomainName(&delem->name, SkipLeadingLabels(d, delta)))
 				{
 				bestDelta = delta;
-				bestDelem = delem;
+				allow = (allow || (delem->uid == request->uid));
 				}
 			}
 		}
 	
-	if (bestDelem && request->uid != bestDelem->uid)
-		{
-		LogOperation("Denying uid %d access to %##s", request->uid, d->c);
-		return mDNSfalse;
-		}
-	else return mDNStrue;
+	return bestDelta == -1 ? mDNStrue : allow;
 }
 
 // ***************************************************************************
