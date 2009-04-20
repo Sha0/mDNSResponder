@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.425  2009/04/20 19:17:19  cheshire
+Added a comment explaining why we don't need our CatchABRT handler on 10.5 and later
+
 Revision 1.424  2009/04/17 19:10:27  mcguire
 <rdar://problem/6802833> May still ping-pong with kernel when a framework calls abort()
 
@@ -3005,6 +3008,7 @@ mDNSexport int main(int argc, char **argv)
 
 	signal(SIGHUP,  HandleSIG);		// (Debugging) Purge the cache to check for cache handling bugs
 	signal(SIGINT,  HandleSIG);		// Ctrl-C: Detach from Mach BootstrapService and exit cleanly
+	// On 10.5 and later, the default action for SIGABRT is to generate a crash report, so we only need our CatchABRT handler on 10.4
 	if (OSXVers <= OSXVers_10_4_Tiger)
 		{
 		LogInfo("Adding SIGABRT handler");
