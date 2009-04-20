@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.426  2009/04/20 19:25:26  cheshire
+For readability, changed "nomulticastadvertisements" to "NoMulticastAdvertisements"
+
 Revision 1.425  2009/04/20 19:17:19  cheshire
 Added a comment explaining why we don't need our CatchABRT handler on 10.5 and later
 
@@ -2995,10 +2998,10 @@ mDNSexport int main(int argc, char **argv)
 
 	for (i=1; i<argc; i++)
 		{
-		if (!strcasecmp(argv[i], "-d"           )) mDNS_DebugMode = mDNStrue;
-		if (!strcasecmp(argv[i], "-launchd"     )) started_via_launchdaemon = mDNStrue;
-		if (!strcasecmp(argv[i], "-launchdaemon")) started_via_launchdaemon = mDNStrue;
-		if (!strcasecmp(argv[i], "-nomulticastadvertisements" )) advertise = mDNS_Init_DontAdvertiseLocalAddresses;
+		if (!strcasecmp(argv[i], "-d"                        )) mDNS_DebugMode = mDNStrue;
+		if (!strcasecmp(argv[i], "-launchd"                  )) started_via_launchdaemon = mDNStrue;
+		if (!strcasecmp(argv[i], "-launchdaemon"             )) started_via_launchdaemon = mDNStrue;
+		if (!strcasecmp(argv[i], "-NoMulticastAdvertisements")) advertise = mDNS_Init_DontAdvertiseLocalAddresses;
 		}
 	
 	// Note that mDNSPlatformInit will set DivertMulticastAdvertisements in the mDNS structure
