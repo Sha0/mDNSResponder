@@ -17,6 +17,11 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.455  2009/04/20 19:19:57  cheshire
+<rdar://problem/6803941> BTMM: If multiple local users are logged in to same BTMM account, all but one fail
+Don't need "empty info->u.browser.browsers list" debugging message, now that we expect this to be
+a case that can legitimately happen.
+
 Revision 1.454  2009/04/18 20:56:43  jessic2
 <rdar://problem/6803941> BTMM: If multiple local users are logged in to same BTMM account, all but one fail
 
@@ -1076,8 +1081,6 @@ mDNSexport DNameListElem *AutoRegistrationDomains;	// Domains where we automatic
 #ifndef PID_FILE
 #define PID_FILE "/var/run/mDNSResponder.pid"
 #endif
-
-mDNSlocal void LogClientInfo(mDNS *const m, request_state *req);
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -2369,12 +2372,6 @@ mDNSlocal mStatus add_domain_to_browser(request_state *info, const domainname *d
 
 mDNSlocal void browse_termination_callback(request_state *info)
 	{
-	if (!info->u.browser.browsers)
-		{
-		LogMsg("%3d: DNSServiceBrowse STOP -- WARNING: empty info->u.browser.browsers list %##s", info->sd, info->u.browser.regtype.c);
-		LogClientInfo(&mDNSStorage, info);
-		}
-
 	while (info->u.browser.browsers)
 		{
 		browser_t *ptr = info->u.browser.browsers;
