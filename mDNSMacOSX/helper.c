@@ -17,6 +17,11 @@
     Change History (most recent first):
 
 $Log: helper.c,v $
+Revision 1.66  2009/04/20 20:40:14  cheshire
+<rdar://problem/6786150> uDNS: Running location cycling caused configd and mDNSResponder to deadlock
+Changed mDNSPreferencesSetName (and similar) routines from MIG "routine" to MIG "simpleroutine"
+so we don't deadlock waiting for a result that we're just going to ignore anyway
+
 Revision 1.65  2009/03/20 22:12:28  mcguire
 <rdar://problem/6703952> Support CFUserNotificationDisplayNotice in mDNSResponderHelper
 Make the call to the helper a simpleroutine: don't wait for an unused return value
@@ -492,7 +497,7 @@ kern_return_t do_mDNSNotify(__unused mach_port_t port, const char *title, const 
 
 kern_return_t
 do_mDNSDynamicStoreSetConfig(__unused mach_port_t port, int key,
-    const char* subkey, vm_offset_t value, mach_msg_type_number_t valueCnt, int *err,
+    const char* subkey, vm_offset_t value, mach_msg_type_number_t valueCnt,
     audit_token_t token)
 	{
 	CFStringRef sckey = NULL;
@@ -502,12 +507,7 @@ do_mDNSDynamicStoreSetConfig(__unused mach_port_t port, int key,
 	SCDynamicStoreRef store = NULL;
 
 	debug("entry");
-	*err = 0;
-	if (!authorized(&token))
-		{
-		*err = kmDNSHelperNotAuthorized;
-		goto fin;
-		}
+	if (!authorized(&token)) goto fin;
 
 	switch ((enum mDNSDynamicStoreSetConfigKey)key)
 		{
@@ -536,21 +536,18 @@ do_mDNSDynamicStoreSetConfig(__unused mach_port_t port, int key,
 			}
 		default:
 			debug("unrecognized key %d", key);
-			*err = kmDNSHelperInvalidConfigKey;
 			goto fin;
 		}
 	if (NULL == (bytes = CFDataCreateWithBytesNoCopy(NULL, (void *)value,
 	    valueCnt, kCFAllocatorNull)))
 		{
 		debug("CFDataCreateWithBytesNoCopy of value failed");
-		*err = kmDNSHelperCreationFailed;
 		goto fin;
 		}
 	if (NULL == (plist = CFPropertyListCreateFromXMLData(NULL, bytes,
 	    kCFPropertyListImmutable, NULL)))
 		{
 		debug("CFPropertyListCreateFromXMLData of bytes failed");
-		*err = kmDNSHelperInvalidPList;
 		goto fin;
 		}
 	CFRelease(bytes);
@@ -559,16 +556,12 @@ do_mDNSDynamicStoreSetConfig(__unused mach_port_t port, int key,
 	    CFSTR(kmDNSHelperServiceName), NULL, NULL)))
 		{
 		debug("SCDynamicStoreCreate failed: %s", SCErrorString(SCError()));
-		*err = kmDNSHelperDynamicStoreFailed;
 		goto fin;
 		}
 	SCDynamicStoreSetValue(store, sckey, plist);
-	*err = 0;
 	debug("succeeded");
 
 fin:
-	if (0 != *err)
-		debug("failed err=%d", *err);
 	if (NULL != bytes)
 		CFRelease(bytes);
 	if (NULL != plist)
@@ -775,7 +768,7 @@ static void update_notification(void)
 	}
 
 kern_return_t
-do_mDNSPreferencesSetName(__unused mach_port_t port, int key, const char* old, const char* new, int *err, audit_token_t token)
+do_mDNSPreferencesSetName(__unused mach_port_t port, int key, const char* old, const char* new, audit_token_t token)
 	{
 	SCPreferencesRef session = NULL;
 	Boolean ok = FALSE;
@@ -786,12 +779,8 @@ do_mDNSPreferencesSetName(__unused mach_port_t port, int key, const char* old, c
 	Boolean needUpdate = FALSE;
 
 	debug("entry %s old=%s new=%s", key==kmDNSComputerName ? "ComputerName" : (key==kmDNSLocalHostName ? "LocalHostName" : "UNKNOWN"), old, new);
-	*err = 0;
-	if (!authorized(&token))
-		{
-		*err = kmDNSHelperNotAuthorized;
-		goto fin;
-		}
+	if (!authorized(&token)) goto fin;
+
 	switch ((enum mDNSPreferencesSetNameKey)key)
 		{
 		case kmDNSComputerName:
@@ -804,7 +793,6 @@ do_mDNSPreferencesSetName(__unused mach_port_t port, int key, const char* old, c
 			break;
 		default:
 			debug("unrecognized key: %d", key);
-			*err = kmDNSHelperInvalidNameKey;
 			goto fin;
 		}
 
@@ -856,13 +844,11 @@ do_mDNSPreferencesSetName(__unused mach_port_t port, int key, const char* old, c
 	if (cfstr == NULL || session == NULL)
 		{
 		debug("SCPreferencesCreate failed");
-		*err = kmDNSHelperPreferencesFailed;
 		goto fin;
 		}
 	if (!SCPreferencesLock(session, 0))
 		{
 		debug("lock failed");
-		*err = kmDNSHelperPreferencesLockFailed;
 		goto fin;
 		}
 	locked = TRUE;
@@ -894,15 +880,11 @@ do_mDNSPreferencesSetName(__unused mach_port_t port, int key, const char* old, c
 	    !SCPreferencesApplyChanges(session))
 		{
 		debug("SCPreferences update failed");
-		*err = kmDNSHelperPreferencesSetFailed;
 		goto fin;
 		}
-	*err = 0;
 	debug("succeeded");
 
 fin:
-	if (0 != *err)
-		debug("failed err=%d", *err);
 	if (NULL != cfstr)
 		CFRelease(cfstr);
 	if (NULL != session)
@@ -1305,27 +1287,22 @@ fin:
 
 int
 do_mDNSAutoTunnelInterfaceUpDown(__unused mach_port_t port, int updown,
-    v6addr_t address, int *err, audit_token_t token)
+    v6addr_t address, audit_token_t token)
 	{
 #ifndef MDNS_NO_IPSEC
 	debug("entry");
-	*err = 0;
-	if (!authorized(&token))
-		{
-		*err = kmDNSHelperNotAuthorized;
-		goto fin;
-		}
+	if (!authorized(&token)) goto fin;
+
 	switch ((enum mDNSUpDown)updown)
-	{
-	case kmDNSUp:
-		*err = aliasTunnelAddress(address);
-		break;
-	case kmDNSDown:
-		*err = unaliasTunnelAddress(address);
-		break;
-	default:
-		*err = kmDNSHelperInvalidInterfaceState;
-		goto fin;
+		{
+		case kmDNSUp:
+			aliasTunnelAddress(address);
+			break;
+		case kmDNSDown:
+			unaliasTunnelAddress(address);
+			break;
+		default:
+			goto fin;
 		}
 	debug("succeeded");
 
@@ -1883,37 +1860,26 @@ kickRacoon(void)
 #endif /* ndef MDNS_NO_IPSEC */
 
 int
-do_mDNSConfigureServer(__unused mach_port_t port, int updown, const char *fqdn, int *err, audit_token_t token)
+do_mDNSConfigureServer(__unused mach_port_t port, int updown, const char *fqdn, audit_token_t token)
 	{
 #ifndef MDNS_NO_IPSEC
 	debug("entry");
-	*err = 0;
-
-	if (!authorized(&token))
-		{
-		*err = kmDNSHelperNotAuthorized;
-		goto fin;
-		}
+	if (!authorized(&token)) goto fin;
 
 	switch ((enum mDNSUpDown)updown)
 		{
 		case kmDNSUp:
-			if (0 != createAnonymousRacoonConfiguration(fqdn))
-				{
-				*err = kmDNSHelperRacoonConfigCreationFailed;
-				goto fin;
-				}
+			if (0 != createAnonymousRacoonConfiguration(fqdn)) goto fin;
 			break;
 		case kmDNSDown:
 			revertAnonymousRacoonConfiguration(GetOldRacoonConfigDir());
 			revertAnonymousRacoonConfiguration(GetRacoonConfigDir());
 			break;
 		default:
-			*err = kmDNSHelperInvalidServerState;
 			goto fin;
 		}
 
-	if (0 != (*err = kickRacoon()))
+	if (0 != kickRacoon())
 		goto fin;
 	debug("succeeded");
 

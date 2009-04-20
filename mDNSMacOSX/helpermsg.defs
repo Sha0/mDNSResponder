@@ -17,6 +17,11 @@
     Change History (most recent first):
 
 $Log: helpermsg.defs,v $
+Revision 1.17  2009/04/20 20:40:14  cheshire
+<rdar://problem/6786150> uDNS: Running location cycling caused configd and mDNSResponder to deadlock
+Changed mDNSPreferencesSetName (and similar) routines from MIG "routine" to MIG "simpleroutine"
+so we don't deadlock waiting for a result that we're just going to ignore anyway
+
 Revision 1.16  2009/03/20 22:12:28  mcguire
 <rdar://problem/6703952> Support CFUserNotificationDisplayNotice in mDNSResponderHelper
 Make the call to the helper a simpleroutine: don't wait for an unused return value
@@ -108,19 +113,17 @@ simpleroutine mDNSNotify(		port			: mach_port_t;
 								msg				: string_t;
 		ServerAuditToken		token			: audit_token_t);
 
-routine mDNSDynamicStoreSetConfig(
+simpleroutine mDNSDynamicStoreSetConfig(
 								port			: mach_port_t;
 								key				: int;
 								subkey			: string_t;
 								value			: pointer_t;
-		out						err				: int;
 		ServerAuditToken		token			: audit_token_t);
 
-routine mDNSPreferencesSetName( port			: mach_port_t;
+simpleroutine mDNSPreferencesSetName( port			: mach_port_t;
 								key				: int;
 								old				: string_t;
 								new				: string_t;
-		out						err				: int;
 		ServerAuditToken		token			: audit_token_t);
 
 routine mDNSKeychainGetSecrets( port			: mach_port_t;
@@ -129,17 +132,15 @@ routine mDNSKeychainGetSecrets( port			: mach_port_t;
 		out						err				: int;
 		ServerAuditToken		token			: audit_token_t);
 
-routine mDNSAutoTunnelInterfaceUpDown(
+simpleroutine mDNSAutoTunnelInterfaceUpDown(
 								port			: mach_port_t;
 								updown			: int;
 								address			: v6addr_t;
-		out						err				: int;
 		ServerAuditToken		token			: audit_token_t);
 
-routine mDNSConfigureServer(	port			: mach_port_t;
+simpleroutine mDNSConfigureServer(	port			: mach_port_t;
 								updown			: int;
 								fqdn			: string_t;
-		out						err				: int;
 		ServerAuditToken		token			: audit_token_t);
 
 routine mDNSAutoTunnelSetKeys(	port			: mach_port_t;

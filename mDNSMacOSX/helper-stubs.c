@@ -16,6 +16,11 @@
     Change History (most recent first):
 
 $Log: helper-stubs.c,v $
+Revision 1.19  2009/04/20 20:40:14  cheshire
+<rdar://problem/6786150> uDNS: Running location cycling caused configd and mDNSResponder to deadlock
+Changed mDNSPreferencesSetName (and similar) routines from MIG "routine" to MIG "simpleroutine"
+so we don't deadlock waiting for a result that we're just going to ignore anyway
+
 Revision 1.18  2009/03/20 22:12:27  mcguire
 <rdar://problem/6703952> Support CFUserNotificationDisplayNotice in mDNSResponderHelper
 Make the call to the helper a simpleroutine: don't wait for an unused return value
@@ -129,7 +134,7 @@ const char *mDNSHelperError(int err)
 	if (0 != (err) && kIOReturnNotReady != (err))											\
 		{ LogMsg("%s: %d 0x%X (%s)", __func__, (err), (err), mDNSHelperError(err)); goto fin; }
 
-int mDNSPreferencesSetName(int key, domainlabel* old, domainlabel* new)
+void mDNSPreferencesSetName(int key, domainlabel *old, domainlabel *new)
 	{
 	kern_return_t kr = KERN_FAILURE;
 	int retry = 0;
@@ -140,14 +145,14 @@ int mDNSPreferencesSetName(int key, domainlabel* old, domainlabel* new)
 	if (new) ConvertDomainLabelToCString_unescaped(new, newname);
 
 	MACHRETRYLOOP_BEGIN(kr, retry, err, fin);
-	kr = proxy_mDNSPreferencesSetName(getHelperPort(retry), key, oldname, newname, &err);
+	kr = proxy_mDNSPreferencesSetName(getHelperPort(retry), key, oldname, newname);
 	MACHRETRYLOOP_END(kr, retry, err, fin);
 
 fin:
-	return err;
+	(void)err;
 	}
 
-int mDNSDynamicStoreSetConfig(int key, const char *subkey, CFPropertyListRef value)
+void mDNSDynamicStoreSetConfig(int key, const char *subkey, CFPropertyListRef value)
 	{
 	CFWriteStreamRef stream = NULL;
 	CFDataRef bytes = NULL;
@@ -178,13 +183,13 @@ int mDNSDynamicStoreSetConfig(int key, const char *subkey, CFPropertyListRef val
 	CFRelease(stream);
 	stream = NULL;
 	MACHRETRYLOOP_BEGIN(kr, retry, err, fin);
-	kr = proxy_mDNSDynamicStoreSetConfig(getHelperPort(retry), key, subkey ? subkey : "", (vm_offset_t)CFDataGetBytePtr(bytes), CFDataGetLength(bytes), &err);
+	kr = proxy_mDNSDynamicStoreSetConfig(getHelperPort(retry), key, subkey ? subkey : "", (vm_offset_t)CFDataGetBytePtr(bytes), CFDataGetLength(bytes));
 	MACHRETRYLOOP_END(kr, retry, err, fin);
 
 fin:
 	if (NULL != stream) { CFWriteStreamClose(stream); CFRelease(stream); }
 	if (NULL != bytes) CFRelease(bytes);
-	return err;
+	(void)err;
 	}
 
 void mDNSRequestBPF(void)
@@ -273,18 +278,18 @@ fin:
 	return err;
 	}
 
-int mDNSAutoTunnelInterfaceUpDown(int updown, v6addr_t address)
+void mDNSAutoTunnelInterfaceUpDown(int updown, v6addr_t address)
 	{
 	kern_return_t kr = KERN_SUCCESS;
 	int retry = 0, err = 0;
 	MACHRETRYLOOP_BEGIN(kr, retry, err, fin);
-	kr = proxy_mDNSAutoTunnelInterfaceUpDown(getHelperPort(retry), updown, address, &err);
+	kr = proxy_mDNSAutoTunnelInterfaceUpDown(getHelperPort(retry), updown, address);
 	MACHRETRYLOOP_END(kr, retry, err, fin);
 fin:
-	return err;
+	(void)err;
 	}
 
-int mDNSConfigureServer(int updown, const domainname * const fqdn)
+void mDNSConfigureServer(int updown, const domainname *const fqdn)
 	{
 	kern_return_t kr = KERN_SUCCESS;
 	int retry = 0, err = 0;
@@ -296,15 +301,15 @@ int mDNSConfigureServer(int updown, const domainname * const fqdn)
 		if (fqdnEnd) fqdnStr[fqdnEnd - 1] = 0;
 		}
 	MACHRETRYLOOP_BEGIN(kr, retry, err, fin);
-	kr = proxy_mDNSConfigureServer(getHelperPort(retry), updown, fqdnStr, &err);
+	kr = proxy_mDNSConfigureServer(getHelperPort(retry), updown, fqdnStr);
 	MACHRETRYLOOP_END(kr, retry, err, fin);
 fin:
-	return err;
+	(void)err;
 	}
 
 int mDNSAutoTunnelSetKeys(int replacedelete, v6addr_t local_inner,
     v4addr_t local_outer, short local_port, v6addr_t remote_inner,
-    v4addr_t remote_outer, short remote_port, const domainname * const fqdn)
+    v4addr_t remote_outer, short remote_port, const domainname *const fqdn)
 	{
 	kern_return_t kr = KERN_SUCCESS;
 	int retry = 0, err = 0;

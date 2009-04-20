@@ -17,6 +17,11 @@
     Change History (most recent first):
 
 $Log: helper.h,v $
+Revision 1.18  2009/04/20 20:40:14  cheshire
+<rdar://problem/6786150> uDNS: Running location cycling caused configd and mDNSResponder to deadlock
+Changed mDNSPreferencesSetName (and similar) routines from MIG "routine" to MIG "simpleroutine"
+so we don't deadlock waiting for a result that we're just going to ignore anyway
+
 Revision 1.17  2009/03/20 22:12:28  mcguire
 <rdar://problem/6703952> Support CFUserNotificationDisplayNotice in mDNSResponderHelper
 Make the call to the helper a simpleroutine: don't wait for an unused return value
@@ -120,13 +125,13 @@ extern void mDNSRequestBPF(void);
 extern int  mDNSPowerRequest(int key, int interval);
 extern int  mDNSSetARP(int ifindex, const v4addr_t ip, const ethaddr_t eth);
 extern void mDNSNotify(const char *title, const char *msg);		// Both strings are UTF-8 text
-extern int  mDNSDynamicStoreSetConfig(int key, const char *subkey, CFPropertyListRef value);
-extern int  mDNSPreferencesSetName(int key, domainlabel* old, domainlabel* new);
+extern void mDNSDynamicStoreSetConfig(int key, const char *subkey, CFPropertyListRef value);
+extern void mDNSPreferencesSetName(int key, domainlabel *old, domainlabel *new);
 extern int  mDNSKeychainGetSecrets(CFArrayRef *secrets);
-extern int  mDNSAutoTunnelInterfaceUpDown(int updown, v6addr_t addr);
-extern int  mDNSConfigureServer(int updown, const domainname * const fqdn);
+extern void mDNSAutoTunnelInterfaceUpDown(int updown, v6addr_t addr);
+extern void mDNSConfigureServer(int updown, const domainname *const fqdn);
 extern int  mDNSAutoTunnelSetKeys(int replacedelete, v6addr_t local_inner,
 				v4addr_t local_outer, short local_port, v6addr_t remote_inner,
-				v4addr_t remote_outer, short remote_port, const domainname * const fqdn);
+				v4addr_t remote_outer, short remote_port, const domainname *const fqdn);
 
 #endif /* H_HELPER_H */
