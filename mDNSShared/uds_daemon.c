@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.456  2009/04/21 01:56:34  jessic2
+<rdar://problem/6803941> BTMM: Back out change for preventing other local users from sending packets to your BTMM machines
+
 Revision 1.455  2009/04/20 19:19:57  cheshire
 <rdar://problem/6803941> BTMM: If multiple local users are logged in to same BTMM account, all but one fail
 Don't need "empty info->u.browser.browsers list" debugging message, now that we expect this to be
@@ -1017,7 +1020,9 @@ struct request_state
 			} pm;
 		struct
 			{
+#if 0
 			DNSServiceFlags flags;
+#endif
 			DNSQuestion q_all;
 			DNSQuestion q_default;
 			} enumeration;
@@ -1357,6 +1362,7 @@ mDNSlocal void send_all(dnssd_sock_t s, const char *ptr, int len)
 			s, n, len, dnssd_errno, dnssd_strerror(dnssd_errno));
 	}
 
+#if 0
 mDNSlocal mDNSBool AuthorizedDomain(const request_state * const request, const domainname * const d, const DNameListElem * const doms)
 {
 	const 		DNameListElem 	*delem = mDNSNULL;
@@ -1383,6 +1389,7 @@ mDNSlocal mDNSBool AuthorizedDomain(const request_state * const request, const d
 	
 	return bestDelta == -1 ? mDNStrue : allow;
 }
+#endif
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -1682,7 +1689,9 @@ mDNSlocal mStatus handle_regrecord_request(request_state *request)
 		re->next = request->u.reg_recs;
 		request->u.reg_recs = re;
 	
+#if 0
 		if (!AuthorizedDomain(request, rr->resrec.name, AutoRegistrationDomains))	return (mStatus_NoError);
+#endif
 		if (rr->resrec.rroriginalttl == 0)
 			rr->resrec.rroriginalttl = DefaultTTLforRRType(rr->resrec.rrtype);
 	
@@ -2282,7 +2291,11 @@ mDNSlocal mStatus handle_regservice_request(request_state *request)
 	// what kind of request this is, and therefore what kind of list validation is required.
 	request->terminate = regservice_termination_callback;
 
+	err = register_service_instance(request, &d);
+
+#if 0
 	err = AuthorizedDomain(request, &d, AutoRegistrationDomains) ? register_service_instance(request, &d) : mStatus_NoError;
+#endif
 	if (!err)
 		{
 		if (request->u.servicereg.autoname) UpdateDeviceInfoRecord(&mDNSStorage);
@@ -2715,7 +2728,10 @@ mDNSlocal mStatus handle_browse_request(request_state *request)
 	if (domain[0])
 		{
 		if (!MakeDomainNameFromDNSNameString(&d, domain)) return(mStatus_BadParamErr);
+		err = add_domain_to_browser(request, &d);
+#if 0
 		err = AuthorizedDomain(request, &d, AutoBrowseDomains) ? add_domain_to_browser(request, &d) : mStatus_NoError;
+#endif
 		}
 	else
 		{
@@ -2858,7 +2874,9 @@ mDNSlocal mStatus handle_resolve_request(request_state *request)
 	request->u.resolve.qtxt.QuestionContext  = request;
 	request->u.resolve.ReportTime            = NonZeroTime(mDNS_TimeNow(&mDNSStorage) + 130 * mDNSPlatformOneSecond);
 
+#if 0
 	if (!AuthorizedDomain(request, &fqdn, AutoBrowseDomains))	return(mStatus_NoError);
+#endif
 
 	// ask the questions
 	LogOperation("%3d: DNSServiceResolve(%##s) START", request->sd, request->u.resolve.qsrv.qname.c);
@@ -2995,7 +3013,9 @@ mDNSlocal mStatus handle_queryrecord_request(request_state *request)
 	q->InterfaceID      = InterfaceID;
 	q->Target           = zeroAddr;
 	if (!MakeDomainNameFromDNSNameString(&q->qname, name)) 			return(mStatus_BadParamErr);
+#if 0
 	if (!AuthorizedDomain(request, &q->qname, AutoBrowseDomains))	return (mStatus_NoError);
+#endif
 	q->qtype            = rrtype;
 	q->qclass           = rrclass;
 	q->LongLived        = (flags & kDNSServiceFlagsLongLivedQuery     ) != 0;
@@ -3093,7 +3113,9 @@ mDNSlocal void enum_result_callback(mDNS *const m,
 
 	if (answer->rrtype != kDNSType_PTR) return;
 
+#if 0
 	if (!AuthorizedDomain(request, &answer->rdata->u.name, request->u.enumeration.flags ? AutoRegistrationDomains : AutoBrowseDomains)) return;
+#endif
 
 	// We only return add/remove events for the browse and registration lists
 	// For the default browse and registration answers, we only give an "ADD" event
@@ -3134,8 +3156,10 @@ mDNSlocal mStatus handle_enum_request(request_state *request)
 	// allocate context structures
 	uDNS_RegisterSearchDomains(&mDNSStorage);
 
+#if 0
 	// mark which kind of enumeration we're doing so we can (de)authorize certain domains
 	request->u.enumeration.flags = reg;
+#endif
 
 	// enumeration requires multiple questions, so we must link all the context pointers so that
 	// necessary context can be reached from the callbacks
@@ -3379,7 +3403,9 @@ mDNSlocal mStatus handle_addrinfo_request(request_state *request)
 	if (!MakeDomainNameFromDNSNameString(&d, hostname))
 		{ LogMsg("ERROR: handle_addrinfo_request: bad hostname: %s", hostname); return(mStatus_BadParamErr); }
 
+#if 0
 	if (!AuthorizedDomain(request, &d, AutoBrowseDomains))	return (mStatus_NoError);
+#endif
 
 	if (!request->u.addrinfo.protocol)
 		{
