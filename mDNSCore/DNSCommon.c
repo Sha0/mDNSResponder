@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.245  2009/04/21 00:57:23  cheshire
+<rdar://problem/6810410> Off-by-one error in putDomainNameAsLabels()
+If just writing one-byte root label, make sure we have space for that
+
 Revision 1.244  2009/04/11 00:19:30  jessic2
 <rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
 
@@ -1882,43 +1886,49 @@ mDNSexport mDNSu8 *putDomainNameAsLabels(const DNSMessage *const msg,
 	const mDNSu8 *      pointer     = mDNSNULL;
 	const mDNSu8 *const searchlimit = ptr;
 
-	if (!ptr) { LogMsg("putDomainNameAsLabels ptr is null"); return(mDNSNULL); }
+	if (!ptr) { LogMsg("putDomainNameAsLabels %##s ptr is null"), name->c; return(mDNSNULL); }
 
-	while (*np)							// While we've got characters in the name
+	if (!*np)		// If just writing one-byte root label, make sure we have space for that
 		{
-		if (*np > MAX_DOMAIN_LABEL)
-			{ LogMsg("Malformed domain name %##s (label more than 63 bytes)", name->c); return(mDNSNULL); }
-
-		// This check correctly allows for the final trailing root label:
-		// e.g.
-		// Suppose our domain name is exactly 256 bytes long, including the final trailing root label.
-		// Suppose np is now at name->c[249], and we're about to write our last non-null label ("local").
-		// We know that max will be at name->c[256]
-		// That means that np + 1 + 5 == max - 1, so we (just) pass the "if" test below, write our
-		// six bytes, then exit the loop, write the final terminating root label, and the domain
-		// name we've written is exactly 256 bytes long, exactly at the correct legal limit.
-		// If the name is one byte longer, then we fail the "if" test below, and correctly bail out.
-		if (np + 1 + *np >= max)
-			{ LogMsg("Malformed domain name %##s (more than 256 bytes)", name->c); return(mDNSNULL); }
-
-		if (base) pointer = FindCompressionPointer(base, searchlimit, np);
-		if (pointer)					// Use a compression pointer if we can
-			{
-			const mDNSu16 offset = (mDNSu16)(pointer - base);
-			if (ptr+2 > limit) return(mDNSNULL);	// If we don't have two bytes of space left, give up
-			*ptr++ = (mDNSu8)(0xC0 | (offset >> 8));
-			*ptr++ = (mDNSu8)(        offset &  0xFF);
-			return(ptr);
-			}
-		else							// Else copy one label and try again
-			{
-			int i;
-			mDNSu8 len = *np++;
-			// If we don't at least have enough space for this label *plus* a terminating zero on the end, give up
-			if (ptr + 1 + len >= limit) return(mDNSNULL);
-			*ptr++ = len;
-			for (i=0; i<len; i++) *ptr++ = *np++;
-			}
+		if (ptr >= limit) return(mDNSNULL);
+		}
+	else			// else, loop through writing labels and/or a compression offset
+		{
+		do	{
+			if (*np > MAX_DOMAIN_LABEL)
+				{ LogMsg("Malformed domain name %##s (label more than 63 bytes)", name->c); return(mDNSNULL); }
+	
+			// This check correctly allows for the final trailing root label:
+			// e.g.
+			// Suppose our domain name is exactly 256 bytes long, including the final trailing root label.
+			// Suppose np is now at name->c[249], and we're about to write our last non-null label ("local").
+			// We know that max will be at name->c[256]
+			// That means that np + 1 + 5 == max - 1, so we (just) pass the "if" test below, write our
+			// six bytes, then exit the loop, write the final terminating root label, and the domain
+			// name we've written is exactly 256 bytes long, exactly at the correct legal limit.
+			// If the name is one byte longer, then we fail the "if" test below, and correctly bail out.
+			if (np + 1 + *np >= max)
+				{ LogMsg("Malformed domain name %##s (more than 256 bytes)", name->c); return(mDNSNULL); }
+	
+			if (base) pointer = FindCompressionPointer(base, searchlimit, np);
+			if (pointer)					// Use a compression pointer if we can
+				{
+				const mDNSu16 offset = (mDNSu16)(pointer - base);
+				if (ptr+2 > limit) return(mDNSNULL);	// If we don't have two bytes of space left, give up
+				*ptr++ = (mDNSu8)(0xC0 | (offset >> 8));
+				*ptr++ = (mDNSu8)(        offset &  0xFF);
+				return(ptr);
+				}
+			else							// Else copy one label and try again
+				{
+				int i;
+				mDNSu8 len = *np++;
+				// If we don't at least have enough space for this label *plus* a terminating zero on the end, give up
+				if (ptr + 1 + len >= limit) return(mDNSNULL);
+				*ptr++ = len;
+				for (i=0; i<len; i++) *ptr++ = *np++;
+				}
+			} while (*np);					// While we've got characters remaining in the name, continue
 		}
 
 	*ptr++ = 0;		// Put the final root label
