@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.247  2009/04/21 23:36:25  cheshire
+<rdar://problem/6814427> Remove unused kDNSType_MAC
+
 Revision 1.246  2009/04/21 01:00:19  cheshire
 Fixed typo in previous checkin
 
@@ -670,7 +673,6 @@ mDNSexport char *DNSTypeName(mDNSu16 rrtype)
 		case kDNSType_AAAA: return("AAAA");
 		case kDNSType_SRV:  return("SRV");
 		case kDNSType_OPT:  return("OPT");
-		case kDNSType_MAC:  return("MAC");
 		case kDNSType_TSIG: return("TSIG");
 		case kDNSQType_ANY: return("ANY");
 		default:			{
@@ -756,8 +758,6 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *const rr, const RD
 								}
 							}
 							break;
-
-		case kDNSType_MAC:	mDNS_snprintf(buffer+length, RemSpc, "%.6a", &rd->mac);          break;
 
 		default:			mDNS_snprintf(buffer+length, RemSpc, "RDLen %d: %s", rr->rdlength, rd->data);
 							// Really should scan buffer to check if text is valid UTF-8 and only replace with dots if not
@@ -1759,8 +1759,6 @@ mDNSexport mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate
 
 		case kDNSType_OPT:  return(rr->rdlength);
 
-		case kDNSType_MAC:  return(sizeof(rd->mac));
-
 		default:			debugf("Warning! Don't know how to get length of resource type %d", rr->rrtype);
 							return(rr->rdlength);
 		}
@@ -1808,8 +1806,6 @@ mDNSexport mDNSBool ValidateRData(const mDNSu16 rrtype, const mDNSu16 rdlength, 
 							// Call to DomainNameLengthLimit() implicitly enforces both requirements for us
 							len = DomainNameLengthLimit(&rd->u.srv.target, rd->u.data + rdlength);
 							return(len <= MAX_DOMAIN_NAME && rdlength == 6+len);
-
-		case kDNSType_MAC:	return(rdlength == sizeof(mDNSEthAddr));
 
 		default:			return(mDNStrue);	// Allow all other types without checking
 		}
@@ -2075,12 +2071,6 @@ mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNS
 								}
 							return ptr;
 							}
-
-		case kDNSType_MAC:	if (rr->rdlength != 6)
-								{ debugf("putRData: Illegal length %d for kDNSType_MAC", rr->rdlength); return(mDNSNULL); }
-							if (ptr + 6 > limit) return(mDNSNULL);
-							mDNSPlatformMemCopy(ptr, rdb->data, rr->rdlength);
-							return(ptr+6);
 
 		default:			debugf("putRData: Warning! Writing unknown resource type %d as raw data", rr->rrtype);
 							if (ptr + rr->rdlength > limit) return(mDNSNULL);
@@ -2602,10 +2592,6 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 							if (ptr != end) { LogMsg("GetLargeResourceRecord: Malformed OptRdata"); return(mDNSNULL); }
 							break;
 							}
-
-		case kDNSType_MAC:	if (pktrdlength != sizeof(mDNSEthAddr)) return(mDNSNULL);
-							mDNSPlatformMemCopy(rdb->data, ptr, sizeof(mDNSEthAddr));
-							break;
 
 		default:			if (pktrdlength > rr->resrec.rdata->MaxRDLength)
 								{

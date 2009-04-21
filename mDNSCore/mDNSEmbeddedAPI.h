@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.558  2009/04/21 23:36:25  cheshire
+<rdar://problem/6814427> Remove unused kDNSType_MAC
+
 Revision 1.557  2009/04/15 20:42:51  mcguire
 <rdar://problem/6768947> uDNS: Treat RCODE 5 (Refused) responses as failures
 
@@ -1065,8 +1068,6 @@ typedef enum				// From RFC 1035
 	kDNSType_NSEC3PARAM,	// 51 Hashed Authenticated Denial of Existence
 
 	kDNSType_HIP = 55,		// 55 Host Identity Protocol
-
-	kDNSType_MAC = 90,		// Temporary placeholder -- may not actually be needed
 
 	kDNSType_SPF = 99,		// 99 Sender Policy Framework for E-Mail
 	kDNSType_UINFO,			// 100 IANA-Reserved
