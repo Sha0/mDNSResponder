@@ -253,7 +253,7 @@ enum
      * an associated PTR record.
      */
 
-    kDNSServiceFlagsShareConnection     = 0x4000
+    kDNSServiceFlagsShareConnection     = 0x4000,
     /* For efficiency, clients that perform many concurrent operations may want to use a
      * single Unix Domain Socket connection with the background daemon, instead of having a
      * separate connection for each independent operation. To use this mode, clients first
@@ -330,6 +330,9 @@ enum
      * lock or take similar appropriate precautions to serialize those calls.
      */
 
+    kDNSServiceFlagsSuppressUnusable    = 0x8000
+    /* Placeholder definition, for future use
+     */
     };
 
 /* Possible protocols for DNSServiceNATPortMappingCreate(). */
