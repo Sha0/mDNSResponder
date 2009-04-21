@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.942  2009/04/21 02:13:29  cheshire
+<rdar://problem/5270176> Local hostname changed even though there really isn't a name conflict
+Made code less susceptible to being tricked by stale packets echoed back from the network.
+
 Revision 1.941  2009/04/15 22:22:23  mcguire
 <rdar://problem/6768947> uDNS: Treat RCODE 5 (Refused) responses as failures
 Additional fix: protect against deref of NULL
@@ -5148,10 +5152,20 @@ mDNSlocal void ResolveSimultaneousProbe(mDNS *const m, const DNSMessage *const q
 				if (result)
 					{
 					const char *const msg = (result < 0) ? "lost:" : (result > 0) ? "won: " : "tie: ";
-					LogMsg("ResolveSimultaneousProbe: Pkt Record:      %08lX %s", m->rec.r.resrec.rdatahash, CRDisplayString(m, &m->rec.r));
-					LogMsg("ResolveSimultaneousProbe: Our Record %s %08lX %s", msg,   our->resrec.rdatahash, ARDisplayString(m, our));
+					LogMsg("ResolveSimultaneousProbe: Pkt Record:        %08lX %s", m->rec.r.resrec.rdatahash, CRDisplayString(m, &m->rec.r));
+					LogMsg("ResolveSimultaneousProbe: Our Record %d %s %08lX %s",   our->ProbeCount, msg, our->resrec.rdatahash, ARDisplayString(m, our));
 					}
-				if (result < 0) { mDNS_Deregister_internal(m, our, mDNS_Dereg_conflict); goto exit; }
+				// If we lost the tie-break for simultaneous probes, we don't immediately give up, because we might be seeing stale packets on the network.
+				// Instead we pause for one second, to give the other host (if real) a change to establish its name, and then try probing again.
+				// If there really is another live host out there with the same name, it will answer our probes and we'll then rename.
+				if (result < 0)
+					{
+					m->SuppressProbes   = NonZeroTime(m->timenow + mDNSPlatformOneSecond);
+					our->ProbeCount     = DefaultProbeCountForTypeUnique;
+					our->AnnounceCount  = InitialAnnounceCount;
+					InitializeLastAPTime(m, our);
+					goto exit;
+					}
 				}
 #if 0
 			else
@@ -6052,6 +6066,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 						// If we've just whacked this record's ProbeCount, don't need to do it again
 						if (rr->ProbeCount > DefaultProbeCountForTypeUnique)
 							LogInfo("mDNSCoreReceiveResponse: Already reset to Probing: %s", ARDisplayString(m, rr));
+						else if (rr->ProbeCount == DefaultProbeCountForTypeUnique)
+							LogMsg("mDNSCoreReceiveResponse: Ignoring response received before we even began probing: %s", ARDisplayString(m, rr));
 						else
 							{
 							LogMsg("mDNSCoreReceiveResponse: Received from %#a:%d %s", srcaddr, mDNSVal16(srcport), CRDisplayString(m, &m->rec.r));
