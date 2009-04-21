@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.672  2009/04/21 16:34:47  mcguire
+<rdar://problem/6810663> null deref in mDNSPlatformSetDNSConfig
+
 Revision 1.671  2009/04/15 01:14:07  mcguire
 <rdar://problem/6791775> 4 second delay in DNS response
 
@@ -4427,12 +4430,12 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 #if APPLE_OSX_mDNSResponder
 				// Record the so-called "primary" domain, which we use as a hint to tell if the user is on a network set up
 				// by someone using Microsoft Active Directory using "local" as a private internal top-level domain
-				if (config->resolver[0]->domain && config->resolver[0]->nameserver[0])
+				if (config->resolver[0]->domain && config->resolver[0]->n_nameserver && config->resolver[0]->nameserver[0])
 					MakeDomainNameFromDNSNameString(&ActiveDirectoryPrimaryDomain, config->resolver[0]->domain);
 				else ActiveDirectoryPrimaryDomain.c[0] = 0;
 				//MakeDomainNameFromDNSNameString(&ActiveDirectoryPrimaryDomain, "test.local");
 				ActiveDirectoryPrimaryDomainLabelCount = CountLabels(&ActiveDirectoryPrimaryDomain);
-				if (SameDomainName(SkipLeadingLabels(&ActiveDirectoryPrimaryDomain, ActiveDirectoryPrimaryDomainLabelCount - 1), &localdomain))
+				if (config->resolver[0]->n_nameserver && SameDomainName(SkipLeadingLabels(&ActiveDirectoryPrimaryDomain, ActiveDirectoryPrimaryDomainLabelCount - 1), &localdomain))
 					SetupAddr(&ActiveDirectoryPrimaryDomainServer, config->resolver[0]->nameserver[0]);
 				else
 					{
