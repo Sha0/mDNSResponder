@@ -414,9 +414,19 @@ enum
     kDNSServiceType_SSHFP     = 44,     /* SSH Key Fingerprint */
     kDNSServiceType_IPSECKEY  = 45,     /* IPSECKEY */
     kDNSServiceType_RRSIG     = 46,     /* RRSIG */
-    kDNSServiceType_NSEC      = 47,     /* NSEC */
+    kDNSServiceType_NSEC      = 47,     /* Denial of Existence */
     kDNSServiceType_DNSKEY    = 48,     /* DNSKEY */
-    kDNSServiceType_DHCID     = 49,     /* DHCID */
+    kDNSServiceType_DHCID     = 49,     /* DHCP Client Identifier */
+    kDNSServiceType_NSEC3     = 50,     /* Hashed Authenticated Denial of Existence */
+    kDNSServiceType_NSEC3PARAM= 51,     /* Hashed Authenticated Denial of Existence */
+
+    kDNSServiceType_HIP       = 55,     /* Host Identity Protocol */
+
+    kDNSServiceType_SPF       = 99,     /* Sender Policy Framework for E-Mail */
+    kDNSServiceType_UINFO     = 100,    /* IANA-Reserved */
+    kDNSServiceType_UID       = 101,    /* IANA-Reserved */
+    kDNSServiceType_GID       = 102,    /* IANA-Reserved */
+    kDNSServiceType_UNSPEC    = 103,    /* IANA-Reserved */
 
     kDNSServiceType_TKEY      = 249,    /* Transaction key */
     kDNSServiceType_TSIG      = 250,    /* Transaction signature. */
