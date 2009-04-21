@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.246  2009/04/21 01:00:19  cheshire
+Fixed typo in previous checkin
+
 Revision 1.245  2009/04/21 00:57:23  cheshire
 <rdar://problem/6810410> Off-by-one error in putDomainNameAsLabels()
 If just writing one-byte root label, make sure we have space for that
@@ -1886,7 +1889,7 @@ mDNSexport mDNSu8 *putDomainNameAsLabels(const DNSMessage *const msg,
 	const mDNSu8 *      pointer     = mDNSNULL;
 	const mDNSu8 *const searchlimit = ptr;
 
-	if (!ptr) { LogMsg("putDomainNameAsLabels %##s ptr is null"), name->c; return(mDNSNULL); }
+	if (!ptr) { LogMsg("putDomainNameAsLabels %##s ptr is null", name->c); return(mDNSNULL); }
 
 	if (!*np)		// If just writing one-byte root label, make sure we have space for that
 		{
