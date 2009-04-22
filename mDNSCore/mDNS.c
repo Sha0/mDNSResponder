@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.943  2009/04/22 01:19:56  jessic2
+<rdar://problem/6814585> Daemon: mDNSResponder is logging garbage for error codes because it's using %ld for int 32
+
 Revision 1.942  2009/04/21 02:13:29  cheshire
 <rdar://problem/5270176> Local hostname changed even though there really isn't a name conflict
 Made code less susceptible to being tricked by stale packets echoed back from the network.
@@ -7809,7 +7812,7 @@ mDNSlocal void mDNS_HostNameCallback(mDNS *const m, AuthRecord *const rr, mStatu
 		debugf("mDNS_HostNameCallback: MemFree (ignored)");
 		}
 	else
-		LogMsg("mDNS_HostNameCallback: Unknown error %ld for registration of record %s", result,  rr->resrec.name->c);
+		LogMsg("mDNS_HostNameCallback: Unknown error %d for registration of record %s", result,  rr->resrec.name->c);
 	}
 
 mDNSlocal void UpdateInterfaceProtocols(mDNS *const m, NetworkInterfaceInfo *active)
@@ -8117,7 +8120,7 @@ mDNSlocal void ServiceCallback(mDNS *const m, AuthRecord *const rr, mStatus resu
 		if      (result == mStatus_NoError)      msg = "Name Registered";
 		else if (result == mStatus_NameConflict) msg = "Name Conflict";
 		else if (result == mStatus_MemFree)      msg = "Memory Free";
-		debugf("ServiceCallback: %##s (%s) %s (%ld)", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype), msg, result);
+		debugf("ServiceCallback: %##s (%s) %s (%d)", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype), msg, result);
 		}
 	#endif
 

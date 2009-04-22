@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.612  2009/04/22 01:19:57  jessic2
+<rdar://problem/6814585> Daemon: mDNSResponder is logging garbage for error codes because it's using %ld for int 32
+
 Revision 1.611  2009/04/15 20:42:51  mcguire
 <rdar://problem/6768947> uDNS: Treat RCODE 5 (Refused) responses as failures
 
@@ -1858,7 +1861,7 @@ mDNSexport mStatus mDNS_StopNATOperation_internal(mDNS *m, NATTraversalInfo *tra
 	#ifdef _LEGACY_NAT_TRAVERSAL_
 		{
 		mStatus err = LNT_UnmapPort(m, traversal);
-		if (err) LogMsg("Legacy NAT Traversal - unmap request failed with error %ld", err);
+		if (err) LogMsg("Legacy NAT Traversal - unmap request failed with error %d", err);
 		}
 	#endif // _LEGACY_NAT_TRAVERSAL_
 
@@ -2206,7 +2209,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			}
 
 		err = mDNSSendDNSMessage(m, &tcpInfo->request, end, mDNSInterface_Any, mDNSNULL, &tcpInfo->Addr, tcpInfo->Port, sock, AuthInfo);
-		if (err) { debugf("ERROR: tcpCallback: mDNSSendDNSMessage - %ld", err); err = mStatus_UnknownErr; goto exit; }
+		if (err) { debugf("ERROR: tcpCallback: mDNSSendDNSMessage - %d", err); err = mStatus_UnknownErr; goto exit; }
 
 		// Record time we sent this question
 		if (q)
@@ -2625,7 +2628,7 @@ mDNSlocal void SendServiceRegistration(mDNS *m, ServiceRecordSet *srs)
 	else
 		{
 		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, mDNSNULL, &srs->SRSUpdateServer, srs->SRSUpdatePort, mDNSNULL, GetAuthInfoForName_internal(m, srs->RR_SRV.resrec.name));
-		if (err) debugf("ERROR: SendServiceRegistration - mDNSSendDNSMessage - %ld", err);
+		if (err) debugf("ERROR: SendServiceRegistration - mDNSSendDNSMessage - %d", err);
 		}
 
 	SetRecordRetry(m, &srs->RR_SRV, err);
@@ -2968,7 +2971,7 @@ mDNSlocal void SendServiceDeregistration(mDNS *m, ServiceRecordSet *srs)
 	else
 		{
 		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, mDNSNULL, &srs->SRSUpdateServer, srs->SRSUpdatePort, mDNSNULL, GetAuthInfoForName_internal(m, srs->RR_SRV.resrec.name));
-		if (err && err != mStatus_TransientErr) { debugf("ERROR: SendServiceDeregistration - mDNSSendDNSMessage - %ld", err); goto exit; }
+		if (err && err != mStatus_TransientErr) { debugf("ERROR: SendServiceDeregistration - mDNSSendDNSMessage - %d", err); goto exit; }
 		}
 
 	SetRecordRetry(m, &srs->RR_SRV, err);
@@ -3202,9 +3205,9 @@ mDNSlocal void HostnameCallback(mDNS *const m, AuthRecord *const rr, mStatus res
 		{
 		// don't unlink or free - we can retry when we get a new address/router
 		if (rr->resrec.rrtype == kDNSType_A)
-			LogMsg("HostnameCallback: Error %ld for registration of %##s IP %.4a", result, rr->resrec.name->c, &rr->resrec.rdata->u.ipv4);
+			LogMsg("HostnameCallback: Error %d for registration of %##s IP %.4a", result, rr->resrec.name->c, &rr->resrec.rdata->u.ipv4);
 		else
-			LogMsg("HostnameCallback: Error %ld for registration of %##s IP %.16a", result, rr->resrec.name->c, &rr->resrec.rdata->u.ipv6);
+			LogMsg("HostnameCallback: Error %d for registration of %##s IP %.16a", result, rr->resrec.name->c, &rr->resrec.rdata->u.ipv6);
 		if (!hi) { mDNSPlatformMemFree(rr); return; }
 		if (rr->state != regState_Unregistered) LogMsg("Error: HostnameCallback invoked with error code for record not in regState_Unregistered!");
 
@@ -3615,7 +3618,7 @@ mDNSlocal void SendRecordRegistration(mDNS *const m, AuthRecord *rr)
 	else
 		{
 		err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, mDNSNULL, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, GetAuthInfoForName_internal(m, rr->resrec.name));
-		if (err) debugf("ERROR: SendRecordRegistration - mDNSSendDNSMessage - %ld", err);
+		if (err) debugf("ERROR: SendRecordRegistration - mDNSSendDNSMessage - %d", err);
 		}
 
 	SetRecordRetry(m, rr, err);
@@ -3671,7 +3674,7 @@ mDNSlocal void hndlServiceUpdateReply(mDNS *const m, ServiceRecordSet *srs,  mSt
 			else
 				{
 				//!!!KRS make sure all structs will still get cleaned up when client calls DeregisterService with this state
-				if (err) LogMsg("Error %ld for registration of service %##s", err, srs->RR_SRV.resrec.name->c);
+				if (err) LogMsg("Error %d for registration of service %##s", err, srs->RR_SRV.resrec.name->c);
 				else srs->state = regState_Registered;
 				InvokeCallback = mDNStrue;
 				break;
@@ -3679,13 +3682,13 @@ mDNSlocal void hndlServiceUpdateReply(mDNS *const m, ServiceRecordSet *srs,  mSt
 		case regState_Refresh:
 			if (err)
 				{
-				LogMsg("Error %ld for refresh of service %##s", err, srs->RR_SRV.resrec.name->c);
+				LogMsg("Error %d for refresh of service %##s", err, srs->RR_SRV.resrec.name->c);
 				InvokeCallback = mDNStrue;
 				}
 			else srs->state = regState_Registered;
 			break;
 		case regState_DeregPending:
-			if (err) LogMsg("Error %ld for deregistration of service %##s", err, srs->RR_SRV.resrec.name->c);
+			if (err) LogMsg("Error %d for deregistration of service %##s", err, srs->RR_SRV.resrec.name->c);
 			if (srs->SRVChanged)
 				{
 				srs->state = regState_NoTarget;	// NoTarget will allow us to pick up new target OR nat traversal state
@@ -3704,7 +3707,7 @@ mDNSlocal void hndlServiceUpdateReply(mDNS *const m, ServiceRecordSet *srs,  mSt
 		case regState_DeregDeferred:
 			if (err)
 				{
-				debugf("Error %ld received prior to deferred derigstration of %##s", err, srs->RR_SRV.resrec.name->c);
+				debugf("Error %d received prior to deferred deregistration of %##s", err, srs->RR_SRV.resrec.name->c);
 				err = mStatus_MemFree;
 				InvokeCallback = mDNStrue;
 				srs->state = regState_Unregistered;
@@ -3742,7 +3745,7 @@ mDNSlocal void hndlServiceUpdateReply(mDNS *const m, ServiceRecordSet *srs,  mSt
 		case regState_NATMap:
 		case regState_ExtraQueued:
 		case regState_NATError:
-			LogMsg("hndlServiceUpdateReply called for service %##s in unexpected state %d with error %ld.  Unlinking.",
+			LogMsg("hndlServiceUpdateReply called for service %##s in unexpected state %d with error %d.  Unlinking.",
 				   srs->RR_SRV.resrec.name->c, srs->state, err);
 			err = mStatus_UnknownErr;
 		default: LogMsg("hndlServiceUpdateReply: Unknown state %d for %##s", srs->state, srs->RR_SRV.resrec.name->c);
@@ -3852,7 +3855,7 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 	if (rr->state == regState_DeregPending)
 		{
 		debugf("Received reply for deregister record %##s type %d", rr->resrec.name->c, rr->resrec.rrtype);
-		if (err) LogMsg("ERROR: Deregistration of record %##s type %d failed with error %ld",
+		if (err) LogMsg("ERROR: Deregistration of record %##s type %d failed with error %d",
 						rr->resrec.name->c, rr->resrec.rrtype, err);
 		err = mStatus_MemFree;
 		rr->state = regState_Unregistered;
@@ -3862,7 +3865,7 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 		{
 		if (err)
 			{
-			LogMsg("Cancelling deferred deregistration record %##s type %d due to registration error %ld",
+			LogMsg("Cancelling deferred deregistration record %##s type %d due to registration error %d",
 				   rr->resrec.name->c, rr->resrec.rrtype, err);
 			rr->state = regState_Unregistered;
 			}
@@ -3888,7 +3891,7 @@ mDNSlocal void hndlRecordUpdateReply(mDNS *m, AuthRecord *rr, mStatus err)
 				SendRecordRegistration(m, rr);
 				return;
 				}
-			LogMsg("hndlRecordUpdateReply: Registration of record %##s type %d failed with error %ld", rr->resrec.name->c, rr->resrec.rrtype, err);
+			LogMsg("hndlRecordUpdateReply: Registration of record %##s type %d failed with error %d", rr->resrec.name->c, rr->resrec.rrtype, err);
 			return;
 			}
 		}
@@ -4329,7 +4332,7 @@ mDNSlocal void PrivateQueryGotZoneData(mDNS *const m, mStatus err, const ZoneDat
 
 	if (err || !zoneInfo || mDNSAddressIsZero(&zoneInfo->Addr) || mDNSIPPortIsZero(zoneInfo->Port))
 		{
-		LogInfo("ERROR: PrivateQueryGotZoneData %##s (%s) invoked with error code %ld %p %#a:%d",
+		LogInfo("ERROR: PrivateQueryGotZoneData %##s (%s) invoked with error code %d %p %#a:%d",
 			q->qname.c, DNSTypeName(q->qtype), err, zoneInfo,
 			zoneInfo ? &zoneInfo->Addr : mDNSNULL,
 			zoneInfo ? mDNSVal16(zoneInfo->Port) : 0);
@@ -4388,7 +4391,7 @@ mDNSexport void RecordRegistrationGotZoneData(mDNS *const m, mStatus err, const 
 	// check error/result
 	if (err)
 		{
-		if (err != mStatus_NoSuchNameErr) LogMsg("RecordRegistrationGotZoneData: error %ld", err);
+		if (err != mStatus_NoSuchNameErr) LogMsg("RecordRegistrationGotZoneData: error %d", err);
 		return;
 		}
 
@@ -4480,7 +4483,7 @@ mDNSlocal void SendRecordDeregistration(mDNS *m, AuthRecord *rr)
 		else
 			{
 			mStatus err = mDNSSendDNSMessage(m, &m->omsg, ptr, mDNSInterface_Any, mDNSNULL, &rr->UpdateServer, rr->UpdatePort, mDNSNULL, GetAuthInfoForName_internal(m, rr->resrec.name));
-			if (err) debugf("ERROR: SendRecordDeregistration - mDNSSendDNSMessage - %ld", err);
+			if (err) debugf("ERROR: SendRecordDeregistration - mDNSSendDNSMessage - %d", err);
 			if (rr->state == regState_DeregPending) CompleteDeregistration(m, rr);		// Don't touch rr after this
 			}
 		}
@@ -4716,7 +4719,7 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 					}
 				}
 
-			if (err) debugf("ERROR: uDNS_idle - mDNSSendDNSMessage - %ld", err); // surpress syslog messages if we have no network
+			if (err) debugf("ERROR: uDNS_idle - mDNSSendDNSMessage - %d", err); // surpress syslog messages if we have no network
 			else
 				{
 				q->ThisQInterval = q->ThisQInterval * QuestionIntervalStep;	// Only increase interval if send succeeded

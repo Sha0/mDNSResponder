@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.673  2009/04/22 01:19:57  jessic2
+<rdar://problem/6814585> Daemon: mDNSResponder is logging garbage for error codes because it's using %ld for int 32
+
 Revision 1.672  2009/04/21 16:34:47  mcguire
 <rdar://problem/6810663> null deref in mDNSPlatformSetDNSConfig
 
@@ -1527,7 +1530,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 			else
 				{
 				err = setsockopt(s, IPPROTO_IP, IP_MULTICAST_IF, &info->ifa_v4addr, sizeof(info->ifa_v4addr));
-				if (err < 0) LogMsg("setsockopt - IP_MULTICAST_IF error %.4a %ld errno %d (%s)", &info->ifa_v4addr, err, errno, strerror(errno));
+				if (err < 0) LogMsg("setsockopt - IP_MULTICAST_IF error %.4a %d errno %d (%s)", &info->ifa_v4addr, err, errno, strerror(errno));
 				}
 			}
 		}
@@ -1544,7 +1547,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 		if (info && mDNSAddrIsDNSMulticast(dst))	// Specify outgoing interface
 			{
 			err = setsockopt(s, IPPROTO_IPV6, IPV6_MULTICAST_IF, &info->scope_id, sizeof(info->scope_id));
-			if (err < 0) LogMsg("setsockopt - IPV6_MULTICAST_IF error %ld errno %d (%s)", err, errno, strerror(errno));
+			if (err < 0) LogMsg("setsockopt - IPV6_MULTICAST_IF error %d errno %d (%s)", err, errno, strerror(errno));
 			}
 		}
 	else
@@ -1592,7 +1595,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 		if (MessageCount < 1000)
 			{
 			MessageCount++;
-			LogMsg("mDNSPlatformSendUDP sendto(%d) failed to send packet on InterfaceID %p %5s/%ld to %#a:%d skt %d error %d errno %d (%s) %lu",
+			LogMsg("mDNSPlatformSendUDP sendto(%d) failed to send packet on InterfaceID %p %5s/%d to %#a:%d skt %d error %d errno %d (%s) %lu",
 				s, InterfaceID, ifa_name, dst->type, dst, mDNSVal16(dstPort), s, err, errno, strerror(errno), (mDNSu32)(m->timenow));
 			}
 		result = mStatus_UnknownErr;
@@ -2411,7 +2414,7 @@ mDNSlocal mStatus SetupSocket(KQSocketSet *cp, const mDNSIPPort port, u_short sa
 	fail:
 	// For "bind" failures, only write log messages for our shared mDNS port, or for binding to zero
 	if (strcmp(errstr, "bind") || mDNSSameIPPort(port, MulticastDNSPort) || mDNSIPPortIsZero(port))
-		LogMsg("%s skt %d port %d error %ld errno %d (%s)", errstr, skt, mDNSVal16(port), err, errno, strerror(errno));
+		LogMsg("%s skt %d port %d error %d errno %d (%s)", errstr, skt, mDNSVal16(port), err, errno, strerror(errno));
 
 	// If we got a "bind" failure of EADDRINUSE, inform the caller as it might need to try another random port
 	if (!strcmp(errstr, "bind") && errno == EADDRINUSE)
@@ -2463,8 +2466,8 @@ mDNSexport UDPSocket *mDNSPlatformUDPSocket(mDNS *const m, const mDNSIPPort requ
 		// We also don't want to log about port 5350, due to a known bug when some other
 		// process is bound to it.
 		if (mDNSSameIPPort(requestedport, NATPMPPort) || mDNSSameIPPort(requestedport, NATPMPAnnouncementPort))
-			LogInfo("mDNSPlatformUDPSocket: SetupSocket %d failed error %ld errno %d (%s)", mDNSVal16(requestedport), err, errno, strerror(errno));
-		else LogMsg("mDNSPlatformUDPSocket: SetupSocket %d failed error %ld errno %d (%s)", mDNSVal16(requestedport), err, errno, strerror(errno));
+			LogInfo("mDNSPlatformUDPSocket: SetupSocket %d failed error %d errno %d (%s)", mDNSVal16(requestedport), err, errno, strerror(errno));
+		else LogMsg("mDNSPlatformUDPSocket: SetupSocket %d failed error %d errno %d (%s)", mDNSVal16(requestedport), err, errno, strerror(errno));
 		freeL("UDPSocket", p);
 		return(mDNSNULL);
 		}
@@ -4138,14 +4141,14 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 							LogInfo("SetupActiveInterfaces: %5s(%lu) Doing precautionary IP_DROP_MEMBERSHIP for %.4a on %.4a", i->ifinfo.ifname, i->scope_id, &imr.imr_multiaddr, &imr.imr_interface);
 							mStatus err = setsockopt(m->p->permanentsockets.sktv4, IPPROTO_IP, IP_DROP_MEMBERSHIP, &imr, sizeof(imr));
 							if (err < 0 && (errno != EADDRNOTAVAIL))
-								LogMsg("setsockopt - IP_DROP_MEMBERSHIP error %ld errno %d (%s)", err, errno, strerror(errno));
+								LogMsg("setsockopt - IP_DROP_MEMBERSHIP error %d errno %d (%s)", err, errno, strerror(errno));
 							}
 	
 						LogInfo("SetupActiveInterfaces: %5s(%lu) joining IPv4 mcast group %.4a on %.4a", i->ifinfo.ifname, i->scope_id, &imr.imr_multiaddr, &imr.imr_interface);
 						mStatus err = setsockopt(m->p->permanentsockets.sktv4, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imr, sizeof(imr));
 						// Joining same group twice can give "Address already in use" error -- no need to report that
 						if (err < 0 && (errno != EADDRINUSE))
-							LogMsg("setsockopt - IP_ADD_MEMBERSHIP error %ld errno %d (%s) group %.4a on %.4a", err, errno, strerror(errno), &imr.imr_multiaddr, &imr.imr_interface);
+							LogMsg("setsockopt - IP_ADD_MEMBERSHIP error %d errno %d (%s) group %.4a on %.4a", err, errno, strerror(errno), &imr.imr_multiaddr, &imr.imr_interface);
 						}
 #ifndef NO_IPV6
 					if (i->sa_family == AF_INET6)
@@ -4159,14 +4162,14 @@ mDNSlocal int SetupActiveInterfaces(mDNS *const m, mDNSs32 utc)
 							LogInfo("SetupActiveInterfaces: %5s(%lu) Doing precautionary IPV6_LEAVE_GROUP for %.16a on %u", i->ifinfo.ifname, i->scope_id, &i6mr.ipv6mr_multiaddr, i6mr.ipv6mr_interface);
 							mStatus err = setsockopt(m->p->permanentsockets.sktv6, IPPROTO_IPV6, IPV6_LEAVE_GROUP, &i6mr, sizeof(i6mr));
 							if (err < 0 && (errno != EADDRNOTAVAIL))
-								LogMsg("setsockopt - IPV6_LEAVE_GROUP error %ld errno %d (%s) group %.16a on %u", err, errno, strerror(errno), &i6mr.ipv6mr_multiaddr, i6mr.ipv6mr_interface);
+								LogMsg("setsockopt - IPV6_LEAVE_GROUP error %d errno %d (%s) group %.16a on %u", err, errno, strerror(errno), &i6mr.ipv6mr_multiaddr, i6mr.ipv6mr_interface);
 							}
 	
 						LogInfo("SetupActiveInterfaces: %5s(%lu) joining IPv6 mcast group %.16a on %u", i->ifinfo.ifname, i->scope_id, &i6mr.ipv6mr_multiaddr, i6mr.ipv6mr_interface);
 						mStatus err = setsockopt(m->p->permanentsockets.sktv6, IPPROTO_IPV6, IPV6_JOIN_GROUP, &i6mr, sizeof(i6mr));
 						// Joining same group twice can give "Address already in use" error -- no need to report that
 						if (err < 0 && (errno != EADDRINUSE))
-							LogMsg("setsockopt - IPV6_JOIN_GROUP error %ld errno %d (%s) group %.16a on %u", err, errno, strerror(errno), &i6mr.ipv6mr_multiaddr, i6mr.ipv6mr_interface);
+							LogMsg("setsockopt - IPV6_JOIN_GROUP error %d errno %d (%s) group %.16a on %u", err, errno, strerror(errno), &i6mr.ipv6mr_multiaddr, i6mr.ipv6mr_interface);
 						}
 #endif
 					}
@@ -4730,7 +4733,7 @@ mDNSexport void mDNSPlatformDynDNSHostNameStatusChanged(const domainname *const 
 	else
 		{
 		const CFNumberRef StatusVals[1] = { CFNumberCreate(NULL, kCFNumberSInt32Type, &status) };
-		if (!StatusVals[0]) LogMsg("SetDDNSNameStatus: CFNumberCreate(%ld) failed", status);
+		if (!StatusVals[0]) LogMsg("SetDDNSNameStatus: CFNumberCreate(%d) failed", status);
 		else
 			{
 			const CFDictionaryRef HostVals[1] = { CFDictionaryCreate(NULL, (void*)StatusKeys, (void*)StatusVals, 1, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks) };

@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.427  2009/04/22 01:19:57  jessic2
+<rdar://problem/6814585> Daemon: mDNSResponder is logging garbage for error codes because it's using %ld for int 32
+
 Revision 1.426  2009/04/20 19:25:26  cheshire
 For readability, changed "nomulticastadvertisements" to "NoMulticastAdvertisements"
 
@@ -1175,7 +1178,7 @@ mDNSexport kern_return_t provide_DNSServiceDomainEnumerationCreate_rpc(mach_port
 	return(mStatus_NoError);
 
 fail:
-	LogMsg("%5d: DNSServiceDomainEnumeration(%d) failed: %s (%ld)", client, regDom, errormsg, err);
+	LogMsg("%5d: DNSServiceDomainEnumeration(%d) failed: %s (%d)", client, regDom, errormsg, err);
 	return(err);
 	}
 
@@ -1347,7 +1350,7 @@ mDNSexport kern_return_t provide_DNSServiceBrowserCreate_rpc(mach_port_t unuseds
 	badparam:
 	err = mStatus_BadParamErr;
 fail:
-	LogMsg("%5d: DNSServiceBrowse(\"%s\", \"%s\") failed: %s (%ld)", client, regtype, domain, errormsg, err);
+	LogMsg("%5d: DNSServiceBrowse(\"%s\", \"%s\") failed: %s (%d)", client, regtype, domain, errormsg, err);
 	return(err);
 	}
 
@@ -1478,7 +1481,7 @@ mDNSexport kern_return_t provide_DNSServiceResolverResolve_rpc(mach_port_t unuse
 badparam:
 	err = mStatus_BadParamErr;
 fail:
-	LogMsg("%5d: DNSServiceResolve(\"%s\", \"%s\", \"%s\") failed: %s (%ld)", client, name, regtype, domain, errormsg, err);
+	LogMsg("%5d: DNSServiceResolve(\"%s\", \"%s\", \"%s\") failed: %s (%d)", client, name, regtype, domain, errormsg, err);
 	return(err);
 	}
 
@@ -1560,7 +1563,7 @@ mDNSlocal void RegCallback(mDNS *const m, ServiceRecordSet *const srs, mStatus r
 		}
 
 	else if (result != mStatus_NATTraversal)
-		LogMsg("%5d: DNSServiceRegistration(%##s, %u) Unknown Result %ld", si->ClientMachPort, srs->RR_SRV.resrec.name->c, SRS_PORT(srs), result);
+		LogMsg("%5d: DNSServiceRegistration(%##s, %u) Unknown Result %d", si->ClientMachPort, srs->RR_SRV.resrec.name->c, SRS_PORT(srs), result);
 	}
 
 mDNSlocal mStatus AddServiceInstance(DNSServiceRegistration *x, const domainname *domain)
@@ -1752,7 +1755,7 @@ badtxt:
 badparam:
 	err = mStatus_BadParamErr;
 fail:
-	LogMsg("%5d: DNSServiceRegister(\"%s\", \"%s\", \"%s\", %d) failed: %s (%ld)",
+	LogMsg("%5d: DNSServiceRegister(\"%s\", \"%s\", \"%s\", %d) failed: %s (%d)",
 		   client, name, regtype, domain, mDNSVal16(port), errormsg, err);
 	return(err);
 	}
@@ -1868,7 +1871,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationAddRecord_rpc(mach_port_t
 	return mStatus_NoError;
 
 fail:
-	LogMsg("%5d: DNSServiceRegistrationAddRecord(%##s, type %d, length %d) failed: %s (%ld)", client, x ? x->name.c : (mDNSu8*)"\x8""«NULL»", type, data_len, errormsg, err);
+	LogMsg("%5d: DNSServiceRegistrationAddRecord(%##s, type %d, length %d) failed: %s (%d)", client, x ? x->name.c : (mDNSu8*)"\x8""«NULL»", type, data_len, errormsg, err);
 	return mStatus_UnknownErr;
 	}
 
@@ -1919,7 +1922,7 @@ mDNSlocal mStatus UpdateRecord(ServiceRecordSet *srs, mach_port_t client, AuthRe
 	return(mStatus_NoError);
 
 fail:
-	LogMsg("%5d: DNSServiceRegistrationUpdateRecord(%##s, %d) failed: %s (%ld)", client, name->c, data_len, errormsg, err);
+	LogMsg("%5d: DNSServiceRegistrationUpdateRecord(%##s, %d) failed: %s (%d)", client, name->c, data_len, errormsg, err);
 	return(err);
 	}
 
@@ -1964,7 +1967,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationUpdateRecord_rpc(mach_por
 	return mStatus_NoError;
 
 fail:
-	LogMsg("%5d: DNSServiceRegistrationUpdateRecord(%##s, %X, %d) failed: %s (%ld)", client, name->c, reference, data_len, errormsg, err);
+	LogMsg("%5d: DNSServiceRegistrationUpdateRecord(%##s, %X, %d) failed: %s (%d)", client, name->c, reference, data_len, errormsg, err);
 	return(err);
 	}
 
@@ -2013,7 +2016,7 @@ mDNSexport kern_return_t provide_DNSServiceRegistrationRemoveRecord_rpc(mach_por
 	return mStatus_NoError;
 
 fail:
-	LogMsg("%5d: DNSServiceRegistrationRemoveRecord(%X) failed: %s (%ld)", client, reference, errormsg, err);
+	LogMsg("%5d: DNSServiceRegistrationRemoveRecord(%X) failed: %s (%d)", client, reference, errormsg, err);
 	return(err);
 	}
 
@@ -2327,7 +2330,7 @@ mDNSlocal void INFOCallback(void)
 		}
 
 	mDNSs32 now = mDNS_TimeNow(&mDNSStorage);
-	LogMsgNoIdent("Timenow 0x%08lX (%ld)", (mDNSu32)now, now);
+	LogMsgNoIdent("Timenow 0x%08lX (%d)", (mDNSu32)now, now);
 
 	LogMsg("----  END STATE LOG  ----");
 	}
@@ -2409,7 +2412,7 @@ mDNSlocal kern_return_t mDNSDaemonInitialize(void)
 		advertise,
 		mDNS_StatusCallback, mDNS_Init_NoInitCallbackContext);
 
-	if (err) { LogMsg("Daemon start: mDNS_Init failed %ld", err); return(err); }
+	if (err) { LogMsg("Daemon start: mDNS_Init failed %d", err); return(err); }
 
 	client_death_port = CFMachPortGetPort(d_port);
 	signal_port       = CFMachPortGetPort(i_port);

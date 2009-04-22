@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.457  2009/04/22 01:19:57  jessic2
+<rdar://problem/6814585> Daemon: mDNSResponder is logging garbage for error codes because it's using %ld for int 32
+
 Revision 1.456  2009/04/21 01:56:34  jessic2
 <rdar://problem/6803941> BTMM: Back out change for preventing other local users from sending packets to your BTMM machines
 
@@ -1538,7 +1541,7 @@ mDNSlocal void regservice_callback(mDNS *const m, ServiceRecordSet *const srs, m
 			{
 			instance->renameonmemfree = 0;
 			err = mDNS_RenameAndReregisterService(m, srs, &instance->request->u.servicereg.name);
-			if (err) LogMsg("ERROR: regservice_callback - RenameAndReregisterService returned %ld", err);
+			if (err) LogMsg("ERROR: regservice_callback - RenameAndReregisterService returned %d", err);
 			// error should never happen - safest to log and continue
 			}
 		else
@@ -1822,7 +1825,7 @@ mDNSlocal mStatus update_record(AuthRecord *rr, mDNSu16 rdlen, const char *rdata
 	if (rr->resrec.rrtype == kDNSType_TXT && rdlen == 0) { rdlen = 1; newrd->u.txt.c[0] = 0; }
 
 	result = mDNS_Update(&mDNSStorage, rr, ttl, rdlen, newrd, update_callback);
-	if (result) { LogMsg("ERROR: mDNS_Update - %ld", result); freeL("RData/update_record", newrd); }
+	if (result) { LogMsg("ERROR: mDNS_Update - %d", result); freeL("RData/update_record", newrd); }
 	return result;
 	}
 
@@ -1921,7 +1924,7 @@ mDNSlocal mStatus remove_record(request_state *request)
 	err = mDNS_Deregister(&mDNSStorage, e->rr);
 	if (err)
 		{
-		LogMsg("ERROR: remove_record, mDNS_Deregister: %ld", err);
+		LogMsg("ERROR: remove_record, mDNS_Deregister: %d", err);
 		freeL("registered_record_entry AuthRecord remove_record", e->rr);
 		}
 	freeL("registered_record_entry remove_record", e);
@@ -4147,7 +4150,7 @@ mDNSexport void udsserver_info(mDNS *const m)
 	const DNSQuestion *q;
 	const DNameListElem *d;
 
-	LogMsgNoIdent("Timenow 0x%08lX (%ld)", (mDNSu32)now, now);
+	LogMsgNoIdent("Timenow 0x%08lX (%d)", (mDNSu32)now, now);
 	LogMsgNoIdent("------------ Cache -------------");
 
 	LogMsgNoIdent("Slt Q     TTL if     U Type rdlen");
