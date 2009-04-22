@@ -30,6 +30,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.428  2009/04/22 19:43:37  cheshire
+To facilitate debugging, added -DebugLogging and -UnicastPacketLogging switches
+as launch-time alternatives to sending SIGUSR1 and SIGUSR2 signals later
+
 Revision 1.427  2009/04/22 01:19:57  jessic2
 <rdar://problem/6814585> Daemon: mDNSResponder is logging garbage for error codes because it's using %ld for int 32
 
@@ -3002,9 +3006,11 @@ mDNSexport int main(int argc, char **argv)
 	for (i=1; i<argc; i++)
 		{
 		if (!strcasecmp(argv[i], "-d"                        )) mDNS_DebugMode = mDNStrue;
-		if (!strcasecmp(argv[i], "-launchd"                  )) started_via_launchdaemon = mDNStrue;
-		if (!strcasecmp(argv[i], "-launchdaemon"             )) started_via_launchdaemon = mDNStrue;
+		if (!strcasecmp(argv[i], "-launchd"                  )) started_via_launchdaemon  = mDNStrue;
+		if (!strcasecmp(argv[i], "-launchdaemon"             )) started_via_launchdaemon  = mDNStrue;
 		if (!strcasecmp(argv[i], "-NoMulticastAdvertisements")) advertise = mDNS_Init_DontAdvertiseLocalAddresses;
+		if (!strcasecmp(argv[i], "-DebugLogging"             )) mDNS_LoggingEnabled       = mDNStrue;
+		if (!strcasecmp(argv[i], "-UnicastPacketLogging"     )) mDNS_PacketLoggingEnabled = mDNStrue;
 		}
 	
 	// Note that mDNSPlatformInit will set DivertMulticastAdvertisements in the mDNS structure
