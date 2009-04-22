@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.559  2009/04/22 00:37:38  cheshire
+<rdar://problem/6814427> Remove unused kDNSType_MAC
+
 Revision 1.558  2009/04/21 23:36:25  cheshire
 <rdar://problem/6814427> Remove unused kDNSType_MAC
 
@@ -1609,7 +1612,6 @@ typedef union
 	mDNSv6Addr  ipv6;		// For 'AAAA' record
 	rdataSRV    srv;
 	rdataOPT    opt[2];		// For EDNS0 OPT record; RDataBody may contain multiple variable-length rdataOPT objects packed together
-	mDNSEthAddr mac;
 	} RDataBody;
 
 // The RDataBody2 union is the same as above, except it includes fields for the larger types like soa, rp, px
@@ -1626,7 +1628,6 @@ typedef union
 	mDNSv6Addr  ipv6;		// For 'AAAA' record
 	rdataSRV    srv;
 	rdataOPT    opt[2];		// For EDNS0 OPT record; RDataBody may contain multiple variable-length rdataOPT objects packed together
-	mDNSEthAddr mac;
 	} RDataBody2;
 
 typedef struct
