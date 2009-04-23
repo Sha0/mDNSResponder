@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.561  2009/04/23 22:06:29  cheshire
+Added CacheRecord and InterfaceID parameters to MakeNegativeCacheRecord, in preparation for:
+<rdar://problem/3476350> Return negative answers when host knows authoritatively that no answer exists
+
 Revision 1.560  2009/04/23 21:54:50  cheshire
 Updated comments
 
@@ -3296,7 +3300,8 @@ extern mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip);
 
 extern CacheRecord *CreateNewCacheEntry(mDNS *const m, const mDNSu32 slot, CacheGroup *cg);
 extern void GrantCacheExtensions(mDNS *const m, DNSQuestion *q, mDNSu32 lease);
-extern void MakeNegativeCacheRecord(mDNS *const m, const domainname *const name, const mDNSu32 namehash, const mDNSu16 rrtype, const mDNSu16 rrclass, mDNSu32 ttl_seconds);
+extern void MakeNegativeCacheRecord(mDNS *const m, CacheRecord *const cr,
+	const domainname *const name, const mDNSu32 namehash, const mDNSu16 rrtype, const mDNSu16 rrclass, mDNSu32 ttl_seconds, mDNSInterfaceID InterfaceID);
 extern void CompleteDeregistration(mDNS *const m, AuthRecord *rr);
 extern void FindSPSInCache(mDNS *const m, const DNSQuestion *const q, const CacheRecord *sps[3]);
 #define PrototypeSPSName(X) ((X)[0] >= 11 && (X)[3] == '-' && (X)[ 4] == '9' && (X)[ 5] == '9' && \

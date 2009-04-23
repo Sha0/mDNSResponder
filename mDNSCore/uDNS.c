@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.613  2009/04/23 22:06:29  cheshire
+Added CacheRecord and InterfaceID parameters to MakeNegativeCacheRecord, in preparation for:
+<rdar://problem/3476350> Return negative answers when host knows authoritatively that no answer exists
+
 Revision 1.612  2009/04/22 01:19:57  jessic2
 <rdar://problem/6814585> Daemon: mDNSResponder is logging garbage for error codes because it's using %ld for int 32
 
@@ -4752,7 +4756,7 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 			if (!q->qDNSServer) debugf("uDNS_CheckCurrentQuestion no DNS server for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 			else LogMsg("uDNS_CheckCurrentQuestion DNS server %#a:%d for %##s is disabled", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qname.c);
 
-			MakeNegativeCacheRecord(m, &q->qname, q->qnamehash, q->qtype, q->qclass, 60);
+			MakeNegativeCacheRecord(m, &m->rec.r, &q->qname, q->qnamehash, q->qtype, q->qclass, 60, mDNSInterface_Any);
 			// Inactivate this question until the next change of DNS servers (do this before AnswerCurrentQuestionWithResourceRecord)
 			q->ThisQInterval = 0;
 			q->unansweredQueries = 0;

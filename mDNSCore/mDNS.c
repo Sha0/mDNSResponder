@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.944  2009/04/23 22:06:29  cheshire
+Added CacheRecord and InterfaceID parameters to MakeNegativeCacheRecord, in preparation for:
+<rdar://problem/3476350> Return negative answers when host knows authoritatively that no answer exists
+
 Revision 1.943  2009/04/22 01:19:56  jessic2
 <rdar://problem/6814585> Daemon: mDNSResponder is logging garbage for error codes because it's using %ld for int 32
 
@@ -2836,9 +2840,9 @@ mDNSlocal void SendResponses(mDNS *const m)
 		if (m->omsg.h.numAnswers > 0 || m->omsg.h.numAdditionals)
 			{
 			debugf("SendResponses: Sending %d Deregistration%s, %d Announcement%s, %d Answer%s, %d Additional%s on %p",
-				numDereg,                  numDereg                  == 1 ? "" : "s",
-				numAnnounce,               numAnnounce               == 1 ? "" : "s",
-				numAnswer,                 numAnswer                 == 1 ? "" : "s",
+				numDereg,                 numDereg                 == 1 ? "" : "s",
+				numAnnounce,              numAnnounce              == 1 ? "" : "s",
+				numAnswer,                numAnswer                == 1 ? "" : "s",
 				m->omsg.h.numAdditionals, m->omsg.h.numAdditionals == 1 ? "" : "s", intf->InterfaceID);
 			if (intf->IPv4Available) mDNSSendDNSMessage(m, &m->omsg, responseptr, intf->InterfaceID, mDNSNULL, &AllDNSLinkGroup_v4, MulticastDNSPort, mDNSNULL, mDNSNULL);
 			if (intf->IPv6Available) mDNSSendDNSMessage(m, &m->omsg, responseptr, intf->InterfaceID, mDNSNULL, &AllDNSLinkGroup_v6, MulticastDNSPort, mDNSNULL, mDNSNULL);
@@ -4037,7 +4041,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 	if (q->NoAnswer == NoAnswer_Fail)
 		{
 		LogMsg("AnswerNewQuestion: NoAnswer_Fail %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
-		MakeNegativeCacheRecord(m, &q->qname, q->qnamehash, q->qtype, q->qclass, 60);
+		MakeNegativeCacheRecord(m, &m->rec.r, &q->qname, q->qnamehash, q->qtype, q->qclass, 60, mDNSInterface_Any);
 		q->NoAnswer = NoAnswer_Normal;		// Temporarily turn off answer suppression
 		AnswerCurrentQuestionWithResourceRecord(m, &m->rec.r, QC_addnocache);
 		q->NoAnswer = NoAnswer_Fail;		// Restore NoAnswer state
@@ -6136,6 +6140,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 			const mDNSu32 slot = HashSlot(m->rec.r.resrec.name);
 			CacheGroup *cg = CacheGroupForRecord(m, slot, &m->rec.r.resrec);
 			CacheRecord *rr;
+
 			// 2a. Check if this packet resource record is already in our cache
 			for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
 				{
@@ -6416,7 +6421,7 @@ exit:
 					else while (1)
 						{
 						debugf("mDNSCoreReceiveResponse making negative cache entry TTL %d for %##s (%s)", negttl, name->c, DNSTypeName(q.qtype));
-						MakeNegativeCacheRecord(m, name, hash, q.qtype, q.qclass, negttl);
+						MakeNegativeCacheRecord(m, &m->rec.r, name, hash, q.qtype, q.qclass, negttl, mDNSInterface_Any);
 						CreateNewCacheEntry(m, slot, cg);
 						m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 						if (!repeat) break;
@@ -6623,35 +6628,44 @@ mDNSlocal void mDNSCoreReceiveUpdateR(mDNS *const m, const DNSMessage *const msg
 		}
 	}
 
-mDNSexport void MakeNegativeCacheRecord(mDNS *const m, const domainname *const name, const mDNSu32 namehash, const mDNSu16 rrtype, const mDNSu16 rrclass, mDNSu32 ttl_seconds)
+mDNSexport void MakeNegativeCacheRecord(mDNS *const m, CacheRecord *const cr,
+	const domainname *const name, const mDNSu32 namehash, const mDNSu16 rrtype, const mDNSu16 rrclass, mDNSu32 ttl_seconds, mDNSInterfaceID InterfaceID)
 	{
-	// Create empty resource record
-	m->rec.r.resrec.RecordType    = kDNSRecordTypePacketNegative;
-	m->rec.r.resrec.InterfaceID   = mDNSInterface_Any;
-	m->rec.r.resrec.name          = name;	// Will be updated to point to cg->name when we call CreateNewCacheEntry
-	m->rec.r.resrec.rrtype        = rrtype;
-	m->rec.r.resrec.rrclass       = rrclass;
-	m->rec.r.resrec.rroriginalttl = ttl_seconds;
-	m->rec.r.resrec.rdlength      = 0;
-	m->rec.r.resrec.rdestimate    = 0;
-	m->rec.r.resrec.namehash      = namehash;
-	m->rec.r.resrec.rdatahash     = 0;
-	m->rec.r.resrec.rdata = (RData*)&m->rec.r.smallrdatastorage;
-	m->rec.r.resrec.rdata->MaxRDLength = m->rec.r.resrec.rdlength;
+	if (cr == &m->rec.r && m->rec.r.resrec.RecordType)
+		{
+		LogMsg("MakeNegativeCacheRecord: m->rec appears to be already in use for %s", CRDisplayString(m, &m->rec.r));
+#if ForceAlerts
+		*(long*)0 = 0;
+#endif
+		}
 
-	m->rec.r.NextInKAList       = mDNSNULL;
-	m->rec.r.TimeRcvd           = m->timenow;
-	m->rec.r.DelayDelivery      = 0;
-	m->rec.r.NextRequiredQuery  = m->timenow;
-	m->rec.r.LastUsed           = m->timenow;
-	m->rec.r.CRActiveQuestion   = mDNSNULL;
-	m->rec.r.UnansweredQueries  = 0;
-	m->rec.r.LastUnansweredTime = 0;
-	m->rec.r.MPUnansweredQ      = 0;
-	m->rec.r.MPLastUnansweredQT = 0;
-	m->rec.r.MPUnansweredKA     = 0;
-	m->rec.r.MPExpectingKA      = mDNSfalse;
-	m->rec.r.NextInCFList       = mDNSNULL;
+	// Create empty resource record
+	cr->resrec.RecordType    = kDNSRecordTypePacketNegative;
+	cr->resrec.InterfaceID   = InterfaceID;
+	cr->resrec.name          = name;	// Will be updated to point to cg->name when we call CreateNewCacheEntry
+	cr->resrec.rrtype        = rrtype;
+	cr->resrec.rrclass       = rrclass;
+	cr->resrec.rroriginalttl = ttl_seconds;
+	cr->resrec.rdlength      = 0;
+	cr->resrec.rdestimate    = 0;
+	cr->resrec.namehash      = namehash;
+	cr->resrec.rdatahash     = 0;
+	cr->resrec.rdata = (RData*)&cr->smallrdatastorage;
+	cr->resrec.rdata->MaxRDLength = 0;
+
+	cr->NextInKAList       = mDNSNULL;
+	cr->TimeRcvd           = m->timenow;
+	cr->DelayDelivery      = 0;
+	cr->NextRequiredQuery  = m->timenow;
+	cr->LastUsed           = m->timenow;
+	cr->CRActiveQuestion   = mDNSNULL;
+	cr->UnansweredQueries  = 0;
+	cr->LastUnansweredTime = 0;
+	cr->MPUnansweredQ      = 0;
+	cr->MPLastUnansweredQT = 0;
+	cr->MPUnansweredKA     = 0;
+	cr->MPExpectingKA      = mDNSfalse;
+	cr->NextInCFList       = mDNSNULL;
 	}
 
 mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *const end,
