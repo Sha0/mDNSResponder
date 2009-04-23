@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.248  2009/04/23 22:11:16  cheshire
+Minor cleanup in debugging checks in GetLargeResourceRecord
+
 Revision 1.247  2009/04/21 23:36:25  cheshire
 <rdar://problem/6814427> Remove unused kDNSType_MAC
 
@@ -1764,6 +1767,8 @@ mDNSexport mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate
 		}
 	}
 
+// When a local client registers (or updates) a record, we use this routine to do some simple validation checks
+// to help reduce the risk of bogus malformed data on the network
 mDNSexport mDNSBool ValidateRData(const mDNSu16 rrtype, const mDNSu16 rdlength, const RData *const rd)
 	{
 	mDNSu16 len;
@@ -2396,14 +2401,19 @@ mDNSlocal mDNSu16 getVal16(const mDNSu8 **ptr)
 	}
 
 mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *ptr,
-    const mDNSu8 *end, const mDNSInterfaceID InterfaceID, mDNSu8 RecordType, LargeCacheRecord *largecr)
+    const mDNSu8 *end, const mDNSInterfaceID InterfaceID, mDNSu8 RecordType, LargeCacheRecord *const largecr)
 	{
 	CacheRecord *const rr = &largecr->r;
 	RDataBody2 *const rdb = (RDataBody2 *)rr->smallrdatastorage.data;
 	mDNSu16 pktrdlength;
 	
-	if (largecr == &m->rec && largecr->r.resrec.RecordType)
-		LogMsg("GetLargeResourceRecord: m->rec appears to be already in use for %s", CRDisplayString(m, &largecr->r));
+	if (largecr == &m->rec && m->rec.r.resrec.RecordType)
+		{
+		LogMsg("GetLargeResourceRecord: m->rec appears to be already in use for %s", CRDisplayString(m, &m->rec.r));
+#if ForceAlerts
+		*(long*)0 = 0;
+#endif
+		}
 
 	rr->next              = mDNSNULL;
 	rr->resrec.name       = &largecr->namestorage;
