@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.560  2009/04/23 21:54:50  cheshire
+Updated comments
+
 Revision 1.559  2009/04/22 00:37:38  cheshire
 <rdar://problem/6814427> Remove unused kDNSType_MAC
 
@@ -1620,11 +1623,11 @@ typedef union
 	mDNSu8      data[StandardAuthRDSize];
 	mDNSv4Addr  ipv4;		// For 'A' record
 	domainname  name;		// For PTR, NS, CNAME, DNAME
-	rdataSOA    soa;
+	rdataSOA    soa;		// This is large; not included in the normal RDataBody definition
 	UTF8str255  txt;
 	rdataMX     mx;
-	rdataRP     rp;
-	rdataPX     px;
+	rdataRP     rp;			// This is large; not included in the normal RDataBody definition
+	rdataPX     px;			// This is large; not included in the normal RDataBody definition
 	mDNSv6Addr  ipv6;		// For 'AAAA' record
 	rdataSRV    srv;
 	rdataOPT    opt[2];		// For EDNS0 OPT record; RDataBody may contain multiple variable-length rdataOPT objects packed together
@@ -1813,7 +1816,7 @@ typedef struct
 	mDNSu32          rroriginalttl;		// In seconds
 	mDNSu16          rdlength;			// Size of the raw rdata, in bytes, in the on-the-wire format
 										// (in-memory storage may be larger, for structures containing 'holes', like SOA)
-	mDNSu16          rdestimate;		// Upper bound on size of rdata after name compression
+	mDNSu16          rdestimate;		// Upper bound on on-the-wire size of rdata after name compression
 	mDNSu32          namehash;			// Name-based (i.e. case-insensitive) hash of name
 	mDNSu32          rdatahash;			// For rdata containing domain name (e.g. PTR, SRV, CNAME etc.), case-insensitive name hash
 										// else, for all other rdata, 32-bit hash of the raw rdata
