@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.674  2009/04/23 00:58:01  jessic2
+<rdar://problem/6802117> uDNS: DNS stops working after configd crashes
+
 Revision 1.673  2009/04/22 01:19:57  jessic2
 <rdar://problem/6814585> Daemon: mDNSResponder is logging garbage for error codes because it's using %ld for int 32
 
@@ -4347,7 +4350,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 					// e.g. the default resolver's "domain" value might say "apple.com", which indicates that this resolver
 					// is only for names that fall under "apple.com", but that's not correct. Actually the default resolver is
 					// for all names not covered by a more specific resolver (i.e. its domain should be ".", is the root domain).
-					if (r->search_order == DEFAULT_SEARCH_ORDER || !r->domain || !*r->domain) d.c[0] = 0;	// Default resolver applies to *all* names
+					if (i == 0 || !r->domain || !*r->domain) d.c[0] = 0;	// Default resolver applies to *all* names
 					else if (!MakeDomainNameFromDNSNameString(&d, r->domain)) { LogMsg("RegisterSplitDNS: bad domain %s", r->domain); continue; }
 
 					for (j = 0; j < config->n_resolver; j++)  // check if this is the lowest-weighted server for the domain
@@ -4357,7 +4360,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 						if (p->search_order <= r->search_order)
 							{
 							domainname tmp;
-							if (p->search_order == DEFAULT_SEARCH_ORDER || !p->domain || !*p->domain) tmp.c[0] = '\0';	// Default resolver applies to *all* names
+							if (j == 0 || !p->domain || !*p->domain) tmp.c[0] = '\0';	// Default resolver applies to *all* names
 							else if (!MakeDomainNameFromDNSNameString(&tmp, p->domain)) { LogMsg("RegisterSplitDNS: bad domain %s", p->domain); continue; }
 							if (SameDomainName(&d, &tmp))
 								if (p->search_order < r->search_order || j < i) break;  // if equal weights, pick first in list, otherwise pick lower-weight (p)
