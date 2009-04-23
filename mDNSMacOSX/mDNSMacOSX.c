@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.675  2009/04/23 18:51:28  mcguire
+<rdar://problem/6729406> uDNS: PPP doesn't automatically reconnect on wake from sleep (no name resolver)
+
 Revision 1.674  2009/04/23 00:58:01  jessic2
 <rdar://problem/6802117> uDNS: DNS stops working after configd crashes
 
@@ -1562,15 +1565,6 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 		return mStatus_BadParamErr;
 		}
 
-	// Don't send if it would cause dial-on-demand connection initiation.
-	// As an optimization, don't bother consulting reachability API / routing
-	// table when sending Multicast DNS since we ignore PPP interfaces for mDNS traffic.
-	if (!info && !mDNSAddrIsDNSMulticast(dst) && AddrRequiresPPPConnection((struct sockaddr *)&to))
-		{
-		debugf("mDNSPlatformSendUDP: Surpressing sending to avoid dial-on-demand connection");
-		return mStatus_NoError;
-		}
-
 	if (s >= 0)
 		verbosedebugf("mDNSPlatformSendUDP: sending on InterfaceID %p %5s/%ld to %#a:%d skt %d",
 			InterfaceID, ifa_name, dst->type, dst, mDNSVal16(dstPort), s);
@@ -2108,13 +2102,6 @@ mDNSexport mStatus mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr *dst, 
 	saddr.sin_port        = dstport.NotAnInteger;
 	saddr.sin_len         = sizeof(saddr);
 	saddr.sin_addr.s_addr = dst->ip.v4.NotAnInteger;
-
-	// Don't send if it would cause dial-on-demand connection initiation.
-	if (AddrRequiresPPPConnection((struct sockaddr *)&saddr))
-		{
-		debugf("mDNSPlatformTCPConnect: Surpressing sending to avoid dial-on-demand connection");
-		return mStatus_UnknownErr;
-		}
 
 	sock->kqEntry.KQcallback = tcpKQSocketCallback;
 	sock->kqEntry.KQcontext  = sock;
@@ -4283,18 +4270,28 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 	if (RegDomains   ) *RegDomains     = NULL;
 	if (BrowseDomains) *BrowseDomains  = NULL;
 
-	debugf("mDNSPlatformSetDNSConfig:%s%s%s%s%s",
-		setservers    ? " setservers"    : "",
-		setsearch     ? " setsearch"     : "",
-		fqdn          ? " fqdn"          : "",
-		RegDomains    ? " RegDomains"    : "",
-		BrowseDomains ? " BrowseDomains" : "");
+	LogInfo("mDNSPlatformSetDNSConfig:%s%s%s%s%s",
+	        setservers    ? " setservers"    : "",
+	        setsearch     ? " setsearch"     : "",
+	        fqdn          ? " fqdn"          : "",
+	        RegDomains    ? " RegDomains"    : "",
+	        BrowseDomains ? " BrowseDomains" : "");
 
 	// Add the inferred address-based configuration discovery domains
 	// (should really be in core code I think, not platform-specific)
 	if (setsearch)
 		{
-		struct ifaddrs *ifa = myGetIfAddrs(1);
+		struct ifaddrs *ifa = mDNSNULL;
+		struct sockaddr_in saddr;
+		mDNSPlatformMemZero(&saddr, sizeof(saddr));
+		saddr.sin_len = sizeof(saddr);
+		saddr.sin_family = AF_INET;
+		saddr.sin_port = 0;
+		saddr.sin_addr.s_addr = *(in_addr_t *)&m->Router.ip.v4;
+
+		// Don't add any reverse-IP search domains if doing the WAB bootstrap queries would cause dial-on-demand connection initiation
+		if (!AddrRequiresPPPConnection((struct sockaddr *)&saddr)) ifa =  myGetIfAddrs(1);
+		
 		while (ifa)
 			{
 			mDNSAddr a, n;
@@ -4331,11 +4328,11 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 			// Accordingly, we suppress syslog messages for the first three minutes after boot.
 			// If we are still getting failures after three minutes, then we log them.
 			if (OSXVers > OSXVers_10_3_Panther && (mDNSu32)mDNSPlatformRawTime() > (mDNSu32)(mDNSPlatformOneSecond * 180))
-				LogMsg("GetDNSConfig: Error: dns_configuration_copy returned NULL");
+				LogMsg("mDNSPlatformSetDNSConfig: Error: dns_configuration_copy returned NULL");
 			}
 		else
 			{
-			debugf("mDNSPlatformSetDNSConfig: config->n_resolver = %d", config->n_resolver);
+			LogInfo("mDNSPlatformSetDNSConfig: config->n_resolver = %d", config->n_resolver);
 			if (setservers)
 				{
 				for (i = 0; i < config->n_resolver; i++)
@@ -4351,7 +4348,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 					// is only for names that fall under "apple.com", but that's not correct. Actually the default resolver is
 					// for all names not covered by a more specific resolver (i.e. its domain should be ".", is the root domain).
 					if (i == 0 || !r->domain || !*r->domain) d.c[0] = 0;	// Default resolver applies to *all* names
-					else if (!MakeDomainNameFromDNSNameString(&d, r->domain)) { LogMsg("RegisterSplitDNS: bad domain %s", r->domain); continue; }
+					else if (!MakeDomainNameFromDNSNameString(&d, r->domain)) { LogMsg("mDNSPlatformSetDNSConfig: bad domain %s", r->domain); continue; }
 
 					for (j = 0; j < config->n_resolver; j++)  // check if this is the lowest-weighted server for the domain
 						{
@@ -4367,7 +4364,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 							}
 						}
 					if (j < config->n_resolver) // found a lower-weighted resolver for this domain
-						debugf("Rejecting DNS server in slot %d domain %##s (slot %d outranks)", i, d.c, j);
+						LogInfo("mDNSPlatformSetDNSConfig: Rejecting DNS server in slot %d domain %##s (slot %d outranks)", i, d.c, j);
 					else
 						{
 						mDNSInterfaceID interface = mDNSInterface_Any;
@@ -4404,18 +4401,20 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 
 						for (n = 0; n < r->n_nameserver; n++)
 							if (r->nameserver[n]->sa_family == AF_INET || r->nameserver[n]->sa_family == AF_INET6)
-								if (interface || disabled || !AddrRequiresPPPConnection(r->nameserver[n]))
+								{
+								mDNSAddr saddr;
+								// mDNSAddr saddr = { mDNSAddrType_IPv4, { { { 192, 168, 1, 1 } } } }; // for testing
+								if (SetupAddr(&saddr, r->nameserver[n])) LogMsg("RegisterSplitDNS: bad IP address");
+								else
 									{
-									mDNSAddr saddr;
-									// mDNSAddr saddr = { mDNSAddrType_IPv4, { { { 192, 168, 1, 1 } } } }; // for testing
-									debugf("Adding dns server from slot %d %#a for domain %##s", i, &saddr, d.c);
-									if (SetupAddr(&saddr, r->nameserver[n])) LogMsg("RegisterSplitDNS: bad IP address");
-									else
+									DNSServer *s = mDNS_AddDNSServer(m, &d, interface, &saddr, r->port ? mDNSOpaque16fromIntVal(r->port) : UnicastDNSPort);
+									if (s)
 										{
-										DNSServer *s = mDNS_AddDNSServer(m, &d, interface, &saddr, r->port ? mDNSOpaque16fromIntVal(r->port) : UnicastDNSPort);
-										if (s && disabled) s->teststate = DNSServer_Disabled;
+										if (disabled) s->teststate = DNSServer_Disabled;
+										LogInfo("Added dns server %#a:%d for domain %##s from slot %d,%d", &s->addr, mDNSVal16(s->port), d.c, i, n);
 										}
 									}
+								}
 						}
 					}
 				}
@@ -4580,15 +4579,20 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 					CFArrayRef values = CFDictionaryGetValue(dict, kSCPropNetDNSServerAddresses);
 					if (values)
 						{
+						LogInfo("DNS Server Address values: %d", CFArrayGetCount(values));
 						for (i = 0; i < CFArrayGetCount(values); i++)
 							{
 							CFStringRef s = CFArrayGetValueAtIndex(values, i);
 							mDNSAddr addr = { mDNSAddrType_IPv4, { { { 0 } } } };
 							if (s && CFStringGetCString(s, buf, 256, kCFStringEncodingUTF8) &&
 								inet_aton(buf, (struct in_addr *) &addr.ip.v4))
+								{
+								LogInfo("Adding DNS server from dict: %s", buf);
 								mDNS_AddDNSServer(m, mDNSNULL, mDNSInterface_Any, &addr, UnicastDNSPort);
+								}
 							}
 						}
+					else LogInfo("No DNS Server Address values");
 					}
 				if (setsearch)
 					{
@@ -4651,8 +4655,7 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS *const m, mDNSAddr *v4, 
 					saddr.sin_port = 0;
 					inet_aton(buf, &saddr.sin_addr);
 		
-					if (AddrRequiresPPPConnection((struct sockaddr *)&saddr)) debugf("Ignoring router %s (requires PPP connection)", buf);
-					else *(in_addr_t *)&r->ip.v4 = saddr.sin_addr.s_addr;
+					*(in_addr_t *)&r->ip.v4 = saddr.sin_addr.s_addr;
 					}
 				}
 		
