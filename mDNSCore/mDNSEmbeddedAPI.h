@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.562  2009/04/24 00:22:23  cheshire
+<rdar://problem/3476350> Return negative answers when host knows authoritatively that no answer exists
+Added definition of rdataNSEC
+
 Revision 1.561  2009/04/23 22:06:29  cheshire
 Added CacheRecord and InterfaceID parameters to MakeNegativeCacheRecord, in preparation for:
 <rdar://problem/3476350> Return negative answers when host knows authoritatively that no answer exists
@@ -1587,6 +1591,17 @@ typedef packedstruct
 	(O)->opt == kDNSOpt_Lease ? DNSOpt_LeaseData_Space :        \
 	(O)->opt == kDNSOpt_Owner ? DNSOpt_Owner_Space(O)  : 0x10000)
 
+// A maximal NSEC record is:
+//   256 bytes domainname 'nextname'
+// + 256 * 34 = 8704 bytes of bitmap data
+// = 8960 bytes total
+// For now we only support NSEC records encoding DNS types 0-255 and ignore the nextname (we always set it to be the same as the rrname),
+// which gives us a fixed in-memory size of 32 bytes (256 bits)
+typedef struct
+	{
+	mDNSu8 bitmap[32]; 
+	} rdataNSEC;
+
 // StandardAuthRDSize is 264 (256+8), which is large enough to hold a maximum-sized SRV record (6 + 256 bytes)
 // MaximumRDSize is 8K the absolute maximum we support (at least for now)
 #define StandardAuthRDSize 264
@@ -1619,6 +1634,7 @@ typedef union
 	mDNSv6Addr  ipv6;		// For 'AAAA' record
 	rdataSRV    srv;
 	rdataOPT    opt[2];		// For EDNS0 OPT record; RDataBody may contain multiple variable-length rdataOPT objects packed together
+	rdataNSEC   nsec;
 	} RDataBody;
 
 // The RDataBody2 union is the same as above, except it includes fields for the larger types like soa, rp, px
@@ -1635,6 +1651,7 @@ typedef union
 	mDNSv6Addr  ipv6;		// For 'AAAA' record
 	rdataSRV    srv;
 	rdataOPT    opt[2];		// For EDNS0 OPT record; RDataBody may contain multiple variable-length rdataOPT objects packed together
+	rdataNSEC   nsec;
 	} RDataBody2;
 
 typedef struct
@@ -1819,7 +1836,8 @@ typedef struct
 	mDNSu16          rrclass;
 	mDNSu32          rroriginalttl;		// In seconds
 	mDNSu16          rdlength;			// Size of the raw rdata, in bytes, in the on-the-wire format
-										// (in-memory storage may be larger, for structures containing 'holes', like SOA)
+										// (In-memory storage may be larger, for structures containing 'holes', like SOA,
+										// or smaller, for NSEC where we don't bother storing the nextname field)
 	mDNSu16          rdestimate;		// Upper bound on on-the-wire size of rdata after name compression
 	mDNSu32          namehash;			// Name-based (i.e. case-insensitive) hash of name
 	mDNSu32          rdatahash;			// For rdata containing domain name (e.g. PTR, SRV, CNAME etc.), case-insensitive name hash
