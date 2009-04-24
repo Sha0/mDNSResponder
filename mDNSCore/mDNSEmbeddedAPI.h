@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.563  2009/04/24 21:06:38  cheshire
+Added comment about UDP length field (includes UDP header, so minimum value is 8 bytes)
+
 Revision 1.562  2009/04/24 00:22:23  cheshire
 <rdar://problem/3476350> Return negative answers when host knows authoritatively that no answer exists
 Added definition of rdataNSEC
@@ -1406,7 +1409,7 @@ typedef packedstruct
 	{
 	mDNSIPPort   src;
 	mDNSIPPort   dst;
-	mDNSu16      len; 
+	mDNSu16      len;		// Length including UDP header (ie. minimum value is 8 bytes)
 	mDNSu16      checksum;
 	} UDPHeader;			// 8 bytes
 
@@ -1416,8 +1419,8 @@ typedef packedstruct
 	mDNSIPPort   dst;
 	mDNSu32      seq;
 	mDNSu32      ack;
-	mDNSu8       offset; 
-	mDNSu8       flags; 
+	mDNSu8       offset;
+	mDNSu8       flags;
 	mDNSu16      window;
 	mDNSu16      checksum;
 	mDNSu16      urgent;
@@ -1599,7 +1602,7 @@ typedef packedstruct
 // which gives us a fixed in-memory size of 32 bytes (256 bits)
 typedef struct
 	{
-	mDNSu8 bitmap[32]; 
+	mDNSu8 bitmap[32];
 	} rdataNSEC;
 
 // StandardAuthRDSize is 264 (256+8), which is large enough to hold a maximum-sized SRV record (6 + 256 bytes)
