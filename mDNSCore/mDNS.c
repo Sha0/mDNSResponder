@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.946  2009/04/24 19:28:39  mcguire
+<rdar://problem/6791775> 4 second delay in DNS response
+
 Revision 1.945  2009/04/24 00:30:30  cheshire
 <rdar://problem/3476350> Return negative answers when host knows authoritatively that no answer exists
 Added code to generate and process NSEC records
@@ -7981,12 +7984,26 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 		// If flapping, delay between first and second queries is eight seconds instead of one
 		mDNSs32 delay    = flapping ? mDNSPlatformOneSecond   * 5 : 0;
 		mDNSu8  announce = flapping ? (mDNSu8)1                   : InitialAnnounceCount;
+		mDNSs32 newSS    = 0;
 
 		// Use a small amount of randomness:
 		// In the case of a network administrator turning on an Ethernet hub so that all the
 		// connected machines establish link at exactly the same time, we don't want them all
 		// to go and hit the network with identical queries at exactly the same moment.
-		if (!m->SuppressSending) m->SuppressSending = m->timenow + (mDNSs32)mDNSRandom((mDNSu32)InitialQuestionInterval);
+		newSS = m->timenow + (mDNSs32)mDNSRandom((mDNSu32)InitialQuestionInterval);
+
+#if APPLE_OSX_mDNSResponder
+		// We set this to at least 2 seconds, because the MacOSX platform layer typically gets lots
+		// of network change notifications in a row, and we don't know when we're done getting notified.
+		// Note that this will not be set if the interface doesn't do multicast (set->McastTxRx).
+		newSS += mDNSPlatformOneSecond * 2;
+#endif
+
+		if (!m->SuppressSending || newSS - m->SuppressSending < 0)
+			{
+			m->SuppressSending = newSS;
+			LogMsg("%s: set SuppressSending to %d", __FUNCTION__, m->SuppressSending);
+			}
 		
 		if (flapping)
 			{
