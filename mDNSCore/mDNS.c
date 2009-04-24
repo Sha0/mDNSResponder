@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.945  2009/04/24 00:30:30  cheshire
+<rdar://problem/3476350> Return negative answers when host knows authoritatively that no answer exists
+Added code to generate and process NSEC records
+
 Revision 1.944  2009/04/23 22:06:29  cheshire
 Added CacheRecord and InterfaceID parameters to MakeNegativeCacheRecord, in preparation for:
 <rdar://problem/3476350> Return negative answers when host knows authoritatively that no answer exists
@@ -1625,7 +1629,11 @@ mDNSlocal void AnswerAllLocalQuestionsWithLocalAuthRecord(mDNS *const m, AuthRec
 // When sending a unique record, all other records matching "SameResourceRecordSignature" must also be sent
 // When receiving a unique record, all old cache records matching "SameResourceRecordSignature" are flushed
 
-mDNSlocal mDNSBool SameResourceRecordSignature(const AuthRecord *const r1, const AuthRecord *const r2)
+// SameResourceRecordNameClassInterface is functionally the same as SameResourceRecordSignature, except rrtype does not have to match
+
+#define SameResourceRecordSignature(A,B) (A)->resrec.rrtype == (B)->resrec.rrtype && SameResourceRecordNameClassInterface((A),(B))
+
+mDNSlocal mDNSBool SameResourceRecordNameClassInterface(const AuthRecord *const r1, const AuthRecord *const r2)
 	{
 	if (!r1) { LogMsg("SameResourceRecordSignature ERROR: r1 is NULL"); return(mDNSfalse); }
 	if (!r2) { LogMsg("SameResourceRecordSignature ERROR: r2 is NULL"); return(mDNSfalse); }
@@ -1633,7 +1641,6 @@ mDNSlocal mDNSBool SameResourceRecordSignature(const AuthRecord *const r1, const
 		r2->resrec.InterfaceID &&
 		r1->resrec.InterfaceID != r2->resrec.InterfaceID) return(mDNSfalse);
 	return(mDNSBool)(
-		r1->resrec.rrtype   == r2->resrec.rrtype &&
 		r1->resrec.rrclass  == r2->resrec.rrclass &&
 		r1->resrec.namehash == r2->resrec.namehash &&
 		SameDomainName(r1->resrec.name, r2->resrec.name));
@@ -2682,7 +2689,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 					if (ResourceRecordIsValidAnswer(r2))
 						if (r2->ImmedAnswer != mDNSInterfaceMark &&
 							r2->ImmedAnswer != rr->ImmedAnswer && SameResourceRecordSignature(r2, rr))
-							r2->ImmedAnswer = rr->ImmedAnswer;
+							r2->ImmedAnswer = !r2->ImmedAnswer ? rr->ImmedAnswer : mDNSInterfaceMark;
 				}
 			else if (rr->ImmedAdditional)	// If we're sending this as additional, see that its whole RRSet is similarly marked
 				{
@@ -2781,9 +2788,39 @@ mDNSlocal void SendResponses(mDNS *const m)
 					rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;			// Make sure to clear cache flush bit back to normal state
 					if (newptr)
 						{
-						responseptr = newptr;
-						rr->RequireGoodbye = active;
-						if (rr->LastAPTime == m->timenow) numAnnounce++; else numAnswer++;
+						// If we succeeded putting this record, and it's verified unique (i.e. typically A, AAAA, SRV and TXT),
+						// and it's the last one of its name and class, add an NSEC too.
+						if (active && rr->resrec.RecordType == kDNSRecordTypeVerified)
+							{
+							for (r2 = m->ResourceRecords; r2; r2=r2->next)
+								if (r2->SendRNow == intf->InterfaceID && r2 != rr && SameResourceRecordNameClassInterface(r2, rr))
+									break;
+							if (!r2)
+								{
+								AuthRecord nsec;
+								mDNS_SetupResourceRecord(&nsec, mDNSNULL, mDNSInterface_Any, kDNSType_NSEC, rr->resrec.rroriginalttl, kDNSRecordTypeUnique, mDNSNULL, mDNSNULL);
+								nsec.resrec.rrclass |= kDNSClass_UniqueRRSet;
+								AssignDomainName(&nsec.namestorage, rr->resrec.name);
+								mDNSPlatformMemZero(nsec.rdatastorage.u.nsec.bitmap, sizeof(nsec.rdatastorage.u.nsec.bitmap));
+								for (r2 = m->ResourceRecords; r2; r2=r2->next)
+									if (ResourceRecordIsValidAnswer(r2) && SameResourceRecordNameClassInterface(r2, rr))
+										{
+										if (r2->resrec.rrtype >= kDNSQType_ANY) { LogMsg("Can't create NSEC for record %s", ARDisplayString(m, r2)); break; }
+										else nsec.rdatastorage.u.nsec.bitmap[r2->resrec.rrtype >> 3] |= 128 >> (r2->resrec.rrtype & 7);
+										}
+								if (!r2)	// Make sure we didn't have to break out because we hit a high-numbered rrtype
+									{
+									newptr = PutResourceRecord(&m->omsg, newptr, &m->omsg.h.numAnswers, &nsec.resrec);
+									if (!newptr) m->omsg.h.numAnswers--;	// If failed to put NSEC, retract previous answer too
+									}
+								}
+							}
+						if (newptr)		// If all successful (newptr still set) update state variables now
+							{
+							responseptr = newptr;
+							rr->RequireGoodbye = active;
+							if (rr->LastAPTime == m->timenow) numAnnounce++; else numAnswer++;
+							}
 						}
 					else if (m->omsg.h.numAnswers) break;
 					}
@@ -3709,13 +3746,21 @@ mDNSexport void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheReco
 	if (rr->DelayDelivery) return;		// We'll come back later when CacheRecordDeferredAdd() calls us
 
 	// Only deliver negative answers if client has explicitly requested them
-	if (rr->resrec.RecordType == kDNSRecordTypePacketNegative && (!AddRecord || !q->ReturnIntermed)) return;
+	if (rr->resrec.RecordType == kDNSRecordTypePacketNegative || (q->qtype != kDNSType_NSEC && RRAssertsNonexistence(&rr->resrec, q->qtype)))
+		if (!AddRecord || !q->ReturnIntermed) return;
 
 	// For CNAME results to non-CNAME questions, only inform the client if they explicitly requested that
 	if (q->QuestionCallback && !q->NoAnswer && (!followcname || q->ReturnIntermed))
 		{
 		mDNS_DropLockBeforeCallback();		// Allow client (and us) to legally make mDNS API calls
-		q->QuestionCallback(m, q, &rr->resrec, AddRecord);
+		if (q->qtype != kDNSType_NSEC && RRAssertsNonexistence(&rr->resrec, q->qtype))
+			{
+			CacheRecord neg;
+			MakeNegativeCacheRecord(m, &neg, &q->qname, q->qnamehash, q->qtype, q->qclass, 1, rr->resrec.InterfaceID);
+			q->QuestionCallback(m, q, &neg.resrec, AddRecord);
+			}
+		else
+			q->QuestionCallback(m, q, &rr->resrec, AddRecord);
 		mDNS_ReclaimLockAfterCallback();	// Decrement mDNS_reentrancy to block mDNS API calls again
 		}
 	// Note: Proceed with caution here because client callback function is allowed to do anything,
@@ -4096,8 +4141,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 				if (m->CurrentQuestion != q) break;		// If callback deleted q, then we're finished here
 				}
 			else if (RRTypeIsAddressType(rr->resrec.rrtype) && RRTypeIsAddressType(q->qtype))
-				if (rr->resrec.namehash == q->qnamehash && SameDomainName(rr->resrec.name, &q->qname))
-					ShouldQueryImmediately = mDNSfalse;
+				ShouldQueryImmediately = mDNSfalse;
 		}
 
 	if (m->CurrentQuestion != q) debugf("AnswerNewQuestion: question deleted while giving cache answers");
@@ -5272,6 +5316,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		{
 		mDNSBool QuestionNeedsMulticastResponse;
 		int NumAnswersForThisQuestion = 0;
+		AuthRecord *NSECAnswer = mDNSNULL;
 		DNSQuestion pktq, *q;
 		ptr = getQuestion(query, ptr, end, InterfaceID, &pktq);	// get the question...
 		if (!ptr) goto exit;
@@ -5301,35 +5346,51 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 			{
 			rr = m->CurrentRecord;
 			m->CurrentRecord = rr->next;
-			if (ResourceRecordAnswersQuestion(&rr->resrec, &pktq) && (QueryWasMulticast || QueryWasLocalUnicast || rr->AllowRemoteQuery))
+			if (AnyTypeRecordAnswersQuestion(&rr->resrec, &pktq) && (QueryWasMulticast || QueryWasLocalUnicast || rr->AllowRemoteQuery))
 				{
-				if (rr->resrec.RecordType == kDNSRecordTypeUnique)
-					ResolveSimultaneousProbe(m, query, end, &pktq, rr);
-				else if (ResourceRecordIsValidAnswer(rr))
+				if (RRTypeAnswersQuestionType(&rr->resrec, pktq.qtype))
 					{
-					NumAnswersForThisQuestion++;
-					// Note: We should check here if this is a probe-type query, and if so, generate an immediate
-					// unicast answer back to the source, because timeliness in answering probes is important.
-
-					// Notes:
-					// NR_AnswerTo pointing into query packet means "answer via immediate legacy unicast" (may *also* choose to multicast)
-					// NR_AnswerTo == (mDNSu8*)~1             means "answer via delayed unicast" (to modern querier; may promote to multicast instead)
-					// NR_AnswerTo == (mDNSu8*)~0             means "definitely answer via multicast" (can't downgrade to unicast later)
-					// If we're not multicasting this record because the kDNSQClass_UnicastResponse bit was set,
-					// but the multicast querier is not on a matching subnet (e.g. because of overlaid subnets on one link)
-					// then we'll multicast it anyway (if we unicast, the receiver will ignore it because it has an apparently non-local source)
-					if (QuestionNeedsMulticastResponse || (!FromLocalSubnet && QueryWasMulticast && !LegacyQuery))
+					if (rr->resrec.RecordType == kDNSRecordTypeUnique)
+						ResolveSimultaneousProbe(m, query, end, &pktq, rr);
+					else if (ResourceRecordIsValidAnswer(rr))
 						{
-						// We only mark this question for sending if it is at least one second since the last time we multicast it
-						// on this interface. If it is more than a second, or LastMCInterface is different, then we may multicast it.
-						// This is to guard against the case where someone blasts us with queries as fast as they can.
-						if (m->timenow - (rr->LastMCTime + mDNSPlatformOneSecond) >= 0 ||
-							(rr->LastMCInterface != mDNSInterfaceMark && rr->LastMCInterface != InterfaceID))
-							rr->NR_AnswerTo = (mDNSu8*)~0;
+						NumAnswersForThisQuestion++;
+						// Note: We should check here if this is a probe-type query, and if so, generate an immediate
+						// unicast answer back to the source, because timeliness in answering probes is important.
+	
+						// Notes:
+						// NR_AnswerTo pointing into query packet means "answer via immediate legacy unicast" (may *also* choose to multicast)
+						// NR_AnswerTo == (mDNSu8*)~1             means "answer via delayed unicast" (to modern querier; may promote to multicast instead)
+						// NR_AnswerTo == (mDNSu8*)~0             means "definitely answer via multicast" (can't downgrade to unicast later)
+						// If we're not multicasting this record because the kDNSQClass_UnicastResponse bit was set,
+						// but the multicast querier is not on a matching subnet (e.g. because of overlaid subnets on one link)
+						// then we'll multicast it anyway (if we unicast, the receiver will ignore it because it has an apparently non-local source)
+						if (QuestionNeedsMulticastResponse || (!FromLocalSubnet && QueryWasMulticast && !LegacyQuery))
+							{
+							// We only mark this question for sending if it is at least one second since the last time we multicast it
+							// on this interface. If it is more than a second, or LastMCInterface is different, then we may multicast it.
+							// This is to guard against the case where someone blasts us with queries as fast as they can.
+							if (m->timenow - (rr->LastMCTime + mDNSPlatformOneSecond) >= 0 ||
+								(rr->LastMCInterface != mDNSInterfaceMark && rr->LastMCInterface != InterfaceID))
+								rr->NR_AnswerTo = (mDNSu8*)~0;
+							}
+						else if (!rr->NR_AnswerTo) rr->NR_AnswerTo = LegacyQuery ? ptr : (mDNSu8*)~1;
 						}
-					else if (!rr->NR_AnswerTo) rr->NR_AnswerTo = LegacyQuery ? ptr : (mDNSu8*)~1;
+					}
+				else if (rr->resrec.RecordType == kDNSRecordTypeVerified)
+					{
+					// If we don't have any answers for this question, but we do own the name, then for now the simplest way to
+					// generate an NSEC response is to mark one of the records we do have, and when we send it we'll automatically
+					// generate a synthetic NSEC to go with it. For efficiency we pick the record with the smallest rdata.
+					if (!NSECAnswer || NSECAnswer->resrec.rdlength > rr->resrec.rdlength) NSECAnswer = rr;
 					}
 				}
+			}
+
+		if (NumAnswersForThisQuestion == 0 && NSECAnswer)
+			{
+			NumAnswersForThisQuestion++;
+			NSECAnswer->NR_AnswerTo = (mDNSu8*)~0;
 			}
 
 		// If we couldn't answer this question, someone else might be able to,
@@ -5776,7 +5837,8 @@ mDNSlocal mDNSBool ExpectingUnicastResponseForRecord(mDNS *const m, const mDNSAd
 
 // Certain data types need more space for in-memory storage than their in-packet rdlength would imply
 // Currently this applies only to rdata types containing more than one domainname,
-// or types where the domainname is not the last item in the structure
+// or types where the domainname is not the last item in the structure.
+// In addition, NSEC currently requires less space for in-memory storage than its in-packet representation.
 mDNSlocal mDNSu16 GetRDLengthMem(const ResourceRecord *const rr)
 	{
 	switch (rr->rrtype)
@@ -5784,6 +5846,7 @@ mDNSlocal mDNSu16 GetRDLengthMem(const ResourceRecord *const rr)
 		case kDNSType_SOA: return sizeof(rdataSOA);
 		case kDNSType_RP:  return sizeof(rdataRP);
 		case kDNSType_PX:  return sizeof(rdataPX);
+		case kDNSType_NSEC:return sizeof(rdataNSEC);
 		default:           return rr->rdlength;
 		}
 	}
@@ -6026,7 +6089,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		if (!AcceptableResponse) AcceptableResponse = ExpectingUnicastResponseForRecord(m, srcaddr, ResponseSrcLocal, dstport, response->h.id, &m->rec.r);
 
 		// 1. Check that this packet resource record does not conflict with any of ours
-		if (mDNSOpaque16IsZero(response->h.id))
+		if (mDNSOpaque16IsZero(response->h.id) && m->rec.r.resrec.rrtype != kDNSType_NSEC)
 			{
 			if (m->CurrentRecord)
 				LogMsg("mDNSCoreReceiveResponse ERROR m->CurrentRecord already set %s", ARDisplayString(m, m->CurrentRecord));
@@ -6039,6 +6102,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 				// For other unicast responses, this code accepts them only for responses with an
 				// (apparently) local source address that pertain to a record of our own that's in probing state
 				if (!AcceptableResponse && !(ResponseSrcLocal && rr->resrec.RecordType == kDNSRecordTypeUnique)) continue;
+
 				if (PacketRRMatchesSignature(&m->rec.r, rr))		// If interface, name, type (if shared record) and class match...
 					{
 					// ... check to see if type and rdata are identical
