@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.677  2009/04/24 20:50:16  mcguire
+<rdar://problem/6791775> 4 second delay in DNS response
+
 Revision 1.676  2009/04/24 02:17:58  mcguire
 <rdar://problem/5264124> uDNS: Not always respecting preference order of DNS servers
 
@@ -5503,18 +5506,7 @@ mDNSlocal void SysEventCallBack(int s1, short __unused filter, void *context)
 			msg.k.event_code == KEV_DL_LINK_ADDRESS_CHANGED ? "KEV_DL_LINK_ADDRESS_CHANGED" :
 			msg.k.event_code == KEV_DL_WAKEFLAGS_CHANGED    ? "KEV_DL_WAKEFLAGS_CHANGED"    : "?");
 
-		// The DHCP code has a four-second delay before it processes the link change,
-		// so we should wait at least that long before doing anything
-		if (!m->p->NetworkChanged)
-			{
-			m->p->NetworkChanged = NonZeroTime(m->timenow + mDNSPlatformOneSecond * 5);
-			LogInfo("SysEventCallBack: setting network changed to %d (%d)", mDNSPlatformOneSecond * 5, m->p->NetworkChanged);
-			}
-
-		// If we're getting a flurry of event notifications, we should make sure that at least
-		// a second has passed without any new notifications before we go ahead and reconfigure
-		if (m->p->NetworkChanged - NonZeroTime(m->timenow + mDNSPlatformOneSecond) < 0)
-			m->p->NetworkChanged = NonZeroTime(m->timenow + mDNSPlatformOneSecond);
+		if (msg.k.event_code == KEV_DL_WAKEFLAGS_CHANGED) SetNetworkChanged(m, mDNSPlatformOneSecond * 2);
 		}
 
 	mDNS_Unlock(m);
