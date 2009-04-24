@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.614  2009/04/24 02:17:57  mcguire
+<rdar://problem/5264124> uDNS: Not always respecting preference order of DNS servers
+
 Revision 1.613  2009/04/23 22:06:29  cheshire
 Added CacheRecord and InterfaceID parameters to MakeNegativeCacheRecord, in preparation for:
 <rdar://problem/3476350> Return negative answers when host knows authoritatively that no answer exists
@@ -1432,38 +1435,46 @@ mDNSlocal void SetRecordRetry(mDNS *const m, AuthRecord *rr, mStatus SendErr)
 mDNSexport DNSServer *mDNS_AddDNSServer(mDNS *const m, const domainname *d, const mDNSInterfaceID interface, const mDNSAddr *addr, const mDNSIPPort port)
 	{
 	DNSServer **p = &m->DNSServers;
-
+	DNSServer *tmp = mDNSNULL;
+	
 	if (!d) d = (const domainname *)"";
 
 	LogInfo("mDNS_AddDNSServer: Adding %#a for %##s", addr, d->c);
 	if (m->mDNS_busy != m->mDNS_reentrancy+1)
 		LogMsg("mDNS_AddDNSServer: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
-	while (*p)	// Check if we already have this {server,domain} pair registered
+	while (*p)	// Check if we already have this {interface,address,port,domain} tuple registered
 		{
 		if ((*p)->interface == interface && (*p)->teststate != DNSServer_Disabled &&
 			mDNSSameAddress(&(*p)->addr, addr) && mDNSSameIPPort((*p)->port, port) && SameDomainName(&(*p)->domain, d))
 			{
-			if (!((*p)->flags & DNSServer_FlagDelete)) debugf("Note: DNS Server %#a for domain %##s registered more than once", addr, d->c);
+			if (!((*p)->flags & DNSServer_FlagDelete)) debugf("Note: DNS Server %#a:%d for domain %##s (%p) registered more than once", addr, mDNSVal16(port), d->c, interface);
 			(*p)->flags &= ~DNSServer_FlagDelete;
-			return(*p);
+			tmp = *p;
+			*p = tmp->next;
+			tmp->next = mDNSNULL;
 			}
-		p=&(*p)->next;
+		else
+			p=&(*p)->next;
 		}
 
-	// allocate, add to list
-	*p = mDNSPlatformMemAllocate(sizeof(**p));
-	if (!*p) LogMsg("Error: mDNS_AddDNSServer - malloc");
+	if (tmp) *p = tmp; // move to end of list, to ensure ordering from platform layer
 	else
 		{
-		(*p)->interface = interface;
-		(*p)->addr      = *addr;
-		(*p)->port      = port;
-		(*p)->flags     = DNSServer_FlagNew;
-		(*p)->teststate = /* DNSServer_Untested */ DNSServer_Passed;
-		(*p)->lasttest  = m->timenow - INIT_UCAST_POLL_INTERVAL;
-		AssignDomainName(&(*p)->domain, d);
-		(*p)->next = mDNSNULL;
+		// allocate, add to list
+		*p = mDNSPlatformMemAllocate(sizeof(**p));
+		if (!*p) LogMsg("Error: mDNS_AddDNSServer - malloc");
+		else
+			{
+			(*p)->interface = interface;
+			(*p)->addr      = *addr;
+			(*p)->port      = port;
+			(*p)->flags     = DNSServer_FlagNew;
+			(*p)->teststate = /* DNSServer_Untested */ DNSServer_Passed;
+			(*p)->lasttest  = m->timenow - INIT_UCAST_POLL_INTERVAL;
+			AssignDomainName(&(*p)->domain, d);
+			(*p)->next = mDNSNULL;
+			}
 		}
 	return(*p);
 	}
