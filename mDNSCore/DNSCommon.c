@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.249  2009/04/24 00:29:20  cheshire
+<rdar://problem/3476350> Return negative answers when host knows authoritatively that no answer exists
+Added support for generating/parsing/displaying NSEC records
+
 Revision 1.248  2009/04/23 22:11:16  cheshire
 Minor cleanup in debugging checks in GetLargeResourceRecord
 
@@ -676,6 +680,7 @@ mDNSexport char *DNSTypeName(mDNSu16 rrtype)
 		case kDNSType_AAAA: return("AAAA");
 		case kDNSType_SRV:  return("SRV");
 		case kDNSType_OPT:  return("OPT");
+		case kDNSType_NSEC: return("NSEC");
 		case kDNSType_TSIG: return("TSIG");
 		case kDNSQType_ANY: return("ANY");
 		default:			{
@@ -759,6 +764,14 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *const rr, const RD
 										break;
 									}
 								}
+							}
+							break;
+
+		case kDNSType_NSEC: {
+							int i;
+							for (i=0; i<255; i++)
+								if (rd->nsec.bitmap[i>>3] & (128 >> (i&7)))
+									length += mDNS_snprintf(buffer+length, RemSpc, "%s ", DNSTypeName(i));
 							}
 							break;
 
@@ -1587,6 +1600,7 @@ mDNSexport void mDNS_SetupQuestion(DNSQuestion *const q, const mDNSInterfaceID I
 
 mDNSexport mDNSu32 RDataHashValue(const ResourceRecord *const rr)
 	{
+	int len = rr->rdlength;
 	const RDataBody2 *const rdb = (RDataBody2 *)rr->rdata->u.data;
 	switch(rr->rrtype)
 		{
@@ -1616,16 +1630,18 @@ mDNSexport mDNSu32 RDataHashValue(const ResourceRecord *const rr)
 
 		case kDNSType_OPT:	 return 0;	// OPT is a pseudo-RR container structure; makes no sense to compare
 
+		case kDNSType_NSEC:	 len = sizeof(rdataNSEC);	// Use in-memory length of 32, and fall through default checksum computation below
+
 		default:
 			{
 			mDNSu32 sum = 0;
 			int i;
-			for (i=0; i+1 < rr->rdlength; i+=2)
+			for (i=0; i+1 < len; i+=2)
 				{
 				sum += (((mDNSu32)(rdb->data[i])) << 8) | rdb->data[i+1];
 				sum = (sum<<3) | (sum>>29);
 				}
-			if (i < rr->rdlength)
+			if (i < len)
 				{
 				sum += ((mDNSu32)(rdb->data[i])) << 8;
 				}
@@ -1675,6 +1691,8 @@ mDNSexport mDNSBool SameRDataBody(const ResourceRecord *const r1, const RDataBod
 
 		case kDNSType_OPT:	return mDNSfalse;	// OPT is a pseudo-RR container structure; makes no sense to compare
 
+		case kDNSType_NSEC: return(mDNSPlatformMemSame(b1->data, b2->data, sizeof(rdataNSEC)));
+
 		default:			return(mDNSPlatformMemSame(b1->data, b2->data, r1->rdlength));
 		}
 	}
@@ -1696,8 +1714,8 @@ mDNSexport mDNSBool SameNameRecordAnswersQuestion(const ResourceRecord *const rr
 	if (rr->InterfaceID && !mDNSOpaque16IsZero(q->TargetQID)) return(mDNSfalse);
 
 	// RR type CNAME matches any query type. QTYPE ANY matches any RR type. QCLASS ANY matches any RR class.
-	if (rr->rrtype != kDNSType_CNAME && rr->rrtype  != q->qtype  && q->qtype  != kDNSQType_ANY ) return(mDNSfalse);
-	if (                                rr->rrclass != q->qclass && q->qclass != kDNSQClass_ANY) return(mDNSfalse);
+	if (!RRTypeAnswersQuestionType(rr,q->qtype)) return(mDNSfalse);
+	if (rr->rrclass != q->qclass && q->qclass != kDNSQClass_ANY) return(mDNSfalse);
 
 	return(mDNStrue);
 	}
@@ -1712,8 +1730,23 @@ mDNSexport mDNSBool ResourceRecordAnswersQuestion(const ResourceRecord *const rr
 	if (rr->InterfaceID && !mDNSOpaque16IsZero(q->TargetQID)) return(mDNSfalse);
 
 	// RR type CNAME matches any query type. QTYPE ANY matches any RR type. QCLASS ANY matches any RR class.
-	if (rr->rrtype != kDNSType_CNAME && rr->rrtype  != q->qtype  && q->qtype  != kDNSQType_ANY ) return(mDNSfalse);
-	if (                                rr->rrclass != q->qclass && q->qclass != kDNSQClass_ANY) return(mDNSfalse);
+	if (!RRTypeAnswersQuestionType(rr,q->qtype)) return(mDNSfalse);
+	if (rr->rrclass != q->qclass && q->qclass != kDNSQClass_ANY) return(mDNSfalse);
+
+	return(rr->namehash == q->qnamehash && SameDomainName(rr->name, &q->qname));
+	}
+
+mDNSexport mDNSBool AnyTypeRecordAnswersQuestion(const ResourceRecord *const rr, const DNSQuestion *const q)
+	{
+	if (rr->InterfaceID &&
+		q ->InterfaceID && q->InterfaceID != mDNSInterface_LocalOnly &&
+		rr->InterfaceID != q->InterfaceID) return(mDNSfalse);
+
+	// If ResourceRecord received via multicast, but question was unicast, then shouldn't use record to answer this question
+	if (rr->InterfaceID && !mDNSOpaque16IsZero(q->TargetQID)) return(mDNSfalse);
+
+	if (rr->rrclass != q->qclass && q->qclass != kDNSQClass_ANY) return(mDNSfalse);
+
 	return(rr->namehash == q->qnamehash && SameDomainName(rr->name, &q->qname));
 	}
 
@@ -1761,6 +1794,17 @@ mDNSexport mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate
 		case kDNSType_SRV:	return(mDNSu16)(6 + CompressedDomainNameLength(&rd->srv.target, name));
 
 		case kDNSType_OPT:  return(rr->rdlength);
+
+		case kDNSType_NSEC: {
+							int i;
+							for (i=sizeof(rdataNSEC); i>0; i--) if (rd->nsec.bitmap[i-1]) break;
+							// For our simplified use of NSEC synthetic records:
+							// nextname is always the record's own name,
+							// the block number is always 0,
+							// the count byte is a value in the range 1-32,
+							// followed by the 1-32 data bytes
+							return((estimate ? 1 : DomainNameLength(rr->name)) + 2 + i);
+							}
 
 		default:			debugf("Warning! Don't know how to get length of resource type %d", rr->rrtype);
 							return(rr->rdlength);
@@ -1811,6 +1855,8 @@ mDNSexport mDNSBool ValidateRData(const mDNSu16 rrtype, const mDNSu16 rdlength, 
 							// Call to DomainNameLengthLimit() implicitly enforces both requirements for us
 							len = DomainNameLengthLimit(&rd->u.srv.target, rd->u.data + rdlength);
 							return(len <= MAX_DOMAIN_NAME && rdlength == 6+len);
+
+		//case kDNSType_NSEC not checked
 
 		default:			return(mDNStrue);	// Allow all other types without checking
 		}
@@ -2074,6 +2120,23 @@ mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNS
 										break;
 									}
 								}
+							return ptr;
+							}
+
+		case kDNSType_NSEC: {
+							// For our simplified use of NSEC synthetic records:
+							// nextname is always the record's own name,
+							// the block number is always 0,
+							// the count byte is a value in the range 1-32,
+							// followed by the 1-32 data bytes
+							int i, j;
+							for (i=sizeof(rdataNSEC); i>0; i--) if (rdb->nsec.bitmap[i-1]) break;
+							ptr = putDomainNameAsLabels(msg, ptr, limit, rr->name);
+							if (!ptr) return(mDNSNULL);
+							if (ptr + 2 + i > limit) return(mDNSNULL);
+							*ptr++ = 0;
+							*ptr++ = i;
+							for (j=0; j<i; j++) *ptr++ = rdb->nsec.bitmap[j];
 							return ptr;
 							}
 
@@ -2600,6 +2663,20 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 								}
 							rr->resrec.rdlength = (mDNSu8*)opt - rr->resrec.rdata->u.data;
 							if (ptr != end) { LogMsg("GetLargeResourceRecord: Malformed OptRdata"); return(mDNSNULL); }
+							break;
+							}
+
+		case kDNSType_NSEC: {
+							unsigned int i, j;
+							domainname d;
+							ptr = getDomainName(msg, ptr, end, &d);		// Ignored for our simplified use of NSEC synthetic records
+							if (!ptr) { debugf("GetLargeResourceRecord: Malformed NSEC nextname"); return mDNSNULL; }
+							if (*ptr++ != 0) { debugf("GetLargeResourceRecord: We only handle block zero NSECs"); return mDNSNULL; }
+							i = *ptr++;
+							if (i < 1 || i > sizeof(rdataNSEC)) { debugf("GetLargeResourceRecord: invalid block length %d", i); return mDNSNULL; }
+							mDNSPlatformMemZero(rdb->nsec.bitmap, sizeof(rdb->nsec.bitmap));
+							for (j=0; j<i; j++) rdb->nsec.bitmap[j] = *ptr++;
+							if (ptr != end) { LogMsg("GetLargeResourceRecord: Malformed NSEC"); return(mDNSNULL); }
 							break;
 							}
 
