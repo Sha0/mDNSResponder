@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.947  2009/04/24 19:41:12  mcguire
+<rdar://problem/6791775> 4 second delay in DNS response
+
 Revision 1.946  2009/04/24 19:28:39  mcguire
 <rdar://problem/6791775> 4 second delay in DNS response
 
@@ -7991,19 +7994,13 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 		// connected machines establish link at exactly the same time, we don't want them all
 		// to go and hit the network with identical queries at exactly the same moment.
 		newSS = m->timenow + (mDNSs32)mDNSRandom((mDNSu32)InitialQuestionInterval);
-
 #if APPLE_OSX_mDNSResponder
 		// We set this to at least 2 seconds, because the MacOSX platform layer typically gets lots
 		// of network change notifications in a row, and we don't know when we're done getting notified.
 		// Note that this will not be set if the interface doesn't do multicast (set->McastTxRx).
 		newSS += mDNSPlatformOneSecond * 2;
 #endif
-
-		if (!m->SuppressSending || newSS - m->SuppressSending < 0)
-			{
-			m->SuppressSending = newSS;
-			LogMsg("%s: set SuppressSending to %d", __FUNCTION__, m->SuppressSending);
-			}
+		if (!m->SuppressSending || newSS - m->SuppressSending < 0) m->SuppressSending = newSS;
 		
 		if (flapping)
 			{
