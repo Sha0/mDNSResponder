@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.73  2009/04/24 00:28:05  cheshire
+<rdar://problem/3476350> Return negative answers when host knows authoritatively that no answer exists
+Added definitions for RRTypeAnswersQuestionType/RRAssertsNonexistence/AnyTypeRecordAnswersQuestion
+
 Revision 1.72  2009/04/01 21:12:56  herscher
 <rdar://problem/5925472> Current Bonjour code does not compile on Windows
 
@@ -289,10 +293,16 @@ extern void AppendLabelSuffix(domainlabel *name, mDNSu32 val, mDNSBool RichText)
 	(r1)->rdatahash == (r2)->rdatahash   && \
 	SameRDataBody((r1), &(r2)->rdata->u))
 
+// A given RRType answers a QuestionType if RRType is CNAME, or types match, or QuestionType is ANY,
+// or the RRType is NSEC and positively asserts the nonexistence of the type being requested
+#define RRTypeAnswersQuestionType(R,T) ((R)->rrtype == kDNSType_CNAME || (R)->rrtype == (T) || (T) == kDNSQType_ANY || RRAssertsNonexistence((R),(T)))
+#define RRAssertsNonexistence(R,T) ((R)->rrtype == kDNSType_NSEC && (T) < kDNSQType_ANY && !((R)->rdata->u.nsec.bitmap[(T)>>3] & (128 >> ((T)&7))))
+
 extern mDNSu32 RDataHashValue(const ResourceRecord *const rr);
 extern mDNSBool SameRDataBody(const ResourceRecord *const r1, const RDataBody *const r2);
-extern mDNSBool ResourceRecordAnswersQuestion(const ResourceRecord *const rr, const DNSQuestion *const q);
 extern mDNSBool SameNameRecordAnswersQuestion(const ResourceRecord *const rr, const DNSQuestion *const q);
+extern mDNSBool ResourceRecordAnswersQuestion(const ResourceRecord *const rr, const DNSQuestion *const q);
+extern mDNSBool AnyTypeRecordAnswersQuestion (const ResourceRecord *const rr, const DNSQuestion *const q);
 extern mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate);
 extern mDNSBool ValidateRData(const mDNSu16 rrtype, const mDNSu16 rdlength, const RData *const rd);
 
