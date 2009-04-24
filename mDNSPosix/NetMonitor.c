@@ -30,6 +30,10 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.94  2009/04/24 00:31:56  cheshire
+<rdar://problem/3476350> Return negative answers when host knows authoritatively that no answer exists
+Added code to display NSEC records
+
 Revision 1.93  2009/01/13 05:31:34  mkrochma
 <rdar://problem/6491367> Replace bzero, bcopy with mDNSPlatformMemZero, mDNSPlatformMemCopy, memset, memcpy
 
@@ -596,6 +600,12 @@ mDNSlocal void DisplayResourceRecord(const mDNSAddr *const srcaddr, const char *
 							} break;
 		case kDNSType_AAAA:	n += mprintf("%.16a", &rd->ipv6); break;
 		case kDNSType_SRV:	n += mprintf("%##s:%d", rd->srv.target.c, mDNSVal16(rd->srv.port)); break;
+		case kDNSType_NSEC:	{
+							int i;
+							for (i=0; i<255; i++)
+								if (rd->nsec.bitmap[i>>3] & (128 >> (i&7)))
+									n += mprintf("%s ", DNSTypeName(i));
+							} break;
 		default:			{
 							mDNSu8 *s = rd->data;
 							while (s < rdend && p < buffer+MaxWidth)
