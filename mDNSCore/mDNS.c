@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.948  2009/04/24 21:25:16  cheshire
+<rdar://problem/6601002> Special case Net Assistant port so Apple Remote Desktop doesn't wake up every machine on the network
+
 Revision 1.947  2009/04/24 19:41:12  mcguire
 <rdar://problem/6791775> 4 second delay in DNS response
 
@@ -8796,8 +8799,10 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 		if (end >= required)
 			{
 			#define SSH_AsNumber 22
+			#define ARD_AsNumber 3283
 			#define IPSEC_AsNumber 4500
 			static const mDNSIPPort SSH   = { { SSH_AsNumber   >> 8, SSH_AsNumber   & 0xFF } };
+			static const mDNSIPPort ARD   = { { ARD_AsNumber   >> 8, ARD_AsNumber   & 0xFF } };
 			static const mDNSIPPort IPSEC = { { IPSEC_AsNumber >> 8, IPSEC_AsNumber & 0xFF } };
 
 			mDNSBool wake = mDNSfalse;
@@ -8811,6 +8816,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 
 				case  6:	{
 							const TCPHeader *const tcp = (const TCPHeader *)trans;
+							port = tcp->dst;
 
 							// Plan to wake if
 							// (a) RST is not set, AND
@@ -8819,11 +8825,10 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 
 							// For now, to reduce spurious wakeups, we wake only for TCP SYN,
 							// except for ssh connections, where we'll wake for plain data packets too
-							if (!mDNSSameIPPort(tcp->dst, SSH) && !(tcp->flags & 2)) wake = mDNSfalse;
+							if (!mDNSSameIPPort(port, SSH) && !(tcp->flags & 2)) wake = mDNSfalse;
 
-							port = tcp->dst;
 							LogSPS("%s %d-byte TCP from %.4a:%d to %.4a:%d%s%s%s", XX,
-								&v4->src, mDNSVal16(tcp->src), &v4->dst, mDNSVal16(tcp->dst),
+								&v4->src, mDNSVal16(tcp->src), &v4->dst, mDNSVal16(port),
 								(tcp->flags & 2) ? " SYN" : "",
 								(tcp->flags & 1) ? " FIN" : "",
 								(tcp->flags & 4) ? " RST" : "");
@@ -8833,11 +8838,19 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 				case 17:	{
 							const UDPHeader *const udp = (const UDPHeader *)trans;
 							mDNSu16 len = (mDNSu16)((mDNSu16)trans[4] << 8 | trans[5]);
-							wake = mDNStrue;
-							// For Back to My Mac UDP port 4500 (IPSEC) packets, we specially ignore NAT keepalive packets
-							if (mDNSSameIPPort(udp->dst, IPSEC)) wake = (len != 9 || end < trans + 9 || trans[8] != 0xFF);
 							port = udp->dst;
-							LogSPS("%s %d-byte UDP from %.4a:%d to %.4a:%d", XX, &v4->src, mDNSVal16(udp->src), &v4->dst, mDNSVal16(udp->dst));
+							wake = mDNStrue;
+
+							// For Back to My Mac UDP port 4500 (IPSEC) packets, we specially ignore NAT keepalive packets
+							if (mDNSSameIPPort(port, IPSEC)) wake = (len != 9 || end < trans + 9 || trans[8] != 0xFF);
+
+							// For now, because we haven't yet worked out a clean elegant way to do this, we just special-case the
+							// Apple Remote Desktop port number -- we ignore all packets to UDP 3283 (the "Net Assistant" port),
+							// except for Apple Remote Desktop's explicit manual wakeup packet, which looks like this:
+							// UDP header (8 bytes) 13 88 00 6a 41 4e 41 20 (8 bytes) ffffffffffff (6 bytes) 16xMAC (96 bytes) = 118 bytes total
+							if (mDNSSameIPPort(port, ARD)) wake = (len >= 118 && end >= trans+10 && trans[8] == 0x13 && trans[9] == 0x88);
+
+							LogSPS("%s %d-byte UDP from %.4a:%d to %.4a:%d", XX, &v4->src, mDNSVal16(udp->src), &v4->dst, mDNSVal16(port));
 							}
 							break;
 
