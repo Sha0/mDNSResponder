@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: Firewall.cpp,v $
+Revision 1.6  2009/04/24 04:55:26  herscher
+<rdar://problem/3496833> Advertise SMB file sharing via Bonjour
+
 Revision 1.5  2009/03/30 20:39:29  herscher
 <rdar://problem/5925472> Current Bonjour code does not compile on Windows
 <rdar://problem/5712486> Put in extra defensive checks to prevent NULL pointer dereferencing crash
@@ -299,6 +302,57 @@ exit:
 }
 
 
+static OSStatus
+mDNSFirewallIsFileAndPrintSharingEnabled
+	(
+	IN INetFwProfile	* fwProfile,
+	OUT BOOL			* fwServiceEnabled
+	)
+{
+    VARIANT_BOOL fwEnabled;
+    INetFwService* fwService = NULL;
+    INetFwServices* fwServices = NULL;
+	OSStatus err = S_OK;
+
+    _ASSERT(fwProfile != NULL);
+    _ASSERT(fwServiceEnabled != NULL);
+
+    *fwServiceEnabled = FALSE;
+
+    // Retrieve the globally open ports collection.
+    err = fwProfile->get_Services(&fwServices);
+	require( SUCCEEDED( err ), exit );
+
+    // Attempt to retrieve the globally open port.
+    err = fwServices->Item(NET_FW_SERVICE_FILE_AND_PRINT, &fwService);
+	require( SUCCEEDED( err ), exit );
+	
+	// Find out if the globally open port is enabled.
+    err = fwService->get_Enabled(&fwEnabled);
+	require( SUCCEEDED( err ), exit );
+	if (fwEnabled != VARIANT_FALSE)
+	{
+		*fwServiceEnabled = TRUE;
+	}
+
+exit:
+
+    // Release the globally open port.
+    if (fwService != NULL)
+    {
+        fwService->Release();
+    }
+
+    // Release the globally open ports collection.
+    if (fwServices != NULL)
+    {
+        fwServices->Release();
+    }
+
+    return err;
+}
+
+
 OSStatus
 mDNSAddToFirewall
 		(
@@ -350,4 +404,53 @@ exit:
     }
 
 	return err;
+}
+
+
+BOOL
+mDNSIsFileAndPrintSharingEnabled()
+{
+	INetFwProfile	*	fwProfile					= NULL;
+	HRESULT				comInit						= E_FAIL;
+	BOOL				enabled						= FALSE;
+	OSStatus			err							= kNoErr;
+
+	// Initialize COM.
+
+	comInit = CoInitializeEx( 0, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE );
+
+	// Ignore this case. RPC_E_CHANGED_MODE means that COM has already been
+	// initialized with a different mode.
+
+	if (comInit != RPC_E_CHANGED_MODE)
+	{
+		err = comInit;
+		require(SUCCEEDED(err), exit);
+	}
+
+	// Connect to the firewall
+
+	err = mDNSFirewallInitialize(&fwProfile);
+	require( SUCCEEDED( err ) && ( fwProfile != NULL ), exit);
+
+	err = mDNSFirewallIsFileAndPrintSharingEnabled( fwProfile, &enabled );
+	require_noerr( err, exit );
+
+exit:
+
+	// Disconnect from the firewall
+
+	if ( fwProfile != NULL )
+	{
+		mDNSFirewallCleanup(fwProfile);
+	}
+
+	// De-initialize COM
+
+	if (SUCCEEDED(comInit))
+    {
+        CoUninitialize();
+    }
+
+	return enabled;
 }

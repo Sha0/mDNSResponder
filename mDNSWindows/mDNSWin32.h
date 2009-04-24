@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.h,v $
+Revision 1.28  2009/04/24 04:55:26  herscher
+<rdar://problem/3496833> Advertise SMB file sharing via Bonjour
+
 Revision 1.27  2009/03/30 20:45:52  herscher
 <rdar://problem/5925472> Current Bonjour code does not compile on Windows
 <rdar://problem/6127927> B4Windows: uDNS: Should use randomized source ports and transaction IDs to avoid DNS cache poisoning
@@ -204,11 +207,17 @@ struct	mDNS_PlatformSupport_struct
 	HANDLE						descChangedEvent;	// Computer description changed event
 	HANDLE						tcpipChangedEvent;	// TCP/IP config changed
 	HANDLE						ddnsChangedEvent;	// DynDNS config changed
+	HANDLE						fileShareEvent;		// File Sharing changed
+	HANDLE						firewallEvent;		// Firewall changed
 	HANDLE						wakeupEvent;
 	HANDLE						initEvent;
 	HKEY						descKey;
 	HKEY						tcpipKey;
 	HKEY						ddnsKey;
+	HKEY						fileShareKey;
+	HKEY						firewallKey;
+	mDNSBool					smbRegistered;
+	ServiceRecordSet			smbSRS;
 	mStatus						initStatus;
 	mDNSBool					registeredLoopback4;
 	SocketRef					interfaceListChangedSocket;

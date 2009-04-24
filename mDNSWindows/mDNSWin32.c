@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.140  2009/04/24 04:55:26  herscher
+<rdar://problem/3496833> Advertise SMB file sharing via Bonjour
+
 Revision 1.139  2009/04/01 20:06:31  herscher
 <rdar://problem/5629676> Corrupt computer name string used
 
@@ -149,6 +152,7 @@ Revision 1.106  2006/02/26 19:31:05  herscher
 
 #include	"CommonServices.h"
 #include	"DebugServices.h"
+#include	"Firewall.h"
 #include	"RegNames.h"
 #include	<dns_sd.h>
 
@@ -157,6 +161,7 @@ Revision 1.106  2006/02/26 19:31:05  herscher
 	#include	<mswsock.h>
 	#include	<process.h>
 	#include	<ntsecapi.h>
+	#include	<lm.h>
 #endif
 
 #include	"mDNSEmbeddedAPI.h"
@@ -190,15 +195,19 @@ Revision 1.106  2006/02/26 19:31:05  herscher
 #define kWaitListComputerDescriptionEvent			( WAIT_OBJECT_0 + 3 )
 #define kWaitListTCPIPEvent							( WAIT_OBJECT_0 + 4 )
 #define kWaitListDynDNSEvent						( WAIT_OBJECT_0 + 5 )
-#define	kWaitListFixedItemCount						6 + MDNS_WINDOWS_ENABLE_IPV4 + MDNS_WINDOWS_ENABLE_IPV6
+#define kWaitListFileShareEvent						( WAIT_OBJECT_0 + 6 )
+#define kWaitListFirewallEvent						( WAIT_OBJECT_0 + 7 )
+#define	kWaitListFixedItemCount						8 + MDNS_WINDOWS_ENABLE_IPV4 + MDNS_WINDOWS_ENABLE_IPV6
 
 #define kRegistryMaxKeyLength						255
+#define kRegistryMaxValueName						16383
 
 #if( !TARGET_OS_WINDOWS_CE )
 	static GUID										kWSARecvMsgGUID = WSAID_WSARECVMSG;
 #endif
 
 #define kIPv6IfIndexBase							(10000000L)
+#define SMBPortAsNumber								445
 
 
 #if 0
@@ -233,6 +242,8 @@ mDNSlocal void				ProcessingThreadInterfaceListChanged( mDNS *inMDNS );
 mDNSlocal void				ProcessingThreadComputerDescriptionChanged( mDNS * inMDNS );
 mDNSlocal void				ProcessingThreadTCPIPConfigChanged( mDNS * inMDNS );
 mDNSlocal void				ProcessingThreadDynDNSConfigChanged( mDNS * inMDNS );
+mDNSlocal void				ProcessingThreadFileShareChanged( mDNS * inMDNS );
+mDNSlocal void				ProcessingThreadFirewallChanged( mDNS * inMDNS );
 mDNSlocal OSStatus			GetWindowsVersionString( char *inBuffer, size_t inBufferSize );
 
 mDNSlocal int				getifaddrs( struct ifaddrs **outAddrs );
@@ -328,6 +339,7 @@ mDNSlocal void				GetDDNSDomains( DNameListElem ** domains, LPCSTR lpSubKey );
 #endif
 mDNSlocal void				SetDomainSecrets( mDNS * const m );
 mDNSlocal void				SetDomainSecret( mDNS * const m, const domainname * inDomain );
+mDNSlocal void				CheckFileShares( mDNS * const m );
 
 #ifdef	__cplusplus
 	}
@@ -548,8 +560,13 @@ mDNSexport mStatus	mDNSPlatformInit( mDNS * const inMDNS )
 	SetDomainSecrets( inMDNS );
 	
 	// Success!
-	
+
 	mDNSCoreInitComplete( inMDNS, err );
+
+	// See if we need to advertise file sharing
+
+	inMDNS->p->smbRegistered = mDNSfalse;
+	CheckFileShares( inMDNS );
 	
 exit:
 	if( err )
@@ -3089,6 +3106,40 @@ mDNSlocal mStatus	SetupNotifications( mDNS * const inMDNS )
 	err = RegNotifyChangeKeyValue(inMDNS->p->ddnsKey, TRUE, REG_NOTIFY_CHANGE_NAME|REG_NOTIFY_CHANGE_LAST_SET, inMDNS->p->ddnsChangedEvent, TRUE);
 	require_noerr( err, exit );
 
+	// This will catch all changes to file sharing
+
+	inMDNS->p->fileShareEvent = CreateEvent( NULL, FALSE, FALSE, NULL );
+	err = translate_errno( inMDNS->p->fileShareEvent, (mStatus) GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+
+	err = RegCreateKey( HKEY_LOCAL_MACHINE, TEXT("SYSTEM\\CurrentControlSet\\Services\\lanmanserver\\Shares"), &inMDNS->p->fileShareKey );
+	require_noerr( err, exit );
+
+	err = RegNotifyChangeKeyValue(inMDNS->p->fileShareKey, TRUE, REG_NOTIFY_CHANGE_NAME|REG_NOTIFY_CHANGE_LAST_SET, inMDNS->p->fileShareEvent, TRUE);
+	require_noerr( err, exit );
+
+	// This will catch changes to the Windows firewall
+
+	inMDNS->p->firewallEvent = CreateEvent( NULL, FALSE, FALSE, NULL );
+	err = translate_errno( inMDNS->p->firewallEvent, (mStatus) GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+
+	// Just to make sure that initialization doesn't fail on some old OS
+	// that doesn't have this key, we'll only add the notification if
+	// the key exists.
+
+	err = RegCreateKey( HKEY_LOCAL_MACHINE, TEXT("SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\FirewallRules"), &inMDNS->p->firewallKey );
+	
+	if ( !err )
+	{
+		err = RegNotifyChangeKeyValue(inMDNS->p->firewallKey, TRUE, REG_NOTIFY_CHANGE_NAME|REG_NOTIFY_CHANGE_LAST_SET, inMDNS->p->firewallEvent, TRUE);
+		require_noerr( err, exit );
+	}
+	else
+	{
+		err = mStatus_NoError;
+	}
+
 exit:
 	if( err )
 	{
@@ -3137,6 +3188,30 @@ mDNSlocal mStatus	TearDownNotifications( mDNS * const inMDNS )
 	{
 		RegCloseKey( inMDNS->p->ddnsKey );
 		inMDNS->p->ddnsKey = NULL;
+	}
+
+	if ( inMDNS->p->fileShareEvent != NULL )
+	{
+		CloseHandle( inMDNS->p->fileShareEvent );
+		inMDNS->p->fileShareEvent = NULL;
+	}
+
+	if ( inMDNS->p->fileShareKey != NULL )
+	{
+		RegCloseKey( inMDNS->p->fileShareKey );
+		inMDNS->p->fileShareKey = NULL;
+	}
+
+	if ( inMDNS->p->firewallEvent != NULL )
+	{
+		CloseHandle( inMDNS->p->firewallEvent );
+		inMDNS->p->firewallEvent = NULL;
+	}
+
+	if ( inMDNS->p->firewallKey != NULL )
+	{
+		RegCloseKey( inMDNS->p->firewallKey );
+		inMDNS->p->firewallKey = NULL;
 	}
 
 	return( mStatus_NoError );
@@ -3341,6 +3416,21 @@ mDNSlocal unsigned WINAPI	ProcessingThread( LPVOID inParam )
 					ProcessingThreadDynDNSConfigChanged( m );
 					break;
 				}
+				else if ( result == kWaitListFileShareEvent )
+				{
+					//
+					// File sharing changed
+					//
+					ProcessingThreadFileShareChanged( m );
+					break;
+				}
+				else if ( result == kWaitListFirewallEvent )
+				{
+					//
+					// Firewall configuration changed
+					//
+					ProcessingThreadFirewallChanged( m );
+				}
 				else
 				{
 					int		waitItemIndex;
@@ -3525,6 +3615,8 @@ mDNSlocal mStatus	ProcessingThreadSetupWaitList( mDNS * const inMDNS, HANDLE **o
 	*waitItemPtr++ = inMDNS->p->descChangedEvent;
 	*waitItemPtr++ = inMDNS->p->tcpipChangedEvent;
 	*waitItemPtr++ = inMDNS->p->ddnsChangedEvent;
+	*waitItemPtr++ = inMDNS->p->fileShareEvent;
+	*waitItemPtr++ = inMDNS->p->firewallEvent;
 	
 	// Append all the dynamic wait items to the list.
 #if ( MDNS_WINDOWS_ENABLE_IPV4 )
@@ -3842,6 +3934,50 @@ mDNSlocal void	ProcessingThreadDynDNSConfigChanged( mDNS *inMDNS )
 	}
 
 	mDNSPlatformUnlock( inMDNS );
+}
+
+
+//===========================================================================================================================
+//	ProcessingThreadFileShareChanged
+//===========================================================================================================================
+mDNSlocal void	ProcessingThreadFileShareChanged( mDNS *inMDNS )
+{
+	mStatus err;
+	
+	dlog( kDebugLevelInfo, DEBUG_NAME "File shares has changed\n" );
+	check( inMDNS );
+
+	CheckFileShares( inMDNS );
+
+	// and reset the event handler
+	
+	if ((inMDNS->p->fileShareKey != NULL) && (inMDNS->p->fileShareEvent))
+	{
+		err = RegNotifyChangeKeyValue(inMDNS->p->fileShareKey, TRUE, REG_NOTIFY_CHANGE_NAME|REG_NOTIFY_CHANGE_LAST_SET, inMDNS->p->fileShareEvent, TRUE);
+		check_noerr( err );
+	}
+}
+
+
+//===========================================================================================================================
+//	ProcessingThreadFileShareChanged
+//===========================================================================================================================
+mDNSlocal void	ProcessingThreadFirewallChanged( mDNS *inMDNS )
+{
+	mStatus err;
+	
+	dlog( kDebugLevelInfo, DEBUG_NAME "Firewall has changed\n" );
+	check( inMDNS );
+
+	CheckFileShares( inMDNS );
+
+	// and reset the event handler
+	
+	if ((inMDNS->p->firewallKey != NULL) && (inMDNS->p->firewallEvent))
+	{
+		err = RegNotifyChangeKeyValue(inMDNS->p->firewallKey, TRUE, REG_NOTIFY_CHANGE_NAME|REG_NOTIFY_CHANGE_LAST_SET, inMDNS->p->firewallEvent, TRUE);
+		check_noerr( err );
+	}
 }
 
 
@@ -5381,4 +5517,80 @@ exit:
 		LsaClose( handle );
 		handle = NULL;
 	}
+}
+
+
+mDNSlocal void
+CheckFileShares( mDNS * const m )
+{
+	PSHARE_INFO_1	bufPtr = ( PSHARE_INFO_1 ) NULL;
+	DWORD			entriesRead = 0;
+	DWORD			totalEntries = 0;
+	DWORD			resume = 0;
+	mDNSBool		enabled = mDNSfalse;
+	NET_API_STATUS  res;
+	mStatus			err;
+
+	check( m );
+
+	if ( mDNSIsFileAndPrintSharingEnabled() )
+	{
+		dlog( kDebugLevelTrace, DEBUG_NAME "file and print sharing is enabled\n" );
+
+		res = NetShareEnum( NULL, 1, ( LPBYTE* )&bufPtr, MAX_PREFERRED_LENGTH, &entriesRead, &totalEntries, &resume );
+
+		if ( ( res == ERROR_SUCCESS ) || ( res == ERROR_MORE_DATA ) )
+		{
+			PSHARE_INFO_1 p = bufPtr;
+			DWORD i;
+
+			for( i = 0; i <= totalEntries; i++ ) 
+			{
+				// We are only interested if the user is sharing anything other 
+				// than the built-in "print$" source
+
+				if ( ( p->shi1_type == STYPE_DISKTREE ) && ( wcscmp( p->shi1_netname, TEXT( "print$" ) ) != 0 ) )
+				{
+					enabled = mDNStrue;
+					break;
+				}
+
+				p++;
+			}
+
+			NetApiBufferFree( bufPtr );
+			bufPtr = NULL;
+		}
+	}
+
+	if ( enabled && !m->p->smbRegistered )
+	{
+		domainname		type;
+		domainname		domain;
+		mDNSIPPort		port = { { SMBPortAsNumber >> 8, SMBPortAsNumber & 0xFF } };
+		mDNSInterfaceID iid = mDNSPlatformInterfaceIDfromInterfaceIndex( m, 0 );
+
+		dlog( kDebugLevelTrace, DEBUG_NAME "registering smb type\n" );
+		
+		MakeDomainNameFromDNSNameString(&type, "_smb._tcp" );
+		MakeDomainNameFromDNSNameString(&domain, "local.");
+
+		err = mDNS_RegisterService( m, &m->p->smbSRS, &m->nicelabel, &type, &domain, NULL, port, NULL, 0, NULL, 0, iid, /* callback */ NULL, /* context */ NULL);
+		require_noerr( err, exit );
+
+		m->p->smbRegistered = mDNStrue;
+	}
+	else if ( !enabled && m->p->smbRegistered )
+	{
+		dlog( kDebugLevelTrace, DEBUG_NAME "deregistering smb type\n" );
+		
+		err = mDNS_DeregisterService( m, &m->p->smbSRS );
+		require_noerr( err, exit );
+
+		m->p->smbRegistered = mDNSfalse;
+	}
+
+exit:
+
+	return;
 }
