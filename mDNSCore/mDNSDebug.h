@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.49  2009/04/24 23:32:28  cheshire
+To facilitate testing, put back code to be a sleep proxy when set to never sleep, compiled out by compile-time switch
+
 Revision 1.48  2009/04/11 01:43:27  jessic2
 <rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
 
@@ -186,6 +189,12 @@ typedef enum
 
 //#define ForceAlerts 1
 //#define LogTimeStamps 1
+
+// Normally Macs don't act as Sleep Proxies.
+// For testing, define this symbol, and a Mac will act as a Sleep Proxy if it is set to never sleep
+// The normal metric for a Mac set to never sleep is 70, for a low-priority sleep proxy
+// To create a high-priority sleep proxy set the value to a lower metric, like 10
+//#define TEST_SLEEP_PROXY_WHEN_SET_TO_NEVER_SLEEP 70
 
 #define USE_SEPARATE_UDNS_SERVICE_LIST 1
 
