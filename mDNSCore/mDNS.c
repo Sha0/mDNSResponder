@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.949  2009/04/25 01:11:02  mcguire
+Refactor: create separate function: RestartRecordGetZoneData
+
 Revision 1.948  2009/04/24 21:25:16  cheshire
 <rdar://problem/6601002> Special case Net Assistant port so Apple Remote Desktop doesn't wake up every machine on the network
 
@@ -7915,11 +7918,31 @@ mDNSlocal void UpdateInterfaceProtocols(mDNS *const m, NetworkInterfaceInfo *act
 			}
 	}
 
+mDNSlocal void RestartRecordGetZoneData(mDNS * const m)
+	{
+	AuthRecord *rr;
+	ServiceRecordSet *s;
+
+	for (rr = m->ResourceRecords; rr; rr=rr->next)
+		if (AuthRecord_uDNS(rr))
+			{
+			debugf("RestartRecordGetZoneData: StartGetZoneData for %##s", rr->resrec.name->c);
+			if (rr->nta) CancelGetZoneData(m, rr->nta);
+			rr->nta = StartGetZoneData(m, rr->resrec.name, ZoneServiceUpdate, RecordRegistrationGotZoneData, rr);
+			}
+
+	for (s = m->ServiceRegistrations; s; s = s->uDNS_next)
+		{
+		debugf("RestartRecordGetZoneData: StartGetZoneData for %##s", s->RR_SRV.resrec.name->c);
+		if (s->srs_nta) CancelGetZoneData(m, s->srs_nta);
+		s->srs_nta = StartGetZoneData(m, s->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationGotZoneData, s);
+		}
+	}
+
 mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *set, mDNSBool flapping)
 	{
 	int i;
 	AuthRecord *rr;
-	ServiceRecordSet *s;
 	mDNSBool FirstOfType = mDNStrue;
 	NetworkInterfaceInfo **p = &m->HostInterfaces;
 
@@ -8045,20 +8068,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 					}
 		}
 
-	for (rr = m->ResourceRecords; rr; rr=rr->next)
-		if (AuthRecord_uDNS(rr))
-			{
-			debugf("mDNS_RegisterInterface: StartGetZoneData for %##s", rr->resrec.name->c);
-			if (rr->nta) CancelGetZoneData(m, rr->nta);
-			rr->nta = StartGetZoneData(m, rr->resrec.name, ZoneServiceUpdate, RecordRegistrationGotZoneData, rr);
-			}
-
-	for (s = m->ServiceRegistrations; s; s = s->uDNS_next)
-		{
-		debugf("mDNS_RegisterInterface: StartGetZoneData for %##s", s->RR_SRV.resrec.name->c);
-		if (s->srs_nta) CancelGetZoneData(m, s->srs_nta);
-		s->srs_nta = StartGetZoneData(m, s->RR_SRV.resrec.name, ZoneServiceUpdate, ServiceRegistrationGotZoneData, s);
-		}
+	RestartRecordGetZoneData(m);
 
 	mDNS_Unlock(m);
 	return(mStatus_NoError);
