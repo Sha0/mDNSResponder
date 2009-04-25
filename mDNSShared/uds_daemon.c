@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.458  2009/04/25 00:59:06  mcguire
+Change a few stray LogInfo to LogOperation
+
 Revision 1.457  2009/04/22 01:19:57  jessic2
 <rdar://problem/6814585> Daemon: mDNSResponder is logging garbage for error codes because it's using %ld for int 32
 
@@ -1131,8 +1134,8 @@ mDNSlocal void abort_request(request_state *req)
 	// Now, if this request_state is not subordinate to some other primary, close file descriptor and discard replies
 	if (!req->primary)
 		{
-		if (req->errsd != req->sd) LogInfo("%3d: Removing FD and closing errsd %d", req->sd, req->errsd);
-		else                       LogInfo("%3d: Removing FD", req->sd);
+		if (req->errsd != req->sd) LogOperation("%3d: Removing FD and closing errsd %d", req->sd, req->errsd);
+		else                       LogOperation("%3d: Removing FD", req->sd);
 		udsSupportRemoveFDFromEventLoop(req->sd);		// Note: This also closes file descriptor req->sd for us
 		if (req->errsd != req->sd) { dnssd_close(req->errsd); req->errsd = req->sd; }
 
@@ -3812,7 +3815,7 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 		send_all(req->errsd, (const char *)&err_netorder, sizeof(err_netorder));
 		if (req->errsd != req->sd)
 			{
-			LogInfo("%3d: Error socket %d closed  %08X %08X (%d)",
+			LogOperation("%3d: Error socket %d closed  %08X %08X (%d)",
 				req->sd, req->errsd, req->hdr.client_context.u32[1], req->hdr.client_context.u32[0], err);
 			dnssd_close(req->errsd);
 			req->errsd = req->sd;
