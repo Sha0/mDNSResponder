@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.950  2009/04/25 01:17:10  mcguire
+Fix spurious TCP connect failures uncovered by <rdar://problem/6729406> PPP doesn't automatically reconnect on wake from sleep
+
 Revision 1.949  2009/04/25 01:11:02  mcguire
 Refactor: create separate function: RestartRecordGetZoneData
 
@@ -9285,6 +9288,10 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 			m->DNSServers ? "DNS server became" : "No DNS servers", count);
 		}
 
+	// If we no longer have any DNS servers, we need to force anything that needs to get zone data
+	// to get that information again (which will fail, since we have no more DNS servers)
+	RestartRecordGetZoneData(m);
+	
 	// Did our FQDN change?
 	if (!SameDomainName(&fqdn, &m->FQDN))
 		{
