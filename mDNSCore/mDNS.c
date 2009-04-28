@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.951  2009/04/28 23:48:19  jessic2
+<rdar://problem/6830541> regservice_callback: instance->request is NULL 0
+
 Revision 1.950  2009/04/25 01:17:10  mcguire
 Fix spurious TCP connect failures uncovered by <rdar://problem/6729406> PPP doesn't automatically reconnect on wake from sleep
 
@@ -9290,7 +9293,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 
 	// If we no longer have any DNS servers, we need to force anything that needs to get zone data
 	// to get that information again (which will fail, since we have no more DNS servers)
-	RestartRecordGetZoneData(m);
+	if ((m->DNSServers == mDNSNULL) && (oldServers != mDNSNULL))	RestartRecordGetZoneData(m);
 	
 	// Did our FQDN change?
 	if (!SameDomainName(&fqdn, &m->FQDN))
