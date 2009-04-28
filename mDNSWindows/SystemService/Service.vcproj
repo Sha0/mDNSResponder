@@ -73,7 +73,7 @@
 			<Tool
 				Name="VCLinkerTool"
 				AdditionalOptions="/NXCOMPAT /DYNAMICBASE /SAFESEH"
-				AdditionalDependencies="ws2_32.lib iphlpapi.lib crypt32.lib"
+				AdditionalDependencies="ws2_32.lib iphlpapi.lib crypt32.lib netapi32.lib"
 				OutputFile="$(OutDir)/mDNSResponder.exe"
 				LinkIncremental="2"
 				IgnoreAllDefaultLibraries="false"
@@ -246,7 +246,7 @@
 			<Tool
 				Name="VCLinkerTool"
 				AdditionalOptions="/NXCOMPAT /DYNAMICBASE /SAFESEH"
-				AdditionalDependencies="ws2_32.lib iphlpapi.lib"
+				AdditionalDependencies="ws2_32.lib iphlpapi.lib netapi32.lib"
 				OutputFile="$(OutDir)/mDNSResponder.exe"
 				LinkIncremental="1"
 				GenerateDebugInformation="true"
