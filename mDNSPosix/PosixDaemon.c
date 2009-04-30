@@ -21,6 +21,9 @@
 	Change History (most recent first):
 
 $Log: PosixDaemon.c,v $
+Revision 1.49  2009/04/30 20:07:51  mcguire
+<rdar://problem/6822674> Support multiple UDSs from launchd
+
 Revision 1.48  2009/04/11 01:43:28  jessic2
 <rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
 
@@ -231,7 +234,7 @@ int main(int argc, char **argv)
 					mDNS_StatusCallback, mDNS_Init_NoInitCallbackContext); 
 
 	if (mStatus_NoError == err)
-		err = udsserver_init(dnssd_InvalidSocket);
+		err = udsserver_init(mDNSNULL, 0);
 		
 	Reconfigure(&mDNSStorage);
 
@@ -252,7 +255,7 @@ int main(int argc, char **argv)
 
 	mDNS_Close(&mDNSStorage);
 
-	if (udsserver_exit(dnssd_InvalidSocket) < 0)
+	if (udsserver_exit() < 0)
 		LogMsg("ExitCallback: udsserver_exit failed");
  
  #if MDNS_DEBUGMSGS > 0

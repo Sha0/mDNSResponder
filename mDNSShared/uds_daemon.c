@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.459  2009/04/30 20:07:51  mcguire
+<rdar://problem/6822674> Support multiple UDSs from launchd
+
 Revision 1.458  2009/04/25 00:59:06  mcguire
 Change a few stray LogInfo to LogOperation
 
@@ -3838,12 +3841,11 @@ mDNSlocal void connect_callback(int fd, short filter, void *info)
 	{
 	dnssd_sockaddr_t cliaddr;
 	dnssd_socklen_t len = (dnssd_socklen_t) sizeof(cliaddr);
-	dnssd_sock_t sd = accept(listenfd, (struct sockaddr*) &cliaddr, &len);
+	dnssd_sock_t sd = accept(fd, (struct sockaddr*) &cliaddr, &len);
 #if defined(SO_NOSIGPIPE) || defined(_WIN32)
 	const unsigned long optval = 1;
 #endif
 
-	(void)fd; // Unused
 	(void)filter; // Unused
 	(void)info; // Unused
 
@@ -3887,10 +3889,49 @@ mDNSlocal void connect_callback(int fd, short filter, void *info)
 		}
 	}
 
-mDNSexport int udsserver_init(dnssd_sock_t skt)
+mDNSlocal mDNSBool uds_socket_setup(dnssd_sock_t skt)
+	{
+#if defined(SO_NP_EXTENSIONS)
+	struct		so_np_extensions sonpx;
+	socklen_t 	optlen = sizeof(struct so_np_extensions);
+	sonpx.npx_flags = SONPX_SETOPTSHUT;
+	sonpx.npx_mask  = SONPX_SETOPTSHUT;
+	if (setsockopt(skt, SOL_SOCKET, SO_NP_EXTENSIONS, &sonpx, optlen) < 0)
+		my_perror("WARNING: could not set sockopt - SO_NP_EXTENSIONS");
+#endif
+#if defined(_WIN32)
+	// SEH: do we even need to do this on windows?
+	// This socket will be given to WSAEventSelect which will automatically set it to non-blocking
+	if (ioctlsocket(skt, FIONBIO, &opt) != 0)
+#else
+	if (fcntl(skt, F_SETFL, fcntl(skt, F_GETFL, 0) | O_NONBLOCK) != 0)
+#endif
+		{
+		my_perror("ERROR: could not set listen socket to non-blocking mode");
+		return mDNSfalse;
+		}
+
+	if (listen(skt, LISTENQ) != 0)
+		{
+		my_perror("ERROR: could not listen on listen socket");
+		return mDNSfalse;
+		}
+
+	if (mStatus_NoError != udsSupportAddFDToEventLoop(skt, connect_callback, (void *) NULL))
+		{
+		my_perror("ERROR: could not add listen socket to event loop");
+		return mDNSfalse;
+		}
+	else LogOperation("%3d: Listening for incoming Unix Domain Socket client requests", skt);
+	
+	return mDNStrue;
+	}
+
+mDNSexport int udsserver_init(dnssd_sock_t skts[], mDNSu32 count)
 	{
 	dnssd_sockaddr_t laddr;
 	int ret;
+	mDNSu32 i = 0;
 #if defined(_WIN32)
 	u_long opt = 1;
 #endif
@@ -3908,8 +3949,12 @@ mDNSexport int udsserver_init(dnssd_sock_t skt)
 			}
 		}
 
-	if (dnssd_SocketValid(skt))
-		listenfd = skt;
+	if (skts)
+		{
+		for (i = 0; i < count; i++)
+			if (dnssd_SocketValid(skts[i]) && !uds_socket_setup(skts[i]))
+				goto error;
+		}
 	else
 		{
 		listenfd = socket(AF_DNSSD, SOCK_STREAM, 0);
@@ -3953,39 +3998,9 @@ mDNSexport int udsserver_init(dnssd_sock_t skt)
 				}
 			}
 		#endif
+		
+		if (!uds_socket_setup(listenfd)) goto error;
 		}
-#if defined(SO_NP_EXTENSIONS)
-	struct		so_np_extensions sonpx;
-	socklen_t 	optlen = sizeof(struct so_np_extensions);
-	sonpx.npx_flags = SONPX_SETOPTSHUT;
-	sonpx.npx_mask  = SONPX_SETOPTSHUT;
-	if (setsockopt(listenfd, SOL_SOCKET, SO_NP_EXTENSIONS, &sonpx, optlen) < 0)
-		my_perror("WARNING: could not set sockopt - SO_NP_EXTENSIONS");
-#endif
-#if defined(_WIN32)
-	// SEH: do we even need to do this on windows?
-	// This socket will be given to WSAEventSelect which will automatically set it to non-blocking
-	if (ioctlsocket(listenfd, FIONBIO, &opt) != 0)
-#else
-	if (fcntl(listenfd, F_SETFL, fcntl(listenfd, F_GETFL, 0) | O_NONBLOCK) != 0)
-#endif
-		{
-		my_perror("ERROR: could not set listen socket to non-blocking mode");
-		goto error;
-		}
-
-	if (listen(listenfd, LISTENQ) != 0)
-		{
-		my_perror("ERROR: could not listen on listen socket");
-		goto error;
-		}
-
-	if (mStatus_NoError != udsSupportAddFDToEventLoop(listenfd, connect_callback, (void *) NULL))
-		{
-		my_perror("ERROR: could not add listen socket to event loop");
-		goto error;
-		}
-	else LogOperation("%3d: Listening for incoming Unix Domain Socket client requests", listenfd);
 
 #if !defined(PLATFORM_NO_RLIMIT)
 	{
@@ -4030,11 +4045,11 @@ error:
 	return -1;
 	}
 
-mDNSexport int udsserver_exit(dnssd_sock_t skt)
+mDNSexport int udsserver_exit(void)
 	{
 	// If the launching environment created no listening socket,
 	// that means we created it ourselves, so we should clean it up on exit
-	if (!dnssd_SocketValid(skt))
+	if (dnssd_SocketValid(listenfd))
 		{
 		dnssd_close(listenfd);
 #if !defined(USE_TCP_LOOPBACK)

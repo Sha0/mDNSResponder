@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.45  2009/04/30 20:07:51  mcguire
+<rdar://problem/6822674> Support multiple UDSs from launchd
+
 Revision 1.44  2009/03/30 20:41:36  herscher
 <rdar://problem/5925472> Current Bonjour code does not compile on Windows
 <rdar://problem/6330821> Bonjour for Windows incompatible w/Juniper Network Connect. Do a substring search for "Juniper" in the description field
@@ -1293,7 +1296,7 @@ static OSStatus	ServiceSpecificInitialize( int argc, LPTSTR argv[] )
 	err = mDNS_Init( &gMDNSRecord, &gPlatformStorage, gRRCache, RR_CACHE_SIZE, mDNS_Init_AdvertiseLocalAddresses, CoreCallback, mDNS_Init_NoInitCallbackContext); 
 	require_noerr( err, exit);
 
-	err = udsserver_init(dnssd_InvalidSocket);
+	err = udsserver_init(mDNSNULL, 0);
 	require_noerr( err, exit);
 
 	//
@@ -1387,7 +1390,7 @@ static void	ServiceSpecificFinalize( int argc, LPTSTR argv[] )
 	//
 	// give a chance for the udsserver code to clean up
 	//
-	udsserver_exit(dnssd_InvalidSocket);
+	udsserver_exit();
 
 	//
 	// and finally close down the mDNSCore

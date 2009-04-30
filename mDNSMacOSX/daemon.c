@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.429  2009/04/30 20:07:50  mcguire
+<rdar://problem/6822674> Support multiple UDSs from launchd
+
 Revision 1.428  2009/04/22 19:43:37  cheshire
 To facilitate debugging, added -DebugLogging and -UnicastPacketLogging switches
 as launch-time alternatives to sending SIGUSR1 and SIGUSR2 signals later
@@ -631,7 +634,8 @@ static mach_port_t client_death_port = MACH_PORT_NULL;
 static mach_port_t signal_port       = MACH_PORT_NULL;
 static mach_port_t server_priv_port  = MACH_PORT_NULL;
 
-static dnssd_sock_t launchd_fd = dnssd_InvalidSocket;
+static dnssd_sock_t *launchd_fds = mDNSNULL;
+static mDNSu32 launchd_fds_count = 0;
 
 // mDNS Mach Message Timeout, in milliseconds.
 // We need this to be short enough that we don't deadlock the mDNSResponder if a client
@@ -2202,7 +2206,7 @@ mDNSlocal void ExitCallback(int sig)
 	while (DNSServiceRegistrationList)
 		AbortClient(DNSServiceRegistrationList     ->ClientMachPort, DNSServiceRegistrationList);
 
-	if (udsserver_exit(launchd_fd) < 0) LogMsg("ExitCallback: udsserver_exit failed");
+	if (udsserver_exit() < 0) LogMsg("ExitCallback: udsserver_exit failed");
 
 	debugf("ExitCallback: mDNS_StartExit");
 	mDNS_StartExit(&mDNSStorage);
@@ -2924,12 +2928,30 @@ mDNSlocal void LaunchdCheckin(void)
 			if (!skt) LogMsg("launch_data_dict_lookup Listeners returned NULL");
 			else
 				{
-				launch_data_t s = launch_data_array_get_index(skt, 0);
-				if (!s) LogMsg("launch_data_array_get_index(skt, 0) returned NULL");
+				launchd_fds_count = launch_data_array_get_count(skt);
+				if (launchd_fds_count == 0) LogMsg("launch_data_array_get_count(skt) returned 0");
 				else
 					{
-					launchd_fd = launch_data_get_fd(s);
-					LogInfo("Launchd Unix Domain Socket: %d", launchd_fd);
+					launchd_fds = mallocL("LaunchdCheckin", sizeof(dnssd_sock_t) * launchd_fds_count);
+					if (!launchd_fds) LogMsg("LaunchdCheckin: malloc failed");
+					else
+						{
+						size_t i;
+						for(i = 0; i < launchd_fds_count; i++)
+							{						
+							launch_data_t s = launch_data_array_get_index(skt, i);
+							if (!s)
+								{
+								launchd_fds[i] = dnssd_InvalidSocket;
+								LogMsg("launch_data_array_get_index(skt, %d) returned NULL", i);
+								}
+							else
+								{
+								launchd_fds[i] = launch_data_get_fd(s);
+								LogInfo("Launchd Unix Domain Socket [%d]: %d", i, launchd_fds[i]);
+								}
+							}
+						}
 					// In some early versions of 10.4.x, the permissions on the UDS were not set correctly, so we fix them here
 					chmod(MDNS_UDS_SERVERPATH, S_IRUSR|S_IWUSR | S_IRGRP|S_IWGRP | S_IROTH|S_IWOTH);
 					}
@@ -2941,7 +2963,7 @@ mDNSlocal void LaunchdCheckin(void)
 		else
 			{
 			launch_data_t p = launch_data_dict_lookup(ports, "com.apple.mDNSResponder");
-			if (!p) LogInfo("launch_data_array_get_index(ports, 0) returned NULL");
+			if (!p) LogInfo("launch_data_dict_lookup(ports, \"com.apple.mDNSResponder\") returned NULL");
 			else
 				{
 				m_port = launch_data_get_fd(p);
@@ -3088,7 +3110,7 @@ mDNSexport int main(int argc, char **argv)
 	status = mDNSDaemonInitialize();
 	if (status) { LogMsg("Daemon start: mDNSDaemonInitialize failed"); goto exit; }
 
-	status = udsserver_init(launchd_fd);
+	status = udsserver_init(launchd_fds, launchd_fds_count);
 	if (status) { LogMsg("Daemon start: udsserver_init failed"); goto exit; }
 
 	mDNSMacOSXNetworkChanged(&mDNSStorage);
