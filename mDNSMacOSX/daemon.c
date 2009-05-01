@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.430  2009/05/01 19:17:36  cheshire
+<rdar://problem/6501561> Sleep Proxy: Reduce the frequency of maintenance wakes: ODD, fans, power
+
 Revision 1.429  2009/04/30 20:07:50  mcguire
 <rdar://problem/6822674> Support multiple UDSs from launchd
 
@@ -2614,7 +2617,7 @@ mDNSlocal mDNSu32 DHCPWakeTime(void)
 											const mDNSu32 elapsed   = now - CFDateGetAbsoluteTime(start);
 											const mDNSu32 lifetime  = (mDNSs32) ((mDNSs32)d[0] << 24 | (mDNSs32)d[1] << 16 | (mDNSs32)d[2] << 8 | d[3]);
 											const mDNSu32 remaining = lifetime - elapsed;
-											const mDNSu32 wake      = remaining > 60 ? remaining - remaining/4 : 45;
+											const mDNSu32 wake      = remaining > 60 ? remaining - remaining/10 : 54;	// Wake at 90% of the lease time
 											LogSPS("DHCP Address Lease Elapsed %6u Lifetime %6u Remaining %6u Wake %6u", elapsed, lifetime, remaining, wake);
 											if (e > wake) e = wake;
 											}

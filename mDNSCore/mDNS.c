@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.953  2009/05/01 19:17:35  cheshire
+<rdar://problem/6501561> Sleep Proxy: Reduce the frequency of maintenance wakes: ODD, fans, power
+
 Revision 1.952  2009/05/01 19:16:45  mcguire
 <rdar://problem/6846322> Crash: mDNS_vsnprintf + 1844
 
@@ -4981,13 +4984,13 @@ mDNSexport mDNSs32 mDNSCoreIntervalToNextWake(mDNS *const m, mDNSs32 now)
 	// failure scenarios, we still want to wake up in at most 90 minutes, to see if the network environment has changed.
 	// E.g. we might wake up and find no wireless network because the base station got rebooted just at that moment,
 	// and if that happens we don't want to just give up and go back to sleep and never try again.
-	mDNSs32 e = now + (90 * 60 * mDNSPlatformOneSecond);		// Sleep for at most 90 minutes
+	mDNSs32 e = now + (120 * 60 * mDNSPlatformOneSecond);		// Sleep for at most 120 minutes
 
 	NATTraversalInfo *nat;
 	for (nat = m->NATTraversals; nat; nat=nat->next)
 		if (nat->Protocol && nat->ExpiryTime && nat->ExpiryTime - now > mDNSPlatformOneSecond*4)
 			{
-			mDNSs32 t = nat->ExpiryTime - (nat->ExpiryTime - now) / 4;
+			mDNSs32 t = nat->ExpiryTime - (nat->ExpiryTime - now) / 10;		// Wake up when 90% of the way to the expiry time
 			if (e - t > 0) e = t;
 			LogSPS("ComputeWakeTime: %p %s Int %5d Ext %5d Err %d Retry %5d Interval %5d Expire %5d Wake %5d",
 				nat, nat->Protocol == NATOp_MapTCP ? "TCP" : "UDP",
@@ -5003,7 +5006,7 @@ mDNSexport mDNSs32 mDNSCoreIntervalToNextWake(mDNS *const m, mDNSs32 now)
 	for (ar = m->ResourceRecords; ar; ar = ar->next)
 		if (ar->expire && ar->expire - now > mDNSPlatformOneSecond*4)
 			{
-			mDNSs32 t = ar->expire - (ar->expire - now) / 4;
+			mDNSs32 t = ar->expire - (ar->expire - now) / 10;		// Wake up when 90% of the way to the expiry time
 			if (e - t > 0) e = t;
 			LogSPS("ComputeWakeTime: %p Int %7d Next %7d Expire %7d Wake %7d %s",
 				ar, ar->ThisAPInterval / mDNSPlatformOneSecond,
