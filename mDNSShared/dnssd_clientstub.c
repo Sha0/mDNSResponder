@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.129  2009/05/01 19:18:50  cheshire
+<rdar://problem/6843645> Using duplicate DNSServiceRefs when sharing a connection should return an error
+
 Revision 1.128  2009/04/01 21:09:35  herscher
 <rdar://problem/5925472> Current Bonjour code does not compile on Windows.
 
@@ -562,7 +565,7 @@ static DNSServiceErrorType ConnectToServer(DNSServiceRef *ref, DNSServiceFlags f
 			syslog(LOG_WARNING, "dnssd_clientstub kDNSServiceFlagsShareConnection used with NULL DNSServiceRef");
 			return kDNSServiceErr_BadParam;
 			}
-		if (!DNSServiceRefValid(*ref))
+		if (!DNSServiceRefValid(*ref) || (*ref)->op != connection_request || (*ref)->primary)
 			{
 			syslog(LOG_WARNING, "dnssd_clientstub kDNSServiceFlagsShareConnection used with invalid DNSServiceRef %p %08X %08X",
 				(*ref), (*ref)->sockfd, (*ref)->validator);
