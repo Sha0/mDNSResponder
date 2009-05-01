@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.952  2009/05/01 19:16:45  mcguire
+<rdar://problem/6846322> Crash: mDNS_vsnprintf + 1844
+
 Revision 1.951  2009/04/28 23:48:19  jessic2
 <rdar://problem/6830541> regservice_callback: instance->request is NULL 0
 
@@ -6824,7 +6827,7 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 	else if (QR_OP == UpdR) mDNSCoreReceiveUpdateR (m, msg, end,                                     InterfaceID);
 	else
 		{
-		LogMsg("%3d: Unknown DNS packet type %02X%02X from %#-15a:%-5d to %#-15a:%-5d length %d on %p (ignored)",
+		LogMsg("Unknown DNS packet type %02X%02X from %#-15a:%-5d to %#-15a:%-5d length %d on %p (ignored)",
 			msg->h.flags.b[0], msg->h.flags.b[1], srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), end-(mDNSu8 *)pkt, InterfaceID);
 		if (mDNS_LoggingEnabled)
 			{
