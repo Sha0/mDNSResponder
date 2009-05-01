@@ -38,6 +38,12 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.954  2009/05/01 21:28:34  cheshire
+<rdar://problem/6721680> AppleConnectAgent's reachability checks delay sleep by 30 seconds
+No longer suspend network operations after we've acknowledged that the machine is going to sleep,
+because other software may not have yet acknowledged the sleep event, and may be still trying
+to do unicast DNS queries or other Bonjour operations.
+
 Revision 1.953  2009/05/01 19:17:35  cheshire
 <rdar://problem/6501561> Sleep Proxy: Reduce the frequency of maintenance wakes: ODD, fans, power
 
@@ -4667,7 +4673,7 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 		// 5. See what packets we need to send
 		if (m->mDNSPlatformStatus != mStatus_NoError || (m->SleepState == SleepState_Sleeping))
 			DiscardDeregistrations(m);
-		else if (m->SuppressSending == 0 || m->timenow - m->SuppressSending >= 0)
+		if (m->mDNSPlatformStatus == mStatus_NoError && (m->SuppressSending == 0 || m->timenow - m->SuppressSending >= 0))
 			{
 			// If the platform code is ready, and we're not suppressing packet generation right now
 			// then send our responses, probes, and questions.

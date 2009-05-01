@@ -17,6 +17,12 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.250  2009/05/01 21:28:33  cheshire
+<rdar://problem/6721680> AppleConnectAgent's reachability checks delay sleep by 30 seconds
+No longer suspend network operations after we've acknowledged that the machine is going to sleep,
+because other software may not have yet acknowledged the sleep event, and may be still trying
+to do unicast DNS queries or other Bonjour operations.
+
 Revision 1.249  2009/04/24 00:29:20  cheshire
 <rdar://problem/3476350> Return negative answers when host knows authoritatively that no answer exists
 Added support for generating/parsing/displaying NSEC records
@@ -3033,18 +3039,15 @@ mDNSlocal mDNSs32 GetNextScheduledEvent(const mDNS *const m)
 	if (e - m->NextScheduledSPS      > 0) e = m->NextScheduledSPS;
 	if (m->DelaySleep && e - m->DelaySleep > 0) e = m->DelaySleep;
 
-	if (m->SleepState != SleepState_Sleeping)
+	if (m->SuppressSending)
 		{
-		if (m->SuppressSending)
-			{
-			if (e - m->SuppressSending       > 0) e = m->SuppressSending;
-			}
-		else
-			{
-			if (e - m->NextScheduledQuery    > 0) e = m->NextScheduledQuery;
-			if (e - m->NextScheduledProbe    > 0) e = m->NextScheduledProbe;
-			if (e - m->NextScheduledResponse > 0) e = m->NextScheduledResponse;
-			}
+		if (e - m->SuppressSending       > 0) e = m->SuppressSending;
+		}
+	else
+		{
+		if (e - m->NextScheduledQuery    > 0) e = m->NextScheduledQuery;
+		if (e - m->NextScheduledProbe    > 0) e = m->NextScheduledProbe;
+		if (e - m->NextScheduledResponse > 0) e = m->NextScheduledResponse;
 		}
 
 	return(e);
