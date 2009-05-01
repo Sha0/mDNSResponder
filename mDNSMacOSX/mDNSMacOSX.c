@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.679  2009/05/01 23:48:46  jessic2
+<rdar://problem/6830541> regservice_callback: instance->request is NULL 0
+
 Revision 1.678  2009/04/24 23:32:28  cheshire
 To facilitate testing, put back code to be a sleep proxy when set to never sleep, compiled out by compile-time switch
 
@@ -2143,7 +2146,8 @@ mDNSexport mStatus mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr *dst, 
 	if (connect(sock->fd, (struct sockaddr *)&saddr, sizeof(saddr)) < 0)
 		{
 		if (errno == EINPROGRESS) return mStatus_ConnPending;
-		LogMsg("ERROR: mDNSPlatformTCPConnect - connect failed: socket %d: Error %d (%s)", sock->fd, errno, strerror(errno));
+		if (errno == EHOSTUNREACH)	LogInfo("ERROR: mDNSPlatformTCPConnect - connect failed: socket %d: Error %d (%s)", sock->fd, errno, strerror(errno));
+		else 						LogMsg("ERROR: mDNSPlatformTCPConnect - connect failed: socket %d: Error %d (%s)", sock->fd, errno, strerror(errno));
 		close(sock->fd);
 		return mStatus_ConnFailed;
 		}
