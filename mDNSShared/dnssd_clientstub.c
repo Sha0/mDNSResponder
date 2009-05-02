@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.130  2009/05/02 01:29:48  mcguire
+<rdar://problem/6847601> spin calling DNSServiceProcessResult if errno was set to EWOULDBLOCK by an unrelated call
+
 Revision 1.129  2009/05/01 19:18:50  cheshire
 <rdar://problem/6843645> Using duplicate DNSServiceRefs when sharing a connection should return an error
 
@@ -418,6 +421,7 @@ static int write_all(dnssd_sock_t sd, char *buf, int len)
 			syslog(LOG_WARNING, "dnssd_clientstub write_all(%d) failed %ld/%d %d %s", sd, num_written, len,
 				(num_written < 0) ? dnssd_errno                 : 0,
 				(num_written < 0) ? dnssd_strerror(dnssd_errno) : "");
+			if (num_written >= 0) dnssd_errno = 0; // Callers depend on this being set if we return non-zero.
 			return -1;
 			}
 		buf += num_written;
@@ -442,6 +446,7 @@ static int read_all(dnssd_sock_t sd, char *buf, int len)
 			syslog(LOG_WARNING, "dnssd_clientstub read_all(%d) failed %ld/%d %d %s", sd, num_read, len,
 				(num_read < 0) ? dnssd_errno                 : 0,
 				(num_read < 0) ? dnssd_strerror(dnssd_errno) : "");
+			if (num_read >= 0) dnssd_errno = 0; // Callers depend on this being set if we return non-zero.
 			return -1;
 			}
 		buf += num_read;
