@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.680  2009/05/05 01:32:50  jessic2
+<rdar://problem/6830541> regservice_callback: instance->request is NULL 0 -- Clean up spurious logs resulting from fixing this bug.
+
 Revision 1.679  2009/05/01 23:48:46  jessic2
 <rdar://problem/6830541> regservice_callback: instance->request is NULL 0
 
@@ -1604,8 +1607,12 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 		if (MessageCount < 1000)
 			{
 			MessageCount++;
-			LogMsg("mDNSPlatformSendUDP sendto(%d) failed to send packet on InterfaceID %p %5s/%d to %#a:%d skt %d error %d errno %d (%s) %lu",
-				s, InterfaceID, ifa_name, dst->type, dst, mDNSVal16(dstPort), s, err, errno, strerror(errno), (mDNSu32)(m->timenow));
+			if (errno == EHOSTUNREACH || errno == EADDRNOTAVAIL)
+				LogInfo("mDNSPlatformSendUDP sendto(%d) failed to send packet on InterfaceID %p %5s/%d to %#a:%d skt %d error %d errno %d (%s) %lu",
+					s, InterfaceID, ifa_name, dst->type, dst, mDNSVal16(dstPort), s, err, errno, strerror(errno), (mDNSu32)(m->timenow));
+			else
+				LogMsg("mDNSPlatformSendUDP sendto(%d) failed to send packet on InterfaceID %p %5s/%d to %#a:%d skt %d error %d errno %d (%s) %lu",
+					s, InterfaceID, ifa_name, dst->type, dst, mDNSVal16(dstPort), s, err, errno, strerror(errno), (mDNSu32)(m->timenow));
 			}
 		result = mStatus_UnknownErr;
 		}
@@ -2146,8 +2153,10 @@ mDNSexport mStatus mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr *dst, 
 	if (connect(sock->fd, (struct sockaddr *)&saddr, sizeof(saddr)) < 0)
 		{
 		if (errno == EINPROGRESS) return mStatus_ConnPending;
-		if (errno == EHOSTUNREACH)	LogInfo("ERROR: mDNSPlatformTCPConnect - connect failed: socket %d: Error %d (%s)", sock->fd, errno, strerror(errno));
-		else 						LogMsg("ERROR: mDNSPlatformTCPConnect - connect failed: socket %d: Error %d (%s)", sock->fd, errno, strerror(errno));
+		if (errno == EHOSTUNREACH || errno == EADDRNOTAVAIL)
+			LogInfo("ERROR: mDNSPlatformTCPConnect - connect failed: socket %d: Error %d (%s)", sock->fd, errno, strerror(errno));
+		else
+			LogMsg("ERROR: mDNSPlatformTCPConnect - connect failed: socket %d: Error %d (%s)", sock->fd, errno, strerror(errno));
 		close(sock->fd);
 		return mStatus_ConnFailed;
 		}

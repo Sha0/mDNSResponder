@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.615  2009/05/05 01:32:50  jessic2
+<rdar://problem/6830541> regservice_callback: instance->request is NULL 0 -- Clean up spurious logs resulting from fixing this bug.
+
 Revision 1.614  2009/04/24 02:17:57  mcguire
 <rdar://problem/5264124> uDNS: Not always respecting preference order of DNS servers
 
@@ -4889,8 +4892,14 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 					{
 					//LogMsg("NAT callback %d %d %d", cur->Protocol, cur->ExpiryTime, cur->retryInterval);
 					if (cur->Protocol && mDNSIPPortIsZero(ExternalPort) && !mDNSIPv4AddressIsZero(m->Router.ip.v4))
-						LogMsg("Failed to obtain NAT port mapping %p from router %#a external address %.4a internal port %5d interval %d error %d",
-							cur, &m->Router, &m->ExternalAddress, mDNSVal16(cur->IntPort), cur->retryInterval, EffectiveResult);
+						{
+						if (!EffectiveResult)
+							LogInfo("Failed to obtain NAT port mapping %p from router %#a external address %.4a internal port %5d interval %d error %d",
+								cur, &m->Router, &m->ExternalAddress, mDNSVal16(cur->IntPort), cur->retryInterval, EffectiveResult);
+						else
+							LogMsg("Failed to obtain NAT port mapping %p from router %#a external address %.4a internal port %5d interval %d error %d",
+								cur, &m->Router, &m->ExternalAddress, mDNSVal16(cur->IntPort), cur->retryInterval, EffectiveResult);
+						}
 
 					cur->ExternalAddress = m->ExternalAddress;
 					cur->ExternalPort    = ExternalPort;
