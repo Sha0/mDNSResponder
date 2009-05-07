@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.957  2009/05/07 23:56:25  cheshire
+<rdar://problem/6601427> Retransmit and retry Sleep Proxy Server requests
+To get negative answers for our AAAA query we need to set the ReturnIntermed flag on the NetWakeResolve question
+
 Revision 1.956  2009/05/07 23:46:27  cheshire
 <rdar://problem/6601427> Retransmit and retry Sleep Proxy Server requests
 
@@ -4883,6 +4887,7 @@ mDNSlocal void BeginSleepProcessing(mDNS *const m)
 							{
 							LogSPS("BeginSleepProcessing: %-6s Found Sleep Proxy Server %d TTL %d %s", intf->ifname, i, sps[i]->resrec.rroriginalttl, CRDisplayString(m, sps[i]));
 							mDNS_SetupQuestion(&intf->NetWakeResolve[i], intf->InterfaceID, &sps[i]->resrec.rdata->u.name, kDNSType_SRV, NetWakeResolve, intf);
+							intf->NetWakeResolve[i].ReturnIntermed = mDNStrue;
 							mDNS_StartQuery_internal(m, &intf->NetWakeResolve[i]);
 							}
 						}
