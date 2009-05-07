@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.956  2009/05/07 23:46:27  cheshire
+<rdar://problem/6601427> Retransmit and retry Sleep Proxy Server requests
+
 Revision 1.955  2009/05/07 23:40:54  cheshire
 Minor code rearrangement in preparation for upcoming changes
 
@@ -1451,6 +1454,7 @@ Fixes to avoid code generation warning/error on FreeBSD 7
 
 // Forward declarations
 mDNSlocal void BeginSleepProcessing(mDNS *const m);
+mDNSlocal void RetrySPSRegistrations(mDNS *const m);
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -2621,6 +2625,8 @@ mDNSlocal void SendResponses(mDNS *const m)
 	const NetworkInterfaceInfo *intf = GetFirstActiveInterface(m->HostInterfaces);
 
 	m->NextScheduledResponse = m->timenow + 0x78000000;
+
+	if (m->SleepState == SleepState_Transferring) RetrySPSRegistrations(m);
 
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		if (rr->ImmedUnicast)
@@ -4667,17 +4673,25 @@ mDNSexport void mDNSCoreRestartQueries(mDNS *const m)
 #pragma mark - Power Management (Sleep/Wake)
 #endif
 
-mDNSlocal void SendSPSRegistration(mDNS *const m, const NetworkInterfaceInfo *intf, int sps)
+mDNSlocal void SendSPSRegistration(mDNS *const m, NetworkInterfaceInfo *intf, const mDNSOpaque16 id)
 	{
 	const int ownerspace = mDNSSameEthAddress(&m->PrimaryMAC, &intf->MAC) ? DNSOpt_OwnerData_ID_Space : DNSOpt_OwnerData_ID_Wake_Space;
 	const int optspace = DNSOpt_Header_Space + DNSOpt_LeaseData_Space + ownerspace;
+	const int sps = intf->NextSPSAttempt / 3;
 	AuthRecord *rr;
 
+	if (!intf->SPSAddr[sps].type)
+		{
+		intf->NextSPSAttemptTime = m->timenow + mDNSPlatformOneSecond;
+		LogSPS("SendSPSRegistration: %s SPS %d (%d) %##s not yet resolved", intf->ifname, intf->NextSPSAttempt, sps, intf->NetWakeResolve[sps].qname.c);
+		goto exit;
+		}
+
 	// Mark our mDNS records (not unicast records) for transfer to SPS
-	for (rr = m->ResourceRecords; rr; rr=rr->next)
-		if (rr->resrec.RecordType > kDNSRecordTypeDeregistering)
-			if (rr->resrec.InterfaceID == intf->InterfaceID || (!rr->resrec.InterfaceID && (rr->ForceMCast || IsLocalDomain(rr->resrec.name))))
-				if (!rr->updateid.NotAnInteger)			// If this record is not already in the process of being transferred to the Sleep Proxy
+	if (mDNSOpaque16IsZero(id))
+		for (rr = m->ResourceRecords; rr; rr=rr->next)
+			if (rr->resrec.RecordType > kDNSRecordTypeDeregistering)
+				if (rr->resrec.InterfaceID == intf->InterfaceID || (!rr->resrec.InterfaceID && (rr->ForceMCast || IsLocalDomain(rr->resrec.name))))
 					rr->SendRNow = mDNSInterfaceMark;	// mark it now
 
 	while (1)
@@ -4687,10 +4701,10 @@ mDNSlocal void SendSPSRegistration(mDNS *const m, const NetworkInterfaceInfo *in
 		// For now we follow that same logic for SPS registrations too.
 		// If we decide to compress SRV records in SPS registrations in the future, we can achieve that by creating our
 		// initial DNSMessage with h.flags set to zero, and then update it to UpdateReqFlags right before sending the packet.
-		InitializeDNSMessage(&m->omsg.h, mDNS_NewMessageID(m), UpdateReqFlags);
+		InitializeDNSMessage(&m->omsg.h, mDNSOpaque16IsZero(id) ? mDNS_NewMessageID(m) : id, UpdateReqFlags);
 
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
-			if (rr->SendRNow)
+			if (rr->SendRNow || (mDNSSameOpaque16(rr->updateid, id) && m->timenow - (rr->LastAPTime + rr->ThisAPInterval) >= 0))
 				{
 				mDNSu8 *newptr;
 				const mDNSu8 *const limit = m->omsg.data + (m->omsg.h.mDNS_numUpdates ? NormalMaxDNSMessageData : AbsoluteMaxDNSMessageData) - optspace;
@@ -4698,7 +4712,17 @@ mDNSlocal void SendSPSRegistration(mDNS *const m, const NetworkInterfaceInfo *in
 					rr->resrec.rrclass |= kDNSClass_UniqueRRSet;	// Temporarily set the 'unique' bit so PutResourceRecord will set it
 				newptr = PutResourceRecordTTLWithLimit(&m->omsg, p, &m->omsg.h.mDNS_numUpdates, &rr->resrec, rr->resrec.rroriginalttl, limit);
 				rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;		// Make sure to clear 'unique' bit back to normal state
-				if (newptr) { rr->SendRNow = mDNSNULL; rr->updateid = m->omsg.h.id; p = newptr; }
+				if (!newptr)
+					LogSPS("SendSPSRegistration put %s FAILED %s", intf->ifname, ARDisplayString(m, rr));
+				else
+					{
+					LogSPS("SendSPSRegistration put %s %s", intf->ifname, ARDisplayString(m, rr));
+					rr->SendRNow       = mDNSNULL;
+					rr->ThisAPInterval = mDNSPlatformOneSecond;
+					rr->LastAPTime     = m->timenow;
+					rr->updateid       = m->omsg.h.id;
+					p = newptr;
+					}
 				}
 
 		if (!m->omsg.h.mDNS_numUpdates) break;
@@ -4715,16 +4739,57 @@ mDNSlocal void SendSPSRegistration(mDNS *const m, const NetworkInterfaceInfo *in
 			SetupOwnerOpt(m, intf, &opt.resrec.rdata->u.opt[1]);
 			LogSPS("SendSPSRegistration put %s %s", intf->ifname, ARDisplayString(m, &opt));
 			p = PutResourceRecordTTLWithLimit(&m->omsg, p, &m->omsg.h.numAdditionals, &opt.resrec, opt.resrec.rroriginalttl, m->omsg.data + AbsoluteMaxDNSMessageData);
-			if (p)
-				{
-				LogSPS("SendSPSRegistration: Sending Update %s %d id %5d with %d records to %#a:%d", intf->ifname, sps,
-					mDNSVal16(m->omsg.h.id), m->omsg.h.mDNS_numUpdates, &intf->SPSAddr[sps], mDNSVal16(intf->SPSPort[sps]));
-				mDNSSendDNSMessage(m, &m->omsg, p, intf->InterfaceID, mDNSNULL, &intf->SPSAddr[sps], intf->SPSPort[sps], mDNSNULL, mDNSNULL);
-				}
-			else
+			if (!p)
 				LogMsg("SendSPSRegistration: Failed to put OPT record (%d updates) %s", m->omsg.h.mDNS_numUpdates, ARDisplayString(m, &opt));
+			else
+				{
+				mStatus err;
+				LogSPS("SendSPSRegistration: Sending Update %s %d (%d) id %5d with %d records to %#a:%d", intf->ifname, intf->NextSPSAttempt, sps,
+					mDNSVal16(m->omsg.h.id), m->omsg.h.mDNS_numUpdates, &intf->SPSAddr[sps], mDNSVal16(intf->SPSPort[sps]));
+				// if (intf->NextSPSAttempt < 5) m->omsg.h.flags = zeroID; For simulating packet loss
+				err = mDNSSendDNSMessage(m, &m->omsg, p, intf->InterfaceID, mDNSNULL, &intf->SPSAddr[sps], intf->SPSPort[sps], mDNSNULL, mDNSNULL);
+				if (err) LogSPS("SendSPSRegistration: mDNSSendDNSMessage err %d", err);
+				if (err && intf->SPSAddr[sps].type == mDNSAddrType_IPv6 && intf->NetWakeResolve[sps].ThisQInterval == -1)
+					{
+					LogSPS("SendSPSRegistration %d %##s failed to send to IPv6 address; will try IPv4 instead", sps, intf->NetWakeResolve[sps].qname.c);
+					intf->NetWakeResolve[sps].qtype = kDNSType_A;
+					mDNS_StartQuery_internal(m, &intf->NetWakeResolve[sps]);
+					return;
+					}
+				}
 			}
 		}
+
+	intf->NextSPSAttemptTime = m->timenow + mDNSPlatformOneSecond * 10;		// If successful, update NextSPSAttemptTime
+
+exit:
+	if (mDNSOpaque16IsZero(id) && intf->NextSPSAttempt < 8) intf->NextSPSAttempt++;
+	}
+
+mDNSlocal void RetrySPSRegistrations(mDNS *const m)
+	{
+	AuthRecord *rr;
+	NetworkInterfaceInfo *intf;
+
+	// First make sure none of our interfaces' NextSPSAttemptTimes are inadvertently set to m->timenow + mDNSPlatformOneSecond * 10
+	for (intf = GetFirstActiveInterface(m->HostInterfaces); intf; intf = GetFirstActiveInterface(intf->next))
+		if (intf->NextSPSAttempt && intf->NextSPSAttemptTime == m->timenow + mDNSPlatformOneSecond * 10)
+			intf->NextSPSAttemptTime++;
+
+	// Retry any record registrations that are due
+	for (rr = m->ResourceRecords; rr; rr=rr->next)
+		if (!AuthRecord_uDNS(rr) && !mDNSOpaque16IsZero(rr->updateid) && m->timenow - (rr->LastAPTime + rr->ThisAPInterval) >= 0)
+			for (intf = GetFirstActiveInterface(m->HostInterfaces); intf; intf = GetFirstActiveInterface(intf->next))
+				if (!rr->resrec.InterfaceID || rr->resrec.InterfaceID == intf->InterfaceID)
+					{
+					LogSPS("RetrySPSRegistrations: %s", ARDisplayString(m, rr));
+					SendSPSRegistration(m, intf, rr->updateid);
+					}
+
+	// For interfaces where we did an SPS registration attempt, increment intf->NextSPSAttempt
+	for (intf = GetFirstActiveInterface(m->HostInterfaces); intf; intf = GetFirstActiveInterface(intf->next))
+		if (intf->NextSPSAttempt && intf->NextSPSAttemptTime == m->timenow + mDNSPlatformOneSecond * 10 && intf->NextSPSAttempt < 8)
+			intf->NextSPSAttempt++;
 	}
 
 mDNSlocal void NetWakeResolve(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
@@ -4751,10 +4816,13 @@ mDNSlocal void NetWakeResolve(mDNS *const m, DNSQuestion *question, const Resour
 		{
 		intf->SPSAddr[sps].type = mDNSAddrType_IPv6;
 		intf->SPSAddr[sps].ip.v6 = answer->rdata->u.ipv6;
-		if (sps == 0) SendSPSRegistration(m, intf, sps);	// For now we only try the highest-ranked Sleep Proxy
+		mDNS_Lock(m);
+		if (sps == intf->NextSPSAttempt/3) SendSPSRegistration(m, intf, zeroID);	// If we're ready for this result, use it now
+		mDNS_Unlock(m);
 		}
 	else if (answer->rrtype == kDNSType_AAAA && answer->rdlength == 0)	// If negative answer for IPv6, look for IPv4 addresses instead
 		{
+		LogSPS("NetWakeResolve: SPS %d %##s has no IPv6 address, will try IPv4 instead", sps, question->qname.c);
 		question->qtype = kDNSType_A;
 		mDNS_StartQuery(m, question);
 		}
@@ -4762,7 +4830,9 @@ mDNSlocal void NetWakeResolve(mDNS *const m, DNSQuestion *question, const Resour
 		{
 		intf->SPSAddr[sps].type = mDNSAddrType_IPv4;
 		intf->SPSAddr[sps].ip.v4 = answer->rdata->u.ipv4;
-		if (sps == 0) SendSPSRegistration(m, intf, sps);	// For now we only try the highest-ranked Sleep Proxy
+		mDNS_Lock(m);
+		if (sps == intf->NextSPSAttempt/3) SendSPSRegistration(m, intf, zeroID);	// If we're ready for this result, use it now
+		mDNS_Unlock(m);
 		}
 	}
 
@@ -4785,8 +4855,8 @@ mDNSlocal void BeginSleepProcessing(mDNS *const m)
 
 	if (rr)
 		{
-		NetworkInterfaceInfo *intf = GetFirstActiveInterface(m->HostInterfaces);
-		while (intf)
+		NetworkInterfaceInfo *intf;
+		for (intf = GetFirstActiveInterface(m->HostInterfaces); intf; intf = GetFirstActiveInterface(intf->next))
 			{
 			if (!intf->NetWake) LogSPS("BeginSleepProcessing: %-6s not capable of magic packet wakeup", intf->ifname);
 			else
@@ -4796,6 +4866,8 @@ mDNSlocal void BeginSleepProcessing(mDNS *const m)
 				else
 					{
 					int i;
+					intf->NextSPSAttempt = 0;
+					intf->NextSPSAttemptTime = m->timenow + mDNSPlatformOneSecond;
 					for (i=0; i<3; i++)
 						{
 #if ForceAlerts
@@ -4816,7 +4888,6 @@ mDNSlocal void BeginSleepProcessing(mDNS *const m)
 						}
 					}
 				}
-			intf = GetFirstActiveInterface(intf->next);
 			}
 		}
 
@@ -4887,6 +4958,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 		mDNSu32 slot;
 		CacheGroup *cg;
 		CacheRecord *cr;
+		NetworkInterfaceInfo *intf;
 
 		// If we were previously sleeping, but now we're not, increment m->SleepSeqNum to indicate that we're entering a new period of wakefulness
 		if (m->SleepState != SleepState_Awake)
@@ -4903,6 +4975,13 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 			mDNSCoreBeSleepProxyServer(m, m->SPSType, m->SPSPortability, m->SPSMarginalPower, m->SPSTotalPower);
 			mDNS_ReclaimLockAfterCallback();
 			}
+
+		// In case we gave up waiting and went to sleep before we got an ack from the Sleep Proxy,
+		// on wake we go through our record list and clear updateid back to zero
+		for (rr = m->ResourceRecords; rr; rr=rr->next) rr->updateid = zeroID;
+
+		// ... and the same for NextSPSAttempt
+		for (intf = GetFirstActiveInterface(m->HostInterfaces); intf; intf = GetFirstActiveInterface(intf->next)) intf->NextSPSAttempt = -1;
 
 		// Restart unicast and multicast queries
 		mDNSCoreRestartQueries(m);
@@ -4943,7 +5022,6 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 
 mDNSexport mDNSBool mDNSCoreReadyForSleep(mDNS *m)
 	{
-	int i;
 	DNSQuestion *q;
 	AuthRecord *rr;
 	ServiceRecordSet *srs;
@@ -4953,19 +5031,31 @@ mDNSexport mDNSBool mDNSCoreReadyForSleep(mDNS *m)
 
 	if (m->DelaySleep) return(mDNSfalse);
 
+	// See if we might need to retransmit any lost Sleep Proxy Registrations
+	mDNS_Lock(m);
+	for (intf = GetFirstActiveInterface(m->HostInterfaces); intf; intf = GetFirstActiveInterface(intf->next))
+		if (intf->NextSPSAttempt >= 0 && m->timenow - intf->NextSPSAttemptTime >= 0)
+			{
+			LogSPS("ReadyForSleep retrying SPS %s %d", intf->ifname, intf->NextSPSAttempt);
+			SendSPSRegistration(m, intf, zeroID);
+			}
+	mDNS_Unlock(m);
+
 	// Scan list of private LLQs, and make sure they've all completed their handshake with the server
 	for (q = m->Questions; q; q = q->next)
-		if (!mDNSOpaque16IsZero(q->TargetQID) && q->LongLived && q->ReqLease == 0 && q->tcp) return(mDNSfalse);
+		if (!mDNSOpaque16IsZero(q->TargetQID) && q->LongLived && q->ReqLease == 0 && q->tcp)
+			{
+			LogSPS("ReadyForSleep waiting for LLQ %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+			return(mDNSfalse);
+			}
 
 	// Scan list of interfaces
 	for (intf = GetFirstActiveInterface(m->HostInterfaces); intf; intf = GetFirstActiveInterface(intf->next))
-		if (intf->NetWake)
-			for (i=0; i<3; i++)
-				if (intf->NetWakeResolve[i].ThisQInterval >= 0)
-					{
-					LogSPS("ReadyForSleep waiting for SPS Resolve %s %d %##s (%s)", intf->ifname, i, intf->NetWakeResolve[i].qname.c, DNSTypeName(intf->NetWakeResolve[i].qtype));
-					return(mDNSfalse);
-					}
+		if (intf->NetWakeResolve[0].ThisQInterval >= 0)
+			{
+			LogSPS("ReadyForSleep waiting for SPS Resolve %s %##s (%s)", intf->ifname, intf->NetWakeResolve[0].qname.c, DNSTypeName(intf->NetWakeResolve[0].qtype));
+			return(mDNSfalse);
+			}
 
 	// Scan list of registered records
 	for (rr = m->ResourceRecords; rr; rr = rr->next)
@@ -4976,8 +5066,11 @@ mDNSexport mDNSBool mDNSCoreReadyForSleep(mDNS *m)
 			}
 		else
 			{
-			if (!mDNSOpaque16IsZero(rr->updateid)) LogSPS("ReadyForSleep waiting for SPS Update ID %d %s", mDNSVal16(rr->updateid), ARDisplayString(m,rr));
-			if (!mDNSOpaque16IsZero(rr->updateid)) return(mDNSfalse);
+			if (!mDNSOpaque16IsZero(rr->updateid))
+				{
+				LogSPS("ReadyForSleep waiting for SPS Update ID %d %s", mDNSVal16(rr->updateid), ARDisplayString(m,rr));
+				return(mDNSfalse);
+				}
 			}
 		}
 
@@ -7989,6 +8082,8 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 		set->NetWakeResolve[i].ThisQInterval = -1;
 		set->SPSAddr[i].type = mDNSAddrType_None;
 		}
+	set->NextSPSAttempt     = -1;
+	set->NextSPSAttemptTime = m->timenow;
 
 	// Scan list to see if this InterfaceID is already represented
 	while (*p)
