@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.955  2009/05/07 23:40:54  cheshire
+Minor code rearrangement in preparation for upcoming changes
+
 Revision 1.954  2009/05/01 21:28:34  cheshire
 <rdar://problem/6721680> AppleConnectAgent's reachability checks delay sleep by 30 seconds
 No longer suspend network operations after we've acknowledged that the machine is going to sleep,
@@ -1445,6 +1448,9 @@ Fixes to avoid code generation warning/error on FreeBSD 7
 	// to the compiler that the assignment is intentional, we have to just turn this warning off completely.
 	#pragma warning(disable:4706)
 #endif
+
+// Forward declarations
+mDNSlocal void BeginSleepProcessing(mDNS *const m);
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -4426,177 +4432,6 @@ mDNSlocal void CheckProxyRecords(mDNS *const m, AuthRecord *list)
 		}
 	}
 
-mDNSlocal void SendSPSRegistration(mDNS *const m, const NetworkInterfaceInfo *intf, int sps)
-	{
-	const int ownerspace = mDNSSameEthAddress(&m->PrimaryMAC, &intf->MAC) ? DNSOpt_OwnerData_ID_Space : DNSOpt_OwnerData_ID_Wake_Space;
-	const int optspace = DNSOpt_Header_Space + DNSOpt_LeaseData_Space + ownerspace;
-	AuthRecord *rr;
-
-	// Mark our mDNS records (not unicast records) for transfer to SPS
-	for (rr = m->ResourceRecords; rr; rr=rr->next)
-		if (rr->resrec.RecordType > kDNSRecordTypeDeregistering)
-			if (rr->resrec.InterfaceID == intf->InterfaceID || (!rr->resrec.InterfaceID && (rr->ForceMCast || IsLocalDomain(rr->resrec.name))))
-				if (!rr->updateid.NotAnInteger)			// If this record is not already in the process of being transferred to the Sleep Proxy
-					rr->SendRNow = mDNSInterfaceMark;	// mark it now
-
-	while (1)
-		{
-		mDNSu8 *p = m->omsg.data;
-		// To comply with RFC 2782, PutResourceRecord suppresses name compression for SRV records in unicast updates.
-		// For now we follow that same logic for SPS registrations too.
-		// If we decide to compress SRV records in SPS registrations in the future, we can achieve that by creating our
-		// initial DNSMessage with h.flags set to zero, and then update it to UpdateReqFlags right before sending the packet.
-		InitializeDNSMessage(&m->omsg.h, mDNS_NewMessageID(m), UpdateReqFlags);
-
-		for (rr = m->ResourceRecords; rr; rr=rr->next)
-			if (rr->SendRNow)
-				{
-				mDNSu8 *newptr;
-				const mDNSu8 *const limit = m->omsg.data + (m->omsg.h.mDNS_numUpdates ? NormalMaxDNSMessageData : AbsoluteMaxDNSMessageData) - optspace;
-				if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
-					rr->resrec.rrclass |= kDNSClass_UniqueRRSet;	// Temporarily set the 'unique' bit so PutResourceRecord will set it
-				newptr = PutResourceRecordTTLWithLimit(&m->omsg, p, &m->omsg.h.mDNS_numUpdates, &rr->resrec, rr->resrec.rroriginalttl, limit);
-				rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;		// Make sure to clear 'unique' bit back to normal state
-				if (newptr) { rr->SendRNow = mDNSNULL; rr->updateid = m->omsg.h.id; p = newptr; }
-				}
-
-		if (!m->omsg.h.mDNS_numUpdates) break;
-		else
-			{
-			AuthRecord opt;
-			mDNS_SetupResourceRecord(&opt, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
-			opt.resrec.rrclass    = NormalMaxDNSMessageData;
-			opt.resrec.rdlength   = sizeof(rdataOPT) * 2;	// Two options in this OPT record
-			opt.resrec.rdestimate = sizeof(rdataOPT) * 2;
-			opt.resrec.rdata->u.opt[0].opt              = kDNSOpt_Lease;
-			opt.resrec.rdata->u.opt[0].optlen           = DNSOpt_LeaseData_Space - 4;
-			opt.resrec.rdata->u.opt[0].u.updatelease    = DEFAULT_UPDATE_LEASE;
-			SetupOwnerOpt(m, intf, &opt.resrec.rdata->u.opt[1]);
-			LogSPS("SendSPSRegistration putting %s %d %s", intf->ifname, sps, ARDisplayString(m, &opt));
-			p = PutResourceRecordTTLWithLimit(&m->omsg, p, &m->omsg.h.numAdditionals, &opt.resrec, opt.resrec.rroriginalttl, m->omsg.data + AbsoluteMaxDNSMessageData);
-			if (p)
-				{
-				LogSPS("SendSPSRegistration: Sending Update %s %d id %5d with %d records to %#a:%d", intf->ifname, sps,
-					mDNSVal16(m->omsg.h.id), m->omsg.h.mDNS_numUpdates, &intf->SPSAddr[sps], mDNSVal16(intf->SPSPort[sps]));
-				mDNSSendDNSMessage(m, &m->omsg, p, intf->InterfaceID, mDNSNULL, &intf->SPSAddr[sps], intf->SPSPort[sps], mDNSNULL, mDNSNULL);
-				}
-			else
-				LogMsg("SendSPSRegistration: Failed to put OPT record (%d updates) %s", m->omsg.h.mDNS_numUpdates, ARDisplayString(m, &opt));
-			}
-		}
-	}
-
-mDNSlocal void NetWakeResolve(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
-	{
-	NetworkInterfaceInfo *intf = (NetworkInterfaceInfo *)question->QuestionContext;
-	int sps = question - intf->NetWakeResolve;
-	(void)m;			// Unused
-	LogSPS("NetWakeResolve: SPS: %d Add: %d %s", sps, AddRecord, RRDisplayString(m, answer));
-
-	if (!AddRecord) return;												// Don't care about REMOVE events
-	if (answer->rrtype != question->qtype) return;						// Don't care about CNAMEs
-
-	mDNS_StopQuery(m, question);
-	question->ThisQInterval = -1;
-
-	if (answer->rrtype == kDNSType_SRV)
-		{
-		intf->SPSPort[sps] = answer->rdata->u.srv.port;
-		AssignDomainName(&question->qname, &answer->rdata->u.srv.target);
-		question->qtype = kDNSType_AAAA;
-		mDNS_StartQuery(m, question);
-		}
-	else if (answer->rrtype == kDNSType_AAAA && answer->rdlength == sizeof(mDNSv6Addr) && mDNSv6AddressIsLinkLocal(&answer->rdata->u.ipv6))
-		{
-		intf->SPSAddr[sps].type = mDNSAddrType_IPv6;
-		intf->SPSAddr[sps].ip.v6 = answer->rdata->u.ipv6;
-		if (sps == 0) SendSPSRegistration(m, intf, sps);	// For now we only try the highest-ranked Sleep Proxy
-		}
-	else if (answer->rrtype == kDNSType_AAAA && answer->rdlength == 0)	// If negative answer for IPv6, look for IPv4 addresses instead
-		{
-		question->qtype = kDNSType_A;
-		mDNS_StartQuery(m, question);
-		}
-	else if (answer->rrtype == kDNSType_A && answer->rdlength == sizeof(mDNSv4Addr))
-		{
-		intf->SPSAddr[sps].type = mDNSAddrType_IPv4;
-		intf->SPSAddr[sps].ip.v4 = answer->rdata->u.ipv4;
-		if (sps == 0) SendSPSRegistration(m, intf, sps);	// For now we only try the highest-ranked Sleep Proxy
-		}
-	}
-
-mDNSlocal void BeginSleepProcessing(mDNS *const m)
-	{
-	const CacheRecord *sps[3] = { mDNSNULL };
-
-	AuthRecord *rr = mDNSNULL;
-	if (m->SystemWakeOnLANEnabled)
-		{
-		for (rr = m->ResourceRecords; rr; rr=rr->next)
-			if (rr->resrec.rrtype == kDNSType_SRV && !mDNSSameIPPort(rr->resrec.rdata->u.srv.port, DiscardPort))
-				break;
-
-		if (!rr)		// If we have at least one advertised service
-			LogSPS("BeginSleepProcessing: No advertised services");
-		}
-	else
-		LogSPS("BeginSleepProcessing: m->SystemWakeOnLANEnabled is false");
-
-	if (rr)
-		{
-		NetworkInterfaceInfo *intf = GetFirstActiveInterface(m->HostInterfaces);
-		while (intf)
-			{
-			if (!intf->NetWake) LogSPS("BeginSleepProcessing: %-6s not capable of magic packet wakeup", intf->ifname);
-			else
-				{
-				FindSPSInCache(m, &intf->NetWakeBrowse, sps);
-				if (!sps[0]) LogSPS("BeginSleepProcessing: %-6s %#a No Sleep Proxy Server found %d", intf->ifname, &intf->ip, intf->NetWakeBrowse.ThisQInterval);
-				else
-					{
-					int i;
-					for (i=0; i<3; i++)
-						{
-#if ForceAlerts
-						if (intf->SPSAddr[i].type)
-							{ LogMsg("BeginSleepProcessing: %s %d intf->SPSAddr[i].type %d", intf->ifname, i, intf->SPSAddr[i].type); *(long*)0 = 0; }
-						if (intf->NetWakeResolve[i].ThisQInterval >= 0)
-							{ LogMsg("BeginSleepProcessing: %s %d intf->NetWakeResolve[i].ThisQInterval %d", intf->ifname, i, intf->NetWakeResolve[i].ThisQInterval); *(long*)0 = 0; }
-#endif
-						intf->SPSAddr[i].type = mDNSAddrType_None;
-						if (intf->NetWakeResolve[i].ThisQInterval >= 0) mDNS_StopQuery(m, &intf->NetWakeResolve[i]);
-						intf->NetWakeResolve[i].ThisQInterval = -1;
-						if (sps[i])
-							{
-							LogSPS("BeginSleepProcessing: %-6s Found Sleep Proxy Server %d TTL %d %s", intf->ifname, i, sps[i]->resrec.rroriginalttl, CRDisplayString(m, sps[i]));
-							mDNS_SetupQuestion(&intf->NetWakeResolve[i], intf->InterfaceID, &sps[i]->resrec.rdata->u.name, kDNSType_SRV, NetWakeResolve, intf);
-							mDNS_StartQuery_internal(m, &intf->NetWakeResolve[i]);
-							}
-						}
-					}
-				}
-			intf = GetFirstActiveInterface(intf->next);
-			}
-		}
-
-	if (!sps[0])	// If we didn't find even one Sleep Proxy
-		{
-		LogSPS("BeginSleepProcessing: Not registering with Sleep Proxy Server");
-		m->SleepState = SleepState_Sleeping;
-
-#ifndef UNICAST_DISABLED
-		SleepServiceRegistrations(m);
-		SleepRecordRegistrations(m);	// If we have no SPS, need to deregister our uDNS records
-#endif
-
-		// Mark all the records we need to deregister and send them
-		for (rr = m->ResourceRecords; rr; rr=rr->next)
-			if (rr->resrec.RecordType == kDNSRecordTypeShared && rr->RequireGoodbye)
-				rr->ImmedAnswer = mDNSInterfaceMark;
-		SendResponses(m);
-		}
-	}
-
 mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 	{
 	mDNS_Lock(m);	// Must grab lock before trying to read m->timenow
@@ -4831,6 +4666,177 @@ mDNSexport void mDNSCoreRestartQueries(mDNS *const m)
 #pragma mark -
 #pragma mark - Power Management (Sleep/Wake)
 #endif
+
+mDNSlocal void SendSPSRegistration(mDNS *const m, const NetworkInterfaceInfo *intf, int sps)
+	{
+	const int ownerspace = mDNSSameEthAddress(&m->PrimaryMAC, &intf->MAC) ? DNSOpt_OwnerData_ID_Space : DNSOpt_OwnerData_ID_Wake_Space;
+	const int optspace = DNSOpt_Header_Space + DNSOpt_LeaseData_Space + ownerspace;
+	AuthRecord *rr;
+
+	// Mark our mDNS records (not unicast records) for transfer to SPS
+	for (rr = m->ResourceRecords; rr; rr=rr->next)
+		if (rr->resrec.RecordType > kDNSRecordTypeDeregistering)
+			if (rr->resrec.InterfaceID == intf->InterfaceID || (!rr->resrec.InterfaceID && (rr->ForceMCast || IsLocalDomain(rr->resrec.name))))
+				if (!rr->updateid.NotAnInteger)			// If this record is not already in the process of being transferred to the Sleep Proxy
+					rr->SendRNow = mDNSInterfaceMark;	// mark it now
+
+	while (1)
+		{
+		mDNSu8 *p = m->omsg.data;
+		// To comply with RFC 2782, PutResourceRecord suppresses name compression for SRV records in unicast updates.
+		// For now we follow that same logic for SPS registrations too.
+		// If we decide to compress SRV records in SPS registrations in the future, we can achieve that by creating our
+		// initial DNSMessage with h.flags set to zero, and then update it to UpdateReqFlags right before sending the packet.
+		InitializeDNSMessage(&m->omsg.h, mDNS_NewMessageID(m), UpdateReqFlags);
+
+		for (rr = m->ResourceRecords; rr; rr=rr->next)
+			if (rr->SendRNow)
+				{
+				mDNSu8 *newptr;
+				const mDNSu8 *const limit = m->omsg.data + (m->omsg.h.mDNS_numUpdates ? NormalMaxDNSMessageData : AbsoluteMaxDNSMessageData) - optspace;
+				if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
+					rr->resrec.rrclass |= kDNSClass_UniqueRRSet;	// Temporarily set the 'unique' bit so PutResourceRecord will set it
+				newptr = PutResourceRecordTTLWithLimit(&m->omsg, p, &m->omsg.h.mDNS_numUpdates, &rr->resrec, rr->resrec.rroriginalttl, limit);
+				rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;		// Make sure to clear 'unique' bit back to normal state
+				if (newptr) { rr->SendRNow = mDNSNULL; rr->updateid = m->omsg.h.id; p = newptr; }
+				}
+
+		if (!m->omsg.h.mDNS_numUpdates) break;
+		else
+			{
+			AuthRecord opt;
+			mDNS_SetupResourceRecord(&opt, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
+			opt.resrec.rrclass    = NormalMaxDNSMessageData;
+			opt.resrec.rdlength   = sizeof(rdataOPT) * 2;	// Two options in this OPT record
+			opt.resrec.rdestimate = sizeof(rdataOPT) * 2;
+			opt.resrec.rdata->u.opt[0].opt              = kDNSOpt_Lease;
+			opt.resrec.rdata->u.opt[0].optlen           = DNSOpt_LeaseData_Space - 4;
+			opt.resrec.rdata->u.opt[0].u.updatelease    = DEFAULT_UPDATE_LEASE;
+			SetupOwnerOpt(m, intf, &opt.resrec.rdata->u.opt[1]);
+			LogSPS("SendSPSRegistration put %s %s", intf->ifname, ARDisplayString(m, &opt));
+			p = PutResourceRecordTTLWithLimit(&m->omsg, p, &m->omsg.h.numAdditionals, &opt.resrec, opt.resrec.rroriginalttl, m->omsg.data + AbsoluteMaxDNSMessageData);
+			if (p)
+				{
+				LogSPS("SendSPSRegistration: Sending Update %s %d id %5d with %d records to %#a:%d", intf->ifname, sps,
+					mDNSVal16(m->omsg.h.id), m->omsg.h.mDNS_numUpdates, &intf->SPSAddr[sps], mDNSVal16(intf->SPSPort[sps]));
+				mDNSSendDNSMessage(m, &m->omsg, p, intf->InterfaceID, mDNSNULL, &intf->SPSAddr[sps], intf->SPSPort[sps], mDNSNULL, mDNSNULL);
+				}
+			else
+				LogMsg("SendSPSRegistration: Failed to put OPT record (%d updates) %s", m->omsg.h.mDNS_numUpdates, ARDisplayString(m, &opt));
+			}
+		}
+	}
+
+mDNSlocal void NetWakeResolve(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
+	{
+	NetworkInterfaceInfo *intf = (NetworkInterfaceInfo *)question->QuestionContext;
+	int sps = question - intf->NetWakeResolve;
+	(void)m;			// Unused
+	LogSPS("NetWakeResolve: SPS: %d Add: %d %s", sps, AddRecord, RRDisplayString(m, answer));
+
+	if (!AddRecord) return;												// Don't care about REMOVE events
+	if (answer->rrtype != question->qtype) return;						// Don't care about CNAMEs
+
+	mDNS_StopQuery(m, question);
+	question->ThisQInterval = -1;
+
+	if (answer->rrtype == kDNSType_SRV)
+		{
+		intf->SPSPort[sps] = answer->rdata->u.srv.port;
+		AssignDomainName(&question->qname, &answer->rdata->u.srv.target);
+		question->qtype = kDNSType_AAAA;
+		mDNS_StartQuery(m, question);
+		}
+	else if (answer->rrtype == kDNSType_AAAA && answer->rdlength == sizeof(mDNSv6Addr) && mDNSv6AddressIsLinkLocal(&answer->rdata->u.ipv6))
+		{
+		intf->SPSAddr[sps].type = mDNSAddrType_IPv6;
+		intf->SPSAddr[sps].ip.v6 = answer->rdata->u.ipv6;
+		if (sps == 0) SendSPSRegistration(m, intf, sps);	// For now we only try the highest-ranked Sleep Proxy
+		}
+	else if (answer->rrtype == kDNSType_AAAA && answer->rdlength == 0)	// If negative answer for IPv6, look for IPv4 addresses instead
+		{
+		question->qtype = kDNSType_A;
+		mDNS_StartQuery(m, question);
+		}
+	else if (answer->rrtype == kDNSType_A && answer->rdlength == sizeof(mDNSv4Addr))
+		{
+		intf->SPSAddr[sps].type = mDNSAddrType_IPv4;
+		intf->SPSAddr[sps].ip.v4 = answer->rdata->u.ipv4;
+		if (sps == 0) SendSPSRegistration(m, intf, sps);	// For now we only try the highest-ranked Sleep Proxy
+		}
+	}
+
+mDNSlocal void BeginSleepProcessing(mDNS *const m)
+	{
+	const CacheRecord *sps[3] = { mDNSNULL };
+
+	AuthRecord *rr = mDNSNULL;
+	if (m->SystemWakeOnLANEnabled)
+		{
+		for (rr = m->ResourceRecords; rr; rr=rr->next)
+			if (rr->resrec.rrtype == kDNSType_SRV && !mDNSSameIPPort(rr->resrec.rdata->u.srv.port, DiscardPort))
+				break;
+
+		if (!rr)		// If we have at least one advertised service
+			LogSPS("BeginSleepProcessing: No advertised services");
+		}
+	else
+		LogSPS("BeginSleepProcessing: m->SystemWakeOnLANEnabled is false");
+
+	if (rr)
+		{
+		NetworkInterfaceInfo *intf = GetFirstActiveInterface(m->HostInterfaces);
+		while (intf)
+			{
+			if (!intf->NetWake) LogSPS("BeginSleepProcessing: %-6s not capable of magic packet wakeup", intf->ifname);
+			else
+				{
+				FindSPSInCache(m, &intf->NetWakeBrowse, sps);
+				if (!sps[0]) LogSPS("BeginSleepProcessing: %-6s %#a No Sleep Proxy Server found %d", intf->ifname, &intf->ip, intf->NetWakeBrowse.ThisQInterval);
+				else
+					{
+					int i;
+					for (i=0; i<3; i++)
+						{
+#if ForceAlerts
+						if (intf->SPSAddr[i].type)
+							{ LogMsg("BeginSleepProcessing: %s %d intf->SPSAddr[i].type %d", intf->ifname, i, intf->SPSAddr[i].type); *(long*)0 = 0; }
+						if (intf->NetWakeResolve[i].ThisQInterval >= 0)
+							{ LogMsg("BeginSleepProcessing: %s %d intf->NetWakeResolve[i].ThisQInterval %d", intf->ifname, i, intf->NetWakeResolve[i].ThisQInterval); *(long*)0 = 0; }
+#endif
+						intf->SPSAddr[i].type = mDNSAddrType_None;
+						if (intf->NetWakeResolve[i].ThisQInterval >= 0) mDNS_StopQuery(m, &intf->NetWakeResolve[i]);
+						intf->NetWakeResolve[i].ThisQInterval = -1;
+						if (sps[i])
+							{
+							LogSPS("BeginSleepProcessing: %-6s Found Sleep Proxy Server %d TTL %d %s", intf->ifname, i, sps[i]->resrec.rroriginalttl, CRDisplayString(m, sps[i]));
+							mDNS_SetupQuestion(&intf->NetWakeResolve[i], intf->InterfaceID, &sps[i]->resrec.rdata->u.name, kDNSType_SRV, NetWakeResolve, intf);
+							mDNS_StartQuery_internal(m, &intf->NetWakeResolve[i]);
+							}
+						}
+					}
+				}
+			intf = GetFirstActiveInterface(intf->next);
+			}
+		}
+
+	if (!sps[0])	// If we didn't find even one Sleep Proxy
+		{
+		LogSPS("BeginSleepProcessing: Not registering with Sleep Proxy Server");
+		m->SleepState = SleepState_Sleeping;
+
+#ifndef UNICAST_DISABLED
+		SleepServiceRegistrations(m);
+		SleepRecordRegistrations(m);	// If we have no SPS, need to deregister our uDNS records
+#endif
+
+		// Mark all the records we need to deregister and send them
+		for (rr = m->ResourceRecords; rr; rr=rr->next)
+			if (rr->resrec.RecordType == kDNSRecordTypeShared && rr->RequireGoodbye)
+				rr->ImmedAnswer = mDNSInterfaceMark;
+		SendResponses(m);
+		}
+	}
 
 // Call mDNSCoreMachineSleep(m, mDNStrue) when the machine is about to go to sleep.
 // Call mDNSCoreMachineSleep(m, mDNSfalse) when the machine is has just woken up.
