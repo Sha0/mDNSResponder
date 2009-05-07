@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.564  2009/05/07 23:31:26  cheshire
+<rdar://problem/6601427> Sleep Proxy: Retransmit and retry Sleep Proxy Server requests
+Added NextSPSAttempt and NextSPSAttemptTime fields to NetworkInterfaceInfo_struct
+
 Revision 1.563  2009/04/24 21:06:38  cheshire
 Added comment about UDP length field (includes UDP header, so minimum value is 8 bytes)
 
@@ -1943,7 +1947,7 @@ struct AuthRecord_struct
 	mDNSBool     uselease;		// dynamic update contains (should contain) lease option
 	mDNSs32      expire;		// In platform time units: expiration of lease (-1 for static)
 	mDNSBool     Private;		// If zone is private, DNS updates may have to be encrypted to prevent eavesdropping
-	mDNSOpaque16 updateid;		// identifier to match update request and response
+	mDNSOpaque16 updateid;		// Identifier to match update request and response -- also used when transferring records to Sleep Proxy
 	const domainname *zone;		// the zone that is updated
 	mDNSAddr     UpdateServer;	// DNS server that handles updates for this zone
 	mDNSIPPort   UpdatePort;	// port on which server accepts dynamic updates
@@ -2384,10 +2388,13 @@ struct NetworkInterfaceInfo_struct
 	mDNSu8          InterfaceActive;	// Set if interface is sending & receiving packets (see comment above)
 	mDNSu8          IPv4Available;		// If InterfaceActive, set if v4 available on this InterfaceID
 	mDNSu8          IPv6Available;		// If InterfaceActive, set if v6 available on this InterfaceID
+
 	DNSQuestion     NetWakeBrowse;
 	DNSQuestion     NetWakeResolve[3];	// For fault-tolerance, we try up to three Sleep Proxies
 	mDNSAddr        SPSAddr[3];
 	mDNSIPPort      SPSPort[3];
+	mDNSs32         NextSPSAttempt;		// -1 if we're not currently attempting to register with any Sleep Proxy
+	mDNSs32         NextSPSAttemptTime;
 
 	// Standard AuthRecords that every Responder host should have (one per active IP address)
 	AuthRecord RR_A;					// 'A' or 'AAAA' (address) record for our ".local" name
