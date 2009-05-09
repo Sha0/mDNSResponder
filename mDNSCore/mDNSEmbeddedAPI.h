@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.565  2009/05/09 00:10:58  jessic2
+Change expected size of NetworkInterfaceInfo to fix build failure
+
 Revision 1.564  2009/05/07 23:31:26  cheshire
 <rdar://problem/6601427> Sleep Proxy: Retransmit and retry Sleep Proxy Server requests
 Added NextSPSAttempt and NextSPSAttemptTime fields to NetworkInterfaceInfo_struct
@@ -3401,7 +3404,7 @@ struct CompileTimeAssertionChecks_mDNS
 	char sizecheck_NATTraversalInfo    [(sizeof(NATTraversalInfo)     <=   192) ? 1 : -1];
 	char sizecheck_HostnameInfo        [(sizeof(HostnameInfo)         <=  2800) ? 1 : -1];
 	char sizecheck_DNSServer           [(sizeof(DNSServer)            <=   312) ? 1 : -1];
-	char sizecheck_NetworkInterfaceInfo[(sizeof(NetworkInterfaceInfo) <=  5960) ? 1 : -1];
+	char sizecheck_NetworkInterfaceInfo[(sizeof(NetworkInterfaceInfo) <=  5968) ? 1 : -1];
 	char sizecheck_ServiceRecordSet    [(sizeof(ServiceRecordSet)     <=  5500) ? 1 : -1];
 	char sizecheck_DomainAuthInfo      [(sizeof(DomainAuthInfo)       <=  5500) ? 1 : -1];
 	char sizecheck_ServiceInfoQuery    [(sizeof(ServiceInfoQuery)     <=  2944) ? 1 : -1];
