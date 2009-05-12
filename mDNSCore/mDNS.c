@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.958  2009/05/12 19:19:20  cheshire
+<rdar://problem/6879925> Sleep Proxy delays sleep by ten seconds when logged in to VPN
+
 Revision 1.957  2009/05/07 23:56:25  cheshire
 <rdar://problem/6601427> Retransmit and retry Sleep Proxy Server requests
 To get negative answers for our AAAA query we need to set the ReturnIntermed flag on the NetWakeResolve question
@@ -4708,7 +4711,7 @@ mDNSlocal void SendSPSRegistration(mDNS *const m, NetworkInterfaceInfo *intf, co
 		InitializeDNSMessage(&m->omsg.h, mDNSOpaque16IsZero(id) ? mDNS_NewMessageID(m) : id, UpdateReqFlags);
 
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
-			if (rr->SendRNow || (mDNSSameOpaque16(rr->updateid, id) && m->timenow - (rr->LastAPTime + rr->ThisAPInterval) >= 0))
+			if (rr->SendRNow || (!mDNSOpaque16IsZero(id) && !AuthRecord_uDNS(rr) && mDNSSameOpaque16(rr->updateid, id) && m->timenow - (rr->LastAPTime + rr->ThisAPInterval) >= 0))
 				{
 				mDNSu8 *newptr;
 				const mDNSu8 *const limit = m->omsg.data + (m->omsg.h.mDNS_numUpdates ? NormalMaxDNSMessageData : AbsoluteMaxDNSMessageData) - optspace;
@@ -4845,19 +4848,18 @@ mDNSlocal void BeginSleepProcessing(mDNS *const m)
 	const CacheRecord *sps[3] = { mDNSNULL };
 
 	AuthRecord *rr = mDNSNULL;
-	if (m->SystemWakeOnLANEnabled)
+	if (!m->SystemWakeOnLANEnabled)
+		LogSPS("BeginSleepProcessing: m->SystemWakeOnLANEnabled is false");
+	else
 		{
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
 			if (rr->resrec.rrtype == kDNSType_SRV && !mDNSSameIPPort(rr->resrec.rdata->u.srv.port, DiscardPort))
 				break;
 
-		if (!rr)		// If we have at least one advertised service
-			LogSPS("BeginSleepProcessing: No advertised services");
+		if (!rr) LogSPS("BeginSleepProcessing: No advertised services");
 		}
-	else
-		LogSPS("BeginSleepProcessing: m->SystemWakeOnLANEnabled is false");
 
-	if (rr)
+	if (rr)	// If we have at least one advertised service
 		{
 		NetworkInterfaceInfo *intf;
 		for (intf = GetFirstActiveInterface(m->HostInterfaces); intf; intf = GetFirstActiveInterface(intf->next))
@@ -5091,7 +5093,7 @@ mDNSexport mDNSs32 mDNSCoreIntervalToNextWake(mDNS *const m, mDNSs32 now)
 	AuthRecord *ar;
 
 	// Even when we have no wake-on-LAN-capable interfaces, or we failed to find a sleep proxy, or we have other
-	// failure scenarios, we still want to wake up in at most 90 minutes, to see if the network environment has changed.
+	// failure scenarios, we still want to wake up in at most 120 minutes, to see if the network environment has changed.
 	// E.g. we might wake up and find no wireless network because the base station got rebooted just at that moment,
 	// and if that happens we don't want to just give up and go back to sleep and never try again.
 	mDNSs32 e = now + (120 * 60 * mDNSPlatformOneSecond);		// Sleep for at most 120 minutes
