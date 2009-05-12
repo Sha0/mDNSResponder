@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.959  2009/05/12 23:10:31  cheshire
+<rdar://problem/6879926> Should not schedule maintenance wake when machine has no advertised services
+Make new routine mDNSCoreHaveAdvertisedServices so daemon.c can tell whether it needs to schedule a maintenance wake
+
 Revision 1.958  2009/05/12 19:19:20  cheshire
 <rdar://problem/6879925> Sleep Proxy delays sleep by ten seconds when logged in to VPN
 
@@ -4843,23 +4847,22 @@ mDNSlocal void NetWakeResolve(mDNS *const m, DNSQuestion *question, const Resour
 		}
 	}
 
+mDNSexport mDNSBool mDNSCoreHaveAdvertisedServices(mDNS *const m)
+	{
+	AuthRecord *rr;
+	for (rr = m->ResourceRecords; rr; rr=rr->next)
+		if (rr->resrec.rrtype == kDNSType_SRV && !mDNSSameIPPort(rr->resrec.rdata->u.srv.port, DiscardPort))
+			return mDNStrue;
+	return mDNSfalse;
+	}
+
 mDNSlocal void BeginSleepProcessing(mDNS *const m)
 	{
 	const CacheRecord *sps[3] = { mDNSNULL };
 
-	AuthRecord *rr = mDNSNULL;
-	if (!m->SystemWakeOnLANEnabled)
-		LogSPS("BeginSleepProcessing: m->SystemWakeOnLANEnabled is false");
-	else
-		{
-		for (rr = m->ResourceRecords; rr; rr=rr->next)
-			if (rr->resrec.rrtype == kDNSType_SRV && !mDNSSameIPPort(rr->resrec.rdata->u.srv.port, DiscardPort))
-				break;
-
-		if (!rr) LogSPS("BeginSleepProcessing: No advertised services");
-		}
-
-	if (rr)	// If we have at least one advertised service
+	if      (!m->SystemWakeOnLANEnabled)         LogSPS("BeginSleepProcessing: m->SystemWakeOnLANEnabled is false");
+	else if (!mDNSCoreHaveAdvertisedServices(m)) LogSPS("BeginSleepProcessing: No advertised services");
+	else	// If we have at least one advertised service
 		{
 		NetworkInterfaceInfo *intf;
 		for (intf = GetFirstActiveInterface(m->HostInterfaces); intf; intf = GetFirstActiveInterface(intf->next))
@@ -4900,6 +4903,7 @@ mDNSlocal void BeginSleepProcessing(mDNS *const m)
 
 	if (!sps[0])	// If we didn't find even one Sleep Proxy
 		{
+		AuthRecord *rr;
 		LogSPS("BeginSleepProcessing: Not registering with Sleep Proxy Server");
 		m->SleepState = SleepState_Sleeping;
 
