@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.681  2009/05/12 23:23:15  cheshire
+Removed unnecessary "mDNSPlatformTCPConnect - connect failed ... Error 50 (Network is down)" debugging message
+
 Revision 1.680  2009/05/05 01:32:50  jessic2
 <rdar://problem/6830541> regservice_callback: instance->request is NULL 0 -- Clean up spurious logs resulting from fixing this bug.
 
@@ -2153,7 +2156,7 @@ mDNSexport mStatus mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr *dst, 
 	if (connect(sock->fd, (struct sockaddr *)&saddr, sizeof(saddr)) < 0)
 		{
 		if (errno == EINPROGRESS) return mStatus_ConnPending;
-		if (errno == EHOSTUNREACH || errno == EADDRNOTAVAIL)
+		if (errno == EHOSTUNREACH || errno == EADDRNOTAVAIL || errno == ENETDOWN)
 			LogInfo("ERROR: mDNSPlatformTCPConnect - connect failed: socket %d: Error %d (%s)", sock->fd, errno, strerror(errno));
 		else
 			LogMsg("ERROR: mDNSPlatformTCPConnect - connect failed: socket %d: Error %d (%s)", sock->fd, errno, strerror(errno));
