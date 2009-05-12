@@ -30,6 +30,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.431  2009/05/12 23:21:18  cheshire
+<rdar://problem/6879926> Should not schedule maintenance wake when machine has no advertised services
+Use mDNSCoreHaveAdvertisedServices routine to determine whether we should schedule a maintenance wake
+
 Revision 1.430  2009/05/01 19:17:36  cheshire
 <rdar://problem/6501561> Sleep Proxy: Reduce the frequency of maintenance wakes: ODD, fans, power
 
@@ -2660,7 +2664,11 @@ mDNSlocal mDNSBool AllowSleepNow(mDNS *const m, mDNSs32 now)
 		LogMsg("AllowSleepNow: Sleep request was canceled with %d ticks remaining", m->SleepLimit - now);
 	else
 		{
-		if (m->SystemWakeOnLANEnabled)
+		if (!m->SystemWakeOnLANEnabled || !mDNSCoreHaveAdvertisedServices(m))
+			LogSPS("AllowSleepNow: Not scheduling wakeup: SystemWakeOnLAN %s enabled; %s advertised services",
+				m->SystemWakeOnLANEnabled         ? "is" : "not",
+				mDNSCoreHaveAdvertisedServices(m) ? "have" : "no");
+		else
 			{
 			mDNSs32 dhcp = DHCPWakeTime();
 			LogSPS("ComputeWakeTime: DHCP Wake %d", dhcp);
