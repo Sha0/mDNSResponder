@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.960  2009/05/13 17:25:33  mkrochma
+<rdar://problem/6879926> Should not schedule maintenance wake when machine has no advertised services
+Sleep proxy client should only look for services being advertised via Multicast
+
 Revision 1.959  2009/05/12 23:10:31  cheshire
 <rdar://problem/6879926> Should not schedule maintenance wake when machine has no advertised services
 Make new routine mDNSCoreHaveAdvertisedServices so daemon.c can tell whether it needs to schedule a maintenance wake
@@ -4847,11 +4851,11 @@ mDNSlocal void NetWakeResolve(mDNS *const m, DNSQuestion *question, const Resour
 		}
 	}
 
-mDNSexport mDNSBool mDNSCoreHaveAdvertisedServices(mDNS *const m)
+mDNSexport mDNSBool mDNSCoreHaveAdvertisedMulticastServices(mDNS *const m)
 	{
 	AuthRecord *rr;
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
-		if (rr->resrec.rrtype == kDNSType_SRV && !mDNSSameIPPort(rr->resrec.rdata->u.srv.port, DiscardPort))
+		if (rr->resrec.rrtype == kDNSType_SRV && !AuthRecord_uDNS(rr) && !mDNSSameIPPort(rr->resrec.rdata->u.srv.port, DiscardPort))
 			return mDNStrue;
 	return mDNSfalse;
 	}
@@ -4860,8 +4864,8 @@ mDNSlocal void BeginSleepProcessing(mDNS *const m)
 	{
 	const CacheRecord *sps[3] = { mDNSNULL };
 
-	if      (!m->SystemWakeOnLANEnabled)         LogSPS("BeginSleepProcessing: m->SystemWakeOnLANEnabled is false");
-	else if (!mDNSCoreHaveAdvertisedServices(m)) LogSPS("BeginSleepProcessing: No advertised services");
+	if      (!m->SystemWakeOnLANEnabled)                  LogSPS("BeginSleepProcessing: m->SystemWakeOnLANEnabled is false");
+	else if (!mDNSCoreHaveAdvertisedMulticastServices(m)) LogSPS("BeginSleepProcessing: No advertised services");
 	else	// If we have at least one advertised service
 		{
 		NetworkInterfaceInfo *intf;

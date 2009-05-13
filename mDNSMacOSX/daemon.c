@@ -30,6 +30,10 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.432  2009/05/13 17:25:33  mkrochma
+<rdar://problem/6879926> Should not schedule maintenance wake when machine has no advertised services
+Sleep proxy client should only look for services being advertised via Multicast
+
 Revision 1.431  2009/05/12 23:21:18  cheshire
 <rdar://problem/6879926> Should not schedule maintenance wake when machine has no advertised services
 Use mDNSCoreHaveAdvertisedServices routine to determine whether we should schedule a maintenance wake
@@ -2664,10 +2668,10 @@ mDNSlocal mDNSBool AllowSleepNow(mDNS *const m, mDNSs32 now)
 		LogMsg("AllowSleepNow: Sleep request was canceled with %d ticks remaining", m->SleepLimit - now);
 	else
 		{
-		if (!m->SystemWakeOnLANEnabled || !mDNSCoreHaveAdvertisedServices(m))
+		if (!m->SystemWakeOnLANEnabled || !mDNSCoreHaveAdvertisedMulticastServices(m))
 			LogSPS("AllowSleepNow: Not scheduling wakeup: SystemWakeOnLAN %s enabled; %s advertised services",
-				m->SystemWakeOnLANEnabled         ? "is" : "not",
-				mDNSCoreHaveAdvertisedServices(m) ? "have" : "no");
+				m->SystemWakeOnLANEnabled                  ? "is" : "not",
+				mDNSCoreHaveAdvertisedMulticastServices(m) ? "have" : "no");
 		else
 			{
 			mDNSs32 dhcp = DHCPWakeTime();

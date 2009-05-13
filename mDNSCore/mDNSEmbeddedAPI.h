@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.567  2009/05/13 17:25:33  mkrochma
+<rdar://problem/6879926> Should not schedule maintenance wake when machine has no advertised services
+Sleep proxy client should only look for services being advertised via Multicast
+
 Revision 1.566  2009/05/12 23:09:24  cheshire
 <rdar://problem/6879926> Should not schedule maintenance wake when machine has no advertised services
 Declare mDNSCoreHaveAdvertisedServices routine so it can be called from daemon.c
@@ -3324,7 +3328,7 @@ extern void     mDNSCoreReceive(mDNS *const m, void *const msg, const mDNSu8 *co
 								const mDNSAddr *const srcaddr, const mDNSIPPort srcport,
 								const mDNSAddr *const dstaddr, const mDNSIPPort dstport, const mDNSInterfaceID InterfaceID);
 extern void 	mDNSCoreRestartQueries(mDNS *const m);
-extern mDNSBool mDNSCoreHaveAdvertisedServices(mDNS *const m);
+extern mDNSBool mDNSCoreHaveAdvertisedMulticastServices(mDNS *const m);
 extern void     mDNSCoreMachineSleep(mDNS *const m, mDNSBool wake);
 extern mDNSBool mDNSCoreReadyForSleep(mDNS *m);
 extern mDNSs32  mDNSCoreIntervalToNextWake(mDNS *const m, mDNSs32 now);
