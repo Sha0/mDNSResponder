@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.568  2009/05/19 22:37:04  cheshire
+<rdar://problem/6903507> Sleep Proxy: Retransmission logic not working reliably on quiet networks
+Added NextScheduledSPRetry field
+
 Revision 1.567  2009/05/13 17:25:33  mkrochma
 <rdar://problem/6879926> Should not schedule maintenance wake when machine has no advertised services
 Sleep proxy client should only look for services being advertised via Multicast
@@ -2518,6 +2522,7 @@ struct mDNS_struct
 	mDNSs32  DelaySleep;				// To inhibit re-sleeping too quickly right after wake
 	mDNSs32  SleepLimit;				// Time window to allow deregistrations, etc.,
 										// during which underying platform layer should inhibit system sleep
+	mDNSs32  NextScheduledSPRetry;		// Time next sleep proxy registration action is required. Only valid if SleepLimit is nonzero.
 
 	// These fields only required for mDNS Searcher...
 	DNSQuestion *Questions;				// List of all registered questions, active and inactive
