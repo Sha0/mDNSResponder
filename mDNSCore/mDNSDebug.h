@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.50  2009/05/19 23:34:06  cheshire
+Updated comment to show correct metric of 80 for a low-priority sleep proxy
+
 Revision 1.49  2009/04/24 23:32:28  cheshire
 To facilitate testing, put back code to be a sleep proxy when set to never sleep, compiled out by compile-time switch
 
@@ -192,9 +195,9 @@ typedef enum
 
 // Normally Macs don't act as Sleep Proxies.
 // For testing, define this symbol, and a Mac will act as a Sleep Proxy if it is set to never sleep
-// The normal metric for a Mac set to never sleep is 70, for a low-priority sleep proxy
+// The normal metric for a Mac set to never sleep is 80, for a low-priority sleep proxy
 // To create a high-priority sleep proxy set the value to a lower metric, like 10
-//#define TEST_SLEEP_PROXY_WHEN_SET_TO_NEVER_SLEEP 70
+//#define TEST_SLEEP_PROXY_WHEN_SET_TO_NEVER_SLEEP 80
 
 #define USE_SEPARATE_UDNS_SERVICE_LIST 1
 
