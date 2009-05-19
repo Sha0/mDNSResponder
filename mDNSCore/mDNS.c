@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.962  2009/05/19 23:40:37  cheshire
+<rdar://problem/6903507> Sleep Proxy: Retransmission logic not working reliably on quiet networks
+Added m->NextScheduledSPRetry timer for scheduling Sleep Proxy registration retries
+
 Revision 1.961  2009/05/19 23:00:43  cheshire
 Improved comments and debugging messages
 
@@ -4701,6 +4705,8 @@ mDNSlocal void SendSPSRegistration(mDNS *const m, NetworkInterfaceInfo *intf, co
 	if (!intf->SPSAddr[sps].type)
 		{
 		intf->NextSPSAttemptTime = m->timenow + mDNSPlatformOneSecond;
+		if (m->NextScheduledSPRetry - intf->NextSPSAttemptTime > 0)
+			m->NextScheduledSPRetry = intf->NextSPSAttemptTime;
 		LogSPS("SendSPSRegistration: %s SPS %d (%d) %##s not yet resolved", intf->ifname, intf->NextSPSAttempt, sps, intf->NetWakeResolve[sps].qname.c);
 		goto exit;
 		}
@@ -4739,6 +4745,8 @@ mDNSlocal void SendSPSRegistration(mDNS *const m, NetworkInterfaceInfo *intf, co
 					rr->ThisAPInterval = mDNSPlatformOneSecond;
 					rr->LastAPTime     = m->timenow;
 					rr->updateid       = m->omsg.h.id;
+					if (m->NextScheduledResponse - (rr->LastAPTime + rr->ThisAPInterval) >= 0)
+						m->NextScheduledResponse = (rr->LastAPTime + rr->ThisAPInterval);
 					p = newptr;
 					}
 				}
@@ -4869,6 +4877,8 @@ mDNSlocal void BeginSleepProcessing(mDNS *const m)
 	{
 	const CacheRecord *sps[3] = { mDNSNULL };
 
+	m->NextScheduledSPRetry = m->timenow;
+
 	if      (!m->SystemWakeOnLANEnabled)                  LogSPS("BeginSleepProcessing: m->SystemWakeOnLANEnabled is false");
 	else if (!mDNSCoreHaveAdvertisedMulticastServices(m)) LogSPS("BeginSleepProcessing: No advertised services");
 	else	// If we have at least one advertised service
@@ -4886,6 +4896,7 @@ mDNSlocal void BeginSleepProcessing(mDNS *const m)
 					int i;
 					intf->NextSPSAttempt = 0;
 					intf->NextSPSAttemptTime = m->timenow + mDNSPlatformOneSecond;
+					// Don't need to set m->NextScheduledSPRetry here because we already set "m->NextScheduledSPRetry = m->timenow" above
 					for (i=0; i<3; i++)
 						{
 #if ForceAlerts
@@ -5047,26 +5058,34 @@ mDNSexport mDNSBool mDNSCoreReadyForSleep(mDNS *m)
 	ServiceRecordSet *srs;
 	NetworkInterfaceInfo *intf;
 
-	(void)m;
+	mDNS_Lock(m);
 
-	if (m->DelaySleep) return(mDNSfalse);
+	if (m->NextScheduledSPRetry - m->timenow > 0) goto notready;
+
+	m->NextScheduledSPRetry = m->timenow + 0x40000000UL;
+
+	if (m->DelaySleep) goto notready;
 
 	// See if we might need to retransmit any lost Sleep Proxy Registrations
-	mDNS_Lock(m);
 	for (intf = GetFirstActiveInterface(m->HostInterfaces); intf; intf = GetFirstActiveInterface(intf->next))
-		if (intf->NextSPSAttempt >= 0 && m->timenow - intf->NextSPSAttemptTime >= 0)
+		if (intf->NextSPSAttempt >= 0)
 			{
-			LogSPS("ReadyForSleep retrying SPS %s %d", intf->ifname, intf->NextSPSAttempt);
-			SendSPSRegistration(m, intf, zeroID);
+			if (m->timenow - intf->NextSPSAttemptTime >= 0)
+				{
+				LogSPS("ReadyForSleep retrying SPS %s %d", intf->ifname, intf->NextSPSAttempt);
+				SendSPSRegistration(m, intf, zeroID);
+				}
+			else
+				if (m->NextScheduledSPRetry - intf->NextSPSAttemptTime > 0)
+					m->NextScheduledSPRetry = intf->NextSPSAttemptTime;
 			}
-	mDNS_Unlock(m);
 
 	// Scan list of private LLQs, and make sure they've all completed their handshake with the server
 	for (q = m->Questions; q; q = q->next)
 		if (!mDNSOpaque16IsZero(q->TargetQID) && q->LongLived && q->ReqLease == 0 && q->tcp)
 			{
 			LogSPS("ReadyForSleep waiting for LLQ %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
-			return(mDNSfalse);
+			goto notready;
 			}
 
 	// Scan list of interfaces
@@ -5074,7 +5093,7 @@ mDNSexport mDNSBool mDNSCoreReadyForSleep(mDNS *m)
 		if (intf->NetWakeResolve[0].ThisQInterval >= 0)
 			{
 			LogSPS("ReadyForSleep waiting for SPS Resolve %s %##s (%s)", intf->ifname, intf->NetWakeResolve[0].qname.c, DNSTypeName(intf->NetWakeResolve[0].qtype));
-			return(mDNSfalse);
+			goto notready;
 			}
 
 	// Scan list of registered records
@@ -5082,23 +5101,28 @@ mDNSexport mDNSBool mDNSCoreReadyForSleep(mDNS *m)
 		{
 		if (AuthRecord_uDNS(rr))
 			{
-			if (rr->state == regState_Refresh && rr->tcp) return(mDNSfalse);
+			if (rr->state == regState_Refresh && rr->tcp) goto notready;
 			}
 		else
 			{
 			if (!mDNSOpaque16IsZero(rr->updateid))
 				{
 				LogSPS("ReadyForSleep waiting for SPS Update ID %d %s", mDNSVal16(rr->updateid), ARDisplayString(m,rr));
-				return(mDNSfalse);
+				goto notready;
 				}
 			}
 		}
 
 	// Scan list of registered services
 	for (srs = m->ServiceRegistrations; srs; srs = srs->uDNS_next)
-		if (srs->state == regState_NoTarget && srs->tcp) return(mDNSfalse);
+		if (srs->state == regState_NoTarget && srs->tcp) goto notready;
 
-	return(mDNStrue);
+	mDNS_Unlock(m);
+	return mDNStrue;
+
+notready:
+	mDNS_Unlock(m);
+	return mDNSfalse;
 	}
 
 mDNSexport mDNSs32 mDNSCoreIntervalToNextWake(mDNS *const m, mDNSs32 now)
@@ -6838,6 +6862,8 @@ mDNSlocal void mDNSCoreReceiveUpdateR(mDNS *const m, const DNSMessage *const msg
 					rr->expire   = NonZeroTime(m->timenow + updatelease * mDNSPlatformOneSecond);
 					LogSPS("Sleep Proxy registered record %5d %s", updatelease, ARDisplayString(m,rr));
 					}
+
+		m->NextScheduledSPRetry = m->timenow;	// Signal code to check if we're now ready to go to sleep
 		}
 	}
 

@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.251  2009/05/19 23:40:37  cheshire
+<rdar://problem/6903507> Sleep Proxy: Retransmission logic not working reliably on quiet networks
+Added m->NextScheduledSPRetry timer for scheduling Sleep Proxy registration retries
+
 Revision 1.250  2009/05/01 21:28:33  cheshire
 <rdar://problem/6721680> AppleConnectAgent's reachability checks delay sleep by 30 seconds
 No longer suspend network operations after we've acknowledged that the machine is going to sleep,
@@ -3037,7 +3041,8 @@ mDNSlocal mDNSs32 GetNextScheduledEvent(const mDNS *const m)
 #endif
 	if (e - m->NextCacheCheck        > 0) e = m->NextCacheCheck;
 	if (e - m->NextScheduledSPS      > 0) e = m->NextScheduledSPS;
-	if (m->DelaySleep && e - m->DelaySleep > 0) e = m->DelaySleep;
+	if (m->SleepLimit && e - m->NextScheduledSPRetry > 0) e = m->NextScheduledSPRetry;
+	if (m->DelaySleep && e - m->DelaySleep           > 0) e = m->DelaySleep;
 
 	if (m->SuppressSending)
 		{
@@ -3088,6 +3093,8 @@ mDNSexport void ShowTaskSchedulingError(mDNS *const m)
 		LogMsg("Task Scheduling Error: m->NextScheduledNATOp %d",    m->timenow - m->NextScheduledNATOp);
 	if (m->timenow - m->NextScheduledSPS      >= 0)
 		LogMsg("Task Scheduling Error: m->NextScheduledSPS %d",      m->timenow - m->NextScheduledSPS);
+	if (m->SleepLimit && m->timenow - m->NextScheduledSPRetry >= 0)
+		LogMsg("Task Scheduling Error: m->NextScheduledSPRetry %d",  m->timenow - m->NextScheduledSPRetry);
 	if (m->DelaySleep && m->timenow - m->DelaySleep >= 0)
 		LogMsg("Task Scheduling Error: m->DelaySleep %d",            m->timenow - m->DelaySleep);
 #ifndef UNICAST_DISABLED
