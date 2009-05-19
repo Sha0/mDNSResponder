@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.961  2009/05/19 23:00:43  cheshire
+Improved comments and debugging messages
+
 Revision 1.960  2009/05/13 17:25:33  mkrochma
 <rdar://problem/6879926> Should not schedule maintenance wake when machine has no advertised services
 Sleep proxy client should only look for services being advertised via Multicast
@@ -4728,7 +4731,7 @@ mDNSlocal void SendSPSRegistration(mDNS *const m, NetworkInterfaceInfo *intf, co
 				newptr = PutResourceRecordTTLWithLimit(&m->omsg, p, &m->omsg.h.mDNS_numUpdates, &rr->resrec, rr->resrec.rroriginalttl, limit);
 				rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;		// Make sure to clear 'unique' bit back to normal state
 				if (!newptr)
-					LogSPS("SendSPSRegistration put %s FAILED %s", intf->ifname, ARDisplayString(m, rr));
+					LogSPS("SendSPSRegistration put %s FAILED %d/%d %s", intf->ifname, p - m->omsg.data, limit - m->omsg.data, ARDisplayString(m, rr));
 				else
 					{
 					LogSPS("SendSPSRegistration put %s %s", intf->ifname, ARDisplayString(m, rr));
@@ -4759,9 +4762,9 @@ mDNSlocal void SendSPSRegistration(mDNS *const m, NetworkInterfaceInfo *intf, co
 			else
 				{
 				mStatus err;
-				LogSPS("SendSPSRegistration: Sending Update %s %d (%d) id %5d with %d records to %#a:%d", intf->ifname, intf->NextSPSAttempt, sps,
-					mDNSVal16(m->omsg.h.id), m->omsg.h.mDNS_numUpdates, &intf->SPSAddr[sps], mDNSVal16(intf->SPSPort[sps]));
-				// if (intf->NextSPSAttempt < 5) m->omsg.h.flags = zeroID; For simulating packet loss
+				LogSPS("SendSPSRegistration: Sending Update %s %d (%d) id %5d with %d records %d bytes to %#a:%d", intf->ifname, intf->NextSPSAttempt, sps,
+					mDNSVal16(m->omsg.h.id), m->omsg.h.mDNS_numUpdates, p - m->omsg.data, &intf->SPSAddr[sps], mDNSVal16(intf->SPSPort[sps]));
+				// if (intf->NextSPSAttempt < 5) m->omsg.h.flags = zeroID;	// For simulating packet loss
 				err = mDNSSendDNSMessage(m, &m->omsg, p, intf->InterfaceID, mDNSNULL, &intf->SPSAddr[sps], intf->SPSPort[sps], mDNSNULL, mDNSNULL);
 				if (err) LogSPS("SendSPSRegistration: mDNSSendDNSMessage err %d", err);
 				if (err && intf->SPSAddr[sps].type == mDNSAddrType_IPv6 && intf->NetWakeResolve[sps].ThisQInterval == -1)
@@ -4781,6 +4784,7 @@ exit:
 	if (mDNSOpaque16IsZero(id) && intf->NextSPSAttempt < 8) intf->NextSPSAttempt++;
 	}
 
+// RetrySPSRegistrations is called from SendResponses, with the lock held
 mDNSlocal void RetrySPSRegistrations(mDNS *const m)
 	{
 	AuthRecord *rr;
@@ -4860,6 +4864,7 @@ mDNSexport mDNSBool mDNSCoreHaveAdvertisedMulticastServices(mDNS *const m)
 	return mDNSfalse;
 	}
 
+// BeginSleepProcessing is called, with the lock held, from either mDNS_Execute or mDNSCoreMachineSleep
 mDNSlocal void BeginSleepProcessing(mDNS *const m)
 	{
 	const CacheRecord *sps[3] = { mDNSNULL };
