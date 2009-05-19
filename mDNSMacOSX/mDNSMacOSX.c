@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.682  2009/05/19 23:30:31  cheshire
+Suppressed some unnecessary debugging messages; added AppleTV to list of recognized hardware
+
 Revision 1.681  2009/05/12 23:23:15  cheshire
 Removed unnecessary "mDNSPlatformTCPConnect - connect failed ... Error 50 (Network is down)" debugging message
 
@@ -1554,7 +1557,8 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 			else
 				{
 				err = setsockopt(s, IPPROTO_IP, IP_MULTICAST_IF, &info->ifa_v4addr, sizeof(info->ifa_v4addr));
-				if (err < 0) LogMsg("setsockopt - IP_MULTICAST_IF error %.4a %d errno %d (%s)", &info->ifa_v4addr, err, errno, strerror(errno));
+				if (err < 0 && !m->p->NetworkChanged)
+					LogMsg("setsockopt - IP_MULTICAST_IF error %.4a %d errno %d (%s)", &info->ifa_v4addr, err, errno, strerror(errno));
 				}
 			}
 		}
@@ -1610,7 +1614,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 		if (MessageCount < 1000)
 			{
 			MessageCount++;
-			if (errno == EHOSTUNREACH || errno == EADDRNOTAVAIL)
+			if (errno == EHOSTUNREACH || errno == EADDRNOTAVAIL || errno == ENETDOWN)
 				LogInfo("mDNSPlatformSendUDP sendto(%d) failed to send packet on InterfaceID %p %5s/%d to %#a:%d skt %d error %d errno %d (%s) %lu",
 					s, InterfaceID, ifa_name, dst->type, dst, mDNSVal16(dstPort), s, err, errno, strerror(errno), (mDNSu32)(m->timenow));
 			else
@@ -5233,6 +5237,11 @@ mDNSlocal void SetSPS(mDNS *const m)
 
 	// If we decide to let laptops act as Sleep Proxy, we should do it only when running on AC power, not on battery
 
+	// For devices that are unable to sleep at all to save power (e.g. the current Apple TV hardware)
+	// it makes sense for them to offer low-priority Sleep Proxy service on the network.
+	// We rate such a device as metric 70 ("Incidentally Available Hardware")
+	if (SPMetricMarginalPower == 10 && (!sps || sps > 70)) sps = 70;
+
 	mDNSCoreBeSleepProxyServer(m, sps, SPMetricPortability, SPMetricMarginalPower, SPMetricTotalPower);
 	}
 
@@ -5986,12 +5995,14 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 #if APPLE_OSX_mDNSResponder
 	// Note: We use SPMetricPortability > 35 to indicate a laptop of some kind
 	// SPMetricPortability <= 35 means nominally a non-portable machine (i.e. Mac mini or better)
+	// An Apple TV does not actually weigh 3kg, but we assign it a 'nominal' mass of 3kg to indicate that it's treated as being relatively less portable than a laptop
 	if      (!strncasecmp(HINFO_HWstring, "Xserve",   6)) { SPMetricPortability = 25 /* 30kg */; SPMetricMarginalPower = 84 /* 250W */; SPMetricTotalPower = 85 /* 300W */; }
 	else if (!strncasecmp(HINFO_HWstring, "RackMac",  7)) { SPMetricPortability = 25 /* 30kg */; SPMetricMarginalPower = 84 /* 250W */; SPMetricTotalPower = 85 /* 300W */; }
 	else if (!strncasecmp(HINFO_HWstring, "MacPro",   6)) { SPMetricPortability = 27 /* 20kg */; SPMetricMarginalPower = 84 /* 250W */; SPMetricTotalPower = 85 /* 300W */; }
 	else if (!strncasecmp(HINFO_HWstring, "PowerMac", 8)) { SPMetricPortability = 27 /* 20kg */; SPMetricMarginalPower = 82 /* 160W */; SPMetricTotalPower = 83 /* 200W */; }
 	else if (!strncasecmp(HINFO_HWstring, "iMac",     4)) { SPMetricPortability = 30 /* 10kg */; SPMetricMarginalPower = 77 /*  50W */; SPMetricTotalPower = 78 /*  60W */; }
 	else if (!strncasecmp(HINFO_HWstring, "Macmini",  7)) { SPMetricPortability = 33 /*  5kg */; SPMetricMarginalPower = 73 /*  20W */; SPMetricTotalPower = 74 /*  25W */; }
+	else if (!strncasecmp(HINFO_HWstring, "AppleTV",  7)) { SPMetricPortability = 35 /*  3kg */; SPMetricMarginalPower = 10 /*   0W */; SPMetricTotalPower = 73 /*  20W */; }
 	else if (!strncasecmp(HINFO_HWstring, "MacBook",  7)) { SPMetricPortability = 37 /*  2kg */; SPMetricMarginalPower = 71 /*  13W */; SPMetricTotalPower = 72 /*  15W */; }
 	else if (!strncasecmp(HINFO_HWstring, "PowerBook",9)) { SPMetricPortability = 37 /*  2kg */; SPMetricMarginalPower = 71 /*  13W */; SPMetricTotalPower = 72 /*  15W */; }
 	LogSPS("HW_MODEL: %.*s (%s) Portability %d Marginal Power %d Total Power %d",
