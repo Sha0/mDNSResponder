@@ -88,6 +88,9 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT ws2_32.lib ..\mDNSWindows\DLL\Rele
 	#define strcasecmp _stricmp
 	#define snprintf   _snprintf
 	static const char kFilePathSep = '\\';
+	#ifndef HeapEnableTerminationOnCorruption
+	#     define HeapEnableTerminationOnCorruption (HEAP_INFORMATION_CLASS)1
+	#endif
 	#if !defined(IFNAMSIZ)
 	 #define IFNAMSIZ 16
     #endif
@@ -946,6 +949,10 @@ int main(int argc, char **argv)
 	// the process calling exec() can pass bogus data in argv[0] if it chooses to.
 	const char *a0 = strrchr(argv[0], kFilePathSep) + 1;
 	if (a0 == (const char *)1) a0 = argv[0];
+
+#if defined(_WIN32)
+	HeapSetInformation(NULL, HeapEnableTerminationOnCorruption, NULL, 0);
+#endif
 
 #if TEST_NEW_CLIENTSTUB
 	printf("Using embedded copy of dnssd_clientstub instead of system library\n");
