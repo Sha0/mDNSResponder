@@ -88,7 +88,7 @@
 			<Tool
 				Name="VCLinkerTool"
 				AdditionalOptions="/MACHINE:I386 /IGNORE:4089 /NXCOMPAT /DYNAMICBASE /SAFESEH"
-				AdditionalDependencies="../../mDNSWindows/DLL/$(PlatformName)/$(ConfigurationName)/dnssd.lib uafxcwd.lib ws2_32.lib"
+				AdditionalDependencies="../../mDNSWindows/DLLGlue/$(PlatformName)/$(ConfigurationName)/dnssdStatic.lib uafxcwd.lib ws2_32.lib"
 				OutputFile="$(OutDir)/ExplorerPlugin.dll"
 				LinkIncremental="1"
 				SuppressStartupBanner="true"
@@ -197,7 +197,7 @@
 			<Tool
 				Name="VCLinkerTool"
 				AdditionalOptions="/IGNORE:4089 /NXCOMPAT /DYNAMICBASE"
-				AdditionalDependencies="../../mDNSWindows/DLL/$(PlatformName)/$(ConfigurationName)/dnssd.lib uafxcwd.lib ws2_32.lib"
+				AdditionalDependencies="../../mDNSWindows/DLLGlue/$(PlatformName)/$(ConfigurationName)/dnssdStatic.lib uafxcwd.lib ws2_32.lib"
 				OutputFile="$(OutDir)/ExplorerPlugin.dll"
 				LinkIncremental="1"
 				SuppressStartupBanner="true"
@@ -306,7 +306,7 @@
 			<Tool
 				Name="VCLinkerTool"
 				AdditionalOptions="/MACHINE:I386 /IGNORE:4089 /NXCOMPAT /DYNAMICBASE /SAFESEH"
-				AdditionalDependencies="../../mDNSWindows/DLL/$(PlatformName)/$(ConfigurationName)/dnssd.lib ws2_32.lib uafxcw.lib"
+				AdditionalDependencies="../../mDNSWindows/DLLGlue/$(PlatformName)/$(ConfigurationName)/dnssdStatic.lib ws2_32.lib uafxcw.lib"
 				OutputFile="$(OutDir)/$(ProjectName).dll"
 				LinkIncremental="1"
 				SuppressStartupBanner="true"
@@ -417,7 +417,7 @@
 			<Tool
 				Name="VCLinkerTool"
 				AdditionalOptions="/IGNORE:4089 /NXCOMPAT /DYNAMICBASE"
-				AdditionalDependencies="../../mDNSWindows/DLL/$(PlatformName)/$(ConfigurationName)/dnssd.lib ws2_32.lib uafxcw.lib"
+				AdditionalDependencies="../../mDNSWindows/DLLGlue/$(PlatformName)/$(ConfigurationName)/dnssdStatic.lib ws2_32.lib uafxcw.lib"
 				OutputFile="$(OutDir)/$(ProjectName).dll"
 				LinkIncremental="1"
 				SuppressStartupBanner="true"
