@@ -13,12 +13,12 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mdnsNSP", "mDNSWindows\mdns
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ExplorerPlugin", "Clients\ExplorerPlugin\ExplorerPlugin.vcproj", "{BB8AC1B5-6587-4163-BDC6-788B157705CA}"
 	ProjectSection(ProjectDependencies) = postProject
-		{AB581101-18F0-46F6-B56A-83A6B1EA657E} = {AB581101-18F0-46F6-B56A-83A6B1EA657E}
+		{3A2B6325-3053-4236-84BD-AA9BE2E323E5} = {3A2B6325-3053-4236-84BD-AA9BE2E323E5}
 	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "PrinterSetupWizard", "Clients\PrinterSetupWizard\PrinterSetupWizard.vcproj", "{B1D2CDA2-CC8F-45D5-A694-2EE45B0308CF}"
 	ProjectSection(ProjectDependencies) = postProject
-		{AB581101-18F0-46F6-B56A-83A6B1EA657E} = {AB581101-18F0-46F6-B56A-83A6B1EA657E}
+		{3A2B6325-3053-4236-84BD-AA9BE2E323E5} = {3A2B6325-3053-4236-84BD-AA9BE2E323E5}
 	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ControlPanel", "mDNSWindows\ControlPanel\ControlPanel.vcproj", "{F5D703B6-5612-4381-8BE2-2B7AEBAE58FC}"
@@ -60,7 +60,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "JavaSamples", "Clients\Java
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ControlPanel (Vista)", "mDNSWindows\ControlPanel\ControlPanelExe.vcproj", "{0DF09484-B4C2-4AB4-9FC0-7B091ADEAFEB}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DLL.NET", "mDNSWindows\DLL.NET\dnssd_NET.vcproj", "{2A2FFA97-AF60-494F-9384-BBAA283AA3F2}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DLLStub", "mDNSWindows\DLLStub\DLLStub.vcproj", "{3A2B6325-3053-4236-84BD-AA9BE2E323E5}"
 	ProjectSection(ProjectDependencies) = postProject
 		{AB581101-18F0-46F6-B56A-83A6B1EA657E} = {AB581101-18F0-46F6-B56A-83A6B1EA657E}
 	EndProjectSection
@@ -189,14 +189,14 @@ Global
 		{0DF09484-B4C2-4AB4-9FC0-7B091ADEAFEB}.Release|Win32.Build.0 = Release|Win32
 		{0DF09484-B4C2-4AB4-9FC0-7B091ADEAFEB}.Release|x64.ActiveCfg = Release|x64
 		{0DF09484-B4C2-4AB4-9FC0-7B091ADEAFEB}.Release|x64.Build.0 = Release|x64
-		{2A2FFA97-AF60-494F-9384-BBAA283AA3F2}.Debug|Win32.ActiveCfg = Debug|Win32
-		{2A2FFA97-AF60-494F-9384-BBAA283AA3F2}.Debug|Win32.Build.0 = Debug|Win32
-		{2A2FFA97-AF60-494F-9384-BBAA283AA3F2}.Debug|x64.ActiveCfg = Debug|x64
-		{2A2FFA97-AF60-494F-9384-BBAA283AA3F2}.Debug|x64.Build.0 = Debug|x64
-		{2A2FFA97-AF60-494F-9384-BBAA283AA3F2}.Release|Win32.ActiveCfg = Release|Win32
-		{2A2FFA97-AF60-494F-9384-BBAA283AA3F2}.Release|Win32.Build.0 = Release|Win32
-		{2A2FFA97-AF60-494F-9384-BBAA283AA3F2}.Release|x64.ActiveCfg = Release|x64
-		{2A2FFA97-AF60-494F-9384-BBAA283AA3F2}.Release|x64.Build.0 = Release|x64
+		{3A2B6325-3053-4236-84BD-AA9BE2E323E5}.Debug|Win32.ActiveCfg = Debug|Win32
+		{3A2B6325-3053-4236-84BD-AA9BE2E323E5}.Debug|Win32.Build.0 = Debug|Win32
+		{3A2B6325-3053-4236-84BD-AA9BE2E323E5}.Debug|x64.ActiveCfg = Debug|x64
+		{3A2B6325-3053-4236-84BD-AA9BE2E323E5}.Debug|x64.Build.0 = Debug|x64
+		{3A2B6325-3053-4236-84BD-AA9BE2E323E5}.Release|Win32.ActiveCfg = Release|Win32
+		{3A2B6325-3053-4236-84BD-AA9BE2E323E5}.Release|Win32.Build.0 = Release|Win32
+		{3A2B6325-3053-4236-84BD-AA9BE2E323E5}.Release|x64.ActiveCfg = Release|x64
+		{3A2B6325-3053-4236-84BD-AA9BE2E323E5}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
