@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.132  2009/05/26 21:31:07  herscher
+Fix compile errors on Windows
+
 Revision 1.131  2009/05/26 04:48:19  herscher
 <rdar://problem/6844819> ExplorerPlugin does not work in B4W 2.0
 
@@ -427,7 +430,7 @@ static int write_all(dnssd_sock_t sd, char *buf, int len)
 			syslog(LOG_WARNING, "dnssd_clientstub write_all(%d) failed %ld/%d %d %s", sd, num_written, len,
 				(num_written < 0) ? dnssd_errno                 : 0,
 				(num_written < 0) ? dnssd_strerror(dnssd_errno) : "");
-			if (num_written >= 0) dnssd_errno = 0; // Callers depend on this being set if we return non-zero.
+			if (num_written >= 0) dnssd_errno_assign( 0 ); // Callers depend on this being set if we return non-zero.
 			return -1;
 			}
 		buf += num_written;
@@ -452,7 +455,7 @@ static int read_all(dnssd_sock_t sd, char *buf, int len)
 			syslog(LOG_WARNING, "dnssd_clientstub read_all(%d) failed %ld/%d %d %s", sd, num_read, len,
 				(num_read < 0) ? dnssd_errno                 : 0,
 				(num_read < 0) ? dnssd_strerror(dnssd_errno) : "");
-			if (num_read >= 0) dnssd_errno = 0; // Callers depend on this being set if we return non-zero.
+			if (num_read >= 0) dnssd_errno_assign( 0 ); // Callers depend on this being set if we return non-zero.
 			return -1;
 			}
 		buf += num_read;

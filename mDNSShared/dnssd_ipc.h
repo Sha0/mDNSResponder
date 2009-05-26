@@ -28,6 +28,9 @@
     Change History (most recent first):
 
 $Log: dnssd_ipc.h,v $
+Revision 1.45  2009/05/26 21:31:07  herscher
+Fix compile errors on Windows
+
 Revision 1.44  2009/02/12 20:28:31  cheshire
 Added some missing "const" declarations
 
@@ -169,6 +172,7 @@ Update to APSL 2.0
 #	define dnssd_sock_t			SOCKET
 #	define dnssd_socklen_t		int
 #	define dnssd_close(sock)	closesocket(sock)
+#	define dnssd_errno_assign( X )	WSASetLastError( X )
 #	define dnssd_errno			WSAGetLastError()
 #	define dnssd_strerror(X)	win32_strerror(X)
 #	define ssize_t				int
@@ -192,6 +196,7 @@ Update to APSL 2.0
 #	define dnssd_socklen_t		unsigned int
 #	define dnssd_close(sock)	close(sock)
 #	define dnssd_errno			errno
+#	define dnssd_errno_assign( X ) errno = X
 #	define dnssd_strerror(X)	strerror(X)
 #endif
 

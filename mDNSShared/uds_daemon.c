@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.460  2009/05/26 21:31:07  herscher
+Fix compile errors on Windows
+
 Revision 1.459  2009/04/30 20:07:51  mcguire
 <rdar://problem/6822674> Support multiple UDSs from launchd
 
@@ -3902,6 +3905,7 @@ mDNSlocal mDNSBool uds_socket_setup(dnssd_sock_t skt)
 #if defined(_WIN32)
 	// SEH: do we even need to do this on windows?
 	// This socket will be given to WSAEventSelect which will automatically set it to non-blocking
+	u_long opt = 1;
 	if (ioctlsocket(skt, FIONBIO, &opt) != 0)
 #else
 	if (fcntl(skt, F_SETFL, fcntl(skt, F_GETFL, 0) | O_NONBLOCK) != 0)
