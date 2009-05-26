@@ -77,7 +77,7 @@
 			<Tool
 				Name="VCLinkerTool"
 				AdditionalOptions="/NXCOMPAT /DYNAMICBASE /SAFESEH"
-				AdditionalDependencies="../../mDNSWindows/DLL/$(PlatformName)/$(ConfigurationName)/dnssd.lib ws2_32.lib iphlpapi.lib winspool.lib"
+				AdditionalDependencies="../../mDNSWindows/DLLStub/$(PlatformName)/$(ConfigurationName)/dnssdStatic.lib ws2_32.lib iphlpapi.lib winspool.lib"
 				OutputFile="$(OutDir)/PrinterWizard.exe"
 				LinkIncremental="2"
 				GenerateDebugInformation="true"
@@ -173,7 +173,7 @@
 			<Tool
 				Name="VCLinkerTool"
 				AdditionalOptions="/NXCOMPAT /DYNAMICBASE"
-				AdditionalDependencies="../../mDNSWindows/DLL/$(PlatformName)/$(ConfigurationName)/dnssd.lib ws2_32.lib iphlpapi.lib winspool.lib"
+				AdditionalDependencies="../../mDNSWindows/DLLStub/$(PlatformName)/$(ConfigurationName)/dnssdStatic.lib ws2_32.lib iphlpapi.lib winspool.lib"
 				OutputFile="$(OutDir)/PrinterWizard.exe"
 				LinkIncremental="2"
 				GenerateDebugInformation="true"
@@ -268,7 +268,7 @@
 			<Tool
 				Name="VCLinkerTool"
 				AdditionalOptions="/NXCOMPAT /DYNAMICBASE /SAFESEH"
-				AdditionalDependencies="../../mDNSWindows/DLL/$(PlatformName)/$(ConfigurationName)/dnssd.lib ws2_32.lib iphlpapi.lib winspool.lib"
+				AdditionalDependencies="../../mDNSWindows/DLLStub/$(PlatformName)/$(ConfigurationName)/dnssdStatic.lib ws2_32.lib iphlpapi.lib winspool.lib"
 				OutputFile="$(OutDir)/PrinterWizard.exe"
 				LinkIncremental="1"
 				GenerateDebugInformation="true"
@@ -367,7 +367,7 @@
 			<Tool
 				Name="VCLinkerTool"
 				AdditionalOptions="/NXCOMPAT /DYNAMICBASE"
-				AdditionalDependencies="../../mDNSWindows/DLL/$(PlatformName)/$(ConfigurationName)/dnssd.lib ws2_32.lib iphlpapi.lib winspool.lib"
+				AdditionalDependencies="../../mDNSWindows/DLLStub/$(PlatformName)/$(ConfigurationName)/dnssdStatic.lib ws2_32.lib iphlpapi.lib winspool.lib"
 				OutputFile="$(OutDir)/PrinterWizard.exe"
 				LinkIncremental="1"
 				GenerateDebugInformation="true"
