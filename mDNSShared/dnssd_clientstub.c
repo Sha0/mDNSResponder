@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.131  2009/05/26 04:48:19  herscher
+<rdar://problem/6844819> ExplorerPlugin does not work in B4W 2.0
+
 Revision 1.130  2009/05/02 01:29:48  mcguire
 <rdar://problem/6847601> spin calling DNSServiceProcessResult if errno was set to EWOULDBLOCK by an unrelated call
 
@@ -331,11 +334,14 @@ Minor textual tidying
 		va_list args;
 		int len;
 		char * buffer;
+		DWORD err;
 
+		err = WSAGetLastError();
 		va_start( args, message );
 		len = _vscprintf( message, args ) + 1;
 		buffer = malloc( len * sizeof(char) );
-		if ( buffer ) { vsprintf( buffer, message, args ); dlog( priority, buffer ); free( buffer ); }
+		if ( buffer ) { vsprintf( buffer, message, args ); OutputDebugString( buffer ); free( buffer ); }
+		WSASetLastError( err );
 		}
 #else
 
