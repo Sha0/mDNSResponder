@@ -28,6 +28,9 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.133  2009/05/27 22:19:12  cheshire
+Remove questionable uses of errno
+
 Revision 1.132  2009/05/26 21:31:07  herscher
 Fix compile errors on Windows
 
@@ -337,9 +340,7 @@ Minor textual tidying
 		va_list args;
 		int len;
 		char * buffer;
-		DWORD err;
-
-		err = WSAGetLastError();
+		DWORD err = WSAGetLastError();
 		va_start( args, message );
 		len = _vscprintf( message, args ) + 1;
 		buffer = malloc( len * sizeof(char) );
@@ -430,7 +431,6 @@ static int write_all(dnssd_sock_t sd, char *buf, int len)
 			syslog(LOG_WARNING, "dnssd_clientstub write_all(%d) failed %ld/%d %d %s", sd, num_written, len,
 				(num_written < 0) ? dnssd_errno                 : 0,
 				(num_written < 0) ? dnssd_strerror(dnssd_errno) : "");
-			if (num_written >= 0) dnssd_errno_assign( 0 ); // Callers depend on this being set if we return non-zero.
 			return -1;
 			}
 		buf += num_written;
@@ -439,7 +439,9 @@ static int write_all(dnssd_sock_t sd, char *buf, int len)
 	return 0;
 	}
 
-// Read len bytes. Return 0 on success, -1 on error
+enum { read_all_success = 0, read_all_fail = -1, read_all_wouldblock = -2 };
+
+// Read len bytes. Return 0 on success, read_all_fail on error, or read_all_wouldblock for 
 static int read_all(dnssd_sock_t sd, char *buf, int len)
 	{
 	// Don't use "MSG_WAITALL"; it returns "Invalid argument" on some Linux versions; use an explicit while() loop instead.
@@ -455,13 +457,12 @@ static int read_all(dnssd_sock_t sd, char *buf, int len)
 			syslog(LOG_WARNING, "dnssd_clientstub read_all(%d) failed %ld/%d %d %s", sd, num_read, len,
 				(num_read < 0) ? dnssd_errno                 : 0,
 				(num_read < 0) ? dnssd_strerror(dnssd_errno) : "");
-			if (num_read >= 0) dnssd_errno_assign( 0 ); // Callers depend on this being set if we return non-zero.
-			return -1;
+			return (num_read < 0 && dnssd_errno == dnssd_EWOULDBLOCK) ? read_all_wouldblock : read_all_fail;
 			}
 		buf += num_read;
 		len -= num_read;
 		}
-	return 0;
+	return read_all_success;
 	}
 
 // Returns 1 if more bytes remain to be read on socket descriptor sd, 0 otherwise
@@ -778,14 +779,14 @@ static DNSServiceErrorType deliver_request(ipc_msg_hdr *hdr, DNSServiceOp *sdr)
 		{
 		syslog(LOG_WARNING, "dnssd_clientstub deliver_request writing %d", i);
 		if (write_all(sdr->sockfd, ((char *)hdr)+i, 1) < 0)
-			{ syslog(LOG_WARNING, "write_all (byte %u) failed %d (%s)", i, dnssd_errno, dnssd_strerror(dnssd_errno)); goto cleanup; }
+			{ syslog(LOG_WARNING, "write_all (byte %u) failed", i); goto cleanup; }
 		usleep(10000);
 		}
 #else
 	if (write_all(sdr->sockfd, (char *)hdr, datalen + sizeof(ipc_msg_hdr)) < 0)
 		{
-		syslog(LOG_WARNING, "dnssd_clientstub deliver_request ERROR: write_all(%d, %lu bytes) failed %d (%s)",
-			sdr->sockfd, (unsigned long)(datalen + sizeof(ipc_msg_hdr)), dnssd_errno, dnssd_strerror(dnssd_errno));
+		syslog(LOG_WARNING, "dnssd_clientstub deliver_request ERROR: write_all(%d, %lu bytes) failed",
+			sdr->sockfd, (unsigned long)(datalen + sizeof(ipc_msg_hdr)));
 		goto cleanup;
 		}
 #endif
@@ -963,22 +964,21 @@ DNSServiceErrorType DNSSD_API DNSServiceProcessResult(DNSServiceRef sdRef)
 		// return NoError on EWOULDBLOCK. This will handle the case
 		// where a non-blocking socket is told there is data, but it was a false positive.
 		// On error, read_all will write a message to syslog for us, so don't need to duplicate that here
-		if (read_all(sdRef->sockfd, (void *)&cbh.ipc_hdr, sizeof(cbh.ipc_hdr)) < 0)
+		// Note: If we want to properly support using non-blocking sockets in the future 
+		int result = read_all(sdRef->sockfd, (void *)&cbh.ipc_hdr, sizeof(cbh.ipc_hdr));
+		if (result == read_all_fail)
 			{
-			if (dnssd_errno != dnssd_EWOULDBLOCK)
+			sdRef->ProcessReply = NULL;
+			return kDNSServiceErr_ServiceNotRunning;
+			}
+		else if (result == read_all_wouldblock)
+			{
+			if (morebytes && sdRef->logcounter < 100)
 				{
-				sdRef->ProcessReply = NULL;
-				return kDNSServiceErr_ServiceNotRunning;
+				sdRef->logcounter++;
+				syslog(LOG_WARNING, "dnssd_clientstub DNSServiceProcessResult error: select indicated data was waiting but read_all returned EWOULDBLOCK");
 				}
-			else
-				{
-				if (morebytes && sdRef->logcounter < 100)
-					{
-					sdRef->logcounter++;
-					syslog(LOG_WARNING, "dnssd_clientstub DNSServiceProcessResult error: select indicated data was waiting but read_all returned EWOULDBLOCK");
-					}
-				return kDNSServiceErr_NoError;
-				}
+			return kDNSServiceErr_NoError;
 			}
 	
 		ConvertHeaderBytes(&cbh.ipc_hdr);
