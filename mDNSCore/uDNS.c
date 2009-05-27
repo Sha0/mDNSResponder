@@ -22,6 +22,10 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.616  2009/05/27 20:29:36  cheshire
+<rdar://problem/6926465> Sleep is delayed by 10 seconds if BTMM is on
+After receiving confirmation of LLQ deletion, need to schedule another evaluation of whether we're ready to sleep yet
+
 Revision 1.615  2009/05/05 01:32:50  jessic2
 <rdar://problem/6830541> regservice_callback: instance->request is NULL 0 -- Clean up spurious logs resulting from fixing this bug.
 
@@ -2127,6 +2131,9 @@ mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *co
 						else
 							{
 							//LogInfo("Received refresh confirmation ntries %d for %##s (%s)", q->ntries, q->qname.c, DNSTypeName(q->qtype));
+							// If we're waiting to go to sleep, then this LLQ deletion may have been the thing
+							// we were waiting for, so schedule another check to see if we can sleep now.
+							if (opt->u.llq.llqlease == 0 && m->SleepLimit) m->NextScheduledSPRetry = m->timenow;
 							GrantCacheExtensions(m, q, opt->u.llq.llqlease);
 							SetLLQTimer(m, q, &opt->u.llq);
 							q->ntries = 0;
