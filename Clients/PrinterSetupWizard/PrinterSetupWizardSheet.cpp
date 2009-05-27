@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.38  2009/05/27 04:49:02  herscher
+<rdar://problem/4417884> Consider setting DoubleSpool for LPR queues to improve compatibility
+
 Revision 1.37  2009/03/30 19:17:37  herscher
 <rdar://problem/5925472> Current Bonjour code does not compile on Windows
 <rdar://problem/6141389> Printer Wizard crashes on launch when Bonjour Service isn't running
@@ -446,6 +449,7 @@ CPrinterSetupWizardSheet::InstallPrinterPDLAndLPR(Printer * printer, Service * s
     	
 	portData.dwPortNumber	=	service->portNumber;
 	portData.dwVersion		=	1;
+	portData.dwDoubleSpool	=	1;
     	
 	portData.dwProtocol	= protocol;
 	portData.cbSize		= sizeof PORT_DATA_1;
