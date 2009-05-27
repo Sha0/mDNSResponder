@@ -17,6 +17,10 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.38  2009/05/27 04:59:57  herscher
+<rdar://problem/4517393> COMPATIBILITY WITH HP CLJ4700
+<rdar://problem/6142138> Compatibility with Samsung print driver files
+
 Revision 1.37  2007/06/08 06:30:26  herscher
 <rdar://problem/5257700> Fix uninitialized pointers when detecting generic PCL and PS drivers
 
@@ -150,6 +154,7 @@ First checked in
 #include <dns_sd.h>
 #include <tcpxcv.h>
 #include <winspool.h>
+#include <setupapi.h>
 
 // local variable is initialize but not referenced
 #pragma warning(disable:4189)
@@ -508,344 +513,159 @@ CThirdPage::AutoScroll( CListCtrl & list, int nIndex )
 OSStatus
 CThirdPage::LoadPrintDriverDefsFromFile(Manufacturers & manufacturers, const CString & filename, bool checkForDuplicateModels )
 {
-	PrinterParsingState		state		= Looking;
-	Manufacturers::iterator iter		= manufacturers.end();
-	CStdioFileEx			file;
-	CFileException			feError;
-	CString					s;
-	OSStatus				err;
-	BOOL					ok;
-
-	typedef std::map<CString, CString> StringMap;
-
-	StringMap				strings;
- 
-	ok = file.Open( filename,  CFile::modeRead|CFile::typeText, &feError);
-	err = translate_errno( ok, errno_compat(), kUnknownErr );
+	HINF			handle	= NULL;
+	const TCHAR *	section = TEXT( "Manufacturer" );
+	LONG			sectionCount;
+	TCHAR			line[ 1000 ];
+	CString			klass;
+	INFCONTEXT		manufacturerContext;
+	BOOL			ok;
+	OSStatus		err		= 0;
+	
+	// Make sure we can open the file
+	handle = SetupOpenInfFile( filename, NULL, INF_STYLE_WIN4, NULL );
+	translate_errno( handle != NULL, GetLastError(), kUnknownErr );
 	require_noerr( err, exit );
 
-	check ( state == Looking );
-	check ( iter == manufacturers.end() );
+	// Make sure it's a printer file
+	ok = SetupGetLineText( NULL, handle, TEXT( "Version" ), TEXT( "Class" ), line, sizeof( line ), NULL );
+	translate_errno( ok, GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+	klass = line;
+	require_action( klass == TEXT( "Printer" ), exit, err = kUnknownErr );
 
-	//
-	// first, parse the file looking for string sections
-	//
-	while (file.ReadString(s))
+	sectionCount = SetupGetLineCount( handle, section );
+	translate_errno( sectionCount != -1, GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+
+	memset( &manufacturerContext, 0, sizeof( manufacturerContext ) );
+			
+	for ( LONG i = 0; i < sectionCount; i++ )
 	{
-		//
-		// check for comment
-		//
-		if (s.Find(';') == 0)
+		Manufacturer	*	manufacturer;
+		CString				manufacturerName;
+		CString				temp;
+		CString				key;
+		CString				model;
+		INFCONTEXT			modelContext;
+		LONG				modelCount;
+
+		if ( i == 0)
 		{
-			continue;
-		}
-
-		//
-		// check for tag
-		//
-		else if (s.Find('[') == 0)
-		{
-			//
-			// handle any capitalization issues here
-			//
-			CString tag = s;
-
-			tag.MakeLower();
-
-			if (tag == L"[strings]")
-			{
-				state = ParsingStrings;
-			}
-			else
-			{
-				state = Looking;
-			}
+			ok = SetupFindFirstLine( handle, section, NULL, &manufacturerContext );
+			err = translate_errno( ok, GetLastError(), kUnknownErr );
+			require_noerr( err, exit );
 		}
 		else
 		{
-			switch (state)
-			{
-				case ParsingStrings:
-				{
-					int	curPos = 0;
-
-					if (s.GetLength() > 0)
-					{
-						CString key = s.Tokenize(L"=",curPos);
-						CString val = s.Tokenize(L"=",curPos);
-
-						//
-						// get rid of all delimiters
-						//
-						key.Trim();
-						val.Remove('"');
-	
-						//
-						// and store it
-						//
-						strings[key] = val;
-					}
-				}
-				break;
-			}
-		}
-	}
-
-	file.Close();
-
-	ok = file.Open( filename,  CFile::modeRead|CFile::typeText, &feError);
-	err = translate_errno( ok, errno_compat(), kUnknownErr );
-	require_noerr( err, exit );
-
-	state = Looking;
-
-	check ( iter == manufacturers.end() );
-
-	while (file.ReadString(s))
-	{
-		//
-		// check for comment
-		//
-		if (s.Find(';') == 0)
-		{
-			continue;
+			ok = SetupFindNextLine( &manufacturerContext, &manufacturerContext );
+			err = translate_errno( ok, GetLastError(), kUnknownErr );
+			require_noerr( err, exit );
 		}
 
-		//
-		// check for tag
-		//
-		else if (s.Find('[') == 0)
+		ok = SetupGetStringField( &manufacturerContext, 0, line, sizeof( line ), NULL );
+		err = translate_errno( ok, GetLastError(), kUnknownErr );
+		require_noerr( err, exit );
+		manufacturerName = line;
+
+		ok = SetupGetLineText( &manufacturerContext, handle, NULL, NULL, line, sizeof( line ), NULL );
+		err = translate_errno( ok, GetLastError(), kUnknownErr );
+		require_noerr( err, exit );
+		temp = line;
+		key = temp.SpanExcluding( TEXT( "," ) );
+
+		try
 		{
-			//
-			// handle any capitalization issues here
-			//
-			CString tag = s;
+			manufacturer = new Manufacturer;
+		}
+		catch (...)
+		{
+			manufacturer = NULL;
+		}
 
-			tag.MakeLower();
+		require_action( manufacturer, exit, err = kNoMemoryErr );
 
-			if (tag == L"[manufacturer]")
+		manufacturer->name		= NormalizeManufacturerName( manufacturerName );
+		manufacturer->tag		= key;
+		manufacturers[ key ]	= manufacturer;
+
+		memset( &modelContext, 0, sizeof( modelContext ) );
+		modelCount = SetupGetLineCount( handle, key );
+
+		for ( LONG j = 0; j < modelCount; j++ )
+		{
+			CString modelName;
+			Model * model;
+
+			if ( j == 0 )
 			{
-				state = ParsingManufacturers;
+				ok = SetupFindFirstLine( handle, key, NULL, &modelContext );
+				err = translate_errno( ok, GetLastError(), kUnknownErr );
+				require_noerr( err, exit );
 			}
 			else
 			{
-				CString name;
-				int		curPos;
-
-				//
-				// remove the leading and trailing delimiters
-				//
-				s.Remove('[');
-				s.Remove(']');
-
-				//
-				// <rdar://problem/4826126>
-				//
-				// Ignore decorations in model declarations
-				//
-				curPos	= 0;
-				name	= s.Tokenize( L".", curPos );
-
-				//
-				// check to see if this is a printer entry
-				//
-				iter = manufacturers.find( name );
-
-				if (iter != manufacturers.end())
-				{
-					state = ParsingModels;
-				}
-				else
-				{
-					state = Looking;
-				}
+				SetupFindNextLine( &modelContext, &modelContext );
+				err = translate_errno( ok, GetLastError(), kUnknownErr );
+				require_noerr( err, exit );
 			}
-		}
-		//
-		// only look at this if the line isn't empty, or
-		// if it isn't a comment
-		//
-		else if ((s.GetLength() > 0) && (s.Find(';') != 0))
-		{
-			switch (state)
+
+			ok = SetupGetStringField( &modelContext, 0, line, sizeof( line ), NULL );
+			err = translate_errno( ok, GetLastError(), kUnknownErr );
+			require_noerr( err, exit );
+
+			modelName = line;
+
+			if (checkForDuplicateModels == true)
 			{
-				//
-				// if we're parsing manufacturers, then we will parse
-				// an entry of the form key=val, where key is a delimited
-				// string specifying a manufacturer name, and val is
-				// a tag that is used later in the file.  the key is
-				// delimited by either '"' (quotes) or '%' (percent sign).
-				//
-				// the tag is used further down the file when models are
-				// declared.  this allows multiple manufacturers to exist
-				// in a single inf file.
-				//
-				case ParsingManufacturers:
+				if ( MatchModel( manufacturer, ConvertToModelName( modelName ) ) != NULL )
 				{
-					Manufacturer	*	manufacturer;
-					int					curPos = 0;
-
-					CString key = s.Tokenize(L"=",curPos);
-					CString val = s.Tokenize(L"=",curPos);
-
-					try
-					{
-						manufacturer = new Manufacturer;
-					}
-					catch (...)
-					{
-						manufacturer = NULL;
-					}
-
-					require_action( manufacturer, exit, err = kNoMemoryErr );
-
-					//
-					// if it's a variable, look it up
-					//
-					if (key.Find('%') == 0)
-					{
-						StringMap::iterator it;
-
-						key.Remove('%');
-
-						it = strings.find(key);
-
-						if (it != strings.end())
-						{
-							key = it->second;
-						}
-					}
-					else
-					{
-						key.Remove('"');
-					}
-
-					val.TrimLeft();
-					val.TrimRight();
-
-					//
-					// why is there no consistency in inf files?
-					//
-					if (val.GetLength() == 0)
-					{
-						val = key;
-					}
-
-					//
-					// fix the manufacturer name if necessary
-					//
-					curPos	=	0;
-					val		=	val.Tokenize(L",", curPos);
-
-					for ( ;; )
-					{
-						CString decoration;
-
-						decoration = val.Tokenize( L",", curPos );
-
-						if ( decoration.GetLength() > 0 )
-						{
-							manufacturer->decorations.push_back( decoration );
-						}
-						else
-						{
-							break;
-						}
-					}
-
-					manufacturer->name = NormalizeManufacturerName( key );
-					manufacturer->tag  = val;
-
-					manufacturers[val] = manufacturer;
+					continue;
 				}
-				break;
-
-				case ParsingModels:
-				{
-					check( iter != manufacturers.end() );
-
-					Model	*	model;
-					int			curPos = 0;
-
-					CString name		= s.Tokenize(L"=",curPos);
-					CString description = s.Tokenize(L"=",curPos);
-					
-					if (name.Find('%') == 0)
-					{
-						StringMap::iterator it;
-
-						name.Remove('%');
-
-						it = strings.find(name);
-
-						if (it != strings.end())
-						{
-							name = it->second;
-						}
-					}
-					else
-					{
-						name.Remove('"');
-					}
-
-					name.Trim();
-					description.Trim();
-					
-					//
-					// If true, see if we've seen this guy before
-					//
-					if (checkForDuplicateModels == true)
-					{
-						if ( MatchModel( iter->second, ConvertToModelName( name ) ) != NULL )
-						{
-							continue;
-						}
-					}
-
-					//
-					// Stock Vista printer inf files embed guids in the model
-					// declarations for Epson printers. Let's ignore those.
-					//
-					if ( name.Find( L"{", 0 ) != -1 )
-					{
-						continue;
-					}
-
-					try
-					{
-						model = new Model;
-					}
-					catch (...)
-					{
-						model = NULL;
-					}
-
-					require_action( model, exit, err = kNoMemoryErr );
-
-					model->infFileName		=	filename;
-					model->displayName		=	name;
-					model->name				=	name;
-					model->driverInstalled	=	false;
-
-					iter->second->models.push_back(model);
-				}
-				break;
-
-				default:
-				{
-					// pay no attention if we are in any other state
-				}
-				break;
 			}
+
+#if 0
+			//
+			// Stock Vista printer inf files embed guids in the model
+			// declarations for Epson printers. Let's ignore those.
+			//
+			if ( name.Find( L"{", 0 ) != -1 )
+			{
+				continue;
+			}
+#endif
+
+			try
+			{
+				model = new Model;
+			}
+			catch (...)
+			{
+				model = NULL;
+			}
+
+			require_action( model, exit, err = kNoMemoryErr );
+
+			model->infFileName		=	filename;
+			model->displayName		=	modelName;
+			model->name				=	modelName;
+			model->driverInstalled	=	false;
+
+			manufacturer->models.push_back(model);
 		}
 	}
 
 exit:
 
-	file.Close();
+	if ( handle )
+	{
+		SetupCloseInfFile( handle );
+		handle = NULL;
+	}
 
-	return (err);
+	return err;
 }
+
 
 // -------------------------------------------------------
 // LoadPrintDriverDefs
