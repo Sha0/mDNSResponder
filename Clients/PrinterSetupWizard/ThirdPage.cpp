@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.39  2009/05/27 06:25:49  herscher
+<rdar://problem/4176334> Need error dialog when selecting bad INF file
+
 Revision 1.38  2009/05/27 04:59:57  herscher
 <rdar://problem/4517393> COMPATIBILITY WITH HP CLJ4700
 <rdar://problem/6142138> Compatibility with Samsung print driver files
@@ -1635,6 +1638,16 @@ void CThirdPage::OnBnClickedHaveDisk()
 				MatchPrinter( manufacturers, printer, service, false );
 
 				break;
+			}
+			else
+			{
+				CString errorMessage;
+				CString errorCaption;
+
+				errorMessage.LoadString( IDS_BAD_INF_FILE );
+				errorCaption.LoadString( IDS_BAD_INF_FILE_CAPTION );
+
+				MessageBox( errorMessage, errorCaption, MB_OK );
 			}
 		}
 		else

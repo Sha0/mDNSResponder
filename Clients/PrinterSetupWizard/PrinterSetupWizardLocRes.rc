@@ -256,6 +256,8 @@ BEGIN
     IDS_INSTALL_ERROR_CAPTION "Error"
     IDS_INSTALL_ERROR_MESSAGE 
                             "You do not have sufficient access to your computer to connect to the selected printer."
+	IDS_BAD_INF_FILE		"The specified location does not contain information about your printer"
+	IDS_BAD_INF_FILE_CAPTION "Select Device"
     IDS_MANUFACTURER_HEADING "Manufacturer"
     IDS_MODEL_HEADING       "Model"
     IDS_NO_PRINTERS         "No Bonjour Printers are available"
