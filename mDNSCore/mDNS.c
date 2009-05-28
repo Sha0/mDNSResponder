@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.963  2009/05/28 00:39:19  cheshire
+<rdar://problem/6926465> Sleep is delayed by 10 seconds if BTMM is on
+After receiving confirmation of wide-area record deletion, need to schedule another evaluation of whether we're ready to sleep yet
+
 Revision 1.962  2009/05/19 23:40:37  cheshire
 <rdar://problem/6903507> Sleep Proxy: Retransmission logic not working reliably on quiet networks
 Added m->NextScheduledSPRetry timer for scheduling Sleep Proxy registration retries
@@ -5101,15 +5105,13 @@ mDNSexport mDNSBool mDNSCoreReadyForSleep(mDNS *m)
 		{
 		if (AuthRecord_uDNS(rr))
 			{
-			if (rr->state == regState_Refresh && rr->tcp) goto notready;
+			if (rr->state == regState_Refresh && rr->tcp)
+				{ LogSPS("ReadyForSleep waiting for Record Update ID %d %s", mDNSVal16(rr->updateid), ARDisplayString(m,rr)); goto notready; }
 			}
 		else
 			{
 			if (!mDNSOpaque16IsZero(rr->updateid))
-				{
-				LogSPS("ReadyForSleep waiting for SPS Update ID %d %s", mDNSVal16(rr->updateid), ARDisplayString(m,rr));
-				goto notready;
-				}
+				{ LogSPS("ReadyForSleep waiting for SPS Update ID %d %s", mDNSVal16(rr->updateid), ARDisplayString(m,rr)); goto notready; }
 			}
 		}
 
@@ -6863,8 +6865,10 @@ mDNSlocal void mDNSCoreReceiveUpdateR(mDNS *const m, const DNSMessage *const msg
 					LogSPS("Sleep Proxy registered record %5d %s", updatelease, ARDisplayString(m,rr));
 					}
 
-		m->NextScheduledSPRetry = m->timenow;	// Signal code to check if we're now ready to go to sleep
 		}
+	// If we were waiting to go to sleep, then this SPS registration or wide-area record deletion
+	// may have been the thing we were waiting for, so schedule another check to see if we can sleep now.
+	if (m->SleepLimit) m->NextScheduledSPRetry = m->timenow;
 	}
 
 mDNSexport void MakeNegativeCacheRecord(mDNS *const m, CacheRecord *const cr,
