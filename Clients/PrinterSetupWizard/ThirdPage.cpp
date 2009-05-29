@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.40  2009/05/29 20:43:36  herscher
+<rdar://problem/6928136> Printer Wizard doesn't work correctly in Windows 7 64 bit
+
 Revision 1.39  2009/05/27 06:25:49  herscher
 <rdar://problem/4176334> Need error dialog when selecting bad INF file
 
@@ -187,16 +190,6 @@ First checked in
 #define kGenericPCLColorDriver		L"HP Color LaserJet 4550 PCL"
 #define kGenericPCLDriver			L"HP LaserJet 4050 Series PCL"
 
-//
-// states for parsing ntprint.inf
-//
-enum PrinterParsingState
-{
-	Looking,
-	ParsingManufacturers,
-	ParsingModels,
-	ParsingStrings
-};
 
 // CThirdPage dialog
 
@@ -486,24 +479,6 @@ CThirdPage::AutoScroll( CListCtrl & list, int nIndex )
 // ------------------------------------------------------
 // LoadPrintDriverDefsFromFile
 //
-// This function does all the heavy lifting in parsing inf
-// files.  It is called to parse both ntprint.inf, and driver
-// files that might be shipped on a printer's installation
-// disk
-//
-// The inf file is not totally parsed.  I only want to determine
-// the manufacturer and models that are involved. I leave it
-// to printui.dll to actually copy the driver files to the
-// right places.
-//
-// I was aiming to parse as little as I could so as not to
-// duplicate the parsing code that is contained in Windows.  There
-// are no public APIs for parsing inf files.
-//
-// That part of the inf file that we're interested in has a fairly
-// easy format.  Tags are strings that are enclosed in brackets.
-// We are only interested in [MANUFACTURERS] and models.
-//
 // The only potentially opaque thing about this function is the
 // checkForDuplicateModels flag.  The problem here is that ntprint.inf
 // doesn't contain duplicate models, and it has hundreds of models
@@ -516,7 +491,7 @@ CThirdPage::AutoScroll( CListCtrl & list, int nIndex )
 OSStatus
 CThirdPage::LoadPrintDriverDefsFromFile(Manufacturers & manufacturers, const CString & filename, bool checkForDuplicateModels )
 {
-	HINF			handle	= NULL;
+	HINF			handle	= INVALID_HANDLE_VALUE;
 	const TCHAR *	section = TEXT( "Manufacturer" );
 	LONG			sectionCount;
 	TCHAR			line[ 1000 ];
@@ -527,7 +502,7 @@ CThirdPage::LoadPrintDriverDefsFromFile(Manufacturers & manufacturers, const CSt
 	
 	// Make sure we can open the file
 	handle = SetupOpenInfFile( filename, NULL, INF_STYLE_WIN4, NULL );
-	translate_errno( handle != NULL, GetLastError(), kUnknownErr );
+	translate_errno( handle != INVALID_HANDLE_VALUE, GetLastError(), kUnknownErr );
 	require_noerr( err, exit );
 
 	// Make sure it's a printer file
@@ -545,15 +520,19 @@ CThirdPage::LoadPrintDriverDefsFromFile(Manufacturers & manufacturers, const CSt
 			
 	for ( LONG i = 0; i < sectionCount; i++ )
 	{
+		Manufacturers::iterator	iter;
 		Manufacturer	*	manufacturer;
 		CString				manufacturerName;
 		CString				temp;
-		CString				key;
+		CStringList			modelSectionNameDecl;
+		CString				modelSectionName;
+		CString				baseModelName;
 		CString				model;
 		INFCONTEXT			modelContext;
 		LONG				modelCount;
+		POSITION			p;
 
-		if ( i == 0)
+		if ( i == 0 )
 		{
 			ok = SetupFindFirstLine( handle, section, NULL, &manufacturerContext );
 			err = translate_errno( ok, GetLastError(), kUnknownErr );
@@ -574,93 +553,122 @@ CThirdPage::LoadPrintDriverDefsFromFile(Manufacturers & manufacturers, const CSt
 		ok = SetupGetLineText( &manufacturerContext, handle, NULL, NULL, line, sizeof( line ), NULL );
 		err = translate_errno( ok, GetLastError(), kUnknownErr );
 		require_noerr( err, exit );
-		temp = line;
-		key = temp.SpanExcluding( TEXT( "," ) );
 
-		try
+		// Try to find some model section name that has entries. Explanation of int file structure
+		// can be found at:
+		//
+		// <http://msdn.microsoft.com/en-us/library/ms794359.aspx>
+		Split( line, ',', modelSectionNameDecl );
+
+		p					= modelSectionNameDecl.GetHeadPosition();
+		modelSectionName	= modelSectionNameDecl.GetNext( p );
+		modelCount			= SetupGetLineCount( handle, modelSectionName );
+		baseModelName		= modelSectionName;
+		
+		while ( modelCount <= 0 && p )
 		{
-			manufacturer = new Manufacturer;
+			CString targetOSVersion;
+
+			targetOSVersion		= modelSectionNameDecl.GetNext( p );
+			modelSectionName	= baseModelName + TEXT( "." ) + targetOSVersion;
+			modelCount			= SetupGetLineCount( handle, modelSectionName );
 		}
-		catch (...)
+
+		if ( modelCount > 0 )
 		{
-			manufacturer = NULL;
-		}
+			manufacturerName = NormalizeManufacturerName( manufacturerName );
 
-		require_action( manufacturer, exit, err = kNoMemoryErr );
+			iter = manufacturers.find( manufacturerName );
 
-		manufacturer->name		= NormalizeManufacturerName( manufacturerName );
-		manufacturer->tag		= key;
-		manufacturers[ key ]	= manufacturer;
-
-		memset( &modelContext, 0, sizeof( modelContext ) );
-		modelCount = SetupGetLineCount( handle, key );
-
-		for ( LONG j = 0; j < modelCount; j++ )
-		{
-			CString modelName;
-			Model * model;
-
-			if ( j == 0 )
+			if ( iter != manufacturers.end() )
 			{
-				ok = SetupFindFirstLine( handle, key, NULL, &modelContext );
-				err = translate_errno( ok, GetLastError(), kUnknownErr );
-				require_noerr( err, exit );
+				manufacturer = iter->second;
+				require_action( manufacturer, exit, err = kUnknownErr );
 			}
 			else
 			{
-				SetupFindNextLine( &modelContext, &modelContext );
-				err = translate_errno( ok, GetLastError(), kUnknownErr );
-				require_noerr( err, exit );
+				try
+				{
+					manufacturer = new Manufacturer;
+				}
+				catch (...)
+				{
+					manufacturer = NULL;
+				}
+
+				require_action( manufacturer, exit, err = kNoMemoryErr );
+
+				manufacturer->name					= manufacturerName;
+				manufacturers[ manufacturerName ]	= manufacturer;
 			}
 
-			ok = SetupGetStringField( &modelContext, 0, line, sizeof( line ), NULL );
-			err = translate_errno( ok, GetLastError(), kUnknownErr );
-			require_noerr( err, exit );
+			memset( &modelContext, 0, sizeof( modelContext ) );
 
-			modelName = line;
-
-			if (checkForDuplicateModels == true)
+			for ( LONG j = 0; j < modelCount; j++ )
 			{
-				if ( MatchModel( manufacturer, ConvertToModelName( modelName ) ) != NULL )
+				CString modelName;
+				Model * model;
+
+				if ( j == 0 )
+				{
+					ok = SetupFindFirstLine( handle, modelSectionName, NULL, &modelContext );
+					err = translate_errno( ok, GetLastError(), kUnknownErr );
+					require_noerr( err, exit );
+				}
+				else
+				{
+					SetupFindNextLine( &modelContext, &modelContext );
+					err = translate_errno( ok, GetLastError(), kUnknownErr );
+					require_noerr( err, exit );
+				}
+
+				ok = SetupGetStringField( &modelContext, 0, line, sizeof( line ), NULL );
+				err = translate_errno( ok, GetLastError(), kUnknownErr );
+				require_noerr( err, exit );
+
+				modelName = line;
+
+				if (checkForDuplicateModels == true)
+				{
+					if ( MatchModel( manufacturer, ConvertToModelName( modelName ) ) != NULL )
+					{
+						continue;
+					}
+				}
+
+				//
+				// Stock Vista printer inf files embed guids in the model
+				// declarations for Epson printers. Let's ignore those.
+				//
+				if ( modelName.Find( TEXT( "{" ), 0 ) != -1 )
 				{
 					continue;
 				}
+
+				try
+				{
+					model = new Model;
+				}
+				catch (...)
+				{
+					model = NULL;
+				}
+
+				require_action( model, exit, err = kNoMemoryErr );
+
+				model->infFileName		=	filename;
+				model->displayName		=	modelName;
+				model->name				=	modelName;
+				model->driverInstalled	=	false;
+
+				manufacturer->models.push_back(model);
 			}
-
-#if 0
-			//
-			// Stock Vista printer inf files embed guids in the model
-			// declarations for Epson printers. Let's ignore those.
-			//
-			if ( name.Find( L"{", 0 ) != -1 )
-			{
-				continue;
-			}
-#endif
-
-			try
-			{
-				model = new Model;
-			}
-			catch (...)
-			{
-				model = NULL;
-			}
-
-			require_action( model, exit, err = kNoMemoryErr );
-
-			model->infFileName		=	filename;
-			model->displayName		=	modelName;
-			model->name				=	modelName;
-			model->driverInstalled	=	false;
-
-			manufacturer->models.push_back(model);
 		}
 	}
 
 exit:
 
-	if ( handle )
+	if ( handle != INVALID_HANDLE_VALUE )
 	{
 		SetupCloseInfFile( handle );
 		handle = NULL;
@@ -1659,4 +1667,22 @@ void CThirdPage::OnBnClickedHaveDisk()
 exit:
 
 	return;
+}
+
+
+void
+CThirdPage::Split( const CString & string, TCHAR ch, CStringList & components )
+{
+	CString	temp;
+	int		n;
+
+	temp = string;
+	
+	while ( ( n = temp.Find( ch ) ) != -1 )
+	{
+		components.AddTail( temp.Left( n ) );
+		temp = temp.Right( temp.GetLength() - ( n + 1 ) );
+	}
+
+	components.AddTail( temp );
 }

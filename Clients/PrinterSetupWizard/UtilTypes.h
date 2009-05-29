@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: UtilTypes.h,v $
+Revision 1.18  2009/05/29 20:43:37  herscher
+<rdar://problem/6928136> Printer Wizard doesn't work correctly in Windows 7 64 bit
+
 Revision 1.17  2009/05/27 04:59:57  herscher
 <rdar://problem/4517393> COMPATIBILITY WITH HP CLJ4700
 <rdar://problem/6142138> Compatibility with Samsung print driver files
@@ -221,7 +224,6 @@ namespace PrinterSetupWizard
 	struct Manufacturer
 	{
 		CString		name;
-		CString		tag;
 		Models		models;
 
 		Model*
