@@ -96,7 +96,6 @@
 		2EDC5E730C39EA640092701B /* helper-server.h in Headers */ = {isa = PBXBuildFile; fileRef = 2EDC5E720C39EA640092701B /* helper-server.h */; };
 		2EDC5E740C39EA640092701B /* helper-server.h in Headers */ = {isa = PBXBuildFile; fileRef = 2EDC5E720C39EA640092701B /* helper-server.h */; };
 		2EDC5E750C39EA640092701B /* helper-server.h in Headers */ = {isa = PBXBuildFile; fileRef = 2EDC5E720C39EA640092701B /* helper-server.h */; };
-		4A8202650C56C4C900DDFD48 /* pfkey.c in Sources */ = {isa = PBXBuildFile; fileRef = 4A8202530C56C36600DDFD48 /* pfkey.c */; };
 		4AAE0C9A0C68EA81003882A5 /* mDNSResponderHelper.8 in CopyFiles */ = {isa = PBXBuildFile; fileRef = 4AAE0C7A0C68E97F003882A5 /* mDNSResponderHelper.8 */; };
 		4AE9B04B0F39448B0080B59D /* safe_vproc.c in Sources */ = {isa = PBXBuildFile; fileRef = 4AE9B0480F39448B0080B59D /* safe_vproc.c */; };
 		4AE9B04C0F39448B0080B59D /* safe_vproc.h in Headers */ = {isa = PBXBuildFile; fileRef = 4AE9B0490F39448B0080B59D /* safe_vproc.h */; };
@@ -1108,7 +1107,6 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = D284BED60ADD80A20027CCDF /* Build configuration list for PBXNativeTarget "dnsextd" */;
 			buildPhases = (
-				030BBF010CE13A2800472F0C /* ShellScript */,
 				D284BEC20ADD80A20027CCDF /* Headers */,
 				D284BEC40ADD80A20027CCDF /* Sources */,
 				D284BECE0ADD80A20027CCDF /* Frameworks */,
@@ -1350,19 +1348,6 @@
 			shellPath = /bin/sh;
 			shellScript = "if [ -e \"${SDKROOT}/usr/lib/libipsec.dylib\" ]\nthen\nrm -f \"${CONFIGURATION_TEMP_DIR}/ipsec_options.h\"\ntouch \"${CONFIGURATION_TEMP_DIR}/ipsec_options.h\"\nrm -f \"${CONFIGURATION_TEMP_DIR}/libipsec.a\"\nelse\necho \"#define MDNS_NO_IPSEC 1\" > ${CONFIGURATION_TEMP_DIR}/ipsec_options.h\ntouch \"${CONFIGURATION_TEMP_DIR}/empty.c\"\nfor i in ${ARCHS}\ndo\nccflags=\"-arch $i $ccflags\"\ndone\ncc ${ccflags} \"${CONFIGURATION_TEMP_DIR}/empty.c\" -c -o \"${CONFIGURATION_TEMP_DIR}/libipsec.a\"\nrm -f \"${CONFIGURATION_TEMP_DIR}/empty.c\"\nfi\n";
 		};
-		030BBF010CE13A2800472F0C /* ShellScript */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "rm -f \"${CONFIGURATION_TEMP_DIR}/ipsec_options.h\"\ntouch \"${CONFIGURATION_TEMP_DIR}/ipsec_options.h\"\n";
-		};
 		D284BE510ADD80740027CCDF /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -1513,7 +1498,6 @@
 				D284BECD0ADD80A20027CCDF /* PlatformCommon.c in Sources */,
 				2EAE955A0C31F4D30021F738 /* helpermsg.defs in Sources */,
 				2E35529E0C3A9E7600CA1CB7 /* helper-stubs.c in Sources */,
-				4A8202650C56C4C900DDFD48 /* pfkey.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
