@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: StringServices.cpp,v $
+Revision 1.2  2009/06/02 18:43:57  herscher
+<rdar://problem/3948252> Allow component consumers to pass in null strings
+
 Revision 1.1  2009/05/26 04:43:54  herscher
 <rdar://problem/3948252> COM component that can be used with any .NET language and VB.
 
@@ -35,42 +38,46 @@ BSTRToUTF8
 	)
 {
 	USES_CONVERSION;
-
-	TCHAR	*	utf16String	= NULL;
+	
 	char	*	utf8String	= NULL;
-	size_t      size		= 0;
-    OSStatus    err			= kNoErr;
+	OSStatus    err			= kNoErr;
 
-	check( inString );
+	outString = "";
 
-	utf16String = OLE2T( inString );
-	require_action( utf16String != NULL, exit, err = kUnknownErr );
-
-	if ( wcslen( utf16String ) > 0 )
+	if ( inString )
 	{
-		size = (size_t) WideCharToMultiByte( CP_UTF8, 0, utf16String, ( int ) wcslen( utf16String ), NULL, 0, NULL, NULL );
-		err = translate_errno( size != 0, GetLastError(), kUnknownErr );
-		require_noerr( err, exit );
+		TCHAR	*	utf16String	= NULL;
+		size_t      size		= 0;
 
-		try
+		utf16String = OLE2T( inString );
+		require_action( utf16String != NULL, exit, err = kUnknownErr );
+
+		if ( wcslen( utf16String ) > 0 )
 		{
-			utf8String = new char[ size + 1 ];
+			size = (size_t) WideCharToMultiByte( CP_UTF8, 0, utf16String, ( int ) wcslen( utf16String ), NULL, 0, NULL, NULL );
+			err = translate_errno( size != 0, GetLastError(), kUnknownErr );
+			require_noerr( err, exit );
+
+			try
+			{
+				utf8String = new char[ size + 1 ];
+			}
+			catch ( ... )
+			{
+				utf8String = NULL;
+			}
+
+			require_action( utf8String != NULL, exit, err = kNoMemoryErr );
+			size = (size_t) WideCharToMultiByte( CP_UTF8, 0, utf16String, ( int ) wcslen( utf16String ), utf8String, (int) size, NULL, NULL);
+			err = translate_errno( size != 0, GetLastError(), kUnknownErr );
+			require_noerr( err, exit );
+
+			// have to add the trailing 0 because WideCharToMultiByte doesn't do it,
+			// although it does return the correct size
+
+			utf8String[size] = '\0';
+			outString = utf8String;
 		}
-		catch ( ... )
-		{
-			utf8String = NULL;
-		}
-
-		require_action( utf8String != NULL, exit, err = kNoMemoryErr );
-		size = (size_t) WideCharToMultiByte( CP_UTF8, 0, utf16String, ( int ) wcslen( utf16String ), utf8String, (int) size, NULL, NULL);
-		err = translate_errno( size != 0, GetLastError(), kUnknownErr );
-		require_noerr( err, exit );
-
-		// have to add the trailing 0 because WideCharToMultiByte doesn't do it,
-		// although it does return the correct size
-
-		utf8String[size] = '\0';
-		outString = utf8String;
 	}
 
 exit:
@@ -91,30 +98,33 @@ UTF8ToBSTR
 	CComBSTR	&	outString
 	)
 {
-	wchar_t		*	unicode	= NULL;
-	int				n		= 0;
-	OSStatus		err		= 0;
+	wchar_t	*	unicode	= NULL;
+	OSStatus	err		= 0;
 
-	check( inString );
-    n = MultiByteToWideChar( CP_UTF8, 0, inString, -1, NULL, 0 );
-    
-	if ( n > 0 )
-    {
-		try
+	if ( inString )
+	{
+		int n;
+
+		n = MultiByteToWideChar( CP_UTF8, 0, inString, -1, NULL, 0 );
+	    
+		if ( n > 0 )
 		{
-			unicode = new wchar_t[ n ];
+			try
+			{
+				unicode = new wchar_t[ n ];
+			}
+			catch ( ... )
+			{
+				unicode = NULL;
+			}
+
+			require_action( unicode, exit, err = ERROR_INSUFFICIENT_BUFFER );
+
+			n = MultiByteToWideChar( CP_UTF8, 0, inString, -1, unicode, n );
 		}
-		catch ( ... )
-		{
-			unicode = NULL;
-		}
 
-        require_action( unicode, exit, err = ERROR_INSUFFICIENT_BUFFER );
-
-        n = MultiByteToWideChar( CP_UTF8, 0, inString, -1, unicode, n );
-    }
-
-	outString = unicode;
+		outString = unicode;
+	}
 
 exit:
 
