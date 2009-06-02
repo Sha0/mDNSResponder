@@ -2,8 +2,8 @@ HKCR
 {
 	NoRemove AppID
 	{
-		'%APPID%' = s 'BonjourLib'
-		'BonjourLib.DLL'
+		'%APPID%' = s 'Bonjour'
+		'Bonjour.DLL'
 		{
 			val AppID = s '%APPID%'
 		}

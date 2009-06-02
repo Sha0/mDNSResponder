@@ -1,20 +1,20 @@
 HKCR
 {
-	BonjourLib.DNSSDService.1 = s 'DNSSDService Class'
+	Bonjour.DNSSDService.1 = s 'DNSSDService Class'
 	{
 		CLSID = s '{24CD4DE9-FF84-4701-9DC1-9B69E0D1090A}'
 	}
-	BonjourLib.DNSSDService = s 'DNSSDService Class'
+	Bonjour.DNSSDService = s 'DNSSDService Class'
 	{
 		CLSID = s '{24CD4DE9-FF84-4701-9DC1-9B69E0D1090A}'
-		CurVer = s 'BonjourLib.DNSSDService.1'
+		CurVer = s 'Bonjour.DNSSDService.1'
 	}
 	NoRemove CLSID
 	{
 		ForceRemove {24CD4DE9-FF84-4701-9DC1-9B69E0D1090A} = s 'DNSSDService Class'
 		{
-			ProgID = s 'BonjourLib.DNSSDService.1'
-			VersionIndependentProgID = s 'BonjourLib.DNSSDService'
+			ProgID = s 'Bonjour.DNSSDService.1'
+			VersionIndependentProgID = s 'Bonjour.DNSSDService'
 			ForceRemove 'Programmable'
 			InprocServer32 = s '%MODULE%'
 			{

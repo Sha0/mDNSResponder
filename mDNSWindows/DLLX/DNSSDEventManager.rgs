@@ -1,20 +1,20 @@
 HKCR
 {
-	DLLComponent.DNSSDEventManager.1 = s 'DNSSDEventManager Class'
+	Bonjour.DNSSDEventManager.1 = s 'DNSSDEventManager Class'
 	{
 		CLSID = s '{BEEB932A-8D4A-4619-AEFE-A836F988B221}'
 	}
-	DLLComponent.DNSSDEventManager = s 'DNSSDEventManager Class'
+	Bonjour.DNSSDEventManager = s 'DNSSDEventManager Class'
 	{
 		CLSID = s '{BEEB932A-8D4A-4619-AEFE-A836F988B221}'
-		CurVer = s 'DLLComponent.DNSSDEventManager.1'
+		CurVer = s 'Bonjour.DNSSDEventManager.1'
 	}
 	NoRemove CLSID
 	{
 		ForceRemove {BEEB932A-8D4A-4619-AEFE-A836F988B221} = s 'DNSSDEventManager Class'
 		{
-			ProgID = s 'DLLComponent.DNSSDEventManager.1'
-			VersionIndependentProgID = s 'DLLComponent.DNSSDEventManager'
+			ProgID = s 'Bonjour.DNSSDEventManager.1'
+			VersionIndependentProgID = s 'Bonjour.DNSSDEventManager'
 			ForceRemove 'Programmable'
 			InprocServer32 = s '%MODULE%'
 			{

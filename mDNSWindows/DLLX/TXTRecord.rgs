@@ -1,20 +1,20 @@
 HKCR
 {
-	BonjourLib.TXTRecord.1 = s 'TXTRecord Class'
+	Bonjour.TXTRecord.1 = s 'TXTRecord Class'
 	{
 		CLSID = s '{AFEE063C-05BA-4248-A26E-168477F49734}'
 	}
-	BonjourLib.TXTRecord = s 'TXTRecord Class'
+	Bonjour.TXTRecord = s 'TXTRecord Class'
 	{
 		CLSID = s '{AFEE063C-05BA-4248-A26E-168477F49734}'
-		CurVer = s 'BonjourLib.TXTRecord.1'
+		CurVer = s 'Bonjour.TXTRecord.1'
 	}
 	NoRemove CLSID
 	{
 		ForceRemove {AFEE063C-05BA-4248-A26E-168477F49734} = s 'TXTRecord Class'
 		{
-			ProgID = s 'BonjourLib.TXTRecord.1'
-			VersionIndependentProgID = s 'BonjourLib.TXTRecord'
+			ProgID = s 'Bonjour.TXTRecord.1'
+			VersionIndependentProgID = s 'Bonjour.TXTRecord'
 			ForceRemove 'Programmable'
 			InprocServer32 = s '%MODULE%'
 			{
