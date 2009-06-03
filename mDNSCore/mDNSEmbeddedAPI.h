@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.569  2009/06/03 23:07:12  cheshire
+<rdar://problem/6890712> mDNS: iChat's Buddy photo always appears as the "shadow person" over Bonjour
+Large records were not being added in cases where an NSEC record was also required
+
 Revision 1.568  2009/05/19 22:37:04  cheshire
 <rdar://problem/6903507> Sleep Proxy: Retransmission logic not working reliably on quiet networks
 Added NextScheduledSPRetry field
@@ -1931,8 +1935,9 @@ struct AuthRecord_struct
 	mDNSu8          RequireGoodbye;		// Set if this RR has been announced on the wire and will require a goodbye packet
 	mDNSu8          AnsweredLocalQ;		// Set if this AuthRecord has been delivered to any local question (LocalOnly or mDNSInterface_Any)
 	mDNSu8          IncludeInProbe;		// Set if this RR is being put into a probe right now
-	mDNSInterfaceID ImmedAnswer;		// Someone on this interface issued a query we need to answer (all-ones for all interfaces)
 	mDNSu8          ImmedUnicast;		// Set if we may send our response directly via unicast to the requester
+	mDNSu8          SendNSECNow;		// Set if we need to generate associated NSEC data for this rrname
+	mDNSInterfaceID ImmedAnswer;		// Someone on this interface issued a query we need to answer (all-ones for all interfaces)
 #if MDNS_LOG_ANSWER_SUPPRESSION_TIMES
 	mDNSs32         ImmedAnswerMarkTime;
 #endif

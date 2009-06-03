@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.964  2009/06/03 23:07:13  cheshire
+<rdar://problem/6890712> mDNS: iChat's Buddy photo always appears as the "shadow person" over Bonjour
+Large records were not being added in cases where an NSEC record was also required
+
 Revision 1.963  2009/05/28 00:39:19  cheshire
 <rdar://problem/6926465> Sleep is delayed by 10 seconds if BTMM is on
 After receiving confirmation of wide-area record deletion, need to schedule another evaluation of whether we're ready to sleep yet
@@ -2000,8 +2004,9 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 	rr->RequireGoodbye    = mDNSfalse;
 	rr->AnsweredLocalQ    = mDNSfalse;
 	rr->IncludeInProbe    = mDNSfalse;
-	rr->ImmedAnswer       = mDNSNULL;
 	rr->ImmedUnicast      = mDNSfalse;
+	rr->SendNSECNow       = mDNSfalse;
+	rr->ImmedAnswer       = mDNSNULL;
 	rr->ImmedAdditional   = mDNSNULL;
 	rr->SendRNow          = mDNSNULL;
 	rr->v4Requester       = zerov4Addr;
@@ -2814,18 +2819,15 @@ mDNSlocal void SendResponses(mDNS *const m)
 		// 1. Deregistering records that need to send their goodbye packet
 		// 2. Updated records that need to retract their old data
 		// 3. Answers and announcements we need to send
-		// In all cases, if we fail, and we've put at least one answer, we break out of the for loop so we can
-		// send this packet and then try again.
-		// If we have not put even one answer, then we don't bail out. We pretend we succeeded anyway,
-		// because otherwise we'll end up in an infinite loop trying to send a record that will never fit.
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
+			{
 			if (rr->SendRNow == intf->InterfaceID)
 				{
+				newptr = mDNSNULL;
 				if (rr->resrec.RecordType == kDNSRecordTypeDeregistering)
 					{
 					newptr = PutResourceRecordTTL(&m->omsg, responseptr, &m->omsg.h.numAnswers, &rr->resrec, 0);
 					if (newptr) { responseptr = newptr; numDereg++; }
-					else if (m->omsg.h.numAnswers) break;
 					}
 				else if (rr->NewRData && !m->SleepState)					// If we have new data for this record
 					{
@@ -2836,7 +2838,6 @@ mDNSlocal void SendResponses(mDNS *const m)
 						{
 						newptr = PutResourceRecordTTL(&m->omsg, responseptr, &m->omsg.h.numAnswers, &rr->resrec, 0);
 						if (newptr) { responseptr = newptr; numDereg++; rr->RequireGoodbye = mDNSfalse; }
-						else if (m->omsg.h.numAnswers) break;
 						}
 					// Now try to see if we can fit the update in the same packet (not fatal if we can't)
 					SetNewRData(&rr->resrec, rr->NewRData, rr->newrdlength);
@@ -2856,48 +2857,54 @@ mDNSlocal void SendResponses(mDNS *const m)
 					rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;			// Make sure to clear cache flush bit back to normal state
 					if (newptr)
 						{
-						// If we succeeded putting this record, and it's verified unique (i.e. typically A, AAAA, SRV and TXT),
-						// and it's the last one of its name and class, add an NSEC too.
-						if (active && rr->resrec.RecordType == kDNSRecordTypeVerified)
-							{
-							for (r2 = m->ResourceRecords; r2; r2=r2->next)
-								if (r2->SendRNow == intf->InterfaceID && r2 != rr && SameResourceRecordNameClassInterface(r2, rr))
-									break;
-							if (!r2)
-								{
-								AuthRecord nsec;
-								mDNS_SetupResourceRecord(&nsec, mDNSNULL, mDNSInterface_Any, kDNSType_NSEC, rr->resrec.rroriginalttl, kDNSRecordTypeUnique, mDNSNULL, mDNSNULL);
-								nsec.resrec.rrclass |= kDNSClass_UniqueRRSet;
-								AssignDomainName(&nsec.namestorage, rr->resrec.name);
-								mDNSPlatformMemZero(nsec.rdatastorage.u.nsec.bitmap, sizeof(nsec.rdatastorage.u.nsec.bitmap));
-								for (r2 = m->ResourceRecords; r2; r2=r2->next)
-									if (ResourceRecordIsValidAnswer(r2) && SameResourceRecordNameClassInterface(r2, rr))
-										{
-										if (r2->resrec.rrtype >= kDNSQType_ANY) { LogMsg("Can't create NSEC for record %s", ARDisplayString(m, r2)); break; }
-										else nsec.rdatastorage.u.nsec.bitmap[r2->resrec.rrtype >> 3] |= 128 >> (r2->resrec.rrtype & 7);
-										}
-								if (!r2)	// Make sure we didn't have to break out because we hit a high-numbered rrtype
-									{
-									newptr = PutResourceRecord(&m->omsg, newptr, &m->omsg.h.numAnswers, &nsec.resrec);
-									if (!newptr) m->omsg.h.numAnswers--;	// If failed to put NSEC, retract previous answer too
-									}
-								}
-							}
-						if (newptr)		// If all successful (newptr still set) update state variables now
-							{
-							responseptr = newptr;
-							rr->RequireGoodbye = active;
-							if (rr->LastAPTime == m->timenow) numAnnounce++; else numAnswer++;
-							}
+						responseptr = newptr;
+						rr->RequireGoodbye = active;
+						if (rr->LastAPTime == m->timenow) numAnnounce++; else numAnswer++;
 						}
-					else if (m->omsg.h.numAnswers) break;
+
+					// The first time through (pktcount==0), if this record is verified unique (i.e. typically A, AAAA, SRV and TXT),
+					// and it's the last one of its name and class, set the flag to add an NSEC too.
+					if (!pktcount && active && rr->resrec.RecordType == kDNSRecordTypeVerified)
+						{
+						for (r2=rr->next; r2; r2=r2->next)		// Search for a matching record that occurs *later* in the list
+							if (r2->SendRNow == intf->InterfaceID && SameResourceRecordNameClassInterface(r2, rr))
+								break;
+						if (!r2) rr->SendNSECNow = mDNStrue;	// If we're the last matching record, set our SendNSECNow flag
+						}
 					}
-				// If sending on all interfaces, go to next interface; else we're finished now
-				if (rr->ImmedAnswer == mDNSInterfaceMark && rr->resrec.InterfaceID == mDNSInterface_Any)
-					rr->SendRNow = GetNextActiveInterfaceID(intf);
-				else
-					rr->SendRNow = mDNSNULL;
+
+				if (newptr)		// If succeeded in sending, advance to next interface
+					{
+					// If sending on all interfaces, go to next interface; else we're finished now
+					if (rr->ImmedAnswer == mDNSInterfaceMark && rr->resrec.InterfaceID == mDNSInterface_Any)
+						rr->SendRNow = GetNextActiveInterfaceID(intf);
+					else
+						rr->SendRNow = mDNSNULL;
+					}
 				}
+
+			if (rr->SendNSECNow)
+				{
+				AuthRecord nsec;
+				mDNS_SetupResourceRecord(&nsec, mDNSNULL, mDNSInterface_Any, kDNSType_NSEC, rr->resrec.rroriginalttl, kDNSRecordTypeUnique, mDNSNULL, mDNSNULL);
+				nsec.resrec.rrclass |= kDNSClass_UniqueRRSet;
+				AssignDomainName(&nsec.namestorage, rr->resrec.name);
+				mDNSPlatformMemZero(nsec.rdatastorage.u.nsec.bitmap, sizeof(nsec.rdatastorage.u.nsec.bitmap));
+				for (r2 = m->ResourceRecords; r2; r2=r2->next)
+					if (ResourceRecordIsValidAnswer(r2) && SameResourceRecordNameClassInterface(r2, rr))
+						{
+						if (r2->resrec.rrtype >= kDNSQType_ANY) { LogMsg("Can't create NSEC for record %s", ARDisplayString(m, r2)); break; }
+						else nsec.rdatastorage.u.nsec.bitmap[r2->resrec.rrtype >> 3] |= 128 >> (r2->resrec.rrtype & 7);
+						}
+				if (r2)		// If we had to break out because we hit a high-numbered rrtype, just pretend we succeeded
+					rr->SendNSECNow = mDNSfalse;
+				else
+					{
+					newptr = PutResourceRecord(&m->omsg, responseptr, &m->omsg.h.numAnswers, &nsec.resrec);
+					if (newptr) { responseptr = newptr; numAnswer++; rr->SendNSECNow = mDNSfalse; }
+					}
+				}
+			}
 	
 		// Second Pass. Add additional records, if there's space.
 		newptr = responseptr;
@@ -2963,6 +2970,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 			debugf(msg, intf, next);
 			#endif
 			intf = next;
+			pktcount = 0;		// When we move to a new interface, reset packet count back to zero -- NSEC generation logic uses it
 			}
 		}
 
