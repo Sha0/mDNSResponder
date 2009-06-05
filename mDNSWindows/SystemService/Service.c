@@ -17,6 +17,10 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.46  2009/06/05 18:28:24  herscher
+<rdar://problem/6125087> mDNSResponder should be able to identify VPN adapters generically
+<rdar://problem/6885843> WIN7: Bonjour removes the default gateway entry and thereby breaks network connectivity
+
 Revision 1.45  2009/04/30 20:07:51  mcguire
 <rdar://problem/6822674> Support multiple UDSs from launchd
 
@@ -369,6 +373,8 @@ DEBUG_LOCAL HANDLE						gStopEvent				= NULL;
 DEBUG_LOCAL CRITICAL_SECTION			gEventSourceLock;
 DEBUG_LOCAL GenLinkedList				gEventSources;
 DEBUG_LOCAL BOOL						gRetryFirewall			= FALSE;
+DEBUG_LOCAL DWORD						gOSMajorVersion;
+DEBUG_LOCAL DWORD						gOSMinorVersion;
 
 typedef DWORD ( WINAPI * GetIpInterfaceEntryFunctionPtr )( PMIB_IPINTERFACE_ROW );
 mDNSlocal HMODULE								gIPHelperLibraryInstance		= NULL;
@@ -1276,7 +1282,9 @@ static void	ServiceStop( void )
 
 static OSStatus	ServiceSpecificInitialize( int argc, LPTSTR argv[] )
 {
-	OSStatus						err;
+	OSVERSIONINFO osInfo;
+	OSStatus err;
+	BOOL ok;
 	
 	DEBUG_UNUSED( argc );
 	DEBUG_UNUSED( argv );
@@ -1300,15 +1308,16 @@ static OSStatus	ServiceSpecificInitialize( int argc, LPTSTR argv[] )
 	require_noerr( err, exit);
 
 	//
-	// <rdar://problem/4096464> Don't call SetLLRoute on loopback
-	// 
-	// Otherwise, set a route to link local addresses (169.254.0.0)
+	// Get the version of Windows that we're running on
 	//
+	osInfo.dwOSVersionInfoSize = sizeof( OSVERSIONINFO );
+	ok = GetVersionEx( &osInfo );
+	err = translate_errno( ok, (OSStatus) GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+	gOSMajorVersion = osInfo.dwMajorVersion;
+	gOSMinorVersion = osInfo.dwMinorVersion;
 
-	if ( gServiceManageLLRouting && !gPlatformStorage.registeredLoopback4 )
-	{
-		SetLLRoute( &gMDNSRecord );
-	}
+	SetLLRoute( &gMDNSRecord );
 
 exit:
 	if( err != kNoErr )
@@ -1421,16 +1430,7 @@ CoreCallback(mDNS * const inMDNS, mStatus status)
 {
 	if (status == mStatus_ConfigChanged)
 	{
-		//
-		// <rdar://problem/4096464> Don't call SetLLRoute on loopback
-		// 
-		// Otherwise, set a route to link local addresses (169.254.0.0)
-		//
-
-		if ( gServiceManageLLRouting && !inMDNS->p->registeredLoopback4 )
-		{
-			SetLLRoute( inMDNS );
-		}
+		SetLLRoute( inMDNS );
 	}
 }
 
@@ -1953,158 +1953,77 @@ exit:
 static OSStatus
 SetLLRoute( mDNS * const inMDNS )
 {
-	DWORD				ifIndex;
-	MIB_IPFORWARDROW	rowExtant;
-	bool				addRoute;
-	MIB_IPFORWARDROW	row;
-	MIB_IPFORWARDROW	oldDefaultRow;
-	OSStatus			err;
+	OSStatus err = kNoErr;
 
-	ZeroMemory(&row, sizeof(row));
-
-	err = GetRouteDestination(&ifIndex, &row.dwForwardNextHop);
-	require_noerr( err, exit );
-	row.dwForwardDest		= inet_addr(kLLNetworkAddr);
-	row.dwForwardIfIndex	= ifIndex;
-	row.dwForwardMask		= inet_addr(kLLNetworkAddrMask);
-	row.dwForwardType		= 3;
-	row.dwForwardProto		= MIB_IPPROTO_NETMGMT;
-	row.dwForwardAge		= 0;
-	row.dwForwardPolicy		= 0;
-	row.dwForwardMetric1	= 20 + GetAdditionalMetric( ifIndex );
-	row.dwForwardMetric2	= (DWORD) - 1;
-	row.dwForwardMetric3	= (DWORD) - 1;
-	row.dwForwardMetric4	= (DWORD) - 1;
-	row.dwForwardMetric5	= (DWORD) - 1;
-
-	addRoute = true;
+	DEBUG_UNUSED( inMDNS );
 
 	//
-	// check to make sure we don't already have a route
+	// <rdar://problem/4096464> Don't call SetLLRoute on loopback
+	// <rdar://problem/6885843> Default route on Windows 7 breaks network connectivity
+	// 
+	// Don't mess w/ the routing table on Vista and later OSes, as 
+	// they have a permanent route to link-local addresses. Otherwise,
+	// set a route to link local addresses (169.254.0.0)
 	//
-	if ( HaveRoute( &rowExtant, inet_addr( kLLNetworkAddr ), 0 ) )
+	if ( ( gOSMajorVersion < 6 ) && gServiceManageLLRouting && !gPlatformStorage.registeredLoopback4 )
 	{
-		//
-		// set the age to 0 so that we can do a memcmp.
-		//
-		rowExtant.dwForwardAge = 0;
+		DWORD				ifIndex;
+		MIB_IPFORWARDROW	rowExtant;
+		bool				addRoute;
+		MIB_IPFORWARDROW	row;
+
+		ZeroMemory(&row, sizeof(row));
+
+		err = GetRouteDestination(&ifIndex, &row.dwForwardNextHop);
+		require_noerr( err, exit );
+		row.dwForwardDest		= inet_addr(kLLNetworkAddr);
+		row.dwForwardIfIndex	= ifIndex;
+		row.dwForwardMask		= inet_addr(kLLNetworkAddrMask);
+		row.dwForwardType		= 3;
+		row.dwForwardProto		= MIB_IPPROTO_NETMGMT;
+		row.dwForwardAge		= 0;
+		row.dwForwardPolicy		= 0;
+		row.dwForwardMetric1	= 20 + GetAdditionalMetric( ifIndex );
+		row.dwForwardMetric2	= (DWORD) - 1;
+		row.dwForwardMetric3	= (DWORD) - 1;
+		row.dwForwardMetric4	= (DWORD) - 1;
+		row.dwForwardMetric5	= (DWORD) - 1;
+
+		addRoute = true;
 
 		//
-		// check to see if this route is the same as our route
+		// check to make sure we don't already have a route
 		//
-		if (memcmp(&row, &rowExtant, sizeof(row)) != 0)
+		if ( HaveRoute( &rowExtant, inet_addr( kLLNetworkAddr ), 0 ) )
 		{
 			//
-			// if it isn't then delete this entry
+			// set the age to 0 so that we can do a memcmp.
 			//
-			DeleteIpForwardEntry(&rowExtant);
-		}
-		else
-		{
+			rowExtant.dwForwardAge = 0;
+
 			//
-			// else it is, so we don't want to create another route
+			// check to see if this route is the same as our route
 			//
-			addRoute = false;
-		}
-	}
-
-	if (addRoute && row.dwForwardNextHop)
-	{
-		err = CreateIpForwardEntry(&row);
-		check_noerr( err );
-	}
-
-	//
-	// <rdar://problem/5781566> Core: Default Gateway set to 0.0.0.0 on Vista causes ARP floodi
-	// This check is really only useful on Vista, because Pre-Vista machines clean up
-	// these routes for us. This check will ensure that any default route we set when
-	// we had a link-local address are cleaned up appropriately.
-	//
-	// Don't use the "row" variable we just used previously, as the last bit of code
-	// in this function will make use of the "dwForwardNextHop" member.  So we'll initialize
-	// a new variable called "oldDefaultRow" to check whether we should clean up a previously
-	// added route
-	//
-
-	oldDefaultRow.dwForwardDest		= 0;
-	oldDefaultRow.dwForwardIfIndex	= ifIndex;
-	oldDefaultRow.dwForwardMask		= 0;
-	oldDefaultRow.dwForwardType		= 3;
-	oldDefaultRow.dwForwardProto	= MIB_IPPROTO_NETMGMT;
-	oldDefaultRow.dwForwardAge		= 0;
-	oldDefaultRow.dwForwardPolicy	= 0;
-	oldDefaultRow.dwForwardMetric1	= kDefaultRouteMetric;
-	oldDefaultRow.dwForwardMetric2	= (DWORD) - 1;
-	oldDefaultRow.dwForwardMetric3	= (DWORD) - 1;
-	oldDefaultRow.dwForwardMetric4	= (DWORD) - 1;
-	oldDefaultRow.dwForwardMetric5	= (DWORD) - 1;
-
-	if ( HaveRoute( &oldDefaultRow, 0, kDefaultRouteMetric ) )
-	{
-		DeleteIpForwardEntry( &oldDefaultRow );
-	}
-	
-	//
-	// Now we want to see if we should install a default route for this interface.
-	// We want to do this if the following are true:
-	//
-	// 1. This interface has a link-local address
-	// 2. This is the only IPv4 interface
-	//
-	// This code assumes the "row" variable has not changed since we try to add
-	// the first route, as it makes use of the "dwForwardNextHop" and "dwForwardDest"
-	// member.
-	//
-
-	if ( ( row.dwForwardNextHop & 0xFFFF ) == row.dwForwardDest )
-	{
-		mDNSInterfaceData	*	ifd;
-		int						numLinkLocalInterfaces	= 0;
-		int						numInterfaces			= 0;
-	
-		//
-		// Loop through all the active interfaces, noting how many are assigned
-		// link-local addresses
-		//
-
-		for ( ifd = inMDNS->p->interfaceList; ifd; ifd = ifd->next )
-		{
-			if ( ifd->defaultAddr.type == mDNSAddrType_IPv4 )
+			if (memcmp(&row, &rowExtant, sizeof(row)) != 0)
 			{
-				numInterfaces++;
-
-				if ( ( ifd->interfaceInfo.ip.ip.v4.b[0] == 169 ) && ( ifd->interfaceInfo.ip.ip.v4.b[1] == 254 ) )
-				{
-					numLinkLocalInterfaces++;
-				}
+				//
+				// if it isn't then delete this entry
+				//
+				DeleteIpForwardEntry(&rowExtant);
+			}
+			else
+			{
+				//
+				// else it is, so we don't want to create another route
+				//
+				addRoute = false;
 			}
 		}
 
-		//
-		// If we only have one interface, and it's assigned a link-local address then we'll
-		// want to create a default route.
-		//
-
-		if ( ( numInterfaces == 1 ) && ( numInterfaces == numLinkLocalInterfaces ) )
+		if (addRoute && row.dwForwardNextHop)
 		{
-			row.dwForwardDest		= 0;
-			row.dwForwardIfIndex	= ifIndex;
-			row.dwForwardMask		= 0;
-			row.dwForwardType		= 3;
-			row.dwForwardProto		= MIB_IPPROTO_NETMGMT;
-			row.dwForwardAge		= 0;
-			row.dwForwardPolicy		= 0;
-			row.dwForwardMetric1	= kDefaultRouteMetric;
-			row.dwForwardMetric2	= (DWORD) - 1;
-			row.dwForwardMetric3	= (DWORD) - 1;
-			row.dwForwardMetric4	= (DWORD) - 1;
-			row.dwForwardMetric5	= (DWORD) - 1;
-		
-			if ( !HaveRoute( &row, 0, 0 ) )
-			{
-				err = CreateIpForwardEntry(&row);
-				require_noerr( err, exit );
-			}
+			err = CreateIpForwardEntry(&row);
+			check_noerr( err );
 		}
 	}
 
