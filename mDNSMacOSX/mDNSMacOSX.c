@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.683  2009/06/08 22:31:03  cheshire
+Fixed typo in comment: Portability > 35 means nominal weight < 3kg
+
 Revision 1.682  2009/05/19 23:30:31  cheshire
 Suppressed some unnecessary debugging messages; added AppleTV to list of recognized hardware
 
@@ -5232,7 +5235,7 @@ mDNSlocal void SetSPS(mDNS *const m)
 #endif
 
 	// For devices that are not running NAT, but are set to never sleep, we may choose to act
-	// as a Sleep Proxy, but only for non-portable Macs (Portability > 35 means nominal weight > 3kg)
+	// as a Sleep Proxy, but only for non-portable Macs (Portability > 35 means nominal weight < 3kg)
 	if (sps > 50 && SPMetricPortability > 35) sps = 0;
 
 	// If we decide to let laptops act as Sleep Proxy, we should do it only when running on AC power, not on battery
