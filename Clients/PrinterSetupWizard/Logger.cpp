@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: Logger.cpp,v $
+Revision 1.2  2009/06/11 23:11:53  herscher
+<rdar://problem/4458913> Log to user's app data folder
+
 Revision 1.1  2009/06/11 22:27:14  herscher
 <rdar://problem/4458913> Add comprehensive logging during printer installation process.
 
@@ -30,26 +33,18 @@ Revision 1.1  2009/06/11 22:27:14  herscher
 
 Logger::Logger()
 {
-	std::string				tmp;
-	std::string::size_type	pos;
-	char					path[ MAX_PATH ];
-	DWORD					count;
-	int						err;
-	BOOL					ok;
+	std::string	tmp;
+	char		path[ MAX_PATH ];
+	HRESULT		err;
+	BOOL		ok;
 
-	count = GetModuleFileNameA( NULL, path, MAX_PATH );
-	require_action( count > 0, exit, err = -1 );
+	err = SHGetFolderPathA( NULL, CSIDL_LOCAL_APPDATA, NULL, 0, path );
+	require_noerr( err, exit );
 
-	// Trim module name from path
 	tmp = path;
-	pos = tmp.rfind( '\\' );
-	if ( pos != std::string::npos )
-	{
-		tmp.resize(pos);
-	}
 
 	// Create Logs subdir
-	tmp += "\\Logs";
+	tmp += "\\Bonjour";
 	ok = CreateDirectoryA( tmp.c_str(), NULL );
 	require_action( ( ok || ( GetLastError() == ERROR_ALREADY_EXISTS ) ), exit, err = -1 );
 
