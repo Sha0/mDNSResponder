@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: Logger.cpp,v $
+Revision 1.3  2009/06/11 23:32:12  herscher
+<rdar://problem/4458913> Follow the app data folder naming convention of Safari/iTunes on Windows
+
 Revision 1.2  2009/06/11 23:11:53  herscher
 <rdar://problem/4458913> Log to user's app data folder
 
@@ -42,6 +45,11 @@ Logger::Logger()
 	require_noerr( err, exit );
 
 	tmp = path;
+
+	// Create Logs subdir
+	tmp += "\\Apple";
+	ok = CreateDirectoryA( tmp.c_str(), NULL );
+	require_action( ( ok || ( GetLastError() == ERROR_ALREADY_EXISTS ) ), exit, err = -1 );
 
 	// Create Logs subdir
 	tmp += "\\Bonjour";
