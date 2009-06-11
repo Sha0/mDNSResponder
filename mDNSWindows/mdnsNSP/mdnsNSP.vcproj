@@ -80,7 +80,7 @@
 				GenerateDebugInformation="true"
 				ProgramDatabaseFile="$(OutDir)/mdnsNSP.pdb"
 				SubSystem="2"
-				BaseAddress="0x16080000"
+				BaseAddress="0x64000000"
 				ImportLibrary="$(OutDir)/mdnsNSP.lib"
 				TargetMachine="1"
 			/>
@@ -173,7 +173,7 @@
 				GenerateDebugInformation="true"
 				ProgramDatabaseFile="$(OutDir)/mdnsNSP.pdb"
 				SubSystem="2"
-				BaseAddress="0x16080000"
+				BaseAddress="0x64000000"
 				ImportLibrary="$(OutDir)/mdnsNSP.lib"
 				TargetMachine="17"
 			/>
@@ -265,7 +265,7 @@
 				SubSystem="2"
 				OptimizeReferences="0"
 				EnableCOMDATFolding="0"
-				BaseAddress="0x16080000"
+				BaseAddress="0x64000000"
 				ImportLibrary="$(IntDir)/mdnsNSP.lib"
 				TargetMachine="1"
 			/>
@@ -359,7 +359,7 @@
 				SubSystem="2"
 				OptimizeReferences="0"
 				EnableCOMDATFolding="0"
-				BaseAddress="0x16080000"
+				BaseAddress="0x64000000"
 				ImportLibrary="$(IntDir)/mdnsNSP.lib"
 				TargetMachine="17"
 			/>
