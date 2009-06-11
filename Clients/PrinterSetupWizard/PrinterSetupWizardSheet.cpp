@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.39  2009/06/11 22:27:16  herscher
+<rdar://problem/4458913> Add comprehensive logging during printer installation process.
+
 Revision 1.38  2009/05/27 04:49:02  herscher
 <rdar://problem/4417884> Consider setting DoubleSpool for LPR queues to improve compatibility
 
@@ -304,9 +307,10 @@ exit:
 OSStatus
 CPrinterSetupWizardSheet::InstallPrinter(Printer * printer)
 {
+	Logger		log;
 	Service	*	service;
 	BOOL		ok;
-	OSStatus	err;
+	OSStatus	err = 0;
 
 	service = printer->services.front();
 	check( service );
@@ -328,7 +332,7 @@ CPrinterSetupWizardSheet::InstallPrinter(Printer * printer)
 		//
 		hThread = (HANDLE) _beginthreadex_compat( NULL, 0, InstallDriverThread, printer, 0, &threadID );
 		err = translate_errno( hThread, (OSStatus) GetLastError(), kUnknownErr );
-		require_noerr( err, exit );
+		require_noerr_with_log( log, "_beginthreadex_compat()", err, exit );
 			
 		//
 		// go modal
@@ -341,18 +345,18 @@ CPrinterSetupWizardSheet::InstallPrinter(Printer * printer)
 			TranslateMessage(&msg);
 			DispatchMessage(&msg);
 		}
-	
+
 		//
 		// Wait until child process exits.
 		//
 		dwResult = WaitForSingleObject( hThread, INFINITE );
 		err = translate_errno( dwResult == WAIT_OBJECT_0, errno_compat(), err = kUnknownErr );
-		require_noerr( err, exit );
+		require_noerr_with_log( log, "WaitForSingleObject()", err, exit );
 
 		//
 		// check the return value of thread
 		//
-		require_noerr( m_driverThreadExitCode, exit );
+		require_noerr_with_log( log, "thread exit code", m_driverThreadExitCode, exit );
 
 		//
 		// now we know that the driver was successfully installed
@@ -362,23 +366,22 @@ CPrinterSetupWizardSheet::InstallPrinter(Printer * printer)
 
 	if ( service->type == kPDLServiceType )
 	{
-		err = InstallPrinterPDLAndLPR( printer, service, PROTOCOL_RAWTCP_TYPE );
-		require_noerr( err, exit );
+		err = InstallPrinterPDLAndLPR( printer, service, PROTOCOL_RAWTCP_TYPE, log );
+		require_noerr_with_log( log, "InstallPrinterPDLAndLPR()", err, exit );
 	}
 	else if ( service->type == kLPRServiceType )
 	{
-		err = InstallPrinterPDLAndLPR( printer, service, PROTOCOL_LPR_TYPE );
-		require_noerr( err, exit );
+		err = InstallPrinterPDLAndLPR( printer, service, PROTOCOL_LPR_TYPE, log );
+		require_noerr_with_log( log, "InstallPrinterPDLAndLPR()", err, exit );
 	}
 	else if ( service->type == kIPPServiceType )
 	{
-		err = InstallPrinterIPP( printer, service );
-		require_noerr( err, exit );
+		err = InstallPrinterIPP( printer, service, log );
+		require_noerr_with_log( log, "InstallPrinterIPP()", err, exit );
 	}
 	else
 	{
-		err = kUnknownErr;
-		require_noerr( err, exit );
+		require_action_with_log( log, ( service->type == kPDLServiceType ) || ( service->type == kLPRServiceType ) || ( service->type == kIPPServiceType ), exit, err = kUnknownErr );
 	}
 
 	printer->installed = true;
@@ -390,7 +393,7 @@ CPrinterSetupWizardSheet::InstallPrinter(Printer * printer)
 	{
 		ok = SetDefaultPrinter( printer->actualName );
 		err = translate_errno( ok, errno_compat(), err = kUnknownErr );
-		require_noerr( err, exit );
+		require_noerr_with_log( log, "SetDefaultPrinter()", err, exit );
 	}
 
 exit:
@@ -400,7 +403,7 @@ exit:
 
 
 OSStatus
-CPrinterSetupWizardSheet::InstallPrinterPDLAndLPR(Printer * printer, Service * service, DWORD protocol )
+CPrinterSetupWizardSheet::InstallPrinterPDLAndLPR(Printer * printer, Service * service, DWORD protocol, Logger & log )
 {
 	PRINTER_DEFAULTS	printerDefaults =	{ NULL,  NULL, SERVER_ACCESS_ADMINISTER };
 	DWORD				dwStatus;
@@ -423,7 +426,7 @@ CPrinterSetupWizardSheet::InstallPrinterPDLAndLPR(Printer * printer, Service * s
 
 	ok = OpenPrinter(L",XcvMonitor Standard TCP/IP Port", &hXcv, &printerDefaults);
 	err = translate_errno( ok, errno_compat(), kUnknownErr );
-	require_noerr( err, exit );
+	require_noerr_with_log( log, "OpenPrinter()", err, exit );
 
 	//
 	// BUGBUG: MSDN said this is not required, but my experience shows it is required
@@ -437,14 +440,14 @@ CPrinterSetupWizardSheet::InstallPrinterPDLAndLPR(Printer * printer, Service * s
 		pOutputData = NULL;
 	}
 
-	require_action( pOutputData, exit, err = kNoMemoryErr );
+	require_action_with_log( log, pOutputData, exit, err = kNoMemoryErr );
 	
 	//
 	// setup the port
 	//
 	ZeroMemory(&portData, sizeof(PORT_DATA_1));
 
-	require_action( wcslen(printer->portName) < sizeof_array(portData.sztPortName), exit, err = kSizeErr );
+	require_action_with_log( log, wcslen(printer->portName) < sizeof_array(portData.sztPortName), exit, err = kSizeErr );
 	wcscpy_s(portData.sztPortName, printer->portName);
     	
 	portData.dwPortNumber	=	service->portNumber;
@@ -455,15 +458,15 @@ CPrinterSetupWizardSheet::InstallPrinterPDLAndLPR(Printer * printer, Service * s
 	portData.cbSize		= sizeof PORT_DATA_1;
 	portData.dwReserved	= 0L;
     	
-	require_action(wcslen(q->name) < sizeof_array(portData.sztQueue), exit, err = kSizeErr );
+	require_action_with_log( log, wcslen(q->name) < sizeof_array(portData.sztQueue), exit, err = kSizeErr );
 	wcscpy_s(portData.sztQueue, q->name);
 
-	require_action(wcslen( service->hostname ) < sizeof_array(portData.sztHostAddress), exit, err = kSizeErr );
+	require_action_with_log( log, wcslen( service->hostname ) < sizeof_array(portData.sztHostAddress), exit, err = kSizeErr );
 	wcscpy_s( portData.sztHostAddress, service->hostname );
 
 	ok = XcvData(hXcv, L"AddPort", (PBYTE) &portData, sizeof(PORT_DATA_1), pOutputData, cbInputData,  &cbOutputNeeded, &dwStatus);
 	err = translate_errno( ok, errno_compat(), kUnknownErr );
-	require_noerr( err, exit );
+	require_noerr_with_log( log, "XcvData()", err, exit );
 
 	//
 	// add the printer
@@ -492,7 +495,7 @@ CPrinterSetupWizardSheet::InstallPrinterPDLAndLPR(Printer * printer, Service * s
 
 	hPrinter = AddPrinter(NULL, 2, (LPBYTE) &pInfo);
 	err = translate_errno( hPrinter, errno_compat(), kUnknownErr );
-	require_noerr( err, exit );
+	require_noerr_with_log( log, "AddPrinter()", err, exit );
 
 exit:
 
@@ -516,7 +519,7 @@ exit:
 
 
 OSStatus
-CPrinterSetupWizardSheet::InstallPrinterIPP(Printer * printer, Service * service)
+CPrinterSetupWizardSheet::InstallPrinterIPP(Printer * printer, Service * service, Logger & log)
 {
 	DEBUG_UNUSED( service );
 
@@ -542,7 +545,7 @@ CPrinterSetupWizardSheet::InstallPrinterIPP(Printer * printer, Service * service
 	
 	hPrinter = AddPrinter(NULL, 2, (LPBYTE)&pInfo);
 	err = translate_errno( hPrinter, errno_compat(), kUnknownErr );
-	require_noerr( err, exit );
+	require_noerr_with_log( log, "AddPrinter()", err, exit );
 
 exit:
 

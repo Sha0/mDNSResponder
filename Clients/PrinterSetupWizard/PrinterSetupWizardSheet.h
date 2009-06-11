@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.h,v $
+Revision 1.14  2009/06/11 22:27:16  herscher
+<rdar://problem/4458913> Add comprehensive logging during printer installation process.
+
 Revision 1.13  2009/03/30 19:18:49  herscher
 <rdar://problem/5925472> Current Bonjour code does not compile on Windows
 <rdar://problem/5187308> Move build train to Visual Studio 2005
@@ -71,6 +74,7 @@ First checked in
 #include "thirdpage.h"
 #include "fourthpage.h"
 #include "UtilTypes.h"
+#include "Logger.h"
 #include "dns_sd.h"
 #include <stdexcept>
 #include <map>
@@ -269,10 +273,10 @@ private:
 	InstallPrinter(Printer * printer);
 
 	OSStatus
-	InstallPrinterPDLAndLPR(Printer * printer, Service * service, DWORD protocol);
+	InstallPrinterPDLAndLPR(Printer * printer, Service * service, DWORD protocol, Logger & log);
 
 	OSStatus
-	InstallPrinterIPP(Printer * printer, Service * service);
+	InstallPrinterIPP(Printer * printer, Service * service, Logger & log);
 
 	static unsigned WINAPI
 	InstallDriverThread( LPVOID inParam );
