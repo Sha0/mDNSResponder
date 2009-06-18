@@ -183,7 +183,7 @@ BEGIN
     IDS_NAME                "Bonjour"
     IDS_WEB_SITES           "Web Sites"
     IDS_PRINTERS            "Printers"
-    IDS_MDNSRESPONDER_NOT_AVAILABLE "Bonjour Service is not available"
+    IDS_MDNSRESPONDER_NOT_AVAILABLE "Bonjour Service is not available."
     IDS_FIREWALL            "Check firewall settings"
 END
 
