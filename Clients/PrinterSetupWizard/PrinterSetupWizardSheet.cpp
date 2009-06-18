@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: PrinterSetupWizardSheet.cpp,v $
+Revision 1.40  2009/06/18 18:05:50  herscher
+<rdar://problem/4694554> Eliminate the first screen of Printer Wizard and maybe combine others ("I'm Feeling Lucky")
+
 Revision 1.39  2009/06/11 22:27:16  herscher
 <rdar://problem/4458913> Add comprehensive logging during printer installation process.
 
@@ -698,7 +701,6 @@ CPrinterSetupWizardSheet::OnOK()
 
 void CPrinterSetupWizardSheet::Init(void)
 {
-	AddPage(&m_pgFirst);
 	AddPage(&m_pgSecond);
 	AddPage(&m_pgThird);
 	AddPage(&m_pgFourth);

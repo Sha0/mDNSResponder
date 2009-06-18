@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: ThirdPage.cpp,v $
+Revision 1.41  2009/06/18 18:05:50  herscher
+<rdar://problem/4694554> Eliminate the first screen of Printer Wizard and maybe combine others ("I'm Feeling Lucky")
+
 Revision 1.40  2009/05/29 20:43:36  herscher
 <rdar://problem/6928136> Printer Wizard doesn't work correctly in Windows 7 64 bit
 
@@ -1453,9 +1456,14 @@ CThirdPage::OnSetActive()
 	// and try and match the printer
 	//
 
-	if ( psheet->GetLastPage() == psheet->GetPage(1) )
+	if ( psheet->GetLastPage() == psheet->GetPage(0) )
 	{
 		MatchPrinter( m_manufacturers, printer, service, true );
+
+		if ( ( m_manufacturerSelected != NULL ) && ( m_modelSelected != NULL  ) )
+		{
+			GetParent()->PostMessage(PSM_SETCURSEL, 2 );
+		}
 	}
 	else
 	{
