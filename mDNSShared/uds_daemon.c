@@ -17,6 +17,10 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.461  2009/06/19 23:15:07  cheshire
+<rdar://problem/6990066> Library: crash at handle_resolve_response + 183
+Made resolve_result_callback code more defensive and improved LogOperation messages
+
 Revision 1.460  2009/05/26 21:31:07  herscher
 Fix compile errors on Windows
 
@@ -2778,17 +2782,12 @@ mDNSlocal void resolve_result_callback(mDNS *const m, DNSQuestion *question, con
 	request_state *req = question->QuestionContext;
 	(void)m; // Unused
 
-	LogOperation("%3d: DNSServiceResolve(%##s, %s) %s %s",
-		req->sd, question->qname.c, DNSTypeName(question->qtype), AddRecord ? "ADD" : "RMV", RRDisplayString(m, answer));
-
-	// This code used to do this trick of just keeping a copy of the pointer to
-	// the answer record in the cache, but the unicast query code doesn't currently
-	// put its answer records in the cache, so for now we can't do this.
+	LogOperation("%3d: DNSServiceResolve(%##s) %s %s", req->sd, question->qname.c, AddRecord ? "ADD" : "RMV", RRDisplayString(m, answer));
 
 	if (!AddRecord)
 		{
-		if (answer->rrtype == kDNSType_SRV && req->u.resolve.srv == answer) req->u.resolve.srv = mDNSNULL;
-		if (answer->rrtype == kDNSType_TXT && req->u.resolve.txt == answer) req->u.resolve.txt = mDNSNULL;
+		if (req->u.resolve.srv == answer) req->u.resolve.srv = mDNSNULL;
+		if (req->u.resolve.txt == answer) req->u.resolve.txt = mDNSNULL;
 		return;
 		}
 
@@ -2820,11 +2819,12 @@ mDNSlocal void resolve_result_callback(mDNS *const m, DNSQuestion *question, con
 	// write reply data to message
 	put_string(fullname, &data);
 	put_string(target, &data);
-	*data++ = req->u.resolve.srv->rdata->u.srv.port.b[0];
-	*data++ = req->u.resolve.srv->rdata->u.srv.port.b[1];
+	*data++ =  req->u.resolve.srv->rdata->u.srv.port.b[0];
+	*data++ =  req->u.resolve.srv->rdata->u.srv.port.b[1];
 	put_uint16(req->u.resolve.txt->rdlength, &data);
-	put_rdata(req->u.resolve.txt->rdlength, req->u.resolve.txt->rdata->u.data, &data);
+	put_rdata (req->u.resolve.txt->rdlength, req->u.resolve.txt->rdata->u.data, &data);
 
+	LogOperation("%3d: DNSServiceResolve(%s) RESULT   %s:%d", req->sd, fullname, target, mDNSVal16(req->u.resolve.srv->rdata->u.srv.port));
 	append_reply(req, rep);
 	}
 
@@ -2884,6 +2884,7 @@ mDNSlocal mStatus handle_resolve_request(request_state *request)
 	request->u.resolve.qtxt.ReturnIntermed   = (flags & kDNSServiceFlagsReturnIntermediates) != 0;
 	request->u.resolve.qtxt.QuestionCallback = resolve_result_callback;
 	request->u.resolve.qtxt.QuestionContext  = request;
+
 	request->u.resolve.ReportTime            = NonZeroTime(mDNS_TimeNow(&mDNSStorage) + 130 * mDNSPlatformOneSecond);
 
 #if 0
