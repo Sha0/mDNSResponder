@@ -28,6 +28,10 @@
 	Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
+Revision 1.134  2009/06/19 23:13:24  cheshire
+<rdar://problem/6990066> Library: crash at handle_resolve_response + 183
+Added check for NULL after calling get_string
+
 Revision 1.133  2009/05/27 22:19:12  cheshire
 Remove questionable uses of errno
 
@@ -1113,7 +1117,7 @@ static void handle_resolve_response(DNSServiceOp *const sdr, const CallbackHeade
 
 	get_string(&data, end, fullname, kDNSServiceMaxDomainName);
 	get_string(&data, end, target,   kDNSServiceMaxDomainName);
-	if (data + 2 > end) data = NULL;
+	if (!data || data + 2 > end) data = NULL;
 	else
 		{
 		port.b[0] = *data++;
@@ -1801,7 +1805,7 @@ static void handle_port_mapping_response(DNSServiceOp *const sdr, const Callback
 	union { uint16_t s; u_char b[2]; } externalPort;
 	uint32_t ttl = 0;
 
-	if (data + 13 > end) data = NULL;
+	if (!data || data + 13 > end) data = NULL;
 	else
 		{
 		addr        .b[0] = *data++;
