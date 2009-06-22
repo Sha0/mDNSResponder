@@ -414,6 +414,10 @@
 				>
 			</File>
 			<File
+				RelativePath="..\Secret.c"
+				>
+			</File>
+			<File
 				RelativePath=".\Service.c"
 				>
 			</File>
@@ -465,6 +469,10 @@
 			</File>
 			<File
 				RelativePath=".\Resource.h"
+				>
+			</File>
+			<File
+				RelativePath="..\Secret.h"
 				>
 			</File>
 			<File

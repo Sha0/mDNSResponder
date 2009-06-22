@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.141  2009/06/22 23:25:05  herscher
+<rdar://problem/5265747> ControlPanel doesn't display key and password in dialog box. Refactor Lsa calls into Secret.h and Secret.c, which is used by both the ControlPanel and mDNSResponder system service.
+
 Revision 1.140  2009/04/24 04:55:26  herscher
 <rdar://problem/3496833> Advertise SMB file sharing via Bonjour
 
@@ -154,6 +157,7 @@ Revision 1.106  2006/02/26 19:31:05  herscher
 #include	"DebugServices.h"
 #include	"Firewall.h"
 #include	"RegNames.h"
+#include	"Secret.h"
 #include	<dns_sd.h>
 
 #include	<Iphlpapi.h>
@@ -294,16 +298,6 @@ mDNSexport mStatus	mDNSPlatformInterfaceIDToInfo( mDNS * const inMDNS, mDNSInter
 
 // Utilities
 
-typedef struct PolyString PolyString;
-
-struct PolyString
-{
-	domainname			m_dname;
-	char				m_utf8[256];
-	PLSA_UNICODE_STRING	m_lsa;
-};
-
-
 #if( MDNS_WINDOWS_USE_IPV6_IF_ADDRS )
 	mDNSlocal int	getifaddrs_ipv6( struct ifaddrs **outAddrs );
 #endif
@@ -326,8 +320,6 @@ mDNSlocal mStatus			RegQueryString( HKEY key, LPCSTR param, LPSTR * string, DWOR
 mDNSlocal struct ifaddrs*	myGetIfAddrs(int refresh);
 mDNSlocal OSStatus			TCHARtoUTF8( const TCHAR *inString, char *inBuffer, size_t inBufferSize );
 mDNSlocal OSStatus			WindowsLatin1toUTF8( const char *inString, char *inBuffer, size_t inBufferSize );
-mDNSlocal OSStatus			MakeLsaStringFromUTF8String( PLSA_UNICODE_STRING output, const char * input );
-mDNSlocal OSStatus			MakeUTF8StringFromLsaString( char * output, size_t len, PLSA_UNICODE_STRING input );
 mDNSlocal void				FreeTCPSocket( TCPSocket *sock );
 mDNSlocal void				FreeUDPSocket( UDPSocket * sock );
 mDNSlocal mStatus           SetupAddr(mDNSAddr *ip, const struct sockaddr *const sa);
@@ -5112,89 +5104,6 @@ exit:
 
 
 //===========================================================================================================================
-//	ConvertUTF8ToLsaString
-//===========================================================================================================================
-
-mDNSlocal OSStatus
-MakeLsaStringFromUTF8String( PLSA_UNICODE_STRING output, const char * input )
-{
-	int			size;
-	OSStatus	err;
-	
-	check( input );
-	check( output );
-
-	output->Buffer = NULL;
-
-	size = MultiByteToWideChar( CP_UTF8, 0, input, -1, NULL, 0 );
-	err = translate_errno( size > 0, GetLastError(), kUnknownErr );
-	require_noerr( err, exit );
-
-	output->Length = (USHORT)( size * sizeof( wchar_t ) );
-	output->Buffer = (PWCHAR) malloc( output->Length );
-	require_action( output->Buffer, exit, err = mStatus_NoMemoryErr );
-	size = MultiByteToWideChar( CP_UTF8, 0, input, -1, output->Buffer, size );
-	err = translate_errno( size > 0, GetLastError(), kUnknownErr );
-	require_noerr( err, exit );
-
-	// We're going to subtrace one wchar_t from the size, because we didn't
-	// include it when we encoded the string
-
-	output->MaximumLength = output->Length;
-	output->Length		-= sizeof( wchar_t );
-	
-exit:
-
-	if ( err && output->Buffer )
-	{
-		free( output->Buffer );
-		output->Buffer = NULL;
-	}
-
-	return( err );
-}
-
-
-//===========================================================================================================================
-//	ConvertLsaStringToUTF8
-//===========================================================================================================================
-
-mDNSlocal OSStatus
-MakeUTF8StringFromLsaString( char * output, size_t len, PLSA_UNICODE_STRING input )
-{
-	size_t		size;
-	OSStatus	err = kNoErr;
-
-	// The Length field of this structure holds the number of bytes,
-	// but WideCharToMultiByte expects the number of wchar_t's. So
-	// we divide by sizeof(wchar_t) to get the correct number.
-
-	size = (size_t) WideCharToMultiByte(CP_UTF8, 0, input->Buffer, ( input->Length / sizeof( wchar_t ) ), NULL, 0, NULL, NULL);
-	err = translate_errno( size != 0, GetLastError(), kUnknownErr );
-	require_noerr( err, exit );
-	
-	// Ensure that we have enough space (Add one for trailing '\0')
-
-	require_action( ( size + 1 ) <= len, exit, err = mStatus_NoMemoryErr );
-
-	// Convert the string
-
-	size = (size_t) WideCharToMultiByte( CP_UTF8, 0, input->Buffer, ( input->Length / sizeof( wchar_t ) ), output, (int) size, NULL, NULL);	
-	err = translate_errno( size != 0, GetLastError(), kUnknownErr );
-	require_noerr( err, exit );
-
-	// have to add the trailing 0 because WideCharToMultiByte doesn't do it,
-	// although it does return the correct size
-
-	output[size] = '\0';
-
-exit:
-
-	return err;
-}
-
-
-//===========================================================================================================================
 //	FreeTCPConnectionData
 //===========================================================================================================================
 
@@ -5399,124 +5308,48 @@ exit:
 
 mDNSlocal void SetDomainSecret( mDNS * const m, const domainname * inDomain )
 {
+	char					domainUTF8[ 256 ];
 	DomainAuthInfo			*foundInList;
 	DomainAuthInfo			*ptr;
-	PolyString				domain;
-	PolyString				key;
-	PolyString				secret;
-	size_t					i;
-	size_t					dlen;
-	LSA_OBJECT_ATTRIBUTES	attrs;
-	LSA_HANDLE				handle = NULL;
-	NTSTATUS				res;
+	char					outDomain[ 256 ];
+	char					outKey[ 256 ];
+	char					outSecret[ 256 ];
 	OSStatus				err;
-
-	// Initialize PolyStrings
-
-	domain.m_lsa	= NULL;
-	key.m_lsa		= NULL;
-	secret.m_lsa	= NULL;
-
-	// canonicalize name by converting to lower case (keychain and some name servers are case sensitive)
 	
-	ConvertDomainNameToCString( inDomain, domain.m_utf8 );
-	dlen = strlen( domain.m_utf8 );
-	for ( i = 0; i < dlen; i++ )
+	ConvertDomainNameToCString( inDomain, domainUTF8 );
+	
+	// If we're able to find a secret for this domain
+
+	if ( LsaGetSecret( domainUTF8, outDomain, sizeof( outDomain ), outKey, sizeof( outKey ), outSecret, sizeof( outSecret ) ) )
 	{
-		domain.m_utf8[i] = (char) tolower( domain.m_utf8[i] );  // canonicalize -> lower case
+		domainname domain;
+		domainname key;
+
+		// Tell the core about this secret
+
+		MakeDomainNameFromDNSNameString( &domain, outDomain );
+		MakeDomainNameFromDNSNameString( &key, outKey );
+
+		for (foundInList = m->AuthInfoList; foundInList; foundInList = foundInList->next)
+			if (SameDomainName(&foundInList->domain, &domain ) ) break;
+
+		ptr = foundInList;
+	
+		if (!ptr)
+		{
+			ptr = (DomainAuthInfo*)malloc(sizeof(DomainAuthInfo));
+			require_action( ptr, exit, err = mStatus_NoMemoryErr );
+		}
+
+		err = mDNS_SetSecretForDomain(m, ptr, &domain, &key, outSecret, mDNSfalse );
+		require_action( err != mStatus_BadParamErr, exit, if (!foundInList ) mDNSPlatformMemFree( ptr ) );
+
+		debugf("Setting shared secret for zone %s with key %##s", outDomain, key.c);
 	}
-
-	MakeDomainNameFromDNSNameString( &domain.m_dname, domain.m_utf8 );
-
-	// attrs are reserved, so initialize to zeroes.
-
-	ZeroMemory( &attrs, sizeof( attrs ) );
-
-	// Get a handle to the Policy object on the local system
-
-	res = LsaOpenPolicy( NULL, &attrs, POLICY_GET_PRIVATE_INFORMATION, &handle );
-	err = translate_errno( res == 0, LsaNtStatusToWinError( res ), kUnknownErr );
-	require_noerr( err, exit );
-
-	// Get the encrypted data
-
-	domain.m_lsa = ( PLSA_UNICODE_STRING) malloc( sizeof( LSA_UNICODE_STRING ) );
-	require_action( domain.m_lsa != NULL, exit, err = mStatus_NoMemoryErr );
-	err = MakeLsaStringFromUTF8String( domain.m_lsa, domain.m_utf8 );
-	require_noerr( err, exit );
-
-	// Retrieve the key
-
-	res = LsaRetrievePrivateData( handle, domain.m_lsa, &key.m_lsa );
-	err = translate_errno( res == 0, LsaNtStatusToWinError( res ), kUnknownErr );
-	require_noerr_quiet( err, exit );
-
-	// <rdar://problem/4192119> Lsa secrets use a flat naming space.  Therefore, we will prepend "$" to the keyname to
-	// make sure it doesn't conflict with a zone name.
-	
-	// Convert the key to a domainname.  Strip off the "$" prefix.
-
-	err = MakeUTF8StringFromLsaString( key.m_utf8, sizeof( key.m_utf8 ), key.m_lsa );
-	require_noerr( err, exit );
-	require_action( key.m_utf8[0] == '$', exit, err = kUnknownErr );
-	MakeDomainNameFromDNSNameString( &key.m_dname, key.m_utf8 + 1 );
-
-	// Retrieve the secret
-
-	res = LsaRetrievePrivateData( handle, key.m_lsa, &secret.m_lsa );
-	err = translate_errno( res == 0, LsaNtStatusToWinError( res ), kUnknownErr );
-	require_noerr_quiet( err, exit );
-	
-	// Convert the secret to UTF8 string
-
-	err = MakeUTF8StringFromLsaString( secret.m_utf8, sizeof( secret.m_utf8 ), secret.m_lsa );
-	require_noerr( err, exit );
-
-	// And finally, tell the core about this secret
-
-	for (foundInList = m->AuthInfoList; foundInList; foundInList = foundInList->next)
-		if (SameDomainName(&foundInList->domain, &domain.m_dname)) break;
-
-	ptr = foundInList;
-	
-	if (!ptr)
-	{
-		ptr = (DomainAuthInfo*)malloc(sizeof(DomainAuthInfo));
-		require_action( ptr, exit, err = mStatus_NoMemoryErr );
-	}
-
-	err = mDNS_SetSecretForDomain(m, ptr, &domain.m_dname, &key.m_dname, secret.m_utf8, mDNSfalse );
-	require_action( err != mStatus_BadParamErr, exit, if (!foundInList ) mDNSPlatformMemFree( ptr ) );
-
-	debugf("Setting shared secret for zone %s with key %##s", domain.m_utf8, key.m_dname.c);
 
 exit:
 
-	if ( domain.m_lsa != NULL )
-	{
-		if ( domain.m_lsa->Buffer != NULL )
-		{
-			free( domain.m_lsa->Buffer );
-		}
-
-		free( domain.m_lsa );
-	}
-
-	if ( key.m_lsa != NULL )
-	{
-		LsaFreeMemory( key.m_lsa );
-	}
-
-	if ( secret.m_lsa != NULL )
-	{
-		LsaFreeMemory( secret.m_lsa );
-	}
-
-	if ( handle )
-	{
-		LsaClose( handle );
-		handle = NULL;
-	}
+	return;
 }
 
 

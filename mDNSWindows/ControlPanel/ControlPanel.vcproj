@@ -768,6 +768,14 @@
 				>
 			</File>
 			<File
+				RelativePath="..\Secret.c"
+				>
+			</File>
+			<File
+				RelativePath="..\Secret.h"
+				>
+			</File>
+			<File
 				RelativePath="..\WinServices.cpp"
 				>
 			</File>
