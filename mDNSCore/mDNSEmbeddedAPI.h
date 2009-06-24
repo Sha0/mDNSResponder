@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.570  2009/06/24 22:14:21  cheshire
+<rdar://problem/6911445> Plugging and unplugging the power cable shouldn't cause a network change event
+
 Revision 1.569  2009/06/03 23:07:12  cheshire
 <rdar://problem/6890712> mDNS: iChat's Buddy photo always appears as the "shadow person" over Bonjour
 Large records were not being added in cases where an NSEC record was also required
@@ -3331,6 +3334,8 @@ extern void     LNT_ClearState(mDNS *const m);
 // not lightweight second-by-second CPU power management modes.)
 
 extern void     mDNS_SetFQDN(mDNS *const m);
+extern void     mDNS_ActivateNetWake_internal  (mDNS *const m, NetworkInterfaceInfo *set);
+extern void     mDNS_DeactivateNetWake_internal(mDNS *const m, NetworkInterfaceInfo *set);
 extern mStatus  mDNS_RegisterInterface  (mDNS *const m, NetworkInterfaceInfo *set, mDNSBool flapping);
 extern void     mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *set, mDNSBool flapping);
 extern void     mDNSCoreInitComplete(mDNS *const m, mStatus result);

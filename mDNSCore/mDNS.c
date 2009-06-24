@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.965  2009/06/24 22:14:21  cheshire
+<rdar://problem/6911445> Plugging and unplugging the power cable shouldn't cause a network change event
+
 Revision 1.964  2009/06/03 23:07:13  cheshire
 <rdar://problem/6890712> mDNS: iChat's Buddy photo always appears as the "shadow person" over Bonjour
 Large records were not being added in cases where an NSEC record was also required
@@ -8114,9 +8117,48 @@ mDNSlocal void RestartRecordGetZoneData(mDNS * const m)
 		}
 	}
 
-mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *set, mDNSBool flapping)
+mDNSlocal void InitializeNetWakeState(mDNS *const m, NetworkInterfaceInfo *set)
 	{
 	int i;
+	set->NetWakeBrowse.ThisQInterval = -1;
+	for (i=0; i<3; i++)
+		{
+		set->NetWakeResolve[i].ThisQInterval = -1;
+		set->SPSAddr[i].type = mDNSAddrType_None;
+		}
+	set->NextSPSAttempt     = -1;
+	set->NextSPSAttemptTime = m->timenow;
+	}
+
+mDNSexport void mDNS_ActivateNetWake_internal(mDNS *const m, NetworkInterfaceInfo *set)
+	{
+	if (set->InterfaceActive)
+		{
+		LogSPS("ActivateNetWake for %s (%#a)", set->ifname, &set->ip);
+		mDNS_StartBrowse_internal(m, &set->NetWakeBrowse, &SleepProxyServiceType, &localdomain, set->InterfaceID, mDNSfalse, m->SPSBrowseCallback, set);
+		}
+	}
+
+mDNSexport void mDNS_DeactivateNetWake_internal(mDNS *const m, NetworkInterfaceInfo *set)
+	{
+	if (set->NetWakeBrowse.ThisQInterval >= 0)
+		{
+		LogSPS("DeactivateNetWake for %s (%#a)", set->ifname, &set->ip);
+
+		// Stop our browse operation
+		mDNS_StopQuery_internal(m, &set->NetWakeBrowse);
+	
+		// Make special call to the browse callback to let it know it can to remove all records for this interface
+		if (m->SPSBrowseCallback) m->SPSBrowseCallback(m, &set->NetWakeBrowse, mDNSNULL, mDNSfalse);
+	
+		// Reset our variables back to initial state, so we're ready for when NetWake is turned back on
+		// (includes resetting NetWakeBrowse.ThisQInterval back to -1)
+		InitializeNetWakeState(m, set);
+		}
+	}
+
+mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *set, mDNSBool flapping)
+	{
 	AuthRecord *rr;
 	mDNSBool FirstOfType = mDNStrue;
 	NetworkInterfaceInfo **p = &m->HostInterfaces;
@@ -8134,14 +8176,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	set->IPv4Available   = (set->ip.type == mDNSAddrType_IPv4 && set->McastTxRx);
 	set->IPv6Available   = (set->ip.type == mDNSAddrType_IPv6 && set->McastTxRx);
 	
-	set->NetWakeBrowse.ThisQInterval = -1;
-	for (i=0; i<3; i++)
-		{
-		set->NetWakeResolve[i].ThisQInterval = -1;
-		set->SPSAddr[i].type = mDNSAddrType_None;
-		}
-	set->NextSPSAttempt     = -1;
-	set->NextSPSAttemptTime = m->timenow;
+	InitializeNetWakeState(m, set);
 
 	// Scan list to see if this InterfaceID is already represented
 	while (*p)
@@ -8176,9 +8211,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 			"not represented in list; marking active and retriggering queries" :
 			"already represented in list; marking inactive for now");
 	
-	if (set->InterfaceActive && set->NetWake)
-		mDNS_StartBrowse_internal(m, &set->NetWakeBrowse, &SleepProxyServiceType, &localdomain,
-			set->InterfaceID, mDNSfalse, m->SPSBrowseCallback, set);
+	if (set->NetWake) mDNS_ActivateNetWake_internal(m, set);
 
 	// In early versions of OS X the IPv6 address remains on an interface even when the interface is turned off,
 	// giving the false impression that there's an active representative of this interface when there really isn't.
@@ -8271,12 +8304,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 	while (*p && *p != set) p=&(*p)->next;
 	if (!*p) { debugf("mDNS_DeregisterInterface: NetworkInterfaceInfo not found in list"); mDNS_Unlock(m); return; }
 
-	if (set->NetWakeBrowse. ThisQInterval >= 0)
-		{
-		mDNS_StopQuery_internal(m, &set->NetWakeBrowse);
-		// Make special call to the browse callback to let it know it can to remove all records for this interface
-		if (m->SPSBrowseCallback) m->SPSBrowseCallback(m, &set->NetWakeBrowse, mDNSNULL, mDNSfalse);
-		}
+	mDNS_DeactivateNetWake_internal(m, set);
 
 	for (i=0; i<3; i++) if (set->NetWakeResolve[i].ThisQInterval >= 0) mDNS_StopQuery_internal(m, &set->NetWakeResolve[i]);
 
@@ -8304,9 +8332,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 			intf->InterfaceActive = mDNStrue;
 			UpdateInterfaceProtocols(m, intf);
 
-			if (intf->NetWake)
-				mDNS_StartBrowse_internal(m, &intf->NetWakeBrowse, &SleepProxyServiceType, &localdomain,
-					intf->InterfaceID, mDNSfalse, m->SPSBrowseCallback, intf);
+			if (intf->NetWake) mDNS_ActivateNetWake_internal(m, intf);
 			
 			// See if another representative *of the same type* exists. If not, we mave have gone from
 			// dual-stack to v6-only (or v4-only) so we need to reconfirm which records are still valid.

@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.684  2009/06/24 22:14:22  cheshire
+<rdar://problem/6911445> Plugging and unplugging the power cable shouldn't cause a network change event
+
 Revision 1.683  2009/06/08 22:31:03  cheshire
 Fixed typo in comment: Portability > 35 means nominal weight < 3kg
 
@@ -3108,13 +3111,25 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 	for (p = &m->p->InterfaceList; *p; p = &(*p)->next)
 		if (scope_id == (*p)->scope_id &&
 			mDNSSameAddress(&ip, &(*p)->ifinfo.ip) &&
-			mDNSSameEthAddress(&bssid, &(*p)->BSSID) &&
-			NetWakeInterface(*p) == (*p)->ifinfo.NetWake)
+			mDNSSameEthAddress(&bssid, &(*p)->BSSID))
 			{
 			debugf("AddInterfaceToList: Found existing interface %lu %.6a with address %#a at %p", scope_id, &bssid, &ip, *p);
 			(*p)->Exists = mDNStrue;
 			// If interface was not in getifaddrs list last time we looked, but it is now, update 'AppearanceTime' for this record
 			if ((*p)->LastSeen != utc) (*p)->AppearanceTime = utc;
+
+			// If Wake-on-LAN capability of this interface has changed (e.g. because power cable on laptop has been disconnected)
+			// we may need to start or stop or sleep proxy browse operation
+			const mDNSBool NetWake = NetWakeInterface(*p);
+			if ((*p)->ifinfo.NetWake != NetWake)
+				{
+				(*p)->ifinfo.NetWake = NetWake;
+				mDNS_Lock(m);
+				if (NetWake) mDNS_ActivateNetWake_internal  (m, &(*p)->ifinfo);
+				else         mDNS_DeactivateNetWake_internal(m, &(*p)->ifinfo);
+				mDNS_Unlock(m);
+				}
+
 			return(*p);
 			}
 
