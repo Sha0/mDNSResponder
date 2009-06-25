@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: Secret.h,v $
+Revision 1.2  2009/06/25 21:11:52  herscher
+Fix compilation error when building Control Panel.
+
 Revision 1.1  2009/06/22 23:25:04  herscher
 <rdar://problem/5265747> ControlPanel doesn't display key and password in dialog box. Refactor Lsa calls into Secret.h and Secret.c, which is used by both the ControlPanel and mDNSResponder system service.
 
@@ -35,7 +38,7 @@ extern "C" {
 
 
 extern mDNSBool
-LsaGetSecret( const char * inDomain, char * outDomain, size_t outDomainLength, char * outKey, size_t outKeyLength, char * outSecret, size_t outSecretLength );
+LsaGetSecret( const char * inDomain, char * outDomain, unsigned outDomainLength, char * outKey, unsigned outKeyLength, char * outSecret, unsigned outSecretLength );
 
 
 extern mDNSBool
