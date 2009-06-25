@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.685  2009/06/25 23:15:12  cheshire
+Don't try to use private header file "IOPowerSourcesPrivate.h"
+(it prevents external developers from being able to compile the code)
+
 Revision 1.684  2009/06/24 22:14:22  cheshire
 <rdar://problem/6911445> Plugging and unplugging the power cable shouldn't cause a network change event
 
@@ -1288,8 +1292,12 @@ Add (commented out) trigger value for testing "mach_absolute_time went backwards
 
 #include <IOKit/IOKitLib.h>
 #include <IOKit/IOMessage.h>
+
+#if USE_IOPMCOPYACTIVEPMPREFERENCES
 #include <IOKit/ps/IOPowerSources.h>
 #include <IOKit/ps/IOPowerSourcesPrivate.h>
+#endif
+
 #include <mach/mach_error.h>
 #include <mach/mach_port.h>
 #include <mach/mach_time.h>
