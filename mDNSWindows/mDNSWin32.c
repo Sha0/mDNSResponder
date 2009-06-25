@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.142  2009/06/25 21:11:02  herscher
+<rdar://problem/7003607> Platform layer doesn't correctly initialize the port field of TCP and UDP socket structures.
+
 Revision 1.141  2009/06/22 23:25:05  herscher
 <rdar://problem/5265747> ControlPanel doesn't display key and password in dialog box. Refactor Lsa calls into Secret.h and Secret.c, which is used by both the ControlPanel and mDNSResponder system service.
 
@@ -1082,6 +1085,12 @@ mDNSPlatformTCPSocket
 	err = translate_errno( sock->fd != INVALID_SOCKET, WSAGetLastError(), mStatus_UnknownErr );
 	require_noerr( err, exit );
 
+	// bind
+
+	err = bind( sock->fd, ( struct sockaddr* ) &saddr, sizeof( saddr )  );
+	err = translate_errno( err == 0, WSAGetLastError(), mStatus_UnknownErr );
+	require_noerr( err, exit );
+
 	// Set it to be non-blocking
 
 	err = ioctlsocket( sock->fd, FIONBIO, &on );
@@ -1351,6 +1360,10 @@ mDNSexport UDPSocket* mDNSPlatformUDPSocket(mDNS *const m, const mDNSIPPort requ
 	}
 
 	require_noerr( err, exit );
+
+	// Set the port
+
+	sock->port = port;
 
 	// Set it up with Windows Eventing
 
@@ -3685,21 +3698,21 @@ mDNSlocal void	ProcessingThreadProcessPacket( mDNS *inMDNS, mDNSInterfaceData *i
 	{
 		recvMsgPtr	= inUDPSocket->recvMsgPtr;
 		dstAddr		= inUDPSocket->dstAddr;
-		dstPort		= zeroIPPort;
+		dstPort		= inUDPSocket->port;
 		ttl			= 255;
 	}
 	else if ( inSock == inMDNS->p->unicastSock4 )
 	{
 		recvMsgPtr	= inMDNS->p->unicastSock4RecvMsgPtr;
 		dstAddr		= inMDNS->p->unicastSock4DestAddr;
-		dstPort		= zeroIPPort;
+		dstPort		= inMDNS->UnicastPort4;
 		ttl			= 255;
 	}
 	else if ( inSock == inMDNS->p->unicastSock6 )
 	{
 		recvMsgPtr	= inMDNS->p->unicastSock6RecvMsgPtr;
 		dstAddr		= inMDNS->p->unicastSock6DestAddr;
-		dstPort		= zeroIPPort;
+		dstPort		= inMDNS->UnicastPort6;
 		ttl			= 255;
 	}
 	else
@@ -3730,7 +3743,7 @@ mDNSlocal void	ProcessingThreadProcessPacket( mDNS *inMDNS, mDNSInterfaceData *i
 		msg.dwFlags			= 0;
 				
 		err = recvMsgPtr( inSock, &msg, &size, NULL, NULL );
-		err = translate_errno( err == 0, (OSStatus) GetLastError(), kUnknownErr );
+		err = translate_errno( err == 0, (OSStatus) WSAGetLastError(), kUnknownErr );
 		require_noerr( err, exit );
 		n = (int) size;
 		
