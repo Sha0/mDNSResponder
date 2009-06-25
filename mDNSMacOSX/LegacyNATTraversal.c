@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.64  2009/06/25 21:07:44  herscher
+<rdar://problem/4147784> B4W should support UPnP
+
 Revision 1.63  2009/03/26 03:59:00  jessic2
 Changes for <rdar://problem/6492552&6492593&6492609&6492613&6492628&6492640&6492699>
 
@@ -228,7 +231,34 @@ Revision 1.1  2004/08/18 17:35:41  ksekar
 
 #include "stdlib.h"			// For strtol()
 #include "string.h"			// For strlcpy(), For strncpy(), strncasecmp()
-#include <arpa/inet.h>		// For inet_pton()
+
+#if defined( WIN32 )
+#	include <winsock2.h>
+#	include <ws2tcpip.h>
+#	define strcasecmp	_stricmp
+#	define strncasecmp	_strnicmp
+#	define mDNSASLLog( UUID, SUBDOMAIN, RESULT, SIGNATURE, FORMAT, ... ) ;
+
+static int
+inet_pton( int family, const char * addr, void * dst )
+	{
+	struct sockaddr_storage ss;
+	int sslen = sizeof( ss );
+
+	ZeroMemory( &ss, sizeof( ss ) );
+	ss.ss_family = family;
+
+	if ( WSAStringToAddressA( addr, family, NULL, ( struct sockaddr* ) &ss, &sslen ) == 0 )
+		{
+		if ( family == AF_INET ) { memcpy( dst, &( ( struct sockaddr_in* ) &ss)->sin_addr, sizeof( IN_ADDR ) ); return 1; }
+		else if ( family == AF_INET6 ) { memcpy( dst, &( ( struct sockaddr_in6* ) &ss)->sin6_addr, sizeof( IN6_ADDR ) ); return 1; }
+		else return 0;
+		}
+	else return 0;
+	}
+#else
+#	include <arpa/inet.h>		// For inet_pton()
+#endif
 
 #include "mDNSEmbeddedAPI.h"
 #include "uDNS.h"			// For natTraversalHandleAddressReply() etc.
@@ -332,6 +362,7 @@ enum
 mDNSlocal mDNSs16 ParseHTTPResponseCode(mDNSu8** data, mDNSu8* end)
 	{
 	mDNSu8* ptr = *data;
+	char * code;
 	
 	if (end - ptr < 5) return HTTPCode_NeedMoreData;
 	if (strncasecmp((char*)ptr, "HTTP/", 5) != 0) return HTTPCode_Bad;
@@ -349,8 +380,8 @@ mDNSlocal mDNSs16 ParseHTTPResponseCode(mDNSu8** data, mDNSu8* end)
 	ptr++;
 	
 	if (end - ptr < 3) return HTTPCode_NeedMoreData;
-	
-	char* code = (char*)ptr;
+
+	code = (char*)ptr;
 	ptr += 3;
 	while (ptr && ptr != end)
 		{
@@ -376,10 +407,11 @@ mDNSlocal void handleLNTDeviceDescriptionResponse(tcpLNTInfo *tcpInfo)
 	char    *ptr  = (char *)tcpInfo->Reply;
 	char    *end  = (char *)tcpInfo->Reply + tcpInfo->nread;
 	char    *stop = mDNSNULL;
+	mDNSs16 http_result;
 	
 	if (!mDNSIPPortIsZero(m->UPnPSOAPPort)) return; // already have the info we need
 
-	mDNSs16 http_result = ParseHTTPResponseCode((mDNSu8**)&ptr, (mDNSu8*)end); // Note: modifies ptr
+	http_result = ParseHTTPResponseCode((mDNSu8**)&ptr, (mDNSu8*)end); // Note: modifies ptr
 	if (http_result == HTTPCode_404) LNT_ClearState(m);
 	if (http_result != HTTPCode_200) 
 		{
@@ -526,12 +558,13 @@ mDNSlocal void handleLNTPortMappingResponse(tcpLNTInfo *tcpInfo)
 	mDNSu8           *ptr     = (mDNSu8*)tcpInfo->Reply;
 	mDNSu8           *end     = (mDNSu8*)tcpInfo->Reply + tcpInfo->nread;
 	NATTraversalInfo *natInfo;
+	mDNSs16 http_result;
 
 	for (natInfo = m->NATTraversals; natInfo; natInfo=natInfo->next) { if (natInfo == tcpInfo->parentNATInfo) break; }
 
 	if (!natInfo) { LogInfo("handleLNTPortMappingResponse: can't find matching tcpInfo in NATTraversals!"); return; }
 
-	mDNSs16 http_result = ParseHTTPResponseCode(&ptr, end); // Note: modifies ptr
+	http_result = ParseHTTPResponseCode(&ptr, end); // Note: modifies ptr
 	if (http_result == HTTPCode_200)
 		{
 		LogInfo("handleLNTPortMappingResponse: got a valid response, sending reply to natTraversalHandlePortMapReply(internal %d external %d retries %d)",
