@@ -17,6 +17,11 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.h,v $
+Revision 1.104  2009/06/25 23:36:56  cheshire
+To facilitate testing, added command-line switch "-OfferSleepProxyService"
+to re-enable the previously-supported mode of operation where we offer
+sleep proxy service on desktop Macs that are set to never sleep.
+
 Revision 1.103  2009/04/11 00:20:13  jessic2
 <rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
 
@@ -290,6 +295,7 @@ struct mDNS_PlatformSupport_struct
 	int						 WakeKQueueLoopFD;
 	};
 
+extern int OfferSleepProxyService;
 extern int OSXVers;
 #define OSXVers_Base              4
 #define OSXVers_10_0_Cheetah      4

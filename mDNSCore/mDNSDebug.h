@@ -17,6 +17,11 @@
     Change History (most recent first):
 
 $Log: mDNSDebug.h,v $
+Revision 1.51  2009/06/25 23:36:59  cheshire
+To facilitate testing, added command-line switch "-OfferSleepProxyService"
+to re-enable the previously-supported mode of operation where we offer
+sleep proxy service on desktop Macs that are set to never sleep.
+
 Revision 1.50  2009/05/19 23:34:06  cheshire
 Updated comment to show correct metric of 80 for a low-priority sleep proxy
 
@@ -192,12 +197,6 @@ typedef enum
 
 //#define ForceAlerts 1
 //#define LogTimeStamps 1
-
-// Normally Macs don't act as Sleep Proxies.
-// For testing, define this symbol, and a Mac will act as a Sleep Proxy if it is set to never sleep
-// The normal metric for a Mac set to never sleep is 80, for a low-priority sleep proxy
-// To create a high-priority sleep proxy set the value to a lower metric, like 10
-//#define TEST_SLEEP_PROXY_WHEN_SET_TO_NEVER_SLEEP 80
 
 #define USE_SEPARATE_UDNS_SERVICE_LIST 1
 

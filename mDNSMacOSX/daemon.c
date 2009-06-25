@@ -30,6 +30,11 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.433  2009/06/25 23:36:57  cheshire
+To facilitate testing, added command-line switch "-OfferSleepProxyService"
+to re-enable the previously-supported mode of operation where we offer
+sleep proxy service on desktop Macs that are set to never sleep.
+
 Revision 1.432  2009/05/13 17:25:33  mkrochma
 <rdar://problem/6879926> Should not schedule maintenance wake when machine has no advertised services
 Sleep proxy client should only look for services being advertised via Multicast
@@ -3042,12 +3047,14 @@ mDNSexport int main(int argc, char **argv)
 
 	for (i=1; i<argc; i++)
 		{
-		if (!strcasecmp(argv[i], "-d"                        )) mDNS_DebugMode = mDNStrue;
+		if (!strcasecmp(argv[i], "-d"                        )) mDNS_DebugMode            = mDNStrue;
 		if (!strcasecmp(argv[i], "-launchd"                  )) started_via_launchdaemon  = mDNStrue;
 		if (!strcasecmp(argv[i], "-launchdaemon"             )) started_via_launchdaemon  = mDNStrue;
-		if (!strcasecmp(argv[i], "-NoMulticastAdvertisements")) advertise = mDNS_Init_DontAdvertiseLocalAddresses;
+		if (!strcasecmp(argv[i], "-NoMulticastAdvertisements")) advertise                 = mDNS_Init_DontAdvertiseLocalAddresses;
 		if (!strcasecmp(argv[i], "-DebugLogging"             )) mDNS_LoggingEnabled       = mDNStrue;
 		if (!strcasecmp(argv[i], "-UnicastPacketLogging"     )) mDNS_PacketLoggingEnabled = mDNStrue;
+		if (!strcasecmp(argv[i], "-OfferSleepProxyService"   ))
+			OfferSleepProxyService = (i+1<argc && mDNSIsDigit(argv[i+1][0]) && mDNSIsDigit(argv[i+1][1]) && argv[i+1][2]==0) ? atoi(argv[++i]) : 80;
 		}
 	
 	// Note that mDNSPlatformInit will set DivertMulticastAdvertisements in the mDNS structure

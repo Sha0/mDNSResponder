@@ -17,6 +17,11 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.686  2009/06/25 23:36:56  cheshire
+To facilitate testing, added command-line switch "-OfferSleepProxyService"
+to re-enable the previously-supported mode of operation where we offer
+sleep proxy service on desktop Macs that are set to never sleep.
+
 Revision 1.685  2009/06/25 23:15:12  cheshire
 Don't try to use private header file "IOPowerSourcesPrivate.h"
 (it prevents external developers from being able to compile the code)
@@ -1313,6 +1318,12 @@ Add (commented out) trigger value for testing "mach_absolute_time went backwards
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark - Globals
 #endif
+
+// By default we don't offer sleep proxy service
+// If OfferSleepProxyService is set non-zero (typically via command-line switch),
+// then we'll offer sleep proxy service on desktop Macs that are set to never sleep.
+// We currently do not offer sleep proxy service on laptops, or on machines that are set to go to sleep.
+mDNSexport int OfferSleepProxyService = 0;
 
 mDNSexport int OSXVers;
 mDNSexport int KQueueFD;
@@ -5224,7 +5235,6 @@ mDNSlocal void UpdateSPSStatus(mDNS *const m, DNSQuestion *question, const Resou
 	CFRelease(ifname);
 	}
 
-#if TEST_SLEEP_PROXY_WHEN_SET_TO_NEVER_SLEEP
 mDNSlocal mDNSs32 GetSystemSleepTimerSetting(void)
 	{
 	mDNSs32 val = -1;
@@ -5244,18 +5254,13 @@ mDNSlocal mDNSs32 GetSystemSleepTimerSetting(void)
 		}
 	return val;
 	}
-#endif
 
 mDNSlocal void SetSPS(mDNS *const m)
 	{
 	SCPreferencesSynchronize(m->p->SCPrefs);
 	CFDictionaryRef dict = SCPreferencesGetValue(m->p->SCPrefs, CFSTR("NAT"));
 	mDNSBool natenabled = (dict && (CFGetTypeID(dict) == CFDictionaryGetTypeID()) && DictionaryIsEnabled(dict));
-#if TEST_SLEEP_PROXY_WHEN_SET_TO_NEVER_SLEEP
-	mDNSu8 sps = natenabled ? 50 : (GetSystemSleepTimerSetting() == 0) ? TEST_SLEEP_PROXY_WHEN_SET_TO_NEVER_SLEEP : 0;
-#else
-	mDNSu8 sps = natenabled ? 50 : 0;
-#endif
+	mDNSu8 sps = natenabled ? 50 : (OfferSleepProxyService && GetSystemSleepTimerSetting() == 0) ? OfferSleepProxyService : 0;
 
 	// For devices that are not running NAT, but are set to never sleep, we may choose to act
 	// as a Sleep Proxy, but only for non-portable Macs (Portability > 35 means nominal weight < 3kg)
