@@ -54,6 +54,11 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.571  2009/06/26 01:55:54  cheshire
+<rdar://problem/6890712> mDNS: iChat's Buddy photo always appears as the "shadow person" over Bonjour
+Additional refinements -- except for the case of explicit queries for record types we don't have (for names we own),
+add additional NSEC records only when there's space to do that without having to generate an additional packet
+
 Revision 1.570  2009/06/24 22:14:21  cheshire
 <rdar://problem/6911445> Plugging and unplugging the power cable shouldn't cause a network change event
 
@@ -1939,7 +1944,7 @@ struct AuthRecord_struct
 	mDNSu8          AnsweredLocalQ;		// Set if this AuthRecord has been delivered to any local question (LocalOnly or mDNSInterface_Any)
 	mDNSu8          IncludeInProbe;		// Set if this RR is being put into a probe right now
 	mDNSu8          ImmedUnicast;		// Set if we may send our response directly via unicast to the requester
-	mDNSu8          SendNSECNow;		// Set if we need to generate associated NSEC data for this rrname
+	mDNSInterfaceID SendNSECNow;		// Set if we need to generate associated NSEC data for this rrname
 	mDNSInterfaceID ImmedAnswer;		// Someone on this interface issued a query we need to answer (all-ones for all interfaces)
 #if MDNS_LOG_ANSWER_SUPPRESSION_TIMES
 	mDNSs32         ImmedAnswerMarkTime;
