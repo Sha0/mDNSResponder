@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: daemon.c,v $
+Revision 1.434  2009/06/27 00:55:27  cheshire
+Added code for displaying the size of various structures like CacheRecord and CacheGroup
+
 Revision 1.433  2009/06/25 23:36:57  cheshire
 To facilitate testing, added command-line switch "-OfferSleepProxyService"
 to re-enable the previously-supported mode of operation where we offer
@@ -3041,6 +3044,18 @@ mDNSexport int main(int argc, char **argv)
 
 	LogMsg("%s starting", mDNSResponderVersionString);
 	
+#if 0
+	LogMsg("CacheRecord %d", sizeof(CacheRecord));
+	LogMsg("CacheGroup  %d", sizeof(CacheGroup));
+	LogMsg("ResourceRecord  %d", sizeof(ResourceRecord));
+	LogMsg("RData_small     %d", sizeof(RData_small));
+
+	LogMsg("sizeof(CacheEntity) %d", sizeof(CacheEntity));
+	LogMsg("RR_CACHE_SIZE       %d", RR_CACHE_SIZE);
+	LogMsg("block usage         %d", sizeof(CacheEntity) * RR_CACHE_SIZE);
+	LogMsg("block wastage       %d", 16*1024 - sizeof(CacheEntity) * RR_CACHE_SIZE);
+#endif
+
 	safe_vproc_transaction_begin();
 
 	if (0 == geteuid()) DropPrivileges();
