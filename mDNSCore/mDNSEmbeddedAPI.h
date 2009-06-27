@@ -54,6 +54,11 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.572  2009/06/27 00:52:27  cheshire
+<rdar://problem/6959273> mDNSResponder taking up 13% CPU with 400 KBps incoming bonjour requests
+Removed overly-complicate and ineffective multi-packet known-answer snooping code
+(Bracketed it with "#if ENABLE_MULTI_PACKET_QUERY_SNOOPING" for now; will delete actual code later)
+
 Revision 1.571  2009/06/26 01:55:54  cheshire
 <rdar://problem/6890712> mDNS: iChat's Buddy photo always appears as the "shadow person" over Bonjour
 Additional refinements -- except for the case of explicit queries for record types we don't have (for names we own),
@@ -1655,7 +1660,20 @@ typedef struct
 // have them both be the same size. Making one smaller without making the other smaller won't actually save any memory.
 #define InlineCacheRDSize 68
 
-#define InlineCacheGroupNameSize 144
+// On 64-bit, the pointers in a CacheRecord are bigger, and that creates 8 bytes more space for the name in a CacheGroup
+#if ENABLE_MULTI_PACKET_QUERY_SNOOPING
+	#if defined(_ILP64) || defined(__ILP64__) || defined(_LP64) || defined(__LP64__)
+	#define InlineCacheGroupNameSize 152
+	#else
+	#define InlineCacheGroupNameSize 144
+	#endif
+#else
+	#if defined(_ILP64) || defined(__ILP64__) || defined(_LP64) || defined(__LP64__)
+	#define InlineCacheGroupNameSize 136
+	#else
+	#define InlineCacheGroupNameSize 128
+	#endif
+#endif
 
 // The RDataBody union defines the common rdata types that fit into our 264-byte limit
 typedef union
@@ -1858,14 +1876,9 @@ struct NATTraversalInfo_struct
 	void                       *clientContext;
 	};
 
-typedef struct
+typedef struct							// Size is 36 bytes when compiling for 32-bit; 48 when compiling for 64-bit
 	{
 	mDNSu8           RecordType;		// See enum above
-	mDNSInterfaceID  InterfaceID;		// Set if this RR is specific to one interface
-										// For records received off the wire, InterfaceID is *always* set to the receiving interface
-										// For our authoritative records, InterfaceID is usually zero, except for those few records
-										// that are interface-specific (e.g. address records, especially linklocal addresses)
-	const domainname *name;
 	mDNSu16          rrtype;
 	mDNSu16          rrclass;
 	mDNSu32          rroriginalttl;		// In seconds
@@ -1880,6 +1893,13 @@ typedef struct
 										// ReconfirmAntecedents(), etc., use rdatahash as a pre-flight check to see
 										// whether it's worth doing a full SameDomainName() call. If the rdatahash
 										// is not a correct case-insensitive name hash, they'll get false negatives.
+
+	// Grouping pointers together at the end of the structure improves the memory layout efficiency
+	mDNSInterfaceID  InterfaceID;		// Set if this RR is specific to one interface
+										// For records received off the wire, InterfaceID is *always* set to the receiving interface
+										// For our authoritative records, InterfaceID is usually zero, except for those few records
+										// that are interface-specific (e.g. address records, especially linklocal addresses)
+	const domainname *name;
 	RData           *rdata;				// Pointer to storage for this rdata
 	} ResourceRecord;
 
@@ -1917,7 +1937,7 @@ struct AuthRecord_struct
 
 	AuthRecord     *next;				// Next in list; first element of structure for efficiency reasons
 	// Field Group 1: Common ResourceRecord fields
-	ResourceRecord  resrec;
+	ResourceRecord  resrec;				// 36 bytes when compiling for 32-bit; 48 when compiling for 64-bit
 
 	// Field Group 2: Persistent metadata for Authoritative Records
 	AuthRecord     *Additional1;		// Recommended additional record to include in response (e.g. SRV for PTR record)
@@ -2018,13 +2038,14 @@ struct CacheGroup_struct				// Header object for a list of CacheRecords with the
 	CacheRecord    *members;			// List of CacheRecords with this same name
 	CacheRecord   **rrcache_tail;		// Tail end of that list
 	domainname     *name;				// Common name for all CacheRecords in this list
+	// Size to here is 20 bytes when compiling 32-bit; 40 bytes when compiling 64-bit
 	mDNSu8          namestorage[InlineCacheGroupNameSize];
 	};
 
 struct CacheRecord_struct
 	{
 	CacheRecord    *next;				// Next in list; first element of structure for efficiency reasons
-	ResourceRecord  resrec;
+	ResourceRecord  resrec;				// 36 bytes when compiling for 32-bit; 48 when compiling for 64-bit
 
 	// Transient state for Cache Records
 	CacheRecord    *NextInKAList;		// Link to the next element in the chain of known answers to send
@@ -2035,16 +2056,19 @@ struct CacheRecord_struct
 	DNSQuestion    *CRActiveQuestion;	// Points to an active question referencing this answer
 	mDNSu32         UnansweredQueries;	// Number of times we've issued a query for this record without getting an answer
 	mDNSs32         LastUnansweredTime;	// In platform time units; last time we incremented UnansweredQueries
+#if ENABLE_MULTI_PACKET_QUERY_SNOOPING
 	mDNSu32         MPUnansweredQ;		// Multi-packet query handling: Number of times we've seen a query for this record
 	mDNSs32         MPLastUnansweredQT;	// Multi-packet query handling: Last time we incremented MPUnansweredQ
 	mDNSu32         MPUnansweredKA;		// Multi-packet query handling: Number of times we've seen this record in a KA list
 	mDNSBool        MPExpectingKA;		// Multi-packet query handling: Set when we increment MPUnansweredQ; allows one KA
+#endif
 	CacheRecord    *NextInCFList;		// Set if this is in the list of records we just received with the cache flush bit set
-
-	RData_small     smallrdatastorage;	// Storage for small records is right here
+	// Size to here is 76 bytes when compiling 32-bit; 104 bytes when compiling 64-bit
+	RData_small     smallrdatastorage;	// Storage for small records is right here (4 bytes header + 68 bytes data = 72 bytes)
 	};
 
 // Storage sufficient to hold either a CacheGroup header or a CacheRecord
+// -- for best efficiency (to avoid wasted unused storage) they should be the same size
 typedef union CacheEntity_union CacheEntity;
 union CacheEntity_union { CacheEntity *next; CacheGroup cg; CacheRecord cr; };
 
@@ -3175,7 +3199,7 @@ extern mDNSBool DNSDigest_VerifyMessage(DNSMessage *msg, mDNSu8 *end, LargeCache
 // Note: mDNSPlatformMemAllocate/mDNSPlatformMemFree are only required for handling oversized resource records and unicast DNS.
 // If your target platform has a well-defined specialized application, and you know that all the records it uses
 // are InlineCacheRDSize or less, then you can just make a simple mDNSPlatformMemAllocate() stub that always returns
-// NULL. InlineCacheRDSize is a compile-time constant, which is set by default to 64. If you need to handle records
+// NULL. InlineCacheRDSize is a compile-time constant, which is set by default to 68. If you need to handle records
 // a little larger than this and you don't want to have to implement run-time allocation and freeing, then you
 // can raise the value of this constant to a suitable value (at the expense of increased memory usage).
 //
@@ -3409,7 +3433,7 @@ struct CompileTimeAssertionChecks_mDNS
 	char assert9[(sizeof(mDNSOpaque16)     ==   2                          ) ? 1 : -1];
 	char assertA[(sizeof(mDNSOpaque32)     ==   4                          ) ? 1 : -1];
 	char assertB[(sizeof(mDNSOpaque128)    ==  16                          ) ? 1 : -1];
-	char assertC[(sizeof(CacheRecord  )    >=  sizeof(CacheGroup)          ) ? 1 : -1];
+	char assertC[(sizeof(CacheRecord  )    ==  sizeof(CacheGroup)          ) ? 1 : -1];
 	char assertD[(sizeof(int)              >=  4                           ) ? 1 : -1];
 	char assertE[(StandardAuthRDSize       >=  256                         ) ? 1 : -1];
 	char assertF[(sizeof(EthernetHeader)   ==   14                         ) ? 1 : -1];
@@ -3426,8 +3450,8 @@ struct CompileTimeAssertionChecks_mDNS
 	char sizecheck_RDataBody           [(sizeof(RDataBody)            ==   264) ? 1 : -1];
 	char sizecheck_ResourceRecord      [(sizeof(ResourceRecord)       <=    56) ? 1 : -1];
 	char sizecheck_AuthRecord          [(sizeof(AuthRecord)           <=  1000) ? 1 : -1];
-	char sizecheck_CacheRecord         [(sizeof(CacheRecord)          <=   200) ? 1 : -1];
-	char sizecheck_CacheGroup          [(sizeof(CacheGroup)           <=   184) ? 1 : -1];
+	char sizecheck_CacheRecord         [(sizeof(CacheRecord)          <=   176) ? 1 : -1];
+	char sizecheck_CacheGroup          [(sizeof(CacheGroup)           <=   176) ? 1 : -1];
 	char sizecheck_DNSQuestion         [(sizeof(DNSQuestion)          <=   728) ? 1 : -1];
 	char sizecheck_ZoneData            [(sizeof(ZoneData)             <=  1560) ? 1 : -1];
 	char sizecheck_NATTraversalInfo    [(sizeof(NATTraversalInfo)     <=   192) ? 1 : -1];
