@@ -17,6 +17,11 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.252  2009/06/27 00:27:03  cheshire
+<rdar://problem/6959273> mDNSResponder taking up 13% CPU with 400 KBps incoming bonjour requests
+Removed overly-complicate and ineffective multi-packet known-answer snooping code
+(Bracketed it with "#if ENABLE_MULTI_PACKET_QUERY_SNOOPING" for now; will delete actual code later)
+
 Revision 1.251  2009/05/19 23:40:37  cheshire
 <rdar://problem/6903507> Sleep Proxy: Retransmission logic not working reliably on quiet networks
 Added m->NextScheduledSPRetry timer for scheduling Sleep Proxy registration retries
@@ -2499,10 +2504,12 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 	rr->CRActiveQuestion  = mDNSNULL;
 	rr->UnansweredQueries = 0;
 	rr->LastUnansweredTime= 0;
+#if ENABLE_MULTI_PACKET_QUERY_SNOOPING
 	rr->MPUnansweredQ     = 0;
 	rr->MPLastUnansweredQT= 0;
 	rr->MPUnansweredKA    = 0;
 	rr->MPExpectingKA     = mDNSfalse;
+#endif
 	rr->NextInCFList      = mDNSNULL;
 
 	rr->resrec.InterfaceID       = InterfaceID;

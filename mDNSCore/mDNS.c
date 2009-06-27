@@ -38,6 +38,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.967  2009/06/27 00:25:27  cheshire
+<rdar://problem/6959273> mDNSResponder taking up 13% CPU with 400 KBps incoming bonjour requests
+Removed overly-complicate and ineffective multi-packet known-answer snooping code
+(Bracketed it with "#if ENABLE_MULTI_PACKET_QUERY_SNOOPING" for now; will delete actual code later)
+
 Revision 1.966  2009/06/26 01:55:55  cheshire
 <rdar://problem/6890712> mDNS: iChat's Buddy photo always appears as the "shadow person" over Bonjour
 Additional refinements -- except for the case of explicit queries for record types we don't have (for names we own),
@@ -5599,10 +5604,16 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 		// so use random delay on response to reduce collisions
 		if (NumAnswersForThisQuestion == 0) delayresponse = mDNSPlatformOneSecond;	// Divided by 50 = 20ms
 
-		// We only do the following accelerated cache expiration processing and duplicate question suppression processing
-		// for multicast queries with multicast responses.
-		// For any query generating a unicast response we don't do this because we can't assume we will see the response
+#if ENABLE_MULTI_PACKET_QUERY_SNOOPING
 		if (QuestionNeedsMulticastResponse)
+#else
+		// We only do the following accelerated cache expiration and duplicate question suppression processing
+		// for non-truncated multicast queries with multicast responses.
+		// For any query generating a unicast response we don't do this because we can't assume we will see the response.
+		// For truncated queries we don't do this because a response we're expecting might be suppressed by a subsequent
+		// known-answer packet, and when there's packet loss we can't safely assume we'll receive *all* known-answer packets.
+		if (QuestionNeedsMulticastResponse && !(query->h.flags.b[0] & kDNSFlag0_TC))
+#endif
 			{
 			const mDNSu32 slot = HashSlot(&pktq.qname);
 			CacheGroup *cg = CacheGroupForName(m, slot, pktq.qnamehash, &pktq.qname);
@@ -5610,28 +5621,35 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 
 			// Make a list indicating which of our own cache records we expect to see updated as a result of this query
 			// Note: Records larger than 1K are not habitually multicast, so don't expect those to be updated
-			for (cr = cg ? cg->members : mDNSNULL; cr; cr=cr->next)
-				if (SameNameRecordAnswersQuestion(&cr->resrec, &pktq) && cr->resrec.rdlength <= SmallRecordLimit)
-					if (!cr->NextInKAList && eap != &cr->NextInKAList)
-						{
-						*eap = cr;
-						eap = &cr->NextInKAList;
-						if (cr->MPUnansweredQ == 0 || m->timenow - cr->MPLastUnansweredQT >= mDNSPlatformOneSecond)
+#if ENABLE_MULTI_PACKET_QUERY_SNOOPING
+			if (!(query->h.flags.b[0] & kDNSFlag0_TC))
+#endif
+				for (cr = cg ? cg->members : mDNSNULL; cr; cr=cr->next)
+					if (SameNameRecordAnswersQuestion(&cr->resrec, &pktq) && cr->resrec.rdlength <= SmallRecordLimit)
+						if (!cr->NextInKAList && eap != &cr->NextInKAList)
 							{
-							// Although MPUnansweredQ is only really used for multi-packet query processing,
-							// we increment it for both single-packet and multi-packet queries, so that it stays in sync
-							// with the MPUnansweredKA value, which by necessity is incremented for both query types.
-							cr->MPUnansweredQ++;
-							cr->MPLastUnansweredQT = m->timenow;
-							cr->MPExpectingKA = mDNStrue;
+							*eap = cr;
+							eap = &cr->NextInKAList;
+#if ENABLE_MULTI_PACKET_QUERY_SNOOPING
+							if (cr->MPUnansweredQ == 0 || m->timenow - cr->MPLastUnansweredQT >= mDNSPlatformOneSecond)
+								{
+								// Although MPUnansweredQ is only really used for multi-packet query processing,
+								// we increment it for both single-packet and multi-packet queries, so that it stays in sync
+								// with the MPUnansweredKA value, which by necessity is incremented for both query types.
+								cr->MPUnansweredQ++;
+								cr->MPLastUnansweredQT = m->timenow;
+								cr->MPExpectingKA = mDNStrue;
+								}
+#endif
 							}
-						}
 	
 			// Check if this question is the same as any of mine.
 			// We only do this for non-truncated queries. Right now it would be too complicated to try
 			// to keep track of duplicate suppression state between multiple packets, especially when we
 			// can't guarantee to receive all of the Known Answer packets that go with a particular query.
+#if ENABLE_MULTI_PACKET_QUERY_SNOOPING
 			if (!(query->h.flags.b[0] & kDNSFlag0_TC))
+#endif
 				for (q = m->Questions; q; q=q->next)
 					if (!q->Target.type && ActiveQuestion(q) && m->timenow - q->LastQTxTime > mDNSPlatformOneSecond / 4)
 						if (!q->InterfaceID || q->InterfaceID == InterfaceID)
@@ -5695,18 +5713,20 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 				}
 			}
 
+		ourcacherr = FindIdenticalRecordInCache(m, &m->rec.r.resrec);
+
+#if ENABLE_MULTI_PACKET_QUERY_SNOOPING
 		// See if this Known-Answer suppresses any answers we were expecting for our cache records. We do this always,
 		// even if the TC bit is not set (the TC bit will *not* be set in the *last* packet of a multi-packet KA list).
-		ourcacherr = FindIdenticalRecordInCache(m, &m->rec.r.resrec);
 		if (ourcacherr && ourcacherr->MPExpectingKA && m->timenow - ourcacherr->MPLastUnansweredQT < mDNSPlatformOneSecond)
 			{
 			ourcacherr->MPUnansweredKA++;
 			ourcacherr->MPExpectingKA = mDNSfalse;
 			}
+#endif
 
-		// Having built our ExpectedAnswers list from the questions in this packet, we can definitively
-		// remove from our ExpectedAnswers list any records that are suppressed in the very same packet.
-		// For answers that are suppressed in subsequent KA list packets, we rely on the MPQ/MPKA counting to track them.
+		// Having built our ExpectedAnswers list from the questions in this packet, we then remove
+		// any records that are suppressed by the Known Answer list in this packet.
 		eap = &ExpectedAnswers;
 		while (*eap)
 			{
@@ -5871,9 +5891,11 @@ exit:
 				{
 				cr->UnansweredQueries++;
 				cr->LastUnansweredTime = m->timenow;
+#if ENABLE_MULTI_PACKET_QUERY_SNOOPING
 				if (cr->UnansweredQueries > 1)
 					debugf("ProcessQuery: (!TC) UAQ %lu MPQ %lu MPKA %lu %s",
 						cr->UnansweredQueries, cr->MPUnansweredQ, cr->MPUnansweredKA, CRDisplayString(m, cr));
+#endif
 				SetNextCacheCheckTime(m, cr);
 				}
 
@@ -5881,12 +5903,15 @@ exit:
 		// then mark it to expire in five seconds if we don't get a response by then.
 		if (cr->UnansweredQueries >= MaxUnansweredQueries)
 			{
+#if ENABLE_MULTI_PACKET_QUERY_SNOOPING
 			// Only show debugging message if this record was not about to expire anyway
 			if (RRExpireTime(cr) - m->timenow > 4 * mDNSPlatformOneSecond)
 				debugf("ProcessQuery: (Max) UAQ %lu MPQ %lu MPKA %lu mDNS_Reconfirm() for %s",
 					cr->UnansweredQueries, cr->MPUnansweredQ, cr->MPUnansweredKA, CRDisplayString(m, cr));
+#endif
 			mDNS_Reconfirm_internal(m, cr, kDefaultReconfirmTimeForNoAnswer);
 			}
+#if ENABLE_MULTI_PACKET_QUERY_SNOOPING
 		// Make a guess, based on the multi-packet query / known answer counts, whether we think we
 		// should have seen an answer for this. (We multiply MPQ by 4 and MPKA by 5, to allow for
 		// possible packet loss of up to 20% of the additional KA packets.)
@@ -5917,6 +5942,7 @@ exit:
 				remain = kDefaultReconfirmTimeForNoAnswer;
 			mDNS_Reconfirm_internal(m, cr, remain);
 			}
+#endif
 		}
 	
 	while (DupQuestions)
@@ -6102,9 +6128,11 @@ mDNSlocal void RefreshCacheRecord(mDNS *const m, CacheRecord *rr, mDNSu32 ttl)
 	rr->TimeRcvd             = m->timenow;
 	rr->resrec.rroriginalttl = ttl;
 	rr->UnansweredQueries = 0;
+#if ENABLE_MULTI_PACKET_QUERY_SNOOPING
 	rr->MPUnansweredQ     = 0;
 	rr->MPUnansweredKA    = 0;
 	rr->MPExpectingKA     = mDNSfalse;
+#endif
 	SetNextCacheCheckTime(m, rr);
 	}
 
@@ -6931,10 +6959,12 @@ mDNSexport void MakeNegativeCacheRecord(mDNS *const m, CacheRecord *const cr,
 	cr->CRActiveQuestion   = mDNSNULL;
 	cr->UnansweredQueries  = 0;
 	cr->LastUnansweredTime = 0;
+#if ENABLE_MULTI_PACKET_QUERY_SNOOPING
 	cr->MPUnansweredQ      = 0;
 	cr->MPLastUnansweredQT = 0;
 	cr->MPUnansweredKA     = 0;
 	cr->MPExpectingKA      = mDNSfalse;
+#endif
 	cr->NextInCFList       = mDNSNULL;
 	}
 
