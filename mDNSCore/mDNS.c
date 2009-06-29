@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.968  2009/06/29 23:51:09  cheshire
+<rdar://problem/6690034> Can't bind to Active Directory
+
 Revision 1.967  2009/06/27 00:25:27  cheshire
 <rdar://problem/6959273> mDNSResponder taking up 13% CPU with 400 KBps incoming bonjour requests
 Removed overly-complicate and ineffective multi-packet known-answer snooping code
@@ -6222,6 +6225,21 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		response->h.numAnswers,     response->h.numAnswers     == 1 ? ", " : "s,",
 		response->h.numAuthorities, response->h.numAuthorities == 1 ? "y,  " : "ies,",
 		response->h.numAdditionals, response->h.numAdditionals == 1 ? "" : "s", LLQType);
+
+	// According to RFC 2181 <http://www.ietf.org/rfc/rfc2181.txt>
+	//    When a DNS client receives a reply with TC
+	//    set, it should ignore that response, and query again, using a
+	//    mechanism, such as a TCP connection, that will permit larger replies.
+	// It feels wrong to be throwing away data after the network went to all the trouble of delivering it to us, but
+	// delivering some records of the RRSet first and then the remainder a couple of milliseconds later was causing
+	// failures in our Microsoft Active Directory client, which expects to get the entire set of answers at once.
+	// <rdar://problem/6690034> Can't bind to Active Directory
+	// In addition, if the client immediately canceled its query after getting the initial partial response, then we'll
+	// abort our TCP connection, and not complete the operation, and end up with an incomplete RRSet in our cache.
+	// Next time there's a query for this RRSet we'll see answers in our cache, and assume we have the whole RRSet already,
+	// and not even do the TCP query.
+	// Accordingly, if we get a uDNS reply with kDNSFlag0_TC set, we bail out and wait for the TCP response containing the entire RRSet.
+	if (!InterfaceID && (response->h.flags.b[0] & kDNSFlag0_TC)) return;
 
 	if (LLQType == uDNS_LLQ_Ignore) return;
 
