@@ -38,6 +38,12 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.969  2009/06/30 21:18:19  cheshire
+<rdar://problem/7020041> Plugging and unplugging the power cable shouldn't cause a network change event
+Additional fixes:
+1. Made mDNS_ActivateNetWake_internal and mDNS_DeactivateNetWake_internal more defensive against bad parameters
+2. mDNS_DeactivateNetWake_internal also needs to stop any outstanding Sleep Proxy resolve operations
+
 Revision 1.968  2009/06/29 23:51:09  cheshire
 <rdar://problem/6690034> Can't bind to Active Directory
 
@@ -7262,8 +7268,8 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 
 		if (*q)
 			{
-			LogMsg("Error! Tried to add a question %##s (%s) that's already in the active list",
-				question->qname.c, DNSTypeName(question->qtype));
+			LogMsg("Error! Tried to add a question %##s (%s) %p that's already in the active list",
+				question->qname.c, DNSTypeName(question->qtype), question);
 			return(mStatus_AlreadyRegistered);
 			}
 
@@ -8196,6 +8202,10 @@ mDNSlocal void InitializeNetWakeState(mDNS *const m, NetworkInterfaceInfo *set)
 
 mDNSexport void mDNS_ActivateNetWake_internal(mDNS *const m, NetworkInterfaceInfo *set)
 	{
+	NetworkInterfaceInfo *p = m->HostInterfaces;
+	while (p && p != set) p=p->next;
+	if (!p) { LogMsg("mDNS_ActivateNetWake_internal: NetworkInterfaceInfo %p not found in active list", set); return; }
+
 	if (set->InterfaceActive)
 		{
 		LogSPS("ActivateNetWake for %s (%#a)", set->ifname, &set->ip);
@@ -8205,16 +8215,22 @@ mDNSexport void mDNS_ActivateNetWake_internal(mDNS *const m, NetworkInterfaceInf
 
 mDNSexport void mDNS_DeactivateNetWake_internal(mDNS *const m, NetworkInterfaceInfo *set)
 	{
+	NetworkInterfaceInfo *p = m->HostInterfaces;
+	while (p && p != set) p=p->next;
+	if (!p) { LogMsg("mDNS_DeactivateNetWake_internal: NetworkInterfaceInfo %p not found in active list", set); return; }
+
 	if (set->NetWakeBrowse.ThisQInterval >= 0)
 		{
+		int i;
 		LogSPS("DeactivateNetWake for %s (%#a)", set->ifname, &set->ip);
 
-		// Stop our browse operation
+		// Stop our browse and resolve operations
 		mDNS_StopQuery_internal(m, &set->NetWakeBrowse);
-	
+		for (i=0; i<3; i++) if (set->NetWakeResolve[i].ThisQInterval >= 0) mDNS_StopQuery_internal(m, &set->NetWakeResolve[i]);
+
 		// Make special call to the browse callback to let it know it can to remove all records for this interface
 		if (m->SPSBrowseCallback) m->SPSBrowseCallback(m, &set->NetWakeBrowse, mDNSNULL, mDNSfalse);
-	
+
 		// Reset our variables back to initial state, so we're ready for when NetWake is turned back on
 		// (includes resetting NetWakeBrowse.ThisQInterval back to -1)
 		InitializeNetWakeState(m, set);
@@ -8304,7 +8320,8 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 		
 		if (flapping)
 			{
-			LogMsg("Note: Frequent transitions for interface %s (%#a); network traffic reduction measures in effect", set->ifname, &set->ip);
+			LogMsg("Note: RegisterInterface: Frequent transitions for interface %s (%#a); network traffic reduction measures in effect",
+				set->ifname, &set->ip);
 			if (!m->SuppressProbes ||
 				m->SuppressProbes - (m->timenow + delay) < 0)
 				m->SuppressProbes = (m->timenow + delay);
@@ -8353,7 +8370,6 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 // Any code walking either list must use the CurrentQuestion and/or CurrentRecord mechanism to protect against this.
 mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *set, mDNSBool flapping)
 	{
-	int i;
 	NetworkInterfaceInfo **p = &m->HostInterfaces;
 	
 	mDNSBool revalidate = mDNSfalse;
@@ -8369,8 +8385,6 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 	if (!*p) { debugf("mDNS_DeregisterInterface: NetworkInterfaceInfo not found in list"); mDNS_Unlock(m); return; }
 
 	mDNS_DeactivateNetWake_internal(m, set);
-
-	for (i=0; i<3; i++) if (set->NetWakeResolve[i].ThisQInterval >= 0) mDNS_StopQuery_internal(m, &set->NetWakeResolve[i]);
 
 	// Unlink this record from our list
 	*p = (*p)->next;
@@ -8417,7 +8431,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 				" marking questions etc. dormant", set->InterfaceID, set->ifname, &set->ip);
 
 			if (flapping)
-				LogMsg("Note: Frequent transitions for interface %s (%#a); network traffic reduction measures in effect",
+				LogMsg("Note: DeregisterInterface: Frequent transitions for interface %s (%#a); network traffic reduction measures in effect",
 					set->ifname, &set->ip);
 
 			// 1. Deactivate any questions specific to this interface, and tag appropriate questions
