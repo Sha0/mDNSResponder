@@ -22,6 +22,9 @@
 	Change History (most recent first):
 
 $Log: uDNS.c,v $
+Revision 1.617  2009/06/30 20:51:02  cheshire
+Improved "Error! Tried to add a NAT traversal that's already in the active list" debugging message
+
 Revision 1.616  2009/05/27 20:29:36  cheshire
 <rdar://problem/6926465> Sleep is delayed by 10 seconds if BTMM is on
 After receiving confirmation of LLQ deletion, need to schedule another evaluation of whether we're ready to sleep yet
@@ -1799,7 +1802,11 @@ mDNSexport mStatus mDNS_StartNATOperation_internal(mDNS *const m, NATTraversalIn
 	for (n = &m->NATTraversals; *n; n=&(*n)->next)
 		{
 		if (traversal == *n)
-			{ LogMsg("Error! Tried to add a NAT traversal that's already in the active list"); return(mStatus_AlreadyRegistered); }
+			{
+			LogMsg("Error! Tried to add a NAT traversal that's already in the active list: request %p Prot %d Int %d TTL %d",
+				traversal, traversal->Protocol, mDNSVal16(traversal->IntPort), traversal->NATLease);
+			return(mStatus_AlreadyRegistered);
+			}
 		if (traversal->Protocol && traversal->Protocol == (*n)->Protocol && mDNSSameIPPort(traversal->IntPort, (*n)->IntPort) &&
 			!mDNSSameIPPort(traversal->IntPort, SSHPort))
 			LogMsg("Warning: Created port mapping request %p Prot %d Int %d TTL %d "
