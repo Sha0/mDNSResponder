@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.687  2009/06/30 21:16:09  cheshire
+<rdar://problem/7020041> Plugging and unplugging the power cable shouldn't cause a network change event
+Additional fix: Only start and stop NetWake browses for active interfaces that are currently registered with mDNSCore
+
 Revision 1.686  2009/06/25 23:36:56  cheshire
 To facilitate testing, added command-line switch "-OfferSleepProxyService"
 to re-enable the previously-supported mode of operation where we offer
@@ -3143,10 +3147,17 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 			if ((*p)->ifinfo.NetWake != NetWake)
 				{
 				(*p)->ifinfo.NetWake = NetWake;
-				mDNS_Lock(m);
-				if (NetWake) mDNS_ActivateNetWake_internal  (m, &(*p)->ifinfo);
-				else         mDNS_DeactivateNetWake_internal(m, &(*p)->ifinfo);
-				mDNS_Unlock(m);
+				// If this interface is already registered with mDNSCore, then we need to start or stop its NetWake browse on-the-fly.
+				// If this interface is not already registered (i.e. it's a dormant interface we had in our list
+				// from when we previously saw it) then we mustn't do that, because mDNSCore doesn't know about it yet.
+				// In this case, the mDNS_RegisterInterface() call will take care of starting the NetWake browse if necessary.
+				if ((*p)->ifinfo.InterfaceID)
+					{
+					mDNS_Lock(m);
+					if (NetWake) mDNS_ActivateNetWake_internal  (m, &(*p)->ifinfo);
+					else         mDNS_DeactivateNetWake_internal(m, &(*p)->ifinfo);
+					mDNS_Unlock(m);
+					}
 				}
 
 			return(*p);
