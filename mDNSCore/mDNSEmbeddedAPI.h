@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.573  2009/06/30 18:17:45  herscher
+Add to 64 bit macro check for 64 bit Windows OSes
+
 Revision 1.572  2009/06/27 00:52:27  cheshire
 <rdar://problem/6959273> mDNSResponder taking up 13% CPU with 400 KBps incoming bonjour requests
 Removed overly-complicate and ineffective multi-packet known-answer snooping code
@@ -1662,13 +1665,13 @@ typedef struct
 
 // On 64-bit, the pointers in a CacheRecord are bigger, and that creates 8 bytes more space for the name in a CacheGroup
 #if ENABLE_MULTI_PACKET_QUERY_SNOOPING
-	#if defined(_ILP64) || defined(__ILP64__) || defined(_LP64) || defined(__LP64__)
+	#if defined(_ILP64) || defined(__ILP64__) || defined(_LP64) || defined(__LP64__) || defined(_WIN64)
 	#define InlineCacheGroupNameSize 152
 	#else
 	#define InlineCacheGroupNameSize 144
 	#endif
 #else
-	#if defined(_ILP64) || defined(__ILP64__) || defined(_LP64) || defined(__LP64__)
+	#if defined(_ILP64) || defined(__ILP64__) || defined(_LP64) || defined(__LP64__) || defined(_WIN64)
 	#define InlineCacheGroupNameSize 136
 	#else
 	#define InlineCacheGroupNameSize 128
