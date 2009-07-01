@@ -586,6 +586,10 @@
 				</FileConfiguration>
 			</File>
 			<File
+				RelativePath=".\FourthPage.cpp"
+				>
+			</File>
+			<File
 				RelativePath="SecondPage.cpp"
 				>
 				<FileConfiguration
@@ -699,6 +703,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\FourthPage.h"
+				>
+			</File>
+			<File
 				RelativePath="Resource.h"
 				>
 			</File>
@@ -786,5 +794,9 @@
 		</Filter>
 	</Files>
 	<Globals>
+		<Global
+			Name="RESOURCE_FILE"
+			Value="ControlPanelDll.rc"
+		/>
 	</Globals>
 </VisualStudioProject>

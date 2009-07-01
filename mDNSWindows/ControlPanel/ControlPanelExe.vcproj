@@ -544,6 +544,10 @@
 				</FileConfiguration>
 			</File>
 			<File
+				RelativePath=".\FourthPage.cpp"
+				>
+			</File>
+			<File
 				RelativePath="SecondPage.cpp"
 				>
 				<FileConfiguration
@@ -654,6 +658,10 @@
 			</File>
 			<File
 				RelativePath="FirstPage.h"
+				>
+			</File>
+			<File
+				RelativePath=".\FourthPage.h"
 				>
 			</File>
 			<File

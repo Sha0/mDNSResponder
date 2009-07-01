@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: ConfigPropertySheet.cpp,v $
+Revision 1.7  2009/07/01 19:20:37  herscher
+<rdar://problem/6713286> UI changes for configuring sleep proxy settings.
+
 Revision 1.6  2009/03/30 19:57:45  herscher
 <rdar://problem/5925472> Current Bonjour code does not compile on Windows
 <rdar://problem/5187308> Move build train to Visual Studio 2005
@@ -61,6 +64,7 @@ CConfigPropertySheet::CConfigPropertySheet()
 	AddPage(&m_firstPage);
 	AddPage(&m_secondPage);
 	AddPage(&m_thirdPage);
+	AddPage(&m_fourthPage );
 
 	InitializeCriticalSection( &m_lock );
 }
