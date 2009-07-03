@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: LegacyNATTraversal.c,v $
+Revision 1.65  2009/07/03 03:16:07  jessic2
+<rdar://problem/7026146> BTMM: UPnP works in Leopard but doesn't work in SnowLeopard (URLBase is empty) Made changes to support the case where the URLBase tag exists but there isn't a valid URL
+
 Revision 1.64  2009/06/25 21:07:44  herscher
 <rdar://problem/4147784> B4W should support UPnP
 
@@ -423,7 +426,7 @@ mDNSlocal void handleLNTDeviceDescriptionResponse(tcpLNTInfo *tcpInfo)
 	m->UPnPWANPPPConnection = mDNSfalse;
 
 	// find either service we care about
-	while (ptr && ptr != end)
+	while (ptr && ptr < end)
 		{
 		if (*ptr == 'W' && (strncasecmp(ptr, "WANIPConnection:1", 17) == 0)) break;
 		ptr++;
@@ -431,7 +434,7 @@ mDNSlocal void handleLNTDeviceDescriptionResponse(tcpLNTInfo *tcpInfo)
 	if (ptr == end)
 		{
 		ptr = (char *)tcpInfo->Reply;
-		while (ptr && ptr != end)
+		while (ptr && ptr < end)
 			{
 			if (*ptr == 'W' && (strncasecmp(ptr, "WANPPPConnection:1", 18) == 0))
 				{
@@ -444,7 +447,7 @@ mDNSlocal void handleLNTDeviceDescriptionResponse(tcpLNTInfo *tcpInfo)
 	if (ptr == mDNSNULL || ptr == end) { LogInfo("handleLNTDeviceDescriptionResponse: didn't find WANIPConnection:1 or WANPPPConnection:1 string"); return; }
 
 	// find "controlURL", starting from where we left off
-	while (ptr && ptr != end)
+	while (ptr && ptr < end)
 		{
 		if (*ptr == 'c' && (strncasecmp(ptr, "controlURL", 10) == 0)) break;			// find the first 'c'; is this controlURL? if not, keep looking
 		ptr++;
@@ -454,7 +457,7 @@ mDNSlocal void handleLNTDeviceDescriptionResponse(tcpLNTInfo *tcpInfo)
 	if (ptr >= end) { LogInfo("handleLNTDeviceDescriptionResponse: past end of buffer and no body!"); return; } // check ptr again in case we skipped over the end of the buffer
 
 	// find the end of the controlURL element
-	for (stop = ptr; stop != end; stop++) { if (*stop == '<') { end = stop; break; } }
+	for (stop = ptr; stop < end; stop++) { if (*stop == '<') { end = stop; break; } }
 
 	// fill in default port
 	m->UPnPSOAPPort = m->UPnPRouterPort;
@@ -476,29 +479,27 @@ mDNSlocal void handleLNTDeviceDescriptionResponse(tcpLNTInfo *tcpInfo)
 
 	if (m->UPnPSOAPAddressString == mDNSNULL)
 		{
-		mDNSBool foundURLBase = mDNSfalse;
 		ptr = (char *)tcpInfo->Reply;
-		while (ptr && ptr != end)
+		while (ptr && ptr < end)
 			{
-			if (*ptr == 'U' && (strncasecmp(ptr, "URLBase", 7) == 0))
-				{
-				foundURLBase = mDNStrue;
-				break;
-				}
+			if (*ptr == 'U' && (strncasecmp(ptr, "URLBase", 7) == 0))		break;
 			ptr++;
 			}
-		if (!foundURLBase) AllocAndCopy(&m->UPnPSOAPAddressString, m->UPnPRouterAddressString);
-		else
+
+		if (ptr < end)		// found URLBase
 			{
 			LogInfo("handleLNTDeviceDescriptionResponse: found URLBase");			
 			ptr += 8; // skip over "URLBase>"
 			// find the end of the URLBase element
-			for (stop = ptr; stop != end; stop++) { if (*stop == '<') { end = stop; break; } }
+			for (stop = ptr; stop < end; stop++) { if (*stop == '<') { end = stop; break; } }
 			if (ParseHttpUrl(ptr, end, &m->UPnPSOAPAddressString, &m->UPnPSOAPPort, mDNSNULL) != mStatus_NoError)
 				{
 				LogInfo("handleLNTDeviceDescriptionResponse: failed to parse URLBase");
 				}
 			}
+		
+		// if all else fails, use the router address string
+		if (m->UPnPSOAPAddressString == mDNSNULL)  AllocAndCopy(&m->UPnPSOAPAddressString, m->UPnPRouterAddressString);
 		}
 	if (m->UPnPSOAPAddressString == mDNSNULL) LogMsg("handleLNTDeviceDescriptionResponse: UPnPSOAPAddressString is NULL");
 	else LogInfo("handleLNTDeviceDescriptionResponse: SOAP address string [%s]", m->UPnPSOAPAddressString);
