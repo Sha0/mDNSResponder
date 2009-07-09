@@ -17,6 +17,9 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.462  2009/07/09 22:43:31  cheshire
+Improved log messages for debugging unresponsive clients
+
 Revision 1.461  2009/06/19 23:15:07  cheshire
 <rdar://problem/6990066> Library: crash at handle_resolve_response + 183
 Made resolve_result_callback code more defensive and improved LogOperation messages
@@ -989,7 +992,8 @@ struct request_state
 
 	// reply, termination, error, and client context info
 	int no_reply;					// don't send asynchronous replies to client
-	int time_blocked;				// record time of a blocked client
+	mDNSs32 time_blocked;			// record time of a blocked client
+	int unresponsiveness_reports;
 	struct reply_state *replies;	// corresponding (active) reply list
 	req_termination_fn terminate;
 
@@ -4467,6 +4471,7 @@ mDNSexport mDNSs32 udsserver_idle(mDNSs32 nextevent)
 				r->replies = r->replies->next;
 				freeL("reply_state/udsserver_idle", fptr);
 				r->time_blocked = 0; // reset failure counter after successful send
+				r->unresponsiveness_reports = 0;
 				continue;
 				}
 			else if (result == t_terminated || result == t_error)
@@ -4480,15 +4485,23 @@ mDNSexport mDNSs32 udsserver_idle(mDNSs32 nextevent)
 
 		if (r->replies)		// If we failed to send everything, check our time_blocked timer
 			{
+			if (nextevent - now > mDNSPlatformOneSecond) nextevent = now + mDNSPlatformOneSecond;
+
 			if (!r->time_blocked) r->time_blocked = NonZeroTime(now);
-			if (now - r->time_blocked >= 60 * mDNSPlatformOneSecond)
+			else if (now - r->time_blocked >= 1 * mDNSPlatformOneSecond * (r->unresponsiveness_reports+1))
 				{
-				LogMsg("%3d: Could not write data to client after %ld seconds - aborting connection", r->sd,
-					(now - r->time_blocked) / mDNSPlatformOneSecond);
-				LogClientInfo(&mDNSStorage, r);
-				abort_request(r);
+				int num = 0;
+				struct reply_state *x = r->replies;
+				while (x) { num++; x=x->next; }
+				LogMsg("%3d: Could not write data to client after %ld seconds, %d repl%s waiting",
+					r->sd, (now - r->time_blocked) / mDNSPlatformOneSecond, num, num == 1 ? "y" : "ies");
+				if (++r->unresponsiveness_reports >= 600)
+					{
+					LogMsg("%3d: Client unresponsive; aborting connection", r->sd);
+					LogClientInfo(&mDNSStorage, r);
+					abort_request(r);
+					}
 				}
-			else if (nextevent - now > mDNSPlatformOneSecond) nextevent = now + mDNSPlatformOneSecond;
 			}
 
 		if (!dnssd_SocketValid(r->sd)) // If this request is finished, unlink it from the list and free the memory
