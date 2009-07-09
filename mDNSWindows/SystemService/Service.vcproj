@@ -410,6 +410,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\main.c"
+				>
+			</File>
+			<File
 				RelativePath="..\..\mDNSCore\mDNS.c"
 				>
 			</File>
@@ -481,6 +485,10 @@
 			</File>
 			<File
 				RelativePath="..\Secret.h"
+				>
+			</File>
+			<File
+				RelativePath=".\Service.h"
 				>
 			</File>
 			<File
