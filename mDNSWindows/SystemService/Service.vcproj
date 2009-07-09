@@ -335,7 +335,7 @@
 			<Tool
 				Name="VCLinkerTool"
 				AdditionalOptions="/NXCOMPAT /DYNAMICBASE"
-				AdditionalDependencies="ws2_32.lib iphlpapi.lib netapi32.lib"
+				AdditionalDependencies="ws2_32.lib iphlpapi.lib netapi32.lib powrprof.lib"
 				OutputFile="$(OutDir)/mDNSResponder.exe"
 				LinkIncremental="1"
 				GenerateDebugInformation="true"
