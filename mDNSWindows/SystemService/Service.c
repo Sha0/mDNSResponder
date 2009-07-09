@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.48  2009/07/09 21:34:14  herscher
+<rdar://problem/3775717> SDK: Port mDNSNetMonitor to Windows. Refactor the system service slightly by removing the main() function from Service.c so that mDNSNetMonitor can link to functions defined in Service.c
+
 Revision 1.47  2009/07/07 21:35:06  herscher
 <rdar://problem/6713286> windows platform changes to support use as sleep proxy client
 
@@ -293,11 +296,6 @@ typedef struct Win32EventSource
 //===========================================================================================================================
 //	Prototypes
 //===========================================================================================================================
-#if defined(UNICODE)
-int __cdecl			wmain( int argc, LPTSTR argv[] );
-#else
-int __cdecl 		main( int argc, char *argv[] );
-#endif
 static void			Usage( void );
 static BOOL WINAPI	ConsoleControlHandler( DWORD inControlEvent );
 static OSStatus		InstallService( LPCTSTR inName, LPCTSTR inDisplayName, LPCTSTR inDescription, LPCTSTR inPath );
@@ -307,7 +305,6 @@ static OSStatus		GetServiceParameters();
 static OSStatus		CheckFirewall();
 static OSStatus		SetServiceInfo( SC_HANDLE inSCM, LPCTSTR inServiceName, LPCTSTR inDescription );
 static void			ReportStatus( int inType, const char *inFormat, ... );
-static OSStatus		RunDirect( int argc, LPTSTR argv[] );
 
 static void WINAPI	ServiceMain( DWORD argc, LPTSTR argv[] );
 static OSStatus		ServiceSetupEventLogging( void );
@@ -393,13 +390,9 @@ mDNSlocal GetIpInterfaceEntryFunctionPtr		gGetIpInterfaceEntryFunctionPtr	= NULL
 #endif
 
 //===========================================================================================================================
-//	main
+//	Main
 //===========================================================================================================================
-#if defined(UNICODE)
-int __cdecl wmain( int argc, wchar_t * argv[] )
-#else
-int	__cdecl main( int argc, char *argv[] )
-#endif
+int	Main( int argc, LPTSTR argv[] )
 {
 	OSStatus		err;
 	BOOL			ok;
@@ -994,7 +987,7 @@ static void	ReportStatus( int inType, const char *inFormat, ... )
 //	RunDirect
 //===========================================================================================================================
 
-static OSStatus	RunDirect( int argc, LPTSTR argv[] )
+int	RunDirect( int argc, LPTSTR argv[] )
 {
 	OSStatus		err;
 	BOOL			initialized;
