@@ -17,6 +17,11 @@
 	Change History (most recent first):
 
 $Log: uds_daemon.c,v $
+Revision 1.463  2009/07/10 22:25:47  cheshire
+Updated syslog messages for debugging unresponsive clients:
+Will now log a warning message about an unresponsive client every ten seconds,
+and then after 60 messagess (10 minutes) will terminate connection to that client.
+
 Revision 1.462  2009/07/09 22:43:31  cheshire
 Improved log messages for debugging unresponsive clients
 
@@ -4488,14 +4493,14 @@ mDNSexport mDNSs32 udsserver_idle(mDNSs32 nextevent)
 			if (nextevent - now > mDNSPlatformOneSecond) nextevent = now + mDNSPlatformOneSecond;
 
 			if (!r->time_blocked) r->time_blocked = NonZeroTime(now);
-			else if (now - r->time_blocked >= 1 * mDNSPlatformOneSecond * (r->unresponsiveness_reports+1))
+			else if (now - r->time_blocked >= 10 * mDNSPlatformOneSecond * (r->unresponsiveness_reports+1))
 				{
 				int num = 0;
 				struct reply_state *x = r->replies;
 				while (x) { num++; x=x->next; }
 				LogMsg("%3d: Could not write data to client after %ld seconds, %d repl%s waiting",
 					r->sd, (now - r->time_blocked) / mDNSPlatformOneSecond, num, num == 1 ? "y" : "ies");
-				if (++r->unresponsiveness_reports >= 600)
+				if (++r->unresponsiveness_reports >= 60)
 					{
 					LogMsg("%3d: Client unresponsive; aborting connection", r->sd);
 					LogClientInfo(&mDNSStorage, r);
@@ -4521,7 +4526,7 @@ struct CompileTimeAssertionChecks_uds_daemon
 	// Check our structures are reasonable sizes. Including overly-large buffers, or embedding
 	// other overly-large structures instead of having a pointer to them, can inadvertently
 	// cause structure sizes (and therefore memory usage) to balloon unreasonably.
-	char sizecheck_request_state          [(sizeof(request_state)           <= 1760) ? 1 : -1];
+	char sizecheck_request_state          [(sizeof(request_state)           <= 2000) ? 1 : -1];
 	char sizecheck_registered_record_entry[(sizeof(registered_record_entry) <=   40) ? 1 : -1];
 	char sizecheck_service_instance       [(sizeof(service_instance)        <= 6552) ? 1 : -1];
 	char sizecheck_browser_t              [(sizeof(browser_t)               <=  992) ? 1 : -1];
