@@ -54,6 +54,9 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.574  2009/07/10 23:03:17  cheshire
+Made SecondLabel(X) more defensive, to guard against the case where the name doesn't have a second label
+
 Revision 1.573  2009/06/30 18:17:45  herscher
 Add to 64 bit macro check for 64 bit Windows OSes
 
@@ -2979,8 +2982,12 @@ extern mDNSBool SameDomainName(const domainname *const d1, const domainname *con
 extern mDNSBool SameDomainNameCS(const domainname *const d1, const domainname *const d2);
 extern mDNSBool IsLocalDomain(const domainname *d);     // returns true for domains that by default should be looked up using link-local multicast
 
+#define StripFirstLabel(X) ((const domainname *)&(X)->c[(X)->c[0] ? 1 + (X)->c[0] : 0])
+
 #define FirstLabel(X)  ((const domainlabel *)(X))
-#define SecondLabel(X) ((const domainlabel *)&(X)->c[1 + (X)->c[0]])
+#define SecondLabel(X) ((const domainlabel *)StripFirstLabel(X))
+#define ThirdLabel(X)  ((const domainlabel *)StripFirstLabel(StripFirstLabel(X)))
+
 extern const mDNSu8 *LastLabel(const domainname *d);
 
 // Get total length of domain name, in native DNS format, including terminal root label
