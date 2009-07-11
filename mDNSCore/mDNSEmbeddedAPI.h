@@ -54,6 +54,10 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.575  2009/07/11 01:57:00  cheshire
+<rdar://problem/6613674> Sleep Proxy: Add support for using sleep proxy in local network interface hardware
+Added declaration of ActivateLocalProxy
+
 Revision 1.574  2009/07/10 23:03:17  cheshire
 Made SecondLabel(X) more defensive, to guard against the case where the name doesn't have a second label
 
@@ -3413,6 +3417,7 @@ extern void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const Resou
 extern void AddNewClientTunnel(mDNS *const m, DNSQuestion *const q);
 extern void SetupLocalAutoTunnelInterface_internal(mDNS *const m);
 extern void UpdateAutoTunnelDomainStatuses(const mDNS *const m);
+extern mStatus ActivateLocalProxy(mDNS *const m, char *ifname);
 #endif
 
 // ***************************************************************************
