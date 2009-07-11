@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.970  2009/07/11 01:59:27  cheshire
+<rdar://problem/6613674> Sleep Proxy: Add support for using sleep proxy in local network interface hardware
+When going to sleep, try calling ActivateLocalProxy before registering with remote sleep proxy
+
 Revision 1.969  2009/06/30 21:18:19  cheshire
 <rdar://problem/7020041> Plugging and unplugging the power cable shouldn't cause a network change event
 Additional fixes:
@@ -4932,6 +4936,9 @@ mDNSlocal void BeginSleepProcessing(mDNS *const m)
 		for (intf = GetFirstActiveInterface(m->HostInterfaces); intf; intf = GetFirstActiveInterface(intf->next))
 			{
 			if (!intf->NetWake) LogSPS("BeginSleepProcessing: %-6s not capable of magic packet wakeup", intf->ifname);
+#if APPLE_OSX_mDNSResponder
+			else if (ActivateLocalProxy(m, intf->ifname) == mStatus_NoError) LogSPS("BeginSleepProcessing: %-6s using local proxy", intf->ifname);
+#endif // APPLE_OSX_mDNSResponder
 			else
 				{
 				FindSPSInCache(m, &intf->NetWakeBrowse, sps);
@@ -9158,11 +9165,11 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 					if (rr->resrec.InterfaceID == InterfaceID &&
 						rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, v4->dst))
 						{
-						const mDNSu8 *const tp = (v4->protocol == 6) ? (mDNSu8 *)"\x4_tcp" : (mDNSu8 *)"\x4_udp";
+						const mDNSu8 *const tp = (v4->protocol == 6) ? (const mDNSu8 *)"\x4_tcp" : (const mDNSu8 *)"\x4_udp";
 						for (r2 = m->ResourceRecords; r2; r2=r2->next)
 							if (r2->resrec.InterfaceID == InterfaceID && mDNSSameEthAddress(&r2->WakeUp.HMAC, &rr->WakeUp.HMAC) &&
 								r2->resrec.rrtype == kDNSType_SRV && mDNSSameIPPort(r2->resrec.rdata->u.srv.port, port) &&
-								SameDomainLabel(SkipLeadingLabels(r2->resrec.name, 2)->c, tp))
+								SameDomainLabel(ThirdLabel(r2->resrec.name)->c, tp))
 								break;
 						if (!r2 && mDNSSameIPPort(port, IPSEC)) r2 = rr;	// So that we wake for BTMM IPSEC packets, even without a matching SRV record
 						if (r2)
