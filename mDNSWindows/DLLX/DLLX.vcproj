@@ -272,7 +272,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				RegisterOutput="true"
+				RegisterOutput="false"
 				IgnoreImportLibrary="true"
 				AdditionalOptions="/NXCOMPAT /DYNAMICBASE /SAFESEH"
 				AdditionalDependencies="ws2_32.lib ../../mDNSWindows/DLLStub/$(PlatformName)/$(ConfigurationName)/dnssdStatic.lib"
@@ -369,7 +369,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				RegisterOutput="true"
+				RegisterOutput="false"
 				IgnoreImportLibrary="true"
 				AdditionalOptions="/NXCOMPAT /DYNAMICBASE"
 				AdditionalDependencies="ws2_32.lib ../../mDNSWindows/DLLStub/$(PlatformName)/$(ConfigurationName)/dnssdStatic.lib"
