@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.690  2009/07/15 22:34:25  cheshire
+<rdar://problem/6613674> Sleep Proxy: Add support for using sleep proxy in local network interface hardware
+Fixes to make the code still compile with old headers and libraries (pre 10.5) that don't include IOConnectCallStructMethod
+
 Revision 1.689  2009/07/15 22:09:19  cheshire
 <rdar://problem/6613674> Sleep Proxy: Add support for using sleep proxy in local network interface hardware
 Removed unnecessary sleep(1) and syslog message
@@ -5418,6 +5422,29 @@ mDNSlocal mDNSu16 GetProxyRecords(mDNS *const m, DNSMessage *msg, uint16_t numby
 				}
 	return(count);
 	}
+
+// If compiling with old headers and libraries (pre 10.5) that don't include IOConnectCallStructMethod
+// then we declare a dummy version here so that the code at least compiles
+#ifndef AVAILABLE_MAC_OS_X_VERSION_10_5_AND_LATER
+static kern_return_t
+IOConnectCallStructMethod(
+	mach_port_t	 connection,		// In
+	uint32_t	 selector,		// In
+	const void	*inputStruct,		// In
+	size_t		 inputStructCnt,	// In
+	void		*outputStruct,		// Out
+	size_t		*outputStructCnt)	// In/Out
+	{
+	(void)connection;
+	(void)selector;
+	(void)inputStruct;
+	(void)inputStructCnt;
+	(void)outputStruct;
+	(void)outputStructCnt;
+	LogMsg("Compiled without IOConnectCallStructMethod");
+	return(KERN_FAILURE);
+	}
+#endif
 
 mDNSexport mStatus ActivateLocalProxy(mDNS *const m, char *ifname)
 	{
