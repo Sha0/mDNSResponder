@@ -17,6 +17,10 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.689  2009/07/15 22:09:19  cheshire
+<rdar://problem/6613674> Sleep Proxy: Add support for using sleep proxy in local network interface hardware
+Removed unnecessary sleep(1) and syslog message
+
 Revision 1.688  2009/07/11 01:58:17  cheshire
 <rdar://problem/6613674> Sleep Proxy: Add support for using sleep proxy in local network interface hardware
 Added ActivateLocalProxy routine for transferring mDNS records to local proxy
@@ -5446,9 +5450,6 @@ mDNSexport mStatus ActivateLocalProxy(mDNS *const m, char *ifname)
 					{
 					mDNSOffloadCmd cmd;
 					mDNSPlatformMemZero(&cmd, sizeof(cmd)); // When compiling 32-bit, make sure top 32 bits of 64-bit pointers get initialized to zero
-					//uint64_t records[128];
-					//u_int16_t udp_ports[1] = { 4500 };
-					//u_int16_t tcp_ports[1] = {   22 };
 					cmd.command       = cmd_mDNSOffloadRR;
 					cmd.numUDPPorts   = GetPortArray(m, (domainlabel *)"\x4_udp", mDNSNULL);
 					cmd.numTCPPorts   = GetPortArray(m, (domainlabel *)"\x4_tcp", mDNSNULL);
@@ -5457,8 +5458,8 @@ mDNSexport mStatus ActivateLocalProxy(mDNS *const m, char *ifname)
 
 					DNSMessage *msg = (DNSMessage *)mallocL("mDNSOffloadCmd msg", sizeof(DNSMessageHeader) + cmd.rrBufferSize);
 					cmd.rrRecords.ptr = mallocL("mDNSOffloadCmd rrRecords", cmd.numRRRecords * sizeof(FatPtr));
-					cmd.udpPorts .ptr = mallocL("mDNSOffloadCmd udpPorts",  cmd.numUDPPorts * sizeof(mDNSIPPort));
-					cmd.tcpPorts .ptr = mallocL("mDNSOffloadCmd tcpPorts",  cmd.numTCPPorts * sizeof(mDNSIPPort));
+					cmd.udpPorts .ptr = mallocL("mDNSOffloadCmd udpPorts",  cmd.numUDPPorts  * sizeof(mDNSIPPort));
+					cmd.tcpPorts .ptr = mallocL("mDNSOffloadCmd tcpPorts",  cmd.numTCPPorts  * sizeof(mDNSIPPort));
 
 					LogSPS("ActivateLocalProxy: msg %p %d RR %p %d, UDP %p %d, TCP %p %d",
 						msg, cmd.rrBufferSize,
@@ -5479,9 +5480,8 @@ mDNSexport mStatus ActivateLocalProxy(mDNS *const m, char *ifname)
 						GetPortArray(m, (domainlabel *)"\x4_tcp", cmd.tcpPorts.ptr);
 						char outputData[2];
 						size_t outputDataSize = sizeof(outputData);
-						sleep(1);
 						kr = IOConnectCallStructMethod(conObj, 0, &cmd, sizeof(cmd), outputData, &outputDataSize);
-						LogMsg("ActivateLocalProxy: IOConnectCallStructMethod for %s/%s/%s %d", ifname, n1, n2, kr);
+						LogSPS("ActivateLocalProxy: IOConnectCallStructMethod for %s/%s/%s %d", ifname, n1, n2, kr);
 						if (kr == KERN_SUCCESS) result = mStatus_NoError;
 						}
 
