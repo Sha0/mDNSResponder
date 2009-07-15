@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.971  2009/07/15 23:35:40  cheshire
+<rdar://problem/6434656> Sleep Proxy: Put owner OPT records in multicast announcements to avoid conflicts
+
 Revision 1.970  2009/07/11 01:59:27  cheshire
 <rdar://problem/6613674> Sleep Proxy: Add support for using sleep proxy in local network interface hardware
 When going to sleep, try calling ActivateLocalProxy before registering with remote sleep proxy
@@ -2986,6 +2989,20 @@ mDNSlocal void SendResponses(mDNS *const m)
 					}
 				}
 
+		// If necessary, add OWNER option, if there's space
+		if (m->AnnounceOwner && intf->MAC.l[0])
+			{
+			AuthRecord opt;
+			mDNS_SetupResourceRecord(&opt, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
+			opt.resrec.rrclass    = NormalMaxDNSMessageData;
+			opt.resrec.rdlength   = sizeof(rdataOPT);	// One option in this OPT record
+			opt.resrec.rdestimate = sizeof(rdataOPT);
+			SetupOwnerOpt(m, intf, &opt.resrec.rdata->u.opt[0]);
+			newptr = PutResourceRecord(&m->omsg, responseptr, &m->omsg.h.numAdditionals, &opt.resrec);
+			if (newptr) responseptr = newptr;
+			LogSPS("SendResponses%s put %s", newptr ? "" : " failed to", ARDisplayString(m, &opt));
+			}
+
 		if (m->omsg.h.numAnswers > 0 || m->omsg.h.numAdditionals)
 			{
 			debugf("SendResponses: Sending %d Deregistration%s, %d Announcement%s, %d Answer%s, %d Additional%s on %p",
@@ -3595,11 +3612,10 @@ mDNSlocal void SendQueries(mDNS *const m)
 	// go through our interface list sending the appropriate queries on each interface
 	while (intf)
 		{
-		const int os = !intf->MAC.l[0] ? 0 : DNSOpt_Header_Space + mDNSSameEthAddress(&m->PrimaryMAC, &intf->MAC) ? DNSOpt_OwnerData_ID_Space : DNSOpt_OwnerData_ID_Wake_Space;
-		int OwnerRecordSpace = 0;
+		const int OwnerRecordSpace = (m->AnnounceOwner && intf->MAC.l[0]) ?
+			DNSOpt_Header_Space + mDNSSameEthAddress(&m->PrimaryMAC, &intf->MAC) ? DNSOpt_OwnerData_ID_Space : DNSOpt_OwnerData_ID_Wake_Space : 0;
 		AuthRecord *rr;
 		mDNSu8 *queryptr = m->omsg.data;
-		mDNSu8 *limit    = m->omsg.data + AbsoluteMaxDNSMessageData;
 		InitializeDNSMessage(&m->omsg.h, zeroID, QueryFlags);
 		if (KnownAnswerList) verbosedebugf("SendQueries:   KnownAnswerList set... Will continue from previous packet");
 		if (!KnownAnswerList)
@@ -3620,10 +3636,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 					// If we're suppressing this question, or we successfully put it, update its SendQNow state
 					if (SuppressOnThisInterface(q->DupSuppress, intf) ||
 						BuildQuestion(m, &m->omsg, &queryptr, q, &kalistptr, &answerforecast))
-						q->SendQNow = (q->InterfaceID || !q->SendOnAll) ? mDNSNULL : GetNextActiveInterfaceID(intf);
-
-					// Once we've put at least one question, cut back our limit to the normal single-packet size
-					if (m->omsg.h.numQuestions) limit = m->omsg.data + NormalMaxDNSMessageData;
+							q->SendQNow = (q->InterfaceID || !q->SendOnAll) ? mDNSNULL : GetNextActiveInterfaceID(intf);
 					}
 				}
 
@@ -3633,15 +3646,14 @@ mDNSlocal void SendQueries(mDNS *const m)
 					{
 					mDNSBool ucast = (rr->ProbeCount >= DefaultProbeCountForTypeUnique-1) && m->CanReceiveUnicastOn5353;
 					mDNSu16 ucbit = (mDNSu16)(ucast ? kDNSQClass_UnicastResponse : 0);
+					const mDNSu8 *const limit = m->omsg.data + ((m->omsg.h.numQuestions) ? NormalMaxDNSMessageData : AbsoluteMaxDNSMessageData) - OwnerRecordSpace;
 					mDNSu8 *newptr = putQuestion(&m->omsg, queryptr, limit, rr->resrec.name, kDNSQType_ANY, (mDNSu16)(rr->resrec.rrclass | ucbit));
 					// We forecast: compressed name (2) type (2) class (2) TTL (4) rdlength (2) rdata (n)
 					mDNSu32 forecast = answerforecast + 12 + rr->resrec.rdestimate;
-					if (newptr && newptr + forecast + os < limit)
+					if (newptr && newptr + forecast < limit)
 						{
-						queryptr         = newptr;
-						limit            = m->omsg.data + NormalMaxDNSMessageData;
-						answerforecast   = forecast;
-						OwnerRecordSpace = os;
+						queryptr       = newptr;
+						answerforecast = forecast;
 						rr->SendRNow = (rr->resrec.InterfaceID) ? mDNSNULL : GetNextActiveInterfaceID(intf);
 						rr->IncludeInProbe = mDNStrue;
 						verbosedebugf("SendQueries:   Put Question %##s (%s) probecount %d",
@@ -3655,20 +3667,18 @@ mDNSlocal void SendQueries(mDNS *const m)
 					}
 			}
 
-		if (m->omsg.h.numQuestions) limit = m->omsg.data + NormalMaxDNSMessageData - OwnerRecordSpace;
-
 		// Put our known answer list (either new one from this question or questions, or remainder of old one from last time)
 		while (KnownAnswerList)
 			{
 			CacheRecord *ka = KnownAnswerList;
 			mDNSu32 SecsSinceRcvd = ((mDNSu32)(m->timenow - ka->TimeRcvd)) / mDNSPlatformOneSecond;
-			mDNSu8 *newptr = PutResourceRecordTTLWithLimit(&m->omsg, queryptr, &m->omsg.h.numAnswers, &ka->resrec, ka->resrec.rroriginalttl - SecsSinceRcvd, limit);
+			mDNSu8 *newptr = PutResourceRecordTTLWithLimit(&m->omsg, queryptr, &m->omsg.h.numAnswers,
+				&ka->resrec, ka->resrec.rroriginalttl - SecsSinceRcvd, m->omsg.data + NormalMaxDNSMessageData - OwnerRecordSpace);
 			if (newptr)
 				{
 				verbosedebugf("SendQueries:   Put %##s (%s) at %d - %d",
 					ka->resrec.name->c, DNSTypeName(ka->resrec.rrtype), queryptr - m->omsg.data, newptr - m->omsg.data);
 				queryptr = newptr;
-				limit = m->omsg.data + NormalMaxDNSMessageData - OwnerRecordSpace;
 				KnownAnswerList = ka->NextInKAList;
 				ka->NextInKAList = mDNSNULL;
 				}
@@ -3706,6 +3716,11 @@ mDNSlocal void SendQueries(mDNS *const m)
 			if (!queryptr)
 				LogMsg("SendQueries: How did we fail to have space for the OPT record (%d/%d/%d/%d) %s",
 					m->omsg.h.numQuestions, m->omsg.h.numAnswers, m->omsg.h.numAuthorities, m->omsg.h.numAdditionals, ARDisplayString(m, &opt));
+			if (queryptr > m->omsg.data + NormalMaxDNSMessageData)
+				if (m->omsg.h.numQuestions != 1 || m->omsg.h.numAnswers != 0 || m->omsg.h.numAuthorities != 1 || m->omsg.h.numAdditionals != 1)
+					LogMsg("SendQueries: Why did we generate oversized packet with OPT record %p %p %p (%d/%d/%d/%d) %s",
+						m->omsg.data, m->omsg.data + NormalMaxDNSMessageData, queryptr,
+						m->omsg.h.numQuestions, m->omsg.h.numAnswers, m->omsg.h.numAuthorities, m->omsg.h.numAdditionals, ARDisplayString(m, &opt));
 			}
 
 		if (queryptr > m->omsg.data)
@@ -4553,6 +4568,9 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 
 		SetSPSProxyListChanged(mDNSNULL);		// Perform any deferred BPF reconfiguration now
 
+		// Clear AnnounceOwner if necessary. (Do this *before* SendQueries() and SendResponses().)
+		if (m->AnnounceOwner && m->timenow - m->AnnounceOwner >= 0) m->AnnounceOwner = 0;
+
 		if (m->DelaySleep && m->timenow - m->DelaySleep >= 0)
 			{
 			m->DelaySleep = 0;
@@ -4942,7 +4960,8 @@ mDNSlocal void BeginSleepProcessing(mDNS *const m)
 			else
 				{
 				FindSPSInCache(m, &intf->NetWakeBrowse, sps);
-				if (!sps[0]) LogSPS("BeginSleepProcessing: %-6s %#a No Sleep Proxy Server found %d", intf->ifname, &intf->ip, intf->NetWakeBrowse.ThisQInterval);
+				if (!sps[0]) LogSPS("BeginSleepProcessing: %-6s %#a No Sleep Proxy Server found (Next Browse Q in %d, interval %d)",
+					intf->ifname, &intf->ip, intf->NetWakeBrowse.LastQTime + intf->NetWakeBrowse.ThisQInterval - m->timenow, intf->NetWakeBrowse.ThisQInterval);
 				else
 					{
 					int i;
@@ -5048,7 +5067,8 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 			{
 			m->SleepState = SleepState_Awake;
 			m->SleepSeqNum++;
-			m->DelaySleep = NonZeroTime(m->timenow + 10 * mDNSPlatformOneSecond);
+			m->AnnounceOwner = NonZeroTime(m->timenow + 60 * mDNSPlatformOneSecond);	// Include OWNER option in packets for 60 seconds after waking
+			m->DelaySleep    = NonZeroTime(m->timenow + 10 * mDNSPlatformOneSecond);
 			}
 
 		if (m->SPSState == 3)
@@ -9335,6 +9355,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->SleepState              = SleepState_Awake;
 	m->SleepSeqNum             = 0;
 	m->SystemWakeOnLANEnabled  = mDNSfalse;
+	m->AnnounceOwner           = 0;
 	m->DelaySleep              = 0;
 	m->SleepLimit              = 0;
 
