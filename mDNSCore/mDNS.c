@@ -38,6 +38,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.973  2009/07/16 00:34:18  cheshire
+<rdar://problem/6434656> Sleep Proxy: Put owner OPT records in multicast announcements to avoid conflicts
+Additional refinement: If we didn't register with a Sleep Proxy when going to sleep,
+we don't need to include our OWNER option in our packets when we re-awaken
+
 Revision 1.972  2009/07/16 00:12:23  cheshire
 <rdar://problem/6434656> Sleep Proxy: Put owner OPT records in multicast announcements to avoid conflicts
 Additional fixes: Only add and send OWNER option if we were already going to send a non-empty packet anyway
@@ -4841,6 +4846,9 @@ mDNSlocal void SendSPSRegistration(mDNS *const m, NetworkInterfaceInfo *intf, co
 			else
 				{
 				mStatus err;
+				// Once we've attempted to register, we need to include our OWNER option in our packets when we re-awaken
+				m->SentSleepProxyRegistration = mDNStrue;
+
 				LogSPS("SendSPSRegistration: Sending Update %s %d (%d) id %5d with %d records %d bytes to %#a:%d", intf->ifname, intf->NextSPSAttempt, sps,
 					mDNSVal16(m->omsg.h.id), m->omsg.h.mDNS_numUpdates, p - m->omsg.data, &intf->SPSAddr[sps], mDNSVal16(intf->SPSPort[sps]));
 				// if (intf->NextSPSAttempt < 5) m->omsg.h.flags = zeroID;	// For simulating packet loss
@@ -5071,8 +5079,12 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 			{
 			m->SleepState = SleepState_Awake;
 			m->SleepSeqNum++;
-			m->AnnounceOwner = NonZeroTime(m->timenow + 60 * mDNSPlatformOneSecond);	// Include OWNER option in packets for 60 seconds after waking
-			m->DelaySleep    = NonZeroTime(m->timenow + 10 * mDNSPlatformOneSecond);
+			if (m->SentSleepProxyRegistration)		// Include OWNER option in packets for 60 seconds after waking
+				{
+				m->SentSleepProxyRegistration = mDNSfalse;
+				m->AnnounceOwner = NonZeroTime(m->timenow + 60 * mDNSPlatformOneSecond);
+				}
+			m->DelaySleep = NonZeroTime(m->timenow + 10 * mDNSPlatformOneSecond);
 			}
 
 		if (m->SPSState == 3)
@@ -9359,6 +9371,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->SleepState              = SleepState_Awake;
 	m->SleepSeqNum             = 0;
 	m->SystemWakeOnLANEnabled  = mDNSfalse;
+	m->SentSleepProxyRegistration = mDNSfalse;
 	m->AnnounceOwner           = 0;
 	m->DelaySleep              = 0;
 	m->SleepLimit              = 0;

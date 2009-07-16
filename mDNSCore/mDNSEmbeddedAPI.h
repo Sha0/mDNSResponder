@@ -54,6 +54,11 @@
     Change History (most recent first):
 
 $Log: mDNSEmbeddedAPI.h,v $
+Revision 1.577  2009/07/16 00:34:18  cheshire
+<rdar://problem/6434656> Sleep Proxy: Put owner OPT records in multicast announcements to avoid conflicts
+Additional refinement: If we didn't register with a Sleep Proxy when going to sleep,
+we don't need to include our OWNER option in our packets when we re-awaken
+
 Revision 1.576  2009/07/15 23:35:37  cheshire
 <rdar://problem/6434656> Sleep Proxy: Put owner OPT records in multicast announcements to avoid conflicts
 
@@ -2569,6 +2574,7 @@ struct mDNS_struct
 	mDNSu8   SleepState;				// Set if we're sleeping
 	mDNSu8   SleepSeqNum;				// "Epoch number" of our current period of wakefulness
 	mDNSu8   SystemWakeOnLANEnabled;	// Set if we want to register with a Sleep Proxy before going to sleep
+	mDNSu8   SentSleepProxyRegistration;// Set if we registered (or tried to register) with a Sleep Proxy
 	mDNSs32  AnnounceOwner;				// After waking from sleep, include OWNER option in packets until this time
 	mDNSs32  DelaySleep;				// To inhibit re-sleeping too quickly right after wake
 	mDNSs32  SleepLimit;				// Time window to allow deregistrations, etc.,
