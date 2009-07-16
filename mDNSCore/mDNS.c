@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.972  2009/07/16 00:12:23  cheshire
+<rdar://problem/6434656> Sleep Proxy: Put owner OPT records in multicast announcements to avoid conflicts
+Additional fixes: Only add and send OWNER option if we were already going to send a non-empty packet anyway
+
 Revision 1.971  2009/07/15 23:35:40  cheshire
 <rdar://problem/6434656> Sleep Proxy: Put owner OPT records in multicast announcements to avoid conflicts
 
@@ -2989,22 +2993,22 @@ mDNSlocal void SendResponses(mDNS *const m)
 					}
 				}
 
-		// If necessary, add OWNER option, if there's space
-		if (m->AnnounceOwner && intf->MAC.l[0])
-			{
-			AuthRecord opt;
-			mDNS_SetupResourceRecord(&opt, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
-			opt.resrec.rrclass    = NormalMaxDNSMessageData;
-			opt.resrec.rdlength   = sizeof(rdataOPT);	// One option in this OPT record
-			opt.resrec.rdestimate = sizeof(rdataOPT);
-			SetupOwnerOpt(m, intf, &opt.resrec.rdata->u.opt[0]);
-			newptr = PutResourceRecord(&m->omsg, responseptr, &m->omsg.h.numAdditionals, &opt.resrec);
-			if (newptr) responseptr = newptr;
-			LogSPS("SendResponses%s put %s", newptr ? "" : " failed to", ARDisplayString(m, &opt));
-			}
-
 		if (m->omsg.h.numAnswers > 0 || m->omsg.h.numAdditionals)
 			{
+			// If necessary, add OWNER option, if there's space
+			if (m->AnnounceOwner && intf->MAC.l[0])
+				{
+				AuthRecord opt;
+				mDNS_SetupResourceRecord(&opt, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
+				opt.resrec.rrclass    = NormalMaxDNSMessageData;
+				opt.resrec.rdlength   = sizeof(rdataOPT);	// One option in this OPT record
+				opt.resrec.rdestimate = sizeof(rdataOPT);
+				SetupOwnerOpt(m, intf, &opt.resrec.rdata->u.opt[0]);
+				newptr = PutResourceRecord(&m->omsg, responseptr, &m->omsg.h.numAdditionals, &opt.resrec);
+				if (newptr) responseptr = newptr;
+				LogSPS("SendResponses%s put %s", newptr ? "" : " failed to", ARDisplayString(m, &opt));
+				}
+
 			debugf("SendResponses: Sending %d Deregistration%s, %d Announcement%s, %d Answer%s, %d Additional%s on %p",
 				numDereg,                 numDereg                 == 1 ? "" : "s",
 				numAnnounce,              numAnnounce              == 1 ? "" : "s",
@@ -3702,29 +3706,29 @@ mDNSlocal void SendQueries(mDNS *const m)
 				else LogMsg("SendQueries:   How did we fail to have space for the Update record %s", ARDisplayString(m,rr));
 				}
 
-		if (OwnerRecordSpace)
-			{
-			AuthRecord opt;
-			mDNS_SetupResourceRecord(&opt, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
-			opt.resrec.rrclass    = NormalMaxDNSMessageData;
-			opt.resrec.rdlength   = sizeof(rdataOPT);	// One option in this OPT record
-			opt.resrec.rdestimate = sizeof(rdataOPT);
-			SetupOwnerOpt(m, intf, &opt.resrec.rdata->u.opt[0]);
-			LogSPS("SendQueries putting %s", ARDisplayString(m, &opt));
-			queryptr = PutResourceRecordTTLWithLimit(&m->omsg, queryptr, &m->omsg.h.numAdditionals,
-				&opt.resrec, opt.resrec.rroriginalttl, m->omsg.data + AbsoluteMaxDNSMessageData);
-			if (!queryptr)
-				LogMsg("SendQueries: How did we fail to have space for the OPT record (%d/%d/%d/%d) %s",
-					m->omsg.h.numQuestions, m->omsg.h.numAnswers, m->omsg.h.numAuthorities, m->omsg.h.numAdditionals, ARDisplayString(m, &opt));
-			if (queryptr > m->omsg.data + NormalMaxDNSMessageData)
-				if (m->omsg.h.numQuestions != 1 || m->omsg.h.numAnswers != 0 || m->omsg.h.numAuthorities != 1 || m->omsg.h.numAdditionals != 1)
-					LogMsg("SendQueries: Why did we generate oversized packet with OPT record %p %p %p (%d/%d/%d/%d) %s",
-						m->omsg.data, m->omsg.data + NormalMaxDNSMessageData, queryptr,
-						m->omsg.h.numQuestions, m->omsg.h.numAnswers, m->omsg.h.numAuthorities, m->omsg.h.numAdditionals, ARDisplayString(m, &opt));
-			}
-
 		if (queryptr > m->omsg.data)
 			{
+			if (OwnerRecordSpace)
+				{
+				AuthRecord opt;
+				mDNS_SetupResourceRecord(&opt, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
+				opt.resrec.rrclass    = NormalMaxDNSMessageData;
+				opt.resrec.rdlength   = sizeof(rdataOPT);	// One option in this OPT record
+				opt.resrec.rdestimate = sizeof(rdataOPT);
+				SetupOwnerOpt(m, intf, &opt.resrec.rdata->u.opt[0]);
+				LogSPS("SendQueries putting %s", ARDisplayString(m, &opt));
+				queryptr = PutResourceRecordTTLWithLimit(&m->omsg, queryptr, &m->omsg.h.numAdditionals,
+					&opt.resrec, opt.resrec.rroriginalttl, m->omsg.data + AbsoluteMaxDNSMessageData);
+				if (!queryptr)
+					LogMsg("SendQueries: How did we fail to have space for the OPT record (%d/%d/%d/%d) %s",
+						m->omsg.h.numQuestions, m->omsg.h.numAnswers, m->omsg.h.numAuthorities, m->omsg.h.numAdditionals, ARDisplayString(m, &opt));
+				if (queryptr > m->omsg.data + NormalMaxDNSMessageData)
+					if (m->omsg.h.numQuestions != 1 || m->omsg.h.numAnswers != 0 || m->omsg.h.numAuthorities != 1 || m->omsg.h.numAdditionals != 1)
+						LogMsg("SendQueries: Why did we generate oversized packet with OPT record %p %p %p (%d/%d/%d/%d) %s",
+							m->omsg.data, m->omsg.data + NormalMaxDNSMessageData, queryptr,
+							m->omsg.h.numQuestions, m->omsg.h.numAnswers, m->omsg.h.numAuthorities, m->omsg.h.numAdditionals, ARDisplayString(m, &opt));
+				}
+
 			if ((m->omsg.h.flags.b[0] & kDNSFlag0_TC) && m->omsg.h.numQuestions > 1)
 				LogMsg("SendQueries: Should not have more than one question (%d) in a truncated packet", m->omsg.h.numQuestions);
 			debugf("SendQueries:   Sending %d Question%s %d Answer%s %d Update%s on %p",
