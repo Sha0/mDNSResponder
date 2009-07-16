@@ -30,6 +30,9 @@
     Change History (most recent first):
 
 $Log: NetMonitor.c,v $
+Revision 1.96  2009/07/16 00:08:57  cheshire
+Display any stray Update (Authority) records in query packets
+
 Revision 1.95  2009/07/09 22:24:52  herscher
 <rdar://problem/3775717> SDK: Port mDNSNetMonitor to Windows
 
@@ -730,16 +733,19 @@ mDNSlocal void DisplayQuery(mDNS *const m, const DNSMessage *const msg, const mD
 	for (i=0; i<msg->h.numAuthorities; i++)
 		{
 		const mDNSu8 *ep = ptr;
-		ptr = skipResourceRecord(msg, ptr, end);
+		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, kDNSRecordTypePacketAuth, &pkt);
 		if (!ptr) { DisplayError(srcaddr, ep, end, "AUTHORITY"); return; }
+		// After we display an Update record with its matching question (above) we zero out its type and class
+		// If any remain that haven't been zero'd out, display them here
+		if (pkt.r.resrec.rrtype || pkt.r.resrec.rrclass) DisplayResourceRecord(srcaddr, "(AU)", &pkt.r.resrec);
 		}
 
 	for (i=0; i<msg->h.numAdditionals; i++)
 		{
 		const mDNSu8 *ep = ptr;
-		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, kDNSRecordTypePacketAns, &pkt);
+		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, kDNSRecordTypePacketAdd, &pkt);
 		if (!ptr) { DisplayError(srcaddr, ep, end, "ADDITIONAL"); return; }
-		DisplayResourceRecord(srcaddr, "    ", &pkt.r.resrec);
+		DisplayResourceRecord(srcaddr, pkt.r.resrec.rrtype == kDNSType_OPT ? "(OP)" : "(AD)", &pkt.r.resrec);
 		}
 
 	if (entry) AnalyseHost(m, entry, InterfaceID);
@@ -803,7 +809,9 @@ mDNSlocal void DisplayResponse(mDNS *const m, const DNSMessage *const msg, const
 		ptr = GetLargeResourceRecord(m, msg, ptr, end, InterfaceID, kDNSRecordTypePacketAdd, &pkt);
 		if (!ptr) { DisplayError(srcaddr, ep, end, "ADDITIONAL"); return; }
 		NumAdditionals++;
-		DisplayResourceRecord(srcaddr, (pkt.r.resrec.RecordType & kDNSRecordTypePacketUniqueMask) ? "(AD)" : "(AD+)", &pkt.r.resrec);
+		DisplayResourceRecord(srcaddr,
+			pkt.r.resrec.rrtype == kDNSType_OPT ? "(OP)" : (pkt.r.resrec.RecordType & kDNSRecordTypePacketUniqueMask) ? "(AD)" : "(AD+)",
+			&pkt.r.resrec);
 		if (entry) RecordHostInfo(entry, &pkt.r.resrec);
 		}
 	
