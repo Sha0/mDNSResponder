@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.49  2009/07/17 19:59:46  herscher
+<rdar://problem/7062660> Update the womp settings for each network adapter immediately preceding the call to mDNSCoreMachineSleep().
+
 Revision 1.48  2009/07/09 21:34:14  herscher
 <rdar://problem/3775717> SDK: Port mDNSNetMonitor to Windows. Refactor the system service slightly by removing the main() function from Service.c so that mDNSNetMonitor can link to functions defined in Service.c
 
@@ -204,6 +207,7 @@ mDNSResponder Windows Service. Provides global Bonjour support with an IPC inter
 
 #include	"uds_daemon.h"
 #include	"GenLinkedList.h"
+#include	"Service.h"
 
 #include	"Resource.h"
 
@@ -1966,6 +1970,7 @@ SystemWakeForNetworkAccess( LARGE_INTEGER * timeout )
 
 	// Now make sure we have a network interface that does wake-on-lan
 
+	UpdateWOMPConfig( &gMDNSRecord );
 	require_action( gMDNSRecord.p->womp, exit, ok = FALSE );
 
 	// Calculate next wake up time

@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.h,v $
+Revision 1.30  2009/07/17 19:59:46  herscher
+<rdar://problem/7062660> Update the womp settings for each network adapter immediately preceding the call to mDNSCoreMachineSleep().
+
 Revision 1.29  2009/07/07 21:34:58  herscher
 <rdar://problem/6713286> windows platform changes to support use as sleep proxy client
 
@@ -264,7 +267,7 @@ struct ifaddrs
 	struct sockaddr	*	ifa_dstaddr;
 	BOOL				ifa_dhcpEnabled;
 	time_t				ifa_dhcpLeaseExpires;
-	mDNSu8				ifa_wakeOnLAN;
+	mDNSu8				ifa_womp;
 	void *				ifa_data;
 	
 	struct
@@ -273,6 +276,9 @@ struct ifaddrs
 	
 	}	ifa_extra;
 };
+
+
+extern void UpdateWOMPConfig();
 
 
 #ifdef	__cplusplus

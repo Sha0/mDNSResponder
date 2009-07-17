@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.144  2009/07/17 19:59:46  herscher
+<rdar://problem/7062660> Update the womp settings for each network adapter immediately preceding the call to mDNSCoreMachineSleep().
+
 Revision 1.143  2009/07/07 21:34:58  herscher
 <rdar://problem/6713286> windows platform changes to support use as sleep proxy client
 
@@ -341,7 +344,7 @@ mDNSlocal void				GetDDNSDomains( DNameListElem ** domains, LPCSTR lpSubKey );
 mDNSlocal void				SetDomainSecrets( mDNS * const m );
 mDNSlocal void				SetDomainSecret( mDNS * const m, const domainname * inDomain );
 mDNSlocal void				CheckFileShares( mDNS * const m );
-mDNSlocal mDNSu8			IsWOMPEnabled( const char * adapterName );
+mDNSlocal mDNSBool			IsWOMPEnabled( const char * adapterName );
 
 #ifdef	__cplusplus
 	}
@@ -2743,7 +2746,7 @@ mDNSlocal mStatus	SetupInterface( mDNS * const inMDNS, const struct ifaddrs *inI
 		inMDNS->p->nextDHCPLeaseExpires = inIFA->ifa_dhcpLeaseExpires;
 	}
 
-	ifd->interfaceInfo.NetWake = inIFA->ifa_wakeOnLAN;
+	ifd->interfaceInfo.NetWake = inIFA->ifa_womp;
 
 	if ( ifd->interfaceInfo.NetWake )
 	{
@@ -4266,7 +4269,7 @@ mDNSlocal int	getifaddrs_ipv6( struct ifaddrs **outAddrs )
 
 			if ( iaa->IfType == IF_TYPE_ETHERNET_CSMACD )
 			{
-				ifa->ifa_wakeOnLAN = IsWOMPEnabled( iaa->AdapterName );
+				ifa->ifa_womp = IsWOMPEnabled( iaa->AdapterName );
 			}
 			
 			// Get address.
@@ -4530,7 +4533,7 @@ mDNSlocal int	getifaddrs_ipv4( struct ifaddrs **outAddrs )
 			{
 				ifa->ifa_dhcpEnabled		= pAdapter->DhcpEnabled;
 				ifa->ifa_dhcpLeaseExpires	= pAdapter->LeaseExpires;
-				ifa->ifa_wakeOnLAN			= IsWOMPEnabled( pAdapter->AdapterName );
+				ifa->ifa_womp				= IsWOMPEnabled( pAdapter->AdapterName );
 				break;
 			}
 		}
@@ -5533,7 +5536,30 @@ exit:
 }
 
 
-mDNSlocal mDNSu8
+void
+UpdateWOMPConfig( mDNS * const m )
+{
+	mDNSInterfaceData * ifd;
+
+	mDNSPlatformLock( m );
+
+	m->p->womp = mDNSfalse;
+
+	for( ifd = m->p->interfaceList; ifd; ifd = ifd->next )
+	{
+		ifd->interfaceInfo.NetWake = IsWOMPEnabled( ifd->name );
+
+		if ( ifd->interfaceInfo.NetWake )
+		{
+			m->p->womp = mDNStrue;
+		}
+	}
+
+	mDNSPlatformUnlock( m );
+}
+
+
+mDNSlocal mDNSBool
 IsWOMPEnabled( const char * adapterName )
 {
 	char						fileName[80];
