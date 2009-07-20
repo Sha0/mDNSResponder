@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.145  2009/07/20 04:07:41  herscher
+<rdar://problem/6145339> Bonjour does not list IPv6 loopback address when all network adapters are disabled
+
 Revision 1.144  2009/07/17 19:59:46  herscher
 <rdar://problem/7062660> Update the womp settings for each network adapter immediately preceding the call to mDNSCoreMachineSleep().
 
@@ -344,7 +347,7 @@ mDNSlocal void				GetDDNSDomains( DNameListElem ** domains, LPCSTR lpSubKey );
 mDNSlocal void				SetDomainSecrets( mDNS * const m );
 mDNSlocal void				SetDomainSecret( mDNS * const m, const domainname * inDomain );
 mDNSlocal void				CheckFileShares( mDNS * const m );
-mDNSlocal mDNSBool			IsWOMPEnabled( const char * adapterName );
+mDNSlocal mDNSu8			IsWOMPEnabled( const char * adapterName );
 
 #ifdef	__cplusplus
 	}
@@ -1360,7 +1363,7 @@ mDNSexport UDPSocket* mDNSPlatformUDPSocket(mDNS *const m, const mDNSIPPort requ
 
         if (mDNSIPPortIsZero(requestedport))
 		{
-			port = mDNSOpaque16fromIntVal(0xC000 + mDNSRandom(0x3FFF));
+			port = mDNSOpaque16fromIntVal( ( mDNSu16 ) ( 0xC000 + mDNSRandom(0x3FFF) ) );
 		}
 
 		saddr.sin_port = port.NotAnInteger;
@@ -2536,7 +2539,7 @@ mDNSlocal mStatus	SetupInterfaceList( mDNS * const inMDNS )
 	
 	if ( !foundv4 && loopbackv4 )
 	{
-		dlog( kDebugLevelVerbose, DEBUG_NAME "Interface %40s (0x%08X) %##a\n", 
+		dlog( kDebugLevelInfo, DEBUG_NAME "Interface %40s (0x%08X) %##a\n", 
 			loopbackv4->ifa_name ? loopbackv4->ifa_name : "<null>", loopbackv4->ifa_extra.index, loopbackv4->ifa_addr );
 		
 		err = SetupInterface( inMDNS, loopbackv4, &ifd );
@@ -2556,6 +2559,34 @@ mDNSlocal mStatus	SetupInterfaceList( mDNS * const inMDNS )
 		{
 			inMDNS->p->unicastSock4DestAddr = ifd->defaultAddr;
 			foundUnicastSock4DestAddr = TRUE;
+		}
+#endif
+
+		*next = ifd;
+		next  = &ifd->next;
+		++inMDNS->p->interfaceCount;
+	}
+
+	if ( !foundv6 && loopbackv6 )
+	{
+		dlog( kDebugLevelInfo, DEBUG_NAME "Interface %40s (0x%08X) %##a\n", 
+			loopbackv6->ifa_name ? loopbackv6->ifa_name : "<null>", loopbackv6->ifa_extra.index, loopbackv6->ifa_addr );
+		
+		err = SetupInterface( inMDNS, loopbackv6, &ifd );
+		require_noerr( err, exit );
+		
+#if( MDNS_WINDOWS_ENABLE_IPV6 )
+
+		// If we're on a platform that doesn't have WSARecvMsg(), there's no way
+		// of determing the destination address of a packet that is sent to us.
+		// For multicast packets, that's easy to determine.  But for the unicast
+		// sockets, we'll fake it by taking the address of the first interface
+		// that is successfully setup.
+
+		if ( !foundUnicastSock6DestAddr )
+		{
+			inMDNS->p->unicastSock6DestAddr = ifd->defaultAddr;
+			foundUnicastSock6DestAddr = TRUE;
 		}
 #endif
 
@@ -4168,9 +4199,9 @@ mDNSlocal int	getifaddrs_ipv6( struct ifaddrs **outAddrs )
 			firstPrefix = NULL;
 		}
 
-		// Skip psuedo and tunnel interfaces.
+		// Skip pseudo and tunnel interfaces.
 		
-		if( ( ipv6IfIndex == 1 ) || ( iaa->IfType == IF_TYPE_TUNNEL ) )
+		if( ( ( ipv6IfIndex == 1 ) && ( iaa->IfType != IF_TYPE_SOFTWARE_LOOPBACK ) ) || ( iaa->IfType == IF_TYPE_TUNNEL ) )
 		{
 			continue;
 		}
@@ -4254,7 +4285,7 @@ mDNSlocal int	getifaddrs_ipv6( struct ifaddrs **outAddrs )
 
 			// Get lease lifetime
 
-			if ( ( addr->LeaseLifetime != 0 ) && ( addr->LeaseLifetime != 0xFFFFFFFF ) )
+			if ( ( iaa->IfType != IF_TYPE_SOFTWARE_LOOPBACK ) && ( addr->LeaseLifetime != 0 ) && ( addr->LeaseLifetime != 0xFFFFFFFF ) )
 			{
 				ifa->ifa_dhcpEnabled		= TRUE;
 				ifa->ifa_dhcpLeaseExpires	= time( NULL ) + addr->LeaseLifetime;
@@ -5559,7 +5590,7 @@ UpdateWOMPConfig( mDNS * const m )
 }
 
 
-mDNSlocal mDNSBool
+mDNSlocal mDNSu8
 IsWOMPEnabled( const char * adapterName )
 {
 	char						fileName[80];
@@ -5568,7 +5599,7 @@ IsWOMPEnabled( const char * adapterName )
     HANDLE						handle	= INVALID_HANDLE_VALUE;
 	NDIS_PNP_CAPABILITIES	*	pNPC	= NULL;
 	int							err;
-	BOOL						ok		= TRUE;
+	mDNSu8						ok		= TRUE;
 	
     // Construct a device name to pass to CreateFile
 
@@ -5582,10 +5613,10 @@ IsWOMPEnabled( const char * adapterName )
 	oid = OID_PNP_CAPABILITIES;
 	pNPC = ( NDIS_PNP_CAPABILITIES * ) malloc( sizeof( NDIS_PNP_CAPABILITIES ) );
 	require_action( pNPC != NULL, exit, ok = FALSE );
-	ok = DeviceIoControl( handle, IOCTL_NDIS_QUERY_GLOBAL_STATS, &oid, sizeof( oid ), pNPC, sizeof( NDIS_PNP_CAPABILITIES ), &count, NULL );
+	ok = ( mDNSu8 ) DeviceIoControl( handle, IOCTL_NDIS_QUERY_GLOBAL_STATS, &oid, sizeof( oid ), pNPC, sizeof( NDIS_PNP_CAPABILITIES ), &count, NULL );
 	err = translate_errno( ok, GetLastError(), kUnknownErr );
 	require_action( !err, exit, ok = FALSE );
-	ok = ( ( count == sizeof( NDIS_PNP_CAPABILITIES ) ) && ( pNPC->Flags & NDIS_DEVICE_WAKE_ON_MAGIC_PACKET_ENABLE ) );
+	ok = ( mDNSu8 ) ( ( count == sizeof( NDIS_PNP_CAPABILITIES ) ) && ( pNPC->Flags & NDIS_DEVICE_WAKE_ON_MAGIC_PACKET_ENABLE ) );
        
 exit:
 
