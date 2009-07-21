@@ -38,6 +38,11 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.974  2009/07/21 23:41:05  cheshire
+<rdar://problem/6434656> Sleep Proxy: Put owner OPT records in multicast announcements to avoid conflicts
+Another refinement: When building a response packet, if we're going to add an OWNER option at the end,
+reserve enough bytes to ensure that we'll be able to do that
+
 Revision 1.973  2009/07/16 00:34:18  cheshire
 <rdar://problem/6434656> Sleep Proxy: Put owner OPT records in multicast announcements to avoid conflicts
 Additional refinement: If we didn't register with a Sleep Proxy when going to sleep,
@@ -2846,6 +2851,8 @@ mDNSlocal void SendResponses(mDNS *const m)
 
 	while (intf)
 		{
+		const int OwnerRecordSpace = (m->AnnounceOwner && intf->MAC.l[0]) ?
+			DNSOpt_Header_Space + mDNSSameEthAddress(&m->PrimaryMAC, &intf->MAC) ? DNSOpt_OwnerData_ID_Space : DNSOpt_OwnerData_ID_Wake_Space : 0;
 		int numDereg    = 0;
 		int numAnnounce = 0;
 		int numAnswer   = 0;
@@ -2864,7 +2871,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 				newptr = mDNSNULL;
 				if (rr->resrec.RecordType == kDNSRecordTypeDeregistering)
 					{
-					newptr = PutResourceRecordTTL(&m->omsg, responseptr, &m->omsg.h.numAnswers, &rr->resrec, 0);
+					newptr = PutRR_OS_TTL(responseptr, &m->omsg.h.numAnswers, &rr->resrec, 0);
 					if (newptr) { responseptr = newptr; numDereg++; }
 					}
 				else if (rr->NewRData && !m->SleepState)					// If we have new data for this record
@@ -2874,14 +2881,14 @@ mDNSlocal void SendResponses(mDNS *const m)
 					// See if we should send a courtesy "goodbye" for the old data before we replace it.
 					if (ResourceRecordIsValidAnswer(rr) && rr->RequireGoodbye)
 						{
-						newptr = PutResourceRecordTTL(&m->omsg, responseptr, &m->omsg.h.numAnswers, &rr->resrec, 0);
+						newptr = PutRR_OS_TTL(responseptr, &m->omsg.h.numAnswers, &rr->resrec, 0);
 						if (newptr) { responseptr = newptr; numDereg++; rr->RequireGoodbye = mDNSfalse; }
 						}
 					// Now try to see if we can fit the update in the same packet (not fatal if we can't)
 					SetNewRData(&rr->resrec, rr->NewRData, rr->newrdlength);
 					if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
 						rr->resrec.rrclass |= kDNSClass_UniqueRRSet;		// Temporarily set the cache flush bit so PutResourceRecord will set it
-					newptr = PutResourceRecord(&m->omsg, responseptr, &m->omsg.h.numAnswers, &rr->resrec);
+					newptr = PutRR_OS(responseptr, &m->omsg.h.numAnswers, &rr->resrec);
 					rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;			// Make sure to clear cache flush bit back to normal state
 					if (newptr) { responseptr = newptr; rr->RequireGoodbye = mDNStrue; }
 					SetNewRData(&rr->resrec, OldRData, oldrdlength);
@@ -2891,7 +2898,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 					mDNSu8 active = (m->SleepState != SleepState_Sleeping || intf->SPSAddr[0].type || intf->SPSAddr[1].type || intf->SPSAddr[2].type);
 					if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
 						rr->resrec.rrclass |= kDNSClass_UniqueRRSet;		// Temporarily set the cache flush bit so PutResourceRecord will set it
-					newptr = PutResourceRecordTTL(&m->omsg, responseptr, &m->omsg.h.numAnswers, &rr->resrec, active ? rr->resrec.rroriginalttl : 0);
+					newptr = PutRR_OS_TTL(responseptr, &m->omsg.h.numAnswers, &rr->resrec, active ? rr->resrec.rroriginalttl : 0);
 					rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;			// Make sure to clear cache flush bit back to normal state
 					if (newptr)
 						{
@@ -2946,7 +2953,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 
 						if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
 							rr->resrec.rrclass |= kDNSClass_UniqueRRSet;	// Temporarily set the cache flush bit so PutResourceRecord will set it
-						newptr = PutResourceRecord(&m->omsg, newptr, &m->omsg.h.numAdditionals, &rr->resrec);
+						newptr = PutRR_OS(newptr, &m->omsg.h.numAdditionals, &rr->resrec);
 						rr->resrec.rrclass &= ~kDNSClass_UniqueRRSet;		// Make sure to clear cache flush bit back to normal state
 						if (newptr)
 							{
@@ -2981,7 +2988,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 				newptr = responseptr;
 				if (!r2)	// If we successfully built our NSEC record, add it to the packet now
 					{
-					newptr = PutResourceRecord(&m->omsg, responseptr, &m->omsg.h.numAdditionals, &nsec.resrec);
+					newptr = PutRR_OS(responseptr, &m->omsg.h.numAdditionals, &nsec.resrec);
 					if (newptr) responseptr = newptr;
 					}
 
@@ -2998,21 +3005,18 @@ mDNSlocal void SendResponses(mDNS *const m)
 					}
 				}
 
-		if (m->omsg.h.numAnswers > 0 || m->omsg.h.numAdditionals)
+		if (OwnerRecordSpace && (m->omsg.h.numAnswers || m->omsg.h.numAdditionals))		// If necessary, add OWNER option
 			{
-			// If necessary, add OWNER option, if there's space
-			if (m->AnnounceOwner && intf->MAC.l[0])
-				{
-				AuthRecord opt;
-				mDNS_SetupResourceRecord(&opt, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
-				opt.resrec.rrclass    = NormalMaxDNSMessageData;
-				opt.resrec.rdlength   = sizeof(rdataOPT);	// One option in this OPT record
-				opt.resrec.rdestimate = sizeof(rdataOPT);
-				SetupOwnerOpt(m, intf, &opt.resrec.rdata->u.opt[0]);
-				newptr = PutResourceRecord(&m->omsg, responseptr, &m->omsg.h.numAdditionals, &opt.resrec);
-				if (newptr) responseptr = newptr;
-				LogSPS("SendResponses%s put %s", newptr ? "" : " failed to", ARDisplayString(m, &opt));
-				}
+			AuthRecord opt;
+			mDNS_SetupResourceRecord(&opt, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
+			opt.resrec.rrclass    = NormalMaxDNSMessageData;
+			opt.resrec.rdlength   = sizeof(rdataOPT);	// One option in this OPT record
+			opt.resrec.rdestimate = sizeof(rdataOPT);
+			SetupOwnerOpt(m, intf, &opt.resrec.rdata->u.opt[0]);
+			newptr = PutResourceRecord(&m->omsg, responseptr, &m->omsg.h.numAdditionals, &opt.resrec);
+			if (newptr) { responseptr = newptr; LogSPS("SendResponses put %s", ARDisplayString(m, &opt)); }
+			else LogMsg("SendResponses: How did we fail to have space for the OPT record (%d/%d/%d/%d) %s",
+				m->omsg.h.numQuestions, m->omsg.h.numAnswers, m->omsg.h.numAuthorities, m->omsg.h.numAdditionals, ARDisplayString(m, &opt));
 
 			debugf("SendResponses: Sending %d Deregistration%s, %d Announcement%s, %d Answer%s, %d Additional%s on %p",
 				numDereg,                 numDereg                 == 1 ? "" : "s",
