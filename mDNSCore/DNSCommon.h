@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.h,v $
+Revision 1.74  2009/07/21 22:06:45  mcguire
+Fix logging false-positive locking failures
+
 Revision 1.73  2009/04/24 00:28:05  cheshire
 <rdar://problem/3476350> Return negative answers when host knows authoritatively that no answer exists
 Added definitions for RRTypeAnswersQuestionType/RRAssertsNonexistence/AnyTypeRecordAnswersQuestion
@@ -389,20 +392,16 @@ extern mStatus mDNSSendDNSMessage(mDNS *const m, DNSMessage *const msg, mDNSu8 *
 #endif
 
 extern void ShowTaskSchedulingError(mDNS *const m);
-extern void mDNS_Lock_(mDNS *const m);
-extern void mDNS_Unlock_(mDNS *const m);
+extern void mDNS_Lock_(mDNS *const m, const char * const functionname);
+extern void mDNS_Unlock_(mDNS *const m, const char * const functionname);
 
 #if defined(_WIN32)
  #define __func__ __FUNCTION__
 #endif
 
-#define mDNS_Lock(X) do { \
-	if ((X)->mDNS_busy != (X)->mDNS_reentrancy) LogMsg("%s: mDNS_Lock locking failure! mDNS_busy (%ld) != mDNS_reentrancy (%ld)", __func__, (X)->mDNS_busy, (X)->mDNS_reentrancy); \
-	mDNS_Lock_(X); } while (0)
+#define mDNS_Lock(X) mDNS_Lock_((X), __func__)
 
-#define mDNS_Unlock(X) do { mDNS_Unlock_(X); \
-	if ((X)->mDNS_busy != (X)->mDNS_reentrancy) LogMsg("%s: mDNS_Unlock locking failure! mDNS_busy (%ld) != mDNS_reentrancy (%ld)", __func__, (X)->mDNS_busy, (X)->mDNS_reentrancy); \
-	} while (0)
+#define mDNS_Unlock(X) mDNS_Unlock_((X), __func__)
 
 #define mDNS_DropLockBeforeCallback() do { m->mDNS_reentrancy++; \
 	if (m->mDNS_busy != m->mDNS_reentrancy) LogMsg("%s: Locking Failure! mDNS_busy (%ld) != mDNS_reentrancy (%ld)", __func__, m->mDNS_busy, m->mDNS_reentrancy); \

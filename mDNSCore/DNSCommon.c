@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: DNSCommon.c,v $
+Revision 1.253  2009/07/21 22:06:44  mcguire
+Fix logging false-positive locking failures
+
 Revision 1.252  2009/06/27 00:27:03  cheshire
 <rdar://problem/6959273> mDNSResponder taking up 13% CPU with 400 KBps incoming bonjour requests
 Removed overly-complicate and ineffective multi-packet known-answer snooping code
@@ -2985,7 +2988,7 @@ mDNSexport mStatus mDNSSendDNSMessage(mDNS *const m, DNSMessage *const msg, mDNS
 #pragma mark - RR List Management & Task Management
 #endif
 
-mDNSexport void mDNS_Lock_(mDNS *const m)
+mDNSexport void mDNS_Lock_(mDNS *const m, const char * const functionname)
 	{
 	// MUST grab the platform lock FIRST!
 	mDNSPlatformLock(m);
@@ -2994,26 +2997,26 @@ mDNSexport void mDNS_Lock_(mDNS *const m)
 	// However, when we call a client callback mDNS_busy is one, and we increment mDNS_reentrancy too
 	// If that client callback does mDNS API calls, mDNS_reentrancy and mDNS_busy will both be one
 	// If mDNS_busy != mDNS_reentrancy that's a bad sign
-#if ForceAlerts
 	if (m->mDNS_busy != m->mDNS_reentrancy)
 		{
-		LogMsg("mDNS_Lock: Locking failure! mDNS_busy (%ld) != mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
+		LogMsg("%s: mDNS_Lock: Locking failure! mDNS_busy (%ld) != mDNS_reentrancy (%ld)", functionname, m->mDNS_busy, m->mDNS_reentrancy);
+#if ForceAlerts
 		*(long*)0 = 0;
-		}
 #endif
+		}
 
 	// If this is an initial entry into the mDNSCore code, set m->timenow
 	// else, if this is a re-entrant entry into the mDNSCore code, m->timenow should already be set
 	if (m->mDNS_busy == 0)
 		{
 		if (m->timenow)
-			LogMsg("mDNS_Lock: m->timenow already set (%ld/%ld)", m->timenow, mDNS_TimeNow_NoLock(m));
+			LogMsg("%s: mDNS_Lock: m->timenow already set (%ld/%ld)", functionname, m->timenow, mDNS_TimeNow_NoLock(m));
 		m->timenow = mDNS_TimeNow_NoLock(m);
 		if (m->timenow == 0) m->timenow = 1;
 		}
 	else if (m->timenow == 0)
 		{
-		LogMsg("mDNS_Lock: m->mDNS_busy is %ld but m->timenow not set", m->mDNS_busy);
+		LogMsg("%s: mDNS_Lock: m->mDNS_busy is %ld but m->timenow not set", functionname, m->mDNS_busy);
 		m->timenow = mDNS_TimeNow_NoLock(m);
 		if (m->timenow == 0) m->timenow = 1;
 		}
@@ -3021,7 +3024,7 @@ mDNSexport void mDNS_Lock_(mDNS *const m)
 	if (m->timenow_last - m->timenow > 0)
 		{
 		m->timenow_adjust += m->timenow_last - m->timenow;
-		LogMsg("mDNSPlatformRawTime went backwards by %ld ticks; setting correction factor to %ld", m->timenow_last - m->timenow, m->timenow_adjust);
+		LogMsg("%s: mDNSPlatformRawTime went backwards by %ld ticks; setting correction factor to %ld", functionname, m->timenow_last - m->timenow, m->timenow_adjust);
 		m->timenow = m->timenow_last;
 		}
 	m->timenow_last = m->timenow;
@@ -3112,25 +3115,25 @@ mDNSexport void ShowTaskSchedulingError(mDNS *const m)
 	mDNS_Unlock(m);
 	}
 
-mDNSexport void mDNS_Unlock_(mDNS *const m)
+mDNSexport void mDNS_Unlock_(mDNS *const m, const char * const functionname)
 	{
 	// Decrement mDNS_busy
 	m->mDNS_busy--;
 	
 	// Check for locking failures
-#if ForceAlerts
 	if (m->mDNS_busy != m->mDNS_reentrancy)
 		{
-		LogMsg("mDNS_Unlock: Locking failure! mDNS_busy (%ld) != mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
+		LogMsg("%s: mDNS_Unlock: Locking failure! mDNS_busy (%ld) != mDNS_reentrancy (%ld)", functionname, m->mDNS_busy, m->mDNS_reentrancy);
+#if ForceAlerts
 		*(long*)0 = 0;
-		}
 #endif
+		}
 
 	// If this is a final exit from the mDNSCore code, set m->NextScheduledEvent and clear m->timenow
 	if (m->mDNS_busy == 0)
 		{
 		m->NextScheduledEvent = GetNextScheduledEvent(m);
-		if (m->timenow == 0) LogMsg("mDNS_Unlock: ERROR! m->timenow aready zero");
+		if (m->timenow == 0) LogMsg("%s: mDNS_Unlock: ERROR! m->timenow aready zero", functionname);
 		m->timenow = 0;
 		}
 
