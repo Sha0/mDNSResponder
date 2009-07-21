@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.975  2009/07/21 23:46:19  cheshire
+Improved "DNS Message too short" syslog debugging message
+
 Revision 1.974  2009/07/21 23:41:05  cheshire
 <rdar://problem/6434656> Sleep Proxy: Put owner OPT records in multicast announcements to avoid conflicts
 Another refinement: When building a response packet, if we're going to add an OWNER option at the end,
@@ -7079,7 +7082,11 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 #endif
 
 #endif
-	if ((unsigned)(end - (mDNSu8 *)pkt) < sizeof(DNSMessageHeader)) { LogMsg("DNS Message too short"); return; }
+	if ((unsigned)(end - (mDNSu8 *)pkt) < sizeof(DNSMessageHeader))
+		{
+		LogMsg("DNS Message from %#a:%d to %#a:%d length %d too short", srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), end - (mDNSu8 *)pkt);
+		return;
+		}
 	QR_OP = (mDNSu8)(msg->h.flags.b[0] & kDNSFlag0_QROP_Mask);
 	// Read the integer parts which are in IETF byte-order (MSB first, LSB second)
 	ptr = (mDNSu8 *)&msg->h.numQuestions;
@@ -7114,15 +7121,15 @@ mDNSexport void mDNSCoreReceive(mDNS *const m, void *const pkt, const mDNSu8 *co
 	else
 		{
 		LogMsg("Unknown DNS packet type %02X%02X from %#-15a:%-5d to %#-15a:%-5d length %d on %p (ignored)",
-			msg->h.flags.b[0], msg->h.flags.b[1], srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), end-(mDNSu8 *)pkt, InterfaceID);
+			msg->h.flags.b[0], msg->h.flags.b[1], srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), end - (mDNSu8 *)pkt, InterfaceID);
 		if (mDNS_LoggingEnabled)
 			{
 			int i = 0;
-			while (i<end-(mDNSu8 *)pkt)
+			while (i<end - (mDNSu8 *)pkt)
 				{
 				char buffer[128];
 				char *p = buffer + mDNS_snprintf(buffer, sizeof(buffer), "%04X", i);
-				do if (i<end-(mDNSu8 *)pkt) p += mDNS_snprintf(p, sizeof(buffer), " %02X", ((mDNSu8 *)pkt)[i]); while (++i & 15);
+				do if (i<end - (mDNSu8 *)pkt) p += mDNS_snprintf(p, sizeof(buffer), " %02X", ((mDNSu8 *)pkt)[i]); while (++i & 15);
 				LogInfo("%s", buffer);
 				}
 			}
