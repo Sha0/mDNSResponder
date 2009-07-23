@@ -38,6 +38,10 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.976  2009/07/23 09:15:06  cheshire
+<rdar://problem/6434656> Sleep Proxy: Put owner OPT records in multicast announcements to avoid conflicts
+Fixed silly mistake in checkin 1.974 that broke SendResponses
+
 Revision 1.975  2009/07/21 23:46:19  cheshire
 Improved "DNS Message too short" syslog debugging message
 
@@ -3008,18 +3012,23 @@ mDNSlocal void SendResponses(mDNS *const m)
 					}
 				}
 
-		if (OwnerRecordSpace && (m->omsg.h.numAnswers || m->omsg.h.numAdditionals))		// If necessary, add OWNER option
+		if (m->omsg.h.numAnswers || m->omsg.h.numAdditionals)
 			{
-			AuthRecord opt;
-			mDNS_SetupResourceRecord(&opt, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
-			opt.resrec.rrclass    = NormalMaxDNSMessageData;
-			opt.resrec.rdlength   = sizeof(rdataOPT);	// One option in this OPT record
-			opt.resrec.rdestimate = sizeof(rdataOPT);
-			SetupOwnerOpt(m, intf, &opt.resrec.rdata->u.opt[0]);
-			newptr = PutResourceRecord(&m->omsg, responseptr, &m->omsg.h.numAdditionals, &opt.resrec);
-			if (newptr) { responseptr = newptr; LogSPS("SendResponses put %s", ARDisplayString(m, &opt)); }
-			else LogMsg("SendResponses: How did we fail to have space for the OPT record (%d/%d/%d/%d) %s",
-				m->omsg.h.numQuestions, m->omsg.h.numAnswers, m->omsg.h.numAuthorities, m->omsg.h.numAdditionals, ARDisplayString(m, &opt));
+			// If we have data to send, add OWNER option if necessary, then send packet
+
+			if (OwnerRecordSpace)
+				{
+				AuthRecord opt;
+				mDNS_SetupResourceRecord(&opt, mDNSNULL, mDNSInterface_Any, kDNSType_OPT, kStandardTTL, kDNSRecordTypeKnownUnique, mDNSNULL, mDNSNULL);
+				opt.resrec.rrclass    = NormalMaxDNSMessageData;
+				opt.resrec.rdlength   = sizeof(rdataOPT);	// One option in this OPT record
+				opt.resrec.rdestimate = sizeof(rdataOPT);
+				SetupOwnerOpt(m, intf, &opt.resrec.rdata->u.opt[0]);
+				newptr = PutResourceRecord(&m->omsg, responseptr, &m->omsg.h.numAdditionals, &opt.resrec);
+				if (newptr) { responseptr = newptr; LogSPS("SendResponses put %s", ARDisplayString(m, &opt)); }
+				else LogMsg("SendResponses: How did we fail to have space for the OPT record (%d/%d/%d/%d) %s",
+					m->omsg.h.numQuestions, m->omsg.h.numAnswers, m->omsg.h.numAuthorities, m->omsg.h.numAdditionals, ARDisplayString(m, &opt));
+				}
 
 			debugf("SendResponses: Sending %d Deregistration%s, %d Announcement%s, %d Answer%s, %d Additional%s on %p",
 				numDereg,                 numDereg                 == 1 ? "" : "s",
