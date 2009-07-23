@@ -38,6 +38,9 @@
     Change History (most recent first):
 
 $Log: mDNS.c,v $
+Revision 1.977  2009/07/23 23:30:01  cheshire
+<rdar://problem/7086623> Sleep Proxy: Ten-second maintenance wake not long enough to reliably get network connectivity
+
 Revision 1.976  2009/07/23 09:15:06  cheshire
 <rdar://problem/6434656> Sleep Proxy: Put owner OPT records in multicast announcements to avoid conflicts
 Fixed silly mistake in checkin 1.974 that broke SendResponses
@@ -5100,7 +5103,11 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 				m->SentSleepProxyRegistration = mDNSfalse;
 				m->AnnounceOwner = NonZeroTime(m->timenow + 60 * mDNSPlatformOneSecond);
 				}
-			m->DelaySleep = NonZeroTime(m->timenow + 10 * mDNSPlatformOneSecond);
+			// If the machine wakes and then immediately tries to sleep again (e.g. a maintenance wake)
+			// then we enforce a minimum delay of 16 seconds before we begin sleep processing.
+			// This is to allow time for the Ethernet link to come up, DHCP to get an address, mDNS to issue queries, etc.,
+			// before we make our determination of whether there's a Sleep Proxy out there we should register with.
+			m->DelaySleep = NonZeroTime(m->timenow + mDNSPlatformOneSecond * 16);
 			}
 
 		if (m->SPSState == 3)
