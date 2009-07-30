@@ -17,6 +17,9 @@
     Change History (most recent first):
 
 $Log: mDNSMacOSX.c,v $
+Revision 1.691  2009/07/30 20:28:15  mkrochma
+<rdar://problem/7100784> Sleep Proxy: Structure changes to data passed to userclient
+
 Revision 1.690  2009/07/15 22:34:25  cheshire
 <rdar://problem/6613674> Sleep Proxy: Add support for using sleep proxy in local network interface hardware
 Fixes to make the code still compile with old headers and libraries (pre 10.5) that don't include IOConnectCallStructMethod
@@ -5340,7 +5343,7 @@ mDNSlocal mStatus WatchForInternetSharingChanges(mDNS *const m)
 // they should never change, so in practice it should not be a big problem to have them defined here.
 
 #define mDNS_IOREG_KEY               "mDNS_KEY"
-#define mDNS_IOREG_VALUE             "2009-03-12"
+#define mDNS_IOREG_VALUE             "2009-07-30"
 #define mDNS_USER_CLIENT_CREATE_TYPE 'mDNS'
 
 enum
@@ -5352,12 +5355,12 @@ typedef union { void *ptr; mDNSOpaque64 sixtyfourbits; } FatPtr;
 
 typedef struct
 	{                                   // cmd_mDNSOffloadRR structure
-    u_int8_t  command;                // set to OffloadRR
-    uint16_t  rrBufferSize;           // number of bytes of RR records      %%% Should be uint32_t ? %%%
-    uint16_t  numUDPPorts;            // number of SRV UDP ports
-    uint16_t  numTCPPorts;            // number of SRV TCP ports 
-    uint16_t  numRRRecords;           // number of RR records
-    uint16_t  compression;            // rrRecords - compression is base for compressed strings
+    uint32_t  command;                // set to OffloadRR
+    uint32_t  rrBufferSize;           // number of bytes of RR records
+    uint32_t  numUDPPorts;            // number of SRV UDP ports
+    uint32_t  numTCPPorts;            // number of SRV TCP ports 
+    uint32_t  numRRRecords;           // number of RR records
+    uint32_t  compression;            // rrRecords - compression is base for compressed strings
     FatPtr    rrRecords;              // address of array of pointers to the rr records
     FatPtr    udpPorts;               // address of udp port list (SRV)
     FatPtr    tcpPorts;               // address of tcp port list (SRV)
@@ -5383,7 +5386,7 @@ mDNSlocal mDNSu16 GetPortArray(const mDNS *const m, domainlabel *tp, mDNSIPPort 
 	(((RR)->resrec.InterfaceID && (RR)->resrec.InterfaceID != mDNSInterface_LocalOnly) || \
 	(!(RR)->resrec.InterfaceID && ((RR)->ForceMCast || IsLocalDomain((RR)->resrec.name))))
 
-mDNSlocal mDNSu16 CountProxyRecords(mDNS *const m, uint16_t *numbytes)
+mDNSlocal mDNSu32 CountProxyRecords(mDNS *const m, uint32_t *numbytes)
 	{
 	*numbytes = 0;
 	int count = 0;
