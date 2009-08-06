@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: Service.c,v $
+Revision 1.50  2009/08/06 22:43:09  herscher
+<rdar://problem/7062660> B4W: Need to Stop and Start Bonjour service to get Wake on LAN to work on Windows machine
+
 Revision 1.49  2009/07/17 19:59:46  herscher
 <rdar://problem/7062660> Update the womp settings for each network adapter immediately preceding the call to mDNSCoreMachineSleep().
 
@@ -1970,13 +1973,13 @@ SystemWakeForNetworkAccess( LARGE_INTEGER * timeout )
 
 	// Now make sure we have a network interface that does wake-on-lan
 
-	UpdateWOMPConfig( &gMDNSRecord );
-	require_action( gMDNSRecord.p->womp, exit, ok = FALSE );
+	ok = ( mDNSu8 ) IsWOMPEnabled( &gMDNSRecord );
+	require_action( ok, exit, ok = FALSE );
 
 	// Calculate next wake up time
 
-	startTime		= time( NULL );
-	nextWakeupTime	= startTime + ( 120 * 60 );
+	startTime		= time( NULL );					// Seconds since midnight January 1, 1970
+	nextWakeupTime	= startTime + ( 120 * 60 );		// 2 hours later
 	
 	if ( gMDNSRecord.p->nextDHCPLeaseExpires < nextWakeupTime )
 	{

@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.c,v $
+Revision 1.146  2009/08/06 22:43:08  herscher
+<rdar://problem/7062660> B4W: Need to Stop and Start Bonjour service to get Wake on LAN to work on Windows machine
+
 Revision 1.145  2009/07/20 04:07:41  herscher
 <rdar://problem/6145339> Bonjour does not list IPv6 loopback address when all network adapters are disabled
 
@@ -347,7 +350,7 @@ mDNSlocal void				GetDDNSDomains( DNameListElem ** domains, LPCSTR lpSubKey );
 mDNSlocal void				SetDomainSecrets( mDNS * const m );
 mDNSlocal void				SetDomainSecret( mDNS * const m, const domainname * inDomain );
 mDNSlocal void				CheckFileShares( mDNS * const m );
-mDNSlocal mDNSu8			IsWOMPEnabled( const char * adapterName );
+mDNSlocal mDNSu8			IsWOMPEnabledForAdapter( const char * adapterName );
 
 #ifdef	__cplusplus
 	}
@@ -2375,8 +2378,7 @@ mDNSlocal mStatus	SetupInterfaceList( mDNS * const inMDNS )
 	check( inMDNS->p );
 	
 	inMDNS->p->registeredLoopback4	= mDNSfalse;
-	inMDNS->p->nextDHCPLeaseExpires = 0xFFFFFFFF;
-	inMDNS->p->womp					= mDNSfalse;
+	inMDNS->p->nextDHCPLeaseExpires = 0x7FFFFFFF;
 	addrs							= NULL;
 	foundv4							= mDNSfalse;
 	foundv6							= mDNSfalse;
@@ -2778,11 +2780,6 @@ mDNSlocal mStatus	SetupInterface( mDNS * const inMDNS, const struct ifaddrs *inI
 	}
 
 	ifd->interfaceInfo.NetWake = inIFA->ifa_womp;
-
-	if ( ifd->interfaceInfo.NetWake )
-	{
-		inMDNS->p->womp = TRUE;
-	}
 
 	// Register this interface with mDNS.
 	
@@ -4285,10 +4282,10 @@ mDNSlocal int	getifaddrs_ipv6( struct ifaddrs **outAddrs )
 
 			// Get lease lifetime
 
-			if ( ( iaa->IfType != IF_TYPE_SOFTWARE_LOOPBACK ) && ( addr->LeaseLifetime != 0 ) && ( addr->LeaseLifetime != 0xFFFFFFFF ) )
+			if ( ( iaa->IfType != IF_TYPE_SOFTWARE_LOOPBACK ) && ( addr->LeaseLifetime != 0 ) && ( addr->ValidLifetime != 0xFFFFFFFF ) )
 			{
 				ifa->ifa_dhcpEnabled		= TRUE;
-				ifa->ifa_dhcpLeaseExpires	= time( NULL ) + addr->LeaseLifetime;
+				ifa->ifa_dhcpLeaseExpires	= time( NULL ) + addr->ValidLifetime;
 			}
 			else
 			{
@@ -4296,12 +4293,12 @@ mDNSlocal int	getifaddrs_ipv6( struct ifaddrs **outAddrs )
 				ifa->ifa_dhcpLeaseExpires	= 0;
 			}
 
-			// Get WakeOnLAN settings
+			// Because we don't get notified of womp changes, we're going to just assume
+			// that all wired interfaces have it enabled. Before we go to sleep, we'll check
+			// if the interface actually supports it, and update mDNS->SystemWakeOnLANEnabled
+			// accordingly
 
-			if ( iaa->IfType == IF_TYPE_ETHERNET_CSMACD )
-			{
-				ifa->ifa_womp = IsWOMPEnabled( iaa->AdapterName );
-			}
+			ifa->ifa_womp = ( iaa->IfType == IF_TYPE_ETHERNET_CSMACD ) ? mDNStrue : mDNSfalse;
 			
 			// Get address.
 			
@@ -4419,9 +4416,6 @@ mDNSlocal int	getifaddrs_ipv4( struct ifaddrs **outAddrs )
 	INTERFACE_INFO *		buffer;
 	INTERFACE_INFO *		tempBuffer;
 	INTERFACE_INFO *		ifInfo;
-	IP_ADAPTER_INFO *		pAdapterInfo;
-	IP_ADAPTER_INFO *		pAdapter;
-	ULONG					bufLen;
 	int						n;
 	int						i;
 	struct ifaddrs *		head;
@@ -4432,7 +4426,6 @@ mDNSlocal int	getifaddrs_ipv4( struct ifaddrs **outAddrs )
 	buffer	= NULL;
 	head	= NULL;
 	next	= &head;
-	pAdapterInfo = NULL;
 	
 	// Get the interface list. WSAIoctl is called with SIO_GET_INTERFACE_LIST, but since this does not provide a 
 	// way to determine the size of the interface list beforehand, we have to start with an initial size guess and
@@ -4464,28 +4457,6 @@ mDNSlocal int	getifaddrs_ipv4( struct ifaddrs **outAddrs )
 	check( actualSize <= size );
 	check( ( actualSize % sizeof( INTERFACE_INFO ) ) == 0 );
 	n = (int)( actualSize / sizeof( INTERFACE_INFO ) );
-
-	// Now call GetAdaptersInfo so we can get DHCP information for each interface
-
-	pAdapterInfo	= NULL;
-	bufLen			= 0;
-	
-	for ( i = 0; i < 100; i++ )
-	{
-		err = GetAdaptersInfo( pAdapterInfo, &bufLen);
-
-		if ( err != ERROR_BUFFER_OVERFLOW )
-		{
-			break;
-		}
-
-		pAdapterInfo = (IP_ADAPTER_INFO*) realloc( pAdapterInfo, bufLen );
-
-		if ( !pAdapterInfo )
-		{
-			break;
-		}
-	}
 	
 	// Process the raw interface list and build a linked list of IPv4 interfaces.
 	
@@ -4555,19 +4526,6 @@ mDNSlocal int	getifaddrs_ipv4( struct ifaddrs **outAddrs )
 		
 			ifa->ifa_extra.index = (uint32_t)( i + 1 );
 		}
-
-		// Now get DHCP configuration information
-
-		for ( pAdapter = pAdapterInfo; pAdapter; pAdapter = pAdapter->Next )
-		{
-			if ( strcmp( inet_ntoa( ifInfo->iiAddress.AddressIn.sin_addr ), pAdapter->IpAddressList.IpAddress.String ) == 0 )
-			{
-				ifa->ifa_dhcpEnabled		= pAdapter->DhcpEnabled;
-				ifa->ifa_dhcpLeaseExpires	= pAdapter->LeaseExpires;
-				ifa->ifa_womp				= IsWOMPEnabled( pAdapter->AdapterName );
-				break;
-			}
-		}
 	}
 	
 	// Success!
@@ -4581,10 +4539,6 @@ mDNSlocal int	getifaddrs_ipv4( struct ifaddrs **outAddrs )
 	
 exit:
 
-	if ( pAdapterInfo )
-	{
-		free( pAdapterInfo );
-	}
 	if( head )
 	{
 		freeifaddrs( head );
@@ -5567,31 +5521,34 @@ exit:
 }
 
 
-void
-UpdateWOMPConfig( mDNS * const m )
+BOOL
+IsWOMPEnabled( mDNS * const m )
 {
+	BOOL enabled;
+
 	mDNSInterfaceData * ifd;
 
 	mDNSPlatformLock( m );
 
-	m->p->womp = mDNSfalse;
+	enabled = FALSE;
 
 	for( ifd = m->p->interfaceList; ifd; ifd = ifd->next )
 	{
-		ifd->interfaceInfo.NetWake = IsWOMPEnabled( ifd->name );
-
-		if ( ifd->interfaceInfo.NetWake )
+		if ( IsWOMPEnabledForAdapter( ifd->name ) )
 		{
-			m->p->womp = mDNStrue;
+			enabled = TRUE;
+			break;
 		}
 	}
 
 	mDNSPlatformUnlock( m );
+
+	return enabled;
 }
 
 
 mDNSlocal mDNSu8
-IsWOMPEnabled( const char * adapterName )
+IsWOMPEnabledForAdapter( const char * adapterName )
 {
 	char						fileName[80];
 	NDIS_OID					oid;
@@ -5600,6 +5557,10 @@ IsWOMPEnabled( const char * adapterName )
 	NDIS_PNP_CAPABILITIES	*	pNPC	= NULL;
 	int							err;
 	mDNSu8						ok		= TRUE;
+
+	require_action( adapterName != NULL, exit, ok = FALSE );
+
+	dlog( kDebugLevelTrace, DEBUG_NAME "IsWOMPEnabledForAdapter: %s\n", adapterName );
 	
     // Construct a device name to pass to CreateFile
 
@@ -5629,6 +5590,8 @@ exit:
     {
 		CloseHandle( handle );
     }
+
+	dlog( kDebugLevelTrace, DEBUG_NAME "IsWOMPEnabledForAdapter returns %s\n", ok ? "true" : "false" );
 
 	return ( mDNSu8 ) ok;
 }

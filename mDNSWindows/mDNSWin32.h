@@ -17,6 +17,9 @@
     Change History (most recent first):
     
 $Log: mDNSWin32.h,v $
+Revision 1.31  2009/08/06 22:43:08  herscher
+<rdar://problem/7062660> B4W: Need to Stop and Start Bonjour service to get Wake on LAN to work on Windows machine
+
 Revision 1.30  2009/07/17 19:59:46  herscher
 <rdar://problem/7062660> Update the womp settings for each network adapter immediately preceding the call to mDNSCoreMachineSleep().
 
@@ -218,7 +221,6 @@ struct	mDNS_PlatformSupport_struct
 	HANDLE						wakeupEvent;
 	HANDLE						initEvent;
 	time_t						nextDHCPLeaseExpires;
-	mDNSBool					womp;				// Does any interface support wake-on-magic-packet
 	HKEY						descKey;
 	HKEY						tcpipKey;
 	HKEY						ddnsKey;
@@ -278,7 +280,7 @@ struct ifaddrs
 };
 
 
-extern void UpdateWOMPConfig();
+extern BOOL IsWOMPEnabled();
 
 
 #ifdef	__cplusplus
