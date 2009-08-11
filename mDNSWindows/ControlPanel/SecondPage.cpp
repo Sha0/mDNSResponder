@@ -13,27 +13,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
-
-    Change History (most recent first):
-
-$Log: SecondPage.cpp,v $
-Revision 1.7  2006/08/14 23:25:28  cheshire
-Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
-
-Revision 1.6  2005/10/05 20:46:50  herscher
-<rdar://problem/4192011> Move Wide-Area preferences to another part of the registry so they don't removed during an update-install.
-
-Revision 1.5  2005/04/05 04:15:46  shersche
-RegQueryString was returning uninitialized strings if the registry key couldn't be found, so always initialize strings before checking the registry key.
-
-Revision 1.4  2005/04/05 03:52:14  shersche
-<rdar://problem/4066485> Registering with shared secret key doesn't work. Additionally, mDNSResponder wasn't dynamically re-reading it's DynDNS setup after setting a shared secret key.
-
-Revision 1.3  2005/03/03 19:55:22  shersche
-<rdar://problem/4034481> ControlPanel source code isn't saving CVS log info
-
-
-*/
+ */
 
 #include "SecondPage.h"
 #include "resource.h"

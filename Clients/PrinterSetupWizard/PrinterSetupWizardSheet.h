@@ -13,58 +13,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
-
-    Change History (most recent first):
-    
-$Log: PrinterSetupWizardSheet.h,v $
-Revision 1.14  2009/06/11 22:27:16  herscher
-<rdar://problem/4458913> Add comprehensive logging during printer installation process.
-
-Revision 1.13  2009/03/30 19:18:49  herscher
-<rdar://problem/5925472> Current Bonjour code does not compile on Windows
-<rdar://problem/5187308> Move build train to Visual Studio 2005
-
-Revision 1.12  2006/08/14 23:24:09  cheshire
-Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
-
-Revision 1.11  2005/10/05 17:32:51  herscher
-<rdar://problem/4141221> Use a case insensitive compare operation to check whether a printer with the same name has already been installed.
-
-Revision 1.10  2005/07/07 17:53:19  shersche
-Fix problems associated with the CUPS printer workaround fix.
-
-Revision 1.9  2005/04/13 17:46:22  shersche
-<rdar://problem/4082122> Generic PCL not selected when printers advertise multiple text records
-
-Revision 1.8  2005/02/08 18:53:33  shersche
-Remove qtotalDefined parameter from ParseTextRecord()
-
-Revision 1.7  2005/01/31 23:54:29  shersche
-<rdar://problem/3947508> Start browsing when printer wizard starts. Move browsing logic from CSecondPage object to CPrinterSetupWizardSheet object.
-
-Revision 1.6  2005/01/03 19:05:01  shersche
-Store pointer to instance of wizard sheet so that print driver install thread sends a window message to the correct window
-
-Revision 1.5  2004/12/29 18:53:38  shersche
-<rdar://problem/3725106>
-<rdar://problem/3737413> Added support for LPR and IPP protocols as well as support for obtaining multiple text records. Reorganized and simplified codebase.
-Bug #: 3725106, 3737413
-
-Revision 1.4  2004/07/13 21:24:23  rpantos
-Fix for <rdar://problem/3701120>.
-
-Revision 1.3  2004/06/28 00:51:47  shersche
-Move call to EnumPrinters out of browse callback into standalone function
-
-Revision 1.2  2004/06/24 20:12:07  shersche
-Clean up source code
-Submitted by: herscher
-
-Revision 1.1  2004/06/18 04:36:57  rpantos
-First checked in
-
-
-*/
+ */
 
 #pragma once
 

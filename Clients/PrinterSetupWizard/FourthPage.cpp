@@ -13,38 +13,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
-
-    Change History (most recent first):
-    
-$Log: FourthPage.cpp,v $
-Revision 1.8  2006/08/14 23:24:09  cheshire
-Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
-
-Revision 1.7  2005/07/07 17:53:20  shersche
-Fix problems associated with the CUPS printer workaround fix.
-
-Revision 1.6  2005/02/08 21:45:06  shersche
-<rdar://problem/3947490> Default to Generic PostScript or PCL if unable to match driver
-
-Revision 1.5  2005/01/06 08:17:08  shersche
-Display the selected protocol ("Raw", "LPR", "IPP") rather than the port name
-
-Revision 1.4  2004/07/13 20:15:04  shersche
-<rdar://problem/3726363> Load large font name from resource
-Bug #: 3726363
-
-Revision 1.3  2004/07/12 06:59:03  shersche
-<rdar://problem/3723695> Use resource strings for Yes/No
-Bug #: 3723695
-
-Revision 1.2  2004/06/26 23:27:12  shersche
-support for installing multiple printers of the same name
-
-Revision 1.1  2004/06/18 04:36:57  rpantos
-First checked in
-
-
-*/
+ */
 
 #include "stdafx.h"
 #include "PrinterSetupWizardApp.h"

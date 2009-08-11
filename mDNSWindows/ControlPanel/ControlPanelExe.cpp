@@ -13,22 +13,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
-
-    Change History (most recent first):
-
-$Log: ControlPanelExe.cpp,v $
-Revision 1.3  2007/04/27 21:43:00  herscher
-Update license info to Apache License, Version 2.0
-
-Revision 1.2  2007/04/27 20:42:12  herscher
-<rdar://problem/5078828> mDNS: Bonjour Control Panel for Windows doesn't work on Vista
-
-Revision 1.1.2.1  2007/04/27 18:13:55  herscher
-<rdar://problem/5078828> mDNS: Bonjour Control Panel for Windows doesn't work on Vista
-
-
-
-*/
+ */
 
     
 #include "ControlPanelExe.h"
@@ -49,7 +34,10 @@ static char THIS_FILE[] = __FILE__;
 //	Static Declarations
 //---------------------------------------------------------------------------------------------------------------------------
 DEFINE_GUID(CLSID_ControlPanel, 
+
 0x1207552c, 0xe59, 0x4d9f, 0x85, 0x54, 0xf1, 0xf8, 0x6, 0xcd, 0x7f, 0xa9);
+
+
 
 static LPCTSTR g_controlPanelGUID			=	TEXT( "{1207552C-0E59-4d9f-8554-F1F806CD7FA9}" );
 static LPCTSTR g_controlPanelName			=	TEXT( "Bonjour Control Panel" );
@@ -262,7 +250,9 @@ CCPApp::InitInstance()
 		OSStatus	err;
 
 		nChars = GetModuleFileName( NULL, exePath, sizeof_array( exePath ) );
+
 		err = translate_errno( nChars > 0, (OSStatus) GetLastError(), kUnknownErr );
+
 		require_noerr( err, exit );
 
 		wsprintf( iconPath, L"%s,-%d", exePath, IDR_APPLET );

@@ -13,30 +13,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
-
-    Change History (most recent first):
-
-$Log: FirstPage.cpp,v $
-Revision 1.7  2009/06/22 23:25:10  herscher
-<rdar://problem/5265747> ControlPanel doesn't display key and password in dialog box. Refactor Lsa calls into Secret.h and Secret.c, which is used by both the ControlPanel and mDNSResponder system service.
-
-Revision 1.6  2006/08/14 23:25:28  cheshire
-Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
-
-Revision 1.5  2005/10/05 20:46:50  herscher
-<rdar://problem/4192011> Move Wide-Area preferences to another part of the registry so they don't removed during an update-install.
-
-Revision 1.4  2005/04/05 03:52:14  shersche
-<rdar://problem/4066485> Registering with shared secret key doesn't work. Additionally, mDNSResponder wasn't dynamically re-reading it's DynDNS setup after setting a shared secret key.
-
-Revision 1.3  2005/03/07 18:27:42  shersche
-<rdar://problem/4037940> Fix problem when ControlPanel commits changes to the browse domain list
-
-Revision 1.2  2005/03/03 19:55:22  shersche
-<rdar://problem/4034481> ControlPanel source code isn't saving CVS log info
-
-
-*/
+ */
 
 #include "FirstPage.h"
 #include "resource.h"

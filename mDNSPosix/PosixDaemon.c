@@ -18,74 +18,7 @@
 
 	Contains:	main & associated Application layer for mDNSResponder on Linux.
 
-	Change History (most recent first):
-
-$Log: PosixDaemon.c,v $
-Revision 1.49  2009/04/30 20:07:51  mcguire
-<rdar://problem/6822674> Support multiple UDSs from launchd
-
-Revision 1.48  2009/04/11 01:43:28  jessic2
-<rdar://problem/4426780> Daemon: Should be able to turn on LogOperation dynamically
-
-Revision 1.47  2009/01/11 03:20:06  mkrochma
-<rdar://problem/5797526> Fixes from Igor Seleznev to get mdnsd working on Solaris
-
-Revision 1.46  2008/11/03 23:09:15  cheshire
-Don't need to include mDNSDebug.h as well as mDNSEmbeddedAPI.h
-
-Revision 1.45  2008/10/03 18:25:17  cheshire
-Instead of calling "m->MainCallback" function pointer directly, call mDNSCore routine "mDNS_ConfigChanged(m);"
-
-Revision 1.44  2008/09/15 23:52:30  cheshire
-<rdar://problem/6218902> mDNSResponder-177 fails to compile on Linux with .desc pseudo-op
-Made __crashreporter_info__ symbol conditional, so we only use it for OS X build
-
-Revision 1.43  2007/10/22 20:05:34  cheshire
-Use mDNSPlatformSourceAddrForDest instead of FindSourceAddrForIP
-
-Revision 1.42  2007/09/18 19:09:02  cheshire
-<rdar://problem/5489549> mDNSResponderHelper (and other binaries) missing SCCS version strings
-
-Revision 1.41  2007/09/04 17:02:25  cheshire
-<rdar://problem/5458929> False positives in changed files list in nightly builds
-Added MDNS_VERSIONSTR_NODTS option at the reqest of Rishi Srivatsavai (Sun)
-
-Revision 1.40  2007/07/31 23:08:34  mcguire
-<rdar://problem/5329542> BTMM: Make AutoTunnel mode work with multihoming
-
-Revision 1.39  2007/03/21 00:30:44  cheshire
-Remove obsolete mDNS_DeleteDNSServers() call
-
-Revision 1.38  2007/02/14 01:58:19  cheshire
-<rdar://problem/4995831> Don't delete Unix Domain Socket on exit if we didn't create it on startup
-
-Revision 1.37  2007/02/07 19:32:00  cheshire
-<rdar://problem/4980353> All mDNSResponder components should contain version strings in SCCS-compatible format
-
-Revision 1.36  2007/02/06 19:06:48  cheshire
-<rdar://problem/3956518> Need to go native with launchd
-
-Revision 1.35  2007/01/05 08:30:52  cheshire
-Trim excessive "$Log" checkin history from before 2006
-(checkin history still available via "cvs log ..." of course)
-
-Revision 1.34  2007/01/05 05:46:08  cheshire
-Add mDNS *const m parameter to udsserver_handle_configchange()
-
-Revision 1.33  2006/12/21 00:10:53  cheshire
-Make mDNS_PlatformSupport PlatformStorage a static global instead of a stack variable
-
-Revision 1.32  2006/11/03 22:28:50  cheshire
-PosixDaemon needs to handle mStatus_ConfigChanged and mStatus_GrowCache messages
-
-Revision 1.31  2006/08/14 23:24:46  cheshire
-Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
-
-Revision 1.30  2006/07/07 01:09:12  cheshire
-<rdar://problem/4472013> Add Private DNS server functionality to dnsextd
-Only use mallocL/freeL debugging routines when building mDNSResponder, not dnsextd
-
-*/
+ */
 
 #include <stdio.h>
 #include <string.h>

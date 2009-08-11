@@ -13,24 +13,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
-
-    Change History (most recent first):
-
-$Log: ThirdPage.cpp,v $
-Revision 1.5  2006/08/14 23:25:29  cheshire
-Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
-
-Revision 1.4  2005/10/05 20:46:50  herscher
-<rdar://problem/4192011> Move Wide-Area preferences to another part of the registry so they don't removed during an update-install.
-
-Revision 1.3  2005/03/07 18:27:42  shersche
-<rdar://problem/4037940> Fix problem when ControlPanel commits changes to the browse domain list
-
-Revision 1.2  2005/03/03 19:55:22  shersche
-<rdar://problem/4034481> ControlPanel source code isn't saving CVS log info
-
-
-*/
+ */
 
 #include "ThirdPage.h"
 #include "resource.h"

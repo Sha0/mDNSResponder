@@ -14,58 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
 
-    Change History (most recent first):
-
-$Log: DNSSD.java,v $
-Revision 1.16  2008/11/04 20:06:20  cheshire
-<rdar://problem/6186231> Change MAX_DOMAIN_NAME to 256
-
-Revision 1.15  2007/03/13 00:28:03  vazquez
-<rdar://problem/4625928> Java: Rename exported symbols in libjdns_sd.jnilib
-
-Revision 1.14  2007/03/13 00:10:14  vazquez
-<rdar://problem/4455206> Java: 64 bit JNI patch
-
-Revision 1.13  2007/02/24 23:08:02  mkrochma
-<rdar://problem/5001673> Typo in Bonjour Java API document
-
-Revision 1.12  2007/02/09 00:33:02  cheshire
-Add missing error codes to kMessages array
-
-Revision 1.11  2006/08/14 23:25:08  cheshire
-Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
-
-Revision 1.10  2006/06/20 23:05:55  rpantos
-<rdar://problem/3839132> Java needs to implement DNSServiceRegisterRecord equivalent
-
-Revision 1.9  2005/10/26 01:52:24  cheshire
-<rdar://problem/4316286> Race condition in Java code (doesn't work at all on Linux)
-
-Revision 1.8  2005/07/11 01:55:21  cheshire
-<rdar://problem/4175511> Race condition in Java API
-
-Revision 1.7  2005/07/05 13:01:52  cheshire
-<rdar://problem/4169791> If mDNSResponder daemon is stopped, Java API spins, burning CPU time
-
-Revision 1.6  2005/07/05 00:02:25  cheshire
-Add missing comma
-
-Revision 1.5  2005/07/04 21:13:47  cheshire
-Add missing error message strings
-
-Revision 1.4  2004/12/11 03:00:59  rpantos
-<rdar://problem/3907498> Java DNSRecord API should be cleaned up
-
-Revision 1.3  2004/11/12 03:23:08  rpantos
-rdar://problem/3809541 implement getIfIndexForName, getNameForIfIndex.
-
-Revision 1.2  2004/05/20 17:43:18  cheshire
-Fix invalid UTF-8 characters in file
-
-Revision 1.1  2004/04/30 16:32:34  rpantos
-First checked in.
-
-
 	This file declares and implements DNSSD, the central Java factory class
 	for doing DNS Service Discovery. It includes the mostly-abstract public
 	interface, as well as the Apple* implementation subclasses.

@@ -13,21 +13,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
-
-    Change History (most recent first):
-
-$Log: ControlPanelExe.h,v $
-Revision 1.3  2007/04/27 21:43:00  herscher
-Update license info to Apache License, Version 2.0
-
-Revision 1.2  2007/04/27 20:42:12  herscher
-<rdar://problem/5078828> mDNS: Bonjour Control Panel for Windows doesn't work on Vista
-
-Revision 1.1.2.1  2007/04/27 18:13:55  herscher
-<rdar://problem/5078828> mDNS: Bonjour Control Panel for Windows doesn't work on Vista
-
-
-*/
+ */
 
     
 #pragma once

@@ -13,22 +13,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
-
-    Change History (most recent first):
-
-$Log: safe_vproc.c,v $
-Revision 1.3  2009/02/14 00:09:53  cheshire
-Only log "Compiled without vproc_transaction support" when running on a system
-where we expect that to be available -- if running on a system that doesn't even
-have vproc_transaction, then it doesn't matter that the code was compiled without it.
-
-Revision 1.2  2009/02/09 21:16:17  mcguire
-<rdar://problem/5858533> Adopt vproc_transaction API in mDNSResponder
-additional cleanup: don't alloc memory since we currently only expect to have one transaction
-
-Revision 1.1  2009/02/06 03:06:49  mcguire
-<rdar://problem/5858533> Adopt vproc_transaction API in mDNSResponder
-
  */
 
 #include <stdlib.h>

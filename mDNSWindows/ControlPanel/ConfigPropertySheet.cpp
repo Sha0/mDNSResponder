@@ -13,28 +13,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
-
-    Change History (most recent first):
-
-$Log: ConfigPropertySheet.cpp,v $
-Revision 1.7  2009/07/01 19:20:37  herscher
-<rdar://problem/6713286> UI changes for configuring sleep proxy settings.
-
-Revision 1.6  2009/03/30 19:57:45  herscher
-<rdar://problem/5925472> Current Bonjour code does not compile on Windows
-<rdar://problem/5187308> Move build train to Visual Studio 2005
-
-Revision 1.5  2006/08/14 23:25:28  cheshire
-Re-licensed mDNSResponder daemon source code under Apache License, Version 2.0
-
-Revision 1.4  2005/10/05 20:46:50  herscher
-<rdar://problem/4192011> Move Wide-Area preferences to another part of the registry so they don't removed during an update-install.
-
-Revision 1.3  2005/03/03 19:55:22  shersche
-<rdar://problem/4034481> ControlPanel source code isn't saving CVS log info
-
-
-*/
+ */
 
 #include "ConfigPropertySheet.h"
 #include <WinServices.h>
