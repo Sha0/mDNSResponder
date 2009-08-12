@@ -3446,6 +3446,8 @@ mDNSlocal void NetWakeResolve(mDNS *const m, DNSQuestion *question, const Resour
 	if (!AddRecord) return;												// Don't care about REMOVE events
 	if (answer->rrtype != question->qtype) return;						// Don't care about CNAMEs
 
+	// if (answer->rrtype == kDNSType_AAAA) return;	// To test failing to resolve sleep proxy's address
+
 	mDNS_StopQuery(m, question);
 	question->ThisQInterval = -1;
 
@@ -3489,9 +3491,27 @@ mDNSexport mDNSBool mDNSCoreHaveAdvertisedMulticastServices(mDNS *const m)
 	return mDNSfalse;
 	}
 
+mDNSlocal void SendSleepGoodbyes(mDNS *const m)
+	{
+	AuthRecord *rr;
+	m->SleepState = SleepState_Sleeping;
+
+#ifndef UNICAST_DISABLED
+	SleepServiceRegistrations(m);
+	SleepRecordRegistrations(m);	// If we have no SPS, need to deregister our uDNS records
+#endif
+
+	// Mark all the records we need to deregister and send them
+	for (rr = m->ResourceRecords; rr; rr=rr->next)
+		if (rr->resrec.RecordType == kDNSRecordTypeShared && rr->RequireGoodbye)
+			rr->ImmedAnswer = mDNSInterfaceMark;
+	SendResponses(m);
+	}
+
 // BeginSleepProcessing is called, with the lock held, from either mDNS_Execute or mDNSCoreMachineSleep
 mDNSlocal void BeginSleepProcessing(mDNS *const m)
 	{
+	mDNSBool SendGoodbyes = mDNStrue;
 	const CacheRecord *sps[3] = { mDNSNULL };
 
 	m->NextScheduledSPRetry = m->timenow;
@@ -3505,7 +3525,14 @@ mDNSlocal void BeginSleepProcessing(mDNS *const m)
 			{
 			if (!intf->NetWake) LogSPS("BeginSleepProcessing: %-6s not capable of magic packet wakeup", intf->ifname);
 #if APPLE_OSX_mDNSResponder
-			else if (ActivateLocalProxy(m, intf->ifname) == mStatus_NoError) LogSPS("BeginSleepProcessing: %-6s using local proxy", intf->ifname);
+			else if (ActivateLocalProxy(m, intf->ifname) == mStatus_NoError)
+				{
+				SendGoodbyes = mDNSfalse;
+				LogSPS("BeginSleepProcessing: %-6s using local proxy", intf->ifname);
+				// This will leave m->SleepState set to SleepState_Transferring,
+				// which is okay because with no outstanding resolves, or updates in flight,
+				// mDNSCoreReadyForSleep() will conclude correctly that all the updates have already completed
+				}
 #endif // APPLE_OSX_mDNSResponder
 			else
 				{
@@ -3515,6 +3542,7 @@ mDNSlocal void BeginSleepProcessing(mDNS *const m)
 				else
 					{
 					int i;
+					SendGoodbyes = mDNSfalse;
 					intf->NextSPSAttempt = 0;
 					intf->NextSPSAttemptTime = m->timenow + mDNSPlatformOneSecond;
 					// Don't need to set m->NextScheduledSPRetry here because we already set "m->NextScheduledSPRetry = m->timenow" above
@@ -3542,22 +3570,10 @@ mDNSlocal void BeginSleepProcessing(mDNS *const m)
 			}
 		}
 
-	if (!sps[0])	// If we didn't find even one Sleep Proxy
+	if (SendGoodbyes)	// If we didn't find even one Sleep Proxy
 		{
-		AuthRecord *rr;
 		LogSPS("BeginSleepProcessing: Not registering with Sleep Proxy Server");
-		m->SleepState = SleepState_Sleeping;
-
-#ifndef UNICAST_DISABLED
-		SleepServiceRegistrations(m);
-		SleepRecordRegistrations(m);	// If we have no SPS, need to deregister our uDNS records
-#endif
-
-		// Mark all the records we need to deregister and send them
-		for (rr = m->ResourceRecords; rr; rr=rr->next)
-			if (rr->resrec.RecordType == kDNSRecordTypeShared && rr->RequireGoodbye)
-				rr->ImmedAnswer = mDNSInterfaceMark;
-		SendResponses(m);
+		SendSleepGoodbyes(m);
 		}
 	}
 
@@ -3681,7 +3697,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 	mDNS_Unlock(m);
 	}
 
-mDNSexport mDNSBool mDNSCoreReadyForSleep(mDNS *m)
+mDNSexport mDNSBool mDNSCoreReadyForSleep(mDNS *m, mDNSs32 now)
 	{
 	DNSQuestion *q;
 	AuthRecord *rr;
@@ -3690,25 +3706,42 @@ mDNSexport mDNSBool mDNSCoreReadyForSleep(mDNS *m)
 
 	mDNS_Lock(m);
 
-	if (m->NextScheduledSPRetry - m->timenow > 0) goto notready;
-
-	m->NextScheduledSPRetry = m->timenow + 0x40000000UL;
-
 	if (m->DelaySleep) goto notready;
+
+	// If we've not hit the sleep limit time, and it's not time for our next retry, we can skip these checks
+	if (m->SleepLimit - now > 0 && m->NextScheduledSPRetry - now > 0) goto notready;
+
+	m->NextScheduledSPRetry = now + 0x40000000UL;
 
 	// See if we might need to retransmit any lost Sleep Proxy Registrations
 	for (intf = GetFirstActiveInterface(m->HostInterfaces); intf; intf = GetFirstActiveInterface(intf->next))
 		if (intf->NextSPSAttempt >= 0)
 			{
-			if (m->timenow - intf->NextSPSAttemptTime >= 0)
+			if (now - intf->NextSPSAttemptTime >= 0)
 				{
 				LogSPS("ReadyForSleep retrying SPS %s %d", intf->ifname, intf->NextSPSAttempt);
 				SendSPSRegistration(m, intf, zeroID);
+				// Don't need to "goto notready" here, becase if we do still have record registrations
+				// that have not been acknowledged yet, we'll catch that in the record list scan below.
 				}
 			else
 				if (m->NextScheduledSPRetry - intf->NextSPSAttemptTime > 0)
 					m->NextScheduledSPRetry = intf->NextSPSAttemptTime;
 			}
+
+	// Scan list of interfaces, and see if we're still waiting for any sleep proxy resolves to complete
+	for (intf = GetFirstActiveInterface(m->HostInterfaces); intf; intf = GetFirstActiveInterface(intf->next))
+		if (intf->NetWakeResolve[0].ThisQInterval >= 0)
+			{
+			LogSPS("ReadyForSleep waiting for SPS Resolve %s %##s (%s)", intf->ifname, intf->NetWakeResolve[0].qname.c, DNSTypeName(intf->NetWakeResolve[0].qtype));
+			goto spsnotready;
+			}
+
+	// Scan list of registered records
+	for (rr = m->ResourceRecords; rr; rr = rr->next)
+		if (!AuthRecord_uDNS(rr))
+			if (!mDNSOpaque16IsZero(rr->updateid))
+				{ LogSPS("ReadyForSleep waiting for SPS Update ID %d %s", mDNSVal16(rr->updateid), ARDisplayString(m,rr)); goto spsnotready; }
 
 	// Scan list of private LLQs, and make sure they've all completed their handshake with the server
 	for (q = m->Questions; q; q = q->next)
@@ -3718,28 +3751,11 @@ mDNSexport mDNSBool mDNSCoreReadyForSleep(mDNS *m)
 			goto notready;
 			}
 
-	// Scan list of interfaces
-	for (intf = GetFirstActiveInterface(m->HostInterfaces); intf; intf = GetFirstActiveInterface(intf->next))
-		if (intf->NetWakeResolve[0].ThisQInterval >= 0)
-			{
-			LogSPS("ReadyForSleep waiting for SPS Resolve %s %##s (%s)", intf->ifname, intf->NetWakeResolve[0].qname.c, DNSTypeName(intf->NetWakeResolve[0].qtype));
-			goto notready;
-			}
-
 	// Scan list of registered records
 	for (rr = m->ResourceRecords; rr; rr = rr->next)
-		{
 		if (AuthRecord_uDNS(rr))
-			{
 			if (rr->state == regState_Refresh && rr->tcp)
 				{ LogSPS("ReadyForSleep waiting for Record Update ID %d %s", mDNSVal16(rr->updateid), ARDisplayString(m,rr)); goto notready; }
-			}
-		else
-			{
-			if (!mDNSOpaque16IsZero(rr->updateid))
-				{ LogSPS("ReadyForSleep waiting for SPS Update ID %d %s", mDNSVal16(rr->updateid), ARDisplayString(m,rr)); goto notready; }
-			}
-		}
 
 	// Scan list of registered services
 	for (srs = m->ServiceRegistrations; srs; srs = srs->uDNS_next)
@@ -3747,6 +3763,40 @@ mDNSexport mDNSBool mDNSCoreReadyForSleep(mDNS *m)
 
 	mDNS_Unlock(m);
 	return mDNStrue;
+
+spsnotready:
+
+	// If we failed to complete sleep proxy registration within ten seconds, we give up on that
+	// and allow up to ten seconds more to complete wide-area deregistration instead
+	if (now - m->SleepLimit >= 0)
+		{
+		LogMsg("Failed to register with SPS, now sending goodbyes");
+
+		for (intf = GetFirstActiveInterface(m->HostInterfaces); intf; intf = GetFirstActiveInterface(intf->next))
+			if (intf->NetWakeBrowse.ThisQInterval >= 0)
+				{
+				LogSPS("ReadyForSleep mDNS_DeactivateNetWake %s %##s (%s)", intf->ifname, intf->NetWakeResolve[0].qname.c, DNSTypeName(intf->NetWakeResolve[0].qtype));
+				mDNS_DeactivateNetWake_internal(m, intf);
+				}
+
+		for (rr = m->ResourceRecords; rr; rr = rr->next)
+			if (!AuthRecord_uDNS(rr))
+				if (!mDNSOpaque16IsZero(rr->updateid))
+					{
+					LogSPS("ReadyForSleep clearing updateid for %s", ARDisplayString(m, rr));
+					rr->updateid = zeroID;
+					}
+
+		// We'd really like to allow up to ten seconds more here,
+		// but if we don't respond to the sleep notification within 30 seconds
+		// we'll be put back to sleep forcibly without the chance to schedule the next maintenance wake.
+		// Right now we wait 16 sec after wake for all the interfaces to come up, then we wait up to 10 seconds
+		// more for SPS resolves and record registrations to complete, which puts us at 26 seconds.
+		// If we allow just one more second to send our goodbyes, that puts us at 27 seconds.
+		m->SleepLimit = now + mDNSPlatformOneSecond * 1;
+
+		SendSleepGoodbyes(m);
+		}
 
 notready:
 	mDNS_Unlock(m);

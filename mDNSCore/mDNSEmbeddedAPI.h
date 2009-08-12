@@ -2455,7 +2455,7 @@ extern void     mDNSCoreReceive(mDNS *const m, void *const msg, const mDNSu8 *co
 extern void 	mDNSCoreRestartQueries(mDNS *const m);
 extern mDNSBool mDNSCoreHaveAdvertisedMulticastServices(mDNS *const m);
 extern void     mDNSCoreMachineSleep(mDNS *const m, mDNSBool wake);
-extern mDNSBool mDNSCoreReadyForSleep(mDNS *m);
+extern mDNSBool mDNSCoreReadyForSleep(mDNS *m, mDNSs32 now);
 extern mDNSs32  mDNSCoreIntervalToNextWake(mDNS *const m, mDNSs32 now);
 
 extern void     mDNSCoreBeSleepProxyServer(mDNS *const m, mDNSu8 sps, mDNSu8 port, mDNSu8 marginalpower, mDNSu8 totpower);
