@@ -3615,7 +3615,8 @@ mDNSexport mDNSs32 udsserver_idle(mDNSs32 nextevent)
 			{
 			if (nextevent - now > mDNSPlatformOneSecond) nextevent = now + mDNSPlatformOneSecond;
 
-			if (!r->time_blocked) r->time_blocked = NonZeroTime(now);
+			if (mDNSStorage.SleepState != SleepState_Awake) r->time_blocked = 0;
+			else if (!r->time_blocked) r->time_blocked = NonZeroTime(now);
 			else if (now - r->time_blocked >= 10 * mDNSPlatformOneSecond * (r->unresponsiveness_reports+1))
 				{
 				int num = 0;
