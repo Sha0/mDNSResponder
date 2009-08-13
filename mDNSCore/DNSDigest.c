@@ -432,12 +432,17 @@ void md5_block_data_order (MD5_CTX *c, const void *p,int num);
    *
    * 					<appro@fy.chalmers.se>
    */
+  /*
+   * LLVM is more strict about compatibility of types between input & output constraints,
+   * but we want these to be rotations of 32 bits, not 64, so we explicitly drop the
+   * most significant bytes by casting to an unsigned int.
+   */
 #  if defined(__i386) || defined(__i386__) || defined(__x86_64) || defined(__x86_64__)
 #   define ROTATE(a,n)	({ register unsigned int ret;	\
 				asm (			\
 				"roll %1,%0"		\
 				: "=r"(ret)		\
-				: "I"(n), "0"(a)	\
+				: "I"(n), "0"((unsigned int)a)	\
 				: "cc");		\
 			   ret;				\
 			})
