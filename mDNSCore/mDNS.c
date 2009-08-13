@@ -6959,7 +6959,7 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 		
 		if (flapping)
 			{
-			LogMsg("Note: RegisterInterface: Frequent transitions for interface %s (%#a); network traffic reduction measures in effect",
+			LogMsg("RegisterInterface: Frequent transitions for interface %s (%#a)",
 				set->ifname, &set->ip);
 			if (!m->SuppressProbes ||
 				m->SuppressProbes - (m->timenow + delay) < 0)
@@ -7070,7 +7070,7 @@ mDNSexport void mDNS_DeregisterInterface(mDNS *const m, NetworkInterfaceInfo *se
 				" marking questions etc. dormant", set->InterfaceID, set->ifname, &set->ip);
 
 			if (flapping)
-				LogMsg("Note: DeregisterInterface: Frequent transitions for interface %s (%#a); network traffic reduction measures in effect",
+				LogMsg("DeregisterInterface: Frequent transitions for interface %s (%#a)",
 					set->ifname, &set->ip);
 
 			// 1. Deactivate any questions specific to this interface, and tag appropriate questions
