@@ -848,26 +848,13 @@ static void DNSSD_API MyRegisterRecordCallback(DNSServiceRef service, DNSRecordR
 	// DNSServiceRemoveRecord(service, rec, 0); to test record removal
 	}
 
-static unsigned long getip(const char *const name)
+static void getip(const char *const name, struct sockaddr_storage *result)
 	{
-	unsigned long ip = 0;
-	struct addrinfo hints;
 	struct addrinfo *addrs = NULL;
-
-	memset(&hints, 0, sizeof(hints));
-	hints.ai_family = AF_INET;
-	
-	if (getaddrinfo(name, NULL, &hints, &addrs) == 0)
-		{
-		ip = ((struct sockaddr_in*) addrs->ai_addr)->sin_addr.s_addr;
-		}
-
-	if (addrs)
-		{
-		freeaddrinfo(addrs);
-		}
-
-	return(ip);
+	int err = getaddrinfo(name, NULL, NULL, &addrs);
+	if (err) fprintf(stderr, "getaddrinfo error %d for %s", err, name);
+	else memcpy(result, addrs->ai_addr, addrs->ai_addr->sa_len);
+	if (addrs) freeaddrinfo(addrs);
 	}
 
 static DNSServiceErrorType RegisterProxyAddressRecord(DNSServiceRef sdref, const char *host, const char *ip)
@@ -876,10 +863,15 @@ static DNSServiceErrorType RegisterProxyAddressRecord(DNSServiceRef sdref, const
 	// On the Win32 platform, WinSock must be initialized for getip() to succeed.
 	// Any DNSService* call will initialize WinSock for us, so we make sure
 	// DNSServiceCreateConnection() is called before getip() is.
-	unsigned long addr = getip(ip);
-	return(DNSServiceRegisterRecord(sdref, &record, kDNSServiceFlagsUnique, opinterface, host,
-		kDNSServiceType_A, kDNSServiceClass_IN, sizeof(addr), &addr, 240, MyRegisterRecordCallback, (void*)host));
-	// Note, should probably add support for creating proxy AAAA records too, one day
+	struct sockaddr_storage hostaddr;
+	getip(ip, &hostaddr);
+	if (hostaddr.ss_family == AF_INET)
+		return(DNSServiceRegisterRecord(sdref, &record, kDNSServiceFlagsUnique, opinterface, host,
+			kDNSServiceType_A,    kDNSServiceClass_IN,  4, &((struct sockaddr_in *)&hostaddr)->sin_addr,  240, MyRegisterRecordCallback, (void*)host));
+	else if (hostaddr.ss_family == AF_INET6)
+		return(DNSServiceRegisterRecord(sdref, &record, kDNSServiceFlagsUnique, opinterface, host,
+			kDNSServiceType_AAAA, kDNSServiceClass_IN, 16, &((struct sockaddr_in6*)&hostaddr)->sin6_addr, 240, MyRegisterRecordCallback, (void*)host));
+	else return(kDNSServiceErr_BadParam);
 	}
 
 #define HexVal(X) ( ((X) >= '0' && (X) <= '9') ? ((X) - '0'     ) :  \
