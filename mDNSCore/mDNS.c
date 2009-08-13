@@ -7633,16 +7633,36 @@ mDNSexport mDNSOpaque16 mDNS_NewMessageID(mDNS * const m)
 #pragma mark - Sleep Proxy Server
 #endif
 
-mDNSlocal void RestartProbing(mDNS *const m, AuthRecord *const rr)
+mDNSlocal void RestartARPProbing(mDNS *const m, AuthRecord *const rr)
 	{
-	// We reset ProbeCount, so we'll suppress our own answers for a while, to avoid generating ARP conflicts with a waking machine.
-	// If the machine does wake properly then we'll discard our records when we see the first new mDNS probe from that machine.
-	// If it does not wake (perhaps we just picked up a stray delayed packet sent before it went to sleep)
-	// then we'll transition out of probing state and start answering ARPs again.
+	// If we see an ARP from a machine we think is sleeping, then either
+	// (i) the machine has woken, or
+	// (ii) it's just a stray old packet from before the machine slept
+	// To handle the second case, we reset ProbeCount, so we'll suppress our own answers for a while, to avoid
+	// generating ARP conflicts with a waking machine, and set rr->LastAPTime so we'll start probing again in 10 seconds.
+	// If the machine has just woken then we'll discard our records when we see the first new mDNS probe from that machine.
+	// If it was a stray old packet, then after 10 seconds we'll probe again and then start answering ARPs again. In this case we *do*
+	// need to send new ARP Announcements, because the owner's ARP broadcasts will have updated neighboring ARP caches, so we need to
+	// re-assert our (temporary) ownership of that IP address in order to receive subsequent packets addressed to that IPv4 address.
+	
 	rr->resrec.RecordType = kDNSRecordTypeUnique;
 	rr->ProbeCount        = DefaultProbeCountForTypeUnique;
-	rr->AnnounceCount     = InitialAnnounceCount;
-	InitializeLastAPTime(m, rr);
+
+	// If we haven't started announcing yet (and we're not already in ten-second-delay mode) the machine is probably
+	// still going to sleep, so we just reset rr->ProbeCount so we'll continue probing until it stops responding.
+	// If we *have* started announcing, the machine is probably in the process of waking back up, so in that case
+	// we're more cautious and we wait ten seconds before probing it again. We do this because while waking from
+	// sleep, some network interfaces tend to lose or delay inbound packets, and without this delay, if the waking machine
+	// didn't answer our three probes within three seconds then we'd announce and cause it an unnecessary address conflict.
+	if (rr->AnnounceCount == InitialAnnounceCount && m->timenow - rr->LastAPTime >= 0)
+		InitializeLastAPTime(m, rr);
+	else
+		{
+		rr->AnnounceCount  = InitialAnnounceCount;
+		rr->ThisAPInterval = mDNSPlatformOneSecond;
+		rr->LastAPTime     = m->timenow + mDNSPlatformOneSecond * 9;	// Send first packet at rr->LastAPTime + rr->ThisAPInterval, i.e. 10 seconds from now
+		SetNextAnnounceProbeTime(m, rr);
+		}
 	}
 
 mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, const mDNSu8 *const end, const mDNSInterfaceID InterfaceID)
@@ -7667,9 +7687,12 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 
 		// Pass 1:
 		// Process ARP Requests and Probes (but not Announcements), and generate an ARP Reply if necessary.
-		// We also process and answer ARPs from our own kernel (no special treatment for localhost).
+		// We also process ARPs from our own kernel (and 'answer' them by injecting a local ARP table entry)
 		// We ignore ARP Announcements here -- Announcements are not questions, they're assertions, so we don't need to answer them.
-		// The only time we might need to respond to an ARP Announcement is if it's a conflict -- and we check for that in Pass 2 below.
+		// The times we might need to react to an ARP Announcement are:
+		// (i) as an indication that the host in question has not gone to sleep yet (so we should delay beginning to proxy for it) or
+		// (ii) if it's a conflicting Announcement from another host
+		// -- and we check for these in Pass 2 below.
 		if (mDNSSameOpaque16(arp->op, ARP_op_request) && !mDNSSameIPv4Address(arp->spa, arp->tpa))
 			for (rr = m->ResourceRecords; rr; rr=rr->next)
 				if (rr->resrec.InterfaceID == InterfaceID && rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, arp->tpa))
@@ -7683,7 +7706,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 											mDNSSameEthAddress(&arp->sha, &intf->MAC)       ? msg3 : msg4;
 					LogSPS("%-7s %s %.6a %.4a for %.4a -- H-MAC %.6a I-MAC %.6a %s",
 						InterfaceNameForID(m, InterfaceID), msg, &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m, rr));
-					if      (msg == msg1) RestartProbing(m, rr);
+					if      (msg == msg1) RestartARPProbing(m, rr);
 					else if (msg == msg3) mDNSPlatformSetLocalARP(&arp->tpa, &rr->WakeUp.IMAC, InterfaceID);
 					else if (msg == msg4) SendARP(m, 2, rr, arp->tpa.b, arp->sha.b, arp->spa.b, arp->sha.b);
 					}
@@ -7704,7 +7727,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 				for (rr = m->ResourceRecords; rr; rr=rr->next)
 					if (rr->resrec.InterfaceID == InterfaceID && rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, arp->spa))
 						{
-						RestartProbing(m, rr);
+						RestartARPProbing(m, rr);
 						if (mDNSSameEthAddress(&arp->sha, &rr->WakeUp.IMAC))
 							LogSPS("%-7s ARP %s from owner %.6a %.4a for %-15.4a -- re-starting probing for %s",
 								InterfaceNameForID(m, InterfaceID),
