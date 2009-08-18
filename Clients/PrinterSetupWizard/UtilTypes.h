@@ -89,7 +89,7 @@ namespace PrinterSetupWizard
 		// This let's us know that this printer was discovered via OSX Printer Sharing.
 		// We use this knowledge to workaround a problem with OS X Printer sharing.
 
-		bool			isSharedFromOSX;
+		bool			isCUPSPrinter;
 		
 		//
 		// state
@@ -178,7 +178,7 @@ namespace PrinterSetupWizard
 	inline
 	Printer::Printer()
 	:
-		isSharedFromOSX( false )
+		isCUPSPrinter( false )
 	{
 	}
 

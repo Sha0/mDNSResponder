@@ -25,6 +25,7 @@
 #include <winspool.h>
 #include <tcpxcv.h>
 #include <string>
+#include <shlwapi.h>
 
 // unreachable code
 #pragma warning(disable:4702)
@@ -35,10 +36,59 @@
 #	include	<process.h>
 #endif
 
+
+#if defined( UNICODE ) || defined( _UNICODE )
+#	define GetEnv	_wgetenv
+#else
+#	define GetEnv	getenv
+#endif
+
+static TCHAR*
+g_printerDriverFiles[] =		// Printer driver files
+{
+	TEXT( "ps5ui.dll" ),
+	TEXT( "pscript.hlp" ),
+	TEXT( "pscript.ntf" ),
+	TEXT( "pscript5.dll" ),
+	TEXT( "cups6.ini" ),
+	TEXT( "cupsui6.dll" ),
+	TEXT( "cupsps6.dll" )
+};
+
+
 // Private Messages
 
 #define WM_SOCKET_EVENT		( WM_USER + 0x100 )
 #define WM_PROCESS_EVENT	( WM_USER + 0x101 )
+
+
+static BOOL
+Is64BitWindows()
+{
+#if defined(_WIN64)
+	return TRUE;  // 64-bit programs run only on Win64
+#else
+	typedef BOOL (WINAPI *LPFN_ISWOW64PROCESS)( HANDLE, PBOOL );
+	LPFN_ISWOW64PROCESS fnIsWow64Process;
+	BOOL bIsWow64 = FALSE;
+
+    fnIsWow64Process = ( LPFN_ISWOW64PROCESS ) GetProcAddress( GetModuleHandle( TEXT( "kernel32" ) ), "IsWow64Process" );
+  
+    if ( fnIsWow64Process != NULL )
+    {
+		BOOL ok;
+
+        ok = fnIsWow64Process( GetCurrentProcess(), &bIsWow64 );
+
+		if ( !ok )
+		{
+			bIsWow64 = FALSE;
+		}
+	}
+
+	return bIsWow64;
+#endif
+}
 
 
 // CPrinterSetupWizardSheet
@@ -170,80 +220,89 @@ OSStatus
 CPrinterSetupWizardSheet::InstallPrinter(Printer * printer)
 {
 	Logger		log;
-	Service	*	service;
+	CUPSLibrary	cupsLib;
+	Service	*	service		= NULL;
 	BOOL		ok;
 	OSStatus	err = 0;
 
 	service = printer->services.front();
 	check( service );
 
-	//
-	// if the driver isn't installed, then install it
-	//
-
-	if ( !printer->driverInstalled )
+	if ( printer->isCUPSPrinter && cupsLib.IsInstalled() )
 	{
-		DWORD		dwResult;
-		HANDLE		hThread;
-		unsigned	threadID;
-
-		m_driverThreadFinished = false;
-	
-		//
-		// create the thread
-		//
-		hThread = (HANDLE) _beginthreadex_compat( NULL, 0, InstallDriverThread, printer, 0, &threadID );
-		err = translate_errno( hThread, (OSStatus) GetLastError(), kUnknownErr );
-		require_noerr_with_log( log, "_beginthreadex_compat()", err, exit );
-			
-		//
-		// go modal
-		//
-		while (!m_driverThreadFinished)
-		{
-			MSG msg;
-	
-			GetMessage( &msg, m_hWnd, 0, 0 );
-			TranslateMessage(&msg);
-			DispatchMessage(&msg);
-		}
-
-		//
-		// Wait until child process exits.
-		//
-		dwResult = WaitForSingleObject( hThread, INFINITE );
-		err = translate_errno( dwResult == WAIT_OBJECT_0, errno_compat(), err = kUnknownErr );
-		require_noerr_with_log( log, "WaitForSingleObject()", err, exit );
-
-		//
-		// check the return value of thread
-		//
-		require_noerr_with_log( log, "thread exit code", m_driverThreadExitCode, exit );
-
-		//
-		// now we know that the driver was successfully installed
-		//
-		printer->driverInstalled = true;
-	}
-
-	if ( service->type == kPDLServiceType )
-	{
-		err = InstallPrinterPDLAndLPR( printer, service, PROTOCOL_RAWTCP_TYPE, log );
-		require_noerr_with_log( log, "InstallPrinterPDLAndLPR()", err, exit );
-	}
-	else if ( service->type == kLPRServiceType )
-	{
-		err = InstallPrinterPDLAndLPR( printer, service, PROTOCOL_LPR_TYPE, log );
-		require_noerr_with_log( log, "InstallPrinterPDLAndLPR()", err, exit );
-	}
-	else if ( service->type == kIPPServiceType )
-	{
-		err = InstallPrinterIPP( printer, service, log );
-		require_noerr_with_log( log, "InstallPrinterIPP()", err, exit );
+		err = InstallPrinterCUPS( printer, service, cupsLib );
+		require_noerr( err, exit );
 	}
 	else
 	{
-		require_action_with_log( log, ( service->type == kPDLServiceType ) || ( service->type == kLPRServiceType ) || ( service->type == kIPPServiceType ), exit, err = kUnknownErr );
+		//
+		// if the driver isn't installed, then install it
+		//
+
+		if ( !printer->driverInstalled )
+		{
+			DWORD		dwResult;
+			HANDLE		hThread;
+			unsigned	threadID;
+
+			m_driverThreadFinished = false;
+		
+			//
+			// create the thread
+			//
+			hThread = (HANDLE) _beginthreadex_compat( NULL, 0, InstallDriverThread, printer, 0, &threadID );
+			err = translate_errno( hThread, (OSStatus) GetLastError(), kUnknownErr );
+			require_noerr_with_log( log, "_beginthreadex_compat()", err, exit );
+				
+			//
+			// go modal
+			//
+			while (!m_driverThreadFinished)
+			{
+				MSG msg;
+		
+				GetMessage( &msg, m_hWnd, 0, 0 );
+				TranslateMessage(&msg);
+				DispatchMessage(&msg);
+			}
+
+			//
+			// Wait until child process exits.
+			//
+			dwResult = WaitForSingleObject( hThread, INFINITE );
+			err = translate_errno( dwResult == WAIT_OBJECT_0, errno_compat(), err = kUnknownErr );
+			require_noerr_with_log( log, "WaitForSingleObject()", err, exit );
+
+			//
+			// check the return value of thread
+			//
+			require_noerr_with_log( log, "thread exit code", m_driverThreadExitCode, exit );
+
+			//
+			// now we know that the driver was successfully installed
+			//
+			printer->driverInstalled = true;
+		}
+
+		if ( service->type == kPDLServiceType )
+		{
+			err = InstallPrinterPDLAndLPR( printer, service, PROTOCOL_RAWTCP_TYPE, log );
+			require_noerr_with_log( log, "InstallPrinterPDLAndLPR()", err, exit );
+		}
+		else if ( service->type == kLPRServiceType )
+		{
+			err = InstallPrinterPDLAndLPR( printer, service, PROTOCOL_LPR_TYPE, log );
+			require_noerr_with_log( log, "InstallPrinterPDLAndLPR()", err, exit );
+		}
+		else if ( service->type == kIPPServiceType )
+		{
+			err = InstallPrinterIPP( printer, service, log );
+			require_noerr_with_log( log, "InstallPrinterIPP()", err, exit );
+		}
+		else
+		{
+			require_action_with_log( log, ( service->type == kPDLServiceType ) || ( service->type == kLPRServiceType ) || ( service->type == kIPPServiceType ), exit, err = kUnknownErr );
+		}
 	}
 
 	printer->installed = true;
@@ -420,6 +479,217 @@ exit:
 }
 
 
+OSStatus
+CPrinterSetupWizardSheet::InstallPrinterCUPS(Printer * printer, Service * service, CUPSLibrary & cupsLib )
+{
+	OSStatus err = kNoErr;
+
+	check( printer );
+	check( service );
+	check( cupsLib.IsInstalled() );
+
+	err = InstallPrinterCUPS( printer, service, cupsLib, TEXT( "Windows NT x86" ) );
+	require_noerr( err, exit );
+
+	if ( Is64BitWindows() )
+	{
+		err = InstallPrinterCUPS( printer, service, cupsLib, TEXT( "Windows x64" ) );
+		require_noerr( err, exit );
+	}
+
+exit:
+
+	return err;
+}
+
+
+OSStatus
+CPrinterSetupWizardSheet::InstallPrinterCUPS(Printer * printer, Service * service, CUPSLibrary & cupsLib, TCHAR * env )
+{
+	
+	Queue		*	q;
+	CString			ppdfile;				// PPD file for printer drivers
+	TCHAR			driverdir[1024];		// Directory for driver files
+	DWORD			needed;					// Bytes needed
+	DRIVER_INFO_3	driverinfo;				// Driver information
+	PRINTER_INFO_2	printerinfo;			// Printer information
+	HANDLE			printerHandle = NULL;	// Handle to printer
+	CString			filename;				// Driver filename
+	CString			dependentFiles;			// List of dependent files
+	CString			portName;				// Port Name
+	int				bytes;					// Bytes copied
+	TCHAR			datadir[ MAX_PATH ];	// Driver files location
+	CFile			in;						// Input file
+	CFile			out;					// Output file
+	void		*	http;					// Connection to server
+	char			buffer[4096];			// Copy/error buffer
+	CString			platform;
+	char			hostname[ 1024 ];
+	CString			dest;
+	char			destANSI[ 1024 ];
+	int				i;
+	DWORD			num;
+	OSStatus		err	= 0;
+	BOOL			ok;
+
+	check( printer );
+	check( service );
+	check( cupsLib.IsInstalled() );
+	check( env );
+
+	// What do we do here for multiple queues?
+	q = service->queues.front();
+	require_action( q != NULL, exit, err = kUnknownErr );
+
+	num = GetModuleFileName( NULL, datadir, MAX_PATH );
+	err = translate_errno( num > 0, GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+	ok = PathRemoveFileSpec( datadir );
+	require_action( ok, exit, err = kUnknownErr );
+
+	ok = GetPrinterDriverDirectory(NULL, env, 1, ( LPBYTE ) driverdir, sizeof( driverdir ), &needed );
+	err = translate_errno( ok, GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+
+	platform = env;
+	platform = platform.Right( 3 );
+
+	// Append the supported banner pages to the PPD file...
+	err = StringObjectToUTF8String( service->hostname, hostname, sizeof( hostname ) );
+	require_noerr( err, exit );
+	http = cupsLib.httpConnectEncrypt( hostname, service->portNumber, cupsLib.cupsEncryption() );
+	err = translate_errno( http != NULL, errno, kUnknownErr );
+	require_noerr( err, exit );
+
+	if ( ( service->portNumber == 443 ) || ( cupsLib.cupsEncryption() >= HTTP_ENCRYPT_REQUIRED ) )
+	{
+		// This forces the use the https: URLs below...
+		cupsLib.cupsSetEncryption( HTTP_ENCRYPT_ALWAYS );
+	}
+
+	// Strip the leading "printers/" or "classes/" from the beginning
+	// of the name
+
+	dest = q->name;
+	dest.Replace( TEXT( "printers/" ), TEXT( "" ) );
+	dest.Replace( TEXT( "classes/" ), TEXT( "" ) );
+
+	err = StringObjectToUTF8String( dest, destANSI, sizeof( destANSI ) );
+	require_noerr( err, exit );
+
+	// Get the PPD file...
+	for ( i = 0; i < 10; i++ )
+	{
+		char ppdfileANSI[ 1024 ];
+
+		if ( cupsLib.cupsAdminCreateWindowsPPD( http, destANSI, ppdfileANSI, sizeof( ppdfileANSI ) ) )
+		{
+			err = UTF8StringToStringObject( ppdfileANSI, ppdfile );
+			require_noerr( err, exit );
+			break;
+		}
+	}
+
+	err = translate_errno( i < 10, errno, kUnknownErr );
+	require_noerr( err, exit );
+
+	// Copy the PPD file to the Windows driver directory...
+	filename.Format( TEXT( "%s/%s.ppd" ), driverdir, dest );
+
+	ok = in.Open( ppdfile, CFile::modeRead | CFile::typeBinary );
+	translate_errno( ok, GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+
+	ok = out.Open( filename, CFile::modeCreate | CFile::modeWrite | CFile::typeBinary );
+	translate_errno( ok, GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+
+	while ( ( bytes = in.Read( buffer, sizeof(buffer) ) ) > 0 )
+	{
+		out.Write(buffer, bytes );
+	}
+
+	in.Close();
+	out.Close();
+
+	// Cleanup temp file...
+	CFile::Remove( ppdfile );
+
+	// Copy the driver files to the driver directory...
+	for ( i = 0; i < ( sizeof( g_printerDriverFiles ) / sizeof( g_printerDriverFiles[0] ) ); i++ )
+	{
+		filename.Format( TEXT( "%s/drivers/%s/%s" ), datadir, platform, g_printerDriverFiles[i]);
+	
+		ok = in.Open(filename, CFile::modeRead | CFile::typeBinary );
+		err = translate_errno( ok, GetLastError(), kUnknownErr );
+		require_noerr( err, exit );
+
+		filename.Format( TEXT( "%s/%s" ), driverdir, g_printerDriverFiles[i] );
+		ok = out.Open(filename, CFile::modeCreate | CFile::modeWrite | CFile::typeBinary );
+		err = translate_errno( ok, errno, kUnknownErr );
+
+		while ( ( bytes = in.Read(buffer, sizeof( buffer ) ) ) > 0 )
+		{
+			out.Write( buffer, bytes );
+		}
+
+		in.Close();
+		out.Close();
+	}
+
+	// Do the Windows system calls needed to add the printer driver...
+	filename.Format( TEXT( "%s.ppd" ), dest);
+	dependentFiles.Format( TEXT( "pscript5.dll%c" ) TEXT( "%s.ppd%c" ) TEXT( "ps5ui.dll%c" ) TEXT( "pscript.hlp%c" ) TEXT( "pscript.ntf%c" ) TEXT( "cups6.ini%c" ) TEXT( "cupsps6.dll%c" ) TEXT( "cupsui6.dll%c" ), 0, dest, 0, 0, 0, 0, 0, 0, 0);
+
+	driverinfo.cVersion         = 3;
+	driverinfo.pName            = printer->actualName.GetBuffer();
+	driverinfo.pEnvironment     = env;
+	driverinfo.pDriverPath      = TEXT( "pscript5.dll" );
+	driverinfo.pDataFile        = filename.GetBuffer();
+	driverinfo.pConfigFile      = TEXT( "ps5ui.dll" );
+	driverinfo.pHelpFile        = TEXT( "pscript.hlp" );
+	driverinfo.pDependentFiles  = dependentFiles.GetBuffer();
+	driverinfo.pMonitorName     = NULL;
+	driverinfo.pDefaultDataType = TEXT( "raw" );
+
+	ok = AddPrinterDriverEx(NULL, 3, (LPBYTE) &driverinfo, APD_COPY_ALL_FILES );
+	err = translate_errno( ok, GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+
+	// See if the printer has already been added?
+	if ( OpenPrinter( printer->actualName.GetBuffer(), &printerHandle, NULL ) )
+    {
+		// Printer already exists, so we are done now...
+		goto exit;
+    }
+
+    // Add the printer using the HTTP/IPP port...
+	portName.Format( TEXT( "%s://%s:%d/printers/%s" ), cupsLib.cupsEncryption() == HTTP_ENCRYPT_ALWAYS ? TEXT( "https" ) : TEXT( "http" ), service->hostname.GetBuffer(), service->portNumber, dest );
+
+    memset(&printerinfo, 0, sizeof(printerinfo));
+    printerinfo.pPrinterName	= printer->actualName.GetBuffer();
+    printerinfo.pPortName		= portName.GetBuffer();
+    printerinfo.pDriverName		= printer->actualName.GetBuffer();
+    printerinfo.Attributes		= PRINTER_ATTRIBUTE_NETWORK | PRINTER_ATTRIBUTE_LOCAL;
+	printerinfo.pComment		= q->description.GetBuffer();
+	printerinfo.pLocation		= q->location.GetBuffer();
+	printerinfo.pPrintProcessor = TEXT( "winprint" );
+
+    printerHandle = AddPrinter( NULL, 2, (LPBYTE) &printerinfo );
+	err = translate_errno( printerHandle, GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+
+exit:
+
+	if ( printerHandle != NULL )
+	{
+		ClosePrinter( printerHandle );
+		printerHandle = NULL;
+	}
+
+	return err;
+}
+
 BEGIN_MESSAGE_MAP(CPrinterSetupWizardSheet, CPropertySheet)
 ON_MESSAGE( WM_SOCKET_EVENT, OnSocketEvent )
 ON_MESSAGE( WM_PROCESS_EVENT, OnProcessEvent )
@@ -541,6 +811,8 @@ CPrinterSetupWizardSheet::OnOK()
 
 	SetWizardButtons( PSWIZB_DISABLEDFINISH );
 
+	ShowWindow( SW_HIDE );
+	
 	if ( InstallPrinter( m_selectedPrinter ) != kNoErr )
 	{
 		CString caption;
@@ -1544,7 +1816,7 @@ CPrinterSetupWizardSheet::ParseTextRecord( Service * service, Queue * q, uint16_
 
 	if ( TXTRecordContainsKey( inTXTSize, inTXT, "printer-state" ) || TXTRecordContainsKey( inTXTSize, inTXT, "printer-type" ) )
 	{
-		service->printer->isSharedFromOSX = true;
+		service->printer->isCUPSPrinter = true;
 	}
 
 exit:

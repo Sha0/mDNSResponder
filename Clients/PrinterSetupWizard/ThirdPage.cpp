@@ -969,7 +969,7 @@ OSStatus CThirdPage::MatchPrinter(Manufacturers & manufacturers, Printer * print
 				useCUPSWorkaround = false;
 			}
 
-			if ( useCUPSWorkaround && printer->isSharedFromOSX && hasGenericDriver )
+			if ( useCUPSWorkaround && printer->isCUPSPrinter && hasGenericDriver )
 			{
 				//
 				// <rdar://problem/4496652> mDNS: Don't allow user to choose non-working driver
@@ -1000,7 +1000,7 @@ OSStatus CThirdPage::MatchPrinter(Manufacturers & manufacturers, Printer * print
 	}
 	else if ( MatchGeneric( manufacturers, printer, service, &genericManufacturer, &genericModel ) )
 	{
-		if ( printer->isSharedFromOSX )
+		if ( printer->isCUPSPrinter )
 		{
 			//
 			// <rdar://problem/4496652> mDNS: Don't allow user to choose non-working driver

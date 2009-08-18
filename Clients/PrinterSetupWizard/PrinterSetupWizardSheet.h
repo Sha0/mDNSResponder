@@ -118,6 +118,67 @@ protected:
 
 private:
 
+	// This is from <cups/http.h>
+	typedef enum http_encryption_e		/**** HTTP encryption values ****/
+	{
+		HTTP_ENCRYPT_IF_REQUESTED,		/* Encrypt if requested (TLS upgrade) */
+		HTTP_ENCRYPT_NEVER,			/* Never encrypt */
+		HTTP_ENCRYPT_REQUIRED,		/* Encryption is required (TLS upgrade) */
+		HTTP_ENCRYPT_ALWAYS			/* Always encrypt (SSL) */
+	} http_encryption_t;
+
+	typedef void*				( *httpConnectEncryptFunc )( const char* host, int port, http_encryption_t encryption );
+	typedef http_encryption_t	( *cupsEncryptionFunc )( void );
+	typedef void				( *cupsSetEncryptionFunc )( http_encryption_t e );
+	typedef char*				( *cupsAdminCreateWindowsPPDFunc )( void * http, const char *dest, char *buffer, int bufsize );
+
+	class CUPSLibrary
+	{
+	public:
+
+		CUPSLibrary()
+			:
+			httpConnectEncrypt( NULL ),
+			cupsEncryption( NULL ),
+			cupsSetEncryption( NULL ),
+			cupsAdminCreateWindowsPPD( NULL ),
+			library( NULL )
+		{
+			if ( ( library = LoadLibrary( TEXT( "libcups2.dll" ) ) ) != NULL )
+			{
+				httpConnectEncrypt = ( httpConnectEncryptFunc ) GetProcAddress( library, "httpConnectEncrypt" );
+				cupsEncryption = ( cupsEncryptionFunc ) GetProcAddress( library, "cupsEncryption" );
+				cupsSetEncryption = ( cupsSetEncryptionFunc ) GetProcAddress( library, "cupsSetEncryption" );
+				cupsAdminCreateWindowsPPD = ( cupsAdminCreateWindowsPPDFunc ) GetProcAddress( library, "cupsAdminCreateWindowsPPD" );
+			}
+		}
+
+		~CUPSLibrary()
+		{
+			if ( library )
+			{
+				FreeLibrary( library );
+				library = NULL;
+			}
+		}
+
+		BOOL
+		IsInstalled()
+		{
+			return ( ( httpConnectEncrypt != NULL ) && ( cupsEncryption != NULL ) && ( cupsSetEncryption != NULL ) && ( cupsAdminCreateWindowsPPD != NULL ) );
+		}
+
+		httpConnectEncryptFunc			httpConnectEncrypt;
+		cupsEncryptionFunc				cupsEncryption;
+		cupsSetEncryptionFunc			cupsSetEncryption;
+		cupsAdminCreateWindowsPPDFunc	cupsAdminCreateWindowsPPD;
+
+	private:
+
+		HMODULE							library;
+	};
+
+
 	static void DNSSD_API
 	OnBrowse(
 		DNSServiceRef 			inRef,
@@ -226,6 +287,12 @@ private:
 
 	OSStatus
 	InstallPrinterIPP(Printer * printer, Service * service, Logger & log);
+	
+	OSStatus
+	InstallPrinterCUPS( Printer * printer, Service * service, CUPSLibrary & cupsLib );
+
+	OSStatus
+	InstallPrinterCUPS(Printer * printer, Service * service, CUPSLibrary & cupsLib, TCHAR * env );
 
 	static unsigned WINAPI
 	InstallDriverThread( LPVOID inParam );
