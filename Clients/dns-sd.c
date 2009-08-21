@@ -144,6 +144,14 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT ws2_32.lib ..\mDNSWindows\DLL\Rele
 		return name;
 		}
 
+	static size_t _sa_len(const struct sockaddr *addr)
+		{
+		if (addr->sa_family == AF_INET) return (sizeof(struct sockaddr_in));
+		else if (addr->sa_family == AF_INET6) return (sizeof(struct sockaddr_in6));
+		else return (sizeof(struct sockaddr));
+		}
+#   define SA_LEN(addr) (_sa_len(addr))
+
 #else
 	#include <unistd.h>			// For getopt() and optind
 	#include <netdb.h>			// For getaddrinfo()
@@ -153,6 +161,7 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT ws2_32.lib ..\mDNSWindows\DLL\Rele
 	#include <arpa/inet.h>		// For inet_addr()
 	#include <net/if.h>			// For if_nametoindex()
 	static const char kFilePathSep = '/';
+	#define SA_LEN(addr) ((addr)->sa_len)
 #endif
 
 #if (TEST_NEW_CLIENTSTUB && !defined(__APPLE_API_PRIVATE))
@@ -853,7 +862,7 @@ static void getip(const char *const name, struct sockaddr_storage *result)
 	struct addrinfo *addrs = NULL;
 	int err = getaddrinfo(name, NULL, NULL, &addrs);
 	if (err) fprintf(stderr, "getaddrinfo error %d for %s", err, name);
-	else memcpy(result, addrs->ai_addr, addrs->ai_addr->sa_len);
+	else memcpy(result, addrs->ai_addr, SA_LEN(addrs->ai_addr));
 	if (addrs) freeaddrinfo(addrs);
 	}
 
