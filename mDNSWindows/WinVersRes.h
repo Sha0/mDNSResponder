@@ -24,10 +24,10 @@
 #define MASTER_COMPANY_NAME   "Apple Inc."
 
 // Define the product version for mDNSResponder on Windows
-#define MASTER_PROD_VERS		2,0,0,8
-#define MASTER_PROD_VERS_STR	"2,0,0,8"
-#define MASTER_PROD_VERS_STR2	"2.0.0.8"
-#define MASTER_PROD_VERS_STR3 "Explorer Plugin 2.0.0.8"
+#define MASTER_PROD_VERS		2,0,0,9
+#define MASTER_PROD_VERS_STR	"2,0,0,9"
+#define MASTER_PROD_VERS_STR2	"2.0.0.9"
+#define MASTER_PROD_VERS_STR3 "Explorer Plugin 2.0.0.9"
 
 // Define the legal copyright
 #define MASTER_LEGAL_COPYRIGHT "Copyright (C) 2003-2009 Apple Inc."
