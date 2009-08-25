@@ -524,10 +524,6 @@
 				>
 			</File>
 			<File
-				RelativePath="res\Print.ico"
-				>
-			</File>
-			<File
 				RelativePath="res\PrinterSetupWizard.manifest"
 				>
 				<FileConfiguration
