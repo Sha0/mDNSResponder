@@ -124,7 +124,7 @@ $(BUILDDIR)\dns_sd.jar: $(JARCONTENTS)
 
 $(BUILDDIR)\jdns_sd.dll: $(JAVASRC)\JNISupport.c $(OBJDIR)\DNSSD.java.h $(OBJDIR)\jdns_sd.RES
 	$(CC) -Fe$@ $(JAVASRC)\JNISupport.c $(CFLAGS) -I$(OBJDIR) \
-	$(LIBDIR)\DNSSD.lib $(JDK)\lib\jvm.lib ws2_32.lib iphlpapi.lib $(OBJDIR)\jdns_sd.RES
+	$(LIBDIR)\DNSSD.lib $(JDK)\lib\jvm.lib ws2_32.lib iphlpapi.lib $(OBJDIR)\jdns_sd.RES /link /NXCOMPAT /DYNAMICBASE /SAFESEH
 
 .SUFFIXES : .java
 {$(JAVASRC)}.java{$(OBJDIR)\com\apple\dnssd}.class:	
