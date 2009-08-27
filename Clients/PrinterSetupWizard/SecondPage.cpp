@@ -131,6 +131,7 @@ CSecondPage::OnSetActive()
 {
 	CPrinterSetupWizardSheet	*	psheet;
 	Printer						*	printer;
+	CWnd						*	pWnd;
 	Printers::iterator				it;
 	OSStatus						err = kNoErr;
 	BOOL							b;
@@ -172,6 +173,13 @@ CSecondPage::OnSetActive()
 		::SetFocus( m_browseList );
 	}
 
+	// Hide the back button
+	pWnd = ((CPropertySheet*)GetParent())->GetDlgItem(ID_WIZBACK);
+	if ( pWnd != NULL )
+	{
+		pWnd->ShowWindow(SW_HIDE);
+	}
+
 exit:
 
 	return b;
@@ -181,12 +189,20 @@ exit:
 BOOL
 CSecondPage::OnKillActive()
 {
-	CPrinterSetupWizardSheet * psheet;
+	CPrinterSetupWizardSheet	* psheet;
+	CWnd						* pWnd;
 
 	psheet = reinterpret_cast<CPrinterSetupWizardSheet*>(GetParent());
 	require_quiet( psheet, exit );   
    
 	psheet->SetLastPage(this);
+
+	// Show the back button
+	pWnd = ((CPropertySheet*)GetParent())->GetDlgItem(ID_WIZBACK);
+	if ( pWnd != NULL )
+	{
+		pWnd->ShowWindow(SW_SHOW);
+	}
 
 exit:
 

@@ -18,7 +18,6 @@
 #pragma once
 
 
-#include "firstpage.h"
 #include "secondpage.h"
 #include "thirdpage.h"
 #include "fourthpage.h"
@@ -105,7 +104,6 @@ public:
 
 protected:
 	DECLARE_MESSAGE_MAP()
-	CFirstPage		m_pgFirst;
 	CSecondPage		m_pgSecond;
 	CThirdPage		m_pgThird;
 	CFourthPage		m_pgFourth;
