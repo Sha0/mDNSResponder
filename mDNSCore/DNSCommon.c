@@ -238,7 +238,7 @@ mDNSexport char *GetRRDisplayString_rdb(const ResourceRecord *const rr, const RD
 							break;
 
 		case kDNSType_NSEC: {
-							int i;
+							mDNSu16 i;
 							for (i=0; i<255; i++)
 								if (rd->nsec.bitmap[i>>3] & (128 >> (i&7)))
 									length += mDNS_snprintf(buffer+length, RemSpc, "%s ", DNSTypeName(i));
@@ -1273,7 +1273,7 @@ mDNSexport mDNSu16 GetRDLength(const ResourceRecord *const rr, mDNSBool estimate
 							// the block number is always 0,
 							// the count byte is a value in the range 1-32,
 							// followed by the 1-32 data bytes
-							return((estimate ? 1 : DomainNameLength(rr->name)) + 2 + i);
+							return(mDNSu16)((estimate ? 1 : DomainNameLength(rr->name)) + 2 + i);
 							}
 
 		default:			debugf("Warning! Don't know how to get length of resource type %d", rr->rrtype);
@@ -1558,7 +1558,7 @@ mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNS
 								{
 								const int space = DNSOpt_Data_Space(opt);
 								ptr = putVal16(ptr, opt->opt);
-								ptr = putVal16(ptr, space - 4);
+								ptr = putVal16(ptr, (mDNSu16)space - 4);
 								switch (opt->opt)
 									{
 									case kDNSOpt_LLQ:
@@ -1605,7 +1605,7 @@ mDNSexport mDNSu8 *putRData(const DNSMessage *const msg, mDNSu8 *ptr, const mDNS
 							if (!ptr) return(mDNSNULL);
 							if (ptr + 2 + i > limit) return(mDNSNULL);
 							*ptr++ = 0;
-							*ptr++ = i;
+							*ptr++ = (mDNSu8)i;
 							for (j=0; j<i; j++) *ptr++ = rdb->nsec.bitmap[j];
 							return ptr;
 							}
@@ -2133,7 +2133,7 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 									}
 								opt++;  // increment pointer into rdatabody
 								}
-							rr->resrec.rdlength = (mDNSu8*)opt - rr->resrec.rdata->u.data;
+							rr->resrec.rdlength = (mDNSu16)((mDNSu8*)opt - rr->resrec.rdata->u.data);
 							if (ptr != end) { LogMsg("GetLargeResourceRecord: Malformed OptRdata"); return(mDNSNULL); }
 							break;
 							}

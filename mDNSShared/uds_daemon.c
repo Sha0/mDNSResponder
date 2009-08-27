@@ -324,11 +324,11 @@ mDNSlocal reply_state *create_reply(const reply_op_t op, const size_t datalen, r
 	if (!reply) FatalError("ERROR: malloc");
 	
 	reply->next     = mDNSNULL;
-	reply->totallen = datalen + sizeof(ipc_msg_hdr);
+	reply->totallen = (mDNSu32)datalen + sizeof(ipc_msg_hdr);
 	reply->nwriten  = 0;
 
 	reply->mhdr->version        = VERSION;
-	reply->mhdr->datalen        = datalen;
+	reply->mhdr->datalen        = (mDNSu32)datalen;
 	reply->mhdr->ipc_flags      = 0;
 	reply->mhdr->op             = op;
 	reply->mhdr->client_context = request->hdr.client_context;
@@ -2376,7 +2376,7 @@ typedef packedstruct
 
 mDNSlocal void handle_getproperty_request(request_state *request)
 	{
-	const mStatus BadParamErr = dnssd_htonl(mStatus_BadParamErr);
+	const mStatus BadParamErr = dnssd_htonl((mDNSu32)mStatus_BadParamErr);
 	char prop[256];
 	if (get_string(&request->msgptr, request->msgend, prop, sizeof(prop)) >= 0)
 		{
@@ -2461,7 +2461,7 @@ mDNSlocal mStatus handle_port_mapping_request(request_state *request)
 	DNSServiceFlags flags          = get_flags(&request->msgptr, request->msgend);
 	mDNSu32         interfaceIndex = get_uint32(&request->msgptr, request->msgend);
 	mDNSInterfaceID InterfaceID    = mDNSPlatformInterfaceIDfromInterfaceIndex(&mDNSStorage, interfaceIndex);
-	mDNSu8          protocol       = get_uint32(&request->msgptr, request->msgend);
+	mDNSu8          protocol       = (mDNSu8)get_uint32(&request->msgptr, request->msgend);
 	(void)flags; // Unused
 	if (interfaceIndex && !InterfaceID) return(mStatus_BadParamErr);
 	if (request->msgptr + 8 > request->msgend) request->msgptr = NULL;
@@ -2768,7 +2768,7 @@ mDNSlocal void read_msg(request_state *req)
 			dnssd_sockaddr_t cliaddr;
 #if defined(USE_TCP_LOOPBACK)
 			mDNSOpaque16 port;
-			int opt = 1;
+			u_long opt = 1;
 			port.b[0] = req->msgptr[0];
 			port.b[1] = req->msgptr[1];
 			req->msgptr += 2;
@@ -2810,7 +2810,9 @@ mDNSlocal void read_msg(request_state *req)
 				return;
 				}
 	
+#if !defined(USE_TCP_LOOPBACK)
 got_errfd:
+#endif
 			LogOperation("%3d: Error socket %d created %08X %08X", req->sd, req->errsd, req->hdr.client_context.u32[1], req->hdr.client_context.u32[0]);
 #if defined(_WIN32)
 			if (ioctlsocket(req->errsd, FIONBIO, &opt) != 0)
@@ -2846,9 +2848,6 @@ mDNSlocal void request_callback(int fd, short filter, void *info)
 	{
 	mStatus err = 0;
 	request_state *req = info;
-#if defined(_WIN32)
-	u_long opt = 1;
-#endif
 	mDNSs32 min_size = sizeof(DNSServiceFlags);
 	(void)fd; // Unused
 	(void)filter; // Unused
@@ -2979,7 +2978,7 @@ mDNSlocal void connect_callback(int fd, short filter, void *info)
 	dnssd_socklen_t len = (dnssd_socklen_t) sizeof(cliaddr);
 	dnssd_sock_t sd = accept(fd, (struct sockaddr*) &cliaddr, &len);
 #if defined(SO_NOSIGPIPE) || defined(_WIN32)
-	const unsigned long optval = 1;
+	unsigned long optval = 1;
 #endif
 
 	(void)filter; // Unused
@@ -3069,9 +3068,6 @@ mDNSexport int udsserver_init(dnssd_sock_t skts[], mDNSu32 count)
 	dnssd_sockaddr_t laddr;
 	int ret;
 	mDNSu32 i = 0;
-#if defined(_WIN32)
-	u_long opt = 1;
-#endif
 
 	LogInfo("udsserver_init");
 

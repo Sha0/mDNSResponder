@@ -62,6 +62,7 @@
 		int len;
 		char * buffer;
 		DWORD err = WSAGetLastError();
+		(void) priority;
 		va_start( args, message );
 		len = _vscprintf( message, args ) + 1;
 		buffer = malloc( len * sizeof(char) );
@@ -138,14 +139,14 @@ struct _DNSRecordRef_t
 	};
 
 // Write len bytes. Return 0 on success, -1 on error
-static int write_all(dnssd_sock_t sd, char *buf, int len)
+static int write_all(dnssd_sock_t sd, char *buf, size_t len)
 	{
 	// Don't use "MSG_WAITALL"; it returns "Invalid argument" on some Linux versions; use an explicit while() loop instead.
 	//if (send(sd, buf, len, MSG_WAITALL) != len) return -1;
 	while (len)
 		{
-		ssize_t num_written = send(sd, buf, len, 0);
-		if (num_written < 0 || num_written > len)
+		ssize_t num_written = send(sd, buf, (long)len, 0);
+		if (num_written < 0 || (size_t)num_written > len)
 			{
 			// Should never happen. If it does, it indicates some OS bug,
 			// or that the mDNSResponder daemon crashed (which should never happen).
@@ -193,7 +194,7 @@ static int more_bytes(dnssd_sock_t sd)
 	fd_set readfds;
 	FD_ZERO(&readfds);
 	FD_SET(sd, &readfds);
-	return(select(sd+1, &readfds, (fd_set*)NULL, (fd_set*)NULL, &tv) > 0);
+	return(select((int)sd+1, &readfds, (fd_set*)NULL, (fd_set*)NULL, &tv) > 0);
 	}
 
 /* create_hdr
@@ -834,18 +835,19 @@ static void handle_resolve_response(DNSServiceOp *const sdr, const CallbackHeade
 
 	get_string(&data, end, fullname, kDNSServiceMaxDomainName);
 	get_string(&data, end, target,   kDNSServiceMaxDomainName);
-	if (!data || data + 2 > end) data = NULL;
-	else
-		{
-		port.b[0] = *data++;
-		port.b[1] = *data++;
-		}
+	if (!data || data + 2 > end) goto fail;
+
+	port.b[0] = *data++;
+	port.b[1] = *data++;
 	txtlen = get_uint16(&data, end);
 	txtrecord = (unsigned char *)get_rdata(&data, end, txtlen);
 
-	if (!data) syslog(LOG_WARNING, "dnssd_clientstub handle_resolve_response: error reading result from daemon");
-	else ((DNSServiceResolveReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, fullname, target, port.s, txtlen, txtrecord, sdr->AppContext);
+	if (!data) goto fail;
+	((DNSServiceResolveReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, fullname, target, port.s, txtlen, txtrecord, sdr->AppContext);
+	return;
 	// MUST NOT touch sdr after invoking AppCallback -- client is allowed to dispose it from within callback function
+fail:
+	syslog(LOG_WARNING, "dnssd_clientstub handle_resolve_response: error reading result from daemon");
 	}
 
 DNSServiceErrorType DNSSD_API DNSServiceResolve
@@ -1517,29 +1519,31 @@ DNSServiceErrorType DNSSD_API DNSServiceReconfirmRecord
 static void handle_port_mapping_response(DNSServiceOp *const sdr, const CallbackHeader *const cbh, const char *data, const char *const end)
 	{
 	union { uint32_t l; u_char b[4]; } addr;
-	uint8_t protocol = 0;
+	uint8_t protocol;
 	union { uint16_t s; u_char b[2]; } internalPort;
 	union { uint16_t s; u_char b[2]; } externalPort;
-	uint32_t ttl = 0;
+	uint32_t ttl;
 
-	if (!data || data + 13 > end) data = NULL;
-	else
-		{
-		addr        .b[0] = *data++;
-		addr        .b[1] = *data++;
-		addr        .b[2] = *data++;
-		addr        .b[3] = *data++;
-		protocol          = *data++;
-		internalPort.b[0] = *data++;
-		internalPort.b[1] = *data++;
-		externalPort.b[0] = *data++;
-		externalPort.b[1] = *data++;
-		ttl               = get_uint32(&data, end);
-		}
+	if (!data || data + 13 > end) goto fail;
 
-	if (!data) syslog(LOG_WARNING, "dnssd_clientstub handle_port_mapping_response: error reading result from daemon");
-	else ((DNSServiceNATPortMappingReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, addr.l, protocol, internalPort.s, externalPort.s, ttl, sdr->AppContext);
+	addr        .b[0] = *data++;
+	addr        .b[1] = *data++;
+	addr        .b[2] = *data++;
+	addr        .b[3] = *data++;
+	protocol          = *data++;
+	internalPort.b[0] = *data++;
+	internalPort.b[1] = *data++;
+	externalPort.b[0] = *data++;
+	externalPort.b[1] = *data++;
+	ttl               = get_uint32(&data, end);
+	if (!data) goto fail;
+
+	((DNSServiceNATPortMappingReply)sdr->AppCallback)(sdr, cbh->cb_flags, cbh->cb_interface, cbh->cb_err, addr.l, protocol, internalPort.s, externalPort.s, ttl, sdr->AppContext);
+	return;
 	// MUST NOT touch sdr after invoking AppCallback -- client is allowed to dispose it from within callback function
+
+fail:
+	syslog(LOG_WARNING, "dnssd_clientstub handle_port_mapping_response: error reading result from daemon");
 	}
 
 DNSServiceErrorType DNSSD_API DNSServiceNATPortMappingCreate

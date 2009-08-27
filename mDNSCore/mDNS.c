@@ -1086,7 +1086,7 @@ mDNSlocal mStatus GetLabelDecimalValue(const mDNSu8 *const src, mDNSu8 *dst)
 		val = val * 10 + src[i] - '0';
 		}
 	if (val > 255) return(mStatus_Invalid);
-	*dst = val;
+	*dst = (mDNSu8)val;
 	return(mStatus_NoError);
 	}
 
@@ -1126,7 +1126,7 @@ mDNSlocal mStatus GetIPv6FromName(mDNSAddr *const a, const domainname *const nam
 		n = (const domainname *)(n->c + 2);
 
 		if (l<0 || h<0) return mStatus_Invalid;
-		a->ip.v6.b[15-i] = (h << 4) | l;
+		a->ip.v6.b[15-i] = (mDNSu8)((h << 4) | l);
 		}
 
 	a->type = mDNSAddrType_IPv6;
@@ -1424,7 +1424,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 					}
 				else
 					{
-					mDNSu8 active = (m->SleepState != SleepState_Sleeping || intf->SPSAddr[0].type || intf->SPSAddr[1].type || intf->SPSAddr[2].type);
+					mDNSu8 active = (mDNSu8)(m->SleepState != SleepState_Sleeping || intf->SPSAddr[0].type || intf->SPSAddr[1].type || intf->SPSAddr[2].type);
 					if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
 						rr->resrec.rrclass |= kDNSClass_UniqueRRSet;		// Temporarily set the cache flush bit so PutResourceRecord will set it
 					newptr = PutRR_OS_TTL(responseptr, &m->omsg.h.numAnswers, &rr->resrec, active ? rr->resrec.rroriginalttl : 0);
@@ -3439,7 +3439,7 @@ mDNSlocal void RetrySPSRegistrations(mDNS *const m)
 mDNSlocal void NetWakeResolve(mDNS *const m, DNSQuestion *question, const ResourceRecord *const answer, QC_result AddRecord)
 	{
 	NetworkInterfaceInfo *intf = (NetworkInterfaceInfo *)question->QuestionContext;
-	int sps = question - intf->NetWakeResolve;
+	int sps = (int)(question - intf->NetWakeResolve);
 	(void)m;			// Unused
 	LogSPS("NetWakeResolve: SPS: %d Add: %d %s", sps, AddRecord, RRDisplayString(m, answer));
 
@@ -5416,7 +5416,7 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 	int i;
 	AuthRecord opt;
 	mDNSu8 *p = m->omsg.data;
-	OwnerOptData owner;
+	OwnerOptData owner = { 0 };
 	mDNSu32 updatelease = 0;
 	const mDNSu8 *ptr;
 
@@ -6892,8 +6892,8 @@ mDNSexport mStatus mDNS_RegisterInterface(mDNS *const m, NetworkInterfaceInfo *s
 	
 	// Assume this interface will be active now, unless we find a duplicate already in the list
 	set->InterfaceActive = mDNStrue;
-	set->IPv4Available   = (set->ip.type == mDNSAddrType_IPv4 && set->McastTxRx);
-	set->IPv6Available   = (set->ip.type == mDNSAddrType_IPv6 && set->McastTxRx);
+	set->IPv4Available   = (mDNSu8)(set->ip.type == mDNSAddrType_IPv4 && set->McastTxRx);
+	set->IPv6Available   = (mDNSu8)(set->ip.type == mDNSAddrType_IPv6 && set->McastTxRx);
 	
 	InitializeNetWakeState(m, set);
 
@@ -7613,16 +7613,19 @@ mDNSexport mStatus mDNS_AdvertiseDomains(mDNS *const m, AuthRecord *rr,
 mDNSexport mDNSOpaque16 mDNS_NewMessageID(mDNS * const m)
 	{
 	mDNSOpaque16 id;
-	int i;
-	for (i=0; i<10; i++)
+	int i = 0;
+	do
 		{
+		// This loop is written this slightly odd way to avoid bogus "unreachable code" warnings on Windows
 		AuthRecord *r;
 		DNSQuestion *q;
-		id = mDNSOpaque16fromIntVal(1 + mDNSRandom(0xFFFE));
-		for (r = m->ResourceRecords; r; r=r->next) if (mDNSSameOpaque16(id, r->updateid )) continue;
-		for (q = m->Questions;       q; q=q->next) if (mDNSSameOpaque16(id, q->TargetQID)) continue;
+		id = mDNSOpaque16fromIntVal(1 + (mDNSu16)mDNSRandom(0xFFFE));
+		for (r = m->ResourceRecords; r; r=r->next) if (mDNSSameOpaque16(id, r->updateid )) goto retry;
+		for (q = m->Questions;       q; q=q->next) if (mDNSSameOpaque16(id, q->TargetQID)) goto retry;
 		break;
-		}
+retry:
+		i++;
+		} while (i < 10);
 	debugf("mDNS_NewMessageID: %5d", mDNSVal16(id));
 	return id;
 	}
@@ -7851,7 +7854,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 
 mDNSlocal void ConstructSleepProxyServerName(mDNS *const m, domainlabel *name)
 	{
-	name->c[0] = mDNS_snprintf((char*)name->c+1, 62, "%d-%d-%d-%d %#s",
+	name->c[0] = (mDNSu8)mDNS_snprintf((char*)name->c+1, 62, "%d-%d-%d-%d %#s",
 		m->SPSType, m->SPSPortability, m->SPSMarginalPower, m->SPSTotalPower, &m->nicelabel);
 	}
 
@@ -7865,7 +7868,7 @@ mDNSlocal void SleepProxyServerCallback(mDNS *const m, ServiceRecordSet *const s
 			m->SPSState = 3;
 		else
 			{
-			m->SPSState = (m->SPSSocket != mDNSNULL);
+			m->SPSState = (mDNSu8)(m->SPSSocket != mDNSNULL);
 			if (m->SPSState)
 				{
 				domainlabel name;

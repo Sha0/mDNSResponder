@@ -34,9 +34,9 @@ inet_pton( int family, const char * addr, void * dst )
 	int sslen = sizeof( ss );
 
 	ZeroMemory( &ss, sizeof( ss ) );
-	ss.ss_family = family;
+	ss.ss_family = (ADDRESS_FAMILY)family;
 
-	if ( WSAStringToAddressA( addr, family, NULL, ( struct sockaddr* ) &ss, &sslen ) == 0 )
+	if ( WSAStringToAddressA( (LPSTR)addr, family, NULL, ( struct sockaddr* ) &ss, &sslen ) == 0 )
 		{
 		if ( family == AF_INET ) { memcpy( dst, &( ( struct sockaddr_in* ) &ss)->sin_addr, sizeof( IN_ADDR ) ); return 1; }
 		else if ( family == AF_INET6 ) { memcpy( dst, &( ( struct sockaddr_in6* ) &ss)->sin6_addr, sizeof( IN6_ADDR ) ); return 1; }
@@ -75,13 +75,13 @@ typedef struct Property_struct
 // In the event of a port conflict, handleLNTPortMappingResponse then increments tcpInfo->retries and calls back to SendPortMapRequest to try again
 mDNSlocal mStatus SendPortMapRequest(mDNS *m, NATTraversalInfo *n);
 
-#define RequestedPortNum(n) (mDNSVal16(mDNSIPPortIsZero((n)->RequestedPort) ? (n)->IntPort : (n)->RequestedPort) + (n)->tcpInfo.retries)
+#define RequestedPortNum(n) (mDNSVal16(mDNSIPPortIsZero((n)->RequestedPort) ? (n)->IntPort : (n)->RequestedPort) + (mDNSu16)(n)->tcpInfo.retries)
 
 // Note that this function assumes src is already NULL terminated
 mDNSlocal void AllocAndCopy(mDNSu8** dst, mDNSu8* src)
 	{
 	if (src == mDNSNULL) return;
-	if ((*dst = (mDNSu8 *) mDNSPlatformMemAllocate(strlen((char*)src) + 1)) == mDNSNULL) { LogMsg("AllocAndCopy: can't allocate string"); return; }
+	if ((*dst = (mDNSu8 *) mDNSPlatformMemAllocate((mDNSu32)strlen((char*)src) + 1)) == mDNSNULL) { LogMsg("AllocAndCopy: can't allocate string"); return; }
 	strcpy((char *)*dst, (char*)src);
 	}
 
@@ -116,10 +116,8 @@ mDNSlocal mStatus ParseHttpUrl(char* ptr, char* end, mDNSu8** addressAndPort, mD
 			{
 			if (*addrPtr == ':')
 				{
-				int tmpport;
 				addrPtr++; // skip over ':'
-				tmpport = (int)strtol(addrPtr, mDNSNULL, 10);
-				*port = mDNSOpaque16fromIntVal(tmpport); // store it properly converted
+				*port = mDNSOpaque16fromIntVal((mDNSu16)strtol(addrPtr, mDNSNULL, 10)); // store it properly converted
 				break;
 				}
 			}
@@ -129,7 +127,7 @@ mDNSlocal mStatus ParseHttpUrl(char* ptr, char* end, mDNSu8** addressAndPort, mD
 	// everything that remains is the path
 	if (path && ptr < end)
 		{
-		if ((*path = (mDNSu8 *)mDNSPlatformMemAllocate(end - ptr + 1)) == mDNSNULL) { LogMsg("ParseHttpUrl: can't mDNSPlatformMemAllocate path"); return mStatus_NoMemoryErr; }
+		if ((*path = (mDNSu8 *)mDNSPlatformMemAllocate((mDNSu32)(end - ptr) + 1)) == mDNSNULL) { LogMsg("ParseHttpUrl: can't mDNSPlatformMemAllocate path"); return mStatus_NoMemoryErr; }
 		strncpy((char *)*path, ptr, end - ptr);
 		(*path)[end - ptr] = '\0';
 		}
@@ -302,7 +300,8 @@ mDNSlocal void handleLNTGetExternalAddressResponse(tcpLNTInfo *tcpInfo)
 	mDNSu8     *ptr = (mDNSu8*)tcpInfo->Reply;
 	mDNSu8     *end = (mDNSu8*)tcpInfo->Reply + tcpInfo->nread;
 	mDNSu8     *addrend;
-	static char tagname[20] = "NewExternalIPAddress";		// Array NOT including a terminating nul
+	static char tagname[20] = { 'N','e','w','E','x','t','e','r','n','a','l','I','P','A','d','d','r','e','s','s' };
+	// Array NOT including a terminating nul
 
 //	LogInfo("handleLNTGetExternalAddressResponse: %s", ptr);
 

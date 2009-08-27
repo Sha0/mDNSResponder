@@ -47,6 +47,8 @@
 #	define dnssd_strerror(X)	win32_strerror(X)
 #	define ssize_t				int
 #	define getpid				_getpid
+#	define unlink				_unlink
+extern char *win32_strerror(int inErrorCode);
 #else
 #	include <sys/types.h>
 #	include <unistd.h>

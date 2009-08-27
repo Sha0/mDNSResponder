@@ -1940,10 +1940,10 @@ DNSServiceErrorType DNSSD_API DNSServiceNATPortMappingCreate
 
 DNSServiceErrorType DNSSD_API DNSServiceConstructFullName
     (
-    char                            *fullName,
-    const char                      *service,      /* may be NULL */
-    const char                      *regtype,
-    const char                      *domain
+    char                            * const fullName,
+    const char                      * const service,      /* may be NULL */
+    const char                      * const regtype,
+    const char                      * const domain
     );
 
 

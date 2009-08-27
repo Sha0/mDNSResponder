@@ -115,7 +115,7 @@ extern const domainname *SkipLeadingLabels(const domainname *d, int skip);
 extern mDNSu32 TruncateUTF8ToLength(mDNSu8 *string, mDNSu32 length, mDNSu32 max);
 extern mDNSBool LabelContainsSuffix(const domainlabel *const name, const mDNSBool RichText);
 extern mDNSu32 RemoveLabelSuffix(domainlabel *name, mDNSBool RichText);
-extern void AppendLabelSuffix(domainlabel *name, mDNSu32 val, mDNSBool RichText);
+extern void AppendLabelSuffix(domainlabel *const name, mDNSu32 val, const mDNSBool RichText);
 #define ValidateDomainName(N) (DomainNameLength(N) <= MAX_DOMAIN_NAME)
 
 // ***************************************************************************
@@ -209,7 +209,7 @@ extern mDNSu8 *PutResourceRecordTTLWithLimit(DNSMessage *const msg, mDNSu8 *ptr,
 
 extern mDNSu8 *putQuestion(DNSMessage *const msg, mDNSu8 *ptr, const mDNSu8 *const limit, const domainname *const name, mDNSu16 rrtype, mDNSu16 rrclass);
 extern mDNSu8 *putZone(DNSMessage *const msg, mDNSu8 *ptr, mDNSu8 *limit, const domainname *zone, mDNSOpaque16 zoneClass);
-extern mDNSu8 *putPrereqNameNotInUse(const domainname *const name, DNSMessage *msg, mDNSu8 *ptr, mDNSu8 *end);
+extern mDNSu8 *putPrereqNameNotInUse(const domainname *const name, DNSMessage *const msg, mDNSu8 *const ptr, mDNSu8 *const end);
 extern mDNSu8 *putDeletionRecord(DNSMessage *msg, mDNSu8 *ptr, ResourceRecord *rr);
 extern mDNSu8 *putDeleteRRSet(DNSMessage *msg, mDNSu8 *ptr, const domainname *name, mDNSu16 rrtype);
 extern mDNSu8 *putDeleteAllRRSets(DNSMessage *msg, mDNSu8 *ptr, const domainname *name);
@@ -231,7 +231,7 @@ extern const mDNSu8 *getDomainName(const DNSMessage *const msg, const mDNSu8 *pt
 	domainname *const name);
 extern const mDNSu8 *skipResourceRecord(const DNSMessage *msg, const mDNSu8 *ptr, const mDNSu8 *end);
 extern const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage * const msg, const mDNSu8 *ptr,
-    const mDNSu8 * end, const mDNSInterfaceID InterfaceID, mDNSu8 RecordType, LargeCacheRecord *largecr);
+    const mDNSu8 * end, const mDNSInterfaceID InterfaceID, mDNSu8 RecordType, LargeCacheRecord *const largecr);
 extern const mDNSu8 *skipQuestion(const DNSMessage *msg, const mDNSu8 *ptr, const mDNSu8 *end);
 extern const mDNSu8 *getQuestion(const DNSMessage *msg, const mDNSu8 *ptr, const mDNSu8 *end, const mDNSInterfaceID InterfaceID,
 	DNSQuestion *question);
