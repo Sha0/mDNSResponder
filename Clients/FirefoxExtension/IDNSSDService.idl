@@ -1,0 +1,33 @@
+#include "nsISupports.idl"
+
+interface IDNSSDService;
+
+
+[scriptable, function, uuid(27346495-A1ED-458A-A5BC-587DF9A26B4F)]
+interface IDNSSDBrowseListener : nsISupports
+{
+	void
+	onBrowse( in IDNSSDService service, in boolean add, in long interfaceIndex, in long error, in AString serviceName, in AString regtype, in AString domain );
+};
+
+
+[scriptable, function, uuid(6620E18F-47F3-47C6-941F-126A5FD4FCF7)]
+interface IDNSSDResolveListener : nsISupports
+{
+	void
+	onResolve( in IDNSSDService service, in long interfaceIndex, in long error, in AString fullname, in AString host, in short port, in AString path );
+};
+
+
+[scriptable, uuid(3A3539FF-F8D8-40B4-8D02-5EA73C51FA12)]
+interface IDNSSDService : nsISupports
+{
+	IDNSSDService
+	browse( in long interfaceIndex, in AString regtype, in AString domain, in IDNSSDBrowseListener listener );
+
+	IDNSSDService
+	resolve( in long interfaceIndex, in AString name, in AString regtype, in AString domain, in IDNSSDResolveListener listener );
+
+	void
+	stop();
+};
