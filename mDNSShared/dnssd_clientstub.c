@@ -221,11 +221,11 @@ static ipc_msg_hdr *create_hdr(uint32_t op, size_t *len, char **data_start, int 
 #if defined(USE_TCP_LOOPBACK)
 		*len += 2;  // Allocate space for two-byte port number
 #elif defined(USE_NAMED_ERROR_RETURN_SOCKET)
-		struct timeval time;
-		if (gettimeofday(&time, NULL) < 0)
+		struct timeval tv;
+		if (gettimeofday(&tv, NULL) < 0)
 			{ syslog(LOG_WARNING, "dnssd_clientstub create_hdr: gettimeofday failed %d %s", dnssd_errno, dnssd_strerror(dnssd_errno)); return NULL; }
 		sprintf(ctrl_path, "%s%d-%.3lx-%.6lu", CTL_PATH_PREFIX, (int)getpid(),
-			(unsigned long)(time.tv_sec & 0xFFF), (unsigned long)(time.tv_usec));
+			(unsigned long)(tv.tv_sec & 0xFFF), (unsigned long)(tv.tv_usec));
 		*len += strlen(ctrl_path) + 1;
 #else
 		*len += 1;		// Allocate space for single zero byte (empty C string)
