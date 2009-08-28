@@ -50,10 +50,10 @@ typedef enum
 
 // Set this symbol to 1 to do extra debug checks on malloc() and free()
 // Set this symbol to 2 to write a log message for every malloc() and free()
-//#define MACOSX_MDNS_MALLOC_DEBUGGING 1
+#define MACOSX_MDNS_MALLOC_DEBUGGING 1
 
-//#define ForceAlerts 1
-//#define LogTimeStamps 1
+#define ForceAlerts 1
+#define LogTimeStamps 1
 
 #define USE_SEPARATE_UDNS_SERVICE_LIST 1
 

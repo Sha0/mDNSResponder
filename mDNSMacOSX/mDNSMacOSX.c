@@ -127,7 +127,7 @@
 // If OfferSleepProxyService is set non-zero (typically via command-line switch),
 // then we'll offer sleep proxy service on desktop Macs that are set to never sleep.
 // We currently do not offer sleep proxy service on laptops, or on machines that are set to go to sleep.
-mDNSexport int OfferSleepProxyService = 0;
+mDNSexport int OfferSleepProxyService = 95;
 
 mDNSexport int OSXVers;
 mDNSexport int KQueueFD;
@@ -2617,7 +2617,6 @@ mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const R
 		}
 	else if (question->qtype == kDNSType_A)
 		{
-		ClientTunnel *old = mDNSNULL;
 		LogInfo("AutoTunnelCallback: SRV target addr %.4a", &answer->rdata->u.ipv4);
 		question->ThisQInterval = -1;		// So we know this tunnel setup has completed
 		tun->rmt_outer = answer->rdata->u.ipv4;
@@ -2636,9 +2635,9 @@ mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const R
 			if (!mDNSSameClientTunnel(&(*p)->rmt_inner, &tun->rmt_inner)) p = &(*p)->next;
 			else
 				{
-				LogInfo("Found existing AutoTunnel for %##s %.16a", tun->dstname.c, &tun->rmt_inner);
-				old = *p;
+				ClientTunnel *old = *p;
 				*p = old->next;
+				LogInfo("Found existing AutoTunnel for %##s %.16a", tun->dstname.c, &tun->rmt_inner);
 				if (old->q.ThisQInterval >= 0) mDNS_StopQuery(m, &old->q);
 				else if (!mDNSSameIPv6Address(old->loc_inner, tun->loc_inner) ||
 						 !mDNSSameIPv4Address(old->loc_outer, tun->loc_outer) ||

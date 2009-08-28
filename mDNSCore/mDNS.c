@@ -5416,7 +5416,7 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 	int i;
 	AuthRecord opt;
 	mDNSu8 *p = m->omsg.data;
-	OwnerOptData owner = { 0 };
+	OwnerOptData owner = zeroOwner;		// Need to zero this, so we'll know if this Update packet was missing its Owner option
 	mDNSu32 updatelease = 0;
 	const mDNSu8 *ptr;
 
