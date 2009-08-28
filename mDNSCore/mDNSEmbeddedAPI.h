@@ -1799,7 +1799,7 @@ extern const mDNSOpaque64 zeroOpaque64;
 
 #define localdomain           (*(const domainname *)"\x5" "local")
 #define DeviceInfoName        (*(const domainname *)"\xC" "_device-info" "\x4" "_tcp")
-#define SleepProxyServiceType (*(const domainname *)"\xC" "_xleep-proxy" "\x4" "_udp")
+#define SleepProxyServiceType (*(const domainname *)"\xC" "_sleep-proxy" "\x4" "_udp")
 
 // ***************************************************************************
 #if 0

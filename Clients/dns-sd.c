@@ -68,7 +68,7 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT ws2_32.lib ..\mDNSWindows\DLL\Rele
 // This also useful to work around link errors when you're working on an older version of Mac OS X,
 // and trying to build a newer version of the "dns-sd" command which uses new API entry points that
 // aren't in the system's /usr/lib/libSystem.dylib.
-// #define TEST_NEW_CLIENTSTUB 1
+//#define TEST_NEW_CLIENTSTUB 1
 
 #include <ctype.h>
 #include <stdio.h>			// For stdout, stderr
@@ -150,7 +150,6 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT ws2_32.lib ..\mDNSWindows\DLL\Rele
 		else if (addr->sa_family == AF_INET6) return (sizeof(struct sockaddr_in6));
 		else return (sizeof(struct sockaddr));
 		}
-
 #   define SA_LEN(addr) (_sa_len(addr))
 
 #else
@@ -170,6 +169,7 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT ws2_32.lib ..\mDNSWindows\DLL\Rele
 #endif
 
 #include "dns_sd.h"
+
 #include "ClientCommon.h"
 
 #if TEST_NEW_CLIENTSTUB
@@ -616,7 +616,6 @@ static void DNSSD_API reg_reply(DNSServiceRef sdref, const DNSServiceFlags flags
 		printf("Error %d\n", errorCode);
 
 	if (!(flags & kDNSServiceFlagsMoreComing)) fflush(stdout);
-	//usleep(260000); stopNow = 1;	// Allow 250ms for service to announce PTR record, then exit
 	}
 
 // Output the wire-format domainname pointed to by rd
@@ -940,10 +939,6 @@ static char *gettype(char *buffer, char *typ)
 	return(typ);
 	}
 
-typedef struct { char i; void *ptr; } atest;
-
-atest *atestp = NULL;
-
 int main(int argc, char **argv)
 	{
 	DNSServiceErrorType err;
@@ -964,10 +959,6 @@ int main(int argc, char **argv)
 	printf("Using embedded copy of dnssd_clientstub instead of system library\n");
 	if (sizeof(argv) == 8) printf("Running in 64-bit mode\n");
 #endif
-
-	printf("CMSG_DATA %d\n", (int)CMSG_DATA(0));
-	printf("atestp->ptr %d\n", (int)&atestp->ptr);
-	printf("ALIGN(1) %d\n", (int)ALIGN(1));
 
 	// Test code for TXTRecord functions
 	//TXTRecordRef txtRecord;
@@ -1072,8 +1063,7 @@ int main(int argc, char **argv)
 					if (argc < opi+1) goto Fail;
 					rrtype = (argc <= opi+1) ? kDNSServiceType_A  : GetRRType(argv[opi+1]);
 					rrclass = (argc <= opi+2) ? kDNSServiceClass_IN : atoi(argv[opi+2]);
-					//if (rrtype == kDNSServiceType_TXT || rrtype == kDNSServiceType_PTR) flags |= kDNSServiceFlagsLongLivedQuery;
-					printf("Query %s %d %d not using kDNSServiceFlagsLongLivedQuery\n", argv[opi+0], rrtype, rrclass);
+					if (rrtype == kDNSServiceType_TXT || rrtype == kDNSServiceType_PTR) flags |= kDNSServiceFlagsLongLivedQuery;
 					err = DNSServiceQueryRecord(&client, flags, opinterface, argv[opi+0], rrtype, rrclass, qr_reply, NULL);
 					break;
 					}
@@ -1199,7 +1189,6 @@ int main(int argc, char **argv)
 	// Be sure to deallocate the DNSServiceRef when you're finished
 	if (client   ) DNSServiceRefDeallocate(client   );
 	if (client_pa) DNSServiceRefDeallocate(client_pa);
-	//usleep(150000);
 	return 0;
 
 Fail:
