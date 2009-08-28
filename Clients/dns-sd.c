@@ -68,7 +68,7 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT ws2_32.lib ..\mDNSWindows\DLL\Rele
 // This also useful to work around link errors when you're working on an older version of Mac OS X,
 // and trying to build a newer version of the "dns-sd" command which uses new API entry points that
 // aren't in the system's /usr/lib/libSystem.dylib.
-#define TEST_NEW_CLIENTSTUB 1
+// #define TEST_NEW_CLIENTSTUB 1
 
 #include <ctype.h>
 #include <stdio.h>			// For stdout, stderr
