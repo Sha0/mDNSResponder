@@ -150,6 +150,7 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT ws2_32.lib ..\mDNSWindows\DLL\Rele
 		else if (addr->sa_family == AF_INET6) return (sizeof(struct sockaddr_in6));
 		else return (sizeof(struct sockaddr));
 		}
+
 #   define SA_LEN(addr) (_sa_len(addr))
 
 #else
@@ -169,7 +170,6 @@ cl dns-sd.c -I../mDNSShared -DNOT_HAVE_GETOPT ws2_32.lib ..\mDNSWindows\DLL\Rele
 #endif
 
 #include "dns_sd.h"
-
 #include "ClientCommon.h"
 
 #if TEST_NEW_CLIENTSTUB
