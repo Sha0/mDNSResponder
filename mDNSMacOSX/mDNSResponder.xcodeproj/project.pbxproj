@@ -1346,7 +1346,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "if [ -e \"${SDKROOT}/usr/lib/libipsec.dylib\" ]\nthen\nrm -f \"${CONFIGURATION_TEMP_DIR}/ipsec_options.h\"\ntouch \"${CONFIGURATION_TEMP_DIR}/ipsec_options.h\"\nrm -f \"${CONFIGURATION_TEMP_DIR}/libipsec.a\"\nelse\necho \"#define MDNS_NO_IPSEC 1\" > ${CONFIGURATION_TEMP_DIR}/ipsec_options.h\ntouch \"${CONFIGURATION_TEMP_DIR}/empty.c\"\nfor i in ${ARCHS}\ndo\nccflags=\"-arch $i $ccflags\"\ndone\ncc ${ccflags} \"${CONFIGURATION_TEMP_DIR}/empty.c\" -c -o \"${CONFIGURATION_TEMP_DIR}/libipsec.a\"\nrm -f \"${CONFIGURATION_TEMP_DIR}/empty.c\"\nfi\n";
+			shellScript = "if [ -e \"${SDKROOT}/usr/include/vproc.h\" ]\nthen\nrm -f \"${CONFIGURATION_TEMP_DIR}/vproc.h\"\nelse\ntouch \"${CONFIGURATION_TEMP_DIR}/vproc.h\"\nfi\n\nif [ -e \"${SDKROOT}/usr/lib/libipsec.dylib\" ]\nthen\nrm -f \"${CONFIGURATION_TEMP_DIR}/ipsec_options.h\"\ntouch \"${CONFIGURATION_TEMP_DIR}/ipsec_options.h\"\nrm -f \"${CONFIGURATION_TEMP_DIR}/libipsec.a\"\nelse\necho \"#define MDNS_NO_IPSEC 1\" > ${CONFIGURATION_TEMP_DIR}/ipsec_options.h\ntouch \"${CONFIGURATION_TEMP_DIR}/empty.c\"\nfor i in ${ARCHS}\ndo\nccflags=\"-arch $i $ccflags\"\ndone\ncc ${ccflags} \"${CONFIGURATION_TEMP_DIR}/empty.c\" -c -o \"${CONFIGURATION_TEMP_DIR}/libipsec.a\"\nrm -f \"${CONFIGURATION_TEMP_DIR}/empty.c\"\nfi\n";
 		};
 		D284BE510ADD80740027CCDF /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -1373,7 +1373,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "if [ -e \"${SDKROOT}/usr/local/include/dnsinfo.h\" ]\nthen\nrm -f \"${CONFIGURATION_TEMP_DIR}/dnsinfo.h\"\nrm -f \"${CONFIGURATION_TEMP_DIR}/libdnsinfo.a\"\nelse\necho \"#define MDNS_NO_DNSINFO 1\" > ${CONFIGURATION_TEMP_DIR}/dnsinfo.h\ntouch \"${CONFIGURATION_TEMP_DIR}/empty.c\"\ncc -arch i386 -arch ppc \"${CONFIGURATION_TEMP_DIR}/empty.c\" -c -o \"${CONFIGURATION_TEMP_DIR}/libdnsinfo.a\"\nrm -f \"${CONFIGURATION_TEMP_DIR}/empty.c\"\nfi\n\nif [ -e \"${SDKROOT}/usr/include/sandbox.h\" ]\nthen\nrm -f \"${CONFIGURATION_TEMP_DIR}/sandbox.h\"\nelse\necho \"#define MDNS_NO_SANDBOX 1\" > \"${CONFIGURATION_TEMP_DIR}/sandbox.h\"\nfi\n";
+			shellScript = "if [ -e \"${SDKROOT}/usr/local/include/dnsinfo.h\" ]\nthen\nrm -f \"${CONFIGURATION_TEMP_DIR}/dnsinfo.h\"\nrm -f \"${CONFIGURATION_TEMP_DIR}/libdnsinfo.a\"\nelse\necho \"#define MDNS_NO_DNSINFO 1\" > ${CONFIGURATION_TEMP_DIR}/dnsinfo.h\ntouch \"${CONFIGURATION_TEMP_DIR}/empty.c\"\nfor i in ${ARCHS}\ndo\nccflags=\"-arch $i $ccflags\"\ndone\ncc ${ccflags} \"${CONFIGURATION_TEMP_DIR}/empty.c\" -c -o \"${CONFIGURATION_TEMP_DIR}/libdnsinfo.a\"\nrm -f \"${CONFIGURATION_TEMP_DIR}/empty.c\"\nfi\n\nif [ -e \"${SDKROOT}/usr/include/sandbox.h\" ]\nthen\nrm -f \"${CONFIGURATION_TEMP_DIR}/sandbox.h\"\nelse\necho \"#define MDNS_NO_SANDBOX 1\" > \"${CONFIGURATION_TEMP_DIR}/sandbox.h\"\nfi\n\nif [ -e \"${SDKROOT}/usr/include/vproc.h\" ]\nthen\nrm -f \"${CONFIGURATION_TEMP_DIR}/vproc.h\"\nelse\ntouch \"${CONFIGURATION_TEMP_DIR}/vproc.h\"\nfi\n\nif [ -e \"${SDKROOT}/System/Library/Frameworks/IOKit.framework/PrivateHeaders/pwr_mgt/IOPMLibPrivate.h\" ]\nthen\nrm -rf \"${CONFIGURATION_TEMP_DIR}/IOKit\"\nelse\nmkdir -p \"${CONFIGURATION_TEMP_DIR}/IOKit/pwr_mgt\"\ntouch \"${CONFIGURATION_TEMP_DIR}/IOKit/pwr_mgt/IOPMLibPrivate.h\"\nfi\n";
 		};
 		FF045B6A0C7E4AA600448140 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
