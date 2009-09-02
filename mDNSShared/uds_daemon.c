@@ -106,6 +106,7 @@ struct request_state
 	dnssd_sock_t sd;
 	dnssd_sock_t errsd;
 	mDNSu32 uid;
+	void * platform_data;
 
 	// Note: On a shared connection these fields in the primary structure, including hdr, are re-used
 	// for each new request. This is because, until we've read the ipc_msg_hdr to find out what the
@@ -278,7 +279,7 @@ mDNSlocal void abort_request(request_state *req)
 		{
 		if (req->errsd != req->sd) LogOperation("%3d: Removing FD and closing errsd %d", req->sd, req->errsd);
 		else                       LogOperation("%3d: Removing FD", req->sd);
-		udsSupportRemoveFDFromEventLoop(req->sd);		// Note: This also closes file descriptor req->sd for us
+		udsSupportRemoveFDFromEventLoop(req->sd, req->platform_data);		// Note: This also closes file descriptor req->sd for us
 		if (req->errsd != req->sd) { dnssd_close(req->errsd); req->errsd = req->sd; }
 
 		while (req->replies)	// free pending replies
@@ -2652,7 +2653,7 @@ mDNSlocal void read_msg(request_state *req)
 	if (req->ts == t_complete)	// this must be death or something is wrong
 		{
 		char buf[4];	// dummy for death notification
-		int nread = recv(req->sd, buf, 4, 0);
+		int nread = udsSupportReadFD(req->sd, buf, 4, 0, req->platform_data);
 		if (!nread) { req->ts = t_terminated; return; }
 		if (nread < 0) goto rerror;
 		LogMsg("%3d: ERROR: read data from a completed request", req->sd);
@@ -2666,7 +2667,7 @@ mDNSlocal void read_msg(request_state *req)
 	if (req->hdr_bytes < sizeof(ipc_msg_hdr))
 		{
 		mDNSu32 nleft = sizeof(ipc_msg_hdr) - req->hdr_bytes;
-		int nread = recv(req->sd, (char *)&req->hdr + req->hdr_bytes, nleft, 0);
+		int nread = udsSupportReadFD(req->sd, (char *)&req->hdr + req->hdr_bytes, nleft, 0, req->platform_data);
 		if (nread == 0) { req->ts = t_terminated; return; }
 		if (nread < 0) goto rerror;
 		req->hdr_bytes += nread;
@@ -2715,7 +2716,7 @@ mDNSlocal void read_msg(request_state *req)
 		msg.msg_flags      = 0;
 		nread = recvmsg(req->sd, &msg, 0);
 #else
-		nread = recv(req->sd, (char *)req->msgbuf + req->data_bytes, nleft, 0);
+		nread = udsSupportReadFD(req->sd, (char *)req->msgbuf + req->data_bytes, nleft, 0, req->platform_data);
 #endif
 		if (nread == 0) { req->ts = t_terminated; return; }
 		if (nread < 0) goto rerror;
@@ -3020,7 +3021,7 @@ mDNSlocal void connect_callback(int fd, short filter, void *info)
 		debugf("LOCAL_PEERCRED %d %u %u %d", xucredlen, x.cr_version, x.cr_uid, x.cr_ngroups);
 #endif // APPLE_OSX_mDNSResponder
 		LogOperation("%3d: Adding FD for uid %u", request->sd, request->uid);
-		udsSupportAddFDToEventLoop(sd, request_callback, request);
+		udsSupportAddFDToEventLoop(sd, request_callback, request, &request->platform_data);
 		}
 	}
 
@@ -3053,7 +3054,7 @@ mDNSlocal mDNSBool uds_socket_setup(dnssd_sock_t skt)
 		return mDNSfalse;
 		}
 
-	if (mStatus_NoError != udsSupportAddFDToEventLoop(skt, connect_callback, (void *) NULL))
+	if (mStatus_NoError != udsSupportAddFDToEventLoop(skt, connect_callback, (void *) NULL, (void **) NULL))
 		{
 		my_perror("ERROR: could not add listen socket to event loop");
 		return mDNSfalse;

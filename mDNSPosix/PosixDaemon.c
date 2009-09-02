@@ -200,16 +200,24 @@ int main(int argc, char **argv)
 
 //		uds_daemon support		////////////////////////////////////////////////////////////
 
-mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *context)
+mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *context, void **platform_data)
 /* Support routine for uds_daemon.c */
 	{
 	// Depends on the fact that udsEventCallback == mDNSPosixEventCallback
+	(void) platform_data;
 	return mDNSPosixAddFDToEventLoop(fd, callback, context);
 	}
 
-mStatus udsSupportRemoveFDFromEventLoop(int fd)		// Note: This also CLOSES the file descriptor
+int udsSupportReadFD(dnssd_sock_t fd, char *buf, int len, int flags, void *platform_data)
+	{
+	(void) platform_data;
+	return recv(fd, buf, len, flags);
+	}
+
+mStatus udsSupportRemoveFDFromEventLoop(int fd, void *platform_data)		// Note: This also CLOSES the file descriptor
 	{
 	mStatus err = mDNSPosixRemoveFDFromEventLoop(fd);
+	(void) platform_data;
 	close(fd);
 	return err;
 	}

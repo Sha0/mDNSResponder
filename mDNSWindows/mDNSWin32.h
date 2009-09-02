@@ -41,6 +41,7 @@ typedef struct	mDNSInterfaceData	mDNSInterfaceData;
 struct	mDNSInterfaceData
 {
 	mDNSInterfaceData *			next;
+	mDNS					*	m;
 	char						name[ 128 ];
 	uint32_t					index;
 	uint32_t					scopeID;
@@ -48,7 +49,13 @@ struct	mDNSInterfaceData
 #if( !defined( _WIN32_WCE ) )
 	LPFN_WSARECVMSG				wsaRecvMsgFunctionPtr;
 #endif
-	HANDLE						readPendingEvent;
+	struct sockaddr_storage		srcAddr;
+	INT							srcAddrLen;
+	uint8_t						controlBuffer[ 128 ];
+	DNSMessage					packet;
+	OVERLAPPED					overlapped;
+	WSAMSG						wmsg;
+	WSABUF						wbuf;
 	NetworkInterfaceInfo		interfaceInfo;
 	mDNSAddr					defaultAddr;
 	mDNSBool					hostRegistered;
@@ -91,48 +98,41 @@ typedef void (*HostDescriptionChangedCallback)(mDNS * const inMDNS);
 
 struct	mDNS_PlatformSupport_struct
 {
-	CRITICAL_SECTION			lock;
-	mDNSBool					lockInitialized;
-	HANDLE						cancelEvent;
-	HANDLE						quitEvent;
-	HANDLE						interfaceListChangedEvent;
-	HANDLE						descChangedEvent;	// Computer description changed event
-	HANDLE						tcpipChangedEvent;	// TCP/IP config changed
-	HANDLE						ddnsChangedEvent;	// DynDNS config changed
-	HANDLE						fileShareEvent;		// File Sharing changed
-	HANDLE						firewallEvent;		// Firewall changed
-	HANDLE						wakeupEvent;
-	HANDLE						initEvent;
+	HANDLE						mainThread;
 	time_t						nextDHCPLeaseExpires;
-	HKEY						descKey;
-	HKEY						tcpipKey;
-	HKEY						ddnsKey;
-	HKEY						fileShareKey;
-	HKEY						firewallKey;
 	mDNSBool					smbRegistered;
 	ServiceRecordSet			smbSRS;
-	mStatus						initStatus;
 	mDNSBool					registeredLoopback4;
 	SocketRef					interfaceListChangedSocket;
 	int							interfaceCount;
 	mDNSInterfaceData *			interfaceList;
 	mDNSInterfaceData *			inactiveInterfaceList;
-	DWORD						threadID;
-	IdleThreadCallback			idleThreadCallback;
-	InterfaceListChangedCallback	interfaceListChangedCallback;
-	HostDescriptionChangedCallback	hostDescriptionChangedCallback;
 	SocketRef						unicastSock4;
 	HANDLE							unicastSock4ReadEvent;
 	mDNSAddr						unicastSock4DestAddr;
 #if( !defined( _WIN32_WCE ) )
 	LPFN_WSARECVMSG					unicastSock4RecvMsgPtr;
 #endif
+	struct sockaddr_storage			unicastSock4SrcAddr;
+	INT								unicastSock4SrcAddrLen;
+	uint8_t							unicastSock4ControlBuffer[ 128 ];
+	DNSMessage						unicastSock4Packet;
+	OVERLAPPED						unicastSock4Overlapped;
+	WSAMSG							unicastSock4WMsg;
+	WSABUF							unicastSock4WBuf;
 	SocketRef						unicastSock6;
 	HANDLE							unicastSock6ReadEvent;
 	mDNSAddr						unicastSock6DestAddr;
 #if( !defined( _WIN32_WCE ) )
 	LPFN_WSARECVMSG					unicastSock6RecvMsgPtr;
 #endif
+	struct sockaddr_storage			unicastSock6SrcAddr;
+	INT								unicastSock6SrcAddrLen;
+	uint8_t							unicastSock6ControlBuffer[ 128 ];
+	DNSMessage						unicastSock6Packet;
+	OVERLAPPED						unicastSock6Overlapped;
+	WSAMSG							unicastSock6WMsg;
+	WSABUF							unicastSock6WBuf;
 };
 
 //---------------------------------------------------------------------------------------------------------------------------
@@ -163,7 +163,15 @@ struct ifaddrs
 };
 
 
-extern BOOL IsWOMPEnabled();
+extern void		InterfaceListDidChange( mDNS * const inMDNS );
+extern void		ComputerDescriptionDidChange( mDNS * const inMDNS );
+extern void		TCPIPConfigDidChange( mDNS * const inMDNS );
+extern void		DynDNSConfigDidChange( mDNS * const inMDNS );
+extern void		FileSharingDidChange( mDNS * const inMDNS );
+extern void		FirewallDidChange( mDNS * const inMDNS );
+extern mStatus	SetupInterfaceList( mDNS * const inMDNS );
+extern mStatus	TearDownInterfaceList( mDNS * const inMDNS );
+extern BOOL		IsWOMPEnabled();
 
 
 #ifdef	__cplusplus

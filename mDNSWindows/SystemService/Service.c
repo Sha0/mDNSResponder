@@ -17,6 +17,7 @@
 
 #include	<stdio.h>
 #include	<stdlib.h>
+#include	<crtdbg.h>
 #include	<stdarg.h>
 #include	<stddef.h>
 
@@ -32,6 +33,7 @@
 #include	"Resource.h"
 
 #include	"mDNSEmbeddedAPI.h"
+#include	"uDNS.h"
 #include	"mDNSWin32.h"
 
 #include	"Firewall.h"
@@ -78,39 +80,34 @@ static CacheEntity gRRCache[RR_CACHE_SIZE];
 //===========================================================================================================================
 //	Structures
 //===========================================================================================================================
-//---------------------------------------------------------------------------------------------------------------------------
-/*!	@typedef	EventSourceFlags
 
-	@abstract	Session flags.
-	
-	@constant	EventSourceFlagsNone			No flags.
-	@constant	EventSourceFlagsThreadDone		Thread is no longer active.
-	@constant	EventSourceFlagsNoClose			Do not close the session when the thread exits.
-	@constant	EventSourceFinalized			Finalize has been called for this session
-*/
-
-typedef uint32_t		EventSourceFlags;
-
-#define	EventSourceFlagsNone			0
-#define	EventSourceFlagsThreadDone		( 1 << 2 )
-#define	EventSourceFlagsNoClose			( 1 << 3 )
-#define EventSourceFinalized			( 1 << 4 )
-
-
-typedef struct Win32EventSource
+typedef struct EventSource
 {
-	EventSourceFlags			flags;
-	HANDLE						threadHandle;
-	unsigned					threadID;
-	HANDLE						socketEvent;
-	HANDLE						closeEvent;
-	udsEventCallback			callback;
-	void					*	context;
-	DWORD						waitCount;
-	HANDLE						waitList[2];
-	SOCKET						sock;
-	struct Win32EventSource	*	next;
-} Win32EventSource;
+	SOCKET					sock;
+	DWORD					lastError;
+	BOOL					closed;
+	void				*	context;
+	udsEventCallback		callback;
+	OVERLAPPED				overlapped;
+	WSABUF					wbuf;
+	uint8_t					buf[ 4192 ];
+	uint8_t				*	bptr;
+	uint8_t				*	eptr;
+	struct EventSource	*   next;
+} EventSource;
+
+
+#define	kWaitListStopEvent							( WAIT_OBJECT_0 + 0 )
+#define	kWaitListInterfaceListChangedEvent			( WAIT_OBJECT_0 + 1 )
+#define kWaitListComputerDescriptionEvent			( WAIT_OBJECT_0 + 2 )
+#define kWaitListTCPIPEvent							( WAIT_OBJECT_0 + 3 )
+#define kWaitListDynDNSEvent						( WAIT_OBJECT_0 + 4 )
+#define kWaitListFileShareEvent						( WAIT_OBJECT_0 + 5 )
+#define kWaitListFirewallEvent						( WAIT_OBJECT_0 + 6 )
+#define kWaitListSPSWakeupEvent						( WAIT_OBJECT_0 + 7 )
+#define kWaitListSPSSleepEvent						( WAIT_OBJECT_0 + 8 )
+#define kWaitListUDSEvent							( WAIT_OBJECT_0 + 9 )
+#define	kWaitListItemCount							10
 
 
 #if 0
@@ -141,12 +138,15 @@ static OSStatus		ServiceSpecificInitialize( int argc, LPTSTR  argv[] );
 static OSStatus		ServiceSpecificRun( int argc, LPTSTR argv[] );
 static OSStatus		ServiceSpecificStop( void );
 static void			ServiceSpecificFinalize( int argc, LPTSTR argv[] );
-static mStatus		EventSourceFinalize(Win32EventSource * source);
-static void			EventSourceLock();
-static void			EventSourceUnlock();
-static mDNSs32		udsIdle(mDNS * const inMDNS, mDNSs32 interval);
+mDNSlocal mStatus	SetupNotifications();
+mDNSlocal mStatus	TearDownNotifications();
+mDNSlocal mStatus	BeginUDSRecv( EventSource * source );
+mDNSlocal void		EndUDSRecv( DWORD error, DWORD bytesTransferred, LPWSAOVERLAPPED overlapped, DWORD flags );
+static mStatus		EventSourceFinalize( EventSource * source );
+static void			EventSourceFree( EventSource * source );
+static void			HandlePowerSuspend( void * v );
+static void			HandlePowerResumeSuspend( void * v );
 static void			CoreCallback(mDNS * const inMDNS, mStatus result);
-static void			HostDescriptionChanged(mDNS * const inMDNS);
 static mDNSu8		SystemWakeForNetworkAccess( LARGE_INTEGER * timeout );
 static OSStatus		GetRouteDestination(DWORD * ifIndex, DWORD * address);
 static OSStatus		SetLLRoute( mDNS * const inMDNS );
@@ -187,6 +187,18 @@ DEBUG_LOCAL SERVICE_TABLE_ENTRY			gServiceDispatchTable[] =
 	{ kServiceName,	ServiceMain }, 
 	{ NULL, 		NULL }
 };
+DEBUG_LOCAL SOCKET						gInterfaceListChangedSocket	= INVALID_SOCKET;
+DEBUG_LOCAL HANDLE						gInterfaceListChangedEvent	= NULL;
+DEBUG_LOCAL HKEY						gDescKey					= NULL;
+DEBUG_LOCAL HANDLE						gDescChangedEvent			= NULL;	// Computer description changed event
+DEBUG_LOCAL HKEY						gTcpipKey					= NULL;
+DEBUG_LOCAL HANDLE						gTcpipChangedEvent			= NULL;	// TCP/IP config changed
+DEBUG_LOCAL HKEY						gDdnsKey					= NULL;
+DEBUG_LOCAL HANDLE						gDdnsChangedEvent			= NULL;	// DynDNS config changed
+DEBUG_LOCAL HKEY						gFileSharingKey				= NULL;
+DEBUG_LOCAL HANDLE						gFileSharingChangedEvent	= NULL;	// File Sharing changed
+DEBUG_LOCAL HKEY						gFirewallKey				= NULL;
+DEBUG_LOCAL HANDLE						gFirewallChangedEvent		= NULL;	// Firewall changed
 DEBUG_LOCAL SERVICE_STATUS				gServiceStatus;
 DEBUG_LOCAL SERVICE_STATUS_HANDLE		gServiceStatusHandle 	= NULL;
 DEBUG_LOCAL HANDLE						gServiceEventSource		= NULL;
@@ -198,7 +210,9 @@ DEBUG_LOCAL HANDLE					*	gWaitList				= NULL;
 DEBUG_LOCAL HANDLE						gStopEvent				= NULL;
 DEBUG_LOCAL HANDLE						gSPSWakeupEvent			= NULL;
 DEBUG_LOCAL HANDLE						gSPSSleepEvent			= NULL;
-DEBUG_LOCAL CRITICAL_SECTION			gEventSourceLock;
+DEBUG_LOCAL HANDLE						gUDSEvent				= NULL;
+DEBUG_LOCAL SocketRef					gUDSSocket				= 0;
+DEBUG_LOCAL udsEventCallback			gUDSCallback			= NULL;
 DEBUG_LOCAL GenLinkedList				gEventSources;
 DEBUG_LOCAL BOOL						gRetryFirewall			= FALSE;
 DEBUG_LOCAL DWORD						gOSMajorVersion;
@@ -224,7 +238,7 @@ int	Main( int argc, LPTSTR argv[] )
 	int				i;
 
 	HeapSetInformation( NULL, HeapEnableTerminationOnCorruption, NULL, 0 );
-	
+
 	debug_initialize( kDebugOutputTypeMetaConsole );
 	debug_set_property( kDebugPropertyTagPrintLevel, kDebugLevelVerbose );
 
@@ -308,6 +322,7 @@ int	Main( int argc, LPTSTR argv[] )
 	
 exit:
 	dlog( kDebugLevelTrace, DEBUG_NAME "exited (%d %m)\n", err, err );
+	_CrtDumpMemoryLeaks();
 	return( (int) err );
 }
 
@@ -969,6 +984,51 @@ exit:
 }
 
 //===========================================================================================================================
+//	HandlePowerSuspend
+//===========================================================================================================================
+
+static void HandlePowerSuspend( void * v )
+{
+	LARGE_INTEGER	timeout;
+	BOOL			ok;
+
+	( void ) v;
+
+	gMDNSRecord.SystemWakeOnLANEnabled = SystemWakeForNetworkAccess( &timeout );
+				
+	if ( gMDNSRecord.SystemWakeOnLANEnabled )
+	{
+		ok = SetWaitableTimer( gSPSWakeupEvent, &timeout, 0, NULL, NULL, TRUE );
+		check( ok );
+	}
+
+	mDNSCoreMachineSleep(&gMDNSRecord, TRUE);
+}
+
+
+//===========================================================================================================================
+//	HandlePowerResumeSuspend
+//===========================================================================================================================
+
+static void HandlePowerResumeSuspend( void * v )
+{
+	( void ) v;
+
+	if ( gSPSWakeupEvent )
+	{
+		CancelWaitableTimer( gSPSWakeupEvent );
+	}
+
+	if ( gSPSSleepEvent )
+	{
+		CancelWaitableTimer( gSPSSleepEvent );
+	}
+
+	mDNSCoreMachineSleep(&gMDNSRecord, FALSE);
+}
+
+
+//===========================================================================================================================
 //	ServiceControlHandler
 //===========================================================================================================================
 
@@ -994,43 +1054,15 @@ static DWORD WINAPI	ServiceControlHandler( DWORD inControl, DWORD inEventType, L
 
 			if (inEventType == PBT_APMSUSPEND)
 			{
-				LARGE_INTEGER timeout;
-
 				dlog( kDebugLevelInfo, DEBUG_NAME "ServiceControlHandler: PBT_APMSUSPEND\n" );
 
-				mDNSPlatformLock( &gMDNSRecord );
-				
-				gMDNSRecord.SystemWakeOnLANEnabled = SystemWakeForNetworkAccess( &timeout );
-				
-				if ( gMDNSRecord.SystemWakeOnLANEnabled )
-				{
-					ok = SetWaitableTimer( gSPSWakeupEvent, &timeout, 0, NULL, NULL, TRUE );
-					check( ok );
-				}
-
-				mDNSPlatformUnlock( &gMDNSRecord );
-
-				mDNSCoreMachineSleep(&gMDNSRecord, TRUE);
+				QueueUserAPC( ( PAPCFUNC ) HandlePowerSuspend, gMDNSRecord.p->mainThread, ( ULONG_PTR ) NULL );
 			}
 			else if (inEventType == PBT_APMRESUMESUSPEND)
 			{
 				dlog( kDebugLevelInfo, DEBUG_NAME "ServiceControlHandler: PBT_APMRESUMESUSPEND\n" );
 
-				mDNSPlatformLock( &gMDNSRecord );
-
-				if ( gSPSWakeupEvent )
-				{
-					CancelWaitableTimer( gSPSWakeupEvent );
-				}
-
-				if ( gSPSSleepEvent )
-				{
-					CancelWaitableTimer( gSPSSleepEvent );
-				}
-
-				mDNSPlatformUnlock( &gMDNSRecord );
-
-				mDNSCoreMachineSleep(&gMDNSRecord, FALSE);
+				QueueUserAPC( ( PAPCFUNC ) HandlePowerResumeSuspend, gMDNSRecord.p->mainThread, ( ULONG_PTR ) NULL );
 			}
 		
 			break;
@@ -1148,25 +1180,11 @@ static OSStatus	ServiceSpecificInitialize( int argc, LPTSTR argv[] )
 	mDNSPlatformMemZero( &gMDNSRecord, sizeof gMDNSRecord);
 	mDNSPlatformMemZero( &gPlatformStorage, sizeof gPlatformStorage);
 
-	gPlatformStorage.idleThreadCallback = udsIdle;
-	gPlatformStorage.hostDescriptionChangedCallback = HostDescriptionChanged;
-
-	InitializeCriticalSection(&gEventSourceLock);
-	
-	gStopEvent	=	CreateEvent(NULL, FALSE, FALSE, NULL);
-	err = translate_errno( gStopEvent, errno_compat(), kNoResourcesErr );
-	require_noerr( err, exit );
-
-	gSPSWakeupEvent = CreateWaitableTimer( NULL, FALSE, NULL );
-	err = translate_errno( gSPSWakeupEvent, (mStatus) GetLastError(), kUnknownErr );
-	require_noerr( err, exit );
-
-	gSPSSleepEvent = CreateWaitableTimer( NULL, FALSE, NULL );
-	err = translate_errno( gSPSSleepEvent, (mStatus) GetLastError(), kUnknownErr );
-	require_noerr( err, exit );
-
 	err = mDNS_Init( &gMDNSRecord, &gPlatformStorage, gRRCache, RR_CACHE_SIZE, mDNS_Init_AdvertiseLocalAddresses, CoreCallback, mDNS_Init_NoInitCallbackContext); 
 	require_noerr( err, exit);
+
+	err = SetupNotifications();
+	check_noerr( err );
 
 	err = udsserver_init(mDNSNULL, 0);
 	require_noerr( err, exit);
@@ -1197,67 +1215,205 @@ exit:
 
 static OSStatus	ServiceSpecificRun( int argc, LPTSTR argv[] )
 {
-	DWORD	timeout;
-	DWORD result;
+	DWORD		timeout;
+	DWORD		result;
+	HANDLE 		waitList[ kWaitListItemCount ];
+	BOOL		done;
+	mStatus		err;
 	
 	DEBUG_UNUSED( argc );
 	DEBUG_UNUSED( argv );
 
-	// Main event loop. Process connection requests and state changes (i.e. quit).
-
 	timeout = ( gRetryFirewall ) ? kRetryFirewallPeriod : INFINITE;
 
-	for ( ;; )
+	err = SetupInterfaceList( &gMDNSRecord );
+	check( !err );
+
+	err = uDNS_SetupDNSConfig( &gMDNSRecord );
+	check( !err );
+	
+	waitList[ 0 ] = gStopEvent;
+	waitList[ 1 ] = gInterfaceListChangedEvent;
+	waitList[ 2 ] = gDescChangedEvent;
+	waitList[ 3 ] = gTcpipChangedEvent;
+	waitList[ 4 ] = gDdnsChangedEvent;
+	waitList[ 5 ] = gFileSharingChangedEvent;
+	waitList[ 6 ] = gFirewallChangedEvent;
+	waitList[ 7 ] = gSPSWakeupEvent;
+	waitList[ 8 ] = gSPSSleepEvent;
+	waitList[ 9 ] = gUDSEvent;
+
+	done = FALSE;
+
+	// Main event loop.
+
+	while( !done )
 	{
-		HANDLE	waitList[ 3 ];
+		mDNSs32 interval;
 
-		waitList[ 0 ] = gStopEvent;
-		waitList[ 1 ] = gSPSWakeupEvent;
-		waitList[ 2 ] = gSPSSleepEvent;
+		// Give the mDNS core a chance to do its work and determine next event time.
+		
+		interval = mDNS_Execute( &gMDNSRecord ) - mDNS_TimeNow( &gMDNSRecord );
+		interval = udsserver_idle( interval );
 
-		result = WaitForMultipleObjects( 3, waitList, FALSE, timeout );
+		if      (interval < 0)						interval = 0;
+		else if (interval > (0x7FFFFFFF / 1000))	interval = 0x7FFFFFFF / mDNSPlatformOneSecond;
+		else										interval = (interval * 1000) / mDNSPlatformOneSecond;
+		
+		// Wait until something occurs (e.g. cancel, incoming packet, or timeout).
+					
+		result = WaitForMultipleObjectsEx( kWaitListItemCount, waitList, FALSE, (DWORD) interval, TRUE );
+		check( result != WAIT_FAILED );
 
-		if ( result == WAIT_OBJECT_0 )
+		if ( result != WAIT_FAILED )
 		{
-			break;
-		}
-		else if ( result == WAIT_OBJECT_0 + 1 )
-		{
-			__int64			temp;
-			LARGE_INTEGER	timeout;
+			if( result == WAIT_TIMEOUT )
+			{
+				// Next task timeout occurred. Loop back up to give mDNS core a chance to work.
+				
+				dlog( kDebugLevelChatty - 1, DEBUG_NAME "timeout\n" );
+				continue;
+			}
+			else if ( result == kWaitListStopEvent )
+			{
+				// Stop event. Set the done flag and break to exit.
+				
+				dlog( kDebugLevelVerbose, DEBUG_NAME "stopping...\n" );
+				done = TRUE;
+				break;
+			}
+			else if( result == kWaitListInterfaceListChangedEvent )
+			{
+				int		inBuffer;
+				int		outBuffer;
+				DWORD	outSize;
 
-			dlog( kDebugLevelInfo, DEBUG_NAME "setting suspend event\n" );
+				// It would be nice to come up with a more elegant solution to this, but it seems that
+				// GetAdaptersAddresses doesn't always stay in sync after network changed events.  So as
+				// as a simple workaround, we'll pause for a couple of seconds before processing the change.
 
-			// Stay awake for 60 seconds
+				// We arrived at 2 secs by trial and error. We could reproduce the problem after sleeping
+				// for 500 msec and 750 msec, but couldn't after sleeping for 1 sec.  We added another
+				// second on top of that to account for machine load or some other exigency.
 
-			temp				= -60 * 10000000;
-			timeout.LowPart		= (DWORD) ( temp & 0xFFFFFFFF );
-			timeout.HighPart	= (LONG)  ( temp >> 32 );
+				Sleep( 2000 );
 
-			SetWaitableTimer( gSPSSleepEvent, &timeout, 0, NULL, NULL, TRUE );
-		}
-		else if ( result == WAIT_OBJECT_0 + 2 )
-		{
-			dlog( kDebugLevelInfo, DEBUG_NAME "suspending machine\n" );
-			SetSuspendState( FALSE, FALSE, FALSE );
-		}
-		else if ( result == WAIT_TIMEOUT )
-		{
-			OSStatus err;
+				// Interface list changed event. Break out of the inner loop to re-setup the wait list.
+				
+				InterfaceListDidChange( &gMDNSRecord );
 
-			err = CheckFirewall();
-			check_noerr( err );
+				// reset the event handler
+				inBuffer	= 0;
+				outBuffer	= 0;
+				err = WSAIoctl( gInterfaceListChangedSocket, SIO_ADDRESS_LIST_CHANGE, &inBuffer, 0, &outBuffer, 0, &outSize, NULL, NULL );
+				if( err < 0 )
+				{
+					check( errno_compat() == WSAEWOULDBLOCK );
+				}
+			}
+			else if ( result == kWaitListComputerDescriptionEvent )
+			{
+				// The computer description might have changed
+				
+				ComputerDescriptionDidChange( &gMDNSRecord );
 
-			timeout = INFINITE;
+				udsserver_handle_configchange( &gMDNSRecord );
+
+				// and reset the event handler
+				if ( ( gDescKey != NULL ) && ( gDescChangedEvent != NULL ) )
+				{
+					err = RegNotifyChangeKeyValue( gDescKey, TRUE, REG_NOTIFY_CHANGE_LAST_SET, gDescChangedEvent, TRUE);
+					check_noerr( err );
+				}
+			}
+			else if ( result == kWaitListTCPIPEvent )
+			{	
+				// The TCP/IP might have changed
+
+				TCPIPConfigDidChange( &gMDNSRecord );
+
+				// and reset the event handler
+
+				if ( ( gTcpipKey != NULL ) && ( gTcpipChangedEvent ) )
+				{
+					err = RegNotifyChangeKeyValue( gTcpipKey, TRUE, REG_NOTIFY_CHANGE_NAME|REG_NOTIFY_CHANGE_LAST_SET, gTcpipChangedEvent, TRUE );
+					check_noerr( err );
+				}
+			}
+			else if ( result == kWaitListDynDNSEvent )
+			{
+				// The DynDNS config might have changed
+
+				DynDNSConfigDidChange( &gMDNSRecord );
+
+				// and reset the event handler
+
+				if ((gDdnsKey != NULL) && (gDdnsChangedEvent))
+				{
+					err = RegNotifyChangeKeyValue(gDdnsKey, TRUE, REG_NOTIFY_CHANGE_NAME|REG_NOTIFY_CHANGE_LAST_SET, gDdnsChangedEvent, TRUE);
+					check_noerr( err );
+				}
+			}
+			else if ( result == kWaitListFileShareEvent )
+			{
+				// File sharing changed
+
+				FileSharingDidChange( &gMDNSRecord );
+
+				// and reset the event handler
+
+				if ((gFileSharingKey != NULL) && (gFileSharingChangedEvent))
+				{
+					err = RegNotifyChangeKeyValue(gFileSharingKey, TRUE, REG_NOTIFY_CHANGE_NAME|REG_NOTIFY_CHANGE_LAST_SET, gFileSharingChangedEvent, TRUE);
+					check_noerr( err );
+				}
+			}
+			else if ( result == kWaitListFirewallEvent )
+			{
+				// Firewall configuration changed
+
+				FirewallDidChange( &gMDNSRecord );
+
+				// and reset the event handler
+
+				if ((gFirewallKey != NULL) && (gFirewallChangedEvent))
+				{
+					err = RegNotifyChangeKeyValue(gFirewallKey, TRUE, REG_NOTIFY_CHANGE_NAME|REG_NOTIFY_CHANGE_LAST_SET, gFirewallChangedEvent, TRUE);
+					check_noerr( err );
+				}
+			}
+			else if ( result == kWaitListSPSWakeupEvent )
+			{
+			}
+			else if ( result == kWaitListSPSSleepEvent )
+			{
+			}
+			else if ( result == kWaitListUDSEvent )
+			{
+				gUDSCallback( ( int ) gUDSSocket, 0, NULL );
+			}
+			else if ( result != WAIT_IO_COMPLETION )
+			{
+				// Unexpected wait result.
+				
+				dlog( kDebugLevelWarning, DEBUG_NAME "%s: unexpected wait result (result=0x%08X)\n", __ROUTINE__, result );
+			}
 		}
 		else
 		{
-			// Unexpected wait result.
-			dlog( kDebugLevelWarning, DEBUG_NAME "%s: unexpected wait result (result=0x%08X)\n", __ROUTINE__, result );
+			Sleep( 3 * 1000 );
+			
+			err = SetupInterfaceList( &gMDNSRecord );
+			check( !err );
+
+			err = uDNS_SetupDNSConfig( &gMDNSRecord );
+			check( !err );
+			
+			break;
 		}
 	}
 
-	return kNoErr;
+	return( 0 );
 }
 
 //===========================================================================================================================
@@ -1290,7 +1446,7 @@ static void	ServiceSpecificFinalize( int argc, LPTSTR argv[] )
 	//
 	while (gEventSources.Head)
 	{
-		EventSourceFinalize((Win32EventSource*) gEventSources.Head);
+		EventSourceFinalize((EventSource*) gEventSources.Head);
 	}
 	//
 	// give a chance for the udsserver code to clean up
@@ -1298,32 +1454,14 @@ static void	ServiceSpecificFinalize( int argc, LPTSTR argv[] )
 	udsserver_exit();
 
 	//
-	// and finally close down the mDNSCore
+	// close down the mDNSCore
 	//
 	mDNS_Close(&gMDNSRecord);
 
 	//
-	// clean up the event sources mutex...no one should be using it now
+	// clean up the notifications
 	//
-	DeleteCriticalSection(&gEventSourceLock);
-
-	if ( gSPSWakeupEvent )
-	{
-		CloseHandle( gSPSWakeupEvent );
-		gSPSWakeupEvent = NULL;
-	}
-
-	if ( gSPSSleepEvent )
-	{
-		CloseHandle( gSPSSleepEvent );
-		gSPSSleepEvent = NULL;
-	}
-
-	if ( gStopEvent )
-	{
-		CloseHandle( gStopEvent );
-		gStopEvent = NULL;
-	}
+	TearDownNotifications();
 
 	//
 	// clean up loaded library
@@ -1339,6 +1477,242 @@ static void	ServiceSpecificFinalize( int argc, LPTSTR argv[] )
 }
 
 
+//===========================================================================================================================
+//	SetupNotifications
+//===========================================================================================================================
+
+mDNSlocal mStatus	SetupNotifications()
+{
+	mStatus				err;
+	SocketRef			sock;
+	unsigned long		param;
+	int					inBuffer;
+	int					outBuffer;
+	DWORD				outSize;
+	
+	gStopEvent	=	CreateEvent(NULL, FALSE, FALSE, NULL);
+	err = translate_errno( gStopEvent, errno_compat(), kNoResourcesErr );
+	require_noerr( err, exit );
+
+	// Register to listen for address list changes.
+	
+	gInterfaceListChangedEvent = CreateEvent( NULL, FALSE, FALSE, NULL );
+	err = translate_errno( gInterfaceListChangedEvent, (mStatus) GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+
+	sock = socket( AF_INET, SOCK_DGRAM, IPPROTO_UDP );
+	err = translate_errno( IsValidSocket( sock ), errno_compat(), kUnknownErr );
+	require_noerr( err, exit );
+	gInterfaceListChangedSocket = sock;
+	
+	// Make the socket non-blocking so the WSAIoctl returns immediately with WSAEWOULDBLOCK. It will set the event 
+	// when a change to the interface list is detected.
+	
+	param = 1;
+	err = ioctlsocket( sock, FIONBIO, &param );
+	err = translate_errno( err == 0, errno_compat(), kUnknownErr );
+	require_noerr( err, exit );
+	
+	inBuffer	= 0;
+	outBuffer	= 0;
+	err = WSAIoctl( sock, SIO_ADDRESS_LIST_CHANGE, &inBuffer, 0, &outBuffer, 0, &outSize, NULL, NULL );
+	if( err < 0 )
+	{
+		check( errno_compat() == WSAEWOULDBLOCK );
+	}
+	
+	err = WSAEventSelect( sock, gInterfaceListChangedEvent, FD_ADDRESS_LIST_CHANGE );
+	err = translate_errno( err == 0, errno_compat(), kUnknownErr );
+	require_noerr( err, exit );
+
+	gDescChangedEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+	err = translate_errno( gDescChangedEvent, (mStatus) GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+
+	if ( gDescKey != NULL )
+	{
+		err = RegNotifyChangeKeyValue( gDescKey, TRUE, REG_NOTIFY_CHANGE_LAST_SET, gDescChangedEvent, TRUE);
+		require_noerr( err, exit );
+	}
+
+	// This will catch all changes to tcp/ip networking, including changes to the domain search list
+
+	gTcpipChangedEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+	err = translate_errno( gTcpipChangedEvent, (mStatus) GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+
+	err = RegCreateKey( HKEY_LOCAL_MACHINE, TEXT("SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters"), &gTcpipKey );
+	require_noerr( err, exit );
+
+	err = RegNotifyChangeKeyValue( gTcpipKey, TRUE, REG_NOTIFY_CHANGE_NAME|REG_NOTIFY_CHANGE_LAST_SET, gTcpipChangedEvent, TRUE);
+	require_noerr( err, exit );
+
+	// This will catch all changes to ddns configuration
+
+	gDdnsChangedEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+	err = translate_errno( gDdnsChangedEvent, (mStatus) GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+
+	err = RegCreateKey( HKEY_LOCAL_MACHINE, kServiceParametersNode TEXT("\\DynDNS\\Setup"), &gDdnsKey );
+	require_noerr( err, exit );
+
+	err = RegNotifyChangeKeyValue( gDdnsKey, TRUE, REG_NOTIFY_CHANGE_NAME|REG_NOTIFY_CHANGE_LAST_SET, gDdnsChangedEvent, TRUE);
+	require_noerr( err, exit );
+
+	// This will catch all changes to file sharing
+
+	gFileSharingChangedEvent = CreateEvent( NULL, FALSE, FALSE, NULL );
+	err = translate_errno( gFileSharingChangedEvent, (mStatus) GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+
+	err = RegCreateKey( HKEY_LOCAL_MACHINE, TEXT("SYSTEM\\CurrentControlSet\\Services\\lanmanserver\\Shares"), &gFileSharingKey );
+	require_noerr( err, exit );
+
+	err = RegNotifyChangeKeyValue( gFileSharingKey, TRUE, REG_NOTIFY_CHANGE_NAME|REG_NOTIFY_CHANGE_LAST_SET, gFileSharingChangedEvent, TRUE);
+	require_noerr( err, exit );
+
+	// This will catch changes to the Windows firewall
+
+	gFirewallChangedEvent = CreateEvent( NULL, FALSE, FALSE, NULL );
+	err = translate_errno( gFirewallChangedEvent, (mStatus) GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+
+	// Just to make sure that initialization doesn't fail on some old OS
+	// that doesn't have this key, we'll only add the notification if
+	// the key exists.
+
+	err = RegCreateKey( HKEY_LOCAL_MACHINE, TEXT("SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\FirewallRules"), &gFirewallKey );
+	
+	if ( !err )
+	{
+		err = RegNotifyChangeKeyValue( gFirewallKey, TRUE, REG_NOTIFY_CHANGE_NAME|REG_NOTIFY_CHANGE_LAST_SET, gFirewallChangedEvent, TRUE);
+		require_noerr( err, exit );
+	}
+	else
+	{
+		err = mStatus_NoError;
+	}
+
+	gSPSWakeupEvent = CreateWaitableTimer( NULL, FALSE, NULL );
+	err = translate_errno( gSPSWakeupEvent, (mStatus) GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+
+	gSPSSleepEvent = CreateWaitableTimer( NULL, FALSE, NULL );
+	err = translate_errno( gSPSSleepEvent, (mStatus) GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+
+	gUDSEvent = CreateEvent( NULL, FALSE, FALSE, NULL );
+	err = translate_errno( gUDSEvent, ( mStatus ) GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+
+exit:
+	if( err )
+	{
+		TearDownNotifications();
+	}
+	return( err );
+}
+
+//===========================================================================================================================
+//	TearDownNotifications
+//===========================================================================================================================
+
+mDNSlocal mStatus	TearDownNotifications()
+{
+	if ( gStopEvent )
+	{
+		CloseHandle( gStopEvent );
+		gStopEvent = NULL;
+	}
+
+	if( IsValidSocket( gInterfaceListChangedSocket ) )
+	{
+		close_compat( gInterfaceListChangedSocket );
+		gInterfaceListChangedSocket = kInvalidSocketRef;
+	}
+
+	if( gInterfaceListChangedEvent )
+	{
+		CloseHandle( gInterfaceListChangedEvent );
+		gInterfaceListChangedEvent = 0;
+	}
+
+	if ( gDescChangedEvent != NULL )
+	{
+		CloseHandle( gDescChangedEvent );
+		gDescChangedEvent = NULL;
+	}
+
+	if ( gDescKey != NULL )
+	{
+		RegCloseKey( gDescKey );
+		gDescKey = NULL;
+	}
+
+	if ( gTcpipChangedEvent != NULL )
+	{
+		CloseHandle( gTcpipChangedEvent );
+		gTcpipChangedEvent = NULL;
+	}
+
+	if ( gDdnsChangedEvent != NULL )
+	{
+		CloseHandle( gDdnsChangedEvent );
+		gDdnsChangedEvent = NULL;
+	}
+
+	if ( gDdnsKey != NULL )
+	{
+		RegCloseKey( gDdnsKey );
+		gDdnsKey = NULL;
+	}
+
+	if ( gFileSharingChangedEvent != NULL )
+	{
+		CloseHandle( gFileSharingChangedEvent );
+		gFileSharingChangedEvent = NULL;
+	}
+
+	if ( gFileSharingKey != NULL )
+	{
+		RegCloseKey( gFileSharingKey );
+		gFileSharingKey = NULL;
+	}
+
+	if ( gFirewallChangedEvent != NULL )
+	{
+		CloseHandle( gFirewallChangedEvent );
+		gFirewallChangedEvent = NULL;
+	}
+
+	if ( gFirewallKey != NULL )
+	{
+		RegCloseKey( gFirewallKey );
+		gFirewallKey = NULL;
+	}
+
+	if ( gSPSWakeupEvent )
+	{
+		CloseHandle( gSPSWakeupEvent );
+		gSPSWakeupEvent = NULL;
+	}
+
+	if ( gSPSSleepEvent )
+	{
+		CloseHandle( gSPSSleepEvent );
+		gSPSSleepEvent = NULL;
+	}
+
+	if ( gUDSEvent )
+	{
+		CloseHandle( gUDSEvent );
+		gUDSEvent = NULL;
+	}
+
+	return( mStatus_NoError );
+}
+
+
 static void
 CoreCallback(mDNS * const inMDNS, mStatus status)
 {
@@ -1349,250 +1723,205 @@ CoreCallback(mDNS * const inMDNS, mStatus status)
 }
 
 
-static mDNSs32
-udsIdle(mDNS * const inMDNS, mDNSs32 interval)
+//===========================================================================================================================
+//	BeginUDSRecv
+//===========================================================================================================================
+
+mDNSlocal mStatus BeginUDSRecv( EventSource * source )
 {
-	DEBUG_UNUSED( inMDNS );
+	DWORD	bytesReceived	= 0;
+	DWORD	flags			= 0;
+	mStatus err;
 
-	//
-	// rdar://problem/3697326
-	//
-	// udsserver_idle wasn't being locked.  This resulted
-	// in multiple threads contesting for the all_requests
-	// data structure in uds_daemon.c
-	//
-	mDNSPlatformLock(&gMDNSRecord);
+	ZeroMemory( &source->overlapped, sizeof( source->overlapped ) );
+	source->overlapped.hEvent = source;
 
-	interval = udsserver_idle(interval);
+	source->wbuf.buf = ( char* ) source->buf;
+	source->wbuf.len = sizeof( source->buf );
 
-	mDNSPlatformUnlock(&gMDNSRecord);
-
-	return interval;
-}
-
-
-static void
-HostDescriptionChanged(mDNS * const inMDNS)
-{
-	DEBUG_UNUSED( inMDNS );
-
-	udsserver_handle_configchange(inMDNS);
-}
-
-
-mDNSlocal unsigned WINAPI
-udsSocketThread(LPVOID inParam)
-{
-	Win32EventSource	*	source		=	(Win32EventSource*) inParam;
-	DWORD					threadID	=	GetCurrentThreadId();
-	DWORD					waitCount;
-	HANDLE					waitList[2];
-	bool					safeToClose;
-	bool					done;
-	bool					locked		= false;
-	mStatus					err			= 0;
-
-	waitCount	= source->waitCount;
-	waitList[0] = source->waitList[0];
-	waitList[1] = source->waitList[1];
-	done		= (bool) (source->flags & EventSourceFinalized);
-
-	while (!done)
-	{
-		DWORD result;
-
-		result = WaitForMultipleObjects(waitCount, waitList, FALSE, INFINITE);
-		
-		mDNSPlatformLock(&gMDNSRecord);
-		locked = true;
-
-		// <rdar://problem/3838237>
-		//
-		// Look up the source by the thread id.  This will ensure that the 
-		// source is still extant.  It could already have been deleted
-		// by the processing thread.
-		//
-
-		EventSourceLock();
-
-		for (source = gEventSources.Head; source; source = source->next)
-		{
-			if (source->threadID == threadID)
-			{
-				break;
-			}
-		}
-
-		EventSourceUnlock();
-		
-		if (source == NULL)
-		{
-			goto exit;
-		}
-
-		//
-		// socket event
-		//
-		if (result == WAIT_OBJECT_0)
-		{
-			source->callback( (int) source->sock, 0, source->context);
-		}
-		//
-		// close event
-		//
-		else if (result == WAIT_OBJECT_0 + 1)
-		{
-			//
-			// this is a bit of a hack.  we want to clean up the internal data structures
-			// so we'll go in here and it will clean up for us
-			//
-			shutdown(source->sock, 2);
-			source->callback( (int) source->sock, 0, source->context);
-
-			break;
-		}
-		else
-		{
-			// Unexpected wait result.
-			dlog( kDebugLevelWarning, DEBUG_NAME "%s: unexpected wait result (result=0x%08X)\n", __ROUTINE__, result );
-			goto exit;
-		}
-
-		done   = (bool) (source->flags & EventSourceFinalized);
-		
-		mDNSPlatformUnlock(&gMDNSRecord);
-		locked = false;
-	}
-
-	EventSourceLock();
-	source->flags |= EventSourceFlagsThreadDone;
-	safeToClose = !( source->flags & EventSourceFlagsNoClose );
-	EventSourceUnlock();
-
-	if( safeToClose )
-	{
-		EventSourceFinalize( source );
-	}
-
-exit:
-
-	if ( locked )
-	{
-		mDNSPlatformUnlock(&gMDNSRecord);
-	}
-
-	_endthreadex_compat( (unsigned) err );
-	return( (unsigned) err );	
-}
-
-
-mStatus
-udsSupportAddFDToEventLoop( SocketRef fd, udsEventCallback callback, void *context)
-{
-	Win32EventSource *  newSource;
-	DWORD				result;
-	mStatus				err;
-
-	newSource = malloc(sizeof(Win32EventSource));
-	require_action( newSource, exit, err = mStatus_NoMemoryErr );
-	mDNSPlatformMemZero(newSource, sizeof(Win32EventSource));
-
-	newSource->flags	= 0;
-	newSource->sock		= (SOCKET) fd;
-	newSource->callback	= callback;
-	newSource->context	= context;
-
-	newSource->socketEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
-	err = translate_errno( newSource->socketEvent, (mStatus) GetLastError(), kUnknownErr );
-	require_noerr( err, exit );
-
-	newSource->closeEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
-	err = translate_errno( newSource->closeEvent, (mStatus) GetLastError(), kUnknownErr );
-	require_noerr( err, exit );
-
-	err = WSAEventSelect(newSource->sock, newSource->socketEvent, FD_ACCEPT|FD_READ|FD_CLOSE);
-	err = translate_errno( err == 0, errno_compat(), kNoResourcesErr );
-	require_noerr( err, exit );
-
-	newSource->waitCount = 0;
-	newSource->waitList[ newSource->waitCount++ ] = newSource->socketEvent;
-	newSource->waitList[ newSource->waitCount++ ] = newSource->closeEvent;
-
-	//
-	// lock the list
-	//
-	EventSourceLock();
-	
-	// add the event source to the end of the list, while checking
-	// to see if the list needs to be initialized
-	//
-	if ( gEventSources.LinkOffset == 0)
-	{
-		InitLinkedList( &gEventSources, offsetof( Win32EventSource, next));
-	}
-
-	AddToTail( &gEventSources, newSource);
-
-	//
-	// no longer using the list
-	//
-	EventSourceUnlock();
-
-	// Create thread with _beginthreadex() instead of CreateThread() to avoid memory leaks when using static run-time 
-	// libraries. See <http://msdn.microsoft.com/library/default.asp?url=/library/en-us/dllproc/base/createthread.asp>.
-	// Create the thread suspended then resume it so the thread handle and ID are valid before the thread starts running.
-	newSource->threadHandle = (HANDLE) _beginthreadex_compat( NULL, 0, udsSocketThread, newSource, CREATE_SUSPENDED, &newSource->threadID );
-	err = translate_errno( newSource->threadHandle, (mStatus) GetLastError(), kUnknownErr );
-	require_noerr( err, exit );
-
-	result = ResumeThread( newSource->threadHandle );
-	err = translate_errno( result != (DWORD) -1, errno_compat(), kNoResourcesErr );
+	err = WSARecv( source->sock, &source->wbuf, 1, &bytesReceived, &flags, &source->overlapped, ( LPWSAOVERLAPPED_COMPLETION_ROUTINE ) EndUDSRecv );
+	err = translate_errno( ( err == 0 ) || ( WSAGetLastError() == WSA_IO_PENDING ), WSAGetLastError(), kUnknownErr );
 	require_noerr( err, exit );
 
 exit:
-
-	if (err && newSource)
-	{
-		EventSourceFinalize(newSource);
-	}
 
 	return err;
 }
 
 
-mStatus
-udsSupportRemoveFDFromEventLoop( SocketRef fd)		// Note: This also CLOSES the socket
-{
-	Win32EventSource	*	source;
-	mStatus					err = mStatus_NoError;
-	
-	//
-	// find the event source
-	//
-	EventSourceLock();
+//===========================================================================================================================
+//	EndUDSRecv
+//===========================================================================================================================
 
-	for (source = gEventSources.Head; source; source = source->next)
+mDNSlocal void EndUDSRecv( DWORD error, DWORD bytesTransferred, LPWSAOVERLAPPED overlapped, DWORD flags )
+{
+	EventSource	* source;
+
+	( void ) flags;
+
+	source = ( overlapped != NULL ) ? overlapped->hEvent : NULL;
+
+	if ( source && ( source->sock != INVALID_SOCKET ) )
 	{
-		if (source->sock == (SOCKET) fd)
+		source->lastError = error;
+
+		if ( !error )
 		{
-			break;
+			if ( bytesTransferred )
+			{
+				source->bptr = source->buf;
+				source->eptr = source->buf + bytesTransferred;
+			}
+			else
+			{
+				source->closed = TRUE;
+			}
+		}
+
+		source->callback( (int) source->sock, 0, source->context );
+	}
+}
+
+
+//===========================================================================================================================
+//	udsSupportAddFDToEventLoop
+//===========================================================================================================================
+
+mStatus
+udsSupportAddFDToEventLoop( SocketRef fd, udsEventCallback callback, void *context, void **platform_data)
+{
+	mStatus err = mStatus_NoError;
+
+	if ( context )
+	{
+		EventSource * source;
+
+		source = malloc( sizeof( EventSource ) );
+		require_action( source, exit, err = mStatus_NoMemoryErr );
+		mDNSPlatformMemZero( source, sizeof( EventSource ) );
+
+		source->sock		= (SOCKET) fd;
+		source->callback	= callback;
+		source->context		= context;
+
+		// Setup socket with alertable i/o
+
+		err = BeginUDSRecv( source );
+		require_noerr( err, exit );
+		
+		// add the event source to the end of the list, while checking
+		// to see if the list needs to be initialized
+		//
+		if ( gEventSources.LinkOffset == 0)
+		{
+			InitLinkedList( &gEventSources, offsetof( EventSource, next ) );
+		}
+
+		AddToTail( &gEventSources, source );
+
+		*platform_data = source;
+	}
+	else
+	{
+		err = WSAEventSelect( fd, gUDSEvent, FD_ACCEPT | FD_CLOSE);
+		err = translate_errno( err == 0, WSAGetLastError(), kNoResourcesErr );
+		require_noerr( err, exit );
+		gUDSSocket		= fd;
+		gUDSCallback	= callback;
+	}
+
+exit:
+
+	return err;
+}
+
+
+int
+udsSupportReadFD( SocketRef fd, char *buf, int len, int flags, void *platform_data )
+{
+	EventSource	*	source;
+	int				bytesLeft;
+	int				ret;
+
+	( void ) flags;
+
+	source = ( EventSource* ) platform_data;
+	require_action( source, exit, ret = -1 );
+	require_action( source->sock == fd, exit, ret = -1 );
+
+	if ( source->closed )
+	{
+		ret = 0;
+	}
+	else if ( source->lastError == 0 )
+	{
+		// First check to see if we have any data left in our buffer
+
+		bytesLeft = ( DWORD ) ( source->eptr - source->bptr );
+
+		if ( bytesLeft )
+		{
+			int bytesToCopy = ( bytesLeft < len ) ? bytesLeft : len;
+
+			memcpy( buf, source->bptr, bytesToCopy );
+			source->bptr += bytesToCopy;
+
+			ret = bytesToCopy;
+
+			if ( bytesLeft == bytesToCopy )
+			{
+				source->lastError = BeginUDSRecv( source );
+
+				if ( source->lastError )
+				{
+					WSASetLastError( source->lastError );
+					ret = -1;
+				}
+			}
+		}
+		else
+		{
+			WSASetLastError( WSAEWOULDBLOCK );
+			ret = -1;
 		}
 	}
-
-	//
-	// if we found him, finalize him
-	//
-	if (source != NULL)
+	else
 	{
-		EventSourceFinalize(source);
+		WSASetLastError( source->lastError );
+		ret = -1;
 	}
 
-	//
-	// done with the list
-	//
-	EventSourceUnlock();
-	
-	closesocket(fd);
+exit:
+
+	return ret;
+}
+
+
+mStatus
+udsSupportRemoveFDFromEventLoop( SocketRef fd, void *platform_data)		// Note: This also CLOSES the socket
+{
+	mStatus err = mStatus_NoError;
+
+	if ( platform_data )
+	{
+		EventSource * source;
+
+		source = ( EventSource* ) platform_data;
+		check( fd == source->sock );
+
+		if ( source )
+		{
+			EventSourceFinalize( source );	
+		}
+	}
+	else
+	{
+		err = WSAEventSelect( fd, gUDSEvent, 0 );
+		err = translate_errno( err == 0, WSAGetLastError(), kUnknownErr );
+		require_noerr( err, exit );
+	}
+
+exit:
 
 	return err;
 }
@@ -1607,144 +1936,32 @@ mDNSexport void RecordUpdatedNiceLabel(mDNS *const m, mDNSs32 delay)
 
 
 static mStatus
-EventSourceFinalize(Win32EventSource * source)
-{
-	OSStatus				err;
-	bool					locked;
-	Win32EventSource	*	inserted;
-	bool				sameThread;
-	bool				deferClose;
-	BOOL				ok;
-	DWORD 				threadID;
-	DWORD				result;
-	
+EventSourceFinalize(EventSource * source)
+{	
 	check( source );
-	
-	// Find the session in the list.
-	
-	EventSourceLock();
-	locked = true;
-	
-	for( inserted = (Win32EventSource*) gEventSources.Head; inserted; inserted = inserted->next )
-	{
-		if( inserted == source )
-		{
-			break;
-		}
-	}
-	require_action( inserted, exit, err = kNotFoundErr );
 
-	//
-	// note that we've had finalize called
-	//
-	source->flags |= EventSourceFinalized;
-	
-	// If we're being called from the same thread as the session (e.g. message callback is closing the session) then 
-	// we must defer the close until the thread is done because the thread is still using the session object.
-	
-	deferClose	= false;
-	threadID	= GetCurrentThreadId();
-	sameThread	= source->threadHandle && ( threadID == source->threadID );
-	if( sameThread && !( source->flags & EventSourceFlagsThreadDone ) )
+	if ( source->sock != INVALID_SOCKET )
 	{
-		source->flags &= ~EventSourceFlagsNoClose;
-		deferClose = true;
+		closesocket( source->sock );
+		source->sock = INVALID_SOCKET;
 	}
-	
-	// If the thread we're not being called from the session thread, but the thread has already marked itself as
-	// as done (e.g. session closed from something like a peer disconnect and at the same time the client also 
-	// tried to close) then we only want to continue with the close if the thread is not going to close itself.
-	
-	if( !sameThread && ( source->flags & EventSourceFlagsThreadDone ) && !( source->flags & EventSourceFlagsNoClose ) )
-	{
-		deferClose = true;
-	}
-	
-	// Signal a close so the thread exits.
-	
-	if( source->closeEvent )
-	{
-		ok = SetEvent( source->closeEvent );
-		check_translated_errno( ok, errno_compat(), kUnknownErr );
-	}	
-	if( deferClose )
-	{
-		err = kNoErr;
-		goto exit;
-	}
-	
-	source->flags |= EventSourceFlagsNoClose;
 	
 	// Remove the session from the list.
 	RemoveFromList(&gEventSources, source);
 	
-	EventSourceUnlock();
-	locked = false;
+	// Queue the free
+	QueueUserAPC( ( PAPCFUNC ) EventSourceFree, gMDNSRecord.p->mainThread, ( ULONG_PTR ) source );
 	
-	// Wait for the thread to exit. Give up after 3 seconds to handle a hung thread.
-	
-	if( source->threadHandle && ( threadID != source->threadID ) )
-	{
-		result = WaitForSingleObject( source->threadHandle, 3 * 1000 );
-		check_translated_errno( result == WAIT_OBJECT_0, (OSStatus) GetLastError(), result );
-	}
-	
-	// Release the thread.
-	
-	if( source->threadHandle )
-	{
-		ok = CloseHandle( source->threadHandle );
-		check_translated_errno( ok, errno_compat(), kUnknownErr );
-		source->threadHandle = NULL;
-	}
-	
-	// Release the socket event.
-	
-	if( source->socketEvent )
-	{
-		ok = CloseHandle( source->socketEvent );
-		check_translated_errno( ok, errno_compat(), kUnknownErr );
-		source->socketEvent = NULL;
-	}
-	
-	// Release the close event.
-	
-	if( source->closeEvent )
-	{
-		ok = CloseHandle( source->closeEvent );
-		check_translated_errno( ok, errno_compat(), kUnknownErr );
-		source->closeEvent = NULL;
-	}
-	
-	// Release the memory used by the object.
-	free ( source );
+	dlog( kDebugLevelInfo, DEBUG_NAME "session closed\n" );
 
-	err = kNoErr;
-	
-	dlog( kDebugLevelNotice, DEBUG_NAME "session closed\n" );
-	
-exit:
-
-	if( locked )
-	{
-		EventSourceUnlock();
-	}
-
-	return( err );
+	return( mStatus_NoError );
 }
 
 
 static void
-EventSourceLock()
+EventSourceFree( EventSource * source )
 {
-	EnterCriticalSection(&gEventSourceLock);
-}
-
-
-static void
-EventSourceUnlock()
-{
-	LeaveCriticalSection(&gEventSourceLock);
+	free( source );
 }
 
 

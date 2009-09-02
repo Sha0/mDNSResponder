@@ -2602,9 +2602,10 @@ exit:
 // uds_daemon.c support routines /////////////////////////////////////////////
 
 // Arrange things so that when data appears on fd, callback is called with context
-mDNSexport mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *context)
+mDNSexport mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback, void *context, void **platform_data)
 	{
 	KQSocketEventSource **p = &gEventSources;
+	(void) platform_data;
 	while (*p && (*p)->fd != fd) p = &(*p)->next;
 	if (*p) { LogMsg("udsSupportAddFDToEventLoop: ERROR fd %d already has EventLoop source entry", fd); return mStatus_AlreadyRegistered; }
 
@@ -2628,9 +2629,16 @@ mDNSexport mStatus udsSupportAddFDToEventLoop(int fd, udsEventCallback callback,
 	return mStatus_BadParamErr;
 	}
 
-mDNSexport mStatus udsSupportRemoveFDFromEventLoop(int fd)		// Note: This also CLOSES the file descriptor
+int udsSupportReadFD(dnssd_sock_t fd, char *buf, int len, int flags, void *platform_data)
+	{
+	(void) platform_data;
+	return recv(fd, buf, len, flags);
+	}
+
+mDNSexport mStatus udsSupportRemoveFDFromEventLoop(int fd, void *platform_data)		// Note: This also CLOSES the file descriptor
 	{
 	KQSocketEventSource **p = &gEventSources;
+	(void) platform_data;
 	while (*p && (*p)->fd != fd) p = &(*p)->next;
 	if (*p)
 		{
