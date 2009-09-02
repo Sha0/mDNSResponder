@@ -2168,7 +2168,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 			{
 			// Start a new known-answer list
 			CacheRecord **kalistptr = &KnownAnswerList;
-			mDNSu32 answerforecast = 0;
+			mDNSu32 answerforecast = OwnerRecordSpace;		// We start by assuming we'll need at least enough space to put the Owner Option
 			
 			// Put query questions in this packet
 			for (q = m->Questions; q && q != m->NewQuestions; q=q->next)
@@ -2192,7 +2192,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 					{
 					mDNSBool ucast = (rr->ProbeCount >= DefaultProbeCountForTypeUnique-1) && m->CanReceiveUnicastOn5353;
 					mDNSu16 ucbit = (mDNSu16)(ucast ? kDNSQClass_UnicastResponse : 0);
-					const mDNSu8 *const limit = m->omsg.data + ((m->omsg.h.numQuestions) ? NormalMaxDNSMessageData : AbsoluteMaxDNSMessageData) - OwnerRecordSpace;
+					const mDNSu8 *const limit = m->omsg.data + (m->omsg.h.numQuestions ? NormalMaxDNSMessageData : AbsoluteMaxDNSMessageData);
 					mDNSu8 *newptr = putQuestion(&m->omsg, queryptr, limit, rr->resrec.name, kDNSQType_ANY, (mDNSu16)(rr->resrec.rrclass | ucbit));
 					// We forecast: compressed name (2) type (2) class (2) TTL (4) rdlength (2) rdata (n)
 					mDNSu32 forecast = answerforecast + 12 + rr->resrec.rdestimate;
