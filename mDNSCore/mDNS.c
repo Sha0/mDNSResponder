@@ -1194,8 +1194,9 @@ mDNSlocal void SetupOwnerOpt(const mDNS *const m, const NetworkInterfaceInfo *co
 	owner->u.owner.password = zeroEthAddr;
 
 	// Don't try to compute the optlen until *after* we've set up the data fields
+	// Right now the DNSOpt_Owner_Space macro does not depend on the owner->u.owner being set up correctly, but in the future it might
 	owner->opt              = kDNSOpt_Owner;
-	owner->optlen           = DNSOpt_Owner_Space(owner) - 4;
+	owner->optlen           = DNSOpt_Owner_Space(&m->PrimaryMAC, &intf->MAC) - 4;
 	}
 
 mDNSlocal void GrantUpdateCredit(AuthRecord *rr)
@@ -1380,8 +1381,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 
 	while (intf)
 		{
-		const int OwnerRecordSpace = (m->AnnounceOwner && intf->MAC.l[0]) ?
-			DNSOpt_Header_Space + mDNSSameEthAddress(&m->PrimaryMAC, &intf->MAC) ? DNSOpt_OwnerData_ID_Space : DNSOpt_OwnerData_ID_Wake_Space : 0;
+		const int OwnerRecordSpace = (m->AnnounceOwner && intf->MAC.l[0]) ? DNSOpt_Header_Space + DNSOpt_Owner_Space(&m->PrimaryMAC, &intf->MAC) : 0;
 		int numDereg    = 0;
 		int numAnnounce = 0;
 		int numAnswer   = 0;
@@ -2159,8 +2159,7 @@ mDNSlocal void SendQueries(mDNS *const m)
 	// go through our interface list sending the appropriate queries on each interface
 	while (intf)
 		{
-		const int OwnerRecordSpace = (m->AnnounceOwner && intf->MAC.l[0]) ?
-			DNSOpt_Header_Space + mDNSSameEthAddress(&m->PrimaryMAC, &intf->MAC) ? DNSOpt_OwnerData_ID_Space : DNSOpt_OwnerData_ID_Wake_Space : 0;
+		const int OwnerRecordSpace = (m->AnnounceOwner && intf->MAC.l[0]) ? DNSOpt_Header_Space + DNSOpt_Owner_Space(&m->PrimaryMAC, &intf->MAC) : 0;
 		AuthRecord *rr;
 		mDNSu8 *queryptr = m->omsg.data;
 		InitializeDNSMessage(&m->omsg.h, zeroID, QueryFlags);
@@ -3311,8 +3310,7 @@ mDNSexport void mDNSCoreRestartQueries(mDNS *const m)
 
 mDNSlocal void SendSPSRegistration(mDNS *const m, NetworkInterfaceInfo *intf, const mDNSOpaque16 id)
 	{
-	const int ownerspace = mDNSSameEthAddress(&m->PrimaryMAC, &intf->MAC) ? DNSOpt_OwnerData_ID_Space : DNSOpt_OwnerData_ID_Wake_Space;
-	const int optspace = DNSOpt_Header_Space + DNSOpt_LeaseData_Space + ownerspace;
+	const int optspace = DNSOpt_Header_Space + DNSOpt_LeaseData_Space + DNSOpt_Owner_Space(&m->PrimaryMAC, &intf->MAC);
 	const int sps = intf->NextSPSAttempt / 3;
 	AuthRecord *rr;
 
