@@ -1701,17 +1701,10 @@ mDNSlocal mDNSBool BuildQuestion(mDNS *const m, DNSMessage *query, mDNSu8 **quer
 	mDNSBool ucast = (q->LargeAnswers || q->RequestUnicast) && m->CanReceiveUnicastOn5353;
 	mDNSu16 ucbit = (mDNSu16)(ucast ? kDNSQClass_UnicastResponse : 0);
 	const mDNSu8 *const limit = query->data + NormalMaxDNSMessageData;
-	mDNSu8 *newptr = putQuestion(query, *queryptr, limit, &q->qname, q->qtype, (mDNSu16)(q->qclass | ucbit));
+	mDNSu8 *newptr = putQuestion(query, *queryptr, limit - *answerforecast, &q->qname, q->qtype, (mDNSu16)(q->qclass | ucbit));
 	if (!newptr)
 		{
 		debugf("BuildQuestion: No more space in this packet for question %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
-		return(mDNSfalse);
-		}
-	else if (newptr + *answerforecast >= limit)
-		{
-		verbosedebugf("BuildQuestion: Retracting question %##s (%s) new forecast total %d",
-			q->qname.c, DNSTypeName(q->qtype), newptr + *answerforecast - query->data);
-		query->h.numQuestions--;
 		return(mDNSfalse);
 		}
 	else
@@ -2193,10 +2186,10 @@ mDNSlocal void SendQueries(mDNS *const m)
 					mDNSBool ucast = (rr->ProbeCount >= DefaultProbeCountForTypeUnique-1) && m->CanReceiveUnicastOn5353;
 					mDNSu16 ucbit = (mDNSu16)(ucast ? kDNSQClass_UnicastResponse : 0);
 					const mDNSu8 *const limit = m->omsg.data + (m->omsg.h.numQuestions ? NormalMaxDNSMessageData : AbsoluteMaxDNSMessageData);
-					mDNSu8 *newptr = putQuestion(&m->omsg, queryptr, limit, rr->resrec.name, kDNSQType_ANY, (mDNSu16)(rr->resrec.rrclass | ucbit));
 					// We forecast: compressed name (2) type (2) class (2) TTL (4) rdlength (2) rdata (n)
 					mDNSu32 forecast = answerforecast + 12 + rr->resrec.rdestimate;
-					if (newptr && newptr + forecast < limit)
+					mDNSu8 *newptr = putQuestion(&m->omsg, queryptr, limit - forecast, rr->resrec.name, kDNSQType_ANY, (mDNSu16)(rr->resrec.rrclass | ucbit));
+					if (newptr)
 						{
 						queryptr       = newptr;
 						answerforecast = forecast;
@@ -2204,11 +2197,6 @@ mDNSlocal void SendQueries(mDNS *const m)
 						rr->IncludeInProbe = mDNStrue;
 						verbosedebugf("SendQueries:   Put Question %##s (%s) probecount %d",
 							rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype), rr->ProbeCount);
-						}
-					else
-						{
-						verbosedebugf("SendQueries:   Retracting Question %##s (%s)", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype));
-						m->omsg.h.numQuestions--;
 						}
 					}
 			}
