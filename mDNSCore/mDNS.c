@@ -7742,10 +7742,8 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 			{
 			#define SSH_AsNumber 22
 			#define ARD_AsNumber 3283
-			#define IPSEC_AsNumber 4500
 			static const mDNSIPPort SSH   = { { SSH_AsNumber   >> 8, SSH_AsNumber   & 0xFF } };
 			static const mDNSIPPort ARD   = { { ARD_AsNumber   >> 8, ARD_AsNumber   & 0xFF } };
-			static const mDNSIPPort IPSEC = { { IPSEC_AsNumber >> 8, IPSEC_AsNumber & 0xFF } };
 
 			mDNSBool wake = mDNSfalse;
 			mDNSIPPort port = zeroIPPort;
@@ -7784,7 +7782,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 							wake = mDNStrue;
 
 							// For Back to My Mac UDP port 4500 (IPSEC) packets, we specially ignore NAT keepalive packets
-							if (mDNSSameIPPort(port, IPSEC)) wake = (len != 9 || end < trans + 9 || trans[8] != 0xFF);
+							if (mDNSSameIPPort(port, IPSECPort)) wake = (len != 9 || end < trans + 9 || trans[8] != 0xFF);
 
 							// For now, because we haven't yet worked out a clean elegant way to do this, we just special-case the
 							// Apple Remote Desktop port number -- we ignore all packets to UDP 3283 (the "Net Assistant" port),
@@ -7815,7 +7813,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 								r2->resrec.rrtype == kDNSType_SRV && mDNSSameIPPort(r2->resrec.rdata->u.srv.port, port) &&
 								SameDomainLabel(ThirdLabel(r2->resrec.name)->c, tp))
 								break;
-						if (!r2 && mDNSSameIPPort(port, IPSEC)) r2 = rr;	// So that we wake for BTMM IPSEC packets, even without a matching SRV record
+						if (!r2 && mDNSSameIPPort(port, IPSECPort)) r2 = rr;	// So that we wake for BTMM IPSEC packets, even without a matching SRV record
 						if (r2)
 							{
 							rr->AnnounceCount = 0;
