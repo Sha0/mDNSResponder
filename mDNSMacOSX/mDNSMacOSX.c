@@ -2507,8 +2507,8 @@ mDNSexport void SetupLocalAutoTunnelInterface_internal(mDNS *const m)
 				info->AutoTunnelNAT.clientCallback   = AutoTunnelNATCallback;
 				info->AutoTunnelNAT.clientContext    = info;
 				info->AutoTunnelNAT.Protocol         = NATOp_MapUDP;
-				info->AutoTunnelNAT.IntPort          = mDNSOpaque16fromIntVal(kRacoonPort);
-				info->AutoTunnelNAT.RequestedPort    = mDNSOpaque16fromIntVal(kRacoonPort);
+				info->AutoTunnelNAT.IntPort          = IPSECPort;
+				info->AutoTunnelNAT.RequestedPort    = IPSECPort;
 				info->AutoTunnelNAT.NATLease         = 0;
 				mStatus err = mDNS_StartNATOperation_internal(m, &info->AutoTunnelNAT);
 				if (err) LogMsg("SetupLocalAutoTunnelInterface_internal error %d starting NAT mapping", err);
@@ -2617,7 +2617,6 @@ mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const R
 		}
 	else if (question->qtype == kDNSType_A)
 		{
-		ClientTunnel *old = mDNSNULL;
 		LogInfo("AutoTunnelCallback: SRV target addr %.4a", &answer->rdata->u.ipv4);
 		question->ThisQInterval = -1;		// So we know this tunnel setup has completed
 		tun->rmt_outer = answer->rdata->u.ipv4;
@@ -2636,9 +2635,9 @@ mDNSexport void AutoTunnelCallback(mDNS *const m, DNSQuestion *question, const R
 			if (!mDNSSameClientTunnel(&(*p)->rmt_inner, &tun->rmt_inner)) p = &(*p)->next;
 			else
 				{
-				LogInfo("Found existing AutoTunnel for %##s %.16a", tun->dstname.c, &tun->rmt_inner);
-				old = *p;
+				ClientTunnel *old = *p;
 				*p = old->next;
+				LogInfo("Found existing AutoTunnel for %##s %.16a", tun->dstname.c, &tun->rmt_inner);
 				if (old->q.ThisQInterval >= 0) mDNS_StopQuery(m, &old->q);
 				else if (!mDNSSameIPv6Address(old->loc_inner, tun->loc_inner) ||
 						 !mDNSSameIPv4Address(old->loc_outer, tun->loc_outer) ||
@@ -4167,7 +4166,7 @@ mDNSlocal mDNSu16 GetPortArray(mDNS *const m, int trans, mDNSIPPort *portarray)
 			}
 
 	// If Back to My Mac is on, also wake for packets to the IPSEC UDP port (4500)
-	if (trans == mDNSTransport_UDP && TunnelServers(m))	
+	if (trans == mDNSTransport_UDP && TunnelServers(m))
 		{
 		LogSPS("GetPortArray Back to My Mac at %d", count);
 		if (portarray) portarray[count] = IPSECPort;
@@ -4243,7 +4242,7 @@ IOConnectCallStructMethod(
 	}
 #endif
 
-mDNSexport mStatus ActivateLocalProxy(mDNS *const m, char *ifname)
+mDNSexport mStatus ActivateLocalProxy(mDNS *const m, char *ifname)	// Called with the lock held
 	{
 	mStatus result = mStatus_UnknownErr;
 	io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault, IOBSDNameMatching(kIOMasterPortDefault, 0, ifname));
