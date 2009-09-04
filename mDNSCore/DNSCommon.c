@@ -2505,7 +2505,8 @@ mDNSlocal mDNSs32 GetNextScheduledEvent(const mDNS *const m)
 #endif
 	if (e - m->NextCacheCheck        > 0) e = m->NextCacheCheck;
 	if (e - m->NextScheduledSPS      > 0) e = m->NextScheduledSPS;
-	if (m->SleepLimit && e - m->NextScheduledSPRetry > 0) e = m->NextScheduledSPRetry;
+	// NextScheduledSPRetry only valid when DelaySleep not set
+	if (!m->DelaySleep && m->SleepLimit && e - m->NextScheduledSPRetry > 0) e = m->NextScheduledSPRetry;
 	if (m->DelaySleep && e - m->DelaySleep           > 0) e = m->DelaySleep;
 
 	if (m->SuppressSending)
@@ -2557,7 +2558,7 @@ mDNSexport void ShowTaskSchedulingError(mDNS *const m)
 		LogMsg("Task Scheduling Error: m->NextScheduledNATOp %d",    m->timenow - m->NextScheduledNATOp);
 	if (m->timenow - m->NextScheduledSPS      >= 0)
 		LogMsg("Task Scheduling Error: m->NextScheduledSPS %d",      m->timenow - m->NextScheduledSPS);
-	if (m->SleepLimit && m->timenow - m->NextScheduledSPRetry >= 0)
+	if (!m->DelaySleep && m->SleepLimit && m->timenow - m->NextScheduledSPRetry >= 0)
 		LogMsg("Task Scheduling Error: m->NextScheduledSPRetry %d",  m->timenow - m->NextScheduledSPRetry);
 	if (m->DelaySleep && m->timenow - m->DelaySleep >= 0)
 		LogMsg("Task Scheduling Error: m->DelaySleep %d",            m->timenow - m->DelaySleep);

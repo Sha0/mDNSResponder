@@ -1643,7 +1643,8 @@ struct mDNS_struct
 	mDNSs32  DelaySleep;				// To inhibit re-sleeping too quickly right after wake
 	mDNSs32  SleepLimit;				// Time window to allow deregistrations, etc.,
 										// during which underying platform layer should inhibit system sleep
-	mDNSs32  NextScheduledSPRetry;		// Time next sleep proxy registration action is required. Only valid if SleepLimit is nonzero.
+	mDNSs32  NextScheduledSPRetry;		// Time next sleep proxy registration action is required.
+										// Only valid if SleepLimit is nonzero and DelaySleep is zero.
 
 	// These fields only required for mDNS Searcher...
 	DNSQuestion *Questions;				// List of all registered questions, active and inactive
