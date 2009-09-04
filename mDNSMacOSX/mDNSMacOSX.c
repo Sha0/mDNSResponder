@@ -4154,8 +4154,9 @@ typedef struct
 #include <IOKit/IOKitLib.h>
 #include <dns_util.h>
 
-mDNSlocal mDNSu16 GetPortArray(const mDNS *const m, domainlabel *tp, mDNSIPPort *portarray)
+mDNSlocal mDNSu16 GetPortArray(mDNS *const m, int trans, mDNSIPPort *portarray)
 	{
+	const domainlabel *const tp = (trans == mDNSTransport_UDP) ? (const domainlabel *)"\x4_udp" : (const domainlabel *)"\x4_tcp";
 	int count = 0;
 	AuthRecord *rr;
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
@@ -4164,6 +4165,14 @@ mDNSlocal mDNSu16 GetPortArray(const mDNS *const m, domainlabel *tp, mDNSIPPort 
 			if (portarray) portarray[count] = rr->resrec.rdata->u.srv.port;
 			count++;
 			}
+
+	// If Back to My Mac is on, also wake for packets to the IPSEC UDP port (4500)
+	if (trans == mDNSTransport_UDP && TunnelServers(m))	
+		{
+		LogSPS("GetPortArray Back to My Mac at %d", count);
+		if (portarray) portarray[count] = IPSECPort;
+		count++;
+		}
 	return(count);
 	}
 
@@ -4266,8 +4275,8 @@ mDNSexport mStatus ActivateLocalProxy(mDNS *const m, char *ifname)
 					mDNSOffloadCmd cmd;
 					mDNSPlatformMemZero(&cmd, sizeof(cmd)); // When compiling 32-bit, make sure top 32 bits of 64-bit pointers get initialized to zero
 					cmd.command       = cmd_mDNSOffloadRR;
-					cmd.numUDPPorts   = GetPortArray(m, (domainlabel *)"\x4_udp", mDNSNULL);
-					cmd.numTCPPorts   = GetPortArray(m, (domainlabel *)"\x4_tcp", mDNSNULL);
+					cmd.numUDPPorts   = GetPortArray(m, mDNSTransport_UDP, mDNSNULL);
+					cmd.numTCPPorts   = GetPortArray(m, mDNSTransport_TCP, mDNSNULL);
 					cmd.numRRRecords  = CountProxyRecords(m, &cmd.rrBufferSize);
 					cmd.compression   = sizeof(DNSMessageHeader);
 
@@ -4291,8 +4300,8 @@ mDNSexport mStatus ActivateLocalProxy(mDNS *const m, char *ifname)
 					else
 						{
 						GetProxyRecords(m, msg, cmd.rrBufferSize, cmd.rrRecords.ptr);
-						GetPortArray(m, (domainlabel *)"\x4_udp", cmd.udpPorts.ptr);
-						GetPortArray(m, (domainlabel *)"\x4_tcp", cmd.tcpPorts.ptr);
+						GetPortArray(m, mDNSTransport_UDP, cmd.udpPorts.ptr);
+						GetPortArray(m, mDNSTransport_TCP, cmd.tcpPorts.ptr);
 						char outputData[2];
 						size_t outputDataSize = sizeof(outputData);
 						kr = IOConnectCallStructMethod(conObj, 0, &cmd, sizeof(cmd), outputData, &outputDataSize);

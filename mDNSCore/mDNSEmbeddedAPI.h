@@ -284,6 +284,13 @@ enum
 	mDNSAddrType_Unknown = ~0	// Special marker value used in known answer list recording
 	};
 
+enum
+	{
+	mDNSTransport_None = 0,
+	mDNSTransport_UDP  = 1,
+	mDNSTransport_TCP  = 2
+	};
+
 typedef struct
 	{
 	mDNSs32 type;
@@ -1774,6 +1781,7 @@ extern const mDNSIPPort   DiscardPort;
 extern const mDNSIPPort   SSHPort;
 extern const mDNSIPPort   UnicastDNSPort;
 extern const mDNSIPPort   SSDPPort;
+extern const mDNSIPPort   IPSECPort;
 extern const mDNSIPPort   NSIPCPort;
 extern const mDNSIPPort   NATPMPAnnouncementPort;
 extern const mDNSIPPort   NATPMPPort;

@@ -61,6 +61,7 @@ mDNSexport const mDNSInterfaceID mDNSInterface_Unicast   = (mDNSInterfaceID)2;
 #define   SSHPortAsNumber                  22
 #define   UnicastDNSPortAsNumber           53
 #define   SSDPPortAsNumber               1900
+#define   IPSECPortAsNumber              4500
 #define   NSIPCPortAsNumber              5030		// Port used for dnsextd to talk to local nameserver bound to loopback
 #define   NATPMPAnnouncementPortAsNumber 5350
 #define   NATPMPPortAsNumber             5351
@@ -74,6 +75,7 @@ mDNSexport const mDNSIPPort DiscardPort            = { { DiscardPortAsNumber    
 mDNSexport const mDNSIPPort SSHPort                = { { SSHPortAsNumber                >> 8, SSHPortAsNumber                & 0xFF } };
 mDNSexport const mDNSIPPort UnicastDNSPort         = { { UnicastDNSPortAsNumber         >> 8, UnicastDNSPortAsNumber         & 0xFF } };
 mDNSexport const mDNSIPPort SSDPPort               = { { SSDPPortAsNumber               >> 8, SSDPPortAsNumber               & 0xFF } };
+mDNSexport const mDNSIPPort IPSECPort              = { { IPSECPortAsNumber              >> 8, IPSECPortAsNumber              & 0xFF } };
 mDNSexport const mDNSIPPort NSIPCPort              = { { NSIPCPortAsNumber              >> 8, NSIPCPortAsNumber              & 0xFF } };
 mDNSexport const mDNSIPPort NATPMPAnnouncementPort = { { NATPMPAnnouncementPortAsNumber >> 8, NATPMPAnnouncementPortAsNumber & 0xFF } };
 mDNSexport const mDNSIPPort NATPMPPort             = { { NATPMPPortAsNumber             >> 8, NATPMPPortAsNumber             & 0xFF } };
