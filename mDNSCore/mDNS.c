@@ -7596,23 +7596,33 @@ mDNSexport mStatus mDNS_AdvertiseDomains(mDNS *const m, AuthRecord *rr,
 	return(mDNS_Register(m, rr));
 	}
 	
+mDNSlocal mDNSBool mDNS_IdUsedInResourceRecordsList(mDNS * const m, mDNSOpaque16 id)
+	{
+	AuthRecord *r;
+	for (r = m->ResourceRecords; r; r=r->next) if (mDNSSameOpaque16(id, r->updateid)) return mDNStrue;
+	return mDNSfalse;
+	}
+	
+mDNSlocal mDNSBool mDNS_IdUsedInQuestionsList(mDNS * const m, mDNSOpaque16 id)
+	{
+	DNSQuestion *q;
+	for (q = m->Questions; q; q=q->next) if (mDNSSameOpaque16(id, q->TargetQID)) return mDNStrue;
+	return mDNSfalse;
+	}
+	
 mDNSexport mDNSOpaque16 mDNS_NewMessageID(mDNS * const m)
 	{
 	mDNSOpaque16 id;
-	int i = 0;
-	do
+	int i;
+
+	for (i=0; i<10; i++)
 		{
-		// This loop is written this slightly odd way to avoid bogus "unreachable code" warnings on Windows
-		AuthRecord *r;
-		DNSQuestion *q;
 		id = mDNSOpaque16fromIntVal(1 + (mDNSu16)mDNSRandom(0xFFFE));
-		for (r = m->ResourceRecords; r; r=r->next) if (mDNSSameOpaque16(id, r->updateid )) goto retry;
-		for (q = m->Questions;       q; q=q->next) if (mDNSSameOpaque16(id, q->TargetQID)) goto retry;
-		break;
-retry:
-		i++;
-		} while (i < 10);
+		if (!mDNS_IdUsedInResourceRecordsList(m, id) && !mDNS_IdUsedInQuestionsList(m, id)) break;
+		}
+		
 	debugf("mDNS_NewMessageID: %5d", mDNSVal16(id));
+
 	return id;
 	}
 
