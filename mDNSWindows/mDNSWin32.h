@@ -31,6 +31,26 @@
 	extern "C" {
 #endif
 
+struct UDPSocket_struct
+{
+	mDNSIPPort						port; 			// MUST BE FIRST FIELD -- mDNSCoreReceive expects every UDPSocket_struct to begin with mDNSIPPort port
+	mDNSAddr						addr;			// This is initialized by our code. If we don't get the 
+													// dstAddr from WSARecvMsg we use this value instead.
+	SOCKET							fd;
+	LPFN_WSARECVMSG					recvMsgPtr;
+	OVERLAPPED						overlapped;
+	WSAMSG							wmsg;
+	WSABUF							wbuf;
+	DNSMessage						packet;
+	uint8_t							controlBuffer[ 128 ];
+	struct sockaddr_storage			srcAddr;		// This is filled in by the WSARecv* function
+	INT								srcAddrLen;		// See above
+	struct mDNSInterfaceData	*	ifd;
+	UDPSocket					*	next;
+	mDNS						*	m;
+};
+
+
 //---------------------------------------------------------------------------------------------------------------------------
 /*!	@struct		mDNSInterfaceData
 
@@ -40,44 +60,14 @@
 typedef struct	mDNSInterfaceData	mDNSInterfaceData;
 struct	mDNSInterfaceData
 {
-	mDNSInterfaceData *			next;
-	mDNS					*	m;
 	char						name[ 128 ];
 	uint32_t					index;
 	uint32_t					scopeID;
-	SocketRef					sock;
-#if( !defined( _WIN32_WCE ) )
-	LPFN_WSARECVMSG				wsaRecvMsgFunctionPtr;
-#endif
-	struct sockaddr_storage		srcAddr;
-	INT							srcAddrLen;
-	uint8_t						controlBuffer[ 128 ];
-	DNSMessage					packet;
-	OVERLAPPED					overlapped;
-	WSAMSG						wmsg;
-	WSABUF						wbuf;
+	UDPSocket					sock;
 	NetworkInterfaceInfo		interfaceInfo;
-	mDNSAddr					defaultAddr;
 	mDNSBool					hostRegistered;
+	mDNSInterfaceData		*	next;
 };
-
-//---------------------------------------------------------------------------------------------------------------------------
-/*!	@typedef	IdleThreadCallback
-
-	@abstract	mDNSWin32 core will call out through this function pointer
-				after calling mDNS_Execute
-*/
-typedef mDNSs32 (*IdleThreadCallback)(mDNS * const inMDNS, mDNSs32 interval);
-//---------------------------------------------------------------------------------------------------------------------------
-
-//---------------------------------------------------------------------------------------------------------------------------
-/*!	@typedef	InterfaceListChangedCallback
-
-	@abstract	mDNSWin32 core will call out through this function pointer
-				after detecting an interface list changed event
-*/
-typedef void (*InterfaceListChangedCallback)(mDNS * const inMDNS);
-//---------------------------------------------------------------------------------------------------------------------------
 
 
 //---------------------------------------------------------------------------------------------------------------------------
@@ -103,36 +93,11 @@ struct	mDNS_PlatformSupport_struct
 	mDNSBool					smbRegistered;
 	ServiceRecordSet			smbSRS;
 	mDNSBool					registeredLoopback4;
-	SocketRef					interfaceListChangedSocket;
 	int							interfaceCount;
 	mDNSInterfaceData *			interfaceList;
 	mDNSInterfaceData *			inactiveInterfaceList;
-	SocketRef						unicastSock4;
-	HANDLE							unicastSock4ReadEvent;
-	mDNSAddr						unicastSock4DestAddr;
-#if( !defined( _WIN32_WCE ) )
-	LPFN_WSARECVMSG					unicastSock4RecvMsgPtr;
-#endif
-	struct sockaddr_storage			unicastSock4SrcAddr;
-	INT								unicastSock4SrcAddrLen;
-	uint8_t							unicastSock4ControlBuffer[ 128 ];
-	DNSMessage						unicastSock4Packet;
-	OVERLAPPED						unicastSock4Overlapped;
-	WSAMSG							unicastSock4WMsg;
-	WSABUF							unicastSock4WBuf;
-	SocketRef						unicastSock6;
-	HANDLE							unicastSock6ReadEvent;
-	mDNSAddr						unicastSock6DestAddr;
-#if( !defined( _WIN32_WCE ) )
-	LPFN_WSARECVMSG					unicastSock6RecvMsgPtr;
-#endif
-	struct sockaddr_storage			unicastSock6SrcAddr;
-	INT								unicastSock6SrcAddrLen;
-	uint8_t							unicastSock6ControlBuffer[ 128 ];
-	DNSMessage						unicastSock6Packet;
-	OVERLAPPED						unicastSock6Overlapped;
-	WSAMSG							unicastSock6WMsg;
-	WSABUF							unicastSock6WBuf;
+	UDPSocket					unicastSock4;
+	UDPSocket					unicastSock6;
 };
 
 //---------------------------------------------------------------------------------------------------------------------------

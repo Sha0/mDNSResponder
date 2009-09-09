@@ -1792,6 +1792,11 @@ udsSupportAddFDToEventLoop( SocketRef fd, udsEventCallback callback, void *conte
 {
 	mStatus err = mStatus_NoError;
 
+	// We are using some knowledge of what is being passed to us here.  If the fd is a listen socket,
+	// then the "callback" parameter is NULL.  If it is an actual read/write socket, then the "callback"
+	// parameter is not null. This is important because we use waitable events for the listen socket
+	// and alertable I/O for the read/write sockets.
+
 	if ( context )
 	{
 		EventSource * source;
