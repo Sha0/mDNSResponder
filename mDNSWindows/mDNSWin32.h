@@ -31,6 +31,29 @@
 	extern "C" {
 #endif
 
+typedef void ( *TCPReadEventHandler )( TCPSocket * sock );
+typedef void ( *TCPUserCallback )();
+
+struct TCPSocket_struct
+{
+	TCPSocketFlags				flags;		// MUST BE FIRST FIELD -- mDNSCore expects every TCPSocket_struct to begin with TCPSocketFlags flags
+	SOCKET						fd;
+	TCPReadEventHandler			readEventHandler;
+	HANDLE						connectEvent;
+	BOOL						connected;
+	TCPUserCallback				userCallback;
+	void					*	userContext;
+	DWORD						lastError;
+	BOOL						closed;
+	OVERLAPPED					overlapped;
+	WSABUF						wbuf;
+	uint8_t						buf[ 4192 ];
+	uint8_t					*	bptr;
+	uint8_t					*	eptr;
+	mDNS					*	m;
+};
+
+
 struct UDPSocket_struct
 {
 	mDNSIPPort						port; 			// MUST BE FIRST FIELD -- mDNSCoreReceive expects every UDPSocket_struct to begin with mDNSIPPort port
@@ -71,13 +94,19 @@ struct	mDNSInterfaceData
 
 
 //---------------------------------------------------------------------------------------------------------------------------
-/*!	@typedef	HostDescriptionChangedCallback
-
-	@abstract	mDNSWin32 core will call out through this function pointer
-				after detecting that the computer description has changed
+/*!	@typedef	RegisterWaitableEventHandler
 */
-typedef void (*HostDescriptionChangedCallback)(mDNS * const inMDNS);
+typedef void		(*RegisterWaitableEventHandler)(mDNS * const inMDNS, HANDLE event, void * context );
+
 //---------------------------------------------------------------------------------------------------------------------------
+/*!	@typedef	RegisterWaitableEventFunc
+*/
+typedef mStatus		(*RegisterWaitableEventFunc)(mDNS * const inMDNS, HANDLE event, void * context, RegisterWaitableEventHandler handler );
+
+//---------------------------------------------------------------------------------------------------------------------------
+/*!	@typedef	UnregisterWaitableEventHandler
+*/
+typedef void		(*UnregisterWaitableEventFunc)(mDNS * const inMDNS, HANDLE event );
 
 
 //---------------------------------------------------------------------------------------------------------------------------
@@ -89,6 +118,8 @@ typedef void (*HostDescriptionChangedCallback)(mDNS * const inMDNS);
 struct	mDNS_PlatformSupport_struct
 {
 	HANDLE						mainThread;
+	RegisterWaitableEventFunc	registerWaitableEventFunc;
+	UnregisterWaitableEventFunc	unregisterWaitableEventFunc;
 	time_t						nextDHCPLeaseExpires;
 	mDNSBool					smbRegistered;
 	ServiceRecordSet			smbSRS;
@@ -134,6 +165,7 @@ extern void		TCPIPConfigDidChange( mDNS * const inMDNS );
 extern void		DynDNSConfigDidChange( mDNS * const inMDNS );
 extern void		FileSharingDidChange( mDNS * const inMDNS );
 extern void		FirewallDidChange( mDNS * const inMDNS );
+extern mStatus  TCPAddSocket( mDNS * const inMDNS, TCPSocket *sock );
 extern mStatus	SetupInterfaceList( mDNS * const inMDNS );
 extern mStatus	TearDownInterfaceList( mDNS * const inMDNS );
 extern BOOL		IsWOMPEnabled();

@@ -97,13 +97,6 @@ mDNSlocal void				FreeInterface( mDNSInterfaceData *inIFD );
 mDNSlocal mStatus			SetupSocket( mDNS * const inMDNS, const struct sockaddr *inAddr, mDNSIPPort port, SocketRef *outSocketRef  );
 mDNSlocal mStatus			SockAddrToMDNSAddr( const struct sockaddr * const inSA, mDNSAddr *outIP, mDNSIPPort *outPort );
 mDNSlocal OSStatus			GetWindowsVersionString( char *inBuffer, size_t inBufferSize );
-
-mDNSlocal unsigned WINAPI	TCPConnectThread( LPVOID inParam );
-mDNSlocal void CALLBACK		TCPConnectSuccess( ULONG_PTR dwParam );
-mDNSlocal void CALLBACK		TCPConnectFailure( ULONG_PTR dwParam );
-mDNSlocal mStatus			TCPBeginRecv( TCPSocket * sock );
-mDNSlocal void				TCPEndRecv( DWORD error, DWORD bytesTransferred, LPWSAOVERLAPPED overlapped, DWORD flags );
-
 mDNSlocal int				getifaddrs( struct ifaddrs **outAddrs );
 mDNSlocal void				freeifaddrs( struct ifaddrs *inAddrs );
 
@@ -120,30 +113,6 @@ struct	mDNSPlatformInterfaceInfo
 {
 	const char *		name;
 	mDNSAddr			ip;
-};
-
-struct TCPSocket_struct
-{
-	TCPSocketFlags			flags;		// MUST BE FIRST FIELD -- mDNSCore expects every TCPSocket_struct to begin with TCPSocketFlags flags
-	mDNS				*	m;
-	SocketRef				fd;
-	HANDLE					connectThread;
-	CRITICAL_SECTION		lock;
-	BOOL					lockInitialized;
-	BOOL					connectReplyQueued;
-	HANDLE					connectEvent;
-	HANDLE					stopEvent;
-	BOOL					connected;
-	TCPConnectionCallback	callback;
-	void				*	context;
-	DWORD					lastError;
-	BOOL					closed;
-	OVERLAPPED				overlapped;
-	WSABUF					wbuf;
-	uint8_t					buf[ 4192 ];
-	uint8_t				*	bptr;
-	uint8_t				*	eptr;
-	TCPSocket			*	next;
 };
 
 
@@ -169,7 +138,11 @@ mDNSlocal mStatus			RegQueryString( HKEY key, LPCSTR param, LPSTR * string, DWOR
 mDNSlocal struct ifaddrs*	myGetIfAddrs(int refresh);
 mDNSlocal OSStatus			TCHARtoUTF8( const TCHAR *inString, char *inBuffer, size_t inBufferSize );
 mDNSlocal OSStatus			WindowsLatin1toUTF8( const char *inString, char *inBuffer, size_t inBufferSize );
-mDNSlocal void				FreeTCPSocket( TCPSocket *sock );
+mDNSlocal void				TCPDidConnect( mDNS * const inMDNS, HANDLE event, void * context );
+mDNSlocal void				TCPCanRead( TCPSocket * sock );
+mDNSlocal mStatus			TCPBeginRecv( TCPSocket * sock );
+mDNSlocal void				TCPEndRecv( DWORD error, DWORD bytesTransferred, LPWSAOVERLAPPED overlapped, DWORD flags );
+mDNSlocal void				TCPFreeSocket( TCPSocket *sock );
 mDNSlocal OSStatus			UDPBeginRecv( UDPSocket * socket );
 mDNSlocal void				UDPEndRecv( DWORD err, DWORD bytesTransferred, LPWSAOVERLAPPED overlapped, DWORD flags );
 mDNSlocal void				UDPFreeSocket( UDPSocket * sock );
@@ -199,8 +172,6 @@ mDNSlocal mDNSu8			IsWOMPEnabledForAdapter( const char * adapterName );
 
 mDNSlocal mDNS_PlatformSupport	gMDNSPlatformSupport;
 mDNSs32							mDNSPlatformOneSecond = 0;
-mDNSlocal TCPSocket		*		gTCPConnectionList		= NULL;
-mDNSlocal int					gTCPConnections			= 0;
 mDNSlocal UDPSocket		*		gUDPSocketList			= NULL;
 mDNSlocal int					gUDPSockets				= 0;
 
@@ -919,14 +890,11 @@ mDNSPlatformTCPSocket
 
 	port->NotAnInteger = saddr.sin_port;
 
-	InitializeCriticalSection( &sock->lock );
-	sock->lockInitialized = TRUE;
-
 exit:
 
 	if ( err && sock )
 	{
-		FreeTCPSocket( sock );
+		TCPFreeSocket( sock );
 		sock = mDNSNULL;
 	}
 
@@ -940,7 +908,7 @@ exit:
 mStatus
 mDNSPlatformTCPConnect
 	(
-	TCPSocket *			sock,
+	TCPSocket			*	sock,
 	const mDNSAddr		*	inDstIP, 
 	mDNSOpaque16 			inDstPort, 
 	mDNSInterfaceID			inInterfaceID,
@@ -961,8 +929,9 @@ mDNSPlatformTCPConnect
 
 	// Setup connection data object
 
-	sock->callback = inCallback;
-	sock->context = inContext;
+	sock->readEventHandler	= TCPCanRead;
+	sock->userCallback		= inCallback;
+	sock->userContext		= inContext;
 
 	mDNSPlatformMemZero(&saddr, sizeof(saddr));
 	saddr.sin_family	= AF_INET;
@@ -973,36 +942,27 @@ mDNSPlatformTCPConnect
 
 	err = connect( sock->fd, ( struct sockaddr* ) &saddr, sizeof( saddr ) );
 	require_action( !err || ( WSAGetLastError() == WSAEWOULDBLOCK ), exit, err = mStatus_ConnFailed );
-	sock->connected		= !err ? TRUE : FALSE;
+	sock->connected	= !err ? TRUE : FALSE;
 
-	if ( !sock->connected )
+	if ( sock->connected )
 	{
-		unsigned threadID;
+		err = TCPAddSocket( sock->m, sock );
+		require_noerr( err, exit );
+	}
+	else
+	{
+		require_action( sock->m->p->registerWaitableEventFunc != NULL, exit, err = mStatus_ConnFailed );
 
 		sock->connectEvent	= CreateEvent( NULL, FALSE, FALSE, NULL );
 		err = translate_errno( sock->connectEvent, GetLastError(), mStatus_UnknownErr );
 		require_noerr( err, exit );
 
-		sock->stopEvent = CreateEvent( NULL, FALSE, FALSE, NULL );
-		err = translate_errno( sock->stopEvent, GetLastError(), mStatus_UnknownErr );
-		require_noerr( err, exit );
-
 		err = WSAEventSelect( sock->fd, sock->connectEvent, FD_CONNECT );
 		require_noerr( err, exit );
 
-		// Create thread with _beginthreadex() instead of CreateThread() to avoid memory leaks when using static run-time 
-		// libraries. See <http://msdn.microsoft.com/library/default.asp?url=/library/en-us/dllproc/base/createthread.asp>.
-	
-		sock->connectThread = ( HANDLE ) _beginthreadex_compat( NULL, 0, TCPConnectThread, sock, 0, &threadID );
-		err = translate_errno( sock->connectThread, (mStatus) GetLastError(), kUnknownErr );
+		err = sock->m->p->registerWaitableEventFunc( sock->m, sock->connectEvent, sock, TCPDidConnect );
 		require_noerr( err, exit );
 	}
-
-	// Bookkeeping
-
-	sock->next			= gTCPConnectionList;
-	gTCPConnectionList	= sock;
-	gTCPConnections++;
 
 exit:
 
@@ -1052,42 +1012,20 @@ exit:
 
 mDNSexport void	mDNSPlatformTCPCloseConnection( TCPSocket *sock )
 {
-	TCPSocket *	inserted  = gTCPConnectionList;
-	TCPSocket *	last = NULL;
+	check( sock );
 
-	while ( inserted )
+	if ( sock->connectEvent && sock->m->p->unregisterWaitableEventFunc )
 	{
-		if ( inserted == sock )
-		{
-			if ( last == NULL )
-			{
-				gTCPConnectionList = inserted->next;
-			}
-			else
-			{
-				last->next = inserted->next;
-			}
+		sock->m->p->unregisterWaitableEventFunc( sock->m, sock->connectEvent );
+	}
 
-			EnterCriticalSection( &sock->lock );
+	if ( sock->fd != INVALID_SOCKET )
+	{
+		closesocket( sock->fd );
+		sock->fd = INVALID_SOCKET;
 
-			closesocket( sock->fd );
-			sock->fd = INVALID_SOCKET;
-
-			if ( !sock->connectReplyQueued )
-			{
-				QueueUserAPC( ( PAPCFUNC ) FreeTCPSocket, sock->m->p->mainThread, ( ULONG_PTR ) sock );
-			}
-
-			LeaveCriticalSection( &sock->lock );
-
-			gTCPConnections--;
-
-			break;
-		}
-
-		last		= inserted;
-		inserted 	= inserted->next;
-	}	
+		QueueUserAPC( ( PAPCFUNC ) TCPFreeSocket, sock->m->p->mainThread, ( ULONG_PTR ) sock );
+	}
 }
 
 //===========================================================================================================================
@@ -1100,10 +1038,10 @@ mDNSexport long	mDNSPlatformReadTCP( TCPSocket *sock, void *inBuffer, unsigned l
 	long			ret;
 
 	ret = -1;
+	*closed = sock->closed;
 
-	if ( sock->closed )
+	if ( *closed )
 	{
-		*closed = mDNStrue;
 		ret = 0;
 	}
 	else if ( sock->lastError == 0 )
@@ -1127,10 +1065,21 @@ mDNSexport long	mDNSPlatformReadTCP( TCPSocket *sock, void *inBuffer, unsigned l
 				
 				if ( sock->lastError )
 				{
+					WSASetLastError( sock->lastError );
 					ret = -1;
 				}
 			}
 		}
+		else
+		{
+			WSASetLastError( WSAEWOULDBLOCK );
+			ret = -1;
+		}
+	}
+	else
+	{
+		WSASetLastError( sock->lastError );
+		ret = -1;
 	}
 
 	return ret;
@@ -1166,94 +1115,90 @@ exit:
 //===========================================================================================================================
 
 mDNSexport int mDNSPlatformTCPGetFD(TCPSocket *sock )
-    {
-    return ( int ) sock->fd;
-    }
-
-
-//===========================================================================================================================
-//	TCPConnectThread
-//===========================================================================================================================
-
-mDNSlocal unsigned WINAPI TCPConnectThread( LPVOID inParam )
 {
-	TCPSocket * sock = ( TCPSocket* ) inParam;
-	HANDLE		waitList[ 2 ];
-	DWORD		result;
-
-	waitList[ 0 ] = sock->connectEvent;
-	waitList[ 1 ] = sock->stopEvent;
-	result = WaitForMultipleObjects( 2, waitList, FALSE, 60 * 1000 );
-
-	EnterCriticalSection( &sock->lock );
-
-	if ( sock->fd != INVALID_SOCKET )
-	{
-		BOOL ok = FALSE;
-
-		if ( result == WAIT_OBJECT_0 )
-		{
-			ok = QueueUserAPC( ( PAPCFUNC ) TCPConnectSuccess, sock->m->p->mainThread, ( ULONG_PTR ) sock );
-			check( ok );
-
-		}
-		else if ( result != WAIT_OBJECT_0 + 1 )
-		{
-			ok = QueueUserAPC( ( PAPCFUNC ) TCPConnectFailure, sock->m->p->mainThread, ( ULONG_PTR ) sock );
-			check( ok );
-		}
-
-		sock->connectReplyQueued = ok;
-	}
-
-	LeaveCriticalSection( &sock->lock );
-
-	_endthreadex_compat( 0 );
-	return 0;
+	return ( int ) sock->fd;
 }
 
 
 //===========================================================================================================================
-//	TCPConnectSuccess
+//	TCPAddConnection
 //===========================================================================================================================
 
-mDNSlocal void CALLBACK TCPConnectSuccess( ULONG_PTR dwParam )
+mStatus TCPAddSocket( mDNS * const inMDNS, TCPSocket *sock )
 {
-	TCPSocket * sock = ( TCPSocket* ) dwParam;
+	mStatus err;
 
-	if ( sock->fd != INVALID_SOCKET )
-	{	
+	( void ) inMDNS;
+
+	dlog( kDebugLevelChatty, DEBUG_NAME "adding TCPSocket 0x%x:%d\n", sock, sock->fd );
+	err = TCPBeginRecv( sock );
+	require_noerr( err, exit );
+
+exit:
+
+	return err;
+}
+
+
+//===========================================================================================================================
+//	TCPDidConnect
+//===========================================================================================================================
+
+mDNSlocal void TCPDidConnect( mDNS * const inMDNS, HANDLE event, void * context )
+{
+	TCPSocket * sock = ( TCPSocket* ) context;
+	TCPConnectionCallback callback = NULL;
+	WSANETWORKEVENTS sockEvent;
+	int err = kNoErr;
+
+	if ( inMDNS->p->unregisterWaitableEventFunc )
+	{
+		inMDNS->p->unregisterWaitableEventFunc( inMDNS, event );
+	}
+
+	if ( sock )
+	{
+		callback = ( TCPConnectionCallback ) sock->userCallback;
+		err = WSAEnumNetworkEvents( sock->fd, sock->connectEvent, &sockEvent );
+		require_noerr( err, exit );
+		require_action( sockEvent.lNetworkEvents & FD_CONNECT, exit, err = mStatus_UnknownErr );
+		require_action( sockEvent.iErrorCode[ FD_CONNECT_BIT ] == 0, exit, err = sockEvent.iErrorCode[ FD_CONNECT_BIT ] );
+
 		sock->connected	= mDNStrue;
-		sock->callback( sock, sock->context, TRUE, 0 );
 
 		if ( sock->fd != INVALID_SOCKET )
 		{
-			TCPBeginRecv( sock );
+			err = TCPAddSocket( sock->m, sock );
+			require_noerr( err, exit );
+		}
+
+		if ( callback )
+		{
+			callback( sock, sock->userContext, TRUE, 0 );
 		}
 	}
-	else
+
+exit:
+
+	if ( err && callback )
 	{
-		FreeTCPSocket( sock );
+		callback( sock, sock->userContext, TRUE, err );
 	}
 }
 
 
+
 //===========================================================================================================================
-//	TCPConnectFailure
+//	TCPCanRead
 //===========================================================================================================================
 
-mDNSlocal void CALLBACK TCPConnectFailure( ULONG_PTR dwParam )
+mDNSlocal void TCPCanRead( TCPSocket * sock )
 {
-	TCPSocket * sock = ( TCPSocket* ) dwParam;
+	TCPConnectionCallback callback = ( TCPConnectionCallback ) sock->userCallback;
 
-	if ( sock->fd != INVALID_SOCKET )
+	if ( callback )
 	{
-		sock->connected	= mDNSfalse;
-		sock->callback( sock, sock->context, TRUE, mStatus_ConnFailed );
-	}
-	else
-	{
-		FreeTCPSocket( sock );
+		callback( sock, sock->userContext, mDNSfalse, sock->lastError );
 	}
 }
 
@@ -1313,7 +1258,10 @@ mDNSlocal void TCPEndRecv( DWORD error, DWORD bytesTransferred, LPWSAOVERLAPPED 
 			}
 		}
 
-		sock->callback( sock, sock->context, FALSE, sock->lastError );
+		if ( sock->readEventHandler != NULL )
+		{
+			sock->readEventHandler( sock );
+		}
 	}
 }
 
@@ -4280,43 +4228,26 @@ exit:
 
 
 //===========================================================================================================================
-//	FreeTCPConnectionData
+//	TCPFreeSocket
 //===========================================================================================================================
 
 mDNSlocal void
-FreeTCPSocket( TCPSocket *sock )
+TCPFreeSocket( TCPSocket *sock )
 {
 	check( sock );
 
-	if ( sock->connectThread )
-	{
-		SetEvent( sock->stopEvent );
-		WaitForSingleObject( sock->connectThread, 5 * 1000 );
-		sock->connectThread = NULL;
-	}
-
+	dlog( kDebugLevelChatty, DEBUG_NAME "freeing TCPSocket 0x%x:%d\n", sock, sock->fd );
+	
 	if ( sock->connectEvent )
 	{
 		CloseHandle( sock->connectEvent );
 		sock->connectEvent = NULL;
 	}
 
-	if ( sock->stopEvent )
-	{
-		CloseHandle( sock->stopEvent );
-		sock->stopEvent = NULL;
-	}
-
 	if ( sock->fd != INVALID_SOCKET )
 	{
 		closesocket( sock->fd );
 		sock->fd = INVALID_SOCKET;
-	}
-
-	if ( sock->lockInitialized )
-	{
-		DeleteCriticalSection( &sock->lock );
-		sock->lockInitialized = FALSE;
 	}
 
 	free( sock );
@@ -4332,9 +4263,10 @@ UDPFreeSocket( UDPSocket * sock )
 {
     check( sock );
 
+	dlog( kDebugLevelChatty, DEBUG_NAME "freeing UDPSocket %d (%##a)\n", sock->fd, &sock->addr );
+
     if ( sock->fd != INVALID_SOCKET )
-    {
-		dlog( kDebugLevelTrace, DEBUG_NAME "freeing socket %d (%##a)\n", sock->fd, &sock->addr );
+    {		
         closesocket( sock->fd );
 		sock->fd = INVALID_SOCKET;
     }
