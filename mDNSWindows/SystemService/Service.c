@@ -989,6 +989,8 @@ static void HandlePowerSuspend( void * v )
 
 	( void ) v;
 
+	dlog( kDebugLevelInfo, DEBUG_NAME "HandlePowerSuspend\n" );
+
 	gMDNSRecord.SystemWakeOnLANEnabled = SystemWakeForNetworkAccess( &timeout );
 				
 	if ( gMDNSRecord.SystemWakeOnLANEnabled )
@@ -1008,6 +1010,8 @@ static void HandlePowerSuspend( void * v )
 static void HandlePowerResumeSuspend( void * v )
 {
 	( void ) v;
+
+	dlog( kDebugLevelInfo, DEBUG_NAME "HandlePowerResumeSuspend\n" );
 
 	if ( gSPSWakeupEvent )
 	{
@@ -1392,16 +1396,24 @@ static OSStatus	ServiceSpecificRun( int argc, LPTSTR argv[] )
 				}
 				else if ( result == kWaitListSPSWakeupEvent )
 				{
+					__int64         temp;
+					LARGE_INTEGER   timeout;
+
+					dlog( kDebugLevelInfo, DEBUG_NAME "setting suspend event\n" );
+
+					// Stay awake for 60 seconds
+
+					temp                = -60 * 10000000;
+					timeout.LowPart     = (DWORD) ( temp & 0xFFFFFFFF );
+					timeout.HighPart    = (LONG)  ( temp >> 32 );
+
+					SetWaitableTimer( gSPSSleepEvent, &timeout, 0, NULL, NULL, TRUE );
 				}
 				else if ( result == kWaitListSPSSleepEvent )
 				{
+					dlog( kDebugLevelInfo, DEBUG_NAME "suspending machine\n" );
+					SetSuspendState( FALSE, FALSE, FALSE );
 				}
-				/*
-				else if ( result == kWaitListUDSEvent )
-				{
-					gUDSCallback( ( int ) gUDSSocket, 0, NULL );
-				}
-				*/
 				else
 				{
 					int waitItemIndex;
