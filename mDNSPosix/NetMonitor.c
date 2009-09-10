@@ -46,6 +46,9 @@
 #include <time.h>			// For "struct tm" etc.
 #include <signal.h>			// For SIGINT, SIGTERM
 #if defined(WIN32)
+// Both mDNS.c and mDNSWin32.h declare UDPSocket_struct type resulting in a compile-time error, so 
+// trick the compiler when including mDNSWin32.h
+#	define UDPSocket_struct _UDPSocket_struct
 #	include <mDNSEmbeddedAPI.h>
 #	include <mDNSWin32.h>
 #	include <uds_daemon.h>
