@@ -86,7 +86,7 @@ struct	mDNSInterfaceData
 	char						name[ 128 ];
 	uint32_t					index;
 	uint32_t					scopeID;
-	UDPSocket					sock;
+	struct UDPSocket_struct		sock;
 	NetworkInterfaceInfo		interfaceInfo;
 	mDNSBool					hostRegistered;
 	mDNSInterfaceData		*	next;
@@ -127,8 +127,8 @@ struct	mDNS_PlatformSupport_struct
 	int							interfaceCount;
 	mDNSInterfaceData *			interfaceList;
 	mDNSInterfaceData *			inactiveInterfaceList;
-	UDPSocket					unicastSock4;
-	UDPSocket					unicastSock6;
+	struct UDPSocket_struct		unicastSock4;
+	struct UDPSocket_struct		unicastSock6;
 };
 
 //---------------------------------------------------------------------------------------------------------------------------

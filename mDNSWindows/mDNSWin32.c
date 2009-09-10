@@ -93,7 +93,7 @@ mDNSlocal mStatus			SetupHostName( mDNS * const inMDNS );
 mDNSlocal mStatus			SetupName( mDNS * const inMDNS );
 mDNSlocal mStatus			SetupInterface( mDNS * const inMDNS, const struct ifaddrs *inIFA, mDNSInterfaceData **outIFD );
 mDNSlocal mStatus			TearDownInterface( mDNS * const inMDNS, mDNSInterfaceData *inIFD );
-mDNSlocal void				FreeInterface( mDNSInterfaceData *inIFD );
+mDNSlocal void CALLBACK		FreeInterface( mDNSInterfaceData *inIFD );
 mDNSlocal mStatus			SetupSocket( mDNS * const inMDNS, const struct sockaddr *inAddr, mDNSIPPort port, SocketRef *outSocketRef  );
 mDNSlocal mStatus			SockAddrToMDNSAddr( const struct sockaddr * const inSA, mDNSAddr *outIP, mDNSIPPort *outPort );
 mDNSlocal OSStatus			GetWindowsVersionString( char *inBuffer, size_t inBufferSize );
@@ -141,11 +141,11 @@ mDNSlocal OSStatus			WindowsLatin1toUTF8( const char *inString, char *inBuffer, 
 mDNSlocal void				TCPDidConnect( mDNS * const inMDNS, HANDLE event, void * context );
 mDNSlocal void				TCPCanRead( TCPSocket * sock );
 mDNSlocal mStatus			TCPBeginRecv( TCPSocket * sock );
-mDNSlocal void				TCPEndRecv( DWORD error, DWORD bytesTransferred, LPWSAOVERLAPPED overlapped, DWORD flags );
-mDNSlocal void				TCPFreeSocket( TCPSocket *sock );
+mDNSlocal void CALLBACK		TCPEndRecv( DWORD error, DWORD bytesTransferred, LPWSAOVERLAPPED overlapped, DWORD flags );
+mDNSlocal void CALLBACK		TCPFreeSocket( TCPSocket *sock );
 mDNSlocal OSStatus			UDPBeginRecv( UDPSocket * socket );
-mDNSlocal void				UDPEndRecv( DWORD err, DWORD bytesTransferred, LPWSAOVERLAPPED overlapped, DWORD flags );
-mDNSlocal void				UDPFreeSocket( UDPSocket * sock );
+mDNSlocal void CALLBACK		UDPEndRecv( DWORD err, DWORD bytesTransferred, LPWSAOVERLAPPED overlapped, DWORD flags );
+mDNSlocal void CALLBACK		UDPFreeSocket( UDPSocket * sock );
 mDNSlocal mStatus           SetupAddr(mDNSAddr *ip, const struct sockaddr *const sa);
 mDNSlocal void				GetDDNSFQDN( domainname *const fqdn );
 #ifdef UNICODE
@@ -1233,7 +1233,7 @@ exit:
 //	TCPEndRecv
 //===========================================================================================================================
 
-mDNSlocal void TCPEndRecv( DWORD error, DWORD bytesTransferred, LPWSAOVERLAPPED overlapped, DWORD flags )
+mDNSlocal void CALLBACK TCPEndRecv( DWORD error, DWORD bytesTransferred, LPWSAOVERLAPPED overlapped, DWORD flags )
 {
 	TCPSocket * sock;
 
@@ -2708,7 +2708,7 @@ mDNSlocal mStatus	TearDownInterface( mDNS * const inMDNS, mDNSInterfaceData *inI
 	return( mStatus_NoError );
 }
 
-mDNSlocal void	FreeInterface( mDNSInterfaceData *inIFD )
+mDNSlocal void CALLBACK FreeInterface( mDNSInterfaceData *inIFD )
 {
 	free( inIFD );
 }
@@ -3001,7 +3001,7 @@ exit:
 //	UDPEndRecv
 //===========================================================================================================================
 
-mDNSlocal void UDPEndRecv( DWORD err, DWORD bytesTransferred, LPWSAOVERLAPPED overlapped, DWORD flags )
+mDNSlocal void CALLBACK UDPEndRecv( DWORD err, DWORD bytesTransferred, LPWSAOVERLAPPED overlapped, DWORD flags )
 {
 	UDPSocket * sock = NULL;
 
@@ -4231,7 +4231,7 @@ exit:
 //	TCPFreeSocket
 //===========================================================================================================================
 
-mDNSlocal void
+mDNSlocal void CALLBACK
 TCPFreeSocket( TCPSocket *sock )
 {
 	check( sock );
@@ -4258,7 +4258,7 @@ TCPFreeSocket( TCPSocket *sock )
 //  UDPFreeSocket
 //===========================================================================================================================
 
-mDNSlocal void
+mDNSlocal void CALLBACK
 UDPFreeSocket( UDPSocket * sock )
 {
     check( sock );
