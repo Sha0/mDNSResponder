@@ -302,6 +302,7 @@ mDNSexport mStatus	mDNSPlatformInit( mDNS * const inMDNS )
 	err = getsockname( inMDNS->p->unicastSock4.fd, (struct sockaddr*) &sa4, &sa4len );
 	require_noerr( err, exit );
 	inMDNS->p->unicastSock4.port.NotAnInteger = sa4.sin_port;
+	inMDNS->UnicastPort4 = inMDNS->p->unicastSock4.port;
 	err = WSAIoctl( inMDNS->p->unicastSock4.fd, SIO_GET_EXTENSION_FUNCTION_POINTER, &kWSARecvMsgGUID, sizeof( kWSARecvMsgGUID ), &inMDNS->p->unicastSock4.recvMsgPtr, sizeof( inMDNS->p->unicastSock4.recvMsgPtr ), &size, NULL, NULL );
 		
 	if ( err )
@@ -343,6 +344,7 @@ mDNSexport mStatus	mDNSPlatformInit( mDNS * const inMDNS )
 		err = getsockname( inMDNS->p->unicastSock6.fd, (struct sockaddr*) &sa6, &sa6len );
 		require_noerr( err, exit );
 		inMDNS->p->unicastSock6.port.NotAnInteger = sa6.sin6_port;
+		inMDNS->UnicastPort6 = inMDNS->p->unicastSock6.port;
 
 		err = WSAIoctl( inMDNS->p->unicastSock6.fd, SIO_GET_EXTENSION_FUNCTION_POINTER, &kWSARecvMsgGUID, sizeof( kWSARecvMsgGUID ), &inMDNS->p->unicastSock6.recvMsgPtr, sizeof( inMDNS->p->unicastSock6.recvMsgPtr ), &size, NULL, NULL );
 		
@@ -1510,14 +1512,14 @@ mDNSexport void mDNSPlatformSetLocalARP( const mDNSv4Addr * const tpa, const mDN
 
 mDNSexport void mDNSPlatformWriteDebugMsg(const char *msg)
 	{
-	fprintf( stderr, msg );
+	dlog( kDebugLevelInfo, "%s\n", msg );
 	}
 
 mDNSexport void mDNSPlatformWriteLogMsg( const char * ident, const char * msg, int flags )
 	{
 	DEBUG_UNUSED( ident );
-	DEBUG_UNUSED( msg );
 	DEBUG_UNUSED( flags );
+	dlog( kDebugLevelInfo, "%s\n", msg );
 	}
 
 mDNSexport void mDNSPlatformSourceAddrForDest( mDNSAddr * const src, const mDNSAddr * const dst )

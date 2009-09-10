@@ -23,6 +23,8 @@
 
 #include <WinServices.h>
     
+#define MAX_KEY_LENGTH 255
+
 IMPLEMENT_DYNCREATE(CSecondPage, CPropertyPage)
 
 
@@ -106,8 +108,6 @@ BOOL
 CSecondPage::OnSetActive()
 {
 	CConfigPropertySheet	*	psheet;
-	DWORD						dwSize;
-	DWORD						enabled;
 	DWORD						err;
 	BOOL						b = CPropertyPage::OnSetActive();
 
@@ -124,12 +124,6 @@ CSecondPage::OnSetActive()
 
 	err = Populate( m_regDomainsBox, m_setupKey, psheet->m_regDomains );
 	check_noerr( err );
-
-	dwSize = sizeof( DWORD );
-	err = RegQueryValueEx( m_setupKey, L"Enabled", NULL, NULL, (LPBYTE) &enabled, &dwSize );
-	m_advertiseServicesButton.SetCheck( ( !err && enabled ) ? BST_CHECKED : BST_UNCHECKED );
-	m_regDomainsBox.EnableWindow( ( !err && enabled ) );
-	m_sharedSecretButton.EnableWindow( (!err && enabled ) );
 
 exit:
 
@@ -177,7 +171,30 @@ OSStatus
 CSecondPage::Commit( CComboBox & box, HKEY key, DWORD enabled )
 {
 	CString		selected;
+	HKEY		subKey	= NULL;
+	TCHAR		subKeyName[MAX_KEY_LENGTH];
+	DWORD		cSubKeys = 0;
+	DWORD		cbMaxSubKey;
+	DWORD		cchMaxClass;
+	DWORD		dwSize;
+	int			i;
 	OSStatus	err = kNoErr;
+
+	// First, remove all the entries that are there
+
+    err = RegQueryInfoKey( key, NULL, NULL, NULL, &cSubKeys, &cbMaxSubKey, &cchMaxClass, NULL, NULL, NULL, NULL, NULL );       
+	require_noerr( err, exit );
+
+	for ( i = 0; i < (int) cSubKeys; i++ )
+	{	
+		dwSize = MAX_KEY_LENGTH;
+            
+		err = RegEnumKeyEx( key, 0, subKeyName, &dwSize, NULL, NULL, NULL, NULL );
+		require_noerr( err, exit );
+			
+		err = RegDeleteKey( key, subKeyName );
+		require_noerr( err, exit );
+	}
 
 	// Get selected text
 	
@@ -211,11 +228,19 @@ CSecondPage::Commit( CComboBox & box, HKEY key, DWORD enabled )
 	// Save selected text in registry.  This will trigger mDNSResponder to setup
 	// DynDNS config again
 
-	err = RegSetValueEx( key, L"", 0, REG_SZ, (LPBYTE) (LPCTSTR) selected, ( selected.GetLength() + 1 ) * sizeof( TCHAR ) );
+	err = RegCreateKey( key, selected, &subKey );
+	require_noerr( err, exit );
+
+	err = RegSetValueEx( subKey, L"Enabled", 0, REG_DWORD, (LPBYTE) &enabled, sizeof( DWORD ) );
 	check_noerr( err );
 
-	err = RegSetValueEx( key, L"Enabled", 0, REG_DWORD, (LPBYTE) &enabled, sizeof( DWORD ) );
-	check_noerr( err );
+exit:
+
+	if ( subKey )
+	{
+		RegCloseKey( subKey );
+		subKey = NULL;
+	}
 
 	return err;
 }
@@ -233,7 +258,7 @@ void CSecondPage::OnBnClickedSharedSecret()
 
 	CSharedSecret dlg;
 
-	dlg.m_key = name;
+	dlg.Load( name );
 
 	if ( dlg.DoModal() == IDOK )
 	{
@@ -354,9 +379,14 @@ CSecondPage::EmptyComboBox( CComboBox & box )
 OSStatus
 CSecondPage::Populate( CComboBox & box, HKEY key, StringList & l )
 {
-	TCHAR		rawString[kDNSServiceMaxDomainName + 1];
-	DWORD		rawStringLen;
 	CString		string;
+	HKEY		subKey = NULL;
+	DWORD		dwSize;
+	DWORD		enabled = 0;
+	TCHAR		subKeyName[MAX_KEY_LENGTH];
+	DWORD		cSubKeys = 0;
+	DWORD		cbMaxSubKey;
+	DWORD		cchMaxClass;
 	OSStatus	err;
 
 	err = RegQueryString( key, L"UserDefined", string );
@@ -396,30 +426,43 @@ CSecondPage::Populate( CComboBox & box, HKEY key, StringList & l )
 		}
 	}
 
-	// Now look to see if there is a selected string, and if so,
-	// select it
+	err = RegQueryInfoKey( key, NULL, NULL, NULL, &cSubKeys, &cbMaxSubKey, &cchMaxClass, NULL, NULL, NULL, NULL, NULL );       
+	require_noerr( err, exit );
 
-	rawString[0] = '\0';
+	if ( cSubKeys > 0 )
+	{	
+		dwSize = MAX_KEY_LENGTH;
+            
+		err = RegEnumKeyEx( key, 0, subKeyName, &dwSize, NULL, NULL, NULL, NULL );
+		require_noerr( err, exit );
 
-	rawStringLen = sizeof( rawString );
+		err = RegOpenKey( key, subKeyName, &subKey );
+		require_noerr( err, exit );
 
-	err = RegQueryValueEx( key, L"", 0, NULL, (LPBYTE) rawString, &rawStringLen );
+		dwSize = sizeof( DWORD );
+		err = RegQueryValueEx( subKey, L"Enabled", NULL, NULL, (LPBYTE) &enabled, &dwSize );
+		require_noerr( err, exit );
 
-	string = rawString;
-	
-	if ( !err && ( string.GetLength() != 0 ) )
-	{
 		// See if it's there
 
-		if ( box.SelectString( -1, string ) == CB_ERR )
+		if ( box.SelectString( -1, subKeyName ) == CB_ERR )
 		{
 			// If not, add it
 
-			box.AddString( string );
+			box.AddString( subKeyName );
 		}
 
-		box.SelectString( -1, string );
+		box.SelectString( -1, subKeyName );
+
+		RegCloseKey( subKey );
+		subKey = NULL;
 	}
+
+exit:
+
+	m_advertiseServicesButton.SetCheck( ( !err && enabled ) ? BST_CHECKED : BST_UNCHECKED );
+	m_regDomainsBox.EnableWindow( ( !err && enabled ) );
+	m_sharedSecretButton.EnableWindow( (!err && enabled ) );
 
 	return err;
 }
