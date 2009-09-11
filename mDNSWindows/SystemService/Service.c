@@ -1328,7 +1328,6 @@ static OSStatus	ServiceSpecificRun( int argc, LPTSTR argv[] )
 					// The computer description might have changed
 					
 					ComputerDescriptionDidChange( &gMDNSRecord );
-
 					udsserver_handle_configchange( &gMDNSRecord );
 
 					// and reset the event handler
@@ -1343,6 +1342,7 @@ static OSStatus	ServiceSpecificRun( int argc, LPTSTR argv[] )
 					// The TCP/IP might have changed
 
 					TCPIPConfigDidChange( &gMDNSRecord );
+					udsserver_handle_configchange( &gMDNSRecord );
 
 					// and reset the event handler
 
@@ -1357,6 +1357,7 @@ static OSStatus	ServiceSpecificRun( int argc, LPTSTR argv[] )
 					// The DynDNS config might have changed
 
 					DynDNSConfigDidChange( &gMDNSRecord );
+					udsserver_handle_configchange( &gMDNSRecord );
 
 					// and reset the event handler
 
