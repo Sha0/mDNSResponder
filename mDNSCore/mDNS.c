@@ -2436,6 +2436,21 @@ mDNSexport void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheReco
 		// which we would subsequently cancel and retract if the CNAME referral record were removed.
 		// In reality this is such a corner case we'll ignore it until someone actually needs it.
 		LogInfo("AnswerCurrentQuestionWithResourceRecord: following CNAME referral for %s", CRDisplayString(m, rr));
+		
+		// If this query is a duplicate of another query, UpdateQuestionDuplicates called from
+		// mDNS_StopQuery_internal copies the value of CNAMEReferrals from this query to the other
+		// query on the Questions list. By setting the new value before calling mDNS_StopQuery_internal,
+		// we ensure that the duplicate question gets a hgigher value and eventually the check for 10 above
+		// would be true. Otherwise, the two queries would end up as active questions
+		// sending mDNSResponder in an infinite loop e.g., Two queries starting off unique but receives
+		// a CNAME response that refers to itself (test IN CNAME test) which makes it a duplicate of
+		// one another. This fix now will make sure that stop at the 10th iteration. 
+		//
+		// Though CNAME records that refer to itself are not added anymore in mDNSCoreReceiveResponse, this fix is
+		// still needed to catch the cases where the CNAME referral spans across multiple records with a potential
+		// cycle in it which in turn can make multiple queries duplicate of each other
+		
+		q->CNAMEReferrals = c;	
 		mDNS_StopQuery_internal(m, q);								// Stop old query
 		AssignDomainName(&q->qname, &rr->resrec.rdata->u.name);		// Update qname
 		q->qnamehash = DomainNameHashValue(&q->qname);				// and namehash
@@ -4952,6 +4967,14 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		// Don't want to cache OPT or TSIG pseudo-RRs
 		if (m->rec.r.resrec.rrtype == kDNSType_OPT || m->rec.r.resrec.rrtype == kDNSType_TSIG)
 			{ m->rec.r.resrec.RecordType = 0; continue; }
+			
+		// if a CNAME record points to itself, then don't add it to the cache
+		if ((m->rec.r.resrec.rrtype == kDNSType_CNAME) && SameDomainName(m->rec.r.resrec.name, &m->rec.r.resrec.rdata->u.name))
+			{ 
+			LogInfo("mDNSCoreReceiveResponse: CNAME loop domain name %##s", m->rec.r.resrec.name->c);
+			m->rec.r.resrec.RecordType = 0; 
+			continue; 
+			}
 		
 		// When we receive uDNS LLQ responses, we assume a long cache lifetime --
 		// In the case of active LLQs, we'll get remove events when the records actually do go away
