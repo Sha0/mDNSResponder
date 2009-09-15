@@ -16,6 +16,10 @@
  */
 
 #define _FORTIFY_SOURCE 2
+
+// We set VERSION_MIN_REQUIRED to 10.4 to avoid "bootstrap_register is deprecated" warnings from bootstrap.h
+#define MAC_OS_X_VERSION_MIN_REQUIRED MAC_OS_X_VERSION_10_4
+
 #include <CoreFoundation/CoreFoundation.h>
 #include <sys/cdefs.h>
 #include <sys/time.h>

@@ -28,6 +28,9 @@
  * layout leads people to unfortunate misunderstandings about how the C language really works.)
  */
 
+// We set VERSION_MIN_REQUIRED to 10.4 to avoid "bootstrap_register is deprecated" warnings from bootstrap.h
+#define MAC_OS_X_VERSION_MIN_REQUIRED MAC_OS_X_VERSION_10_4
+
 #include <mach/mach.h>
 #include <mach/mach_error.h>
 #include <servers/bootstrap.h>
