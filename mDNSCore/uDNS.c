@@ -2873,12 +2873,12 @@ mDNSexport void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNS
 	(void)srcport; // Unused
 
 	debugf("uDNS_ReceiveMsg from %#-15a with "
-		"%2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
+		"%2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s %d bytes",
 		srcaddr,
-		msg->h.numQuestions,   msg->h.numQuestions   == 1 ? ", " : "s,",
-		msg->h.numAnswers,     msg->h.numAnswers     == 1 ? ", " : "s,",
+		msg->h.numQuestions,   msg->h.numQuestions   == 1 ? ", "   : "s,",
+		msg->h.numAnswers,     msg->h.numAnswers     == 1 ? ", "   : "s,",
 		msg->h.numAuthorities, msg->h.numAuthorities == 1 ? "y,  " : "ies,",
-		msg->h.numAdditionals, msg->h.numAdditionals == 1 ? "" : "s");
+		msg->h.numAdditionals, msg->h.numAdditionals == 1 ? ""     : "s", end - msg->data);
 
 	if (QR_OP == StdR)
 		{

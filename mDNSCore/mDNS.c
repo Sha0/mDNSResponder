@@ -4614,22 +4614,22 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 	if (!InterfaceID && dstaddr && mDNSAddrIsDNSMulticast(dstaddr))
 		{
 		LogMsg("Ignoring Query from %#-15a:%-5d to %#-15a:%-5d on 0x%p with "
-			"%2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s (Multicast, but no InterfaceID)",
+			"%2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s %d bytes (Multicast, but no InterfaceID)",
 			srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), InterfaceID,
-			msg->h.numQuestions,   msg->h.numQuestions   == 1 ? ", " : "s,",
-			msg->h.numAnswers,     msg->h.numAnswers     == 1 ? ", " : "s,",
+			msg->h.numQuestions,   msg->h.numQuestions   == 1 ? ", "   : "s,",
+			msg->h.numAnswers,     msg->h.numAnswers     == 1 ? ", "   : "s,",
 			msg->h.numAuthorities, msg->h.numAuthorities == 1 ? "y,  " : "ies,",
-			msg->h.numAdditionals, msg->h.numAdditionals == 1 ? "" : "s");
+			msg->h.numAdditionals, msg->h.numAdditionals == 1 ? " "    : "s", end - msg->data);
 		return;
 		}
 
 	verbosedebugf("Received Query from %#-15a:%-5d to %#-15a:%-5d on 0x%p with "
-		"%2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
+		"%2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s %d bytes",
 		srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), InterfaceID,
-		msg->h.numQuestions,   msg->h.numQuestions   == 1 ? ", " : "s,",
-		msg->h.numAnswers,     msg->h.numAnswers     == 1 ? ", " : "s,",
+		msg->h.numQuestions,   msg->h.numQuestions   == 1 ? ", "   : "s,",
+		msg->h.numAnswers,     msg->h.numAnswers     == 1 ? ", "   : "s,",
 		msg->h.numAuthorities, msg->h.numAuthorities == 1 ? "y,  " : "ies,",
-		msg->h.numAdditionals, msg->h.numAdditionals == 1 ? "" : "s");
+		msg->h.numAdditionals, msg->h.numAdditionals == 1 ? " "    : "s", end - msg->data);
 	
 	responseend = ProcessQuery(m, msg, end, srcaddr, InterfaceID,
 		!mDNSSameIPPort(srcport, MulticastDNSPort), mDNSAddrIsDNSMulticast(dstaddr), QueryWasLocalUnicast, &m->omsg);
@@ -4861,12 +4861,12 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	const mDNSu8 *ptr   = response->data;
 
 	debugf("Received Response from %#-15a addressed to %#-15a on %p with "
-		"%2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s LLQType %d",
+		"%2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s %d bytes LLQType %d",
 		srcaddr, dstaddr, InterfaceID,
-		response->h.numQuestions,   response->h.numQuestions   == 1 ? ", " : "s,",
-		response->h.numAnswers,     response->h.numAnswers     == 1 ? ", " : "s,",
+		response->h.numQuestions,   response->h.numQuestions   == 1 ? ", "   : "s,",
+		response->h.numAnswers,     response->h.numAnswers     == 1 ? ", "   : "s,",
 		response->h.numAuthorities, response->h.numAuthorities == 1 ? "y,  " : "ies,",
-		response->h.numAdditionals, response->h.numAdditionals == 1 ? "" : "s", LLQType);
+		response->h.numAdditionals, response->h.numAdditionals == 1 ? " "    : "s", end - response->data, LLQType);
 
 	// According to RFC 2181 <http://www.ietf.org/rfc/rfc2181.txt>
 	//    When a DNS client receives a reply with TC
@@ -5430,12 +5430,12 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 	const mDNSu8 *ptr;
 
 	LogSPS("Received Update from %#-15a:%-5d to %#-15a:%-5d on 0x%p with "
-		"%2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s",
+		"%2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s %d bytes",
 		srcaddr, mDNSVal16(srcport), dstaddr, mDNSVal16(dstport), InterfaceID,
-		msg->h.numQuestions,   msg->h.numQuestions   == 1 ? ", " : "s,",
-		msg->h.numAnswers,     msg->h.numAnswers     == 1 ? ", " : "s,",
+		msg->h.numQuestions,   msg->h.numQuestions   == 1 ? ", "   : "s,",
+		msg->h.numAnswers,     msg->h.numAnswers     == 1 ? ", "   : "s,",
 		msg->h.numAuthorities, msg->h.numAuthorities == 1 ? "y,  " : "ies,",
-		msg->h.numAdditionals, msg->h.numAdditionals == 1 ? "" : "s");
+		msg->h.numAdditionals, msg->h.numAdditionals == 1 ? " "    : "s", end - msg->data);
 
 	if (!InterfaceID || !m->SPSSocket || !mDNSSameIPPort(dstport, m->SPSSocket->port)) return;
 
