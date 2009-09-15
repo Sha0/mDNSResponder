@@ -204,6 +204,7 @@
 		FFA5724B0AF18FCC0055A0F1 /* DNSServiceDiscovery.c in Sources */ = {isa = PBXBuildFile; fileRef = FFA572480AF18FCC0055A0F1 /* DNSServiceDiscovery.c */; };
 		FFA572610AF190940055A0F1 /* DNSServiceDiscovery.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = FFA572600AF1908D0055A0F1 /* DNSServiceDiscovery.h */; };
 		FFA572640AF190C80055A0F1 /* dns_sd.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = FFA572630AF190C20055A0F1 /* dns_sd.h */; };
+		FFAE66F0105F0CD900162116 /* ddnswriteconfig in Resources */ = {isa = PBXBuildFile; fileRef = D284BEE80ADD80A70027CCDF /* ddnswriteconfig */; };
 		FFB437150EB165BD00E17C68 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 00CA213D02786FC30CCA2C71 /* IOKit.framework */; };
 		FFC22AA20B00F42A00BAB070 /* DNSServiceDiscoveryRequest.defs in Sources */ = {isa = PBXBuildFile; fileRef = 6575FC01022EAFBA00000109 /* DNSServiceDiscoveryRequest.defs */; };
 		FFC22AA30B00F42B00BAB070 /* DNSServiceDiscoveryRequest.defs in Sources */ = {isa = PBXBuildFile; fileRef = 6575FC01022EAFBA00000109 /* DNSServiceDiscoveryRequest.defs */; };
@@ -348,6 +349,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = FFA572650AF190F10055A0F1;
 			remoteInfo = SystemLibraries;
+		};
+		FFAE66F8105F0CF100162116 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 08FB7793FE84155DC02AAC07 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D284BEDB0ADD80A70027CCDF /* ddnswriteconfig */;
+			remoteInfo = ddnswriteconfig;
 		};
 		FFB7657C0AEED97F00583A2C /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -1159,6 +1167,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				FFAE66F9105F0CF100162116 /* PBXTargetDependency */,
 			);
 			name = PreferencePane;
 			productInstallPath = "${SYSTEM_LIBRARY_DIR}/PreferencePanes";
@@ -1270,6 +1279,7 @@
 				D284BEF90ADD80B00027CCDF /* InfoPlist.strings in Resources */,
 				D284BEFB0ADD80B00027CCDF /* inprogress.tiff in Resources */,
 				D284BEFC0ADD80B00027CCDF /* installtool in Resources */,
+				FFAE66F0105F0CD900162116 /* ddnswriteconfig in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1637,6 +1647,11 @@
 			target = FFA572650AF190F10055A0F1 /* SystemLibraries */;
 			targetProxy = FFA572700AF191230055A0F1 /* PBXContainerItemProxy */;
 		};
+		FFAE66F9105F0CF100162116 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D284BEDB0ADD80A70027CCDF /* ddnswriteconfig */;
+			targetProxy = FFAE66F8105F0CF100162116 /* PBXContainerItemProxy */;
+		};
 		FFB7657D0AEED97F00583A2C /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 00AD62BB032D7A0C0CCA2C71 /* Build More */;
@@ -1937,7 +1952,7 @@
 				GCC_ENABLE_FIX_AND_CONTINUE = NO;
 				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
 				INSTALL_PATH = "/Library/Application Support/Bonjour";
-				MACOSX_DEPLOYMENT_TARGET = "";
+				MACOSX_DEPLOYMENT_TARGET = 10.4;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -1959,7 +1974,7 @@
 				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
 				INFOPLIST_FILE = "PreferencePane/Info-PreferencePane.plist";
 				INSTALL_PATH = /AppleInternal/Library/PreferencePanes;
-				MACOSX_DEPLOYMENT_TARGET = "";
+				MACOSX_DEPLOYMENT_TARGET = 10.4;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "-twolevel_namespace";
 				OTHER_REZFLAGS = "";
