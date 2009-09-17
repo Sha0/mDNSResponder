@@ -2290,7 +2290,7 @@ mDNSlocal const mDNSu8 *DumpRecords(mDNS *const m, const DNSMessage *const msg, 
 		// embedded systems) putting a 9kB object on the stack isn't a big problem.
 		LargeCacheRecord largecr;
 		ptr = GetLargeResourceRecord(m, msg, ptr, end, mDNSInterface_Any, kDNSRecordTypePacketAns, &largecr);
-		if (ptr) LogMsg("%2d TTL%7d %s", i, largecr.r.resrec.rroriginalttl, CRDisplayString(m, &largecr.r));
+		if (ptr) LogMsg("%2d TTL%8d %s", i, largecr.r.resrec.rroriginalttl, CRDisplayString(m, &largecr.r));
 		}
 	if (!ptr) LogMsg("ERROR: Premature end of packet data");
 	return(ptr);
