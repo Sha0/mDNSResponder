@@ -2695,7 +2695,7 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m, CacheGroup *const cg)
 		if (m->timenow - event >= 0)	// If expired, delete it
 			{
 			*rp = rr->next;				// Cut it from the list
-			verbosedebugf("CheckCacheExpiration: Deleting%7d %4d %p %s",
+			verbosedebugf("CheckCacheExpiration: Deleting%7d %7d %p %s",
 				m->timenow - rr->TimeRcvd, rr->resrec.rroriginalttl, rr->CRActiveQuestion, CRDisplayString(m, rr));
 			if (rr->CRActiveQuestion)	// If this record has one or more active questions, tell them it's going away
 				{
@@ -4806,8 +4806,8 @@ mDNSlocal mDNSu32 GetEffectiveTTL(const uDNS_LLQType LLQType, mDNSu32 ttl)		// T
 	else	// else not LLQ (standard uDNS response)
 		{
 		// The TTL is already capped to a maximum value in GetLargeResourceRecord, but just to be extra safe we
-		// also do this check here to make sure we can't get integer overflow below
-		if (ttl > 0x8000000UL) ttl = 0x8000000UL;
+		// also do this check here to make sure we can't get overflow below when we add a quarter to the TTL
+		if (ttl > 0x60000000UL / mDNSPlatformOneSecond) ttl = 0x60000000UL / mDNSPlatformOneSecond;
 
 		// Adjustment factor to avoid race condition:
 		// Suppose real record as TTL of 3600, and our local caching server has held it for 3500 seconds, so it returns an aged TTL of 100.
