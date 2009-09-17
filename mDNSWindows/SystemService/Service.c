@@ -29,6 +29,7 @@
 #include	"uds_daemon.h"
 #include	"GenLinkedList.h"
 #include	"Service.h"
+#include	"EventLog.h"
 
 #include	"Resource.h"
 
@@ -421,7 +422,7 @@ static OSStatus	InstallService( LPCTSTR inName, LPCTSTR inDisplayName, LPCTSTR i
 	err = translate_errno( ok, (OSStatus) GetLastError(), kInUseErr );
 	require_noerr( err, exit );
 	
-	ReportStatus( EVENTLOG_SUCCESS, "installed service \"%s\"/\"%s\" at \"%s\"\n", inName, inDisplayName, inPath );
+	ReportStatus( EVENTLOG_SUCCESS, "installed service\n" );
 	err = kNoErr;
 	
 exit:
@@ -477,7 +478,7 @@ static OSStatus	RemoveService( LPCTSTR inName )
 	err = translate_errno( ok, (OSStatus) GetLastError(), kDeletedErr );
 	require_noerr( err, exit );
 		
-	ReportStatus( EVENTLOG_SUCCESS, "Removed service \"%s\"\n", inName );
+	ReportStatus( EVENTLOG_SUCCESS, "Removed service\n" );
 	err = ERROR_SUCCESS;
 	
 exit:
@@ -803,7 +804,7 @@ static void	ReportStatus( int inType, const char *inFormat, ... )
 			
 			vsprintf( s, inFormat, args );
 			array[ 0 ] = s;
-			ok = ReportEventA( gServiceEventSource, (WORD) inType, 0, 0x20000001L, NULL, 1, 0, array, NULL );
+			ok = ReportEventA( gServiceEventSource, (WORD) inType, 0, MDNSRESPONDER_LOG, NULL, 1, 0, array, NULL );
 			check_translated_errno( ok, GetLastError(), kUnknownErr );
 		}
 		else
@@ -841,7 +842,7 @@ int	RunDirect( int argc, LPTSTR argv[] )
 	
 	// Run the service. This does not return until the service quits or is stopped.
 	
-	ReportStatus( EVENTLOG_SUCCESS, "Running \"%s\" service directly\n", kServiceName );
+	ReportStatus( EVENTLOG_INFORMATION_TYPE, "Running service directly\n" );
 	
 	err = ServiceSpecificRun( argc, argv );
 	require_noerr( err, exit );
@@ -1121,9 +1122,9 @@ static OSStatus	ServiceRun( int argc, LPTSTR argv[] )
 	
 	// Run the service-specific stuff. This does not return until the service quits or is stopped.
 	
-	ReportStatus( EVENTLOG_INFORMATION_TYPE, "mDNSResponder started\n" );
+	ReportStatus( EVENTLOG_INFORMATION_TYPE, "Service started\n" );
 	err = ServiceSpecificRun( argc, argv );
-	ReportStatus( EVENTLOG_INFORMATION_TYPE, "mDNSResponder stopped (%d)\n", err );
+	ReportStatus( EVENTLOG_INFORMATION_TYPE, "Service stopped (%d)\n", err );
 	require_noerr( err, exit );
 	
 	// Service stopped. Clean up and we're done.

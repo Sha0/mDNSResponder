@@ -166,7 +166,7 @@
 			<Tool
 				Name="VCLinkerTool"
 				AdditionalOptions="/NXCOMPAT /DYNAMICBASE"
-				AdditionalDependencies="ws2_32.lib iphlpapi.lib crypt32.lib netapi32.lib"
+				AdditionalDependencies="ws2_32.lib iphlpapi.lib crypt32.lib netapi32.lib powrprof.lib"
 				OutputFile="$(OutDir)/mDNSResponder.exe"
 				LinkIncremental="2"
 				IgnoreAllDefaultLibraries="false"
@@ -397,6 +397,50 @@
 			<File
 				RelativePath="..\..\mDNSShared\dnssd_ipc.c"
 				>
+			</File>
+			<File
+				RelativePath=".\EventLog.mc"
+				>
+				<FileConfiguration
+					Name="Debug|Win32"
+					>
+					<Tool
+						Name="VCCustomBuildTool"
+						Description="Compiling Message Resource"
+						CommandLine="mc.exe EventLog.mc"
+						Outputs="EventLog.rc EventLog.h"
+					/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Debug|x64"
+					>
+					<Tool
+						Name="VCCustomBuildTool"
+						Description="Compiling Message Resource"
+						CommandLine="mc.exe EventLog.mc"
+						Outputs="EventLog.rc EventLog.h"
+					/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Release|Win32"
+					>
+					<Tool
+						Name="VCCustomBuildTool"
+						Description="Compiling Message Resource"
+						CommandLine="mc.exe EventLog.mc"
+						Outputs="EventLog.rc EventLog.h"
+					/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Release|x64"
+					>
+					<Tool
+						Name="VCCustomBuildTool"
+						Description="Compiling Message Resource"
+						CommandLine="mc.exe EventLog.mc"
+						Outputs="EventLog.rc EventLog.h"
+					/>
+				</FileConfiguration>
 			</File>
 			<File
 				RelativePath="Firewall.cpp"
