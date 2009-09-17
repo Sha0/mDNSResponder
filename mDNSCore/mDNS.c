@@ -5305,7 +5305,7 @@ exit:
 					if (SameNameRecordAnswersQuestion(&rr->resrec, &q))
 						{
 						// 1. If we got a fresh answer to this query, then don't need to generate a negative entry
-						if (rr->TimeRcvd + TicksTTL(rr) - m->timenow > 0) break;
+						if (RRExpireTime(rr) - m->timenow > 0) break;
 						// 2. If we already had a negative entry, keep track of it so we can resurrect it instead of creating a new one
 						if (rr->resrec.RecordType == kDNSRecordTypePacketNegative) neg = rr;
 						}
