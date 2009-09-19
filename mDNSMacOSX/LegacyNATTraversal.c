@@ -211,7 +211,7 @@ mDNSlocal void handleLNTDeviceDescriptionResponse(tcpLNTInfo *tcpInfo)
 	// find either service we care about
 	while (ptr && ptr < end)
 		{
-		if (*ptr == 'W' && (strncasecmp(ptr, "WANIPConnection:1", 17) == 0)) break;
+		if ((*ptr & 0xDF) == 'W' && (strncasecmp(ptr, "WANIPConnection:1", 17) == 0)) break;
 		ptr++;
 		}
 	if (ptr == end)
@@ -219,7 +219,7 @@ mDNSlocal void handleLNTDeviceDescriptionResponse(tcpLNTInfo *tcpInfo)
 		ptr = (char *)tcpInfo->Reply;
 		while (ptr && ptr < end)
 			{
-			if (*ptr == 'W' && (strncasecmp(ptr, "WANPPPConnection:1", 18) == 0))
+			if ((*ptr & 0xDF) == 'W' && (strncasecmp(ptr, "WANPPPConnection:1", 18) == 0))
 				{
 				m->UPnPWANPPPConnection = mDNStrue;
 				break;
@@ -232,7 +232,7 @@ mDNSlocal void handleLNTDeviceDescriptionResponse(tcpLNTInfo *tcpInfo)
 	// find "controlURL", starting from where we left off
 	while (ptr && ptr < end)
 		{
-		if (*ptr == 'c' && (strncasecmp(ptr, "controlURL", 10) == 0)) break;			// find the first 'c'; is this controlURL? if not, keep looking
+		if ((*ptr & 0xDF) == 'C' && (strncasecmp(ptr, "controlURL", 10) == 0)) break;			// find the first 'c'; is this controlURL? if not, keep looking
 		ptr++;
 		}
 	if (ptr == mDNSNULL || ptr == end) { LogInfo("handleLNTDeviceDescriptionResponse: didn't find controlURL string"); return; }
@@ -265,7 +265,7 @@ mDNSlocal void handleLNTDeviceDescriptionResponse(tcpLNTInfo *tcpInfo)
 		ptr = (char *)tcpInfo->Reply;
 		while (ptr && ptr < end)
 			{
-			if (*ptr == 'U' && (strncasecmp(ptr, "URLBase", 7) == 0))		break;
+			if ((*ptr & 0xDF) == 'U' && (strncasecmp(ptr, "URLBase", 7) == 0))		break;
 			ptr++;
 			}
 
@@ -364,7 +364,7 @@ mDNSlocal void handleLNTPortMappingResponse(tcpLNTInfo *tcpInfo)
 		{
 		while (ptr && ptr != end)
 			{
-			if (((*ptr == 'c' || *ptr == 'C') && end - ptr >= 8 && strncasecmp((char*)ptr, "Conflict", 8) == 0) || (*ptr == '>' && end - ptr >= 15 && strncasecmp((char*)ptr, ">718</errorCode", 15) == 0))
+			if (((*ptr & 0xDF) == 'C' && end - ptr >= 8 && strncasecmp((char*)ptr, "Conflict", 8) == 0) || (*ptr == '>' && end - ptr >= 15 && strncasecmp((char*)ptr, ">718</errorCode", 15) == 0))
 				{
 				if (tcpInfo->retries < 100)
 					{ 
@@ -768,7 +768,7 @@ mDNSexport void LNT_ConfigureRouterInfo(mDNS *m, const mDNSInterfaceID Interface
 	// figure out if this is a message from a service we care about
 	while (ptr && ptr != end)
 		{
-		if (*ptr == 'W' && (strncasecmp(ptr, "WANIPConnection:1", 17) == 0)) break;
+		if ((*ptr & 0xDF) == 'W' && (strncasecmp(ptr, "WANIPConnection:1", 17) == 0)) break;
 		ptr++;
 		}
 	if (ptr == end)
@@ -776,7 +776,7 @@ mDNSexport void LNT_ConfigureRouterInfo(mDNS *m, const mDNSInterfaceID Interface
 		ptr = (char *)data;
 		while (ptr && ptr != end)
 			{
-			if (*ptr == 'W' && (strncasecmp(ptr, "WANPPPConnection:1", 18) == 0)) break;
+			if ((*ptr & 0xDF) == 'W' && (strncasecmp(ptr, "WANPPPConnection:1", 18) == 0)) break;
 			ptr++;
 			}
 		}
@@ -786,7 +786,7 @@ mDNSexport void LNT_ConfigureRouterInfo(mDNS *m, const mDNSInterfaceID Interface
 	ptr = (char *)data;
 	while (ptr && ptr != end)
 		{
-		if (*ptr == 'L' && (strncasecmp(ptr, "Location:", 9) == 0)) break;			// find the first 'L'; is this Location? if not, keep looking
+		if ((*ptr & 0xDF) == 'L' && (strncasecmp(ptr, "Location:", 9) == 0)) break;			// find the first 'L'; is this Location? if not, keep looking
 		ptr++;
 		}
 	if (ptr == mDNSNULL || ptr == end) 
