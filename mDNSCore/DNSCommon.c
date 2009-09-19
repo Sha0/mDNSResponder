@@ -731,16 +731,16 @@ mDNSexport mDNSu8 *ConstructServiceName(domainname *const fqdn,
 
 	src = type->c;										// Put the service type into the domain name
 	len = *src;
-	if (len < 2 || len > 15)
+	if (len < 2 || len > 16)
 		{
-		LogMsg("Bad service type in %#s.%##s%##s Application protocol name must be underscore plus 1-14 characters. "
+		LogMsg("Bad service type in %#s.%##s%##s Application protocol name must be underscore plus 1-15 characters. "
 			"See <http://www.dns-sd.org/ServiceTypes.html>", name->c, type->c, domain->c);
 #if APPLE_OSX_mDNSResponder
 		ConvertDomainNameToCString(type, typeBuf);
 		mDNSASLLog(mDNSNULL, "serviceType.nameTooLong", "noop", typeBuf, "");
 #endif
 		}
-	if (len < 2 || len >= 0x40 || (len > 15 && !SameDomainName(domain, &localdomain))) return(mDNSNULL);
+	if (len < 2 || len >= 0x40 || (len > 16 && !SameDomainName(domain, &localdomain))) return(mDNSNULL);
 	if (src[1] != '_') { errormsg = "Application protocol name must begin with underscore"; goto fail; }
 	for (i=2; i<=len; i++)
 		{

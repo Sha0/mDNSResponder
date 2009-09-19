@@ -514,7 +514,7 @@ enum
  *
  * The servicename may be up to 63 bytes of UTF-8 text (not counting the C-String
  * terminating NULL at the end). The regtype is of the form _service._tcp or
- * _service._udp, where the "service" part is 1-14 characters, which may be
+ * _service._udp, where the "service" part is 1-15 characters, which may be
  * letters, digits, or hyphens. The domain part of the three-part name may be
  * any legal domain, providing that the resulting servicename+regtype+domain
  * name does not exceed 256 bytes.
@@ -886,7 +886,7 @@ typedef void (DNSSD_API *DNSServiceRegisterReply)
  *
  * regtype:         The service type followed by the protocol, separated by a dot
  *                  (e.g. "_ftp._tcp"). The service type must be an underscore, followed
- *                  by 1-14 characters, which may be letters, digits, or hyphens.
+ *                  by 1-15 characters, which may be letters, digits, or hyphens.
  *                  The transport protocol must be "_tcp" or "_udp". New service types
  *                  should be registered at <http://www.dns-sd.org/ServiceTypes.html>.
  *
