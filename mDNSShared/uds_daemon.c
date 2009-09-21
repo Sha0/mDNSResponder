@@ -1024,8 +1024,7 @@ mDNSlocal mStatus handle_update_request(request_state *request)
 			if (!request->u.servicereg.txtdata) FatalError("ERROR: handle_update_request - malloc");
 			mDNSPlatformMemCopy(request->u.servicereg.txtdata, rdata, rdlen);
 			}
-		else
-			request->u.servicereg.txtdata = NULL;
+		request->u.servicereg.txtlen = rdlen;
 		}
 
 	// update a record from a service record set
@@ -1364,7 +1363,6 @@ mDNSlocal mStatus handle_regservice_request(request_state *request)
 		if (!request->u.servicereg.txtdata) FatalError("ERROR: handle_regservice_request - malloc");
 		mDNSPlatformMemCopy(request->u.servicereg.txtdata, get_rdata(&request->msgptr, request->msgend, request->u.servicereg.txtlen), request->u.servicereg.txtlen);
 		}
-	else request->u.servicereg.txtdata = NULL;
 
 	if (!request->msgptr) { LogMsg("%3d: DNSServiceRegister(unreadable parameters)", request->sd); return(mStatus_BadParamErr); }
 
