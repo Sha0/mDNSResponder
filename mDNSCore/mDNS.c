@@ -7810,27 +7810,51 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 
 				case 17:	{
 							const UDPHeader *const udp = (const UDPHeader *)trans;
-							mDNSu16 len = (mDNSu16)((mDNSu16)trans[4] << 8 | trans[5]);
-							port = udp->dst;
-							wake = mDNStrue;
+							const mDNSu16 udplen = (mDNSu16)((mDNSu16)trans[4] << 8 | trans[5]);		// Length *including* 8-byte UDP header
+							if (udplen >= sizeof(UDPHeader))
+								{
+								const mDNSu16 datalen = udplen - sizeof(UDPHeader);
+								port = udp->dst;
+								wake = mDNStrue;
 
-							// For Back to My Mac UDP port 4500 (IPSEC) packets, we specially ignore NAT keepalive packets
-							if (mDNSSameIPPort(port, IPSECPort)) wake = (len != 9 || end < trans + 9 || trans[8] != 0xFF);
+								// For Back to My Mac UDP port 4500 (IPSEC) packets, we do some special handling
+								if (mDNSSameIPPort(port, IPSECPort))
+									{
+									// Specifically ignore NAT keepalive packets
+									if (datalen == 1 && end >= trans + 9 && trans[8] == 0xFF) wake = mDNSfalse;
+									else
+										{
+										// Skip over the Non-ESP Marker if present
+										const mDNSBool NonESP = (end >= trans + 12 && trans[8] == 0 && trans[9] == 0 && trans[10] == 0 && trans[11] == 0);
+										const IKEHeader *const ike    = (IKEHeader *)(trans + (NonESP ? 12 : 8));
+										const mDNSu16          ikelen = datalen - (NonESP ? 4 : 0);
+										if (ikelen >= sizeof(IKEHeader) && end >= ((mDNSu8 *)ike) + sizeof(IKEHeader))
+											if ((ike->Version & 0x10) == 0x10)
+												{
+												// ExchangeType ==  5 means 'Informational' <http://www.ietf.org/rfc/rfc2408.txt>
+												// ExchangeType == 34 means 'IKE_SA_INIT'   <http://www.iana.org/assignments/ikev2-parameters>
+												if (ike->ExchangeType == 5 || ike->ExchangeType == 34) wake = mDNSfalse;
+												LogSPS("%s %d-byte IKE ExchangeType %d", XX, ike->ExchangeType);
+												}
+										}
+									}
 
-							// For now, because we haven't yet worked out a clean elegant way to do this, we just special-case the
-							// Apple Remote Desktop port number -- we ignore all packets to UDP 3283 (the "Net Assistant" port),
-							// except for Apple Remote Desktop's explicit manual wakeup packet, which looks like this:
-							// UDP header (8 bytes) 13 88 00 6a 41 4e 41 20 (8 bytes) ffffffffffff (6 bytes) 16xMAC (96 bytes) = 118 bytes total
-							if (mDNSSameIPPort(port, ARD)) wake = (len >= 118 && end >= trans+10 && trans[8] == 0x13 && trans[9] == 0x88);
+								// For now, because we haven't yet worked out a clean elegant way to do this, we just special-case the
+								// Apple Remote Desktop port number -- we ignore all packets to UDP 3283 (the "Net Assistant" port),
+								// except for Apple Remote Desktop's explicit manual wakeup packet, which looks like this:
+								// UDP header (8 bytes)
+								// Payload: 13 88 00 6a 41 4e 41 20 (8 bytes) ffffffffffff (6 bytes) 16xMAC (96 bytes) = 110 bytes total
+								if (mDNSSameIPPort(port, ARD)) wake = (datalen >= 110 && end >= trans+10 && trans[8] == 0x13 && trans[9] == 0x88);
 
-							LogSPS("%s %d-byte UDP from %.4a:%d to %.4a:%d", XX, &v4->src, mDNSVal16(udp->src), &v4->dst, mDNSVal16(port));
+								LogSPS("%s %d-byte UDP from %.4a:%d to %.4a:%d", XX, &v4->src, mDNSVal16(udp->src), &v4->dst, mDNSVal16(port));
+								}
 							}
 							break;
 
 				default:	LogSPS("%s %d-byte IP packet unknown protocol %d from %.4a to %.4a", XX, v4->protocol, &v4->src, &v4->dst);
 							break;
 				}
-	
+
 			if (wake)
 				{
 				AuthRecord *rr, *r2;

@@ -533,6 +533,18 @@ typedef packedstruct
 
 typedef packedstruct
 	{
+	mDNSOpaque64 InitiatorCookie;
+	mDNSOpaque64 ResponderCookie;
+	mDNSu8       NextPayload;
+	mDNSu8       Version;
+	mDNSu8       ExchangeType;
+	mDNSu8       Flags;
+	mDNSOpaque32 MessageID;
+	mDNSu32      Length;
+	} IKEHeader;			// 28 bytes
+
+typedef packedstruct
+	{
 	mDNSIPPort   src;
 	mDNSIPPort   dst;
 	mDNSu32      seq;
@@ -2533,7 +2545,8 @@ struct CompileTimeAssertionChecks_mDNS
 	char assertI[(sizeof(IPv6Header    )   ==   40                         ) ? 1 : -1];
 	char assertJ[(sizeof(IPv6ND        )   ==   24                         ) ? 1 : -1];
 	char assertK[(sizeof(UDPHeader     )   ==    8                         ) ? 1 : -1];
-	char assertL[(sizeof(TCPHeader     )   ==   20                         ) ? 1 : -1];
+	char assertL[(sizeof(IKEHeader     )   ==   28                         ) ? 1 : -1];
+	char assertM[(sizeof(TCPHeader     )   ==   20                         ) ? 1 : -1];
 
 	// Check our structures are reasonable sizes. Including overly-large buffers, or embedding
 	// other overly-large structures instead of having a pointer to them, can inadvertently
