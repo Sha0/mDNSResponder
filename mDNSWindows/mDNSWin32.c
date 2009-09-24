@@ -1037,10 +1037,12 @@ mDNSexport void	mDNSPlatformTCPCloseConnection( TCPSocket *sock )
 mDNSexport long	mDNSPlatformReadTCP( TCPSocket *sock, void *inBuffer, unsigned long inBufferSize, mDNSBool * closed )
 {
 	unsigned long	bytesLeft;
+	int				wsaError;
 	long			ret;
 
-	ret = -1;
 	*closed = sock->closed;
+	wsaError = sock->lastError;
+	ret = -1;
 
 	if ( *closed )
 	{
@@ -1065,24 +1067,30 @@ mDNSexport long	mDNSPlatformReadTCP( TCPSocket *sock, void *inBuffer, unsigned l
 			{
 				sock->lastError = TCPBeginRecv( sock );
 				
+				// If we can't immediately queue up another read, abort the connection
+				// now, even if we successfully wrote bytes to the buffer.
+				// We don't expect this to happen unless something is seriously borked.
+				// If we run into this in the real world, we should consider queuing up
+				// a user APC function to defer an explicit callback to the read event handler
+				// to inform the consumer of the problem.
+
 				if ( sock->lastError )
 				{
-					WSASetLastError( sock->lastError );
+					dlog( kDebugLevelError, DEBUG_NAME "TCPBeginRecv failed with error %d\n", sock->lastError );
+					wsaError = sock->lastError;
 					ret = -1;
 				}
 			}
 		}
 		else
 		{
-			WSASetLastError( WSAEWOULDBLOCK );
-			ret = -1;
+			wsaError = WSAEWOULDBLOCK;
 		}
 	}
-	else
-	{
-		WSASetLastError( sock->lastError );
-		ret = -1;
-	}
+
+	// Always set the last winsock error, so that we don't inadvertently use a previous one		
+	
+	WSASetLastError( wsaError );
 
 	return ret;
 }
