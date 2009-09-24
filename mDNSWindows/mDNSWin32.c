@@ -261,16 +261,15 @@ mDNSexport mStatus	mDNSPlatformInit( mDNS * const inMDNS )
 	
 	inMDNS->CanReceiveUnicastOn5353 = CanReceiveUnicast();
 	
-	// Setup the HINFO HW/SW strings.
-	
-#if ( MDNS_SET_HINFO_STRINGS )
-	err = GetWindowsVersionString( (char *) &inMDNS->HIHardware.c[ 1 ], sizeof( inMDNS->HIHardware.c ) - 2 );
-	check_noerr( err );
-	// Note that GetWindowsVersionString guarantees that the resulting string is always null-terminated,
-	// so the following strlen call is safe
-	inMDNS->HIHardware.c[ 0 ] = (mDNSu8) mDNSPlatformStrLen( &inMDNS->HIHardware.c[ 1 ] );
+	// Setup the HINFO HW strings.
+	//<rdar://problem/7245119> device-info should have model=Windows
+
+	strcpy_s( ( char* ) &inMDNS->HIHardware.c[ 1 ], sizeof( inMDNS->HIHardware.c ) - 2, "Windows" );
+	inMDNS->HIHardware.c[ 0 ] = ( mDNSu8 ) mDNSPlatformStrLen( &inMDNS->HIHardware.c[ 1 ] );
 	dlog( kDebugLevelInfo, DEBUG_NAME "HIHardware: %#s\n", inMDNS->HIHardware.c );
-	
+
+	// Setup the HINFO SW strings.
+#if ( MDNS_SET_HINFO_STRINGS )
 	mDNS_snprintf( (char *) &inMDNS->HISoftware.c[ 1 ], sizeof( inMDNS->HISoftware.c ) - 2, 
 		"mDNSResponder (%s %s)", __DATE__, __TIME__ );
 	inMDNS->HISoftware.c[ 0 ] = (mDNSu8) mDNSPlatformStrLen( &inMDNS->HISoftware.c[ 1 ] );
