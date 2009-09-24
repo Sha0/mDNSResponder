@@ -92,6 +92,7 @@ typedef struct EventSource
 
 static BOOL											gEventSourceListChanged = FALSE;
 static EventSource								*	gEventSourceList = NULL;
+static EventSource								*	gCurrentSource = NULL;
 static int											gEventSources = 0;
 
 #define	kWaitListStopEvent							( WAIT_OBJECT_0 + 0 )
@@ -1250,14 +1251,9 @@ static OSStatus	ServiceSpecificRun( int argc, LPTSTR argv[] )
 
 		gEventSourceListChanged = FALSE;
 
-		for ( ;; )
+		while ( !gEventSourceListChanged )
 		{
 			mDNSs32 interval;
-
-			if ( gEventSourceListChanged )
-			{
-				break;
-			}
 
 			// Give the mDNS core a chance to do its work and determine next event time.
 			
@@ -1426,21 +1422,39 @@ static OSStatus	ServiceSpecificRun( int argc, LPTSTR argv[] )
 
 					if ( ( waitItemIndex >= 0 ) && ( waitItemIndex < waitListCount ) )
 					{
-						HANDLE			signaledEvent;
-						EventSource	*	source;
-						int				n = 0;
+						HANDLE	signaledEvent;
+						int		n = 0;
 						
 						signaledEvent = waitList[ waitItemIndex ];
 
-						for ( source = gEventSourceList; source; source = source->next )
+						// If gCurrentSource is not NULL, then this routine has been called
+						// re-entrantly which should never happen.
+
+						check( !gCurrentSource );
+
+						for ( gCurrentSource = gEventSourceList; gCurrentSource; )
 						{
-							if ( source->event == signaledEvent )
+							EventSource * current = gCurrentSource;
+
+							if ( gCurrentSource->event == signaledEvent )
 							{
-								source->handler( &gMDNSRecord, source->event, source->context );
+								gCurrentSource->handler( &gMDNSRecord, gCurrentSource->event, gCurrentSource->context );
 								++n;
 								break;
 							}
+
+							// If the current node was removed as a result of calling
+							// the handler, then gCurrentSource was already incremented to
+							// the next node.  If it wasn't removed, then increment it
+							// ourselves
+
+							if ( gCurrentSource == current )
+							{
+								gCurrentSource = gCurrentSource->next;
+							}
 						}
+
+						gCurrentSource = NULL;
 
 						check( n > 0 );
 					}
@@ -1826,6 +1840,16 @@ static void UnregisterWaitableEvent( mDNS * const inMDNS, HANDLE event )
 			}
 
 			gEventSourceListChanged = TRUE;
+
+			// Protect against removing the node that we happen
+			// to be looking at as we iterate through the event
+			// source list in ServiceSpecificRun()
+
+			if ( current == gCurrentSource )
+			{
+				gCurrentSource = current->next;
+			}
+
 			gEventSources--;
 			free( current );
 
