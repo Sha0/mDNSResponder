@@ -156,6 +156,7 @@ mDNSlocal void				GetDDNSDomains( DNameListElem ** domains, LPCSTR lpSubKey );
 mDNSlocal void				SetDomainSecrets( mDNS * const inMDNS );
 mDNSlocal void				SetDomainSecret( mDNS * const m, const domainname * inDomain );
 mDNSlocal void				CheckFileShares( mDNS * const inMDNS );
+mDNSlocal void				SMBCallback(mDNS *const m, ServiceRecordSet *const srs, mStatus result);
 mDNSlocal mDNSu8			IsWOMPEnabledForAdapter( const char * adapterName );
 
 #ifdef	__cplusplus
@@ -4495,72 +4496,137 @@ CheckFileShares( mDNS * const m )
 	DWORD			entriesRead = 0;
 	DWORD			totalEntries = 0;
 	DWORD			resume = 0;
-	mDNSBool		enabled = mDNSfalse;
+	mDNSBool		fileSharing = mDNSfalse;
+	mDNSBool		printSharing = mDNSfalse;
 	NET_API_STATUS  res;
 	mStatus			err;
 
 	check( m );
 
-	if ( mDNSIsFileAndPrintSharingEnabled() )
+	// We only want to enter this routine if either we haven't called mDNS_RegisterService()
+	// or we called mDNS_DeregisterService() and our callback was invoked and told
+	// that our service has been fully deregistered.
+	//
+	// The first part of the following if statement is self-explanatory; it's checking to see if
+	// we have registered or not. When we call mDNS_DeregisterService() we continue
+	// to set m->p->smbRegistered to true until our callback is invoked, but we set smbFileSharing
+	// and smbPrintSharing to false. So if we enter this routine with smbRegistered being
+	// true, and smbFileSharing and smbPrintSharing being false we know that we're waiting
+	// to be notified that our service has been fully deregistered.
+
+	if ( !m->p->smbRegistered || ( m->p->smbFileSharing || m->p->smbPrintSharing ) )
 	{
-		dlog( kDebugLevelTrace, DEBUG_NAME "file and print sharing is enabled\n" );
-
-		res = NetShareEnum( NULL, 1, ( LPBYTE* )&bufPtr, MAX_PREFERRED_LENGTH, &entriesRead, &totalEntries, &resume );
-
-		if ( ( res == ERROR_SUCCESS ) || ( res == ERROR_MORE_DATA ) )
+		if ( mDNSIsFileAndPrintSharingEnabled() )
 		{
-			PSHARE_INFO_1 p = bufPtr;
-			DWORD i;
+			dlog( kDebugLevelTrace, DEBUG_NAME "file and print sharing is enabled\n" );
 
-			for( i = 0; i <= totalEntries; i++ ) 
+			res = NetShareEnum( NULL, 1, ( LPBYTE* )&bufPtr, MAX_PREFERRED_LENGTH, &entriesRead, &totalEntries, &resume );
+
+			if ( ( res == ERROR_SUCCESS ) || ( res == ERROR_MORE_DATA ) )
 			{
-				// We are only interested if the user is sharing anything other 
-				// than the built-in "print$" source
+				PSHARE_INFO_1 p = bufPtr;
+				DWORD i;
 
-				if ( ( p->shi1_type == STYPE_DISKTREE ) && ( wcscmp( p->shi1_netname, TEXT( "print$" ) ) != 0 ) )
+				for( i = 0; i <= totalEntries; i++ ) 
 				{
-					enabled = mDNStrue;
-					break;
+					// We are only interested if the user is sharing anything other 
+					// than the built-in "print$" source
+
+					if ( ( p->shi1_type == STYPE_DISKTREE ) && ( wcscmp( p->shi1_netname, TEXT( "print$" ) ) != 0 ) )
+					{
+						fileSharing = mDNStrue;
+					}
+					else if ( p->shi1_type == STYPE_PRINTQ )
+					{
+						printSharing = mDNStrue;
+					}
+
+					p++;
 				}
 
-				p++;
+				NetApiBufferFree( bufPtr );
+				bufPtr = NULL;
+			}
+		}
+		
+		if ( !m->p->smbRegistered && fileSharing )
+		{
+			domainname		type;
+			domainname		domain;
+			mDNSIPPort		port = { { SMBPortAsNumber >> 8, SMBPortAsNumber & 0xFF } };
+			mDNSInterfaceID iid = mDNSPlatformInterfaceIDfromInterfaceIndex( m, 0 );
+			mDNSu32			stCount = 1;
+			mDNSu8		  * dt;
+			
+			MakeDomainNameFromDNSNameString(&type, "_smb._tcp" );
+			MakeDomainNameFromDNSNameString(&domain, "local.");
+			
+			dlog( kDebugLevelTrace, DEBUG_NAME "setting up _smb._tcp,_file\n" );
+
+			mDNS_SetupResourceRecord( &m->p->smbSubTypes[ 0 ], mDNSNULL, mDNSInterface_Any, kDNSQType_ANY, kStandardTTL, 0, mDNSNULL, mDNSNULL);
+			dt = MakeDomainNameFromDNSNameString( &m->p->smbSubTypes[ 0 ].namestorage, "_file" );
+			err = translate_errno( dt != NULL, kUnknownErr, kUnknownErr );
+			require_noerr( err, exit );
+
+			if ( printSharing )
+			{
+				dlog( kDebugLevelTrace, DEBUG_NAME "setting up _smb._tcp,_print\n" );
+				mDNS_SetupResourceRecord( &m->p->smbSubTypes[ 1 ], mDNSNULL, mDNSInterface_Any, kDNSQType_ANY, kStandardTTL, 0, mDNSNULL, mDNSNULL);
+				dt = MakeDomainNameFromDNSNameString( &m->p->smbSubTypes[ 1 ].namestorage, "_print" );
+				err = translate_errno( dt != NULL, kUnknownErr, kUnknownErr );
+				require_noerr( err, exit );
+				stCount++;
 			}
 
-			NetApiBufferFree( bufPtr );
-			bufPtr = NULL;
+			memset( &m->p->smbSRS, 0, sizeof( m->p->smbSRS ) );
+
+			dlog( kDebugLevelTrace, DEBUG_NAME "registering smb type\n" );
+
+			err = mDNS_RegisterService( m, &m->p->smbSRS, &m->nicelabel, &type, &domain, NULL, port, NULL, 0, m->p->smbSubTypes, stCount, iid, SMBCallback, NULL );
+			require_noerr( err, exit );
+
+			m->p->smbRegistered		= mDNStrue;
+			m->p->smbFileSharing	= fileSharing;
+			m->p->smbPrintSharing	= printSharing;
 		}
-	}
+		else if ( m->p->smbRegistered && ( ( m->p->smbFileSharing != fileSharing ) || ( m->p->smbPrintSharing != printSharing ) ) )
+		{
+			dlog( kDebugLevelTrace, DEBUG_NAME "deregistering smb type\n" );
+			
+			err = mDNS_DeregisterService( m, &m->p->smbSRS );
+			require_noerr( err, exit );
 
-	if ( enabled && !m->p->smbRegistered )
-	{
-		domainname		type;
-		domainname		domain;
-		mDNSIPPort		port = { { SMBPortAsNumber >> 8, SMBPortAsNumber & 0xFF } };
-		mDNSInterfaceID iid = mDNSPlatformInterfaceIDfromInterfaceIndex( m, 0 );
+			// Don't set m->p->smbRegistered to false here. Do that in SMBCallback()
 
-		dlog( kDebugLevelTrace, DEBUG_NAME "registering smb type\n" );
-		
-		MakeDomainNameFromDNSNameString(&type, "_smb._tcp" );
-		MakeDomainNameFromDNSNameString(&domain, "local.");
-
-		err = mDNS_RegisterService( m, &m->p->smbSRS, &m->nicelabel, &type, &domain, NULL, port, NULL, 0, NULL, 0, iid, /* callback */ NULL, /* context */ NULL);
-		require_noerr( err, exit );
-
-		m->p->smbRegistered = mDNStrue;
-	}
-	else if ( !enabled && m->p->smbRegistered )
-	{
-		dlog( kDebugLevelTrace, DEBUG_NAME "deregistering smb type\n" );
-		
-		err = mDNS_DeregisterService( m, &m->p->smbSRS );
-		require_noerr( err, exit );
-
-		m->p->smbRegistered = mDNSfalse;
+			m->p->smbFileSharing	= mDNSfalse;
+			m->p->smbPrintSharing	= mDNSfalse;
+		}
 	}
 
 exit:
 
 	return;
+}
+
+
+mDNSlocal void
+SMBCallback(mDNS *const m, ServiceRecordSet *const srs, mStatus result)
+{
+	( void ) srs;
+
+	if ( result == mStatus_MemFree)
+	{
+		m->p->smbRegistered = mDNSfalse;
+		CheckFileShares( m );
+	}
+	else if ( result != mStatus_NoError )
+	{
+		dlog( kDebugLevelError, DEBUG_NAME "SMBCallback error: %d\n", result );
+		
+		m->p->smbRegistered		= mDNSfalse;
+		m->p->smbFileSharing	= mDNSfalse;
+		m->p->smbPrintSharing	= mDNSfalse;
+	}
 }
 
 

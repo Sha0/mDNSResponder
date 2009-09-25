@@ -122,7 +122,10 @@ struct	mDNS_PlatformSupport_struct
 	UnregisterWaitableEventFunc	unregisterWaitableEventFunc;
 	time_t						nextDHCPLeaseExpires;
 	mDNSBool					smbRegistered;
+	mDNSBool					smbFileSharing;
+	mDNSBool					smbPrintSharing;
 	ServiceRecordSet			smbSRS;
+	AuthRecord					smbSubTypes[ 2 ];
 	mDNSBool					registeredLoopback4;
 	int							interfaceCount;
 	mDNSInterfaceData *			interfaceList;
