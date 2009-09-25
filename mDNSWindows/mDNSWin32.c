@@ -2087,7 +2087,11 @@ mStatus	SetupNiceName( mDNS * const inMDNS )
 	HKEY		descKey = NULL;
 	char		utf8[ 256 ];
 	LPCTSTR		s;
+	LPWSTR		joinName;
+	NETSETUP_JOIN_STATUS joinStatus;
 	mStatus		err = 0;
+	DWORD		namelen;
+	BOOL		ok;
 	
 	check( inMDNS );
 	
@@ -2122,10 +2126,10 @@ mStatus	SetupNiceName( mDNS * const inMDNS )
 	if ( err || ( utf8[ 0 ] == '\0' ) )
 	{
 		TCHAR hostname[256];
-		DWORD hostnameLen = sizeof( hostname ) / sizeof( TCHAR );
-		BOOL  ok;
+		
+		namelen = sizeof( hostname ) / sizeof( TCHAR );
 
-		ok = GetComputerNameExW( ComputerNamePhysicalDnsHostname, hostname, &hostnameLen );
+		ok = GetComputerNameExW( ComputerNamePhysicalDnsHostname, hostname, &namelen );
 		err = translate_errno( ok, (mStatus) GetLastError(), kNameErr );
 		check_noerr( err );
 		
@@ -2158,6 +2162,31 @@ mStatus	SetupNiceName( mDNS * const inMDNS )
 	{
 		RegCloseKey( descKey );
 	}
+
+	ZeroMemory( inMDNS->p->nbname, sizeof( inMDNS->p->nbname ) );
+	ZeroMemory( inMDNS->p->nbworkgroup, sizeof( inMDNS->p->nbworkgroup ) );
+
+	namelen = sizeof( inMDNS->p->nbname );
+	ok = GetComputerNameExA( ComputerNamePhysicalNetBIOS, inMDNS->p->nbname, &namelen );
+	check( ok );
+	if ( ok ) dlog( kDebugLevelInfo, DEBUG_NAME "netbios name \"%s\"\n", inMDNS->p->nbname );
+
+	err = NetGetJoinInformation( NULL, &joinName, &joinStatus );
+	check ( err == NERR_Success );
+	if ( err == NERR_Success )
+	{
+		if ( ( joinStatus == NetSetupWorkgroupName ) || ( joinStatus == NetSetupDomainName ) )
+		{
+			err = TCHARtoUTF8( joinName, inMDNS->p->nbworkgroup, sizeof( inMDNS->p->nbworkgroup ) );
+			check( !err );
+			if ( !err ) dlog( kDebugLevelInfo, DEBUG_NAME "netbios workgroup \"%s\"\n", inMDNS->p->nbworkgroup );
+		}
+
+		NetApiBufferFree( joinName );
+		joinName = NULL;
+	}
+
+	err = 0;
 
 	return( err );
 }
@@ -4498,6 +4527,10 @@ CheckFileShares( mDNS * const m )
 	DWORD			resume = 0;
 	mDNSBool		fileSharing = mDNSfalse;
 	mDNSBool		printSharing = mDNSfalse;
+	mDNSu8			txtBuf[ 256 ];
+	mDNSu8		*	txtPtr;
+	size_t			keyLen;
+	size_t			valLen;
 	NET_API_STATUS  res;
 	mStatus			err;
 
@@ -4579,10 +4612,27 @@ CheckFileShares( mDNS * const m )
 			}
 
 			memset( &m->p->smbSRS, 0, sizeof( m->p->smbSRS ) );
+			memset( txtBuf, 0, sizeof( txtBuf )  );
+			txtPtr = txtBuf;
+			keyLen = strlen( "netbios=" );
+			valLen = strlen( m->p->nbname );
+			require_action( valLen < 32, exit, err = kUnknownErr );	// This should never happen, but check to avoid further memory corruption
+			*txtPtr++ = ( mDNSu8 ) ( keyLen + valLen );
+			memcpy( txtPtr, "netbios=", keyLen );
+			txtPtr += keyLen;
+			if ( valLen ) { memcpy( txtPtr, m->p->nbname, valLen ); txtPtr += ( mDNSu8 ) valLen; }
+
+			keyLen = strlen( "workgroup=" );
+			valLen = strlen( m->p->nbworkgroup );
+			require_action( valLen < 32, exit, err = kUnknownErr );	// This should never happen, but check to avoid further memory corruption
+			*txtPtr++ = ( mDNSu8 )( keyLen + valLen );
+			memcpy( txtPtr, "workgroup=", keyLen );
+			txtPtr += keyLen;
+			if ( valLen ) { memcpy( txtPtr, m->p->nbworkgroup, valLen ); txtPtr += valLen; }
 
 			dlog( kDebugLevelTrace, DEBUG_NAME "registering smb type\n" );
 
-			err = mDNS_RegisterService( m, &m->p->smbSRS, &m->nicelabel, &type, &domain, NULL, port, NULL, 0, m->p->smbSubTypes, stCount, iid, SMBCallback, NULL );
+			err = mDNS_RegisterService( m, &m->p->smbSRS, &m->nicelabel, &type, &domain, NULL, port, txtBuf, ( mDNSu16 )( txtPtr - txtBuf ), m->p->smbSubTypes, stCount, iid, SMBCallback, NULL );
 			require_noerr( err, exit );
 
 			m->p->smbRegistered		= mDNStrue;
