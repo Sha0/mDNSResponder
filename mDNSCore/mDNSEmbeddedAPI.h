@@ -1209,6 +1209,7 @@ typedef struct DNSServer
 	mDNSu32         teststate;	// Have we sent bug-detection query to this server?
 	mDNSs32         lasttest;	// Time we sent last bug-detection query to this server
 	domainname      domain;		// name->server matching for "split dns"
+	mDNSs32			penaltyTime; // amount of time this server is penalized			
 	} DNSServer;
 
 typedef struct ExtraResourceRecord_struct ExtraResourceRecord;
@@ -1818,6 +1819,8 @@ extern const mDNSOpaque16 UpdateRespFlags;
 
 extern const mDNSOpaque64 zeroOpaque64;
 
+extern mDNSBool StrictUnicastOrdering;
+
 #define localdomain           (*(const domainname *)"\x5" "local")
 #define DeviceInfoName        (*(const domainname *)"\xC" "_device-info" "\x4" "_tcp")
 #define SleepProxyServiceType (*(const domainname *)"\xC" "_sleep-proxy" "\x4" "_udp")
@@ -2047,7 +2050,7 @@ extern mStatus mDNS_AdvertiseDomains(mDNS *const m, AuthRecord *rr, mDNS_DomainT
 
 extern mDNSOpaque16 mDNS_NewMessageID(mDNS *const m);
 		
-extern DNSServer *GetServerForName(mDNS *m, const domainname *name);
+extern DNSServer *GetServerForName(mDNS *m, const domainname *name, DNSServer *current);
 
 // ***************************************************************************
 #if 0
@@ -2246,7 +2249,7 @@ extern void mDNS_AddDynDNSHostName(mDNS *m, const domainname *fqdn, mDNSRecordCa
 extern void mDNS_RemoveDynDNSHostName(mDNS *m, const domainname *fqdn);
 extern void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr,  const mDNSAddr *v6addr, const mDNSAddr *router);
 extern DNSServer *mDNS_AddDNSServer(mDNS *const m, const domainname *d, const mDNSInterfaceID interface, const mDNSAddr *addr, const mDNSIPPort port);
-extern void PushDNSServerToEnd(mDNS *const m, DNSQuestion *q);
+extern void PenalizeDNSServer(mDNS *const m, DNSQuestion *q, mDNSBool QueryFail);
 extern void mDNS_AddSearchDomain(const domainname *const domain);
 
 // We use ((void *)0) here instead of mDNSNULL to avoid compile warnings on gcc 4.2

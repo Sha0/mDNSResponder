@@ -33,6 +33,7 @@
 #define LLQ_POLL_INTERVAL       (15 * 60 * mDNSPlatformOneSecond) // Polling interval for zones w/ an advertised LLQ port (ie not static zones) if LLQ fails due to NAT, etc.
 #define RESPONSE_WINDOW (60 * mDNSPlatformOneSecond)         // require server responses within one minute of request
 #define MAX_UCAST_UNANSWERED_QUERIES 2                       // the number of unanswered queries from any one uDNS server before trying another server
+#define DNSSERVER_PENALTY_TIME (60 * mDNSPlatformOneSecond) // number of seconds for which new questions don't pick this server
 
 #define DEFAULT_UPDATE_LEASE 7200
 
@@ -86,6 +87,7 @@ extern void uDNS_ReceiveMsg(mDNS *const m, DNSMessage *const msg, const mDNSu8 *
 
 // returns time of next scheduled event
 extern void uDNS_Execute(mDNS *const m);
+extern void ResetDNSServerPenalties(mDNS *m);
 
 extern mStatus         uDNS_SetupDNSConfig(mDNS *const m);
 extern mStatus         uDNS_RegisterSearchDomains(mDNS *const m);

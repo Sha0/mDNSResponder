@@ -186,44 +186,110 @@ mDNSexport DNSServer *mDNS_AddDNSServer(mDNS *const m, const domainname *d, cons
 			(*p)->next = mDNSNULL;
 			}
 		}
+	(*p)->penaltyTime = 0;
 	return(*p);
 	}
 
-mDNSexport void PushDNSServerToEnd(mDNS *const m, DNSQuestion *q)
+// PenalizeDNSServer is called when the number of queries to the unicast
+// DNS server exceeds MAX_UCAST_UNANSWERED_QUERIES or when we receive an
+// error e.g., SERV_FAIL from DNS server. QueryFail is TRUE if this function
+// is called when we exceed MAX_UCAST_UNANSWERED_QUERIES
+
+mDNSexport void PenalizeDNSServer(mDNS *const m, DNSQuestion *q, mDNSBool QueryFail)
 	{
 	DNSServer *orig = q->qDNSServer;
-	DNSServer **p = &m->DNSServers;
 	
 	if (m->mDNS_busy != m->mDNS_reentrancy+1)
-		LogMsg("PushDNSServerToEnd: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
+		LogMsg("PenalizeDNSServer: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
 	if (!q->qDNSServer)
 		{
-		LogMsg("PushDNSServerToEnd: Null DNS server for %##s (%s) %d", q->qname.c, DNSTypeName(q->qtype), q->unansweredQueries);
+		LogMsg("PenalizeDNSServer: Null DNS server for %##s (%s) %d", q->qname.c, DNSTypeName(q->qtype), q->unansweredQueries);
 		goto end;
 		}
 
-	LogInfo("PushDNSServerToEnd: Pushing DNS server %#a:%d (%##s) due to %d unanswered queries for %##s (%s)",
-		&q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qDNSServer->domain.c, q->unansweredQueries, q->qname.c, DNSTypeName(q->qtype));
-
-	while (*p)
+	if (QueryFail)
 		{
-		if (*p == q->qDNSServer) *p = q->qDNSServer->next;
-		else p=&(*p)->next;
+			LogInfo("PenalizeDNSServer: DNS server %#a:%d (%##s) %d unanswered queries for %##s (%s)",
+		&q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qDNSServer->domain.c, q->unansweredQueries, q->qname.c, DNSTypeName(q->qtype));
+		}
+	else
+		{
+			LogInfo("PenalizeDNSServer: DNS server %#a:%d (%##s) Server Error for %##s (%s)",
+		&q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qDNSServer->domain.c, q->qname.c, DNSTypeName(q->qtype));
 		}
 
-	*p = q->qDNSServer;
-	q->qDNSServer->next = mDNSNULL;
+
+	// If strict ordering of unicast servers needs to be preserved, we just lookup
+	// the next best match server below
+	//
+	// If strict ordering is not required which is the default behavior, we penalize the server
+	// for DNSSERVER_PENALTY_TIME. We may also use additional logic e.g., don't penalize for PTR
+	// in the future.
+
+	if (!StrictUnicastOrdering)
+		{
+		LogInfo("PenalizeDNSServer: Strict Unicast Ordering is FALSE");
+		// We penalize the server so that new queries don't pick this server for DNSSERVER_PENALTY_TIME
+		// XXX Include other logic here to see if this server should really be penalized
+		//
+		if (q->qtype == kDNSType_PTR)
+			{
+			LogInfo("PenalizeDNSServer: Not Penalizing PTR question");
+			}
+		else
+			{
+			LogInfo("PenalizeDNSServer: Penalizing question type %d", q->qtype);
+			q->qDNSServer->penaltyTime = NonZeroTime(m->timenow + DNSSERVER_PENALTY_TIME);
+			}
+		}
+	else
+		{
+		LogInfo("PenalizeDNSServer: Strict Unicast Ordering is TRUE");
+		}
 
 end:
-	q->qDNSServer = GetServerForName(m, &q->qname);
+	q->qDNSServer = GetServerForName(m, &q->qname, q->qDNSServer);
 
-	if (q->qDNSServer != orig)
+	if ((q->qDNSServer != orig) && (QueryFail))
 		{
-		if (q->qDNSServer) LogInfo("PushDNSServerToEnd: Server for %##s (%s) changed to %#a:%d (%##s)", q->qname.c, DNSTypeName(q->qtype), &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qDNSServer->domain.c);
-		else               LogInfo("PushDNSServerToEnd: Server for %##s (%s) changed to <null>",        q->qname.c, DNSTypeName(q->qtype));
-		q->ThisQInterval = q->ThisQInterval / QuestionIntervalStep; // Decrease interval one step so we don't quickly bounce between servers for queries that will not be answered.
+		// We picked a new server. In the case where QueryFail is true, the code has already incremented the interval
+		// and to compensate that we decrease it here.  When two queries are sent, the QuestionIntervalStep is at 9. We just
+		// move it back to 3 here when we pick a new server. We can't start at 1 because if we have two servers failing, we will never
+		// backoff 
+		//
+		q->ThisQInterval = q->ThisQInterval / QuestionIntervalStep;
+		if (q->qDNSServer) LogInfo("PenalizeDNSServer: Server for %##s (%s) changed to %#a:%d (%##s), Question Interval %u", q->qname.c, DNSTypeName(q->qtype), &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qDNSServer->domain.c, q->ThisQInterval);
+		else               LogInfo("PenalizeDNSServer: Server for %##s (%s) changed to <null>, Question Interval %u",        q->qname.c, DNSTypeName(q->qtype), q->ThisQInterval);
+
 		}
+	else 
+		{
+		// if we are here it means,
+		//
+		// 1) We picked the same server, QueryFail = false
+		// 2) We picked the same server, QueryFail = true 
+		// 3) We picked a different server, QueryFail = false
+		//
+		// For all these three cases, ThisQInterval is already set properly
+
+		if (q->qDNSServer) 
+			{
+			if (q->qDNSServer != orig)
+				{
+				LogInfo("PenalizeDNSServer: Server for %##s (%s) changed to %#a:%d (%##s)", q->qname.c, DNSTypeName(q->qtype), &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qDNSServer->domain.c);
+				}
+				else
+				{
+				LogInfo("PenalizeDNSServer: Server for %##s (%s) remains the same at %#a:%d (%##s)", q->qname.c, DNSTypeName(q->qtype), &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qDNSServer->domain.c);
+				}
+			}
+		else
+			{ 
+			LogInfo("PenalizeDNSServer: Server for %##s (%s) changed to <null>",        q->qname.c, DNSTypeName(q->qtype));
+			}
+		}
+	q->unansweredQueries = 0;
 	}
 
 // ***************************************************************************
@@ -3407,8 +3473,7 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 			DNSServer *orig = q->qDNSServer;
 			if (orig) LogInfo("Sent %d unanswered queries for %##s (%s) to %#a:%d (%##s)", q->unansweredQueries, q->qname.c, DNSTypeName(q->qtype), &orig->addr, mDNSVal16(orig->port), orig->domain.c);
 
-			PushDNSServerToEnd(m, q);
-			q->unansweredQueries = 0;
+			PenalizeDNSServer(m, q, mDNStrue);
 			}
 
 		if (q->qDNSServer && q->qDNSServer->teststate != DNSServer_Disabled)
@@ -3696,6 +3761,40 @@ mDNSlocal mDNSs32 CheckServiceRegistrations(mDNS *m)
 	return nextevent;
 	}
 
+// This function is called early on in mDNS_Execute before any uDNS questions are
+// dispatched so that if there are some good servers, the uDNS questions can now
+// use it
+mDNSexport void ResetDNSServerPenalties(mDNS *m)
+	{
+	DNSServer *d;
+	for (d = m->DNSServers; d; d=d->next)
+		{
+		if (d->penaltyTime != 0)
+			{
+			if (d->penaltyTime - m->timenow <= 0)
+				{
+				LogInfo("ResetDNSServerPenalties: DNS server %#a:%d out of penalty box", &d->addr, mDNSVal16(d->port));
+				d->penaltyTime = 0;
+				}
+			}
+		}
+	}
+
+mDNSlocal mDNSs32 CheckDNSServerPenalties(mDNS *m)
+	{
+	mDNSs32 nextevent = m->timenow + 0x3FFFFFFF;
+	DNSServer *d;
+	for (d = m->DNSServers; d; d=d->next)
+		{
+		if (d->penaltyTime != 0)
+			{
+			if ((nextevent - d->penaltyTime) > 0)
+				nextevent = d->penaltyTime;
+			}
+		}
+	return nextevent;
+	}
+
 mDNSexport void uDNS_Execute(mDNS *const m)
 	{
 	mDNSs32 nexte;
@@ -3714,6 +3813,9 @@ mDNSexport void uDNS_Execute(mDNS *const m)
 	if (nexte - m->NextuDNSEvent < 0) m->NextuDNSEvent = nexte;
 
 	nexte = CheckServiceRegistrations(m);
+	if (nexte - m->NextuDNSEvent < 0) m->NextuDNSEvent = nexte;
+
+	nexte = CheckDNSServerPenalties(m);
 	if (nexte - m->NextuDNSEvent < 0) m->NextuDNSEvent = nexte;
 	}
 

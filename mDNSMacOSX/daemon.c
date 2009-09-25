@@ -100,6 +100,7 @@ static int restarting_via_mach_init = 0;	// Used on Jaguar/Panther when daemon i
 static int started_via_launchdaemon = 0;	// Indicates we're running on Tiger or later, where daemon is managed by launchd
 static mDNSBool advertise = mDNS_Init_AdvertiseLocalAddresses; // By default, advertise addresses (& other records) via multicast
 
+mDNSBool StrictUnicastOrdering = mDNSfalse;
 //*************************************************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
@@ -1779,8 +1780,9 @@ mDNSlocal void INFOCallback(void)
 		for (s = mDNSStorage.DNSServers; s; s = s->next)
 			{
 			NetworkInterfaceInfoOSX *ifx = (NetworkInterfaceInfoOSX *)s->interface;
-			LogMsgNoIdent("DNS Server %##s %s%s%#a:%d %s",
+			LogMsgNoIdent("DNS Server %##s %s%s%#a:%d %d %s",
 				s->domain.c, ifx ? ifx->ifinfo.ifname : "", ifx ? " " : "", &s->addr, mDNSVal16(s->port),
+				s->penaltyTime ? s->penaltyTime - mDNS_TimeNow(&mDNSStorage) : 0,
 				s->teststate == DNSServer_Untested ? "(Untested)" :
 				s->teststate == DNSServer_Passed   ? ""           :
 				s->teststate == DNSServer_Failed   ? "(Failed)"   :
@@ -2502,6 +2504,7 @@ mDNSexport int main(int argc, char **argv)
 		if (!strcasecmp(argv[i], "-UnicastPacketLogging"     )) mDNS_PacketLoggingEnabled = mDNStrue;
 		if (!strcasecmp(argv[i], "-OfferSleepProxyService"   ))
 			OfferSleepProxyService = (i+1<argc && mDNSIsDigit(argv[i+1][0]) && mDNSIsDigit(argv[i+1][1]) && argv[i+1][2]==0) ? atoi(argv[++i]) : 80;
+		if (!strcasecmp(argv[i], "-StrictUnicastOrdering"     )) StrictUnicastOrdering = mDNStrue;
 		}
 	
 	// Note that mDNSPlatformInit will set DivertMulticastAdvertisements in the mDNS structure

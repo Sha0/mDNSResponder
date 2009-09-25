@@ -3081,6 +3081,10 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 		{
 		int i;
 
+		// If there are DNS servers that will come out of the Penalty box, we should do that now
+		// so that any questions that we send below can start using that
+		ResetDNSServerPenalties(m);
+
 		verbosedebugf("mDNS_Execute");
 		if (m->CurrentQuestion)
 			LogMsg("mDNS_Execute: ERROR m->CurrentQuestion already set: %##s (%s)", m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
@@ -4932,7 +4936,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					if (qptr)
 						{
 						LogInfo("Server %p responded with code %d to query %##s (%s)", qptr->qDNSServer, rcode, q.qname.c, DNSTypeName(q.qtype));
-						PushDNSServerToEnd(m, qptr);
+						PenalizeDNSServer(m, qptr, mDNSfalse);
 						}
 					returnEarly = mDNStrue;
 					}
@@ -5840,19 +5844,150 @@ mDNSlocal void UpdateQuestionDuplicates(mDNS *const m, DNSQuestion *const questi
 				}
 	}
 
-// Look up a DNS Server, matching by name in split-dns configurations.
-mDNSexport DNSServer *GetServerForName(mDNS *m, const domainname *name)
-    {
-	DNSServer *curmatch = mDNSNULL, *p;
-	int curmatchlen = -1, ncount = name ? CountLabels(name) : 0;
-
-	for (p = m->DNSServers; p; p = p->next)
+mDNSinline mDNSs32 PenaltyTimeForServer(mDNS *m, DNSServer *server)
+	{
+	mDNSs32 ptime = 0;
+	if (server->penaltyTime != 0)
 		{
-		int scount = CountLabels(&p->domain);
-		if (!(p->flags & DNSServer_FlagDelete) && ncount >= scount && scount > curmatchlen)
-			if (SameDomainName(SkipLeadingLabels(name, ncount - scount), &p->domain))
-				{ curmatch = p; curmatchlen = scount; }
+		ptime = server->penaltyTime - m->timenow;
+		if (ptime < 0)
+			{
+			// This should always be a positive value between 0 and DNSSERVER_PENALTY_TIME
+			// If it does not get reset in ResetDNSServerPenalties for some reason, we do it
+			// here
+			LogMsg("PenaltyTimeForServer: PenaltyTime negative %d, (server penaltyTime %d, timenow %d) resetting the penalty", ptime, server->penaltyTime, m->timenow);
+			server->penaltyTime = 0;
+			ptime = 0;
+			}
 		}
+	return ptime;
+	}
+
+// Return the next server to "prev" if it is a match and unpenalized
+mDNSlocal DNSServer *GetNextUnPenalizedServer(mDNS *m, DNSServer *prev)
+	{
+	int curmatchlen = -1;
+	DNSServer *curr = m->DNSServers;
+
+	if (prev == mDNSNULL) return mDNSNULL;
+
+	while (curr != mDNSNULL && curr != prev)
+		curr = curr->next;
+
+	if (curr == mDNSNULL)
+		return mDNSNULL;
+
+
+	// We need to set the curmatchlen as though we are walking the list
+	// from the beginning. Otherwise, we may not pick the best match.
+	// For example, if we are looking up xxx.com, and we used the "xxx.com"
+	// entry the previous time and the next one is "com", we should not pick
+	// "com" now
+	curmatchlen = CountLabels(&curr->domain);
+	curr = curr->next;
+	while (curr != mDNSNULL)
+		{
+		int scount = CountLabels(&curr->domain);
+
+		// Should not be delete because it is marked temporarily for cleaning up
+		// entries during configuration change and we pass NULL as the last argument
+		// to GetServerForName 
+		if (curr->flags & DNSServer_FlagDelete)
+			{
+			LogInfo("GetServerForName: DNS Server is marked delete, cannot happen");
+			curr = curr->next;
+			continue;
+			}
+
+
+		LogInfo("GetNextUnPenalizedServer: Address %#a (Domain %##s), PenaltyTime(abs) %d, PenaltyTime(rel) %d", &curr->addr, curr->domain.c, curr->penaltyTime, PenaltyTimeForServer(m,curr));
+
+		// Note the "==" in comparing scount and curmatchlen. When we picked a match
+		// for the question the first time, we already made sure that prev is the best match.
+		// Any other match is as good if we can find another entry with same number of
+		// labels. There can't be better matches that have more labels, because
+		// we would have picked that in the first place. Also we don't care what the
+		// name in the question is as we picked the best server for the question first
+		// time and the domain name is in prev now
+
+		if ((curr->penaltyTime == 0) && (scount == curmatchlen) && SameDomainName(&prev->domain, &curr->domain))
+				return curr;
+		curr = curr->next;
+		}
+	return mDNSNULL;
+	}
+
+
+// Get the Best server that matches a name. If you find penalized servers, look for the one
+// that will come out of the penalty box soon
+mDNSlocal DNSServer *GetAnyBestServer(mDNS *m, const domainname *name)
+	{
+	DNSServer *curmatch = mDNSNULL;
+	int curmatchlen = -1, ncount = name ? CountLabels(name) : 0;
+	DNSServer *curr;
+	mDNSs32 penaltyTime;
+
+	curmatchlen = -1;
+	penaltyTime = DNSSERVER_PENALTY_TIME + 1;
+	for (curr = m->DNSServers; curr; curr = curr->next)
+		{
+		int scount = CountLabels(&curr->domain);
+		mDNSs32 stime = PenaltyTimeForServer(m, curr);
+
+		LogInfo("GetAnyBestServer: Address %#a (Domain %##s), PenaltyTime(abs) %d, PenaltyTime(rel) %d", &curr->addr, curr->domain.c, curr->penaltyTime, stime);
+
+		// If there are multiple best servers for a given question, we will pick the first one
+		// if none of them are penalized. If some of them are penalized in that list, we pick
+		// the least penalized one. "scount >= curmatchlen" lets us walk through all best
+		// matches and "stime < penaltyTime" check lets us either pick the first best server
+		// in the list when there are no penalized servers and least one among them when there
+		// are some penalized servers
+
+		if (!(curr->flags & DNSServer_FlagDelete) && ncount >= scount && scount >= curmatchlen && stime < penaltyTime)
+			if (SameDomainName(SkipLeadingLabels(name, ncount - scount), &curr->domain))
+				{ curmatch = curr; curmatchlen = scount; penaltyTime = stime;}
+		}
+	return curmatch;
+	}
+
+// Look up a DNS Server, matching by name in split-dns configurations.
+mDNSexport DNSServer *GetServerForName(mDNS *m, const domainname *name, DNSServer *prev)
+    {
+	DNSServer *curmatch = mDNSNULL;
+
+	// prev is the previous DNS server used by some question
+	if (prev != mDNSNULL)
+		{
+		curmatch = GetNextUnPenalizedServer(m, prev);
+		if (curmatch != mDNSNULL) 
+			{
+			LogInfo("GetServerForName: Good DNS server %#a:%d (Penalty Time Left %d) found", &curmatch->addr,
+			    mDNSVal16(curmatch->port), (curmatch->penaltyTime ? (curmatch->penaltyTime - m->timenow) : 0));
+			return curmatch;
+			}
+		}
+	
+	// We are here for many reasons.
+	//
+	// 1. We are looking up the DNS server first time for this question
+	// 2. We reached the end of list looking for unpenalized servers
+	//
+	// In the case of (1) we want to find the best match for the name. If nothing is penalized,
+	// we want the first one in the list. If some are penalized, we want the one that will get
+	// out of penalty box sooner
+	//
+	// In the case of (2) we want to select the first server that matches the name if StrictUnicastOrdering
+	// is TRUE. As penaltyTime is zero for all of them in that case, we automatically achieve that below.
+	// If StrictUnicastOrdering is FALSE, we want to pick the least penalized server in the list
+
+	curmatch = GetAnyBestServer(m, name);
+
+	if (curmatch != mDNSNULL) 
+		LogInfo("GetServerForName: DNS server %#a:%d (Penalty Time Left %d) found", &curmatch->addr,
+		    mDNSVal16(curmatch->port), (curmatch->penaltyTime ? (curmatch->penaltyTime - m->timenow) : 0));
+	else
+		LogInfo("GetServerForName: no DNS server found");
+
 	return(curmatch);
 	}
 
@@ -6005,7 +6140,7 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 			// this routine with the question list data structures in an inconsistent state.
 			if (!mDNSOpaque16IsZero(question->TargetQID))
 				{
-				question->qDNSServer = GetServerForName(m, &question->qname);
+				question->qDNSServer = GetServerForName(m, &question->qname, mDNSNULL);
 				ActivateUnicastQuery(m, question, mDNSfalse);
 
 				// If long-lived query, and we don't have our NAT mapping active, start it now
@@ -8208,7 +8343,11 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 	// Let the platform layer get the current DNS information
 	// The m->RegisterSearchDomains boolean is so that we lazily get the search domain list only on-demand
 	// (no need to hit the network with domain enumeration queries until we actually need that information).
-	for (ptr = m->DNSServers; ptr; ptr = ptr->next) ptr->flags |= DNSServer_FlagDelete;
+	for (ptr = m->DNSServers; ptr; ptr = ptr->next)
+		{
+		ptr->penaltyTime = 0;
+		ptr->flags |= DNSServer_FlagDelete;
+		}
 
 	mDNSPlatformSetDNSConfig(m, mDNStrue, mDNSfalse, &fqdn, mDNSNULL, mDNSNULL);
 
@@ -8216,7 +8355,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 	for (q = m->Questions; q; q=q->next)
 		if (!mDNSOpaque16IsZero(q->TargetQID))
 			{
-			DNSServer *s = GetServerForName(m, &q->qname);
+			DNSServer *s = GetServerForName(m, &q->qname, mDNSNULL);
 			DNSServer *t = q->qDNSServer;
 			if (t != s)
 				{
@@ -8234,7 +8373,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 	// Flush all records that match a new resolver
 	FORALL_CACHERECORDS(slot, cg, cr)
 		{
-		ptr = GetServerForName(m, cr->resrec.name);
+		ptr = GetServerForName(m, cr->resrec.name, mDNSNULL);
 		if (ptr && (ptr->flags & DNSServer_FlagNew) && !cr->resrec.InterfaceID)
 			PurgeOrReconfirmCacheRecord(m, cr, ptr, mDNSfalse);
 		}
@@ -8249,7 +8388,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 			ptr = *p;
 			ptr->flags &= ~DNSServer_FlagDelete;	// Clear del so GetServerForName will (temporarily) find this server again before it's finally deleted
 			FORALL_CACHERECORDS(slot, cg, cr)
-				if (!cr->resrec.InterfaceID && GetServerForName(m, cr->resrec.name) == ptr)
+				if (!cr->resrec.InterfaceID && GetServerForName(m, cr->resrec.name, mDNSNULL) == ptr)
 					PurgeOrReconfirmCacheRecord(m, cr, ptr, mDNStrue);
 			*p = (*p)->next;
 			debugf("uDNS_SetupDNSConfig: Deleting server %p %#a:%d (%##s)", ptr, &ptr->addr, mDNSVal16(ptr->port), ptr->domain.c);
