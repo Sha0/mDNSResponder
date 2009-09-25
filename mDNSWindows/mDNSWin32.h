@@ -122,7 +122,7 @@ struct	mDNS_PlatformSupport_struct
 	UnregisterWaitableEventFunc	unregisterWaitableEventFunc;
 	time_t						nextDHCPLeaseExpires;
 	char						nbname[ 32 ];
-	char						nbworkgroup[ 32 ];
+	char						nbdomain[ 32 ];
 	mDNSBool					smbRegistered;
 	mDNSBool					smbFileSharing;
 	mDNSBool					smbPrintSharing;

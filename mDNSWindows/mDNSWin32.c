@@ -2164,7 +2164,7 @@ mStatus	SetupNiceName( mDNS * const inMDNS )
 	}
 
 	ZeroMemory( inMDNS->p->nbname, sizeof( inMDNS->p->nbname ) );
-	ZeroMemory( inMDNS->p->nbworkgroup, sizeof( inMDNS->p->nbworkgroup ) );
+	ZeroMemory( inMDNS->p->nbdomain, sizeof( inMDNS->p->nbdomain ) );
 
 	namelen = sizeof( inMDNS->p->nbname );
 	ok = GetComputerNameExA( ComputerNamePhysicalNetBIOS, inMDNS->p->nbname, &namelen );
@@ -2177,9 +2177,9 @@ mStatus	SetupNiceName( mDNS * const inMDNS )
 	{
 		if ( ( joinStatus == NetSetupWorkgroupName ) || ( joinStatus == NetSetupDomainName ) )
 		{
-			err = TCHARtoUTF8( joinName, inMDNS->p->nbworkgroup, sizeof( inMDNS->p->nbworkgroup ) );
+			err = TCHARtoUTF8( joinName, inMDNS->p->nbdomain, sizeof( inMDNS->p->nbdomain ) );
 			check( !err );
-			if ( !err ) dlog( kDebugLevelInfo, DEBUG_NAME "netbios workgroup \"%s\"\n", inMDNS->p->nbworkgroup );
+			if ( !err ) dlog( kDebugLevelInfo, DEBUG_NAME "netbios domain/workgroup \"%s\"\n", inMDNS->p->nbdomain );
 		}
 
 		NetApiBufferFree( joinName );
@@ -4622,13 +4622,13 @@ CheckFileShares( mDNS * const m )
 			txtPtr += keyLen;
 			if ( valLen ) { memcpy( txtPtr, m->p->nbname, valLen ); txtPtr += ( mDNSu8 ) valLen; }
 
-			keyLen = strlen( "workgroup=" );
-			valLen = strlen( m->p->nbworkgroup );
+			keyLen = strlen( "domain=" );
+			valLen = strlen( m->p->nbdomain );
 			require_action( valLen < 32, exit, err = kUnknownErr );	// This should never happen, but check to avoid further memory corruption
 			*txtPtr++ = ( mDNSu8 )( keyLen + valLen );
-			memcpy( txtPtr, "workgroup=", keyLen );
+			memcpy( txtPtr, "domain=", keyLen );
 			txtPtr += keyLen;
-			if ( valLen ) { memcpy( txtPtr, m->p->nbworkgroup, valLen ); txtPtr += valLen; }
+			if ( valLen ) { memcpy( txtPtr, m->p->nbdomain, valLen ); txtPtr += valLen; }
 
 			dlog( kDebugLevelTrace, DEBUG_NAME "registering smb type\n" );
 
