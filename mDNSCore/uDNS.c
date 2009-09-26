@@ -2743,11 +2743,14 @@ mDNSexport void uDNS_ReceiveNATPMPPacket(mDNS *m, const mDNSInterfaceID Interfac
 
 	// We compute a conservative estimate of how much the NAT gateways's clock should have advanced
 	// 1. We subtract 12.5% from our own measured elapsed time, to allow for NAT gateways that have an inacurate clock that runs slowly
-	// 2. We add a two-second safety margin to allow for rounding errors:
-	//    -- e.g. if NAT gateway sends a packet at t=2.00 seconds, then one at t=7.99, that's virtually 6 seconds,
-	//       but based on the values in the packet (2,7) the apparent difference is only 5 seconds
-	//    -- similarly, if we're slow handling packets and/or we have coarse clock granularity, we could over-estimate the true interval
-	//       (e.g. t=1.99 seconds rounded to 1, and t=8.01 rounded to 8, gives an apparent difference of 7 seconds)
+	// 2. We add a two-second safety margin to allow for rounding errors: e.g.
+	//    -- if NAT gateway sends a packet at t=2.000 seconds, then one at t=7.999, that's approximately 6 real seconds,
+	//       but based on the values in the packet (2,7) the apparent difference according to the packet is only 5 seconds
+	//    -- if we're slow handling packets and/or we have coarse clock granularity,
+	//       we could receive the t=2 packet at our t=1.999 seconds, which we round down to 1
+	//       and the t=7.999 packet at our t=8.000 seconds, which we record as 8,
+	//       giving an apparent local time difference of 7 seconds
+	//    The two-second safety margin coves this possible calculation discrepancy
 	if (AddrReply->upseconds < m->LastNATupseconds || nat_elapsed + 2 < our_elapsed - our_elapsed/8)
 		{ LogMsg("NAT gateway %#a rebooted", &m->Router); RecreateNATMappings(m); }
 
@@ -3659,6 +3662,10 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 		// (1) we have an ExternalAddress, or we've tried and failed a couple of times to discover it
 		// and (2) the client doesn't want a mapping, or the client won't need a mapping, or the client has a successful mapping, or we've tried and failed a couple of times
 		// and (3) we have new data to give the client that's changed since the last callback
+		// Time line is: Send, Wait 500ms, Send, Wait 1sec, Send, Wait 2sec, Send
+		// At this point we've sent three requests without an answer, we've just sent our fourth request,
+		// retryIntervalGetAddr is now 4 seconds, which is greater than NATMAP_INIT_RETRY * 8 (2 seconds),
+		// so we return an error result to the caller.
 		if (!mDNSIPv4AddressIsZero(m->ExternalAddress) || m->retryIntervalGetAddr > NATMAP_INIT_RETRY * 8)
 			{
 			const mStatus EffectiveResult = cur->NewResult ? cur->NewResult : mDNSv4AddrIsRFC1918(&m->ExternalAddress) ? mStatus_DoubleNAT : mStatus_NoError;
