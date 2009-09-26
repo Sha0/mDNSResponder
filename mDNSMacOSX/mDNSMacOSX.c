@@ -2427,8 +2427,7 @@ mDNSlocal void AutoTunnelRecordCallback(mDNS *const m, AuthRecord *const rr, mSt
 		}
 	}
 
-// Determine whether we need racoon to accept incoming connections
-mDNSlocal void UpdateConfigureServer(mDNS *m)
+mDNSlocal void UpdateAnonymousRacoonConfig(mDNS *m)		// Determine whether we need racoon to accept incoming connections
 	{
 	DomainAuthInfo *info;
 	
@@ -2454,7 +2453,7 @@ mDNSlocal void AutoTunnelNATCallback(mDNS *m, NATTraversalInfo *n)
 	DeregisterAutoTunnelRecords(m,info);
 	RegisterAutoTunnelRecords(m,info);
 	
-	UpdateConfigureServer(m);
+	UpdateAnonymousRacoonConfig(m);		// Determine whether we need racoon to accept incoming connections
 
 	UpdateAutoTunnelDomainStatus(m, (DomainAuthInfo *)n->clientContext);
 	}
@@ -3831,7 +3830,7 @@ mDNSexport void SetDomainSecrets(mDNS *m)
 			mDNSPlatformMemZero(m->AutoTunnelHostAddr.b, sizeof(m->AutoTunnelHostAddr.b));
 			}
 
-		UpdateConfigureServer(m);
+		UpdateAnonymousRacoonConfig(m);		// Determine whether we need racoon to accept incoming connections
 		
 		if (m->AutoTunnelHostAddr.b[0])
 			if (TunnelClients(m) || TunnelServers(m))
