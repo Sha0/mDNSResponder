@@ -9,6 +9,7 @@
 #define IDR_SECRET                      133
 #define IDR_APPLET_PAGE3                134
 #define IDR_APPLET_PAGE4                135
+#define IDR_APPLET_PAGE5                136
 #define IDI_FAILURE                     140
 #define IDI_SUCCESS                     141
 #define IDD_ADD_BROWSE_DOMAIN           142
@@ -32,6 +33,7 @@
 #define IDC_REMOVE_BROWSE_DOMAIN        1012
 #define IDC_ADD_BROWSE_DOMAIN           1013
 #define IDC_POWER_MANAGEMENT            1014
+#define IDC_ADVERTISE_SMB	            1015
 
 // Next default values for new objects
 // 
@@ -39,7 +41,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        143
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         1015
+#define _APS_NEXT_CONTROL_VALUE         1016
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

@@ -23,6 +23,7 @@
 #include "SecondPage.h"
 #include "ThirdPage.h"
 #include "FourthPage.h"
+#include "FifthPage.h"
 
 #include <RegNames.h>
 #include <dns_sd.h>
@@ -51,6 +52,7 @@ protected:
 	CSecondPage	m_secondPage;
 	CThirdPage m_thirdPage;
 	CFourthPage m_fourthPage;
+	CFifthPage m_fifthPage;
 
 	//{{AFX_VIRTUAL(CConfigPropertySheet)
 	//}}AFX_VIRTUAL

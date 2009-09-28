@@ -43,6 +43,7 @@ CConfigPropertySheet::CConfigPropertySheet()
 	AddPage(&m_firstPage);
 	AddPage(&m_secondPage);
 	AddPage(&m_thirdPage);
+	AddPage(&m_fifthPage );
 	AddPage(&m_fourthPage );
 
 	InitializeCriticalSection( &m_lock );
