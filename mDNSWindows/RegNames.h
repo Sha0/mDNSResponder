@@ -35,6 +35,7 @@
 #	define kServiceManageLLRouting				L"ManageLLRouting"
 #	define kServiceCacheEntryCount				L"CacheEntryCount"
 #	define kServiceManageFirewall				L"ManageFirewall"
+#	define kServiceAdvertisedServices			L"Services"
 
 # else
 

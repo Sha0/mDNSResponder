@@ -4525,16 +4525,28 @@ CheckFileShares( mDNS * const m )
 	DWORD			entriesRead = 0;
 	DWORD			totalEntries = 0;
 	DWORD			resume = 0;
+	mDNSBool		advertise = mDNSfalse;
 	mDNSBool		fileSharing = mDNSfalse;
 	mDNSBool		printSharing = mDNSfalse;
 	mDNSu8			txtBuf[ 256 ];
 	mDNSu8		*	txtPtr;
 	size_t			keyLen;
 	size_t			valLen;
+	HKEY			key = NULL;
 	NET_API_STATUS  res;
 	mStatus			err;
 
 	check( m );
+
+	err = RegCreateKey( HKEY_LOCAL_MACHINE, kServiceParametersNode L"\\Services\\SMB", &key );
+
+	if ( !err )
+	{
+		DWORD dwSize;
+
+		dwSize = sizeof( DWORD );
+		RegQueryValueEx( key, L"Advertise", NULL, NULL, (LPBYTE) &advertise, &dwSize );
+	}
 
 	// We only want to enter this routine if either we haven't called mDNS_RegisterService()
 	// or we called mDNS_DeregisterService() and our callback was invoked and told
@@ -4582,7 +4594,7 @@ CheckFileShares( mDNS * const m )
 			}
 		}
 		
-		if ( !m->p->smbRegistered && fileSharing )
+		if ( !m->p->smbRegistered && advertise && fileSharing )
 		{
 			domainname		type;
 			domainname		domain;
@@ -4639,7 +4651,7 @@ CheckFileShares( mDNS * const m )
 			m->p->smbFileSharing	= fileSharing;
 			m->p->smbPrintSharing	= printSharing;
 		}
-		else if ( m->p->smbRegistered && ( ( m->p->smbFileSharing != fileSharing ) || ( m->p->smbPrintSharing != printSharing ) ) )
+		else if ( m->p->smbRegistered && ( !advertise || ( ( m->p->smbFileSharing != fileSharing ) || ( m->p->smbPrintSharing != printSharing ) ) ) )
 		{
 			dlog( kDebugLevelTrace, DEBUG_NAME "deregistering smb type\n" );
 			
@@ -4655,7 +4667,10 @@ CheckFileShares( mDNS * const m )
 
 exit:
 
-	return;
+	if ( key )
+	{
+		RegCloseKey( key );
+	}
 }
 
 

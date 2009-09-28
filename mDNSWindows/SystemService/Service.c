@@ -102,9 +102,10 @@ static int											gEventSources = 0;
 #define kWaitListDynDNSEvent						( WAIT_OBJECT_0 + 4 )
 #define kWaitListFileShareEvent						( WAIT_OBJECT_0 + 5 )
 #define kWaitListFirewallEvent						( WAIT_OBJECT_0 + 6 )
-#define kWaitListSPSWakeupEvent						( WAIT_OBJECT_0 + 7 )
-#define kWaitListSPSSleepEvent						( WAIT_OBJECT_0 + 8 )
-#define	kWaitListFixedItemCount						9
+#define kWaitListAdvertisedServicesEvent			( WAIT_OBJECT_0 + 7 )
+#define kWaitListSPSWakeupEvent						( WAIT_OBJECT_0 + 8 )
+#define kWaitListSPSSleepEvent						( WAIT_OBJECT_0 + 9 )
+#define	kWaitListFixedItemCount						10
 
 
 #if 0
@@ -197,6 +198,8 @@ DEBUG_LOCAL HKEY						gFileSharingKey				= NULL;
 DEBUG_LOCAL HANDLE						gFileSharingChangedEvent	= NULL;	// File Sharing changed
 DEBUG_LOCAL HKEY						gFirewallKey				= NULL;
 DEBUG_LOCAL HANDLE						gFirewallChangedEvent		= NULL;	// Firewall changed
+DEBUG_LOCAL HKEY						gAdvertisedServicesKey		= NULL;
+DEBUG_LOCAL HANDLE						gAdvertisedServicesChangedEvent	= NULL; // Advertised services changed
 DEBUG_LOCAL SERVICE_STATUS				gServiceStatus;
 DEBUG_LOCAL SERVICE_STATUS_HANDLE		gServiceStatusHandle 	= NULL;
 DEBUG_LOCAL HANDLE						gServiceEventSource		= NULL;
@@ -1392,6 +1395,21 @@ static OSStatus	ServiceSpecificRun( int argc, LPTSTR argv[] )
 						check_noerr( err );
 					}
 				}
+				else if ( result == kWaitListAdvertisedServicesEvent )
+				{
+					// Ultimately we'll want to manage multiple services, but right now the only service
+					// we'll be managing is SMB.
+
+					FileSharingDidChange( &gMDNSRecord );
+
+					// and reset the event handler
+
+					if ( ( gAdvertisedServicesKey != NULL ) && ( gAdvertisedServicesChangedEvent ) )
+					{
+						err = RegNotifyChangeKeyValue(gAdvertisedServicesKey, TRUE, REG_NOTIFY_CHANGE_NAME|REG_NOTIFY_CHANGE_LAST_SET, gAdvertisedServicesChangedEvent, TRUE);
+						check_noerr( err );
+					}
+				}
 				else if ( result == kWaitListSPSWakeupEvent )
 				{
 					__int64         temp;
@@ -1642,10 +1660,20 @@ mDNSlocal mStatus	SetupNotifications()
 	require_noerr( err, exit );
 
 	err = RegCreateKey( HKEY_LOCAL_MACHINE, TEXT("SYSTEM\\CurrentControlSet\\Services\\lanmanserver\\Shares"), &gFileSharingKey );
-	require_noerr( err, exit );
+	
+	// Just to make sure that initialization doesn't fail on some old OS
+	// that doesn't have this key, we'll only add the notification if
+	// the key exists.
 
-	err = RegNotifyChangeKeyValue( gFileSharingKey, TRUE, REG_NOTIFY_CHANGE_NAME|REG_NOTIFY_CHANGE_LAST_SET, gFileSharingChangedEvent, TRUE);
-	require_noerr( err, exit );
+	if ( !err )
+	{
+		err = RegNotifyChangeKeyValue( gFileSharingKey, TRUE, REG_NOTIFY_CHANGE_NAME|REG_NOTIFY_CHANGE_LAST_SET, gFileSharingChangedEvent, TRUE);
+		require_noerr( err, exit );
+	}
+	else
+	{
+		err = mStatus_NoError;
+	}
 
 	// This will catch changes to the Windows firewall
 
@@ -1668,6 +1696,18 @@ mDNSlocal mStatus	SetupNotifications()
 	{
 		err = mStatus_NoError;
 	}
+
+	// This will catch all changes to advertised services configuration
+
+	gAdvertisedServicesChangedEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+	err = translate_errno( gAdvertisedServicesChangedEvent, (mStatus) GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+
+	err = RegCreateKey( HKEY_LOCAL_MACHINE, kServiceParametersNode TEXT("\\Services"), &gAdvertisedServicesKey );
+	require_noerr( err, exit );
+
+	err = RegNotifyChangeKeyValue( gAdvertisedServicesKey, TRUE, REG_NOTIFY_CHANGE_NAME|REG_NOTIFY_CHANGE_LAST_SET, gAdvertisedServicesChangedEvent, TRUE);
+	require_noerr( err, exit );
 
 	gSPSWakeupEvent = CreateWaitableTimer( NULL, FALSE, NULL );
 	err = translate_errno( gSPSWakeupEvent, (mStatus) GetLastError(), kUnknownErr );
@@ -1765,6 +1805,18 @@ mDNSlocal mStatus	TearDownNotifications()
 	{
 		RegCloseKey( gFirewallKey );
 		gFirewallKey = NULL;
+	}
+
+	if ( gAdvertisedServicesChangedEvent != NULL )
+	{
+		CloseHandle( gAdvertisedServicesChangedEvent );
+		gAdvertisedServicesChangedEvent = NULL;
+	}
+
+	if ( gAdvertisedServicesKey != NULL )
+	{
+		RegCloseKey( gAdvertisedServicesKey );
+		gAdvertisedServicesKey = NULL;
 	}
 
 	if ( gSPSWakeupEvent )
@@ -1897,6 +1949,7 @@ mDNSlocal mStatus SetupWaitList( mDNS * const inMDNS, HANDLE **outWaitList, int 
 	*waitItemPtr++	=	gDdnsChangedEvent;
 	*waitItemPtr++	=	gFileSharingChangedEvent;
 	*waitItemPtr++	=	gFirewallChangedEvent;
+	*waitItemPtr++	=	gAdvertisedServicesChangedEvent;
 	*waitItemPtr++	=	gSPSWakeupEvent;
 	*waitItemPtr++	=	gSPSSleepEvent;
 
