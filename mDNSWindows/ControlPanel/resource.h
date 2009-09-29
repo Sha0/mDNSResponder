@@ -14,6 +14,8 @@
 #define IDI_SUCCESS                     141
 #define IDD_ADD_BROWSE_DOMAIN           142
 #define IDR_ADD_BROWSE_DOMAIN           142
+#define IDS_REINSTALL					143
+#define IDS_REINSTALL_CAPTION			144
 #define IDC_EDIT1                       1000
 #define IDC_BUTTON1                     1001
 #define IDC_COMBO1                      1002

@@ -20,6 +20,8 @@
 
 #include "stdafx.h"
 
+extern HINSTANCE	GetNonLocalizedResources();
+extern HINSTANCE	GetLocalizedResources();
 
 //-------------------------------------------------
 //	CCPApp
@@ -37,7 +39,7 @@ protected:
 	virtual BOOL    InitInstance();
 
 	void
-	Register( LPCTSTR inClsidString, LPCTSTR inName, LPCTSTR inCategory, LPCTSTR inLocalizedName, LPCTSTR inInfoTip, LPCTSTR inIconPath, LPCTSTR inExePath );
+	Register( LPCTSTR inClsidString, LPCTSTR inName, LPCTSTR inCanonicalName, LPCTSTR inCategory, LPCTSTR inLocalizedName, LPCTSTR inInfoTip, LPCTSTR inIconPath, LPCTSTR inExePath );
 
 	void
 	Unregister( LPCTSTR clsidString );

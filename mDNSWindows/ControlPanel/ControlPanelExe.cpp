@@ -22,6 +22,7 @@
 #include "resource.h"
 
 #include <DebugServices.h>
+#include "loclibrary.h"
 
 
 #ifdef _DEBUG
@@ -30,6 +31,16 @@
 static char THIS_FILE[] = __FILE__;
 #endif
 
+#ifndef HeapEnableTerminationOnCorruption
+#	define HeapEnableTerminationOnCorruption (HEAP_INFORMATION_CLASS) 1
+#endif
+
+
+// Stash away pointers to our resource DLLs
+
+static HINSTANCE g_nonLocalizedResources	= NULL;
+static HINSTANCE g_localizedResources		= NULL;
+
 //---------------------------------------------------------------------------------------------------------------------------
 //	Static Declarations
 //---------------------------------------------------------------------------------------------------------------------------
@@ -37,10 +48,9 @@ DEFINE_GUID(CLSID_ControlPanel,
 
 0x1207552c, 0xe59, 0x4d9f, 0x85, 0x54, 0xf1, 0xf8, 0x6, 0xcd, 0x7f, 0xa9);
 
-
-
 static LPCTSTR g_controlPanelGUID			=	TEXT( "{1207552C-0E59-4d9f-8554-F1F806CD7FA9}" );
 static LPCTSTR g_controlPanelName			=	TEXT( "Bonjour Control Panel" );
+static LPCTSTR g_controlPanelCanonicalName	=	TEXT( "Apple.Bonjour" );
 static LPCTSTR g_controlPanelCategory		=	TEXT( "3,8" );
 static LPCTSTR g_controlPanelLocalizedName	=	g_controlPanelName;
 static LPCTSTR g_controlPanelInfoTip		=	TEXT( "Configures Wide-Area Bonjour" );
@@ -146,7 +156,7 @@ CCPApp::~CCPApp()
 
 
 void
-CCPApp::Register( LPCTSTR inClsidString, LPCTSTR inName, LPCTSTR inCategory, LPCTSTR inLocalizedName, LPCTSTR inInfoTip, LPCTSTR inIconPath, LPCTSTR inExePath )
+CCPApp::Register( LPCTSTR inClsidString, LPCTSTR inName, LPCTSTR inCanonicalName, LPCTSTR inCategory, LPCTSTR inLocalizedName, LPCTSTR inInfoTip, LPCTSTR inIconPath, LPCTSTR inExePath )
 {
 	typedef struct	RegistryBuilder		RegistryBuilder;
 	
@@ -168,7 +178,7 @@ CCPApp::Register( LPCTSTR inClsidString, LPCTSTR inName, LPCTSTR inCategory, LPC
 	{
 		{ HKEY_LOCAL_MACHINE,	TEXT( "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\ControlPanel\\NameSpace\\%s" ),	NULL,									REG_SZ,		inName },
 		{ HKEY_CLASSES_ROOT,	TEXT( "CLSID\\%s" ),																			NULL,									NULL,		NULL },
-		{ HKEY_CLASSES_ROOT,	TEXT( "CLSID\\%s" ),																			TEXT( "System.ApplicationName" ),		REG_SZ,		inName },
+		{ HKEY_CLASSES_ROOT,	TEXT( "CLSID\\%s" ),																			TEXT( "System.ApplicationName" ),		REG_SZ,		inCanonicalName },
 		{ HKEY_CLASSES_ROOT,	TEXT( "CLSID\\%s" ),																			TEXT( "System.ControlPanel.Category" ),	REG_SZ,		inCategory },
 		{ HKEY_CLASSES_ROOT,	TEXT( "CLSID\\%s" ),																			TEXT( "LocalizedString" ),				REG_SZ,		inLocalizedName },
 		{ HKEY_CLASSES_ROOT,	TEXT( "CLSID\\%s" ),																			TEXT( "InfoTip" ),						REG_SZ,		inInfoTip },
@@ -228,7 +238,42 @@ BOOL
 CCPApp::InitInstance()
 {
 	CCommandLineInfo	commandLine;
+	wchar_t				resource[MAX_PATH];
+	CString				errorMessage;
+	CString				errorCaption;
+	int					res;
 	OSStatus			err = kNoErr;
+
+	HeapSetInformation( NULL, HeapEnableTerminationOnCorruption, NULL, 0 );
+
+	//
+	// initialize the debugging framework
+	//
+	debug_initialize( kDebugOutputTypeWindowsDebugger, "ControlPanel", NULL );
+	debug_set_property( kDebugPropertyTagPrintLevel, kDebugLevelTrace );
+
+	// Before we load the resources, let's load the error string
+
+	errorMessage.LoadString( IDS_REINSTALL );
+	errorCaption.LoadString( IDS_REINSTALL_CAPTION );
+
+	res = PathForResource( NULL, L"ControlPanelResources.dll", resource, MAX_PATH );
+	err = translate_errno( res != 0, kUnknownErr, kUnknownErr );
+	require_noerr( err, exit );
+
+	g_nonLocalizedResources = LoadLibrary( resource );
+	translate_errno( g_nonLocalizedResources, GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+
+	res = PathForResource( NULL, L"ControlPanelLocalized.dll", resource, MAX_PATH );
+	err = translate_errno( res != 0, kUnknownErr, kUnknownErr );
+	require_noerr( err, exit );
+
+	g_localizedResources = LoadLibrary( resource );
+	translate_errno( g_localizedResources, GetLastError(), kUnknownErr );
+	require_noerr( err, exit );
+
+	AfxSetResourceHandle( g_localizedResources );
 
 	// InitCommonControls() is required on Windows XP if an application
 	// manifest specifies use of ComCtl32.dll version 6 or later to enable
@@ -257,7 +302,7 @@ CCPApp::InitInstance()
 
 		wsprintf( iconPath, L"%s,-%d", exePath, IDR_APPLET );
 
-		Register( g_controlPanelGUID, g_controlPanelName, g_controlPanelCategory, g_controlPanelName, g_controlPanelInfoTip, iconPath, exePath );
+		Register( g_controlPanelGUID, g_controlPanelName, g_controlPanelCanonicalName, g_controlPanelCategory, g_controlPanelName, g_controlPanelInfoTip, iconPath, exePath );
 	}
 	else if ( commandLine.m_nShellCommand == CCommandLineInfo::AppUnregister )
 	{
@@ -300,6 +345,11 @@ CCPApp::InitInstance()
 	}
 
 exit:
+
+	if ( err )
+	{
+		MessageBox( NULL, errorMessage, errorCaption, MB_ICONERROR | MB_OK );
+	}
 
 	// Since the dialog has been closed, return FALSE so that we exit the
 	//  application, rather than start the application's message pump.

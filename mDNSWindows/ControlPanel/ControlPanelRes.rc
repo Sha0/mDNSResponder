@@ -57,15 +57,6 @@ END
 
 #endif    // APSTUDIO_INVOKED
 
-/////////////////////////////////////////////////////////////////////////////
-//
-// Icon
-//
-
-// Icon with lowest ID value placed first to ensure application icon
-// remains consistent on all systems.
-IDR_APPLET              ICON                    "res\\controlpanel.ico"
-
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -90,11 +81,11 @@ BEGIN
         BLOCK "040904b0"
         BEGIN
             VALUE "CompanyName", MASTER_COMPANY_NAME
-            VALUE "FileDescription", "Bonjour Configuration Applet"
+            VALUE "FileDescription", "Bonjour Resource Module"
             VALUE "FileVersion", MASTER_PROD_VERS_STR
-            VALUE "InternalName", "ControlPanel.cpl"
+            VALUE "InternalName", "ControlPanelResources.dll"
             VALUE "LegalCopyright", MASTER_LEGAL_COPYRIGHT
-            VALUE "OriginalFilename", "ControlPanel.cpl"
+            VALUE "OriginalFilename", "ControlPanelResources.dll"
             VALUE "ProductName", MASTER_PROD_NAME
             VALUE "ProductVersion", MASTER_PROD_VERS_STR
         END
@@ -105,16 +96,17 @@ BEGIN
     END
 END
 
+
 /////////////////////////////////////////////////////////////////////////////
 //
-// String Table
+// Icon
 //
 
-STRINGTABLE
-BEGIN
-	IDS_REINSTALL    "Bonjour Control Panel cannot run because some of its required files are missing.  Please reinstall Bonjour Control Panel."
-	IDS_REINSTALL_CAPTION "Bonjour Control Panel"
-END
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDR_APPLET              ICON                    "res\\controlpanel.ico"
+IDI_FAILURE             ICON                    "res\\failure.ico"
+IDI_SUCCESS             ICON                    "res\\success.ico"
 #endif    // English (U.S.) resources
 /////////////////////////////////////////////////////////////////////////////
 
