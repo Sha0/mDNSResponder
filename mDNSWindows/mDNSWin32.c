@@ -3025,7 +3025,9 @@ mDNSlocal OSStatus UDPBeginRecv( UDPSocket * sock )
 	}
 	else
 	{
-		err = WSARecvFrom( sock->fd, &sock->wbuf, 1, 0, &size, ( LPSOCKADDR ) &sock->srcAddr, &sock->srcAddrLen, &sock->overlapped, ( LPWSAOVERLAPPED_COMPLETION_ROUTINE ) UDPEndRecv );
+		DWORD flags = 0;
+
+		err = WSARecvFrom( sock->fd, &sock->wbuf, 1, NULL, &flags, ( LPSOCKADDR ) &sock->srcAddr, &sock->srcAddrLen, &sock->overlapped, ( LPWSAOVERLAPPED_COMPLETION_ROUTINE ) UDPEndRecv );
 		err = translate_errno( ( err == 0 ) || ( WSAGetLastError() == WSA_IO_PENDING ), ( OSStatus ) WSAGetLastError(), kUnknownErr );
 		require_noerr( err, exit );
 	}
