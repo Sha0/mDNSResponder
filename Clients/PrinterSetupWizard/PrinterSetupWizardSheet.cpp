@@ -300,6 +300,9 @@ CPrinterSetupWizardSheet::InstallPrinter(Printer * printer)
 		}
 		else if ( service->type == kIPPServiceType )
 		{
+			// There's no need to install a printer port for IPP printers, because
+			// the call to AddPrinter() will do that for us.
+
 			err = InstallPrinterIPP( printer, service, log );
 			require_noerr_with_log( log, "InstallPrinterIPP()", err, exit );
 		}
@@ -1015,16 +1018,25 @@ CPrinterSetupWizardSheet::OnBrowse(
 
 	if ( inFlags & kDNSServiceFlagsAdd )
 	{
-		if (printer == NULL)
-		{
-			// If not, then create a new one
+		BOOL newPrinter = FALSE;
 
+		if ( !printer )
+		{
 			printer = self->OnAddPrinter( inInterfaceIndex, inName, inType, inDomain, moreComing );
 			require_action( printer, exit, err = kUnknownErr );
+			newPrinter = TRUE;
 		}
-		else if ( self->GetActivePage() == &self->m_pgSecond )
+		
+		// If we're looking at the browse list on page 2, then we need to call
+		// CPage2::OnAddPrinter() regardless of whether we've seen the printer
+		// or not because the moreComing flag might have changed from a previous
+		// call. If we only call CPage2::OnAddPrinter() when there's a new printer,
+		// we might not correctly update our UI, so if we've seen the printer before,
+		// call OnAddPrinter with a NULL parameter.
+
+		if ( self->GetActivePage() == &self->m_pgSecond )
 		{
-			self->m_pgSecond.OnAddPrinter( NULL, moreComing );
+			self->m_pgSecond.OnAddPrinter( newPrinter ? printer : NULL, moreComing );
 		}
 
 		if ( !service )
@@ -1277,6 +1289,7 @@ CPrinterSetupWizardSheet::OnAddPrinter(
 	DEBUG_UNUSED( inInterfaceIndex );
 	DEBUG_UNUSED( inType );
 	DEBUG_UNUSED( inDomain );
+	DEBUG_UNUSED( moreComing );
 
 	try
 	{
@@ -1333,11 +1346,6 @@ CPrinterSetupWizardSheet::OnAddPrinter(
 	}
 
 	m_printers.push_back( printer );
-
-	if ( GetActivePage() == &m_pgSecond )
-	{
-		m_pgSecond.OnAddPrinter( printer, moreComing );
-	}
 
 exit:
 
