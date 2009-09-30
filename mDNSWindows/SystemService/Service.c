@@ -222,6 +222,8 @@ typedef DWORD ( WINAPI * GetIpInterfaceEntryFunctionPtr )( PMIB_IPINTERFACE_ROW 
 mDNSlocal HMODULE								gIPHelperLibraryInstance		= NULL;
 mDNSlocal GetIpInterfaceEntryFunctionPtr		gGetIpInterfaceEntryFunctionPtr	= NULL;
 
+mDNSBool StrictUnicastOrdering = mDNSfalse;
+
 
 #if 0
 #pragma mark -
