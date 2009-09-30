@@ -1515,9 +1515,9 @@ mDNSexport void mDNSPlatformUpdateProxyList(mDNS *const m, const mDNSInterfaceID
 	static const struct bpf_insn g6  = BPF_STMT(BPF_LD  + BPF_W   + BPF_ABS, 50);	// Read IPv6 Dst LSW (bytes 50,51,52,53)
 
 	static const struct bpf_insn r4a = BPF_STMT(BPF_LDX + BPF_B   + BPF_MSH, 14);	// Get IP Header length (normally 20)
-	static const struct bpf_insn r4b = BPF_STMT(BPF_LD  + BPF_IMM,           34);	// A = 34 (14-byte Ethernet plus 20-byte TCP)
+	static const struct bpf_insn r4b = BPF_STMT(BPF_LD  + BPF_IMM,           54);	// A = 54 (14-byte Ethernet plus 20-byte TCP + 20 bytes spare)
 	static const struct bpf_insn r4c = BPF_STMT(BPF_ALU + BPF_ADD + BPF_X,    0);	// A += IP Header length
-	static const struct bpf_insn r4d = BPF_STMT(BPF_RET + BPF_A, 0);				// Success: Return Ethernet + IP + TCP
+	static const struct bpf_insn r4d = BPF_STMT(BPF_RET + BPF_A, 0);				// Success: Return Ethernet + IP + TCP + 20 bytes spare (normally 74)
 
 	static const struct bpf_insn r6a = BPF_STMT(BPF_RET + BPF_K, 94);				// Success: Return Eth + IPv6 + TCP + 20 bytes spare
 
@@ -1535,6 +1535,13 @@ mDNSexport void mDNSPlatformUpdateProxyList(mDNS *const m, const mDNSInterfaceID
 	// so that when the BPF API goes through and swaps them all, they end up back as they should be.
 	// In summary, if we byte-swap all the non-numeric fields that shouldn't be swapped, and we *don't*
 	// swap any of the numeric values that *should* be byte-swapped, then the filter will work correctly.
+
+	// IPSEC capture size notes:
+	//  8 bytes UDP header
+	//  4 bytes Non-ESP Marker
+	// 28 bytes IKE Header
+	// --
+	// 40 Total. Capturing TCP Header + 20 gets us enough bytes to receive the IKE Header in a UDP-encapsulated IKE packet.
 
 	AuthRecord *rr;
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
