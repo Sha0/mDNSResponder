@@ -286,16 +286,22 @@ CPrinterSetupWizardSheet::InstallPrinter(Printer * printer)
 
 		if ( service->type == kPDLServiceType )
 		{
-			err = InstallPrinterPDLAndLPR( printer, service, PROTOCOL_RAWTCP_TYPE, log );
+			err = InstallPrinterPort( printer, service, PROTOCOL_RAWTCP_TYPE, log );
+			require_noerr_with_log( log, "InstallPrinterPort()", err, exit );
+			err = InstallPrinterPDLAndLPR( printer, service, log );
 			require_noerr_with_log( log, "InstallPrinterPDLAndLPR()", err, exit );
 		}
 		else if ( service->type == kLPRServiceType )
 		{
-			err = InstallPrinterPDLAndLPR( printer, service, PROTOCOL_LPR_TYPE, log );
+			err = InstallPrinterPort( printer, service, PROTOCOL_LPR_TYPE, log );
+			require_noerr_with_log( log, "InstallPrinterPort()", err, exit );
+			err = InstallPrinterPDLAndLPR( printer, service, log );
 			require_noerr_with_log( log, "InstallPrinterPDLAndLPR()", err, exit );
 		}
 		else if ( service->type == kIPPServiceType )
 		{
+			err = InstallPrinterPort( printer, service, PROTOCOL_RAWTCP_TYPE, log );
+			require_noerr_with_log( log, "InstallPrinterPort()", err, exit );
 			err = InstallPrinterIPP( printer, service, log );
 			require_noerr_with_log( log, "InstallPrinterIPP()", err, exit );
 		}
@@ -324,23 +330,23 @@ exit:
 
 
 OSStatus
-CPrinterSetupWizardSheet::InstallPrinterPDLAndLPR(Printer * printer, Service * service, DWORD protocol, Logger & log )
+CPrinterSetupWizardSheet::InstallPrinterPort( Printer * printer, Service * service, DWORD protocol, Logger & log )
 {
 	PRINTER_DEFAULTS	printerDefaults =	{ NULL,  NULL, SERVER_ACCESS_ADMINISTER };
+	PORT_DATA_1			portData;
 	DWORD				dwStatus;
 	DWORD				cbInputData		=	100;
 	PBYTE				pOutputData		=	NULL;
 	DWORD				cbOutputNeeded	=	0;
-	PORT_DATA_1			portData;
-	PRINTER_INFO_2		pInfo;
 	HANDLE				hXcv			=	NULL;
-	HANDLE				hPrinter		=	NULL;
 	Queue			*	q;
 	BOOL				ok;
 	OSStatus			err;
 
-	check(printer != NULL);
-	check(printer->installed == false);
+	ZeroMemory(&portData, sizeof(PORT_DATA_1));
+
+	require_action_with_log( log, wcslen(printer->portName) < sizeof_array(portData.sztPortName), exit, err = kSizeErr );
+	wcscpy_s(portData.sztPortName, printer->portName);
 
 	q = service->queues.front();
 	check( q );
@@ -362,14 +368,6 @@ CPrinterSetupWizardSheet::InstallPrinterPDLAndLPR(Printer * printer, Service * s
 	}
 
 	require_action_with_log( log, pOutputData, exit, err = kNoMemoryErr );
-	
-	//
-	// setup the port
-	//
-	ZeroMemory(&portData, sizeof(PORT_DATA_1));
-
-	require_action_with_log( log, wcslen(printer->portName) < sizeof_array(portData.sztPortName), exit, err = kSizeErr );
-	wcscpy_s(portData.sztPortName, printer->portName);
     	
 	portData.dwPortNumber	=	service->portNumber;
 	portData.dwVersion		=	1;
@@ -378,7 +376,7 @@ CPrinterSetupWizardSheet::InstallPrinterPDLAndLPR(Printer * printer, Service * s
 	portData.dwProtocol	= protocol;
 	portData.cbSize		= sizeof PORT_DATA_1;
 	portData.dwReserved	= 0L;
-    	
+
 	require_action_with_log( log, wcslen(q->name) < sizeof_array(portData.sztQueue), exit, err = kSizeErr );
 	wcscpy_s(portData.sztQueue, q->name);
 
@@ -388,6 +386,36 @@ CPrinterSetupWizardSheet::InstallPrinterPDLAndLPR(Printer * printer, Service * s
 	ok = XcvData(hXcv, L"AddPort", (PBYTE) &portData, sizeof(PORT_DATA_1), pOutputData, cbInputData,  &cbOutputNeeded, &dwStatus);
 	err = translate_errno( ok, errno_compat(), kUnknownErr );
 	require_noerr_with_log( log, "XcvData()", err, exit );
+
+exit:
+
+	if (hXcv != NULL)
+	{
+		ClosePrinter(hXcv);
+	}
+
+	if (pOutputData != NULL)
+	{
+		delete [] pOutputData;
+	}
+
+	return err;
+}
+
+
+OSStatus
+CPrinterSetupWizardSheet::InstallPrinterPDLAndLPR(Printer * printer, Service * service, Logger & log )
+{
+	PRINTER_INFO_2		pInfo;
+	HANDLE				hPrinter = NULL;
+	Queue			*	q;
+	OSStatus			err;
+
+	check(printer != NULL);
+	check(printer->installed == false);
+
+	q = service->queues.front();
+	check( q );
 
 	//
 	// add the printer
@@ -423,16 +451,6 @@ exit:
 	if (hPrinter != NULL)
 	{
 		ClosePrinter(hPrinter);
-	}
-
-	if (hXcv != NULL)
-	{
-		ClosePrinter(hXcv);
-	}
-
-	if (pOutputData != NULL)
-	{
-		delete [] pOutputData;
 	}
 
 	return err;
@@ -725,7 +743,7 @@ BOOL CPrinterSetupWizardSheet::OnCommand(WPARAM wParam, LPARAM lParam)
 BOOL CPrinterSetupWizardSheet::OnInitDialog()
 {
 	OSStatus err;
-	
+
 	CPropertySheet::OnInitDialog();
 
 	err = StartBrowse();
@@ -981,7 +999,7 @@ CPrinterSetupWizardSheet::OnBrowse(
 	OSStatus						err = kNoErr;
 
 	require_noerr( inErrorCode, exit );
-	
+
 	self = reinterpret_cast <CPrinterSetupWizardSheet*>( inContext );
 	require_quiet( self, exit );
 
@@ -1005,6 +1023,10 @@ CPrinterSetupWizardSheet::OnBrowse(
 
 			printer = self->OnAddPrinter( inInterfaceIndex, inName, inType, inDomain, moreComing );
 			require_action( printer, exit, err = kUnknownErr );
+		}
+		else if ( self->GetActivePage() == &self->m_pgSecond )
+		{
+			self->m_pgSecond.OnAddPrinter( NULL, moreComing );
 		}
 
 		if ( !service )

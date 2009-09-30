@@ -234,36 +234,39 @@ CSecondPage::OnAddPrinter(
 
 	psheet = reinterpret_cast<CPrinterSetupWizardSheet*>(GetParent());
 	require_quiet( psheet, exit );
-	
-	selectedPrinter = psheet->GetSelectedPrinter();
 
-	printer->item = m_browseList.InsertItem(printer->displayName);
-
-	m_browseList.SetItemData( printer->item, (DWORD_PTR) printer );
-
-	m_browseList.SortChildren(TVI_ROOT);
-
-	//
-	// if the searching item is still in the list
-	// get rid of it
-	//
-	// note that order is important here.  Insert the printer
-	// item before removing the placeholder so we always have
-	// an item in the list to avoid experiencing the bug
-	// in Microsoft's implementation of CTreeCtrl
-	//
-	if (m_emptyListItem != NULL)
+	if ( printer )
 	{
-		m_browseList.DeleteItem(m_emptyListItem);
-		m_emptyListItem = NULL;
-		m_browseList.EnableWindow(TRUE);
-	}
+		selectedPrinter = psheet->GetSelectedPrinter();
 
-	if ( !selectedPrinter )
-	{
-		psheet->SetSelectedPrinter( printer );
-		m_browseList.SelectItem( printer->item );
-		::SetFocus( m_browseList );
+		printer->item = m_browseList.InsertItem(printer->displayName);
+
+		m_browseList.SetItemData( printer->item, (DWORD_PTR) printer );
+
+		m_browseList.SortChildren(TVI_ROOT);
+
+		//
+		// if the searching item is still in the list
+		// get rid of it
+		//
+		// note that order is important here.  Insert the printer
+		// item before removing the placeholder so we always have
+		// an item in the list to avoid experiencing the bug
+		// in Microsoft's implementation of CTreeCtrl
+		//
+		if (m_emptyListItem != NULL)
+		{
+			m_browseList.DeleteItem(m_emptyListItem);
+			m_emptyListItem = NULL;
+			m_browseList.EnableWindow(TRUE);
+		}
+
+		if ( !selectedPrinter )
+		{
+			psheet->SetSelectedPrinter( printer );
+			m_browseList.SelectItem( printer->item );
+			::SetFocus( m_browseList );
+		}
 	}
 
 exit:
@@ -294,25 +297,28 @@ CSecondPage::OnRemovePrinter(
 
 	m_browseList.SetRedraw(FALSE);
 
-	//
-	// check to make sure if we're the only item in the control...i.e.
-	// the list size is 1.
-	//
-	if (m_browseList.GetCount() > 1)
+	if ( printer )
 	{
 		//
-		// if we're not the only thing in the list, then
-		// simply remove it from the list
+		// check to make sure if we're the only item in the control...i.e.
+		// the list size is 1.
 		//
-		m_browseList.DeleteItem( printer->item );
-	}
-	else
-	{
-		//
-		// if we're the only thing in the list, then redisplay
-		// it with the no printers message
-		//
-		InitBrowseList();
+		if (m_browseList.GetCount() > 1)
+		{
+			//
+			// if we're not the only thing in the list, then
+			// simply remove it from the list
+			//
+			m_browseList.DeleteItem( printer->item );
+		}
+		else
+		{
+			//
+			// if we're the only thing in the list, then redisplay
+			// it with the no printers message
+			//
+			InitBrowseList();
+		}
 	}
 
 exit:

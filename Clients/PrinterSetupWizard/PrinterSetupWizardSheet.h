@@ -281,7 +281,10 @@ private:
 	InstallPrinter(Printer * printer);
 
 	OSStatus
-	InstallPrinterPDLAndLPR(Printer * printer, Service * service, DWORD protocol, Logger & log);
+	InstallPrinterPort( Printer * printer, Service * service, DWORD protocol, Logger & log );
+
+	OSStatus
+	InstallPrinterPDLAndLPR(Printer * printer, Service * service, Logger & log);
 
 	OSStatus
 	InstallPrinterIPP(Printer * printer, Service * service, Logger & log);

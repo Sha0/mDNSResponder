@@ -238,6 +238,8 @@ CThirdPage::SelectMatch(Manufacturers & manufacturers, Printer * printer, Servic
 void
 CThirdPage::CopyPrinterSettings( Printer * printer, Service * service, Manufacturer * manufacturer, Model * model )
 {
+	DWORD portNameLen;
+
 	printer->manufacturer		=	manufacturer->name;
 	printer->displayModelName	=	model->displayName;
 	printer->modelName			=	model->name;
@@ -280,6 +282,15 @@ CThirdPage::CopyPrinterSettings( Printer * printer, Service * service, Manufactu
 		}
 
 		service->protocol = L"IPP";
+	}
+
+	// Truncate the portName so that it's valid
+
+	portNameLen = printer->portName.GetLength() + 1;
+		
+	if ( portNameLen > MAX_PORTNAME_LEN )
+	{
+		printer->portName.Delete( MAX_PORTNAME_LEN - 1, ( portNameLen - MAX_PORTNAME_LEN ) );
 	}
 }
 
