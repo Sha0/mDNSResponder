@@ -300,8 +300,6 @@ CPrinterSetupWizardSheet::InstallPrinter(Printer * printer)
 		}
 		else if ( service->type == kIPPServiceType )
 		{
-			err = InstallPrinterPort( printer, service, PROTOCOL_RAWTCP_TYPE, log );
-			require_noerr_with_log( log, "InstallPrinterPort()", err, exit );
 			err = InstallPrinterIPP( printer, service, log );
 			require_noerr_with_log( log, "InstallPrinterIPP()", err, exit );
 		}

@@ -284,13 +284,16 @@ CThirdPage::CopyPrinterSettings( Printer * printer, Service * service, Manufactu
 		service->protocol = L"IPP";
 	}
 
-	// Truncate the portName so that it's valid
+	// If it's not an IPP printr, truncate the portName so that it's valid
 
-	portNameLen = printer->portName.GetLength() + 1;
-		
-	if ( portNameLen > MAX_PORTNAME_LEN )
+	if ( service->type != kIPPServiceType )
 	{
-		printer->portName.Delete( MAX_PORTNAME_LEN - 1, ( portNameLen - MAX_PORTNAME_LEN ) );
+		portNameLen = printer->portName.GetLength() + 1;
+		
+		if ( portNameLen > MAX_PORTNAME_LEN )
+		{
+			printer->portName.Delete( MAX_PORTNAME_LEN - 1, ( portNameLen - MAX_PORTNAME_LEN ) );
+		}
 	}
 }
 
