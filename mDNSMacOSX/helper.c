@@ -60,6 +60,9 @@
 #endif
 
 #if TARGET_OS_EMBEDDED
+#ifndef MDNS_NO_IPSEC
+#define MDNS_NO_IPSEC 1
+#endif
 #define NO_CFUSERNOTIFICATION 1
 #define NO_SECURITYFRAMEWORK 1
 #endif
@@ -273,6 +276,9 @@ kern_return_t do_mDNSNotify(__unused mach_port_t port, const char *title, const 
 	if (err) helplog(ASL_LEVEL_ERR, "CFUserNotificationDisplayNotice returned %d", err);
 	CFRelease(alertHeader);
 	CFRelease(alertMessage);
+#else
+	(void)title;
+	(void)msg;
 #endif /* NO_CFUSERNOTIFICATION */
 
 	update_idle_timer();
@@ -1093,7 +1099,6 @@ do_mDNSAutoTunnelInterfaceUpDown(__unused mach_port_t port, int updown,
 fin:
 #else
 	(void)port; (void)updown; (void)address; (void)token;
-	*err = kmDNSHelperIPsecDisabled;
 #endif
 	update_idle_timer();
 	return KERN_SUCCESS;
@@ -1670,7 +1675,6 @@ do_mDNSConfigureServer(__unused mach_port_t port, int updown, const char *fqdn, 
 fin:
 #else
 	(void)port; (void)updown; (void)fqdn; (void)token;
-	*err = kmDNSHelperIPsecDisabled;
 #endif
 	update_idle_timer();
 	return KERN_SUCCESS;
@@ -2188,7 +2192,7 @@ fin:
 	unlink(tmp_path);
 #else
 	(void)replacedelete; (void)loc_inner; (void)loc_outer; (void)loc_port; (void)rmt_inner;
-	(void)rmt_outer; (void)rmt_port; (void)keydata; (void)token;
+	(void)rmt_outer; (void)rmt_port; (void)fqdn; (void)token;
 	
 	*err = kmDNSHelperIPsecDisabled;
 #endif /* MDNS_NO_IPSEC */

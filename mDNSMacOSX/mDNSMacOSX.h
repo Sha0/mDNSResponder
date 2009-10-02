@@ -47,8 +47,10 @@ typedef struct
 	mDNS                    *m;
 	int                      sktv4;
 	KQueueEntry				 kqsv4;
+#ifndef NO_IPV6
 	int                      sktv6;
 	KQueueEntry	             kqsv6;
+#endif
 	int                     *closeFlag;
 	} KQSocketSet;
 

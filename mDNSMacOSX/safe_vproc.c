@@ -20,8 +20,9 @@
 #include <vproc.h>
 #include "safe_vproc.h"
 #include "mDNSDebug.h"
+#include <TargetConditionals.h>
 
-#ifdef VPROC_HAS_TRANSACTIONS
+#if defined(VPROC_HAS_TRANSACTIONS) && !TARGET_OS_EMBEDDED
 
 static vproc_transaction_t transaction = NULL;
 
@@ -45,6 +46,7 @@ void safe_vproc_transaction_end(void)
 
 #else
 
+#if ! TARGET_OS_EMBEDDED
 #include <stdio.h>
 #include <CoreFoundation/CFString.h>
 
@@ -70,6 +72,12 @@ void safe_vproc_transaction_begin(void)
 			LogMsg("Compiled without vproc_transaction support");
 		}
 	}
+
+#else
+
+void safe_vproc_transaction_begin(void) { }
+
+#endif
 
 void safe_vproc_transaction_end(void) { }
 

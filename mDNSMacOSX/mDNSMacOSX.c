@@ -79,6 +79,7 @@
 #if TARGET_OS_EMBEDDED
 #define NO_SECURITYFRAMEWORK 1
 #define NO_CFUSERNOTIFICATION 1
+#define NO_IOPOWER 1
 #endif
 
 #ifndef NO_SECURITYFRAMEWORK
@@ -391,6 +392,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 				}
 			}
 		}
+#ifndef NO_IPV6
 	else if (dst->type == mDNSAddrType_IPv6)
 		{
 		struct sockaddr_in6 *sin6_to = (struct sockaddr_in6*)&to;
@@ -407,6 +409,7 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 			if (err < 0) LogMsg("setsockopt - IPV6_MULTICAST_IF error %d errno %d (%s)", err, errno, strerror(errno));
 			}
 		}
+#endif
 	else
 		{
 		LogMsg("mDNSPlatformSendUDP: dst is not an IPv4 or IPv6 address!");
@@ -551,11 +554,17 @@ mDNSlocal void myKQSocketCallBack(int s1, short filter, void *context)
 	if (filter != EVFILT_READ)
 		LogMsg("myKQSocketCallBack: Why is filter %d not EVFILT_READ (%d)?", filter, EVFILT_READ);
 
-	if (s1 != ss->sktv4 && s1 != ss->sktv6)
+	if (s1 != ss->sktv4
+#ifndef NO_IPV6
+		&& s1 != ss->sktv6
+#endif
+		)
 		{
 		LogMsg("myKQSocketCallBack: native socket %d", s1);
 		LogMsg("myKQSocketCallBack: sktv4 %d", ss->sktv4);
+#ifndef NO_IPV6
 		LogMsg("myKQSocketCallBack: sktv6 %d", ss->sktv6);
+#endif
  		}
 
 	while (!closed)
@@ -1158,12 +1167,21 @@ mDNSexport int mDNSPlatformTCPGetFD(TCPSocket *sock)
 // If mDNSIPPort port is zero, then it's a randomly assigned port number, used for sending unicast queries
 mDNSlocal mStatus SetupSocket(KQSocketSet *cp, const mDNSIPPort port, u_short sa_family, mDNSIPPort *const outport)
 	{
+#ifndef NO_IPV6
 	int         *s        = (sa_family == AF_INET) ? &cp->sktv4 : &cp->sktv6;
 	KQueueEntry	*k        = (sa_family == AF_INET) ? &cp->kqsv4 : &cp->kqsv6;
+#else
+	int         *s        = &cp->sktv4;
+	KQueueEntry	*k        = &cp->kqsv4;
+#endif
 	const int on = 1;
 	const int twofivefive = 255;
 	mStatus err = mStatus_NoError;
 	char *errstr = mDNSNULL;
+
+#ifdef NO_IPV6
+	if (sa_family != AF_INET) return -1;
+#endif
 	
 	cp->closeFlag = mDNSNULL;
 
@@ -1205,6 +1223,7 @@ mDNSlocal mStatus SetupSocket(KQSocketSet *cp, const mDNSIPPort port, u_short sa
 		if (err) { errstr = "bind"; goto fail; }
 		if (outport) outport->NotAnInteger = listening_sockaddr.sin_port;
 		}
+#ifndef NO_IPV6
 	else if (sa_family == AF_INET6)
 		{
 		// NAT-PMP Announcements make no sense on IPv6, so bail early w/o error
@@ -1248,6 +1267,7 @@ mDNSlocal mStatus SetupSocket(KQSocketSet *cp, const mDNSIPPort port, u_short sa
 		if (err) { errstr = "bind"; goto fail; }
 		if (outport) outport->NotAnInteger = listening_sockaddr6.sin6_port;
 		}
+#endif
 
 	fcntl(skt, F_SETFL, fcntl(skt, F_GETFL, 0) | O_NONBLOCK); // set non-blocking
 	fcntl(skt, F_SETFD, 1); // set close-on-exec
@@ -1292,18 +1312,22 @@ mDNSexport UDPSocket *mDNSPlatformUDPSocket(mDNS *const m, const mDNSIPPort requ
 	p->ss.port  = zeroIPPort;
 	p->ss.m     = m;
 	p->ss.sktv4 = -1;
+#ifndef NO_IPV6
 	p->ss.sktv6 = -1;
+#endif
 
 	do
 		{
 		// The kernel doesn't do cryptographically strong random port allocation, so we do it ourselves here
 		if (randomizePort) port = mDNSOpaque16fromIntVal(0xC000 + mDNSRandom(0x3FFF));
 		err = SetupSocket(&p->ss, port, AF_INET, &p->ss.port);
+#ifndef NO_IPV6
 		if (!err)
 			{
 			err = SetupSocket(&p->ss, port, AF_INET6, &p->ss.port);
 			if (err) { close(p->ss.sktv4); p->ss.sktv4 = -1; }
 			}
+#endif
 		i--;
 		} while (err == EADDRINUSE && randomizePort && i);
 
@@ -1329,11 +1353,13 @@ mDNSlocal void CloseSocketSet(KQSocketSet *ss)
 		close(ss->sktv4);
 		ss->sktv4 = -1;
 		}
+#ifndef NO_IPV6
 	if (ss->sktv6 != -1)
 		{
 		close(ss->sktv6);
 		ss->sktv6 = -1;
 		}
+#endif
 	if (ss->closeFlag) *ss->closeFlag = 1;
 	}
 
@@ -2057,8 +2083,6 @@ mDNSlocal void RemoveAutoTunnelDomainStatus(const mDNS *const m, const DomainAut
 	CFRelease(domain);
 	}
 
-#endif // ndef NO_SECURITYFRAMEWORK
-
 mDNSlocal mStatus CheckQuestionForStatus(const DNSQuestion *const q)
 	{
 	if (q->LongLived)
@@ -2073,6 +2097,8 @@ mDNSlocal mStatus CheckQuestionForStatus(const DNSQuestion *const q)
 	
 	return mStatus_NoError;
 }
+
+#endif // ndef NO_SECURITYFRAMEWORK
 
 // MUST be called with lock held
 mDNSlocal void UpdateAutoTunnelDomainStatus(const mDNS *const m, const DomainAuthInfo *const info)
@@ -4750,6 +4776,7 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 		case kIOMessageSystemWillRestart:		LogInfo("PowerChanged kIOMessageSystemWillRestart     (no action)");	break;	// E0000310
 		case kIOMessageSystemWillPowerOn:		LogInfo("PowerChanged kIOMessageSystemWillPowerOn");							// E0000320
 
+											#if ! TARGET_OS_EMBEDDED
 												// On Leopard and earlier, on wake from sleep, instead of reporting link state down, Apple
 												// Ethernet drivers report "hardware incapable of detecting link state", which the kernel
 												// interprets as "should assume we have networking", which results in the first 4-5 seconds
@@ -4761,6 +4788,7 @@ mDNSlocal void PowerChanged(void *refcon, io_service_t service, natural_t messag
 													LogMsg("Running on Mac OS X version 10.%d earlier than 10.6; "
 														"PowerChanged did sleep(5) to wait for Ethernet hardware", OSXVers - OSXVers_Base);
 													}
+											#endif
 
 												// Make sure our interface list is cleared to the empty state, then tell mDNSCore to wake
 												if (m->SleepState != SleepState_Sleeping)
@@ -4935,10 +4963,16 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 
  	m->p->permanentsockets.port  = MulticastDNSPort;
  	m->p->permanentsockets.m     = m;
-	m->p->permanentsockets.sktv4 = m->p->permanentsockets.sktv6 = -1;
-	m->p->permanentsockets.kqsv4.KQcallback = m->p->permanentsockets.kqsv6.KQcallback = myKQSocketCallBack;
-	m->p->permanentsockets.kqsv4.KQcontext  = m->p->permanentsockets.kqsv6.KQcontext  = &m->p->permanentsockets;
-	m->p->permanentsockets.kqsv4.KQtask     = m->p->permanentsockets.kqsv6.KQtask     = "UDP packet reception";
+	m->p->permanentsockets.sktv4 = -1;
+	m->p->permanentsockets.kqsv4.KQcallback = myKQSocketCallBack;
+	m->p->permanentsockets.kqsv4.KQcontext  = &m->p->permanentsockets;
+	m->p->permanentsockets.kqsv4.KQtask     = "UDP packet reception";
+#ifndef NO_IPV6
+	m->p->permanentsockets.sktv6 = -1;
+	m->p->permanentsockets.kqsv6.KQcallback = myKQSocketCallBack;
+	m->p->permanentsockets.kqsv6.KQcontext  = &m->p->permanentsockets;
+	m->p->permanentsockets.kqsv6.KQtask     = "UDP packet reception";
+#endif
 
 	err = SetupSocket(&m->p->permanentsockets, MulticastDNSPort, AF_INET, mDNSNULL);
 #ifndef NO_IPV6

@@ -47,6 +47,7 @@
 #include <SystemConfiguration/SCDynamicStoreCopyDHCPInfo.h>
 
 #if TARGET_OS_EMBEDDED
+#define NO_IOPOWER 1
 #include <bootstrap_priv.h>
 
 #define bootstrap_register(A,B,C) bootstrap_register2((A),(B),(C),0)
@@ -2193,7 +2194,7 @@ mDNSlocal mDNSBool AllowSleepNow(mDNS *const m, mDNSs32 now)
 		}
 
 	LogSPS("AllowSleepNow: %s(%lX) %s at %ld (%d ticks remaining)",
-#ifdef kIOPMAcknowledgmentOptionSystemCapabilityRequirements
+#if !defined(NO_IOPOWER) && defined(kIOPMAcknowledgmentOptionSystemCapabilityRequirements)
 		(m->p->IOPMConnection) ? "IOPMConnectionAcknowledgeEventWithOptions" :
 #endif
 		(result == kIOReturnSuccess) ? "IOAllowPowerChange" : "IOCancelPowerChange",
@@ -2201,7 +2202,7 @@ mDNSlocal mDNSBool AllowSleepNow(mDNS *const m, mDNSs32 now)
 
 	m->SleepLimit = 0;	// Don't clear m->SleepLimit until after we've logged it above
 
-#ifdef kIOPMAcknowledgmentOptionSystemCapabilityRequirements
+#if !defined(NO_IOPOWER) && defined(kIOPMAcknowledgmentOptionSystemCapabilityRequirements)
 	if (m->p->IOPMConnection) IOPMConnectionAcknowledgeEventWithOptions(m->p->IOPMConnection, m->p->SleepCookie, opts);
 	else
 #endif
