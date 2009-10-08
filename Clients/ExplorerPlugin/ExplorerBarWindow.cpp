@@ -138,6 +138,9 @@ int	ExplorerBarWindow::OnCreate( LPCREATESTRUCT inCreateStruct )
 	
 	ServiceHandlerEntry *		e;
 	
+	s.LoadString( IDS_ABOUT );
+	m_about = mTree.InsertItem( s, 0, 0 );
+
 	// Web Site Handler
 	
 	e = new ServiceHandlerEntry;
@@ -149,9 +152,6 @@ int	ExplorerBarWindow::OnCreate( LPCREATESTRUCT inCreateStruct )
 	e->needsLogin		= false;
 	mServiceHandlers.Add( e );
 
-	s.LoadString( IDS_ABOUT );
-	m_about = mTree.InsertItem( s, 0, 0 );
-
 	err = DNSServiceBrowse( &e->ref, 0, 0, e->type, NULL, BrowseCallBack, e );
 	require_noerr( err, exit );
 
@@ -160,6 +160,23 @@ int	ExplorerBarWindow::OnCreate( LPCREATESTRUCT inCreateStruct )
 
 	m_serviceRefs.push_back(e->ref);
 
+	e = new ServiceHandlerEntry;
+	check( e );
+	e->type				= "_https._tcp";
+	e->urlScheme		= "https://";
+	e->ref				= NULL;
+	e->obj				= this;
+	e->needsLogin		= false;
+	mServiceHandlers.Add( e );
+
+	err = DNSServiceBrowse( &e->ref, 0, 0, e->type, NULL, BrowseCallBack, e );
+	require_noerr( err, exit );
+
+	err = WSAAsyncSelect((SOCKET) DNSServiceRefSockFD(e->ref), m_hWnd, WM_PRIVATE_SERVICE_EVENT, FD_READ|FD_CLOSE);
+	require_noerr( err, exit );
+
+	m_serviceRefs.push_back(e->ref);
+	
 	m_imageList.Create( 16, 16, ILC_MASK | ILC_COLOR16, 2, 0);
 
 	bitmap.Attach( ::LoadBitmap( GetNonLocalizedResources(), MAKEINTRESOURCE( IDB_LOGO ) ) );
