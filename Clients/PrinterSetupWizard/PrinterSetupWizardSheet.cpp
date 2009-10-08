@@ -826,20 +826,34 @@ CPrinterSetupWizardSheet::OnContextMenu(CWnd * pWnd, CPoint pos)
 void
 CPrinterSetupWizardSheet::OnOK()
 {
+	CWnd * window;
+	OSStatus err;
+
 	check ( m_selectedPrinter != NULL );
 
 	SetWizardButtons( PSWIZB_DISABLEDFINISH );
 
-	ShowWindow( SW_HIDE );
+	window = GetDlgItem( IDCANCEL );
+ 
+	if ( window )
+	{
+		window->EnableWindow( FALSE );
+	}
+
+	m_pgFourth.StartActivityIndicator();
 	
-	if ( InstallPrinter( m_selectedPrinter ) != kNoErr )
+	err = InstallPrinter( m_selectedPrinter );
+
+	m_pgFourth.StopActivityIndicator();
+
+	if ( err != kNoErr )
 	{
 		CString caption;
 		CString message;
 
 		caption.LoadString(IDS_INSTALL_ERROR_CAPTION);
+		caption.AppendFormat( TEXT( " (%d)" ), err );
 		message.LoadString(IDS_INSTALL_ERROR_MESSAGE);
-
 		MessageBox(message, caption, MB_OK|MB_ICONEXCLAMATION);
 	}
 

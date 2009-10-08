@@ -20,6 +20,15 @@
 #include "PrinterSetupWizardSheet.h"
 #include "FourthPage.h"
 
+#if !defined( PBS_MARQUEE )
+#	define PBS_MARQUEE  0x08
+#endif
+
+#if !defined( PBM_SETMARQUEE )
+#	define PBM_SETMARQUEE WM_USER + 10
+#endif
+
+
 
 // CFourthPage dialog
 
@@ -65,7 +74,23 @@ END_MESSAGE_MAP()
 OSStatus 
 CFourthPage::OnInitPage()
 {
-	return kNoErr;
+	CWnd * window; 
+	OSStatus err = kNoErr;
+
+	window = GetDlgItem( IDC_INSTALLING );
+	require_action( window, exit, err = kUnknownErr );
+	window->ShowWindow( SW_HIDE );
+
+	window = GetDlgItem( IDC_PROGRESS );
+	require_action( window, exit, err = kUnknownErr );
+	SetWindowLong( *window, GWL_STYLE, GetWindowLong( *window, GWL_STYLE ) | PBS_MARQUEE );
+	SetWindowLongPtr( *window, GWL_STYLE, GetWindowLongPtr( *window, GWL_STYLE ) | PBS_MARQUEE );
+	window->SendMessage( ( UINT ) PBM_SETMARQUEE, ( WPARAM ) FALSE,( LPARAM ) 35 );
+	window->ShowWindow( SW_HIDE );
+
+exit:
+
+	return err;
 }
 
 
@@ -134,4 +159,54 @@ CFourthPage::OnKillActive()
 exit:
 
 	return CPropertyPage::OnKillActive();
+}
+
+
+BOOL
+CFourthPage::StartActivityIndicator()
+{
+	CWnd * window; 
+	BOOL ok = TRUE;
+
+	window = GetDlgItem( IDC_COMPLETE1 );
+	require_action( window, exit, ok = FALSE );
+	window->ShowWindow( SW_HIDE );
+
+	window = GetDlgItem( IDC_COMPLETE2 );
+	require_action( window, exit, ok = FALSE );
+	window->ShowWindow( SW_HIDE );
+
+	window = GetDlgItem( IDC_INSTALLING );
+	require_action( window, exit, ok = FALSE );
+	window->ShowWindow( SW_SHOW );
+
+	window = GetDlgItem( IDC_PROGRESS );
+	require_action( window, exit, ok = FALSE );
+	window->SendMessage( ( UINT ) PBM_SETMARQUEE, ( WPARAM ) TRUE,( LPARAM ) 50 );
+	window->ShowWindow( SW_SHOW );
+
+exit:
+
+	return ok;
+}
+
+
+BOOL
+CFourthPage::StopActivityIndicator()
+{
+	CWnd * window; 
+	BOOL ok = TRUE;
+
+	window = GetDlgItem( IDC_INSTALLING );
+	require_action( window, exit, ok = FALSE );
+	window->ShowWindow( SW_HIDE );
+
+	window = GetDlgItem( IDC_PROGRESS );
+	require_action( window, exit, ok = FALSE );
+	window->SendMessage( ( UINT ) PBM_SETMARQUEE, ( WPARAM ) FALSE,( LPARAM ) 35 );
+	window->ShowWindow( SW_HIDE );
+
+exit:
+
+	return ok;
 }

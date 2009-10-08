@@ -35,6 +35,9 @@ public:
 	virtual BOOL OnSetActive();
 	virtual BOOL OnKillActive();
 
+	BOOL StartActivityIndicator();
+	BOOL StopActivityIndicator();
+
 protected:
 	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
 
