@@ -160,6 +160,7 @@ int	ExplorerBarWindow::OnCreate( LPCREATESTRUCT inCreateStruct )
 
 	m_serviceRefs.push_back(e->ref);
 
+#if defined( _BROWSE_FOR_HTTPS_ )
 	e = new ServiceHandlerEntry;
 	check( e );
 	e->type				= "_https._tcp";
@@ -176,6 +177,7 @@ int	ExplorerBarWindow::OnCreate( LPCREATESTRUCT inCreateStruct )
 	require_noerr( err, exit );
 
 	m_serviceRefs.push_back(e->ref);
+#endif
 	
 	m_imageList.Create( 16, 16, ILC_MASK | ILC_COLOR16, 2, 0);
 
