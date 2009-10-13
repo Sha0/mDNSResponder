@@ -2512,6 +2512,7 @@ extern void AddNewClientTunnel(mDNS *const m, DNSQuestion *const q);
 extern void SetupLocalAutoTunnelInterface_internal(mDNS *const m);
 extern void UpdateAutoTunnelDomainStatuses(const mDNS *const m);
 extern mStatus ActivateLocalProxy(mDNS *const m, char *ifname);
+extern char *InterfaceNameForID(mDNS *const m, const mDNSInterfaceID InterfaceID);
 #endif
 
 // ***************************************************************************

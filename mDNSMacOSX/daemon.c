@@ -822,7 +822,7 @@ mDNSlocal void FoundInstanceInfo(mDNS *const m, ServiceInfoQuery *query)
 	{
 	kern_return_t status;
 	DNSServiceResolver *x = (DNSServiceResolver *)query->ServiceInfoQueryContext;
-	NetworkInterfaceInfoOSX *ifx = (NetworkInterfaceInfoOSX *)query->info->InterfaceID;
+	NetworkInterfaceInfoOSX *ifx = IfindexToInterfaceInfoOSX(m, query->info->InterfaceID);
 	if (query->info->InterfaceID == mDNSInterface_LocalOnly) ifx = mDNSNULL;
 	struct sockaddr_storage interface;
 	struct sockaddr_storage address;

@@ -167,10 +167,10 @@ mDNSlocal NetworkInterfaceInfo *FirstInterfaceForID(mDNS *const m, const mDNSInt
 	return(intf);
 	}
 
-mDNSlocal char *InterfaceNameForID(mDNS *const m, const mDNSInterfaceID InterfaceID)
+mDNSexport char *InterfaceNameForID(mDNS *const m, const mDNSInterfaceID InterfaceID)
 	{
 	NetworkInterfaceInfo *intf = FirstInterfaceForID(m, InterfaceID);
-	return(intf ? intf->ifname : "<NULL InterfaceID>");
+	return(intf ? intf->ifname : mDNSNULL);
 	}
 
 // For a single given DNSQuestion, deliver an add/remove result for the single given AuthRecord
@@ -2090,7 +2090,9 @@ mDNSlocal void SendQueries(mDNS *const m)
 					{
 					if (rr->AddressProxy.type == mDNSAddrType_IPv4)
 						{
-						LogSPS("SendQueries ARP Probe %d %s %s", rr->ProbeCount, InterfaceNameForID(m, rr->resrec.InterfaceID), ARDisplayString(m,rr));
+						char *ifname = InterfaceNameForID(m, rr->resrec.InterfaceID);
+						if (!ifname) ifname = "<NULL InterfaceID>";
+						LogSPS("SendQueries ARP Probe %d %s %s", rr->ProbeCount, ifname, ARDisplayString(m,rr));
 						SendARP(m, 1, rr, zerov4Addr.b, zeroEthAddr.b, rr->AddressProxy.ip.v4.b, rr->WakeUp.IMAC.b);
 						}
 					else if (rr->AddressProxy.type == mDNSAddrType_IPv6)
@@ -5410,8 +5412,9 @@ mDNSlocal void SPSRecordCallback(mDNS *const m, AuthRecord *const ar, mStatus re
 
 	if (result == mStatus_NameConflict)
 		{
-		LogMsg("Received Conflicting mDNS -- waking %s %.6a %s",
-			InterfaceNameForID(m, ar->resrec.InterfaceID), &ar->WakeUp.HMAC, ARDisplayString(m, ar));
+		char *ifname = InterfaceNameForID(m, ar->resrec.InterfaceID);
+		if (!ifname) ifname = "<NULL InterfaceID>";
+		LogMsg("Received Conflicting mDNS -- waking %s %.6a %s", ifname, &ar->WakeUp.HMAC, ARDisplayString(m, ar));
 		SendWakeup(m, ar->resrec.InterfaceID, &ar->WakeUp.IMAC, &ar->WakeUp.password);
 		}
 	else if (result == mStatus_MemFree)
@@ -7854,6 +7857,8 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 			for (rr = m->ResourceRecords; rr; rr=rr->next)
 				if (rr->resrec.InterfaceID == InterfaceID && rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, arp->tpa))
 					{
+					char *ifname = InterfaceNameForID(m, InterfaceID);
+					if (!ifname) ifname = "<NULL InterfaceID>";
 					static const char msg1[] = "ARP Req from owner -- re-probing";
 					static const char msg2[] = "Ignoring  ARP Request from      ";
 					static const char msg3[] = "Creating Local ARP Cache entry  ";
@@ -7862,7 +7867,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 											(rr->AnnounceCount == InitialAnnounceCount)     ? msg2 :
 											mDNSSameEthAddress(&arp->sha, &intf->MAC)       ? msg3 : msg4;
 					LogSPS("%-7s %s %.6a %.4a for %.4a -- H-MAC %.6a I-MAC %.6a %s",
-						InterfaceNameForID(m, InterfaceID), msg, &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m, rr));
+						ifname, msg, &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m, rr));
 					if      (msg == msg1) RestartARPProbing(m, rr);
 					else if (msg == msg3) mDNSPlatformSetLocalARP(&arp->tpa, &rr->WakeUp.IMAC, InterfaceID);
 					else if (msg == msg4) SendARP(m, 2, rr, arp->tpa.b, arp->sha.b, arp->spa.b, arp->sha.b);
@@ -7884,16 +7889,19 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 				for (rr = m->ResourceRecords; rr; rr=rr->next)
 					if (rr->resrec.InterfaceID == InterfaceID && rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, arp->spa))
 						{
+						char *ifname = InterfaceNameForID(m, InterfaceID);
+						if (!ifname) ifname = "<NULL InterfaceID>";
+
 						RestartARPProbing(m, rr);
 						if (mDNSSameEthAddress(&arp->sha, &rr->WakeUp.IMAC))
 							LogSPS("%-7s ARP %s from owner %.6a %.4a for %-15.4a -- re-starting probing for %s",
-								InterfaceNameForID(m, InterfaceID),
+								ifname,
 								mDNSSameIPv4Address(arp->spa, arp->tpa) ? "Announcement" : mDNSSameOpaque16(arp->op, ARP_op_request) ? "Request     " : "Response    ",
 								&arp->sha, &arp->spa, &arp->tpa, ARDisplayString(m, rr));
 						else
 							{
 							LogMsg("%-7s Conflicting ARP from %.6a %.4a for %.4a -- waking H-MAC %.6a I-MAC %.6a %s",
-								InterfaceNameForID(m, InterfaceID), &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m, rr));
+								ifname, &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m, rr));
 							SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.IMAC, &rr->WakeUp.password);
 							}
 						}
@@ -8006,16 +8014,18 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 								SameDomainLabel(ThirdLabel(r2->resrec.name)->c, tp))
 								break;
 						if (!r2 && mDNSSameIPPort(port, IPSECPort)) r2 = rr;	// So that we wake for BTMM IPSEC packets, even without a matching SRV record
+						char *ifname = InterfaceNameForID(m, rr->resrec.InterfaceID);
+						if (!ifname) ifname = "<NULL InterfaceID>";
 						if (r2)
 							{
 							rr->AnnounceCount = 0;
 							LogMsg("Waking host at %s %.4a H-MAC %.6a I-MAC %.6a for %s",
-								InterfaceNameForID(m, rr->resrec.InterfaceID), &v4->dst, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m, r2));
+								ifname, &v4->dst, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m, r2));
 							SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.IMAC, &rr->WakeUp.password);
 							}
 						else
 							LogSPS("Sleeping host at %s %.4a %.6a has no service on %#s %d",
-								InterfaceNameForID(m, rr->resrec.InterfaceID), &v4->dst, &rr->WakeUp.HMAC, tp, mDNSVal16(port));
+								ifname, &v4->dst, &rr->WakeUp.HMAC, tp, mDNSVal16(port));
 						}
 				mDNS_Unlock(m);
 				}
