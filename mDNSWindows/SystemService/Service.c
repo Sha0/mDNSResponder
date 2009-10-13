@@ -1625,6 +1625,9 @@ mDNSlocal mStatus	SetupNotifications()
 	err = translate_errno( gDescChangedEvent, (mStatus) GetLastError(), kUnknownErr );
 	require_noerr( err, exit );
 
+	err = RegOpenKeyEx( HKEY_LOCAL_MACHINE, TEXT("SYSTEM\\CurrentControlSet\\Services\\lanmanserver\\parameters"), 0, KEY_READ, &gDescKey);
+	check_translated_errno( err == 0, errno_compat(), kNameErr );
+
 	if ( gDescKey != NULL )
 	{
 		err = RegNotifyChangeKeyValue( gDescKey, TRUE, REG_NOTIFY_CHANGE_LAST_SET, gDescChangedEvent, TRUE);
