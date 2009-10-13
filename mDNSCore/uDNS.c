@@ -979,6 +979,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 		// connection is established - send the message
 		if (q && q->LongLived && q->state == LLQ_Established)
 			{
+			// Lease renewal over TCP, resulting from opening a TCP connection in sendLLQRefresh
 			end = ((mDNSu8*) &tcpInfo->request) + tcpInfo->requestLen;
 			}
 		else if (q && q->LongLived && q->state != LLQ_Poll && !mDNSIPPortIsZero(m->LLQNAT.ExternalPort) && !mDNSIPPortIsZero(q->servPort))
@@ -998,9 +999,11 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			end = putLLQ(&tcpInfo->request, tcpInfo->request.data, q, &llqData);
 			if (!end) { LogMsg("ERROR: tcpCallback - putLLQ"); err = mStatus_UnknownErr; goto exit; }
 			AuthInfo = q->AuthInfo;		// Need to add TSIG to this message
+			q->ntries = 0; // Reset ntries so that tcp/tls connection failures don't affect sendChallengeResponse failures
 			}
 		else if (q)
 			{
+			// LLQ Polling mode or non-LLQ uDNS over TCP
 			InitializeDNSMessage(&tcpInfo->request.h, q->TargetQID, uQueryFlags);
 			end = putQuestion(&tcpInfo->request, tcpInfo->request.data, tcpInfo->request.data + AbsoluteMaxDNSMessageData, &q->qname, q->qtype, q->qclass);
 			AuthInfo = q->AuthInfo;		// Need to add TSIG to this message
@@ -1104,14 +1107,53 @@ exit:
 
 		if (q)
 			{
-			if (q->ThisQInterval == 0 || q->LastQTime + q->ThisQInterval - m->timenow > MAX_UCAST_POLL_INTERVAL)
+			if (q->ThisQInterval == 0)
 				{
-				q->LastQTime     = m->timenow;
-				q->ThisQInterval = MAX_UCAST_POLL_INTERVAL;
+				// We get here when we fail to establish a new TCP/TLS connection that would have been used for a new LLQ request or an LLQ renewal.
+				// Note that ThisQInterval is also zero when sendChallengeResponse resends the LLQ request on an extant TCP/TLS connection.
+				q->LastQTime = m->timenow;
+				if (q->LongLived)
+					{
+					// We didn't get the chance to send our request packet before the TCP/TLS connection failed.
+					// We want to retry quickly, but want to back off exponentially in case the server is having issues.
+					// Since ThisQInterval was 0, we can't just multiply by QuestionIntervalStep, we must track the number
+					// of TCP/TLS connection failures using ntries.
+					mDNSu32 count = q->ntries + 1; // want to wait at least 1 second before retrying
+
+					q->ThisQInterval = InitialQuestionInterval;
+
+					for (;count;count--)
+						q->ThisQInterval *= QuestionIntervalStep;
+
+					if (q->ThisQInterval > LLQ_POLL_INTERVAL)
+						q->ThisQInterval = LLQ_POLL_INTERVAL;
+					else
+						q->ntries++;
+						
+					LogMsg("tcpCallback: stream connection for LLQ %##s (%s) failed %d times, retrying in %d ms", q->qname.c, DNSTypeName(q->qtype), q->ntries, q->ThisQInterval);
+					q->state = LLQ_InitialRequest;
+					}
+				else
+					{
+					q->ThisQInterval = MAX_UCAST_POLL_INTERVAL;
+					LogMsg("tcpCallback: stream connection for %##s (%s) failed, retrying in %d ms", q->qname.c, DNSTypeName(q->qtype), q->ThisQInterval);
+					}
 				SetNextQueryTime(m, q);
 				}
-			// ConnFailed may be actually okay. It just means that the server closed the connection but the LLQ may still be okay.
-			// If the error isn't ConnFailed, then the LLQ is in bad shape.
+			else if (q->LastQTime + q->ThisQInterval - m->timenow > (q->LongLived ? LLQ_POLL_INTERVAL : MAX_UCAST_POLL_INTERVAL))
+				{
+				// Ensure we don't go over the maximum interval
+				q->LastQTime     = m->timenow;
+				q->ThisQInterval = (q->LongLived ? q->ntries * InitialQuestionInterval  : MAX_UCAST_POLL_INTERVAL);
+				SetNextQueryTime(m, q);
+				}
+			else if (q->LongLived && q->state == LLQ_SecondaryRequest)
+				q->state = LLQ_InitialRequest; // We're about to dispose of the TCP connection, so we must reset the state to retry over TCP/TLS
+			
+			// ConnFailed is expected in the case where the server closed the connection after the first reply. In this case, we just dispose of the TCP connection.
+			// ConnFailed may also happen if the server sends a TCP reset or TLS fails, in which case we want to retry establishing the LLQ
+			// quickly rather than switching to polling mode.
+			// If the error isn't ConnFailed, then the LLQ is in bad shape, so we switch to polling mode.
 			if (err != mStatus_ConnFailed)
 				{
 				if (q->LongLived && q->state != LLQ_Poll) StartLLQPolling(m, q);

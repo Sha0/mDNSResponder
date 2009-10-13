@@ -775,12 +775,12 @@ mDNSlocal void *doSSLHandshake(void *ctx)
 			{
 			if (err)
 				{
-				LogMsg("SSLHandshake failed: %d", err);
+				LogMsg("SSLHandshake failed: %d%s", err, err == errSSLPeerInternalError ? " (server busy)" : "");
 				SSLDisposeContext(sock->tlsContext);
 				sock->tlsContext = NULL;
 				}
 			
-			sock->err = err;
+			sock->err = err ? mStatus_ConnFailed : 0;
 			sock->handshake = handshake_completed;
 			
 			LogInfo("doSSLHandshake: %p calling doTcpSocketCallback", sock);

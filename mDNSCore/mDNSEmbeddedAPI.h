@@ -1410,7 +1410,10 @@ struct DNSQuestion_struct
 	LLQ_State             state;
 	mDNSu32               ReqLease;			// seconds (relative)
 	mDNSs32               expire;			// ticks (absolute)
-	mDNSs16               ntries;
+	mDNSs16               ntries;           // for UDP: the number of packets sent for this LLQ state
+	                                       // for TCP: there is some ambiguity in the use of this variable, but in general, it is
+	                                       //          the number of TCP/TLS connection attempts for this LLQ state, or
+	                                       //          the number of packets sent for this TCP/TLS connection
 	mDNSOpaque64          id;
 
 	// Client API fields: The client must set up these fields *before* calling mDNS_StartQuery()
