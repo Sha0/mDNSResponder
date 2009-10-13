@@ -45,6 +45,9 @@ mDNSexport SearchListElem *SearchList = mDNSNULL;
 // would avoid the perils of modifying that list cleanly while some other piece of code is iterating through it.
 ServiceRecordSet *CurrentServiceRecordSet = mDNSNULL;
 
+// The value can be set to true by the Platform code e.g., MacOSX uses the plist mechanism
+mDNSBool StrictUnicastOrdering = mDNSfalse;
+
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark - General Utility Functions

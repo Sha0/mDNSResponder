@@ -101,7 +101,8 @@ static int restarting_via_mach_init = 0;	// Used on Jaguar/Panther when daemon i
 static int started_via_launchdaemon = 0;	// Indicates we're running on Tiger or later, where daemon is managed by launchd
 static mDNSBool advertise = mDNS_Init_AdvertiseLocalAddresses; // By default, advertise addresses (& other records) via multicast
 
-mDNSBool StrictUnicastOrdering = mDNSfalse;
+extern mDNSBool StrictUnicastOrdering;
+
 //*************************************************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
 #pragma mark -
