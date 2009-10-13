@@ -16,6 +16,8 @@
 #define IDR_ADD_BROWSE_DOMAIN           142
 #define IDS_REINSTALL					143
 #define IDS_REINSTALL_CAPTION			144
+#define IDS_APPLET_NAME					145
+#define IDS_APPLET_TOOLTIP				146
 #define IDC_EDIT1                       1000
 #define IDC_BUTTON1                     1001
 #define IDC_COMBO1                      1002
@@ -41,7 +43,7 @@
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        143
+#define _APS_NEXT_RESOURCE_VALUE        147
 #define _APS_NEXT_COMMAND_VALUE         32771
 #define _APS_NEXT_CONTROL_VALUE         1016
 #define _APS_NEXT_SYMED_VALUE           101

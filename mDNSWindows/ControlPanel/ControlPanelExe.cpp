@@ -49,11 +49,9 @@ DEFINE_GUID(CLSID_ControlPanel,
 0x1207552c, 0xe59, 0x4d9f, 0x85, 0x54, 0xf1, 0xf8, 0x6, 0xcd, 0x7f, 0xa9);
 
 static LPCTSTR g_controlPanelGUID			=	TEXT( "{1207552C-0E59-4d9f-8554-F1F806CD7FA9}" );
-static LPCTSTR g_controlPanelName			=	TEXT( "Bonjour Control Panel" );
+static LPCTSTR g_controlPanelName			=	TEXT( "Bonjour" );
 static LPCTSTR g_controlPanelCanonicalName	=	TEXT( "Apple.Bonjour" );
 static LPCTSTR g_controlPanelCategory		=	TEXT( "3,8" );
-static LPCTSTR g_controlPanelLocalizedName	=	g_controlPanelName;
-static LPCTSTR g_controlPanelInfoTip		=	TEXT( "Configures Wide-Area Bonjour" );
 
 static CCPApp theApp;
 
@@ -289,6 +287,8 @@ CCPApp::InitInstance()
 
 	if ( commandLine.m_nShellCommand == CCommandLineInfo::AppRegister )
 	{
+		CString		localizedName;
+		CString		toolTip;
 		TCHAR		iconPath[ MAX_PATH + 12 ]	= TEXT( "" );
 		TCHAR		exePath[ MAX_PATH ]			= TEXT( "" );
 		DWORD		nChars;
@@ -302,7 +302,10 @@ CCPApp::InitInstance()
 
 		wsprintf( iconPath, L"%s,-%d", exePath, IDR_APPLET );
 
-		Register( g_controlPanelGUID, g_controlPanelName, g_controlPanelCanonicalName, g_controlPanelCategory, g_controlPanelName, g_controlPanelInfoTip, iconPath, exePath );
+		localizedName.LoadString( IDS_APPLET_NAME );
+		toolTip.LoadString( IDS_APPLET_TOOLTIP );
+
+		Register( g_controlPanelGUID, g_controlPanelName, g_controlPanelCanonicalName, g_controlPanelCategory, localizedName, toolTip, iconPath, exePath );
 	}
 	else if ( commandLine.m_nShellCommand == CCommandLineInfo::AppUnregister )
 	{

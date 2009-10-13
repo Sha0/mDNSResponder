@@ -256,7 +256,9 @@ END
 STRINGTABLE 
 BEGIN
     IDR_APPLET              "Bonjour"
-    IDS_APPLET_DESCRIPTION  "Wide-Area Bonjour Control Panel"
+	IDS_APPLET_NAME			"Bonjour"
+    IDS_APPLET_DESCRIPTION  "Bonjour"
+	IDS_APPLET_TOOLTIP		"Configures Bonjour for your computer."
 END
 
 #endif    // English (U.S.) resources

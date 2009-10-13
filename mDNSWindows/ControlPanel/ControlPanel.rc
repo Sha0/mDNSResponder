@@ -113,7 +113,7 @@ END
 STRINGTABLE
 BEGIN
 	IDS_REINSTALL    "Bonjour Control Panel cannot run because some of its required files are missing.  Please reinstall Bonjour Control Panel."
-	IDS_REINSTALL_CAPTION "Bonjour Control Panel"
+	IDS_REINSTALL_CAPTION "Bonjour"
 END
 #endif    // English (U.S.) resources
 /////////////////////////////////////////////////////////////////////////////
