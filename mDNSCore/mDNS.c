@@ -7858,7 +7858,6 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 				if (rr->resrec.InterfaceID == InterfaceID && rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, arp->tpa))
 					{
 					char *ifname = InterfaceNameForID(m, InterfaceID);
-					if (!ifname) ifname = "<NULL InterfaceID>";
 					static const char msg1[] = "ARP Req from owner -- re-probing";
 					static const char msg2[] = "Ignoring  ARP Request from      ";
 					static const char msg3[] = "Creating Local ARP Cache entry  ";
@@ -7866,6 +7865,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 					const char *const msg = mDNSSameEthAddress(&arp->sha, &rr->WakeUp.IMAC) ? msg1 :
 											(rr->AnnounceCount == InitialAnnounceCount)     ? msg2 :
 											mDNSSameEthAddress(&arp->sha, &intf->MAC)       ? msg3 : msg4;
+					if (!ifname) ifname = "<NULL InterfaceID>";
 					LogSPS("%-7s %s %.6a %.4a for %.4a -- H-MAC %.6a I-MAC %.6a %s",
 						ifname, msg, &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m, rr));
 					if      (msg == msg1) RestartARPProbing(m, rr);
@@ -8007,6 +8007,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 					if (rr->resrec.InterfaceID == InterfaceID &&
 						rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, v4->dst))
 						{
+						char *ifname = InterfaceNameForID(m, rr->resrec.InterfaceID);
 						const mDNSu8 *const tp = (v4->protocol == 6) ? (const mDNSu8 *)"\x4_tcp" : (const mDNSu8 *)"\x4_udp";
 						for (r2 = m->ResourceRecords; r2; r2=r2->next)
 							if (r2->resrec.InterfaceID == InterfaceID && mDNSSameEthAddress(&r2->WakeUp.HMAC, &rr->WakeUp.HMAC) &&
@@ -8014,7 +8015,6 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 								SameDomainLabel(ThirdLabel(r2->resrec.name)->c, tp))
 								break;
 						if (!r2 && mDNSSameIPPort(port, IPSECPort)) r2 = rr;	// So that we wake for BTMM IPSEC packets, even without a matching SRV record
-						char *ifname = InterfaceNameForID(m, rr->resrec.InterfaceID);
 						if (!ifname) ifname = "<NULL InterfaceID>";
 						if (r2)
 							{
