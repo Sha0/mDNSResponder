@@ -2503,6 +2503,7 @@ extern void FindSPSInCache(mDNS *const m, const DNSQuestion *const q, const Cach
 #define SPSMetric(X) (!ValidSPSName(X) || PrototypeSPSName(X) ? 1000000 : \
 	((X)[1]-'0') * 100000 + ((X)[2]-'0') * 10000 + ((X)[4]-'0') * 1000 + ((X)[5]-'0') * 100 + ((X)[7]-'0') * 10 + ((X)[8]-'0'))
 extern void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheRecord *const rr, const QC_result AddRecord);
+extern char *InterfaceNameForID(mDNS *const m, const mDNSInterfaceID InterfaceID);
 
 // For now this AutoTunnel stuff is specific to Mac OS X.
 // In the future, if there's demand, we may see if we can abstract it out cleanly into the platform layer
@@ -2512,7 +2513,6 @@ extern void AddNewClientTunnel(mDNS *const m, DNSQuestion *const q);
 extern void SetupLocalAutoTunnelInterface_internal(mDNS *const m);
 extern void UpdateAutoTunnelDomainStatuses(const mDNS *const m);
 extern mStatus ActivateLocalProxy(mDNS *const m, char *ifname);
-extern char *InterfaceNameForID(mDNS *const m, const mDNSInterfaceID InterfaceID);
 #endif
 
 // ***************************************************************************
