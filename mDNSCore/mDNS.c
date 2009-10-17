@@ -3672,7 +3672,7 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 
 		// and reactivtate service registrations
 		m->NextSRVUpdate = NonZeroTime(m->timenow + mDNSPlatformOneSecond);
-		LogInfo("WakeServiceRegistrations %d %d", m->timenow, m->NextSRVUpdate);
+		LogInfo("mDNSCoreMachineSleep waking: NextSRVUpdate in %d %d", m->NextSRVUpdate - m->timenow, m->timenow);
 
 		// 2. Re-validate our cache records
 		m->NextCacheCheck  = m->timenow;

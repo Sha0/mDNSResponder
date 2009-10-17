@@ -3359,7 +3359,8 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 					if (r->port == 5353 || r->n_nameserver == 0) continue;
 					
 					if (!r->domain || !*r->domain) d.c[0] = 0;
-					else if (!MakeDomainNameFromDNSNameString(&d, r->domain)) { LogMsg("mDNSPlatformSetDNSConfig: bad domain %s", r->domain); continue; }
+					else if (!MakeDomainNameFromDNSNameString(&d, r->domain))
+						{ LogMsg("mDNSPlatformSetDNSConfig: config->resolver[%d] bad domain %s", i, r->domain); continue; }
 
 					// DNS server option parsing
 					if (r->options != NULL)
@@ -3380,12 +3381,13 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 								ifindex = if_nametoindex(ifname);
 								if (ifindex == 0) { disabled = 1; LogMsg("RegisterSplitDNS: interfaceSpecific - interface %s not found", ifname); continue; }
 								LogInfo("%s: Interface-specific entry: %s on %s (%d)", __FUNCTION__, r->domain, ifname, ifindex);
-								// Find the interface, can't use mDNSPlatformInterfaceIDFromInterfaceIndex
+								// Find the interface. Can't use mDNSPlatformInterfaceIDFromInterfaceIndex
 								// because that will call mDNSMacOSXNetworkChanged if the interface doesn't exist
 								for (ni = m->p->InterfaceList; ni; ni = ni->next)
 									if (ni->ifinfo.InterfaceID && ni->scope_id == ifindex) break;
 								if (ni != NULL) interface = ni->ifinfo.InterfaceID;
-								if (interface == mDNSNULL) { disabled = 1; LogMsg("RegisterSplitDNS: interfaceSpecific - index %d (%s) not found", ifindex, ifname); continue; }
+								if (interface == mDNSNULL)
+									{ disabled = 1; LogMsg("RegisterSplitDNS: interfaceSpecific - index %d (%s) not found", ifindex, ifname); continue; }
 								}
 							}
 						}
