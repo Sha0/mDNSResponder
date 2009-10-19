@@ -5147,8 +5147,36 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 						}
 					else if (m->rec.r.resrec.rroriginalttl > 0)
 						{
+						DNSQuestion *q;
 						//if (rr->resrec.rroriginalttl == 0) LogMsg("uDNS rescuing %s", CRDisplayString(m, rr));
 						RefreshCacheRecord(m, rr, m->rec.r.resrec.rroriginalttl);
+
+						// We have to reset the question interval to MaxQuestionInterval so that we don't keep
+						// polling the network once we get a valid response back. For the first time when a new
+						// cache entry is created, AnswerCurrentQuestionWithResourceRecord does that.
+						// Subsequently, if we reissue questions from within the mDNSResponder e.g., DNS server
+						// configuration changed, without flushing the cache, we reset the question interval here.
+						// Currently, we do this for for both multicast and unicast questions as long as the record
+						// type is unique. For unicast, resource record is always unique and for multicast it is
+						// true for records like A etc. but not for PTR.
+						if (rr->resrec.RecordType & kDNSRecordTypePacketUniqueMask)
+							{
+							for (q = m->Questions; q; q=q->next)
+								{
+
+								if (!q->DuplicateOf && !q->LongLived && 
+									ActiveQuestion(q) && ResourceRecordAnswersQuestion(&rr->resrec, q))
+									{
+									q->LastQTime        = m->timenow;
+									q->LastQTxTime      = m->timenow;
+									q->RecentAnswerPkts = 0;
+									q->ThisQInterval    = MaxQuestionInterval;
+									q->RequestUnicast   = mDNSfalse;
+									debugf("mDNSCoreReceiveResponse: Set MaxQuestionInterval for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+									break;
+									}
+								}
+							}
 						break;
 						}
 					else
