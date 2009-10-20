@@ -5172,6 +5172,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 									q->RecentAnswerPkts = 0;
 									q->ThisQInterval    = MaxQuestionInterval;
 									q->RequestUnicast   = mDNSfalse;
+									q->unansweredQueries = 0;
 									debugf("mDNSCoreReceiveResponse: Set MaxQuestionInterval for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 									break;
 									}
