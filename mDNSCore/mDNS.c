@@ -65,7 +65,6 @@ mDNSlocal void RetrySPSRegistrations(mDNS *const m);
 
 #define NO_HINFO 1
 
-mDNSlocal const mDNSInterfaceID mDNSInterfaceMark = (mDNSInterfaceID)~0;
 
 // Any records bigger than this are considered 'large' records
 #define SmallRecordLimit 1024
@@ -1438,7 +1437,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 
 					// The first time through (pktcount==0), if this record is verified unique
 					// (i.e. typically A, AAAA, SRV and TXT), set the flag to add an NSEC too.
-					if (!pktcount && active && rr->resrec.RecordType == kDNSRecordTypeVerified && !rr->SendNSECNow) rr->SendNSECNow = (mDNSInterfaceID)1;
+					if (!pktcount && active && rr->resrec.RecordType == kDNSRecordTypeVerified && !rr->SendNSECNow) rr->SendNSECNow = mDNSInterfaceMark;
 					}
 
 				if (newptr)		// If succeeded in sending, advance to next interface
@@ -1478,7 +1477,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 						{
 						// The first time through (pktcount==0), if this record is verified unique
 						// (i.e. typically A, AAAA, SRV and TXT), set the flag to add an NSEC too.
-						if (!pktcount && rr->resrec.RecordType == kDNSRecordTypeVerified && !rr->SendNSECNow) rr->SendNSECNow = (mDNSInterfaceID)1;
+						if (!pktcount && rr->resrec.RecordType == kDNSRecordTypeVerified && !rr->SendNSECNow) rr->SendNSECNow = mDNSInterfaceMark;
 
 						if (rr->resrec.RecordType & kDNSRecordTypeUniqueMask)
 							rr->resrec.rrclass |= kDNSClass_UniqueRRSet;	// Temporarily set the cache flush bit so PutResourceRecord will set it
@@ -1501,7 +1500,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 
 		// Third Pass. Add NSEC records, if there's space.
 		for (rr = m->ResourceRecords; rr; rr=rr->next)
-			if (rr->SendNSECNow == (mDNSInterfaceID)1 || rr->SendNSECNow == intf->InterfaceID)
+			if (rr->SendNSECNow == mDNSInterfaceMark || rr->SendNSECNow == intf->InterfaceID)
 				{
 				AuthRecord nsec;
 				mDNS_SetupResourceRecord(&nsec, mDNSNULL, mDNSInterface_Any, kDNSType_NSEC, rr->resrec.rroriginalttl, kDNSRecordTypeUnique, mDNSNULL, mDNSNULL);
@@ -1523,13 +1522,13 @@ mDNSlocal void SendResponses(mDNS *const m)
 
 				// If we successfully put the NSEC record, clear the SendNSECNow flag
 				// If we consider this NSEC optional, then we unconditionally clear the SendNSECNow flag, even if we fail to put this additional record
-				if (newptr || rr->SendNSECNow == (mDNSInterfaceID)1)
+				if (newptr || rr->SendNSECNow == mDNSInterfaceMark)
 					{
 					rr->SendNSECNow = mDNSNULL;
 					// Run through remainder of list clearing SendNSECNow flag for all other records which would generate the same NSEC
 					for (r2 = rr->next; r2; r2=r2->next)
 						if (SameResourceRecordNameClassInterface(r2, rr))
-							if (r2->SendNSECNow == (mDNSInterfaceID)1 || r2->SendNSECNow == intf->InterfaceID)
+							if (r2->SendNSECNow == mDNSInterfaceMark || r2->SendNSECNow == intf->InterfaceID)
 								r2->SendNSECNow = mDNSNULL;
 					}
 				}

@@ -1793,6 +1793,7 @@ extern const OwnerOptData    zeroOwner;
 extern const mDNSInterfaceID mDNSInterface_Any;				// Zero
 extern const mDNSInterfaceID mDNSInterface_LocalOnly;		// Special value
 extern const mDNSInterfaceID mDNSInterface_Unicast;			// Special value
+extern const mDNSInterfaceID mDNSInterfaceMark;				// Special value
 
 extern const mDNSIPPort   DiscardPort;
 extern const mDNSIPPort   SSHPort;
