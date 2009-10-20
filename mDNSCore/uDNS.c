@@ -1033,16 +1033,33 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			{
 			mDNSu8 *lenptr = (mDNSu8 *)&tcpInfo->replylen;
 			n = mDNSPlatformReadTCP(sock, lenptr + tcpInfo->nread, 2 - tcpInfo->nread, &closed);
-			if (n < 0) { LogMsg("ERROR: tcpCallback - attempt to read message length failed (%d)", n); err = mStatus_ConnFailed; goto exit; }
+			if (n < 0)
+				{
+				LogMsg("ERROR: tcpCallback - attempt to read message length failed (%d)", n);
+				err = mStatus_ConnFailed;
+				goto exit;
+				}
 			else if (closed)
 				{
 				// It's perfectly fine for this socket to close after the first reply. The server might
 				// be sending gratuitous replies using UDP and doesn't have a need to leave the TCP socket open.
 				// We'll only log this event if we've never received a reply before.
 				// BIND 9 appears to close an idle connection after 30 seconds.
-				if (tcpInfo->numReplies == 0) LogMsg("ERROR: socket closed prematurely tcpInfo->nread = %d", tcpInfo->nread);
-				err = mStatus_ConnFailed;
-				goto exit;
+				if (tcpInfo->numReplies == 0)
+					{
+					LogMsg("ERROR: socket closed prematurely tcpInfo->nread = %d", tcpInfo->nread);
+					err = mStatus_ConnFailed;
+					goto exit;
+					}
+				else
+					{
+					// Note that we may not be doing the best thing if an error occurs after we've sent a second request
+					// over this tcp connection.  That is, we only track whether we've received at least one response
+					// which may have been to a previous request sent over this tcp connection.
+					if (backpointer) *backpointer = mDNSNULL; // Clear client backpointer FIRST so we don't risk double-disposing our tcpInfo_t 
+					DisposeTCPConn(tcpInfo);
+					return;
+					}
 				}
 
 			tcpInfo->nread += n;
@@ -1058,8 +1075,30 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 
 		n = mDNSPlatformReadTCP(sock, ((char *)tcpInfo->reply) + (tcpInfo->nread - 2), tcpInfo->replylen - (tcpInfo->nread - 2), &closed);
 
-		if      (n < 0)  { LogMsg("ERROR: tcpCallback - read returned %d", n);            err = mStatus_ConnFailed; goto exit; }
-		else if (closed) { LogMsg("ERROR: socket closed prematurely %d", tcpInfo->nread); err = mStatus_ConnFailed; goto exit; }
+		if (n < 0)
+			{
+			LogMsg("ERROR: tcpCallback - read returned %d", n);
+			err = mStatus_ConnFailed;
+			goto exit;
+			}
+		else if (closed)
+			{
+			if (tcpInfo->numReplies == 0)
+				{
+				LogMsg("ERROR: socket closed prematurely tcpInfo->nread = %d", tcpInfo->nread);
+				err = mStatus_ConnFailed;
+				goto exit;
+				}
+			else
+				{
+				// Note that we may not be doing the best thing if an error occurs after we've sent a second request
+				// over this tcp connection.  That is, we only track whether we've received at least one response
+				// which may have been to a previous request sent over this tcp connection.
+				if (backpointer) *backpointer = mDNSNULL; // Clear client backpointer FIRST so we don't risk double-disposing our tcpInfo_t 
+				DisposeTCPConn(tcpInfo);
+				return;
+				}
+			}
 
 		tcpInfo->nread += n;
 
@@ -1134,7 +1173,6 @@ exit:
 						q->ntries++;
 						
 					LogMsg("tcpCallback: stream connection for LLQ %##s (%s) failed %d times, retrying in %d ms", q->qname.c, DNSTypeName(q->qtype), q->ntries, q->ThisQInterval);
-					q->state = LLQ_InitialRequest;
 					}
 				else
 					{
@@ -1145,17 +1183,22 @@ exit:
 				}
 			else if (q->LastQTime + q->ThisQInterval - m->timenow > (q->LongLived ? LLQ_POLL_INTERVAL : MAX_UCAST_POLL_INTERVAL))
 				{
-				// Ensure we don't go over the maximum interval
+				// If we get an error and our next scheduled query for this question is more than the max interval from now,
+				// reset the next query to ensure we wait no longer the maximum interval from now before trying again.
 				q->LastQTime     = m->timenow;
-				q->ThisQInterval = (q->LongLived ? q->ntries * InitialQuestionInterval  : MAX_UCAST_POLL_INTERVAL);
+				q->ThisQInterval = q->LongLived ? LLQ_POLL_INTERVAL : MAX_UCAST_POLL_INTERVAL;
 				SetNextQueryTime(m, q);
 				}
-			else if (q->LongLived && q->state == LLQ_SecondaryRequest)
-				q->state = LLQ_InitialRequest; // We're about to dispose of the TCP connection, so we must reset the state to retry over TCP/TLS
 			
-			// ConnFailed is expected in the case where the server closed the connection after the first reply. In this case, we just dispose of the TCP connection.
-			// ConnFailed may also happen if the server sends a TCP reset or TLS fails, in which case we want to retry establishing the LLQ
-			// quickly rather than switching to polling mode.
+			// We're about to dispose of the TCP connection, so we must reset the state to retry over TCP/TLS
+			// because sendChallengeResponse will send the query via UDP if we don't have a tcp pointer.
+			// Resetting to LLQ_InitialRequest will cause uDNS_CheckCurrentQuestion to call startLLQHandshake, which
+			// will attempt to establish a new tcp connection.
+			if (q->LongLived && q->state == LLQ_SecondaryRequest)
+				q->state = LLQ_InitialRequest;
+			
+			// ConnFailed may happen if the server sends a TCP reset or TLS fails, in which case we want to retry establishing the LLQ
+			// quickly rather than switching to polling mode.  This case is handled by the above code to set q->ThisQInterval just above.
 			// If the error isn't ConnFailed, then the LLQ is in bad shape, so we switch to polling mode.
 			if (err != mStatus_ConnFailed)
 				{
