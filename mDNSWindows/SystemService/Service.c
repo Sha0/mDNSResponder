@@ -222,8 +222,6 @@ typedef DWORD ( WINAPI * GetIpInterfaceEntryFunctionPtr )( PMIB_IPINTERFACE_ROW 
 mDNSlocal HMODULE								gIPHelperLibraryInstance		= NULL;
 mDNSlocal GetIpInterfaceEntryFunctionPtr		gGetIpInterfaceEntryFunctionPtr	= NULL;
 
-mDNSBool StrictUnicastOrdering = mDNSfalse;
-
 
 #if 0
 #pragma mark -
@@ -1258,20 +1256,36 @@ static OSStatus	ServiceSpecificRun( int argc, LPTSTR argv[] )
 
 		while ( !gEventSourceListChanged )
 		{
-			mDNSs32 interval;
+			mDNSs32 nextTimerEvent;
 
 			// Give the mDNS core a chance to do its work and determine next event time.
-			
-			interval = mDNS_Execute( &gMDNSRecord ) - mDNS_TimeNow( &gMDNSRecord );
-			interval = udsserver_idle( interval );
 
-			if      (interval < 0)						interval = 0;
-			else if (interval > (0x7FFFFFFF / 1000))	interval = 0x7FFFFFFF / mDNSPlatformOneSecond;
-			else										interval = (interval * 1000) / mDNSPlatformOneSecond;
-			
+			nextTimerEvent = udsserver_idle( mDNS_Execute( &gMDNSRecord ) - mDNS_TimeNow( &gMDNSRecord ) );
+
+			if      ( nextTimerEvent < 0)					nextTimerEvent = 0;
+			else if ( nextTimerEvent > (0x7FFFFFFF / 1000))	nextTimerEvent = 0x7FFFFFFF / mDNSPlatformOneSecond;
+			else											nextTimerEvent = ( nextTimerEvent * 1000) / mDNSPlatformOneSecond;
+
+			if ( gMDNSRecord.ShutdownTime )
+			{
+				mDNSs32 now = mDNS_TimeNow( &gMDNSRecord );
+
+				if ( mDNS_ExitNow( &gMDNSRecord, now ) )
+				{
+					mDNS_FinalExit( &gMDNSRecord );
+					done = TRUE;
+					break;
+				}
+
+				if ( nextTimerEvent - gMDNSRecord.ShutdownTime >= 0 )
+				{
+					nextTimerEvent = gMDNSRecord.ShutdownTime;
+				}
+			}
+
 			// Wait until something occurs (e.g. cancel, incoming packet, or timeout).
 						
-			result = WaitForMultipleObjectsEx( ( DWORD ) waitListCount, waitList, FALSE, (DWORD) interval, TRUE );
+			result = WaitForMultipleObjectsEx( ( DWORD ) waitListCount, waitList, FALSE, (DWORD) nextTimerEvent, TRUE );
 			check( result != WAIT_FAILED );
 
 			if ( result != WAIT_FAILED )
@@ -1293,7 +1307,8 @@ static OSStatus	ServiceSpecificRun( int argc, LPTSTR argv[] )
 					// Stop event. Set the done flag and break to exit.
 					
 					dlog( kDebugLevelVerbose, DEBUG_NAME "stopping...\n" );
-					done = TRUE;
+					udsserver_exit();
+					mDNS_StartExit( &gMDNSRecord );
 					break;
 				}
 				else if( result == kWaitListInterfaceListChangedEvent )
@@ -1543,16 +1558,6 @@ static void	ServiceSpecificFinalize( int argc, LPTSTR argv[] )
 	{
 		UnregisterWaitableEvent( &gMDNSRecord, gEventSourceList->event );
 	}
-
-	//
-	// give a chance for the udsserver code to clean up
-	//
-	udsserver_exit();
-
-	//
-	// close down the mDNSCore
-	//
-	mDNS_Close(&gMDNSRecord);
 
 	//
 	// clean up the notifications
