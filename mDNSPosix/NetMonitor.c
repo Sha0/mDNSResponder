@@ -51,16 +51,10 @@
 #	define UDPSocket_struct _UDPSocket_struct
 #	include <mDNSEmbeddedAPI.h>
 #	include <mDNSWin32.h>
-#	include <uds_daemon.h>
 #	include <PosixCompat.h>
-#	include <Service.h>
 #	define IFNAMSIZ 256
-
-// Stub these functions out
-mDNSexport int udsserver_init(dnssd_sock_t skts[], mDNSu32 count) { return 0; }
-mDNSexport mDNSs32 udsserver_idle(mDNSs32 nextevent) { return 0; }
-mDNSexport void udsserver_handle_configchange(mDNS *const m) {}
-mDNSexport int udsserver_exit(void) { return 0; }
+static HANDLE gStopEvent = INVALID_HANDLE_VALUE;
+static BOOL WINAPI ConsoleControlHandler( DWORD inControlEvent ) { SetEvent( gStopEvent ); return TRUE; }
 void setlinebuf( FILE * fp ) {}
 #else
 #	include <netdb.h>			// For gethostbyname()
@@ -829,7 +823,14 @@ mDNSlocal mStatus mDNSNetMonitor(void)
 	gettimeofday(&tv_start, NULL);
 
 #if defined( WIN32 )
-	RunDirect( 0, NULL );
+	status = SetupInterfaceList(&mDNSStorage);
+	if (status) return(status);
+	gStopEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+	if (gStopEvent == INVALID_HANDLE_VALUE) return mStatus_UnknownErr;
+	if (!SetConsoleCtrlHandler(ConsoleControlHandler, TRUE)) return mStatus_UnknownErr;
+	while (WaitForSingleObjectEx(gStopEvent, INFINITE, TRUE) == WAIT_IO_COMPLETION);
+	if (!SetConsoleCtrlHandler(ConsoleControlHandler, FALSE)) return mStatus_UnknownErr;
+	CloseHandle(gStopEvent);
 #else
 	mDNSPosixListenForSignalInEventLoop(SIGINT);
 	mDNSPosixListenForSignalInEventLoop(SIGTERM);
@@ -910,7 +911,11 @@ mDNSexport int main(int argc, char **argv)
 	const char *progname = strrchr(argv[0], '/') ? strrchr(argv[0], '/') + 1 : argv[0];
 	int i;
 	mStatus status;
-	
+
+#if defined(WIN32)
+	HeapSetInformation(NULL, HeapEnableTerminationOnCorruption, NULL, 0);
+#endif
+
 	setlinebuf(stdout);				// Want to see lines as they appear, not block buffered
 
 	for (i=1; i<argc; i++)

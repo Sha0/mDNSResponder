@@ -222,10 +222,6 @@
 				>
 			</File>
 			<File
-				RelativePath="..\..\mDNSWindows\SystemService\Service.c"
-				>
-			</File>
-			<File
 				RelativePath="..\..\mDNSCore\uDNS.c"
 				>
 			</File>
