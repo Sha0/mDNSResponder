@@ -1965,8 +1965,6 @@ extern mStatus mDNS_StartNATOperation(mDNS *const m, NATTraversalInfo *traversal
 extern mStatus mDNS_StopNATOperation(mDNS *const m, NATTraversalInfo *traversal);
 extern mStatus mDNS_StopNATOperation_internal(mDNS *m, NATTraversalInfo *traversal);
 
-extern DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const name);
-
 // ***************************************************************************
 #if 0
 #pragma mark -

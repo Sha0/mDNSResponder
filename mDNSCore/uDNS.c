@@ -356,7 +356,7 @@ mDNSexport DomainAuthInfo *GetAuthInfoForName_internal(mDNS *m, const domainname
 	return(GetAuthInfoForName_direct(m, name));
 	}
 
-mDNSexport DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const name)
+mDNSlocal DomainAuthInfo *GetAuthInfoForName(mDNS *m, const domainname *const name)
 	{
 	DomainAuthInfo *d;
 	mDNS_Lock(m);

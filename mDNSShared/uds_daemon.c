@@ -1211,15 +1211,6 @@ mDNSlocal mStatus register_service_instance(request_state *request, const domain
 			}
 		}
 
-	// Special-case hack: We don't advertise SMB service in AutoTunnel domains, because AutoTunnel
-	// services have to support IPv6, and our SMB server does not
-	// <rdar://problem/5482322> BTMM: Don't advertise SMB with BTMM because it doesn't support IPv6
-	if (SameDomainName(&request->u.servicereg.type, (const domainname *) "\x4" "_smb" "\x4" "_tcp"))
-		{
-		DomainAuthInfo *AuthInfo = GetAuthInfoForName(&mDNSStorage, domain);
-		if (AuthInfo && AuthInfo->AutoTunnel) return(kDNSServiceErr_Unsupported);
-		}
-
 	instance_size = sizeof(*instance);
 	if (request->u.servicereg.txtlen > sizeof(RDataBody)) instance_size += (request->u.servicereg.txtlen - sizeof(RDataBody));
 	instance = mallocL("service_instance", instance_size);
