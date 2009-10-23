@@ -4542,7 +4542,7 @@ CheckFileShares( mDNS * const m )
 
 	// Only do this if we're not shutting down
 
-	require_action_quiet( !m->ShutdownTime, exit, err = kNoErr );
+	require_action_quiet( m->AdvertiseLocalAddresses && !m->ShutdownTime, exit, err = kNoErr );
 
 	err = RegCreateKey( HKEY_LOCAL_MACHINE, kServiceParametersNode L"\\Services\\SMB", &key );
 
