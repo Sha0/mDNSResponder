@@ -884,7 +884,7 @@ static void WINAPI ServiceMain( DWORD argc, LPTSTR argv[] )
 	
 	gServiceStatus.dwServiceType 				= SERVICE_WIN32_SHARE_PROCESS;
 	gServiceStatus.dwCurrentState 				= 0;
-	gServiceStatus.dwControlsAccepted 			= SERVICE_ACCEPT_STOP|SERVICE_ACCEPT_POWEREVENT;
+	gServiceStatus.dwControlsAccepted 			= SERVICE_ACCEPT_STOP|SERVICE_ACCEPT_SHUTDOWN|SERVICE_ACCEPT_POWEREVENT;
 	gServiceStatus.dwWin32ExitCode 				= NO_ERROR;
 	gServiceStatus.dwServiceSpecificExitCode 	= NO_ERROR;
 	gServiceStatus.dwCheckPoint 				= 0;
@@ -1048,7 +1048,8 @@ static DWORD WINAPI	ServiceControlHandler( DWORD inControl, DWORD inEventType, L
 	switch( inControl )
 	{
 		case SERVICE_CONTROL_STOP:
-			dlog( kDebugLevelInfo, DEBUG_NAME "ServiceControlHandler: SERVICE_CONTROL_STOP\n" );
+		case SERVICE_CONTROL_SHUTDOWN:
+			dlog( kDebugLevelInfo, DEBUG_NAME "ServiceControlHandler: SERVICE_CONTROL_STOP|SERVICE_CONTROL_SHUTDOWN\n" );
 			
 			ServiceStop();
 			setStatus = FALSE;
