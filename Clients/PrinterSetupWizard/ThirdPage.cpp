@@ -139,30 +139,25 @@ exit:
 	return;
 }
 
-CThirdPage::~CThirdPage()
+
+void
+CThirdPage::FreeManufacturers( Manufacturers & manufacturers )
 {
-	//
-	// clean up all the printer manufacturers
-	//
-	while (m_manufacturers.size())
+	for ( Manufacturers::iterator it = manufacturers.begin(); it != manufacturers.end(); it++ )
 	{
-		Manufacturers::iterator iter = m_manufacturers.begin();
-
-		while (iter->second->models.size())
+		for ( Models::iterator it2 = it->second->models.begin(); it2 != it->second->models.end(); it2++ )
 		{
-			Models::iterator it = iter->second->models.begin();
-
-			Model * model = *it;
-
-			delete model;
-
-			iter->second->models.erase(it);
+			delete *it2;
 		}
 
-		delete iter->second;
-
-		m_manufacturers.erase(iter);
+		delete it->second;
 	}
+}
+
+
+CThirdPage::~CThirdPage()
+{
+	FreeManufacturers( m_manufacturers );
 }
 
 // ----------------------------------------------------
@@ -993,6 +988,8 @@ OSStatus CThirdPage::MatchPrinter(Manufacturers & manufacturers, Printer * print
 				LoadGenericPrintDriverDefs( genericManufacturers );
 
 				SelectMatch( genericManufacturers, printer, service, genericManufacturer, genericModel );
+
+				FreeManufacturers( genericManufacturers );
 			}
 			else
 			{
@@ -1026,6 +1023,8 @@ OSStatus CThirdPage::MatchPrinter(Manufacturers & manufacturers, Printer * print
 			SelectMatch( genericManufacturers, printer, service, genericManufacturer, genericModel );
 			
 			text.LoadString(IDS_PRINTER_MATCH_GOOD);
+
+			FreeManufacturers( genericManufacturers );
 		}
 		else
 		{
@@ -1562,6 +1561,7 @@ void CThirdPage::OnBnClickedHaveDisk()
 
 exit:
 
+	FreeManufacturers( manufacturers );
 	return;
 }
 

@@ -124,6 +124,8 @@ private:
 	//
 	void				AutoScroll(CListCtrl & list, int nIndex);
 
+	void				FreeManufacturers( Manufacturers & manufacturers );
+
 	Manufacturers		m_manufacturers;
 
 	CListCtrl			m_manufacturerListCtrl;
