@@ -8449,12 +8449,11 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 		FORALL_CACHERECORDS(slot, cg, cr) if (!cr->resrec.InterfaceID) { mDNS_PurgeCacheResourceRecord(m, cr); count++; }
 		LogInfo("uDNS_SetupDNSConfig: %s available; purged %d unicast DNS records from cache",
 			m->DNSServers ? "DNS server became" : "No DNS servers", count);
+
+		// Force anything that needs to get zone data to get that information again
+		RestartRecordGetZoneData(m);
 		}
 
-	// If we no longer have any DNS servers, we need to force anything that needs to get zone data
-	// to get that information again (which will fail, since we have no more DNS servers)
-	if ((m->DNSServers == mDNSNULL) && (oldServers != mDNSNULL))	RestartRecordGetZoneData(m);
-	
 	// Did our FQDN change?
 	if (!SameDomainName(&fqdn, &m->FQDN))
 		{
