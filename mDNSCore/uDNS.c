@@ -2146,6 +2146,7 @@ mDNSlocal void FoundStaticHostname(mDNS *const m, DNSQuestion *question, const R
 				{
 				// if we're in the process of registering a dynamic hostname, delay SRV update so we don't have to reregister services if the dynamic name succeeds
 				m->NextSRVUpdate = NonZeroTime(m->timenow + 5 * mDNSPlatformOneSecond);
+				debugf("FoundStaticHostname: NextSRVUpdate in %d %d", m->NextSRVUpdate - m->timenow, m->timenow);
 				return;
 				}
 			h = h->next;
