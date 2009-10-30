@@ -2306,14 +2306,21 @@ mDNSexport void mDNS_SetPrimaryInterfaceInfo(mDNS *m, const mDNSAddr *v4addr, co
 
 		if (v4Changed || RouterChanged)
 			{
+			// If we have a non-zero IPv4 address, we should try immediately to see if we have a NAT gateway
+			// If we have no IPv4 address, we don't want to be in quite such a hurry to report failures to our clients
+			// <rdar://problem/6935929> Sleeping server sometimes briefly disappears over Back to My Mac after it wakes up
 			m->ExternalAddress      = zerov4Addr;
 			m->retryIntervalGetAddr = NATMAP_INIT_RETRY;
-			m->retryGetAddr         = m->timenow;
+			m->retryGetAddr         = m->timenow + (v4addr ? 0 : mDNSPlatformOneSecond * 5);
 			m->NextScheduledNATOp   = m->timenow;
 			m->LastNATMapResultCode = NATErr_None;
 #ifdef _LEGACY_NAT_TRAVERSAL_
 			LNT_ClearState(m);
 #endif // _LEGACY_NAT_TRAVERSAL_
+			LogInfo("mDNS_SetPrimaryInterfaceInfo:%s%s: retryGetAddr in %d %d",
+				v4Changed     ? " v4Changed"     : "",
+				RouterChanged ? " RouterChanged" : "",
+				m->retryGetAddr - m->timenow, m->timenow);
 			}
 
 		if (m->ReverseMap.ThisQInterval != -1) mDNS_StopQuery_internal(m, &m->ReverseMap);
@@ -3638,7 +3645,7 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 				for (rr = cg->members; rr; rr=rr->next)
 					if (SameNameRecordAnswersQuestion(&rr->resrec, q)) mDNS_PurgeCacheResourceRecord(m, rr);
 
-			if (!q->qDNSServer) debugf("uDNS_CheckCurrentQuestion no DNS server for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
+			if (!q->qDNSServer) LogInfo("uDNS_CheckCurrentQuestion no DNS server for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 			else LogMsg("uDNS_CheckCurrentQuestion DNS server %#a:%d for %##s is disabled", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qname.c);
 
 			MakeNegativeCacheRecord(m, &m->rec.r, &q->qname, q->qnamehash, q->qtype, q->qclass, 60, mDNSInterface_Any);
@@ -3697,6 +3704,8 @@ mDNSlocal void CheckNATMappings(mDNS *m)
 				else if (m->retryIntervalGetAddr < NATMAP_MAX_RETRY_INTERVAL / 2) m->retryIntervalGetAddr *= 2;
 				else                                                              m->retryIntervalGetAddr = NATMAP_MAX_RETRY_INTERVAL;
 				}
+			LogInfo("CheckNATMappings retryGetAddr sent address request err %d interval %d", err, m->retryIntervalGetAddr);
+
 			// Always update m->retryGetAddr, even if we fail to send the packet. Otherwise in cases where we can't send the packet
 			// (like when we have no active interfaces) we'll spin in an infinite loop repeatedly failing to send the packet
 			m->retryGetAddr = m->timenow + m->retryIntervalGetAddr;

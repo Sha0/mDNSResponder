@@ -3695,8 +3695,12 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 		// 4. Refresh NAT mappings
 		// We don't want to have to assume that all hardware can necessarily keep accurate
 		// track of passage of time while asleep, so on wake we refresh our NAT mappings
+		// We typically wake up with no interfaces active, so there's no need to rush to try to find our external address.
+		// When we get a DHCP address and mDNS_SetPrimaryInterfaceInfo is called, we'll then set m->retryGetAddr
+		// to immediately request our external address from the NAT gateway.
 		m->retryIntervalGetAddr = NATMAP_INIT_RETRY;
-		m->retryGetAddr         = m->timenow;
+		m->retryGetAddr         = m->timenow + mDNSPlatformOneSecond * 5;
+		LogInfo("mDNSCoreMachineSleep: retryGetAddr in %d %d", m->retryGetAddr - m->timenow, m->timenow);
 		RecreateNATMappings(m);
 		}
 
