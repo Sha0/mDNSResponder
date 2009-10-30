@@ -309,7 +309,7 @@ mDNSexport void mDNSASLLog(uuid_t *uuid, const char *subdomain, const char *resu
 	if (!asl_msg)	{ LogMsg("mDNSASLLog: asl_new failed"); return; }
 	if (uuid)
 		{
-		char		uuidStr[36];
+		char		uuidStr[37];
 		uuid_unparse(*uuid, uuidStr);
 		asl_set		(asl_msg, "com.apple.message.uuid", uuidStr);
 		}
