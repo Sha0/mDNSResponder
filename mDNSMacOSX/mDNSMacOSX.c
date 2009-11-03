@@ -2501,6 +2501,7 @@ mDNSlocal void AutoTunnelRecordCallback(mDNS *const m, AuthRecord *const rr, mSt
 			{
 			rr->namestorage.c[0] = 0;
 			m->NextSRVUpdate = NonZeroTime(m->timenow);
+			LogInfo("AutoTunnelRecordCallback: NextSRVUpdate in %d %d", m->NextSRVUpdate - m->timenow, m->timenow);
 			}
 		RegisterAutoTunnelRecords(m,info);
 		}
@@ -2529,6 +2530,8 @@ mDNSlocal void AutoTunnelNATCallback(mDNS *m, NATTraversalInfo *n)
 		n->Result, &n->ExternalAddress, mDNSVal16(n->IntPort), mDNSVal16(n->ExternalPort), m->hostlabel.c, info->domain.c);
 
 	m->NextSRVUpdate = NonZeroTime(m->timenow);
+	LogInfo("AutoTunnelNATCallback: NextSRVUpdate in %d %d", m->NextSRVUpdate - m->timenow, m->timenow);
+
 	DeregisterAutoTunnelRecords(m,info);
 	RegisterAutoTunnelRecords(m,info);
 	
@@ -3352,6 +3355,8 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 					mDNSInterfaceID interface = mDNSInterface_Any;
 					int disabled = 0;
 					
+					LogInfo("mDNSPlatformSetDNSConfig: config->resolver[%d] domain %s n_nameserver %d", i, r->domain, r->n_nameserver);
+
 					// On Tiger, dnsinfo entries for mDNS domains have port 5353, the mDNS port.  Ignore them.
 					// Note: Unlike the BSD Sockets APIs (where TCP and UDP port numbers are universally in network byte order)
 					// in Apple's "dnsinfo.h" API the port number is declared to be a "uint16_t in host byte order"
@@ -3591,7 +3596,6 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS *const m, mDNSAddr *v4, mDNSAddr *v6, mDNSAddr *r)
 	{
 	char				buf[256];
-	mStatus				err		= 0;
 	(void)m; // Unused
 
 	SCDynamicStoreRef store = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:mDNSPlatformGetPrimaryInterface"), NULL, NULL);
@@ -3669,7 +3673,7 @@ mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNS *const m, mDNSAddr *v4, 
 			}
 		CFRelease(store);
 		}
-	return err;
+	return mStatus_NoError;
 	}
 
 mDNSexport void mDNSPlatformDynDNSHostNameStatusChanged(const domainname *const dname, const mStatus status)
