@@ -5973,36 +5973,79 @@ mDNSlocal DNSServer *GetNextUnPenalizedServer(mDNS *m, DNSServer *prev)
 	}
 
 
+//Checks to see whether the newname is a better match for the name, given the best one we have
+//seen so far (given in bestcount).
+//Returns -1 if the newname is not a better match
+//Returns 0 if the newname is the same as the old match
+//Returns 1 if the newname is a better match
+mDNSlocal int BetterMatchForName(const domainname *name, int namecount, const domainname *newname, int newcount,
+	int bestcount)
+	{
+	// If the name contains fewer labels than the new server's domain or the new name
+	// contains fewer labels than the current best, then it can't possibly be a better match
+	if (namecount < newcount || newcount < bestcount) return -1;
+
+	// If there is no match, return -1 and the caller will skip this newname for
+	// selection
+	//
+	// If we find a match and the number of labels is the same as bestcount, then
+	// we return 0 so that the caller can do additional logic to pick one of
+	// the best based on some other factors e.g., penaltyTime
+	//
+	// If we find a match and the number of labels is more than bestcount, then we
+	// return 1 so that the caller can pick this over the old one.
+	//
+	// NOTE: newcount can either be equal or greater than bestcount beause of the
+	// check above.
+
+	if (SameDomainName(SkipLeadingLabels(name, namecount - newcount), newname))
+		return bestcount == newcount ? 0 : 1;
+	else
+		return -1;
+	}
+
 // Get the Best server that matches a name. If you find penalized servers, look for the one
 // that will come out of the penalty box soon
 mDNSlocal DNSServer *GetAnyBestServer(mDNS *m, const domainname *name)
 	{
 	DNSServer *curmatch = mDNSNULL;
-	int curmatchlen = -1, ncount = name ? CountLabels(name) : 0;
+	int bestmatchlen = -1, namecount = name ? CountLabels(name) : 0;
 	DNSServer *curr;
-	mDNSs32 penaltyTime;
+	mDNSs32 bestPenaltyTime;
+	int bettermatch;
 
-	curmatchlen = -1;
-	penaltyTime = DNSSERVER_PENALTY_TIME + 1;
+	bestmatchlen = -1;
+	bestPenaltyTime = DNSSERVER_PENALTY_TIME + 1;
 	for (curr = m->DNSServers; curr; curr = curr->next)
 		{
-		int scount = CountLabels(&curr->domain);
-		mDNSs32 stime = PenaltyTimeForServer(m, curr);
+		int currcount = CountLabels(&curr->domain);
+		mDNSs32 currPenaltyTime = PenaltyTimeForServer(m, curr);
 
 		LogInfo("GetAnyBestServer: Address %#a (Domain %##s), PenaltyTime(abs) %d, PenaltyTime(rel) %d",
-			&curr->addr, curr->domain.c, curr->penaltyTime, stime);
+			&curr->addr, curr->domain.c, curr->penaltyTime, currPenaltyTime);
+
 
 		// If there are multiple best servers for a given question, we will pick the first one
 		// if none of them are penalized. If some of them are penalized in that list, we pick
-		// the least penalized one. "scount >= curmatchlen" lets us walk through all best
-		// matches and "stime < penaltyTime" check lets us either pick the first best server
-		// in the list when there are no penalized servers and least one among them when there
-		// are some penalized servers
+		// the least penalized one. BetterMatchForName walks through all best matches and
+		// "currPenaltyTime < bestPenaltyTime" check lets us either pick the first best server
+		// in the list when there are no penalized servers and least one among them
+		// when there are some penalized servers
 
-		if (!(curr->flags & DNSServer_FlagDelete) && ncount >= scount && scount >= curmatchlen && stime < penaltyTime)
-			if (SameDomainName(SkipLeadingLabels(name, ncount - scount), &curr->domain))
-				{ curmatch = curr; curmatchlen = scount; penaltyTime = stime;}
+		if (!(curr->flags & DNSServer_FlagDelete))
+			{
+
+			bettermatch = BetterMatchForName(name, namecount, &curr->domain, currcount, bestmatchlen);
+
+			// If we found a better match (bettermatch == 1) then we don't need to
+			// compare penalty times. But if we found an equal match, then we compare
+			// the penalty times to pick a better match
+
+			if ((bettermatch == 1) || ((bettermatch == 0) && currPenaltyTime < bestPenaltyTime))
+				{ curmatch = curr; bestmatchlen = currcount; bestPenaltyTime = currPenaltyTime;}
+			}
 		}
+
 	return curmatch;
 	}
 
