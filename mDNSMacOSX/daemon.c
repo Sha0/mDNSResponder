@@ -1781,7 +1781,7 @@ mDNSlocal void INFOCallback(void)
 		{
 		for (s = mDNSStorage.DNSServers; s; s = s->next)
 			{
-			NetworkInterfaceInfoOSX *ifx = (NetworkInterfaceInfoOSX *)s->interface;
+			NetworkInterfaceInfoOSX *ifx = IfindexToInterfaceInfoOSX(&mDNSStorage, s->interface);
 			LogMsgNoIdent("DNS Server %##s %s%s%#a:%d %d %s",
 				s->domain.c, ifx ? ifx->ifinfo.ifname : "", ifx ? " " : "", &s->addr, mDNSVal16(s->port),
 				s->penaltyTime ? s->penaltyTime - mDNS_TimeNow(&mDNSStorage) : 0,
