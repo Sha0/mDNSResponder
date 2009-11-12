@@ -252,7 +252,13 @@ mDNSexport void PenalizeDNSServer(mDNS *const m, DNSQuestion *q, mDNSBool QueryF
 		}
 
 end:
-	q->qDNSServer = GetServerForName(m, &q->qname, q->qDNSServer);
+	q->qDNSServer = GetServerForName(m, &q->qname, q->qDNSServer, q->InterfaceID);
+
+	
+	// Whenever we change the DNS server, we change the message identifier also so that response
+	// from the old server is not accepted as a response from the new server but only messages
+	// from the new server are accepted as valid responses
+	if (q->qDNSServer != mDNSNULL && q->qDNSServer != orig)	q->TargetQID = mDNS_NewMessageID(m);
 
 	if ((q->qDNSServer != orig) && (QueryFail))
 		{
@@ -784,6 +790,7 @@ mDNSlocal void sendChallengeResponse(mDNS *const m, DNSQuestion *const q, const 
 	responsePtr = putLLQ(&m->omsg, responsePtr, q, llq);
 	if (responsePtr)
 		{
+
 		mStatus err = mDNSSendDNSMessage(m, &m->omsg, responsePtr, mDNSInterface_Any, q->LocalSocket, &q->servAddr, q->servPort, q->tcp ? q->tcp->sock : mDNSNULL, q->AuthInfo);
 		if (err)
 			{
@@ -861,7 +868,7 @@ mDNSlocal void recvSetupResponse(mDNS *const m, mDNSu8 rcode, DNSQuestion *const
 		}
 	}
 
-mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *const srcaddr, const mDNSIPPort srcport)
+mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *const srcaddr, const mDNSIPPort srcport, DNSQuestion **matchQuestion)
 	{
 	DNSQuestion pktQ, *q;
 	if (msg->h.numQuestions && getQuestion(msg, msg->data, end, 0, &pktQ))
@@ -885,6 +892,7 @@ mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *co
 					q->ThisQInterval = LLQ_POLL_INTERVAL + mDNSRandom(LLQ_POLL_INTERVAL/10);	// Retry LLQ setup in approx 15 minutes
 					q->LastQTime     = m->timenow;
 					SetNextQueryTime(m, q);
+					*matchQuestion = q;
 					return uDNS_LLQ_Entire;		// uDNS_LLQ_Entire means flush stale records; assume a large effective TTL
 					}
 				// Note: In LLQ Event packets, the msg->h.id does not match our q->TargetQID, because in that case the msg->h.id nonce is selected by the server
@@ -897,6 +905,7 @@ mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *co
 					if (ackEnd) mDNSSendDNSMessage(m, &m->omsg, ackEnd, mDNSInterface_Any, q->LocalSocket, srcaddr, srcport, mDNSNULL, mDNSNULL);
 					m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 					debugf("uDNS_LLQ_Events: q->state == LLQ_Established msg->h.id %d q->TargetQID %d", mDNSVal16(msg->h.id), mDNSVal16(q->TargetQID));
+					*matchQuestion = q;
 					return uDNS_LLQ_Events;
 					}
 				if (opt && mDNSSameOpaque16(msg->h.id, q->TargetQID))
@@ -915,6 +924,7 @@ mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *co
 							q->ntries = 0;
 							}
 						m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
+						*matchQuestion = q;
 						return uDNS_LLQ_Ignore;
 						}
 					if (q->state < LLQ_Established && mDNSSameAddress(srcaddr, &q->servAddr))
@@ -929,6 +939,7 @@ mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *co
 						// are still valid, so this packet should not cause us to do anything that messes with our cache.
 						// The ack+answers packet gives us the whole truth, so we should handle it by updating our cache
 						// to match the answers in the packet, and only the answers in the packet.
+						*matchQuestion = q;
 						return (oldstate == LLQ_SecondaryRequest ? uDNS_LLQ_Entire : uDNS_LLQ_Ignore);
 						}
 					}
@@ -936,6 +947,7 @@ mDNSexport uDNS_LLQType uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *co
 			}
 		m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 		}
+	*matchQuestion = mDNSNULL;
 	return uDNS_LLQ_Not;
 	}
 
@@ -1117,9 +1129,15 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			// If we're going to dispose this connection, do it FIRST, before calling client callback
 			// Note: Sleep code depends on us clearing *backpointer here -- it uses the clearing of rr->tcp and srs->tcp
 			// as the signal that the DNS deregistration operation with the server has completed, and the machine may now sleep
+			// If we clear the tcp pointer in the question, mDNSCoreReceiveResponse cannot find a matching question. Hence
+			// we store the minimal information i.e., the source port of the connection in the question itself.
+			
+			mDNSIPPort srcPort = zeroIPPort;
+
+			if (q && q->tcp) srcPort = q->tcp->SrcPort;
 			if (backpointer)
 				if (!q || !q->LongLived || m->SleepState)
-					{ *backpointer = mDNSNULL; DisposeTCPConn(tcpInfo); }
+					{ if (q && q->tcp) q->tcpSrcPort = q->tcp->SrcPort;*backpointer = mDNSNULL; DisposeTCPConn(tcpInfo); }
 			
 			if (rr && rr->resrec.RecordType == kDNSRecordTypeDeregistering)
 				{
@@ -1129,7 +1147,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 				mDNS_Unlock(m);
 				}
 			else
-				mDNSCoreReceive(m, reply, end, &Addr, Port, (sock->flags & kTCPSocketFlags_UseTLS) ? (mDNSAddr *)1 : mDNSNULL, zeroIPPort, 0);
+				mDNSCoreReceive(m, reply, end, &Addr, Port, (sock->flags & kTCPSocketFlags_UseTLS) ? (mDNSAddr *)1 : mDNSNULL, srcPort, 0);
 			// USE CAUTION HERE: Invoking mDNSCoreReceive may have caused the environment to change, including canceling this operation itself
 			
 			mDNSPlatformMemFree(reply);
@@ -1238,6 +1256,7 @@ mDNSlocal tcpInfo_t *MakeTCPConn(mDNS *const m, const DNSMessage *const msg, con
 	info->replylen   = 0;
 	info->nread      = 0;
 	info->numReplies = 0;
+	info->SrcPort = srcport;
 
 	if (msg)
 		{
@@ -1245,8 +1264,8 @@ mDNSlocal tcpInfo_t *MakeTCPConn(mDNS *const m, const DNSMessage *const msg, con
 		mDNSPlatformMemCopy(&info->request, msg, info->requestLen);
 		}
 
-	if (!info->sock) { LogMsg("SendServiceRegistration: unable to create TCP socket"); mDNSPlatformMemFree(info); return(mDNSNULL); }
-	err = mDNSPlatformTCPConnect(info->sock, Addr, Port, 0, tcpCallback, info);
+	if (!info->sock) { LogMsg("MakeTCPConn: unable to create TCP socket"); mDNSPlatformMemFree(info); return(mDNSNULL); }
+	err = mDNSPlatformTCPConnect(info->sock, Addr, Port, (question ? question->InterfaceID : mDNSNULL), tcpCallback, info);
 
 	// Probably suboptimal here.
 	// Instead of returning mDNSNULL here on failure, we should probably invoke the callback with an error code.
@@ -1256,7 +1275,7 @@ mDNSlocal tcpInfo_t *MakeTCPConn(mDNS *const m, const DNSMessage *const msg, con
 
 	// Don't need to log "connection failed" in customer builds -- it happens quite often during sleep, wake, configuration changes, etc.
 	if      (err == mStatus_ConnEstablished) { tcpCallback(info->sock, info, mDNStrue, mStatus_NoError); }
-	else if (err != mStatus_ConnPending    ) { LogInfo("MakeTCPConnection: connection failed"); DisposeTCPConn(info); return(mDNSNULL); }
+	else if (err != mStatus_ConnPending    ) { LogInfo("MakeTCPConn: connection failed"); DisposeTCPConn(info); return(mDNSNULL); }
 	return(info);
 	}
 
@@ -3648,7 +3667,7 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 			if (!q->qDNSServer) LogInfo("uDNS_CheckCurrentQuestion no DNS server for %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
 			else LogMsg("uDNS_CheckCurrentQuestion DNS server %#a:%d for %##s is disabled", &q->qDNSServer->addr, mDNSVal16(q->qDNSServer->port), q->qname.c);
 
-			MakeNegativeCacheRecord(m, &m->rec.r, &q->qname, q->qnamehash, q->qtype, q->qclass, 60, mDNSInterface_Any);
+			MakeNegativeCacheRecord(m, &m->rec.r, &q->qname, q->qnamehash, q->qtype, q->qclass, 60, mDNSInterface_Any, mDNSNULL);
 			// Inactivate this question until the next change of DNS servers (do this before AnswerCurrentQuestionWithResourceRecord)
 			q->ThisQInterval = 0;
 			q->unansweredQueries = 0;

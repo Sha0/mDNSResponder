@@ -458,6 +458,7 @@ typedef struct tcpInfo_t
 	AuthRecord       *rr;         // For record updates
 	mDNSAddr          Addr;
 	mDNSIPPort        Port;
+	mDNSIPPort        SrcPort;
 	DNSMessage       *reply;
 	mDNSu16           replylen;
 	unsigned long     nread;
@@ -757,15 +758,15 @@ typedef struct
 // On 64-bit, the pointers in a CacheRecord are bigger, and that creates 8 bytes more space for the name in a CacheGroup
 #if ENABLE_MULTI_PACKET_QUERY_SNOOPING
 	#if defined(_ILP64) || defined(__ILP64__) || defined(_LP64) || defined(__LP64__) || defined(_WIN64)
-	#define InlineCacheGroupNameSize 152
+	#define InlineCacheGroupNameSize 160
 	#else
-	#define InlineCacheGroupNameSize 144
+	#define InlineCacheGroupNameSize 148
 	#endif
 #else
 	#if defined(_ILP64) || defined(__ILP64__) || defined(_LP64) || defined(__LP64__) || defined(_WIN64)
-	#define InlineCacheGroupNameSize 136
+	#define InlineCacheGroupNameSize 144
 	#else
-	#define InlineCacheGroupNameSize 128
+	#define InlineCacheGroupNameSize 132
 	#endif
 #endif
 
@@ -970,6 +971,34 @@ struct NATTraversalInfo_struct
 	void                       *clientContext;
 	};
 
+enum
+	{
+	DNSServer_Untested = 0,
+	DNSServer_Passed   = 1,
+	DNSServer_Failed   = 2,
+	DNSServer_Disabled = 3
+	};
+
+enum
+	{
+	DNSServer_FlagDelete = 1,
+	DNSServer_FlagNew    = 2
+	};
+
+typedef struct DNSServer
+	{
+	struct DNSServer *next;
+	mDNSInterfaceID interface;	// For specialized uses; we can have DNS servers reachable over specific interfaces
+	mDNSAddr        addr;
+	mDNSIPPort      port;
+	mDNSOpaque16    testid;
+	mDNSu32         flags;		// Set when we're planning to delete this from the list
+	mDNSu32         teststate;	// Have we sent bug-detection query to this server?
+	mDNSs32         lasttest;	// Time we sent last bug-detection query to this server
+	domainname      domain;		// name->server matching for "split dns"
+	mDNSs32			penaltyTime; // amount of time this server is penalized			
+	} DNSServer;
+
 typedef struct							// Size is 36 bytes when compiling for 32-bit; 48 when compiling for 64-bit
 	{
 	mDNSu8           RecordType;		// See enum above
@@ -995,6 +1024,7 @@ typedef struct							// Size is 36 bytes when compiling for 32-bit; 48 when comp
 										// that are interface-specific (e.g. address records, especially linklocal addresses)
 	const domainname *name;
 	RData           *rdata;				// Pointer to storage for this rdata
+	DNSServer       *rDNSServer;		// Unicast DNS server authoritative for this entry;null for multicast
 	} ResourceRecord;
 
 // Unless otherwise noted, states may apply to either independent record registrations or service registrations
@@ -1183,34 +1213,6 @@ typedef struct HostnameInfo
 	mDNSRecordCallback *StatusCallback;       // callback to deliver success or error code to client layer
 	const void *StatusContext;                // Client Context
 	} HostnameInfo;
-
-enum
-	{
-	DNSServer_Untested = 0,
-	DNSServer_Passed   = 1,
-	DNSServer_Failed   = 2,
-	DNSServer_Disabled = 3
-	};
-
-enum
-	{
-	DNSServer_FlagDelete = 1,
-	DNSServer_FlagNew    = 2
-	};
-
-typedef struct DNSServer
-	{
-	struct DNSServer *next;
-	mDNSInterfaceID interface;	// For specialized uses; we can have DNS servers reachable over specific interfaces
-	mDNSAddr        addr;
-	mDNSIPPort      port;
-	mDNSOpaque16    testid;
-	mDNSu32         flags;		// Set when we're planning to delete this from the list
-	mDNSu32         teststate;	// Have we sent bug-detection query to this server?
-	mDNSs32         lasttest;	// Time we sent last bug-detection query to this server
-	domainname      domain;		// name->server matching for "split dns"
-	mDNSs32			penaltyTime; // amount of time this server is penalized			
-	} DNSServer;
 
 typedef struct ExtraResourceRecord_struct ExtraResourceRecord;
 struct ExtraResourceRecord_struct
@@ -1404,6 +1406,8 @@ struct DNSQuestion_struct
 	mDNSAddr              servAddr;			// Address and port learned from _dns-llq, _dns-llq-tls or _dns-query-tls SRV query
 	mDNSIPPort            servPort;
 	struct tcpInfo_t *tcp;
+	mDNSIPPort            tcpSrcPort;		// Local Port TCP packet received on;need this as tcp struct is disposed
+											// by tcpCallback before calling into mDNSCoreReceive
 	mDNSu8                NoAnswer;			// Set if we want to suppress answers until tunnel setup has completed
 
 	// LLQ-specific fields. These fields are only meaningful when LongLived flag is set
@@ -2052,7 +2056,7 @@ extern mStatus mDNS_AdvertiseDomains(mDNS *const m, AuthRecord *rr, mDNS_DomainT
 
 extern mDNSOpaque16 mDNS_NewMessageID(mDNS *const m);
 		
-extern DNSServer *GetServerForName(mDNS *m, const domainname *name, DNSServer *current);
+extern DNSServer *GetServerForName(mDNS *m, const domainname *name, DNSServer *current, mDNSInterfaceID InterfaceID);
 
 // ***************************************************************************
 #if 0
@@ -2492,7 +2496,8 @@ extern mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip);
 extern CacheRecord *CreateNewCacheEntry(mDNS *const m, const mDNSu32 slot, CacheGroup *cg);
 extern void GrantCacheExtensions(mDNS *const m, DNSQuestion *q, mDNSu32 lease);
 extern void MakeNegativeCacheRecord(mDNS *const m, CacheRecord *const cr,
-	const domainname *const name, const mDNSu32 namehash, const mDNSu16 rrtype, const mDNSu16 rrclass, mDNSu32 ttl_seconds, mDNSInterfaceID InterfaceID);
+	const domainname *const name, const mDNSu32 namehash, const mDNSu16 rrtype, const mDNSu16 rrclass, mDNSu32 ttl_seconds,
+	mDNSInterfaceID InterfaceID, DNSServer *dnsserver);
 extern void CompleteDeregistration(mDNS *const m, AuthRecord *rr);
 extern void FindSPSInCache(mDNS *const m, const DNSQuestion *const q, const CacheRecord *sps[3]);
 #define PrototypeSPSName(X) ((X)[0] >= 11 && (X)[3] == '-' && (X)[ 4] == '9' && (X)[ 5] == '9' && \
@@ -2558,10 +2563,10 @@ struct CompileTimeAssertionChecks_mDNS
 	// other overly-large structures instead of having a pointer to them, can inadvertently
 	// cause structure sizes (and therefore memory usage) to balloon unreasonably.
 	char sizecheck_RDataBody           [(sizeof(RDataBody)            ==   264) ? 1 : -1];
-	char sizecheck_ResourceRecord      [(sizeof(ResourceRecord)       <=    56) ? 1 : -1];
+	char sizecheck_ResourceRecord      [(sizeof(ResourceRecord)       <=    64) ? 1 : -1];
 	char sizecheck_AuthRecord          [(sizeof(AuthRecord)           <=  1000) ? 1 : -1];
-	char sizecheck_CacheRecord         [(sizeof(CacheRecord)          <=   176) ? 1 : -1];
-	char sizecheck_CacheGroup          [(sizeof(CacheGroup)           <=   176) ? 1 : -1];
+	char sizecheck_CacheRecord         [(sizeof(CacheRecord)          <=   184) ? 1 : -1];
+	char sizecheck_CacheGroup          [(sizeof(CacheGroup)           <=   184) ? 1 : -1];
 	char sizecheck_DNSQuestion         [(sizeof(DNSQuestion)          <=   728) ? 1 : -1];
 	char sizecheck_ZoneData            [(sizeof(ZoneData)             <=  1560) ? 1 : -1];
 	char sizecheck_NATTraversalInfo    [(sizeof(NATTraversalInfo)     <=   192) ? 1 : -1];

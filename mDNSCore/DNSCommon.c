@@ -1000,6 +1000,7 @@ mDNSexport void mDNS_SetupResourceRecord(AuthRecord *rr, RData *RDataStorage, mD
 	rr->resrec.rrtype            = rrtype;
 	rr->resrec.rrclass           = kDNSClass_IN;
 	rr->resrec.rroriginalttl     = ttl;
+	rr->resrec.rDNSServer		 = mDNSNULL;
 //	rr->resrec.rdlength          = MUST set by client and/or in mDNS_Register_internal
 //	rr->resrec.rdestimate        = set in mDNS_Register_internal
 //	rr->resrec.rdata             = MUST be set by client
@@ -1183,6 +1184,9 @@ mDNSexport mDNSBool SameNameRecordAnswersQuestion(const ResourceRecord *const rr
 		q ->InterfaceID && q->InterfaceID != mDNSInterface_LocalOnly &&
 		rr->InterfaceID != q->InterfaceID) return(mDNSfalse);
 
+	// Resource record received via unicast, the DNSServer entries should match ?
+	if (!rr->InterfaceID && rr->rDNSServer != q->qDNSServer) return (mDNSfalse);
+
 	// If ResourceRecord received via multicast, but question was unicast, then shouldn't use record to answer this question
 	if (rr->InterfaceID && !mDNSOpaque16IsZero(q->TargetQID)) return(mDNSfalse);
 
@@ -1198,6 +1202,9 @@ mDNSexport mDNSBool ResourceRecordAnswersQuestion(const ResourceRecord *const rr
 	if (rr->InterfaceID &&
 		q ->InterfaceID && q->InterfaceID != mDNSInterface_LocalOnly &&
 		rr->InterfaceID != q->InterfaceID) return(mDNSfalse);
+
+	// Resource record received via unicast, the DNSServer entries should match ?
+	if (!rr->InterfaceID && rr->rDNSServer != q->qDNSServer) return (mDNSfalse);
 
 	// If ResourceRecord received via multicast, but question was unicast, then shouldn't use record to answer this question
 	if (rr->InterfaceID && !mDNSOpaque16IsZero(q->TargetQID)) return(mDNSfalse);
@@ -1215,8 +1222,27 @@ mDNSexport mDNSBool AnyTypeRecordAnswersQuestion(const ResourceRecord *const rr,
 		q ->InterfaceID && q->InterfaceID != mDNSInterface_LocalOnly &&
 		rr->InterfaceID != q->InterfaceID) return(mDNSfalse);
 
+	// Resource record received via unicast, the DNSServer entries should match ?
+	// Note that Auth Records are normally setup with NULL InterfaceID and
+	// both the DNSServers are assumed to be NULL in that case
+	if (!rr->InterfaceID && rr->rDNSServer != q->qDNSServer) return (mDNSfalse);
+
 	// If ResourceRecord received via multicast, but question was unicast, then shouldn't use record to answer this question
 	if (rr->InterfaceID && !mDNSOpaque16IsZero(q->TargetQID)) return(mDNSfalse);
+
+	if (rr->rrclass != q->qclass && q->qclass != kDNSQClass_ANY) return(mDNSfalse);
+
+	return(rr->namehash == q->qnamehash && SameDomainName(rr->name, &q->qname));
+	}
+
+// This is called only when the caller knows that it is a Unicast Resource Record and it is a Unicast Question
+// and hence we don't need InterfaceID checks like above. Though this may not be a big optimization, the main
+// reason we need this is that we can't compare DNSServers between the question and the resource record because
+// the resource record may not be completely initialized e.g., mDNSCoreReceiveResponse
+mDNSexport mDNSBool UnicastResourceRecordAnswersQuestion(const ResourceRecord *const rr, const DNSQuestion *const q)
+	{
+	// RR type CNAME matches any query type. QTYPE ANY matches any RR type. QCLASS ANY matches any RR class.
+	if (!RRTypeAnswersQuestionType(rr,q->qtype)) return(mDNSfalse);
 
 	if (rr->rrclass != q->qclass && q->qclass != kDNSQClass_ANY) return(mDNSfalse);
 
@@ -1971,6 +1997,8 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 	rr->NextInCFList      = mDNSNULL;
 
 	rr->resrec.InterfaceID       = InterfaceID;
+	rr->resrec.rDNSServer = mDNSNULL;
+
 	ptr = getDomainName(msg, ptr, end, &largecr->namestorage);
 	if (!ptr) { debugf("GetLargeResourceRecord: Malformed RR name"); return(mDNSNULL); }
 

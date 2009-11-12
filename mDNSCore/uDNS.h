@@ -100,7 +100,7 @@ typedef enum
 	uDNS_LLQ_Events		// LLQ event packet: don't flush cache; assume TTL is 2 x LLQ refresh interval
 	} uDNS_LLQType;
 
-extern uDNS_LLQType    uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *const srcaddr, const mDNSIPPort srcport);
+extern uDNS_LLQType    uDNS_recvLLQResponse(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *const end, const mDNSAddr *const srcaddr, const mDNSIPPort srcport, DNSQuestion **matchQuestion);
 extern DomainAuthInfo *GetAuthInfoForName_internal(mDNS *m, const domainname *const name);
 extern DomainAuthInfo *GetAuthInfoForQuestion(mDNS *m, const DNSQuestion *const q);
 extern void DisposeTCPConn(struct tcpInfo_t *tcp);

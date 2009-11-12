@@ -2424,7 +2424,7 @@ mDNSexport void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheReco
 		if (q->qtype != kDNSType_NSEC && RRAssertsNonexistence(&rr->resrec, q->qtype))
 			{
 			CacheRecord neg;
-			MakeNegativeCacheRecord(m, &neg, &q->qname, q->qnamehash, q->qtype, q->qclass, 1, rr->resrec.InterfaceID);
+			MakeNegativeCacheRecord(m, &neg, &q->qname, q->qnamehash, q->qtype, q->qclass, 1, rr->resrec.InterfaceID, q->qDNSServer);
 			q->QuestionCallback(m, q, &neg.resrec, AddRecord);
 			}
 		else
@@ -2775,7 +2775,7 @@ mDNSlocal void AnswerNewQuestion(mDNS *const m)
 	if (q->NoAnswer == NoAnswer_Fail)
 		{
 		LogMsg("AnswerNewQuestion: NoAnswer_Fail %##s (%s)", q->qname.c, DNSTypeName(q->qtype));
-		MakeNegativeCacheRecord(m, &m->rec.r, &q->qname, q->qnamehash, q->qtype, q->qclass, 60, mDNSInterface_Any);
+		MakeNegativeCacheRecord(m, &m->rec.r, &q->qname, q->qnamehash, q->qtype, q->qclass, 60, mDNSInterface_Any, q->qDNSServer);
 		q->NoAnswer = NoAnswer_Normal;		// Temporarily turn off answer suppression
 		AnswerCurrentQuestionWithResourceRecord(m, &m->rec.r, QC_addnocache);
 		q->NoAnswer = NoAnswer_Fail;		// Restore NoAnswer state
@@ -4116,8 +4116,12 @@ mDNSlocal CacheRecord *FindIdenticalRecordInCache(const mDNS *const m, const Res
 	mDNSu32 slot = HashSlot(pktrr->name);
 	CacheGroup *cg = CacheGroupForRecord(m, slot, pktrr);
 	CacheRecord *rr;
+	mDNSBool match;
 	for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
-		if (pktrr->InterfaceID == rr->resrec.InterfaceID && IdenticalSameNameRecord(pktrr, &rr->resrec)) break;
+		{
+		match = !pktrr->InterfaceID ? pktrr->rDNSServer == rr->resrec.rDNSServer : pktrr->InterfaceID == rr->resrec.InterfaceID;
+		if (match && IdenticalSameNameRecord(pktrr, &rr->resrec)) break;
+		}
 	return(rr);
 	}
 
@@ -4687,52 +4691,70 @@ struct UDPSocket_struct
 	mDNSIPPort port; // MUST BE FIRST FIELD -- mDNSCoreReceive expects every UDPSocket_struct to begin with mDNSIPPort port
 	};
 
-mDNSlocal DNSQuestion *ExpectingUnicastResponseForQuestion(const mDNS *const m, const mDNSIPPort port, const mDNSOpaque16 id, const DNSQuestion *const question)
+mDNSlocal DNSQuestion *ExpectingUnicastResponseForQuestion(const mDNS *const m, const mDNSIPPort port, const mDNSOpaque16 id, const DNSQuestion *const question, mDNSBool tcp)
 	{
 	DNSQuestion *q;
 	for (q = m->Questions; q; q=q->next)
-		if (q->LocalSocket &&
-			mDNSSameIPPort  (q->LocalSocket->port, port)     &&
+		{
+		if (!tcp && !q->LocalSocket) continue;
+		if (mDNSSameIPPort(tcp ? q->tcpSrcPort : q->LocalSocket->port, port)     &&
 			mDNSSameOpaque16(q->TargetQID,         id)       &&
 			q->qtype                  == question->qtype     &&
 			q->qclass                 == question->qclass    &&
 			q->qnamehash              == question->qnamehash &&
 			SameDomainName(&q->qname, &question->qname))
 			return(q);
+		}
 	return(mDNSNULL);
 	}
 
-mDNSlocal mDNSBool ExpectingUnicastResponseForRecord(mDNS *const m,
-	const mDNSAddr *const srcaddr, const mDNSBool SrcLocal, const mDNSIPPort port, const mDNSOpaque16 id, const CacheRecord *const rr)
+mDNSlocal DNSQuestion *ExpectingUnicastResponseForRecord(mDNS *const m,
+	const mDNSAddr *const srcaddr, const mDNSBool SrcLocal, const mDNSIPPort port, const mDNSOpaque16 id, const CacheRecord *const rr, mDNSBool tcp)
 	{
 	DNSQuestion *q;
 	(void)id;
 	(void)srcaddr;
+
+	// Unicast records have zero as InterfaceID
+	if (rr->resrec.InterfaceID) return mDNSNULL;
+
 	for (q = m->Questions; q; q=q->next)
-		if (!q->DuplicateOf && ResourceRecordAnswersQuestion(&rr->resrec, q))
+		{
+		if (!q->DuplicateOf && UnicastResourceRecordAnswersQuestion(&rr->resrec, q))
 			{
 			if (!mDNSOpaque16IsZero(q->TargetQID))
 				{
 				debugf("ExpectingUnicastResponseForRecord msg->h.id %d q->TargetQID %d for %s", mDNSVal16(id), mDNSVal16(q->TargetQID), CRDisplayString(m, rr));
+
 				if (mDNSSameOpaque16(q->TargetQID, id))
 					{
-					if (q->LocalSocket && mDNSSameIPPort(q->LocalSocket->port, port)) return(mDNStrue);
+					mDNSIPPort srcp;
+					if (!tcp)
+						{
+						srcp = q->LocalSocket ? q->LocalSocket->port : zeroIPPort;
+						}
+					else
+						{
+						srcp = q->tcpSrcPort;
+						}
+					if (mDNSSameIPPort(srcp, port)) return(q);
+					
 				//	if (mDNSSameAddress(srcaddr, &q->Target))                   return(mDNStrue);
 				//	if (q->LongLived && mDNSSameAddress(srcaddr, &q->servAddr)) return(mDNStrue); Shouldn't need this now that we have LLQType checking
 				//	if (TrustedSource(m, srcaddr))                              return(mDNStrue);
 					LogInfo("WARNING: Ignoring suspect uDNS response for %##s (%s) [q->Target %#a:%d] from %#a:%d %s",
-						q->qname.c, DNSTypeName(q->qtype), &q->Target, mDNSVal16(q->LocalSocket ? q->LocalSocket->port : zeroIPPort),
-						srcaddr, mDNSVal16(port), CRDisplayString(m, rr));
-					return(mDNSfalse);
+						q->qname.c, DNSTypeName(q->qtype), &q->Target, mDNSVal16(srcp), srcaddr, mDNSVal16(port), CRDisplayString(m, rr));
+					return(mDNSNULL);
 					}
 				}
 			else
 				{
 				if (SrcLocal && q->ExpectUnicastResp && (mDNSu32)(m->timenow - q->ExpectUnicastResp) < (mDNSu32)(mDNSPlatformOneSecond*2))
-					return(mDNStrue);
+					return(q);
 				}
 			}
-	return(mDNSfalse);
+		}
+	return(mDNSNULL);
 	}
 
 // Certain data types need more space for in-memory storage than their in-packet rdlength would imply
@@ -4871,7 +4893,8 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	int i;
 	mDNSBool ResponseMCast    = dstaddr && mDNSAddrIsDNSMulticast(dstaddr);
 	mDNSBool ResponseSrcLocal = !srcaddr || AddressIsLocalSubnet(m, InterfaceID, srcaddr);
-	uDNS_LLQType LLQType      = uDNS_recvLLQResponse(m, response, end, srcaddr, srcport);
+	DNSQuestion *llqMatch = mDNSNULL;
+	uDNS_LLQType LLQType      = uDNS_recvLLQResponse(m, response, end, srcaddr, srcport, &llqMatch);
 
 	// "(CacheRecord*)1" is a special (non-zero) end-of-list marker
 	// We use this non-zero marker so that records in our CacheFlushRecords list will always have NextInCFList
@@ -4937,7 +4960,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 			{
 			DNSQuestion q, *qptr = mDNSNULL;
 			ptr = getQuestion(response, ptr, end, InterfaceID, &q);
-			if (ptr && (!dstaddr || (qptr = ExpectingUnicastResponseForQuestion(m, dstport, response->h.id, &q))))
+			if (ptr && (qptr = ExpectingUnicastResponseForQuestion(m, dstport, response->h.id, &q, !dstaddr)))
 				{
 				if (!failure)
 					{
@@ -4945,7 +4968,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					const mDNSu32 slot = HashSlot(&q.qname);
 					CacheGroup *cg = CacheGroupForName(m, slot, q.qnamehash, &q.qname);
 					for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
-						if (q.InterfaceID == rr->resrec.InterfaceID && SameNameRecordAnswersQuestion(&rr->resrec, &q))
+						if (SameNameRecordAnswersQuestion(&rr->resrec, qptr))
 							{
 							debugf("uDNS marking %p %##s (%s) %p %s", q.InterfaceID, q.qname.c, DNSTypeName(q.qtype),
 								rr->resrec.InterfaceID, CRDisplayString(m, rr));
@@ -4977,6 +5000,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 			}
 		}
 
+	DNSServer *uDNSServer = mDNSNULL;
 	for (i = 0; i < totalrecords && ptr && ptr < end; i++)
 		{
 		// All responses sent via LL multicast are acceptable for caching
@@ -5011,7 +5035,60 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 
 		// If response was not sent via LL multicast,
 		// then see if it answers a recent query of ours, which would also make it acceptable for caching.
-		if (!AcceptableResponse) AcceptableResponse = ExpectingUnicastResponseForRecord(m, srcaddr, ResponseSrcLocal, dstport, response->h.id, &m->rec.r);
+		if (!ResponseMCast)
+			{
+
+			if (LLQType)
+				{
+				// For Long Lived queries that are both sent over UDP and Private TCP, LLQType is set.
+				// Even though it is AcceptableResponse, we need a matching DNSServer pointer for the
+				// queries to get ADD/RMV events. To lookup the question, we can't use
+				// ExpectingUnicastResponseForRecord as the port numbers don't match. uDNS_recvLLQRespose
+				// has already matched the question using the 64 bit Id in the packet and we use that here.
+
+				if(llqMatch != mDNSNULL) m->rec.r.resrec.rDNSServer = uDNSServer = llqMatch->qDNSServer;	
+				}
+			else if (!AcceptableResponse || !dstaddr)
+				{
+
+				//
+				// For responses that come over TCP (Responses that can't fit within UDP) or TLS (Private queries
+				// that are not long lived e.g., AAAA lookup in a Private domain), it is indicated by !dstaddr.
+				// Even though it is AcceptableResponse, we still need a DNNServer pointer for the resource records that
+				// we create.
+
+				DNSQuestion *q = ExpectingUnicastResponseForRecord(m, srcaddr, ResponseSrcLocal, dstport, response->h.id, &m->rec.r, !dstaddr);
+
+				// Intialize the DNS server on the resource record which will now filter what questions we answer with
+				// this record.
+				//
+				// We could potentially lookup the DNS server based on the source address, but that may not work always
+				// and that's why ExpectingUnicastResponseForRecord does not try to verify whether the response came
+				// from the DNS server that queried. We follow the same logic here. If we can find a matching quetion based
+				// on the "id" and "source port", then this response answers the question and assume the response
+				// came from the same DNS server that we sent the query to.
+
+				if (q != mDNSNULL)
+					{
+					AcceptableResponse = mDNStrue;
+					if (!InterfaceID)
+						{
+						//LogInfo("mDNSCoreReceiveResponse: InterfaceID %p %##s (%s)", q->InterfaceID, q->qname.c, DNSTypeName(q->qtype));
+						m->rec.r.resrec.rDNSServer = uDNSServer = q->qDNSServer;
+						}
+					}
+				else
+					{
+					// If we can't find a matching question, we need to see whether we have seen records earlier that matched 
+					// the question. The code below does that. So, make this record unacceptable for now
+					if (!InterfaceID)
+						{
+						debugf("mDNSCoreReceiveResponse: Can't find question for record name %##s", m->rec.r.resrec.name->c);
+						AcceptableResponse = mDNSfalse;
+						}
+					}
+				}
+			}
 
 		// 1. Check that this packet resource record does not conflict with any of ours
 		if (mDNSOpaque16IsZero(response->h.id) && m->rec.r.resrec.rrtype != kDNSType_NSEC)
@@ -5115,8 +5192,19 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 			for (cr = CacheFlushRecords; cr != (CacheRecord*)1; cr = cr->NextInCFList)
 				{
 				domainname *target = GetRRDomainNameTarget(&cr->resrec);
+				// When we issue a query for A record, the response might contain both a CNAME and A records. Only the CNAME would
+				// match the question and we already created a cache entry in the previous pass of this loop. Now when we process
+				// the A record, it does not match the question because the record name here is the CNAME. Hence we try to
+				// match with the previous records to make it an AcceptableResponse. We have to be careful about setting the
+				// DNSServer value that we got in the previous pass. This can happen for other record types like SRV also.
+
 				if (target && cr->resrec.rdatahash == m->rec.r.resrec.namehash && SameDomainName(target, m->rec.r.resrec.name))
-					{ AcceptableResponse = mDNStrue; break; }
+					{
+					debugf("mDNSCoreReceiveResponse: Found a matching entry for %##s in the CacheFlushRecords", m->rec.r.resrec.name->c);
+					AcceptableResponse = mDNStrue;
+					m->rec.r.resrec.rDNSServer = uDNSServer;
+					break;
+					}
 				}
 			}
 
@@ -5133,8 +5221,9 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 			// 2a. Check if this packet resource record is already in our cache
 			for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
 				{
+				mDNSBool match = !InterfaceID ? m->rec.r.resrec.rDNSServer == rr->resrec.rDNSServer : rr->resrec.InterfaceID == InterfaceID;
 				// If we found this exact resource record, refresh its TTL
-				if (rr->resrec.InterfaceID == InterfaceID && IdenticalSameNameRecord(&m->rec.r.resrec, &rr->resrec))
+				if (match && IdenticalSameNameRecord(&m->rec.r.resrec, &rr->resrec))
 					{
 					if (m->rec.r.resrec.rdlength > InlineCacheRDSize)
 						verbosedebugf("Found record size %5d interface %p already in cache: %s",
@@ -5256,7 +5345,9 @@ exit:
 		// To avoid this, we need to ensure that the cache flushing operation will only act to
 		// *decrease* a record's remaining lifetime, never *increase* it.
 		for (r2 = cg ? cg->members : mDNSNULL; r2; r2=r2->next)
-			if (r1->resrec.InterfaceID == r2->resrec.InterfaceID &&
+			// For Unicast (null InterfaceID) the DNSservers should also match	
+			if ((r1->resrec.InterfaceID == r2->resrec.InterfaceID) &&
+				(r1->resrec.InterfaceID || (r1->resrec.rDNSServer == r2->resrec.rDNSServer)) &&
 				r1->resrec.rrtype      == r2->resrec.rrtype &&
 				r1->resrec.rrclass     == r2->resrec.rrclass)
 				{
@@ -5337,8 +5428,9 @@ exit:
 	for (i = 0; i < response->h.numQuestions && ptr && ptr < end; i++)
 		{
 		DNSQuestion q;
+		DNSQuestion *qptr = mDNSNULL;
 		ptr = getQuestion(response, ptr, end, InterfaceID, &q);
-		if (ptr && (!dstaddr || ExpectingUnicastResponseForQuestion(m, dstport, response->h.id, &q)))
+		if (ptr && (qptr = ExpectingUnicastResponseForQuestion(m, dstport, response->h.id, &q, !dstaddr)))
 			{
 			// When we're doing parallel unicast and multicast queries for dot-local names (for supporting Microsoft
 			// Active Directory sites) we don't want to waste memory making negative cache entries for all the unicast answers.
@@ -5358,7 +5450,7 @@ exit:
 				mDNSu32 slot = HashSlot(&q.qname);
 				CacheGroup *cg = CacheGroupForName(m, slot, q.qnamehash, &q.qname);
 				for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
-					if (SameNameRecordAnswersQuestion(&rr->resrec, &q))
+					if (SameNameRecordAnswersQuestion(&rr->resrec, qptr))
 						{
 						// 1. If we got a fresh answer to this query, then don't need to generate a negative entry
 						if (RRExpireTime(rr) - m->timenow > 0) break;
@@ -5439,7 +5531,7 @@ exit:
 					else while (1)
 						{
 						debugf("mDNSCoreReceiveResponse making negative cache entry TTL %d for %##s (%s)", negttl, name->c, DNSTypeName(q.qtype));
-						MakeNegativeCacheRecord(m, &m->rec.r, name, hash, q.qtype, q.qclass, negttl, mDNSInterface_Any);
+						MakeNegativeCacheRecord(m, &m->rec.r, name, hash, q.qtype, q.qclass, negttl, mDNSInterface_Any, qptr->qDNSServer);
 						CreateNewCacheEntry(m, slot, cg);
 						m->rec.r.resrec.RecordType = 0;		// Clear RecordType to show we're not still using it
 						if (!repeat) break;
@@ -5652,7 +5744,7 @@ mDNSlocal void mDNSCoreReceiveUpdateR(mDNS *const m, const DNSMessage *const msg
 	}
 
 mDNSexport void MakeNegativeCacheRecord(mDNS *const m, CacheRecord *const cr,
-	const domainname *const name, const mDNSu32 namehash, const mDNSu16 rrtype, const mDNSu16 rrclass, mDNSu32 ttl_seconds, mDNSInterfaceID InterfaceID)
+	const domainname *const name, const mDNSu32 namehash, const mDNSu16 rrtype, const mDNSu16 rrclass, mDNSu32 ttl_seconds, mDNSInterfaceID InterfaceID, DNSServer *dnsserver)
 	{
 	if (cr == &m->rec.r && m->rec.r.resrec.RecordType)
 		{
@@ -5665,6 +5757,7 @@ mDNSexport void MakeNegativeCacheRecord(mDNS *const m, CacheRecord *const cr,
 	// Create empty resource record
 	cr->resrec.RecordType    = kDNSRecordTypePacketNegative;
 	cr->resrec.InterfaceID   = InterfaceID;
+	cr->resrec.rDNSServer	 = dnsserver;
 	cr->resrec.name          = name;	// Will be updated to point to cg->name when we call CreateNewCacheEntry
 	cr->resrec.rrtype        = rrtype;
 	cr->resrec.rrclass       = rrclass;
@@ -5918,8 +6011,9 @@ mDNSinline mDNSs32 PenaltyTimeForServer(mDNS *m, DNSServer *server)
 	}
 
 // Return the next server to "prev" if it is a match and unpenalized
-mDNSlocal DNSServer *GetNextUnPenalizedServer(mDNS *m, DNSServer *prev)
+mDNSlocal DNSServer *GetNextUnPenalizedServer(mDNS *m, DNSServer *prev, mDNSInterfaceID InterfaceID)
 	{
+	(void)InterfaceID; //unused
 	int curmatchlen = -1;
 	DNSServer *curr = m->DNSServers;
 
@@ -5954,7 +6048,7 @@ mDNSlocal DNSServer *GetNextUnPenalizedServer(mDNS *m, DNSServer *prev)
 			}
 
 
-		LogInfo("GetNextUnPenalizedServer: Address %#a (Domain %##s), PenaltyTime(abs) %d, PenaltyTime(rel) %d",
+		debugf("GetNextUnPenalizedServer: Address %#a (Domain %##s), PenaltyTime(abs) %d, PenaltyTime(rel) %d",
 			&curr->addr, curr->domain.c, curr->penaltyTime, PenaltyTimeForServer(m,curr));
 
 		// Note the "==" in comparing scount and curmatchlen. When we picked a match
@@ -6006,8 +6100,9 @@ mDNSlocal int BetterMatchForName(const domainname *name, int namecount, const do
 
 // Get the Best server that matches a name. If you find penalized servers, look for the one
 // that will come out of the penalty box soon
-mDNSlocal DNSServer *GetAnyBestServer(mDNS *m, const domainname *name)
+mDNSlocal DNSServer *GetAnyBestServer(mDNS *m, const domainname *name, mDNSInterfaceID InterfaceID)
 	{
+	(void)InterfaceID; //unused
 	DNSServer *curmatch = mDNSNULL;
 	int bestmatchlen = -1, namecount = name ? CountLabels(name) : 0;
 	DNSServer *curr;
@@ -6021,7 +6116,7 @@ mDNSlocal DNSServer *GetAnyBestServer(mDNS *m, const domainname *name)
 		int currcount = CountLabels(&curr->domain);
 		mDNSs32 currPenaltyTime = PenaltyTimeForServer(m, curr);
 
-		LogInfo("GetAnyBestServer: Address %#a (Domain %##s), PenaltyTime(abs) %d, PenaltyTime(rel) %d",
+		debugf("GetAnyBestServer: Address %#a (Domain %##s), PenaltyTime(abs) %d, PenaltyTime(rel) %d",
 			&curr->addr, curr->domain.c, curr->penaltyTime, currPenaltyTime);
 
 
@@ -6050,18 +6145,18 @@ mDNSlocal DNSServer *GetAnyBestServer(mDNS *m, const domainname *name)
 	}
 
 // Look up a DNS Server, matching by name in split-dns configurations.
-mDNSexport DNSServer *GetServerForName(mDNS *m, const domainname *name, DNSServer *prev)
+mDNSexport DNSServer *GetServerForName(mDNS *m, const domainname *name, DNSServer *prev, mDNSInterfaceID InterfaceID)
     {
 	DNSServer *curmatch = mDNSNULL;
 
 	// prev is the previous DNS server used by some question
 	if (prev != mDNSNULL)
 		{
-		curmatch = GetNextUnPenalizedServer(m, prev);
+		curmatch = GetNextUnPenalizedServer(m, prev, InterfaceID);
 		if (curmatch != mDNSNULL) 
 			{
-			LogInfo("GetServerForName: Good DNS server %#a:%d (Penalty Time Left %d) found", &curmatch->addr,
-			    mDNSVal16(curmatch->port), (curmatch->penaltyTime ? (curmatch->penaltyTime - m->timenow) : 0));
+			LogInfo("GetServerForName: Good DNS server %#a:%d (Penalty Time Left %d) found for name %##s", &curmatch->addr,
+			    mDNSVal16(curmatch->port), (curmatch->penaltyTime ? (curmatch->penaltyTime - m->timenow) : 0), name);
 			return curmatch;
 			}
 		}
@@ -6079,13 +6174,13 @@ mDNSexport DNSServer *GetServerForName(mDNS *m, const domainname *name, DNSServe
 	// is TRUE. As penaltyTime is zero for all of them in that case, we automatically achieve that below.
 	// If StrictUnicastOrdering is FALSE, we want to pick the least penalized server in the list
 
-	curmatch = GetAnyBestServer(m, name);
+	curmatch = GetAnyBestServer(m, name, InterfaceID);
 
 	if (curmatch != mDNSNULL) 
-		LogInfo("GetServerForName: DNS server %#a:%d (Penalty Time Left %d) found", &curmatch->addr,
-		    mDNSVal16(curmatch->port), (curmatch->penaltyTime ? (curmatch->penaltyTime - m->timenow) : 0));
+		LogInfo("GetServerForName: DNS server %#a:%d (Penalty Time Left %d) found for name %##s", &curmatch->addr,
+		    mDNSVal16(curmatch->port), (curmatch->penaltyTime ? (curmatch->penaltyTime - m->timenow) : 0), name);
 	else
-		LogInfo("GetServerForName: no DNS server found");
+		LogInfo("GetServerForName: no DNS server found for name %##s", name);
 
 	return(curmatch);
 	}
@@ -6239,7 +6334,7 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 			// this routine with the question list data structures in an inconsistent state.
 			if (!mDNSOpaque16IsZero(question->TargetQID))
 				{
-				question->qDNSServer = GetServerForName(m, &question->qname, mDNSNULL);
+				question->qDNSServer = GetServerForName(m, &question->qname, mDNSNULL, question->InterfaceID);
 				ActivateUnicastQuery(m, question, mDNSfalse);
 
 				// If long-lived query, and we don't have our NAT mapping active, start it now
@@ -8430,6 +8525,27 @@ mDNSlocal void PurgeOrReconfirmCacheRecord(mDNS *const m, CacheRecord *cr, const
 	if (purge) mDNS_PurgeCacheResourceRecord(m, cr);
 	else mDNS_Reconfirm_internal(m, cr, kDefaultReconfirmTimeForNoAnswer);
 	}
+
+mDNSlocal void CacheRecordResetDNSServer(mDNS *const m, DNSQuestion *q, DNSServer *new)
+	{
+	const mDNSu32 slot = HashSlot(&q->qname);
+	CacheGroup *const cg = CacheGroupForName(m, slot, q->qnamehash, &q->qname);
+	CacheRecord *rp;
+
+	for (rp = cg ? cg->members : mDNSNULL; rp; rp = rp->next)
+		{
+		if (ResourceRecordAnswersQuestion(&rp->resrec, q))
+			{
+			// Though we set it to the new DNS server, the caller is *assumed* to do either a purge
+			// or reconfirm or send out questions to the "new" server to verify whether the cached
+			// RDATA is valid
+			LogInfo("CacheRecordResetDNSServer: resetting cache record %##s DNSServer address before:%#a, after:%#a", rp->resrec.name->c,
+				(rp->resrec.rDNSServer != mDNSNULL ?  &rp->resrec.rDNSServer->addr : mDNSNULL),
+				(new != mDNSNULL ?  &new->addr : mDNSNULL));
+			rp->resrec.rDNSServer = new;
+			}
+		}
+	}
 	
 mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 	{
@@ -8464,7 +8580,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 	for (q = m->Questions; q; q=q->next)
 		if (!mDNSOpaque16IsZero(q->TargetQID))
 			{
-			DNSServer *s = GetServerForName(m, &q->qname, mDNSNULL);
+			DNSServer *s = GetServerForName(m, &q->qname, mDNSNULL, q->InterfaceID);
 			DNSServer *t = q->qDNSServer;
 			if (t != s)
 				{
@@ -8473,8 +8589,36 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 					t, t ? &t->addr : mDNSNULL, mDNSVal16(t ? t->port : zeroIPPort), t ? t->domain.c : (mDNSu8*)"",
 					s, s ? &s->addr : mDNSNULL, mDNSVal16(s ? s->port : zeroIPPort), s ? s->domain.c : (mDNSu8*)"",
 					q->qname.c, DNSTypeName(q->qtype));
+
+				//
+				// When we change the DNSServer on the question, we need to make sure that the matching
+				// CacheRecords also are changed. Otherwise, we will never deliver events to this
+				// question when the resource record changes
+				//
+				// After we reset the DNSServer pointer here, three things could happen:
+				//
+				// 1) The query gets sent out and when the actual response comes back later it is possible
+				// that the response has the same RDATA, in which case we update our cache entry.
+				// If the response is different, then the entry will expire and a new entry gets added.
+				// For the latter case to generate a RMV followed by ADD events, we need to reset the DNS
+				// server here to match the question and the cache record.
+				//
+				// 2) We might purge the entry below and for us to be able to generate the RMV events for the
+				// questions, the DNSServer on the question should match the Cache Record
+				//
+				// 3) We might reconfirm the entry for which we send the query out which is the same as the
+				// first case above.
+				//
+				// Also, CRActiveQuestion should not be touched here as it will affect the delivery of RMV events.
+				// NOTE: s could be NULL. But that should be okay as the question ends up pointing to the same thing
+				// as the cache record
+
+				CacheRecordResetDNSServer(m, q, s);
 				q->qDNSServer = s;
 				q->unansweredQueries = 0;
+				// Setting the new message ID makes sure that we don't accept responses
+				// from the old DNS server anymore
+				q->TargetQID = mDNS_NewMessageID(m);
 				ActivateUnicastQuery(m, q, mDNStrue);
 				}
 			}
@@ -8482,9 +8626,35 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 	// Flush all records that match a new resolver
 	FORALL_CACHERECORDS(slot, cg, cr)
 		{
-		ptr = GetServerForName(m, cr->resrec.name, mDNSNULL);
-		if (ptr && (ptr->flags & DNSServer_FlagNew) && !cr->resrec.InterfaceID)
+		if (cr->resrec.InterfaceID) continue;
+
+		// Reconfirm happens only if there is an active question for the cache record.
+		// We already went through the questions above and affected the matching
+		// cache records. We will come across the same entries below. Can there be more
+		// cache records with an active question ? If we find them, we set them to the new
+		// server as we will be either purging or reconfirming soon
+		//
+		// The new DNS server entry may be a scoped entry which might be matched only with a
+		// non-NULL InterfaceID or may be an entry that can be matched without specifying
+		// an InterfaceID. It is possible that we might miss picking the new DNS server, but
+		// it is okay as we went through the questions already above and called GetServerForName
+		// with the right InterfaceID.
+		ptr = GetServerForName(m, cr->resrec.name, mDNSNULL, mDNSNULL);
+		if (ptr && (ptr->flags & DNSServer_FlagNew))
+			{
+			if (cr->CRActiveQuestion)
+				{
+				DNSQuestion *qptr = cr->CRActiveQuestion;
+				LogInfo("uDNS_SetupDNSConfig:-1-: Cache Record %##s with an active question %##s (%s)", cr->resrec.name, qptr->qname.c, DNSTypeName(qptr->qtype));
+				if (qptr->qDNSServer == mDNSNULL)
+					LogMsg("uDNS_SetupDNSConfig:-1-: Cache Record mismatch: Active question %##s (%s) question DNSServer Address NULL, New Server address %#a", qptr->qname.c, DNSTypeName(qptr->qtype), &ptr->addr);
+				else if (qptr->qDNSServer != ptr)
+					LogMsg("uDNS_SetupDNSConfig:-1-: Cache Record mismatch: Active question %##s (%s) question DNSServer Address %#a, New Server address %#a", qptr->qname.c, DNSTypeName(qptr->qtype), &qptr->qDNSServer->addr, &ptr->addr);
+				else
+					cr->resrec.rDNSServer = ptr;
+				}
 			PurgeOrReconfirmCacheRecord(m, cr, ptr, mDNSfalse);
+			}
 		}
 	
 	while (*p)
@@ -8495,10 +8665,51 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 			// We reconfirm any records that match, because in this world of split DNS, firewalls, etc.
 			// different DNS servers can give different answers to the same question.
 			ptr = *p;
-			ptr->flags &= ~DNSServer_FlagDelete;	// Clear del so GetServerForName will (temporarily) find this server again before it's finally deleted
 			FORALL_CACHERECORDS(slot, cg, cr)
-				if (!cr->resrec.InterfaceID && GetServerForName(m, cr->resrec.name, mDNSNULL) == ptr)
+				{
+				if (cr->resrec.InterfaceID) continue;
+				if (cr->resrec.rDNSServer == ptr)
+					{
+					// If we don't have an active question for this cache record, neither Purge can
+					// generate RMV events nor Reconfirm can send queries out. Just set the DNSServer
+					// pointer on the record NULL so that we don't point to freed memory (We might dereference
+					// DNSServer pointers from resource record for logging purposes).
+					//
+					// If there is an active question, point to its DNSServer as long as it does not point to the
+					// freed one. We already went through the questions above and made them point at either the
+					// new server or NULL if there is no server and also affected the cache entries that match
+					// this question. Hence, whenever we hit a resource record with a DNSServer that is just
+					// about to be deleted, we should never have an active question. The code below just tries to
+					// be careful logging messages if we ever hit this case.
+
+					if (cr->CRActiveQuestion)
+						{
+						DNSQuestion *qptr = cr->CRActiveQuestion;
+						if (qptr->qDNSServer == mDNSNULL)
+							LogMsg("uDNS_SetupDNSConfig:-2-: Cache Record match: Active question %##s (%s) with DNSServer Address NULL, Server to be deleted %#a", qptr->qname.c, DNSTypeName(qptr->qtype), &ptr->addr);
+						else
+							LogMsg("uDNS_SetupDNSConfig:-2-: Cache Record match: Active question %##s (%s) DNSServer Address %#a, Server to be deleted %#a", qptr->qname.c, DNSTypeName(qptr->qtype), &qptr->qDNSServer->addr, &ptr->addr);
+
+						if (qptr->qDNSServer == ptr)
+							{
+							qptr->qDNSServer = mDNSNULL;
+							cr->resrec.rDNSServer = mDNSNULL;
+							}
+						else
+							{
+							cr->resrec.rDNSServer = qptr->qDNSServer;
+							}
+						}
+					else
+						{
+						LogInfo("uDNS_SetupDNSConfig:-3-: Cache Record %##s has no Active question, Record's DNSServer Address %#a, Server to be deleted %#a", cr->resrec.name, &cr->resrec.rDNSServer->addr, &ptr->addr);
+
+						cr->resrec.rDNSServer = mDNSNULL;
+						}
+						
 					PurgeOrReconfirmCacheRecord(m, cr, ptr, mDNStrue);
+					}
+				}
 			*p = (*p)->next;
 			debugf("uDNS_SetupDNSConfig: Deleting server %p %#a:%d (%##s)", ptr, &ptr->addr, mDNSVal16(ptr->port), ptr->domain.c);
 			mDNSPlatformMemFree(ptr);
