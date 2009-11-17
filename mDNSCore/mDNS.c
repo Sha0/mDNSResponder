@@ -4909,6 +4909,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	int firstadditional = firstauthority  + response->h.numAuthorities;
 	int totalrecords    = firstadditional + response->h.numAdditionals;
 	const mDNSu8 *ptr   = response->data;
+	DNSServer *uDNSServer = mDNSNULL;
 
 	debugf("Received Response from %#-15a addressed to %#-15a on %p with "
 		"%2d Question%s %2d Answer%s %2d Authorit%s %2d Additional%s %d bytes LLQType %d",
@@ -5000,7 +5001,6 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 			}
 		}
 
-	DNSServer *uDNSServer = mDNSNULL;
 	for (i = 0; i < totalrecords && ptr && ptr < end; i++)
 		{
 		// All responses sent via LL multicast are acceptable for caching
@@ -6013,9 +6013,9 @@ mDNSinline mDNSs32 PenaltyTimeForServer(mDNS *m, DNSServer *server)
 // Return the next server to "prev" if it is a match and unpenalized
 mDNSlocal DNSServer *GetNextUnPenalizedServer(mDNS *m, DNSServer *prev, mDNSInterfaceID InterfaceID)
 	{
-	(void)InterfaceID; //unused
 	int curmatchlen = -1;
 	DNSServer *curr = m->DNSServers;
+	(void)InterfaceID; //unused
 
 	if (prev == mDNSNULL) return mDNSNULL;
 
@@ -6102,12 +6102,12 @@ mDNSlocal int BetterMatchForName(const domainname *name, int namecount, const do
 // that will come out of the penalty box soon
 mDNSlocal DNSServer *GetAnyBestServer(mDNS *m, const domainname *name, mDNSInterfaceID InterfaceID)
 	{
-	(void)InterfaceID; //unused
 	DNSServer *curmatch = mDNSNULL;
 	int bestmatchlen = -1, namecount = name ? CountLabels(name) : 0;
 	DNSServer *curr;
 	mDNSs32 bestPenaltyTime;
 	int bettermatch;
+	(void)InterfaceID; //unused
 
 	bestmatchlen = -1;
 	bestPenaltyTime = DNSSERVER_PENALTY_TIME + 1;

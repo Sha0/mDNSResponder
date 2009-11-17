@@ -1121,6 +1121,7 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			mDNSu8     *end   = (mDNSu8 *)tcpInfo->reply + tcpInfo->replylen;
 			mDNSAddr    Addr  = tcpInfo->Addr;
 			mDNSIPPort  Port  = tcpInfo->Port;
+			mDNSIPPort srcPort = zeroIPPort;
 			tcpInfo->numReplies++;
 			tcpInfo->reply    = mDNSNULL;	// Detach reply buffer from tcpInfo_t, to make sure client callback can't cause it to be disposed
 			tcpInfo->nread    = 0;
@@ -1132,7 +1133,6 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			// If we clear the tcp pointer in the question, mDNSCoreReceiveResponse cannot find a matching question. Hence
 			// we store the minimal information i.e., the source port of the connection in the question itself.
 			
-			mDNSIPPort srcPort = zeroIPPort;
 
 			if (q && q->tcp) srcPort = q->tcp->SrcPort;
 			if (backpointer)
