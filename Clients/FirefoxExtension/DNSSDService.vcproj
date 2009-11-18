@@ -2,7 +2,7 @@
 <VisualStudioProject
 	ProjectType="Visual C++"
 	Version="8.00"
-	Name="DNSSDService"
+	Name="FirefoxExtension"
 	ProjectGUID="{7826EA27-D4CC-4FAA-AD23-DF813823227B}"
 	>
 	<Platforms>
