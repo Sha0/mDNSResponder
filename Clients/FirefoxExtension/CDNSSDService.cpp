@@ -22,8 +22,6 @@
 #include <string>
 #include <stdio.h>
 
-static FILE * m_fp;
-
 
 NS_IMPL_ISUPPORTS2(CDNSSDService, IDNSSDService, nsIRunnable)
 
@@ -38,11 +36,6 @@ CDNSSDService::CDNSSDService()
 {
 	nsresult err;
 
-	//m_fp = fopen( "/Users/scott/scott.txt", "w+" );
-	m_fp = stderr;
-	fprintf( m_fp, "CDNSSDService::CDNSSDService( this = 0x%x )\n", this );
-	fflush( m_fp );
-	
 	if ( DNSServiceCreateConnection( &m_mainRef ) != kDNSServiceErr_NoError )
 	{
 		err = NS_ERROR_FAILURE;
@@ -86,9 +79,6 @@ CDNSSDService::CDNSSDService( DNSServiceRef ref, nsISupports * listener )
 
 CDNSSDService::~CDNSSDService()
 {
-	fprintf( m_fp, "in CDNSSDService::~CDNSSDService( this = 0x%x)\n", this );
-	fflush( m_fp );
-	
 	Cleanup();
 }
 
@@ -151,9 +141,6 @@ CDNSSDService::Browse(PRInt32 interfaceIndex, const nsAString & regtype, const n
 
 	*_retval = NULL;
 	
-	fprintf( m_fp, "in Browse( listener = 0x%x )\n", listener );
-	fflush( m_fp );
-	
 	if ( !m_mainRef )
 	{
 		err = NS_ERROR_NOT_AVAILABLE;
@@ -169,9 +156,6 @@ CDNSSDService::Browse(PRInt32 interfaceIndex, const nsAString & regtype, const n
 		service = NULL;
 	}
 	
-	fprintf( m_fp, "created new service\n" );
-	fflush( m_fp );
-
 	if ( service == NULL )
 	{
 		err = NS_ERROR_FAILURE;
@@ -182,8 +166,6 @@ CDNSSDService::Browse(PRInt32 interfaceIndex, const nsAString & regtype, const n
 	
 	if ( dnsErr != kDNSServiceErr_NoError )
 	{
-		fprintf( m_fp, "DNSServiceBrowse failed\n" );
-		fflush( m_fp );
 		err = NS_ERROR_FAILURE;
 		goto exit;
 	}
@@ -192,9 +174,6 @@ CDNSSDService::Browse(PRInt32 interfaceIndex, const nsAString & regtype, const n
 	service->AddRef();
 	*_retval = service;
 	err = NS_OK;
-	
-	fprintf( m_fp, "did DNSServiceBrowse\n" );
-	fflush( m_fp );
 	
 exit:
 
@@ -218,9 +197,6 @@ CDNSSDService::Resolve(PRInt32 interfaceIndex, const nsAString & name, const nsA
 
 	*_retval = NULL;
 	
-	fprintf( m_fp, "in Resolve( listener = 0x%x )\n", listener );
-	fflush( m_fp );
-
 	if ( !m_mainRef )
 	{
 		err = NS_ERROR_NOT_AVAILABLE;
@@ -254,9 +230,6 @@ CDNSSDService::Resolve(PRInt32 interfaceIndex, const nsAString & name, const nsA
 	service->AddRef();
 	*_retval = service;
 	err = NS_OK;
-	
-	fprintf( m_fp, "did DNSServiceResolve\n" );
-	fflush( m_fp );
 	
 exit:
 	
@@ -300,9 +273,6 @@ CDNSSDService::Run()
 	
 	NS_PRECONDITION( m_mainRef != NULL, "m_mainRef is NULL" );
 
-	fprintf( m_fp, "in CDNSSDService::Run()\n" );
-	fflush( m_fp );
-	
 	m_job = NULL;
 
 	if ( DNSServiceProcessResult( m_mainRef ) == kDNSServiceErr_NoError )
@@ -332,9 +302,6 @@ CDNSSDService::BrowseReply
 		)
 {
 	CDNSSDService * self = ( CDNSSDService* ) context;
-
-	fprintf( m_fp, "in browseReply: interfaceIndex = %d\n", interfaceIndex );
-	fflush( m_fp );
 
 	// This should never be NULL, but let's be defensive.
 	
@@ -369,9 +336,6 @@ CDNSSDService::ResolveReply
 {
 	CDNSSDService * self = ( CDNSSDService* ) context;
 	
-	fprintf( m_fp, "in CDNSSDService::ResolveReply()\n" );
-	fflush( m_fp );
-
 	// This should never be NULL, but let's be defensive.
 	
 	if ( self != NULL )
