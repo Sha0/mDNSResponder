@@ -784,7 +784,7 @@ mDNSlocal void *doSSLHandshake(void *ctx)
 	mStatus err = SSLHandshake(sock->tlsContext);
 	
 	KQueueLock(m);
-	LogInfo("doSSLHandshake %p: got lock", sock); // Log *after* we get the lock
+	debugf("doSSLHandshake %p: got lock", sock); // Log *after* we get the lock
 
 	if (sock->handshake == handshake_to_be_closed)
 		{
@@ -810,19 +810,19 @@ mDNSlocal void *doSSLHandshake(void *ctx)
 			sock->err = err ? mStatus_ConnFailed : 0;
 			sock->handshake = handshake_completed;
 			
-			LogInfo("doSSLHandshake: %p calling doTcpSocketCallback", sock);
+			debugf("doSSLHandshake: %p calling doTcpSocketCallback", sock);
 			doTcpSocketCallback(sock);
 			}
 		}
 	
-	LogInfo("SSLHandshake %p: dropping lock", sock);
+	debugf("SSLHandshake %p: dropping lock", sock);
 	KQueueUnlock(m, "doSSLHandshake");
 	return NULL;
 	}
 
 mDNSlocal mStatus spawnSSLHandshake(TCPSocket* sock)
 	{
-	LogInfo("spawnSSLHandshake %p: entry", sock);
+	debugf("spawnSSLHandshake %p: entry", sock);
 	if (sock->handshake != handshake_required) LogMsg("spawnSSLHandshake: handshake status not required: %d", sock->handshake);
 	sock->handshake = handshake_in_progress;
 	KQueueSet(sock->fd, EV_DELETE, EVFILT_READ, &sock->kqEntry);
@@ -838,7 +838,7 @@ mDNSlocal mStatus spawnSSLHandshake(TCPSocket* sock)
 		sock->err = err;
 		KQueueSet(sock->fd, EV_ADD, EVFILT_READ, &sock->kqEntry);
 		}
-	LogInfo("spawnSSLHandshake %p: done", sock);
+	debugf("spawnSSLHandshake %p: done", sock);
 	return err;
 	}
 
