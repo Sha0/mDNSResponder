@@ -1019,22 +1019,18 @@ mDNSexport mStatus mDNSPlatformTCPConnect(TCPSocket *sock, const mDNSAddr *dst, 
 		return mStatus_UnknownErr;
 		}
 
-		// We bind to the interface and all subsequent packets including the SYN will be sent out
-		// on this interface
+	// We bind to the interface and all subsequent packets including the SYN will be sent out
+	// on this interface
 #ifdef IP_BOUND_IF
-		NetworkInterfaceInfoOSX *info = mDNSNULL;
-		if (InterfaceID)
-			{
-			extern mDNS mDNSStorage;
-			info = IfindexToInterfaceInfoOSX(&mDNSStorage, InterfaceID);
-			if (info == NULL)
-				{
-				LogMsg("mDNSPlatformTCPConnect: Invalid interface index %p", InterfaceID);
-				return mStatus_BadParamErr;
-				}
-			}
-		if (info)
-			setsockopt(sock->fd, IPPROTO_IP, IP_BOUND_IF, &info->scope_id, sizeof(info->scope_id));
+	if (InterfaceID)
+		{
+		extern mDNS mDNSStorage;
+		NetworkInterfaceInfoOSX *info = IfindexToInterfaceInfoOSX(&mDNSStorage, InterfaceID);
+		if (info) setsockopt(sock->fd, IPPROTO_IP, IP_BOUND_IF, &info->scope_id, sizeof(info->scope_id));
+		else { LogMsg("mDNSPlatformTCPConnect: Invalid interface index %p", InterfaceID); return mStatus_BadParamErr; }
+		}
+#else
+	(void)InterfaceID; // Unused
 #endif
 	// initiate connection wth peer
 	if (connect(sock->fd, (struct sockaddr *)&saddr, sizeof(saddr)) < 0)
