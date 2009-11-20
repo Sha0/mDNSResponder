@@ -3247,6 +3247,163 @@ mDNSlocal int compare_dns_configs(const void *aa, const void *bb)
 	return (a->search_order < b->search_order) ? -1 : (a->search_order == b->search_order) ? 0 : 1;
 	}
 
+mDNSlocal void ConfigResolvers(mDNS *const m, dns_config_t *config, mDNSBool scope, mDNSBool setsearch, mDNSBool setservers)
+	{
+	int i;
+	domainname d;
+#if DNSINFO_VERSION >= 20091104
+	dns_resolver_t **resolver = scope ? config->scoped_resolver : config->resolver;
+	int nresolvers = scope ? config->n_scoped_resolver : config->n_resolver;
+#else
+	(void) scope; // unused
+	dns_resolver_t **resolver = config->resolver;
+	int nresolvers = config->n_resolver;
+#endif
+
+	// Currently we don't support search lists for scoped resolvers. The WAB support for this will be added later.
+	if (setsearch && !scope && nresolvers)
+		{
+		// Due to the vagaries of Apple's SystemConfiguration and dnsinfo.h APIs, if there are no search domains
+		// listed, then you're supposed to interpret the "domain" field as also being the search domain, but if
+		// there *are* search domains listed, then you're supposed to ignore the "domain" field completely and
+		// instead use the search domain list as the sole authority for what domains to search and in what order
+		// (and the domain from the "domain" field will also appear somewhere in that list).
+		// Also, all search domains get added to the search list for resolver[0], so the domains and/or
+		// search lists for other resolvers in the list need to be ignored.
+		//
+		// NOTE: Starting DNSINFO_VERSION 20091104, search list is present only in the first resolver (resolver 0).
+		// i.e., n_search for the first resolver is always non-zero. We don't guard it with #ifs for better readability
+
+		if (resolver[0]->n_search == 0)
+			{
+			LogInfo("ConfigResolvers: (%s) configuring zeroth domain as search list %s", scope ? "Scoped" : "Non-scoped", resolver[0]->domain);
+			mDNS_AddSearchDomain_CString(resolver[0]->domain);
+			}
+		else
+			{
+			for (i = 0; i < resolver[0]->n_search; i++)
+				{
+				LogInfo("ConfigResolvers: (%s) configuring search list %s", scope ? "Scoped" : "Non-scoped", resolver[0]->search[i]);
+				mDNS_AddSearchDomain_CString(resolver[0]->search[i]);
+				}
+			}
+		}
+
+	if (!setservers) return;
+
+	// For the "default" resolver ("resolver #1") the "domain" value is bogus and we need to ignore it.
+	// e.g. the default resolver's "domain" value might say "apple.com", which indicates that this resolver
+	// is only for names that fall under "apple.com", but that's not correct. Actually the default resolver is
+	// for all names not covered by a more specific resolver (i.e. its domain should be ".", the root domain).
+	//
+	// NOTE: Starting DNSINFO_VERSION 20091104, domain value of this first resolver (resolver 0) is always NULL.
+	// We don't guard it with #ifs for better readability
+	// 
+	if ((nresolvers != 0) && resolver[0]->domain)
+		resolver[0]->domain[0] = 0; // don't stop pointing at the memory, just change the first byte
+
+	qsort(resolver, nresolvers, sizeof(dns_resolver_t*), compare_dns_configs);
+				
+	for (i = 0; i < nresolvers; i++)
+		{	
+		int n;
+		dns_resolver_t *r = resolver[i];
+		mDNSInterfaceID interface = mDNSInterface_Any;
+		int disabled = 0;
+					
+		LogInfo("ConfigResolvers: %s resolver[%d] domain %s n_nameserver %d", scope ? "Scoped" : "", i, r->domain, r->n_nameserver);
+
+		// On Tiger, dnsinfo entries for mDNS domains have port 5353, the mDNS port.  Ignore them.
+		// Note: Unlike the BSD Sockets APIs (where TCP and UDP port numbers are universally in network byte order)
+		// in Apple's "dnsinfo.h" API the port number is declared to be a "uint16_t in host byte order"
+		// We also don't need to do any more work if there are no nameserver addresses
+		if (r->port == 5353 || r->n_nameserver == 0) continue;
+					
+		if (!r->domain || !*r->domain) d.c[0] = 0;
+		else if (!MakeDomainNameFromDNSNameString(&d, r->domain))
+			{ LogMsg("ConfigResolvers: config->resolver[%d] bad domain %s", i, r->domain); continue; }
+
+		// DNS server option parsing
+		if (r->options != NULL)
+			{
+			char *nextOption = r->options;
+			char *currentOption = NULL;
+			while ((currentOption = strsep(&nextOption, " ")) != NULL && currentOption[0] != 0)
+				{
+				// The option may be in the form of interface=xxx where xxx is an interface name.
+				if (strncmp(currentOption, kInterfaceSpecificOption, sizeof(kInterfaceSpecificOption) - 1) == 0)
+					{
+					NetworkInterfaceInfoOSX *ni;
+					char	ifname[IF_NAMESIZE+1];
+					mDNSu32	ifindex = 0;
+					// If something goes wrong finding the interface, create the server entry anyhow but mark it as disabled.
+					// This allows us to block these special queries from going out on the wire.
+					strlcpy(ifname, currentOption + sizeof(kInterfaceSpecificOption)-1, sizeof(ifname));
+					ifindex = if_nametoindex(ifname);
+					if (ifindex == 0) { disabled = 1; LogMsg("ConfigResolvers: RegisterSplitDNS interface specific - interface %s not found", ifname); continue; }
+					LogInfo("ConfigResolvers: interface specific entry: %s on %s (%d)", r->domain, ifname, ifindex);
+					// Find the interface. Can't use mDNSPlatformInterfaceIDFromInterfaceIndex
+					// because that will call mDNSMacOSXNetworkChanged if the interface doesn't exist
+					for (ni = m->p->InterfaceList; ni; ni = ni->next)
+						if (ni->ifinfo.InterfaceID && ni->scope_id == ifindex) break;
+					if (ni != NULL) interface = ni->ifinfo.InterfaceID;
+					if (interface == mDNSNULL)
+						{
+						disabled = 1;
+						LogMsg("ConfigResolvers: RegisterSplitDNS interface specific - index %d (%s) not found", ifindex, ifname);
+						continue;
+						}
+					}
+				}
+			}
+
+		// flags and if_index are defined only from this DNSINFO_VERSION onwards. Currently these
+		// fields are zero for non-scoped resolvers. For now, these fields have non-zero values only
+		// for scoped_resolvers.
+#if DNSINFO_VERSION >= 20091104
+		if (scope && (r->flags & DNS_RESOLVER_FLAGS_SCOPED) && (r->if_index != 0))
+			{
+			NetworkInterfaceInfoOSX *ni;
+			interface = mDNSNULL;
+			for (ni = m->p->InterfaceList; ni; ni = ni->next)
+				if (ni->ifinfo.InterfaceID && ni->scope_id == r->if_index) break;
+			if (ni != NULL) interface = ni->ifinfo.InterfaceID;
+			if (interface == mDNSNULL)
+				{
+				disabled = 1;
+				LogMsg("ConfigResolvers: interface specific index %d not found", r->if_index);
+				continue;
+				}
+			}
+#endif
+
+		for (n = 0; n < r->n_nameserver; n++)
+			if (r->nameserver[n]->sa_family == AF_INET || r->nameserver[n]->sa_family == AF_INET6)
+				{
+				mDNSAddr saddr;
+				// mDNSAddr saddr = { mDNSAddrType_IPv4, { { { 192, 168, 1, 1 } } } }; // for testing
+				if (SetupAddr(&saddr, r->nameserver[n])) LogMsg("RegisterSplitDNS: bad IP address");
+				else
+					{
+					DNSServer *s = mDNS_AddDNSServer(m, &d, interface, &saddr, r->port ? mDNSOpaque16fromIntVal(r->port) : UnicastDNSPort);
+					if (s)
+						{
+#if DNSINFO_VERSION >= 20091104
+						// By setting scoped, this DNSServer can only be picked if the right interfaceID
+						// is given in the question
+						if (scope && (r->flags & DNS_RESOLVER_FLAGS_SCOPED) && (interface == mDNSNULL))
+							LogMsg("ConfigResolvers: ERROR: scoped is set but InterfaceID %d is invalid for DNSServer %#a:%d", s->interface, &s->addr, mDNSVal16(s->port));
+						else
+							s->scoped = (scope && (r->flags & DNS_RESOLVER_FLAGS_SCOPED)) ? mDNStrue : mDNSfalse;
+#endif
+						if (disabled) s->teststate = DNSServer_Disabled;
+						LogInfo("ConfigResolvers: Dns server %#a:%d for domain %##s from slot %d,%d", &s->addr, mDNSVal16(s->port), d.c, i, n);
+						}
+					}
+				}
+		}
+	}
+
 mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDNSBool setsearch, domainname *const fqdn, DNameListElem **RegDomains, DNameListElem **BrowseDomains)
 	{
 	int i;
@@ -3321,18 +3478,6 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 		else
 			{
 			LogInfo("mDNSPlatformSetDNSConfig: config->n_resolver = %d", config->n_resolver);
-			if (setsearch && config->n_resolver)
-				{
-				// Due to the vagaries of Apple's SystemConfiguration and dnsinfo.h APIs, if there are no search domains
-				// listed, then you're supposed to interpret the "domain" field as also being the search domain, but if
-				// there *are* search domains listed, then you're supposed to ignore the "domain" field completely and
-				// instead use the search domain list as the sole authority for what domains to search and in what order
-				// (and the domain from the "domain" field will also appear somewhere in that list).
-				// Also, all search domains get added to the search list for resolver[0], so the domains and/or
-				// search lists for other resolvers in the list need to be ignored.
-				if (config->resolver[0]->n_search == 0) mDNS_AddSearchDomain_CString(config->resolver[0]->domain);
-				else for (i = 0; i < config->resolver[0]->n_search; i++) mDNS_AddSearchDomain_CString(config->resolver[0]->search[i]);
-				}
 
 #if APPLE_OSX_mDNSResponder
 				// Record the so-called "primary" domain, which we use as a hint to tell if the user is on a network set up
@@ -3352,86 +3497,10 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 					}
 #endif
 
-			if (setservers)
-				{
-				// For the "default" resolver ("resolver #1") the "domain" value is bogus and we need to ignore it.
-				// e.g. the default resolver's "domain" value might say "apple.com", which indicates that this resolver
-				// is only for names that fall under "apple.com", but that's not correct. Actually the default resolver is
-				// for all names not covered by a more specific resolver (i.e. its domain should be ".", the root domain).
-				if (config->n_resolver && config->resolver[0]->domain)
-					config->resolver[0]->domain[0] = 0; // don't stop pointing at the memory, just change the first byte
-				
-				qsort(config->resolver, config->n_resolver, sizeof(dns_resolver_t*), compare_dns_configs);
-				
-				for (i = 0; i < config->n_resolver; i++)
-					{
-					int n;
-					dns_resolver_t *r = config->resolver[i];
-					mDNSInterfaceID interface = mDNSInterface_Any;
-					int disabled = 0;
-					
-					LogInfo("mDNSPlatformSetDNSConfig: config->resolver[%d] domain %s n_nameserver %d", i, r->domain, r->n_nameserver);
-
-					// On Tiger, dnsinfo entries for mDNS domains have port 5353, the mDNS port.  Ignore them.
-					// Note: Unlike the BSD Sockets APIs (where TCP and UDP port numbers are universally in network byte order)
-					// in Apple's "dnsinfo.h" API the port number is declared to be a "uint16_t in host byte order"
-					// We also don't need to do any more work if there are no nameserver addresses
-					if (r->port == 5353 || r->n_nameserver == 0) continue;
-					
-					if (!r->domain || !*r->domain) d.c[0] = 0;
-					else if (!MakeDomainNameFromDNSNameString(&d, r->domain))
-						{ LogMsg("mDNSPlatformSetDNSConfig: config->resolver[%d] bad domain %s", i, r->domain); continue; }
-
-					// DNS server option parsing
-					if (r->options != NULL)
-						{
-						char *nextOption = r->options;
-						char *currentOption = NULL;
-						while ((currentOption = strsep(&nextOption, " ")) != NULL && currentOption[0] != 0)
-							{
-							// The option may be in the form of interface=xxx where xxx is an interface name.
-							if (strncmp(currentOption, kInterfaceSpecificOption, sizeof(kInterfaceSpecificOption) - 1) == 0)
-								{
-								NetworkInterfaceInfoOSX *ni;
-								char	ifname[IF_NAMESIZE+1];
-								mDNSu32	ifindex = 0;
-								// If something goes wrong finding the interface, create the server entry anyhow but mark it as disabled.
-								// This allows us to block these special queries from going out on the wire.
-								strlcpy(ifname, currentOption + sizeof(kInterfaceSpecificOption)-1, sizeof(ifname));
-								ifindex = if_nametoindex(ifname);
-								if (ifindex == 0) { disabled = 1; LogMsg("RegisterSplitDNS: interfaceSpecific - interface %s not found", ifname); continue; }
-								LogInfo("%s: Interface-specific entry: %s on %s (%d)", __FUNCTION__, r->domain, ifname, ifindex);
-								// Find the interface. Can't use mDNSPlatformInterfaceIDFromInterfaceIndex
-								// because that will call mDNSMacOSXNetworkChanged if the interface doesn't exist
-								for (ni = m->p->InterfaceList; ni; ni = ni->next)
-									if (ni->ifinfo.InterfaceID && ni->scope_id == ifindex) break;
-								if (ni != NULL) interface = ni->ifinfo.InterfaceID;
-								if (interface == mDNSNULL)
-									{ disabled = 1; LogMsg("RegisterSplitDNS: interfaceSpecific - index %d (%s) not found", ifindex, ifname); continue; }
-								}
-							}
-						}
-
-					for (n = 0; n < r->n_nameserver; n++)
-						if (r->nameserver[n]->sa_family == AF_INET || r->nameserver[n]->sa_family == AF_INET6)
-							{
-							mDNSAddr saddr;
-							// mDNSAddr saddr = { mDNSAddrType_IPv4, { { { 192, 168, 1, 1 } } } }; // for testing
-							if (SetupAddr(&saddr, r->nameserver[n])) LogMsg("RegisterSplitDNS: bad IP address");
-							else
-								{
-								DNSServer *s = mDNS_AddDNSServer(m, &d, interface, &saddr, r->port ? mDNSOpaque16fromIntVal(r->port) : UnicastDNSPort);
-								if (s)
-									{
-									if (disabled) s->teststate = DNSServer_Disabled;
-									LogInfo("Added dns server %#a:%d for domain %##s from slot %d,%d", &s->addr, mDNSVal16(s->port), d.c, i, n);
-									}
-								}
-							}
-						
-					}
-				}
-
+			ConfigResolvers(m, config, mDNSfalse, setsearch, setservers);
+#if DNSINFO_VERSION >= 20091104
+			ConfigResolvers(m, config, mDNStrue, setsearch, setservers);
+#endif
 			dns_configuration_free(config);
 			setservers = mDNSfalse;  // Done these now -- no need to fetch the same data from SCDynamicStore
 			setsearch  = mDNSfalse;

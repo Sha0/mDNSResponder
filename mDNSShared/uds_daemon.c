@@ -3302,7 +3302,11 @@ mDNSexport void udsserver_info(mDNS *const m)
 			for (cr = cg->members; cr; cr=cr->next)
 				{
 				mDNSs32 remain = cr->resrec.rroriginalttl - (now - cr->TimeRcvd) / mDNSPlatformOneSecond;
-				char *ifname = InterfaceNameForID(m, cr->resrec.InterfaceID);
+				char *ifname;
+				mDNSInterfaceID InterfaceID = cr->resrec.InterfaceID;
+				if (!InterfaceID && cr->resrec.rDNSServer)
+					InterfaceID = cr->resrec.rDNSServer->interface;
+				ifname = InterfaceNameForID(m, InterfaceID);
 				CacheUsed++;
 				if (cr->CRActiveQuestion) CacheActive++;
 				LogMsgNoIdent("%3d %s%8ld %-7s%s %-6s%s",
@@ -3639,7 +3643,7 @@ struct CompileTimeAssertionChecks_uds_daemon
 	char sizecheck_request_state          [(sizeof(request_state)           <= 2000) ? 1 : -1];
 	char sizecheck_registered_record_entry[(sizeof(registered_record_entry) <=   40) ? 1 : -1];
 	char sizecheck_service_instance       [(sizeof(service_instance)        <= 6552) ? 1 : -1];
-	char sizecheck_browser_t              [(sizeof(browser_t)               <=  992) ? 1 : -1];
+	char sizecheck_browser_t              [(sizeof(browser_t)               <=  1000) ? 1 : -1];
 	char sizecheck_reply_hdr              [(sizeof(reply_hdr)               <=   12) ? 1 : -1];
 	char sizecheck_reply_state            [(sizeof(reply_state)             <=   64) ? 1 : -1];
 	};

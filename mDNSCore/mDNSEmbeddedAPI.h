@@ -997,6 +997,8 @@ typedef struct DNSServer
 	mDNSs32         lasttest;	// Time we sent last bug-detection query to this server
 	domainname      domain;		// name->server matching for "split dns"
 	mDNSs32			penaltyTime; // amount of time this server is penalized			
+	mDNSBool		scoped;		// interface should be matched against question only
+								// if scoped is set
 	} DNSServer;
 
 typedef struct							// Size is 36 bytes when compiling for 32-bit; 48 when compiling for 64-bit
@@ -1399,6 +1401,7 @@ struct DNSQuestion_struct
 
 	// Wide Area fields. These are used internally by the uDNS core
 	UDPSocket            *LocalSocket;
+	mDNSBool             deliverAddEvents;  // Change in DNSSserver requiring to deliver ADD events
 	DNSServer            *qDNSServer;		// Caching server for this query (in the absence of an SRV saying otherwise)
 	mDNSu8                unansweredQueries;// The number of unanswered queries to this server
 
@@ -2508,6 +2511,7 @@ extern void FindSPSInCache(mDNS *const m, const DNSQuestion *const q, const Cach
 	((X)[1]-'0') * 100000 + ((X)[2]-'0') * 10000 + ((X)[4]-'0') * 1000 + ((X)[5]-'0') * 100 + ((X)[7]-'0') * 10 + ((X)[8]-'0'))
 extern void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheRecord *const rr, const QC_result AddRecord);
 extern char *InterfaceNameForID(mDNS *const m, const mDNSInterfaceID InterfaceID);
+extern void DNSServerChangeForQuestion(mDNS *const m, DNSQuestion *q, DNSServer *new);
 
 // For now this AutoTunnel stuff is specific to Mac OS X.
 // In the future, if there's demand, we may see if we can abstract it out cleanly into the platform layer
@@ -2567,15 +2571,15 @@ struct CompileTimeAssertionChecks_mDNS
 	char sizecheck_AuthRecord          [(sizeof(AuthRecord)           <=  1000) ? 1 : -1];
 	char sizecheck_CacheRecord         [(sizeof(CacheRecord)          <=   184) ? 1 : -1];
 	char sizecheck_CacheGroup          [(sizeof(CacheGroup)           <=   184) ? 1 : -1];
-	char sizecheck_DNSQuestion         [(sizeof(DNSQuestion)          <=   728) ? 1 : -1];
-	char sizecheck_ZoneData            [(sizeof(ZoneData)             <=  1560) ? 1 : -1];
+	char sizecheck_DNSQuestion         [(sizeof(DNSQuestion)          <=   736) ? 1 : -1];
+	char sizecheck_ZoneData            [(sizeof(ZoneData)             <=  1568) ? 1 : -1];
 	char sizecheck_NATTraversalInfo    [(sizeof(NATTraversalInfo)     <=   192) ? 1 : -1];
 	char sizecheck_HostnameInfo        [(sizeof(HostnameInfo)         <=  2800) ? 1 : -1];
-	char sizecheck_DNSServer           [(sizeof(DNSServer)            <=   312) ? 1 : -1];
-	char sizecheck_NetworkInterfaceInfo[(sizeof(NetworkInterfaceInfo) <=  5968) ? 1 : -1];
+	char sizecheck_DNSServer           [(sizeof(DNSServer)            <=   320) ? 1 : -1];
+	char sizecheck_NetworkInterfaceInfo[(sizeof(NetworkInterfaceInfo) <=  6000) ? 1 : -1];
 	char sizecheck_ServiceRecordSet    [(sizeof(ServiceRecordSet)     <=  5500) ? 1 : -1];
 	char sizecheck_DomainAuthInfo      [(sizeof(DomainAuthInfo)       <=  5500) ? 1 : -1];
-	char sizecheck_ServiceInfoQuery    [(sizeof(ServiceInfoQuery)     <=  2944) ? 1 : -1];
+	char sizecheck_ServiceInfoQuery    [(sizeof(ServiceInfoQuery)     <=  2976) ? 1 : -1];
 #if APPLE_OSX_mDNSResponder
 	char sizecheck_ClientTunnel        [(sizeof(ClientTunnel)         <=  1072) ? 1 : -1];
 #endif

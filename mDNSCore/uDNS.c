@@ -190,6 +190,7 @@ mDNSexport DNSServer *mDNS_AddDNSServer(mDNS *const m, const domainname *d, cons
 			}
 		}
 	(*p)->penaltyTime = 0;
+	(*p)->scoped = mDNSfalse;
 	return(*p);
 	}
 
@@ -197,9 +198,9 @@ mDNSexport DNSServer *mDNS_AddDNSServer(mDNS *const m, const domainname *d, cons
 // DNS server exceeds MAX_UCAST_UNANSWERED_QUERIES or when we receive an
 // error e.g., SERV_FAIL from DNS server. QueryFail is TRUE if this function
 // is called when we exceed MAX_UCAST_UNANSWERED_QUERIES
-
 mDNSexport void PenalizeDNSServer(mDNS *const m, DNSQuestion *q, mDNSBool QueryFail)
 	{
+	DNSServer *new;
 	DNSServer *orig = q->qDNSServer;
 	
 	if (m->mDNS_busy != m->mDNS_reentrancy+1)
@@ -252,13 +253,11 @@ mDNSexport void PenalizeDNSServer(mDNS *const m, DNSQuestion *q, mDNSBool QueryF
 		}
 
 end:
-	q->qDNSServer = GetServerForName(m, &q->qname, q->qDNSServer, q->InterfaceID);
+	new = GetServerForName(m, &q->qname, q->qDNSServer, q->InterfaceID);
 
 	
-	// Whenever we change the DNS server, we change the message identifier also so that response
-	// from the old server is not accepted as a response from the new server but only messages
-	// from the new server are accepted as valid responses
-	if (q->qDNSServer != mDNSNULL && q->qDNSServer != orig)	q->TargetQID = mDNS_NewMessageID(m);
+	// The new DNSServer is set in DNSServerChangeForQuestion
+	if (new != orig) DNSServerChangeForQuestion(m, q, new);
 
 	if ((q->qDNSServer != orig) && (QueryFail))
 		{
@@ -4225,5 +4224,5 @@ struct CompileTimeAssertionChecks_uDNS
 	// other overly-large structures instead of having a pointer to them, can inadvertently
 	// cause structure sizes (and therefore memory usage) to balloon unreasonably.
 	char sizecheck_tcpInfo_t     [(sizeof(tcpInfo_t)      <=  9056) ? 1 : -1];
-	char sizecheck_SearchListElem[(sizeof(SearchListElem) <=  3920) ? 1 : -1];
+	char sizecheck_SearchListElem[(sizeof(SearchListElem) <=  3960) ? 1 : -1];
 	};

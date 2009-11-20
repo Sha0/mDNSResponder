@@ -2468,6 +2468,63 @@ mDNSexport void AnswerCurrentQuestionWithResourceRecord(mDNS *const m, CacheReco
 		}
 	}
 
+// New Questions are answered through AnswerNewQuestions. But there may not have been any
+// matching cache records for the questions when it is called. There are two possibilities.
+//
+// 1) There are no cache records
+// 2) There are cache records but the DNSServers between question and cache record don't match.
+//
+// In the case of (1), where there are no cache records and later we add them when we get a response,
+// CacheRecordAdd/CacheRecordDeferredAdd will take care of adding the cache and delivering the ADD
+// events to the application. If we already have a cache entry, then no ADD events are delivered
+// unless the RDATA has changed
+//
+// In the case of (2) where we had the cache records and did not answer because of the DNSServer mismatch,
+// we need to answer them whenever we change the DNSServer.  But we can't do it at the instant the DNSServer
+// changes because when we do the callback, the question can get deleted and the calling function would not
+// know how to handle it. So, we run this function from mDNS_Execute to handle DNSServer changes on the
+// question
+
+mDNSlocal void AnswerQuestionsForDNSServerChanges(mDNS *const m)
+	{
+	DNSQuestion *q;
+	DNSQuestion *qnext;
+	CacheRecord *rr;
+	mDNSu32 slot;
+	CacheGroup *cg;
+
+	if (m->CurrentQuestion)
+		LogMsg("AnswerQuestionsForDNSServerChanges: ERROR m->CurrentQuestion already set: %##s (%s)",
+				m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
+
+	for (q = m->Questions; q && q != m->NewQuestions; q = qnext)
+		{
+		qnext = q->next;
+
+		// multicast or DNSServers did not change.
+		if (mDNSOpaque16IsZero(q->TargetQID)) continue;
+		if (!q->deliverAddEvents) continue;
+
+		// We are going to look through the cache for this question since it changed
+		// its DNSserver last time. Reset it so that we don't call them again. Calling
+		// them again will deliver duplicate events to the application
+		q->deliverAddEvents = mDNSfalse;
+		m->CurrentQuestion = q;
+		slot = HashSlot(&q->qname);
+		cg = CacheGroupForName(m, slot, q->qnamehash, &q->qname);
+		for (rr = cg ? cg->members : mDNSNULL; rr; rr=rr->next)
+			{
+			if (SameNameRecordAnswersQuestion(&rr->resrec, q))
+				{
+				LogInfo("AnswerQuestionsForDNSServerChanges: Calling AnswerCurrentQuestionWithResourceRecord for question %##s using resource record %s", q->qname.c, CRDisplayString(m, rr));
+				AnswerCurrentQuestionWithResourceRecord(m, rr, QC_add);
+				if (m->CurrentQuestion != q) break;		// If callback deleted q, then we're finished here
+				}
+			}
+		}
+		m->CurrentQuestion = mDNSNULL;
+	}
+
 mDNSlocal void CacheRecordDeferredAdd(mDNS *const m, CacheRecord *rr)
 	{
 	rr->DelayDelivery = 0;		// Note, only need to call SetNextCacheCheckTime() when DelayDelivery is set, not when it's cleared
@@ -2710,6 +2767,10 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m, CacheGroup *const cg)
 				m->timenow - rr->TimeRcvd, rr->resrec.rroriginalttl, rr->CRActiveQuestion, CRDisplayString(m, rr));
 			if (rr->CRActiveQuestion)	// If this record has one or more active questions, tell them it's going away
 				{
+				DNSQuestion *q = rr->CRActiveQuestion;
+				q->ThisQInterval = InitialQuestionInterval;
+				q->LastQTime     = m->timenow - q->ThisQInterval;
+				SetNextQueryTime(m, q);
 				CacheRecordRmv(m, rr);
 				m->rrcache_active--;
 				}
@@ -3094,11 +3155,12 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 		{
 		int i;
 
+		verbosedebugf("mDNS_Execute");
+
 		// If there are DNS servers that will come out of the Penalty box, we should do that now
 		// so that any questions that we send below can start using that
 		ResetDNSServerPenalties(m);
 
-		verbosedebugf("mDNS_Execute");
 		if (m->CurrentQuestion)
 			LogMsg("mDNS_Execute: ERROR m->CurrentQuestion already set: %##s (%s)",
 				m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
@@ -3167,7 +3229,11 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 			}
 		if (i >= 1000) LogMsg("mDNS_Execute: AnswerForNewLocalRecords exceeded loop limit");
 
-		// 5. See what packets we need to send
+		// 5. Some questions may have picked a new DNS server and the cache may answer these
+		// questions now. 
+		AnswerQuestionsForDNSServerChanges(m);
+
+		// 6. See what packets we need to send
 		if (m->mDNSPlatformStatus != mStatus_NoError || (m->SleepState == SleepState_Sleeping))
 			DiscardDeregistrations(m);
 		if (m->mDNSPlatformStatus == mStatus_NoError && (m->SuppressSending == 0 || m->timenow - m->SuppressSending >= 0))
@@ -3180,7 +3246,7 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 			// Finally, we send responses, including the previously mentioned records that just completed probing.
 			m->SuppressSending = 0;
 	
-			// 6. Send Query packets. This may cause some probing records to advance to announcing state
+			// 7. Send Query packets. This may cause some probing records to advance to announcing state
 			if (m->timenow - m->NextScheduledQuery >= 0 || m->timenow - m->NextScheduledProbe >= 0) SendQueries(m);
 			if (m->timenow - m->NextScheduledQuery >= 0)
 				{
@@ -3199,7 +3265,7 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 				m->NextScheduledProbe = m->timenow + mDNSPlatformOneSecond;
 				}
 	
-			// 7. Send Response packets, including probing records just advanced to announcing state
+			// 8. Send Response packets, including probing records just advanced to announcing state
 			if (m->timenow - m->NextScheduledResponse >= 0) SendResponses(m);
 			if (m->timenow - m->NextScheduledResponse >= 0)
 				{
@@ -5073,7 +5139,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					AcceptableResponse = mDNStrue;
 					if (!InterfaceID)
 						{
-						//LogInfo("mDNSCoreReceiveResponse: InterfaceID %p %##s (%s)", q->InterfaceID, q->qname.c, DNSTypeName(q->qtype));
+						debugf("mDNSCoreReceiveResponse: InterfaceID %p %##s (%s)", q->InterfaceID, q->qname.c, DNSTypeName(q->qtype));
 						m->rec.r.resrec.rDNSServer = uDNSServer = q->qDNSServer;
 						}
 					}
@@ -6059,7 +6125,8 @@ mDNSlocal DNSServer *GetNextUnPenalizedServer(mDNS *m, DNSServer *prev, mDNSInte
 		// name in the question is as we picked the best server for the question first
 		// time and the domain name is in prev now
 
-		if ((curr->penaltyTime == 0) && (scount == curmatchlen) && SameDomainName(&prev->domain, &curr->domain))
+		if (((!curr->scoped && !InterfaceID) || (curr->interface == InterfaceID)) && (curr->penaltyTime == 0) &&
+			(scount == curmatchlen) && SameDomainName(&prev->domain, &curr->domain))
 				return curr;
 		curr = curr->next;
 		}
@@ -6126,8 +6193,25 @@ mDNSlocal DNSServer *GetAnyBestServer(mDNS *m, const domainname *name, mDNSInter
 		// "currPenaltyTime < bestPenaltyTime" check lets us either pick the first best server
 		// in the list when there are no penalized servers and least one among them
 		// when there are some penalized servers
+		//
+		// Notes on InterfaceID matching:
+		//
+		// 1) A DNSServer entry may have an InterfaceID but the scoped flag may not be set. This
+		// is the old way of specifying an InterfaceID option for DNSServer. We recoginize these
+		// entries by "scoped" being false. These are like any other unscoped entries except that
+		// if it is picked e.g., domain match, when the packet is sent out later, the packet will
+		// be sent out on that interface. Theese entries can be matched by either specifying a
+		// zero InterfaceID or non-zero InterfaceID on the question. Specifying an InterfaceID on
+		// the question will cause an extra check on matching the InterfaceID on the question
+		// against the DNSServer.
+		// 
+		// 2) A DNSServer may also have both scoped set and InterfaceID non-NULL. This
+		// is the new way of specifying an InterfaceID option for DNSServer. These will be considered
+		// only when the question has non-zero interfaceID.
+		//
 
-		if (!(curr->flags & DNSServer_FlagDelete))
+		if (!(curr->flags & DNSServer_FlagDelete) && ((!curr->scoped && !InterfaceID) ||
+			(curr->interface == InterfaceID)))
 			{
 
 			bettermatch = BetterMatchForName(name, namecount, &curr->domain, currcount, bestmatchlen);
@@ -6148,6 +6232,12 @@ mDNSlocal DNSServer *GetAnyBestServer(mDNS *m, const domainname *name, mDNSInter
 mDNSexport DNSServer *GetServerForName(mDNS *m, const domainname *name, DNSServer *prev, mDNSInterfaceID InterfaceID)
     {
 	DNSServer *curmatch = mDNSNULL;
+	char *ifname = mDNSNULL;	// for logging purposes only
+
+	if ((InterfaceID == mDNSInterface_Unicast) || (InterfaceID == mDNSInterface_LocalOnly))
+		InterfaceID = mDNSNULL;
+
+	if (InterfaceID) ifname = InterfaceNameForID(m, InterfaceID);
 
 	// prev is the previous DNS server used by some question
 	if (prev != mDNSNULL)
@@ -6155,8 +6245,8 @@ mDNSexport DNSServer *GetServerForName(mDNS *m, const domainname *name, DNSServe
 		curmatch = GetNextUnPenalizedServer(m, prev, InterfaceID);
 		if (curmatch != mDNSNULL) 
 			{
-			LogInfo("GetServerForName: Good DNS server %#a:%d (Penalty Time Left %d) found for name %##s", &curmatch->addr,
-			    mDNSVal16(curmatch->port), (curmatch->penaltyTime ? (curmatch->penaltyTime - m->timenow) : 0), name);
+			LogInfo("GetServerForName: Good DNS server %#a:%d (Penalty Time Left %d) (Scope %s:%p) found for name %##s", &curmatch->addr,
+			    mDNSVal16(curmatch->port), (curmatch->penaltyTime ? (curmatch->penaltyTime - m->timenow) : 0), ifname ? ifname : "None", InterfaceID, name);
 			return curmatch;
 			}
 		}
@@ -6177,10 +6267,11 @@ mDNSexport DNSServer *GetServerForName(mDNS *m, const domainname *name, DNSServe
 	curmatch = GetAnyBestServer(m, name, InterfaceID);
 
 	if (curmatch != mDNSNULL) 
-		LogInfo("GetServerForName: DNS server %#a:%d (Penalty Time Left %d) found for name %##s", &curmatch->addr,
-		    mDNSVal16(curmatch->port), (curmatch->penaltyTime ? (curmatch->penaltyTime - m->timenow) : 0), name);
+		LogInfo("GetServerForName: DNS server %#a:%d (Penalty Time Left %d) (Scope %s:%p) found for name %##s", &curmatch->addr,
+		    mDNSVal16(curmatch->port), (curmatch->penaltyTime ? (curmatch->penaltyTime - m->timenow) : 0), ifname ? ifname : "None",
+		InterfaceID, name);
 	else
-		LogInfo("GetServerForName: no DNS server found for name %##s", name);
+		LogInfo("GetServerForName: no DNS server (Scope %s:%p) found for name %##s", ifname ? ifname : "None", InterfaceID, name);
 
 	return(curmatch);
 	}
@@ -6293,6 +6384,7 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 		// We also don't need one for LLQs because (when we're using NAT) we want them all to share a single
 		// NAT mapping for receiving inbound add/remove events.
 		question->LocalSocket       = mDNSNULL;
+		question->deliverAddEvents  = mDNSfalse;
 		question->qDNSServer        = mDNSNULL;
 		question->unansweredQueries = 0;
 		question->nta               = mDNSNULL;
@@ -6334,7 +6426,20 @@ mDNSexport mStatus mDNS_StartQuery_internal(mDNS *const m, DNSQuestion *const qu
 			// this routine with the question list data structures in an inconsistent state.
 			if (!mDNSOpaque16IsZero(question->TargetQID))
 				{
-				question->qDNSServer = GetServerForName(m, &question->qname, mDNSNULL, question->InterfaceID);
+				// Duplicate questions should have the same DNSServers so that when we find
+				// a matching resource record, all of them get the answers. Calling GetServerForName
+				// for the duplicate question may get a different DNS server from the original question
+				if (question->DuplicateOf)
+					{
+					question->qDNSServer = question->DuplicateOf->qDNSServer;
+					LogInfo("mDNS_StartQuery_internal: Duplicate question %##s, DNS Server %#a:%d", question->qname.c,
+						question->qDNSServer ? &question->qDNSServer->addr : mDNSNULL,
+					    mDNSVal16(question->qDNSServer ? question->qDNSServer->port : zeroIPPort));
+					}
+				else
+					{
+					question->qDNSServer = GetServerForName(m, &question->qname, mDNSNULL, question->InterfaceID);
+					}
 				ActivateUnicastQuery(m, question, mDNSfalse);
 
 				// If long-lived query, and we don't have our NAT mapping active, start it now
@@ -8517,13 +8622,29 @@ mDNSlocal void PurgeOrReconfirmCacheRecord(mDNS *const m, CacheRecord *cr, const
 
 	(void) lameduck;
 	(void) ptr;
-	debugf("uDNS_SetupDNSConfig: %s cache record due to %s server %p %#a:%d (%##s): %s",
+	debugf("PurgeOrReconfirmCacheRecord: %s cache record due to %s server %p %#a:%d (%##s): %s",
 		purge    ? "purging"   : "reconfirming",
 		lameduck ? "lame duck" : "new",
 		ptr, &ptr->addr, mDNSVal16(ptr->port), ptr->domain.c, CRDisplayString(m, cr));
 
-	if (purge) mDNS_PurgeCacheResourceRecord(m, cr);
-	else mDNS_Reconfirm_internal(m, cr, kDefaultReconfirmTimeForNoAnswer);
+	if (purge)
+		{
+		LogInfo("PurgeorReconfirmCacheRecord: Purging Resourcerecord %s, RecordType %x", CRDisplayString(m, cr), cr->resrec.RecordType);	
+		mDNS_PurgeCacheResourceRecord(m, cr);
+		}
+	else
+		{
+		LogInfo("PurgeorReconfirmCacheRecord: Reconfirming Resourcerecord %s, RecordType %x", CRDisplayString(m, cr), cr->resrec.RecordType);	
+		mDNS_Reconfirm_internal(m, cr, kDefaultReconfirmTimeForNoAnswer);
+		}
+	}
+
+mDNSlocal mDNSBool IsQuestionNew(mDNS *const m, DNSQuestion *question)
+	{
+	DNSQuestion *q;
+	for (q = m->NewQuestions; q; q = q->next)
+		if (q == question) return mDNStrue;
+	return mDNSfalse;
 	}
 
 mDNSlocal void CacheRecordResetDNSServer(mDNS *const m, DNSQuestion *q, DNSServer *new)
@@ -8531,20 +8652,160 @@ mDNSlocal void CacheRecordResetDNSServer(mDNS *const m, DNSQuestion *q, DNSServe
 	const mDNSu32 slot = HashSlot(&q->qname);
 	CacheGroup *const cg = CacheGroupForName(m, slot, q->qnamehash, &q->qname);
 	CacheRecord *rp;
+	mDNSBool found = mDNSfalse;
+	mDNSBool foundNew = mDNSfalse;
+	DNSServer *old = q->qDNSServer;
+	mDNSBool newQuestion = IsQuestionNew(m, q);
+	DNSQuestion *qptr;
+
+	// This function is called when the DNSServer is updated to the new question. There may already be
+	// some cache entries matching the old DNSServer and/or new DNSServer. There are four cases. In the
+	// following table, "Yes" denotes that a cache entry was found for old/new DNSServer.
+	//
+	// 					old DNSServer		new DNSServer
+	//
+	//	Case 1				Yes					Yes				
+	//  Case 2				No					Yes
+	//  Case 3				Yes					No
+	//  Case 4				No					No
+	//
+	// Case 1: There are cache entries for both old and new DNSServer. We handle this case by simply
+	//		   expiring the old Cache entries, deliver a RMV event (if an ADD event was delivered before)
+	//		   followed by the ADD event of the cache entries corresponding to the new server. This
+	//		   case happens when we pick a DNSServer, issue a query and get a valid response and create
+	//		   cache entries after which it stops responding. Another query (non-duplicate) picks a different
+	//	       DNSServer and creates identical cache entries (perhaps through records in Additional records).
+	//		   Now if the first one expires and tries to pick the new DNSServer (the original DNSServer
+	//		   is not responding) we will find cache entries corresponding to both DNSServers.
+	//
+	// Case 2: There are no cache entries for the old DNSServer but there are some for the new DNSServer.
+	//		   This means we should deliver an ADD event. Normally ADD events are delivered by
+	//		   AnswerNewQuestions if it is a new question. So, we check to see if it is a new question
+	//		   and if so, leave it to AnswerNewQuestions to deliver it. Otherwise, we use
+	//		   AnswerQuestionForDNSServerChanges to deliver the ADD event. This case happens when a
+	//		   question picks a DNS server for which AnswerNewQuestions could not deliver an answer even
+	//         though there were potential cache entries but DNSServer did not match. Now when we
+	//         pick a new DNSServer, those cache entries may answer this question.
+	//	
+	// Case 3: There are the cache entries for the old DNSServer but none for the new. We just move
+	//		   the old cache entries to point to the new DNSServer and the caller is expected to
+	//		   do a purge or reconfirm to delete or validate the RDATA. We don't need to do anything
+	//		   special for delivering ADD events, as it should have been done/will be done by
+	//		   AnswerNewQuestions. This case happens when we picked a DNSServer, sent the query and
+	//		   got a response and the cache is expired now and we are reissuing the question but the
+	//		   original DNSServer does not respond. 
+	//
+	// Case 4: There are no cache entries either for the old or for the new DNSServer. There is nothing
+	//		   much we can do here. 
+	//
+	// Case 2 and 3 are the most common while case 4 is possible when no DNSServers are working. Case 1
+	// is relatively less likely to happen in practice
+
+	// Temporarily set the DNSServer to look for the matching records for the new DNSServer.
+	q->qDNSServer = new;
+	for (rp = cg ? cg->members : mDNSNULL; rp; rp = rp->next)
+		{
+		if (SameNameRecordAnswersQuestion(&rp->resrec, q))
+			{
+			LogInfo("CacheRecordResetDNSServer: Found cache record %##s for new DNSServer address: %#a", rp->resrec.name->c,
+				(rp->resrec.rDNSServer != mDNSNULL ?  &rp->resrec.rDNSServer->addr : mDNSNULL));
+			foundNew = mDNStrue;
+			break;
+			}
+		}
+	q->qDNSServer = old;
 
 	for (rp = cg ? cg->members : mDNSNULL; rp; rp = rp->next)
 		{
-		if (ResourceRecordAnswersQuestion(&rp->resrec, q))
+		if (SameNameRecordAnswersQuestion(&rp->resrec, q))
 			{
-			// Though we set it to the new DNS server, the caller is *assumed* to do either a purge
-			// or reconfirm or send out questions to the "new" server to verify whether the cached
-			// RDATA is valid
+			// Case1
+			found = mDNStrue;
+			if (foundNew)
+				{
+				LogInfo("CacheRecordResetDNSServer: Flushing Resourcerecord %##s, before:%#a, after:%#a", rp->resrec.name->c,
+					(rp->resrec.rDNSServer != mDNSNULL ?  &rp->resrec.rDNSServer->addr : mDNSNULL),
+					(new != mDNSNULL ?  &new->addr : mDNSNULL));
+				mDNS_PurgeCacheResourceRecord(m, rp);
+				if (newQuestion)
+					{
+					// "q" is not a duplicate question. If it is a newQuestion, then the CRActiveQuestion can't be
+					// possibly set as it is set only when we deliver the ADD event to the question.
+					if (rp->CRActiveQuestion != mDNSNULL)
+						{
+						LogMsg("CacheRecordResetDNSServer: ERROR: CRActiveQuestion %p set, current question %p, name %##s", rp->CRActiveQuestion, q, q->qname.c);
+						rp->CRActiveQuestion = mDNSNULL;
+						}
+					// if this is a new question, then we never delivered an ADD yet, so don't deliver the RMV.
+					continue;
+					}
+				}
 			LogInfo("CacheRecordResetDNSServer: resetting cache record %##s DNSServer address before:%#a, after:%#a", rp->resrec.name->c,
 				(rp->resrec.rDNSServer != mDNSNULL ?  &rp->resrec.rDNSServer->addr : mDNSNULL),
 				(new != mDNSNULL ?  &new->addr : mDNSNULL));
+			// Though we set it to the new DNS server, the caller is *assumed* to do either a purge
+			// or reconfirm or send out questions to the "new" server to verify whether the cached
+			// RDATA is valid
 			rp->resrec.rDNSServer = new;
 			}
 		}
+
+	// Case 1 and Case 2
+	if ((found && foundNew) || (!found && foundNew))
+		{
+		if (newQuestion)
+			LogInfo("CacheRecordResetDNSServer: deliverAddEvents not set for question %##s", q->qname.c);
+		else
+			{
+			LogInfo("CacheRecordResetDNSServer: deliverAddEvents set for %##s", q->qname.c);
+			q->deliverAddEvents = mDNStrue;
+			for (qptr = q->next; qptr; qptr = qptr->next)
+				{
+				if (qptr->DuplicateOf == q) qptr->deliverAddEvents = mDNStrue;
+				}
+			}
+		return;
+		}
+
+	// Case 3 and Case 4
+	return;
+	}
+
+mDNSexport void DNSServerChangeForQuestion(mDNS *const m, DNSQuestion *q, DNSServer *new)
+	{
+	DNSQuestion *qptr;
+
+	// 1. Whenever we change the DNS server, we change the message identifier also so that response
+	// from the old server is not accepted as a response from the new server but only messages
+	// from the new server are accepted as valid responses
+
+	if (new != mDNSNULL) q->TargetQID = mDNS_NewMessageID(m);
+		
+	// 2. Move the old cache records to point them at the new DNSServer so that we can deliver the ADD/RMV events
+	// appropriately. At any point in time, we want all the cache records point only to one DNSServer for a given
+	// question. "DNSServer" here is the DNSServer object and not the DNS server itself. It is possible to
+	// have the same DNS server address in two objects, one scoped and another not scoped. But, the cache is per
+	// DNSServer object. By maintaining the question and the cache entries point to the same DNSServer
+	// always, the cache maintenance and delivery of ADD/RMV events becomes simpler.
+	//
+	// CacheRecordResetDNSServer should be called only once for the non-duplicate question as once the cache
+	// entries are moved to point to the new DNSServer, we don't need to call it for the duplicate question
+	// and it is wrong to call for the duplicate question as it's decision to mark deliverAddevents will be
+	// incorrect.
+
+	if (q->DuplicateOf)
+		LogMsg("DNSServerChangeForQuestion: ERROR: Called for duplicate question %##s", q->qname.c);
+	else
+		CacheRecordResetDNSServer(m, q, new);
+
+	// 3. Make sure all the duplicate questions point to the same DNSServer so that delivery
+	// of events for all of them are consistent. Duplicates for a question are always inserted
+	// after in the list
+	q->qDNSServer = new;
+	for (qptr = q->next ; qptr; qptr = qptr->next)
+		{
+		if (qptr->DuplicateOf == q) qptr->qDNSServer = new;
+		}	
 	}
 	
 mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
@@ -8576,12 +8837,43 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 
 	mDNSPlatformSetDNSConfig(m, mDNStrue, mDNSfalse, &fqdn, mDNSNULL, mDNSNULL);
 
+	// Mark the records to be flushed that match a new resolver. We need to do this before
+	// we walk the questions below where we change the DNSServer pointer of the cache
+	// record
+	FORALL_CACHERECORDS(slot, cg, cr)
+		{
+		if (cr->resrec.InterfaceID) continue;
+
+		// We just mark them for purge or reconfirm. We can't affect the DNSServer pointer
+		// here as the code below that calls CacheRecordResetDNSServer relies on this
+		//
+		// The new DNSServer may be a scoped or non-scoped one. We use the active question's
+		// InterfaceID for looking up the right DNS server
+		ptr = GetServerForName(m, cr->resrec.name, mDNSNULL, cr->CRActiveQuestion ? cr->CRActiveQuestion->InterfaceID : mDNSNULL);
+
+		// Purge or Reconfirm if this cache entry would use the new DNS server
+		if (ptr && (ptr != cr->resrec.rDNSServer))
+			{
+			// As the DNSServers for this cache record is not the same anymore, we don't
+			// want any new questions to pick this old value
+			if (cr->CRActiveQuestion == mDNSNULL)
+				{
+				LogInfo("uDNS_SetupDNSConfig: Purging Resourcerecord %s", CRDisplayString(m, cr));
+				mDNS_PurgeCacheResourceRecord(m, cr);
+				}
+			else
+				PurgeOrReconfirmCacheRecord(m, cr, ptr, mDNSfalse);
+			}
+		}
 	// Update our qDNSServer pointers before we go and free the DNSServer object memory
 	for (q = m->Questions; q; q=q->next)
 		if (!mDNSOpaque16IsZero(q->TargetQID))
 			{
-			DNSServer *s = GetServerForName(m, &q->qname, mDNSNULL, q->InterfaceID);
-			DNSServer *t = q->qDNSServer;
+			DNSServer *s, *t;
+			DNSQuestion *qptr;
+			if (q->DuplicateOf) continue;
+			s = GetServerForName(m, &q->qname, mDNSNULL, q->InterfaceID);
+			t = q->qDNSServer;
 			if (t != s)
 				{
 				// If DNS Server for this question has changed, reactivate it
@@ -8590,12 +8882,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 					s, s ? &s->addr : mDNSNULL, mDNSVal16(s ? s->port : zeroIPPort), s ? s->domain.c : (mDNSu8*)"",
 					q->qname.c, DNSTypeName(q->qtype));
 
-				//
-				// When we change the DNSServer on the question, we need to make sure that the matching
-				// CacheRecords also are changed. Otherwise, we will never deliver events to this
-				// question when the resource record changes
-				//
-				// After we reset the DNSServer pointer here, three things could happen:
+				// After we reset the DNSServer pointer on the cache records here, three things could happen:
 				//
 				// 1) The query gets sent out and when the actual response comes back later it is possible
 				// that the response has the same RDATA, in which case we update our cache entry.
@@ -8603,60 +8890,24 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 				// For the latter case to generate a RMV followed by ADD events, we need to reset the DNS
 				// server here to match the question and the cache record.
 				//
-				// 2) We might purge the entry below and for us to be able to generate the RMV events for the
-				// questions, the DNSServer on the question should match the Cache Record
+				// 2) We might have marked the cache entries for purge above and for us to be able to generate the RMV
+				// events for the questions, the DNSServer on the question should match the Cache Record
 				//
-				// 3) We might reconfirm the entry for which we send the query out which is the same as the
-				// first case above.
-				//
-				// Also, CRActiveQuestion should not be touched here as it will affect the delivery of RMV events.
-				// NOTE: s could be NULL. But that should be okay as the question ends up pointing to the same thing
-				// as the cache record
+				// 3) We might have marked the cache entries for reconfirm above, for which we send the query out which is
+				// the same as the first case above.
 
-				CacheRecordResetDNSServer(m, q, s);
-				q->qDNSServer = s;
+				DNSServerChangeForQuestion(m, q, s);
 				q->unansweredQueries = 0;
-				// Setting the new message ID makes sure that we don't accept responses
-				// from the old DNS server anymore
-				q->TargetQID = mDNS_NewMessageID(m);
 				ActivateUnicastQuery(m, q, mDNStrue);
+				// ActivateUnicastQuery is called for duplicate questions also as it does something
+				// special for AutoTunnel questions
+				for (qptr = q->next ; qptr; qptr = qptr->next)
+					{
+					if (qptr->DuplicateOf == q) ActivateUnicastQuery(m, qptr, mDNStrue);
+					}	
 				}
 			}
 
-	// Flush all records that match a new resolver
-	FORALL_CACHERECORDS(slot, cg, cr)
-		{
-		if (cr->resrec.InterfaceID) continue;
-
-		// Reconfirm happens only if there is an active question for the cache record.
-		// We already went through the questions above and affected the matching
-		// cache records. We will come across the same entries below. Can there be more
-		// cache records with an active question ? If we find them, we set them to the new
-		// server as we will be either purging or reconfirming soon
-		//
-		// The new DNS server entry may be a scoped entry which might be matched only with a
-		// non-NULL InterfaceID or may be an entry that can be matched without specifying
-		// an InterfaceID. It is possible that we might miss picking the new DNS server, but
-		// it is okay as we went through the questions already above and called GetServerForName
-		// with the right InterfaceID.
-		ptr = GetServerForName(m, cr->resrec.name, mDNSNULL, mDNSNULL);
-		if (ptr && (ptr->flags & DNSServer_FlagNew))
-			{
-			if (cr->CRActiveQuestion)
-				{
-				DNSQuestion *qptr = cr->CRActiveQuestion;
-				LogInfo("uDNS_SetupDNSConfig:-1-: Cache Record %##s with an active question %##s (%s)", cr->resrec.name, qptr->qname.c, DNSTypeName(qptr->qtype));
-				if (qptr->qDNSServer == mDNSNULL)
-					LogMsg("uDNS_SetupDNSConfig:-1-: Cache Record mismatch: Active question %##s (%s) question DNSServer Address NULL, New Server address %#a", qptr->qname.c, DNSTypeName(qptr->qtype), &ptr->addr);
-				else if (qptr->qDNSServer != ptr)
-					LogMsg("uDNS_SetupDNSConfig:-1-: Cache Record mismatch: Active question %##s (%s) question DNSServer Address %#a, New Server address %#a", qptr->qname.c, DNSTypeName(qptr->qtype), &qptr->qDNSServer->addr, &ptr->addr);
-				else
-					cr->resrec.rDNSServer = ptr;
-				}
-			PurgeOrReconfirmCacheRecord(m, cr, ptr, mDNSfalse);
-			}
-		}
-	
 	while (*p)
 		{
 		if (((*p)->flags & DNSServer_FlagDelete) != 0)
@@ -8686,9 +8937,9 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 						{
 						DNSQuestion *qptr = cr->CRActiveQuestion;
 						if (qptr->qDNSServer == mDNSNULL)
-							LogMsg("uDNS_SetupDNSConfig:-2-: Cache Record match: Active question %##s (%s) with DNSServer Address NULL, Server to be deleted %#a", qptr->qname.c, DNSTypeName(qptr->qtype), &ptr->addr);
+							LogMsg("uDNS_SetupDNSConfig: Cache Record match: Active question %##s (%s) with DNSServer Address NULL, Server to be deleted %#a", qptr->qname.c, DNSTypeName(qptr->qtype), &ptr->addr);
 						else
-							LogMsg("uDNS_SetupDNSConfig:-2-: Cache Record match: Active question %##s (%s) DNSServer Address %#a, Server to be deleted %#a", qptr->qname.c, DNSTypeName(qptr->qtype), &qptr->qDNSServer->addr, &ptr->addr);
+							LogMsg("uDNS_SetupDNSConfig: Cache Record match: Active question %##s (%s) DNSServer Address %#a, Server to be deleted %#a", qptr->qname.c, DNSTypeName(qptr->qtype), &qptr->qDNSServer->addr, &ptr->addr);
 
 						if (qptr->qDNSServer == ptr)
 							{
@@ -8702,7 +8953,7 @@ mDNSexport mStatus uDNS_SetupDNSConfig(mDNS *const m)
 						}
 					else
 						{
-						LogInfo("uDNS_SetupDNSConfig:-3-: Cache Record %##s has no Active question, Record's DNSServer Address %#a, Server to be deleted %#a", cr->resrec.name, &cr->resrec.rDNSServer->addr, &ptr->addr);
+						LogInfo("uDNS_SetupDNSConfig: Cache Record %##s has no Active question, Record's DNSServer Address %#a, Server to be deleted %#a", cr->resrec.name, &cr->resrec.rDNSServer->addr, &ptr->addr);
 
 						cr->resrec.rDNSServer = mDNSNULL;
 						}
