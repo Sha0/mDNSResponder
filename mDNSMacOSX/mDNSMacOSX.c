@@ -1680,6 +1680,7 @@ mDNSexport void mDNSPlatformUpdateProxyList(mDNS *const m, const mDNSInterfaceID
 		// Schedule check to see if we can close this BPF_fd now
 		if (!m->p->NetworkChanged) m->p->NetworkChanged = NonZeroTime(m->timenow + mDNSPlatformOneSecond * 2);
 		// prog.bf_len = 0; This seems to panic the kernel
+		if (x->BPF_fd < 0) return;		// If we've already closed our BPF_fd, no need to generate an error message below
 		}
 
 	if (ioctl(x->BPF_fd, BIOCSETF, &prog) < 0) LogMsg("mDNSPlatformUpdateProxyList: BIOCSETF(%d) failed %d (%s)", prog.bf_len, errno, strerror(errno));

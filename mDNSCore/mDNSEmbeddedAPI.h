@@ -1076,7 +1076,7 @@ struct AuthRecord_struct
 	mDNSu8          AllowRemoteQuery;	// Set if we allow hosts not on the local link to query this record
 	mDNSu8          ForceMCast;			// Set by client to advertise solely via multicast, even for apparently unicast names
 
-	OwnerOptData    WakeUp;				// Fpr Sleep Proxy records, MAC address of original owner (so we can wake it)
+	OwnerOptData    WakeUp;				// WakeUp.HMAC.l[0] nonzero indicates that this is a Sleep Proxy record
 	mDNSAddr        AddressProxy;		// For reverse-mapping Sleep Proxy PTR records, address in question
 	mDNSs32         TimeRcvd;			// In platform time units
 	mDNSs32         TimeExpire;			// In platform time units
@@ -2491,7 +2491,9 @@ extern void     mDNSCoreMachineSleep(mDNS *const m, mDNSBool wake);
 extern mDNSBool mDNSCoreReadyForSleep(mDNS *m, mDNSs32 now);
 extern mDNSs32  mDNSCoreIntervalToNextWake(mDNS *const m, mDNSs32 now);
 
-extern void     mDNSCoreBeSleepProxyServer(mDNS *const m, mDNSu8 sps, mDNSu8 port, mDNSu8 marginalpower, mDNSu8 totpower);
+extern void     mDNSCoreBeSleepProxyServer_internal(mDNS *const m, mDNSu8 sps, mDNSu8 port, mDNSu8 marginalpower, mDNSu8 totpower);
+#define mDNSCoreBeSleepProxyServer(M,S,P,MP,TP) \
+	do { mDNS_Lock(m); mDNSCoreBeSleepProxyServer_internal((M),(S),(P),(MP),(TP)); mDNS_Unlock(m); } while(0)
 extern void     mDNSCoreReceiveRawPacket  (mDNS *const m, const mDNSu8 *const p, const mDNSu8 *const end, const mDNSInterfaceID InterfaceID);
 
 extern mDNSBool mDNSAddrIsDNSMulticast(const mDNSAddr *ip);

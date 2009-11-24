@@ -57,6 +57,7 @@
 // Forward declarations
 mDNSlocal void BeginSleepProcessing(mDNS *const m);
 mDNSlocal void RetrySPSRegistrations(mDNS *const m);
+mDNSlocal void SendWakeup(mDNS *const m, mDNSInterfaceID InterfaceID, mDNSEthAddr *EthAddr, mDNSOpaque48 *password);
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
@@ -811,6 +812,12 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 		if (drt != mDNS_Dereg_repeat)
 			LogMsg("mDNS_Deregister_internal: Record %p not found in list %s", rr, ARDisplayString(m,rr));
 		return(mStatus_BadReferenceErr);
+		}
+
+	if (rr->WakeUp.HMAC.l[0])
+		{
+		LogSPS("mDNS_Deregister_internal: Sending wakeup for %.6a %s", &rr->WakeUp.HMAC, ARDisplayString(m, rr));
+		SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.IMAC, &rr->WakeUp.password);
 		}
 
 	// If this is a shared record and we've announced it at least once,
@@ -3126,14 +3133,16 @@ mDNSlocal void CheckProxyRecords(mDNS *const m, AuthRecord *list)
 		AuthRecord *rr = m->CurrentRecord;
 		if (rr->WakeUp.HMAC.l[0])
 			{
-			if (m->timenow - rr->TimeExpire < 0)		// If proxy record not expired yet, update m->NextScheduledSPS
+			// If m->SPSSocket is NULL that means we're not acting as a sleep proxy any more,
+			// so we need to cease proxying for *all* records we may have, expired or not.
+			if (m->SPSSocket && m->timenow - rr->TimeExpire < 0)	// If proxy record not expired yet, update m->NextScheduledSPS
 				{
 				if (m->NextScheduledSPS - rr->TimeExpire > 0)
 					m->NextScheduledSPS = rr->TimeExpire;
 				}
-			else										// else proxy record expired, so remove it
+			else													// else proxy record expired, so remove it
 				{
-				LogSPS("mDNS_Execute: Removing %d H-MAC %.6a I-MAC %.6a %d %s",
+				LogSPS("CheckProxyRecords: Removing %d H-MAC %.6a I-MAC %.6a %d %s",
 					m->ProxyRecords, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, rr->WakeUp.seq, ARDisplayString(m, rr));
 				SetSPSProxyListChanged(rr->resrec.InterfaceID);
 				mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
@@ -3733,10 +3742,8 @@ mDNSexport void mDNSCoreMachineSleep(mDNS *const m, mDNSBool sleep)
 
 		if (m->SPSState == 3)
 			{
-			mDNS_DropLockBeforeCallback();		// mDNS_DeregisterService expects to be called without the lock held, so we emulate that here
 			m->SPSState = 0;
-			mDNSCoreBeSleepProxyServer(m, m->SPSType, m->SPSPortability, m->SPSMarginalPower, m->SPSTotalPower);
-			mDNS_ReclaimLockAfterCallback();
+			mDNSCoreBeSleepProxyServer_internal(m, m->SPSType, m->SPSPortability, m->SPSMarginalPower, m->SPSTotalPower);
 			}
 
 		// In case we gave up waiting and went to sleep before we got an ack from the Sleep Proxy,
@@ -4194,6 +4201,8 @@ mDNSlocal CacheRecord *FindIdenticalRecordInCache(const mDNS *const m, const Res
 // Called from ProcessQuery when we get an mDNS packet with an owner record in it
 mDNSlocal void ClearProxyRecords(mDNS *const m, const OwnerOptData *const owner, AuthRecord *const thelist)
 	{
+	if (m->CurrentRecord)
+		LogMsg("ClearProxyRecords ERROR m->CurrentRecord already set %s", ARDisplayString(m, m->CurrentRecord));
 	m->CurrentRecord = thelist;
 	while (m->CurrentRecord)
 		{
@@ -4203,6 +4212,8 @@ mDNSlocal void ClearProxyRecords(mDNS *const m, const OwnerOptData *const owner,
 				{
 				LogSPS("ClearProxyRecords: Removing %3d H-MAC %.6a I-MAC %.6a %d %d %s",
 					m->ProxyRecords, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, rr->WakeUp.seq, owner->seq, ARDisplayString(m, rr));
+				rr->WakeUp.HMAC = zeroEthAddr;	// Clear HMAC so that mDNS_Deregister_internal doesn't waste packets trying to wake this host
+				rr->RequireGoodbye = mDNSfalse;	// and we don't want to send goodbye for it, since real host is now back and functional
 				mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
 				SetSPSProxyListChanged(m->rec.r.resrec.InterfaceID);
 				}
@@ -5082,9 +5093,23 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 		if (!ptr) goto exit;		// Break out of the loop and clean up our CacheFlushRecords list before exiting
 
 		// Don't want to cache OPT or TSIG pseudo-RRs
-		if (m->rec.r.resrec.rrtype == kDNSType_OPT || m->rec.r.resrec.rrtype == kDNSType_TSIG)
-			{ m->rec.r.resrec.RecordType = 0; continue; }
-			
+		if (m->rec.r.resrec.rrtype == kDNSType_TSIG) { m->rec.r.resrec.RecordType = 0; continue; }
+		if (m->rec.r.resrec.rrtype == kDNSType_OPT)
+			{
+			const rdataOPT *opt;
+			const rdataOPT *const e = (const rdataOPT *)&m->rec.r.resrec.rdata->u.data[m->rec.r.resrec.rdlength];
+			// Find owner sub-option(s). We verify that the MAC is non-zero, otherwise we could inadvertently
+			// delete all our own AuthRecords (which are identified by having zero MAC tags on them).
+			for (opt = &m->rec.r.resrec.rdata->u.opt[0]; opt < e; opt++)
+				if (opt->opt == kDNSOpt_Owner && opt->u.owner.vers == 0 && opt->u.owner.HMAC.l[0])
+					{
+					ClearProxyRecords(m, &opt->u.owner, m->DuplicateRecords);
+					ClearProxyRecords(m, &opt->u.owner, m->ResourceRecords);
+					}
+			m->rec.r.resrec.RecordType = 0;
+			continue;
+			}
+
 		// if a CNAME record points to itself, then don't add it to the cache
 		if ((m->rec.r.resrec.rrtype == kDNSType_CNAME) && SameDomainName(m->rec.r.resrec.name, &m->rec.r.resrec.rdata->u.name))
 			{ 
@@ -8368,8 +8393,12 @@ mDNSlocal void SleepProxyServerCallback(mDNS *const m, ServiceRecordSet *const s
 		}
 	}
 
-mDNSexport void mDNSCoreBeSleepProxyServer(mDNS *const m, mDNSu8 sps, mDNSu8 port, mDNSu8 marginalpower, mDNSu8 totpower)
+// Called with lock held
+mDNSexport void mDNSCoreBeSleepProxyServer_internal(mDNS *const m, mDNSu8 sps, mDNSu8 port, mDNSu8 marginalpower, mDNSu8 totpower)
 	{
+	// This routine uses mDNS_DeregisterService and calls SleepProxyServerCallback, so we execute in user callback context
+	mDNS_DropLockBeforeCallback();
+
 	// If turning off SPS, close our socket
 	// (Do this first, BEFORE calling mDNS_DeregisterService below)
 	if (!sps && m->SPSSocket) { mDNSPlatformUDPClose(m->SPSSocket); m->SPSSocket = mDNSNULL; }
@@ -8390,10 +8419,17 @@ mDNSexport void mDNSCoreBeSleepProxyServer(mDNS *const m, mDNSu8 sps, mDNSu8 por
 		if (!m->SPSSocket)
 			{
 			m->SPSSocket = mDNSPlatformUDPSocket(m, zeroIPPort);
-			if (!m->SPSSocket) { LogMsg("mDNSCoreBeSleepProxyServer: Failed to allocate SPSSocket"); return; }
+			if (!m->SPSSocket) { LogMsg("mDNSCoreBeSleepProxyServer: Failed to allocate SPSSocket"); goto fail; }
 			}
 		if (m->SPSState == 0) SleepProxyServerCallback(m, &m->SPSRecords, mStatus_MemFree);
 		}
+	else if (m->SPSState)
+		{
+		LogSPS("mDNSCoreBeSleepProxyServer turning off from state %d; will wake clients", m->SPSState);
+		m->NextScheduledSPS = m->timenow;
+		}
+fail:
+	mDNS_ReclaimLockAfterCallback();
 	}
 
 // ***************************************************************************
@@ -9065,9 +9101,7 @@ mDNSexport void mDNS_StartExit(mDNS *const m)
 
 	m->ShutdownTime = NonZeroTime(m->timenow + mDNSPlatformOneSecond * 5);
 
-	mDNS_DropLockBeforeCallback();		// mDNSCoreBeSleepProxyServer expects to be called without the lock held, so we emulate that here
-	mDNSCoreBeSleepProxyServer(m, 0, 0, 0, 0);
-	mDNS_ReclaimLockAfterCallback();
+	mDNSCoreBeSleepProxyServer_internal(m, 0, 0, 0, 0);
 
 #ifndef UNICAST_DISABLED
 	{
