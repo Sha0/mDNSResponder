@@ -177,15 +177,15 @@ int mDNSKeychainGetSecrets(CFArrayRef *result)
 	CFDataRef bytes = NULL;
 	kern_return_t kr = KERN_FAILURE;
 	unsigned int numsecrets = 0;
-	void *secrets = NULL;
+	vm_offset_t secrets = 0;
 	mach_msg_type_number_t secretsCnt = 0;
 	int retry = 0, err = 0;
 
 	MACHRETRYLOOP_BEGIN(kr, retry, err, fin);
-	kr = proxy_mDNSKeychainGetSecrets(getHelperPort(retry), &numsecrets, (vm_offset_t *)&secrets, &secretsCnt, &err);
+	kr = proxy_mDNSKeychainGetSecrets(getHelperPort(retry), &numsecrets, &secrets, &secretsCnt, &err);
 	MACHRETRYLOOP_END(kr, retry, err, fin);
 
-	if (NULL == (bytes = CFDataCreateWithBytesNoCopy(kCFAllocatorDefault, secrets, secretsCnt, kCFAllocatorNull)))
+	if (NULL == (bytes = CFDataCreateWithBytesNoCopy(kCFAllocatorDefault, (void*)secrets, secretsCnt, kCFAllocatorNull)))
 		{
 		err = kmDNSHelperCreationFailed;
 		LogMsg("%s: CFDataCreateWithBytesNoCopy failed", __func__);
@@ -208,8 +208,8 @@ int mDNSKeychainGetSecrets(CFArrayRef *result)
 	*result = (CFArrayRef)plist;
 
 fin:
-	if (NULL != bytes) CFRelease(bytes);
-	if (NULL != secrets) vm_deallocate(mach_task_self(), (vm_offset_t)secrets, secretsCnt);
+	if (bytes) CFRelease(bytes);
+	if (secrets) vm_deallocate(mach_task_self(), secrets, secretsCnt);
 	return err;
 	}
 
