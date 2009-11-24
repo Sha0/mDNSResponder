@@ -918,9 +918,9 @@ struct tcpLNTInfo_struct
 	LNTOp_t           op;				// operation performed using this connection
 	mDNSAddr          Address;			// router address
 	mDNSIPPort        Port;				// router port
-	mDNSs8           *Request;			// xml request to router
+	mDNSu8           *Request;			// xml request to router
 	int               requestLen;
-	mDNSs8           *Reply;			// xml reply from router
+	mDNSu8           *Reply;			// xml reply from router
 	int               replyLen;
 	unsigned long     nread;			// number of bytes read so far
 	int               retries;			// number of times we've tried to do this port mapping
@@ -2434,7 +2434,7 @@ extern void       mDNSPlatformDynDNSHostNameStatusChanged(const domainname *cons
 #ifdef _LEGACY_NAT_TRAVERSAL_
 // Support for legacy NAT traversal protocols, implemented by the platform layer and callable by the core.
 extern void     LNT_SendDiscoveryMsg(mDNS *m);
-extern void     LNT_ConfigureRouterInfo(mDNS *m, const mDNSInterfaceID InterfaceID, mDNSu8 *data, mDNSu16 len);
+extern void     LNT_ConfigureRouterInfo(mDNS *m, const mDNSInterfaceID InterfaceID, const mDNSu8 *const data, const mDNSu16 len);
 extern mStatus  LNT_GetExternalAddress(mDNS *m);
 extern mStatus  LNT_MapPort(mDNS *m, NATTraversalInfo *n);
 extern mStatus  LNT_UnmapPort(mDNS *m, NATTraversalInfo *n);

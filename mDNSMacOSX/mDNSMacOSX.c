@@ -128,7 +128,7 @@
 // If OfferSleepProxyService is set non-zero (typically via command-line switch),
 // then we'll offer sleep proxy service on desktop Macs that are set to never sleep.
 // We currently do not offer sleep proxy service on laptops, or on machines that are set to go to sleep.
-mDNSexport int OfferSleepProxyService = 0;
+mDNSexport int OfferSleepProxyService = 11;
 
 mDNSexport int OSXVers;
 mDNSexport int KQueueFD;
@@ -1116,7 +1116,7 @@ mDNSexport void mDNSPlatformTCPCloseConnection(TCPSocket *sock)
 
 mDNSexport long mDNSPlatformReadTCP(TCPSocket *sock, void *buf, unsigned long buflen, mDNSBool *closed)
 	{
-	long nread = 0;
+	size_t nread = 0;
 	*closed = mDNSfalse;
 
 	if (sock->flags & kTCPSocketFlags_UseTLS)
@@ -1127,7 +1127,7 @@ mDNSexport long mDNSPlatformReadTCP(TCPSocket *sock, void *buf, unsigned long bu
 		else if (sock->handshake != handshake_completed) LogMsg("mDNSPlatformReadTCP called with unexpected SSLHandshake status: %d", sock->handshake);
 
 		//LogMsg("Starting SSLRead %d %X", sock->fd, fcntl(sock->fd, F_GETFL, 0));
-		mStatus err = SSLRead(sock->tlsContext, buf, buflen, (size_t*)&nread);
+		mStatus err = SSLRead(sock->tlsContext, buf, buflen, &nread);
 		//LogMsg("SSLRead returned %d (%d) nread %d buflen %d", err, errSSLWouldBlock, nread, buflen);
 		if (err == errSSLClosedGraceful) { nread = 0; *closed = mDNStrue; }
 		else if (err && err != errSSLWouldBlock)
@@ -3394,7 +3394,7 @@ mDNSlocal void ConfigResolvers(mDNS *const m, dns_config_t *config, mDNSBool sco
 							s->scoped = (scope && (r->flags & DNS_RESOLVER_FLAGS_SCOPED)) ? mDNStrue : mDNSfalse;
 #endif
 						if (disabled) s->teststate = DNSServer_Disabled;
-						LogInfo("ConfigResolvers: Dns server %#a:%d for domain %##s from slot %d,%d", &s->addr, mDNSVal16(s->port), d.c, i, n);
+						LogInfo("ConfigResolvers: DNS server %#a:%d for domain %##s from slot %d,%d", &s->addr, mDNSVal16(s->port), d.c, i, n);
 						}
 					}
 				}
