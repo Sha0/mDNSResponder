@@ -1549,7 +1549,7 @@ mDNSexport void mDNSPlatformUpdateProxyList(mDNS *const m, const mDNSInterfaceID
 	{
 	NetworkInterfaceInfoOSX *x;
 
-	//NOTE: We can't use IfIndexToInterfaceInfoOSX because that looks for Registered also.
+	// Note: We can't use IfIndexToInterfaceInfoOSX because that looks for Registered also.
 	for (x = m->p->InterfaceList; x; x = x->next) if (x->ifinfo.InterfaceID == InterfaceID) break;
 
 	if (!x) { LogMsg("mDNSPlatformUpdateProxyList: ERROR InterfaceID %p not found", InterfaceID); return; }
@@ -3268,7 +3268,7 @@ mDNSlocal void ConfigResolvers(mDNS *const m, dns_config_t *config, mDNSBool sco
 		// Also, all search domains get added to the search list for resolver[0], so the domains and/or
 		// search lists for other resolvers in the list need to be ignored.
 		//
-		// NOTE: Starting DNSINFO_VERSION 20091104, search list is present only in the first resolver (resolver 0).
+		// Note: Starting DNSINFO_VERSION 20091104, search list is present only in the first resolver (resolver 0).
 		// i.e., n_search for the first resolver is always non-zero. We don't guard it with #ifs for better readability
 
 		if (resolver[0]->n_search == 0)
@@ -3293,7 +3293,7 @@ mDNSlocal void ConfigResolvers(mDNS *const m, dns_config_t *config, mDNSBool sco
 	// is only for names that fall under "apple.com", but that's not correct. Actually the default resolver is
 	// for all names not covered by a more specific resolver (i.e. its domain should be ".", the root domain).
 	//
-	// NOTE: Starting DNSINFO_VERSION 20091104, domain value of this first resolver (resolver 0) is always NULL.
+	// Note: Starting DNSINFO_VERSION 20091104, domain value of this first resolver (resolver 0) is always NULL.
 	// We don't guard it with #ifs for better readability
 	// 
 	if ((nresolvers != 0) && resolver[0]->domain)
