@@ -35,6 +35,8 @@
 #include <mach/mach_error.h>
 #include <servers/bootstrap.h>
 #include <sys/types.h>
+#include <errno.h>
+#include <signal.h>
 #include <unistd.h>
 #include <paths.h>
 #include <fcntl.h>

@@ -1882,7 +1882,7 @@ mDNSlocal void GetUserSpecifiedLocalHostName(domainlabel *const namelabel)
 mDNSexport mDNSBool DictionaryIsEnabled(CFDictionaryRef dict)
 	{
 	mDNSs32 val;
-	CFNumberRef state = CFDictionaryGetValue(dict, CFSTR("Enabled"));
+	CFNumberRef state = (CFNumberRef)CFDictionaryGetValue(dict, CFSTR("Enabled"));
 	if (!state) return mDNSfalse;
 	if (!CFNumberGetValue(state, kCFNumberSInt32Type, &val))
 		{ LogMsg("ERROR: DictionaryIsEnabled - CFNumberGetValue"); return mDNSfalse; }
@@ -3632,7 +3632,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 					CFArrayRef values = CFDictionaryGetValue(dict, kSCPropNetDNSServerAddresses);
 					if (values)
 						{
-						LogInfo("DNS Server Address values: %d", CFArrayGetCount(values));
+						LogInfo("DNS Server Address values: %d", (int)CFArrayGetCount(values));
 						for (i = 0; i < CFArrayGetCount(values); i++)
 							{
 							CFStringRef s = CFArrayGetValueAtIndex(values, i);
