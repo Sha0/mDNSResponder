@@ -8148,15 +8148,21 @@ mDNSlocal void RestartARPProbing(mDNS *const m, AuthRecord *const rr)
 
 mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, const mDNSu8 *const end, const mDNSInterfaceID InterfaceID)
 	{
-	static const mDNSOpaque16 Ethertype_IP = { { 0x08, 0x00 } };
-	static const mDNSOpaque32 ARP_EthIP_h0 = { { 0x08, 0x06, 0x00, 0x01 } };	// Ethertype (ARP = 0x0806), Hardware address space (Ethernet = 1)
-	static const mDNSOpaque32 ARP_EthIP_h1 = { { 0x08, 0x00, 0x06, 0x04 } };	// Protocol address space (IP = 0x0800), hlen, plen
-	static const mDNSOpaque16 ARP_op_request = { { 0, 1 } };
+	static const mDNSOpaque16 Ethertype_ARP  = { { 0x08, 0x06 } };	// Ethertype 0x0806 = ARP
+	static const mDNSOpaque16 Ethertype_IP   = { { 0x08, 0x00 } };	// Ethertype 0x0800 = IP
+	static const mDNSOpaque16 ARP_hrd_eth    = { { 0x00, 0x01 } };	// Hardware address space (Ethernet = 1)
+	static const mDNSOpaque16 ARP_pro_ip     = { { 0x08, 0x00 } };	// Protocol address space (IP = 0x0800)
+	static const mDNSOpaque16 ARP_op_request = { {    0,    1 } };
+
+	// Note: BPF guarantees that the NETWORK LAYER header will be word aligned, not the link-layer header.
+	// In other words, we can safely assume that arp, v4 and v6 below are all properly word aligned, but
+	// that means that eth points to 14 bytes before that, so necessarily it cannot also be 4-byte aligned.
 	const EthernetHeader *const eth = (const EthernetHeader *)p;
 	const ARP_EthIP      *const arp = (const ARP_EthIP      *)(eth+1);
 	const IPv4Header     *const v4  = (const IPv4Header     *)(eth+1);
 	const IPv6Header     *const v6  = (const IPv6Header     *)(eth+1);
-	if (end >= p+42 && *(mDNSu32*)(p+12) == ARP_EthIP_h0.NotAnInteger && *(mDNSu32*)(p+16) == ARP_EthIP_h1.NotAnInteger)
+
+	if (end >= p+42 && mDNSSameOpaque16(eth->ethertype, Ethertype_ARP) && mDNSSameOpaque16(arp->hrd, ARP_hrd_eth) && mDNSSameOpaque16(arp->pro, ARP_pro_ip))
 		{
 		AuthRecord *rr;
 		NetworkInterfaceInfo *intf = FirstInterfaceForID(m, InterfaceID);

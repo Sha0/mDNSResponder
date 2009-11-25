@@ -1510,8 +1510,13 @@ mDNSlocal void bpf_callback(const CFSocketRef cfs, const CFSocketCallBackType Ca
 
 	while (ptr < end)
 		{
-		const struct bpf_hdr *bh = (const struct bpf_hdr *)ptr;
-		debugf("%3d: bpf_callback bh_caplen %4d bh_datalen %4d remaining %4d", info->BPF_fd, bh->bh_caplen, bh->bh_datalen, end - (ptr + BPF_WORDALIGN(bh->bh_hdrlen + bh->bh_caplen)));
+		const struct bpf_hdr *const bh = (const struct bpf_hdr *)ptr;
+		debugf("%3d: bpf_callback ptr %p bh_hdrlen %d data %p bh_caplen %4d bh_datalen %4d next %p remaining %4d",
+			info->BPF_fd, ptr, bh->bh_hdrlen, ptr + bh->bh_hdrlen, bh->bh_caplen, bh->bh_datalen,
+			ptr + BPF_WORDALIGN(bh->bh_hdrlen + bh->bh_caplen), end - (ptr + BPF_WORDALIGN(bh->bh_hdrlen + bh->bh_caplen)));
+		// Note that BPF guarantees that the NETWORK LAYER header will be word aligned, not the link-layer header.
+		// Given that An Ethernet header is 14 bytes, this means that if the network layer header (e.g. IP header,
+		// ARP message, etc.) is 4-byte aligned, then necessarily the Ethernet header will be NOT be 4-byte aligned.
 		mDNSCoreReceiveRawPacket(info->m, ptr + bh->bh_hdrlen, ptr + bh->bh_hdrlen + bh->bh_caplen, info->ifinfo.InterfaceID);
 		ptr += BPF_WORDALIGN(bh->bh_hdrlen + bh->bh_caplen);
 		}
