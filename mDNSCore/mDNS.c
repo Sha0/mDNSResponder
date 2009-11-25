@@ -4198,6 +4198,33 @@ mDNSlocal CacheRecord *FindIdenticalRecordInCache(const mDNS *const m, const Res
 	return(rr);
 	}
 
+// Called from mDNSCoreReceiveUpdate when we get a sleep proxy registration request,
+// to check our lists and discard any stale duplicates of this record we already have
+mDNSlocal void ClearIdenticalProxyRecords(mDNS *const m, const OwnerOptData *const owner, AuthRecord *const thelist)
+	{
+	if (m->CurrentRecord)
+		LogMsg("ClearIdenticalProxyRecords ERROR m->CurrentRecord already set %s", ARDisplayString(m, m->CurrentRecord));
+	m->CurrentRecord = thelist;
+	while (m->CurrentRecord)
+		{
+		AuthRecord *const rr = m->CurrentRecord;
+		if (m->rec.r.resrec.InterfaceID == rr->resrec.InterfaceID && mDNSSameEthAddress(&owner->HMAC, &rr->WakeUp.HMAC))
+			if (IdenticalResourceRecord(&rr->resrec, &m->rec.r.resrec))
+				{
+				LogSPS("ClearIdenticalProxyRecords: Removing %3d H-MAC %.6a I-MAC %.6a %d %d %s",
+					m->ProxyRecords, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, rr->WakeUp.seq, owner->seq, ARDisplayString(m, rr));
+				rr->WakeUp.HMAC = zeroEthAddr;	// Clear HMAC so that mDNS_Deregister_internal doesn't waste packets trying to wake this host
+				rr->RequireGoodbye = mDNSfalse;	// and we don't want to send goodbye for it
+				mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
+				SetSPSProxyListChanged(m->rec.r.resrec.InterfaceID);
+				}
+		// Mustn't advance m->CurrentRecord until *after* mDNS_Deregister_internal,
+		// because the list may have been changed in that call.
+		if (m->CurrentRecord == rr) // If m->CurrentRecord was not advanced for us, do it now
+			m->CurrentRecord = rr->next;
+		}
+	}
+
 // Called from ProcessQuery when we get an mDNS packet with an owner record in it
 mDNSlocal void ClearProxyRecords(mDNS *const m, const OwnerOptData *const owner, AuthRecord *const thelist)
 	{
@@ -5746,6 +5773,8 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 					{
 					mDNSu8 RecordType = m->rec.r.resrec.RecordType & kDNSRecordTypePacketUniqueMask ? kDNSRecordTypeUnique : kDNSRecordTypeShared;
 					m->rec.r.resrec.rrclass &= ~kDNSClass_UniqueRRSet;
+					ClearIdenticalProxyRecords(m, &owner, m->DuplicateRecords);	// Make sure we don't have any old stale duplicates of this record
+					ClearIdenticalProxyRecords(m, &owner, m->ResourceRecords);
 					mDNS_SetupResourceRecord(ar, mDNSNULL, InterfaceID, m->rec.r.resrec.rrtype, m->rec.r.resrec.rroriginalttl, RecordType, SPSRecordCallback, ar);
 					AssignDomainName(&ar->namestorage, m->rec.r.resrec.name);
 					ar->resrec.rdlength = GetRDLength(&m->rec.r.resrec, mDNSfalse);
