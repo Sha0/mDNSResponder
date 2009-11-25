@@ -5223,16 +5223,19 @@ mDNSlocal mStatus mDNSPlatformInit_setup(mDNS *const m)
 #if APPLE_OSX_mDNSResponder
 	// Note: We use SPMetricPortability > 35 to indicate a laptop of some kind
 	// SPMetricPortability <= 35 means nominally a non-portable machine (i.e. Mac mini or better)
-	// An Apple TV does not actually weigh 3kg, but we assign it a 'nominal' mass of 3kg to indicate that it's treated as being relatively less portable than a laptop
-	if      (!strncasecmp(HINFO_HWstring, "Xserve",   6)) { SPMetricPortability = 25 /* 30kg */; SPMetricMarginalPower = 84 /* 250W */; SPMetricTotalPower = 85 /* 300W */; }
-	else if (!strncasecmp(HINFO_HWstring, "RackMac",  7)) { SPMetricPortability = 25 /* 30kg */; SPMetricMarginalPower = 84 /* 250W */; SPMetricTotalPower = 85 /* 300W */; }
-	else if (!strncasecmp(HINFO_HWstring, "MacPro",   6)) { SPMetricPortability = 27 /* 20kg */; SPMetricMarginalPower = 84 /* 250W */; SPMetricTotalPower = 85 /* 300W */; }
-	else if (!strncasecmp(HINFO_HWstring, "PowerMac", 8)) { SPMetricPortability = 27 /* 20kg */; SPMetricMarginalPower = 82 /* 160W */; SPMetricTotalPower = 83 /* 200W */; }
-	else if (!strncasecmp(HINFO_HWstring, "iMac",     4)) { SPMetricPortability = 30 /* 10kg */; SPMetricMarginalPower = 77 /*  50W */; SPMetricTotalPower = 78 /*  60W */; }
-	else if (!strncasecmp(HINFO_HWstring, "Macmini",  7)) { SPMetricPortability = 33 /*  5kg */; SPMetricMarginalPower = 73 /*  20W */; SPMetricTotalPower = 74 /*  25W */; }
-	else if (!strncasecmp(HINFO_HWstring, "AppleTV",  7)) { SPMetricPortability = 35 /*  3kg */; SPMetricMarginalPower = 10 /*   0W */; SPMetricTotalPower = 73 /*  20W */; }
-	else if (!strncasecmp(HINFO_HWstring, "MacBook",  7)) { SPMetricPortability = 37 /*  2kg */; SPMetricMarginalPower = 71 /*  13W */; SPMetricTotalPower = 72 /*  15W */; }
-	else if (!strncasecmp(HINFO_HWstring, "PowerBook",9)) { SPMetricPortability = 37 /*  2kg */; SPMetricMarginalPower = 71 /*  13W */; SPMetricTotalPower = 72 /*  15W */; }
+	// Apple TVs, AirPort base stations, and Time Capsules do not actually weigh 3kg, but we assign them
+	// higher 'nominal' masses to indicate they should be treated as being relatively less portable than a laptop
+	if      (!strncasecmp(HINFO_HWstring, "Xserve",       6)) { SPMetricPortability = 25 /* 30kg */; SPMetricMarginalPower = 84 /* 250W */; SPMetricTotalPower = 85 /* 300W */; }
+	else if (!strncasecmp(HINFO_HWstring, "RackMac",      7)) { SPMetricPortability = 25 /* 30kg */; SPMetricMarginalPower = 84 /* 250W */; SPMetricTotalPower = 85 /* 300W */; }
+	else if (!strncasecmp(HINFO_HWstring, "MacPro",       6)) { SPMetricPortability = 27 /* 20kg */; SPMetricMarginalPower = 84 /* 250W */; SPMetricTotalPower = 85 /* 300W */; }
+	else if (!strncasecmp(HINFO_HWstring, "PowerMac",     8)) { SPMetricPortability = 27 /* 20kg */; SPMetricMarginalPower = 82 /* 160W */; SPMetricTotalPower = 83 /* 200W */; }
+	else if (!strncasecmp(HINFO_HWstring, "iMac",         4)) { SPMetricPortability = 30 /* 10kg */; SPMetricMarginalPower = 77 /*  50W */; SPMetricTotalPower = 78 /*  60W */; }
+	else if (!strncasecmp(HINFO_HWstring, "Macmini",      7)) { SPMetricPortability = 33 /*  5kg */; SPMetricMarginalPower = 73 /*  20W */; SPMetricTotalPower = 74 /*  25W */; }
+	else if (!strncasecmp(HINFO_HWstring, "TimeCapsule", 11)) { SPMetricPortability = 34 /*  4kg */; SPMetricMarginalPower = 10 /*  ~0W */; SPMetricTotalPower = 70 /*  13W */; }
+	else if (!strncasecmp(HINFO_HWstring, "AirPort",      7)) { SPMetricPortability = 35 /*  3kg */; SPMetricMarginalPower = 10 /*  ~0W */; SPMetricTotalPower = 70 /*  12W */; }
+	else if (!strncasecmp(HINFO_HWstring, "AppleTV",      7)) { SPMetricPortability = 35 /*  3kg */; SPMetricMarginalPower = 10 /*  ~0W */; SPMetricTotalPower = 73 /*  20W */; }
+	else if (!strncasecmp(HINFO_HWstring, "MacBook",      7)) { SPMetricPortability = 37 /*  2kg */; SPMetricMarginalPower = 71 /*  13W */; SPMetricTotalPower = 72 /*  15W */; }
+	else if (!strncasecmp(HINFO_HWstring, "PowerBook",    9)) { SPMetricPortability = 37 /*  2kg */; SPMetricMarginalPower = 71 /*  13W */; SPMetricTotalPower = 72 /*  15W */; }
 	LogSPS("HW_MODEL: %.*s (%s) Portability %d Marginal Power %d Total Power %d",
 		HINFO_HWstring_prefixlen, HINFO_HWstring, HINFO_HWstring, SPMetricPortability, SPMetricMarginalPower, SPMetricTotalPower);
 
