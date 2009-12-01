@@ -2775,9 +2775,18 @@ mDNSlocal void CheckCacheExpiration(mDNS *const m, CacheGroup *const cg)
 			if (rr->CRActiveQuestion)	// If this record has one or more active questions, tell them it's going away
 				{
 				DNSQuestion *q = rr->CRActiveQuestion;
-				q->ThisQInterval = InitialQuestionInterval;
-				q->LastQTime     = m->timenow - q->ThisQInterval;
-				SetNextQueryTime(m, q);
+				// When a cache record is about to expire, we expect to do four queries at 80-82%, 85-87%, 90-92% and
+				// then 95-97% of the TTL. If the DNS server does not respond, then we will remove the cache entry
+				// before we pick a new DNS server. As the question interval is set to MaxQuestionInterval, we may
+				// not send out a query anytime soon. Hence, we need to reset the question interval. If this is
+				// a normal deferred ADD case, then AnswerCurrentQuestionWithResourceRecord will reset it to
+				// MaxQuestionInterval.
+				if (!mDNSOpaque16IsZero(q->TargetQID) && !q->LongLived)
+					{
+					q->ThisQInterval = InitialQuestionInterval;
+					q->LastQTime     = m->timenow - q->ThisQInterval;
+					SetNextQueryTime(m, q);
+					}
 				CacheRecordRmv(m, rr);
 				m->rrcache_active--;
 				}
