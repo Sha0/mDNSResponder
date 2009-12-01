@@ -3387,17 +3387,19 @@ mDNSlocal void ConfigResolvers(mDNS *const m, dns_config_t *config, mDNSBool sco
 				if (SetupAddr(&saddr, r->nameserver[n])) LogMsg("RegisterSplitDNS: bad IP address");
 				else
 					{
-					DNSServer *s = mDNS_AddDNSServer(m, &d, interface, &saddr, r->port ? mDNSOpaque16fromIntVal(r->port) : UnicastDNSPort);
+					mDNSBool scopedDNS = mDNSfalse;
+					DNSServer *s;
+#if DNSINFO_VERSION >= 20091104
+					// By setting scoped, this DNSServer can only be picked if the right interfaceID
+					// is given in the question
+					if (scope && (r->flags & DNS_RESOLVER_FLAGS_SCOPED) && (interface == mDNSNULL))
+						LogMsg("ConfigResolvers: ERROR: scoped is set but if_index %d is invalid for DNSServer %#a:%d", r->if_index, &saddr, mDNSVal16(r->port ? mDNSOpaque16fromIntVal(r->port) : UnicastDNSPort));
+					else
+						scopedDNS = (scope && (r->flags & DNS_RESOLVER_FLAGS_SCOPED)) ? mDNStrue : mDNSfalse;
+#endif
+					s = mDNS_AddDNSServer(m, &d, interface, &saddr, r->port ? mDNSOpaque16fromIntVal(r->port) : UnicastDNSPort, scopedDNS);
 					if (s)
 						{
-#if DNSINFO_VERSION >= 20091104
-						// By setting scoped, this DNSServer can only be picked if the right interfaceID
-						// is given in the question
-						if (scope && (r->flags & DNS_RESOLVER_FLAGS_SCOPED) && (interface == mDNSNULL))
-							LogMsg("ConfigResolvers: ERROR: scoped is set but InterfaceID %d is invalid for DNSServer %#a:%d", s->interface, &s->addr, mDNSVal16(s->port));
-						else
-							s->scoped = (scope && (r->flags & DNS_RESOLVER_FLAGS_SCOPED)) ? mDNStrue : mDNSfalse;
-#endif
 						if (disabled) s->teststate = DNSServer_Disabled;
 						LogInfo("ConfigResolvers: DNS server %#a:%d for domain %##s from slot %d,%d", &s->addr, mDNSVal16(s->port), d.c, i, n);
 						}
@@ -3641,7 +3643,7 @@ mDNSexport void mDNSPlatformSetDNSConfig(mDNS *const m, mDNSBool setservers, mDN
 								inet_aton(buf, (struct in_addr *) &addr.ip.v4))
 								{
 								LogInfo("Adding DNS server from dict: %s", buf);
-								mDNS_AddDNSServer(m, mDNSNULL, mDNSInterface_Any, &addr, UnicastDNSPort);
+								mDNS_AddDNSServer(m, mDNSNULL, mDNSInterface_Any, &addr, UnicastDNSPort, mDNSfalse);
 								}
 							}
 						}

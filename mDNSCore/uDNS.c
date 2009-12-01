@@ -145,20 +145,20 @@ mDNSlocal void SetRecordRetry(mDNS *const m, AuthRecord *rr, mStatus SendErr)
 #pragma mark - Name Server List Management
 #endif
 
-mDNSexport DNSServer *mDNS_AddDNSServer(mDNS *const m, const domainname *d, const mDNSInterfaceID interface, const mDNSAddr *addr, const mDNSIPPort port)
+mDNSexport DNSServer *mDNS_AddDNSServer(mDNS *const m, const domainname *d, const mDNSInterfaceID interface, const mDNSAddr *addr, const mDNSIPPort port, mDNSBool scoped)
 	{
 	DNSServer **p = &m->DNSServers;
 	DNSServer *tmp = mDNSNULL;
 	
 	if (!d) d = (const domainname *)"";
 
-	LogInfo("mDNS_AddDNSServer: Adding %#a for %##s", addr, d->c);
+	LogInfo("mDNS_AddDNSServer: Adding %#a for %##s, InterfaceID %p, scoped %d", addr, d->c, interface, scoped);
 	if (m->mDNS_busy != m->mDNS_reentrancy+1)
 		LogMsg("mDNS_AddDNSServer: Lock not held! mDNS_busy (%ld) mDNS_reentrancy (%ld)", m->mDNS_busy, m->mDNS_reentrancy);
 
 	while (*p)	// Check if we already have this {interface,address,port,domain} tuple registered
 		{
-		if ((*p)->interface == interface && (*p)->teststate != DNSServer_Disabled &&
+		if ((*p)->scoped == scoped && (*p)->interface == interface && (*p)->teststate != DNSServer_Disabled &&
 			mDNSSameAddress(&(*p)->addr, addr) && mDNSSameIPPort((*p)->port, port) && SameDomainName(&(*p)->domain, d))
 			{
 			if (!((*p)->flags & DNSServer_FlagDelete)) debugf("Note: DNS Server %#a:%d for domain %##s (%p) registered more than once", addr, mDNSVal16(port), d->c, interface);
@@ -179,6 +179,7 @@ mDNSexport DNSServer *mDNS_AddDNSServer(mDNS *const m, const domainname *d, cons
 		if (!*p) LogMsg("Error: mDNS_AddDNSServer - malloc");
 		else
 			{
+			(*p)->scoped	= scoped;
 			(*p)->interface = interface;
 			(*p)->addr      = *addr;
 			(*p)->port      = port;
@@ -190,7 +191,6 @@ mDNSexport DNSServer *mDNS_AddDNSServer(mDNS *const m, const domainname *d, cons
 			}
 		}
 	(*p)->penaltyTime = 0;
-	(*p)->scoped = mDNSfalse;
 	return(*p);
 	}
 

@@ -1784,9 +1784,9 @@ mDNSlocal void INFOCallback(void)
 		for (s = mDNSStorage.DNSServers; s; s = s->next)
 			{
 			NetworkInterfaceInfoOSX *ifx = IfindexToInterfaceInfoOSX(&mDNSStorage, s->interface);
-			LogMsgNoIdent("DNS Server %##s %s%s%#a:%d %d %s",
+			LogMsgNoIdent("DNS Server %##s %s%s%#a:%d %d %s %s",
 				s->domain.c, ifx ? ifx->ifinfo.ifname : "", ifx ? " " : "", &s->addr, mDNSVal16(s->port),
-				s->penaltyTime ? s->penaltyTime - mDNS_TimeNow(&mDNSStorage) : 0,
+				s->penaltyTime ? s->penaltyTime - mDNS_TimeNow(&mDNSStorage) : 0, s->scoped ? "Scoped" : "",
 				s->teststate == DNSServer_Untested ? "(Untested)" :
 				s->teststate == DNSServer_Passed   ? ""           :
 				s->teststate == DNSServer_Failed   ? "(Failed)"   :
