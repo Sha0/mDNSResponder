@@ -2187,6 +2187,8 @@ mDNSlocal mStatus handle_queryrecord_request(request_state *request)
 			// then that's a hint that it's worth doing a unicast query. Otherwise, we first check to see if the
 			// site's DNS server claims there's an SOA record for "local", and if so, that's also a hint that queries
 			// for names in the "local" domain will be safely answered privately before they hit the root name servers.
+			// Note that in the "my-small-company.local" example above there will typically be an SOA record for
+			// "my-small-company.local" but *not* for "local", which is why the "local SOA" check would fail in that case.
 			if (labels == 2 && !SameDomainName(&q->qname, &ActiveDirectoryPrimaryDomain))
 				{
 				AssignDomainName(&q2->qname, &localdomain);
