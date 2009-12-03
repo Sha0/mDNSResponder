@@ -4312,8 +4312,10 @@ mDNSlocal void ClearProxyRecords(mDNS *const m, const OwnerOptData *const owner,
 		if (m->rec.r.resrec.InterfaceID == rr->resrec.InterfaceID && mDNSSameEthAddress(&owner->HMAC, &rr->WakeUp.HMAC))
 			if (owner->seq != rr->WakeUp.seq || m->timenow - rr->TimeRcvd > mDNSPlatformOneSecond * 60)
 				{
-				LogSPS("ClearProxyRecords: Removing %3d H-MAC %.6a I-MAC %.6a %d %d %s",
-					m->ProxyRecords, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, rr->WakeUp.seq, owner->seq, ARDisplayString(m, rr));
+				LogSPS("ClearProxyRecords: Removing %3d AC %2d %02X H-MAC %.6a I-MAC %.6a %d %d %s",
+					m->ProxyRecords, rr->AnnounceCount, rr->resrec.RecordType,
+					&rr->WakeUp.HMAC, &rr->WakeUp.IMAC, rr->WakeUp.seq, owner->seq, ARDisplayString(m, rr));
+				if (rr->resrec.RecordType == kDNSRecordTypeDeregistering) rr->resrec.RecordType = kDNSRecordTypeShared;
 				rr->WakeUp.HMAC = zeroEthAddr;	// Clear HMAC so that mDNS_Deregister_internal doesn't waste packets trying to wake this host
 				rr->RequireGoodbye = mDNSfalse;	// and we don't want to send goodbye for it, since real host is now back and functional
 				mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
@@ -8301,7 +8303,8 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 		// -- and we check for these in Pass 2 below.
 		if (mDNSSameOpaque16(arp->op, ARP_op_request) && !mDNSSameIPv4Address(arp->spa, arp->tpa))
 			for (rr = m->ResourceRecords; rr; rr=rr->next)
-				if (rr->resrec.InterfaceID == InterfaceID && rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, arp->tpa))
+				if (rr->resrec.InterfaceID == InterfaceID && rr->resrec.RecordType != kDNSRecordTypeDeregistering &&
+					rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, arp->tpa))
 					{
 					char *ifname = InterfaceNameForID(m, InterfaceID);
 					static const char msg1[] = "ARP Req from owner -- re-probing";
@@ -8333,7 +8336,8 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 			{
 			if (!mDNSSameIPv4Address(arp->spa, zerov4Addr))
 				for (rr = m->ResourceRecords; rr; rr=rr->next)
-					if (rr->resrec.InterfaceID == InterfaceID && rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, arp->spa))
+					if (rr->resrec.InterfaceID == InterfaceID && rr->resrec.RecordType != kDNSRecordTypeDeregistering &&
+						rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, arp->spa))
 						{
 						char *ifname = InterfaceNameForID(m, InterfaceID);
 						if (!ifname) ifname = "<NULL InterfaceID>";
@@ -8451,12 +8455,14 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 				mDNS_Lock(m);
 				for (rr = m->ResourceRecords; rr; rr=rr->next)
 					if (rr->resrec.InterfaceID == InterfaceID &&
+						rr->resrec.RecordType != kDNSRecordTypeDeregistering &&
 						rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, v4->dst))
 						{
 						char *ifname = InterfaceNameForID(m, rr->resrec.InterfaceID);
 						const mDNSu8 *const tp = (v4->protocol == 6) ? (const mDNSu8 *)"\x4_tcp" : (const mDNSu8 *)"\x4_udp";
 						for (r2 = m->ResourceRecords; r2; r2=r2->next)
 							if (r2->resrec.InterfaceID == InterfaceID && mDNSSameEthAddress(&r2->WakeUp.HMAC, &rr->WakeUp.HMAC) &&
+								r2->resrec.RecordType != kDNSRecordTypeDeregistering &&
 								r2->resrec.rrtype == kDNSType_SRV && mDNSSameIPPort(r2->resrec.rdata->u.srv.port, port) &&
 								SameDomainLabel(ThirdLabel(r2->resrec.name)->c, tp))
 								break;
@@ -8464,7 +8470,6 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 						if (!ifname) ifname = "<NULL InterfaceID>";
 						if (r2)
 							{
-							rr->AnnounceCount = 0;
 							LogMsg("Waking host at %s %.4a H-MAC %.6a I-MAC %.6a for %s",
 								ifname, &v4->dst, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m, r2));
 							ScheduleWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.HMAC);
