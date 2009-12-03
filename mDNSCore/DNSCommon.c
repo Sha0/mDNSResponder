@@ -2528,6 +2528,7 @@ mDNSlocal mDNSs32 GetNextScheduledEvent(const mDNS *const m)
 	if (m->NewLocalOnlyQuestions)                                   return(m->timenow);
 	if (m->NewLocalRecords && LocalRecordReady(m->NewLocalRecords)) return(m->timenow);
 	if (m->SPSProxyListChanged)                                     return(m->timenow);
+	if (m->LocalRemoveEvents)                                       return(m->timenow);
 #ifndef UNICAST_DISABLED
 	if (e - m->NextuDNSEvent         > 0) e = m->NextuDNSEvent;
 	if (e - m->NextScheduledNATOp    > 0) e = m->NextScheduledNATOp;
@@ -2570,6 +2571,9 @@ mDNSexport void ShowTaskSchedulingError(mDNS *const m)
 
 	if (m->NewLocalRecords && LocalRecordReady(m->NewLocalRecords))
 		LogMsg("Task Scheduling Error: NewLocalRecords %s", ARDisplayString(m, m->NewLocalRecords));
+
+	if (m->SPSProxyListChanged) LogMsg("Task Scheduling Error: SPSProxyListChanged");
+	if (m->LocalRemoveEvents)   LogMsg("Task Scheduling Error: LocalRemoveEvents");
 
 	if (m->timenow - m->NextScheduledEvent    >= 0)
 		LogMsg("Task Scheduling Error: m->NextScheduledEvent %d",    m->timenow - m->NextScheduledEvent);

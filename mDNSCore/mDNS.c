@@ -177,6 +177,14 @@ mDNSexport char *InterfaceNameForID(mDNS *const m, const mDNSInterfaceID Interfa
 // Used by AnswerAllLocalQuestionsWithLocalAuthRecord() and AnswerNewLocalOnlyQuestion()
 mDNSlocal void AnswerLocalQuestionWithLocalAuthRecord(mDNS *const m, DNSQuestion *q, AuthRecord *rr, QC_result AddRecord)
 	{
+	// We should not be delivering results for record types Unregistered, Deregistering, and (unverified) Unique
+	if (!(rr->resrec.RecordType & kDNSRecordTypeActiveMask))
+		{
+		LogMsg("AnswerLocalQuestionWithLocalAuthRecord: *NOT* delivering %s event for local record type %X %s",
+			AddRecord ? "Add" : "Rmv", rr->resrec.RecordType, ARDisplayString(m, rr));
+		return;
+		}
+
 	// Indicate that we've given at least one positive answer for this record, so we should be prepared to send a goodbye for it
 	if (AddRecord) rr->AnsweredLocalQ = mDNStrue;
 	mDNS_DropLockBeforeCallback();		// Allow client to legally make mDNS API calls from the callback
@@ -192,7 +200,7 @@ mDNSlocal void AnswerLocalQuestionWithLocalAuthRecord(mDNS *const m, DNSQuestion
 // all our local questions (both LocalOnlyQuestions and mDNSInterface_Any questions) delivering answers to each,
 // stopping if it reaches a NewLocalOnlyQuestion -- brand-new questions are handled by AnswerNewLocalOnlyQuestion().
 // If the AuthRecord is marked mDNSInterface_LocalOnly, then we also deliver it to any other questions we have using mDNSInterface_Any.
-// Used by AnswerForNewLocalRecords() and mDNS_Deregister_internal()
+// Used by the m->NewLocalRecords loop in mDNS_Execute(), and by mDNS_Deregister_internal()
 mDNSlocal void AnswerAllLocalQuestionsWithLocalAuthRecord(mDNS *const m, AuthRecord *rr, QC_result AddRecord)
 	{
 	if (m->CurrentQuestion)
@@ -344,7 +352,7 @@ mDNSlocal void SetNextAnnounceProbeTime(mDNS *const m, const AuthRecord *const r
 		if (m->NextScheduledProbe - (rr->LastAPTime + rr->ThisAPInterval) >= 0)
 			m->NextScheduledProbe = (rr->LastAPTime + rr->ThisAPInterval);
 		}
-	else if (rr->AnnounceCount && ResourceRecordIsValidAnswer(rr))
+	else if (rr->AnnounceCount && (ResourceRecordIsValidAnswer(rr) || rr->resrec.RecordType == kDNSRecordTypeDeregistering))
 		{
 		if (m->NextScheduledResponse - (rr->LastAPTime + rr->ThisAPInterval) >= 0)
 			m->NextScheduledResponse = (rr->LastAPTime + rr->ThisAPInterval);
@@ -667,6 +675,7 @@ mDNSexport mStatus mDNS_Register_internal(mDNS *const m, AuthRecord *const rr)
 				rr->resrec.RecordType    = kDNSRecordTypeDeregistering;
 				rr->resrec.rroriginalttl = 0;
 				rr->ImmedAnswer          = mDNSInterfaceMark;
+				m->LocalRemoveEvents     = mDNStrue;
 				m->NextScheduledResponse = m->timenow;
 				}
 			}
@@ -814,12 +823,6 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 		return(mStatus_BadReferenceErr);
 		}
 
-	if (rr->WakeUp.HMAC.l[0])
-		{
-		LogSPS("mDNS_Deregister_internal: Sending wakeup for %.6a %s", &rr->WakeUp.HMAC, ARDisplayString(m, rr));
-		SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.IMAC, &rr->WakeUp.password);
-		}
-
 	// If this is a shared record and we've announced it at least once,
 	// we need to retract that announcement before we delete the record
 
@@ -839,6 +842,7 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 		{
 		if (rr->tcp) { DisposeTCPConn(rr->tcp); rr->tcp = mDNSNULL; }
 		rr->resrec.RecordType    = kDNSRecordTypeDeregistering;
+		m->LocalRemoveEvents     = mDNStrue;
 		uDNS_DeregisterRecord(m, rr);
 		// At this point unconditionally we bail out
 		// Either uDNS_DeregisterRecord will have completed synchronously, and called CompleteDeregistration,
@@ -848,12 +852,19 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 		}
 #endif // UNICAST_DISABLED
 
-	if (RecordType == kDNSRecordTypeShared && (rr->RequireGoodbye || rr->AnsweredLocalQ))
+	if (rr->WakeUp.HMAC.l[0] ||
+		(RecordType == kDNSRecordTypeShared && (rr->RequireGoodbye || rr->AnsweredLocalQ)))
 		{
-		verbosedebugf("mDNS_Deregister_internal: Sending deregister for %s", ARDisplayString(m, rr));
+		verbosedebugf("mDNS_Deregister_internal: Starting deregistration for %s", ARDisplayString(m, rr));
 		rr->resrec.RecordType    = kDNSRecordTypeDeregistering;
 		rr->resrec.rroriginalttl = 0;
-		rr->ImmedAnswer          = mDNSInterfaceMark;
+		// If the machine is shutting down we just send one wakeup or goodbye, so we can exit quickly.
+		// Otherwise, for goodbye packets we set the count to 3, and for wakeups we set it to 33 (which
+		// will be up to 30 wakeup attempts, and then if the machine fails to wake, 3 goodbye packets).
+		rr->AnnounceCount        = m->ShutdownTime ? 1 : !rr->WakeUp.HMAC.l[0] ? 3: 33;
+		rr->ThisAPInterval       = mDNSPlatformOneSecond;
+		rr->LastAPTime           = m->timenow - rr->ThisAPInterval;
+		m->LocalRemoveEvents     = mDNStrue;
 		if (m->NextScheduledResponse - (m->timenow + mDNSPlatformOneSecond/10) >= 0)
 			m->NextScheduledResponse = (m->timenow + mDNSPlatformOneSecond/10);
 		}
@@ -864,6 +875,10 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 		if (m->CurrentRecord   == rr) m->CurrentRecord   = rr->next;
 		if (m->NewLocalRecords == rr) m->NewLocalRecords = rr->next;
 		rr->next = mDNSNULL;
+
+		// Should we generate local remove events here?
+		// i.e. something like:
+		// if (rr->AnsweredLocalQ) { AnswerAllLocalQuestionsWithLocalAuthRecord(m, rr, mDNSfalse); rr->AnsweredLocalQ = mDNSfalse; }
 
 		if      (RecordType == kDNSRecordTypeUnregistered)
 			LogMsg("mDNS_Deregister_internal: %s already marked kDNSRecordTypeUnregistered", ARDisplayString(m, rr));
@@ -1264,31 +1279,52 @@ mDNSlocal void SendResponses(mDNS *const m)
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		{
 		while (rr->NextUpdateCredit && m->timenow - rr->NextUpdateCredit >= 0) GrantUpdateCredit(rr);
-		if (TimeToAnnounceThisRecord(rr, m->timenow) && ResourceRecordIsValidAnswer(rr))
+		if (TimeToAnnounceThisRecord(rr, m->timenow))
 			{
-			if (rr->AddressProxy.type)
+			if (rr->resrec.RecordType == kDNSRecordTypeDeregistering)
 				{
-				rr->AnnounceCount--;
-				rr->ThisAPInterval *= 2;
-				rr->LastAPTime = m->timenow;
-				if (rr->AddressProxy.type == mDNSAddrType_IPv4)
+				if (!rr->WakeUp.HMAC.l[0])
+					rr->ImmedAnswer = mDNSInterfaceMark;		// Send goodbye packet on all interfaces
+				else
 					{
-					LogSPS("ARP Announcement %d Capturing traffic for H-MAC %.6a I-MAC %.6a %s",
-						rr->AnnounceCount, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m,rr));
-					SendARP(m, 1, rr, rr->AddressProxy.ip.v4.b, zeroEthAddr.b, rr->AddressProxy.ip.v4.b, onesEthAddr.b);
-					}
-				else if (rr->AddressProxy.type == mDNSAddrType_IPv6)
-					{
-					//LogSPS("NDP Announcement %d %s", rr->AnnounceCount, ARDisplayString(m,rr));
-					//SendARP(m, 1, rr, rr->AddressProxy.ip.v4.b, zeroEthAddr.b, rr->AddressProxy.ip.v4.b, onesEthAddr.b);
+					LogSPS("SendResponses: Sending wakeup %2d for %.6a %s", rr->AnnounceCount, &rr->WakeUp.IMAC, ARDisplayString(m, rr));
+					SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.IMAC, &rr->WakeUp.password);
+					rr->LastAPTime = m->timenow;
+					if (rr->AnnounceCount-- <= 4) rr->WakeUp.HMAC = zeroEthAddr;
+					for (r2 = rr->next; r2; r2=r2->next)
+						if (r2->AnnounceCount && r2->resrec.InterfaceID == rr->resrec.InterfaceID && mDNSSameEthAddress(&r2->WakeUp.IMAC, &rr->WakeUp.IMAC))
+							{
+							r2->LastAPTime = m->timenow;
+							if (r2->AnnounceCount-- <= 4) r2->WakeUp.HMAC = zeroEthAddr;
+							}
 					}
 				}
-			else
+			else if (ResourceRecordIsValidAnswer(rr))
 				{
-				rr->ImmedAnswer = mDNSInterfaceMark;		// Send on all interfaces
-				if (maxExistingAnnounceInterval < rr->ThisAPInterval)
-					maxExistingAnnounceInterval = rr->ThisAPInterval;
-				if (rr->UpdateBlocked) rr->UpdateBlocked = 0;
+				if (rr->AddressProxy.type)
+					{
+					rr->AnnounceCount--;
+					rr->ThisAPInterval *= 2;
+					rr->LastAPTime = m->timenow;
+					if (rr->AddressProxy.type == mDNSAddrType_IPv4)
+						{
+						LogSPS("ARP Announcement %d Capturing traffic for H-MAC %.6a I-MAC %.6a %s",
+							rr->AnnounceCount, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m,rr));
+						SendARP(m, 1, rr, rr->AddressProxy.ip.v4.b, zeroEthAddr.b, rr->AddressProxy.ip.v4.b, onesEthAddr.b);
+						}
+					else if (rr->AddressProxy.type == mDNSAddrType_IPv6)
+						{
+						//LogSPS("NDP Announcement %d %s", rr->AnnounceCount, ARDisplayString(m,rr));
+						//SendARP(m, 1, rr, rr->AddressProxy.ip.v4.b, zeroEthAddr.b, rr->AddressProxy.ip.v4.b, onesEthAddr.b);
+						}
+					}
+				else
+					{
+					rr->ImmedAnswer = mDNSInterfaceMark;		// Send on all interfaces
+					if (maxExistingAnnounceInterval < rr->ThisAPInterval)
+						maxExistingAnnounceInterval = rr->ThisAPInterval;
+					if (rr->UpdateBlocked) rr->UpdateBlocked = 0;
+					}
 				}
 			}
 		}
@@ -1368,7 +1404,8 @@ mDNSlocal void SendResponses(mDNS *const m)
 			if (TimeToAnnounceThisRecord(rr, m->timenow + rr->ThisAPInterval/2))
 				{
 				rr->AnnounceCount--;
-				rr->ThisAPInterval *= 2;
+				if (rr->resrec.RecordType != kDNSRecordTypeDeregistering)
+					rr->ThisAPInterval *= 2;
 				rr->LastAPTime = m->timenow;
 				debugf("Announcing %##s (%s) %d", rr->resrec.name->c, DNSTypeName(rr->resrec.rrtype), rr->AnnounceCount);
 				}
@@ -1604,11 +1641,11 @@ mDNSlocal void SendResponses(mDNS *const m)
 			rr->SendRNow = mDNSNULL;
 			}
 
-		if (rr->ImmedAnswer)
+		if (rr->ImmedAnswer || rr->resrec.RecordType == kDNSRecordTypeDeregistering)
 			{
 			if (rr->NewRData) CompleteRDataUpdate(m, rr);	// Update our rdata, clear the NewRData pointer, and return memory to the client
 	
-			if (rr->resrec.RecordType == kDNSRecordTypeDeregistering)
+			if (rr->resrec.RecordType == kDNSRecordTypeDeregistering && rr->AnnounceCount == 0)
 				CompleteDeregistration(m, rr);		// Don't touch rr after this
 			else
 				{
@@ -3158,8 +3195,8 @@ mDNSlocal void CheckProxyRecords(mDNS *const m, AuthRecord *list)
 				// Don't touch rr after this -- memory may have been free'd
 				}
 			}
-		// Mustn't advance m->CurrentRecord until *after* mDNS_Deregister_internal,
-		// because the list may have been changed in that call.
+		// Mustn't advance m->CurrentRecord until *after* mDNS_Deregister_internal, because
+		// new records could have been added to the end of the list as a result of that call.
 		if (m->CurrentRecord == rr) // If m->CurrentRecord was not advanced for us, do it now
 			m->CurrentRecord = rr->next;
 		}
@@ -3182,6 +3219,9 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 		if (m->CurrentQuestion)
 			LogMsg("mDNS_Execute: ERROR m->CurrentQuestion already set: %##s (%s)",
 				m->CurrentQuestion->qname.c, DNSTypeName(m->CurrentQuestion->qtype));
+	
+		if (m->CurrentRecord)
+			LogMsg("mDNS_Execute: ERROR m->CurrentRecord already set: %s", ARDisplayString(m, m->CurrentRecord));
 	
 		// 1. If we're past the probe suppression time, we can clear it
 		if (m->SuppressProbes && m->timenow - m->SuppressProbes >= 0) m->SuppressProbes = 0;
@@ -3235,6 +3275,32 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 			AnswerNewQuestion(m);
 			}
 		if (i >= 1000) LogMsg("mDNS_Execute: AnswerNewQuestion exceeded loop limit");
+
+		// Make sure we deliver *all* local RMV events, and clear the corresponding rr->AnsweredLocalQ flags, *before*
+		// we begin generating *any* new ADD events in the m->NewLocalOnlyQuestions and m->NewLocalRecords loops below.
+		for (i=0; i<1000 && m->LocalRemoveEvents; i++)
+			{
+			m->LocalRemoveEvents = mDNSfalse;
+			m->CurrentRecord = m->ResourceRecords;
+			while (m->CurrentRecord)
+				{
+				AuthRecord *rr = m->CurrentRecord;
+				if (rr->AnsweredLocalQ && rr->resrec.RecordType == kDNSRecordTypeDeregistering)
+					{
+					debugf("mDNS_Execute: Generating local RMV events for %s", ARDisplayString(m, rr));
+					rr->resrec.RecordType = kDNSRecordTypeShared;
+					AnswerAllLocalQuestionsWithLocalAuthRecord(m, rr, mDNSfalse);
+					if (m->CurrentRecord == rr)	// If rr still exists in list, restore its state now
+						{
+						rr->resrec.RecordType = kDNSRecordTypeDeregistering;
+						rr->AnsweredLocalQ = mDNSfalse;
+						}
+					}
+				if (m->CurrentRecord == rr)		// If m->CurrentRecord was not auto-advanced, do it ourselves now
+					m->CurrentRecord = rr->next;
+				}
+			}
+		if (i >= 1000) LogMsg("mDNS_Execute: m->LocalRemoveEvents exceeded loop limit");
 		
 		for (i=0; m->NewLocalOnlyQuestions && i<1000; i++) AnswerNewLocalOnlyQuestion(m);
 		if (i >= 1000) LogMsg("mDNS_Execute: AnswerNewLocalOnlyQuestion exceeded loop limit");
@@ -3245,7 +3311,7 @@ mDNSexport mDNSs32 mDNS_Execute(mDNS *const m)
 			m->NewLocalRecords = m->NewLocalRecords->next;
 			AnswerAllLocalQuestionsWithLocalAuthRecord(m, rr, mDNStrue);
 			}
-		if (i >= 1000) LogMsg("mDNS_Execute: AnswerForNewLocalRecords exceeded loop limit");
+		if (i >= 1000) LogMsg("mDNS_Execute: m->NewLocalRecords exceeded loop limit");
 
 		// 5. Some questions may have picked a new DNS server and the cache may answer these
 		// questions now. 
@@ -4227,8 +4293,8 @@ mDNSlocal void ClearIdenticalProxyRecords(mDNS *const m, const OwnerOptData *con
 				mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
 				SetSPSProxyListChanged(m->rec.r.resrec.InterfaceID);
 				}
-		// Mustn't advance m->CurrentRecord until *after* mDNS_Deregister_internal,
-		// because the list may have been changed in that call.
+		// Mustn't advance m->CurrentRecord until *after* mDNS_Deregister_internal, because
+		// new records could have been added to the end of the list as a result of that call.
 		if (m->CurrentRecord == rr) // If m->CurrentRecord was not advanced for us, do it now
 			m->CurrentRecord = rr->next;
 		}
@@ -4253,8 +4319,8 @@ mDNSlocal void ClearProxyRecords(mDNS *const m, const OwnerOptData *const owner,
 				mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
 				SetSPSProxyListChanged(m->rec.r.resrec.InterfaceID);
 				}
-		// Mustn't advance m->CurrentRecord until *after* mDNS_Deregister_internal,
-		// because the list may have been changed in that call.
+		// Mustn't advance m->CurrentRecord until *after* mDNS_Deregister_internal, because
+		// new records could have been added to the end of the list as a result of that call.
 		if (m->CurrentRecord == rr) // If m->CurrentRecord was not advanced for us, do it now
 			m->CurrentRecord = rr->next;
 		}
@@ -5674,6 +5740,20 @@ exit:
 		}
 	}
 
+mDNSlocal void ScheduleWakeupForList(mDNS *const m, mDNSInterfaceID InterfaceID, mDNSEthAddr *e, AuthRecord *const thelist)
+	{
+	AuthRecord *rr;
+	for (rr = thelist; rr; rr=rr->next)
+		if (rr->resrec.InterfaceID == InterfaceID && rr->resrec.RecordType != kDNSRecordTypeDeregistering && mDNSSameEthAddress(&rr->WakeUp.HMAC, e))
+			mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
+	}
+
+mDNSlocal void ScheduleWakeup(mDNS *const m, mDNSInterfaceID InterfaceID, mDNSEthAddr *e)
+	{
+	ScheduleWakeupForList(m, InterfaceID, e, m->DuplicateRecords);
+	ScheduleWakeupForList(m, InterfaceID, e, m->ResourceRecords);
+	}
+
 mDNSlocal void SPSRecordCallback(mDNS *const m, AuthRecord *const ar, mStatus result)
 	{
 	if (result && result != mStatus_MemFree)
@@ -5685,6 +5765,7 @@ mDNSlocal void SPSRecordCallback(mDNS *const m, AuthRecord *const ar, mStatus re
 		if (!ifname) ifname = "<NULL InterfaceID>";
 		LogMsg("Received Conflicting mDNS -- waking %s %.6a %s", ifname, &ar->WakeUp.HMAC, ARDisplayString(m, ar));
 		SendWakeup(m, ar->resrec.InterfaceID, &ar->WakeUp.IMAC, &ar->WakeUp.password);
+		ScheduleWakeup(m, ar->resrec.InterfaceID, &ar->WakeUp.HMAC);
 		}
 	else if (result == mStatus_MemFree)
 		{
@@ -8267,7 +8348,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 							{
 							LogMsg("%-7s Conflicting ARP from %.6a %.4a for %.4a -- waking H-MAC %.6a I-MAC %.6a %s",
 								ifname, &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m, rr));
-							SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.IMAC, &rr->WakeUp.password);
+							ScheduleWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.HMAC);
 							}
 						}
 			}
@@ -8386,7 +8467,7 @@ mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, c
 							rr->AnnounceCount = 0;
 							LogMsg("Waking host at %s %.4a H-MAC %.6a I-MAC %.6a for %s",
 								ifname, &v4->dst, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m, r2));
-							SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.IMAC, &rr->WakeUp.password);
+							ScheduleWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.HMAC);
 							}
 						else
 							LogSPS("Sleeping host at %s %.4a %.6a has no service on %#s %d",
@@ -8552,6 +8633,7 @@ mDNSexport mStatus mDNS_Init(mDNS *const m, mDNS_PlatformSupport *const p,
 	m->RandomQueryDelay        = 0;
 	m->RandomReconfirmDelay    = 0;
 	m->PktNum                  = 0;
+	m->LocalRemoveEvents       = mDNSfalse;
 	m->SleepState              = SleepState_Awake;
 	m->SleepSeqNum             = 0;
 	m->SystemWakeOnLANEnabled  = mDNSfalse;
@@ -9129,8 +9211,8 @@ mDNSlocal void DeregLoop(mDNS *const m, AuthRecord *const start)
 			LogInfo("DeregLoop: Deregistering %p %02X %s", rr, rr->resrec.RecordType, ARDisplayString(m, rr));
 			mDNS_Deregister_internal(m, rr, mDNS_Dereg_normal);
 			}
-		// Note: We mustn't advance m->CurrentRecord until *after* mDNS_Deregister_internal, because
-		// the list may have been changed in that call.
+		// Mustn't advance m->CurrentRecord until *after* mDNS_Deregister_internal, because
+		// new records could have been added to the end of the list as a result of that call.
 		if (m->CurrentRecord == rr) // If m->CurrentRecord was not advanced for us, do it now
 			m->CurrentRecord = rr->next;
 		}

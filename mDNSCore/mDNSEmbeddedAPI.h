@@ -528,7 +528,7 @@ typedef packedstruct
 	{
 	mDNSIPPort   src;
 	mDNSIPPort   dst;
-	mDNSu16      len;		// Length including UDP header (ie. minimum value is 8 bytes)
+	mDNSu16      len;		// Length including UDP header (i.e. minimum value is 8 bytes)
 	mDNSu16      checksum;
 	} UDPHeader;			// 8 bytes
 
@@ -1658,6 +1658,7 @@ struct mDNS_struct
 	mDNSs32  RandomQueryDelay;			// For de-synchronization of query packets on the wire
 	mDNSu32  RandomReconfirmDelay;		// For de-synchronization of reconfirmation queries on the wire
 	mDNSs32  PktNum;					// Unique sequence number assigned to each received packet
+	mDNSu8   LocalRemoveEvents;			// Set if we may need to deliver remove events for local-only questions and/or local-only records
 	mDNSu8   SleepState;				// Set if we're sleeping
 	mDNSu8   SleepSeqNum;				// "Epoch number" of our current period of wakefulness
 	mDNSu8   SystemWakeOnLANEnabled;	// Set if we want to register with a Sleep Proxy before going to sleep

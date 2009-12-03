@@ -173,7 +173,7 @@ extern mDNSBool ValidateRData(const mDNSu16 rrtype, const mDNSu16 rdlength, cons
 	((RR)->rrtype == kDNSType_MX || (RR)->rrtype == kDNSType_AFSDB || (RR)->rrtype == kDNSType_RT  || (RR)->rrtype == kDNSType_KX   ) ? &(RR)->rdata->u.mx.exchange : \
 	((RR)->rrtype == kDNSType_SRV                                  ) ? &(RR)->rdata->u.srv.target : mDNSNULL )
 
-#define LocalRecordReady(X) ((X)->resrec.RecordType != kDNSRecordTypeUnique && (X)->resrec.RecordType != kDNSRecordTypeDeregistering)
+#define LocalRecordReady(X) ((X)->resrec.RecordType != kDNSRecordTypeUnique)
 
 // ***************************************************************************
 #if COMPILER_LIKES_PRAGMA_MARK
