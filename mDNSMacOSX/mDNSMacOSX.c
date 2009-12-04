@@ -128,7 +128,7 @@
 // If OfferSleepProxyService is set non-zero (typically via command-line switch),
 // then we'll offer sleep proxy service on desktop Macs that are set to never sleep.
 // We currently do not offer sleep proxy service on laptops, or on machines that are set to go to sleep.
-mDNSexport int OfferSleepProxyService = 11;
+mDNSexport int OfferSleepProxyService = 0;
 
 mDNSexport int OSXVers;
 mDNSexport int KQueueFD;
