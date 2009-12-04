@@ -862,7 +862,7 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 		// Otherwise, for goodbye packets we set the count to 3, and for wakeups we set it to 33 (which
 		// will be up to 30 wakeup attempts, and then if the machine fails to wake, 3 goodbye packets).
 		rr->AnnounceCount        = m->ShutdownTime ? 1 : !rr->WakeUp.HMAC.l[0] ? 3: 33;
-		rr->ThisAPInterval       = mDNSPlatformOneSecond;
+		rr->ThisAPInterval       = mDNSPlatformOneSecond + mDNSPlatformOneSecond/4;
 		rr->LastAPTime           = m->timenow - rr->ThisAPInterval;
 		m->LocalRemoveEvents     = mDNStrue;
 		if (m->NextScheduledResponse - (m->timenow + mDNSPlatformOneSecond/10) >= 0)
@@ -5423,7 +5423,6 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 					if (m->rec.r.resrec.rdlength > InlineCacheRDSize)
 						verbosedebugf("Found record size %5d interface %p already in cache: %s",
 							m->rec.r.resrec.rdlength, InterfaceID, CRDisplayString(m, &m->rec.r));
-					rr->TimeRcvd  = m->timenow;
 					
 					if (m->rec.r.resrec.RecordType & kDNSRecordTypePacketUniqueMask)
 						{
@@ -5446,6 +5445,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 						// then mDNSPlatformMemSame will detect this. In this case, throw the old record away, so that clients get
 						// a 'remove' event for the record with the old capitalization, and then an 'add' event for the new one.
 						rr->resrec.rroriginalttl = 0;
+						rr->TimeRcvd = m->timenow;
 						rr->UnansweredQueries = MaxUnansweredQueries;
 						SetNextCacheCheckTime(m, rr);
 						// DO NOT break out here -- we want to continue as if we never found it
@@ -5468,7 +5468,6 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 							{
 							for (q = m->Questions; q; q=q->next)
 								{
-
 								if (!q->DuplicateOf && !q->LongLived && 
 									ActiveQuestion(q) && ResourceRecordAnswersQuestion(&rr->resrec, q))
 									{
@@ -5492,10 +5491,17 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 						// out one second into the future. Also, we set UnansweredQueries to MaxUnansweredQueries.
 						// Otherwise, we'll do final queries for this record at 80% and 90% of its apparent
 						// lifetime (800ms and 900ms from now) which is a pointless waste of network bandwidth.
+						// If record's current expiry time is more than a second from now, we set it to expire in one second.
+						// If the record is already going to expire in less than one second anyway, we leave it alone --
+						// we don't want to let the goodbye packet *extend* the record's lifetime in our cache.
 						debugf("DE for %s", CRDisplayString(m, rr));
-						rr->resrec.rroriginalttl = 1;
-						rr->UnansweredQueries = MaxUnansweredQueries;
-						SetNextCacheCheckTime(m, rr);
+						if (RRExpireTime(rr) - m->timenow > mDNSPlatformOneSecond)
+							{
+							rr->resrec.rroriginalttl = 1;
+							rr->TimeRcvd = m->timenow;
+							rr->UnansweredQueries = MaxUnansweredQueries;
+							SetNextCacheCheckTime(m, rr);
+							}
 						break;
 						}
 					}
