@@ -52,14 +52,14 @@ CFLAGS_COMMON = -LD -DAUTO_CALLBACKS=0 -I. -I..\.. \
 DEBUG=0
 !if $(DEBUG) == 1
 CFLAGS_DEBUG = -Zi -DMDNS_DEBUGMSGS=2 
-OBJDIR = objects\debug
-BUILDDIR = build\debug
+OBJDIR = objects\debug\x64
+BUILDDIR = build\debug\x64
 INSTALLDIR = root\"Program Files"\Bonjour
 LIBDIR = ..\DLL\x64\Debug
 !else
 CFLAGS_DEBUG = -Os -DMDNS_DEBUGMSGS=0 
-OBJDIR = objects\prod
-BUILDDIR = build\prod
+OBJDIR = objects\prod\x64
+BUILDDIR = build\prod\x64
 INSTALLDIR = root\"Program Files"\Bonjour
 LIBDIR = ..\DLL\x64\Release
 !endif
