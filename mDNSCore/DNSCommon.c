@@ -1955,13 +1955,6 @@ mDNSexport const mDNSu8 *skipResourceRecord(const DNSMessage *msg, const mDNSu8 
 	return(ptr + pktrdlength);
 	}
 
-mDNSlocal mDNSu16 getVal16(const mDNSu8 **ptr)
-	{
-	mDNSu16 val = (mDNSu16)(((mDNSu16)(*ptr)[0]) << 8 | (*ptr)[1]);
-	*ptr += sizeof(mDNSOpaque16);
-	return val;
-	}
-
 mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage *const msg, const mDNSu8 *ptr,
     const mDNSu8 *end, const mDNSInterfaceID InterfaceID, mDNSu8 RecordType, LargeCacheRecord *const largecr)
 	{
@@ -2123,49 +2116,60 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 							rr->resrec.rdlength = 0;
 							while (ptr < end && (mDNSu8 *)(opt+1) < &rr->resrec.rdata->u.data[MaximumRDSize])
 								{
-								if (ptr + 4 > end) { LogMsg("GetLargeResourceRecord: OPT RDATA ptr + 4 > end"); return(mDNSNULL); }
-								opt->opt    = getVal16(&ptr);
-								opt->optlen = getVal16(&ptr);
-								if (!ValidDNSOpt(opt)) { LogMsg("GetLargeResourceRecord: opt %d optlen %d wrong", opt->opt, opt->optlen); return(mDNSNULL); }
-								if (ptr + opt->optlen > end) { LogMsg("GetLargeResourceRecord: ptr + opt->optlen > end"); return(mDNSNULL); }
-								switch(opt->opt)
+								const rdataOPT *const currentopt = opt;
+								if (ptr + 4 > end) { LogInfo("GetLargeResourceRecord: OPT RDATA ptr + 4 > end"); return(mDNSNULL); }
+								opt->opt    = (mDNSu16)((mDNSu16)ptr[0] <<  8 | ptr[1]);
+								opt->optlen = (mDNSu16)((mDNSu16)ptr[2] <<  8 | ptr[3]);
+								ptr += 4;
+								if (ptr + opt->optlen > end) { LogInfo("GetLargeResourceRecord: ptr + opt->optlen > end"); return(mDNSNULL); }
+								switch (opt->opt)
 									{
 									case kDNSOpt_LLQ:
-										opt->u.llq.vers  = getVal16(&ptr);
-										opt->u.llq.llqOp = getVal16(&ptr);
-										opt->u.llq.err   = getVal16(&ptr);
-										mDNSPlatformMemCopy(opt->u.llq.id.b, ptr, 8);
-										ptr += 8;
-										opt->u.llq.llqlease = (mDNSu32) ((mDNSu32)ptr[0] << 24 | (mDNSu32)ptr[1] << 16 | (mDNSu32)ptr[2] << 8 | ptr[3]);
-										if (opt->u.llq.llqlease > 0x70000000UL / mDNSPlatformOneSecond)
-											opt->u.llq.llqlease = 0x70000000UL / mDNSPlatformOneSecond;
-										ptr += sizeof(mDNSOpaque32);
+										if (opt->optlen == DNSOpt_LLQData_Space - 4)
+											{
+											opt->u.llq.vers  = (mDNSu16)((mDNSu16)ptr[0] <<  8 | ptr[1]);
+											opt->u.llq.llqOp = (mDNSu16)((mDNSu16)ptr[2] <<  8 | ptr[3]);
+											opt->u.llq.err   = (mDNSu16)((mDNSu16)ptr[4] <<  8 | ptr[5]);
+											mDNSPlatformMemCopy(opt->u.llq.id.b, ptr+6, 8);
+											opt->u.llq.llqlease = (mDNSu32) ((mDNSu32)ptr[14] << 24 | (mDNSu32)ptr[15] << 16 | (mDNSu32)ptr[16] << 8 | ptr[17]);
+											if (opt->u.llq.llqlease > 0x70000000UL / mDNSPlatformOneSecond)
+												opt->u.llq.llqlease = 0x70000000UL / mDNSPlatformOneSecond;
+											opt++;
+											}
 										break;
 									case kDNSOpt_Lease:
-										opt->u.updatelease = (mDNSu32) ((mDNSu32)ptr[0] << 24 | (mDNSu32)ptr[1] << 16 | (mDNSu32)ptr[2] << 8 | ptr[3]);
-										if (opt->u.updatelease > 0x70000000UL / mDNSPlatformOneSecond)
-											opt->u.updatelease = 0x70000000UL / mDNSPlatformOneSecond;
-										ptr += sizeof(mDNSs32);
+										if (opt->optlen == DNSOpt_LeaseData_Space - 4)
+											{
+											opt->u.updatelease = (mDNSu32) ((mDNSu32)ptr[0] << 24 | (mDNSu32)ptr[1] << 16 | (mDNSu32)ptr[2] << 8 | ptr[3]);
+											if (opt->u.updatelease > 0x70000000UL / mDNSPlatformOneSecond)
+												opt->u.updatelease = 0x70000000UL / mDNSPlatformOneSecond;
+											opt++;
+											}
 										break;
 									case kDNSOpt_Owner:
-										opt->u.owner.vers = ptr[0];
-										opt->u.owner.seq  = ptr[1];
-										mDNSPlatformMemCopy(opt->u.owner.HMAC.b, ptr+2, 6);		// 6-byte MAC address
-										mDNSPlatformMemCopy(opt->u.owner.IMAC.b, ptr+2, 6);		// 6-byte MAC address
-										opt->u.owner.password = zeroEthAddr;
-										if (opt->optlen >= DNSOpt_OwnerData_ID_Wake_Space-4)
+										if (ValidOwnerLength(opt->optlen))
 											{
-											mDNSPlatformMemCopy(opt->u.owner.IMAC.b, ptr+8, 6);	// 6-byte MAC address
-											if (opt->optlen > DNSOpt_OwnerData_ID_Wake_Space-4)
-												mDNSPlatformMemCopy(opt->u.owner.password.b, ptr+14, opt->optlen - (DNSOpt_OwnerData_ID_Wake_Space-4));
+											opt->u.owner.vers = ptr[0];
+											opt->u.owner.seq  = ptr[1];
+											mDNSPlatformMemCopy(opt->u.owner.HMAC.b, ptr+2, 6);		// 6-byte MAC address
+											mDNSPlatformMemCopy(opt->u.owner.IMAC.b, ptr+2, 6);		// 6-byte MAC address
+											opt->u.owner.password = zeroEthAddr;
+											if (opt->optlen >= DNSOpt_OwnerData_ID_Wake_Space-4)
+												{
+												mDNSPlatformMemCopy(opt->u.owner.IMAC.b, ptr+8, 6);	// 6-byte MAC address
+												// This mDNSPlatformMemCopy is safe because the ValidOwnerLength(opt->optlen) check above
+												// ensures that opt->optlen is no more than DNSOpt_OwnerData_ID_Wake_PW6_Space - 4
+												if (opt->optlen > DNSOpt_OwnerData_ID_Wake_Space-4)
+													mDNSPlatformMemCopy(opt->u.owner.password.b, ptr+14, opt->optlen - (DNSOpt_OwnerData_ID_Wake_Space-4));
+												}
+											opt++;
 											}
-										ptr += opt->optlen;
 										break;
 									}
-								opt++;  // increment pointer into rdatabody
+								ptr += currentopt->optlen;
 								}
 							rr->resrec.rdlength = (mDNSu16)((mDNSu8*)opt - rr->resrec.rdata->u.data);
-							if (ptr != end) { LogMsg("GetLargeResourceRecord: Malformed OptRdata"); return(mDNSNULL); }
+							if (ptr != end) { LogInfo("GetLargeResourceRecord: Malformed OptRdata"); return(mDNSNULL); }
 							break;
 							}
 
@@ -2173,13 +2177,13 @@ mDNSexport const mDNSu8 *GetLargeResourceRecord(mDNS *const m, const DNSMessage 
 							unsigned int i, j;
 							domainname d;
 							ptr = getDomainName(msg, ptr, end, &d);		// Ignored for our simplified use of NSEC synthetic records
-							if (!ptr) { debugf("GetLargeResourceRecord: Malformed NSEC nextname"); return mDNSNULL; }
+							if (!ptr) { LogInfo("GetLargeResourceRecord: Malformed NSEC nextname"); return mDNSNULL; }
 							if (*ptr++ != 0) { debugf("GetLargeResourceRecord: We only handle block zero NSECs"); return mDNSNULL; }
 							i = *ptr++;
 							if (i < 1 || i > sizeof(rdataNSEC)) { debugf("GetLargeResourceRecord: invalid block length %d", i); return mDNSNULL; }
 							mDNSPlatformMemZero(rdb->nsec.bitmap, sizeof(rdb->nsec.bitmap));
 							for (j=0; j<i; j++) rdb->nsec.bitmap[j] = *ptr++;
-							if (ptr != end) { LogMsg("GetLargeResourceRecord: Malformed NSEC"); return(mDNSNULL); }
+							if (ptr != end) { debugf("GetLargeResourceRecord: Malformed NSEC"); return(mDNSNULL); }
 							break;
 							}
 

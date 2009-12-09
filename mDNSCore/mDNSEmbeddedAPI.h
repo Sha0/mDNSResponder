@@ -714,10 +714,6 @@ typedef packedstruct
 								(X) == DNSOpt_OwnerData_ID_Wake_PW4_Space - 4 || \
 								(X) == DNSOpt_OwnerData_ID_Wake_PW6_Space - 4    )
 
-#define ValidDNSOpt(O) (((O)->opt == kDNSOpt_LLQ   && (O)->optlen == DNSOpt_LLQData_Space   - 4) || \
-						((O)->opt == kDNSOpt_Lease && (O)->optlen == DNSOpt_LeaseData_Space - 4) || \
-						((O)->opt == kDNSOpt_Owner && ValidOwnerLength((O)->optlen)            )    )
-
 #define DNSOpt_Owner_Space(A,B) (mDNSSameEthAddress((A),(B)) ? DNSOpt_OwnerData_ID_Space : DNSOpt_OwnerData_ID_Wake_Space)
 
 #define DNSOpt_Data_Space(O) (                                  \
