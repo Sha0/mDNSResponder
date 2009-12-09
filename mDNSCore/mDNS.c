@@ -852,6 +852,9 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 		}
 #endif // UNICAST_DISABLED
 
+	// <rdar://problem/7457925> Local-only questions don't get remove events for unique records
+	// We may want to consider changing this code so that we generate local-only question "rmv"
+	// events (and maybe goodbye packets too) for unique records as well as for shared records
 	if (rr->WakeUp.HMAC.l[0] ||
 		(RecordType == kDNSRecordTypeShared && (rr->RequireGoodbye || rr->AnsweredLocalQ)))
 		{
