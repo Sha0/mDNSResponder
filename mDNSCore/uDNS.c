@@ -1133,10 +1133,10 @@ mDNSlocal void tcpCallback(TCPSocket *sock, void *context, mDNSBool ConnectionEs
 			// we store the minimal information i.e., the source port of the connection in the question itself.
 			
 
-			if (q && q->tcp) srcPort = q->tcp->SrcPort;
+			if (q && q->tcp) {srcPort = q->tcp->SrcPort; q->tcpSrcPort = srcPort;}
 			if (backpointer)
 				if (!q || !q->LongLived || m->SleepState)
-					{ if (q && q->tcp) q->tcpSrcPort = q->tcp->SrcPort;*backpointer = mDNSNULL; DisposeTCPConn(tcpInfo); }
+					{ *backpointer = mDNSNULL; DisposeTCPConn(tcpInfo); }
 			
 			if (rr && rr->resrec.RecordType == kDNSRecordTypeDeregistering)
 				{
