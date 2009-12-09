@@ -858,11 +858,11 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 		verbosedebugf("mDNS_Deregister_internal: Starting deregistration for %s", ARDisplayString(m, rr));
 		rr->resrec.RecordType    = kDNSRecordTypeDeregistering;
 		rr->resrec.rroriginalttl = 0;
-		// If the machine is shutting down we just send one wakeup or goodbye, so we can exit quickly.
-		// Otherwise, for goodbye packets we set the count to 3, and for wakeups we set it to 33 (which
-		// will be up to 30 wakeup attempts, and then if the machine fails to wake, 3 goodbye packets).
-		rr->AnnounceCount        = m->ShutdownTime ? 1 : !rr->WakeUp.HMAC.l[0] ? 3: 33;
-		rr->ThisAPInterval       = mDNSPlatformOneSecond + mDNSPlatformOneSecond/4;
+		// For goodbye packets we set the count to 3, and for wakeups we set it to 18
+		// (which will be up to 15 wakeup attempts over the course of 30 seconds,
+		// and then if the machine fails to wake, 3 goodbye packets).
+		rr->AnnounceCount        = rr->WakeUp.HMAC.l[0] ? 18: 3;
+		rr->ThisAPInterval       = mDNSPlatformOneSecond * 2;
 		rr->LastAPTime           = m->timenow - rr->ThisAPInterval;
 		m->LocalRemoveEvents     = mDNStrue;
 		if (m->NextScheduledResponse - (m->timenow + mDNSPlatformOneSecond/10) >= 0)
@@ -9236,6 +9236,7 @@ mDNSexport void mDNS_StartExit(mDNS *const m)
 
 	mDNS_Lock(m);
 
+	LogInfo("mDNS_StartExit");
 	m->ShutdownTime = NonZeroTime(m->timenow + mDNSPlatformOneSecond * 5);
 
 	mDNSCoreBeSleepProxyServer_internal(m, 0, 0, 0, 0);
@@ -9320,6 +9321,10 @@ mDNSexport void mDNS_StartExit(mDNS *const m)
 
 	if (m->ServiceRegistrations) LogInfo("mDNS_StartExit: Sending final uDNS service deregistrations");
 	else                         LogInfo("mDNS_StartExit: No deregistering uDNS services remain");
+
+	// Don't want to delay shutdown, so on exit we send at most one goodbye or wakeup
+	for (rr = m->ResourceRecords; rr; rr = rr->next)
+		if (rr->AnnounceCount) rr->AnnounceCount = 1;
 
 	for (rr = m->DuplicateRecords; rr; rr = rr->next)
 		LogMsg("mDNS_StartExit: Should not still have Duplicate Records remaining: %02X %s", rr->resrec.RecordType, ARDisplayString(m, rr));
