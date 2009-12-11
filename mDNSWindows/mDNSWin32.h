@@ -118,6 +118,8 @@ typedef void		(*UnregisterWaitableEventFunc)(mDNS * const inMDNS, HANDLE event )
 struct	mDNS_PlatformSupport_struct
 {
 	HANDLE						mainThread;
+	HANDLE						checkFileSharesTimer;
+	mDNSs32						checkFileSharesTimeout;
 	RegisterWaitableEventFunc	registerWaitableEventFunc;
 	UnregisterWaitableEventFunc	unregisterWaitableEventFunc;
 	time_t						nextDHCPLeaseExpires;

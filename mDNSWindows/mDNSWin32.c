@@ -79,7 +79,6 @@ static GUID											kWSARecvMsgGUID = WSAID_WSARECVMSG;
 #define SMBPortAsNumber								445
 #define DEVICE_PREFIX								"\\\\.\\"
 
-
 #if 0
 #pragma mark == Prototypes ==
 #endif
@@ -155,6 +154,7 @@ mDNSlocal void				GetDDNSDomains( DNameListElem ** domains, LPCSTR lpSubKey );
 #endif
 mDNSlocal void				SetDomainSecrets( mDNS * const inMDNS );
 mDNSlocal void				SetDomainSecret( mDNS * const m, const domainname * inDomain );
+mDNSlocal VOID CALLBACK		CheckFileSharesProc( LPVOID arg, DWORD dwTimerLowValue, DWORD dwTimerHighValue );
 mDNSlocal void				CheckFileShares( mDNS * const inMDNS );
 mDNSlocal void				SMBCallback(mDNS *const m, ServiceRecordSet *const srs, mStatus result);
 mDNSlocal mDNSu8			IsWOMPEnabledForAdapter( const char * adapterName );
@@ -250,6 +250,9 @@ mDNSexport mStatus	mDNSPlatformInit( mDNS * const inMDNS )
 	if( !inMDNS->p ) inMDNS->p				= &gMDNSPlatformSupport;
 	inMDNS->p->mainThread					= OpenThread( THREAD_ALL_ACCESS, FALSE, GetCurrentThreadId() );
 	require_action( inMDNS->p->mainThread, exit, err = mStatus_UnknownErr );
+	inMDNS->p->checkFileSharesTimer = CreateWaitableTimer( NULL, FALSE, NULL );
+	require_action( inMDNS->p->checkFileSharesTimer, exit, err = mStatus_UnknownErr );
+	inMDNS->p->checkFileSharesTimeout		= 15;		// Retry time for NetShareEnum in seconds
 	mDNSPlatformOneSecond 					= 1000;		// Use milliseconds as the quantum of time
 	
 	// Startup WinSock 2.2 or later.
@@ -4520,6 +4523,18 @@ exit:
 }
 
 
+mDNSlocal VOID CALLBACK
+CheckFileSharesProc( LPVOID arg, DWORD dwTimerLowValue, DWORD dwTimerHighValue )
+{
+	mDNS * const m = ( mDNS * const ) arg;
+
+	( void ) dwTimerLowValue;
+	( void ) dwTimerHighValue;
+
+	CheckFileShares( m );
+}
+
+
 mDNSlocal void
 CheckFileShares( mDNS * const m )
 {
@@ -4597,6 +4612,17 @@ CheckFileShares( mDNS * const m )
 
 				NetApiBufferFree( bufPtr );
 				bufPtr = NULL;
+			}
+			else if ( res == NERR_ServerNotStarted )
+			{
+				__int64			qwTimeout;
+				LARGE_INTEGER   liTimeout;
+
+				qwTimeout = -m->p->checkFileSharesTimeout * 10000000;
+				liTimeout.LowPart  = ( DWORD )( qwTimeout & 0xFFFFFFFF );
+				liTimeout.HighPart = ( LONG )( qwTimeout >> 32 );
+
+				SetWaitableTimer( m->p->checkFileSharesTimer, &liTimeout, 0, CheckFileSharesProc, m, FALSE );
 			}
 		}
 		
