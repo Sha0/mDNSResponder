@@ -105,7 +105,8 @@ CFifthPage::OnSetActive()
 
 	// Now populate the browse domain box
 
-	err = RegCreateKey( HKEY_LOCAL_MACHINE, kServiceParametersNode L"\\Services\\SMB", &key );
+	err = RegCreateKeyEx( HKEY_LOCAL_MACHINE, kServiceParametersNode L"\\Services\\SMB", 0,
+		                  NULL, REG_OPTION_NON_VOLATILE, KEY_READ|KEY_WRITE|KEY_WOW64_32KEY, NULL, &key, NULL );
 	require_noerr( err, exit );
 
 	dwSize = sizeof( DWORD );
@@ -151,7 +152,8 @@ CFifthPage::Commit()
 	DWORD		enabled;
 	DWORD		err;
 
-	err = RegCreateKey( HKEY_LOCAL_MACHINE, kServiceParametersNode L"\\Services\\SMB", &key );
+	err = RegCreateKeyEx( HKEY_LOCAL_MACHINE, kServiceParametersNode L"\\Services\\SMB", 0,
+	                   	NULL, REG_OPTION_NON_VOLATILE, KEY_READ|KEY_WRITE|KEY_WOW64_32KEY, NULL, &key, NULL );
 	require_noerr( err, exit );
 
 	enabled = m_checkBox.GetCheck();
