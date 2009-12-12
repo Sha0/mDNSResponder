@@ -1256,7 +1256,7 @@ mDNSlocal mStatus SetupSocket(KQSocketSet *cp, const mDNSIPPort port, u_short sa
 		struct sockaddr_in listening_sockaddr;
 		listening_sockaddr.sin_family      = AF_INET;
 		listening_sockaddr.sin_port        = port.NotAnInteger;		// Pass in opaque ID without any byte swapping
-		listening_sockaddr.sin_addr.s_addr = mDNSSameIPPort(port, NATPMPAnnouncementPort) ? AllSystemsMcast.NotAnInteger : 0;
+		listening_sockaddr.sin_addr.s_addr = mDNSSameIPPort(port, NATPMPAnnouncementPort) ? AllHosts_v4.NotAnInteger : 0;
 		err = bind(skt, (struct sockaddr *) &listening_sockaddr, sizeof(listening_sockaddr));
 		if (err) { errstr = "bind"; goto fail; }
 		if (outport) outport->NotAnInteger = listening_sockaddr.sin_port;
@@ -1480,6 +1480,7 @@ mDNSlocal void CloseBPF(NetworkInterfaceInfoOSX *const i)
 	CFSocketInvalidate(i->BPF_cfs);
 	CFRelease(i->BPF_cfs);
 	i->BPF_fd = -1;
+	if (i->BPF_mcfd >= 0) { close(i->BPF_mcfd); i->BPF_mcfd = -1; }
 	}
 
 mDNSlocal void bpf_callback(const CFSocketRef cfs, const CFSocketCallBackType CallBackType, const CFDataRef address, const void *const data, void *const context)
@@ -1585,7 +1586,7 @@ mDNSexport void mDNSPlatformUpdateProxyList(mDNS *const m, const mDNSInterfaceID
 		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0x86DD, 0, 9),		// 4 If Ethertype == IPv6 goto next, else exit
 		BPF_STMT(BPF_LD  + BPF_H   + BPF_ABS, 20),				// 5 Read Protocol and Hop Limit (bytes 20,21)
 		BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, 0x3AFF, 0, 9),		// 6 If (Prot,TTL) == (3A,FF) goto next, else IPv6 address list check
-		BPF_STMT(BPF_RET + BPF_K,             78),				// 7 Return 78-byte ND
+		BPF_STMT(BPF_RET + BPF_K,             86),				// 7 Return 86-byte ND
 
 		// Is IPv4 packet; check if it's addressed to any IPv4 address we're proxying for
 		BPF_STMT(BPF_LD  + BPF_W   + BPF_ABS, 30),				// 8 Read IPv4 Dst (bytes 30,31,32,33)
@@ -1646,19 +1647,41 @@ mDNSexport void mDNSPlatformUpdateProxyList(mDNS *const m, const mDNSInterfaceID
 	if (pc != chk6) LogMsg("mDNSPlatformUpdateProxyList: pc %p != chk6 %p", pc, chk6);
 	*pc++ = g6;	// chk6 points here
 
+	// First cancel any previous ND group memberships we had, then create a fresh socket
+	if (x->BPF_mcfd >= 0) close(x->BPF_mcfd);
+	x->BPF_mcfd = socket(AF_INET6, SOCK_DGRAM, 0);
+
 	for (rr = m->ResourceRecords; rr; rr=rr->next)
 		if (rr->resrec.InterfaceID == InterfaceID && rr->AddressProxy.type == mDNSAddrType_IPv6)
 			{
-			mDNSv6Addr a = rr->AddressProxy.ip.v6;
+			const mDNSv6Addr *const a = &rr->AddressProxy.ip.v6;
 			pc->code = BPF_JMP + BPF_JEQ + BPF_K;
 			BPF_SetOffset(pc, jt, ret6);
 			pc->jf   = 0;
-			pc->k    = (bpf_u_int32)a.b[12] << 24 | (bpf_u_int32)a.b[13] << 16 | (bpf_u_int32)a.b[14] << 8 | (bpf_u_int32)a.b[15];
+			pc->k    = (bpf_u_int32)a->b[0x0C] << 24 | (bpf_u_int32)a->b[0x0D] << 16 | (bpf_u_int32)a->b[0x0E] << 8 | (bpf_u_int32)a->b[0x0F];
 			pc++;
+
+			struct ipv6_mreq i6mr;
+			i6mr.ipv6mr_interface = x->scope_id;
+			i6mr.ipv6mr_multiaddr = *(const struct in6_addr*)&NDP_prefix;
+			i6mr.ipv6mr_multiaddr.s6_addr[0xD] = a->b[0xD];
+			i6mr.ipv6mr_multiaddr.s6_addr[0xE] = a->b[0xE];
+			i6mr.ipv6mr_multiaddr.s6_addr[0xF] = a->b[0xF];
+
+			// Do precautionary IPV6_LEAVE_GROUP first, necessary to clear stale kernel state
+			mStatus err = setsockopt(x->BPF_mcfd, IPPROTO_IPV6, IPV6_LEAVE_GROUP, &i6mr, sizeof(i6mr));
+			if (err < 0 && (errno != EADDRNOTAVAIL))
+				LogMsg("mDNSPlatformUpdateProxyList: IPV6_LEAVE_GROUP error %d errno %d (%s) group %.16a on %u", err, errno, strerror(errno), &i6mr.ipv6mr_multiaddr, i6mr.ipv6mr_interface);
+
+			err = setsockopt(x->BPF_mcfd, IPPROTO_IPV6, IPV6_JOIN_GROUP, &i6mr, sizeof(i6mr));
+			if (err < 0 && (errno != EADDRINUSE))	// Joining same group twice can give "Address already in use" error -- no need to report that
+				LogMsg("mDNSPlatformUpdateProxyList: IPV6_JOIN_GROUP error %d errno %d (%s) group %.16a on %u", err, errno, strerror(errno), &i6mr.ipv6mr_multiaddr, i6mr.ipv6mr_interface);
+			
+			LogSPS("Joined IPv6 ND multicast group %.16a for %.16a", &i6mr.ipv6mr_multiaddr, a);
 			}
 
 	if (pc != fail) LogMsg("mDNSPlatformUpdateProxyList: pc %p != fail %p", pc, fail);
-	*pc++ = rf;	// fail points here
+	*pc++ = rf;		// fail points here
 
 	if (pc != ret4) LogMsg("mDNSPlatformUpdateProxyList: pc %p != ret4 %p", pc, ret4);
 	*pc++ = r4a;	// ret4 points here
@@ -1721,9 +1744,15 @@ mDNSexport void mDNSPlatformReceiveBPF_fd(mDNS *const m, int fd)
 			else LogSPS("mDNSPlatformReceiveBPF_fd: %d %s BIOCSBLEN %d", i->BPF_len);
 			}
 	
-		static const u_int opt_immediate = 1;
-		if (ioctl(fd, BIOCIMMEDIATE, &opt_immediate) < 0)
+		static const u_int opt_one = 1;
+		if (ioctl(fd, BIOCIMMEDIATE, &opt_one) < 0)
 			LogMsg("mDNSPlatformReceiveBPF_fd: %d %s BIOCIMMEDIATE failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno));
+	
+		//if (ioctl(fd, BIOCPROMISC, &opt_one) < 0)
+		//	LogMsg("mDNSPlatformReceiveBPF_fd: %d %s BIOCPROMISC failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno));
+	
+		if (ioctl(fd, BIOCSHDRCMPLT, &opt_one) < 0)
+			LogMsg("mDNSPlatformReceiveBPF_fd: %d %s BIOCSHDRCMPLT failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno));
 	
 		struct ifreq ifr;
 		mDNSPlatformMemZero(&ifr, sizeof(ifr));
@@ -2084,6 +2113,7 @@ mDNSlocal NetworkInterfaceInfoOSX *AddInterfaceToList(mDNS *const m, struct ifad
 	i->BSSID           = bssid;
 	i->sa_family       = ifa->ifa_addr->sa_family;
 	i->BPF_fd          = -1;
+	i->BPF_mcfd        = -1;
 	i->BPF_len         = 0;
 	i->Registered	   = mDNSNULL;
 

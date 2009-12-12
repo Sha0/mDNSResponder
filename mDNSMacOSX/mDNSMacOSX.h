@@ -79,6 +79,7 @@ struct NetworkInterfaceInfoOSX_struct
 	mDNSEthAddr              BSSID;				// BSSID of 802.11 base station, if applicable
 	u_short                  sa_family;
 	int                      BPF_fd;			// -1 uninitialized; -2 requested BPF; -3 failed
+	int                      BPF_mcfd;			// Socket for our IPv6 ND group membership
 	u_int                    BPF_len;
 	CFSocketRef              BPF_cfs;
 	CFRunLoopSourceRef       BPF_rls;

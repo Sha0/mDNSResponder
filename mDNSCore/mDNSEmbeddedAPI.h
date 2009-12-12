@@ -499,7 +499,7 @@ typedef packedstruct
 	mDNSOpaque16 id;
 	mDNSOpaque16 flagsfrags;
 	mDNSu8       ttl;
-	mDNSu8       protocol;
+	mDNSu8       protocol;	// Payload type: 0x06 = TCP, 0x11 = UDP
 	mDNSu16      checksum;
 	mDNSv4Addr   src;
 	mDNSv4Addr   dst;
@@ -509,7 +509,7 @@ typedef packedstruct
 	{
 	mDNSu32      vcf;		// Version, Traffic Class, Flow Label
 	mDNSu16      len;		// Payload Length
-	mDNSu8       protocol;	// Type of next header: 0x06 = TCP, 0x11 = UDP, 0x3A = ICMPv6
+	mDNSu8       pro;		// Type of next header: 0x06 = TCP, 0x11 = UDP, 0x3A = ICMPv6
 	mDNSu8       ttl;		// Hop Limit
 	mDNSv6Addr   src;
 	mDNSv6Addr   dst;
@@ -517,32 +517,19 @@ typedef packedstruct
 
 typedef packedstruct
 	{
-	mDNSu8       type;		// 0x87 == Neighbor Solicitation, 0x88 == Neighbor Advertisement
-	mDNSu8       code;
-	mDNSu16      checksum;
-	mDNSu32      reserved;
-	mDNSv6Addr   target;
-	} IPv6ND;				// 24 bytes
+	mDNSv6Addr   src;
+	mDNSv6Addr   dst;
+	mDNSOpaque32 len;
+	mDNSOpaque32 pro;
+	} IPv6PseudoHeader;		// 40 bytes
 
-typedef packedstruct
+typedef union
 	{
-	mDNSIPPort   src;
-	mDNSIPPort   dst;
-	mDNSu16      len;		// Length including UDP header (i.e. minimum value is 8 bytes)
-	mDNSu16      checksum;
-	} UDPHeader;			// 8 bytes
-
-typedef packedstruct
-	{
-	mDNSOpaque64 InitiatorCookie;
-	mDNSOpaque64 ResponderCookie;
-	mDNSu8       NextPayload;
-	mDNSu8       Version;
-	mDNSu8       ExchangeType;
-	mDNSu8       Flags;
-	mDNSOpaque32 MessageID;
-	mDNSu32      Length;
-	} IKEHeader;			// 28 bytes
+	mDNSu8       bytes[20];
+	ARP_EthIP    arp;
+	IPv4Header   v4;
+	IPv6Header   v6;
+	} NetworkLayerPacket;
 
 typedef packedstruct
 	{
@@ -555,7 +542,45 @@ typedef packedstruct
 	mDNSu16      window;
 	mDNSu16      checksum;
 	mDNSu16      urgent;
-	} TCPHeader;			// 20 bytes
+	} TCPHeader;			// 20 bytes; IP protocol type 0x06
+
+typedef packedstruct
+	{
+	mDNSIPPort   src;
+	mDNSIPPort   dst;
+	mDNSu16      len;		// Length including UDP header (i.e. minimum value is 8 bytes)
+	mDNSu16      checksum;
+	} UDPHeader;			// 8 bytes; IP protocol type 0x11
+
+typedef packedstruct
+	{
+	mDNSu8       type;		// 0x87 == Neighbor Solicitation, 0x88 == Neighbor Advertisement
+	mDNSu8       code;
+	mDNSu16      checksum;
+	mDNSu32      flags_res;	// R/S/O flags and reserved bits
+	mDNSv6Addr   target;
+	// Typically 8 bytes of options are also present
+	} IPv6NDP;				// 24 bytes or more; IP protocol type 0x3A
+
+typedef union
+	{
+	mDNSu8       bytes[20];
+	TCPHeader    tcp;
+	UDPHeader    udp;
+	IPv6NDP      ndp;
+	} TransportLayerPacket;
+
+typedef packedstruct
+	{
+	mDNSOpaque64 InitiatorCookie;
+	mDNSOpaque64 ResponderCookie;
+	mDNSu8       NextPayload;
+	mDNSu8       Version;
+	mDNSu8       ExchangeType;
+	mDNSu8       Flags;
+	mDNSOpaque32 MessageID;
+	mDNSu32      Length;
+	} IKEHeader;			// 28 bytes
 
 // ***************************************************************************
 #if 0
@@ -1783,17 +1808,6 @@ struct mDNS_struct
 #pragma mark - Useful Static Constants
 #endif
 
-extern const mDNSIPPort      zeroIPPort;
-extern const mDNSv4Addr      zerov4Addr;
-extern const mDNSv6Addr      zerov6Addr;
-extern const mDNSEthAddr     zeroEthAddr;
-extern const mDNSv4Addr      onesIPv4Addr;
-extern const mDNSv6Addr      onesIPv6Addr;
-extern const mDNSEthAddr     onesEthAddr;
-extern const mDNSAddr        zeroAddr;
-
-extern const OwnerOptData    zeroOwner;
-
 extern const mDNSInterfaceID mDNSInterface_Any;				// Zero
 extern const mDNSInterfaceID mDNSInterface_LocalOnly;		// Special value
 extern const mDNSInterfaceID mDNSInterface_Unicast;			// Special value
@@ -1812,8 +1826,22 @@ extern const mDNSIPPort   MulticastDNSPort;
 extern const mDNSIPPort   LoopbackIPCPort;
 extern const mDNSIPPort   PrivateDNSPort;
 
+extern const OwnerOptData    zeroOwner;
+
+extern const mDNSIPPort      zeroIPPort;
+extern const mDNSv4Addr      zerov4Addr;
+extern const mDNSv6Addr      zerov6Addr;
+extern const mDNSEthAddr     zeroEthAddr;
+extern const mDNSv4Addr      onesIPv4Addr;
+extern const mDNSv6Addr      onesIPv6Addr;
+extern const mDNSEthAddr     onesEthAddr;
+extern const mDNSAddr        zeroAddr;
+
 extern const mDNSv4Addr   AllDNSAdminGroup;
-extern const mDNSv4Addr   AllSystemsMcast;
+extern const mDNSv4Addr   AllHosts_v4;
+extern const mDNSv6Addr   AllHosts_v6;
+extern const mDNSv6Addr   NDP_prefix;
+extern const mDNSEthAddr  AllHosts_v6_Eth;
 extern const mDNSAddr     AllDNSLinkGroup_v4;
 extern const mDNSAddr     AllDNSLinkGroup_v6;
 
@@ -2557,7 +2585,7 @@ struct CompileTimeAssertionChecks_mDNS
 	char assertG[(sizeof(ARP_EthIP     )   ==   28                         ) ? 1 : -1];
 	char assertH[(sizeof(IPv4Header    )   ==   20                         ) ? 1 : -1];
 	char assertI[(sizeof(IPv6Header    )   ==   40                         ) ? 1 : -1];
-	char assertJ[(sizeof(IPv6ND        )   ==   24                         ) ? 1 : -1];
+	char assertJ[(sizeof(IPv6NDP       )   ==   24                         ) ? 1 : -1];
 	char assertK[(sizeof(UDPHeader     )   ==    8                         ) ? 1 : -1];
 	char assertL[(sizeof(IKEHeader     )   ==   28                         ) ? 1 : -1];
 	char assertM[(sizeof(TCPHeader     )   ==   20                         ) ? 1 : -1];

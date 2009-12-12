@@ -415,9 +415,9 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr)
 	// (depending on the OS and networking stack it's using) that it might interpret it as a conflict and change its IP address.
 	if (rr->AddressProxy.type) rr->LastAPTime = m->timenow;
 
-	// For now, since we don't yet handle IPv6 ND or data packets, we send deletions for our SPS clients' AAAA records
-	if (rr->WakeUp.HMAC.l[0] && rr->resrec.rrtype == kDNSType_AAAA)
-		rr->LastAPTime = m->timenow - rr->ThisAPInterval + mDNSPlatformOneSecond * 10;
+	// For now, since we don't yet handle IPv6 NDP or data packets, we send deletions for our SPS clients' AAAA records
+	//if (rr->WakeUp.HMAC.l[0] && rr->resrec.rrtype == kDNSType_AAAA)
+	//	rr->LastAPTime = m->timenow - rr->ThisAPInterval + mDNSPlatformOneSecond * 10;
 	
 	SetNextAnnounceProbeTime(m, rr);
 	}
@@ -1170,7 +1170,7 @@ mDNSlocal mDNSs32 ReverseMapDomainType(const domainname *const name)
 	}
 
 mDNSlocal void SendARP(mDNS *const m, const mDNSu8 op, const AuthRecord *const rr,
-	const mDNSu8 *const spa, const mDNSu8 *const tha, const mDNSu8 *const tpa, const mDNSu8 *const dst)
+	const mDNSv4Addr *const spa, const mDNSEthAddr *const tha, const mDNSv4Addr *const tpa, const mDNSEthAddr *const dst)
 	{
 	int i;
 	mDNSu8 *ptr = m->omsg.data;
@@ -1178,10 +1178,10 @@ mDNSlocal void SendARP(mDNS *const m, const mDNSu8 op, const AuthRecord *const r
 	if (!intf) { LogMsg("SendARP: No interface with InterfaceID %p found %s", rr->resrec.InterfaceID, ARDisplayString(m,rr)); return; }
 
 	// 0x00 Destination address
-	for (i=0; i<6; i++) *ptr++ = dst[i];
+	for (i=0; i<6; i++) *ptr++ = dst->b[i];
 
 	// 0x06 Source address (we just use zero -- driver/hardware will fill in real interface address)
-	for (i=0; i<6; i++) *ptr++ = 0x0;
+	for (i=0; i<6; i++) *ptr++ = intf->MAC.b[0];
 
 	// 0x0C ARP Ethertype (0x0806)
 	*ptr++ = 0x08; *ptr++ = 0x06;
@@ -1197,15 +1197,120 @@ mDNSlocal void SendARP(mDNS *const m, const mDNSu8 op, const AuthRecord *const r
 	for (i=0; i<6; i++) *ptr++ = intf->MAC.b[i];
 
 	// 0x1C Sender protocol address
-	for (i=0; i<4; i++) *ptr++ = spa[i];
+	for (i=0; i<4; i++) *ptr++ = spa->b[i];
 
 	// 0x20 Target hardware address
-	for (i=0; i<6; i++) *ptr++ = tha[i];
+	for (i=0; i<6; i++) *ptr++ = tha->b[i];
 
 	// 0x26 Target protocol address
-	for (i=0; i<4; i++) *ptr++ = tpa[i];
+	for (i=0; i<4; i++) *ptr++ = tpa->b[i];
 
 	// 0x2A Total ARP Packet length 42 bytes
+	mDNSPlatformSendRawPacket(m->omsg.data, ptr, rr->resrec.InterfaceID);
+	}
+
+mDNSlocal mDNSu16 CheckSum(const void *const data, mDNSs32 length, mDNSu32 sum)
+	{
+	const mDNSu16 *ptr = data;
+	while (length > 0) { length -= 2; sum += *ptr++; }
+	sum = (sum & 0xFFFF) + (sum >> 16);
+	sum = (sum & 0xFFFF) + (sum >> 16);
+	return(sum != 0xFFFF ? sum : 0);
+	}
+
+mDNSlocal mDNSu16 IPv6CheckSum(const mDNSv6Addr *const src, const mDNSv6Addr *const dst, const mDNSu8 protocol, const void *const data, const mDNSu32 length)
+	{
+	IPv6PseudoHeader ph;
+	ph.src = *src;
+	ph.dst = *dst;
+	ph.len.b[0] = length >> 24;
+	ph.len.b[1] = length >> 16;
+	ph.len.b[2] = length >> 8;
+	ph.len.b[3] = length;
+	ph.pro.b[0] = 0;
+	ph.pro.b[1] = 0;
+	ph.pro.b[2] = 0;
+	ph.pro.b[3] = protocol;
+	return CheckSum(&ph, sizeof(ph), CheckSum(data, length, 0));
+	}
+
+mDNSlocal void SendNDP(mDNS *const m, const mDNSu8 op, const mDNSu8 flags, const AuthRecord *const rr,
+	const mDNSv6Addr *const spa, const mDNSEthAddr *const tha, const mDNSv6Addr *const tpa, const mDNSEthAddr *const dst)
+	{
+	int i;
+	mDNSOpaque16 checksum;
+	mDNSu8 *ptr = m->omsg.data;
+	// Unicast Neighbor Solicitations don't appear to work, so we need to multicast them
+	mDNSv6Addr mc = { { 0xFF,0x02,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x01, 0xFF,tpa->b[0xD],tpa->b[0xE],tpa->b[0xF] } };
+	const mDNSv6Addr *const v6dst = op == 0x87 ? &mc : tpa;
+	NetworkInterfaceInfo *intf = FirstInterfaceForID(m, rr->resrec.InterfaceID);
+	if (!intf) { LogMsg("SendNDP: No interface with InterfaceID %p found %s", rr->resrec.InterfaceID, ARDisplayString(m,rr)); return; }
+
+	// 0x00 Destination address
+	if (op == 0x8)
+		{
+		*ptr++ = 0x33;
+		*ptr++ = 0x33;
+		*ptr++ = 0xFF;
+		*ptr++ = tpa->b[0xD];
+		*ptr++ = tpa->b[0xE];
+		*ptr++ = tpa->b[0xF];
+		}
+	else
+		for (i=0; i<6; i++) *ptr++ = dst->b[i];
+
+	// 0x06 Source address (we just use zero -- driver/hardware will fill in real interface address)
+	for (i=0; i<6; i++) *ptr++ = (tha ? *tha : intf->MAC).b[i];
+
+	// 0x0C IPv6 Ethertype (0x86DD)
+	*ptr++ = 0x86; *ptr++ = 0xDD;
+
+	// 0x0E IPv6 header
+	*ptr++ = 0x60; *ptr++ = 0x00; *ptr++ = 0x00; *ptr++ = 0x00;		// Version, Traffic Class, Flow Label
+	*ptr++ = 0x00; *ptr++ = 0x20;									// Length
+	*ptr++ = 0x3A;													// Protocol == ICMPv6
+	*ptr++ = 0xFF;													// Hop Limit
+
+	// 0x16 Sender IPv6 address
+	for (i=0; i<16; i++) *ptr++ = spa->b[i];
+
+	// 0x26 Destination IPv6 address
+	for (i=0; i<16; i++) *ptr++ = v6dst->b[i];
+
+	// 0x36 NDP header
+	*ptr++ = op;					// 0x87 == Neighbor Solicitation, 0x88 == Neighbor Advertisement
+	*ptr++ = 0x00;					// Code
+	*ptr++ = 0x00; *ptr++ = 0x00;	// Checksum placeholder (0x38, 0x39)
+	*ptr++ = flags;
+	*ptr++ = 0x00; *ptr++ = 0x00; *ptr++ = 0x00;
+
+	// In Neighbor Solicitations, the NDP "target" is the desired address
+	// In Neighbor Advertisements, the NDP "target" is the sender
+	if (op == 0x87)
+		{
+		// 0x3E NDP target.
+		for (i=0; i<16; i++) *ptr++ = tpa->b[i];
+		// 0x4E Source Link-layer Address
+		//*ptr++ = 0x01;		// Option Type 1 == Source Link-layer Address
+		//*ptr++ = 0x01;		// Option length 1 (in units of 8 octets)
+		//for (i=0; i<6; i++) *ptr++ = (tha ? *tha : intf->MAC).b[i];
+		}
+	else
+		{
+		// 0x3E NDP target.
+		for (i=0; i<16; i++) *ptr++ = spa->b[i];
+		// 0x4E Target Link-layer Address
+		*ptr++ = 0x02;		// Option Type 2 == Target Link-layer Address
+		*ptr++ = 0x01;		// Option length 1 (in units of 8 octets)
+		for (i=0; i<6; i++) *ptr++ = (tha ? *tha : intf->MAC).b[i];
+		}
+
+	// 0x4E or 0x56 Total NDP Packet length 78 or 86 bytes
+	m->omsg.data[0x13] = ptr - &m->omsg.data[0x36];		// Compute actual length
+	checksum.NotAnInteger = ~IPv6CheckSum(spa, v6dst, 0x3A, &m->omsg.data[0x36], m->omsg.data[0x13]);
+	m->omsg.data[0x38] = checksum.b[0];
+	m->omsg.data[0x39] = checksum.b[1];
+
 	mDNSPlatformSendRawPacket(m->omsg.data, ptr, rr->resrec.InterfaceID);
 	}
 
@@ -1290,11 +1395,16 @@ mDNSlocal void SendResponses(mDNS *const m)
 					{
 					LogSPS("SendResponses: Sending wakeup %2d for %.6a %s", rr->AnnounceCount, &rr->WakeUp.IMAC, ARDisplayString(m, rr));
 					SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.IMAC, &rr->WakeUp.password);
-					rr->LastAPTime = m->timenow;
-					if (rr->AnnounceCount-- <= 4) rr->WakeUp.HMAC = zeroEthAddr;
-					for (r2 = rr->next; r2; r2=r2->next)
+					for (r2 = rr; r2; r2=r2->next)
 						if (r2->AnnounceCount && r2->resrec.InterfaceID == rr->resrec.InterfaceID && mDNSSameEthAddress(&r2->WakeUp.IMAC, &rr->WakeUp.IMAC))
 							{
+							if (r2->AddressProxy.type == mDNSAddrType_IPv6)
+								{
+								LogSPS("NDP Announcement %2d Releasing traffic for H-MAC %.6a I-MAC %.6a %s",
+									r2->AnnounceCount, &r2->WakeUp.HMAC, &r2->WakeUp.IMAC, ARDisplayString(m,r2));
+								// Neighbor Advertisement; Override flag
+								SendNDP(m, 0x88, 0x20, r2, &r2->AddressProxy.ip.v6, &r2->WakeUp.IMAC, &AllHosts_v6, &AllHosts_v6_Eth);
+								}
 							r2->LastAPTime = m->timenow;
 							if (r2->AnnounceCount-- <= 4) r2->WakeUp.HMAC = zeroEthAddr;
 							}
@@ -1309,14 +1419,16 @@ mDNSlocal void SendResponses(mDNS *const m)
 					rr->LastAPTime = m->timenow;
 					if (rr->AddressProxy.type == mDNSAddrType_IPv4)
 						{
-						LogSPS("ARP Announcement %d Capturing traffic for H-MAC %.6a I-MAC %.6a %s",
+						LogSPS("ARP Announcement %2d Capturing traffic for H-MAC %.6a I-MAC %.6a %s",
 							rr->AnnounceCount, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m,rr));
-						SendARP(m, 1, rr, rr->AddressProxy.ip.v4.b, zeroEthAddr.b, rr->AddressProxy.ip.v4.b, onesEthAddr.b);
+						SendARP(m, 1, rr, &rr->AddressProxy.ip.v4, &zeroEthAddr, &rr->AddressProxy.ip.v4, &onesEthAddr);
 						}
 					else if (rr->AddressProxy.type == mDNSAddrType_IPv6)
 						{
-						//LogSPS("NDP Announcement %d %s", rr->AnnounceCount, ARDisplayString(m,rr));
-						//SendARP(m, 1, rr, rr->AddressProxy.ip.v4.b, zeroEthAddr.b, rr->AddressProxy.ip.v4.b, onesEthAddr.b);
+						LogSPS("NDP Announcement %2d Capturing traffic for H-MAC %.6a I-MAC %.6a %s",
+							rr->AnnounceCount, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m,rr));
+						// Neighbor Advertisement; Override flag
+						SendNDP(m, 0x88, 0x20, rr, &rr->AddressProxy.ip.v6, mDNSNULL, &AllHosts_v6, &AllHosts_v6_Eth);
 						}
 					}
 				else
@@ -2138,15 +2250,13 @@ mDNSlocal void SendQueries(mDNS *const m)
 					{
 					if (rr->AddressProxy.type == mDNSAddrType_IPv4)
 						{
-						char *ifname = InterfaceNameForID(m, rr->resrec.InterfaceID);
-						if (!ifname) ifname = "<NULL InterfaceID>";
-						LogSPS("SendQueries ARP Probe %d %s %s", rr->ProbeCount, ifname, ARDisplayString(m,rr));
-						SendARP(m, 1, rr, zerov4Addr.b, zeroEthAddr.b, rr->AddressProxy.ip.v4.b, rr->WakeUp.IMAC.b);
+						LogSPS("SendQueries ARP Probe %d %s %s", rr->ProbeCount, InterfaceNameForID(m, rr->resrec.InterfaceID), ARDisplayString(m,rr));
+						SendARP(m, 1, rr, &zerov4Addr, &zeroEthAddr, &rr->AddressProxy.ip.v4, &rr->WakeUp.IMAC);
 						}
 					else if (rr->AddressProxy.type == mDNSAddrType_IPv6)
 						{
-						//LogSPS("SendQueries NDP Probe %d %s", rr->ProbeCount, ARDisplayString(m,rr));
-						//SendARP(m, 1, rr, rr->AddressProxy.ip.v4.b, zeroEthAddr.b, rr->AddressProxy.ip.v4.b, onesEthAddr.b);
+						LogSPS("SendQueries NDP Probe %d %s", rr->ProbeCount, ARDisplayString(m,rr));
+						SendNDP(m, 0x87, 0, rr, &zerov6Addr, mDNSNULL, &rr->AddressProxy.ip.v6, &rr->WakeUp.IMAC);
 						}
 					// Mark for sending. (If no active interfaces, then don't even try.)
 					rr->SendRNow   = (!intf || rr->WakeUp.HMAC.l[0]) ? mDNSNULL : rr->resrec.InterfaceID ? rr->resrec.InterfaceID : intf->InterfaceID;
@@ -4316,6 +4426,13 @@ mDNSlocal void ClearProxyRecords(mDNS *const m, const OwnerOptData *const owner,
 				LogSPS("ClearProxyRecords: Removing %3d AC %2d %02X H-MAC %.6a I-MAC %.6a %d %d %s",
 					m->ProxyRecords, rr->AnnounceCount, rr->resrec.RecordType,
 					&rr->WakeUp.HMAC, &rr->WakeUp.IMAC, rr->WakeUp.seq, owner->seq, ARDisplayString(m, rr));
+				if (rr->AddressProxy.type == mDNSAddrType_IPv6)
+					{
+					LogSPS("NDP Announcement -- Releasing traffic for H-MAC %.6a I-MAC %.6a %s",
+						&rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m,rr));
+					// Neighbor Advertisement; Override flag
+					SendNDP(m, 0x88, 0x20, rr, &rr->AddressProxy.ip.v6, &rr->WakeUp.IMAC, &AllHosts_v6, &AllHosts_v6_Eth);
+					}
 				if (rr->resrec.RecordType == kDNSRecordTypeDeregistering) rr->resrec.RecordType = kDNSRecordTypeShared;
 				rr->WakeUp.HMAC = zeroEthAddr;	// Clear HMAC so that mDNS_Deregister_internal doesn't waste packets trying to wake this host
 				rr->RequireGoodbye = mDNSfalse;	// and we don't want to send goodbye for it, since real host is now back and functional
@@ -5770,9 +5887,7 @@ mDNSlocal void SPSRecordCallback(mDNS *const m, AuthRecord *const ar, mStatus re
 
 	if (result == mStatus_NameConflict)
 		{
-		char *ifname = InterfaceNameForID(m, ar->resrec.InterfaceID);
-		if (!ifname) ifname = "<NULL InterfaceID>";
-		LogMsg("Received Conflicting mDNS -- waking %s %.6a %s", ifname, &ar->WakeUp.HMAC, ARDisplayString(m, ar));
+		LogMsg("Received Conflicting mDNS -- waking %s %.6a %s", InterfaceNameForID(m, ar->resrec.InterfaceID), &ar->WakeUp.HMAC, ARDisplayString(m, ar));
 		SendWakeup(m, ar->resrec.InterfaceID, &ar->WakeUp.IMAC, &ar->WakeUp.password);
 		ScheduleWakeup(m, ar->resrec.InterfaceID, &ar->WakeUp.HMAC);
 		}
@@ -5893,8 +6008,8 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 					if (m->NextScheduledSPS - ar->TimeExpire > 0)
 						m->NextScheduledSPS = ar->TimeExpire;
 					mDNS_Register_internal(m, ar);
-					// For now, since we don't get IPv6 ND or data packets, we don't advertise AAAA records for our SPS clients
-					if (ar->resrec.rrtype == kDNSType_AAAA) ar->resrec.rroriginalttl = 0;
+					// For now, since we don't get IPv6 NDP or data packets, we don't advertise AAAA records for our SPS clients
+					//if (ar->resrec.rrtype == kDNSType_AAAA) ar->resrec.rroriginalttl = 0;
 					m->ProxyRecords++;
 					LogSPS("SPS Registered %4d %X %s", m->ProxyRecords, RecordType, ARDisplayString(m,ar));
 					}
@@ -8274,225 +8389,311 @@ mDNSlocal void RestartARPProbing(mDNS *const m, AuthRecord *const rr)
 		}
 	}
 
+mDNSlocal void mDNSCoreReceiveRawARP(mDNS *const m, const ARP_EthIP *const arp, const mDNSInterfaceID InterfaceID)
+	{
+	static const mDNSOpaque16 ARP_op_request = { { 0, 1 } };
+	AuthRecord *rr;
+	NetworkInterfaceInfo *intf = FirstInterfaceForID(m, InterfaceID);
+	if (!intf) return;
+
+	mDNS_Lock(m);
+
+	// Pass 1:
+	// Process ARP Requests and Probes (but not Announcements), and generate an ARP Reply if necessary.
+	// We also process ARPs from our own kernel (and 'answer' them by injecting a local ARP table entry)
+	// We ignore ARP Announcements here -- Announcements are not questions, they're assertions, so we don't need to answer them.
+	// The times we might need to react to an ARP Announcement are:
+	// (i) as an indication that the host in question has not gone to sleep yet (so we should delay beginning to proxy for it) or
+	// (ii) if it's a conflicting Announcement from another host
+	// -- and we check for these in Pass 2 below.
+	if (mDNSSameOpaque16(arp->op, ARP_op_request) && !mDNSSameIPv4Address(arp->spa, arp->tpa))
+		{
+		for (rr = m->ResourceRecords; rr; rr=rr->next)
+			if (rr->resrec.InterfaceID == InterfaceID && rr->resrec.RecordType != kDNSRecordTypeDeregistering &&
+				rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, arp->tpa))
+				{
+				static const char msg1[] = "ARP Req from owner -- re-probing";
+				static const char msg2[] = "Ignoring  ARP Request from      ";
+				static const char msg3[] = "Creating Local ARP Cache entry  ";
+				static const char msg4[] = "Answering ARP Request from      ";
+				const char *const msg = mDNSSameEthAddress(&arp->sha, &rr->WakeUp.IMAC) ? msg1 :
+										(rr->AnnounceCount == InitialAnnounceCount)     ? msg2 :
+										mDNSSameEthAddress(&arp->sha, &intf->MAC)       ? msg3 : msg4;
+				LogSPS("%-7s %s %.6a %.4a for %.4a -- H-MAC %.6a I-MAC %.6a %s",
+					intf->ifname, msg, &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m, rr));
+				if      (msg == msg1) RestartARPProbing(m, rr);
+				else if (msg == msg3) mDNSPlatformSetLocalARP(&arp->tpa, &rr->WakeUp.IMAC, InterfaceID);
+				else if (msg == msg4) SendARP(m, 2, rr, &arp->tpa, &arp->sha, &arp->spa, &arp->sha);
+				}
+		}
+
+	// Pass 2:
+	// For all types of ARP packet we check the Sender IP address to make sure it doesn't conflict with any AddressProxy record we're holding.
+	// (Strictly speaking we're only checking Announcement/Request/Reply packets, since ARP Probes have zero Sender IP address,
+	// so by definition (and by design) they can never conflict with any real (i.e. non-zero) IP address).
+	// We ignore ARPs we sent ourselves (Sender MAC address is our MAC address) because our own proxy ARPs do not constitute a conflict that we need to handle.
+	// If we see an apparently conflicting ARP, we check the sender hardware address:
+	//   If the sender hardware address is the original owner this is benign, so we just suppress our own proxy answering for a while longer.
+	//   If the sender hardware address is *not* the original owner, then this is a conflict, and we need to wake the sleeping machine to handle it.
+	if (mDNSSameEthAddress(&arp->sha, &intf->MAC))
+		debugf("ARP from self for %.4a", &arp->tpa);
+	else
+		{
+		if (!mDNSSameIPv4Address(arp->spa, zerov4Addr))
+			for (rr = m->ResourceRecords; rr; rr=rr->next)
+				if (rr->resrec.InterfaceID == InterfaceID && rr->resrec.RecordType != kDNSRecordTypeDeregistering &&
+					rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, arp->spa))
+					{
+					RestartARPProbing(m, rr);
+					if (mDNSSameEthAddress(&arp->sha, &rr->WakeUp.IMAC))
+						LogSPS("%-7s ARP %s from owner %.6a %.4a for %-15.4a -- re-starting probing for %s", intf->ifname,
+							mDNSSameIPv4Address(arp->spa, arp->tpa) ? "Announcement" : mDNSSameOpaque16(arp->op, ARP_op_request) ? "Request     " : "Response    ",
+							&arp->sha, &arp->spa, &arp->tpa, ARDisplayString(m, rr));
+					else
+						{
+						LogMsg("%-7s Conflicting ARP from %.6a %.4a for %.4a -- waking H-MAC %.6a I-MAC %.6a %s", intf->ifname,
+							&arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m, rr));
+						ScheduleWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.HMAC);
+						}
+					}
+		}
+
+	mDNS_Unlock(m);
+	}
+
+/*
+mDNSlocal mDNSEthAddr *GetSourceLinkLayerAddressOption(const IPv6NDP *const ndp, const mDNSu8 *const end)
+	{
+	const mDNSu8 *options = (mDNSu8 *)(ndp+1);
+	while (options < end)
+		{
+		debugf("NDP Option %02X len %2d %d", options[0], options[1], end - options);
+		if (options[0] == 1 && options[1] == 1) return (mDNSEthAddr*)(options+2);
+		options += options[1] * 8;
+		}
+	return mDNSNULL;
+	}
+*/
+
+mDNSlocal void mDNSCoreReceiveRawND(mDNS *const m, const mDNSEthAddr *const sha, const mDNSv6Addr *const spa,
+	const IPv6NDP *const ndp, const mDNSu8 *const end, const mDNSInterfaceID InterfaceID)
+	{
+	AuthRecord *rr;
+	NetworkInterfaceInfo *intf = FirstInterfaceForID(m, InterfaceID);
+	if (!intf) return;
+
+	mDNS_Lock(m);
+
+	// Pass 1: Process Neighbor Solicitations, and generate a Neighbor Advertisement if necessary.
+	if (ndp->type == 0x87)
+		{
+		//const mDNSEthAddr *const sha = GetSourceLinkLayerAddressOption(ndp, end);
+		(void)end;
+		for (rr = m->ResourceRecords; rr; rr=rr->next)
+			if (rr->resrec.InterfaceID == InterfaceID && rr->resrec.RecordType != kDNSRecordTypeDeregistering &&
+				rr->AddressProxy.type == mDNSAddrType_IPv6 && mDNSSameIPv6Address(rr->AddressProxy.ip.v6, ndp->target))
+				{
+				static const char msg1[] = "NDP Req from owner -- re-probing";
+				static const char msg2[] = "Ignoring  NDP Request from      ";
+				static const char msg3[] = "Creating Local NDP Cache entry  ";
+				static const char msg4[] = "Answering NDP Request from      ";
+				const char *const msg = sha && mDNSSameEthAddress(sha, &rr->WakeUp.IMAC) ? msg1 :
+										(rr->AnnounceCount == InitialAnnounceCount)      ? msg2 :
+										sha && mDNSSameEthAddress(sha, &intf->MAC)       ? msg3 : msg4;
+				LogSPS("%-7s %s %.6a %.16a for %.16a -- H-MAC %.6a I-MAC %.6a %s",
+					intf->ifname, msg, sha, spa, &ndp->target, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m, rr));
+				if      (msg == msg1) RestartARPProbing(m, rr);
+				else if (msg == msg3) SendNDP(m, 0x88, 0x60, rr, &ndp->target, mDNSNULL, spa, sha);	// Neighbor Advertisement; Solicited+Override
+				else if (msg == msg4) SendNDP(m, 0x88, 0x60, rr, &ndp->target, mDNSNULL, spa, sha);	// Neighbor Advertisement; Solicited+Override
+				}
+		}
+
+	// Pass 2: For all types of NDP packet we check the Sender IP address to make sure it doesn't conflict with any AddressProxy record we're holding.
+	if (mDNSSameEthAddress(sha, &intf->MAC))
+		debugf("NDP from self for %.16a", &ndp->target);
+	else
+		{
+		if (!mDNSSameIPv6Address(*spa, zerov6Addr))
+			for (rr = m->ResourceRecords; rr; rr=rr->next)
+				if (rr->resrec.InterfaceID == InterfaceID && rr->resrec.RecordType != kDNSRecordTypeDeregistering &&
+					rr->AddressProxy.type == mDNSAddrType_IPv6 && mDNSSameIPv6Address(rr->AddressProxy.ip.v6, *spa))
+					{
+					RestartARPProbing(m, rr);
+					if (mDNSSameEthAddress(sha, &rr->WakeUp.IMAC))
+						LogSPS("%-7s NDP %s from owner %.6a %.16a for %.16a -- re-starting probing for %s", intf->ifname,
+							ndp->type == 0x87 ? "Solicitation " : "Advertisement", sha, spa, &ndp->target, ARDisplayString(m, rr));
+					else
+						{
+						LogMsg("%-7s Conflicting NDP from %.6a %.16a for %.16a -- waking H-MAC %.6a I-MAC %.6a %s", intf->ifname,
+							sha, spa, &ndp->target, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m, rr));
+						ScheduleWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.HMAC);
+						}
+					}
+		}
+
+	mDNS_Unlock(m);
+	}
+
+mDNSlocal void mDNSCoreReceiveRawTransportPacket(mDNS *const m, const mDNSEthAddr *const sha, const mDNSAddr *const src, const mDNSAddr *const dst, const mDNSu8 protocol,
+	const mDNSu8 *const p, const TransportLayerPacket *const t, const mDNSu8 *const end, const mDNSInterfaceID InterfaceID, const mDNSu16 len)
+	{
+	const mDNSIPPort port = (protocol == 0x06) ? t->tcp.dst : (protocol == 0x11) ? t->udp.dst : zeroIPPort;
+	mDNSBool wake = mDNSfalse;
+
+	switch (protocol)
+		{
+		#define XX wake ? "Received" : "Ignoring", end-p
+		case 0x01:	LogSPS("Ignoring %d-byte ICMP from %#a to %#a", end-p, src, dst);
+					break;
+
+		case 0x06:	{
+					#define SSH_AsNumber 22
+					static const mDNSIPPort SSH = { { SSH_AsNumber >> 8, SSH_AsNumber & 0xFF } };
+
+					// Plan to wake if
+					// (a) RST is not set, AND
+					// (b) packet is SYN, SYN+FIN, or plain data packet (no SYN or FIN). We won't wake for FIN alone.
+					wake = (!(t->tcp.flags & 4) && (t->tcp.flags & 3) != 1);
+
+					// For now, to reduce spurious wakeups, we wake only for TCP SYN,
+					// except for ssh connections, where we'll wake for plain data packets too
+					if (!mDNSSameIPPort(port, SSH) && !(t->tcp.flags & 2)) wake = mDNSfalse;
+
+					LogSPS("%s %d-byte TCP from %#a:%d to %#a:%d%s%s%s", XX,
+						src, mDNSVal16(t->tcp.src), dst, mDNSVal16(port),
+						(t->tcp.flags & 2) ? " SYN" : "",
+						(t->tcp.flags & 1) ? " FIN" : "",
+						(t->tcp.flags & 4) ? " RST" : "");
+					}
+					break;
+
+		case 0x11:	{
+					#define ARD_AsNumber 3283
+					static const mDNSIPPort ARD = { { ARD_AsNumber >> 8, ARD_AsNumber & 0xFF } };
+					const mDNSu16 udplen = (mDNSu16)((mDNSu16)t->bytes[4] << 8 | t->bytes[5]);		// Length *including* 8-byte UDP header
+					if (udplen >= sizeof(UDPHeader))
+						{
+						const mDNSu16 datalen = udplen - sizeof(UDPHeader);
+						wake = mDNStrue;
+
+						// For Back to My Mac UDP port 4500 (IPSEC) packets, we do some special handling
+						if (mDNSSameIPPort(port, IPSECPort))
+							{
+							// Specifically ignore NAT keepalive packets
+							if (datalen == 1 && end >= &t->bytes[9] && t->bytes[8] == 0xFF) wake = mDNSfalse;
+							else
+								{
+								// Skip over the Non-ESP Marker if present
+								const mDNSBool NonESP = (end >= &t->bytes[12] && t->bytes[8] == 0 && t->bytes[9] == 0 && t->bytes[10] == 0 && t->bytes[11] == 0);
+								const IKEHeader *const ike    = (IKEHeader *)(t + (NonESP ? 12 : 8));
+								const mDNSu16          ikelen = datalen - (NonESP ? 4 : 0);
+								if (ikelen >= sizeof(IKEHeader) && end >= ((mDNSu8 *)ike) + sizeof(IKEHeader))
+									if ((ike->Version & 0x10) == 0x10)
+										{
+										// ExchangeType ==  5 means 'Informational' <http://www.ietf.org/rfc/rfc2408.txt>
+										// ExchangeType == 34 means 'IKE_SA_INIT'   <http://www.iana.org/assignments/ikev2-parameters>
+										if (ike->ExchangeType == 5 || ike->ExchangeType == 34) wake = mDNSfalse;
+										LogSPS("%s %d-byte IKE ExchangeType %d", XX, ike->ExchangeType);
+										}
+								}
+							}
+
+						// For now, because we haven't yet worked out a clean elegant way to do this, we just special-case the
+						// Apple Remote Desktop port number -- we ignore all packets to UDP 3283 (the "Net Assistant" port),
+						// except for Apple Remote Desktop's explicit manual wakeup packet, which looks like this:
+						// UDP header (8 bytes)
+						// Payload: 13 88 00 6a 41 4e 41 20 (8 bytes) ffffffffffff (6 bytes) 16xMAC (96 bytes) = 110 bytes total
+						if (mDNSSameIPPort(port, ARD)) wake = (datalen >= 110 && end >= &t->bytes[10] && t->bytes[8] == 0x13 && t->bytes[9] == 0x88);
+
+						LogSPS("%s %d-byte UDP from %#a:%d to %#a:%d", XX, src, mDNSVal16(t->udp.src), dst, mDNSVal16(port));
+						}
+					}
+					break;
+
+		case 0x3A:	if (&t->bytes[len] <= end)
+						{
+						mDNSu16 checksum = IPv6CheckSum(&src->ip.v6, &dst->ip.v6, protocol, t->bytes, len);
+						if (!checksum) mDNSCoreReceiveRawND(m, sha, &src->ip.v6, &t->ndp, &t->bytes[len], InterfaceID);
+						else LogInfo("IPv6CheckSum bad %04X %02X%02X from %#a to %#a", checksum, t->bytes[2], t->bytes[3], src, dst);
+						}
+					break;
+
+		default:	LogSPS("Ignoring %d-byte IP packet unknown protocol %d from %#a to %#a", end-p, protocol, src, dst);
+					break;
+		}
+
+	if (wake)
+		{
+		AuthRecord *rr, *r2;
+
+		mDNS_Lock(m);
+		for (rr = m->ResourceRecords; rr; rr=rr->next)
+			if (rr->resrec.InterfaceID == InterfaceID &&
+				rr->resrec.RecordType != kDNSRecordTypeDeregistering &&
+				rr->AddressProxy.type && mDNSSameAddress(&rr->AddressProxy, dst))
+				{
+				const mDNSu8 *const tp = (protocol == 6) ? (const mDNSu8 *)"\x4_tcp" : (const mDNSu8 *)"\x4_udp";
+				for (r2 = m->ResourceRecords; r2; r2=r2->next)
+					if (r2->resrec.InterfaceID == InterfaceID && mDNSSameEthAddress(&r2->WakeUp.HMAC, &rr->WakeUp.HMAC) &&
+						r2->resrec.RecordType != kDNSRecordTypeDeregistering &&
+						r2->resrec.rrtype == kDNSType_SRV && mDNSSameIPPort(r2->resrec.rdata->u.srv.port, port) &&
+						SameDomainLabel(ThirdLabel(r2->resrec.name)->c, tp))
+						break;
+				if (!r2 && mDNSSameIPPort(port, IPSECPort)) r2 = rr;	// So that we wake for BTMM IPSEC packets, even without a matching SRV record
+				if (r2)
+					{
+					LogMsg("Waking host at %s %#a H-MAC %.6a I-MAC %.6a for %s",
+						InterfaceNameForID(m, rr->resrec.InterfaceID), dst, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m, r2));
+					ScheduleWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.HMAC);
+					}
+				else
+					LogSPS("Sleeping host at %s %#a %.6a has no service on %#s %d",
+						InterfaceNameForID(m, rr->resrec.InterfaceID), dst, &rr->WakeUp.HMAC, tp, mDNSVal16(port));
+				}
+		mDNS_Unlock(m);
+		}
+	}
+
 mDNSexport void mDNSCoreReceiveRawPacket(mDNS *const m, const mDNSu8 *const p, const mDNSu8 *const end, const mDNSInterfaceID InterfaceID)
 	{
 	static const mDNSOpaque16 Ethertype_ARP  = { { 0x08, 0x06 } };	// Ethertype 0x0806 = ARP
-	static const mDNSOpaque16 Ethertype_IP   = { { 0x08, 0x00 } };	// Ethertype 0x0800 = IP
+	static const mDNSOpaque16 Ethertype_IPv4 = { { 0x08, 0x00 } };	// Ethertype 0x0800 = IPv4
+	static const mDNSOpaque16 Ethertype_IPv6 = { { 0x86, 0xDD } };	// Ethertype 0x86DD = IPv6
 	static const mDNSOpaque16 ARP_hrd_eth    = { { 0x00, 0x01 } };	// Hardware address space (Ethernet = 1)
 	static const mDNSOpaque16 ARP_pro_ip     = { { 0x08, 0x00 } };	// Protocol address space (IP = 0x0800)
-	static const mDNSOpaque16 ARP_op_request = { {    0,    1 } };
 
 	// Note: BPF guarantees that the NETWORK LAYER header will be word aligned, not the link-layer header.
-	// In other words, we can safely assume that arp, v4 and v6 below are all properly word aligned, but
-	// that means that eth points to 14 bytes before that, so necessarily it cannot also be 4-byte aligned.
-	const EthernetHeader *const eth = (const EthernetHeader *)p;
-	const ARP_EthIP      *const arp = (const ARP_EthIP      *)(eth+1);
-	const IPv4Header     *const v4  = (const IPv4Header     *)(eth+1);
-	const IPv6Header     *const v6  = (const IPv6Header     *)(eth+1);
+	// In other words, we can safely assume that pkt below (ARP, IPv4 or IPv6) is properly word aligned,
+	// but if pkt is 4-byte aligned, that necessarily means that eth CANNOT also be 4-byte aligned
+	// since it points to a an address 14 bytes before pkt.
+	const EthernetHeader     *const eth = (const EthernetHeader *)p;
+	const NetworkLayerPacket *const pkt = (const NetworkLayerPacket *)(eth+1);
+	mDNSAddr src, dst;
+	#define RequiredCapLen(P) ((P)==0x01 ? 4 : (P)==0x06 ? 20 : (P)==0x11 ? 8 : (P)==0x3A ? 24 : 0)
 
-	if (end >= p+42 && mDNSSameOpaque16(eth->ethertype, Ethertype_ARP) && mDNSSameOpaque16(arp->hrd, ARP_hrd_eth) && mDNSSameOpaque16(arp->pro, ARP_pro_ip))
+	// Is ARP? Length must be at least 14 + 28 = 42 bytes
+	if (end >= p+42 && mDNSSameOpaque16(eth->ethertype, Ethertype_ARP) && mDNSSameOpaque16(pkt->arp.hrd, ARP_hrd_eth) && mDNSSameOpaque16(pkt->arp.pro, ARP_pro_ip))
+		mDNSCoreReceiveRawARP(m, &pkt->arp, InterfaceID);
+	// Is IPv4 with zero fragmentation offset? Length must be at least 14 + 20 = 34 bytes
+	else if (end >= p+34 && mDNSSameOpaque16(eth->ethertype, Ethertype_IPv4) && (pkt->v4.flagsfrags.b[0] & 0x1F) == 0 && pkt->v4.flagsfrags.b[1] == 0)
 		{
-		AuthRecord *rr;
-		NetworkInterfaceInfo *intf = FirstInterfaceForID(m, InterfaceID);
-		if (!intf) return;
-
-		debugf("Got ARP from %.4a/%.6a for %.4a", &arp->spa, &arp->sha, &arp->tpa);
-
-		mDNS_Lock(m);
-
-		// Pass 1:
-		// Process ARP Requests and Probes (but not Announcements), and generate an ARP Reply if necessary.
-		// We also process ARPs from our own kernel (and 'answer' them by injecting a local ARP table entry)
-		// We ignore ARP Announcements here -- Announcements are not questions, they're assertions, so we don't need to answer them.
-		// The times we might need to react to an ARP Announcement are:
-		// (i) as an indication that the host in question has not gone to sleep yet (so we should delay beginning to proxy for it) or
-		// (ii) if it's a conflicting Announcement from another host
-		// -- and we check for these in Pass 2 below.
-		if (mDNSSameOpaque16(arp->op, ARP_op_request) && !mDNSSameIPv4Address(arp->spa, arp->tpa))
-			for (rr = m->ResourceRecords; rr; rr=rr->next)
-				if (rr->resrec.InterfaceID == InterfaceID && rr->resrec.RecordType != kDNSRecordTypeDeregistering &&
-					rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, arp->tpa))
-					{
-					char *ifname = InterfaceNameForID(m, InterfaceID);
-					static const char msg1[] = "ARP Req from owner -- re-probing";
-					static const char msg2[] = "Ignoring  ARP Request from      ";
-					static const char msg3[] = "Creating Local ARP Cache entry  ";
-					static const char msg4[] = "Answering ARP Request from      ";
-					const char *const msg = mDNSSameEthAddress(&arp->sha, &rr->WakeUp.IMAC) ? msg1 :
-											(rr->AnnounceCount == InitialAnnounceCount)     ? msg2 :
-											mDNSSameEthAddress(&arp->sha, &intf->MAC)       ? msg3 : msg4;
-					if (!ifname) ifname = "<NULL InterfaceID>";
-					LogSPS("%-7s %s %.6a %.4a for %.4a -- H-MAC %.6a I-MAC %.6a %s",
-						ifname, msg, &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m, rr));
-					if      (msg == msg1) RestartARPProbing(m, rr);
-					else if (msg == msg3) mDNSPlatformSetLocalARP(&arp->tpa, &rr->WakeUp.IMAC, InterfaceID);
-					else if (msg == msg4) SendARP(m, 2, rr, arp->tpa.b, arp->sha.b, arp->spa.b, arp->sha.b);
-					}
-
-		// Pass 2:
-		// For all types of ARP packet we check the Sender IP address to make sure it doesn't conflict with any AddressProxy record we're holding.
-		// (Strictly speaking we're only checking Announcement/Request/Reply packets, since ARP Probes have zero Sender IP address,
-		// so by definition (and by design) they can never conflict with any real (i.e. non-zero) IP address).
-		// We ignore ARPs we sent ourselves (Sender MAC address is our MAC address) because our own proxy ARPs do not constitute a conflict that we need to handle.
-		// If we see an apparently conflicting ARP, we check the sender hardware address:
-		//   If the sender hardware address is the original owner this is benign, so we just suppress our own proxy answering for a while longer.
-		//   If the sender hardware address is *not* the original owner, then this is a conflict, and we need to wake the sleeping machine to handle it.
-		if (mDNSSameEthAddress(&arp->sha, &intf->MAC))
-			debugf("ARP from self for %.4a", &arp->tpa);
-		else
-			{
-			if (!mDNSSameIPv4Address(arp->spa, zerov4Addr))
-				for (rr = m->ResourceRecords; rr; rr=rr->next)
-					if (rr->resrec.InterfaceID == InterfaceID && rr->resrec.RecordType != kDNSRecordTypeDeregistering &&
-						rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, arp->spa))
-						{
-						char *ifname = InterfaceNameForID(m, InterfaceID);
-						if (!ifname) ifname = "<NULL InterfaceID>";
-
-						RestartARPProbing(m, rr);
-						if (mDNSSameEthAddress(&arp->sha, &rr->WakeUp.IMAC))
-							LogSPS("%-7s ARP %s from owner %.6a %.4a for %-15.4a -- re-starting probing for %s",
-								ifname,
-								mDNSSameIPv4Address(arp->spa, arp->tpa) ? "Announcement" : mDNSSameOpaque16(arp->op, ARP_op_request) ? "Request     " : "Response    ",
-								&arp->sha, &arp->spa, &arp->tpa, ARDisplayString(m, rr));
-						else
-							{
-							LogMsg("%-7s Conflicting ARP from %.6a %.4a for %.4a -- waking H-MAC %.6a I-MAC %.6a %s",
-								ifname, &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m, rr));
-							ScheduleWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.HMAC);
-							}
-						}
-			}
-
-		mDNS_Unlock(m);
+		const mDNSu8 *const trans = p + 14 + (pkt->v4.vlen & 0xF) * 4;
+		debugf("Got IPv4 %02X from %.4a to %.4a", pkt->v4.protocol, &pkt->v4.src, &pkt->v4.dst);
+		src.type = mDNSAddrType_IPv4; src.ip.v4 = pkt->v4.src;
+		dst.type = mDNSAddrType_IPv4; dst.ip.v4 = pkt->v4.dst;
+		if (end >= trans + RequiredCapLen(pkt->v4.protocol))
+			mDNSCoreReceiveRawTransportPacket(m, &eth->src, &src, &dst, pkt->v4.protocol, p, (TransportLayerPacket*)trans, end, InterfaceID, 0);
 		}
-	else if (end >= p+34 && mDNSSameOpaque16(eth->ethertype, Ethertype_IP) && (v4->flagsfrags.b[0] & 0x1F) == 0 && v4->flagsfrags.b[1] == 0)
+	// Is IPv6? Length must be at least 14 + 28 = 42 bytes
+	else if (end >= p+54 && mDNSSameOpaque16(eth->ethertype, Ethertype_IPv6))
 		{
-		const mDNSu8 *const trans = p + 14 + (v4->vlen & 0xF) * 4;
-		const mDNSu8 *const required = trans + (v4->protocol == 1 ? 4 : v4->protocol == 6 ? 20 : v4->protocol == 17 ? 8 : 0);
-		debugf("Got IPv4 from %.4a to %.4a", &v4->src, &v4->dst);
-		if (end >= required)
-			{
-			#define SSH_AsNumber 22
-			#define ARD_AsNumber 3283
-			static const mDNSIPPort SSH   = { { SSH_AsNumber   >> 8, SSH_AsNumber   & 0xFF } };
-			static const mDNSIPPort ARD   = { { ARD_AsNumber   >> 8, ARD_AsNumber   & 0xFF } };
-
-			mDNSBool wake = mDNSfalse;
-			mDNSIPPort port = zeroIPPort;
-	
-			switch (v4->protocol)
-				{
-				#define XX wake ? "Received" : "Ignoring", end-p
-				case  1:	LogSPS("%s %d-byte ICMP from %.4a to %.4a", XX, &v4->src, &v4->dst);
-							break;
-
-				case  6:	{
-							const TCPHeader *const tcp = (const TCPHeader *)trans;
-							port = tcp->dst;
-
-							// Plan to wake if
-							// (a) RST is not set, AND
-							// (b) packet is SYN, SYN+FIN, or plain data packet (no SYN or FIN). We won't wake for FIN alone.
-							wake = (!(tcp->flags & 4) && (tcp->flags & 3) != 1);
-
-							// For now, to reduce spurious wakeups, we wake only for TCP SYN,
-							// except for ssh connections, where we'll wake for plain data packets too
-							if (!mDNSSameIPPort(port, SSH) && !(tcp->flags & 2)) wake = mDNSfalse;
-
-							LogSPS("%s %d-byte TCP from %.4a:%d to %.4a:%d%s%s%s", XX,
-								&v4->src, mDNSVal16(tcp->src), &v4->dst, mDNSVal16(port),
-								(tcp->flags & 2) ? " SYN" : "",
-								(tcp->flags & 1) ? " FIN" : "",
-								(tcp->flags & 4) ? " RST" : "");
-							}
-							break;
-
-				case 17:	{
-							const UDPHeader *const udp = (const UDPHeader *)trans;
-							const mDNSu16 udplen = (mDNSu16)((mDNSu16)trans[4] << 8 | trans[5]);		// Length *including* 8-byte UDP header
-							if (udplen >= sizeof(UDPHeader))
-								{
-								const mDNSu16 datalen = udplen - sizeof(UDPHeader);
-								port = udp->dst;
-								wake = mDNStrue;
-
-								// For Back to My Mac UDP port 4500 (IPSEC) packets, we do some special handling
-								if (mDNSSameIPPort(port, IPSECPort))
-									{
-									// Specifically ignore NAT keepalive packets
-									if (datalen == 1 && end >= trans + 9 && trans[8] == 0xFF) wake = mDNSfalse;
-									else
-										{
-										// Skip over the Non-ESP Marker if present
-										const mDNSBool NonESP = (end >= trans + 12 && trans[8] == 0 && trans[9] == 0 && trans[10] == 0 && trans[11] == 0);
-										const IKEHeader *const ike    = (IKEHeader *)(trans + (NonESP ? 12 : 8));
-										const mDNSu16          ikelen = datalen - (NonESP ? 4 : 0);
-										if (ikelen >= sizeof(IKEHeader) && end >= ((mDNSu8 *)ike) + sizeof(IKEHeader))
-											if ((ike->Version & 0x10) == 0x10)
-												{
-												// ExchangeType ==  5 means 'Informational' <http://www.ietf.org/rfc/rfc2408.txt>
-												// ExchangeType == 34 means 'IKE_SA_INIT'   <http://www.iana.org/assignments/ikev2-parameters>
-												if (ike->ExchangeType == 5 || ike->ExchangeType == 34) wake = mDNSfalse;
-												LogSPS("%s %d-byte IKE ExchangeType %d", XX, ike->ExchangeType);
-												}
-										}
-									}
-
-								// For now, because we haven't yet worked out a clean elegant way to do this, we just special-case the
-								// Apple Remote Desktop port number -- we ignore all packets to UDP 3283 (the "Net Assistant" port),
-								// except for Apple Remote Desktop's explicit manual wakeup packet, which looks like this:
-								// UDP header (8 bytes)
-								// Payload: 13 88 00 6a 41 4e 41 20 (8 bytes) ffffffffffff (6 bytes) 16xMAC (96 bytes) = 110 bytes total
-								if (mDNSSameIPPort(port, ARD)) wake = (datalen >= 110 && end >= trans+10 && trans[8] == 0x13 && trans[9] == 0x88);
-
-								LogSPS("%s %d-byte UDP from %.4a:%d to %.4a:%d", XX, &v4->src, mDNSVal16(udp->src), &v4->dst, mDNSVal16(port));
-								}
-							}
-							break;
-
-				default:	LogSPS("%s %d-byte IP packet unknown protocol %d from %.4a to %.4a", XX, v4->protocol, &v4->src, &v4->dst);
-							break;
-				}
-
-			if (wake)
-				{
-				AuthRecord *rr, *r2;
-
-				mDNS_Lock(m);
-				for (rr = m->ResourceRecords; rr; rr=rr->next)
-					if (rr->resrec.InterfaceID == InterfaceID &&
-						rr->resrec.RecordType != kDNSRecordTypeDeregistering &&
-						rr->AddressProxy.type == mDNSAddrType_IPv4 && mDNSSameIPv4Address(rr->AddressProxy.ip.v4, v4->dst))
-						{
-						char *ifname = InterfaceNameForID(m, rr->resrec.InterfaceID);
-						const mDNSu8 *const tp = (v4->protocol == 6) ? (const mDNSu8 *)"\x4_tcp" : (const mDNSu8 *)"\x4_udp";
-						for (r2 = m->ResourceRecords; r2; r2=r2->next)
-							if (r2->resrec.InterfaceID == InterfaceID && mDNSSameEthAddress(&r2->WakeUp.HMAC, &rr->WakeUp.HMAC) &&
-								r2->resrec.RecordType != kDNSRecordTypeDeregistering &&
-								r2->resrec.rrtype == kDNSType_SRV && mDNSSameIPPort(r2->resrec.rdata->u.srv.port, port) &&
-								SameDomainLabel(ThirdLabel(r2->resrec.name)->c, tp))
-								break;
-						if (!r2 && mDNSSameIPPort(port, IPSECPort)) r2 = rr;	// So that we wake for BTMM IPSEC packets, even without a matching SRV record
-						if (!ifname) ifname = "<NULL InterfaceID>";
-						if (r2)
-							{
-							LogMsg("Waking host at %s %.4a H-MAC %.6a I-MAC %.6a for %s",
-								ifname, &v4->dst, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m, r2));
-							ScheduleWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.HMAC);
-							}
-						else
-							LogSPS("Sleeping host at %s %.4a %.6a has no service on %#s %d",
-								ifname, &v4->dst, &rr->WakeUp.HMAC, tp, mDNSVal16(port));
-						}
-				mDNS_Unlock(m);
-				}
-			}
-		}
-	else if (end >= p+34 && mDNSSameOpaque16(eth->ethertype, Ethertype_IP) && (v4->flagsfrags.b[0] & 0x1F) == 0 && v4->flagsfrags.b[1] == 0)
-		{
-		debugf("Got IPv6 from %.16a to %.16a", &v4->src, &v6->dst);
-		(void)v6;
+		const mDNSu8 *const trans = p + 54;
+		debugf("Got IPv6  %02X from %.16a to %.16a", pkt->v6.pro, &pkt->v6.src, &pkt->v6.dst);
+		src.type = mDNSAddrType_IPv6; src.ip.v6 = pkt->v6.src;
+		dst.type = mDNSAddrType_IPv6; dst.ip.v6 = pkt->v6.dst;
+		if (end >= trans + RequiredCapLen(pkt->v6.pro))
+			mDNSCoreReceiveRawTransportPacket(m, &eth->src, &src, &dst, pkt->v6.pro, p, (TransportLayerPacket*)trans, end, InterfaceID,
+				(mDNSu16)pkt->bytes[4] << 8 | pkt->bytes[5]);
 		}
 	}
 
