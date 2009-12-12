@@ -2263,8 +2263,12 @@ mDNSlocal void * KQueueLoop(void *m_param)
 			{
 			if (mDNSStorage.ResourceRecords)
 				{
-				LogInfo("Cannot exit yet; Resource Record still exists: %s", ARDisplayString(m, mDNSStorage.ResourceRecords));
-				if (mDNS_LoggingEnabled) usleep(10000);		// Sleep 10ms so that we don't flood syslog with too many messages
+				AuthRecord *rr;
+				for (rr = mDNSStorage.ResourceRecords; rr; rr=rr->next)
+					{
+					LogInfo("Cannot exit yet; Resource Record still exists: %s", ARDisplayString(m, rr));
+					if (mDNS_LoggingEnabled) usleep(10000);		// Sleep 10ms so that we don't flood syslog with too many messages
+					}
 				}
 			if (mDNSStorage.ServiceRegistrations)
 				LogInfo("Cannot exit yet; ServiceRegistrations still exists: %s", ARDisplayString(m, &mDNSStorage.ServiceRegistrations->RR_SRV));
