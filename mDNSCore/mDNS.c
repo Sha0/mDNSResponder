@@ -852,6 +852,11 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 		}
 #endif // UNICAST_DISABLED
 
+	if      (RecordType == kDNSRecordTypeUnregistered)
+		LogMsg("mDNS_Deregister_internal: %s already marked kDNSRecordTypeUnregistered", ARDisplayString(m, rr));
+	else if (RecordType == kDNSRecordTypeDeregistering)
+		LogMsg("mDNS_Deregister_internal: %s already marked kDNSRecordTypeDeregistering", ARDisplayString(m, rr));
+
 	// <rdar://problem/7457925> Local-only questions don't get remove events for unique records
 	// We may want to consider changing this code so that we generate local-only question "rmv"
 	// events (and maybe goodbye packets too) for unique records as well as for shared records
@@ -883,15 +888,8 @@ mDNSexport mStatus mDNS_Deregister_internal(mDNS *const m, AuthRecord *const rr,
 		// i.e. something like:
 		// if (rr->AnsweredLocalQ) { AnswerAllLocalQuestionsWithLocalAuthRecord(m, rr, mDNSfalse); rr->AnsweredLocalQ = mDNSfalse; }
 
-		if      (RecordType == kDNSRecordTypeUnregistered)
-			LogMsg("mDNS_Deregister_internal: %s already marked kDNSRecordTypeUnregistered", ARDisplayString(m, rr));
-		else if (RecordType == kDNSRecordTypeDeregistering)
-			LogMsg("mDNS_Deregister_internal: %s already marked kDNSRecordTypeDeregistering", ARDisplayString(m, rr));
-		else
-			{
-			verbosedebugf("mDNS_Deregister_internal: Deleting record for %s", ARDisplayString(m, rr));
-			rr->resrec.RecordType = kDNSRecordTypeUnregistered;
-			}
+		verbosedebugf("mDNS_Deregister_internal: Deleting record for %s", ARDisplayString(m, rr));
+		rr->resrec.RecordType = kDNSRecordTypeUnregistered;
 
 		if ((drt == mDNS_Dereg_conflict || drt == mDNS_Dereg_repeat) && RecordType == kDNSRecordTypeShared)
 			debugf("mDNS_Deregister_internal: Cannot have a conflict on a shared record! %##s (%s)",
@@ -3180,7 +3178,7 @@ mDNSlocal void CheckProxyRecords(mDNS *const m, AuthRecord *list)
 	while (m->CurrentRecord)
 		{
 		AuthRecord *rr = m->CurrentRecord;
-		if (rr->WakeUp.HMAC.l[0])
+		if (rr->resrec.RecordType != kDNSRecordTypeDeregistering && rr->WakeUp.HMAC.l[0])
 			{
 			// If m->SPSSocket is NULL that means we're not acting as a sleep proxy any more,
 			// so we need to cease proxying for *all* records we may have, expired or not.
