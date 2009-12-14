@@ -2051,6 +2051,7 @@
 					"$(inherited)",
 					"__DARWIN_NON_CANCELABLE=1",
 				);
+				INSTALLHDRS_COPY_PHASE = YES;
 				INSTALL_PATH = /usr/local/lib/system;
 				PRODUCT_NAME = dns_sd;
 			};
