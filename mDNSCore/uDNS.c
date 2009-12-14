@@ -1205,6 +1205,7 @@ exit:
 				q->LastQTime     = m->timenow;
 				q->ThisQInterval = q->LongLived ? LLQ_POLL_INTERVAL : MAX_UCAST_POLL_INTERVAL;
 				SetNextQueryTime(m, q);
+				LogMsg("tcpCallback: stream connection for %##s (%s) failed, retrying in %d ms", q->qname.c, DNSTypeName(q->qtype), q->ThisQInterval);
 				}
 			
 			// We're about to dispose of the TCP connection, so we must reset the state to retry over TCP/TLS
@@ -3622,7 +3623,7 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 					{
 					if (q->nta) CancelGetZoneData(m, q->nta);
 					q->nta = StartGetZoneData(m, &q->qname, q->LongLived ? ZoneServiceLLQ : ZoneServiceQuery, PrivateQueryGotZoneData, q);
-					q->ThisQInterval = (LLQ_POLL_INTERVAL + mDNSRandom(LLQ_POLL_INTERVAL/10)) / QuestionIntervalStep;
+					if (q->state == LLQ_Poll) q->ThisQInterval = (LLQ_POLL_INTERVAL + mDNSRandom(LLQ_POLL_INTERVAL/10)) / QuestionIntervalStep;
 					}
 				else
 					{
@@ -3640,6 +3641,16 @@ mDNSexport void uDNS_CheckCurrentQuestion(mDNS *const m)
 				q->unansweredQueries++;
 				if (q->ThisQInterval > MAX_UCAST_POLL_INTERVAL)
 					q->ThisQInterval = MAX_UCAST_POLL_INTERVAL;
+				if (private && q->state != LLQ_Poll)
+					{
+					// We don't want to retransmit too soon. Hence, we always schedule our first
+					// retransmisson at 3 seconds rather than one second
+					if (q->ThisQInterval < (3 * mDNSPlatformOneSecond))
+						q->ThisQInterval = q->ThisQInterval * QuestionIntervalStep;
+					if (q->ThisQInterval > LLQ_POLL_INTERVAL)
+						q->ThisQInterval = LLQ_POLL_INTERVAL;
+					LogInfo("uDNS_CheckCurrentQuestion: private non polling question for %##s (%s) will be retried in %d ms", q->qname.c, DNSTypeName(q->qtype), q->ThisQInterval);
+					}
 				debugf("Increased ThisQInterval to %d for %##s (%s)", q->ThisQInterval, q->qname.c, DNSTypeName(q->qtype));
 				}
 			q->LastQTime = m->timenow;
