@@ -1180,7 +1180,7 @@ mDNSlocal void SendARP(mDNS *const m, const mDNSu8 op, const AuthRecord *const r
 	// 0x00 Destination address
 	for (i=0; i<6; i++) *ptr++ = dst->b[i];
 
-	// 0x06 Source address (we just use zero -- driver/hardware will fill in real interface address)
+	// 0x06 Source address (Note: Unless we set the BIOCSHDRCMPLT option, BPF will fill in real interface address)
 	for (i=0; i<6; i++) *ptr++ = intf->MAC.b[0];
 
 	// 0x0C ARP Ethertype (0x0806)
@@ -1259,7 +1259,7 @@ mDNSlocal void SendNDP(mDNS *const m, const mDNSu8 op, const mDNSu8 flags, const
 	else
 		for (i=0; i<6; i++) *ptr++ = dst->b[i];
 
-	// 0x06 Source address (we just use zero -- driver/hardware will fill in real interface address)
+	// 0x06 Source address (Note: Unless we set the BIOCSHDRCMPLT option, BPF will fill in real interface address)
 	for (i=0; i<6; i++) *ptr++ = (tha ? *tha : intf->MAC).b[i];
 
 	// 0x0C IPv6 Ethertype (0x86DD)
@@ -2489,7 +2489,7 @@ mDNSlocal void SendWakeup(mDNS *const m, mDNSInterfaceID InterfaceID, mDNSEthAdd
 	// 0x00 Destination address
 	for (i=0; i<6; i++) *ptr++ = EthAddr->b[i];
 
-	// 0x06 Source address (we just use zero -- BPF will fill in real interface address)
+	// 0x06 Source address (Note: We just use zero. Unless we set the BIOCSHDRCMPLT option, BPF will fill in real interface address)
 	for (i=0; i<6; i++) *ptr++ = 0x0;
 
 	// 0x0C Ethertype (0x0842)

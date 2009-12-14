@@ -1751,8 +1751,8 @@ mDNSexport void mDNSPlatformReceiveBPF_fd(mDNS *const m, int fd)
 		//if (ioctl(fd, BIOCPROMISC, &opt_one) < 0)
 		//	LogMsg("mDNSPlatformReceiveBPF_fd: %d %s BIOCPROMISC failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno));
 	
-		if (ioctl(fd, BIOCSHDRCMPLT, &opt_one) < 0)
-			LogMsg("mDNSPlatformReceiveBPF_fd: %d %s BIOCSHDRCMPLT failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno));
+		//if (ioctl(fd, BIOCSHDRCMPLT, &opt_one) < 0)
+		//	LogMsg("mDNSPlatformReceiveBPF_fd: %d %s BIOCSHDRCMPLT failed %d (%s)", fd, i->ifinfo.ifname, errno, strerror(errno));
 	
 		struct ifreq ifr;
 		mDNSPlatformMemZero(&ifr, sizeof(ifr));
