@@ -1017,7 +1017,7 @@ typedef struct DNSServer
 	mDNSu32         teststate;	// Have we sent bug-detection query to this server?
 	mDNSs32         lasttest;	// Time we sent last bug-detection query to this server
 	domainname      domain;		// name->server matching for "split dns"
-	mDNSs32			penaltyTime; // amount of time this server is penalized			
+	mDNSs32			penaltyTime; // amount of time this server is penalized
 	mDNSBool		scoped;		// interface should be matched against question only
 								// if scoped is set
 	} DNSServer;
@@ -1101,7 +1101,6 @@ struct AuthRecord_struct
 	mDNSAddr        AddressProxy;		// For reverse-mapping Sleep Proxy PTR records, address in question
 	mDNSs32         TimeRcvd;			// In platform time units
 	mDNSs32         TimeExpire;			// In platform time units
-	
 
 	// Field Group 3: Transient state for Authoritative Records
 	mDNSu8          Acknowledged;		// Set if we've given the success callback to the client
@@ -2083,7 +2082,8 @@ extern mStatus mDNS_AdvertiseDomains(mDNS *const m, AuthRecord *rr, mDNS_DomainT
 #define        mDNS_StopAdvertiseDomains mDNS_Deregister
 
 extern mDNSOpaque16 mDNS_NewMessageID(mDNS *const m);
-		
+extern mDNSBool mDNS_AddressIsLocalSubnet(mDNS *const m, const mDNSInterfaceID InterfaceID, const mDNSAddr *addr);
+
 extern DNSServer *GetServerForName(mDNS *m, const domainname *name, DNSServer *current, mDNSInterfaceID InterfaceID);
 
 // ***************************************************************************
@@ -2442,7 +2442,7 @@ extern void       mDNSPlatformUDPClose(UDPSocket *sock);
 extern void       mDNSPlatformReceiveBPF_fd(mDNS *const m, int fd);
 extern void       mDNSPlatformUpdateProxyList(mDNS *const m, const mDNSInterfaceID InterfaceID);
 extern void       mDNSPlatformSendRawPacket(const void *const msg, const mDNSu8 *const end, mDNSInterfaceID InterfaceID);
-extern void       mDNSPlatformSetLocalARP(const mDNSv4Addr *const tpa, const mDNSEthAddr *const tha, mDNSInterfaceID InterfaceID);
+extern void       mDNSPlatformSetLocalAddressCacheEntry(mDNS *const m, const mDNSAddr *const tpa, const mDNSEthAddr *const tha, mDNSInterfaceID InterfaceID);
 extern void       mDNSPlatformSourceAddrForDest(mDNSAddr *const src, const mDNSAddr *const dst);
 
 // mDNSPlatformTLSSetupCerts/mDNSPlatformTLSTearDownCerts used by dnsextd

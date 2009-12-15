@@ -393,7 +393,7 @@ mDNSexport void mDNSPlatformSendRawPacket(const void *const msg, const mDNSu8 *c
 	(void)InterfaceID;			// Unused
 	}
 	
-mDNSexport void mDNSPlatformSetLocalARP(const mDNSv4Addr *const tpa, const mDNSEthAddr *const tha, mDNSInterfaceID InterfaceID)
+mDNSexport void mDNSPlatformSetLocalAddressCacheEntry(mDNS *const m, const mDNSAddr *const tpa, const mDNSEthAddr *const tha, mDNSInterfaceID InterfaceID)
 	{
 	(void)tpa;			// Unused
 	(void)tha;			// Unused

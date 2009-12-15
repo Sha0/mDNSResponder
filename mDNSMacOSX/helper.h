@@ -63,7 +63,7 @@ extern const char *mDNSHelperError(int errornum);
 
 extern void mDNSRequestBPF(void);
 extern int  mDNSPowerRequest(int key, int interval);
-extern int  mDNSSetARP(int ifindex, const v4addr_t ip, const ethaddr_t eth);
+extern int  mDNSSetLocalAddressCacheEntry(int ifindex, int family, const v6addr_t ip, const ethaddr_t eth);
 extern void mDNSNotify(const char *title, const char *msg);		// Both strings are UTF-8 text
 extern void mDNSDynamicStoreSetConfig(int key, const char *subkey, CFPropertyListRef value);
 extern void mDNSPreferencesSetName(int key, domainlabel *old, domainlabel *new);

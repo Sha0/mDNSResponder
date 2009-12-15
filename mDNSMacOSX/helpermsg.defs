@@ -41,9 +41,11 @@ routine mDNSPowerRequest(		port			: mach_port_t;
 		out						err				: int;
 		ServerAuditToken		token			: audit_token_t);
 
-routine mDNSSetARP(				port			: mach_port_t;
+routine mDNSSetLocalAddressCacheEntry(
+								port			: mach_port_t;
 								ifindex			: int;
-								ip				: v4addr_t;
+								family			: int;
+								ip				: v6addr_t;
 								eth				: ethaddr_t;
 		out						err				: int;
 		ServerAuditToken		token			: audit_token_t);

@@ -131,7 +131,7 @@ mDNSlocal CacheGroup *CacheGroupForRecord(const mDNS *const m, const mDNSu32 slo
 	return(CacheGroupForName(m, slot, rr->namehash, rr->name));
 	}
 
-mDNSlocal mDNSBool AddressIsLocalSubnet(mDNS *const m, const mDNSInterfaceID InterfaceID, const mDNSAddr *addr)
+mDNSexport mDNSBool mDNS_AddressIsLocalSubnet(mDNS *const m, const mDNSInterfaceID InterfaceID, const mDNSAddr *addr)
 	{
 	NetworkInterfaceInfo *intf;
 
@@ -1240,24 +1240,27 @@ mDNSlocal void SendNDP(mDNS *const m, const mDNSu8 op, const mDNSu8 flags, const
 	int i;
 	mDNSOpaque16 checksum;
 	mDNSu8 *ptr = m->omsg.data;
-	// Unicast Neighbor Solicitations don't appear to work, so we need to multicast them
-	mDNSv6Addr mc = { { 0xFF,0x02,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x01, 0xFF,tpa->b[0xD],tpa->b[0xE],tpa->b[0xF] } };
-	const mDNSv6Addr *const v6dst = op == 0x87 ? &mc : tpa;
+	// Some recipient hosts seem to ignore Neighbor Solicitations if the IPv6-layer destination address is not the
+	// appropriate IPv6 solicited node multicast address, so we use that IPv6-layer destination address, even though
+	// at the Ethernet-layer we unicast the packet to the intended target, to avoid wasting network bandwidth.
+	const mDNSv6Addr mc = { { 0xFF,0x02,0x00,0x00, 0,0,0,0, 0,0,0,1, 0xFF,tpa->b[0xD],tpa->b[0xE],tpa->b[0xF] } };
+	const mDNSv6Addr *const v6dst = (op == 0x87) ? &mc : tpa;
 	NetworkInterfaceInfo *intf = FirstInterfaceForID(m, rr->resrec.InterfaceID);
 	if (!intf) { LogMsg("SendNDP: No interface with InterfaceID %p found %s", rr->resrec.InterfaceID, ARDisplayString(m,rr)); return; }
 
 	// 0x00 Destination address
-	if (op == 0x8)
-		{
-		*ptr++ = 0x33;
-		*ptr++ = 0x33;
-		*ptr++ = 0xFF;
-		*ptr++ = tpa->b[0xD];
-		*ptr++ = tpa->b[0xE];
-		*ptr++ = tpa->b[0xF];
-		}
-	else
-		for (i=0; i<6; i++) *ptr++ = dst->b[i];
+	for (i=0; i<6; i++) *ptr++ = dst->b[i];
+	// Right now we only send Neighbor Solicitations to verify whether the host we're proxying for has gone to sleep yet.
+	// Since we know who we're looking for, we send it via Ethernet-layer unicast, rather than bothering every host on the
+	// link with a pointless link-layer multicast.
+	// Should we want to send traditional Neighbor Solicitations in the future, where we really don't know in advance what
+	// Ethernet-layer address we're looking for, we'll need to send to the appropriate Ethernet-layer multicast address:
+	// *ptr++ = 0x33;
+	// *ptr++ = 0x33;
+	// *ptr++ = 0xFF;
+	// *ptr++ = tpa->b[0xD];
+	// *ptr++ = tpa->b[0xE];
+	// *ptr++ = tpa->b[0xF];
 
 	// 0x06 Source address (Note: Unless we set the BIOCSHDRCMPLT option, BPF will fill in real interface address)
 	for (i=0; i<6; i++) *ptr++ = (tha ? *tha : intf->MAC).b[i];
@@ -1393,7 +1396,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 					rr->ImmedAnswer = mDNSInterfaceMark;		// Send goodbye packet on all interfaces
 				else
 					{
-					LogSPS("SendResponses: Sending wakeup %2d for %.6a %s", rr->AnnounceCount, &rr->WakeUp.IMAC, ARDisplayString(m, rr));
+					LogSPS("SendResponses: Sending wakeup %2d for %.6a %s", rr->AnnounceCount-3, &rr->WakeUp.IMAC, ARDisplayString(m, rr));
 					SendWakeup(m, rr->resrec.InterfaceID, &rr->WakeUp.IMAC, &rr->WakeUp.password);
 					for (r2 = rr; r2; r2=r2->next)
 						if (r2->AnnounceCount && r2->resrec.InterfaceID == rr->resrec.InterfaceID && mDNSSameEthAddress(&r2->WakeUp.IMAC, &rr->WakeUp.IMAC))
@@ -1401,7 +1404,7 @@ mDNSlocal void SendResponses(mDNS *const m)
 							if (r2->AddressProxy.type == mDNSAddrType_IPv6)
 								{
 								LogSPS("NDP Announcement %2d Releasing traffic for H-MAC %.6a I-MAC %.6a %s",
-									r2->AnnounceCount, &r2->WakeUp.HMAC, &r2->WakeUp.IMAC, ARDisplayString(m,r2));
+									r2->AnnounceCount-3, &r2->WakeUp.HMAC, &r2->WakeUp.IMAC, ARDisplayString(m,r2));
 								// Neighbor Advertisement; Override flag
 								SendNDP(m, 0x88, 0x20, r2, &r2->AddressProxy.ip.v6, &r2->WakeUp.IMAC, &AllHosts_v6, &AllHosts_v6_Eth);
 								}
@@ -4451,7 +4454,7 @@ mDNSlocal mDNSu8 *ProcessQuery(mDNS *const m, const DNSMessage *const query, con
 	const mDNSAddr *srcaddr, const mDNSInterfaceID InterfaceID, mDNSBool LegacyQuery, mDNSBool QueryWasMulticast,
 	mDNSBool QueryWasLocalUnicast, DNSMessage *const response)
 	{
-	mDNSBool      FromLocalSubnet    = srcaddr && AddressIsLocalSubnet(m, InterfaceID, srcaddr);
+	mDNSBool      FromLocalSubnet    = srcaddr && mDNS_AddressIsLocalSubnet(m, InterfaceID, srcaddr);
 	AuthRecord   *ResponseRecords    = mDNSNULL;
 	AuthRecord  **nrp                = &ResponseRecords;
 	CacheRecord  *ExpectedAnswers    = mDNSNULL;			// Records in our cache we expect to see updated
@@ -4937,7 +4940,7 @@ mDNSlocal void mDNSCoreReceiveQuery(mDNS *const m, const DNSMessage *const msg, 
 	{
 	mDNSu8    *responseend = mDNSNULL;
 	mDNSBool   QueryWasLocalUnicast = srcaddr && dstaddr &&
-		!mDNSAddrIsDNSMulticast(dstaddr) && AddressIsLocalSubnet(m, InterfaceID, srcaddr);
+		!mDNSAddrIsDNSMulticast(dstaddr) && mDNS_AddressIsLocalSubnet(m, InterfaceID, srcaddr);
 	
 	if (!InterfaceID && dstaddr && mDNSAddrIsDNSMulticast(dstaddr))
 		{
@@ -5191,7 +5194,7 @@ mDNSlocal void mDNSCoreReceiveResponse(mDNS *const m,
 	{
 	int i;
 	mDNSBool ResponseMCast    = dstaddr && mDNSAddrIsDNSMulticast(dstaddr);
-	mDNSBool ResponseSrcLocal = !srcaddr || AddressIsLocalSubnet(m, InterfaceID, srcaddr);
+	mDNSBool ResponseSrcLocal = !srcaddr || mDNS_AddressIsLocalSubnet(m, InterfaceID, srcaddr);
 	DNSQuestion *llqMatch = mDNSNULL;
 	uDNS_LLQType LLQType      = uDNS_recvLLQResponse(m, response, end, srcaddr, srcport, &llqMatch);
 
@@ -8422,7 +8425,7 @@ mDNSlocal void mDNSCoreReceiveRawARP(mDNS *const m, const ARP_EthIP *const arp, 
 				LogSPS("%-7s %s %.6a %.4a for %.4a -- H-MAC %.6a I-MAC %.6a %s",
 					intf->ifname, msg, &arp->sha, &arp->spa, &arp->tpa, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m, rr));
 				if      (msg == msg1) RestartARPProbing(m, rr);
-				else if (msg == msg3) mDNSPlatformSetLocalARP(&arp->tpa, &rr->WakeUp.IMAC, InterfaceID);
+				else if (msg == msg3) mDNSPlatformSetLocalAddressCacheEntry(m, &rr->AddressProxy, &rr->WakeUp.IMAC, InterfaceID);
 				else if (msg == msg4) SendARP(m, 2, rr, &arp->tpa, &arp->sha, &arp->spa, &arp->sha);
 				}
 		}
@@ -8503,7 +8506,7 @@ mDNSlocal void mDNSCoreReceiveRawND(mDNS *const m, const mDNSEthAddr *const sha,
 				LogSPS("%-7s %s %.6a %.16a for %.16a -- H-MAC %.6a I-MAC %.6a %s",
 					intf->ifname, msg, sha, spa, &ndp->target, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m, rr));
 				if      (msg == msg1) RestartARPProbing(m, rr);
-				else if (msg == msg3) SendNDP(m, 0x88, 0x60, rr, &ndp->target, mDNSNULL, spa, sha);	// Neighbor Advertisement; Solicited+Override
+				else if (msg == msg3) mDNSPlatformSetLocalAddressCacheEntry(m, &rr->AddressProxy, &rr->WakeUp.IMAC, InterfaceID);
 				else if (msg == msg4) SendNDP(m, 0x88, 0x60, rr, &ndp->target, mDNSNULL, spa, sha);	// Neighbor Advertisement; Solicited+Override
 				}
 		}

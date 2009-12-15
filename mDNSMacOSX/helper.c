@@ -190,10 +190,18 @@ fin:
 	return KERN_SUCCESS;
 	}
 
-kern_return_t do_mDNSSetARP(__unused mach_port_t port, int ifindex, v4addr_t v4, ethaddr_t eth, int *err, audit_token_t token)
+kern_return_t do_mDNSSetLocalAddressCacheEntry(__unused mach_port_t port, int ifindex, int family, v6addr_t ip, ethaddr_t eth, int *err, audit_token_t token)
 	{
-	//helplog(ASL_LEVEL_ERR, "do_mDNSSetARP %d %d.%d.%d.%d %02X:%02X:%02X:%02X:%02X:%02X",
-	//	ifindex, v4[0], v4[1], v4[2], v4[3], eth[0], eth[1], eth[2], eth[3], eth[4], eth[5]);
+	#define IPv6FMTSTRING "%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X"
+	#define IPv6FMTARGS  ip[0], ip[1], ip[2], ip[3], ip[4], ip[5], ip[6], ip[7], ip[8], ip[9], ip[10], ip[11], ip[12], ip[13], ip[14], ip[15] 
+	#if 0
+	if (family == 4)
+		helplog(ASL_LEVEL_ERR, "do_mDNSSetLocalAddressCacheEntry %d IPv%d %d.%d.%d.%d %02X:%02X:%02X:%02X:%02X:%02X",
+			ifindex, family, ip[0], ip[1], ip[2], ip[3], eth[0], eth[1], eth[2], eth[3], eth[4], eth[5]);
+	else
+		helplog(ASL_LEVEL_ERR, "do_mDNSSetLocalAddressCacheEntry %d IPv%d " IPv6FMTSTRING " %02X:%02X:%02X:%02X:%02X:%02X",
+			ifindex, family, IPv6FMTARGS, eth[0], eth[1], eth[2], eth[3], eth[4], eth[5]);
+	#endif
 
 	*err = -1;
 	if (!authorized(&token)) { *err = kmDNSHelperNotAuthorized; goto fin; }
@@ -202,59 +210,109 @@ kern_return_t do_mDNSSetARP(__unused mach_port_t port, int ifindex, v4addr_t v4,
 	if (s < 0)
 		{
 		s = socket(PF_ROUTE, SOCK_RAW, 0);
-		if (s < 0) helplog(ASL_LEVEL_ERR, "do_mDNSSetARP: socket(PF_ROUTE, SOCK_RAW, 0) failed %d (%s)", errno, strerror(errno));
+		if (s < 0) helplog(ASL_LEVEL_ERR, "do_mDNSSetLocalAddressCacheEntry: socket(PF_ROUTE, SOCK_RAW, 0) failed %d (%s)", errno, strerror(errno));
 		}
 
 	if (s >= 0)
 		{
 		struct timeval tv;
 		gettimeofday(&tv, 0);
+		if (family == 4)
+			{
+			struct { struct rt_msghdr hdr; struct sockaddr_inarp dst; struct sockaddr_dl sdl; } rtmsg;
+			memset(&rtmsg, 0, sizeof(rtmsg));
 
-		struct { struct rt_msghdr hdr; struct sockaddr_inarp dst; struct sockaddr_dl sdl; } rtmsg;
-		memset(&rtmsg, 0, sizeof(rtmsg));
+			rtmsg.hdr.rtm_msglen         = sizeof(rtmsg);
+			rtmsg.hdr.rtm_version        = RTM_VERSION;
+			rtmsg.hdr.rtm_type           = RTM_ADD;
+			rtmsg.hdr.rtm_index          = ifindex;
+			rtmsg.hdr.rtm_flags          = RTF_HOST | RTF_STATIC | RTF_IFSCOPE;
+			rtmsg.hdr.rtm_addrs          = RTA_DST | RTA_GATEWAY;
+			rtmsg.hdr.rtm_pid            = 0;
+			rtmsg.hdr.rtm_seq            = seq++;
+			rtmsg.hdr.rtm_errno          = 0;
+			rtmsg.hdr.rtm_use            = 0;
+			rtmsg.hdr.rtm_inits          = RTV_EXPIRE;
+			rtmsg.hdr.rtm_rmx.rmx_expire = tv.tv_sec + 30;
 
-		rtmsg.hdr.rtm_msglen         = sizeof(rtmsg);
-		rtmsg.hdr.rtm_version        = RTM_VERSION;
-		rtmsg.hdr.rtm_type           = RTM_ADD;
-		rtmsg.hdr.rtm_index          = ifindex;
-		rtmsg.hdr.rtm_flags          = RTF_HOST | RTF_STATIC | RTF_IFSCOPE;
-		rtmsg.hdr.rtm_addrs          = RTA_DST | RTA_GATEWAY;
-		rtmsg.hdr.rtm_pid            = 0;
-		rtmsg.hdr.rtm_seq            = seq++;
-		rtmsg.hdr.rtm_errno          = 0;
-		rtmsg.hdr.rtm_use            = 0;
-		rtmsg.hdr.rtm_inits          = RTV_EXPIRE;
-		rtmsg.hdr.rtm_rmx.rmx_expire = tv.tv_sec + 30;
+			rtmsg.dst.sin_len            = sizeof(rtmsg.dst);
+			rtmsg.dst.sin_family         = AF_INET;
+			rtmsg.dst.sin_port           = 0;
+			rtmsg.dst.sin_addr.s_addr    = *(in_addr_t*)ip;
+			rtmsg.dst.sin_srcaddr.s_addr = 0;
+			rtmsg.dst.sin_tos            = 0;
+			rtmsg.dst.sin_other          = 0;
 
-		rtmsg.dst.sin_len            = sizeof(struct sockaddr_inarp);
-		rtmsg.dst.sin_family         = AF_INET;
-		rtmsg.dst.sin_port           = 0;
-		rtmsg.dst.sin_addr.s_addr    = *(in_addr_t*)v4;
-		rtmsg.dst.sin_srcaddr.s_addr = 0;
-		rtmsg.dst.sin_tos            = 0;
-		rtmsg.dst.sin_other          = 0;
+			rtmsg.sdl.sdl_len            = sizeof(rtmsg.sdl);
+			rtmsg.sdl.sdl_family         = AF_LINK;
+			rtmsg.sdl.sdl_index          = ifindex;
+			rtmsg.sdl.sdl_type           = IFT_ETHER;
+			rtmsg.sdl.sdl_nlen           = 0;
+			rtmsg.sdl.sdl_alen           = ETHER_ADDR_LEN;
+			rtmsg.sdl.sdl_slen           = 0;
 
-		rtmsg.sdl.sdl_len            = sizeof(struct sockaddr_dl);
-		rtmsg.sdl.sdl_family         = AF_LINK;
-		rtmsg.sdl.sdl_index          = ifindex;
-		rtmsg.sdl.sdl_type           = IFT_ETHER;
-		rtmsg.sdl.sdl_nlen           = 0;
-		rtmsg.sdl.sdl_alen           = ETHER_ADDR_LEN;
-		rtmsg.sdl.sdl_slen           = 0;
+			// Target MAC address goes in rtmsg.sdl.sdl_data[0..5]; (See LLADDR() in /usr/include/net/if_dl.h)
+			memcpy(rtmsg.sdl.sdl_data, eth, sizeof(ethaddr_t));
 
-		// Target MAC address goes in rtmsg.sdl.sdl_data[0..5]; (See LLADDR() in /usr/include/net/if_dl.h)
-		memcpy(rtmsg.sdl.sdl_data, eth, sizeof(ethaddr_t));
+			int len = write(s, (char *)&rtmsg, sizeof(rtmsg));
+			if (len < 0)
+				helplog(ASL_LEVEL_ERR, "do_mDNSSetLocalAddressCacheEntry: write(%d) interface %d address %d.%d.%d.%d seq %d result %d errno %d (%s)",
+					sizeof(rtmsg), ifindex, ip[0], ip[1], ip[2], ip[3], rtmsg.hdr.rtm_seq, len, errno, strerror(errno));
+			len = read(s, (char *)&rtmsg, sizeof(rtmsg));
+			if (len < 0 || rtmsg.hdr.rtm_errno)
+				helplog(ASL_LEVEL_ERR, "do_mDNSSetLocalAddressCacheEntry: read (%d) interface %d address %d.%d.%d.%d seq %d result %d errno %d (%s) %d",
+					sizeof(rtmsg), ifindex, ip[0], ip[1], ip[2], ip[3], rtmsg.hdr.rtm_seq, len, errno, strerror(errno), rtmsg.hdr.rtm_errno);
 
-		int len = write(s, (char *)&rtmsg, sizeof(rtmsg));
-		if (len < 0)
-			helplog(ASL_LEVEL_ERR, "do_mDNSSetARP: write(%d) interface %d address %d.%d.%d.%d seq %d result %d errno %d (%s)",
-				sizeof(rtmsg), ifindex, v4[0], v4[1], v4[2], v4[3], rtmsg.hdr.rtm_seq, len, errno, strerror(errno));
-		len = read(s, (char *)&rtmsg, sizeof(rtmsg));
-		if (len < 0)
-			helplog(ASL_LEVEL_ERR, "do_mDNSSetARP: read (%d) interface %d address %d.%d.%d.%d seq %d result %d errno %d (%s)",
-				sizeof(rtmsg), ifindex, v4[0], v4[1], v4[2], v4[3], rtmsg.hdr.rtm_seq, len, errno, strerror(errno));
+			*err = 0;
+			}
+		else
+			{
+			struct { struct rt_msghdr hdr; struct sockaddr_in6 dst; struct sockaddr_dl sdl; } rtmsg;
+			memset(&rtmsg, 0, sizeof(rtmsg));
 
-		*err = 0;
+			rtmsg.hdr.rtm_msglen         = sizeof(rtmsg);
+			rtmsg.hdr.rtm_version        = RTM_VERSION;
+			rtmsg.hdr.rtm_type           = RTM_ADD;
+			rtmsg.hdr.rtm_index          = ifindex;
+			rtmsg.hdr.rtm_flags          = RTF_HOST | RTF_STATIC | RTF_IFSCOPE;
+			rtmsg.hdr.rtm_addrs          = RTA_DST | RTA_GATEWAY;
+			rtmsg.hdr.rtm_pid            = 0;
+			rtmsg.hdr.rtm_seq            = seq++;
+			rtmsg.hdr.rtm_errno          = 0;
+			rtmsg.hdr.rtm_use            = 0;
+			rtmsg.hdr.rtm_inits          = RTV_EXPIRE;
+			rtmsg.hdr.rtm_rmx.rmx_expire = tv.tv_sec + 30;
+
+			rtmsg.dst.sin6_len           = sizeof(rtmsg.dst);
+			rtmsg.dst.sin6_family        = AF_INET6;
+			rtmsg.dst.sin6_port          = 0;
+			rtmsg.dst.sin6_flowinfo      = 0;
+			rtmsg.dst.sin6_addr          = *(struct in6_addr*)ip;
+			rtmsg.dst.sin6_scope_id      = ifindex;
+
+			rtmsg.sdl.sdl_len            = sizeof(rtmsg.sdl);
+			rtmsg.sdl.sdl_family         = AF_LINK;
+			rtmsg.sdl.sdl_index          = ifindex;
+			rtmsg.sdl.sdl_type           = IFT_ETHER;
+			rtmsg.sdl.sdl_nlen           = 0;
+			rtmsg.sdl.sdl_alen           = ETHER_ADDR_LEN;
+			rtmsg.sdl.sdl_slen           = 0;
+
+			// Target MAC address goes in rtmsg.sdl.sdl_data[0..5]; (See LLADDR() in /usr/include/net/if_dl.h)
+			memcpy(rtmsg.sdl.sdl_data, eth, sizeof(ethaddr_t));
+
+			int len = write(s, (char *)&rtmsg, sizeof(rtmsg));
+			if (len < 0)
+				helplog(ASL_LEVEL_ERR, "do_mDNSSetLocalAddressCacheEntry: write(%d) interface %d address " IPv6FMTSTRING " seq %d result %d errno %d (%s)",
+					sizeof(rtmsg), ifindex, IPv6FMTARGS, rtmsg.hdr.rtm_seq, len, errno, strerror(errno));
+			len = read(s, (char *)&rtmsg, sizeof(rtmsg));
+			if (len < 0 || rtmsg.hdr.rtm_errno)
+				helplog(ASL_LEVEL_ERR, "do_mDNSSetLocalAddressCacheEntry: read (%d) interface %d address " IPv6FMTSTRING " seq %d result %d errno %d (%s) %d",
+					sizeof(rtmsg), ifindex, IPv6FMTARGS, rtmsg.hdr.rtm_seq, len, errno, strerror(errno), rtmsg.hdr.rtm_errno);
+
+			*err = 0;
+			}
+
 		}
 
 fin:

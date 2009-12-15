@@ -1436,35 +1436,21 @@ mDNSexport void mDNSPlatformSendRawPacket(const void *const msg, const mDNSu8 *c
 		}
 	}
 
-mDNSexport void mDNSPlatformSetLocalARP(const mDNSv4Addr *const tpa, const mDNSEthAddr *const tha, mDNSInterfaceID InterfaceID)
+mDNSexport void mDNSPlatformSetLocalAddressCacheEntry(mDNS *const m, const mDNSAddr *const tpa, const mDNSEthAddr *const tha, mDNSInterfaceID InterfaceID)
 	{
-	if (!InterfaceID) { LogMsg("mDNSPlatformSetLocalARP: No InterfaceID specified"); return; }
+	if (!InterfaceID) { LogMsg("mDNSPlatformSetLocalAddressCacheEntry: No InterfaceID specified"); return; }
 	NetworkInterfaceInfoOSX *info;
-	extern mDNS mDNSStorage;
-	info = IfindexToInterfaceInfoOSX(&mDNSStorage, InterfaceID);
-	if (info == NULL)
-		{
-		LogMsg("mDNSPlatformSendUDP: Invalid interface index %p", InterfaceID);
-		return;
-		}
+	info = IfindexToInterfaceInfoOSX(m, InterfaceID);
+	if (info == NULL) { LogMsg("mDNSPlatformSetLocalAddressCacheEntry: Invalid interface index %p", InterfaceID); return; }
 	// Manually inject an entry into our local ARP cache.
 	// (We can't do this by sending an ARP broadcast, because the kernel only pays attention to incoming ARP packets, not outgoing.)
-	mDNSBool makearp = mDNSv4AddressIsLinkLocal(tpa);
-	if (!makearp)
-		{
-		NetworkInterfaceInfoOSX *i;
-		for (i = info->m->p->InterfaceList; i; i = i->next)
-			if (i->Exists && i->ifinfo.InterfaceID == InterfaceID && i->ifinfo.ip.type == mDNSAddrType_IPv4)
-				if (((i->ifinfo.ip.ip.v4.NotAnInteger ^ tpa->NotAnInteger) & i->ifinfo.mask.ip.v4.NotAnInteger) == 0)
-					makearp = mDNStrue;
-		}
-	if (!makearp)
-		LogInfo("Don't need ARP entry for %s %.4a %.6a",            info->ifinfo.ifname, tpa, tha);
+	if (!mDNS_AddressIsLocalSubnet(m, InterfaceID, tpa))
+		LogSPS("Don't need address cache entry for %s %#a %.6a",            info->ifinfo.ifname, tpa, tha);
 	else
 		{
-		int result = mDNSSetARP(info->scope_id, tpa->b, tha->b);
-		if (result) LogMsg("Set local ARP entry for %s %.4a %.6a failed: %d", info->ifinfo.ifname, tpa, tha, result);
-		else debugf       ("Set local ARP entry for %s %.4a %.6a",            info->ifinfo.ifname, tpa, tha);
+		int result = mDNSSetLocalAddressCacheEntry(info->scope_id, tpa->type, tpa->ip.v6.b, tha->b);
+		if (result) LogMsg("Set local address cache entry for %s %#a %.6a failed: %d", info->ifinfo.ifname, tpa, tha, result);
+		else        LogSPS("Set local address cache entry for %s %#a %.6a",            info->ifinfo.ifname, tpa, tha);
 		}
 	}
 

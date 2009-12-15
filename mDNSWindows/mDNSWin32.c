@@ -1514,7 +1514,7 @@ mDNSexport void mDNSPlatformReceiveRawPacket(const void *const msg, const mDNSu8
 	DEBUG_UNUSED( InterfaceID );
 	}
 
-mDNSexport void mDNSPlatformSetLocalARP( const mDNSv4Addr * const tpa, const mDNSEthAddr * const tha, mDNSInterfaceID InterfaceID )
+mDNSexport void mDNSPlatformSetLocalAddressCacheEntry(mDNS *const m, const mDNSAddr *const tpa, const mDNSEthAddr *const tha, mDNSInterfaceID InterfaceID)
 	{
 	DEBUG_UNUSED( tpa );
 	DEBUG_UNUSED( tha );

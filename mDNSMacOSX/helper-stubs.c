@@ -149,12 +149,12 @@ fin:
 	return err;
 	}
 
-int mDNSSetARP(int ifindex, const v4addr_t ip, const ethaddr_t eth)
+int mDNSSetLocalAddressCacheEntry(int ifindex, int family, const v6addr_t ip, const ethaddr_t eth)
 	{
 	kern_return_t kr = KERN_FAILURE;
 	int retry = 0, err = 0;
 	MACHRETRYLOOP_BEGIN(kr, retry, err, fin);
-	kr = proxy_mDNSSetARP(getHelperPort(retry), ifindex, (uint8_t*)ip, (uint8_t*)eth, &err);
+	kr = proxy_mDNSSetLocalAddressCacheEntry(getHelperPort(retry), ifindex, family, (uint8_t*)ip, (uint8_t*)eth, &err);
 	MACHRETRYLOOP_END(kr, retry, err, fin);
 fin:
 	return err;
