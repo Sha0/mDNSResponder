@@ -434,7 +434,7 @@ exit:
 
 
 BOOL
-mDNSIsFileAndPrintSharingEnabled()
+mDNSIsFileAndPrintSharingEnabled( BOOL * retry )
 {
 	INetFwProfile	*	fwProfile					= NULL;
 	HRESULT				comInit						= E_FAIL;
@@ -443,6 +443,7 @@ mDNSIsFileAndPrintSharingEnabled()
 
 	// Initialize COM.
 
+	*retry = FALSE;
 	comInit = CoInitializeEx( 0, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE );
 
 	// Ignore this case. RPC_E_CHANGED_MODE means that COM has already been
@@ -450,6 +451,7 @@ mDNSIsFileAndPrintSharingEnabled()
 
 	if (comInit != RPC_E_CHANGED_MODE)
 	{
+		*retry = TRUE;
 		err = comInit;
 		require(SUCCEEDED(err), exit);
 	}

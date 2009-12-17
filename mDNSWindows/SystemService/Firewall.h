@@ -59,7 +59,7 @@ mDNSAddToFirewall
 
 
 BOOL
-mDNSIsFileAndPrintSharingEnabled();
+mDNSIsFileAndPrintSharingEnabled( BOOL * retry );
 
 
 

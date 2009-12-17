@@ -252,7 +252,7 @@ mDNSexport mStatus	mDNSPlatformInit( mDNS * const inMDNS )
 	require_action( inMDNS->p->mainThread, exit, err = mStatus_UnknownErr );
 	inMDNS->p->checkFileSharesTimer = CreateWaitableTimer( NULL, FALSE, NULL );
 	require_action( inMDNS->p->checkFileSharesTimer, exit, err = mStatus_UnknownErr );
-	inMDNS->p->checkFileSharesTimeout		= 15;		// Retry time for NetShareEnum in seconds
+	inMDNS->p->checkFileSharesTimeout		= 10;		// Retry time for CheckFileShares() in seconds
 	mDNSPlatformOneSecond 					= 1000;		// Use milliseconds as the quantum of time
 	
 	// Startup WinSock 2.2 or later.
@@ -4582,7 +4582,9 @@ CheckFileShares( mDNS * const m )
 
 	if ( !m->p->smbRegistered || ( m->p->smbFileSharing || m->p->smbPrintSharing ) )
 	{
-		if ( mDNSIsFileAndPrintSharingEnabled() )
+		BOOL retry = FALSE;
+
+		if ( mDNSIsFileAndPrintSharingEnabled( &retry ) )
 		{
 			dlog( kDebugLevelTrace, DEBUG_NAME "file and print sharing is enabled\n" );
 
@@ -4612,20 +4614,26 @@ CheckFileShares( mDNS * const m )
 
 				NetApiBufferFree( bufPtr );
 				bufPtr = NULL;
+				retry = FALSE;
 			}
 			else if ( res == NERR_ServerNotStarted )
 			{
-				__int64			qwTimeout;
-				LARGE_INTEGER   liTimeout;
-
-				qwTimeout = -m->p->checkFileSharesTimeout * 10000000;
-				liTimeout.LowPart  = ( DWORD )( qwTimeout & 0xFFFFFFFF );
-				liTimeout.HighPart = ( LONG )( qwTimeout >> 32 );
-
-				SetWaitableTimer( m->p->checkFileSharesTimer, &liTimeout, 0, CheckFileSharesProc, m, FALSE );
+				retry = TRUE;
 			}
 		}
 		
+		if ( retry )
+		{
+			__int64			qwTimeout;
+			LARGE_INTEGER   liTimeout;
+
+			qwTimeout = -m->p->checkFileSharesTimeout * 10000000;
+			liTimeout.LowPart  = ( DWORD )( qwTimeout & 0xFFFFFFFF );
+			liTimeout.HighPart = ( LONG )( qwTimeout >> 32 );
+
+			SetWaitableTimer( m->p->checkFileSharesTimer, &liTimeout, 0, CheckFileSharesProc, m, FALSE );
+		}
+
 		if ( !m->p->smbRegistered && advertise && fileSharing )
 		{
 			domainname		type;
