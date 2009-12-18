@@ -177,6 +177,11 @@ static int read_all(dnssd_sock_t sd, char *buf, int len)
 			{
 			// Should never happen. If it does, it indicates some OS bug,
 			// or that the mDNSResponder daemon crashed (which should never happen).
+#if defined(WIN32)
+			// <rdar://problem/7481776> Suppress logs for "A non-blocking socket operation
+			//                          could not be completed immediately"
+			if (WSAGetLastError() != WSAEWOULDBLOCK)
+#endif
 			syslog(LOG_WARNING, "dnssd_clientstub read_all(%d) failed %ld/%ld %d %s", sd,
 				(long)num_read, (long)len,
 				(num_read < 0) ? dnssd_errno                 : 0,
