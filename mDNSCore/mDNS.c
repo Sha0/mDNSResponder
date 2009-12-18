@@ -415,9 +415,13 @@ mDNSlocal void InitializeLastAPTime(mDNS *const m, AuthRecord *const rr)
 	// (depending on the OS and networking stack it's using) that it might interpret it as a conflict and change its IP address.
 	if (rr->AddressProxy.type) rr->LastAPTime = m->timenow;
 
-	// For now, since we don't yet handle IPv6 NDP or data packets, we send deletions for our SPS clients' AAAA records
-	//if (rr->WakeUp.HMAC.l[0] && rr->resrec.rrtype == kDNSType_AAAA)
-	//	rr->LastAPTime = m->timenow - rr->ThisAPInterval + mDNSPlatformOneSecond * 10;
+	// Unsolicited Neighbor Advertisements (RFC 2461 Section 7.2.6) give us fast address cache updating,
+	// but some older IPv6 clients get confused by them, so for now we don't send them. Without Unsolicited
+	// Neighbor Advertisements we have to rely on Neighbor Unreachability Detection instead, which is slower.
+	// Given this, we'll do our best to wake for existing IPv6 connections, but we don't want to encourage
+	// new ones for sleeping clients, so we'll we send deletions for our SPS clients' AAAA records.
+	if (rr->WakeUp.HMAC.l[0] && rr->resrec.rrtype == kDNSType_AAAA)
+		rr->LastAPTime = m->timenow - rr->ThisAPInterval + mDNSPlatformOneSecond * 10;
 	
 	SetNextAnnounceProbeTime(m, rr);
 	}
@@ -1403,10 +1407,12 @@ mDNSlocal void SendResponses(mDNS *const m)
 							{
 							if (r2->AddressProxy.type == mDNSAddrType_IPv6)
 								{
+								#if MDNS_USE_Unsolicited_Neighbor_Advertisements
 								LogSPS("NDP Announcement %2d Releasing traffic for H-MAC %.6a I-MAC %.6a %s",
 									r2->AnnounceCount-3, &r2->WakeUp.HMAC, &r2->WakeUp.IMAC, ARDisplayString(m,r2));
 								// Neighbor Advertisement; Override flag
 								SendNDP(m, 0x88, 0x20, r2, &r2->AddressProxy.ip.v6, &r2->WakeUp.IMAC, &AllHosts_v6, &AllHosts_v6_Eth);
+								#endif
 								}
 							r2->LastAPTime = m->timenow;
 							if (r2->AnnounceCount-- <= 4) r2->WakeUp.HMAC = zeroEthAddr;
@@ -1428,10 +1434,12 @@ mDNSlocal void SendResponses(mDNS *const m)
 						}
 					else if (rr->AddressProxy.type == mDNSAddrType_IPv6)
 						{
+						#if MDNS_USE_Unsolicited_Neighbor_Advertisements
 						LogSPS("NDP Announcement %2d Capturing traffic for H-MAC %.6a I-MAC %.6a %s",
 							rr->AnnounceCount, &rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m,rr));
 						// Neighbor Advertisement; Override flag
 						SendNDP(m, 0x88, 0x20, rr, &rr->AddressProxy.ip.v6, mDNSNULL, &AllHosts_v6, &AllHosts_v6_Eth);
+						#endif
 						}
 					}
 				else
@@ -4426,16 +4434,18 @@ mDNSlocal void ClearProxyRecords(mDNS *const m, const OwnerOptData *const owner,
 		if (m->rec.r.resrec.InterfaceID == rr->resrec.InterfaceID && mDNSSameEthAddress(&owner->HMAC, &rr->WakeUp.HMAC))
 			if (owner->seq != rr->WakeUp.seq || m->timenow - rr->TimeRcvd > mDNSPlatformOneSecond * 60)
 				{
-				LogSPS("ClearProxyRecords: Removing %3d AC %2d %02X H-MAC %.6a I-MAC %.6a %d %d %s",
-					m->ProxyRecords, rr->AnnounceCount, rr->resrec.RecordType,
-					&rr->WakeUp.HMAC, &rr->WakeUp.IMAC, rr->WakeUp.seq, owner->seq, ARDisplayString(m, rr));
 				if (rr->AddressProxy.type == mDNSAddrType_IPv6)
 					{
+					#if MDNS_USE_Unsolicited_Neighbor_Advertisements
 					LogSPS("NDP Announcement -- Releasing traffic for H-MAC %.6a I-MAC %.6a %s",
 						&rr->WakeUp.HMAC, &rr->WakeUp.IMAC, ARDisplayString(m,rr));
 					// Neighbor Advertisement; Override flag
 					SendNDP(m, 0x88, 0x20, rr, &rr->AddressProxy.ip.v6, &rr->WakeUp.IMAC, &AllHosts_v6, &AllHosts_v6_Eth);
+					#endif
 					}
+				LogSPS("ClearProxyRecords: Removing %3d AC %2d %02X H-MAC %.6a I-MAC %.6a %d %d %s",
+					m->ProxyRecords, rr->AnnounceCount, rr->resrec.RecordType,
+					&rr->WakeUp.HMAC, &rr->WakeUp.IMAC, rr->WakeUp.seq, owner->seq, ARDisplayString(m, rr));
 				if (rr->resrec.RecordType == kDNSRecordTypeDeregistering) rr->resrec.RecordType = kDNSRecordTypeShared;
 				rr->WakeUp.HMAC = zeroEthAddr;	// Clear HMAC so that mDNS_Deregister_internal doesn't waste packets trying to wake this host
 				rr->RequireGoodbye = mDNSfalse;	// and we don't want to send goodbye for it, since real host is now back and functional
@@ -6011,8 +6021,12 @@ mDNSlocal void mDNSCoreReceiveUpdate(mDNS *const m,
 					if (m->NextScheduledSPS - ar->TimeExpire > 0)
 						m->NextScheduledSPS = ar->TimeExpire;
 					mDNS_Register_internal(m, ar);
-					// For now, since we don't get IPv6 NDP or data packets, we don't advertise AAAA records for our SPS clients
-					//if (ar->resrec.rrtype == kDNSType_AAAA) ar->resrec.rroriginalttl = 0;
+					// Unsolicited Neighbor Advertisements (RFC 2461 Section 7.2.6) give us fast address cache updating,
+					// but some older IPv6 clients get confused by them, so for now we don't send them. Without Unsolicited
+					// Neighbor Advertisements we have to rely on Neighbor Unreachability Detection instead, which is slower.
+					// Given this, we'll do our best to wake for existing IPv6 connections, but we don't want to encourage
+					// new ones for sleeping clients, so we'll we send deletions for our SPS clients' AAAA records.
+					if (ar->resrec.rrtype == kDNSType_AAAA) ar->resrec.rroriginalttl = 0;
 					m->ProxyRecords++;
 					LogSPS("SPS Registered %4d %X %s", m->ProxyRecords, RecordType, ARDisplayString(m,ar));
 					}
